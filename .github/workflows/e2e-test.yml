@@ -1,0 +1,39 @@
+# Run nri resource policy plugin e2e tests
+
+name: NRI Resource Policy CI
+
+# Controls when the workflow will run
+on:
+#  pull_request:
+#    branches: [ "main" ]
+  schedule:
+    - cron: '0 4 * * *'
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  e2e-tests:
+    name: "e2e tests"
+    runs-on: >-
+      ${{ (
+        github.event_name == 'push' ||
+        github.event_name == 'schedule' ||
+        github.event.pull_request.author_association == 'OWNER' ||
+        github.event.pull_request.author_association == 'MEMBER'
+      ) && 'self-hosted' }}
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v3
+
+      - name: Update vendoring data
+        run: go mod vendor
+
+      - name: Build binaries
+        run: make
+
+      - name: Build images
+        run: make images
+
+      - name: Run all resource policy e2e tests
+        run: test/e2e/run_ci.sh policies.test-suite/
