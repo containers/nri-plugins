@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${NAME}
+  labels:
+    app: ${NAME}
+    $(for lbl in ${!LABEL*}; do [[ "$lbl" == LABEL[0-9]* ]] && echo "
+    ${!lbl}
+    "; done)
+  $([ -n "${!ANN*}" ] && echo "
+  annotations:
+    $(for ann in ${!ANN*}; do [[ "$ann" == ANN[0-9]* ]] && echo "
+    ${!ann}
+    "; done)
+  ")
+spec:
+  $(if [ -n "$ICONTCOUNT" ]; then echo "
+  initContainers:
+  $(for contnum in $(seq 1 ${ICONTCOUNT}); do echo "
+  - name: ${NAME}c$(( contnum - 1 ))i
+    image: busybox
+    imagePullPolicy: IfNotPresent
+    command:
+      - sh
+      - -c
+      - echo ${NAME}c$(( contnum - 1 ))i \$(sleep ${ICONTSLEEP:-5})
+    resources:
+      requests:
+        cpu: ${CPU}
+        memory: '${MEM}'
+      limits:
+        cpu: ${CPU}
+        memory: '${MEM}'
+  "; done )
+  "; fi )
+  containers:
+  $(for contnum in $(seq 1 ${CONTCOUNT}); do echo "
+  - name: ${NAME}c$(( contnum - 1 ))
+    image: busybox
+    imagePullPolicy: IfNotPresent
+    command:
+      - sh
+      - -c
+      - echo ${NAME}c$(( contnum - 1 )) \$(sleep inf)
+    resources:
+      requests:
+        cpu: ${CPU}
+        memory: '${MEM}'
+      limits:
+        cpu: ${CPU}
+        memory: '${MEM}'
+  "; done )
+  terminationGracePeriodSeconds: 1

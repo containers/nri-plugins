@@ -1,0 +1,27 @@
+all: up
+
+install:
+	vagrant plugin install dotenv
+	vagrant plugin install vagrant-proxyconf
+	vagrant plugin install vagrant-qemu
+
+provision: install
+	vagrant up --provision --provider=qemu --no-parallel --no-destroy-on-error
+
+up:
+	vagrant up
+
+down:
+	vagrant halt
+
+ssh: up
+	vagrant ssh
+
+status:
+	vagrant status
+
+destroy: up
+	vagrant destroy --force --graceful --no-tty
+
+validate: up
+	vagrant validate

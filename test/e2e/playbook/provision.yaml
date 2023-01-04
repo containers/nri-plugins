@@ -1,0 +1,205 @@
+---
+- hosts: all
+  become: yes
+  become_user: root
+  vars:
+    is_containerd: "{{ cri_runtime }} == containerd"
+  tasks:
+    - name: setup DNS
+      shell: "{{ item }}"
+      with_items:
+        - rm -f /etc/resolv.conf
+        - echo "nameserver {{ dns_nameserver }}" > /etc/resolv.conf
+        - echo "search  {{ dns_search_domain }}" >> /etc/resolv.conf
+        - sed -i "s/DNS=.*$/DNS={{ dns_nameserver }}/" /etc/systemd/resolved.conf
+        - sed -i "s/Domains=.*$/Domains={{ dns_search_domain }}/" /etc/systemd/resolved.conf
+        - sed -i 's/addresses\(.\) \[.*\]$/addresses\1 \[{{ dns_nameserver }}\]/' /etc/netplan/01-netcfg.yaml
+
+    - name: install apt packages
+      apt:
+        name: "{{ packages }}"
+        state: latest
+        update_cache: yes
+      vars:
+        packages:
+        - apt-transport-https
+        - ca-certificates
+        - curl
+        - gnupg-agent
+        - software-properties-common
+        - runc
+        - python3-pip
+        - jq
+      when: ansible_facts['distribution'] == "Ubuntu"
+
+    - name: install python pip based apps
+      shell: "{{ item }}"
+      with_items:
+        - pip3 install toml tomli_w
+
+    # We need quite recent containerd that has NRI support so use the one
+    # that is compiled from sources.
+    - name: copy containerd sources
+      when: is_containerd
+      copy: src="{{ item }}" dest="/usr/bin" mode=0755
+      with_items:
+        - "{{ containerd_src }}/bin/ctr"
+        - "{{ containerd_src }}/bin/containerd"
+        - "{{ containerd_src }}/bin/containerd-shim"
+        - "{{ containerd_src }}/bin/containerd-shim-runc-v1"
+        - "{{ containerd_src }}/bin/containerd-shim-runc-v2"
+
+    - name: setup runtime systemd file
+      copy:
+        src: "{{ nri_resmgr_src }}/test/e2e/files/{{ cri_runtime }}.service"
+        dest: "/lib/systemd/system/{{ cri_runtime }}.service"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: create service.d directory for the runtime
+      file:
+        path: "/etc/systemd/system/{{ cri_runtime }}.service.d"
+        state: directory
+
+    - name: setting up proxies for the runtime
+      copy:
+        dest: "/etc/systemd/system/{{ cri_runtime }}.service.d/proxy.conf"
+        content: |
+          [Service]
+          Environment=HTTP_PROXY="{{ http_proxy }}"
+          Environment=HTTPS_PROXY="{{ https_proxy }}"
+          Environment=NO_PROXY="{{ no_proxy }}"
+
+    - name: start runtime
+      shell: "{{ item }}"
+      with_items:
+        - systemctl daemon-reload
+        - systemctl enable --now "{{ cri_runtime }}"
+
+    - name: copy containerd nri enable script
+      copy:
+        src: "{{ nri_resmgr_src }}/test/e2e/files/containerd-nri-enable"
+        dest: /usr/local/bin/containerd-nri-enable
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: configure containerd
+      when: is_containerd
+      shell: "{{ item }}"
+      with_items:
+        - mkdir -p /etc/containerd
+        - containerd config default > /etc/containerd/config.toml
+        - sed -i 's/^.*disabled_plugins *= *.*$/disabled_plugins = []/' /etc/containerd/config.toml
+        - sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
+
+    - name: setup nri.conf
+      lineinfile:
+        path: /etc/nri/nri.conf
+        line: "disableConnections: false"
+        create: yes
+
+    - name: setup nri
+      shell: "{{ item }}"
+      with_items:
+        - mkdir -p /opt/nri/plugins
+        - systemctl restart "{{ cri_runtime }}"
+
+    - name: enable nri for containerd
+      command: /usr/local/bin/containerd-nri-enable
+      when: is_containerd
+
+    - name: remove swapfile from /etc/fstab
+      mount:
+        name: "{{ item }}"
+        fstype: swap
+        state: absent
+      with_items:
+        - swap
+        - none
+
+    - name: disable swap
+      command: swapoff -a
+      when: ansible_swaptotal_mb > 0
+
+    - name: add an apt signing key for Kubernetes
+      apt_key:
+        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        state: present
+
+    - name: adding apt repository for Kubernetes
+      apt_repository:
+        repo: deb https://apt.kubernetes.io/ kubernetes-xenial main
+        state: present
+        filename: kubernetes.list
+
+    - name: install Kubernetes binaries
+      apt:
+        name: "{{ packages }}"
+        state: present
+        update_cache: yes
+      vars:
+        packages:
+          - kubelet
+          - kubeadm
+          - kubectl
+
+    - name: pre-flight requirements for k8s
+      shell: "{{ item }}"
+      with_items:
+        - rm -f /etc/modules-load.d/k8s.conf
+        - touch /etc/modules-load.d/k8s.conf
+        - modprobe bridge && echo bridge >> /etc/modules-load.d/k8s.conf || echo
+        - modprobe nf-tables-bridge && echo nf-tables-bridge >> /etc/modules-load.d/k8s.conf || echo
+        - modprobe br_netfilter && echo br_netfilter >> /etc/modules-load.d/k8s.conf || echo
+        - touch /etc/sysctl.d/k8s.conf
+        - echo "net.bridge.bridge-nf-call-ip6tables = 1" >> /etc/sysctl.d/k8s.conf
+        - echo "net.bridge.bridge-nf-call-iptables = 1" >> /etc/sysctl.d/k8s.conf
+        - echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.d/k8s.conf
+        # rp_filter (partially) mitigates DDOS attacks with spoofed IP addresses
+        # by dropping packages with non-routable (unanswerable) source addresses.
+        # However, rp_filter > 0 breaks cilium networking. Make sure it's disabled.
+        - echo "net.ipv4.conf.*.rp_filter = 0" >> /etc/sysctl.d/k8s.conf
+        - sysctl -p /etc/sysctl.d/k8s.conf || echo
+
+    - name: restart kubelet
+      service:
+        name: kubelet
+        daemon_reload: yes
+        state: restarted
+
+    - name: initialize the Kubernetes cluster using kubeadm
+      command: kubeadm init --pod-network-cidr="{{ network }}"
+
+    - name: setup kubeconfig for vagrant user
+      command: "{{ item }}"
+      with_items:
+        - mkdir -p /home/vagrant/.kube
+        - cp -i /etc/kubernetes/admin.conf /home/vagrant/.kube/config
+        - chown vagrant:vagrant /home/vagrant/.kube/config
+        - mkdir -p /root/.kube
+        - cp -i /etc/kubernetes/admin.conf /root/.kube/config
+
+    - name: install singlenode cluster
+      become: false
+      shell: "{{ item }}"
+      with_items:
+        - kubectl taint nodes --all node-role.kubernetes.io/control-plane- || echo
+        - kubectl taint nodes --all node-role.kubernetes.io/master- || echo
+
+    - name: Install cilium cni
+      command: "{{ item }}"
+      with_items:
+        - curl -L --remote-name-all https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz
+        - tar xzvfC cilium-linux-amd64.tar.gz /usr/local/bin
+        - cilium install
+        - rm -f cilium-linux-amd64.tar.gz
+
+    - name: generate join command
+      command: kubeadm token create --print-join-command
+      register: join_command
+
+    - name: copy join command to local file
+      become: false
+      local_action: copy content="{{ join_command.stdout_lines[0] }}" dest="{{ outdir }}/join-command"

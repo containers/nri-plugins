@@ -1,0 +1,8 @@
+[testservers]
+testserver ansible_host=SERVER_NAME
+
+[testservers:vars]
+ansible_host=SERVER_NAME
+ansible_user=vagrant
+ansible_private_key_file=.vagrant/machines/SERVER_NAME/libvirt/private_key
+ansible_ssh_common_args=-F .ssh-config

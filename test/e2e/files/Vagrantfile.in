@@ -1,0 +1,73 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+ENV['VAGRANT_DEFAULT_PROVIDER'] = 'qemu'
+
+# Distro image to use
+IMAGE_NAME = "DISTRO"
+
+# Hostname of the system
+HOSTNAME = "SERVER_NAME"
+
+# How many nodes to create
+N = 1
+
+CRI_RUNTIME = "#{ENV['k8scri']}"
+CONTAINERD_SRC = "#{ENV['containerd_src']}"
+NRI_RESMGR_SRC = "#{ENV['nri_resmgr_src']}"
+OUTPUT_DIR = "#{ENV['OUTPUT_DIR']}"
+
+REQUIRED_PLUGINS = %w(vagrant-proxyconf vagrant-qemu)
+exit unless REQUIRED_PLUGINS.all? do |plugin|
+  Vagrant.has_plugin?(plugin) || (
+    puts "The #{plugin} plugin is required. Please install it with:"
+    puts "$ vagrant plugin install #{plugin}"
+    false
+  )
+end
+
+Dotenv.load("env")
+
+Vagrant.configure("2") do |config|
+  config.vm.define HOSTNAME
+  config.vm.hostname = HOSTNAME
+  config.vm.box = IMAGE_NAME
+  config.vm.disk :disk, size: "#{ENV['VM_DISK_SIZE']}", primary: true
+  config.vm.box_check_update = false
+  config.nfs.functional = false
+
+  if Vagrant.has_plugin?("vagrant-proxyconf")
+    config.proxy.http     = "#{ENV['HTTP_PROXY']}"
+    config.proxy.https    = "#{ENV['HTTPS_PROXY']}"
+    config.proxy.no_proxy = "#{ENV['NO_PROXY']}"
+  end
+
+  config.vm.provider "qemu" do |qemu|
+    qemu.memory = "QEMU_MEM"
+    qemu.arch = "x86_64"
+    qemu.machine = "QEMU_MACHINE"
+    qemu.cpu = "host"
+    qemu.net_device = "virtio-net-pci"
+    qemu.extra_netdev_args = "net=192.168.76.0/24,dhcpstart=192.168.76.9"
+    qemu.qemu_dir = "/usr/share/OVMF"
+    qemu.smp = "QEMU_SMP"
+    qemu.extra_qemu_args = ["-enable-kvm",QEMU_EXTRA_ARGS]
+  end
+
+  config.vm.provision :ansible do |ansible|
+    ansible.playbook = "#{ENV['nri_resmgr_src']}/test/e2e/playbook/provision.yaml"
+    ansible.extra_vars = {
+      network: "10.217.0.0/16",
+      hostname: HOSTNAME,
+      dns_nameserver: "#{ENV['DNS_NAMESERVER']}",
+      dns_search_domain: "#{ENV['DNS_SEARCH_DOMAIN']}",
+      https_proxy: "#{ENV['HTTPS_PROXY']}",
+      http_proxy: "#{ENV['HTTP_PROXY']}",
+      no_proxy: "#{ENV['NO_PROXY']}",
+      cri_runtime: CRI_RUNTIME,
+      containerd_src: CONTAINERD_SRC,
+      nri_resmgr_src: NRI_RESMGR_SRC,
+      outdir: OUTPUT_DIR,
+    }
+  end
+end

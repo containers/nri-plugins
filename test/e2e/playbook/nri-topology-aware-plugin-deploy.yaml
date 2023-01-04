@@ -1,0 +1,39 @@
+---
+- hosts: all
+  become: no
+  become_user: root
+  tasks:
+    - name: create default nri configuration file
+      become: yes
+      copy:
+        src: "{{ nri_resmgr_src }}/test/e2e/files/nri-resmgr.cfg"
+        dest: /etc/nri-resmgr/
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: copy nri-resmgr plugins
+      copy: src="{{ item }}" dest="." mode=0755
+      with_items:
+        - "{{ nri_resmgr_src }}/build/bin/nri-resmgr-topology-aware"
+
+    - name: copy nri-resmgr deployment yaml
+      copy: src="{{ item }}" dest="." mode=0644
+      with_items:
+        - "{{ nri_resmgr_src }}/build/images/nri-resmgr-topology-aware-deployment.yaml"
+
+    - name: copy nri-resmgr deployment yaml to /etc/nri-resmgr/nri-resmgr-deployment.yaml
+      become: yes
+      copy: src="{{ nri_resmgr_src }}/build/images/nri-resmgr-topology-aware-deployment.yaml" dest="/etc/nri-resmgr/nri-resmgr-deployment.yaml" mode=0644
+
+    - name: get latest nri-resmgr deployment image name
+      delegate_to: localhost
+      shell: "ls -1t {{ nri_resmgr_src }}/build/images/nri-resmgr-topology-aware-image-*.tar"
+      register: nri_resmgr_images
+
+    - name: copy latest nri-resmgr deployment image
+      copy: src="{{ nri_resmgr_images.stdout_lines[0] }}" dest="."
+
+    - name: import nri plugin image
+      become: yes
+      shell: "ctr -n k8s.io images import `basename {{ nri_resmgr_images.stdout_lines[0] }}`"
