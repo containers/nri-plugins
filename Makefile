@@ -30,6 +30,7 @@ RPM_VERSION   := $(shell scripts/build/get-buildid --rpm --shell=no)
 DEB_VERSION   := $(shell scripts/build/get-buildid --deb --shell=no)
 TAR_VERSION   := $(shell scripts/build/get-buildid --tar --shell=no)
 
+# Protoc compiler and protobuf definitions we might need to recompile.
 PROTO_SOURCES = $(shell find . -name '*.proto' | grep -v /vendor/)
 PROTO_GOFILES = $(patsubst %.proto,%.pb.go,$(PROTO_SOURCES))
 PROTO_INCLUDE = -I$(PWD):/usr/local/include:/usr/include
@@ -37,9 +38,22 @@ PROTO_OPTIONS = --proto_path=. $(PROTO_INCLUDE) \
     --go_opt=paths=source_relative --go_out=. \
     --go-ttrpc_opt=paths=source_relative --go-ttrpc_out=.
 PROTO_COMPILE = PATH=$(PATH):$(shell go env GOPATH)/bin; protoc $(PROTO_OPTIONS)
+PROTOCODE := $(patsubst %.proto,%.pb.go,$(PROTO_SOURCES))
+
+# List of visualizer collateral files to go generate.
+UI_ASSETS := $(shell for i in pkg/visualizer/*; do \
+        if [ -d "$$i" -a -e "$$i/assets_generate.go" ]; then \
+            echo $$i/assets_gendata.go; \
+        fi; \
+    done)
+
+# Right now we don't depend on libexec/%.o on purpose so make sure the file
+# is always up-to-date when elf/avx512.c is changed.
+GEN_TARGETS := pkg/avx/programbytes_gendata.go $(PROTOCODE)
 
 GO_CMD     := go
 GO_BUILD   := $(GO_CMD) build
+GO_GEN     := $(GO_CMD) generate -x
 GO_INSTALL := $(GO_CMD) install
 GO_TEST    := $(GO_CMD) test
 GO_LINT    := golint -set_exit_status
@@ -98,6 +112,9 @@ build-static:
 
 clean: clean-plugins
 
+clean-gen:
+	$(Q)rm -f $(GEN_TARGETS)
+
 allclean: clean clean-cache
 
 test: test-gopkgs
@@ -132,6 +149,14 @@ $(BIN_PATH)/%: .static.%.$(STATIC)
 	echo "Building $$([ -n "$(STATIC)" ] && echo 'static ')$@ (version $(BUILD_VERSION), build $(BUILD_BUILDID))..."; \
 	mkdir -p $(BIN_PATH) && \
 	$(GO_BUILD) $(BUILD_TAGS) $(LDFLAGS) $(GCFLAGS) -o $(BIN_PATH)/$$bin $$src
+
+$(BIN_PATH)/nri-resmgr-topology-aware: $(wildcard cmd/topology-aware/*.go) $(UI_ASSETS) $(GEN_TARGETS) \
+    $(shell for dir in \
+                  $(shell go list -f '{{ join .Deps  "\n"}}' ./cmd/topology-aware/... | \
+                          grep nri-resmgr/pkg/ | \
+                          sed 's#github.com/intel/nri-resmgr/##g'); do \
+                find $$dir -name \*.go; \
+            done | sort | uniq)
 
 .static.%.$(STATIC):
 	$(Q)if [ ! -f "$@" ]; then \
@@ -261,4 +286,24 @@ image-%:
 	    $(DOCKER) build . -f "cmd/$$bin/Dockerfile" \
 	    --build-arg GO_VERSION=$${go_version} \
 	    -t $(IMAGE_REPO)$$tag:$(IMAGE_VERSION)
+
+#
+# rules to run go generators
+#
+clean-ui-assets:
+	$(Q)echo "Cleaning up generated UI assets..."; \
+	for i in $(UI_ASSETS); do \
+	    echo "  - $$i"; \
+	    rm -f $$i; \
+	done
+
+%_gendata.go::
+	$(Q)echo "Generating $@..."; \
+	cd $(dir $@) && \
+	    $(GO_GEN) || exit 1 && \
+	cd - > /dev/null
+
+pkg/sysfs/sst_types%.go: pkg/sysfs/_sst_types%.go pkg/sysfs/gen_sst_types.sh
+	$(Q)cd $(@D) && \
+	    KERNEL_SRC_DIR=$(KERNEL_SRC_DIR) $(GO_GEN)
 

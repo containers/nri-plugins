@@ -19,7 +19,7 @@ package main
 
 import (
 	"fmt"
-	visualizer "github.com/intel/cri-resource-manager/pkg/cri/resource-manager/visualizer/bubbles"
+	visualizer "github.com/intel/nri-resmgr/pkg/visualizer/bubbles"
 	"github.com/shurcooL/vfsgen"
 	"log"
 )
