@@ -30,7 +30,6 @@ import (
 	config "github.com/intel/nri-resmgr/pkg/resmgr/config"
 	//	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/control"
 	"github.com/intel/nri-resmgr/pkg/introspect"
-	"github.com/intel/nri-resmgr/pkg/resmgr/agent"
 	"github.com/intel/nri-resmgr/pkg/resmgr/metrics"
 	"github.com/intel/nri-resmgr/pkg/policy"
 	"github.com/intel/nri-resmgr/pkg/visualizer"
@@ -69,7 +68,6 @@ type resmgr struct {
 	policySwitch bool               // active policy is being switched
 	configServer config.Server      // configuration management server
 	//control      control.Control    // policy controllers/enforcement
-	agent        agent.Interface    // connection to cri-resmgr agent
 	conf         *config.RawConfig  // pending for saving in cache
 	metrics      *metrics.Metrics   // metrics collector/pre-processor
 	events       chan interface{}   // channel for delivering events
@@ -274,17 +272,6 @@ func (m *resmgr) setupCache() error {
 
 }
 
-// setupAgentInterface sets up the connection to the node agent.
-func (m *resmgr) setupAgentInterface() error {
-	var err error
-
-	if m.agent, err = agent.NewAgentInterface(opt.AgentSocket); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 // setupConfigServer sets up our configuration server for agent notifications.
 func (m *resmgr) setupConfigServer() error {
 	var err error
@@ -335,16 +322,6 @@ func (m *resmgr) loadConfig() error {
 		return m.setupConfigSignal(opt.ForceConfigSignal)
 	}
 
-	/*
-	m.Info("trying configuration from agent...")
-	if conf, err := m.agent.GetConfig(1 * time.Second); err == nil {
-		if err = pkgcfg.SetConfig(conf.Data); err == nil && conf.Data != nil {
-			m.conf = conf // schedule storing in cache if we ever manage to start up
-			return nil
-		}
-		m.Error("configuration from agent failed to apply: %v", err)
-	}
-	*/
 	m.Info("trying last cached configuration...")
 	if conf := m.cache.GetConfig(); conf != nil && conf.Data != nil {
 		err := pkgcfg.SetConfig(conf.Data)
@@ -427,7 +404,7 @@ func (m *resmgr) setupPolicy() error {
 		m.policySwitch = true
 	}
 
-	options := &policy.Options{AgentCli: m.agent, SendEvent: m.SendEvent}
+	options := &policy.Options{SendEvent: m.SendEvent}
 	if m.policy, err = policy.NewPolicy(m.cache, options); err != nil {
 		return resmgrError("failed to create policy %s: %v", active, err)
 	}

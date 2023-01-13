@@ -24,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
-	"github.com/intel/nri-resmgr/pkg/resmgr/agent"
 	"github.com/intel/nri-resmgr/pkg/config"
 	"github.com/intel/nri-resmgr/pkg/cache"
 	"github.com/intel/nri-resmgr/pkg/resmgr/events"
@@ -59,8 +58,6 @@ type ConstraintSet map[Domain]Constraint
 
 // Options describes policy options
 type Options struct {
-	// Client interface to cri-resmgr agent
-	AgentCli agent.Interface
 	// SendEvent is the function for delivering events back to the resource manager.
 	SendEvent SendEventFn
 }
