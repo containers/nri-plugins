@@ -30,6 +30,11 @@ RPM_VERSION   := $(shell scripts/build/get-buildid --rpm --shell=no)
 DEB_VERSION   := $(shell scripts/build/get-buildid --deb --shell=no)
 TAR_VERSION   := $(shell scripts/build/get-buildid --tar --shell=no)
 
+CONTAINER_RUN_CMD ?= docker run
+IMAGE_BUILD_CMD ?= docker build
+IMAGE_BUILD_EXTRA_OPTS ?=
+BUILDER_IMAGE ?= golang:1.19-bullseye
+
 # Protoc compiler and protobuf definitions we might need to recompile.
 PROTO_SOURCES = $(shell find . -name '*.proto' | grep -v /vendor/)
 PROTO_GOFILES = $(patsubst %.proto,%.pb.go,$(PROTO_SOURCES))
@@ -222,8 +227,24 @@ golangci-lint:
 # API generation
 #
 
+.generator.image.stamp: Dockerfile_generator
+	$(IMAGE_BUILD_CMD) \
+	    --build-arg BUILDER_IMAGE=$(BUILDER_IMAGE) \
+	    -t nri-resmgr-generator \
+	    -f Dockerfile_generator .
+
+generate: .generator.image.stamp
+	mkdir -p $(BUILD_PATH)/deployment && \
+	$(CONTAINER_RUN_CMD) --rm \
+	    -v "`go env GOMODCACHE`:/go/pkg/mod" \
+	    -v "`go env GOCACHE`:/.cache" \
+	    -v "`pwd`:/go/nri-resmgr" \
+	    --user=`id -u`:`id -g`\
+	    nri-resmgr-generator \
+	    ./scripts/code-generator/generate.sh
+
 # unconditionally generate all apis
-generate-apis: generate-resmgr-api
+generate-apis: generate
 
 # unconditionally generate (external) resmgr api
 generate-resmgr-api:
@@ -231,8 +252,8 @@ generate-resmgr-api:
 
 # automatic update of generated code for resource-manager external api
 pkg/apis/resmgr/$(RESMGR_API_VERSION)/zz_generated.deepcopy.go: \
-    pkg/apis/resmgr/$(RESMGR_API_VERSION)/types.go
-	$(Q)$(call generate-api,resmgr,$(RESMGR_API_VERSION))
+	pkg/apis/resmgr/$(RESMGR_API_VERSION)/types.go
+	$(Q)$(call generate-apis)
 
 # macro to generate code for api $(1), version $(2)
 generate-api = \
