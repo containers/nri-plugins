@@ -104,10 +104,12 @@
       shell: "{{ item }}"
       with_items:
         - mkdir -p /opt/nri/plugins
-        - systemctl restart "{{ cri_runtime }}"
 
     - name: enable nri for containerd
-      command: /usr/local/bin/containerd-nri-enable
+      shell: "{{ item }}"
+      with_items:
+        - /usr/local/bin/containerd-nri-enable
+        - systemctl restart "{{ cri_runtime }}"
       when: is_containerd
 
     - name: remove swapfile from /etc/fstab

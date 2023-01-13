@@ -102,6 +102,7 @@ spec:
       - name: resmgrnrisock
         hostPath:
           path: /var/run/nri.sock
+          type: Socket
       - name: resmgrdata
         hostPath:
           path: /var/lib/nri-resmgr
