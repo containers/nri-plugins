@@ -1,0 +1,15 @@
+#
+# If you pass this file to nri-resmgr using the --fallback-config
+# command line option, it will be used if configuration cannot be
+# acquired from any other source (agent, or last configuration
+# stored in the cache).
+#
+
+policy:
+  Active: balloons
+  ReservedResources:
+    CPU: 750m
+logger:
+  Debug: resource-manager,cache,policy,resource-control
+dump:
+  Config: off:.*,full:((Create)|(Remove)|(Run)|(Update)|(Start)|(Stop)).*

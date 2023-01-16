@@ -84,7 +84,8 @@ DOCKER_OPTIONS =
 DOCKER_PULL := --pull
 
 PLUGINS := \
-	$(BIN_PATH)/nri-resmgr-topology-aware
+	nri-resmgr-topology-aware \
+	nri-resmgr-balloons
 
 
 ifneq ($(V),1)
@@ -130,7 +131,7 @@ test: test-gopkgs
 
 build-proto: $(PROTO_GOFILES)
 
-build-plugins: $(PLUGINS)
+build-plugins: $(foreach bin,$(PLUGINS),$(BIN_PATH)/$(bin))
 
 build-check:
 	$(Q)$(GO_BUILD) -v $(GO_MODULES)
@@ -140,7 +141,10 @@ build-check:
 #
 
 clean-plugins:
-	$(Q)rm -f $(PLUGINS)
+	$(Q)echo "Cleaning $(PLUGINS)"; \
+	for i in $(PLUGINS); do \
+		rm -f $(BIN_PATH)/$$i; \
+	done
 
 clean-cache:
 	$(Q)$(GO_CMD) clean -cache -testcache
@@ -155,9 +159,9 @@ $(BIN_PATH)/%: .static.%.$(STATIC)
 	mkdir -p $(BIN_PATH) && \
 	$(GO_BUILD) $(BUILD_TAGS) $(LDFLAGS) $(GCFLAGS) -o $(BIN_PATH)/$$bin $$src
 
-$(BIN_PATH)/nri-resmgr-topology-aware: $(wildcard cmd/topology-aware/*.go) $(UI_ASSETS) $(GEN_TARGETS) \
+$(BIN_PATH)/nri-resmgr-%: $(wildcard cmd/%/*.go) $(UI_ASSETS) $(GEN_TARGETS) \
     $(shell for dir in \
-                  $(shell go list -f '{{ join .Deps  "\n"}}' ./cmd/topology-aware/... | \
+                  $(shell go list -f '{{ join .Deps  "\n"}}' ./cmd/$@/... | \
                           grep nri-resmgr/pkg/ | \
                           sed 's#github.com/intel/nri-resmgr/##g'); do \
                 find $$dir -name \*.go; \
