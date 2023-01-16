@@ -28,7 +28,7 @@ import (
 	pkgcfg "github.com/intel/nri-resmgr/pkg/config"
 	"github.com/intel/nri-resmgr/pkg/cache"
 	config "github.com/intel/nri-resmgr/pkg/resmgr/config"
-	//	"github.com/intel/cri-resource-manager/pkg/cri/resource-manager/control"
+	"github.com/intel/nri-resmgr/pkg/control"
 	"github.com/intel/nri-resmgr/pkg/introspect"
 	"github.com/intel/nri-resmgr/pkg/resmgr/metrics"
 	"github.com/intel/nri-resmgr/pkg/policy"
@@ -67,7 +67,7 @@ type resmgr struct {
 	policy       policy.Policy      // resource manager policy
 	policySwitch bool               // active policy is being switched
 	configServer config.Server      // configuration management server
-	//control      control.Control    // policy controllers/enforcement
+	control      control.Control    // policy controllers/enforcement
 	conf         *config.RawConfig  // pending for saving in cache
 	metrics      *metrics.Metrics   // metrics collector/pre-processor
 	events       chan interface{}   // channel for delivering events

@@ -28,7 +28,7 @@ import (
 
 func TestAllocatorHelper(t *testing.T) {
 	// Create tmpdir and decompress testdata there
-	tmpdir, err := ioutil.TempDir("", "cri-resource-manager-test-")
+	tmpdir, err := ioutil.TempDir("", "nri-resmgr-test-")
 	if err != nil {
 		t.Fatalf("failed to create tmpdir: %v", err)
 	}
