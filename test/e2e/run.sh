@@ -176,9 +176,6 @@ launch() { # script API
     #                Environment variables:
     #                nri_resmgr_cfg: configuration filepath (on host)
     #
-    #   nri-resmgr-webhook:
-    #                deploy nri-resmgr-webhook from the image on VM.
-    #
     # Example:
     #   nri_resmgr_cfg=/tmp/topology-aware.cfg launch nri-resmgr
 
@@ -251,13 +248,6 @@ launch() { # script API
 	    fi
 	    ;;
 
-        "nri-resmgr-webhook")
-            kubectl apply -f webhook/webhook-deployment.yaml
-            kubectl wait --for=condition=Available -n nri-resmgr deployments/nri-resmgr-webhook ||
-                error "nri-resmgr-webhook deployment did not become Available"
-            kubectl apply -f webhook/mutating-webhook-config.yaml
-            ;;
-
         *)
             error "launch: invalid target \"$1\""
             ;;
@@ -270,14 +260,10 @@ terminate() { # script API
     #
     # Supported TARGETs:
     #   nri-resmgr: stop (kill) nri-resmgr.
-    #   nri-resmgr-webhook: delete nri-resmgr-webhook from k8s.
     local target="$1"
     case $target in
         "nri-resmgr")
 	    vm-command "kubectl delete -f /etc/nri-resmgr/nri-resmgr-deployment.yaml"
-            ;;
-        "cri-resmgr-webhook")
-            vm-command "kubectl delete -f webhook/mutating-webhook-config.yaml; kubectl delete -f webhook/webhook-deployment.yaml"
             ;;
         *)
             error "terminate: invalid target \"$target\""

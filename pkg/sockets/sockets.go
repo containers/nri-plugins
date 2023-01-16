@@ -17,12 +17,6 @@ package sockets
 const (
 	// Containerd is the CRI socket containerd listens on.
 	Containerd = "/var/run/containerd/containerd.sock"
-	// ResourceManagerRelay is the CRI socket the resource manager listens on.
-	ResourceManagerRelay = "/var/run/cri-resmgr/cri-resmgr.sock"
-	// ResourceManagerAgent is the socket the resource manager node agent listens on.
-	ResourceManagerAgent = "/var/run/cri-resmgr/cri-resmgr-agent.sock"
-	// ResourceManagerConfig for resource manager configuration notifications.
-	ResourceManagerConfig = "/var/run/cri-resmgr/cri-resmgr-config.sock"
 	// DirPermissions is the permissions to create the directory for sockets with.
 	DirPermissions = 0711
 )

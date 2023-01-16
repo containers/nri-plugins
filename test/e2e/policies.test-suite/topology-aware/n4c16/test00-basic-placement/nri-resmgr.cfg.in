@@ -6,6 +6,6 @@ policy:
     ColocatePods: $(echo ${COLOCATE_PODS:-false})
     ColocateNamespaces: $(echo ${COLOCATE_NAMESPACES:-false})
 logger:
-  Debug: cri-resmgr,resource-manager,cache,policy
+  Debug: nri-resmgr,resource-manager,cache,policy
   Klog:
     skip_headers: true

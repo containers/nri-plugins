@@ -865,7 +865,7 @@ func getTopologyHints(hostPath, containerPath string, readOnly bool) topology.Hi
 	}
 
 	// ignore topology information for small files in /etc, service files in /var/lib/kubelet and host libraries mounts
-	ignoredTopologyPaths := []string{"/.cri-resmgr", "/etc/", "/dev/termination-log", "/lib/", "/lib64/", "/usr/lib/", "/usr/lib32/", "/usr/lib64/"}
+	ignoredTopologyPaths := []string{"/.nri-resmgr", "/etc/", "/dev/termination-log", "/lib/", "/lib64/", "/usr/lib/", "/usr/lib32/", "/usr/lib64/"}
 
 	for _, path := range ignoredTopologyPaths {
 		if strings.HasPrefix(hostPath, path) || strings.HasPrefix(containerPath, path) {
