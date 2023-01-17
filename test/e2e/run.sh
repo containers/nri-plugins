@@ -3,6 +3,10 @@
 TITLE="NRI Resource Manager End-to-End Testing"
 DEFAULT_DISTRO="generic/ubuntu2204"
 
+# Other tested distros
+#    generic/fedora37
+#    fedora/37-cloud-base
+
 SCRIPT_DIR="$(dirname "${BASH_SOURCE[0]}")"
 SRC_DIR=$(realpath "$SCRIPT_DIR/../..")
 LIB_DIR=$(realpath "$SCRIPT_DIR/lib")
