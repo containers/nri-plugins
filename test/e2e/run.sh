@@ -19,6 +19,7 @@ TOPOLOGY_DIR=${TOPOLOGY_DIR:=e2e}
 export vm_name=${vm_name:=$(vm-create-name "$k8scri" "$(basename "$TOPOLOGY_DIR")" ${distro})}
 ESCAPED_VM=$(printf '%s\n' "$vm_name" | sed -e 's/[\/]/-/g')
 export VM_HOSTNAME="$ESCAPED_VM"
+export POLICY=${policy:-"topology-aware"}
 
 # These exports force ssh-* to fail instead of prompting for a passphrase.
 export DISPLAY=bogus-none
@@ -65,12 +66,13 @@ echo "    Output dir      = $OUTPUT_DIR"
 echo "    Test output dir = $TEST_OUTPUT_DIR"
 echo "    NRI dir         = $nri_resmgr_src"
 echo "    Containerd dir  = $containerd_src"
+echo "    Policy          = $POLICY"
 echo "    Topology        = $topology"
 echo
 
 vm-setup "$OUTPUT_DIR" "$ESCAPED_VM" "$distro" "$TOPOLOGY_DIR" "$topology"
 
-vm-nri-plugin-deploy "$OUTPUT_DIR" "$ESCAPED_VM"
+vm-nri-plugin-deploy "$OUTPUT_DIR" "$ESCAPED_VM" "$POLICY"
 
 SUMMARY_FILE="$TEST_OUTPUT_DIR/summary.txt"
 echo -n "" > "$SUMMARY_FILE" || error "cannot write summary to \"$SUMMARY_FILE\""

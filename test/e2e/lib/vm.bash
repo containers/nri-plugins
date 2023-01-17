@@ -135,14 +135,14 @@ vm-play() {
 vm-nri-plugin-deploy() {
     local output_dir="$1"
     local vm_name="$2"
+    local policy="$3"
     local vagrantdir="$output_dir"
     local playbook="$nri_resmgr_src/test/e2e/playbook"
-    local plugin="topology-aware"
 
      # We do not setup NRI plugin during provisioning because provisioning is
      # only run once but we can execute the tests multiple times and we might
      # have to use newer version of nri plugin.
-    vm-play "$vm_name" "$playbook/nri-${plugin}-plugin-deploy.yaml" "$vagrantdir"
+    vm-play "$vm_name" "$playbook/nri-${policy}-plugin-deploy.yaml" "$vagrantdir"
 }
 
 vm-command() { # script API

@@ -229,7 +229,7 @@ ${code}"
 
                         mkdir -p "$test_outdir"
                         echo "Run $TEST_NAME"
-                        test_outdir="$test_outdir" TEST_DIR=$TEST_DIR TOPOLOGY_DIR=$TOPOLOGY_DIR POLICY_DIR=$POLICY_DIR \
+                        policy="$TESTS_POLICY_FILTER" test_outdir="$test_outdir" TEST_DIR=$TEST_DIR TOPOLOGY_DIR=$TOPOLOGY_DIR POLICY_DIR=$POLICY_DIR \
                             "$RUN_SH" test 2>&1 | tee "$test_outdir/run.sh.output"
                         test_name="$(basename "$POLICY_DIR")/$(basename "$TOPOLOGY_DIR")/$(basename "$TEST_DIR")"
                         if grep -q "Test verdict: PASS" "$test_outdir/run.sh.output"; then
