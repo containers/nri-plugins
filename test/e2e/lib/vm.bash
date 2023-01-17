@@ -143,6 +143,9 @@ vm-nri-plugin-deploy() {
      # only run once but we can execute the tests multiple times and we might
      # have to use newer version of nri plugin.
     vm-play "$vm_name" "$playbook/nri-${policy}-plugin-deploy.yaml" "$vagrantdir"
+    if [ $? -ne 0 ]; then
+        error "Cannot deploy $policy nri plugin"
+    fi
 }
 
 vm-command() { # script API

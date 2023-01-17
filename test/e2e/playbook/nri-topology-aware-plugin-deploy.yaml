@@ -25,11 +25,14 @@
     - name: copy nri-resmgr deployment yaml to /etc/nri-resmgr/nri-resmgr-deployment.yaml
       become: yes
       copy: src="{{ nri_resmgr_src }}/build/images/nri-resmgr-topology-aware-deployment.yaml" dest="/etc/nri-resmgr/nri-resmgr-deployment.yaml" mode=0644
+      register: result
+      failed_when: result.state != "file"
 
     - name: get latest nri-resmgr deployment image name
       delegate_to: localhost
       shell: "ls -1t {{ nri_resmgr_src }}/build/images/nri-resmgr-topology-aware-image-*.tar"
       register: nri_resmgr_images
+      failed_when: nri_resmgr_images.rc != 0
 
     - name: copy latest nri-resmgr deployment image
       copy: src="{{ nri_resmgr_images.stdout_lines[0] }}" dest="."
