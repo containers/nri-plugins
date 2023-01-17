@@ -85,6 +85,9 @@ vm-setup() {
     fi
 
     if [ ! -f "$vagrantdir/env" ]; then
+	# Get a random port between 50023 - 52071 to be used to access the VM
+	SSH_PORT="$[ $RANDOM % 2048 + 50023 ]"
+
 	if [ ! -z "$proxy" ]; then
 	    ESCAPED_PROXY=$(printf '%s\n' "$proxy" | sed -e 's/[\/&]/\\&/g')
 
@@ -92,6 +95,12 @@ vm-setup() {
 		-e "s/\#HTTP/HTTP/g" \
 		-e "s/DNS_NAMESERVER=\"\"/DNS_NAMESERVER=\"$dns_nameserver\"/g" \
 		-e "s/DNS_SEARCH_DOMAIN=\"\"/DNS_SEARCH_DOMAIN=\"$dns_search_domain\"/g" \
+		-e "s/SSH_PORT=/SSH_PORT=$SSH_PORT/g" \
+		"$files/env.in" > "$vagrantdir/env"
+	else
+	    sed -e "s/DNS_NAMESERVER=\"\"/DNS_NAMESERVER=\"$dns_nameserver\"/g" \
+		-e "s/DNS_SEARCH_DOMAIN=\"\"/DNS_SEARCH_DOMAIN=\"$dns_search_domain\"/g" \
+		-e "s/SSH_PORT=/SSH_PORT=$SSH_PORT/g" \
 		"$files/env.in" > "$vagrantdir/env"
 	fi
     fi

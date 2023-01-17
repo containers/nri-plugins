@@ -3,6 +3,8 @@
 
 ENV['VAGRANT_DEFAULT_PROVIDER'] = 'qemu'
 
+Dotenv.load("env")
+
 # Distro image to use
 IMAGE_NAME = "DISTRO"
 
@@ -17,6 +19,13 @@ CONTAINERD_SRC = "#{ENV['containerd_src']}"
 NRI_RESMGR_SRC = "#{ENV['nri_resmgr_src']}"
 OUTPUT_DIR = "#{ENV['OUTPUT_DIR']}"
 
+# Each VM should have its own ssh port so that we can have multiple
+# VM in the host side that will not have conflicting source port
+# values. Use the value that is set in the caller script and placed in
+# the environment file.
+# Note that the port value cannot be changed after the VM is created.
+SSH_PORT = "#{ENV['SSH_PORT']}".to_i
+
 REQUIRED_PLUGINS = %w(vagrant-proxyconf vagrant-qemu)
 exit unless REQUIRED_PLUGINS.all? do |plugin|
   Vagrant.has_plugin?(plugin) || (
@@ -26,8 +35,6 @@ exit unless REQUIRED_PLUGINS.all? do |plugin|
   )
 end
 
-Dotenv.load("env")
-
 Vagrant.configure("2") do |config|
   config.vm.define HOSTNAME
   config.vm.hostname = HOSTNAME
@@ -35,6 +42,7 @@ Vagrant.configure("2") do |config|
   config.vm.disk :disk, size: "#{ENV['VM_DISK_SIZE']}", primary: true
   config.vm.box_check_update = false
   config.nfs.functional = false
+  config.vm.network "forwarded_port", id: "ssh", host: SSH_PORT, guest: 22
 
   if Vagrant.has_plugin?("vagrant-proxyconf")
     config.proxy.http     = "#{ENV['HTTP_PROXY']}"
@@ -49,6 +57,7 @@ Vagrant.configure("2") do |config|
     qemu.cpu = "host"
     qemu.net_device = "virtio-net-pci"
     qemu.extra_netdev_args = "net=192.168.76.0/24,dhcpstart=192.168.76.9"
+    qemu.ssh_port = SSH_PORT
     qemu.qemu_dir = "/usr/share/OVMF"
     qemu.smp = "QEMU_SMP"
     qemu.extra_qemu_args = ["-enable-kvm",QEMU_EXTRA_ARGS]
