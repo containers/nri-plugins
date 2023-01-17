@@ -12,6 +12,7 @@ RUN go mod download
 # Build nri-resmgr
 COPY . .
 
+RUN make clean
 RUN make build-static
 
 FROM gcr.io/distroless/static
