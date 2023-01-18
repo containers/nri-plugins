@@ -193,9 +193,9 @@
       with_items:
         - rm -f /etc/modules-load.d/k8s.conf
         - touch /etc/modules-load.d/k8s.conf
-        - modprobe bridge && echo bridge >> /etc/modules-load.d/k8s.conf || echo
-        - modprobe nf-tables-bridge && echo nf-tables-bridge >> /etc/modules-load.d/k8s.conf || echo
-        - modprobe br_netfilter && echo br_netfilter >> /etc/modules-load.d/k8s.conf || echo
+        - modprobe bridge && echo bridge >> /etc/modules-load.d/k8s.conf || true
+        - modprobe nf-tables-bridge && echo nf-tables-bridge >> /etc/modules-load.d/k8s.conf || true
+        - modprobe br_netfilter && echo br_netfilter >> /etc/modules-load.d/k8s.conf || true
         - touch /etc/sysctl.d/k8s.conf
         - echo "net.bridge.bridge-nf-call-ip6tables = 1" >> /etc/sysctl.d/k8s.conf
         - echo "net.bridge.bridge-nf-call-iptables = 1" >> /etc/sysctl.d/k8s.conf
@@ -204,7 +204,7 @@
         # by dropping packages with non-routable (unanswerable) source addresses.
         # However, rp_filter > 0 breaks cilium networking. Make sure it's disabled.
         - echo "net.ipv4.conf.*.rp_filter = 0" >> /etc/sysctl.d/k8s.conf
-        - sysctl -p /etc/sysctl.d/k8s.conf || echo
+        - sysctl -p /etc/sysctl.d/k8s.conf || true
 
     - name: restart kubelet
       service:
@@ -228,8 +228,8 @@
       become: false
       shell: "{{ item }}"
       with_items:
-        - kubectl taint nodes --all node-role.kubernetes.io/control-plane- || echo
-        - kubectl taint nodes --all node-role.kubernetes.io/master- || echo
+        - kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true
+        - kubectl taint nodes --all node-role.kubernetes.io/master- || true
 
     - name: Install cilium cni
       command: "{{ item }}"
