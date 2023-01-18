@@ -12,6 +12,7 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
+SHELL := /bin/bash
 # Kubernetes version we pull in as modules and our external API versions.
 KUBERNETES_VERSION := $(shell grep 'k8s.io/kubernetes ' go.mod | sed 's/^.* //')
 RESMGR_API_VERSION := $(shell ls pkg/apis/resmgr | grep '^v[0-9]*')
