@@ -11,7 +11,7 @@ metadata:
 rules:
 - apiGroups:
   - ""
-  - nriresmgr.intel.com
+  - criresmgr.intel.com
   resources:
   - nodes
   - configmaps
