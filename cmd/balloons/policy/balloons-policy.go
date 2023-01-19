@@ -23,17 +23,17 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
-	pkgcfg "github.com/intel/nri-resmgr/pkg/config"
-	"github.com/intel/nri-resmgr/pkg/cpuallocator"
+	idset "github.com/intel/goresctrl/pkg/utils"
 	"github.com/intel/nri-resmgr/pkg/cache"
+	pkgcfg "github.com/intel/nri-resmgr/pkg/config"
 	cpucontrol "github.com/intel/nri-resmgr/pkg/control/cpu"
-	"github.com/intel/nri-resmgr/pkg/resmgr/events"
+	"github.com/intel/nri-resmgr/pkg/cpuallocator"
 	"github.com/intel/nri-resmgr/pkg/introspect"
 	"github.com/intel/nri-resmgr/pkg/kubernetes"
-	policy "github.com/intel/nri-resmgr/pkg/policy"
 	logger "github.com/intel/nri-resmgr/pkg/log"
+	policy "github.com/intel/nri-resmgr/pkg/policy"
+	"github.com/intel/nri-resmgr/pkg/resmgr/events"
 	"github.com/intel/nri-resmgr/pkg/utils"
-	idset "github.com/intel/goresctrl/pkg/utils"
 )
 
 const (
@@ -55,14 +55,14 @@ const (
 
 // balloons contains configuration and runtime attributes of the balloons policy
 type balloons struct {
-	options          *policy.BackendOptions    // configuration common to all policies
-	bpoptions        BalloonsOptions           // balloons-specific configuration
-	cch              cache.Cache               // cri-resmgr cache
-	allowed          cpuset.CPUSet             // bounding set of CPUs we're allowed to use
-	reserved         cpuset.CPUSet             // system-/kube-reserved CPUs
-	freeCpus         cpuset.CPUSet             // CPUs to be included in growing or new ballons
-	cpuTree          *cpuTreeNode              // system CPU topology
-	cpuTreeAllocator *cpuTreeAllocator         // CPU allocator from system CPU topology
+	options          *policy.BackendOptions // configuration common to all policies
+	bpoptions        BalloonsOptions        // balloons-specific configuration
+	cch              cache.Cache            // cri-resmgr cache
+	allowed          cpuset.CPUSet          // bounding set of CPUs we're allowed to use
+	reserved         cpuset.CPUSet          // system-/kube-reserved CPUs
+	freeCpus         cpuset.CPUSet          // CPUs to be included in growing or new ballons
+	cpuTree          *cpuTreeNode           // system CPU topology
+	cpuTreeAllocator *cpuTreeAllocator      // CPU allocator from system CPU topology
 
 	reservedBalloonDef *BalloonDef // built-in definition of the reserved balloon
 	defaultBalloonDef  *BalloonDef // built-in definition of the default balloon
@@ -299,6 +299,11 @@ func (p *balloons) ExportResourceData(c cache.Container) map[string]string {
 // Introspect provides data for external introspection.
 func (p *balloons) Introspect(*introspect.State) {
 	return
+}
+
+// GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
+func (b *balloons) GetTopologyZones() []*policy.TopologyZone {
+	return nil
 }
 
 // balloonByContainer returns a balloon that contains a container.

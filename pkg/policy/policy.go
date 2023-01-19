@@ -24,14 +24,15 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
-	"github.com/intel/nri-resmgr/pkg/config"
 	"github.com/intel/nri-resmgr/pkg/cache"
-	"github.com/intel/nri-resmgr/pkg/resmgr/events"
+	"github.com/intel/nri-resmgr/pkg/config"
 	"github.com/intel/nri-resmgr/pkg/introspect"
+	"github.com/intel/nri-resmgr/pkg/resmgr/events"
 	"github.com/prometheus/client_golang/prometheus"
 
 	logger "github.com/intel/nri-resmgr/pkg/log"
 	system "github.com/intel/nri-resmgr/pkg/sysfs"
+	// nrt "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 )
 
 // Domain represents a hardware resource domain that can be policied by a backend.
@@ -97,7 +98,6 @@ const (
 //
 // A backends operates in a set of policy domains. Currently each policy domain
 // corresponds to some particular hardware resource (CPU, memory, cache, etc).
-//
 type Backend interface {
 	// Name gets the well-known name of this policy.
 	Name() string
@@ -128,6 +128,8 @@ type Backend interface {
 	PollMetrics() Metrics
 	// CollectMetrics generates prometheus metrics from cached/polled policy-specific metrics data.
 	CollectMetrics(Metrics) ([]prometheus.Metric, error)
+	// GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
+	GetTopologyZones() []*TopologyZone
 }
 
 // Policy is the exposed interface for container resource allocations decision making.
@@ -160,9 +162,53 @@ type Policy interface {
 	PollMetrics() Metrics
 	// CollectMetrics generates prometheus metrics from cached/polled policy-specific metrics data.
 	CollectMetrics(Metrics) ([]prometheus.Metric, error)
+	// GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
+	GetTopologyZones() []*TopologyZone
 }
 
 type Metrics interface{}
+
+// Node resource topology resource and attribute names.
+// XXX TODO(klihub): We'll probably need to add similar unified consts
+//     for resource types (socket, die, NUMA node, etc.) and use them
+//     in policies (for instance for TA pool 'kind's)
+const (
+	// MemoryResource is resource name for memory
+	MemoryResource = "memory"
+	// CPUResource is the resource name for CPU
+	CPUResource = "cpu"
+	// MemsetAttribute is the attribute name for assignable memory set
+	MemsetAttribute = "memory set"
+	// SharedCPUsAttribute is the attribute name for the assignable shared CPU set
+	SharedCPUsAttribute = "shared cpuset"
+	// ReservedCPUsAttribute is the attribute name for assignable the reserved CPU set
+	ReservedCPUsAttribute = "reserved cpuset"
+	// IsolatedCPUsAttribute is the attribute name for the assignable isolated CPU set
+	IsolatedCPUsAttribute = "isolated cpuset"
+)
+
+// TopologyZone provides policy-/pool-specific data for 'node resource topology' CRs.
+type TopologyZone struct {
+	Name       string
+	Parent     string
+	Type       string
+	Resources  []*ZoneResource
+	Attributes []*ZoneAttribute
+}
+
+// ZoneResource is a resource available in some TopologyZone.
+type ZoneResource struct {
+	Name        string
+	Capacity    resource.Quantity
+	Allocatable resource.Quantity
+	Available   resource.Quantity
+}
+
+// ZoneAttribute represents additional, policy-specific information about a zone.
+type ZoneAttribute struct {
+	Name  string
+	Value string
+}
 
 // Policy instance/state.
 type policy struct {
@@ -421,6 +467,14 @@ func (p *policy) CollectMetrics(m Metrics) ([]prometheus.Metric, error) {
 		return p.active.CollectMetrics(m)
 	}
 	return nil, nil
+}
+
+// GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
+func (p *policy) GetTopologyZones() []*TopologyZone {
+	if !p.Bypassed() {
+		return p.active.GetTopologyZones()
+	}
+	return nil
 }
 
 // Register registers a policy backend.

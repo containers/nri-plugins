@@ -22,15 +22,15 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/intel/nri-resmgr/pkg/cache"
 	"github.com/intel/nri-resmgr/pkg/config"
 	"github.com/intel/nri-resmgr/pkg/cpuallocator"
-	"github.com/intel/nri-resmgr/pkg/cache"
-	"github.com/intel/nri-resmgr/pkg/resmgr/events"
 	"github.com/intel/nri-resmgr/pkg/introspect"
+	"github.com/intel/nri-resmgr/pkg/resmgr/events"
 
+	idset "github.com/intel/goresctrl/pkg/utils"
 	policyapi "github.com/intel/nri-resmgr/pkg/policy"
 	system "github.com/intel/nri-resmgr/pkg/sysfs"
-	idset "github.com/intel/goresctrl/pkg/utils"
 )
 
 const (
@@ -301,6 +301,12 @@ func (p *policy) PollMetrics() policyapi.Metrics {
 // CollectMetrics generates prometheus metrics from cached/polled policy-specific metrics data.
 func (p *policy) CollectMetrics(policyapi.Metrics) ([]prometheus.Metric, error) {
 	return nil, nil
+}
+
+// GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
+func (p *policy) GetTopologyZones() []*policyapi.TopologyZone {
+	log.Info("*** should provide tpology-aware policy TopologyZone data for CRDs...")
+	return nil
 }
 
 // ExportResourceData provides resource data to export for the container.
