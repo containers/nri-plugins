@@ -21,23 +21,26 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
 	//	"time"
 
 	"golang.org/x/sys/unix"
 
-	pkgcfg "github.com/intel/nri-resmgr/pkg/config"
+	"github.com/intel/nri-resmgr/pkg/agent"
 	"github.com/intel/nri-resmgr/pkg/cache"
-	config "github.com/intel/nri-resmgr/pkg/resmgr/config"
+	pkgcfg "github.com/intel/nri-resmgr/pkg/config"
 	"github.com/intel/nri-resmgr/pkg/control"
-	"github.com/intel/nri-resmgr/pkg/introspect"
-	"github.com/intel/nri-resmgr/pkg/resmgr/metrics"
-	"github.com/intel/nri-resmgr/pkg/policy"
-	"github.com/intel/nri-resmgr/pkg/visualizer"
 	"github.com/intel/nri-resmgr/pkg/instrumentation"
+	"github.com/intel/nri-resmgr/pkg/introspect"
+	"github.com/intel/nri-resmgr/pkg/log"
 	logger "github.com/intel/nri-resmgr/pkg/log"
 	"github.com/intel/nri-resmgr/pkg/pidfile"
+	"github.com/intel/nri-resmgr/pkg/policy"
+	config "github.com/intel/nri-resmgr/pkg/resmgr/config"
+	"github.com/intel/nri-resmgr/pkg/resmgr/metrics"
 	"github.com/intel/nri-resmgr/pkg/sysfs"
 	"github.com/intel/nri-resmgr/pkg/topology"
+	"github.com/intel/nri-resmgr/pkg/visualizer"
 
 	policyCollector "github.com/intel/nri-resmgr/pkg/policycollector"
 	"github.com/intel/nri-resmgr/pkg/utils"
@@ -75,6 +78,7 @@ type resmgr struct {
 	signals      chan os.Signal     // signal channel
 	introspect   *introspect.Server // server for external introspection
 	nri          *nriPlugin         // NRI plugins, if we're running as such
+	agent        agent.ResourceManagerAgent
 }
 
 // NewResourceManager creates a new ResourceManager instance.
@@ -123,6 +127,10 @@ func NewResourceManager() (ResourceManager, error) {
 		return nil, err
 	}
 
+	if err := m.setupAgent(); err != nil {
+		return nil, err
+	}
+
 	return m, nil
 }
 
@@ -140,6 +148,10 @@ func (m *resmgr) Start() error {
 	}
 
 	m.startIntrospection()
+
+	if err := m.startAgent(); err != nil {
+		return err
+	}
 
 	if err := pidfile.Remove(); err != nil {
 		return resmgrError("failed to remove stale/old PID file: %v", err)
@@ -449,6 +461,44 @@ func (m *resmgr) updateIntrospection() {
 	m.introspect.Set(m.policy.Introspect())
 }
 
+// setupAgent sets up the cluster access 'agent', for accessing the cluster/API server.
+func (m *resmgr) setupAgent() error {
+	if opt.DisableAgent {
+		m.Info("cluster access agent is disabled")
+		return nil
+	}
+
+	a, err := agent.NewResourceManagerAgent()
+	if err != nil {
+		return fmt.Errorf("failed to set up cluster access agent: %w", err)
+	}
+
+	m.agent = a
+	return nil
+}
+
+// startAgent starts the cluster access 'agent'.
+func (m *resmgr) startAgent() error {
+	if m.agent == nil {
+		return nil
+	}
+
+	go func() {
+		if err := m.agent.Run(); err != nil {
+			log.Error("failed to start cluster access agent")
+		}
+	}()
+
+	return nil
+}
+
+// stopAgent stops the cluster access 'agent'.
+func (m *resmgr) stopAgent() {
+	if m.agent == nil {
+		return
+	}
+}
+
 // registerPolicyMetricsCollector registers policy metrics collector·
 func (m *resmgr) registerPolicyMetricsCollector() error {
 	pc := &policyCollector.PolicyCollector{}
@@ -481,7 +531,7 @@ func (m *resmgr) setConfig(v interface{}) error {
 	}
 
 	// TODO: fix this and add stuff
-	
+
 	// if we managed to activate a configuration from the agent, store it in the cache
 	if cfg, ok := v.(*config.RawConfig); ok {
 		m.Info("setting configuration from agent")

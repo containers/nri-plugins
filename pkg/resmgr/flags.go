@@ -42,6 +42,7 @@ type options struct {
 	MetricsTimer          time.Duration
 	RebalanceTimer        time.Duration
 	DisableUI             bool
+	DisableAgent          bool
 
 	UseNRIPlugin bool
 }
@@ -75,4 +76,6 @@ func init() {
 
 	flag.BoolVar(&opt.DisableUI, "disable-ui", false,
 		"Disable serving container placement visualization UIs.")
+	flag.BoolVar(&opt.DisableAgent, "disable-agent", false,
+		"Disable K8s cluster agent.")
 }
