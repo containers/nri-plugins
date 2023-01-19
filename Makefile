@@ -177,20 +177,18 @@ $(BIN_PATH)/%: .static.%.$(STATIC)
 # plugin build dependencies
 #
 
-$(BIN_PATH)/nri-resmgr-topology-aware: $(wildcard cmd/topology-aware/*.go) \
-    $(UI_ASSETS) $(GEN_TARGETS) \
+$(BIN_PATH)/nri-resmgr-topology-aware: $(UI_ASSETS) $(GEN_TARGETS) \
     $(shell for dir in \
-                  $(shell go list -f '{{ join .Deps  "\n"}}' ./cmd/topology-aware/... | \
-                          grep nri-resmgr/pkg/ | \
+                $(shell go list -f '{{ join .Deps  "\n"}}' ./... | \
+                          egrep '(nri-resmgr/pkg/)|(nri-resmgr/cmd/topology-aware/)' | \
                           sed 's#github.com/intel/nri-resmgr/##g'); do \
                 find $$dir -name \*.go; \
             done | sort | uniq)
 
-$(BIN_PATH)/nri-resmgr-balloons: $(wildcard cmd/balloons/*.go) \
-    $(UI_ASSETS) $(GEN_TARGETS) \
+$(BIN_PATH)/nri-resmgr-balloons: $(UI_ASSETS) $(GEN_TARGETS) \
     $(shell for dir in \
-                  $(shell go list -f '{{ join .Deps  "\n"}}' ./cmd/balloons/... | \
-                          grep nri-resmgr/pkg/ | \
+                  $(shell go list -f '{{ join .Deps  "\n"}}' ./... | \
+                          egrep '(nri-resmgr/pkg/)|(nri-resmgr/cmd/balloons/)' | \
                           sed 's#github.com/intel/nri-resmgr/##g'); do \
                 find $$dir -name \*.go; \
             done | sort | uniq)
