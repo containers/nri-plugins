@@ -20,10 +20,12 @@ import (
 	"fmt"
 
 	"github.com/intel/nri-resmgr/pkg/log"
+	policyapi "github.com/intel/nri-resmgr/pkg/policy"
 	k8sclient "k8s.io/client-go/kubernetes"
 
 	resmgrcs "github.com/intel/nri-resmgr/pkg/apis/resmgr/generated/clientset/versioned/typed/resmgr/v1alpha1"
 	resmgr "github.com/intel/nri-resmgr/pkg/apis/resmgr/v1alpha1"
+	nrtapi "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/typed/topology/v1alpha1"
 )
 
 // Get cri-resmgr config
@@ -44,6 +46,7 @@ type resmgrStatus struct {
 // ResourceManagerAgent is the interface exposed for the CRI Resource Manager Congig Agent
 type ResourceManagerAgent interface {
 	Run() error
+	UpdateNrtCR(policy string, zones []*policyapi.TopologyZone) error
 }
 
 // agent implements ResourceManagerAgent
@@ -51,6 +54,7 @@ type agent struct {
 	log.Logger                      // Our logging interface
 	cli        *k8sclient.Clientset // K8s client
 	extCli     *resmgrcs.CriresmgrV1alpha1Client
+	nrtCli     *nrtapi.TopologyV1alpha1Client
 	server     agentServer   // gRPC server listening for requests from cri-resource-manager
 	watcher    k8sWatcher    // Watcher monitoring events in K8s cluster
 	updater    configUpdater // Client sending config updates to cri-resource-manager
@@ -64,7 +68,7 @@ func NewResourceManagerAgent() (ResourceManagerAgent, error) {
 		Logger: log.NewLogger("resource-manager-agent"),
 	}
 
-	if a.cli, a.extCli, err = a.getK8sClient(opts.kubeconfig); err != nil {
+	if a.cli, a.extCli, a.nrtCli, err = a.getK8sClient(opts.kubeconfig); err != nil {
 		return nil, agentError("failed to get k8s client: %v", err)
 	}
 

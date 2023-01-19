@@ -35,6 +35,7 @@ import (
 	resmgr "github.com/intel/nri-resmgr/pkg/apis/resmgr/generated/clientset/versioned/typed/resmgr/v1alpha1"
 
 	agent_v1 "github.com/intel/nri-resmgr/pkg/agent/api/v1"
+	nrtapi "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/typed/topology/v1alpha1"
 )
 
 type namespace string
@@ -43,7 +44,7 @@ type namespace string
 var nodeName string
 
 // getK8sClient initializes a new Kubernetes client
-func (a *agent) getK8sClient(kubeconfig string) (*k8sclient.Clientset, *resmgr.CriresmgrV1alpha1Client, error) {
+func (a *agent) getK8sClient(kubeconfig string) (*k8sclient.Clientset, *resmgr.CriresmgrV1alpha1Client, *nrtapi.TopologyV1alpha1Client, error) {
 	var config *rest.Config
 	var err error
 
@@ -54,20 +55,25 @@ func (a *agent) getK8sClient(kubeconfig string) (*k8sclient.Clientset, *resmgr.C
 		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	genCli, err := k8sclient.NewForConfig(config)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	resmgr, err := resmgr.NewForConfig(config)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	return genCli, resmgr, nil
+	nrtcli, err := nrtapi.NewForConfig(config)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	return genCli, resmgr, nrtcli, nil
 }
 
 // getNodeObject gets a k8s Node object
