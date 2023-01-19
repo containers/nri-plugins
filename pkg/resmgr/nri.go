@@ -20,8 +20,8 @@ import (
 	"strings"
 
 	"github.com/intel/nri-resmgr/pkg/cache"
-	"github.com/intel/nri-resmgr/pkg/resmgr/events"
 	"github.com/intel/nri-resmgr/pkg/policy"
+	"github.com/intel/nri-resmgr/pkg/resmgr/events"
 	"github.com/pkg/errors"
 	"sigs.k8s.io/yaml"
 
@@ -158,6 +158,8 @@ func (p *nriPlugin) Synchronize(pods []*api.PodSandbox, containers []*api.Contai
 			"failed to start policy %s", policy.ActivePolicy())
 	}
 
+	m.updateTopologyZones()
+
 	return p.getPendingUpdates(nil), nil
 }
 
@@ -214,6 +216,7 @@ func (p *nriPlugin) CreateContainer(pod *api.PodSandbox, container *api.Containe
 		Propagation: cache.MountHostToContainer,
 	})
 	m.policy.ExportResourceData(c)
+	m.updateTopologyZones()
 
 	adjust := p.getPendingCreate(container)
 	updates := p.getPendingUpdates(container)
@@ -277,6 +280,7 @@ func (p *nriPlugin) StopContainer(pod *api.PodSandbox, container *api.Container)
 	}
 
 	c.UpdateState(cache.ContainerStateExited)
+	m.updateTopologyZones()
 
 	updates := p.getPendingUpdates(container)
 

@@ -461,6 +461,21 @@ func (m *resmgr) updateIntrospection() {
 	m.introspect.Set(m.policy.Introspect())
 }
 
+// updateTopologyZones updates the 'topology zone' CRDs.
+func (m *resmgr) updateTopologyZones() {
+	m.Info("updating topology zone CRDs...")
+
+	if m.agent == nil {
+		m.Warn("no agent, can't update topology zones")
+		return
+	}
+
+	err := m.agent.UpdateNrtCR(policy.ActivePolicy(), m.policy.GetTopologyZones())
+	if err != nil {
+		m.Error("failed to update topology zones: %v", err)
+	}
+}
+
 // setupAgent sets up the cluster access 'agent', for accessing the cluster/API server.
 func (m *resmgr) setupAgent() error {
 	if opt.DisableAgent {
