@@ -160,14 +160,6 @@ $(BIN_PATH)/%: .static.%.$(STATIC)
 	mkdir -p $(BIN_PATH) && \
 	$(GO_BUILD) $(BUILD_TAGS) $(LDFLAGS) $(GCFLAGS) -o $(BIN_PATH)/$$bin $$src
 
-$(BIN_PATH)/nri-resmgr-%: $(wildcard cmd/%/*.go) $(UI_ASSETS) $(GEN_TARGETS) \
-    $(shell for dir in \
-                  $(shell go list -f '{{ join .Deps  "\n"}}' ./cmd/$@/... | \
-                          grep nri-resmgr/pkg/ | \
-                          sed 's#github.com/intel/nri-resmgr/##g'); do \
-                find $$dir -name \*.go; \
-            done | sort | uniq)
-
 .static.%.$(STATIC):
 	$(Q)if [ ! -f "$@" ]; then \
 	    touch "$@"; \
@@ -180,6 +172,28 @@ $(BIN_PATH)/nri-resmgr-%: $(wildcard cmd/%/*.go) $(UI_ASSETS) $(GEN_TARGETS) \
 	fi
 
 .PRECIOUS: $(foreach dir,$(BUILD_DIRS),.static.$(dir).1 .static.$(dir).)
+
+#
+# plugin build dependencies
+#
+
+$(BIN_PATH)/nri-resmgr-topology-aware: $(wildcard cmd/topology-aware/*.go) \
+    $(UI_ASSETS) $(GEN_TARGETS) \
+    $(shell for dir in \
+                  $(shell go list -f '{{ join .Deps  "\n"}}' ./cmd/topology-aware/... | \
+                          grep nri-resmgr/pkg/ | \
+                          sed 's#github.com/intel/nri-resmgr/##g'); do \
+                find $$dir -name \*.go; \
+            done | sort | uniq)
+
+$(BIN_PATH)/nri-resmgr-balloons: $(wildcard cmd/balloons/*.go) \
+    $(UI_ASSETS) $(GEN_TARGETS) \
+    $(shell for dir in \
+                  $(shell go list -f '{{ join .Deps  "\n"}}' ./cmd/balloons/... | \
+                          grep nri-resmgr/pkg/ | \
+                          sed 's#github.com/intel/nri-resmgr/##g'); do \
+                find $$dir -name \*.go; \
+            done | sort | uniq)
 
 #
 # test targets
