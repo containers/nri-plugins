@@ -16,8 +16,8 @@ rm -rf github.com
 
 ${K8S_CODE_GENERATOR}/generate-groups.sh all \
     github.com/intel/nri-resmgr/pkg/apis/resmgr/generated \
-    github.com/intel/nri-resmgr/pkg/apis/resmgr \
-    "v1alpha1" --output-base=. \
+    github.com/intel/nri-resmgr/pkg/apis \
+    "resmgr:v1alpha1" --output-base=. \
     --go-header-file scripts/code-generator/boilerplate.go.txt
 
 rm -rf pkg/apis/resmgr/generated
