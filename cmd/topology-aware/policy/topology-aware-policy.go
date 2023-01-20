@@ -16,6 +16,7 @@ package topologyaware
 
 import (
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	resapi "k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
@@ -305,8 +306,74 @@ func (p *policy) CollectMetrics(policyapi.Metrics) ([]prometheus.Metric, error) 
 
 // GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
 func (p *policy) GetTopologyZones() []*policyapi.TopologyZone {
-	log.Info("*** should provide tpology-aware policy TopologyZone data for CRDs...")
-	return nil
+	zones := []*policyapi.TopologyZone{}
+
+	for _, pool := range p.pools {
+		zone := &policyapi.TopologyZone{
+			Name:      pool.Name(),
+			Type:      string(pool.Kind()),
+			Resources: []*policyapi.ZoneResource{},
+		}
+		if !pool.IsRootNode() {
+			zone.Parent = pool.Parent().Name()
+		}
+
+		total := pool.GetSupply().(*supply)
+		free := pool.FreeSupply().(*supply)
+		capacity := int64(total.mem[memoryAll])
+		available := int64(free.mem[memoryAll] - free.ExtraMemoryReservation(memoryAll))
+
+		memory := &policyapi.ZoneResource{
+			Name:        policyapi.MemoryResource,
+			Capacity:    *resource.NewQuantity(capacity, resource.DecimalSI),
+			Allocatable: *resource.NewQuantity(capacity, resource.DecimalSI),
+			Available:   *resource.NewQuantity(available, resource.DecimalSI),
+		}
+		zone.Resources = append(zone.Resources, memory)
+
+		attributes := []*policyapi.ZoneAttribute{
+			{
+				Name:  policyapi.MemsetAttribute,
+				Value: pool.GetMemset(memoryAll).String(),
+			},
+		}
+
+		cpu := &policyapi.ZoneResource{
+			Name: policyapi.CPUResource,
+			Capacity: *resource.NewMilliQuantity(
+				1000*int64(total.SharableCPUs().Union(total.ReservedCPUs()).Size()),
+				resource.DecimalSI),
+			Allocatable: *resource.NewMilliQuantity(
+				1000*int64(total.SharableCPUs().Union(total.ReservedCPUs()).Size()),
+				resource.DecimalSI),
+			Available: *resource.NewMilliQuantity(int64(free.AllocatableSharedCPU()),
+				resource.DecimalSI),
+		}
+		zone.Resources = append(zone.Resources, cpu)
+
+		attributes = append(attributes, &policyapi.ZoneAttribute{
+			Name:  policyapi.SharedCPUsAttribute,
+			Value: free.SharableCPUs().String(),
+		})
+		if !total.ReservedCPUs().IsEmpty() {
+			attributes = append(attributes, &policyapi.ZoneAttribute{
+				Name:  policyapi.ReservedCPUsAttribute,
+				Value: total.ReservedCPUs().String(),
+			})
+		}
+		if !free.IsolatedCPUs().IsEmpty() {
+			attributes = append(attributes, &policyapi.ZoneAttribute{
+				Name:  policyapi.IsolatedCPUsAttribute,
+				Value: total.IsolatedCPUs().String(),
+			})
+		}
+
+		zone.Attributes = attributes
+
+		zones = append(zones, zone)
+	}
+
+	return zones
 }
 
 // ExportResourceData provides resource data to export for the container.
