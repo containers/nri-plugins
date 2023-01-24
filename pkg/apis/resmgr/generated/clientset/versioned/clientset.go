@@ -31,8 +31,7 @@ type Interface interface {
 	CriresmgrV1alpha1() criresmgrv1alpha1.CriresmgrV1alpha1Interface
 }
 
-// Clientset contains the clients for groups. Each group has exactly one
-// version included in a Clientset.
+// Clientset contains the clients for groups.
 type Clientset struct {
 	*discovery.DiscoveryClient
 	criresmgrV1alpha1 *criresmgrv1alpha1.CriresmgrV1alpha1Client
