@@ -219,6 +219,7 @@ launch() { # script API
 	    }
         host-command "$SCP \"$adjustment_schema\" $VM_HOSTNAME:" ||
             command-error "copying \"$adjustment_schema\" to VM failed"
+        vm-command "kubectl delete -f $(basename "$adjustment_schema"); kubectl create -f $(basename "$adjustment_schema")"
         host-command "$SCP \"$node_resource_topology_schema\" $VM_HOSTNAME:" ||
             command-error "copying \"$node_resource_topology_schema\" to VM failed"
         vm-command "kubectl delete -f $(basename "$node_resource_topology_schema"); kubectl create -f $(basename "$node_resource_topology_schema")"
