@@ -289,16 +289,16 @@ func (e *Expression) String() string {
 // DeepCopy creates a deep copy of the expression.
 func (e *Expression) DeepCopy() *Expression {
 	out := &Expression{}
-	e.DeepCopyInto(&out)
+	e.DeepCopyInto(out)
 	return out
 }
 
 // DeepCopyInto copies the expression into another one.
-func (e *Expression) DeepCopyInto(out **Expression) {
-	(*out).Key = e.Key
-	(*out).Op = e.Op
-	(*out).Values = make([]string, len(e.Values))
-	copy((*out).Values, e.Values)
+func (e *Expression) DeepCopyInto(out *Expression) {
+	out.Key = e.Key
+	out.Op = e.Op
+	out.Values = make([]string, len(e.Values))
+	copy(out.Values, e.Values)
 }
 // exprError returns a formatted error specific to expressions.
 func exprError(format string, args ...interface{}) error {

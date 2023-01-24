@@ -104,7 +104,7 @@ func (in *AdjustmentScope) DeepCopyInto(out *AdjustmentScope) {
 		in, out := &in.Containers, &out.Containers
 		*out = make([]*resmgr.Expression, len(*in))
 		for i := range *in {
-			(*in)[i].DeepCopyInto(&(*out)[i])
+			(*in)[i].DeepCopyInto((*out)[i])
 		}
 	}
 }
