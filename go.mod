@@ -13,16 +13,18 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/intel/goresctrl v0.3.0
 	github.com/intel/nri-resmgr/pkg/topology v0.0.0
+	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.0.13
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.14.0
 	github.com/prometheus/client_model v0.3.0
 	github.com/prometheus/common v0.37.0
+	github.com/shurcooL/vfsgen v0.0.0-20200824052919-0d455de96546
 	github.com/stretchr/testify v1.8.1
 	go.opencensus.io v0.24.0
-	golang.org/x/net v0.2.0
 	golang.org/x/sys v0.2.0
 	golang.org/x/time v0.2.0
 	google.golang.org/grpc v1.50.1
+	google.golang.org/protobuf v1.28.1
 	k8s.io/api v0.25.4
 	k8s.io/apimachinery v0.25.4
 	k8s.io/client-go v0.25.4
@@ -93,7 +95,6 @@ require (
 	github.com/prometheus/statsd_exporter v0.22.8 // indirect
 	github.com/seccomp/libseccomp-golang v0.9.2-0.20220502022130-f33da4d89646 // indirect
 	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749 // indirect
-	github.com/shurcooL/vfsgen v0.0.0-20200824052919-0d455de96546 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/spf13/cobra v1.4.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
@@ -101,6 +102,7 @@ require (
 	github.com/uber/jaeger-client-go v2.25.0+incompatible // indirect
 	github.com/vishvananda/netlink v1.1.1-0.20210330154013-f5de75959ad5 // indirect
 	github.com/vishvananda/netns v0.0.0-20210104183010-2eb08e3e575f // indirect
+	golang.org/x/net v0.2.0 // indirect
 	golang.org/x/oauth2 v0.0.0-20221014153046-6fdb5e3db783 // indirect
 	golang.org/x/sync v0.1.0 // indirect
 	golang.org/x/term v0.2.0 // indirect
@@ -108,7 +110,6 @@ require (
 	google.golang.org/api v0.103.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20221027153422-115e99e71e1c // indirect
-	google.golang.org/protobuf v1.28.1 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
