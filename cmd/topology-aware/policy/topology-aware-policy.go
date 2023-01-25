@@ -679,5 +679,4 @@ func (a *allocations) getContainerPoolHints() ([]cache.Container, map[string]str
 // Register us as a policy implementation.
 func init() {
 	policyapi.Register(PolicyName, PolicyDescription, CreateTopologyAwarePolicy)
-	policyapi.Register(AliasName, PolicyDescription, CreateMemtierPolicy)
 }
