@@ -27,16 +27,12 @@ import (
 
 	logger "github.com/intel/nri-resmgr/pkg/log"
 
-	"github.com/intel/nri-resmgr/pkg/resmgr/events"
 	"github.com/intel/nri-resmgr/pkg/instrumentation"
 	"github.com/intel/nri-resmgr/pkg/metrics"
+	"github.com/intel/nri-resmgr/pkg/resmgr/events"
+
 	// pull in all metrics collectors
 	_ "github.com/intel/nri-resmgr/pkg/metrics/register"
-)
-
-const (
-	// DefaultAvxThreshold is the cutoff below which a cgroup/container is not an AVX user.
-	DefaultAvxThreshold = float64(0.1)
 )
 
 // Options describes options for metrics collection and processing.
@@ -45,8 +41,6 @@ type Options struct {
 	PollInterval time.Duration
 	// Events is the channel for delivering metrics events.
 	Events chan interface{}
-	// AvxThreshold is the threshold (0 - 1) for a cgroup to be considered AVX512-active
-	AvxThreshold float64
 }
 
 // Metrics implements collecting, caching and processing of raw metrics.
@@ -66,9 +60,6 @@ var log = logger.NewLogger("metrics")
 func NewMetrics(opts Options) (*Metrics, error) {
 	if opts.Events == nil {
 		return nil, metricsError("invalid options, nil Event channel")
-	}
-	if opts.AvxThreshold == 0.0 {
-		opts.AvxThreshold = DefaultAvxThreshold
 	}
 
 	g, err := metrics.NewMetricGatherer()
@@ -116,11 +107,6 @@ func (m *Metrics) Start() error {
 			case _ = <-pollChan:
 				if err := m.poll(); err != nil {
 					log.Error("failed to poll raw metrics: %v", err)
-					continue
-				}
-
-				if err := m.process(); err != nil {
-					log.Error("failed to deliver metrics event: %v", err)
 				}
 			}
 		}
@@ -150,21 +136,6 @@ func (m *Metrics) poll() error {
 	m.raw = f
 	m.pend = f
 	return nil
-}
-
-// process processes the collected raw metrics.
-func (m *Metrics) process() error {
-	raw := map[string]*model.MetricFamily{}
-	for _, f := range m.raw {
-		dump(" <metric "+*f.Name+"> ", f)
-		raw[*f.Name] = f
-	}
-
-	event := &events.Metrics{
-		Avx: m.collectAvxEvents(raw),
-	}
-
-	return m.sendEvent(event)
 }
 
 // sendEvent sends a metrics-based event for processing.

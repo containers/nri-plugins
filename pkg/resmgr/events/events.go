@@ -16,14 +16,6 @@ package events
 
 // Metrics is a set of metrics-related events we might need to act upon.
 type Metrics struct {
-	// Avx describes changes in container AVX512 instruction usage.
-	Avx *Avx
-}
-
-// AVX contains data related to container AVX512 instruction usage.
-type Avx struct {
-	// Updates contains containers with a change in their AVX512 instruction usage.
-	Updates map[string]bool
 }
 
 // Policy is a policy-specific event to be handled by the active policy.

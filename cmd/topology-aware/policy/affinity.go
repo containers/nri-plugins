@@ -75,16 +75,6 @@ func (p *policy) registerImplicitAffinities() error {
 		affinity cache.ImplicitAffinity
 	}{
 		{
-			name: "AVX512-pull/push",
-			affinity: func(c cache.Container, hasExplicit bool) *cache.Affinity {
-				_, tagged := c.GetTag(cache.TagAVX512)
-				if tagged {
-					return cache.GlobalAffinity("tags/"+cache.TagAVX512, 5)
-				}
-				return cache.GlobalAntiAffinity("tags/"+cache.TagAVX512, 5)
-			},
-		},
-		{
 			name:     "colocate-pods",
 			disabled: !opt.ColocatePods,
 			affinity: func(c cache.Container, hasExplicit bool) *cache.Affinity {

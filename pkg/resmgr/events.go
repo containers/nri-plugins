@@ -19,7 +19,6 @@ import (
 
 	"github.com/intel/nri-resmgr/pkg/cache"
 	logger "github.com/intel/nri-resmgr/pkg/log"
-	"github.com/intel/nri-resmgr/pkg/resmgr/events"
 	"github.com/intel/nri-resmgr/pkg/resmgr/metrics"
 )
 
@@ -118,43 +117,11 @@ func (m *resmgr) processEvent(e interface{}) {
 	switch event := e.(type) {
 	case string:
 		evtlog.Debug("'%s'...", event)
-	case *events.Metrics:
-		m.processAvx(event.Avx)
 		//case *events.Policy:
 		//m.DeliverPolicyEvent(event)
 	default:
 		evtlog.Warn("event of unexpected type %T...", e)
 	}
-}
-
-// processAvx processes AVX512 events.
-func (m *resmgr) processAvx(e *events.Avx) bool {
-	if e == nil {
-		return false
-	}
-
-	m.Lock()
-	defer m.Unlock()
-
-	changes := false
-	for cgroup, active := range e.Updates {
-		c, ok := m.resolveCgroupPath(cgroup)
-		if !ok {
-			continue
-		}
-		// XXX This is just for testing, we should effectively drive state transitions
-		//     through a low-pass filter.
-		if active {
-			if _, wasTagged := c.SetTag(cache.TagAVX512, "true"); !wasTagged {
-				evtlog.Info("container %s STARTED using AVX512 instructions", c.PrettyName())
-			}
-		} else {
-			if _, wasTagged := c.DeleteTag(cache.TagAVX512); wasTagged {
-				evtlog.Info("container %s STOPPED using AVX512 instructions", c.PrettyName())
-			}
-		}
-	}
-	return changes
 }
 
 // resolveCgroupPath resolves a cgroup path to a container.

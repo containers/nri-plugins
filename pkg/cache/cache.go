@@ -31,12 +31,12 @@ import (
 
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
+	idset "github.com/intel/goresctrl/pkg/utils"
 	"github.com/intel/nri-resmgr/pkg/apis/resmgr"
-	"github.com/intel/nri-resmgr/pkg/resmgr/config"
 	"github.com/intel/nri-resmgr/pkg/kubernetes"
 	logger "github.com/intel/nri-resmgr/pkg/log"
+	"github.com/intel/nri-resmgr/pkg/resmgr/config"
 	"github.com/intel/nri-resmgr/pkg/topology"
-	idset "github.com/intel/goresctrl/pkg/utils"
 )
 
 const (
@@ -52,9 +52,6 @@ const (
 	Memory = "memory"
 	// PageMigration marks changes that can be applied by the PageMigration controller.
 	PageMigration = "page-migration"
-
-	// TagAVX512 tags containers that use AVX512 instructions.
-	TagAVX512 = "AVX512"
 
 	// RDTClassKey is the pod annotation key for specifying a container RDT class.
 	RDTClassKey = "rdtclass" + "." + kubernetes.ResmgrKeyNamespace
