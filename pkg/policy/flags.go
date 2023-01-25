@@ -228,6 +228,7 @@ func AvailablePolicies() []*AvailablePolicy {
 // defaultOptions returns a new options instance, all initialized to defaults.
 func defaultOptions() interface{} {
 	opts := &options{
+		Policy:    DefaultPolicy(),
 		Available: ConstraintSet{},
 		Reserved:  ConstraintSet{},
 	}

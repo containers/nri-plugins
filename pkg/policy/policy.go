@@ -236,7 +236,20 @@ var backendOpts = &BackendOptions{}
 
 // ActivePolicy returns the name of the policy to be activated.
 func ActivePolicy() string {
-	return opt.Policy
+	if opt.Policy != "" {
+		return opt.Policy
+	}
+
+	return DefaultPolicy()
+}
+
+// DefaultPolicy returns the name of the default policy.
+func DefaultPolicy() string {
+	for name := range backends {
+		return name
+	}
+
+	return ""
 }
 
 // NewPolicy creates a policy instance using the selected backend.
@@ -252,9 +265,10 @@ func NewPolicy(cache cache.Cache, o *Options) (Policy, error) {
 		options: *o,
 	}
 
-	active, ok := backends[opt.Policy]
+	selected := ActivePolicy()
+	active, ok := backends[selected]
 	if !ok {
-		return nil, policyError("unknown policy '%s' requested", opt.Policy)
+		return nil, policyError("unknown policy '%s' requested", selected)
 	}
 
 	log.Info("activating '%s' policy...", active.name)
@@ -273,7 +287,7 @@ func NewPolicy(cache cache.Cache, o *Options) (Policy, error) {
 	}
 
 	if log.DebugEnabled() {
-		logger.Get(opt.Policy).EnableDebug(true)
+		logger.Get(selected).EnableDebug(true)
 	}
 
 	backendOpts.Cache = p.cache
@@ -417,7 +431,7 @@ func (p *policy) Introspect() *introspect.State {
 		p.inspsys = sys
 	}
 
-	p.inspsys.Policy = opt.Policy
+	p.inspsys.Policy = p.active.Name()
 
 	state.System = p.inspsys
 	p.active.Introspect(state)
