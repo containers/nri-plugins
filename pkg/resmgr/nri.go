@@ -109,10 +109,6 @@ func (p *nriPlugin) Configure(cfg, runtime, version string) (stub.EventMask, err
 func (p *nriPlugin) syncWithNRI(pods []*api.PodSandbox, containers []*api.Container) ([]cache.Container, []cache.Container, error) {
 	m := p.resmgr
 
-	if m.policy.Bypassed() {
-		return nil, nil, nil
-	}
-
 	m.Info("synchronizing cache state with NRI/CRI runtime...")
 
 	add, del := []cache.Container{}, []cache.Container{}

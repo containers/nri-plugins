@@ -154,8 +154,6 @@ type Policy interface {
 	ExportResourceData(cache.Container)
 	// Introspect provides data for external introspection.
 	Introspect() *introspect.State
-	// Bypassed checks if local policy processing is effectively disabled/bypassed.
-	Bypassed() bool
 	// DescribeMetrics generates policy-specific prometheus metrics data descriptors.
 	DescribeMetrics() []*prometheus.Desc
 	// PollMetrics provides policy metrics for monitoring.
@@ -254,58 +252,45 @@ func NewPolicy(cache cache.Cache, o *Options) (Policy, error) {
 		options: *o,
 	}
 
-	if opt.Policy == NullPolicy {
-		log.Info("activating '%s' policy (no active backend)", opt.Policy)
-	} else {
-		active, ok := backends[opt.Policy]
-		if !ok {
-			return nil, policyError("unknown policy '%s' requested", opt.Policy)
-		}
-
-		log.Info("activating '%s' policy...", active.name)
-
-		if len(opt.Available) != 0 {
-			log.Info("  with available resources:")
-			for n, r := range opt.Available {
-				log.Info("    - %s=%s", n, ConstraintToString(r))
-			}
-		}
-		if len(opt.Reserved) != 0 {
-			log.Info("  with reserved resources:")
-			for n, r := range opt.Reserved {
-				log.Info("    - %s=%s", n, ConstraintToString(r))
-			}
-		}
-
-		if log.DebugEnabled() {
-			logger.Get(opt.Policy).EnableDebug(true)
-		}
-
-		backendOpts.Cache = p.cache
-		backendOpts.System = p.system
-		backendOpts.Available = opt.Available
-		backendOpts.Reserved = opt.Reserved
-		backendOpts.SendEvent = o.SendEvent
-
-		p.active = active.create(backendOpts)
+	active, ok := backends[opt.Policy]
+	if !ok {
+		return nil, policyError("unknown policy '%s' requested", opt.Policy)
 	}
+
+	log.Info("activating '%s' policy...", active.name)
+
+	if len(opt.Available) != 0 {
+		log.Info("  with available resources:")
+		for n, r := range opt.Available {
+			log.Info("    - %s=%s", n, ConstraintToString(r))
+		}
+	}
+	if len(opt.Reserved) != 0 {
+		log.Info("  with reserved resources:")
+		for n, r := range opt.Reserved {
+			log.Info("    - %s=%s", n, ConstraintToString(r))
+		}
+	}
+
+	if log.DebugEnabled() {
+		logger.Get(opt.Policy).EnableDebug(true)
+	}
+
+	backendOpts.Cache = p.cache
+	backendOpts.System = p.system
+	backendOpts.Available = opt.Available
+	backendOpts.Reserved = opt.Reserved
+	backendOpts.SendEvent = o.SendEvent
+
+	p.active = active.create(backendOpts)
 
 	return p, nil
 }
 
 // Start starts up policy, preparing it for resving requests.
 func (p *policy) Start(add []cache.Container, del []cache.Container) error {
-	if p.Bypassed() {
-		log.Info("policy '%s' active, nothing to start...", opt.Policy)
-		return nil
-	}
-
 	log.Info("starting policy '%s'...", p.active.Name())
 	return p.active.Start(add, del)
-}
-
-func (p *policy) Bypassed() bool {
-	return p.active == nil
 }
 
 // Sync synchronizes the active policy state.
@@ -335,10 +320,7 @@ func (p *policy) Rebalance() (bool, error) {
 
 // HandleEvent passes on the given event to the active policy.
 func (p *policy) HandleEvent(e *events.Policy) (bool, error) {
-	if !p.Bypassed() {
-		return p.active.HandleEvent(e)
-	}
-	return false, nil
+	return p.active.HandleEvent(e)
 }
 
 // ExportResourceData exports/updates resource data for the container.
@@ -438,43 +420,29 @@ func (p *policy) Introspect() *introspect.State {
 	p.inspsys.Policy = opt.Policy
 
 	state.System = p.inspsys
-	if !p.Bypassed() {
-		p.active.Introspect(state)
-	}
+	p.active.Introspect(state)
 
 	return state
 }
 
 // PollMetrics provides policy metrics for monitoring.
 func (p *policy) PollMetrics() Metrics {
-	if !p.Bypassed() {
-		return p.active.PollMetrics()
-	}
-	return nil
+	return p.active.PollMetrics()
 }
 
 // DescribeMetrics generates policy-specific prometheus metrics data descriptors.
 func (p *policy) DescribeMetrics() []*prometheus.Desc {
-	if !p.Bypassed() {
-		return p.active.DescribeMetrics()
-	}
-	return nil
+	return p.active.DescribeMetrics()
 }
 
 // CollectMetrics generates prometheus metrics from cached/polled policy-specific metrics data.
 func (p *policy) CollectMetrics(m Metrics) ([]prometheus.Metric, error) {
-	if !p.Bypassed() {
-		return p.active.CollectMetrics(m)
-	}
-	return nil, nil
+	return p.active.CollectMetrics(m)
 }
 
 // GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
 func (p *policy) GetTopologyZones() []*TopologyZone {
-	if !p.Bypassed() {
-		return p.active.GetTopologyZones()
-	}
-	return nil
+	return p.active.GetTopologyZones()
 }
 
 // Register registers a policy backend.

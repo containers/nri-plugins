@@ -562,7 +562,7 @@ func (m *resmgr) setConfig(v interface{}) error {
 
 // rebalance triggers a policy-specific rebalancing cycle of containers.
 func (m *resmgr) rebalance(method string) error {
-	if m.policy == nil || m.policy.Bypassed() {
+	if m.policy == nil {
 		return nil
 	}
 

@@ -32,10 +32,6 @@ import (
 )
 
 const (
-	// NullPolicy is the reserved name for disabling policy altogether.
-	NullPolicy = "null"
-	// NullPolicyDescription is the description for the null policy.
-	NullPolicyDescription = "A policy to bypass local policy processing."
 	// ConfigPath is the configuration module path for the generic policy layer.
 	ConfigPath = "policy"
 )
@@ -217,17 +213,13 @@ type AvailablePolicy struct {
 
 // AvailablePolicies returns the available policies and their descriptions.
 func AvailablePolicies() []*AvailablePolicy {
-	policies := make([]*AvailablePolicy, 0, len(backends)+1)
+	policies := make([]*AvailablePolicy, 0, len(backends))
 	for name, be := range backends {
 		policies = append(policies, &AvailablePolicy{
 			Name:        name,
 			Description: be.description,
 		})
 	}
-	policies = append(policies, &AvailablePolicy{
-		Name:        NullPolicy,
-		Description: NullPolicyDescription,
-	})
 	sort.Slice(policies, func(i, j int) bool { return policies[i].Name < policies[j].Name })
 
 	return policies
@@ -235,11 +227,12 @@ func AvailablePolicies() []*AvailablePolicy {
 
 // defaultOptions returns a new options instance, all initialized to defaults.
 func defaultOptions() interface{} {
-	return &options{
-		Policy:    NullPolicy,
+	opts := &options{
 		Available: ConstraintSet{},
 		Reserved:  ConstraintSet{},
 	}
+
+	return opts
 }
 
 // Register us for configuration handling.
