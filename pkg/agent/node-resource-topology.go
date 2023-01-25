@@ -32,9 +32,28 @@ func (a *agent) UpdateNrtCR(policy string, zones []*policyapi.TopologyZone) erro
 	a.Info("updating node resource topology CR")
 
 	if a.nrtCli == nil {
-		a.Warn("no node resource topology client, can't update CR")
-		return nil
+		return fmt.Errorf("no node resource topology client, can't update CR")
 	}
+
+	// To minimize the risk of an NRI request timeout (and the plugin getting
+	// kicked out) we do the update asynchronously. We can rework this to use
+	// a single goroutine that reads update requests from a channel to mimick
+	// the rest if necessary.
+	// XXX TODO(klihub): We can't/don't propagate update errors now back
+	//     to the caller. We could do that (using a channel) if necessary...
+	go func() {
+		if err := a.updateNrtCR(policy, zones); err != nil {
+			a.Error("failed to update topology CR: %v", err)
+		}
+	}()
+
+	return nil
+}
+
+// updateNrtCR updates the node's node resource topology CR using the given data.
+func (a *agent) updateNrtCR(policy string, zones []*policyapi.TopologyZone) error {
+	a.nrtLock.Lock()
+	defer a.nrtLock.Unlock()
 
 	cli := a.nrtCli.NodeResourceTopologies()
 	ctx := context.Background()

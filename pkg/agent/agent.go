@@ -18,6 +18,7 @@ package agent
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/intel/nri-resmgr/pkg/log"
 	policyapi "github.com/intel/nri-resmgr/pkg/policy"
@@ -58,6 +59,7 @@ type agent struct {
 	server     agentServer   // gRPC server listening for requests from cri-resource-manager
 	watcher    k8sWatcher    // Watcher monitoring events in K8s cluster
 	updater    configUpdater // Client sending config updates to cri-resource-manager
+	nrtLock    sync.Mutex    // serialize async CR updates
 }
 
 // NewResourceManagerAgent creates a new instance of ResourceManagerAgent
