@@ -14,7 +14,7 @@ build/bin directory.
 ```
 
 In order to use the policies in a Kubernetes cluster node, a DaemonSet deployment
-file and corresponding container image are created to build/images directory.
+file and corresponding container image are created to build/images directory:
 
 ```
    $ make images
@@ -29,7 +29,7 @@ Only one policy can be running in the cluster node at one time. In this example 
 run topology-aware policy in the cluster node.
 
 You need to copy the deployment file (yaml) and corresponding image file (tar)
-to the node.
+to the node:
 
 ```
    $ scp nri-resmgr-topology-aware-deployment.yaml nri-resmgr-topology-aware-image-9797e8de7107.tar node:
@@ -57,14 +57,30 @@ This will create a fresh config file and backup the old one if it existed:
 Edit the `/etc/containerd/config.toml` file and set `plugins."io.containerd.nri.v1.nri"`
 option `disable = true` to `disable = false` and restart containerd.
 
-Then deploy NRI resource manager plugin
+
+Before deploying NRI resource manager plugin, you need to declare the CRDs it needs.
+Copy first the CRD YAMLs to the node:
+
+```
+   $ scp deployment/base/crds/noderesourcetopology_crd.yaml pkg/apis/resmgr/v1alpha1/adjustment-schema.yaml node:
+```
+
+Then log in to the node and create the CRDs:
+
+```
+   $ ssh node
+   (on the node) $ kubectl apply -f noderesourcetopology_crd.yaml
+   (on the node) $ kubectl apply -f adjustment-schema.yaml
+```
+
+You can now deploy NRI resource manager plugin:
 
 ```
    $ ctr -n k8s.io images import nri-resmgr-topology-aware-image-9797e8de7107.tar
    $ kubectl apply -f nri-resmgr-topology-aware-deployment.yaml
 ```
 
-Verify that the pod is running
+Verify that the pod is running:
 
 ```
    $ kubectl -n kube-system get pods
@@ -78,14 +94,8 @@ To see the resource manager logs:
    $ kubectl -n kube-system logs nri-resmgr-nblgl
 ```
 
-You can enable NodeResourceTopology CRD which describes node resources and their topology.
-
-```
-   $ kubectl apply -f deployment/base/crds/noderesourcetopology_crd.yaml
-```
-
 In order to see how resource manager allocates resources for the topology-aware policy,
-you can create a simple pod to see the changes.
+you can create a simple pod to see the changes:
 
 ```
    $ cat pod0.yaml
@@ -130,19 +140,7 @@ spec:
    $ kubectl apply -f pod0.yaml
 ```
 
-If the nri-resmgr is not deployed, the containers are allocated to same CPUs and memory
-
-```
-   $ kubectl exec pod0 -c pod0c0 -- grep allowed_list: /proc/self/status
-   Cpus_allowed_list:	0-15
-   Mems_allowed_list:	0-3
-
-   $ kubectl exec pod0 -c pod0c1 -- grep allowed_list: /proc/self/status
-   Cpus_allowed_list:	0-15
-   Mems_allowed_list:	0-3
-```
-
-Then if you deploy nri-resmgr, the resource allocation changes like this
+Then if you *have already* deployed nri-resmgr, the resources are allocated in isolation like this:
 
 ```
    $ kubectl exec pod0 -c pod0c0 -- grep allowed_list: /proc/self/status
@@ -153,3 +151,22 @@ Then if you deploy nri-resmgr, the resource allocation changes like this
    Cpus_allowed_list:	12
    Mems_allowed_list:	3
 ```
+
+If you *have not* deployed yet nri-resmgr, the containers are allocated to same CPUs and memory:
+
+```
+   $ kubectl exec pod0 -c pod0c0 -- grep allowed_list: /proc/self/status
+   Cpus_allowed_list:	0-15
+   Mems_allowed_list:	0-3
+
+   $ kubectl exec pod0 -c pod0c1 -- grep allowed_list: /proc/self/status
+   Cpus_allowed_list:	0-15
+   Mems_allowed_list:	0-3
+```
+
+You can also check the difference in resource allocation using an alternative sequence
+of steps. Remove the simple test pod, remove the nri-resmgr deployment, re-create the
+simple test pod, check the resources, re-create the nri-resmgr deployment, then check
+the resources and compare to the previous. You should see the resources reassigned so
+that the containers in the pod are isolated from each other into different NUMA nodes
+if your HW setup makes this possible.
