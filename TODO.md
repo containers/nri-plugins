@@ -1,0 +1,2 @@
+- [ ] minimal README with instructions how to build/deploy/try the plugins
+- [ ] drop AVX512 related bits
