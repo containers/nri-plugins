@@ -29,10 +29,10 @@ import (
 	nrtapi "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/typed/topology/v1alpha1"
 )
 
-// Get cri-resmgr config
+// Get nri-resmgr config
 type getConfigFn func() resmgrConfig
 
-// resmgrConfig represents cri-resmgr configuration
+// resmgrConfig represents nri-resmgr configuration
 type resmgrConfig map[string]string
 
 // resmgrAdjustment represents external adjustments for the resource-manager
@@ -54,7 +54,7 @@ type ResourceManagerAgent interface {
 type agent struct {
 	log.Logger                      // Our logging interface
 	cli        *k8sclient.Clientset // K8s client
-	extCli     *resmgrcs.CriresmgrV1alpha1Client
+	extCli     *resmgrcs.NriresmgrV1alpha1Client
 	nrtCli     *nrtapi.TopologyV1alpha1Client
 	server     agentServer   // gRPC server listening for requests from cri-resource-manager
 	watcher    k8sWatcher    // Watcher monitoring events in K8s cluster

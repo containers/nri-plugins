@@ -188,7 +188,7 @@ func isNativeResource(name string) bool {
 	}
 }
 
-// GetConfig gets the cri-resmgr configuration
+// GetConfig gets the nri-resmgr configuration
 func (g *grpcServer) GetConfig(ctx context.Context, req *v1.GetConfigRequest) (*v1.GetConfigReply, error) {
 	g.Debug("received GetConfigRequest: %v", req)
 	rpl := &v1.GetConfigReply{

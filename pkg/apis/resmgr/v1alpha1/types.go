@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	GroupName string = "criresmgr.intel.com"    // GroupName is the group of our CRD.
+	GroupName string = "nriresmgr.intel.com"    // GroupName is the group of our CRD.
 	Version   string = "v1alpha1"               // Version is the API version of our CRD.
 	Kind      string = "Adjustment"             // Kind is the object kind of our CRD.
 	Plural    string = "adjustments"            // Plural is Kind in plural form.

@@ -492,7 +492,7 @@ cpu_ids = lambda i: set_ids(i, '[cpu]')
 }
 
 get-py-cache() {
-    # Fetch current cri-resmgr cache from a virtual machine.
+    # Fetch current nri-resmgr cache from a virtual machine.
     vm-command "cat \"$nri_resmgr_cache\"" >/dev/null 2>&1 || {
         command-error "fetching cache file failed"
     }
@@ -530,14 +530,14 @@ pyexec() { # script API
     # Run python3 -c PYTHONCODEs on host. Stops if execution fails.
     #
     # Variables available in PYTHONCODE:
-    #   allocations: dictionary: shorthand to cri-resmgr policy allocations
+    #   allocations: dictionary: shorthand to nri-resmgr policy allocations
     #                (unmarshaled cache['PolicyJSON']['allocations'])
     #   allowed      tree: {package: {die: {node: {core: {thread: {pod}}}}}}
     #                resource topology and pods allowed to use the resources.
     #   packages, dies, nodes, cores, threads:
     #                dictionaries: {podname: set-of-allowed}
     #                Example: pyexec 'print(dies["pod0c0"])'
-    #   cache:       dictionary, cri-resmgr cache
+    #   cache:       dictionary, nri-resmgr cache
     #
     # Note that variables are *not* updated when pyexec is called.
     # You can update the variables by running "verify" without expressions.
@@ -590,7 +590,7 @@ report() { # script API
     #     allowed
     #     cache
     #
-    # Example: print cri-resmgr policy allocations. In interactive mode
+    # Example: print nri-resmgr policy allocations. In interactive mode
     #          you may use a pager like less.
     #   report allocations | less
     local varname

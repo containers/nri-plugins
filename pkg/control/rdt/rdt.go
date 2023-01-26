@@ -19,13 +19,13 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	pkgcfg "github.com/intel/nri-resmgr/pkg/config"
-	"github.com/intel/nri-resmgr/pkg/client"
+	"github.com/intel/goresctrl/pkg/rdt"
 	"github.com/intel/nri-resmgr/pkg/cache"
+	"github.com/intel/nri-resmgr/pkg/client"
+	pkgcfg "github.com/intel/nri-resmgr/pkg/config"
 	"github.com/intel/nri-resmgr/pkg/control"
 	logger "github.com/intel/nri-resmgr/pkg/log"
 	"github.com/intel/nri-resmgr/pkg/metrics"
-	"github.com/intel/goresctrl/pkg/rdt"
 )
 
 const (
@@ -35,7 +35,7 @@ const (
 	// RDTController is the name of the RDT controller.
 	RDTController = cache.RDT
 
-	resctrlGroupPrefix = "cri-resmgr."
+	resctrlGroupPrefix = "nri-resmgr."
 )
 
 // rdtctl encapsulates the runtime state of our RTD enforcement/controller.

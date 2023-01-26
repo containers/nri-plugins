@@ -32,7 +32,7 @@ const (
 	retryTimeout = 5 * time.Second
 )
 
-// configUpdater handles sending configuration to cri-resmgr
+// configUpdater handles sending configuration to nri-resmgr
 type configUpdater interface {
 	Start() error
 	Stop()
@@ -90,7 +90,7 @@ func (u *updater) Start() error {
 						ratelimit = time.After(retryTimeout)
 					} else {
 						if mgrErr != nil {
-							u.Error("cri-resmgr configuration error: %v", mgrErr)
+							u.Error("nri-resmgr configuration error: %v", mgrErr)
 						}
 						pendingConfig = nil
 						ratelimit = nil

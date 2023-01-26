@@ -68,14 +68,14 @@ type watcher struct {
 	log.Logger
 	stop           chan struct{}                      // channel to stop watcher goroutine
 	k8sCli         *k8sclient.Clientset               // k8s client interface
-	resmgrCli      *resmgrcli.CriresmgrV1alpha1Client // adjustment CRD interface
+	resmgrCli      *resmgrcli.NriresmgrV1alpha1Client // adjustment CRD interface
 	currentConfig  cachedConfig                       // current configuration, cached
 	configChan     chan resmgrConfig                  // channel for config updates
 	adjustmentChan chan resmgrAdjustment              // channel for adjustment updates
 }
 
 // newK8sWatcher creates a new K8sWatcher instance
-func newK8sWatcher(k8sCli *k8sclient.Clientset, resmgrCli *resmgrcli.CriresmgrV1alpha1Client) (k8sWatcher, error) {
+func newK8sWatcher(k8sCli *k8sclient.Clientset, resmgrCli *resmgrcli.NriresmgrV1alpha1Client) (k8sWatcher, error) {
 	w := &watcher{
 		Logger:         log.NewLogger("watcher"),
 		k8sCli:         k8sCli,
@@ -121,7 +121,7 @@ func (w *watcher) AdjustmentChan() <-chan resmgrAdjustment {
 	return w.adjustmentChan
 }
 
-// GetConfig returns the current cri-resmgr configuration
+// GetConfig returns the current nri-resmgr configuration
 func (w *watcher) GetConfig() resmgrConfig {
 	cfg, kind := w.currentConfig.getConfig()
 	w.Info("giving %s configuration in reply to query", kind)
@@ -476,7 +476,7 @@ func (c *cachedConfig) setAdjustment(adjust *resmgr.Adjustment) bool {
 	}
 
 	//
-	// we need to notify cri-resmgr if
+	// we need to notify nri-resmgr if
 	//   - the adjustment applies to this node
 	//   - the adjustment used to apply to this node before the update
 	//
@@ -504,7 +504,7 @@ func (c *cachedConfig) deleteAdjustment(o *resmgr.Adjustment) bool {
 	c.Lock()
 	defer c.Unlock()
 
-	// we need to notify cri-resmgr if the deleted adjustment used to apply to this node
+	// we need to notify nri-resmgr if the deleted adjustment used to apply to this node
 	if _, ok := c.inscope[o.Name]; ok {
 		delete(c.inscope, o.Name)
 		return true

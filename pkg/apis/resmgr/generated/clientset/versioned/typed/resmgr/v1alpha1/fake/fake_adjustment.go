@@ -30,13 +30,13 @@ import (
 
 // FakeAdjustments implements AdjustmentInterface
 type FakeAdjustments struct {
-	Fake *FakeCriresmgrV1alpha1
+	Fake *FakeNriresmgrV1alpha1
 	ns   string
 }
 
-var adjustmentsResource = schema.GroupVersionResource{Group: "criresmgr.intel.com", Version: "v1alpha1", Resource: "adjustments"}
+var adjustmentsResource = schema.GroupVersionResource{Group: "nriresmgr.intel.com", Version: "v1alpha1", Resource: "adjustments"}
 
-var adjustmentsKind = schema.GroupVersionKind{Group: "criresmgr.intel.com", Version: "v1alpha1", Kind: "Adjustment"}
+var adjustmentsKind = schema.GroupVersionKind{Group: "nriresmgr.intel.com", Version: "v1alpha1", Kind: "Adjustment"}
 
 // Get takes name of the adjustment, and returns the corresponding adjustment object, and an error if there is any.
 func (c *FakeAdjustments) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.Adjustment, err error) {

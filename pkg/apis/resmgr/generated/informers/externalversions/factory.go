@@ -241,9 +241,9 @@ type SharedInformerFactory interface {
 	// client.
 	InformerFor(obj runtime.Object, newFunc internalinterfaces.NewInformerFunc) cache.SharedIndexInformer
 
-	Criresmgr() resmgr.Interface
+	Nriresmgr() resmgr.Interface
 }
 
-func (f *sharedInformerFactory) Criresmgr() resmgr.Interface {
+func (f *sharedInformerFactory) Nriresmgr() resmgr.Interface {
 	return resmgr.New(f, f.namespace, f.tweakListOptions)
 }

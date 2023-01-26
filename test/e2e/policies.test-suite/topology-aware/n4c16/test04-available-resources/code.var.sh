@@ -53,7 +53,7 @@ else
     # cgroup v2
     CGROUP_CPUSET=/sys/fs/cgroup
 fi
-NRIRM_CGROUP=$CGROUP_CPUSET/cri-resmgr-test-05-1
+NRIRM_CGROUP=$CGROUP_CPUSET/nri-resmgr-test-05-1
 vm-command "rmdir $NRIRM_CGROUP; mkdir $NRIRM_CGROUP; echo 1-4,11 > $NRIRM_CGROUP/cpuset.cpus"
 
 terminate nri-resmgr
@@ -63,7 +63,7 @@ launch nri-resmgr
 test-and-verify-allowed 1 2 3 4
 vm-command "rmdir $NRIRM_CGROUP || true"
 
-NRIRM_CGROUP=$CGROUP_CPUSET/cri-resmgr-test-05-2
+NRIRM_CGROUP=$CGROUP_CPUSET/nri-resmgr-test-05-2
 vm-command "rmdir $NRIRM_CGROUP; mkdir $NRIRM_CGROUP; echo 5-8,11 > $NRIRM_CGROUP/cpuset.cpus"
 
 terminate nri-resmgr

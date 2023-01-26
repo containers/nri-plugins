@@ -44,7 +44,7 @@ type namespace string
 var nodeName string
 
 // getK8sClient initializes a new Kubernetes client
-func (a *agent) getK8sClient(kubeconfig string) (*k8sclient.Clientset, *resmgr.CriresmgrV1alpha1Client, *nrtapi.TopologyV1alpha1Client, error) {
+func (a *agent) getK8sClient(kubeconfig string) (*k8sclient.Clientset, *resmgr.NriresmgrV1alpha1Client, *nrtapi.TopologyV1alpha1Client, error) {
 	var config *rest.Config
 	var err error
 
@@ -117,7 +117,7 @@ func patchNodeStatus(cli *k8sclient.Clientset, fields map[string]string) error {
 }
 
 // patchAdjustmentStatus is a helper for patching the status of a Adjustment CRD.
-func patchAdjustmentStatus(cli *resmgr.CriresmgrV1alpha1Client, status *resmgrStatus, names ...string) error {
+func patchAdjustmentStatus(cli *resmgr.NriresmgrV1alpha1Client, status *resmgrStatus, names ...string) error {
 	return nil
 }
 

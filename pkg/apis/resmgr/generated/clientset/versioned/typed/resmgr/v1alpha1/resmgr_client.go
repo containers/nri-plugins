@@ -24,24 +24,24 @@ import (
 	rest "k8s.io/client-go/rest"
 )
 
-type CriresmgrV1alpha1Interface interface {
+type NriresmgrV1alpha1Interface interface {
 	RESTClient() rest.Interface
 	AdjustmentsGetter
 }
 
-// CriresmgrV1alpha1Client is used to interact with features provided by the criresmgr.intel.com group.
-type CriresmgrV1alpha1Client struct {
+// NriresmgrV1alpha1Client is used to interact with features provided by the nriresmgr.intel.com group.
+type NriresmgrV1alpha1Client struct {
 	restClient rest.Interface
 }
 
-func (c *CriresmgrV1alpha1Client) Adjustments(namespace string) AdjustmentInterface {
+func (c *NriresmgrV1alpha1Client) Adjustments(namespace string) AdjustmentInterface {
 	return newAdjustments(c, namespace)
 }
 
-// NewForConfig creates a new CriresmgrV1alpha1Client for the given config.
+// NewForConfig creates a new NriresmgrV1alpha1Client for the given config.
 // NewForConfig is equivalent to NewForConfigAndClient(c, httpClient),
 // where httpClient was generated with rest.HTTPClientFor(c).
-func NewForConfig(c *rest.Config) (*CriresmgrV1alpha1Client, error) {
+func NewForConfig(c *rest.Config) (*NriresmgrV1alpha1Client, error) {
 	config := *c
 	if err := setConfigDefaults(&config); err != nil {
 		return nil, err
@@ -53,9 +53,9 @@ func NewForConfig(c *rest.Config) (*CriresmgrV1alpha1Client, error) {
 	return NewForConfigAndClient(&config, httpClient)
 }
 
-// NewForConfigAndClient creates a new CriresmgrV1alpha1Client for the given config and http client.
+// NewForConfigAndClient creates a new NriresmgrV1alpha1Client for the given config and http client.
 // Note the http client provided takes precedence over the configured transport values.
-func NewForConfigAndClient(c *rest.Config, h *http.Client) (*CriresmgrV1alpha1Client, error) {
+func NewForConfigAndClient(c *rest.Config, h *http.Client) (*NriresmgrV1alpha1Client, error) {
 	config := *c
 	if err := setConfigDefaults(&config); err != nil {
 		return nil, err
@@ -64,12 +64,12 @@ func NewForConfigAndClient(c *rest.Config, h *http.Client) (*CriresmgrV1alpha1Cl
 	if err != nil {
 		return nil, err
 	}
-	return &CriresmgrV1alpha1Client{client}, nil
+	return &NriresmgrV1alpha1Client{client}, nil
 }
 
-// NewForConfigOrDie creates a new CriresmgrV1alpha1Client for the given config and
+// NewForConfigOrDie creates a new NriresmgrV1alpha1Client for the given config and
 // panics if there is an error in the config.
-func NewForConfigOrDie(c *rest.Config) *CriresmgrV1alpha1Client {
+func NewForConfigOrDie(c *rest.Config) *NriresmgrV1alpha1Client {
 	client, err := NewForConfig(c)
 	if err != nil {
 		panic(err)
@@ -77,9 +77,9 @@ func NewForConfigOrDie(c *rest.Config) *CriresmgrV1alpha1Client {
 	return client
 }
 
-// New creates a new CriresmgrV1alpha1Client for the given RESTClient.
-func New(c rest.Interface) *CriresmgrV1alpha1Client {
-	return &CriresmgrV1alpha1Client{c}
+// New creates a new NriresmgrV1alpha1Client for the given RESTClient.
+func New(c rest.Interface) *NriresmgrV1alpha1Client {
+	return &NriresmgrV1alpha1Client{c}
 }
 
 func setConfigDefaults(config *rest.Config) error {
@@ -97,7 +97,7 @@ func setConfigDefaults(config *rest.Config) error {
 
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
-func (c *CriresmgrV1alpha1Client) RESTClient() rest.Interface {
+func (c *NriresmgrV1alpha1Client) RESTClient() rest.Interface {
 	if c == nil {
 		return nil
 	}

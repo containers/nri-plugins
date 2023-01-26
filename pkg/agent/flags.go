@@ -34,6 +34,6 @@ var opts = options{}
 func init() {
 	flag.StringVar(&opts.kubeconfig, "kubeconfig", "", "Kubeconfig to use, empty string implies in-cluster config (i.e. running inside a Pod)")
 	flag.StringVar(&opts.configNs, "config-ns", "kube-system", "Kubernetes namespace where to look for config")
-	flag.StringVar(&opts.configMapName, "configmap-name", "cri-resmgr-config", "Name of the K8s ConfigMap to watch")
+	flag.StringVar(&opts.configMapName, "configmap-name", "nri-resmgr-config", "Name of the K8s ConfigMap to watch")
 	flag.StringVar(&opts.labelName, "label-name", kubernetes.ResmgrKey("group"), "Name of the label used to assign a node to a configuration group.")
 }

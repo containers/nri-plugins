@@ -60,13 +60,13 @@ func NewFilteredAdjustmentInformer(client versioned.Interface, namespace string,
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.CriresmgrV1alpha1().Adjustments(namespace).List(context.TODO(), options)
+				return client.NriresmgrV1alpha1().Adjustments(namespace).List(context.TODO(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.CriresmgrV1alpha1().Adjustments(namespace).Watch(context.TODO(), options)
+				return client.NriresmgrV1alpha1().Adjustments(namespace).Watch(context.TODO(), options)
 			},
 		},
 		&resmgrv1alpha1.Adjustment{},

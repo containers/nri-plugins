@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"net/http"
 
-	criresmgrv1alpha1 "github.com/intel/nri-resmgr/pkg/apis/resmgr/generated/clientset/versioned/typed/resmgr/v1alpha1"
+	nriresmgrv1alpha1 "github.com/intel/nri-resmgr/pkg/apis/resmgr/generated/clientset/versioned/typed/resmgr/v1alpha1"
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"
@@ -28,18 +28,18 @@ import (
 
 type Interface interface {
 	Discovery() discovery.DiscoveryInterface
-	CriresmgrV1alpha1() criresmgrv1alpha1.CriresmgrV1alpha1Interface
+	NriresmgrV1alpha1() nriresmgrv1alpha1.NriresmgrV1alpha1Interface
 }
 
 // Clientset contains the clients for groups.
 type Clientset struct {
 	*discovery.DiscoveryClient
-	criresmgrV1alpha1 *criresmgrv1alpha1.CriresmgrV1alpha1Client
+	nriresmgrV1alpha1 *nriresmgrv1alpha1.NriresmgrV1alpha1Client
 }
 
-// CriresmgrV1alpha1 retrieves the CriresmgrV1alpha1Client
-func (c *Clientset) CriresmgrV1alpha1() criresmgrv1alpha1.CriresmgrV1alpha1Interface {
-	return c.criresmgrV1alpha1
+// NriresmgrV1alpha1 retrieves the NriresmgrV1alpha1Client
+func (c *Clientset) NriresmgrV1alpha1() nriresmgrv1alpha1.NriresmgrV1alpha1Interface {
+	return c.nriresmgrV1alpha1
 }
 
 // Discovery retrieves the DiscoveryClient
@@ -86,7 +86,7 @@ func NewForConfigAndClient(c *rest.Config, httpClient *http.Client) (*Clientset,
 
 	var cs Clientset
 	var err error
-	cs.criresmgrV1alpha1, err = criresmgrv1alpha1.NewForConfigAndClient(&configShallowCopy, httpClient)
+	cs.nriresmgrV1alpha1, err = nriresmgrv1alpha1.NewForConfigAndClient(&configShallowCopy, httpClient)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +111,7 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 // New creates a new Clientset for the given RESTClient.
 func New(c rest.Interface) *Clientset {
 	var cs Clientset
-	cs.criresmgrV1alpha1 = criresmgrv1alpha1.New(c)
+	cs.nriresmgrV1alpha1 = nriresmgrv1alpha1.New(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClient(c)
 	return &cs

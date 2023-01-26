@@ -55,7 +55,7 @@ type adjustments struct {
 }
 
 // newAdjustments returns a Adjustments
-func newAdjustments(c *CriresmgrV1alpha1Client, namespace string) *adjustments {
+func newAdjustments(c *NriresmgrV1alpha1Client, namespace string) *adjustments {
 	return &adjustments{
 		client: c.RESTClient(),
 		ns:     namespace,

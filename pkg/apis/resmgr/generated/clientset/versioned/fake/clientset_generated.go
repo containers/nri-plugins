@@ -18,8 +18,8 @@ package fake
 
 import (
 	clientset "github.com/intel/nri-resmgr/pkg/apis/resmgr/generated/clientset/versioned"
-	criresmgrv1alpha1 "github.com/intel/nri-resmgr/pkg/apis/resmgr/generated/clientset/versioned/typed/resmgr/v1alpha1"
-	fakecriresmgrv1alpha1 "github.com/intel/nri-resmgr/pkg/apis/resmgr/generated/clientset/versioned/typed/resmgr/v1alpha1/fake"
+	nriresmgrv1alpha1 "github.com/intel/nri-resmgr/pkg/apis/resmgr/generated/clientset/versioned/typed/resmgr/v1alpha1"
+	fakenriresmgrv1alpha1 "github.com/intel/nri-resmgr/pkg/apis/resmgr/generated/clientset/versioned/typed/resmgr/v1alpha1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/discovery"
@@ -77,7 +77,7 @@ var (
 	_ testing.FakeClient  = &Clientset{}
 )
 
-// CriresmgrV1alpha1 retrieves the CriresmgrV1alpha1Client
-func (c *Clientset) CriresmgrV1alpha1() criresmgrv1alpha1.CriresmgrV1alpha1Interface {
-	return &fakecriresmgrv1alpha1.FakeCriresmgrV1alpha1{Fake: &c.Fake}
+// NriresmgrV1alpha1 retrieves the NriresmgrV1alpha1Client
+func (c *Clientset) NriresmgrV1alpha1() nriresmgrv1alpha1.NriresmgrV1alpha1Interface {
+	return &fakenriresmgrv1alpha1.FakeNriresmgrV1alpha1{Fake: &c.Fake}
 }

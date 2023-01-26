@@ -13,6 +13,6 @@
 // limitations under the License.
 
 // +k8s:deepcopy-gen=package
-// +groupName=criresmgr.intel.com
+// +groupName=nriresmgr.intel.com
 
 package v1alpha1

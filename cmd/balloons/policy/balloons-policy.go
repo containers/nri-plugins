@@ -57,7 +57,7 @@ const (
 type balloons struct {
 	options          *policy.BackendOptions // configuration common to all policies
 	bpoptions        BalloonsOptions        // balloons-specific configuration
-	cch              cache.Cache            // cri-resmgr cache
+	cch              cache.Cache            // nri-resmgr cache
 	allowed          cpuset.CPUSet          // bounding set of CPUs we're allowed to use
 	reserved         cpuset.CPUSet          // system-/kube-reserved CPUs
 	freeCpus         cpuset.CPUSet          // CPUs to be included in growing or new ballons
