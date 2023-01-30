@@ -10,7 +10,7 @@
   - [ ] get rid of CRI-specific representation/interfaces, NRI/CRI pod, container conversion
   - [ ] eliminate need for saving cache to disk
 - config
-  - [ ] (finish readding) config via agent
+  - [x] (finish readding) config via agent
   - [x] fallback config via ConfigMap (bind-mounted in deployment file)
   - [ ] switch to using CRDs (from ConfigMaps)
   - [ ] consider usig 1 CRD per policy as opposed to a single 'union' CRD
