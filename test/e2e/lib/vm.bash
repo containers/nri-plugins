@@ -121,6 +121,10 @@ vm-setup() {
 
      vagrant up --provider qemu
      vagrant ssh-config > .ssh-config
+
+     # Add hostname alias to the ssh config so that we can ssh
+     # with shorter hostname "node"
+     sed -i 's/^Host /Host node /' .ssh-config
     )
 
     mkdir -p "$COMMAND_OUTPUT_DIR"
