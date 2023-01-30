@@ -117,14 +117,10 @@ spec:
         hostPath:
           path: /var/lib/nri-resmgr
           type: DirectoryOrCreate
-      - name: nri-resmgr
-        hostPath:
-          path: /var/lib/nri-resmgr
       - name: hostsysfs
         hostPath:
           path: /host
           type: DirectoryOrCreate
-      - name: sys
         hostPath:
           path: /sys
           type: Directory
