@@ -22,9 +22,13 @@ import (
 
 	"github.com/intel/nri-resmgr/pkg/log"
 	policyapi "github.com/intel/nri-resmgr/pkg/policy"
+	"github.com/intel/nri-resmgr/pkg/resmgr/config"
 	nrtapi "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/typed/topology/v1alpha1"
 	k8sclient "k8s.io/client-go/kubernetes"
 )
+
+// SetConfigFn is used to activate an updated configuration.
+type SetConfigFn func(config.RawConfig) error
 
 // ResourceManagerAgent is the interface exposed for the CRI Resource Manager Congig Agent
 type ResourceManagerAgent interface {
@@ -43,7 +47,7 @@ type agent struct {
 }
 
 // NewResourceManagerAgent creates a new instance of ResourceManagerAgent
-func NewResourceManagerAgent() (ResourceManagerAgent, error) {
+func NewResourceManagerAgent(setConfig SetConfigFn) (ResourceManagerAgent, error) {
 	var err error
 
 	a := &agent{
@@ -58,7 +62,7 @@ func NewResourceManagerAgent() (ResourceManagerAgent, error) {
 		return nil, agentError("failed to initialize watcher instance: %v", err)
 	}
 
-	if a.updater, err = newConfigUpdater(); err != nil {
+	if a.updater, err = newConfigUpdater(setConfig); err != nil {
 		return nil, agentError("failed to initialize config updater instance: %v", err)
 	}
 

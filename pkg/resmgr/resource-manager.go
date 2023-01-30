@@ -184,23 +184,6 @@ func (m *resmgr) Stop() {
 	m.nri.stop()
 }
 
-// SetConfig pushes new configuration to the resource manager.
-func (m *resmgr) SetConfig(conf config.RawConfig) error {
-	if conf == nil {
-		m.Info("config from agent is empty, ignoring...")
-		return resmgrError("config from agent is empty, ignoring...")
-	}
-
-	m.Info("applying new configuration from agent...")
-	return m.setConfig(conf)
-}
-
-// setConfigFromFile pushes new configuration to the resource manager from a file.
-func (m *resmgr) setConfigFromFile(path string) error {
-	m.Info("applying new configuration from file %s...", path)
-	return m.setConfig(path)
-}
-
 // resetCachedPolicy resets the cached active policy and all of its data.
 func (m *resmgr) resetCachedPolicy() int {
 	m.Info("resetting active policy stored in cache...")
@@ -256,94 +239,6 @@ func (m *resmgr) checkOpts() error {
 		return resmgrError("both fallback (%s) and forced (%s) configurations given",
 			opt.FallbackConfig, opt.ForceConfig)
 	}
-
-	return nil
-}
-
-// loadConfig tries to pick and load (initial) configuration from a number of sources.
-func (m *resmgr) loadConfig() error {
-	//
-	// We try to load initial configuration from a number of sources:
-	//
-	//    1. use forced configuration file if we were given one
-	//    2. use configuration from agent, if we can fetch it and it applies
-	//    3. use last configuration stored in cache, if we have one and it applies
-	//    4. use fallback configuration file if we were given one
-	//    5. use empty/builtin default configuration, whatever that is...
-	//
-	// Notes/TODO:
-	//   If the agent is already running at this point, the initial configuration is
-	//   obtained by polling the agent via GetConfig(). Unlike for the latter updates
-	//   which are pushed by the agent, there is currently no way to report problems
-	//   about polled configuration back to the agent. If/once the agent will have a
-	//   mechanism to propagate configuration errors back to the origin, this might
-	//   become a problem that we'll need to solve.
-	//
-
-	if opt.ForceConfig != "" {
-		m.Info("using forced configuration %s...", opt.ForceConfig)
-		if err := pkgcfg.SetConfigFromFile(opt.ForceConfig); err != nil {
-			return resmgrError("failed to load forced configuration %s: %v",
-				opt.ForceConfig, err)
-		}
-		return m.setupConfigSignal(opt.ForceConfigSignal)
-	}
-
-	m.Info("trying last cached configuration...")
-	if conf := m.cache.GetConfig(); conf != nil {
-		err := pkgcfg.SetConfig(conf)
-		if err == nil {
-			return nil
-		}
-		m.Error("failed to activate cached configuration: %v", err)
-	}
-
-	if opt.FallbackConfig != "" {
-		m.Info("using fallback configuration %s...", opt.FallbackConfig)
-		if err := pkgcfg.SetConfigFromFile(opt.FallbackConfig); err != nil {
-			return resmgrError("failed to load fallback configuration %s: %v",
-				opt.FallbackConfig, err)
-		}
-		return nil
-	}
-
-	m.Warn("no initial configuration found")
-	return nil
-}
-
-// setupConfigSignal sets up a signal handler for reloading forced configuration.
-func (m *resmgr) setupConfigSignal(signame string) error {
-	if signame == "" || strings.HasPrefix(strings.ToLower(signame), "disable") {
-		return nil
-	}
-
-	m.Info("setting up signal %s to reload forced configuration", signame)
-
-	sig := unix.SignalNum(signame)
-	if int(sig) == 0 {
-		return resmgrError("invalid forced configuration reload signal '%s'", signame)
-	}
-
-	m.signals = make(chan os.Signal, 1)
-	signal.Notify(m.signals, sig)
-
-	go func(signals <-chan os.Signal) {
-		for {
-			select {
-			case _, ok := <-signals:
-				if !ok {
-					return
-				}
-			}
-
-			m.Info("reloading forced configuration %s...", opt.ForceConfig)
-
-			if err := m.setConfigFromFile(opt.ForceConfig); err != nil {
-				m.Error("failed to reload forced configuration %s: %v",
-					opt.ForceConfig, err)
-			}
-		}
-	}(m.signals)
 
 	return nil
 }
@@ -438,7 +333,7 @@ func (m *resmgr) setupAgent() error {
 		return nil
 	}
 
-	a, err := agent.NewResourceManagerAgent()
+	a, err := agent.NewResourceManagerAgent(m.SetConfig)
 	if err != nil {
 		return fmt.Errorf("failed to set up cluster access agent: %w", err)
 	}
@@ -480,6 +375,75 @@ func (m *resmgr) registerPolicyMetricsCollector() error {
 	return nil
 }
 
+// loadConfig tries to pick and load (initial) configuration from a number of sources.
+func (m *resmgr) loadConfig() error {
+	//
+	// We try to load initial configuration from a number of sources:
+	//
+	//    1. use forced configuration file if we were given one
+	//    2. use configuration from agent, if we can fetch it and it applies
+	//    3. use last configuration stored in cache, if we have one and it applies
+	//    4. use fallback configuration file if we were given one
+	//    5. use empty/builtin default configuration, whatever that is...
+	//
+	// Notes/TODO:
+	//   If the agent is already running at this point, the initial configuration is
+	//   obtained by polling the agent via GetConfig(). Unlike for the latter updates
+	//   which are pushed by the agent, there is currently no way to report problems
+	//   about polled configuration back to the agent. If/once the agent will have a
+	//   mechanism to propagate configuration errors back to the origin, this might
+	//   become a problem that we'll need to solve.
+	//
+
+	if opt.ForceConfig != "" {
+		m.Info("using forced configuration %s...", opt.ForceConfig)
+		if err := pkgcfg.SetConfigFromFile(opt.ForceConfig); err != nil {
+			return resmgrError("failed to load forced configuration %s: %v",
+				opt.ForceConfig, err)
+		}
+		return m.setupConfigSignal(opt.ForceConfigSignal)
+	}
+
+	m.Info("trying last cached configuration...")
+	if conf := m.cache.GetConfig(); conf != nil {
+		err := pkgcfg.SetConfig(conf)
+		if err == nil {
+			return nil
+		}
+		m.Error("failed to activate cached configuration: %v", err)
+	}
+
+	if opt.FallbackConfig != "" {
+		m.Info("using fallback configuration %s...", opt.FallbackConfig)
+		if err := pkgcfg.SetConfigFromFile(opt.FallbackConfig); err != nil {
+			return resmgrError("failed to load fallback configuration %s: %v",
+				opt.FallbackConfig, err)
+		}
+		return nil
+	}
+
+	m.Warn("no initial configuration found")
+	return nil
+}
+
+// SetConfig pushes new configuration to the resource manager.
+func (m *resmgr) SetConfig(conf config.RawConfig) error {
+	if conf == nil {
+		m.Info("config from agent is empty, ignoring...")
+		return resmgrError("config from agent is empty, ignoring...")
+	}
+
+	m.Info("applying new configuration from agent...")
+
+	return m.setConfig(conf)
+}
+
+// setConfigFromFile pushes new configuration to the resource manager from a file.
+func (m *resmgr) setConfigFromFile(path string) error {
+	m.Info("applying new configuration from file %s...", path)
+	return m.setConfig(path)
+}
+
 // setConfig activates a new configuration, either from the agent or from a file.
 func (m *resmgr) setConfig(v interface{}) error {
 	var err error
@@ -500,17 +464,53 @@ func (m *resmgr) setConfig(v interface{}) error {
 		return resmgrError("configuration rejected: %v", err)
 	}
 
-	// TODO: fix this and add stuff
-
-	// if we managed to activate a configuration from the agent, store it in the cache
-	if cfg, ok := v.(config.RawConfig); ok {
-		m.Info("setting configuration from agent")
-		m.cache.SetConfig(cfg)
-	} else {
-		m.Info("RawConfig failed")
+	if err != nil {
+		return err
 	}
 
 	m.Info("successfully switched to new configuration")
+
+	// Save succesfully applied configuration from agent in the cache.
+	if cfg, ok := v.(config.RawConfig); ok {
+		m.cache.SetConfig(cfg)
+	}
+
+	return nil
+}
+
+// setupConfigSignal sets up a signal handler for reloading forced configuration.
+func (m *resmgr) setupConfigSignal(signame string) error {
+	if signame == "" || strings.HasPrefix(strings.ToLower(signame), "disable") {
+		return nil
+	}
+
+	m.Info("setting up signal %s to reload forced configuration", signame)
+
+	sig := unix.SignalNum(signame)
+	if int(sig) == 0 {
+		return resmgrError("invalid forced configuration reload signal '%s'", signame)
+	}
+
+	m.signals = make(chan os.Signal, 1)
+	signal.Notify(m.signals, sig)
+
+	go func(signals <-chan os.Signal) {
+		for {
+			select {
+			case _, ok := <-signals:
+				if !ok {
+					return
+				}
+			}
+
+			m.Info("reloading forced configuration %s...", opt.ForceConfig)
+
+			if err := m.setConfigFromFile(opt.ForceConfig); err != nil {
+				m.Error("failed to reload forced configuration %s: %v",
+					opt.ForceConfig, err)
+			}
+		}
+	}(m.signals)
 
 	return nil
 }

@@ -42,14 +42,17 @@ type configUpdater interface {
 // updater implements configUpdater
 type updater struct {
 	log.Logger
-	newConfig    chan config.RawConfig
-	notifyConfig func(config.RawConfig) error
+	newConfig chan config.RawConfig
+	setConfig SetConfigFn
+	configErr error
 }
 
-func newConfigUpdater() (configUpdater, error) {
-	u := &updater{Logger: log.NewLogger("config-updater")}
-
-	u.newConfig = make(chan config.RawConfig)
+func newConfigUpdater(setConfig SetConfigFn) (configUpdater, error) {
+	u := &updater{
+		Logger:    log.NewLogger("config-updater"),
+		newConfig: make(chan config.RawConfig),
+		setConfig: setConfig,
+	}
 
 	return u, nil
 }
@@ -70,17 +73,12 @@ func (u *updater) Start() error {
 
 			case _ = <-ratelimit:
 				if pendingConfig != nil {
-					mgrErr, err := u.setConfig(pendingConfig)
+					err := u.SetConfig(pendingConfig)
 					if err != nil {
-						u.Error("failed to send configuration update: %v", err)
-						ratelimit = time.After(retryTimeout)
-					} else {
-						if mgrErr != nil {
-							u.Error("nri-resmgr configuration error: %v", mgrErr)
-						}
-						pendingConfig = nil
-						ratelimit = nil
+						u.Error("nri-resmgr configuration error: %v", err)
 					}
+					pendingConfig = nil
+					ratelimit = nil
 				}
 			}
 		}
@@ -96,8 +94,10 @@ func (u *updater) UpdateConfig(c config.RawConfig) {
 	u.newConfig <- c
 }
 
-func (u *updater) setConfig(cfg config.RawConfig) (error, error) {
-	u.Info("*** should set configuration")
+func (u *updater) SetConfig(cfg config.RawConfig) error {
+	if u.setConfig != nil {
+		u.configErr = u.setConfig(cfg)
+	}
 
-	return nil, nil
+	return nil
 }
