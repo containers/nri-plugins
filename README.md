@@ -62,7 +62,7 @@ Before deploying NRI resource manager plugin, you need to declare the CRDs it ne
 Copy first the CRD YAMLs to the node:
 
 ```
-   $ scp deployment/base/crds/noderesourcetopology_crd.yaml pkg/apis/resmgr/v1alpha1/adjustment-schema.yaml node:
+   $ scp deployment/base/crds/noderesourcetopology_crd.yaml node:
 ```
 
 Then log in to the node and create the CRDs:
@@ -70,7 +70,6 @@ Then log in to the node and create the CRDs:
 ```
    $ ssh node
    (on the node) $ kubectl apply -f noderesourcetopology_crd.yaml
-   (on the node) $ kubectl apply -f adjustment-schema.yaml
 ```
 
 You can now deploy NRI resource manager plugin:
