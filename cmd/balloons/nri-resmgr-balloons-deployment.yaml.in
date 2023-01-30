@@ -109,9 +109,6 @@ spec:
           type: DirectoryOrCreate
       - name: hostsysfs
         hostPath:
-          path: /host
-          type: DirectoryOrCreate
-        hostPath:
           path: /sys
           type: Directory
       - name: resmgrsockets
