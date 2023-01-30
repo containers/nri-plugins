@@ -67,7 +67,6 @@ type resmgr struct {
 	cache        cache.Cache        // cached state
 	policy       policy.Policy      // resource manager policy
 	policySwitch bool               // active policy is being switched
-	configServer config.Server      // configuration management server
 	control      control.Control    // policy controllers/enforcement
 	conf         *config.RawConfig  // pending for saving in cache
 	metrics      *metrics.Metrics   // metrics collector/pre-processor
@@ -102,10 +101,6 @@ func NewResourceManager() (ResourceManager, error) {
 	}
 
 	if err := m.loadConfig(); err != nil {
-		return nil, err
-	}
-
-	if err := m.setupConfigServer(); err != nil {
 		return nil, err
 	}
 
@@ -159,10 +154,6 @@ func (m *resmgr) Start() error {
 	}
 
 	if opt.ForceConfig == "" {
-		if err := m.configServer.Start(opt.ConfigSocket); err != nil {
-			return resmgrError("failed to start configuration server: %v", err)
-		}
-
 		// We never store a forced configuration in the cache. However, if we're not
 		// running with a forced configuration, and the configuration is pending to
 		// get stored in the cache (IOW, it is a new one acquired from an agent), then
@@ -189,8 +180,6 @@ func (m *resmgr) Stop() {
 		close(m.signals)
 		m.signals = nil
 	}
-
-	m.configServer.Stop()
 
 	m.nri.stop()
 }
@@ -259,17 +248,6 @@ func (m *resmgr) setupCache() error {
 
 	return nil
 
-}
-
-// setupConfigServer sets up our configuration server for agent notifications.
-func (m *resmgr) setupConfigServer() error {
-	var err error
-
-	if m.configServer, err = config.NewConfigServer(m.SetConfig); err != nil {
-		return resmgrError("failed to create configuration notification server: %v", err)
-	}
-
-	return nil
 }
 
 // checkOpts checks the command line options for obvious errors.
