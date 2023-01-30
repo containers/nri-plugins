@@ -461,6 +461,11 @@ func (m *resmgr) setConfig(v interface{}) error {
 		m.cache.SetConfig(cfg)
 	}
 
+	err = m.nri.updateContainers()
+	if err != nil {
+		m.Warn("failed to update containers for new configuration: %v", err)
+	}
+
 	return nil
 }
 

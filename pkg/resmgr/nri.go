@@ -296,6 +296,26 @@ func (p *nriPlugin) RemoveContainer(pod *api.PodSandbox, container *api.Containe
 	return nil
 }
 
+func (p *nriPlugin) updateContainers() error {
+	// assumes call with p.resmgr locked
+
+	m := p.resmgr
+
+	m.Info("NRI post-config UpdateContainers")
+
+	updates := p.getPendingUpdates(nil)
+
+	p.dump("NRI-PostConfig-Update", "updates", updates)
+
+	_, err := p.stub.UpdateContainers(updates)
+
+	if err != nil {
+		return fmt.Errorf("failed update containers after reconfiguration: %w", err)
+	}
+
+	return nil
+}
+
 func (p *nriPlugin) getPendingCreate(container *api.Container) *api.ContainerAdjustment {
 	m := p.resmgr
 	c, ok := m.cache.LookupContainer(container.GetId())
