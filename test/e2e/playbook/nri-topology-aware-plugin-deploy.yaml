@@ -20,11 +20,11 @@
     - name: copy nri-resmgr deployment yaml
       copy: src="{{ item }}" dest="." mode=0644
       with_items:
-        - "{{ nri_resmgr_src }}/build/images/nri-resmgr-topology-aware-deployment.yaml"
+        - "{{ nri_resmgr_src }}/build/images/nri-resmgr-topology-aware-deployment-e2e.yaml"
 
     - name: copy nri-resmgr deployment yaml to /etc/nri-resmgr/nri-resmgr-deployment.yaml
       become: yes
-      copy: src="{{ nri_resmgr_src }}/build/images/nri-resmgr-topology-aware-deployment.yaml" dest="/etc/nri-resmgr/nri-resmgr-deployment.yaml" mode=0644
+      copy: src="{{ nri_resmgr_src }}/build/images/nri-resmgr-topology-aware-deployment-e2e.yaml" dest="/etc/nri-resmgr/nri-resmgr-deployment.yaml" mode=0644
       register: result
       failed_when: result.state != "file"
 

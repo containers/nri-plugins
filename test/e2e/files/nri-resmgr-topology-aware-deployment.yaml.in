@@ -1,0 +1,128 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nri-resmgr
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nri-resmgr
+rules:
+- apiGroups:
+  - ""
+  - nriresmgr.intel.com
+  resources:
+  - nodes
+  - configmaps
+  - adjustments
+  - labels
+  - annotations
+  verbs:
+  - get
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - topology.node.k8s.io
+  resources:
+  - noderesourcetopologies
+  verbs:
+  - create
+  - get
+  - list
+  - update
+  - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: nri-resmgr
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nri-resmgr
+subjects:
+- kind: ServiceAccount
+  name: nri-resmgr
+  namespace: kube-system
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app: nri-resmgr
+  name: nri-resmgr
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app: nri-resmgr
+  template:
+    metadata:
+      labels:
+        app: nri-resmgr
+    spec:
+      serviceAccount: nri-resmgr
+      nodeSelector:
+        kubernetes.io/os: "linux"
+      containers:
+        - name: nri-resmgr-topology-aware
+          args:
+            - --host-root
+            - /host
+            - --force-config
+            - /etc/nri-resmgr/nri-resmgr.cfg
+            - --pid-file
+            - /tmp/nri-resmgr.pid
+            - -metrics-interval
+            - 5s
+          ports:
+            - containerPort: 8891
+              name: metrics
+              protocol: TCP
+              hostPort: 8891
+          env:
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+          image: IMAGE_PLACEHOLDER
+          imagePullPolicy: Always # for testing
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+          - name: resmgrnrisock
+            mountPath: /var/run/nri.sock
+          - name: resmgrdata
+            mountPath: /var/lib/nri-resmgr
+          - name: hostsysfs
+            mountPath: /host/sys
+          - name: resmgrsockets
+            mountPath: /var/run/nri-resmgr
+          - name: resmgrconfig
+            mountPath: /etc/nri-resmgr
+      volumes:
+      - name: resmgrnrisock
+        hostPath:
+          path: /var/run/nri.sock
+          type: Socket
+      - name: resmgrdata
+        hostPath:
+          path: /var/lib/nri-resmgr
+      - name: hostsysfs
+        hostPath:
+          path: /sys
+          type: Directory
+      - name: resmgrsockets
+        hostPath:
+          path: /var/run/nri-resmgr
+      - name: resmgrconfig
+        hostPath:
+          path: /etc/nri-resmgr

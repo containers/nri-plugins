@@ -315,7 +315,12 @@ image-deployment-%:
             -e 's|^\(\s*\)tolerations:$$|\1tolerations:\n\1  - {"key": "cmk", "operator": "Equal", "value": "true", "effect": "NoSchedule"}|g' \
             -e 's/imagePullPolicy: Always/imagePullPolicy: Never/g' \
             < "`pwd`/cmd/$${img}/$${tag}-deployment.yaml.in" \
-            > "$(IMAGE_PATH)/$${tag}-deployment.yaml"
+            > "$(IMAGE_PATH)/$${tag}-deployment.yaml"; \
+	sed -e "s|IMAGE_PLACEHOLDER|$${NRI_IMAGE_REPOTAG}|g" \
+            -e 's|^\(\s*\)tolerations:$$|\1tolerations:\n\1  - {"key": "cmk", "operator": "Equal", "value": "true", "effect": "NoSchedule"}|g' \
+            -e 's/imagePullPolicy: Always/imagePullPolicy: Never/g' \
+            < "`pwd`/test/e2e/files/$${tag}-deployment.yaml.in" \
+            > "$(IMAGE_PATH)/$${tag}-deployment-e2e.yaml"
 
 image-%:
 	$(Q)mkdir -p $(IMAGE_PATH); \
