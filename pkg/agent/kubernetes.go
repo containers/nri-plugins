@@ -18,21 +18,17 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"os"
 	"time"
 
 	core_v1 "k8s.io/api/core/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	k8swatch "k8s.io/apimachinery/pkg/watch"
 	k8sclient "k8s.io/client-go/kubernetes"
 
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
-	agent_v1 "github.com/intel/nri-resmgr/pkg/agent/api/v1"
 	nrtapi "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/typed/topology/v1alpha1"
 )
 
@@ -76,37 +72,6 @@ func getNodeObject(cli *k8sclient.Clientset) (*core_v1.Node, error) {
 		return nil, agentError("failed to get node object for node %q: %v", nodeName, err)
 	}
 	return node, nil
-}
-
-// patchNodeObject is a helper for patching a k8s Node object
-func patchNode(cli *k8sclient.Clientset, patchList []*agent_v1.JsonPatch) error {
-	// Convert patch list into bytes
-	data, err := json.Marshal(patchList)
-	if err != nil {
-		return agentError("failed to marshal Node patches: %v", err)
-	}
-
-	// Patch our node
-	pt := types.JSONPatchType
-	_, err = cli.CoreV1().Nodes().Patch(context.TODO(), nodeName, pt, data, meta_v1.PatchOptions{})
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-// patchNodeStatus is a helper for patching the status of a k8s Node object
-func patchNodeStatus(cli *k8sclient.Clientset, fields map[string]string) error {
-	patch, sep := fmt.Sprintf(`{"status": {`), ""
-	for f, v := range fields {
-		patch += sep + fmt.Sprintf(`"%s": %s`, f, v)
-		sep = ","
-	}
-	patch += "}}"
-
-	_, err := cli.CoreV1().Nodes().PatchStatus(context.TODO(), nodeName, []byte(patch))
-
-	return err
 }
 
 // watch is a wrapper around the k8s watch.Interface

@@ -26,9 +26,6 @@ import (
 	k8sclient "k8s.io/client-go/kubernetes"
 )
 
-// Get nri-resmgr config
-type getConfigFn func() resmgrConfig
-
 // resmgrConfig represents nri-resmgr configuration
 type resmgrConfig map[string]string
 
@@ -43,7 +40,6 @@ type agent struct {
 	log.Logger                      // Our logging interface
 	cli        *k8sclient.Clientset // K8s client
 	nrtCli     *nrtapi.TopologyV1alpha1Client
-	server     agentServer   // gRPC server listening for requests from cri-resource-manager
 	watcher    k8sWatcher    // Watcher monitoring events in K8s cluster
 	updater    configUpdater // Client sending config updates to cri-resource-manager
 	nrtLock    sync.Mutex    // serialize async CR updates
