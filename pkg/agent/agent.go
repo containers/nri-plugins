@@ -30,9 +30,11 @@ import (
 // SetConfigFn is used to activate an updated configuration.
 type SetConfigFn func(config.RawConfig) error
 
-// ResourceManagerAgent is the interface exposed for the CRI Resource Manager Congig Agent
+// ResourceManagerAgent is the interface exposed by the agent.
 type ResourceManagerAgent interface {
+	// Run starts the agents configuration monitoring loop.
 	Run() error
+	// UpdateNrtCR updates Node Resource Topology CRs using the given data.
 	UpdateNrtCR(policy string, zones []*policyapi.TopologyZone) error
 }
 
