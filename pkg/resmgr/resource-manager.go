@@ -53,7 +53,7 @@ type ResourceManager interface {
 	// Stop stops the resource manager.
 	Stop()
 	// SetConfig dynamically updates the resource manager configuration.
-	SetConfig(*config.RawConfig) error
+	SetConfig(config.RawConfig) error
 	// SendEvent sends an event to be processed by the resource manager.
 	SendEvent(event interface{}) error
 	// Add-ons for testing.
@@ -68,7 +68,7 @@ type resmgr struct {
 	policy       policy.Policy      // resource manager policy
 	policySwitch bool               // active policy is being switched
 	control      control.Control    // policy controllers/enforcement
-	conf         *config.RawConfig  // pending for saving in cache
+	conf         config.RawConfig   // pending for saving in cache
 	metrics      *metrics.Metrics   // metrics collector/pre-processor
 	events       chan interface{}   // channel for delivering events
 	stop         chan interface{}   // channel for signalling shutdown to goroutines
@@ -185,8 +185,8 @@ func (m *resmgr) Stop() {
 }
 
 // SetConfig pushes new configuration to the resource manager.
-func (m *resmgr) SetConfig(conf *config.RawConfig) error {
-	if conf.Data == nil {
+func (m *resmgr) SetConfig(conf config.RawConfig) error {
+	if conf == nil {
 		m.Info("config from agent is empty, ignoring...")
 		return resmgrError("config from agent is empty, ignoring...")
 	}
@@ -290,8 +290,8 @@ func (m *resmgr) loadConfig() error {
 	}
 
 	m.Info("trying last cached configuration...")
-	if conf := m.cache.GetConfig(); conf != nil && conf.Data != nil {
-		err := pkgcfg.SetConfig(conf.Data)
+	if conf := m.cache.GetConfig(); conf != nil {
+		err := pkgcfg.SetConfig(conf)
 		if err == nil {
 			return nil
 		}
@@ -488,8 +488,8 @@ func (m *resmgr) setConfig(v interface{}) error {
 	defer m.Unlock()
 
 	switch cfg := v.(type) {
-	case *config.RawConfig:
-		err = pkgcfg.SetConfig(cfg.Data)
+	case config.RawConfig:
+		err = pkgcfg.SetConfig(cfg)
 	case string:
 		err = pkgcfg.SetConfigFromFile(cfg)
 	default:
@@ -503,7 +503,7 @@ func (m *resmgr) setConfig(v interface{}) error {
 	// TODO: fix this and add stuff
 
 	// if we managed to activate a configuration from the agent, store it in the cache
-	if cfg, ok := v.(*config.RawConfig); ok {
+	if cfg, ok := v.(config.RawConfig); ok {
 		m.Info("setting configuration from agent")
 		m.cache.SetConfig(cfg)
 	} else {

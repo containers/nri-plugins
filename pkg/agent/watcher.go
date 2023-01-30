@@ -25,13 +25,14 @@ import (
 	k8sclient "k8s.io/client-go/kubernetes"
 
 	"github.com/intel/nri-resmgr/pkg/log"
+	"github.com/intel/nri-resmgr/pkg/resmgr/config"
 )
 
 type cachedConfig struct {
 	sync.RWMutex
-	nodeCfg  *resmgrConfig // node-specific configuration
-	groupCfg *resmgrConfig // group-specific configuration
-	group    string        // group name, "" for default
+	nodeCfg  config.RawConfig // node-specific configuration
+	groupCfg config.RawConfig // group-specific configuration
+	group    string           // group name, "" for default
 }
 
 // k8sWatcher is our interface to K8s control plane watcher
@@ -41,18 +42,18 @@ type k8sWatcher interface {
 	// Stop the watcher instance
 	Stop()
 	// Get a chan through which to receive configuration updates
-	ConfigChan() <-chan resmgrConfig
+	ConfigChan() <-chan config.RawConfig
 	// Get up-to-date config
-	GetConfig() resmgrConfig
+	GetConfig() config.RawConfig
 }
 
 // watcher implements k8sWatcher
 type watcher struct {
 	log.Logger
-	stop          chan struct{}        // channel to stop watcher goroutine
-	k8sCli        *k8sclient.Clientset // k8s client interface
-	currentConfig cachedConfig         // current configuration, cached
-	configChan    chan resmgrConfig    // channel for config updates
+	stop          chan struct{}         // channel to stop watcher goroutine
+	k8sCli        *k8sclient.Clientset  // k8s client interface
+	currentConfig cachedConfig          // current configuration, cached
+	configChan    chan config.RawConfig // channel for config updates
 }
 
 // newK8sWatcher creates a new K8sWatcher instance
@@ -62,7 +63,7 @@ func newK8sWatcher(k8sCli *k8sclient.Clientset) (k8sWatcher, error) {
 		k8sCli:        k8sCli,
 		stop:          make(chan struct{}, 1),
 		currentConfig: newCachedConfig(),
-		configChan:    make(chan resmgrConfig, 1),
+		configChan:    make(chan config.RawConfig, 1),
 	}
 
 	return w, nil
@@ -91,12 +92,12 @@ func (w *watcher) Stop() {
 }
 
 // ConfigChan returns the chan for config updates
-func (w *watcher) ConfigChan() <-chan resmgrConfig {
+func (w *watcher) ConfigChan() <-chan config.RawConfig {
 	return w.configChan
 }
 
 // GetConfig returns the current nri-resmgr configuration
-func (w *watcher) GetConfig() resmgrConfig {
+func (w *watcher) GetConfig() config.RawConfig {
 	cfg, kind := w.currentConfig.getConfig()
 	w.Info("giving %s configuration in reply to query", kind)
 	return cfg
@@ -160,7 +161,7 @@ func (w *watcher) watch() error {
 				case k8swatch.Added, k8swatch.Modified:
 					w.Info("node ConfigMap updated")
 					cm := e.Object.(*core_v1.ConfigMap)
-					w.currentConfig.setNode(&cm.Data)
+					w.currentConfig.setNode(cm.Data)
 					w.sendConfig()
 
 				case k8swatch.Deleted, SyntheticMissing:
@@ -177,7 +178,7 @@ func (w *watcher) watch() error {
 				case k8swatch.Added, k8swatch.Modified:
 					w.Info("group/default ConfigMap updated")
 					cm := e.Object.(*core_v1.ConfigMap)
-					if w.currentConfig.setGroup(group, &cm.Data) {
+					if w.currentConfig.setGroup(group, cm.Data) {
 						w.sendConfig()
 					}
 				case k8swatch.Deleted, SyntheticMissing:
@@ -209,11 +210,11 @@ func newCachedConfig() cachedConfig {
 }
 
 // getConfig is a helper method for getting the config data
-func (c *cachedConfig) getConfig() (resmgrConfig, string) {
+func (c *cachedConfig) getConfig() (config.RawConfig, string) {
 	c.RLock()
 	defer c.RUnlock()
 
-	var cfg *resmgrConfig
+	var cfg config.RawConfig
 	var kind string
 
 	switch {
@@ -232,27 +233,27 @@ func (c *cachedConfig) getConfig() (resmgrConfig, string) {
 
 	if cfg == nil {
 		kind = "empty " + kind
-		cfg = &resmgrConfig{}
+		cfg = config.RawConfig{}
 	}
 
-	return *cfg, kind
+	return cfg, kind
 }
 
 // set node-specific configuration
-func (c *cachedConfig) setNode(data *map[string]string) bool {
+func (c *cachedConfig) setNode(data map[string]string) bool {
 	c.Lock()
 	defer c.Unlock()
 
-	c.nodeCfg = (*resmgrConfig)(data)
+	c.nodeCfg = (config.RawConfig)(data)
 	return true
 }
 
 // set group-specific or default configuration
-func (c *cachedConfig) setGroup(group string, data *map[string]string) bool {
+func (c *cachedConfig) setGroup(group string, data map[string]string) bool {
 	c.Lock()
 	defer c.Unlock()
 
-	c.groupCfg = (*resmgrConfig)(data)
+	c.groupCfg = (config.RawConfig)(data)
 	c.group = group
 	return c.nodeCfg == nil
 }

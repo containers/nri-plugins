@@ -16,36 +16,27 @@ limitations under the License.
 
 package config
 
-// RawConfig represents the resource manager config data in unparsed form, as
-// received from the agent.
-type RawConfig struct {
-	// NodeName is the node name the agent used to acquire configuration.
-	NodeName string
-	// Data is the raw ConfigMap data for this node.
-	Data map[string]string
-}
+// RawConfig represents raw configuration data from a ConfigMap.
+type RawConfig map[string]string
 
 // HasIdenticalData returns true if RawConfig has identical data to the supplied one.
-func (c *RawConfig) HasIdenticalData(data map[string]string) bool {
-	if c == nil && data == nil {
+func (c RawConfig) HasIdenticalData(data map[string]string) bool {
+	if len(c) == 0 && len(data) == 0 {
 		return true
 	}
-	if c == nil || data == nil {
+
+	if len(c) != len(data) {
 		return false
 	}
 
-	if len(c.Data) != len(data) {
-		return false
-	}
-
-	for k, v := range c.Data {
+	for k, v := range c {
 		if dv, found := data[k]; !found || dv != v {
 			return false
 		}
 	}
 
 	for dk, dv := range data {
-		if v, found := c.Data[dk]; !found || v != dv {
+		if v, found := c[dk]; !found || v != dv {
 			return false
 		}
 	}

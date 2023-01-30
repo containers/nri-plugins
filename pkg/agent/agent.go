@@ -26,9 +26,6 @@ import (
 	k8sclient "k8s.io/client-go/kubernetes"
 )
 
-// resmgrConfig represents nri-resmgr configuration
-type resmgrConfig map[string]string
-
 // ResourceManagerAgent is the interface exposed for the CRI Resource Manager Congig Agent
 type ResourceManagerAgent interface {
 	Run() error
@@ -84,7 +81,7 @@ func (a *agent) Run() error {
 		select {
 		case config, ok := <-a.watcher.ConfigChan():
 			if ok {
-				a.updater.UpdateConfig(&config)
+				a.updater.UpdateConfig(config)
 			}
 		}
 	}

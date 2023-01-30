@@ -566,9 +566,9 @@ type Cache interface {
 	GetPolicyEntry(string, interface{}) bool
 
 	// SetConfig caches the given configuration.
-	SetConfig(*config.RawConfig) error
+	SetConfig(config.RawConfig) error
 	// GetConfig returns the current/cached configuration.
-	GetConfig() *config.RawConfig
+	GetConfig() config.RawConfig
 	// ResetConfig clears any stored configuration from the cache.
 	ResetConfig() error
 
@@ -618,7 +618,7 @@ type cache struct {
 	Containers map[string]*container // known/cache containers
 	NextID     uint64                // next container cache id to use
 
-	Cfg        *config.RawConfig      // cached/current configuration
+	Cfg        config.RawConfig       // cached/current configuration
 	PolicyName string                 // name of the active policy
 	policyData map[string]interface{} // opaque policy data
 	PolicyJSON map[string]string      // ditto in raw, unmarshaled form
@@ -691,7 +691,7 @@ func (cch *cache) ResetActivePolicy() error {
 }
 
 // SetConfig caches the given configuration.
-func (cch *cache) SetConfig(cfg *config.RawConfig) error {
+func (cch *cache) SetConfig(cfg config.RawConfig) error {
 	old := cch.Cfg
 	cch.Cfg = cfg
 
@@ -704,7 +704,7 @@ func (cch *cache) SetConfig(cfg *config.RawConfig) error {
 }
 
 // GetConfig returns the current/cached configuration.
-func (cch *cache) GetConfig() *config.RawConfig {
+func (cch *cache) GetConfig() config.RawConfig {
 	return cch.Cfg
 }
 
@@ -1367,7 +1367,7 @@ type snapshot struct {
 	Pods       map[string]*pod
 	Containers map[string]*container
 	NextID     uint64
-	Cfg        *config.RawConfig
+	Cfg        config.RawConfig
 	PolicyName string
 	PolicyJSON map[string]string
 }

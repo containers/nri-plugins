@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/intel/nri-resmgr/pkg/log"
+	"github.com/intel/nri-resmgr/pkg/resmgr/config"
 )
 
 const (
@@ -35,20 +36,20 @@ const (
 type configUpdater interface {
 	Start() error
 	Stop()
-	UpdateConfig(*resmgrConfig)
+	UpdateConfig(config.RawConfig)
 }
 
 // updater implements configUpdater
 type updater struct {
 	log.Logger
-	newConfig    chan *resmgrConfig
-	notifyConfig func(*resmgrConfig) error
+	newConfig    chan config.RawConfig
+	notifyConfig func(config.RawConfig) error
 }
 
 func newConfigUpdater() (configUpdater, error) {
 	u := &updater{Logger: log.NewLogger("config-updater")}
 
-	u.newConfig = make(chan *resmgrConfig)
+	u.newConfig = make(chan config.RawConfig)
 
 	return u, nil
 }
@@ -56,7 +57,7 @@ func newConfigUpdater() (configUpdater, error) {
 func (u *updater) Start() error {
 	u.Info("Starting config-updater")
 	go func() {
-		var pendingConfig *resmgrConfig
+		var pendingConfig config.RawConfig
 
 		var ratelimit <-chan time.Time
 
@@ -91,11 +92,11 @@ func (u *updater) Start() error {
 func (u *updater) Stop() {
 }
 
-func (u *updater) UpdateConfig(c *resmgrConfig) {
+func (u *updater) UpdateConfig(c config.RawConfig) {
 	u.newConfig <- c
 }
 
-func (u *updater) setConfig(cfg *resmgrConfig) (error, error) {
+func (u *updater) setConfig(cfg config.RawConfig) (error, error) {
 	u.Info("*** should set configuration")
 
 	return nil, nil

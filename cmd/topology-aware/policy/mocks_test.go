@@ -720,10 +720,10 @@ func (m *mockCache) SetPolicyEntry(string, interface{}) {
 func (m *mockCache) GetPolicyEntry(string, interface{}) bool {
 	return m.returnValueForGetPolicyEntry
 }
-func (m *mockCache) SetConfig(*config.RawConfig) error {
+func (m *mockCache) SetConfig(config.RawConfig) error {
 	panic("unimplemented")
 }
-func (m *mockCache) GetConfig() *config.RawConfig {
+func (m *mockCache) GetConfig() config.RawConfig {
 	panic("unimplemented")
 }
 func (m *mockCache) ResetConfig() error {
