@@ -16,10 +16,6 @@ limitations under the License.
 
 package config
 
-import (
-	extapi "github.com/intel/nri-resmgr/pkg/apis/resmgr/v1alpha1"
-)
-
 // RawConfig represents the resource manager config data in unparsed form, as
 // received from the agent.
 type RawConfig struct {
@@ -27,12 +23,6 @@ type RawConfig struct {
 	NodeName string
 	// Data is the raw ConfigMap data for this node.
 	Data map[string]string
-}
-
-// Adjustment represents external adjustments for this node.
-type Adjustment struct {
-	// Adjustments contains all adjustment CRDs for this node.
-	Adjustments map[string]*extapi.AdjustmentSpec
 }
 
 // HasIdenticalData returns true if RawConfig has identical data to the supplied one.

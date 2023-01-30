@@ -19,7 +19,6 @@ package agent
 import (
 	"time"
 
-	resmgr "github.com/intel/nri-resmgr/pkg/apis/resmgr/v1alpha1"
 	"github.com/intel/nri-resmgr/pkg/log"
 )
 
@@ -37,27 +36,19 @@ type configUpdater interface {
 	Start() error
 	Stop()
 	UpdateConfig(*resmgrConfig)
-	UpdateAdjustment(*resmgrAdjustment)
-	StatusChan() chan *resmgrStatus
 }
 
 // updater implements configUpdater
 type updater struct {
 	log.Logger
-	newConfig     chan *resmgrConfig
-	newAdjustment chan *resmgrAdjustment
-	newStatus     chan *resmgrStatus
-
-	notifyConfig     func(*resmgrConfig) error
-	notifyAdjustment func(map[string]*resmgr.AdjustmentSpec) error
+	newConfig    chan *resmgrConfig
+	notifyConfig func(*resmgrConfig) error
 }
 
 func newConfigUpdater() (configUpdater, error) {
 	u := &updater{Logger: log.NewLogger("config-updater")}
 
 	u.newConfig = make(chan *resmgrConfig)
-	u.newAdjustment = make(chan *resmgrAdjustment)
-	u.newStatus = make(chan *resmgrStatus)
 
 	return u, nil
 }
@@ -66,7 +57,6 @@ func (u *updater) Start() error {
 	u.Info("Starting config-updater")
 	go func() {
 		var pendingConfig *resmgrConfig
-		var pendingAdjustment *resmgrAdjustment
 
 		var ratelimit <-chan time.Time
 
@@ -75,11 +65,6 @@ func (u *updater) Start() error {
 			case cfg := <-u.newConfig:
 				u.Info("scheduling update after %v rate-limiting timeout...", rateLimitTimeout)
 				pendingConfig = cfg
-				ratelimit = time.After(rateLimitTimeout)
-
-			case adjust := <-u.newAdjustment:
-				u.Info("scheduling update after %v rate-limiting timeout...", rateLimitTimeout)
-				pendingAdjustment = adjust
 				ratelimit = time.After(rateLimitTimeout)
 
 			case _ = <-ratelimit:
@@ -96,24 +81,6 @@ func (u *updater) Start() error {
 						ratelimit = nil
 					}
 				}
-				if pendingAdjustment != nil {
-					errors, err := u.setAdjustment(pendingAdjustment)
-
-					if err != nil {
-						u.Error("failed to update adjustments: %+v", err)
-					}
-					if len(errors) > 0 {
-						u.Error("some adjustment updates failed: %+v", errors)
-					}
-
-					u.newStatus <- &resmgrStatus{
-						request: err,
-						errors:  errors,
-					}
-
-					pendingAdjustment = nil
-					ratelimit = nil
-				}
 			}
 		}
 	}()
@@ -128,33 +95,8 @@ func (u *updater) UpdateConfig(c *resmgrConfig) {
 	u.newConfig <- c
 }
 
-func (u *updater) UpdateAdjustment(c *resmgrAdjustment) {
-	u.newAdjustment <- c
-}
-
-func (u *updater) StatusChan() chan *resmgrStatus {
-	return u.newStatus
-}
-
 func (u *updater) setConfig(cfg *resmgrConfig) (error, error) {
 	u.Info("*** should set configuration")
 
-	return nil, nil
-}
-
-func (u *updater) setAdjustment(adjust *resmgrAdjustment) (map[string]string, error) {
-	/*
-		specs := map[string]*resmgr.AdjustmentSpec{}
-		for name, p := range *adjust {
-			specs[name] = &resmgr.AdjustmentSpec{
-				Scope:        p.Spec.NodeScope(nodeName),
-				Resources:    p.Spec.Resources,
-				Classes:      p.Spec.Classes,
-				ToptierLimit: p.Spec.ToptierLimit,
-			}
-		}
-	*/
-
-	u.Info("*** should set adjustment")
 	return nil, nil
 }

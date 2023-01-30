@@ -18,13 +18,13 @@ import (
 	"os"
 	"time"
 
+	"github.com/intel/goresctrl/pkg/sst"
+	idset "github.com/intel/goresctrl/pkg/utils"
 	"github.com/intel/nri-resmgr/pkg/apis/resmgr"
 	"github.com/intel/nri-resmgr/pkg/cache"
 	"github.com/intel/nri-resmgr/pkg/resmgr/config"
 	system "github.com/intel/nri-resmgr/pkg/sysfs"
 	"github.com/intel/nri-resmgr/pkg/topology"
-	"github.com/intel/goresctrl/pkg/sst"
-	idset "github.com/intel/goresctrl/pkg/utils"
 	v1 "k8s.io/api/core/v1"
 	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
@@ -727,9 +727,6 @@ func (m *mockCache) GetConfig() *config.RawConfig {
 	panic("unimplemented")
 }
 func (m *mockCache) ResetConfig() error {
-	panic("unimplemented")
-}
-func (m *mockCache) SetAdjustment(*config.Adjustment) (bool, map[string]error) {
 	panic("unimplemented")
 }
 func (m *mockCache) Save() error {

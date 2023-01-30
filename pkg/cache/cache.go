@@ -427,7 +427,6 @@ type container struct {
 	Devices       map[string]*Device // devices
 	TopologyHints topology.Hints     // Set of topology hints for all containers within Pod
 	Tags          map[string]string  // container tags (local dynamic labels)
-	Adjustment    string             // name of applicable external adjustment, if any
 
 	Resources v1.ResourceRequirements        // container resources (from webhook annotation)
 	LinuxReq  *criv1.LinuxContainerResources // used to estimate Resources if we lack annotations
@@ -573,9 +572,6 @@ type Cache interface {
 	// ResetConfig clears any stored configuration from the cache.
 	ResetConfig() error
 
-	// SetAdjustment updates external adjustments and containers based this.
-	SetAdjustment(*config.Adjustment) (bool, map[string]error)
-
 	// Save requests a cache save.
 	Save() error
 
@@ -623,7 +619,6 @@ type cache struct {
 	NextID     uint64                // next container cache id to use
 
 	Cfg        *config.RawConfig      // cached/current configuration
-	External   *config.Adjustment     // cached/current external adjustments
 	PolicyName string                 // name of the active policy
 	policyData map[string]interface{} // opaque policy data
 	PolicyJSON map[string]string      // ditto in raw, unmarshaled form
@@ -726,115 +721,6 @@ func (cch *cache) ResetConfig() error {
 	return nil
 }
 
-// SetAdjustment updates external adjustments and containers based on this.
-func (cch *cache) SetAdjustment(external *config.Adjustment) (bool, map[string]error) {
-	effective := map[*container]string{}
-
-	// collect per container external adjustments, checking for obvious errors
-	errors := map[string]error{}
-	for id, c := range cch.Containers {
-		if id != c.GetCacheID() {
-			continue
-		}
-
-		adjustments := cch.getApplicableAdjustments(external, c)
-
-		if len(adjustments) == 0 {
-			continue
-		}
-
-		// conflict: multiple adjustments per container
-		if len(adjustments) > 1 {
-			errors[c.GetID()] = cacheError("conflicting adjustments for %s: %s",
-				c.PrettyName(), strings.Join(adjustments, ","))
-			continue
-		}
-
-		adjust := external.Adjustments[adjustments[0]]
-
-		// error: trying to override resources for BestEffort container
-		if c.GetQOSClass() == v1.PodQOSBestEffort {
-			if adjust.Resources != nil {
-				errors[c.GetID()] = cacheError("%s: can't override resources for BestEffort %s",
-					adjustments[0], c.PrettyName())
-				continue
-			}
-		}
-
-		effective[c] = adjustments[0]
-	}
-	if len(errors) > 0 {
-		return false, errors
-	}
-
-	// update per container external adjustments, mark all containers with pending changes
-	for id, c := range cch.Containers {
-		if id != c.GetCacheID() {
-			continue
-		}
-
-		uptodate := effective[c]
-		previous := c.setEffectiveAdjustment(uptodate)
-		effective[c] = previous
-
-		if previous != uptodate {
-			cch.Info("%s effective external adjustment changed from %q to %q",
-				c.PrettyName(), previous, uptodate)
-		}
-
-		c.markPending(allControllers...)
-	}
-
-	if err := cch.Save(); err != nil {
-		for id, c := range cch.Containers {
-			if id != c.GetCacheID() {
-				continue
-			}
-			c.setEffectiveAdjustment(effective[c])
-		}
-		return false, map[string]error{"cache": err}
-	}
-
-	cch.External = external
-	return true, nil
-}
-
-// Get all external adjustments applicable to the given container.
-func (cch *cache) getApplicableAdjustments(ext *config.Adjustment, c *container) []string {
-	if ext == nil {
-		return []string{}
-	}
-	applicable := []string{}
-	for name, adjust := range ext.Adjustments {
-		if adjust.IsContainerInScope(c) {
-			applicable = append(applicable, name)
-		}
-	}
-	return applicable
-}
-
-// setEffectiveAdjustment updates the effective adjustments of all containers.
-func (cch *cache) setEffectiveAdjustment(effective map[*container]string) {
-	for id, c := range cch.Containers {
-		if id != c.GetCacheID() {
-			continue
-		}
-
-		uptodate := effective[c]
-		previous := c.setEffectiveAdjustment(uptodate)
-
-		if previous != uptodate {
-			cch.Info("%s effective external adjustment changed from %q to %q",
-				c.PrettyName(), previous, uptodate)
-		}
-
-		// we forcibly mark the container as updated in all controller domains
-		for _, ctrl := range allControllers {
-			c.markPending(ctrl)
-		}
-	}
-}
-
 // Derive cache id using pod uid, or allocate a new unused local cache id.
 func (cch *cache) createCacheID(c *container) string {
 	if pod, ok := c.cache.LookupPod(c.PodID); ok {
@@ -932,16 +818,6 @@ func (cch *cache) InsertContainer(msg interface{}) (Container, error) {
 	}
 
 	cch.createContainerDirectory(c.CacheID)
-
-	adjustments := cch.getApplicableAdjustments(cch.External, c)
-	switch {
-	case len(adjustments) > 1:
-		cch.Error("conflicting adjustments for %s: %s",
-			c.PrettyName(), strings.Join(adjustments, ","))
-	case len(adjustments) == 1:
-		c.setEffectiveAdjustment(adjustments[0])
-	}
-
 	cch.Save()
 
 	return c, nil

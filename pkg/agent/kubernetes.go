@@ -32,8 +32,6 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
-	resmgr "github.com/intel/nri-resmgr/pkg/apis/resmgr/generated/clientset/versioned/typed/resmgr/v1alpha1"
-
 	agent_v1 "github.com/intel/nri-resmgr/pkg/agent/api/v1"
 	nrtapi "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/typed/topology/v1alpha1"
 )
@@ -44,7 +42,7 @@ type namespace string
 var nodeName string
 
 // getK8sClient initializes a new Kubernetes client
-func (a *agent) getK8sClient(kubeconfig string) (*k8sclient.Clientset, *resmgr.NriresmgrV1alpha1Client, *nrtapi.TopologyV1alpha1Client, error) {
+func (a *agent) getK8sClient(kubeconfig string) (*k8sclient.Clientset, *nrtapi.TopologyV1alpha1Client, error) {
 	var config *rest.Config
 	var err error
 
@@ -55,25 +53,20 @@ func (a *agent) getK8sClient(kubeconfig string) (*k8sclient.Clientset, *resmgr.N
 		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
 	}
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	genCli, err := k8sclient.NewForConfig(config)
 	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	resmgr, err := resmgr.NewForConfig(config)
-	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	nrtcli, err := nrtapi.NewForConfig(config)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
-	return genCli, resmgr, nrtcli, nil
+	return genCli, nrtcli, nil
 }
 
 // getNodeObject gets a k8s Node object
@@ -114,11 +107,6 @@ func patchNodeStatus(cli *k8sclient.Clientset, fields map[string]string) error {
 	_, err := cli.CoreV1().Nodes().PatchStatus(context.TODO(), nodeName, []byte(patch))
 
 	return err
-}
-
-// patchAdjustmentStatus is a helper for patching the status of a Adjustment CRD.
-func patchAdjustmentStatus(cli *resmgr.NriresmgrV1alpha1Client, status *resmgrStatus, names ...string) error {
-	return nil
 }
 
 // watch is a wrapper around the k8s watch.Interface
@@ -199,30 +187,6 @@ func newConfigMapWatch(parent *watcher, name string, ns namespace) *watch {
 			return cm, nil
 		})
 	w.Start(name)
-	return w
-}
-
-// newAdustmentCRDWatch creates a watch for k8s Adjustment CRDs
-func newAdjustmentCRDWatch(parent *watcher, ns namespace) *watch {
-	w := newWatch(parent, "AdjustmentCRD", ns,
-		func(ns namespace, name string) (k8swatch.Interface, error) {
-			k8w, err := parent.resmgrCli.Adjustments(string(ns)).Watch(context.TODO(), meta_v1.ListOptions{})
-			if err != nil {
-				return nil, err
-			}
-			return k8w, nil
-		},
-		func(ns namespace, name string) (interface{}, error) {
-			crds, err := parent.resmgrCli.Adjustments(string(ns)).List(context.TODO(), meta_v1.ListOptions{})
-			if err != nil {
-				return nil, err
-			}
-			if crds == nil || len(crds.Items) == 0 {
-				crds = nil
-			}
-			return crds, nil
-		})
-	w.Start("AdjustmentCRD")
 	return w
 }
 
