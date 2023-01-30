@@ -61,7 +61,7 @@ spec:
           args:
             - --host-root
             - /host
-            - --force-config
+            - --fallback-config
             - /etc/nri-resmgr/nri-resmgr.cfg
             - --pid-file
             - /tmp/nri-resmgr.pid
@@ -115,5 +115,19 @@ spec:
         hostPath:
           path: /var/run/nri-resmgr
       - name: resmgrconfig
-        hostPath:
-          path: /etc/nri-resmgr
+        configMap:
+          name: nri-resmgr-config
+---
+apiVersion: v1
+data:
+  nri-resmgr.cfg: |
+    policy:
+      Active: balloons
+      ReservedResources:
+        CPU: 750m
+    logger:
+      Debug: resource-manager,cache,policy,resource-control
+kind: ConfigMap
+metadata:
+  name: nri-resmgr-config
+  namespace: kube-system

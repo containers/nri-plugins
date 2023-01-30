@@ -11,7 +11,7 @@
   - [ ] eliminate need for saving cache to disk
 - config
   - [ ] (finish readding) config via agent
-  - [ ] fallback config via ConfigMap (bind-mounted in deployment file)
+  - [x] fallback config via ConfigMap (bind-mounted in deployment file)
   - [ ] switch to using CRDs (from ConfigMaps)
   - [ ] consider usig 1 CRD per policy as opposed to a single 'union' CRD
   - [ ] remove config-like external adjustment via CRD support

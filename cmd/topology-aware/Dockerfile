@@ -21,6 +21,5 @@ FROM gcr.io/distroless/static
 #gcr.io/distroless/static
 
 COPY --from=builder /go/builder/build/bin/nri-resmgr-topology-aware /bin/nri-resmgr-topology-aware
-COPY --from=builder /go/builder/cmd/topology-aware/fallback.cfg.sample /etc/nri-resmgr/fallback.cfg
 
 ENTRYPOINT ["/bin/nri-resmgr-topology-aware"]
