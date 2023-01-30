@@ -43,7 +43,6 @@ PROTO_OPTIONS = --proto_path=. $(PROTO_INCLUDE) \
     --go_opt=paths=source_relative --go_out=. \
     --go-ttrpc_opt=paths=source_relative --go-ttrpc_out=.
 PROTO_COMPILE = PATH=$(PATH):$(shell go env GOPATH)/bin; protoc $(PROTO_OPTIONS)
-PROTOCODE := $(patsubst %.proto,%.pb.go,$(PROTO_SOURCES))
 
 # List of visualizer collateral files to go generate.
 UI_ASSETS := $(shell for i in pkg/visualizer/*; do \
@@ -51,10 +50,6 @@ UI_ASSETS := $(shell for i in pkg/visualizer/*; do \
             echo $$i/assets_gendata.go; \
         fi; \
     done)
-
-# Right now we don't depend on libexec/%.o on purpose so make sure the file
-# is always up-to-date when elf/avx512.c is changed.
-GEN_TARGETS := pkg/avx/programbytes_gendata.go $(PROTOCODE)
 
 GO_CMD     := go
 GO_BUILD   := $(GO_CMD) build
@@ -118,9 +113,6 @@ build-static:
 
 clean: clean-plugins
 
-clean-gen:
-	$(Q)rm -f $(GEN_TARGETS)
-
 allclean: clean clean-cache
 
 test: test-gopkgs
@@ -176,7 +168,7 @@ $(BIN_PATH)/%: .static.%.$(STATIC)
 # plugin build dependencies
 #
 
-$(BIN_PATH)/nri-resmgr-topology-aware: $(UI_ASSETS) $(GEN_TARGETS) \
+$(BIN_PATH)/nri-resmgr-topology-aware: $(UI_ASSETS) \
     $(shell for dir in \
                 $(shell go list -f '{{ join .Deps  "\n"}}' ./... | \
                           egrep '(nri-resmgr/pkg/)|(nri-resmgr/cmd/topology-aware/)' | \
@@ -184,7 +176,7 @@ $(BIN_PATH)/nri-resmgr-topology-aware: $(UI_ASSETS) $(GEN_TARGETS) \
                 find $$dir -name \*.go; \
             done | sort | uniq)
 
-$(BIN_PATH)/nri-resmgr-balloons: $(UI_ASSETS) $(GEN_TARGETS) \
+$(BIN_PATH)/nri-resmgr-balloons: $(UI_ASSETS) \
     $(shell for dir in \
                   $(shell go list -f '{{ join .Deps  "\n"}}' ./... | \
                           egrep '(nri-resmgr/pkg/)|(nri-resmgr/cmd/balloons/)' | \
