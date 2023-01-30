@@ -15,7 +15,6 @@
 SHELL := /bin/bash
 # Kubernetes version we pull in as modules and our external API versions.
 KUBERNETES_VERSION := $(shell grep 'k8s.io/kubernetes ' go.mod | sed 's/^.* //')
-RESMGR_API_VERSION := $(shell ls pkg/apis/resmgr | grep '^v[0-9]*')
 
 # Directories (in cmd) with go code we'll want to create Docker images from.
 IMAGE_DIRS  = $(shell find cmd -name Dockerfile | sed 's:cmd/::g;s:/.*::g' | uniq)
@@ -262,27 +261,6 @@ generate: .generator.image.stamp
 
 # unconditionally generate all apis
 generate-apis: generate
-
-# unconditionally generate (external) resmgr api
-generate-resmgr-api:
-	$(Q)$(call generate-api,resmgr,$(RESMGR_API_VERSION))
-
-# automatic update of generated code for resource-manager external api
-pkg/apis/resmgr/$(RESMGR_API_VERSION)/zz_generated.deepcopy.go: \
-	pkg/apis/resmgr/$(RESMGR_API_VERSION)/types.go
-	$(Q)$(call generate-apis)
-
-# macro to generate code for api $(1), version $(2)
-generate-api = \
-	echo "Generating '$(1)' api, version $(2)..." && \
-	    KUBERNETES_VERSION=$(KUBERNETES_VERSION) \
-	    ./scripts/code-generator/generate-groups.sh all \
-	        github.com/intel/nri-resmgr/pkg/apis/$(1)/generated \
-	        github.com/intel/nri-resmgr/pkg/apis $(1):$(2) \
-	        --output-base $(shell pwd)/generate && \
-	    cp -r generate/github.com/intel/nri-resmgr/pkg/apis/$(1) pkg/apis && \
-	        rm -fr generate/github.com/intel/nri-resmgr/pkg/apis/$(1)
-
 
 #
 # targets for installing dependencies

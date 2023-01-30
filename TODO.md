@@ -14,7 +14,7 @@
   - [x] fallback config via ConfigMap (bind-mounted in deployment file)
   - [ ] switch to using CRDs (from ConfigMaps)
   - [ ] consider usig 1 CRD per policy as opposed to a single 'union' CRD
-  - [ ] remove config-like external adjustment via CRD support
+  - [x] remove config-like external adjustment via CRD support
 - policies
   - [ ] remove support for multiple policies in a single binary
   - [ ] balloons: implement topology hint support
