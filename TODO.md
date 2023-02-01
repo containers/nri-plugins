@@ -34,6 +34,7 @@
   - [ ] more unit tests
   - [ ] unit tests in GH actions
   - [ ] e2e-tests on merge by CI/self-hosted runners
+  - [ ] migrate shell based e2e-tests into Ansible
 - documentation
   - [ ] minimal README with instructions about how to build/deploy/try the plugins
 
