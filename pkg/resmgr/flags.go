@@ -23,36 +23,24 @@ import (
 
 // Options captures our command line parameters.
 type options struct {
-	HostRoot              string
-	ImageSocket           string
-	RuntimeSocket         string
-	RelaySocket           string
-	StateDir              string
-	AllowUntestedRuntimes bool
-	AgentSocket           string
-	ConfigSocket          string
-	PidFile               string
-	ResctrlPath           string
-	FallbackConfig        string
-	ForceConfig           string
-	ForceConfigSignal     string
-	DisablePolicySwitch   bool
-	ResetPolicy           bool
-	ResetConfig           bool
-	MetricsTimer          time.Duration
-	RebalanceTimer        time.Duration
-	DisableUI             bool
-	DisableAgent          bool
-
-	UseNRIPlugin bool
+	HostRoot            string
+	StateDir            string
+	PidFile             string
+	ResctrlPath         string
+	FallbackConfig      string
+	ForceConfig         string
+	ForceConfigSignal   string
+	DisablePolicySwitch bool
+	ResetPolicy         bool
+	ResetConfig         bool
+	MetricsTimer        time.Duration
+	RebalanceTimer      time.Duration
+	DisableUI           bool
+	DisableAgent        bool
 }
 
 // Relay command line options.
 var opt = options{}
-
-const (
-	allowUntestedRuntimesFlag = "allow-untested-runtimes"
-)
 
 // Register us for command line option processing.
 func init() {

@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -43,7 +42,6 @@ import (
 	"github.com/intel/nri-resmgr/pkg/visualizer"
 
 	policyCollector "github.com/intel/nri-resmgr/pkg/policycollector"
-	"github.com/intel/nri-resmgr/pkg/utils"
 )
 
 // ResourceManager is the interface we expose for controlling the CRI resource manager.
@@ -189,12 +187,6 @@ func (m *resmgr) resetCachedPolicy() int {
 	m.Info("resetting active policy stored in cache...")
 	defer logger.Flush()
 
-	if ls, err := utils.IsListeningSocket(opt.RelaySocket); ls || err != nil {
-		m.Error("refusing to reset, looks like an instance of %q is active at socket %q...",
-			filepath.Base(os.Args[0]), opt.RelaySocket)
-		return 1
-	}
-
 	if err := m.cache.ResetActivePolicy(); err != nil {
 		m.Error("failed to reset active policy: %v", err)
 		return 1
@@ -206,12 +198,6 @@ func (m *resmgr) resetCachedPolicy() int {
 func (m *resmgr) resetCachedConfig() int {
 	m.Info("resetting cached configuration...")
 	defer logger.Flush()
-
-	if ls, err := utils.IsListeningSocket(opt.RelaySocket); ls || err != nil {
-		m.Error("refusing to reset, looks like an instance of %q is active at socket %q...",
-			filepath.Base(os.Args[0]), opt.RelaySocket)
-		return 1
-	}
 
 	if err := m.cache.ResetConfig(); err != nil {
 		m.Error("failed to reset cached configuration: %v", err)
