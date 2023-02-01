@@ -18,7 +18,13 @@ import (
 	"flag"
 	"time"
 
+	nri "github.com/containerd/nri/pkg/api"
 	"github.com/intel/nri-resmgr/pkg/pidfile"
+)
+
+const (
+	defaultPluginName  = "resource-manager"
+	defaultPluginIndex = "90"
 )
 
 // Options captures our command line parameters.
@@ -37,15 +43,24 @@ type options struct {
 	RebalanceTimer      time.Duration
 	DisableUI           bool
 	DisableAgent        bool
+	NriPluginName       string
+	NriPluginIdx        string
+	NriSocket           string
 }
 
-// Relay command line options.
+// ResourceManager command line options.
 var opt = options{}
 
 // Register us for command line option processing.
 func init() {
 	flag.StringVar(&opt.HostRoot, "host-root", "",
 		"Directory prefix under which the host's sysfs, etc. are mounted.")
+	flag.StringVar(&opt.NriPluginName, "nri-plugin-name", defaultPluginName,
+		"NRI plugin name to register.")
+	flag.StringVar(&opt.NriPluginIdx, "nri-plugin-index", defaultPluginIndex,
+		"NRI plugin index to register.")
+	flag.StringVar(&opt.NriSocket, "nri-socket", nri.DefaultSocketPath,
+		"NRI unix domain socket path to connect to.")
 
 	flag.StringVar(&opt.PidFile, "pid-file", pidfile.GetPath(),
 		"PID file to write daemon PID to")

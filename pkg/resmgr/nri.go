@@ -47,8 +47,9 @@ func newNRIPlugin(resmgr *resmgr) (*nriPlugin, error) {
 func (p *nriPlugin) createStub() error {
 	var (
 		opts = []stub.Option{
-			stub.WithPluginName("resource-manager"),
-			stub.WithPluginIdx("90"),
+			stub.WithPluginName(opt.NriPluginName),
+			stub.WithPluginIdx(opt.NriPluginIdx),
+			stub.WithSocketPath(opt.NriSocket),
 			stub.WithOnClose(p.onClose),
 		}
 		err error
