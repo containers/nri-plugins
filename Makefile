@@ -198,7 +198,8 @@ ginkgo-tests:
 	    --covermode atomic \
 	    --output-dir $(COVERAGE_PATH) \
 	    --junit-report junit.xml \
-	    --coverprofile coverprofile \
+	    --coverprofile $(COVERAGE_PATH)/coverprofile \
+	    --keep-separate-coverprofiles \
 	    --succinct \
 	    -r .; \
 	$(GO_CMD) tool cover -html=$(COVERAGE_PATH)/coverprofile -o $(COVERAGE_PATH)/coverage.html
