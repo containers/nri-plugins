@@ -35,15 +35,6 @@ IMAGE_BUILD_CMD ?= docker build
 IMAGE_BUILD_EXTRA_OPTS ?=
 BUILDER_IMAGE ?= golang:1.19-bullseye
 
-# Protoc compiler and protobuf definitions we might need to recompile.
-PROTO_SOURCES = $(shell find . -name '*.proto' | grep -v /vendor/)
-PROTO_GOFILES = $(patsubst %.proto,%.pb.go,$(PROTO_SOURCES))
-PROTO_INCLUDE = -I$(PWD):/usr/local/include:/usr/include
-PROTO_OPTIONS = --proto_path=. $(PROTO_INCLUDE) \
-    --go_opt=paths=source_relative --go_out=. \
-    --go-ttrpc_opt=paths=source_relative --go-ttrpc_out=.
-PROTO_COMPILE = PATH=$(PATH):$(shell go env GOPATH)/bin; protoc $(PROTO_OPTIONS)
-
 # List of visualizer collateral files to go generate.
 UI_ASSETS := $(shell for i in pkg/visualizer/*; do \
         if [ -d "$$i" -a -e "$$i/assets_generate.go" ]; then \
@@ -106,7 +97,7 @@ LDFLAGS    = \
 
 all: build
 
-build: build-proto build-plugins build-check
+build: build-plugins build-check
 
 build-static:
 	$(MAKE) STATIC=1 build
@@ -120,8 +111,6 @@ test: test-gopkgs
 #
 # build targets
 #
-
-build-proto: $(PROTO_GOFILES)
 
 build-plugins: $(foreach bin,$(PLUGINS),$(BIN_PATH)/$(bin))
 
@@ -225,48 +214,8 @@ golangci-lint:
 	$(Q)$(GOLANG_CILINT) run
 
 #
-# proto generation targets
-#
-
-%.pb.go: %.proto
-	$(Q)echo "Generating $@..."; \
-	$(PROTO_COMPILE) $<
-
-#
-# API generation
-#
-
-.generator.image.stamp: Dockerfile_generator
-	$(IMAGE_BUILD_CMD) \
-	    --build-arg BUILDER_IMAGE=$(BUILDER_IMAGE) \
-	    -t nri-resmgr-generator \
-	    -f Dockerfile_generator .
-
-generate: .generator.image.stamp
-	mkdir -p $(BUILD_PATH)/deployment && \
-	$(CONTAINER_RUN_CMD) --rm \
-	    -v "`go env GOMODCACHE`:/go/pkg/mod" \
-	    -v "`go env GOCACHE`:/.cache" \
-	    -v "`pwd`:/go/nri-resmgr" \
-	    --user=`id -u`:`id -g`\
-	    nri-resmgr-generator \
-	    ./scripts/code-generator/generate.sh
-
-# unconditionally generate all apis
-generate-apis: generate
-
-#
 # targets for installing dependencies
 #
-
-install-protoc install-protobuf:
-	$(Q)./scripts/install-protobuf && \
-
-install-ttrpc-plugin:
-	$(Q)$(GO_INSTALL) github.com/containerd/ttrpc/cmd/protoc-gen-go-ttrpc@74421d10189e8c118870d294c9f7f62db2d33ec1
-
-install-protoc-dependencies:
-	$(Q)$(GO_INSTALL) google.golang.org/protobuf/cmd/protoc-gen-go@v1.28.0
 
 install-ginkgo:
 	$(Q)$(GO_INSTALL) -mod=mod github.com/onsi/ginkgo/v2/ginkgo
