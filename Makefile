@@ -108,6 +108,8 @@ allclean: clean clean-cache
 
 test: test-gopkgs
 
+verify: verify-godeps
+
 #
 # build targets
 #
@@ -212,6 +214,18 @@ vet:
 
 golangci-lint:
 	$(Q)$(GOLANG_CILINT) run
+
+verify-godeps:
+	$(Q) $(GO_CMD) mod tidy && git diff --quiet; ec="$$?"; \
+	if [ "$$ec" != "0" ]; then \
+	    echo "ERROR: go mod dependencies are not up-to-date."; \
+	    echo "ERROR:"; \
+	    git --no-pager diff go.mod go.sum | sed 's/^/ERROR: /g'; \
+	    echo "ERROR:"; \
+	    echo "ERROR: please run 'go mod tidy' and commit these changes."; \
+	    exit "$$ec"; \
+	fi; \
+	$(GO_CMD) mod verify
 
 #
 # targets for installing dependencies
