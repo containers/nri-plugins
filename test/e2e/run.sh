@@ -20,6 +20,9 @@ export COMMAND_OUTPUT_DIR="$TEST_OUTPUT_DIR"/commands
 distro=${distro:-$DEFAULT_DISTRO}
 export k8scri=${k8scri:-"containerd"}
 TOPOLOGY_DIR=${TOPOLOGY_DIR:=e2e}
+
+source "$LIB_DIR"/vm.bash
+
 export vm_name=${vm_name:=$(vm-create-name "$k8scri" "$(basename "$TOPOLOGY_DIR")" ${distro})}
 ESCAPED_VM=$(printf '%s\n' "$vm_name" | sed -e 's/[\/]/-/g')
 export VM_HOSTNAME="$ESCAPED_VM"
@@ -61,6 +64,16 @@ fi
 source "$LIB_DIR"/command.bash
 source "$LIB_DIR"/vm.bash
 source "$LIB_DIR"/host.bash
+
+# Special handling for printing out runtime logs. This is called
+# by run_tests.sh script and done here as run_tests.sh does not
+# know all the configuration details that this script knows.
+# So in order not to duplicate code, let run_tests.sh call this
+# to just print runtime logs.
+if [ "$1" == "runtime-logs" ]; then
+    vm-command "journalctl /usr/bin/${k8scri}" > "${OUTPUT_DIR}/runtime.log"
+    exit
+fi
 
 echo
 echo "    VM              = $vm_name"
