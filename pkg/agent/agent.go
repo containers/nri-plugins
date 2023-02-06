@@ -23,7 +23,7 @@ import (
 	"github.com/intel/nri-resmgr/pkg/log"
 	policyapi "github.com/intel/nri-resmgr/pkg/policy"
 	"github.com/intel/nri-resmgr/pkg/resmgr/config"
-	nrtapi "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/typed/topology/v1alpha1"
+	nrtapi "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/typed/topology/v1alpha2"
 	k8sclient "k8s.io/client-go/kubernetes"
 )
 
@@ -42,7 +42,7 @@ type ResourceManagerAgent interface {
 type agent struct {
 	log.Logger                      // Our logging interface
 	cli        *k8sclient.Clientset // K8s client
-	nrtCli     *nrtapi.TopologyV1alpha1Client
+	nrtCli     *nrtapi.TopologyV1alpha2Client
 	watcher    k8sWatcher    // Watcher monitoring events in K8s cluster
 	updater    configUpdater // Client sending config updates to cri-resource-manager
 	nrtLock    sync.Mutex    // serialize async CR updates

@@ -24,7 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	policyapi "github.com/intel/nri-resmgr/pkg/policy"
-	nrtapi "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	nrtapi "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 )
 
 // UpdateNrtCR updates the node's node resource topology CR using the given data.
@@ -84,9 +84,13 @@ func (a *agent) updateNrtCR(policy string, zones []*policyapi.TopologyZone) erro
 
 	// otherwise update CR if one exists
 	if cr != nil {
-		cr.TopologyPolicies = []string{
-			policy,
+		cr.Attributes = nrtapi.AttributeList{
+			nrtapi.AttributeInfo{
+				Name:  "TopologyPolicy",
+				Value: policy,
+			},
 		}
+
 		cr.Zones = zonesToNrt(zones)
 
 		_, err = cli.Update(ctx, cr, metav1.UpdateOptions{})
@@ -102,8 +106,12 @@ func (a *agent) updateNrtCR(policy string, zones []*policyapi.TopologyZone) erro
 		ObjectMeta: metav1.ObjectMeta{
 			Name: nodeName,
 		},
-		TopologyPolicies: []string{
-			policy,
+
+		Attributes: nrtapi.AttributeList{
+			nrtapi.AttributeInfo{
+				Name:  "TopologyPolicy",
+				Value: policy,
+			},
 		},
 		Zones: zonesToNrt(zones),
 	}

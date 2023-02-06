@@ -10,7 +10,7 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/intel/goresctrl v0.3.0
 	github.com/intel/nri-resmgr/pkg/topology v0.0.0
-	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.0.13
+	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.14.0
 	github.com/prometheus/client_model v0.3.0

@@ -29,7 +29,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
-	nrtapi "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/typed/topology/v1alpha1"
+	nrtapi "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/typed/topology/v1alpha2"
 )
 
 type namespace string
@@ -38,7 +38,7 @@ type namespace string
 var nodeName string
 
 // getK8sClient initializes a new Kubernetes client
-func (a *agent) getK8sClient(kubeconfig string) (*k8sclient.Clientset, *nrtapi.TopologyV1alpha1Client, error) {
+func (a *agent) getK8sClient(kubeconfig string) (*k8sclient.Clientset, *nrtapi.TopologyV1alpha2Client, error) {
 	var config *rest.Config
 	var err error
 
