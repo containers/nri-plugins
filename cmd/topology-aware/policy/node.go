@@ -17,9 +17,9 @@ package topologyaware
 import (
 	"fmt"
 
+	idset "github.com/intel/goresctrl/pkg/utils"
 	system "github.com/intel/nri-resmgr/pkg/sysfs"
 	"github.com/intel/nri-resmgr/pkg/topology"
-	idset "github.com/intel/goresctrl/pkg/utils"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
 	"github.com/intel/nri-resmgr/pkg/kubernetes"

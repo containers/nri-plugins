@@ -19,8 +19,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/intel/nri-resmgr/pkg/client"
 	"github.com/intel/nri-resmgr/pkg/cache"
+	"github.com/intel/nri-resmgr/pkg/client"
 	logger "github.com/intel/nri-resmgr/pkg/log"
 )
 

@@ -20,7 +20,7 @@ import (
 	"path/filepath"
 )
 
-//nolint
+// nolint
 const (
 	// Tasks is a cgroup's "tasks" entry.
 	Tasks = "tasks"

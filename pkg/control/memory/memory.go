@@ -19,9 +19,9 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/intel/nri-resmgr/pkg/cache"
 	"github.com/intel/nri-resmgr/pkg/cgroups"
 	"github.com/intel/nri-resmgr/pkg/client"
-	"github.com/intel/nri-resmgr/pkg/cache"
 	"github.com/intel/nri-resmgr/pkg/control"
 	logger "github.com/intel/nri-resmgr/pkg/log"
 )

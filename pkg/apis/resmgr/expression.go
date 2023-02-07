@@ -300,6 +300,7 @@ func (e *Expression) DeepCopyInto(out *Expression) {
 	out.Values = make([]string, len(e.Values))
 	copy(out.Values, e.Values)
 }
+
 // exprError returns a formatted error specific to expressions.
 func exprError(format string, args ...interface{}) error {
 	return fmt.Errorf("expression: "+format, args...)

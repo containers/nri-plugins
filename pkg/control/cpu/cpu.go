@@ -19,13 +19,13 @@ import (
 
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
-	pkgcfg "github.com/intel/nri-resmgr/pkg/config"
-	"github.com/intel/nri-resmgr/pkg/client"
+	"github.com/intel/goresctrl/pkg/utils"
 	"github.com/intel/nri-resmgr/pkg/cache"
+	"github.com/intel/nri-resmgr/pkg/client"
+	pkgcfg "github.com/intel/nri-resmgr/pkg/config"
 	"github.com/intel/nri-resmgr/pkg/control"
 	logger "github.com/intel/nri-resmgr/pkg/log"
 	"github.com/intel/nri-resmgr/pkg/sysfs"
-	"github.com/intel/goresctrl/pkg/utils"
 )
 
 const (

@@ -22,10 +22,10 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
-	"github.com/intel/nri-resmgr/pkg/cpuallocator"
-	"github.com/intel/nri-resmgr/pkg/cache"
-	"github.com/intel/nri-resmgr/pkg/kubernetes"
 	idset "github.com/intel/goresctrl/pkg/utils"
+	"github.com/intel/nri-resmgr/pkg/cache"
+	"github.com/intel/nri-resmgr/pkg/cpuallocator"
+	"github.com/intel/nri-resmgr/pkg/kubernetes"
 )
 
 // Supply represents avaialbe CPU and memory capacity of a node.

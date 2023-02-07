@@ -20,11 +20,11 @@ import (
 
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
+	"github.com/intel/goresctrl/pkg/sst"
+	idset "github.com/intel/goresctrl/pkg/utils"
 	logger "github.com/intel/nri-resmgr/pkg/log"
 	"github.com/intel/nri-resmgr/pkg/sysfs"
 	"github.com/intel/nri-resmgr/pkg/utils"
-	"github.com/intel/goresctrl/pkg/sst"
-	idset "github.com/intel/goresctrl/pkg/utils"
 )
 
 // AllocFlag represents CPU allocation preferences.
@@ -633,9 +633,10 @@ func (p CPUPriority) String() string {
 }
 
 // cmpCPUSet compares two cpusets in terms of preferred cpu priority. Returns:
-//   > 0 if cpuset A is preferred
-//   < 0 if cpuset B is preferred
-//   0 if cpusets A and B are equal in terms of cpu priority
+//
+//	> 0 if cpuset A is preferred
+//	< 0 if cpuset B is preferred
+//	0 if cpusets A and B are equal in terms of cpu priority
 func (c *cpuPriorities) cmpCPUSet(csetA, csetB cpuset.CPUSet, prefer CPUPriority, cpuCnt int) int {
 	if prefer == PriorityNone {
 		return 0

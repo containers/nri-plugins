@@ -15,8 +15,8 @@
 package cpu
 
 import (
-	"github.com/intel/nri-resmgr/pkg/cache"
 	"github.com/intel/goresctrl/pkg/utils"
+	"github.com/intel/nri-resmgr/pkg/cache"
 )
 
 const (

@@ -30,7 +30,7 @@ type Controller int
 // Group represents a control group.
 type Group string
 
-//nolint
+// nolint
 const (
 	// UnkownController represents a controller of unknown type.
 	UnknownController Controller = iota

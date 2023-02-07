@@ -168,8 +168,9 @@ type Metrics interface{}
 
 // Node resource topology resource and attribute names.
 // XXX TODO(klihub): We'll probably need to add similar unified consts
-//     for resource types (socket, die, NUMA node, etc.) and use them
-//     in policies (for instance for TA pool 'kind's)
+//
+//	for resource types (socket, die, NUMA node, etc.) and use them
+//	in policies (for instance for TA pool 'kind's)
 const (
 	// MemoryResource is resource name for memory
 	MemoryResource = "memory"

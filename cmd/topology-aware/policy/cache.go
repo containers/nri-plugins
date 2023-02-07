@@ -20,8 +20,8 @@ import (
 
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
-	"github.com/intel/nri-resmgr/pkg/cache"
 	idset "github.com/intel/goresctrl/pkg/utils"
+	"github.com/intel/nri-resmgr/pkg/cache"
 )
 
 const (
