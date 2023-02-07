@@ -37,3 +37,14 @@ jobs:
 
       - name: Run all resource policy e2e tests
         run: test/e2e/run_ci.sh policies.test-suite/
+
+      - name: Save log files if tests fail
+        uses: actions/upload-artifact@v3
+        if: failure()
+        with:
+          name: saved-logs
+          path: |
+            ${{ github.workspace }}/e2e-test-results/policies.test-suite/topology-aware/
+            ${{ github.workspace }}/e2e-test-results/policies.test-suite/balloons/
+            ${{ github.workspace }}/e2e-test-results/runtime.log
+          if-no-files-found: ignore
