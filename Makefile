@@ -108,7 +108,7 @@ allclean: clean clean-cache
 
 test: test-gopkgs
 
-verify: verify-godeps
+verify: verify-godeps verify-fmt
 
 #
 # build targets
@@ -206,6 +206,9 @@ codecov:
 fmt format:
 	$(Q)$(GO_FMT) -s -d -e .
 
+reformat:
+	$(Q)$(GO_FMT) -s -d -w $$(git ls-files '*.go')
+
 lint:
 	$(Q)$(GO_LINT) -set_exit_status ./...
 
@@ -226,6 +229,15 @@ verify-godeps:
 	    exit "$$ec"; \
 	fi; \
 	$(GO_CMD) mod verify
+
+verify-fmt:
+	$(Q)report=`$(GO_FMT) -s -d -e $$(git ls-files '*.go')`; \
+	if [ -n "$$report" ]; then \
+	    echo "ERROR: go formatting errors"; \
+	    echo "$$report" | sed 's/^/ERROR: /g'; \
+	    echo "ERROR: please run make reformat or go fmt by hand and commit any changes."; \
+	    exit 1; \
+	fi
 
 #
 # targets for installing dependencies
