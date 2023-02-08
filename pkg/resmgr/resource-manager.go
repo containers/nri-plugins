@@ -132,7 +132,9 @@ func (m *resmgr) Start() error {
 	m.Lock()
 	defer m.Unlock()
 
-	m.nri.start()
+	if err := m.nri.start(); err != nil {
+		return err
+	}
 
 	if err := m.startEventProcessing(); err != nil {
 		return err
