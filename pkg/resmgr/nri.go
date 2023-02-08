@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/intel/nri-resmgr/pkg/cache"
+	logger "github.com/intel/nri-resmgr/pkg/log"
 	"github.com/intel/nri-resmgr/pkg/policy"
 	"github.com/intel/nri-resmgr/pkg/resmgr/events"
 	"github.com/pkg/errors"
@@ -30,16 +31,18 @@ import (
 )
 
 type nriPlugin struct {
+	logger.Logger
 	stub   stub.Stub
 	resmgr *resmgr
 }
 
 func newNRIPlugin(resmgr *resmgr) (*nriPlugin, error) {
 	p := &nriPlugin{
+		Logger: logger.NewLogger("nri-plugin"),
 		resmgr: resmgr,
 	}
 
-	p.resmgr.Info("creating NRI plugin...")
+	p.Info("creating plugin...")
 
 	return p, nil
 }
@@ -55,7 +58,7 @@ func (p *nriPlugin) createStub() error {
 		err error
 	)
 
-	p.resmgr.Info("creating NRI plugin stub...")
+	p.Info("creating plugin stub...")
 
 	if p.stub, err = stub.New(p, opts...); err != nil {
 		return errors.Wrap(err, "failed to create NRI plugin stub")
@@ -69,7 +72,7 @@ func (p *nriPlugin) start() error {
 		return nil
 	}
 
-	p.resmgr.Info("starting NRI plugin...")
+	p.Info("starting plugin...")
 
 	if err := p.createStub(); err != nil {
 		return err
@@ -86,7 +89,8 @@ func (p *nriPlugin) stop() {
 	if p == nil {
 		return
 	}
-	p.resmgr.Info("stopping NRI plugin...")
+
+	p.Info("stopping plugin...")
 	p.stub.Stop()
 }
 
@@ -100,7 +104,9 @@ func (p *nriPlugin) onClose() {
 }
 
 func (p *nriPlugin) Configure(cfg, runtime, version string) (stub.EventMask, error) {
-	p.dump("NRI-Configure", "data", cfg)
+	event := Configure
+	p.dump(in, event, runtime, version)
+
 	return api.MustParseEventMask(
 		"RunPodSandbox,StopPodSandbox,RemovePodSandbox",
 		"CreateContainer,StartContainer,UpdateContainer,StopContainer,RemoveContainer",
@@ -139,10 +145,14 @@ func (p *nriPlugin) syncWithNRI(pods []*api.PodSandbox, containers []*api.Contai
 	return add, del, nil
 }
 
-func (p *nriPlugin) Synchronize(pods []*api.PodSandbox, containers []*api.Container) ([]*api.ContainerUpdate, error) {
-	m := p.resmgr
+func (p *nriPlugin) Synchronize(pods []*api.PodSandbox, containers []*api.Container) (updates []*api.ContainerUpdate, retErr error) {
+	event := Synchronize
+	p.dump(in, event, pods, containers)
+	defer func() {
+		p.dump(out, event, updates, retErr)
+	}()
 
-	p.dump("NRI-Synchronize", "pods", pods, "containers", containers)
+	m := p.resmgr
 
 	add, del, err := p.syncWithNRI(pods, containers)
 	if err != nil {
@@ -160,11 +170,14 @@ func (p *nriPlugin) Synchronize(pods []*api.PodSandbox, containers []*api.Contai
 	return p.getPendingUpdates(nil), nil
 }
 
-func (p *nriPlugin) RunPodSandbox(pod *api.PodSandbox) error {
-	p.dump("NRI-RunPodSandbox", "pod", pod)
+func (p *nriPlugin) RunPodSandbox(pod *api.PodSandbox) (retErr error) {
+	event := RunPodSandbox
+	p.dump(in, event, pod)
+	defer func() {
+		p.dump(out, event, retErr)
+	}()
 
 	m := p.resmgr
-
 	m.Lock()
 	defer m.Unlock()
 
@@ -172,16 +185,24 @@ func (p *nriPlugin) RunPodSandbox(pod *api.PodSandbox) error {
 	return nil
 }
 
-func (p *nriPlugin) StopPodSandbox(pod *api.PodSandbox) error {
-	p.dump("NRI-StopPodSandbox", "pod", pod)
+func (p *nriPlugin) StopPodSandbox(pod *api.PodSandbox) (retErr error) {
+	event := StopPodSandbox
+	p.dump(in, event, pod)
+	defer func() {
+		p.dump(out, event, retErr)
+	}()
+
 	return nil
 }
 
-func (p *nriPlugin) RemovePodSandbox(pod *api.PodSandbox) error {
-	p.dump("NRI-RemovePodSandbox", "pod", pod)
+func (p *nriPlugin) RemovePodSandbox(pod *api.PodSandbox) (retErr error) {
+	event := RemovePodSandbox
+	p.dump(in, event, pod)
+	defer func() {
+		p.dump(out, event, retErr)
+	}()
 
 	m := p.resmgr
-
 	m.Lock()
 	defer m.Unlock()
 
@@ -189,11 +210,14 @@ func (p *nriPlugin) RemovePodSandbox(pod *api.PodSandbox) error {
 	return nil
 }
 
-func (p *nriPlugin) CreateContainer(pod *api.PodSandbox, container *api.Container) (*api.ContainerAdjustment, []*api.ContainerUpdate, error) {
-	p.dump("NRI-CreateContainer", "pod", pod, "container", container)
+func (p *nriPlugin) CreateContainer(pod *api.PodSandbox, container *api.Container) (adjust *api.ContainerAdjustment, updates []*api.ContainerUpdate, retErr error) {
+	event := CreateContainer
+	p.dump(in, event, pod, container)
+	defer func() {
+		p.dump(out, event, adjust, updates, retErr)
+	}()
 
 	m := p.resmgr
-
 	m.Lock()
 	defer m.Unlock()
 
@@ -215,55 +239,67 @@ func (p *nriPlugin) CreateContainer(pod *api.PodSandbox, container *api.Containe
 	m.policy.ExportResourceData(c)
 	m.updateTopologyZones()
 
-	adjust := p.getPendingCreate(container)
-	updates := p.getPendingUpdates(container)
-
-	p.dump("<= CreateContainer", "adjustments", adjust, "updates", updates)
+	adjust = p.getPendingCreate(container)
+	updates = p.getPendingUpdates(container)
 
 	return adjust, updates, nil
 }
 
-func (p *nriPlugin) StartContainer(pod *api.PodSandbox, container *api.Container) error {
-	method := "NRI-StartContainer"
-
-	p.dump(method, "pod", pod, "container", container)
+func (p *nriPlugin) StartContainer(pod *api.PodSandbox, container *api.Container) (retErr error) {
+	event := StartContainer
+	p.dump(in, event, pod, container)
+	defer func() {
+		p.dump(out, event, retErr)
+	}()
 
 	m := p.resmgr
-
 	m.Lock()
 	defer m.Unlock()
 
 	c, ok := m.cache.LookupContainer(container.Id)
-	if ok {
-		c.UpdateState(cache.ContainerStateRunning)
-
-		e := &events.Policy{
-			Type:   events.ContainerStarted,
-			Source: "resource-manager",
-			Data:   c,
-		}
-
-		if _, err := m.policy.HandleEvent(e); err != nil {
-			m.Error("%s: policy failed to handle event %s: %v", method, e.Type, err)
-		}
+	if !ok {
+		return nil
 	}
 
-	// test timeouts
-	//time.Sleep(3 * time.Second)
+	c.UpdateState(cache.ContainerStateRunning)
+
+	e := &events.Policy{
+		Type:   events.ContainerStarted,
+		Source: "resource-manager",
+		Data:   c,
+	}
+
+	if _, err := m.policy.HandleEvent(e); err != nil {
+		m.Error("%s: policy failed to handle event %s: %v", event, e.Type, err)
+	}
 
 	return nil
 }
 
-func (p *nriPlugin) UpdateContainer(pod *api.PodSandbox, container *api.Container) ([]*api.ContainerUpdate, error) {
-	p.dump("NRI-UpdateContainer", "pod", pod, "container", container)
+func (p *nriPlugin) UpdateContainer(pod *api.PodSandbox, container *api.Container) (updates []*api.ContainerUpdate, retErr error) {
+	event := UpdateContainer
+	p.dump(in, event, pod, container)
+	defer func() {
+		p.dump(out, event, updates, retErr)
+	}()
+
+	m := p.resmgr
+	m.Lock()
+	defer m.Unlock()
+
+	// XXX TODO(klihub): hook in policy processing
+
 	return nil, nil
 }
 
-func (p *nriPlugin) StopContainer(pod *api.PodSandbox, container *api.Container) ([]*api.ContainerUpdate, error) {
-	p.dump("NRI-StopContainer", "pod", pod, "container", container)
+func (p *nriPlugin) StopContainer(pod *api.PodSandbox, container *api.Container) (updates []*api.ContainerUpdate, retErr error) {
+	event := StopContainer
+	p.dump(in, event, pod, container)
+	defer func() {
+		p.dump(out, event, updates, retErr)
+	}()
 
 	m := p.resmgr
-
 	m.Lock()
 	defer m.Unlock()
 
@@ -279,16 +315,17 @@ func (p *nriPlugin) StopContainer(pod *api.PodSandbox, container *api.Container)
 	c.UpdateState(cache.ContainerStateExited)
 	m.updateTopologyZones()
 
-	updates := p.getPendingUpdates(container)
-
-	return updates, nil
+	return p.getPendingUpdates(container), nil
 }
 
-func (p *nriPlugin) RemoveContainer(pod *api.PodSandbox, container *api.Container) error {
-	p.dump("NRI-RemoveContainer", "pod", pod, "container", container)
+func (p *nriPlugin) RemoveContainer(pod *api.PodSandbox, container *api.Container) (retErr error) {
+	event := RemoveContainer
+	p.dump(in, event, pod, container)
+	defer func() {
+		p.dump(out, event, retErr)
+	}()
 
 	m := p.resmgr
-
 	m.Lock()
 	defer m.Unlock()
 
@@ -296,21 +333,20 @@ func (p *nriPlugin) RemoveContainer(pod *api.PodSandbox, container *api.Containe
 	return nil
 }
 
-func (p *nriPlugin) updateContainers() error {
-	// assumes call with p.resmgr locked
-
-	m := p.resmgr
-
-	m.Info("NRI post-config UpdateContainers")
+func (p *nriPlugin) updateContainers() (retErr error) {
+	// Notes: must be called with p.resmgr lock held.
 
 	updates := p.getPendingUpdates(nil)
 
-	p.dump("NRI-PostConfig-Update", "updates", updates)
+	event := UpdateContainers
+	p.dump(out, event, updates)
+	defer func() {
+		p.dump(in, event, retErr)
+	}()
 
 	_, err := p.stub.UpdateContainers(updates)
-
 	if err != nil {
-		return fmt.Errorf("failed update containers after reconfiguration: %w", err)
+		return fmt.Errorf("post-config container update failed: %w", err)
 	}
 
 	return nil
@@ -389,7 +425,7 @@ func toNRILinuxResources(container cache.Container) *api.LinuxResources {
 }
 
 func (p *nriPlugin) adjustDevices(a *api.ContainerAdjustment, c *api.Container, cc cache.Container) {
-	// Notes: we don't alter devices... but it should perhaps be checked.
+	// Notes: we don't alter devices.
 }
 
 func (p *nriPlugin) adjustResources(a *api.ContainerAdjustment, c *api.Container, cc cache.Container) {
@@ -406,7 +442,7 @@ func (p *nriPlugin) adjustResources(a *api.ContainerAdjustment, c *api.Container
 }
 
 func (p *nriPlugin) adjustMounts(a *api.ContainerAdjustment, c *api.Container, cc cache.Container) {
-	// Notes: we don't alter mounts, just inject new ones...
+	// Notes: we never remove mounts, just inject new ones.
 nextMount:
 	for _, mnt := range cc.GetMounts() {
 		for _, m := range c.GetMounts() {
@@ -492,35 +528,247 @@ func (p *nriPlugin) updateResources(u *api.ContainerUpdate, c cache.Container) {
 	}
 }
 
-func (p *nriPlugin) dump(header string, args ...interface{}) {
-	for {
-		var (
-			prefix string
-			msg    []byte
-			ok     bool
-			err    error
-		)
+const (
+	in  = "=>"
+	out = "<="
+)
 
-		if len(args) == 0 {
-			return
-		}
-		if len(args) == 1 {
-			p.resmgr.Error("invalid call to dump, expecting tag/obj pairs")
-			return
-		}
-		if prefix, ok = args[0].(string); !ok {
-			p.resmgr.Error("invalid call to dump, expecting string tags")
-			return
+const (
+	Configure        = "Configure"
+	Synchronize      = "Synchronize"
+	RunPodSandbox    = "RunPodSandbox"
+	StopPodSandbox   = "StopPodSandbox"
+	RemovePodSandbox = "RemovePodSandbox"
+	CreateContainer  = "CreateContainer"
+	StartContainer   = "StartContainer"
+	UpdateContainer  = "UpdateContainer"
+	StopContainer    = "StopContainer"
+	RemoveContainer  = "RemoveContainer"
+	UpdateContainers = "UpdateContainers"
+)
+
+func (p *nriPlugin) dump(dir, event string, args ...interface{}) {
+	switch event {
+	case RunPodSandbox, StopPodSandbox, RemovePodSandbox:
+		if dir == in {
+			if len(args) != 1 {
+				p.Error("%s %s <dump error, %d args, expected (pod)>", dir, event, len(args))
+				return
+			}
+
+			pod, ok := args[0].(*api.PodSandbox)
+			if !ok {
+				p.Error("%s %s <dump error, arg %T, expected (pod)>", dir, event, args[0])
+				return
+			}
+
+			p.Info("%s %s %s/%s", dir, event, pod.GetNamespace(), pod.GetName())
+			p.dumpDetails(dir, event, pod)
+		} else {
+			if len(args) != 1 {
+				p.Error("%s %s <dump error, %d args, expected (err/nil)>", dir, event, len(args))
+				return
+			}
+
+			err := args[0]
+			if err != nil {
+				p.Error("%s %s FAILED: %v", dir, event, err.(error))
+				return
+			}
+
+			p.Info("%s %s", dir, event)
 		}
 
-		msg, err = yaml.Marshal(args[1])
-		if err != nil {
-			msg = []byte(fmt.Sprintf("<failed to YAML-marshal object: %v>", err))
+	case CreateContainer, StartContainer, UpdateContainer, StopContainer, RemoveContainer:
+		if dir == in {
+			if len(args) != 2 {
+				p.Error("%s %s <dump error, %d args, expected (pod, container)>",
+					dir, event, len(args))
+				return
+			}
+
+			pod, ok := args[0].(*api.PodSandbox)
+			if !ok {
+				p.Error("%s %s <dump error, args %T, %T, expected (pod, container)>",
+					dir, event, args[0], args[1])
+				return
+			}
+			ctr, ok := args[1].(*api.Container)
+			if !ok {
+				p.Error("%s %s <dump error, args %T, %T, expected (pod, container)>",
+					dir, event, args[0], args[1])
+				return
+			}
+
+			p.Info("%s %s %s/%s:%s", dir, event, pod.GetNamespace(), pod.GetName(), ctr.GetName())
+			p.dumpDetails(dir, event, ctr)
+		} else {
+			if len(args) < 1 {
+				p.Error("%s %s <dump error, missing args>", dir, event)
+				return
+			}
+
+			err := args[len(args)-1]
+			if err != nil {
+				p.Error("%s %s FAILED: %v", dir, event, err.(error))
+				return
+			}
+
+			p.Info("%s %s", dir, event)
+
+			switch event {
+			case CreateContainer:
+				p.dumpDetails(dir, event, args[0])
+				p.dumpDetails(dir, event, args[1])
+			case StopContainer, UpdateContainer:
+				p.dumpDetails(dir, event, args[0])
+			}
 		}
 
-		p.resmgr.InfoBlock(header+" ", "%s:", prefix)
-		p.resmgr.InfoBlock(header+" ", "%s", msg)
+	case UpdateContainers: // post-config outgoing UpdateContainers
+		if dir == out {
+			if len(args) != 1 {
+				p.Error("%s %s <dump error, %d args, expected (update)>", dir, event, len(args))
+				return
+			}
 
-		args = args[2:]
+			p.Info("%s %s", dir, event)
+			p.dumpDetails(dir, event, args[0])
+		} else {
+			if len(args) != 1 {
+				p.Error("%s %s <dump error, %d args, expected (err/nil)>", dir, event, len(args))
+				return
+			}
+
+			err := args[0]
+			if err == nil {
+				p.Info("%s %s", dir, event)
+				return
+			}
+
+			p.Error("%s %s FAILED: %v", dir, event, err.(error))
+		}
+
+	case Configure:
+		if dir == in {
+			if len(args) != 2 {
+				p.Error("%s %s <dump error, %d args, expected (runtime, version)>",
+					dir, event, len(args))
+				return
+			}
+
+			runtime, ok := args[0].(string)
+			if !ok {
+				p.Error("%s %s <dump error, args %T, %T, expected (runtime, version)>",
+					dir, event, args[0], args[1])
+				return
+			}
+			version, ok := args[1].(string)
+			if !ok {
+				p.Error("%s %s <dump error, args %T, %T, expected (runtime, version)>",
+					dir, event, args[0], args[1])
+				return
+			}
+
+			p.Info("%s %s, runtime %s %s", dir, event, runtime, version)
+		} else {
+			p.Info("%s %s", dir, event)
+		}
+
+	case Synchronize:
+		if dir == in {
+			if len(args) != 2 {
+				p.Error("%s %s <dump error, %d args, expected (pods, containers)",
+					dir, event, len(args))
+			}
+
+			p.Info("%s %s", dir, event)
+			p.dumpDetails(dir, event, args[0])
+			p.dumpDetails(dir, event, args[1])
+		} else {
+			if len(args) != 2 {
+				p.Error("%s %s <dump error, %d args, expected (updates, err/nil)",
+					dir, event, len(args))
+				return
+			}
+
+			err := args[1]
+			if err != nil {
+				p.Error("%s %s FAILED: %v", dir, event, err.(error))
+				return
+			}
+
+			p.Info("%s %s", dir, event)
+			p.dumpDetails(dir, event, args[0])
+			p.dumpDetails(dir, event, args[0])
+		}
+
+	default:
+		p.Info("%s %s", dir, event)
 	}
+}
+
+func (p *nriPlugin) dumpDetails(dir, event string, arg interface{}) {
+	// if debug is off for our debug source, we don't dump any details
+	if !p.DebugEnabled() {
+		return
+	}
+
+	if dir == in {
+		switch event {
+		case RunPodSandbox, CreateContainer, Synchronize:
+		default:
+			// we only dump details for the requests listed above
+			return
+		}
+	} else {
+		switch event {
+		case CreateContainer, UpdateContainer, StopContainer, Synchronize, UpdateContainers:
+		default:
+			// we only dump details for the responses listed above
+			return
+		}
+	}
+
+	switch obj := arg.(type) {
+	case *api.PodSandbox:
+		data := marshal("pod", obj)
+		p.DebugBlock(dir+"   <pod> ", "%s", data)
+
+	case *api.Container:
+		data := marshal("container", obj)
+		p.DebugBlock(dir+"   <ctr> ", "%s", data)
+
+	case *api.ContainerAdjustment:
+		data := marshal("adjustment", obj)
+		p.DebugBlock(dir+"   <adjustment> ", "%s", data)
+
+	case []*api.ContainerUpdate:
+		for idx, update := range obj {
+			data := marshal("update", update)
+			p.DebugBlock(dir+fmt.Sprintf("   <update #%d> ", idx), "%s", data)
+		}
+
+	case []*api.PodSandbox:
+		for idx, pod := range obj {
+			data := marshal("pod", pod)
+			p.DebugBlock(dir+fmt.Sprintf("   <pod #%d> ", idx), "%s", data)
+		}
+
+	case []*api.Container:
+		for idx, ctr := range obj {
+			data := marshal("container", ctr)
+			p.DebugBlock(dir+fmt.Sprintf("   <ctr #%d> ", idx), "%s", data)
+		}
+	default:
+		p.DebugBlock(dir+"   <unknown data of type> ", "%s", []byte(fmt.Sprintf("%T", arg)))
+	}
+}
+
+func marshal(kind string, obj interface{}) []byte {
+	data, err := yaml.Marshal(obj)
+	if err != nil {
+		data = []byte(fmt.Sprintf("<failed to marshal details of %s (%T): %v>", kind, obj, err))
+	}
+	return data
 }
