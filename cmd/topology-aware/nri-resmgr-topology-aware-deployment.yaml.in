@@ -97,8 +97,6 @@ spec:
               cpu: 500m
               memory: 512Mi
           volumeMounts:
-          - name: resmgrnrisock
-            mountPath: /var/run/nri.sock
           - name: resmgrdata
             mountPath: /var/lib/nri-resmgr
           - name: hostsysfs
@@ -107,11 +105,9 @@ spec:
             mountPath: /var/run/nri-resmgr
           - name: resmgrconfig
             mountPath: /etc/nri-resmgr
+          - name: nrisockets
+            mountPath: /var/run/nri
       volumes:
-      - name: resmgrnrisock
-        hostPath:
-          path: /var/run/nri.sock
-          type: Socket
       - name: resmgrdata
         hostPath:
           path: /var/lib/nri-resmgr
@@ -126,6 +122,10 @@ spec:
       - name: resmgrconfig
         configMap:
           name: nri-resmgr-config
+      - name: nrisockets
+        hostPath:
+          path: /var/run/nri
+          type: Directory
 ---
 apiVersion: v1
 data:

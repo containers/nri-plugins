@@ -58,10 +58,10 @@ The estimated complexity and priority of a feature/task is defined like this:
 
 ## NRI Core (https://github.com/containerd/nri)
 
-- [ ] change default socket path to `/var/run/nri/nri.sock` (to allow reconnect from container), C1
-- [ ] change socket permissions to `0700`, C1
-- [ ] get rid of NRI config file, C1
-- [ ] replace config file `disableConnections` with `WithDisableExternalConnections()`, C1
+- [x] change default socket path to `/var/run/nri/nri.sock` (to allow reconnect from container), C1
+- [x] change socket permissions to `0700`, C1
+- [x] get rid of NRI config file, C1
+- [x] replace config file `disableConnections` with `WithDisableExternalConnections()`, C1
 - [ ] Darwin support, C4
 - [ ] Windows support, C8
 - [ ] add warning to documentation about socket 'access security', C1
