@@ -21,17 +21,54 @@
         - sed -i 's/addresses\(.\) \[.*\]$/addresses\1 \[{{ dns_nameserver }}\]/' /etc/netplan/01-netcfg.yaml
       when: ansible_facts['distribution'] == "Ubuntu"
 
+    - name: disable swap
+      shell: "{{ item }}"
+      with_items:
+        - for swp in `systemctl --type swap | awk '/\.swap/ { print $1 }'`; do systemctl stop "$swp"; systemctl mask "$swp"; done
+        - swapoff --all
+      when: ansible_swaptotal_mb > 0
+
+    - name: download public signing key Kubernetes
+      apt_key:
+        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        state: present
+      when: ansible_facts['distribution'] == "Ubuntu"
+
+    - name: adding apt repository for Kubernetes
+      apt_repository:
+        repo: "deb https://apt.kubernetes.io/ kubernetes-xenial main"
+        state: present
+        filename: /etc/apt/sources.list.d/kubernetes.list
+      when: ansible_facts['distribution'] == "Ubuntu"
+
+    - name: adding yum repository for Kubernetes
+      yum_repository:
+        description: Kubernetes repository
+        baseurl: "https://packages.cloud.google.com/yum/repos/kubernetes-el7-$basearch"
+        gpgkey: "https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg"
+        state: present
+        name: kubernetes
+      when: ansible_facts['distribution'] == "Fedora"
+
+    - name: install common packages
+      package:
+        name:
+          - curl
+          - runc
+          - jq
+          - python3-pip
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
+
     - name: install apt packages
       apt:
         pkg:
           - apt-transport-https
           - ca-certificates
-          - curl
           - gnupg-agent
           - software-properties-common
-          - runc
-          - python3-pip
-          - jq
         state: present
         update_cache: yes
       when: ansible_facts['distribution'] == "Ubuntu"
@@ -39,10 +76,6 @@
     - name: install rpm packages
       dnf:
         pkg:
-        - curl
-        - runc
-        - python3-pip
-        - jq
         - iproute-tc
         state: present
         update_cache: yes
@@ -89,11 +122,13 @@
           Environment=HTTPS_PROXY="{{ https_proxy }}"
           Environment=NO_PROXY="{{ no_proxy }}"
 
+    # First issue daemon-reload to pick up config changes
     - name: start runtime
-      shell: "{{ item }}"
-      with_items:
-        - systemctl daemon-reload
-        - systemctl enable --now "{{ cri_runtime }}"
+      systemd:
+        name: "{{ cri_runtime }}"
+        daemon_reload: true
+        state: started
+        enabled: true
 
     - name: copy containerd nri enable script
       copy:
@@ -119,15 +154,20 @@
         create: yes
 
     - name: setup nri
-      shell: "{{ item }}"
-      with_items:
-        - mkdir -p /opt/nri/plugins
+      file:
+        path: /opt/nri/plugins
+        state: directory
 
     - name: enable nri for containerd
       shell: "{{ item }}"
       with_items:
         - /usr/local/bin/containerd-nri-enable
-        - systemctl restart "{{ cri_runtime }}"
+
+    - name: restart the containerd
+      systemd:
+        state: restarted
+        name: "{{ cri_runtime }}"
+        daemon_reload: true
       when: is_containerd
 
     - name: remove swapfile from /etc/fstab
@@ -138,55 +178,6 @@
       with_items:
         - swap
         - none
-
-    - name: disable swap
-      shell: "{{ item }}"
-      with_items:
-        - for swp in `systemctl --type swap | awk '/\.swap/ { print $1 }'`; do systemctl stop "$swp"; systemctl mask "$swp"; done
-        - swapoff --all
-      when: ansible_swaptotal_mb > 0
-
-    - name: download public signing key Kubernetes
-      apt_key:
-        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
-        state: present
-      when: ansible_facts['distribution'] == "Ubuntu"
-
-    - name: adding apt repository for Kubernetes
-      apt_repository:
-        repo: "deb https://apt.kubernetes.io/ kubernetes-xenial main"
-        state: present
-        filename: /etc/apt/sources.list.d/kubernetes.list
-      when: ansible_facts['distribution'] == "Ubuntu"
-
-    - name: adding yum repository for Kubernetes
-      yum_repository:
-        description: Kubernetes repository
-        baseurl: "https://packages.cloud.google.com/yum/repos/kubernetes-el7-$basearch"
-        gpgkey: "https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg"
-        state: present
-        name: kubernetes
-      when: ansible_facts['distribution'] == "Fedora"
-
-    - name: install apt Kubernetes binaries
-      apt:
-        pkg:
-          - kubelet
-          - kubeadm
-          - kubectl
-        state: latest
-        update_cache: yes
-      when: ansible_facts['distribution'] == "Ubuntu"
-
-    - name: install dnf Kubernetes binaries
-      dnf:
-        pkg:
-          - kubelet
-          - kubeadm
-          - kubectl
-        state: latest
-        update_cache: yes
-      when: ansible_facts['distribution'] == "Fedora"
 
     - name: pre-flight requirements for k8s
       shell: "{{ item }}"
