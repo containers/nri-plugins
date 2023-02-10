@@ -217,6 +217,20 @@ func (m *resmgr) setupCache() error {
 		return resmgrError("failed to create cache: %v", err)
 	}
 
+	// If we ended up loading an existing cache and that cache has
+	// an empty configuration saved, remove that configuration now.
+	// Policies tend to expect *some* CPU reservation which is not
+	// present if the configuration is fully empty. Not having any
+	// configuration (in the cache or from the agent) should cause
+	// the fallback configuration to be taken into use (until some
+	// other configuration is provided by the agent). The fallback
+	// configuration is fully controlled by the user and it should
+	// have a valid configuration for the policy being started.
+
+	if cfg := m.cache.GetConfig(); cfg != nil && len(cfg) == 0 {
+		m.cache.ResetConfig()
+	}
+
 	return nil
 
 }
