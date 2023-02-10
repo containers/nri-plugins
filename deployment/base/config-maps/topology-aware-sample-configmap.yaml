@@ -19,49 +19,10 @@ metadata:
 data:
   policy: |+
     Active: topology-aware
-    AvailableResources:
-      cpu: cpuset:0-63
     ReservedResources:
-      cpu: cpuset:0-1
+      cpu: 750m
     topology-aware:
       PinCPU: true
       PinMemory: true
       PreferIsolatedCPUs: true
       PreferSharedCPUs: false
-  rdt: |+
-    # Common options
-    options:
-      # One of Full, Discovery or Disabled
-      mode: Full
-      # Set to true to disable creation of monitoring groups
-      monitoringDisabled: false
-      l3:
-        # Make this false if L3 CAT must be available
-        optional: true
-      mb:
-        # Make this false if MBA must be available
-        optional: true
-
-    # Configuration of classes
-    partitions:
-      exclusive:
-        # Allocate 60% of all L3 cache to the "exclusive" partition
-        l3Allocation: "60%"
-        mbAllocation: ["100%"]
-        classes:
-          Guaranteed:
-            # Allocate all of the partitions cache lines to "Guaranteed"
-            l3Allocation: "100%"
-      shared:
-        # Allocate 40% L3 cache IDs to the "shared" partition
-        # These will NOT overlap with the cache lines allocated for "exclusive" partition
-        l3Allocation: "40%"
-        mbAllocation: ["50%"]
-        classes:
-          Burstable:
-            # Allow "Burstable" to use all cache lines of the "shared" partition
-            l3Allocation: "100%"
-          BestEffort:
-            # Allow "Besteffort" to use only half of the L3 cache # lines of the "shared" partition.
-            # These will overlap with those used by "Burstable"
-            l3Allocation: "50%"
