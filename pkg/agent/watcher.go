@@ -232,8 +232,8 @@ func (c *cachedConfig) getConfig() (config.RawConfig, string) {
 	}
 
 	if cfg == nil {
-		kind = "empty " + kind
-		cfg = config.RawConfig{}
+		kind = "nil " + kind
+		cfg = nil
 	}
 
 	return cfg, kind
