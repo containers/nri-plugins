@@ -41,7 +41,6 @@ type options struct {
 	ResetConfig         bool
 	MetricsTimer        time.Duration
 	RebalanceTimer      time.Duration
-	DisableUI           bool
 	DisableAgent        bool
 	NriPluginName       string
 	NriPluginIdx        string
@@ -77,8 +76,6 @@ func init() {
 	flag.StringVar(&opt.StateDir, "state-dir", "/var/lib/nri-resmgr",
 		"Permanent storage directory path for the resource manager to store its state in.")
 
-	flag.BoolVar(&opt.DisableUI, "disable-ui", false,
-		"Disable serving container placement visualization UIs.")
 	flag.BoolVar(&opt.DisableAgent, "disable-agent", false,
 		"Disable K8s cluster agent.")
 }

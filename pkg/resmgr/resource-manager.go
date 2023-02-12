@@ -39,7 +39,6 @@ import (
 	"github.com/intel/nri-resmgr/pkg/resmgr/metrics"
 	"github.com/intel/nri-resmgr/pkg/sysfs"
 	"github.com/intel/nri-resmgr/pkg/topology"
-	"github.com/intel/nri-resmgr/pkg/visualizer"
 
 	policyCollector "github.com/intel/nri-resmgr/pkg/policycollector"
 )
@@ -285,14 +284,6 @@ func (m *resmgr) setupIntrospection() error {
 		return resmgrError("failed to set up introspection service: %v", err)
 	}
 	m.introspect = i
-
-	if !opt.DisableUI {
-		if err := visualizer.Setup(mux); err != nil {
-			m.Error("failed to set up UI for visualization: %v", err)
-		}
-	} else {
-		m.Warn("built-in visualization UIs are disabled")
-	}
 
 	return nil
 }

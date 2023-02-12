@@ -35,13 +35,6 @@ IMAGE_BUILD_CMD ?= docker build
 IMAGE_BUILD_EXTRA_OPTS ?=
 BUILDER_IMAGE ?= golang:1.19-bullseye
 
-# List of visualizer collateral files to go generate.
-UI_ASSETS := $(shell for i in pkg/visualizer/*; do \
-        if [ -d "$$i" -a -e "$$i/assets_generate.go" ]; then \
-            echo $$i/assets_gendata.go; \
-        fi; \
-    done)
-
 GO_CMD     := go
 GO_BUILD   := $(GO_CMD) build
 GO_GEN     := $(GO_CMD) generate -x
@@ -159,7 +152,7 @@ $(BIN_PATH)/%: .static.%.$(STATIC)
 # plugin build dependencies
 #
 
-$(BIN_PATH)/nri-resmgr-topology-aware: $(UI_ASSETS) \
+$(BIN_PATH)/nri-resmgr-topology-aware: \
     $(shell for dir in \
                 $(shell go list -f '{{ join .Deps  "\n"}}' ./... | \
                           egrep '(nri-resmgr/pkg/)|(nri-resmgr/cmd/topology-aware/)' | \
@@ -167,7 +160,7 @@ $(BIN_PATH)/nri-resmgr-topology-aware: $(UI_ASSETS) \
                 find $$dir -name \*.go; \
             done | sort | uniq)
 
-$(BIN_PATH)/nri-resmgr-balloons: $(UI_ASSETS) \
+$(BIN_PATH)/nri-resmgr-balloons: \
     $(shell for dir in \
                   $(shell go list -f '{{ join .Deps  "\n"}}' ./... | \
                           egrep '(nri-resmgr/pkg/)|(nri-resmgr/cmd/balloons/)' | \
@@ -275,22 +268,6 @@ image-%:
 	    $(DOCKER) build . -f "cmd/$$bin/Dockerfile" \
 	    --build-arg GO_VERSION=$${go_version} \
 	    -t $(IMAGE_REPO)$$tag:$(IMAGE_VERSION)
-
-#
-# rules to run go generators
-#
-clean-ui-assets:
-	$(Q)echo "Cleaning up generated UI assets..."; \
-	for i in $(UI_ASSETS); do \
-	    echo "  - $$i"; \
-	    rm -f $$i; \
-	done
-
-%_gendata.go::
-	$(Q)echo "Generating $@..."; \
-	cd $(dir $@) && \
-	    $(GO_GEN) || exit 1 && \
-	cd - > /dev/null
 
 pkg/sysfs/sst_types%.go: pkg/sysfs/_sst_types%.go pkg/sysfs/gen_sst_types.sh
 	$(Q)cd $(@D) && \

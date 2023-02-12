@@ -15,7 +15,6 @@ require (
 	github.com/prometheus/client_golang v1.14.0
 	github.com/prometheus/client_model v0.3.0
 	github.com/prometheus/common v0.37.0
-	github.com/shurcooL/vfsgen v0.0.0-20200824052919-0d455de96546
 	github.com/stretchr/testify v1.8.1
 	go.opencensus.io v0.24.0
 	golang.org/x/sys v0.2.0
@@ -93,7 +92,6 @@ require (
 	github.com/prometheus/procfs v0.8.0 // indirect
 	github.com/prometheus/statsd_exporter v0.22.8 // indirect
 	github.com/seccomp/libseccomp-golang v0.9.2-0.20220502022130-f33da4d89646 // indirect
-	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/spf13/cobra v1.4.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
