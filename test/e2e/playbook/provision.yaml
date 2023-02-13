@@ -237,3 +237,6 @@
     - name: copy join command to local file
       become: false
       local_action: copy content="{{ join_command.stdout_lines[0] }}" dest="{{ outdir }}/join-command"
+
+    - name: enable kubelet to run always
+      command: systemctl enable --now kubelet
