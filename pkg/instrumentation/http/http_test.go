@@ -81,7 +81,7 @@ type testHandler struct {
 }
 
 func (h *testHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, h.response)
+	fmt.Fprintf(w, "%s", h.response)
 }
 
 func TestPatternsp(t *testing.T) {
