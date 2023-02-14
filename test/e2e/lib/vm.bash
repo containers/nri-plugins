@@ -300,3 +300,71 @@ vm-wait-pod-regexp() {
 
     return $ret
 }
+
+vm-put-file() { # script API
+    # Usage: vm-put-file [--cleanup] [--append] SRC-HOST-FILE DST-VM-FILE
+    #
+    # Copy SRC-HOST-FILE to DST-VM-FILE on the VM, removing
+    # SRC-HOST-FILE if called with the --cleanup flag, and
+    # appending instead of copying if the --append flag is
+    # specified.
+    #
+    # Example:
+    #   src=$(mktemp) && \
+    #       echo 'Ahoy, Matey...' > $src && \
+    #       vm-put-file --cleanup $src /etc/motd
+    local cleanup append invalid
+    while [ "${1#-}" != "$1" ] && [ -n "$1" ]; do
+        case "$1" in
+            --cleanup)
+                cleanup=1
+                shift
+                ;;
+            --append)
+                append=1
+                shift
+                ;;
+            *)
+                invalid="${invalid}${invalid:+,}\"$1\""
+                shift
+                ;;
+        esac
+    done
+    if [ -n "$cleanup" ] && [ -n "$1" ]; then
+        # shellcheck disable=SC2064
+        trap "rm -f \"$1\"" RETURN EXIT
+    fi
+    if [ -n "$invalid" ]; then
+        error "invalid options: $invalid"
+        return 1
+    fi
+    [ "$(dirname "$2")" == "." ] || vm-command-q "[ -d \"$(dirname "$2")\" ]" || vm-command "mkdir -p \"$(dirname "$2")\"" ||
+        command-error "cannot create vm-put-file destination directory to VM"
+    host-command "$SCP \"$1\" ${VM_HOSTNAME}:\"vm-put-file.${1##*/}\"" ||
+        command-error "failed to copy file to VM"
+    if [ -z "$append" ]; then
+        vm-command "mv \"vm-put-file.${1##*/}\" \"$2\"" ||
+            command-error "failed to rename file"
+    else
+        vm-command "touch \"$2\" && cat \"vm-put-file.${1##*/}\" >> \"$2\" && rm -f \"vm-put-file.${1##*/}\"" ||
+            command-error "failed to append file"
+    fi
+}
+
+vm-nri-resmgr-pod-name() {
+    echo "$(namespace=kube-system wait_t=5 vm-wait-pod-regexp nri-resmgr-)"
+}
+
+port_forward_log_file=/tmp/nri-resmgr-port-forward
+
+vm-port-forward-enable() {
+    local pod_name=$(vm-nri-resmgr-pod-name)
+
+    vm-port-forward-disable
+
+    vm-command "kubectl port-forward $pod_name 8891:8891 -n kube-system > $port_forward_log_file 2>&1 &"
+}
+
+vm-port-forward-disable() {
+    vm-command "fuser --kill $port_forward_log_file 2>/dev/null"
+}
