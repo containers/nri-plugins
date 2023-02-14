@@ -41,7 +41,6 @@ type options struct {
 
 // Our runtime configuration.
 var opt = defaultOptions().(*options)
-var aliasOpt = defaultOptions().(*options)
 
 // fakeHints is our flag.Value for per-pod or per-container faked topology.Hints.
 type fakehints map[string]topology.Hints
@@ -73,5 +72,4 @@ func defaultOptions() interface{} {
 // Register us for configuration handling.
 func init() {
 	config.Register(PolicyPath, PolicyDescription, opt, defaultOptions)
-	config.Register(AliasPath, PolicyDescription, aliasOpt, defaultOptions)
 }

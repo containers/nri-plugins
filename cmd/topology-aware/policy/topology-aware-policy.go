@@ -41,10 +41,6 @@ const (
 	PolicyDescription = "A policy for prototyping memory tiering."
 	// PolicyPath is the path of this policy in the configuration hierarchy.
 	PolicyPath = "policy." + PolicyName
-	// AliasName is the 'memtier' alias name for this policy.
-	AliasName = "memtier"
-	// AliasPath is the 'memtier' alias configuration path for this policy.
-	AliasPath = "policy." + AliasName
 
 	// ColdStartDone is the event generated for the end of a container cold start period.
 	ColdStartDone = "cold-start-done"
@@ -73,7 +69,6 @@ type policy struct {
 	allocations  allocations               // container pool assignments
 	cpuAllocator cpuallocator.CPUAllocator // CPU allocator used by the policy
 	coldstartOff bool                      // coldstart forced off (have movable PMEM zones)
-	isAlias      bool                      // whether started by referencing AliasName
 }
 
 // Make sure policy implements the policy.Backend interface.
@@ -84,26 +79,11 @@ var coldStartOff bool
 
 // CreateTopologyAwarePolicy creates a new policy instance.
 func CreateTopologyAwarePolicy(opts *policyapi.BackendOptions) policyapi.Backend {
-	return createPolicy(opts, false)
-}
-
-// CreateMemtierPolicy creates a new policy instance, aliased as 'memtier'.
-func CreateMemtierPolicy(opts *policyapi.BackendOptions) policyapi.Backend {
-	return createPolicy(opts, true)
-}
-
-// createPolicy creates a new policy instance.
-func createPolicy(opts *policyapi.BackendOptions, isAlias bool) policyapi.Backend {
 	p := &policy{
 		cache:        opts.Cache,
 		sys:          opts.System,
 		options:      opts,
 		cpuAllocator: cpuallocator.NewCPUAllocator(opts.System),
-		isAlias:      isAlias,
-	}
-
-	if isAlias {
-		*opt = *aliasOpt
 	}
 
 	if err := p.initialize(); err != nil {
@@ -464,10 +444,6 @@ func (p *policy) reallocateResources(containers []cache.Container, pools map[str
 
 func (p *policy) configNotify(event config.Event, source config.Source) error {
 	policyName := PolicyName
-	if p.isAlias {
-		policyName = AliasName
-		*opt = *aliasOpt
-	}
 	log.Info("%s configuration %s:", policyName, event)
 	log.Info("  - pin containers to CPUs: %v", opt.PinCPU)
 	log.Info("  - pin containers to memory: %v", opt.PinMemory)
