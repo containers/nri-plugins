@@ -81,6 +81,26 @@ vm-nri-plugin-deploy "$OUTPUT_DIR" "$ESCAPED_VM" "$POLICY"
 SUMMARY_FILE="$TEST_OUTPUT_DIR/summary.txt"
 echo -n "" > "$SUMMARY_FILE" || error "cannot write summary to \"$SUMMARY_FILE\""
 
+# The breakpoint function can be used in debugging the test script. You can call
+# this function which causes the script to enter interactive mode where you can
+# give additional commands.
+breakpoint() { # script API
+    # Usage: breakpoint
+    #
+    # Enter the interactive/debug mode: read next script commands from
+    # the standard input until "exit".
+    echo "Entering the interactive mode until \"exit\"."
+    INTERACTIVE_MODE=$(( INTERACTIVE_MODE + 1 ))
+    # shellcheck disable=SC2162
+    while read -e -p "run.sh> " -a commands; do
+        if [ "${commands[0]}" == "exit" ]; then
+            break
+        fi
+        eval "${commands[@]}"
+    done
+    INTERACTIVE_MODE=$(( INTERACTIVE_MODE - 1 ))
+}
+
 test-user-code() {
     vm-command-q "kubectl get pods 2>&1 | grep -q NAME" && vm-command "kubectl delete pods --all --now"
 
