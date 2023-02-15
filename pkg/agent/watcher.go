@@ -106,8 +106,12 @@ func (w *watcher) GetConfig() config.RawConfig {
 // sendConfig sends the current configuration.
 func (w *watcher) sendConfig() {
 	cfg, kind := w.currentConfig.getConfig()
-	w.Info("pushing %s configuration to client", kind)
-	w.configChan <- cfg
+	if cfg != nil {
+		w.Info("pushing %s configuration to client", kind)
+		w.configChan <- cfg
+	} else {
+		w.Info("discarding %s configuration", kind)
+	}
 }
 
 func (w *watcher) watch() error {
