@@ -81,6 +81,12 @@
         update_cache: yes
       when: ansible_facts['distribution'] == "Fedora"
 
+    - name: remove the firewalld package
+      ansible.builtin.package:
+        name: firewalld
+        state: absent
+      when: ansible_facts['distribution'] == "Fedora"
+
     - name: install python pip based apps
       pip:
         name:
