@@ -24,7 +24,7 @@ verify-metrics-has-no-line 'balloon_type="flex"'
 
 # pod0 in full-core[0]
 CPUREQ="100m" MEMREQ="100M" CPULIM="100m" MEMLIM="100M"
-POD_ANNOTATION="balloon.balloons.cri-resource-manager.intel.com: full-core" CONTCOUNT=2 create balloons-busybox
+POD_ANNOTATION="balloon.balloons.nri-resmgr.intel.com: full-core" CONTCOUNT=2 create balloons-busybox
 report allowed
 verify-metrics-has-line 'balloon="default\[0\]"'
 verify-metrics-has-line 'balloon="reserved\[0\]"'
@@ -32,14 +32,14 @@ verify-metrics-has-line 'balloons{balloon="full-core\[0\]",balloon_type="full-co
 
 # pod1 in fast-dualcore[0]
 CPUREQ="200m" MEMREQ="" CPULIM="200m" MEMLIM=""
-POD_ANNOTATION="balloon.balloons.cri-resource-manager.intel.com: fast-dualcore" CONTCOUNT=1 create balloons-busybox
+POD_ANNOTATION="balloon.balloons.nri-resmgr.intel.com: fast-dualcore" CONTCOUNT=1 create balloons-busybox
 report allowed
 verify-metrics-has-line 'balloon="fast-dualcore\[0\]".*tot_req_millicpu="(199|200)".* 4'
 verify-metrics-has-no-line 'balloon="fast-dualcore\[1\]"'
 
 # pod2 in fast-dualcore[1] (FillChain prefers new-balloon)
 CPUREQ="500m" MEMREQ="" CPULIM="500m" MEMLIM=""
-POD_ANNOTATION="balloon.balloons.cri-resource-manager.intel.com: fast-dualcore" CONTCOUNT=1 create balloons-busybox
+POD_ANNOTATION="balloon.balloons.nri-resmgr.intel.com: fast-dualcore" CONTCOUNT=1 create balloons-busybox
 report allowed
 verify-metrics-has-line 'balloon="fast-dualcore\[0\]"'
 verify-metrics-has-line 'balloon="fast-dualcore\[1\]".*tot_req_millicpu="500".* 4'
@@ -47,13 +47,13 @@ verify-metrics-has-no-line 'balloon_type="flex"'
 
 # pod3 in flex[0]
 CPUREQ="3500m" MEMREQ="" CPULIM="3500m" MEMLIM=""
-POD_ANNOTATION="balloon.balloons.cri-resource-manager.intel.com: flex" CONTCOUNT=1 create balloons-busybox
+POD_ANNOTATION="balloon.balloons.nri-resmgr.intel.com: flex" CONTCOUNT=1 create balloons-busybox
 report allowed
 verify-metrics-has-line 'balloon_type="flex".* 4'
 
 # pod4 in flex[0], balloon inflated to fit pod3 + pod4
 CPUREQ="1200m" MEMREQ="" CPULIM="1200m" MEMLIM=""
-POD_ANNOTATION="balloon.balloons.cri-resource-manager.intel.com: flex" CONTCOUNT=1 create balloons-busybox
+POD_ANNOTATION="balloon.balloons.nri-resmgr.intel.com: flex" CONTCOUNT=1 create balloons-busybox
 report allowed
 verify-metrics-has-line 'balloon_type="flex"'
 verify-metrics-has-line 'balloon_type="flex".* 5'
@@ -77,7 +77,7 @@ verify-metrics-has-no-line 'balloon="fast-dualcore\[0\]"'
 # re-create balloon instance fast-dualcore[0] that was just popped.
 # pod5 in fast-dualcore[0], pod2 keeps running in fast-dualcore[1]
 CPUREQ="4000m" MEMREQ="100M" CPULIM="4000m" MEMLIM="100M"
-POD_ANNOTATION="balloon.balloons.cri-resource-manager.intel.com: fast-dualcore" CONTCOUNT=1 create balloons-busybox
+POD_ANNOTATION="balloon.balloons.nri-resmgr.intel.com: fast-dualcore" CONTCOUNT=1 create balloons-busybox
 report allowed
 verify-metrics-has-line 'balloon="fast-dualcore\[1\]".*pod2c0.* 4'
 verify-metrics-has-line 'balloon="fast-dualcore\[0\]".*pod5c0.* 4'

@@ -63,8 +63,8 @@ verify `# every container is placed on a single node (no socket, no root)` \
 # - opt-out from shared CPUs (=> opt-in to exclusive CPUs)
 # - opt-in to isolated CPUs (this should not matter, test opt-out with pod4).
 # There is only one node where the container fits: the same node as pod1c0.
-ANNOTATIONS=('prefer-shared-cpus.cri-resource-manager.intel.com/pod: "false"'
-             'prefer-isolated-cpus.cri-resource-manager.intel.com/pod: "true"')
+ANNOTATIONS=('prefer-shared-cpus.nri-resmgr.intel.com/pod: "false"'
+             'prefer-isolated-cpus.nri-resmgr.intel.com/pod: "true"')
 CONTCOUNT=1 CPU=1200m create guaranteed-annotated
 report allowed
 verify `# every container is placed on a single node (no socket, no root)` \
@@ -82,8 +82,8 @@ verify `# every container is placed on a single node (no socket, no root)` \
 # - opt-out from shared CPUs (=> opt-in to exclusive CPUs)
 # - opt-out from isolated CPUs (this does not affect getting exclusive CPUs)
 vm-command "kubectl delete pods pod3 --now"
-ANNOTATIONS=('prefer-shared-cpus.cri-resource-manager.intel.com/pod: "false"'
-             'prefer-isolated-cpus.cri-resource-manager.intel.com/pod: "false"')
+ANNOTATIONS=('prefer-shared-cpus.nri-resmgr.intel.com/pod: "false"'
+             'prefer-isolated-cpus.nri-resmgr.intel.com/pod: "false"')
 CONTCOUNT=1 CPU=1200m create guaranteed-annotated
 report allowed
 verify `# every container is placed on a single node (no socket, no root)` \
@@ -105,7 +105,7 @@ verify `# pod0c0 or pod0c1 shared a node with pod1c1 and had only 3 CPUs` \
        "len(cpus['pod0c0']) == 3" \
        "len(cpus['pod0c1']) == 3"
 
-ANNOTATIONS=('prefer-shared-cpus.cri-resource-manager.intel.com/pod: "true"')
+ANNOTATIONS=('prefer-shared-cpus.nri-resmgr.intel.com/pod: "true"')
 CONTCOUNT=2 CPU=750m create guaranteed-annotated
 report allowed
 verify `# every container is placed on a single node (no socket, no root)` \

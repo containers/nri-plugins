@@ -12,14 +12,14 @@
 #    - version: git-version
 #    - buildid: git-buildid
 #  3. directory name:
-#    - version: cri-resource-manager-(.*):
+#    - version: nri-resmgr-(.*):
 #    - buildid: unknown
 #  4. date:
 #    - version: 0.0.0-$(date +%Y%m%d%H%M)
 #    - buildid: unknown
 #
 
-PARENT_DIRNAME=cri-resource-manager
+PARENT_DIRNAME=nri-resmgr
 VERSION_FILE=version
 BUILDID_FILE=buildid
 VERSION=""

@@ -42,9 +42,9 @@ cleanup-foobar-namespace() {
 cleanup-foobar-namespace
 
 CONTCOUNT=1 namespace=foobar create besteffort
-ANN0='prefer-reserved-cpus.cri-resource-manager.intel.com/pod: "false"'
+ANN0='prefer-reserved-cpus.nri-resmgr.intel.com/pod: "false"'
 CONTCOUNT=1 namespace=foobar create besteffort
-ANN0='prefer-reserved-cpus.cri-resource-manager.intel.com/pod: "true"'
+ANN0='prefer-reserved-cpus.nri-resmgr.intel.com/pod: "true"'
 CONTCOUNT=1 namespace=foobar create besteffort
 
 report allowed

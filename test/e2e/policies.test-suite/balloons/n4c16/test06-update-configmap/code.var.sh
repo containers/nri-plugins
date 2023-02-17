@@ -35,7 +35,7 @@ vm-port-forward-enable
 
 # pod0 in btype0, annotation
 CPUREQ=1 MEMREQ="100M" CPULIM=1 MEMLIM="100M"
-POD_ANNOTATION="balloon.balloons.cri-resource-manager.intel.com: btype0" create balloons-busybox
+POD_ANNOTATION="balloon.balloons.nri-resmgr.intel.com: btype0" create balloons-busybox
 # pod1 in btype1, namespace
 CPUREQ=1 MEMREQ="100M" CPULIM=1 MEMLIM="100M"
 namespace="btype1ns0" create balloons-busybox

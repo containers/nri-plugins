@@ -22,8 +22,8 @@ import (
 )
 
 const (
-	// ResmgrKeyNamespace is a CRI Resource Manager namespace
-	ResmgrKeyNamespace = "cri-resource-manager.intel.com"
+	// ResmgrKeyNamespace is a NRI Resource Manager namespace
+	ResmgrKeyNamespace = "nri-resmgr.intel.com"
 
 	// NamespaceSystem is the kubernetes system namespace.
 	NamespaceSystem = core.NamespaceSystem
