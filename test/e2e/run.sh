@@ -236,13 +236,11 @@ launch() { # script API
 	    host-command "$SCP \"$nri_resmgr_cfg\" $VM_HOSTNAME:/etc/nri-resmgr/nri-resmgr.cfg" || {
                 command-error "copying \"$nri_resmgr_cfg\" to VM failed"
 	    }
-        host-command "$SCP \"$node_resource_topology_schema\" $VM_HOSTNAME:" ||
-            command-error "copying \"$node_resource_topology_schema\" to VM failed"
-        vm-command "kubectl delete -f $(basename "$node_resource_topology_schema"); kubectl create -f $(basename "$node_resource_topology_schema")"
+            host-command "$SCP \"$node_resource_topology_schema\" $VM_HOSTNAME:" ||
+		command-error "copying \"$node_resource_topology_schema\" to VM failed"
+            vm-command "kubectl delete -f $(basename "$node_resource_topology_schema"); kubectl create -f $(basename "$node_resource_topology_schema")"
 	    vm-command "kubectl apply -f $nri_resmgr_deployment_file" ||
 		error "Cannot apply deployment"
-	    #vm-command "kubectl wait --for=condition=Available -n kube-system daemonset/nri-resmgr" ||
-            #    error "nri-resmgr deployment did not become Available"
 
 	    # Direct logs to output file
 	    POD="$(namespace=kube-system wait_t=120 vm-wait-pod-regexp nri-resmgr-)"
@@ -258,10 +256,13 @@ launch() { # script API
 		    fi
 		fi
 
-		# Check if we have CrashLoopBackOff or Error for the pod
+		# Wait a while so that the status check can get somewhat meaningful status
+		vm-command-q "kubectl wait --timeout=5s --for=condition=Available -n kube-system daemonset/nri-resmgr"
+
+		# Check if we have anything else than Running status for the pod
 		status="$(vm-command-q "kubectl get pod "$POD" -n kube-system | tail -1 | awk '{ print \$3 }'")"
-		if [ "$status" == "CrashLoopBackOff" ] || [ "$status" == "Error" ]; then
-		    # Check if nri-resmgr failed, ignore the agent errors for now
+		if [ "$status" != "Running" ]; then
+		    # Check if nri-resmgr failed
 		    if vm-command "kubectl logs $POD -n kube-system | tail -1 | grep -q ^F" 2>&1; then
 			error "Cannot start nri-resmgr"
 		    fi
