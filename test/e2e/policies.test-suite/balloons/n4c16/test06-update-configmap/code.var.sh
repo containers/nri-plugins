@@ -11,7 +11,8 @@ cleanup() {
         kubectl delete pods -n $testns --all --now; \
         kubectl delete pods -n btype1ns0 --all --now; \
         kubectl delete namespace $testns || :; \
-        kubectl delete namespace btype1ns0 || :"
+        kubectl delete namespace btype1ns0 || :; \
+	kubectl -n kube-system delete configmap nri-resmgr-config.default || :"
     vm-port-forward-disable
     terminate nri-resmgr
 }
