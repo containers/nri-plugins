@@ -1,8 +1,5 @@
 # This test verifies prometheus metrics from the balloons policy.
 
-terminate nri-resmgr
-launch nri-resmgr
-
 cleanup() {
     vm-command "kubectl delete pods --all --now"
     vm-port-forward-disable
