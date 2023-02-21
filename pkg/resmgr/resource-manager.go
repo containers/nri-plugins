@@ -426,6 +426,11 @@ func (m *resmgr) SetConfig(conf config.RawConfig) error {
 		return resmgrError("config from agent is empty, ignoring...")
 	}
 
+	if opt.ForceConfig != "" {
+		m.Info("ignoring config from agent because using forced configuration %s", opt.ForceConfig)
+		return fmt.Errorf("force config is enabled, ignoring agent config")
+	}
+
 	m.Info("applying new configuration from agent...")
 
 	return m.setConfig(conf)
