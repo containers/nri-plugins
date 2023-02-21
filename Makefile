@@ -91,6 +91,17 @@ LDFLAGS    = \
              -X=github.com/containers/nri-plugins/pkg/version.Build=$(BUILD_BUILDID) \
              -B 0x$(RANDOM_ID)"
 
+# Documentation-related variables
+SPHINXOPTS    ?= -W
+SPHINXBUILD   = sphinx-build
+SITE_BUILDDIR ?= build/docs
+
+# Docker base command for working with html documentation.
+DOCKER_SITE_BUILDER_IMAGE := nri-plugins-site-builder
+DOCKER_SITE_CMD := $(DOCKER) run --rm -v "`pwd`:/docs" --user=`id -u`:`id -g` \
+	-p 8081:8081 \
+	-e SITE_BUILDDIR=$(SITE_BUILDDIR) -e SPHINXOPTS=$(SPHINXOPTS)
+
 #
 # top-level targets
 #
@@ -329,3 +340,33 @@ report-licenses:
 	        --ignore github.com/containers/nri-plugins \
 	        > $(LICENSE_PATH)/licenses.csv && \
 	echo See $(LICENSE_PATH)/licenses.csv for license information
+
+#
+# Rules for documentation
+#
+
+html: clean-html
+	$(Q)BUILD_VERSION=$(BUILD_VERSION) \
+		$(SPHINXBUILD) -c docs docs "$(SITE_BUILDDIR)" $(SPHINXOPTS)
+	cp docs/index.html "$(SITE_BUILDDIR)"
+	for d in $$(find docs -name figures -type d); do \
+	    mkdir -p $(SITE_BUILDDIR)/$$d && cp $$d/* $(SITE_BUILDDIR)/$$d; \
+	done
+
+serve-html: html
+	$(Q)cd $(SITE_BUILDDIR) && python3 -m http.server 8081
+
+clean-html:
+	rm -rf $(SITE_BUILDDIR)
+
+site-build: .$(DOCKER_SITE_BUILDER_IMAGE).image.stamp
+	$(Q)$(DOCKER_SITE_CMD) $(DOCKER_SITE_BUILDER_IMAGE) make html
+
+site-serve: .$(DOCKER_SITE_BUILDER_IMAGE).image.stamp
+	$(Q)$(DOCKER_SITE_CMD) -it $(DOCKER_SITE_BUILDER_IMAGE) make serve-html
+
+.$(DOCKER_SITE_BUILDER_IMAGE).image.stamp: docs/Dockerfile docs/requirements.txt
+	docker build -t $(DOCKER_SITE_BUILDER_IMAGE) docs
+	touch $@
+
+docs: site-build
