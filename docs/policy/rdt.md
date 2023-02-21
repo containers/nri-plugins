@@ -151,7 +151,7 @@ and data paths. If the hardware details are known, raw bitmasks or bit numbers
 configure cache allocations exactly as required. For detailed description of the RDT configuration format with examples see the
 {{ '[goresctrl library documentation](https://github.com/intel/goresctrl/blob/{}/doc/rdt.md)'.format(goresctrl_version) }}
 
-See `rdt` in the [example ConfigMap spec](/sample-configs/cri-resmgr-configmap.example.yaml)
+See `rdt` in the [example ConfigMap spec](/sample-configs/nri-resmgr-configmap.example.yaml)
 for another example configuration.
 
 ### Dynamic Configuration
