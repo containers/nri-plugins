@@ -29,6 +29,7 @@ import (
 	"github.com/intel/nri-resmgr/pkg/cache"
 	pkgcfg "github.com/intel/nri-resmgr/pkg/config"
 	"github.com/intel/nri-resmgr/pkg/control"
+	"github.com/intel/nri-resmgr/pkg/healthz"
 	"github.com/intel/nri-resmgr/pkg/instrumentation"
 	"github.com/intel/nri-resmgr/pkg/introspect"
 	"github.com/intel/nri-resmgr/pkg/log"
@@ -116,6 +117,8 @@ func NewResourceManager() (ResourceManager, error) {
 	if err := m.setupIntrospection(); err != nil {
 		return nil, err
 	}
+
+	m.setupHealthCheck()
 
 	if err := m.setupAgent(); err != nil {
 		return nil, err
@@ -286,6 +289,12 @@ func (m *resmgr) setupIntrospection() error {
 	m.introspect = i
 
 	return nil
+}
+
+// setupHealthCheck prepares the resource manager for serving health-check requests.
+func (m *resmgr) setupHealthCheck() {
+	mux := instrumentation.GetHTTPMux()
+	healthz.Setup(mux)
 }
 
 // startIntrospection starts serving the external introspection requests.

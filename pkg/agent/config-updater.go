@@ -19,6 +19,7 @@ package agent
 import (
 	"time"
 
+	"github.com/intel/nri-resmgr/pkg/healthz"
 	"github.com/intel/nri-resmgr/pkg/log"
 	"github.com/intel/nri-resmgr/pkg/resmgr/config"
 )
@@ -58,6 +59,8 @@ func newConfigUpdater(setConfig SetConfigFn) (configUpdater, error) {
 }
 
 func (u *updater) Start() error {
+	u.Info("Registering health-checker")
+	healthz.RegisterHealthChecker("config", u.healthCheck)
 	u.Info("Starting config-updater")
 	go func() {
 		var pendingConfig config.RawConfig
@@ -100,4 +103,13 @@ func (u *updater) SetConfig(cfg config.RawConfig) error {
 	}
 
 	return nil
+}
+
+// If the last config update failed we report unhealthy,
+// otherwise healthy.
+func (u *updater) healthCheck() (healthz.Status, error) {
+	if u.configErr != nil {
+		return healthz.Degraded, u.configErr
+	}
+	return healthz.Healthy, nil
 }
