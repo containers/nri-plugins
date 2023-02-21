@@ -347,7 +347,7 @@ report-licenses:
 
 html: clean-html
 	$(Q)BUILD_VERSION=$(BUILD_VERSION) \
-		$(SPHINXBUILD) -c docs docs "$(SITE_BUILDDIR)" $(SPHINXOPTS)
+		$(SPHINXBUILD) -c docs . "$(SITE_BUILDDIR)" $(SPHINXOPTS)
 	cp docs/index.html "$(SITE_BUILDDIR)"
 	for d in $$(find docs -name figures -type d); do \
 	    mkdir -p $(SITE_BUILDDIR)/$$d && cp $$d/* $(SITE_BUILDDIR)/$$d; \

@@ -1,15 +1,8 @@
 # Node Agent
 
 CRI Resource Manager can be configured dynamically using the CRI Resource
-Manager Node Agent and Kubernetes\* ConfigMaps. The agent can be build using
-the [provided Dockerfile](/cmd/cri-resmgr-agent/Dockerfile). It can be
-deployed as a `DaemonSet` in the cluster using the
-[provided deployment file](/cmd/cri-resmgr-agent/agent-deployment.yaml).
-
-To run the agent manually or as a `systemd` service, set the environment
-variable `NODE_NAME` to the name of the cluster node the agent is running
-on. If necessary pass it the credentials for accessing the cluster using
- the `-kubeconfig <file>` command line option.
+Manager Node Agent and Kubernetes\* ConfigMaps. The agent is built in the
+NRI resource plugin.
 
 The agent monitors two ConfigMaps for the node, a primary node-specific one
 and a secondary group-specific or default one, depending on whether the node
@@ -30,7 +23,7 @@ the configuration group. You can remove a node from its group by deleting
 the node group label.
 
 There is a
-[sample ConfigMap spec](/sample-configs/cri-resmgr-configmap.example.yaml)
+[sample ConfigMap spec](/sample-configs/nri-resmgr-configmap.example.yaml)
 that contains a node-specific, a group-specific, and a default ConfigMap
 example. See [any available policy-specific documentation](policy/index.rst)
 for more information on the policy configurations.

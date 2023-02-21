@@ -13,7 +13,6 @@ Welcome to CRI Resource Manager's documentation!
    setup.md
    policy/index.rst
    node-agent.md
-   webhook.md
 
    developers-guide/index.rst
 

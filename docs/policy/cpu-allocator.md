@@ -2,8 +2,8 @@
 
 CRI Resource Manager has a separate CPU allocator component that helps policies
 make educated allocation of CPU cores for workloads.  Currently all policies
-except for [static-pools](static-pools.md) utilize the built-in CPU allocator.
-See policy specific documentation for more details.
+utilize the built-in CPU allocator. See policy specific documentation for more
+details.
 
 ## Topology Based Allocation
 
