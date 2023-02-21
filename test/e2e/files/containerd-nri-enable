@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 #
-# Enable containerd NRI plugin and enable annotations
+# Enable containerd NRI plugin
 
 import tomli_w
 import toml
 
 data=toml.load("/etc/containerd/config.toml")
 ((data["plugins"])["io.containerd.nri.v1.nri"])["disable"]=False
-
-# Whitelist annotations as those are needed by e2e tests.
-(data["plugins"])["io.containerd.grpc.v1.cri"]["containerd"]["runtimes"]["runc"]["pod_annotations"]=["*"]
 
 with open("/etc/containerd/config.toml", "wb") as f:
     tomli_w.dump(data, f)
