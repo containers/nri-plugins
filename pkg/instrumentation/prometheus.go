@@ -24,7 +24,7 @@ import (
 	model "github.com/prometheus/client_model/go"
 	"go.opencensus.io/stats/view"
 
-	"github.com/intel/nri-resmgr/pkg/instrumentation/http"
+	"github.com/intel/nri-resmgr/pkg/http"
 )
 
 const (

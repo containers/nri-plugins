@@ -20,7 +20,7 @@ import (
 	"net/http"
 	"sync"
 
-	xhttp "github.com/intel/nri-resmgr/pkg/instrumentation/http"
+	xhttp "github.com/intel/nri-resmgr/pkg/http"
 	logger "github.com/intel/nri-resmgr/pkg/log"
 	"github.com/intel/nri-resmgr/pkg/topology"
 )

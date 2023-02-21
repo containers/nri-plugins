@@ -17,7 +17,7 @@ package instrumentation
 import (
 	"fmt"
 
-	"github.com/intel/nri-resmgr/pkg/instrumentation/http"
+	"github.com/intel/nri-resmgr/pkg/http"
 	logger "github.com/intel/nri-resmgr/pkg/log"
 )
 
