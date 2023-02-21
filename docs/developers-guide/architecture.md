@@ -70,15 +70,10 @@ The node agent is a component external to CRI-RM itself. All interactions
 by CRI-RM with the Kubernetes Control Plane go through the node agent with
 the node agent performing any direct interactions on behalf of CRI-RM.
 
-The node agent communicates with CRI-RM using two gRPC interfaces. The
-[config interface](/pkg/cri/resource-manager/config/api/v1/) is used to:
+The node agent communicates with NRI-RM via goroutine. The API is used to:
   - push updated external configuration data to CRI-RM
-  - push adjustments to container resource assignments to CRI-RM
 
-The [cluster interface](/pkg/agent/api/v1/) implements the necessary
-low-level plumbing for the agent interface CRI-RM internally exposes
-for its policies and other components. This interface in turn implements
-the following:
+The agent interface implements the following:
   - updating resource capacity of the node
   - getting, setting, or removing labels on the node
   - getting, setting, or removing annotations on the node
@@ -87,7 +82,7 @@ the following:
 The config interface is defined and has its gRPC server running in
 CRI-RM. The agent acts as a gRPC client for this interface. The low-level
 cluster interface is defined and has its gRPC server running in the agent,
-with the [convenience layer](/pkg/cri/resource-manager/agent) defined in
+with the [convenience layer](/pkg/agent) defined in
 CRI-RM. CRI-RM acts as a gRPC client for the low-level plumbing interface.
 
 Additionally, the stock node agent that comes with CRI-RM implements schemes
@@ -101,7 +96,7 @@ for:
 </p>
 
 
-### [Resource Manager](/pkg/cri/resource-manager/)
+### [Resource Manager](/pkg/resmgr/)
 
 CRI-RM implements a request processing pipeline and an event processing
 pipeline.
@@ -172,7 +167,7 @@ following, based on the event type:
    4. Release the pipeline lock.
 
 
-### [Cache](/pkg/cri/resource-manager/cache/)
+### [Cache](/pkg/cache/)
 
 The cache is a shared internal storage location within CRI-RM. It tracks the
 runtime state of pods and containers known to CRI-RM, as well as the state
@@ -206,14 +201,14 @@ the policy's event handler with the injected event as an argument and with
 the cache properly locked.
 
 
-### [Generic Policy Layer](/pkg/cri/resource-manager/policy/policy.go)
+### [Generic Policy Layer](/pkg/policy/policy.go)
 
 The generic policy layer defines the abstract interface the rest of CRI-RM
 uses to interact with policy implementations and takes care of the details
 of activating and dispatching calls through to the configured active policy.
 
 
-### [Generic Resource Controller Layer](/pkg/cri/resource-manager/control/control.go)
+### [Generic Resource Controller Layer](/pkg/control/control.go)
 
 The generic resource controller layer defines the abstract interface the rest
 of CRI-RM uses to interact with resource controller implementations and takes
@@ -230,40 +225,21 @@ resources is and to attempt a rebalancing/reallocation if it is deemed
 both possible and necessary.
 
 
-### [Policy Implementations](/pkg/cri/resource-manager/policy/builtin/)
+### [Policy Implementations](/cmd/)
 
-#### [None](/pkg/cri/resource-manager/policy/builtin/none/)
-
-An empty policy that makes no policy decisions. It is included
-merely for the sake of completeness, analoguous to the none policy of the
-CPU Manager in kubelet.
-
-#### [Static Pools](/pkg/cri/resource-manager/policy/builtin/static-pools/)
-
-A backward-compatible reimplementation of
-[CMK](https://github.com/intel/CPU-Manager-for-Kubernetes)
-for CRI-RM with a few extra features.
-
-#### [Static](/pkg/cri/resource-manager/policy/builtin/static/)
-
-Part of the code from the static policy of CPU Manager in kubelet, that has
-been brutally hacked to work within CRI-RM. Serves merely as a
-proof-of-concept that the current policies of kubelet can be implemented in
-CRI-RM.
-
-#### [Static Plus](/pkg/cri/resource-manager/policy/builtin/static-plus/)
-
-A fairly simplistic policy similar in spirit to the static policy of
-CPU Manager in kubelet, with a few extra features.
-
-#### [Topology Aware](/pkg/cri/resource-manager/policy/builtin/topology-aware/)
+#### [Topology Aware](/cmd/topology-aware/)
 
 A topology-aware policy capable of handling multiple tiers/types of memory,
 typically a DRAM/PMEM combination configured in 2-layer memory mode.
 
-### [Resource Controller Implementations](/pkg/cri/resource-manager/control/)
+#### [Balloons](/cmd/balloons/)
 
-#### [Intel RDT](/pkg/cri/resource-manager/control/rdt/)
+A balloons policy allows user to define fine grained control how the
+computer resources are distributed to workloads.
+
+### [Resource Controller Implementations](/pkg/control/)
+
+#### [Intel RDT](/pkg/control/rdt/)
 
 A resource controller implementation responsible for the practical details of
 associating a container with Intel RDT classes. This class effectively
@@ -271,7 +247,7 @@ determines how much last level cache and memory bandwidth will be available
 for the container. This controller uses the resctrl pseudo filesystem of the
 Linux kernel for control.
 
-#### [Block I/O](/pkg/cri/resource-manager/control/blockio/)
+#### [Block I/O](/pkg/control/blockio/)
 
 A resource controller implementation responsible for the practical details of
 associating a container with a Block I/O class. This class effectively
@@ -279,7 +255,7 @@ determines how much Block I/O bandwidth will be available for the container.
 This controller uses the blkio cgroup controller and the cgroupfs pseudo-
 filesystem of the Linux kernel for control.
 
-#### [CRI](/pkg/cri/resource-manager/control/cri/)
+#### [CRI](/pkg/control/cri/)
 
 A resource controller responsible for modifying intercepted CRI container
 creation requests and creating CRI container resource update requests,

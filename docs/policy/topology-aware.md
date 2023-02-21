@@ -388,9 +388,8 @@ every two seconds from DRAM to PMEM.
 
 Due to inaccuracies in how `cri-resmgr` calculates memory requests for
 pods in QoS class `Burstable`, you should either use `Limit` for setting
-the amount of memory for containers in `Burstable` pods or run the
-[resource-annotating webhook](../webhook.md) to provide `cri-resmgr` with
-an exact copy of the resource requirements from the Pod Spec as an extra
+the amount of memory for containers in `Burstable` pods to provide `cri-resmgr`
+with an exact copy of the resource requirements from the Pod Spec as an extra
 Pod annotation.
 
 ## Reserved pool namespaces
