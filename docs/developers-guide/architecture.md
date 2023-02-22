@@ -2,76 +2,50 @@
 
 ## Overview
 
-CRI Resource Manager (CRI-RM) is a pluggable add-on for controlling how much
-and which resources are assigned to containers in a Kubernetes\* cluster.
+NRI Resource Policy (NRI-RP) plugin is a pluggable add-on for controlling how
+much and which resources are assigned to containers in a Kubernetes\* cluster.
 It's an add-on because you install it in addition to the normal selection of
 your components. It's pluggable since you inject it on the signaling path
 between two existing components with the rest of the cluster unaware of its
 presence.
 
-CRI-RM plugs in between kubelet and CRI, the Kubernetes node agent and the
-container runtime implementation. CRI-RM intercepts CRI protocol requests
-from the kubelet acting as a non-transparent proxy towards the runtime.
-Proxying by CRI-RM is non-transparent in nature because it usually alters
-intercepted protocol messages before forwarding them.
+NRI-RP plugs in to NRI interface provided by container runtime implementation.
+The NRI-RP may alter the container resource allocation depending on
+configuration.
 
-CRI-RM keeps track of the states of all containers running on a Kubernetes
-node. Whenever it intercepts a CRI request that results in changes to the
+NRI-RP keeps track of the states of all containers running on a Kubernetes
+node. Whenever it receives a NRI request that results in changes to the
 resource allocation of any container (container creation, deletion, or
-resource assignment update request), CRI-RM runs one of its built-in policy
-algorithms. This policy makes a decision about how the assignment of
-resources should be updated and, eventually, the intercepted request is
+resource assignment update request), NRI-RP runs the built-in policy
+algorithm. This policy makes a decision about how the assignment of
+resources should be updated and, eventually, the container resources are
 modified according to this decision. The policy can make changes to any
-container in the system, not just the one associated with the intercepted
-CRI request. Therefore it does not operate directly on CRI requests.
-Instead CRI-RM's internal state tracking cache provides an abstraction for
-modifying containers and the policy uses this abstraction for recording its
+container in the system, not just the one associated with the received
+NRI request. NRI-RP's internal state tracking cache provides an abstraction
+for modifying containers and the policy uses this abstraction for recording its
 decisions.
 
-In addition to policies, CRI-RM has a number of built-in resource
-controllers.
-These are used to put policy decisions—in practice pending changes made to
-containers by a policy—into effect. A special in-band CRI controller is used
-to control all resources that are controllable via the CRI runtime. This
-controller handles the practical details of updating the intercepted CRI
-request and generating any additional unsolicited update requests for other
-existing containers updated by the policy decision. Additional out-of-band
-controllers exist to exercise control over resources that the current CRI
-runtimes are unable to handle.
-
-To tell which containers need to be handed off to various controllers for
-updating, CRI-RM uses the internal state tracking cache's ability to tell
-which containers have pending unenforced changes and to which controllers'
-domain these changes belong. The CRI controller currently handles CPU and
-memory resources, including huge pages. The level of control covers per
-container CPU sets, CFS parametrization, memory limits, OOM score adjustment,
-and pinning to memory controllers. The two existing out-of-band controllers,
-Intel® Resource Director Technology (Intel® RDT) and Block I/O, handle last-level cache and memory bandwidth allocation,
-and the arbitration of Block I/O bandwidth respectively.
-
-Many of the details of how CRI-RM operates is configurable. These include,
-for instance, which policy is active within CRI-RM, configuration of the
-resource assignment algorithm for the active policy, and configuration for
-the various resource controllers. Although CRI-RM can be configured using a
-configuration file present on the node running CRI-RM, the preferred way to
-configure all CRI-RM instances in a cluster is to use Kubernetes
-ConfigMaps and the CRI-RM Node Agent.
+Many of the details of how NRI-RP operates is configurable. These include, for
+instance, configuration of the resource assignment algorithm for the policy.
+Although NRI-RP can be configured using a configuration file present on the
+node running NRI-RP, the preferred way to configure all NRI-RP instances in
+a cluster is to use Kubernetes CRDs and ConfigMaps.
 
 <p align="center">
 <!-- # It's a pity the markdown ![]()-syntax does not support aligning... -->
-<img src="figures/arch-overview.svg" title="Architecture Overview">
+<img src="figures/nri-resource-policy.png" title="Architecture Overview" width="75%">
 </p>
 
 ## Components
 
 ### [Node Agent](/pkg/agent/)
 
-The node agent is a component external to CRI-RM itself. All interactions
-by CRI-RM with the Kubernetes Control Plane go through the node agent with
-the node agent performing any direct interactions on behalf of CRI-RM.
+The node agent is a component internal to NRI-RP itself. All interactions
+by NRI-RP with the Kubernetes Control Plane go through the node agent with
+the node agent performing any direct interactions on behalf of NRI-RP.
 
-The node agent communicates with NRI-RM via goroutine. The API is used to:
-  - push updated external configuration data to CRI-RM
+The node agent communicates with NRI-RP via goroutine. The API is used to:
+  - push updated external configuration data to NRI-RP
 
 The agent interface implements the following:
   - updating resource capacity of the node
@@ -80,42 +54,33 @@ The agent interface implements the following:
   - getting, setting, or removing taints on the node
 
 The config interface is defined and has its gRPC server running in
-CRI-RM. The agent acts as a gRPC client for this interface. The low-level
+NRI-RP. The agent acts as a gRPC client for this interface. The low-level
 cluster interface is defined and has its gRPC server running in the agent,
-with the [convenience layer](/pkg/agent) defined in
-CRI-RM. CRI-RM acts as a gRPC client for the low-level plumbing interface.
+with the [convenience layer](/pkg/agent) defined in NRI-RP.
+NRI-RP acts as a gRPC client for the low-level plumbing interface.
 
-Additionally, the stock node agent that comes with CRI-RM implements schemes
+Additionally, the stock node agent that comes with NRI-RP implements schemes
 for:
-   - configuration management for all CRI-RM instances
+   - configuration management for all NRI-RP instances
    - management of dynamic adjustments to container resource assignments
-
-<p align="center">
-<!-- # It's a pity the markdown ![]()-syntax does not support aligning... -->
-<img src="figures/cri-resmgr.png" title="Architecture Overview" width="50%">
-</p>
 
 
 ### [Resource Manager](/pkg/resmgr/)
 
-CRI-RM implements a request processing pipeline and an event processing
-pipeline.
-The request processing pipeline takes care of proxying CRI requests and
-responses between CRI clients and the CRI runtime. The event processing
-pipeline processes a set of other events that are not directly related
-to or the result of CRI requests. These events are typically internally
-generated within CRI-RM. They can be the result of changes in the state
-of some containers or the utilization of a shared system resource, which
-potentially could warrant an attempt to rebalance the distribution of
-resources among containers to bring the system closer to an optimal state.
-Some events can also be generated by policies.
+NRI-RP implements a an event processing pipeline. It processes a set of
+other events that are not directly related to or the result of NRI requests.
+These events are typically internally generated within NRI-RP. They can be
+the result of changes in the state of some containers or the utilization
+of a shared system resource, which potentially could warrant an attempt to
+rebalance the distribution of resources among containers to bring the system
+closer to an optimal state. Some events can also be generated by policies.
 
-The Resource Manager component of CRI-RM implements the basic control
-flow of both of these processing pipelines. It passes control to all the
-necessary sub-components of CRI-RM at the various phases of processing a
+The Resource Manager component of NRI-RP implements the basic control
+flow of the processing pipeline. It passes control to all the
+necessary sub-components of NRI-RP at the various phases of processing a
 request or an event. Additionally, it serializes the processing of these,
-making sure there is at most one (intercepted) request or event being
-processed at any point in time.
+making sure there is at most one request or event being processed at any
+point in time.
 
 The high-level control flow of the request processing pipeline is as
 follows:
@@ -169,11 +134,11 @@ following, based on the event type:
 
 ### [Cache](/pkg/cache/)
 
-The cache is a shared internal storage location within CRI-RM. It tracks the
-runtime state of pods and containers known to CRI-RM, as well as the state
-of CRI-RM itself, including the active configuration and the state of the
+The cache is a shared internal storage location within NRI-RP. It tracks the
+runtime state of pods and containers known to NRI-RP, as well as the state
+of NRI-RP itself, including the active configuration and the state of the
 active policy. The cache is saved to permanent storage in the filesystem and
-is used to restore the runtime state of CRI-RM across restarts.
+is used to restore the runtime state of NRI-RP across restarts.
 
 The cache provides functions for querying and updating the state of pods and
 containers. This is the mechanism used by the active policy to make resource
@@ -203,7 +168,7 @@ the cache properly locked.
 
 ### [Generic Policy Layer](/pkg/policy/policy.go)
 
-The generic policy layer defines the abstract interface the rest of CRI-RM
+The generic policy layer defines the abstract interface the rest of NRI-RP
 uses to interact with policy implementations and takes care of the details
 of activating and dispatching calls through to the configured active policy.
 
@@ -211,7 +176,7 @@ of activating and dispatching calls through to the configured active policy.
 ### [Generic Resource Controller Layer](/pkg/control/control.go)
 
 The generic resource controller layer defines the abstract interface the rest
-of CRI-RM uses to interact with resource controller implementations and takes
+of NRI-RP uses to interact with resource controller implementations and takes
 care of the details of dispatching calls to the controller implementations
 for post-policy enforcment of decisions.
 
@@ -219,7 +184,7 @@ for post-policy enforcment of decisions.
 ### [Metrics Collector](/pkg/metrics/)
 
 The metrics collector gathers a set of runtime metrics about the containers
-running on the node. CRI-RM can be configured to periodically evaluate this
+running on the node. NRI-RP can be configured to periodically evaluate this
 collected data to determine how optimal the current assignment of container
 resources is and to attempt a rebalancing/reallocation if it is deemed
 both possible and necessary.
@@ -236,27 +201,3 @@ typically a DRAM/PMEM combination configured in 2-layer memory mode.
 
 A balloons policy allows user to define fine grained control how the
 computer resources are distributed to workloads.
-
-### [Resource Controller Implementations](/pkg/control/)
-
-#### [Intel RDT](/pkg/control/rdt/)
-
-A resource controller implementation responsible for the practical details of
-associating a container with Intel RDT classes. This class effectively
-determines how much last level cache and memory bandwidth will be available
-for the container. This controller uses the resctrl pseudo filesystem of the
-Linux kernel for control.
-
-#### [Block I/O](/pkg/control/blockio/)
-
-A resource controller implementation responsible for the practical details of
-associating a container with a Block I/O class. This class effectively
-determines how much Block I/O bandwidth will be available for the container.
-This controller uses the blkio cgroup controller and the cgroupfs pseudo-
-filesystem of the Linux kernel for control.
-
-#### [CRI](/pkg/control/cri/)
-
-A resource controller responsible for modifying intercepted CRI container
-creation requests and creating CRI container resource update requests,
-according to the changes the active policy makes to containers.

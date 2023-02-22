@@ -1,7 +1,7 @@
-.. CRI Resource Manager documentation master file
+.. NRI Plugin Collection documentation master file
 
-Welcome to CRI Resource Manager's documentation!
-================================================
+Welcome to NRI Plugin Collection documentation!
+===============================================
 
 .. toctree::
    :maxdepth: 2
@@ -21,4 +21,4 @@ Welcome to CRI Resource Manager's documentation!
    contributing.md
    security.md
 
-   Project GitHub repository <https://github.com/intel/nri-resmgr>
+   Project GitHub repository <https://github.com/containers/nri-plugins>
