@@ -21,7 +21,7 @@ from subprocess import run, STDOUT
 
 # -- Project information -----------------------------------------------------
 
-project = 'NRI Plugin Collection'
+project = 'NRI Plugins'
 copyright = '2023, various'
 author = 'various'
 
@@ -129,7 +129,7 @@ templates_path = ['_templates']
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = ['_build', '.github', '_work', 'generate', 'README.md', 'TODO.md', 'SECURITY.md', 'CODE-OF-CONDUCT.md', 'docs/releases', 'test/self-hosted-runner/README.md', 'test/e2e/README.md']
+exclude_patterns = ['_build', '.github', '_work', 'generate', 'README.md', 'TODO.md', 'SECURITY.md', 'CODE-OF-CONDUCT.md', 'docs/releases', 'test/self-hosted-runner/README.md', 'test/e2e/README.md', 'docs/resource-policy/releases', 'docs/resource-policy/README.md','test/statistics-analysis/README.md']
 
 # -- Options for HTML output -------------------------------------------------
 

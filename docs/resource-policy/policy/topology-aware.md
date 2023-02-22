@@ -39,8 +39,9 @@ dies, sockets, and finally the whole of the system at the root node. Leaf NUMA
 nodes are assigned the memory behind their controllers / zones and CPU cores
 with the smallest distance / access penalty to this memory. If the machine
 has multiple types of memory separately visible to both the kernel and user
-space, for instance both DRAM and [PMEM](https://www.intel.com/content/www/us/en/products/memory-storage/optane-dc-persistent-memory.html), each zone of special type of memory
-is assigned to the closest NUMA node pool.
+space, for instance both DRAM and
+[PMEM](https://www.intel.com/content/www/us/en/products/memory-storage/optane-dc-persistent-memory.html),
+each zone of special type of memory is assigned to the closest NUMA node pool.
 
 Each non-leaf pool node in the tree is assigned the union of the resources of
 its children. So in practice, dies nodes end up containing all the CPU cores
@@ -118,7 +119,7 @@ The `topology-aware` policy has the following features:
 ## Activating the Policy
 
 You can activate the `topology-aware` policy by using the following configuration
-fragment in the configuration for `cri-resmgr`:
+fragment in the configuration for `nri-resource-policy-topology-aware`:
 
 ```yaml
 policy:
@@ -131,10 +132,9 @@ policy:
 
 The policy has a number of configuration options which affect its default behavior.
 These options can be supplied as part of the
-[dynamic configuration](../setup.md#using-cri-resource-manager-agent-and-a-configmap)
+[dynamic configuration](../setup.md#using-nri-resource-policy-agent-and-a-configmap)
 received via the [`node agent`](../node-agent.md), or in a fallback or forced
-[configuration file](../setup.md#using-a-local-configuration-from-a-file). These
-configuration options are
+configuration file. These configuration options are
 
   - `PinCPU`
     * whether to pin workloads to assigned pool CPU sets
@@ -247,11 +247,11 @@ following Pod annotation.
 metadata:
   annotations:
     # opt in container C1 to shared CPU core allocation
-    prefer-shared-cpus.cri-resource-manager.intel.com/container.C1: "true"
+    prefer-shared-cpus.resource-policy.nri.io/container.C1: "true"
     # opt in the whole pod to shared CPU core allocation
-    prefer-shared-cpus.cri-resource-manager.intel.com/pod: "true"
+    prefer-shared-cpus.resource-policy.nri.io/pod: "true"
     # selectively opt out container C2 from shared CPU core allocation
-    prefer-shared-cpus.cri-resource-manager.intel.com/container.C2: "false"
+    prefer-shared-cpus.resource-policy.nri.io/container.C2: "false"
 ```
 
 Opting in to exclusive allocation happens by opting out from shared allocation,
@@ -265,11 +265,11 @@ allocation using the following Pod annotation.
 metadata:
   annotations:
     # opt in container C1 to isolated exclusive CPU core allocation
-    prefer-isolated-cpus.cri-resource-manager.intel.com/container.C1: "true"
+    prefer-isolated-cpus.resource-policy.nri.io/container.C1: "true"
     # opt in the whole pod to isolated exclusive CPU core allocation
-    prefer-isolated-cpus.cri-resource-manager.intel.com/pod: "true"
+    prefer-isolated-cpus.resource-policy.nri.io/pod: "true"
     # selectively opt out container C2 from isolated exclusive CPU core allocation
-    prefer-isolated-cpus.cri-resource-manager.intel.com/container.C2: "false"
+    prefer-isolated-cpus.resource-policy.nri.io/container.C2: "false"
 ```
 
 These Pod annotations have no effect on containers which are not eligible for
@@ -277,12 +277,12 @@ exclusive allocation.
 
 ### Implicit Hardware Topology Hints
 
-`CRI Resource Manager` automatically generates HW `Topology Hints` for devices
+`NRI Resource Policy` automatically generates HW `Topology Hints` for devices
 assigned to a container, prior to handing the container off to the active policy
 for resource allocation. The `topology-aware` policy is hint-aware and normally
-takes topology hints into account when picking the best pool to allocate
-resources. Hints indicate optimal `HW locality` for device access and they can
-alter significantly which pool gets picked for a container.
+takes topology hints into account when picking the best pool to allocate resources.
+Hints indicate optimal `HW locality` for device access and they can alter
+significantly which pool gets picked for a container.
 
 Since device topology hints are implicitly generated, there are cases where one
 would like the policy to disregard them altogether. For instance, when a local
@@ -295,11 +295,11 @@ pool selection using the following Pod annotations.
 metadata:
   annotations:
     # only disregard hints for container C1
-    topologyhints.cri-resource-manager.intel.com/container.C1: "false"
+    topologyhints.resource-policy.nri.io/container.C1: "false"
     # disregard hints for all containers by default
-    topologyhints.cri-resource-manager.intel.com/pod: "false"
+    topologyhints.resource-policy.nri.io/pod: "false"
     # but take hints into account for container C2
-    topologyhints.cri-resource-manager.intel.com/container.C2: "true"
+    topologyhints.resource-policy.nri.io/container.C2: "true"
 ```
 
 Topology hint generation is globally enabled by default. Therefore, using the
@@ -336,8 +336,8 @@ begin with. Cold start is configured like this in the pod metadata:
 ```yaml
 metadata:
   annotations:
-    memory-type.cri-resource-manager.intel.com/container.container1: dram,pmem
-    cold-start.cri-resource-manager.intel.com/container.container1: |
+    memory-type.resource-policy.nri.io/container.container1: dram,pmem
+    cold-start.resource-policy.nri.io/container.container1: |
       duration: 60s
 ```
 
@@ -348,9 +348,9 @@ future release:
 ```yaml
 metadata:
   annotations:
-    cri-resource-manager.intel.com/memory-type: |
+    resource-policy.nri.io/memory-type: |
       container1: dram,pmem
-    cri-resource-manager.intel.com/cold-start: |
+    resource-policy.nri.io/cold-start: |
       container1:
         duration: 60s
 ```
@@ -386,7 +386,7 @@ every two seconds from DRAM to PMEM.
 
 ## Container memory requests and limits
 
-Due to inaccuracies in how `cri-resmgr` calculates memory requests for
+Due to inaccuracies in how `nri-resource-policy` calculates memory requests for
 pods in QoS class `Burstable`, you should either use `Limit` for setting
 the amount of memory for containers in `Burstable` pods to provide `cri-resmgr`
 with an exact copy of the resource requirements from the Pod Spec as an extra
@@ -427,6 +427,6 @@ For example:
 ```yaml
 metadata:
   annotations:
-    prefer-reserved-cpus.cri-resource-manager.intel.com/pod: "true"
-    prefer-reserved-cpus.cri-resource-manager.intel.com/container.special: "false"
+    prefer-reserved-cpus.resource-policy.nri.io/pod: "true"
+    prefer-reserved-cpus.resource-policy.nri.io/container.special: "false"
 ```
