@@ -1,24 +1,14 @@
-.. CRI Resource Manager documentation master file
+.. NRI Plugins documentation master file
 
-Welcome to CRI Resource Manager's documentation!
-================================================
+Welcome to NRI Plugins documentation
+====================================
 
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
 
-   introduction.md
-   quick-start.md
-   installation.md
-   setup.md
-   policy/index.rst
-   node-agent.md
-
-   developers-guide/index.rst
-
-   reference/index.md
+   resource-policy/index.rst
 
    contributing.md
-   security.md
 
-   Project GitHub repository <https://github.com/intel/nri-resmgr>
+   Project GitHub repository <https://github.com/containers/nri-plugins>

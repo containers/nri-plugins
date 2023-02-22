@@ -7,6 +7,4 @@ Policies
    topology-aware.md
    balloons.md
    container-affinity.md
-   blockio.md
-   rdt.md
    cpu-allocator.md

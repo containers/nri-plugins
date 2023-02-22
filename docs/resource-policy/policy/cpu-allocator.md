@@ -1,6 +1,6 @@
 # CPU Allocator
 
-CRI Resource Manager has a separate CPU allocator component that helps policies
+NRI Resource Policy has a separate CPU allocator component that helps policies
 make educated allocation of CPU cores for workloads.  Currently all policies
 utilize the built-in CPU allocator. See policy specific documentation for more
 details.
@@ -14,7 +14,7 @@ request "near" each other in order to minimize memory latencies between CPUs.
 ## CPU Prioritization
 
 The CPU allocator also does automatic CPU prioritization by detecting CPU
-features and their configuration parameters. Currently, CRI Resource Manager
+features and their configuration parameters. Currently, NRI Resource Policy
 supports CPU priority detection based on the `intel_pstate` scaling
 driver in the Linux CPUFreq subsystem, and, Intel Speed Select Technology
 (SST).
@@ -26,7 +26,7 @@ priority CPUs for high priority workloads.
 
 ### Intel Speed Select Technology (SST)
 
-CRI Resource Manager supports detection of all Intel Speed Select Technology
+NRI Resource Policy supports detection of all Intel Speed Select Technology
 (SST) features, i.e. Speed Select Technology Performance Profile (SST-PP), Base
 Frequency (SST-BF), Turbo Frequency (SST-TF) and Core Power (SST-CP).
 
@@ -47,7 +47,7 @@ and their parameterization:
 ### Linux CPUFreq
 
 CPUFreq based prioritization only takes effect if Intel Speed Select Technology
-(SST) is disabled (or not supported). CRI-RM divides CPU cores into priority
+(SST) is disabled (or not supported). NRI-RM divides CPU cores into priority
 classes based on two parameters:
 
 - base frequency

@@ -1,4 +1,4 @@
-# NRI Plugin Collection
+# NRI Plugins
 
 This repository contains a collection of community maintained NRI plugins.
 
@@ -9,4 +9,4 @@ Currently following plugins are available:
 | [Topology Aware][1] |  resource policy |
 | [Balloons][1]       |  resource policy |
 
-[1]: http://github.com/containers/nri-plugins/blob/main/docs/README-resource-policy.md
+[1]: http://github.com/containers/nri-plugins/blob/main/docs/resource-policy/README.md

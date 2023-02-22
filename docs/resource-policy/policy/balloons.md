@@ -47,17 +47,15 @@ min and max frequencies on CPU cores and uncore.
 
 ## Deployment
 
-### Install cri-resmgr
-
-Deploy cri-resmgr on each node as you would for any other policy. See
-[installation](../installation.md) for more details.
+Deploy nri-resource-policy-balloons on each node as you would for any
+other policy. See [installation](../installation.md) for more details.
 
 ## Configuration
 
 The balloons policy is configured using the yaml-based configuration
-system of CRI-RM. See [setup and
-usage](../setup.md#setting-up-cri-resource-manager) for more details
-on managing the configuration.
+system of nri-resource-policy.
+See [setup and usage](../setup.md#setting-up-nri-resource-policy) for
+more details on managing the configuration.
 
 ### Parameters
 
@@ -193,9 +191,9 @@ of a single container (`CONTAINER_NAME`). The last two annotations set
 the default balloon type for all containers in the pod.
 
 ```yaml
-balloon.balloons.cri-resource-manager.intel.com/container.CONTAINER_NAME: BT
-balloon.balloons.cri-resource-manager.intel.com/pod: BT
-balloon.balloons.cri-resource-manager.intel.com: BT
+balloon.balloons.resource-policy.nri.io/container.CONTAINER_NAME: BT
+balloon.balloons.resource-policy.nri.io/pod: BT
+balloon.balloons.resource-policy.nri.io: BT
 ```
 
 If a pod has no annotations, its namespace is matched to the
@@ -211,7 +209,7 @@ the `BalloonTypes` configuration.
 
 In order to enable more verbose logging and metrics exporting from the
 balloons policy, enable instrumentation and policy debugging from the
-CRI-RM global config:
+nri-resource-policy global config:
 
 ```yaml
 instrumentation:

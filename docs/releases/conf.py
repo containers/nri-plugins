@@ -16,8 +16,8 @@ import os
 
 # -- Project information -----------------------------------------------------
 
-project = 'CRI Resource Manager'
-copyright = '2020, various'
+project = 'NRI Plugins'
+copyright = '2023, various'
 author = 'various'
 
 # Versions to show in the version menu

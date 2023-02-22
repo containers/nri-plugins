@@ -1,6 +1,6 @@
 # Releases
 
-For up-to-date user documentation see the [documentation site](/cri-resource-manager)
+For up-to-date user documentation see the [documentation site](/nri-plugins/resource-policy)
 
 ## Documentation for Released Versions
 <div id="releases">
