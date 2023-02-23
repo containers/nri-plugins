@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nri-resmgr-config.default
+  namespace: kube-system
+data:
+  policy: |+
+    Active: topology-aware
+    ReservedResources:
+      cpu: 750m
+  instrumentation: |+
+    HTTPEndpoint: ":8891"
+  logger: |+
+    Debug: resource-manager,cache,policy,resource-control
+  foo: |+
+    bar: "abc"

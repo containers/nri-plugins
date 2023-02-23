@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nri-resmgr-config.default
+  namespace: kube-system
+data:
+  policy: |+
+    Active: balloons
+    ReservedResources:
+      cpu: cpuset:1
+    balloons:
+      AllocatorTopologyBalancing: true
+      BalloonTypes:
+        - Name: dynamic
+          MaxCPUs: 32
+          MaxBalloons: 8
+          PreferNewBalloons: true
+          ShareIdleCpusInSame: numa
+  instrumentation: |+
+    HTTPEndpoint: :8891
+  logger: |+
+    Debug: policy
+    Klog:
+      skip_headers: true
+  foo: |+
+    bar: "abc"

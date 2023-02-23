@@ -6,5 +6,7 @@ policy:
     cpu: ${AVAILABLE_CPU}
   topology-aware:
     ReservedPoolNamespaces: [\"reserved-pool\",\"reserved-*\",\"foobar\"]
+instrumentation:
+  HTTPEndpoint: ":8891"
 logger:
   Debug: nri-resmgr,resource-manager,cache,policy

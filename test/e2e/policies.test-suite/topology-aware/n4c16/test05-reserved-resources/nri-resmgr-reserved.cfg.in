@@ -4,5 +4,7 @@ policy:
     cpu: ${AVAILABLE_CPU}
   ReservedResources:
     cpu: ${RESERVED_CPU}
+instrumentation:
+  HTTPEndpoint: ":8891"
 logger:
   Debug: nri-resmgr,resource-manager,cache,policy

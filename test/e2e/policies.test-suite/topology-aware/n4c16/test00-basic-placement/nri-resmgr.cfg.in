@@ -5,6 +5,8 @@ policy:
   topology-aware:
     ColocatePods: $(echo ${COLOCATE_PODS:-false})
     ColocateNamespaces: $(echo ${COLOCATE_NAMESPACES:-false})
+instrumentation:
+  HTTPEndpoint: ":8891"
 logger:
   Debug: nri-resmgr,resource-manager,cache,policy
   Klog:

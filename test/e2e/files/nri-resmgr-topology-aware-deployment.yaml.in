@@ -87,6 +87,12 @@ spec:
               fieldRef:
                 fieldPath: spec.nodeName
           image: IMAGE_PLACEHOLDER
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8891
+            initialDelaySeconds: 1
+            periodSeconds: 1
           imagePullPolicy: Always # for testing
           securityContext:
             allowPrivilegeEscalation: false
