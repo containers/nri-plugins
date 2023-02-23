@@ -42,6 +42,11 @@ The estimated complexity and priority of a feature/task is defined like this:
   - [ ] check and unify annotation naming for consistency, C1
   - [ ] structural logging (with better configurability), check what Patrik did, C2
   - [ ] agent usage should be optional and controllable, C2
+- instrumentation
+  - [ ] switch metrics collection to opentelemetry from opencensus
+  - [ ] make sure default go runtime metrics gets properly exported
+  - [ ] export policy-agnostic metrics data (maybe same as for node resource topology)
+  - [ ] (maybe) remove any resulting duplicated data export from policy-specific data
 - testing
   - [ ] more unit tests, C4
   - [ ] unit tests in GH actions, C4
@@ -65,6 +70,8 @@ The estimated complexity and priority of a feature/task is defined like this:
 - [ ] less protocol stutter:
     - [ ] add minimal pod/container cache to stub, C4
     - [ ] replace pod/container ID in most protocol messages, C1
+- [ ] add trace spans in adaptation for request/event handling
+- [ ] add trace spans to stub for request/event handling
 
 
 ## Containerd integration
