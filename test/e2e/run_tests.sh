@@ -166,6 +166,8 @@ echo -n "" > "$summary_file"
 
 export-and-source-dir "$TESTS_ROOT_DIR"
 
+TEST_SUITE_NAME="$(basename $TESTS_ROOT_DIR)"
+
 for POLICY_DIR in "$TESTS_ROOT_DIR"/*; do
     if ! [ -d "$POLICY_DIR" ]; then
         continue
@@ -197,7 +199,7 @@ for POLICY_DIR in "$TESTS_ROOT_DIR"/*; do
                 distro=${distro:=$DEFAULT_DISTRO}
                 export distro
 
-		topology_name="$TESTS_POLICY_FILTER"
+		policy_name="$(basename $POLICY_DIR)"
 
 		# Create name for the vm.
 		export vm_name=$(vm-create-name "$k8scri" "$(basename "$TOPOLOGY_DIR")" ${distro})
@@ -225,13 +227,13 @@ ${code}"
 			TEST_NAME=$(basename "$TEST_DIR")
                         export outdir="$OUTPUT_DIR"
 
-			test_outdir=$outdir/$topology_name/$TEST_NAME
+			test_outdir="$outdir/$TEST_SUITE_NAME/$policy_name/$(basename "$TEST_DIR")"
 
                         mkdir -p "$test_outdir"
                         echo "Run $TEST_NAME"
-                        policy="$TESTS_POLICY_FILTER" test_outdir="$test_outdir" TEST_DIR=$TEST_DIR TOPOLOGY_DIR=$TOPOLOGY_DIR POLICY_DIR=$POLICY_DIR \
+                        policy="$policy_name" test_outdir="$test_outdir" TEST_DIR=$TEST_DIR TOPOLOGY_DIR=$TOPOLOGY_DIR POLICY_DIR=$POLICY_DIR \
                             "$RUN_SH" test 2>&1 | tee "$test_outdir/run.sh.output"
-                        test_name="$(basename "$POLICY_DIR")/$(basename "$TOPOLOGY_DIR")/$(basename "$TEST_DIR")"
+                        test_name="$policy_name/$(basename "$TOPOLOGY_DIR")/$(basename "$TEST_DIR")"
                         if grep -q "Test verdict: PASS" "$test_outdir/run.sh.output"; then
                             echo "PASS $test_name" >> "$summary_file"
                         elif grep -q "Test verdict: FAIL" "$test_outdir/run.sh.output"; then
