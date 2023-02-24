@@ -86,4 +86,3 @@ verify 'cpus["pod6c0"] == cpus["pod6c1"]'
 
 cleanup
 terminate nri-resmgr
-launch nri-resmgr

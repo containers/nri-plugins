@@ -72,4 +72,3 @@ terminate nri-resmgr
 echo "starting nri-resmgr with impossible static balloons configuration failed as expected"
 
 terminate nri-resmgr
-launch nri-resmgr

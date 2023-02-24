@@ -77,4 +77,3 @@ verify-metrics-has-line 'btype2\[0\].*pod1:pod1c0.*cpu_class="classB"'
 verify-metrics-has-line 'btype2\[0\].*pod2:pod2c0.*cpu_class="classB"'
 
 cleanup
-launch nri-resmgr

@@ -96,4 +96,3 @@ verify 'len(cpus["pod0c0"]) == 1' \
        'disjoint_sets(cpus["pod0c0"], cpus["pod6c0"])'
 
 terminate nri-resmgr
-launch nri-resmgr

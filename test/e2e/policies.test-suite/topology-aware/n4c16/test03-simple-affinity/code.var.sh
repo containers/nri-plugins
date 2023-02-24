@@ -1,6 +1,9 @@
 # Test that guaranteed and burstable pods get the CPUs they require
 # when there are enough CPUs available.
 
+terminate nri-resmgr
+launch nri-resmgr
+
 inject-affinities() {
     local var=$1 srcdst src dst hdr line
     shift
@@ -77,3 +80,5 @@ report allowed
 verify \
     'disjoint_sets(nodes["pod2c4"], nodes["pod2c0"], nodes["pod2c1"], nodes["pod2c2"])' \
     'disjoint_sets(nodes["pod2c5"], nodes["pod2c0"], nodes["pod2c2"], nodes["pod2c3"])'
+
+terminate nri-resmgr

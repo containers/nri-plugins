@@ -91,4 +91,3 @@ verify-metrics-has-line 'balloon="isolated-ctrs\[3\]"'
 vm-port-forward-disable
 
 terminate nri-resmgr
-launch nri-resmgr

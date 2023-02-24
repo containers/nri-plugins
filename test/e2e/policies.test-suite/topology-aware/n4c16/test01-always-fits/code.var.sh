@@ -1,6 +1,9 @@
 # Test that guaranteed and burstable pods get the CPUs they require
 # when there are enough CPUs available.
 
+terminate nri-resmgr
+launch nri-resmgr
+
 # pod0, fits in a core
 CPU=1 create guaranteed
 report allowed
@@ -132,3 +135,5 @@ verify \
     'len(cpus["pod2c0"]) >= 5' \
     'len(cpus["pod4c0"]) >= 5' \
     'len(cpus["pod5c0"]) >= 4'
+
+terminate nri-resmgr

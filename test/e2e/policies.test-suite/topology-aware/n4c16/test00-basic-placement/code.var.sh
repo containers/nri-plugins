@@ -115,7 +115,5 @@ vm-command "kubectl delete namespace test-ns"
 
 # Restore default test configuration, restart nri-resmgr.
 terminate nri-resmgr
-nri_resmgr_cfg=$(instantiate nri-resmgr.cfg)
-launch nri-resmgr
 
 echo $?

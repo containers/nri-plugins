@@ -85,4 +85,3 @@ verify 'cpus["pod7c0"] == {"cpu00", "cpu01", "cpu02"}'
 cleanup
 
 terminate nri-resmgr
-launch nri-resmgr

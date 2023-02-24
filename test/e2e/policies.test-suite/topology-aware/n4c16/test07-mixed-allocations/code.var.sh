@@ -1,3 +1,6 @@
+terminate nri-resmgr
+launch nri-resmgr
+
 # Make sure all the pods in default namespace are cleared so we get a fresh start
 vm-command "kubectl delete pods --all --now"
 
@@ -121,3 +124,5 @@ verify `# every container is placed on a single node (no socket, no root)` \
        `# pod5c0 and pod5c1 share a node with another container => all their CPUs should be shared` \
        "len(cpus['pod5c0'] - set.union(*[cpus[c] for c in cpus if c != 'pod5c0'])) == 2" \
        "len(cpus['pod5c1'] - set.union(*[cpus[c] for c in cpus if c != 'pod5c1'])) == 0"
+
+terminate nri-resmgr

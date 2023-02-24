@@ -65,3 +65,5 @@ verify 'disjoint_sets(cpus["pod5c0"], cpus["pod5c1"], cpus["pod5c2"])' \
        'len(cpus["pod5c2"]) == 2'
 
 cleanup
+
+terminate nri-resmgr

@@ -1,3 +1,6 @@
+terminate nri-resmgr
+launch nri-resmgr
+
 # pod0: require 10 out of 16 CPUs with two containers.
 # Both containers should fit in their own die. (8 CPUs per die.)
 CPU=5 CONTCOUNT=2 create guaranteed
@@ -44,3 +47,6 @@ verify \
          set.union(cpus["pod1c0"], cpus["pod1c1"]),
          set.union(cpus["pod3c0"],
                    cpus["pod2c0"], cpus["pod2c1"], cpus["pod2c2"], cpus["pod2c3"]))'
+
+terminate nri-resmgr
+launch nri-resmgr

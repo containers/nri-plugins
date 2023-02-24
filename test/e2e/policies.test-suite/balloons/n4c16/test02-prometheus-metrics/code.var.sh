@@ -87,3 +87,5 @@ verify-metrics-has-line 'balloon="fast-dualcore\[0\]".*pod5c0.* 4'
 # launch nri-resmgr
 
 cleanup
+
+terminate nri-resmgr

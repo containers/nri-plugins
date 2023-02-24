@@ -1,15 +1,12 @@
 # Test that
 # - containers marked in Annotations pinned on Reserved CPUs.
 
-nri_resmgr_cfg_orig=$nri_resmgr_cfg
-
 cleanup-test-pods() {
     ( vm-command "kubectl delete pods pod0 --now" ) || true
     ( vm-command "kubectl delete pods pod1 --now" ) || true
 }
 cleanup-test-pods
 
-nri_resmgr_cfg_orig=$nri_resmgr_cfg
 terminate nri-resmgr
 
 AVAILABLE_CPU="cpuset:8-11"
@@ -31,5 +28,3 @@ verify 'cpus["pod1c0"] == {"cpu08"}'
 cleanup-test-pods
 
 terminate nri-resmgr
-nri_resmgr_cfg=$nri_resmgr_cfg_orig
-launch nri-resmgr

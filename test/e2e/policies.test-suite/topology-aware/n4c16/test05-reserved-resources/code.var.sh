@@ -5,8 +5,6 @@
 
 AVAILABLE_CPU="cpuset:4-7,8-13"
 
-nri_resmgr_cfg_orig=$nri_resmgr_cfg
-
 # This script will create pods to the kube-system namespace
 # that is not automatically cleaned up by the framework.
 # Make sure the namespace is clear when starting the test and clean it up
@@ -99,5 +97,3 @@ verify "cpus['pod0c0'] == {'cpu04', 'cpu05', 'cpu06'}"
 vm-command "kubectl delete -n kube-system pods/pod0"
 
 terminate nri-resmgr
-nri_resmgr_cfg=$nri_resmgr_cfg_orig
-launch nri-resmgr

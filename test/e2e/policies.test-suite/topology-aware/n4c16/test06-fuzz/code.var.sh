@@ -1,3 +1,6 @@
+terminate nri-resmgr
+launch nri-resmgr
+
 source $TEST_DIR/codelib.sh || {
     echo "error importing codelib.sh"
     exit 1
@@ -42,5 +45,3 @@ wait
 
 # Restore default test configuration, restart nri-resmgr.
 terminate nri-resmgr
-nri_resmgr_cfg=$(instantiate nri-resmgr.cfg)
-launch nri-resmgr

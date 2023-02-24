@@ -3,8 +3,6 @@
 
 ( vm-command "kubectl create namespace reserved-test" ) || true
 
-nri_resmgr_cfg_orig=$nri_resmgr_cfg
-
 # This script will create pods to the reserved and default namespace.
 # Make sure the namespace is clear when starting the test and clean it up
 # if exiting with success. Otherwise leave the pod running for
@@ -53,3 +51,5 @@ verify 'cpus["pod3c0"] == {"cpu08", "cpu09"}'
 verify 'cpus["pod4c0"] == {"cpu10", "cpu11"}'
 
 cleanup-foobar-namespace
+
+terminate nri-resmgr
