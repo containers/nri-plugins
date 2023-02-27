@@ -1,10 +1,10 @@
 #!/bin/bash
 
 TITLE="NRI Resource Manager End-to-End Testing"
-DEFAULT_DISTRO="generic/ubuntu2204"
+DEFAULT_DISTRO=${DEFAULT_DISTRO:-"generic/fedora37"}
 
 # Other tested distros
-#    generic/fedora37
+#    generic/ubuntu2204
 #    fedora/37-cloud-base
 
 SCRIPT_DIR="$(dirname "${BASH_SOURCE[0]}")"

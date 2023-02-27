@@ -3,7 +3,7 @@
 TESTS_DIR="$1"
 RUN_SH="${0%/*}/run.sh"
 
-DEFAULT_DISTRO="generic/ubuntu2204"
+DEFAULT_DISTRO="generic/fedora37"
 
 k8scri=${k8scri:="containerd"}
 
