@@ -254,7 +254,7 @@ func TestGetBlkioParameters(t *testing.T) {
 			cgroupsDir:         "/missing/err",
 			fsContent:          map[string]string{},
 			expectedBlockIO:    &OciBlockIOParameters{Weight: -1},
-			expectedErrorCount: 6,
+			expectedErrorCount: 8,
 			expectedErrorSubstrings: []string{
 				"file not found",
 				"blkio.bfq.weight",
@@ -356,7 +356,7 @@ func TestSetBlkioParameters(t *testing.T) {
 				WeightDevice: OciDeviceWeights{{1, 0, 100}},
 			},
 			writesFail:         9999,
-			expectedErrorCount: 1,
+			expectedErrorCount: 2,
 			expectedErrorSubstrings: []string{
 				"could not write content \"1:0 100\" to any of files",
 				"\"blkio.bfq.weight_device\"",

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hashicorp/go-multierror"
+	"github.com/intel/nri-resmgr/pkg/multierror"
 )
 
 // VerifyDeepEqual checks that two values (including structures) are equal, or else it fails the test.
@@ -24,13 +24,10 @@ func VerifyError(t *testing.T, err error, expectedCount int, expectedSubstrings 
 			t.Errorf("error expected, got nil")
 			return false
 		}
-		merr, ok := err.(*multierror.Error)
-		if !ok {
-			t.Errorf("expected %d errors, but got %#v instead of multierror", expectedCount, err)
-			return false
-		}
-		if len(merr.Errors) != expectedCount {
-			t.Errorf("expected %d errors, but got %d: %v", expectedCount, len(merr.Errors), merr)
+		merr := multierror.New(err)
+		errors := strings.Split(merr.Error(), "\n")
+		if len(errors) != expectedCount {
+			t.Errorf("expected %d errors, but got %d: %v", expectedCount, errors, merr)
 			return false
 		}
 

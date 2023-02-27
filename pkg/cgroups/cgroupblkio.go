@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hashicorp/go-multierror"
+	"github.com/intel/nri-resmgr/pkg/multierror"
 
 	logger "github.com/intel/nri-resmgr/pkg/log"
 )
@@ -160,7 +160,7 @@ type devMajMin struct {
 
 // ResetBlkioParameters adds new, changes existing and removes missing blockIO parameters in cgroupsDir
 func ResetBlkioParameters(cgroupsDir string, blockIO OciBlockIOParameters) error {
-	var errors *multierror.Error
+	var errors error
 	oldBlockIO, getErr := GetBlkioParameters(cgroupsDir)
 	errors = multierror.Append(errors, getErr)
 	newBlockIO := NewOciBlockIOParameters()
@@ -182,7 +182,7 @@ func ResetBlkioParameters(cgroupsDir string, blockIO OciBlockIOParameters) error
 	newBlockIO.ThrottleReadIOPSDevice = resetDevRates(oldBlockIO.ThrottleReadIOPSDevice, blockIO.ThrottleReadIOPSDevice)
 	newBlockIO.ThrottleWriteIOPSDevice = resetDevRates(oldBlockIO.ThrottleWriteIOPSDevice, blockIO.ThrottleWriteIOPSDevice)
 	errors = multierror.Append(errors, SetBlkioParameters(cgroupsDir, newBlockIO))
-	return errors.ErrorOrNil()
+	return multierror.New(errors)
 }
 
 // resetDevRates adds wanted rate parameters to new and resets unwated rates
@@ -203,7 +203,7 @@ func resetDevRates(old, wanted []OciDeviceRate) []OciDeviceRate {
 
 // GetBlkioParameters returns OCI BlockIO parameters from files in cgroups blkio controller directory.
 func GetBlkioParameters(cgroupsDir string) (OciBlockIOParameters, error) {
-	var errors *multierror.Error
+	var errors error
 	blockIO := NewOciBlockIOParameters()
 	content, err := readFromFileInDir(cgroupsDir, blkioWeightFiles)
 	if err == nil {
@@ -221,12 +221,12 @@ func GetBlkioParameters(cgroupsDir string) (OciBlockIOParameters, error) {
 	errors = multierror.Append(errors, readOciDeviceParameters(cgroupsDir, blkioThrottleWriteBpsFiles, &blockIO.ThrottleWriteBpsDevice))
 	errors = multierror.Append(errors, readOciDeviceParameters(cgroupsDir, blkioThrottleReadIOPSFiles, &blockIO.ThrottleReadIOPSDevice))
 	errors = multierror.Append(errors, readOciDeviceParameters(cgroupsDir, blkioThrottleWriteIOPSFiles, &blockIO.ThrottleWriteIOPSDevice))
-	return blockIO, errors.ErrorOrNil()
+	return blockIO, multierror.New(errors)
 }
 
 // readOciDeviceParameters parses device lines used for weights and throttling rates
 func readOciDeviceParameters(baseDir string, filenames []string, params OciDeviceParameters) error {
-	var errors *multierror.Error
+	var errors error
 	contents, err := readFromFileInDir(baseDir, filenames)
 	if err != nil {
 		return err
@@ -256,12 +256,12 @@ func readOciDeviceParameters(baseDir string, filenames []string, params OciDevic
 		}
 		params.Append(major, minor, value)
 	}
-	return errors.ErrorOrNil()
+	return multierror.New(errors)
 }
 
 // readFromFileInDir returns content from the first successfully read file.
 func readFromFileInDir(baseDir string, filenames []string) (string, error) {
-	var errors *multierror.Error
+	var errors error
 	// If reading all the files fails, return list of read errors.
 	for _, filename := range filenames {
 		filepath := filepath.Join(baseDir, filename)
@@ -271,7 +271,7 @@ func readFromFileInDir(baseDir string, filenames []string) (string, error) {
 		}
 		errors = multierror.Append(errors, err)
 	}
-	err := errors.ErrorOrNil()
+	err := multierror.New(errors)
 	if err != nil {
 		return "", fmt.Errorf("could not read any of files %q: %w", filenames, err)
 	}
@@ -281,7 +281,7 @@ func readFromFileInDir(baseDir string, filenames []string) (string, error) {
 // SetBlkioParameters writes OCI BlockIO parameters to files in cgroups blkio contoller directory.
 func SetBlkioParameters(cgroupsDir string, blockIO OciBlockIOParameters) error {
 	log.Debug("configuring cgroups blkio controller in directory %#v with parameters %+v", cgroupsDir, blockIO)
-	var errors *multierror.Error
+	var errors error
 	if blockIO.Weight >= 0 {
 		errors = multierror.Append(errors, writeToFileInDir(cgroupsDir, blkioWeightFiles, strconv.FormatInt(blockIO.Weight, 10)))
 	}
@@ -300,7 +300,7 @@ func SetBlkioParameters(cgroupsDir string, blockIO OciBlockIOParameters) error {
 	for _, rateDevice := range blockIO.ThrottleWriteIOPSDevice {
 		errors = multierror.Append(errors, writeDevValueToFileInDir(cgroupsDir, blkioThrottleWriteIOPSFiles, rateDevice.Major, rateDevice.Minor, rateDevice.Rate))
 	}
-	return errors.ErrorOrNil()
+	return multierror.New(errors)
 }
 
 // writeDevValueToFileInDir writes MAJOR:MINOR VALUE to the first existing file under baseDir
@@ -311,7 +311,7 @@ func writeDevValueToFileInDir(baseDir string, filenames []string, major, minor, 
 
 // writeToFileInDir writes content to the first existing file in the list under baseDir.
 func writeToFileInDir(baseDir string, filenames []string, content string) error {
-	var errors *multierror.Error
+	var errors error
 	// Returns list of errors from writes, list of single error due to all filenames missing or nil on success.
 	for _, filename := range filenames {
 		filepath := filepath.Join(baseDir, filename)
@@ -321,7 +321,7 @@ func writeToFileInDir(baseDir string, filenames []string, content string) error 
 		}
 		errors = multierror.Append(errors, err)
 	}
-	err := errors.ErrorOrNil()
+	err := multierror.New(errors)
 	if err != nil {
 		return fmt.Errorf("could not write content %#v to any of files %q: %w", content, filenames, err)
 	}

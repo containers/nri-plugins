@@ -7,7 +7,6 @@ require (
 	contrib.go.opencensus.io/exporter/prometheus v0.4.2
 	github.com/containerd/nri v0.2.0
 	github.com/google/go-cmp v0.5.9
-	github.com/hashicorp/go-multierror v1.1.1
 	github.com/intel/goresctrl v0.3.0
 	github.com/intel/nri-resmgr/pkg/topology v0.0.0
 	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.0
@@ -67,7 +66,6 @@ require (
 	github.com/google/gnostic v0.5.7-v3refs // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/uuid v1.3.0 // indirect
-	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/imdario/mergo v0.3.12 // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect

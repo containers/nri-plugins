@@ -20,7 +20,7 @@ import (
 	resapi "k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
-	"github.com/hashicorp/go-multierror"
+	"github.com/intel/nri-resmgr/pkg/multierror"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/intel/nri-resmgr/pkg/cache"
@@ -411,7 +411,7 @@ func (p *policy) ExportResourceData(c cache.Container) map[string]string {
 
 // reallocateResources reallocates the given containers using the given pool hints
 func (p *policy) reallocateResources(containers []cache.Container, pools map[string]string) error {
-	var errors *multierror.Error
+	var errors error
 
 	log.Info("reallocating resources...")
 
@@ -431,7 +431,7 @@ func (p *policy) reallocateResources(containers []cache.Container, pools map[str
 		}
 	}
 
-	if err := errors.ErrorOrNil(); err != nil {
+	if err := multierror.New(errors); err != nil {
 		return err
 	}
 
