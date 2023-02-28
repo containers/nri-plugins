@@ -29,6 +29,7 @@ BUILD_BUILDID := $(shell scripts/build/get-buildid --buildid --shell=no)
 RPM_VERSION   := $(shell scripts/build/get-buildid --rpm --shell=no)
 DEB_VERSION   := $(shell scripts/build/get-buildid --deb --shell=no)
 TAR_VERSION   := $(shell scripts/build/get-buildid --tar --shell=no)
+GOLICENSES_VERSION  ?= v1.6.0
 
 CONTAINER_RUN_CMD ?= docker run
 IMAGE_BUILD_CMD ?= docker build
@@ -53,6 +54,7 @@ BUILD_PATH    := $(shell pwd)/build
 BIN_PATH      := $(BUILD_PATH)/bin
 COVERAGE_PATH := $(BUILD_PATH)/coverage
 IMAGE_PATH    := $(BUILD_PATH)/images
+LICENSE_PATH  := $(BUILD_PATH)/licenses
 
 DOCKER := docker
 
@@ -273,3 +275,12 @@ pkg/sysfs/sst_types%.go: pkg/sysfs/_sst_types%.go pkg/sysfs/gen_sst_types.sh
 	$(Q)cd $(@D) && \
 	    KERNEL_SRC_DIR=$(KERNEL_SRC_DIR) $(GO_GEN)
 
+report-licenses:
+	$(Q)mkdir -p $(LICENSE_PATH) && \
+	for cmd in $(IMAGE_DIRS); do \
+	    LICENSE_PKGS="$$LICENSE_PKGS ./cmd/$$cmd"; \
+	done && \
+	go-licenses report $$LICENSE_PKGS \
+	        --ignore github.com/intel/nri-resmgr \
+	        > $(LICENSE_PATH)/licenses.csv && \
+	echo See $(LICENSE_PATH)/licenses.csv for license information
