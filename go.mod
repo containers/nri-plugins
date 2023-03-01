@@ -5,7 +5,7 @@ go 1.19
 require (
 	contrib.go.opencensus.io/exporter/jaeger v0.2.1
 	contrib.go.opencensus.io/exporter/prometheus v0.4.2
-	github.com/containerd/nri v0.2.0
+	github.com/containerd/nri v0.3.0
 	github.com/google/go-cmp v0.5.9
 	github.com/intel/goresctrl v0.3.0
 	github.com/intel/nri-resmgr/pkg/topology v0.0.0
