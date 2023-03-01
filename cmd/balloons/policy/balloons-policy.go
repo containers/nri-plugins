@@ -208,10 +208,14 @@ func (p *balloons) Start(add []cache.Container, del []cache.Container) error {
 func (p *balloons) Sync(add []cache.Container, del []cache.Container) error {
 	log.Debug("synchronizing state...")
 	for _, c := range del {
-		p.ReleaseResources(c)
+		if err := p.ReleaseResources(c); err != nil {
+			log.Warnf("releasing resources for Sync produced an error: %v", err)
+		}
 	}
 	for _, c := range add {
-		p.AllocateResources(c)
+		if err := p.AllocateResources(c); err != nil {
+			log.Warnf("allocating resources for Sync produced an error: %v", err)
+		}
 	}
 	return nil
 }
