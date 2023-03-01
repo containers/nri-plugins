@@ -12,5 +12,4 @@ data:
     HTTPEndpoint: ":8891"
   logger: |+
     Debug: resource-manager,cache,policy,resource-control
-  foo: |+
-    bar: "abc"
+  ${dummyData}
