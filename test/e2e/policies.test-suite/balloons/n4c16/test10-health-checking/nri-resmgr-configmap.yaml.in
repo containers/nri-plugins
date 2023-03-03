@@ -22,5 +22,4 @@ data:
     Debug: policy
     Klog:
       skip_headers: true
-  foo: |+
-    bar: "abc"
+  ${dummyData}
