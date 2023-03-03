@@ -28,6 +28,12 @@
       register: result
       failed_when: result.state != "file"
 
+    - name: create fallback config file for configmap tests
+      become: yes
+      shell: "{{ item }}"
+      with_items:
+        - sed 's/--force-config/--fallback-config/' /etc/nri-resmgr/nri-resmgr-deployment.yaml > /etc/nri-resmgr/nri-resmgr-deployment-fallback.yaml
+
     - name: get latest nri-resmgr deployment image name
       delegate_to: localhost
       shell: "ls -1t {{ nri_resmgr_src }}/build/images/nri-resmgr-topology-aware-image-*.tar"
