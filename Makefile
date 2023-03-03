@@ -46,9 +46,12 @@ GO_FMT     := gofmt
 GO_VET     := $(GO_CMD) vet
 
 GO_MODULES := $(shell $(GO_CMD) list ./...)
+GO_SUBPKGS := $(shell find ./pkg -name go.mod | sed 's:/go.mod::g' | grep -v testdata)
 
 GOLANG_CILINT := golangci-lint
 GINKGO        := ginkgo
+TEST_SETUP    := test-setup.sh
+TEST_CLEANUP  := test-cleanup.sh
 
 BUILD_PATH    := $(shell pwd)/build
 BIN_PATH      := $(BUILD_PATH)/bin
@@ -174,7 +177,7 @@ $(BIN_PATH)/nri-resmgr-balloons: \
 # test targets
 #
 
-test-gopkgs: ginkgo-tests
+test-gopkgs: ginkgo-tests ginkgo-subpkgs-tests
 
 ginkgo-tests:
 	$(Q)$(GINKGO) run \
@@ -189,6 +192,22 @@ ginkgo-tests:
 	    --succinct \
 	    -r .; \
 	$(GO_CMD) tool cover -html=$(COVERAGE_PATH)/coverprofile -o $(COVERAGE_PATH)/coverage.html
+
+ginkgo-subpkgs-tests: # TODO(klihub): coverage ?
+	$(Q)for i in $(GO_SUBPKGS); do \
+	    (cd $$i; \
+	        if [ -x "$(TEST_SETUP)" ]; then \
+	            ./$(TEST_SETUP); \
+	        fi; \
+	        $(GINKGO) run \
+	            --race \
+	            --trace \
+	            --succinct \
+	            -r . || exit 1; \
+	        if [ -x "$(TEST_CLEANUP)" ]; then \
+	            ./"$(TEST_CLEANUP)"; \
+	        fi); \
+	done
 
 codecov: SHELL := $(shell which bash)
 codecov:
