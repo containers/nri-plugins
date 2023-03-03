@@ -437,7 +437,7 @@ func (m *resmgr) SetConfig(conf config.RawConfig) error {
 
 	if opt.ForceConfig != "" {
 		m.Info("ignoring config from agent because using forced configuration %s", opt.ForceConfig)
-		return fmt.Errorf("force config is enabled, ignoring agent config")
+		return nil
 	}
 
 	m.Info("applying new configuration from agent...")
