@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -1303,12 +1302,16 @@ func (cch *cache) checkPerm(what, path string, isDir bool, p *permissions) (bool
 		what += " directory"
 	}
 
-	info, err := os.Stat(path)
+	info, err := os.Lstat(path)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			return true, cacheError("failed to os.Stat() %s %q: %v", what, path, err)
 		}
 		return false, nil
+	}
+
+	if (info.Mode() & os.ModeType) == os.ModeSymlink {
+		return true, cacheError("%s %q exists, but is a symbolic link", what, path)
 	}
 
 	// check expected file type
@@ -1461,7 +1464,7 @@ func (cch *cache) Save() error {
 	}
 
 	tmpPath := cch.filePath + ".saving"
-	if err = ioutil.WriteFile(tmpPath, data, cacheFilePerm.prefer); err != nil {
+	if err = os.WriteFile(tmpPath, data, cacheFilePerm.prefer); err != nil {
 		return cacheError("failed to write cache to file %q: %v", tmpPath, err)
 	}
 	if err := os.Rename(tmpPath, cch.filePath); err != nil {
@@ -1476,7 +1479,7 @@ func (cch *cache) Save() error {
 func (cch *cache) Load() error {
 	cch.Debug("loading cache from file '%s'...", cch.filePath)
 
-	data, err := ioutil.ReadFile(cch.filePath)
+	data, err := os.ReadFile(cch.filePath)
 
 	switch {
 	case os.IsNotExist(err):
