@@ -242,15 +242,19 @@ launch() { # script API
 	    vm-command "kubectl apply -f $nri_resmgr_deployment_file" ||
 		error "Cannot apply deployment"
 
+            if [ "${wait_t}" = "none" ]; then
+                return 0
+            fi
+
 	    # Direct logs to output file
-	    POD="$(namespace=kube-system wait_t=120 vm-wait-pod-regexp nri-resmgr-)"
+	    POD="$(namespace=kube-system wait_t=${wait_t:-120} vm-wait-pod-regexp nri-resmgr-)"
 	    if [ ! -z "$POD" ]; then
 		# If the POD contains \n, then the old pod is still there. Wait a sec in this
 		# case and retry.
 		POD_CHECK=$(echo "$POD" | awk 'BEGIN { RS=""; FS="\n"} { print $2 }')
 		if [ ! -z "$POD_CHECK" ]; then
 		    sleep 1
-		    POD="$(namespace=kube-system wait_t=60 vm-wait-pod-regexp nri-resmgr-)"
+		    POD="$(namespace=kube-system wait_t=${wait_t:-60} vm-wait-pod-regexp nri-resmgr-)"
 		    if [ -z "$POD" ]; then
 			error "Cannot figure out pod name"
 		    fi
