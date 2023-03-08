@@ -15,6 +15,10 @@ cleanup() {
 	kubectl -n kube-system delete configmap nri-resmgr-config.default || :"
     vm-port-forward-disable
     terminate nri-resmgr
+
+    # Just in case the cache says that the policy is "topology-aware"
+    # (from earlier tests) then remove the cache to force "balloons" policy
+    vm-command "rm -f /var/lib/nri-resmgr/cache" || true
 }
 
 apply-configmap() {
