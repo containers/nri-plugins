@@ -26,7 +26,7 @@ symlink_cache
 # Try to re-launch nri-resmgr, check whether and how it fails.
 (
   trap 'restore_cache' 0
-  if (wait_t=5 launch nri-resmgr); then
+  if (wait_t=5 ds_wait_t=none launch nri-resmgr); then
       exit 1
   else
       if ! vm-command "kubectl -n kube-system logs daemonset.apps/nri-resmgr | \

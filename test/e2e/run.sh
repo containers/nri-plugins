@@ -260,8 +260,13 @@ launch() { # script API
 		    fi
 		fi
 
-		# Wait a while so that the status check can get somewhat meaningful status
-		vm-command-q "kubectl wait --timeout=5s --for=condition=Available -n kube-system daemonset/nri-resmgr"
+		if [ "$ds_wait_t" != "none" ]; then
+		    # Wait a while so that the status check can get somewhat meaningful status
+		    vm-command "kubectl -n kube-system rollout status daemonset/nri-resmgr --timeout=${ds_wait_t:-20s}"
+		    if [ $? -ne 0 ]; then
+			error "Timeout while waiting daemonset/nri-resmgr to be ready"
+		    fi
+		fi
 
 		# Check if we have anything else than Running status for the pod
 		status="$(vm-command-q "kubectl get pod "$POD" -n kube-system | tail -1 | awk '{ print \$3 }'")"
