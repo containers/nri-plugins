@@ -36,8 +36,6 @@ type options struct {
 	FallbackConfig    string
 	ForceConfig       string
 	ForceConfigSignal string
-	ResetPolicy       bool
-	ResetConfig       bool
 	MetricsTimer      time.Duration
 	RebalanceTimer    time.Duration
 	DisableAgent      bool
