@@ -66,7 +66,7 @@ cleanup
 # Try starting nri-resmgr with a configuration where MinBalloons and
 # MaxBalloons of the same balloon type contradict.
 terminate nri-resmgr
-( nri_resmgr_cfg=${TEST_DIR}/balloons-maxballoons-impossible.cfg launch nri-resmgr ) && {
+( ds_wait_t=1s nri_resmgr_cfg=${TEST_DIR}/balloons-maxballoons-impossible.cfg launch nri-resmgr ) && {
     error "starting nri-resmgr succeeded, but was expected to fail due to impossible static balloons"
 }
 echo "starting nri-resmgr with impossible static balloons configuration failed as expected"
