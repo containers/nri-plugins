@@ -39,6 +39,8 @@ symlink_cache
 )
 status=$?
 
+terminate nri-resmgr
+
 # Check and report test status.
 case "$status" in
     1) error "ERROR: nri-resmgr expected to reject symlinked cache, but it did not.";;
