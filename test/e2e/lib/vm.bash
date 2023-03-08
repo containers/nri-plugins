@@ -286,7 +286,7 @@ vm-wait-pod-regexp() {
     # Rudimentary wait as "kubectl wait" will timeout immediately if pod is not yet there.
     vm-run-until --timeout "$wait_t" "kubectl get pods $namespace_args | grep -q $pod_regexp" || error "timeout while waiting $pod_regexp"
 
-    POD="$(vm-command-q "kubectl get pods $namespace_args | awk '/${pod_regexp}/ { print \$1 }'")"
+    local POD="$(vm-command-q "kubectl get pods $namespace_args | awk '/${pod_regexp}/ { print \$1 }'")"
     if [ -z "$POD" ]; then
         command-error "Pod $pod_regexp not found"
     fi
