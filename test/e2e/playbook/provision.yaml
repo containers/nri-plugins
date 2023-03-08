@@ -153,16 +153,13 @@
         - sed -i 's/^.*disabled_plugins *= *.*$/disabled_plugins = []/' /etc/containerd/config.toml
         - sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
 
-    - name: setup nri.conf
-      lineinfile:
-        path: /etc/nri/nri.conf
-        line: "disableConnections: false"
-        create: yes
-
     - name: setup nri
       file:
-        path: /opt/nri/plugins
+        path: "{{ item }}"
         state: directory
+      with_items:
+        - "/etc/nri/conf.d"
+        - "/opt/nri/plugins"
 
     - name: enable nri for containerd
       shell: "{{ item }}"
