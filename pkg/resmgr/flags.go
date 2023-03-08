@@ -29,22 +29,21 @@ const (
 
 // Options captures our command line parameters.
 type options struct {
-	HostRoot            string
-	StateDir            string
-	PidFile             string
-	ResctrlPath         string
-	FallbackConfig      string
-	ForceConfig         string
-	ForceConfigSignal   string
-	DisablePolicySwitch bool
-	ResetPolicy         bool
-	ResetConfig         bool
-	MetricsTimer        time.Duration
-	RebalanceTimer      time.Duration
-	DisableAgent        bool
-	NriPluginName       string
-	NriPluginIdx        string
-	NriSocket           string
+	HostRoot          string
+	StateDir          string
+	PidFile           string
+	ResctrlPath       string
+	FallbackConfig    string
+	ForceConfig       string
+	ForceConfigSignal string
+	ResetPolicy       bool
+	ResetConfig       bool
+	MetricsTimer      time.Duration
+	RebalanceTimer    time.Duration
+	DisableAgent      bool
+	NriPluginName     string
+	NriPluginIdx      string
+	NriSocket         string
 }
 
 // ResourceManager command line options.

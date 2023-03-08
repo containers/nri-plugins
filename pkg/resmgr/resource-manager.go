@@ -186,30 +186,6 @@ func (m *resmgr) Stop() {
 	m.nri.stop()
 }
 
-// resetCachedPolicy resets the cached active policy and all of its data.
-func (m *resmgr) resetCachedPolicy() int {
-	m.Info("resetting active policy stored in cache...")
-	defer logger.Flush()
-
-	if err := m.cache.ResetActivePolicy(); err != nil {
-		m.Error("failed to reset active policy: %v", err)
-		return 1
-	}
-	return 0
-}
-
-// resetCachedConfig resets any cached configuration.
-func (m *resmgr) resetCachedConfig() int {
-	m.Info("resetting cached configuration...")
-	defer logger.Flush()
-
-	if err := m.cache.ResetConfig(); err != nil {
-		m.Error("failed to reset cached configuration: %v", err)
-		return 1
-	}
-	return 0
-}
-
 // setupCache creates a cache and reloads its last saved state if found.
 func (m *resmgr) setupCache() error {
 	var err error
@@ -256,12 +232,6 @@ func (m *resmgr) setupPolicy() error {
 
 	if active != cached {
 		if cached != "" {
-			if opt.DisablePolicySwitch {
-				m.Error("can't switch policy from %q to %q: policy switching disabled",
-					cached, active)
-				return resmgrError("cannot load cache with policy %s for active policy %s",
-					cached, active)
-			}
 			if err := m.cache.ResetActivePolicy(); err != nil {
 				return resmgrError("failed to reset cached policy %q: %v", cached, err)
 			}
