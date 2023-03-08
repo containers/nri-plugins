@@ -20,14 +20,13 @@ import (
 	"strings"
 
 	"github.com/intel/nri-resmgr/pkg/cache"
-	"github.com/intel/nri-resmgr/pkg/client"
 	logger "github.com/intel/nri-resmgr/pkg/log"
 )
 
 // Control is the interface for triggering controller-/domain-specific post-decision actions.
 type Control interface {
 	// StartStopControllers starts/stops all controllers according to configuration.
-	StartStopControllers(cache.Cache, client.Client) error
+	StartStopControllers(cache.Cache) error
 	// PreCreateHooks runs the pre-create hooks of all registered controllers.
 	RunPreCreateHooks(cache.Container) error
 	// RunPreStartHooks runs the pre-start hooks of all registered controllers.
@@ -43,7 +42,7 @@ type Control interface {
 // Controller is the interface all resource controllers must implement.
 type Controller interface {
 	// Start prepares the controller for resource control/decision enforcement.
-	Start(cache.Cache, client.Client) error
+	Start(cache.Cache) error
 	// Stop shuts down the controller.
 	Stop()
 	// PreCreateHook is the controller's pre-create hook.
@@ -61,7 +60,6 @@ type Controller interface {
 // control encapsulates our controller-agnostic runtime state.
 type control struct {
 	cache       cache.Cache   // resource manager cache
-	client      client.Client // resource manager CRI client
 	controllers []*controller // active controllers
 }
 
@@ -105,9 +103,8 @@ func NewControl() (Control, error) {
 }
 
 // StartStopController starts/stops all controllers according to configuration.
-func (c *control) StartStopControllers(cache cache.Cache, client client.Client) error {
+func (c *control) StartStopControllers(cache cache.Cache) error {
 	c.cache = cache
-	c.client = client
 
 	log.Info("syncing controllers with configuration...")
 
@@ -126,7 +123,7 @@ func (c *control) StartStopControllers(cache cache.Cache, client client.Client) 
 			continue
 		}
 
-		err := controller.c.Start(cache, client)
+		err := controller.c.Start(cache)
 
 		if err != nil {
 			log.Error("controller %s: failed to start: %v", controller.name, err)

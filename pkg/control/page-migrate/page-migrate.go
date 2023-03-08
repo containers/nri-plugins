@@ -19,7 +19,6 @@ import (
 	"sync"
 
 	"github.com/intel/nri-resmgr/pkg/cache"
-	"github.com/intel/nri-resmgr/pkg/client"
 	"github.com/intel/nri-resmgr/pkg/control"
 	logger "github.com/intel/nri-resmgr/pkg/log"
 )
@@ -96,7 +95,7 @@ func getMigrationController() *migration {
 }
 
 // Start prepares the controller for resource control/decision enforcement.
-func (m *migration) Start(cache cache.Cache, client client.Client) error {
+func (m *migration) Start(cache cache.Cache) error {
 	m.cache = cache
 	m.syncWithCache()
 	m.demoter.Reconfigure()

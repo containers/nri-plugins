@@ -21,7 +21,6 @@ import (
 
 	"github.com/intel/goresctrl/pkg/utils"
 	"github.com/intel/nri-resmgr/pkg/cache"
-	"github.com/intel/nri-resmgr/pkg/client"
 	pkgcfg "github.com/intel/nri-resmgr/pkg/config"
 	"github.com/intel/nri-resmgr/pkg/control"
 	logger "github.com/intel/nri-resmgr/pkg/log"
@@ -74,7 +73,7 @@ func getCPUController() *cpuctl {
 }
 
 // Start initializes the controller for enforcing decisions.
-func (ctl *cpuctl) Start(cache cache.Cache, client client.Client) error {
+func (ctl *cpuctl) Start(cache cache.Cache) error {
 	sys, err := sysfs.DiscoverSystem()
 	if err != nil {
 		return fmt.Errorf("failed to discover system topology: %w", err)

@@ -21,7 +21,6 @@ import (
 
 	"github.com/intel/nri-resmgr/pkg/cache"
 	"github.com/intel/nri-resmgr/pkg/cgroups"
-	"github.com/intel/nri-resmgr/pkg/client"
 	"github.com/intel/nri-resmgr/pkg/control"
 	logger "github.com/intel/nri-resmgr/pkg/log"
 )
@@ -57,7 +56,7 @@ func getMemoryController() *memctl {
 }
 
 // Start initializes the controller for enforcing decisions.
-func (ctl *memctl) Start(cache cache.Cache, client client.Client) error {
+func (ctl *memctl) Start(cache cache.Cache) error {
 	// Let's keep this off for now so we can exercise this without a patched kernel...
 	if !ctl.checkToptierLimitSupport() {
 		return memctlError("cgroup top tier memory limit control not available")
