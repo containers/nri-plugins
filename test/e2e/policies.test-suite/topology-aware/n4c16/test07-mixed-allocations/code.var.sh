@@ -7,10 +7,6 @@ vm-command "kubectl delete pods --all --now"
 # Remove also any leftover test pods from kube-system
 vm-command "kubectl delete pods pod0 pod1 pod2 pod3 pod4 pod5 --ignore-not-found=true --now -n kube-system"
 
-# Do a fresh start
-terminate nri-resmgr
-launch nri-resmgr
-
 # Place pod0c0 and pod0c1 to shared pools on separate nodes.
 CONTCOUNT=2 CPU=500m create guaranteed
 report allowed
