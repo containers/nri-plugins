@@ -52,6 +52,7 @@ The estimated complexity and priority of a feature/task is defined like this:
   - [ ] unit tests in GH actions, C4
   - [ ] e2e-tests on merge by CI/self-hosted runners, C4
   - [ ] migrate shell based e2e-tests into Ansible, C4
+  - [ ] make topology-aware e2e test07-mixed-allocations more reliable, C1
 - documentation
   - [ ] minimal README with instructions about how to build/deploy/try the plugins, C2
 
