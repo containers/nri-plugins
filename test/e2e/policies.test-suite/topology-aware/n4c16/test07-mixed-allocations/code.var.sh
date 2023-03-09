@@ -1,12 +1,15 @@
 terminate nri-resmgr
 launch nri-resmgr
 
-# Make sure all the pods in default namespace are cleared so we get a fresh start
-vm-command "kubectl delete pods --all --now"
+cleanup-test-pods() {
+    # Make sure all the pods in default namespace are cleared so we get a fresh start
+    vm-command "kubectl delete pods --all --now"
 
-# Remove also any leftover test pods from kube-system
-vm-command "kubectl delete pods pod0 pod1 pod2 pod3 pod4 pod5 --ignore-not-found=true --now -n kube-system"
+    # Remove also any leftover test pods from kube-system
+    vm-command "kubectl delete pods pod0 pod1 pod2 pod3 pod4 pod5 --ignore-not-found=true --now -n kube-system"
+}
 
+cleanup-test-pods
 
 # Place pod0c0 and pod0c1 to shared pools on separate nodes.
 CONTCOUNT=2 CPU=500m create guaranteed
@@ -121,5 +124,7 @@ verify `# every container is placed on a single node (no socket, no root)` \
        `# pod5c0 and pod5c1 share a node with another container => all their CPUs should be shared` \
        "len(cpus['pod5c0'] - set.union(*[cpus[c] for c in cpus if c != 'pod5c0'])) == 0" \
        "len(cpus['pod5c1'] - set.union(*[cpus[c] for c in cpus if c != 'pod5c1'])) == 0"
+
+cleanup-test-pods
 
 terminate nri-resmgr
