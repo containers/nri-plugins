@@ -44,6 +44,7 @@ GO_TEST    := $(GO_CMD) test
 GO_LINT    := golint -set_exit_status
 GO_FMT     := gofmt
 GO_VET     := $(GO_CMD) vet
+GO_DEPS    := $(GO_CMD) list -f '{{ join .Deps "\n" }}'
 
 GO_MODULES := $(shell $(GO_CMD) list ./...)
 GO_SUBPKGS := $(shell find ./pkg -name go.mod | sed 's:/go.mod::g' | grep -v testdata)
@@ -158,17 +159,17 @@ $(BIN_PATH)/%: .static.%.$(STATIC)
 #
 
 $(BIN_PATH)/nri-resmgr-topology-aware: \
-    $(shell for dir in \
-                $(shell go list -f '{{ join .Deps  "\n"}}' ./... | \
-                          egrep '(nri-resmgr/pkg/)|(nri-resmgr/cmd/topology-aware/)' | \
+    $(shell for f in cmd/topology-aware/*.go; do echo $$f; done; \
+            for dir in $(shell $(GO_DEPS) ./cmd/topology-aware/... | \
+                          grep '/nri-resmgr/' | \
                           sed 's#github.com/intel/nri-resmgr/##g'); do \
                 find $$dir -name \*.go; \
             done | sort | uniq)
 
 $(BIN_PATH)/nri-resmgr-balloons: \
-    $(shell for dir in \
-                  $(shell go list -f '{{ join .Deps  "\n"}}' ./... | \
-                          egrep '(nri-resmgr/pkg/)|(nri-resmgr/cmd/balloons/)' | \
+    $(shell for f in cmd/balloons/*.go; do echo $$f; done; \
+                for dir in $(shell $(GO_DEPS) ./cmd/balloons/... | \
+                          grep '/nri-resmgr/' | \
                           sed 's#github.com/intel/nri-resmgr/##g'); do \
                 find $$dir -name \*.go; \
             done | sort | uniq)
