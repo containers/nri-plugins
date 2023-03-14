@@ -106,6 +106,9 @@ vm-setup() {
     fi
 
     (cd "$vagrantdir";
+     # Make sure the vagrant plugins are installed
+     make install
+
      if [ ! -d .vagrant ]; then
 	 vagrant init $distro
      fi
