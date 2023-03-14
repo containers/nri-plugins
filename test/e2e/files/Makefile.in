@@ -1,9 +1,14 @@
 all: up
 
-install:
+install: .plugins.installed.stamp
+
+.plugins.installed.stamp:
 	vagrant plugin install dotenv
 	vagrant plugin install vagrant-proxyconf
 	vagrant plugin install vagrant-qemu
+	$(Q)if [ ! -f "$@" ]; then \
+	    touch "$@"; \
+	fi;
 
 provision: install
 	vagrant up --provision --provider=qemu --no-parallel --no-destroy-on-error
