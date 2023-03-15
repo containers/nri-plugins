@@ -225,12 +225,20 @@
         - kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true
         - kubectl taint nodes --all node-role.kubernetes.io/master- || true
 
+    - name: copy cilium install script
+      copy:
+        src: "{{ nri_resmgr_src }}/test/e2e/files/cilium-install.sh"
+        dest: /usr/local/bin/cilium-install.sh
+        owner: root
+        group: root
+        mode: '0755'
+
     - name: Install cilium cni
       command: "{{ item }}"
       with_items:
         - curl -L --remote-name-all https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz
         - tar xzvfC cilium-linux-amd64.tar.gz /usr/local/bin
-        - cilium install
+        - cilium-install.sh
         - rm -f cilium-linux-amd64.tar.gz
 
     - name: generate join command
