@@ -1,0 +1,12 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nri-resmgr
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nri-resmgr
+subjects:
+- kind: ServiceAccount
+  name: nri-resmgr
+  namespace: default

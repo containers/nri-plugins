@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nri-resmgr-config.default
+data:
+  policy: |+
+    ReservedResources:
+      cpu: 750m
+    #balloons:
+  #logger: |+
+    #Debug: resource-manager,cache,policy,resource-control

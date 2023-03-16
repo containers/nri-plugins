@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nri-resmgr-config.default
+data:
+  policy: |+
+    ReservedResources:
+      cpu: 750m
+    #topology-aware:
+    #  PinCPU: true
+    #  PinMemory: true
+    #  PreferIsolatedCPUs: true
+    #  PreferSharedCPUs: false
+  #logger: |+
+    #Debug: resource-manager,cache,policy,resource-control

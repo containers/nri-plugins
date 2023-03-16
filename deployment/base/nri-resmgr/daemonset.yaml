@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app: nri-resmgr
+  name: nri-resmgr
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app: nri-resmgr
+  template:
+    metadata:
+      labels:
+        app: nri-resmgr
+    spec:
+      serviceAccount: nri-resmgr
+      nodeSelector:
+        kubernetes.io/os: "linux"
+      containers:
+        - name: nri-resmgr-topology-aware
+          args:
+            - --host-root
+            - /host
+            - --fallback-config
+            - /etc/nri-resmgr/nri-resmgr.cfg
+            - --pid-file
+            - /tmp/nri-resmgr.pid
+            - -metrics-interval
+            - 5s
+          ports:
+            - containerPort: 8891
+              name: metrics
+              protocol: TCP
+              hostPort: 8891
+          env:
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+          image: IMAGE_PLACEHOLDER
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+          - name: resmgrdata
+            mountPath: /var/lib/nri-resmgr
+          - name: hostsysfs
+            mountPath: /host/sys
+          - name: resmgrsockets
+            mountPath: /var/run/nri-resmgr
+          - name: resmgrconfig
+            mountPath: /etc/nri-resmgr
+          - name: nrisockets
+            mountPath: /var/run/nri
+      volumes:
+      - name: resmgrdata
+        hostPath:
+          path: /var/lib/nri-resmgr
+          type: DirectoryOrCreate
+      - name: hostsysfs
+        hostPath:
+          path: /sys
+          type: Directory
+      - name: resmgrsockets
+        hostPath:
+          path: /var/run/nri-resmgr
+      - name: resmgrconfig
+        configMap:
+          name: nri-resmgr-config
+      - name: nrisockets
+        hostPath:
+          path: /var/run/nri
+          type: Directory
