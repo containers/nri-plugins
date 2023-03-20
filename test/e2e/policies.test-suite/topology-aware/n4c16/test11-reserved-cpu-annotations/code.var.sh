@@ -14,11 +14,11 @@ RESERVED_CPU="cpuset:10-11"
 nri_resource_policy_cfg=$(instantiate nri-resource-policy-reserved-annotations.cfg)
 launch nri-resource-policy
 
-ANNOTATIONS='prefer-reserved-cpus.nri-resmgr.intel.com/pod: "true"'
+ANNOTATIONS='prefer-reserved-cpus.nri-resource-policy.intel.com/pod: "true"'
 CONTCOUNT=1 create reserved-annotated
 report allowed
 
-ANNOTATIONS='prefer-reserved-cpus.nri-resmgr.intel.com/container.special: "false"'
+ANNOTATIONS='prefer-reserved-cpus.nri-resource-policy.intel.com/container.special: "false"'
 CONTCOUNT=1 create reserved-annotated
 report allowed
 

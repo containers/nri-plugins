@@ -221,12 +221,12 @@ func (p *pod) GetLabel(key string) (string, bool) {
 	return value, ok
 }
 
-// Get all label keys in the nri-resmgr namespace.
+// Get all label keys in the nri-resource-policy namespace.
 func (p *pod) GetResmgrLabelKeys() []string {
 	return keysInNamespace(p.Labels, kubernetes.ResmgrKeyNamespace)
 }
 
-// Get the label for the given key in the nri-resmgr namespace.
+// Get the label for the given key in the nri-resource-policy namespace.
 func (p *pod) GetResmgrLabel(key string) (string, bool) {
 	value, ok := p.Labels[kubernetes.ResmgrKey(key)]
 	return value, ok
@@ -296,17 +296,17 @@ func (p *pod) GetAnnotationObject(key string, objPtr interface{},
 	return true, err
 }
 
-// Get the keys of all annotation in the nri-resmgr namespace.
+// Get the keys of all annotation in the nri-resource-policy namespace.
 func (p *pod) GetResmgrAnnotationKeys() []string {
 	return keysInNamespace(p.Annotations, kubernetes.ResmgrKeyNamespace)
 }
 
-// Get the value of the given annotation in the nri-resmgr namespace.
+// Get the value of the given annotation in the nri-resource-policy namespace.
 func (p *pod) GetResmgrAnnotation(key string) (string, bool) {
 	return p.GetAnnotation(kubernetes.ResmgrKey(key))
 }
 
-// Get and decode the pod annotation for the key in the nri-resmgr namespace..
+// Get and decode the pod annotation for the key in the nri-resource-policy namespace..
 func (p *pod) GetResmgrAnnotationObject(key string, objPtr interface{},
 	decode func([]byte, interface{}) error) (bool, error) {
 	return p.GetAnnotationObject(kubernetes.ResmgrKey(key), objPtr, decode)

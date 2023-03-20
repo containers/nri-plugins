@@ -124,10 +124,10 @@ type Pod interface {
 	// GetLabel returns the value of the given label and whether it was found.
 	GetLabel(string) (string, bool)
 	// GetResmgrLabelKeys returns pod label keys (without the namespace
-	// part) in nri-resmgr namespace.
+	// part) in nri-resource-policy namespace.
 	GetResmgrLabelKeys() []string
 	// GetResmgrLabel returns the value of a pod label from the
-	// nri-resmgr namespace.
+	// nri-resource-policy namespace.
 	GetResmgrLabel(string) (string, bool)
 	// GetAnnotationKeys returns the keys of all pod annotations as a string slice.
 	GetAnnotationKeys() []string
@@ -137,13 +137,13 @@ type Pod interface {
 	GetAnnotationObject(key string, objPtr interface{},
 		decode func([]byte, interface{}) error) (bool, error)
 	// GetResmgrAnnotationKeys returns pod annotation keys (without the
-	// namespace part) in nri-resmgr namespace as a string slice.
+	// namespace part) in nri-resource-policy namespace as a string slice.
 	GetResmgrAnnotationKeys() []string
 	// GetAnnotation returns the value of a pod annotation from the
-	// nri-resmgr namespace and whether it was found.
+	// nri-resource-policy namespace and whether it was found.
 	GetResmgrAnnotation(key string) (string, bool)
 	// GetResmgrAnnotationObject decodes the value of the given annotation in the
-	// nri-resmgr namespace.
+	// nri-resource-policy namespace.
 	GetResmgrAnnotationObject(key string, objPtr interface{},
 		decode func([]byte, interface{}) error) (bool, error)
 	// GetEffectiveAnnotation returns the effective annotation for a container.
@@ -246,20 +246,20 @@ type Container interface {
 	// GetLabels returns a copy of all container labels.
 	GetLabels() map[string]string
 	// GetResmgrLabelKeys returns container label keys (without the namespace
-	// part) in nri-resmgr namespace.
+	// part) in nri-resource-policy namespace.
 	GetResmgrLabelKeys() []string
 	// GetResmgrLabel returns the value of a container label from the
-	// nri-resmgr namespace.
+	// nri-resource-policy namespace.
 	GetResmgrLabel(string) (string, bool)
 	// GetAnnotationKeys returns the keys of all annotations of the container.
 	GetAnnotationKeys() []string
 	// GetAnnotation returns the value of a container annotation.
 	GetAnnotation(key string, objPtr interface{}) (string, bool)
 	// GetResmgrAnnotationKeys returns container annotation keys (without the
-	// namespace part) in nri-resmgr namespace.
+	// namespace part) in nri-resource-policy namespace.
 	GetResmgrAnnotationKeys() []string
 	// GetAnnotation returns the value of a container annotation from the
-	// nri-resmgr namespace.
+	// nri-resource-policy namespace.
 	GetResmgrAnnotation(key string, objPtr interface{}) (string, bool)
 	// GetEffectiveAnnotation returns the effective annotation for the container from the pod.
 	GetEffectiveAnnotation(key string) (string, bool)

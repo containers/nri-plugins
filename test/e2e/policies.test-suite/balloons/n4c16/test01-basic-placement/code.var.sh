@@ -20,7 +20,7 @@ verify 'cpus["pod0c0"] == cpus["pod0c1"]' \
 # pod1: run on the same two-cpu balloon (running containers of a pod
 # on the same balloon takes precedence creating new balloons).
 CPUREQ="100m" MEMREQ="100M" CPULIM="100m" MEMLIM="100M"
-POD_ANNOTATION="balloon.balloons.nri-resmgr.intel.com: two-cpu" CONTCOUNT=2 create balloons-busybox
+POD_ANNOTATION="balloon.balloons.nri-resource-policy.intel.com: two-cpu" CONTCOUNT=2 create balloons-busybox
 report allowed
 verify 'cpus["pod1c0"] == cpus["pod1c1"]' \
        'len(cpus["pod1c0"]) == 2'
@@ -28,7 +28,7 @@ verify 'cpus["pod1c0"] == cpus["pod1c1"]' \
 # pod2: run on a different two-cpu balloon than pod1 (new balloon
 # creation is preferred).
 CPUREQ="100m" MEMREQ="100M" CPULIM="100m" MEMLIM="100M"
-POD_ANNOTATION="balloon.balloons.nri-resmgr.intel.com: two-cpu" CONTCOUNT=1 create balloons-busybox
+POD_ANNOTATION="balloon.balloons.nri-resource-policy.intel.com: two-cpu" CONTCOUNT=1 create balloons-busybox
 report allowed
 verify 'len(cpus["pod2c0"]) == 2' \
        'disjoint_sets(cpus["pod2c0"], cpus["pod1c0"])'
@@ -46,7 +46,7 @@ cleanup
 
 # pod4: first two containers to the first instance, 3rd to new four-cpu instance
 CPUREQ="3" MEMREQ="" CPULIM="3" MEMLIM=""
-POD_ANNOTATION="balloon.balloons.nri-resmgr.intel.com: four-cpu" CONTCOUNT=3 create balloons-busybox
+POD_ANNOTATION="balloon.balloons.nri-resource-policy.intel.com: four-cpu" CONTCOUNT=3 create balloons-busybox
 report allowed
 verify 'cpus["pod4c0"] == cpus["pod4c1"]' \
        'disjoint_sets(cpus["pod4c2"], cpus["pod4c0"])' \
@@ -57,7 +57,7 @@ cleanup
 
 # pod5: all spread containers to their own balloon instances
 CPUREQ="1250m" MEMREQ="" CPULIM="" MEMLIM=""
-POD_ANNOTATION="balloon.balloons.nri-resmgr.intel.com: five-cpu" CONTCOUNT=3 create balloons-busybox
+POD_ANNOTATION="balloon.balloons.nri-resource-policy.intel.com: five-cpu" CONTCOUNT=3 create balloons-busybox
 report allowed
 verify 'disjoint_sets(cpus["pod5c0"], cpus["pod5c1"], cpus["pod5c2"])' \
        'len(cpus["pod5c0"]) == 2' \

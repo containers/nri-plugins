@@ -286,7 +286,7 @@ func TestPoolCreation(t *testing.T) {
 	// Test pool creation with "real" sysfs data.
 
 	// Create a temporary directory for the test data.
-	dir, err := ioutil.TempDir("", "nri-resmgr-test-sysfs-")
+	dir, err := ioutil.TempDir("", "nri-resource-policy-test-sysfs-")
 	if err != nil {
 		panic(err)
 	}
@@ -437,7 +437,7 @@ func TestWorkloadPlacement(t *testing.T) {
 	// server system.
 
 	// Create a temporary directory for the test data.
-	dir, err := ioutil.TempDir("", "nri-resmgr-test-sysfs-")
+	dir, err := ioutil.TempDir("", "nri-resource-policy-test-sysfs-")
 	if err != nil {
 		panic(err)
 	}
@@ -554,7 +554,7 @@ func TestContainerMove(t *testing.T) {
 	// to be moved upwards in the tree.
 
 	// Create a temporary directory for the test data.
-	dir, err := ioutil.TempDir("", "nri-resmgr-test-sysfs-")
+	dir, err := ioutil.TempDir("", "nri-resource-policy-test-sysfs-")
 	if err != nil {
 		panic(err)
 	}
@@ -720,7 +720,7 @@ func TestAffinities(t *testing.T) {
 	//
 
 	// Create a temporary directory for the test data.
-	dir, err := ioutil.TempDir("", "nri-resmgr-test-sysfs-")
+	dir, err := ioutil.TempDir("", "nri-resource-policy-test-sysfs-")
 	if err != nil {
 		panic(err)
 	}

@@ -42,7 +42,7 @@ verify 'cpus["pod2c0"] == cpus["pod0c0"]'
 
 # pod3: force a kube-system pod to full-core using an annotation
 CPUREQ="2" MEMREQ="" CPULIM="2" MEMLIM=""
-POD_ANNOTATION="balloon.balloons.nri-resmgr.intel.com: full-core" namespace=kube-system create balloons-busybox
+POD_ANNOTATION="balloon.balloons.nri-resource-policy.intel.com: full-core" namespace=kube-system create balloons-busybox
 report allowed
 verify 'len(cpus["pod3c0"]) == 2' \
        'disjoint_sets(cpus["pod0c0"], cpus["pod3c0"])'
@@ -58,7 +58,7 @@ verify 'len(cpus["pod4c0"]) == 3' \
 # pod5: annotate otherwise a default pod to the reserved CPUs,
 # severely overbook reserved CPUs
 CPUREQ="2500m" MEMREQ="" CPULIM="2500m" MEMLIM=""
-POD_ANNOTATION="balloon.balloons.nri-resmgr.intel.com: reserved" create balloons-busybox
+POD_ANNOTATION="balloon.balloons.nri-resource-policy.intel.com: reserved" create balloons-busybox
 report allowed
 verify 'cpus["pod5c0"] == {"cpu00", "cpu01", "cpu02"}' \
        'disjoint_sets(cpus["pod5c0"], cpus["pod3c0"], cpus["pod4c0"])'
