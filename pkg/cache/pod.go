@@ -30,7 +30,7 @@ import (
 
 const (
 	// KeyResourceAnnotation is the annotation key our webhook uses.
-	KeyResourceAnnotation = "intel.com/resources"
+	KeyResourceAnnotation = "resource-policy.nri.io/resources"
 )
 
 // Create a pod from a run request.

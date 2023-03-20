@@ -23,7 +23,7 @@ import (
 
 const (
 	// ResmgrKeyNamespace is a NRI Resource Policy namespace
-	ResmgrKeyNamespace = "nri-resource-policy.intel.com"
+	ResmgrKeyNamespace = "resource-policy.nri.io"
 
 	// NamespaceSystem is the kubernetes system namespace.
 	NamespaceSystem = core.NamespaceSystem

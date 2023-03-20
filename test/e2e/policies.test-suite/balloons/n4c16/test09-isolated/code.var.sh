@@ -9,7 +9,7 @@ verify-metrics-has-no-line 'balloon="isolated-pods\[2\]"'
 
 # pod0: besteffort
 CPUREQ="" CPULIM="" MEMREQ="" MEMLIM=""
-POD_ANNOTATION="balloon.balloons.nri-resource-policy.intel.com: isolated-pods"
+POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: isolated-pods"
 CONTCOUNT=2 create balloons-busybox
 report allowed
 verify 'len(cpus["pod0c0"]) == 1' \
@@ -24,7 +24,7 @@ verify-metrics-has-no-line 'balloon="isolated-pods\[2\]"'
 
 # pod1: guaranteed
 CPUREQ="600m" CPULIM="600m" MEMREQ="100M" MEMLIM="100M"
-POD_ANNOTATION="balloon.balloons.nri-resource-policy.intel.com: isolated-pods"
+POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: isolated-pods"
 CONTCOUNT=2 create balloons-busybox
 report allowed
 verify 'len(cpus["pod0c0"]) == 1' \
@@ -40,7 +40,7 @@ verify-metrics-has-no-line 'balloon="isolated-pods\[2\]"'
 
 # pod2: burstable
 CPUREQ="100m" CPULIM="200m"
-POD_ANNOTATION="balloon.balloons.nri-resource-policy.intel.com: isolated-pods"
+POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: isolated-pods"
 CONTCOUNT=2 create balloons-busybox
 report allowed
 verify 'len(cpus["pod0c0"]) == 1' \
@@ -60,7 +60,7 @@ verify-metrics-has-no-line 'balloon="isolated-pods\[3\]"'
 
 # pod3: isolated containers
 CPUREQ="" CPULIM="" MEMREQ="" MEMLIM=""
-POD_ANNOTATION="balloon.balloons.nri-resource-policy.intel.com: isolated-ctrs"
+POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: isolated-ctrs"
 CONTCOUNT=4 create balloons-busybox
 report allowed
 verify 'len(cpus["pod0c0"]) == 1' \

@@ -11,7 +11,7 @@ metadata:
 rules:
 - apiGroups:
   - ""
-  - nri.resource-policy.intel.com
+  - resource-policy.nri.io
   resources:
   - nodes
   - configmaps

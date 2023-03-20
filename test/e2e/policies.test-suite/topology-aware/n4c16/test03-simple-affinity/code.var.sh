@@ -11,8 +11,8 @@ inject-affinities() {
         return 0
     fi
     case "$var" in
-        ANTI_*|*_ANTI_*) hdr="nri-resource-policy.intel.com/anti-affinity";;
-        *)      hdr="nri-resource-policy.intel.com/affinity";;
+        ANTI_*|*_ANTI_*) hdr="resource-policy.nri.io/anti-affinity";;
+        *)      hdr="resource-policy.nri.io/affinity";;
     esac
     for srcdst in ${!var}; do
         src=${srcdst%:*}
