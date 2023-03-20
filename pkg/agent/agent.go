@@ -20,9 +20,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/intel/nri-resmgr/pkg/log"
-	policyapi "github.com/intel/nri-resmgr/pkg/policy"
-	"github.com/intel/nri-resmgr/pkg/resmgr/config"
+	"github.com/containers/nri-plugins/pkg/log"
+	policyapi "github.com/containers/nri-plugins/pkg/policy"
+	"github.com/containers/nri-plugins/pkg/resmgr/config"
 	nrtapi "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/typed/topology/v1alpha2"
 	k8sclient "k8s.io/client-go/kubernetes"
 )

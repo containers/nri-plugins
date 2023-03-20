@@ -27,7 +27,7 @@ import (
 	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 	kubecm "k8s.io/kubernetes/pkg/kubelet/cm"
 
-	"github.com/intel/nri-resmgr/pkg/cgroups"
+	"github.com/containers/nri-plugins/pkg/cgroups"
 )
 
 var memoryCapacity int64

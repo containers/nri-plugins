@@ -19,7 +19,7 @@ package agent
 import (
 	"flag"
 
-	"github.com/intel/nri-resmgr/pkg/kubernetes"
+	"github.com/containers/nri-plugins/pkg/kubernetes"
 )
 
 type options struct {

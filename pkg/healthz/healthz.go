@@ -20,8 +20,8 @@ import (
 	"sort"
 	"sync"
 
-	xhttp "github.com/intel/nri-resmgr/pkg/http"
-	logger "github.com/intel/nri-resmgr/pkg/log"
+	xhttp "github.com/containers/nri-plugins/pkg/http"
+	logger "github.com/containers/nri-plugins/pkg/log"
 )
 
 var (

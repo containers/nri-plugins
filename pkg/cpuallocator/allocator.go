@@ -20,11 +20,11 @@ import (
 
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
+	logger "github.com/containers/nri-plugins/pkg/log"
+	"github.com/containers/nri-plugins/pkg/sysfs"
+	"github.com/containers/nri-plugins/pkg/utils"
 	"github.com/intel/goresctrl/pkg/sst"
 	idset "github.com/intel/goresctrl/pkg/utils"
-	logger "github.com/intel/nri-resmgr/pkg/log"
-	"github.com/intel/nri-resmgr/pkg/sysfs"
-	"github.com/intel/nri-resmgr/pkg/utils"
 )
 
 // AllocFlag represents CPU allocation preferences.

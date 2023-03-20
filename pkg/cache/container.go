@@ -22,10 +22,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/intel/nri-resmgr/pkg/apis/resmgr"
-	"github.com/intel/nri-resmgr/pkg/cgroups"
-	"github.com/intel/nri-resmgr/pkg/kubernetes"
-	"github.com/intel/nri-resmgr/pkg/topology"
+	"github.com/containers/nri-plugins/pkg/apis/resmgr"
+	"github.com/containers/nri-plugins/pkg/cgroups"
+	"github.com/containers/nri-plugins/pkg/kubernetes"
+	"github.com/containers/nri-plugins/pkg/topology"
 
 	"github.com/containerd/nri/pkg/api"
 	nri "github.com/containerd/nri/pkg/api"

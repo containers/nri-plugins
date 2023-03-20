@@ -19,9 +19,9 @@ package agent
 import (
 	"time"
 
-	"github.com/intel/nri-resmgr/pkg/healthz"
-	"github.com/intel/nri-resmgr/pkg/log"
-	"github.com/intel/nri-resmgr/pkg/resmgr/config"
+	"github.com/containers/nri-plugins/pkg/healthz"
+	"github.com/containers/nri-plugins/pkg/log"
+	"github.com/containers/nri-plugins/pkg/resmgr/config"
 )
 
 const (

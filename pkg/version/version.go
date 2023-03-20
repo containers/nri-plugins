@@ -24,8 +24,8 @@
 //   1) import this package
 //   2) add the linker flags to override the dummy package variables, for instance:
 //        LDFLAGS=-ldflags \
-//          "-X=github.com/intel/nri-resmgr/pkg/version.Version=<version> \
-//           -X=github.com/intel/nri-resmgr/pkg/version.Build=<build-id>"
+//          "-X=github.com/containers/nri-plugins/pkg/version.Version=<version> \
+//           -X=github.com/containers/nri-plugins/pkg/version.Build=<build-id>"
 //
 // Note that further metadata can be trivially added in a similar fashion:
 //

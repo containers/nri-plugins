@@ -17,7 +17,7 @@ package topologyaware
 import (
 	"fmt"
 
-	logger "github.com/intel/nri-resmgr/pkg/log"
+	logger "github.com/containers/nri-plugins/pkg/log"
 )
 
 // Create our logger instance.

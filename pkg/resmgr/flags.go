@@ -19,7 +19,7 @@ import (
 	"time"
 
 	nri "github.com/containerd/nri/pkg/api"
-	"github.com/intel/nri-resmgr/pkg/pidfile"
+	"github.com/containers/nri-plugins/pkg/pidfile"
 )
 
 const (

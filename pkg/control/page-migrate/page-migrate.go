@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/intel/nri-resmgr/pkg/cache"
-	"github.com/intel/nri-resmgr/pkg/control"
-	logger "github.com/intel/nri-resmgr/pkg/log"
+	"github.com/containers/nri-plugins/pkg/cache"
+	"github.com/containers/nri-plugins/pkg/control"
+	logger "github.com/containers/nri-plugins/pkg/log"
 )
 
 const (

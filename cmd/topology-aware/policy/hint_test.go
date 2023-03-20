@@ -17,8 +17,8 @@ package topologyaware
 import (
 	"testing"
 
+	"github.com/containers/nri-plugins/pkg/topology"
 	idset "github.com/intel/goresctrl/pkg/utils"
-	"github.com/intel/nri-resmgr/pkg/topology"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 )
 

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/intel/nri-resmgr/pkg/multierror"
+	"github.com/containers/nri-plugins/pkg/multierror"
 )
 
 // VerifyDeepEqual checks that two values (including structures) are equal, or else it fails the test.

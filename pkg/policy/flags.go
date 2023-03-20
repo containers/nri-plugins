@@ -27,8 +27,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
-	"github.com/intel/nri-resmgr/pkg/cgroups"
-	"github.com/intel/nri-resmgr/pkg/config"
+	"github.com/containers/nri-plugins/pkg/cgroups"
+	"github.com/containers/nri-plugins/pkg/config"
 )
 
 const (

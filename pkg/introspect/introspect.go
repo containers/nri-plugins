@@ -20,9 +20,9 @@ import (
 	"net/http"
 	"sync"
 
-	xhttp "github.com/intel/nri-resmgr/pkg/http"
-	logger "github.com/intel/nri-resmgr/pkg/log"
-	"github.com/intel/nri-resmgr/pkg/topology"
+	xhttp "github.com/containers/nri-plugins/pkg/http"
+	logger "github.com/containers/nri-plugins/pkg/log"
+	"github.com/containers/nri-plugins/pkg/topology"
 )
 
 // Pod describes a single pod and its containers.

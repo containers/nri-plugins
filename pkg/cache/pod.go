@@ -23,9 +23,9 @@ import (
 	v1 "k8s.io/api/core/v1"
 	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 
-	"github.com/intel/nri-resmgr/pkg/apis/resmgr"
-	"github.com/intel/nri-resmgr/pkg/cgroups"
-	"github.com/intel/nri-resmgr/pkg/kubernetes"
+	"github.com/containers/nri-plugins/pkg/apis/resmgr"
+	"github.com/containers/nri-plugins/pkg/cgroups"
+	"github.com/containers/nri-plugins/pkg/kubernetes"
 )
 
 const (

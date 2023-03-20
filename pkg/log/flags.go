@@ -19,9 +19,9 @@ import (
 	"os"
 	"strings"
 
-	pkgcfg "github.com/intel/nri-resmgr/pkg/config"
-	"github.com/intel/nri-resmgr/pkg/log/klogcontrol"
-	"github.com/intel/nri-resmgr/pkg/utils"
+	pkgcfg "github.com/containers/nri-plugins/pkg/config"
+	"github.com/containers/nri-plugins/pkg/log/klogcontrol"
+	"github.com/containers/nri-plugins/pkg/utils"
 )
 
 const (

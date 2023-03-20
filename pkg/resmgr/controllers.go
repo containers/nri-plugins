@@ -16,7 +16,7 @@ package resmgr
 
 import (
 	// List of controllers to pull in.
-	_ "github.com/intel/nri-resmgr/pkg/control/cpu"
-	_ "github.com/intel/nri-resmgr/pkg/control/memory"
-	_ "github.com/intel/nri-resmgr/pkg/control/page-migrate"
+	_ "github.com/containers/nri-plugins/pkg/control/cpu"
+	_ "github.com/containers/nri-plugins/pkg/control/memory"
+	_ "github.com/containers/nri-plugins/pkg/control/page-migrate"
 )

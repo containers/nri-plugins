@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/intel/nri-resmgr/pkg/sysfs"
+	"github.com/containers/nri-plugins/pkg/sysfs"
 )
 
 // BlkioDeviceBytes contains a single operations line of blkio.throttle.io_service_bytes_recursive file

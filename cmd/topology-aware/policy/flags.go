@@ -15,8 +15,8 @@
 package topologyaware
 
 import (
-	config "github.com/intel/nri-resmgr/pkg/config"
-	"github.com/intel/nri-resmgr/pkg/topology"
+	config "github.com/containers/nri-plugins/pkg/config"
+	"github.com/containers/nri-plugins/pkg/topology"
 )
 
 // Options captures our configurable policy parameters.

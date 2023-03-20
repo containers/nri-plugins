@@ -21,7 +21,7 @@ import (
 	"sort"
 	"strings"
 
-	system "github.com/intel/nri-resmgr/pkg/sysfs"
+	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 )
 

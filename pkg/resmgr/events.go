@@ -17,9 +17,9 @@ package resmgr
 import (
 	"time"
 
-	"github.com/intel/nri-resmgr/pkg/cache"
-	logger "github.com/intel/nri-resmgr/pkg/log"
-	"github.com/intel/nri-resmgr/pkg/resmgr/metrics"
+	"github.com/containers/nri-plugins/pkg/cache"
+	logger "github.com/containers/nri-plugins/pkg/log"
+	"github.com/containers/nri-plugins/pkg/resmgr/metrics"
 )
 
 // Our logger instance for events.

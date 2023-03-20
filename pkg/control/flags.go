@@ -17,7 +17,7 @@ package control
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/intel/nri-resmgr/pkg/config"
+	"github.com/containers/nri-plugins/pkg/config"
 	"strings"
 )
 

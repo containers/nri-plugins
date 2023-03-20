@@ -20,11 +20,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/containers/nri-plugins/pkg/cache"
+	policyapi "github.com/containers/nri-plugins/pkg/policy"
+	"github.com/containers/nri-plugins/pkg/resmgr/events"
+	system "github.com/containers/nri-plugins/pkg/sysfs"
 	idset "github.com/intel/goresctrl/pkg/utils"
-	"github.com/intel/nri-resmgr/pkg/cache"
-	policyapi "github.com/intel/nri-resmgr/pkg/policy"
-	"github.com/intel/nri-resmgr/pkg/resmgr/events"
-	system "github.com/intel/nri-resmgr/pkg/sysfs"
 )
 
 var globalPolicy *policy

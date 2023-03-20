@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/intel/nri-resmgr/pkg/testutils"
+	"github.com/containers/nri-plugins/pkg/testutils"
 )
 
 func TestUpdateAppend(t *testing.T) {

@@ -23,9 +23,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/intel/nri-resmgr/pkg/cgroups"
-	logger "github.com/intel/nri-resmgr/pkg/log"
-	"github.com/intel/nri-resmgr/pkg/metrics"
+	"github.com/containers/nri-plugins/pkg/cgroups"
+	logger "github.com/containers/nri-plugins/pkg/log"
+	"github.com/containers/nri-plugins/pkg/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 )
 

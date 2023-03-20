@@ -20,10 +20,10 @@ import (
 
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
+	"github.com/containers/nri-plugins/pkg/cache"
+	"github.com/containers/nri-plugins/pkg/kubernetes"
+	system "github.com/containers/nri-plugins/pkg/sysfs"
 	idset "github.com/intel/goresctrl/pkg/utils"
-	"github.com/intel/nri-resmgr/pkg/cache"
-	"github.com/intel/nri-resmgr/pkg/kubernetes"
-	system "github.com/intel/nri-resmgr/pkg/sysfs"
 )
 
 // buildPoolsByTopology builds a hierarchical tree of pools based on HW topology.

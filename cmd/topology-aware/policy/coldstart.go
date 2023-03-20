@@ -17,8 +17,8 @@ package topologyaware
 import (
 	"time"
 
-	"github.com/intel/nri-resmgr/pkg/cache"
-	"github.com/intel/nri-resmgr/pkg/resmgr/events"
+	"github.com/containers/nri-plugins/pkg/cache"
+	"github.com/containers/nri-plugins/pkg/resmgr/events"
 )
 
 // trigger cold start for the container if necessary.

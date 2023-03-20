@@ -21,14 +21,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/intel/nri-resmgr/pkg/config"
-	"github.com/intel/nri-resmgr/pkg/instrumentation"
-	"github.com/intel/nri-resmgr/pkg/resmgr"
+	"github.com/containers/nri-plugins/pkg/config"
+	"github.com/containers/nri-plugins/pkg/instrumentation"
+	"github.com/containers/nri-plugins/pkg/resmgr"
 
-	logger "github.com/intel/nri-resmgr/pkg/log"
-	version "github.com/intel/nri-resmgr/pkg/version"
+	logger "github.com/containers/nri-plugins/pkg/log"
+	version "github.com/containers/nri-plugins/pkg/version"
 
-	_ "github.com/intel/nri-resmgr/cmd/topology-aware/policy"
+	_ "github.com/containers/nri-plugins/cmd/topology-aware/policy"
 )
 
 var log = logger.Default()

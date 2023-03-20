@@ -24,8 +24,8 @@ import (
 	k8swatch "k8s.io/apimachinery/pkg/watch"
 	k8sclient "k8s.io/client-go/kubernetes"
 
-	"github.com/intel/nri-resmgr/pkg/log"
-	"github.com/intel/nri-resmgr/pkg/resmgr/config"
+	"github.com/containers/nri-plugins/pkg/log"
+	"github.com/containers/nri-plugins/pkg/resmgr/config"
 )
 
 type cachedConfig struct {

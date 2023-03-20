@@ -19,8 +19,8 @@ import (
 
 	"sigs.k8s.io/yaml"
 
-	"github.com/intel/nri-resmgr/pkg/apis/resmgr"
-	"github.com/intel/nri-resmgr/pkg/kubernetes"
+	"github.com/containers/nri-plugins/pkg/apis/resmgr"
+	"github.com/containers/nri-plugins/pkg/kubernetes"
 )
 
 const (

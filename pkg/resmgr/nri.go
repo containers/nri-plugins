@@ -19,10 +19,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/intel/nri-resmgr/pkg/cache"
-	logger "github.com/intel/nri-resmgr/pkg/log"
-	"github.com/intel/nri-resmgr/pkg/policy"
-	"github.com/intel/nri-resmgr/pkg/resmgr/events"
+	"github.com/containers/nri-plugins/pkg/cache"
+	logger "github.com/containers/nri-plugins/pkg/log"
+	"github.com/containers/nri-plugins/pkg/policy"
+	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	"github.com/pkg/errors"
 	"sigs.k8s.io/yaml"
 

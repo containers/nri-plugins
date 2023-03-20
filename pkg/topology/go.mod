@@ -1,4 +1,4 @@
-module github.com/intel/nri-resmgr/pkg/topology
+module github.com/containers/nri-plugins/pkg/topology
 
 go 1.19
 

@@ -23,8 +23,8 @@ import (
 
 	"go.opencensus.io/trace"
 
-	"github.com/intel/nri-resmgr/pkg/config"
-	"github.com/intel/nri-resmgr/pkg/utils"
+	"github.com/containers/nri-plugins/pkg/config"
+	"github.com/containers/nri-plugins/pkg/utils"
 )
 
 // Sampling defines how often trace samples are taken.

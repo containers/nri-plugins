@@ -23,17 +23,17 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
+	"github.com/containers/nri-plugins/pkg/cache"
+	pkgcfg "github.com/containers/nri-plugins/pkg/config"
+	cpucontrol "github.com/containers/nri-plugins/pkg/control/cpu"
+	"github.com/containers/nri-plugins/pkg/cpuallocator"
+	"github.com/containers/nri-plugins/pkg/introspect"
+	"github.com/containers/nri-plugins/pkg/kubernetes"
+	logger "github.com/containers/nri-plugins/pkg/log"
+	policy "github.com/containers/nri-plugins/pkg/policy"
+	"github.com/containers/nri-plugins/pkg/resmgr/events"
+	"github.com/containers/nri-plugins/pkg/utils"
 	idset "github.com/intel/goresctrl/pkg/utils"
-	"github.com/intel/nri-resmgr/pkg/cache"
-	pkgcfg "github.com/intel/nri-resmgr/pkg/config"
-	cpucontrol "github.com/intel/nri-resmgr/pkg/control/cpu"
-	"github.com/intel/nri-resmgr/pkg/cpuallocator"
-	"github.com/intel/nri-resmgr/pkg/introspect"
-	"github.com/intel/nri-resmgr/pkg/kubernetes"
-	logger "github.com/intel/nri-resmgr/pkg/log"
-	policy "github.com/intel/nri-resmgr/pkg/policy"
-	"github.com/intel/nri-resmgr/pkg/resmgr/events"
-	"github.com/intel/nri-resmgr/pkg/utils"
 )
 
 const (

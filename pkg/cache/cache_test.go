@@ -26,7 +26,7 @@ import (
 	kubecm "k8s.io/kubernetes/pkg/kubelet/cm"
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
 
-	"github.com/intel/nri-resmgr/pkg/kubernetes"
+	"github.com/containers/nri-plugins/pkg/kubernetes"
 )
 
 var nextFakePodID = 1

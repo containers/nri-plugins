@@ -30,12 +30,12 @@ import (
 
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
+	"github.com/containers/nri-plugins/pkg/apis/resmgr"
+	"github.com/containers/nri-plugins/pkg/kubernetes"
+	logger "github.com/containers/nri-plugins/pkg/log"
+	"github.com/containers/nri-plugins/pkg/resmgr/config"
+	"github.com/containers/nri-plugins/pkg/topology"
 	idset "github.com/intel/goresctrl/pkg/utils"
-	"github.com/intel/nri-resmgr/pkg/apis/resmgr"
-	"github.com/intel/nri-resmgr/pkg/kubernetes"
-	logger "github.com/intel/nri-resmgr/pkg/log"
-	"github.com/intel/nri-resmgr/pkg/resmgr/config"
-	"github.com/intel/nri-resmgr/pkg/topology"
 )
 
 const (

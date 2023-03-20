@@ -21,14 +21,14 @@ import (
 	"path"
 	"testing"
 
-	"github.com/intel/nri-resmgr/pkg/cache"
-	policyapi "github.com/intel/nri-resmgr/pkg/policy"
+	"github.com/containers/nri-plugins/pkg/cache"
+	policyapi "github.com/containers/nri-plugins/pkg/policy"
 
 	v1 "k8s.io/api/core/v1"
 	resapi "k8s.io/apimachinery/pkg/api/resource"
 
-	system "github.com/intel/nri-resmgr/pkg/sysfs"
-	"github.com/intel/nri-resmgr/pkg/utils"
+	system "github.com/containers/nri-plugins/pkg/sysfs"
+	"github.com/containers/nri-plugins/pkg/utils"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 )
 

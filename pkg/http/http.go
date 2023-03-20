@@ -21,7 +21,7 @@ import (
 	"net/http"
 	"sync"
 
-	logger "github.com/intel/nri-resmgr/pkg/log"
+	logger "github.com/containers/nri-plugins/pkg/log"
 )
 
 const (

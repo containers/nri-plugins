@@ -20,18 +20,18 @@ import (
 	resapi "k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
-	"github.com/intel/nri-resmgr/pkg/multierror"
+	"github.com/containers/nri-plugins/pkg/multierror"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/intel/nri-resmgr/pkg/cache"
-	"github.com/intel/nri-resmgr/pkg/config"
-	"github.com/intel/nri-resmgr/pkg/cpuallocator"
-	"github.com/intel/nri-resmgr/pkg/introspect"
-	"github.com/intel/nri-resmgr/pkg/resmgr/events"
+	"github.com/containers/nri-plugins/pkg/cache"
+	"github.com/containers/nri-plugins/pkg/config"
+	"github.com/containers/nri-plugins/pkg/cpuallocator"
+	"github.com/containers/nri-plugins/pkg/introspect"
+	"github.com/containers/nri-plugins/pkg/resmgr/events"
 
+	policyapi "github.com/containers/nri-plugins/pkg/policy"
+	system "github.com/containers/nri-plugins/pkg/sysfs"
 	idset "github.com/intel/goresctrl/pkg/utils"
-	policyapi "github.com/intel/nri-resmgr/pkg/policy"
-	system "github.com/intel/nri-resmgr/pkg/sysfs"
 )
 
 const (

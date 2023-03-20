@@ -24,14 +24,14 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
-	"github.com/intel/nri-resmgr/pkg/cache"
-	"github.com/intel/nri-resmgr/pkg/config"
-	"github.com/intel/nri-resmgr/pkg/introspect"
-	"github.com/intel/nri-resmgr/pkg/resmgr/events"
+	"github.com/containers/nri-plugins/pkg/cache"
+	"github.com/containers/nri-plugins/pkg/config"
+	"github.com/containers/nri-plugins/pkg/introspect"
+	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	"github.com/prometheus/client_golang/prometheus"
 
-	logger "github.com/intel/nri-resmgr/pkg/log"
-	system "github.com/intel/nri-resmgr/pkg/sysfs"
+	logger "github.com/containers/nri-plugins/pkg/log"
+	system "github.com/containers/nri-plugins/pkg/sysfs"
 	// nrt "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 )
 

@@ -20,7 +20,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	logger "github.com/intel/nri-resmgr/pkg/log"
+	logger "github.com/containers/nri-plugins/pkg/log"
 )
 
 // Evaluable is the interface objects need to implement to be evaluable against Expressions.

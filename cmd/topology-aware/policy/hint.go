@@ -15,9 +15,9 @@
 package topologyaware
 
 import (
+	system "github.com/containers/nri-plugins/pkg/sysfs"
+	"github.com/containers/nri-plugins/pkg/topology"
 	idset "github.com/intel/goresctrl/pkg/utils"
-	system "github.com/intel/nri-resmgr/pkg/sysfs"
-	"github.com/intel/nri-resmgr/pkg/topology"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 	"strconv"
 	"strings"

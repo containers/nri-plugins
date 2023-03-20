@@ -25,9 +25,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/containers/nri-plugins/pkg/cgroups"
+	"github.com/containers/nri-plugins/pkg/config"
 	idset "github.com/intel/goresctrl/pkg/utils"
-	"github.com/intel/nri-resmgr/pkg/cgroups"
-	"github.com/intel/nri-resmgr/pkg/config"
 )
 
 // Support dynamic pushing of unused pages from DRAM to PMEM.

@@ -86,8 +86,8 @@ ifdef STATIC
 endif
 
 LDFLAGS    = \
-    -ldflags "$(STATIC_LDFLAGS) -X=github.com/intel/nri-resmgr/pkg/version.Version=$(BUILD_VERSION) \
-             -X=github.com/intel/nri-resmgr/pkg/version.Build=$(BUILD_BUILDID) \
+    -ldflags "$(STATIC_LDFLAGS) -X=github.com/containers/nri-plugins/pkg/version.Version=$(BUILD_VERSION) \
+             -X=github.com/containers/nri-plugins/pkg/version.Build=$(BUILD_BUILDID) \
              -B 0x$(RANDOM_ID)"
 
 #
@@ -162,7 +162,7 @@ $(BIN_PATH)/nri-resource-policy-topology-aware: \
     $(shell for f in cmd/topology-aware/*.go; do echo $$f; done; \
             for dir in $(shell $(GO_DEPS) ./cmd/topology-aware/... | \
                           grep '/nri-resource-policy/' | \
-                          sed 's#github.com/intel/nri-resource-policy/##g'); do \
+                          sed 's#github.com/containers/nri-plugins/##g'); do \
                 find $$dir -name \*.go; \
             done | sort | uniq)
 
@@ -170,7 +170,7 @@ $(BIN_PATH)/nri-resource-policy-balloons: \
     $(shell for f in cmd/balloons/*.go; do echo $$f; done; \
                 for dir in $(shell $(GO_DEPS) ./cmd/balloons/... | \
                           grep '/nri-resource-policy/' | \
-                          sed 's#github.com/intel/nri-resource-policy/##g'); do \
+                          sed 's#github.com/containers/nri-plugins/##g'); do \
                 find $$dir -name \*.go; \
             done | sort | uniq)
 
@@ -301,6 +301,6 @@ report-licenses:
 	    LICENSE_PKGS="$$LICENSE_PKGS ./cmd/$$cmd"; \
 	done && \
 	go-licenses report $$LICENSE_PKGS \
-	        --ignore github.com/intel/nri-resmgr \
+	        --ignore github.com/containers/nri-plugins \
 	        > $(LICENSE_PATH)/licenses.csv && \
 	echo See $(LICENSE_PATH)/licenses.csv for license information

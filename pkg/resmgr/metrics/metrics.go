@@ -25,14 +25,14 @@ import (
 	model "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 
-	logger "github.com/intel/nri-resmgr/pkg/log"
+	logger "github.com/containers/nri-plugins/pkg/log"
 
-	"github.com/intel/nri-resmgr/pkg/instrumentation"
-	"github.com/intel/nri-resmgr/pkg/metrics"
-	"github.com/intel/nri-resmgr/pkg/resmgr/events"
+	"github.com/containers/nri-plugins/pkg/instrumentation"
+	"github.com/containers/nri-plugins/pkg/metrics"
+	"github.com/containers/nri-plugins/pkg/resmgr/events"
 
 	// pull in all metrics collectors
-	_ "github.com/intel/nri-resmgr/pkg/metrics/register"
+	_ "github.com/containers/nri-plugins/pkg/metrics/register"
 )
 
 // Options describes options for metrics collection and processing.

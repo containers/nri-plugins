@@ -17,7 +17,7 @@ package instrumentation
 import (
 	"sync"
 
-	"github.com/intel/nri-resmgr/pkg/http"
+	"github.com/containers/nri-plugins/pkg/http"
 )
 
 // service is the state of our instrumentation services: HTTP endpoint, trace/metrics exporters.

@@ -22,8 +22,8 @@ import (
 
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
-	"github.com/intel/nri-resmgr/pkg/sysfs"
-	"github.com/intel/nri-resmgr/pkg/utils"
+	"github.com/containers/nri-plugins/pkg/sysfs"
+	"github.com/containers/nri-plugins/pkg/utils"
 )
 
 func TestAllocatorHelper(t *testing.T) {

@@ -22,9 +22,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/intel/nri-resmgr/pkg/multierror"
+	"github.com/containers/nri-plugins/pkg/multierror"
 
-	logger "github.com/intel/nri-resmgr/pkg/log"
+	logger "github.com/containers/nri-plugins/pkg/log"
 )
 
 const (

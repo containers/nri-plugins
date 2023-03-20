@@ -2,7 +2,7 @@ package metrics
 
 import (
 	"fmt"
-	logger "github.com/intel/nri-resmgr/pkg/log"
+	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/prometheus/client_golang/prometheus"
 )
 

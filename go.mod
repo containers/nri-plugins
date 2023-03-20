@@ -1,4 +1,4 @@
-module github.com/intel/nri-resmgr
+module github.com/containers/nri-plugins
 
 go 1.19
 
@@ -6,9 +6,9 @@ require (
 	contrib.go.opencensus.io/exporter/jaeger v0.2.1
 	contrib.go.opencensus.io/exporter/prometheus v0.4.2
 	github.com/containerd/nri v0.3.0
+	github.com/containers/nri-plugins/pkg/topology v0.0.0
 	github.com/google/go-cmp v0.5.9
 	github.com/intel/goresctrl v0.3.0
-	github.com/intel/nri-resmgr/pkg/topology v0.0.0
 	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.14.0
@@ -124,7 +124,7 @@ require (
 )
 
 replace (
-	github.com/intel/nri-resmgr/pkg/topology v0.0.0 => ./pkg/topology
+	github.com/containers/nri-plugins/pkg/topology v0.0.0 => ./pkg/topology
 	github.com/opencontainers/runtime-tools => github.com/opencontainers/runtime-tools v0.0.0-20221026201742-946c877fa809
 
 	go.opentelemetry.io/contrib => go.opentelemetry.io/contrib v0.20.0

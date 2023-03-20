@@ -15,7 +15,7 @@
 package pagemigrate
 
 import (
-	"github.com/intel/nri-resmgr/pkg/config"
+	"github.com/containers/nri-plugins/pkg/config"
 )
 
 // options captures our configurable controller parameters.
