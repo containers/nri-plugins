@@ -209,7 +209,7 @@ for POLICY_DIR in "$TESTS_ROOT_DIR"/*; do
 		# Create ansible inventory file from a template
 		ESCAPED_VM=$(printf '%s\n' "$vm_name" | sed -e 's/[\/]/-/g')
 
-		OUTPUT_DIR=${2:-"`pwd`/$ESCAPED_VM"}
+		OUTPUT_DIR=$(realpath ${2:-"`pwd`/$ESCAPED_VM"})
 
                 for TEST_DIR in "$TOPOLOGY_DIR"/test*; do
                     if ! [ -d "$TEST_DIR" ]; then
