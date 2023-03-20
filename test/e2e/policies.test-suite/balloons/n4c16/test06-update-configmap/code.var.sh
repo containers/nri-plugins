@@ -1,8 +1,8 @@
-# This test verifies that configuration updates via nri-resmgr-agent
+# This test verifies that configuration updates via nri-resource-policy-agent
 # are handled properly in the balloons policy.
 
-terminate nri-resmgr
-launch nri-resmgr
+terminate nri-resource-policy
+launch nri-resource-policy
 
 testns=e2e-balloons-test06
 
@@ -12,13 +12,13 @@ cleanup() {
         kubectl delete pods -n btype1ns0 --all --now; \
         kubectl delete namespace $testns || :; \
         kubectl delete namespace btype1ns0 || :; \
-	kubectl -n kube-system delete configmap nri-resmgr-config.default || :"
+	kubectl -n kube-system delete configmap nri-resource-policy-config.default || :"
     vm-port-forward-disable
-    terminate nri-resmgr
+    terminate nri-resource-policy
 
     # Just in case the cache says that the policy is "topology-aware"
     # (from earlier tests) then remove the cache to force "balloons" policy
-    vm-command "rm -f /var/lib/nri-resmgr/cache" || true
+    vm-command "rm -f /var/lib/nri-resource-policy/cache" || true
 }
 
 apply-configmap() {
@@ -28,7 +28,7 @@ apply-configmap() {
 }
 
 cleanup
-nri_resmgr_extra_args="-metrics-interval 1s" nri_resmgr_config=fallback launch nri-resmgr
+nri_resource_policy_extra_args="-metrics-interval 1s" nri_resource_policy_config=fallback launch nri-resource-policy
 
 vm-command "kubectl create namespace $testns"
 vm-command "kubectl create namespace btype1ns0"

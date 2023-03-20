@@ -1,6 +1,6 @@
 #!/bin/bash
 
-TITLE="NRI Resource Manager End-to-End Testing"
+TITLE="NRI Resource Policy End-to-End Testing"
 DEFAULT_DISTRO=${DEFAULT_DISTRO:-"generic/fedora37"}
 
 # Other tested distros
@@ -36,10 +36,10 @@ export SSH="ssh $SSH_OPTS"
 export SCP="scp $SSH_OPTS"
 export VM_SSH_USER=vagrant
 
-export nri_resmgr_src=${nri_resmgr_src:-"$SRC_DIR"}
-export nri_resmgr_cfg=${nri_resmgr_cfg:-"${SRC_DIR}/test/e2e/files/nri-resmgr-topology-aware.cfg"}
+export nri_resource_policy_src=${nri_resource_policy_src:-"$SRC_DIR"}
+export nri_resource_policy_cfg=${nri_resource_policy_cfg:-"${SRC_DIR}/test/e2e/files/nri-resource-policy-topology-aware.cfg"}
 
-nri_resmgr_cache="/var/lib/nri-resmgr/cache"
+nri_resource_policy_cache="/var/lib/nri-resource-policy/cache"
 
 if [ "$k8scri" == "containerd" ]; then
     k8scri_sock="/var/run/containerd/containerd.sock"
@@ -81,7 +81,7 @@ echo "    Distro          = $distro"
 echo "    Runtime         = $k8scri"
 echo "    Output dir      = $OUTPUT_DIR"
 echo "    Test output dir = $TEST_OUTPUT_DIR"
-echo "    NRI dir         = $nri_resmgr_src"
+echo "    NRI dir         = $nri_resource_policy_src"
 echo "    Containerd dir  = $containerd_src"
 echo "    Policy          = $POLICY"
 echo "    Topology        = $topology"
@@ -198,61 +198,61 @@ launch() { # script API
     # Usage: launch TARGET
     #
     # Supported TARGETs:
-    #   nri-resmgr:  launch nri-resmgr on VM. Environment variables:
-    #                nri_resmgr_cfg: configuration filepath (on host)
-    #                nri_resmgr_extra_args: extra arguments on command line
-    #                nri_resmgr_config: "force" (default) or "fallback"
-    #                k8scri: if the CRI pipe starts with nri-resmgr
-    #                        this launches nri-resmgr as a proxy,
+    #   nri-resource-policy:  launch nri-resource-policy on VM. Environment variables:
+    #                nri_resource_policy_cfg: configuration filepath (on host)
+    #                nri_resource_policy_extra_args: extra arguments on command line
+    #                nri_resource_policy_config: "force" (default) or "fallback"
+    #                k8scri: if the CRI pipe starts with nri-resource-policy
+    #                        this launches nri-resource-policy as a proxy,
     #                        otherwise as a dynamic NRI plugin.
     #
-    #   nri-resmgr-daemonset:
-    #                launch nri-resmgr on VM using Kubernetes DaemonSet
+    #   nri-resource-policy-daemonset:
+    #                launch nri-resource-policy on VM using Kubernetes DaemonSet
     #
-    #   nri-resmgr-systemd:
-    #                launch nri-resmgr on VM using "systemctl start".
+    #   nri-resource-policy-systemd:
+    #                launch nri-resource-policy on VM using "systemctl start".
     #                Works when installed with binsrc=packages/<distro>.
     #                Environment variables:
-    #                nri_resmgr_cfg: configuration filepath (on host)
+    #                nri_resource_policy_cfg: configuration filepath (on host)
     #
     # Example:
-    #   nri_resmgr_cfg=/tmp/topology-aware.cfg launch nri-resmgr
+    #   nri_resource_policy_cfg=/tmp/topology-aware.cfg launch nri-resource-policy
 
     local target="$1"
     local launch_cmd
     local node_resource_topology_schema="$SRC_DIR/deployment/base/crds/noderesourcetopology_crd.yaml"
-    local nri_resmgr_config_option="-${nri_resmgr_config:-force}-config"
-    local nri_resmgr_mode=""
+    local nri_resource_policy_config_option="-${nri_resource_policy_config:-force}-config"
+    local nri_resource_policy_mode=""
 
     case $target in
-        "nri-resmgr-systemd")
-            host-command "$SCP \"$nri_resmgr_cfg\" $VM_HOSTNAME:" ||
-                command-error "copying \"$nri_resmgr_cfg\" to VM failed"
-            vm-command "cp \"$(basename "$nri_resmgr_cfg")\" /etc/nri-resmgr/fallback.cfg"
-            vm-command "systemctl daemon-reload ; systemctl start nri-resource-manager" ||
-                command-error "systemd failed to start nri-resource-manager"
-            vm-wait-process --timeout 30 nri-resmgr
-            vm-command "systemctl is-active nri-resource-manager" || {
-                vm-command "systemctl status nri-resource-manager"
-                command-error "nri-resource-manager did not become active after systemctl start"
+        "nri-resource-policy-systemd")
+            host-command "$SCP \"$nri_resource_policy_cfg\" $VM_HOSTNAME:" ||
+                command-error "copying \"$nri_resource_policy_cfg\" to VM failed"
+            vm-command "cp \"$(basename "$nri_resource_policy_cfg")\" /etc/nri-resource-policy/fallback.cfg"
+            vm-command "systemctl daemon-reload ; systemctl start nri-resource-policy" ||
+                command-error "systemd failed to start nri-resource-policy"
+            vm-wait-process --timeout 30 nri-resource-policy
+            vm-command "systemctl is-active nri-resource-policy" || {
+                vm-command "systemctl status nri-resource-policy"
+                command-error "nri-resource-policy did not become active after systemctl start"
             }
             ;;
 
-        "nri-resmgr")
-	    if [ "$nri_resmgr_config" == "fallback" ]; then
-		nri_resmgr_deployment_file="/etc/nri-resmgr/nri-resmgr-deployment-fallback.yaml"
+        "nri-resource-policy")
+	    if [ "$nri_resource_policy_config" == "fallback" ]; then
+		nri_resource_policy_deployment_file="/etc/nri-resource-policy/nri-resource-policy-deployment-fallback.yaml"
 	    else
-		nri_resmgr_deployment_file="/etc/nri-resmgr/nri-resmgr-deployment.yaml"
+		nri_resource_policy_deployment_file="/etc/nri-resource-policy/nri-resource-policy-deployment.yaml"
 	    fi
-	    vm-command "chown $VM_SSH_USER:$VM_SSH_USER /etc/nri-resmgr/"
-	    vm-command "rm -f /etc/nri-resmgr/nri-resmgr.cfg"
-	    host-command "$SCP \"$nri_resmgr_cfg\" $VM_HOSTNAME:/etc/nri-resmgr/nri-resmgr.cfg" || {
-                command-error "copying \"$nri_resmgr_cfg\" to VM failed"
+	    vm-command "chown $VM_SSH_USER:$VM_SSH_USER /etc/nri-resource-policy/"
+	    vm-command "rm -f /etc/nri-resource-policy/nri-resource-policy.cfg"
+	    host-command "$SCP \"$nri_resource_policy_cfg\" $VM_HOSTNAME:/etc/nri-resource-policy/nri-resource-policy.cfg" || {
+                command-error "copying \"$nri_resource_policy_cfg\" to VM failed"
 	    }
             host-command "$SCP \"$node_resource_topology_schema\" $VM_HOSTNAME:" ||
 		command-error "copying \"$node_resource_topology_schema\" to VM failed"
             vm-command "kubectl delete -f $(basename "$node_resource_topology_schema"); kubectl create -f $(basename "$node_resource_topology_schema")"
-	    vm-command "kubectl apply -f $nri_resmgr_deployment_file" ||
+	    vm-command "kubectl apply -f $nri_resource_policy_deployment_file" ||
 		error "Cannot apply deployment"
 
             if [ "${wait_t}" = "none" ]; then
@@ -260,14 +260,14 @@ launch() { # script API
             fi
 
 	    # Direct logs to output file
-	    local POD="$(namespace=kube-system wait_t=${wait_t:-120} vm-wait-pod-regexp nri-resmgr-)"
+	    local POD="$(namespace=kube-system wait_t=${wait_t:-120} vm-wait-pod-regexp nri-resource-policy-)"
 	    if [ ! -z "$POD" ]; then
 		# If the POD contains \n, then the old pod is still there. Wait a sec in this
 		# case and retry.
 		local POD_CHECK=$(echo "$POD" | awk 'BEGIN { RS=""; FS="\n"} { print $2 }')
 		if [ ! -z "$POD_CHECK" ]; then
 		    sleep 1
-		    POD="$(namespace=kube-system wait_t=${wait_t:-60} vm-wait-pod-regexp nri-resmgr-)"
+		    POD="$(namespace=kube-system wait_t=${wait_t:-60} vm-wait-pod-regexp nri-resource-policy-)"
 		    if [ -z "$POD" ]; then
 			error "Cannot figure out pod name"
 		    fi
@@ -275,25 +275,25 @@ launch() { # script API
 
 		if [ "$ds_wait_t" != "none" ]; then
 		    # Wait a while so that the status check can get somewhat meaningful status
-		    vm-command "kubectl -n kube-system rollout status daemonset/nri-resmgr --timeout=${ds_wait_t:-20s}"
+		    vm-command "kubectl -n kube-system rollout status daemonset/nri-resource-policy --timeout=${ds_wait_t:-20s}"
 		    if [ $? -ne 0 ]; then
-			error "Timeout while waiting daemonset/nri-resmgr to be ready"
+			error "Timeout while waiting daemonset/nri-resource-policy to be ready"
 		    fi
 		fi
 
 		# Check if we have anything else than Running status for the pod
 		status="$(vm-command-q "kubectl get pod "$POD" -n kube-system | tail -1 | awk '{ print \$3 }'")"
 		if [ "$status" != "Running" ]; then
-		    # Check if nri-resmgr failed
+		    # Check if nri-resource-policy failed
 		    if vm-command "kubectl logs $POD -n kube-system | tail -1 | grep -q ^F" 2>&1; then
-			error "Cannot start nri-resmgr"
+			error "Cannot start nri-resource-policy"
 		    fi
 		fi
 
-		vm-command "fuser --kill nri-resmgr.output.txt 2>/dev/null"
-		vm-command "kubectl -n kube-system logs "$POD" -f >nri-resmgr.output.txt 2>&1 &"
+		vm-command "fuser --kill nri-resource-policy.output.txt 2>/dev/null"
+		vm-command "kubectl -n kube-system logs "$POD" -f >nri-resource-policy.output.txt 2>&1 &"
 	    else
-		error "nri-resmgr pod not found"
+		error "nri-resource-policy pod not found"
 	    fi
 	    ;;
 
@@ -308,11 +308,11 @@ terminate() { # script API
     # Usage: terminate TARGET
     #
     # Supported TARGETs:
-    #   nri-resmgr: stop (kill) nri-resmgr.
+    #   nri-resource-policy: stop (kill) nri-resource-policy.
     local target="$1"
     case $target in
-        "nri-resmgr")
-	    vm-command "kubectl delete -f /etc/nri-resmgr/nri-resmgr-deployment.yaml"
+        "nri-resource-policy")
+	    vm-command "kubectl delete -f /etc/nri-resource-policy/nri-resource-policy-deployment.yaml"
             ;;
         *)
             error "terminate: invalid target \"$target\""
@@ -531,8 +531,8 @@ cpu_ids = lambda i: set_ids(i, '[cpu]')
 }
 
 get-py-cache() {
-    # Fetch current nri-resmgr cache from a virtual machine.
-    vm-command "cat \"$nri_resmgr_cache\"" >/dev/null 2>&1 || {
+    # Fetch current nri-resource-policy cache from a virtual machine.
+    vm-command "cat \"$nri_resource_policy_cache\"" >/dev/null 2>&1 || {
         command-error "fetching cache file failed"
     }
     cat > "${TEST_OUTPUT_DIR}/cache" <<<"$COMMAND_OUTPUT"
@@ -569,14 +569,14 @@ pyexec() { # script API
     # Run python3 -c PYTHONCODEs on host. Stops if execution fails.
     #
     # Variables available in PYTHONCODE:
-    #   allocations: dictionary: shorthand to nri-resmgr policy allocations
+    #   allocations: dictionary: shorthand to nri-resource-policy policy allocations
     #                (unmarshaled cache['PolicyJSON']['allocations'])
     #   allowed      tree: {package: {die: {node: {core: {thread: {pod}}}}}}
     #                resource topology and pods allowed to use the resources.
     #   packages, dies, nodes, cores, threads:
     #                dictionaries: {podname: set-of-allowed}
     #                Example: pyexec 'print(dies["pod0c0"])'
-    #   cache:       dictionary, nri-resmgr cache
+    #   cache:       dictionary, nri-resource-policy cache
     #
     # Note that variables are *not* updated when pyexec is called.
     # You can update the variables by running "verify" without expressions.
@@ -629,7 +629,7 @@ report() { # script API
     #     allowed
     #     cache
     #
-    # Example: print nri-resmgr policy allocations. In interactive mode
+    # Example: print nri-resource-policy policy allocations. In interactive mode
     #          you may use a pager like less.
     #   report allocations | less
     local varname
@@ -732,9 +732,9 @@ eval "${yaml_in_defaults}"
 TEST_FAILURES=""
 test-user-code
 
-# If there are any nri-resmgr logs in the DUT, copy them back to host.
-host-command "$SCP $VM_HOSTNAME:nri-resmgr.output.txt \"${TEST_OUTPUT_DIR}/\"" ||
-    out "copying \"$nri-resmgr.output.txt\" from VM failed"
+# If there are any nri-resource-policy logs in the DUT, copy them back to host.
+host-command "$SCP $VM_HOSTNAME:nri-resource-policy.output.txt \"${TEST_OUTPUT_DIR}/\"" ||
+    out "copying \"$nri-resource-policy.output.txt\" from VM failed"
 
 # Summarize results
 exit_status=0

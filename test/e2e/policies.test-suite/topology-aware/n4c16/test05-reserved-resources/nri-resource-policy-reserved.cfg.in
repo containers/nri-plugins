@@ -1,10 +1,10 @@
 policy:
   Active: topology-aware
-  ReservedResources:
-    cpu: ${RESERVED_CPU}
   AvailableResources:
     cpu: ${AVAILABLE_CPU}
+  ReservedResources:
+    cpu: ${RESERVED_CPU}
 instrumentation:
   HTTPEndpoint: ":8891"
 logger:
-  Debug: nri-resmgr,resource-manager,cache,policy
+  Debug: nri-resource-policy,resource-manager,cache,policy

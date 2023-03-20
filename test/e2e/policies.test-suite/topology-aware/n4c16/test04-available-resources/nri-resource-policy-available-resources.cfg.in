@@ -7,4 +7,4 @@ policy:
 instrumentation:
   HTTPEndpoint: ":8891"
 logger:
-  Debug: nri-resmgr,resource-manager,cache,policy
+  Debug: nri-resource-policy,resource-manager,cache,policy

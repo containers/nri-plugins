@@ -16,7 +16,7 @@ N = 1
 
 CRI_RUNTIME = "#{ENV['k8scri']}"
 CONTAINERD_SRC = "#{ENV['containerd_src']}"
-NRI_RESMGR_SRC = "#{ENV['nri_resmgr_src']}"
+NRI_RESOURCE_POLICY_SRC = "#{ENV['nri_resource_policy_src']}"
 OUTPUT_DIR = "#{ENV['OUTPUT_DIR']}"
 
 # Each VM should have its own ssh port so that we can have multiple
@@ -64,7 +64,7 @@ Vagrant.configure("2") do |config|
   end
 
   config.vm.provision :ansible do |ansible|
-    ansible.playbook = "#{ENV['nri_resmgr_src']}/test/e2e/playbook/provision.yaml"
+    ansible.playbook = "#{ENV['nri_resource_policy_src']}/test/e2e/playbook/provision.yaml"
     ansible.extra_vars = {
       network: "10.217.0.0/16",
       hostname: HOSTNAME,
@@ -75,7 +75,7 @@ Vagrant.configure("2") do |config|
       no_proxy: "#{ENV['NO_PROXY']}",
       cri_runtime: CRI_RUNTIME,
       containerd_src: CONTAINERD_SRC,
-      nri_resmgr_src: NRI_RESMGR_SRC,
+      nri_resource_policy_src: NRI_RESOURCE_POLICY_SRC,
       outdir: OUTPUT_DIR,
     }
   end

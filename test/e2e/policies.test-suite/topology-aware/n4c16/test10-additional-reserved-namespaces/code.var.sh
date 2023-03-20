@@ -13,11 +13,11 @@ cleanup-test-pods() {
 }
 cleanup-test-pods
 
-terminate nri-resmgr
+terminate nri-resource-policy
 AVAILABLE_CPU="cpuset:8-11"
 RESERVED_CPU="cpuset:10-11"
-nri_resmgr_cfg=$(instantiate nri-resmgr-reserved-namespaces.cfg)
-launch nri-resmgr
+nri_resource_policy_cfg=$(instantiate nri-resource-policy-reserved-namespaces.cfg)
+launch nri-resource-policy
 
 CONTCOUNT=1 namespace=kube-system create besteffort
 CONTCOUNT=1 create besteffort
@@ -52,4 +52,4 @@ verify 'cpus["pod4c0"] == {"cpu10", "cpu11"}'
 
 cleanup-foobar-namespace
 
-terminate nri-resmgr
+terminate nri-resource-policy

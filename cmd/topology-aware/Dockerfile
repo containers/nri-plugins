@@ -9,7 +9,7 @@ COPY go.mod go.sum ./
 COPY pkg/topology/ pkg/topology/
 RUN go mod download
 
-# Build nri-resmgr
+# Build nri-resource-policy
 COPY . .
 
 RUN make clean
@@ -20,6 +20,6 @@ FROM gcr.io/distroless/static
 #gcr.io/distroless/base
 #gcr.io/distroless/static
 
-COPY --from=builder /go/builder/build/bin/nri-resmgr-topology-aware /bin/nri-resmgr-topology-aware
+COPY --from=builder /go/builder/build/bin/nri-resource-policy-topology-aware /bin/nri-resource-policy-topology-aware
 
-ENTRYPOINT ["/bin/nri-resmgr-topology-aware"]
+ENTRYPOINT ["/bin/nri-resource-policy-topology-aware"]

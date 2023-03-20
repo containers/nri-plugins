@@ -96,7 +96,7 @@ func (w *watcher) ConfigChan() <-chan config.RawConfig {
 	return w.configChan
 }
 
-// GetConfig returns the current nri-resmgr configuration
+// GetConfig returns the current nri-resource-poicy configuration
 func (w *watcher) GetConfig() config.RawConfig {
 	cfg, kind := w.currentConfig.getConfig()
 	w.Info("giving %s configuration in reply to query", kind)

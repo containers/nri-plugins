@@ -5,10 +5,10 @@ namespace: kube-system
 
 images:
 - name: '*'
-  newName: nri-resmgr-balloons
+  newName: nri-resource-policy-balloons
   newTag: devel
 
 resources:
 - ../../base/crds
-- ../../base/nri-resmgr
+- ../../base/nri-resource-policy
 - sample-configmap.yaml

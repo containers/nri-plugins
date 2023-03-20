@@ -1,17 +1,17 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: nri-resmgr
+  name: nri-resource-policy
   namespace: kube-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: nri-resmgr
+  name: nri-resource-policy
 rules:
 - apiGroups:
   - ""
-  - nriresmgr.intel.com
+  - nri.resource-policy.intel.com
   resources:
   - nodes
   - configmaps
@@ -36,44 +36,44 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: nri-resmgr
+  name: nri-resource-policy
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: nri-resmgr
+  name: nri-resource-policy
 subjects:
 - kind: ServiceAccount
-  name: nri-resmgr
+  name: nri-resource-policy
   namespace: kube-system
 ---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   labels:
-    app: nri-resmgr
-  name: nri-resmgr
+    app: nri-resource-policy
+  name: nri-resource-policy
   namespace: kube-system
 spec:
   selector:
     matchLabels:
-      app: nri-resmgr
+      app: nri-resource-policy
   template:
     metadata:
       labels:
-        app: nri-resmgr
+        app: nri-resource-policy
     spec:
-      serviceAccount: nri-resmgr
+      serviceAccount: nri-resource-policy
       nodeSelector:
         kubernetes.io/os: "linux"
       containers:
-        - name: nri-resmgr-topology-aware
+        - name: nri-resource-policy-topology-aware
           args:
             - --host-root
             - /host
-            - --fallback-config
-            - /etc/nri-resmgr/nri-resmgr.cfg
+            - --force-config
+            - /etc/nri-resource-policy/nri-resource-policy.cfg
             - --pid-file
-            - /tmp/nri-resmgr.pid
+            - /tmp/nri-resource-policy.pid
             - -metrics-interval
             - 5s
           ports:
@@ -87,6 +87,12 @@ spec:
               fieldRef:
                 fieldPath: spec.nodeName
           image: IMAGE_PLACEHOLDER
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8891
+            initialDelaySeconds: 1
+            periodSeconds: 1
           imagePullPolicy: Always # for testing
           securityContext:
             allowPrivilegeEscalation: false
@@ -97,46 +103,31 @@ spec:
               cpu: 500m
               memory: 512Mi
           volumeMounts:
-          - name: resmgrdata
-            mountPath: /var/lib/nri-resmgr
+          - name: resource-policydata
+            mountPath: /var/lib/nri-resource-policy
           - name: hostsysfs
             mountPath: /host/sys
-          - name: resmgrsockets
-            mountPath: /var/run/nri-resmgr
-          - name: resmgrconfig
-            mountPath: /etc/nri-resmgr
+          - name: resource-policysockets
+            mountPath: /var/run/nri-resource-policy
+          - name: resource-policyconfig
+            mountPath: /etc/nri-resource-policy
           - name: nrisockets
             mountPath: /var/run/nri
       volumes:
-      - name: resmgrdata
+      - name: resource-policydata
         hostPath:
-          path: /var/lib/nri-resmgr
-          type: DirectoryOrCreate
+          path: /var/lib/nri-resource-policy
       - name: hostsysfs
         hostPath:
           path: /sys
           type: Directory
-      - name: resmgrsockets
+      - name: resource-policysockets
         hostPath:
-          path: /var/run/nri-resmgr
-      - name: resmgrconfig
-        configMap:
-          name: nri-resmgr-config
+          path: /var/run/nri-resource-policy
+      - name: resource-policyconfig
+        hostPath:
+          path: /etc/nri-resource-policy
       - name: nrisockets
         hostPath:
           path: /var/run/nri
           type: Directory
----
-apiVersion: v1
-data:
-  nri-resmgr.cfg: |
-    policy:
-      Active: topology-aware
-      ReservedResources:
-        CPU: 750m
-    logger:
-      Debug: nri-resmgr,resource-manager,cache,policy
-kind: ConfigMap
-metadata:
-  name: nri-resmgr-config
-  namespace: kube-system

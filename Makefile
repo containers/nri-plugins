@@ -69,8 +69,8 @@ DOCKER_OPTIONS =
 DOCKER_PULL := --pull
 
 PLUGINS := \
-	nri-resmgr-topology-aware \
-	nri-resmgr-balloons
+	nri-resource-policy-topology-aware \
+	nri-resource-policy-balloons
 
 
 ifneq ($(V),1)
@@ -136,7 +136,7 @@ clean-cache:
 #
 
 $(BIN_PATH)/%: .static.%.$(STATIC)
-	$(Q)src=./cmd/$(patsubst nri-resmgr-%,%,$(notdir $@)); bin=$(notdir $@); \
+	$(Q)src=./cmd/$(patsubst nri-resource-policy-%,%,$(notdir $@)); bin=$(notdir $@); \
 	echo "Building $$([ -n "$(STATIC)" ] && echo 'static ')$@ (version $(BUILD_VERSION), build $(BUILD_BUILDID))..."; \
 	mkdir -p $(BIN_PATH) && \
 	$(GO_BUILD) $(BUILD_TAGS) $(LDFLAGS) $(GCFLAGS) -o $(BIN_PATH)/$$bin $$src
@@ -158,19 +158,19 @@ $(BIN_PATH)/%: .static.%.$(STATIC)
 # plugin build dependencies
 #
 
-$(BIN_PATH)/nri-resmgr-topology-aware: \
+$(BIN_PATH)/nri-resource-policy-topology-aware: \
     $(shell for f in cmd/topology-aware/*.go; do echo $$f; done; \
             for dir in $(shell $(GO_DEPS) ./cmd/topology-aware/... | \
-                          grep '/nri-resmgr/' | \
-                          sed 's#github.com/intel/nri-resmgr/##g'); do \
+                          grep '/nri-resource-policy/' | \
+                          sed 's#github.com/intel/nri-resource-policy/##g'); do \
                 find $$dir -name \*.go; \
             done | sort | uniq)
 
-$(BIN_PATH)/nri-resmgr-balloons: \
+$(BIN_PATH)/nri-resource-policy-balloons: \
     $(shell for f in cmd/balloons/*.go; do echo $$f; done; \
                 for dir in $(shell $(GO_DEPS) ./cmd/balloons/... | \
-                          grep '/nri-resmgr/' | \
-                          sed 's#github.com/intel/nri-resmgr/##g'); do \
+                          grep '/nri-resource-policy/' | \
+                          sed 's#github.com/intel/nri-resource-policy/##g'); do \
                 find $$dir -name \*.go; \
             done | sort | uniq)
 
@@ -266,7 +266,7 @@ images: $(foreach dir,$(IMAGE_DIRS),image-$(dir)) \
 
 image-deployment-%:
 	$(Q)mkdir -p $(IMAGE_PATH); \
-	img=$(patsubst image-deployment-%,%,$@); tag=nri-resmgr-$$img; \
+	img=$(patsubst image-deployment-%,%,$@); tag=nri-resource-policy-$$img; \
 	NRI_IMAGE_INFO=`$(DOCKER) images --filter=reference=$${tag} --format '{{.ID}} {{.Repository}}:{{.Tag}} (created {{.CreatedSince}}, {{.CreatedAt}})' | head -n 1`; \
 	NRI_IMAGE_ID=`awk '{print $$1}' <<< "$${NRI_IMAGE_INFO}"`; \
 	NRI_IMAGE_REPOTAG=`awk '{print $$2}' <<< "$${NRI_IMAGE_INFO}"`; \
@@ -285,7 +285,7 @@ image-deployment-%:
 
 image-%:
 	$(Q)mkdir -p $(IMAGE_PATH); \
-	bin=$(patsubst image-%,%,$@); tag=nri-resmgr-$$bin; \
+	bin=$(patsubst image-%,%,$@); tag=nri-resource-policy-$$bin; \
 	    go_version=`$(GO_CMD) list -m -f '{{.GoVersion}}'`; \
 	    $(DOCKER) build . -f "cmd/$$bin/Dockerfile" \
 	    --build-arg GO_VERSION=$${go_version} \

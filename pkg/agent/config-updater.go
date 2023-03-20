@@ -33,7 +33,7 @@ const (
 	retryTimeout = 5 * time.Second
 )
 
-// configUpdater handles sending configuration to nri-resmgr
+// configUpdater handles sending configuration to nri-resource-policy
 type configUpdater interface {
 	Start() error
 	Stop()
@@ -78,7 +78,7 @@ func (u *updater) Start() error {
 				if pendingConfig != nil {
 					err := u.SetConfig(pendingConfig)
 					if err != nil {
-						u.Error("nri-resmgr configuration error: %v", err)
+						u.Error("nri-resource-policy configuration error: %v", err)
 					}
 					pendingConfig = nil
 					ratelimit = nil

@@ -44,7 +44,7 @@ type agent struct {
 	cli        *k8sclient.Clientset // K8s client
 	nrtCli     *nrtapi.TopologyV1alpha2Client
 	watcher    k8sWatcher    // Watcher monitoring events in K8s cluster
-	updater    configUpdater // Client sending config updates to nri-resmgr
+	updater    configUpdater // Client sending config updates to nri-resource-policy
 	nrtLock    sync.Mutex    // serialize async CR updates
 }
 

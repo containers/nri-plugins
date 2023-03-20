@@ -1,8 +1,8 @@
 # Test resource allocation / free on different container exit and
 # restart scenarios.
 
-terminate nri-resmgr
-launch nri-resmgr
+terminate nri-resource-policy
+launch nri-resource-policy
 
 # Make sure all the pods in default namespace are cleared so we get a fresh start
 vm-command "kubectl delete pods --all --now"
@@ -38,4 +38,4 @@ verify '"pod0c0" not in cpus'
     error "pod0c0 expected to disappear from allocations"
 }
 
-terminate nri-resmgr
+terminate nri-resource-policy

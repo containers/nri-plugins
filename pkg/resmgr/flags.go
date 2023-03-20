@@ -70,7 +70,7 @@ func init() {
 		"Interval for polling/gathering runtime metrics data. Use 'disable' for disabling.")
 	flag.DurationVar(&opt.RebalanceTimer, "rebalance-interval", 0,
 		"Minimum interval between two container rebalancing attempts. Use 'disable' for disabling.")
-	flag.StringVar(&opt.StateDir, "state-dir", "/var/lib/nri-resmgr",
+	flag.StringVar(&opt.StateDir, "state-dir", "/var/lib/nri-resource-policy",
 		"Permanent storage directory path for the resource manager to store its state in.")
 
 	flag.BoolVar(&opt.DisableAgent, "disable-agent", false,

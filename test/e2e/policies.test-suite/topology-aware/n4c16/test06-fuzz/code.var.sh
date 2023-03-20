@@ -1,5 +1,5 @@
-terminate nri-resmgr
-launch nri-resmgr
+terminate nri-resource-policy
+launch nri-resource-policy
 
 source $TEST_DIR/codelib.sh || {
     echo "error importing codelib.sh"
@@ -49,5 +49,5 @@ wait
 
 cleanup-test-pods
 
-# Restore default test configuration, restart nri-resmgr.
-terminate nri-resmgr
+# Restore default test configuration, restart nri-resource-policy.
+terminate nri-resource-policy

@@ -9,7 +9,7 @@ COPY go.mod go.sum ./
 COPY pkg/topology/ pkg/topology/
 RUN go mod download
 
-# Build nri-resmgr
+# Build nri-resource-policy
 COPY . .
 
 RUN make clean
@@ -20,6 +20,6 @@ FROM gcr.io/distroless/static
 #gcr.io/distroless/base
 #gcr.io/distroless/static
 
-COPY --from=builder /go/builder/build/bin/nri-resmgr-balloons /bin/nri-resmgr-balloons
+COPY --from=builder /go/builder/build/bin/nri-resource-policy-balloons /bin/nri-resource-policy-balloons
 
-ENTRYPOINT ["/bin/nri-resmgr-balloons"]
+ENTRYPOINT ["/bin/nri-resource-policy-balloons"]

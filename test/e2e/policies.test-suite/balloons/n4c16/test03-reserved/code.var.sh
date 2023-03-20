@@ -1,5 +1,5 @@
-terminate nri-resmgr
-nri_resmgr_cfg=${TEST_DIR}/balloons-reserved.cfg launch nri-resmgr
+terminate nri-resource-policy
+nri_resource_policy_cfg=${TEST_DIR}/balloons-reserved.cfg launch nri-resource-policy
 
 cleanup() {
     vm-command \
@@ -84,4 +84,4 @@ verify 'cpus["pod7c0"] == {"cpu00", "cpu01", "cpu02"}'
 
 cleanup
 
-terminate nri-resmgr
+terminate nri-resource-policy

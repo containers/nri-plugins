@@ -1,8 +1,8 @@
 # Test placing containers with and without annotations to correct balloons
 # reserved and shared CPUs.
 
-terminate nri-resmgr
-launch nri-resmgr
+terminate nri-resource-policy
+launch nri-resource-policy
 
 cleanup() {
     vm-command "kubectl delete pods -n kube-system pod0; kubectl delete pods -n three --all --now; kubectl delete pods --all --now; kubectl delete namespace three"
@@ -66,4 +66,4 @@ verify 'disjoint_sets(cpus["pod5c0"], cpus["pod5c1"], cpus["pod5c2"])' \
 
 cleanup
 
-terminate nri-resmgr
+terminate nri-resource-policy

@@ -1,10 +1,10 @@
 # Test that AvailableResources are honored.
 
 # Test explicit cpuset in AvailableResources.CPU
-terminate nri-resmgr
+terminate nri-resource-policy
 AVAILABLE_CPU="cpuset:4-7,8-11"
-nri_resmgr_cfg=$(instantiate nri-resmgr-available-resources.cfg)
-launch nri-resmgr
+nri_resource_policy_cfg=$(instantiate nri-resource-policy-available-resources.cfg)
+launch nri-resource-policy
 
 # pod0: exclusive CPUs
 CPU=3 create guaranteed
@@ -56,22 +56,22 @@ fi
 NRIRM_CGROUP=$CGROUP_CPUSET/nri-resmgr-test-05-1
 vm-command "rmdir $NRIRM_CGROUP; mkdir $NRIRM_CGROUP; echo 1-4,11 > $NRIRM_CGROUP/cpuset.cpus"
 
-terminate nri-resmgr
+terminate nri-resource-policy
 AVAILABLE_CPU="\"${NRIRM_SYS_PATH}$NRIRM_CGROUP\""
-nri_resmgr_cfg=$(instantiate nri-resmgr-available-resources.cfg)
-launch nri-resmgr
+nri_resource_policy_cfg=$(instantiate nri-resource-policy-available-resources.cfg)
+launch nri-resource-policy
 test-and-verify-allowed 1 2 3 4
 vm-command "rmdir $NRIRM_CGROUP || true"
 
 NRIRM_CGROUP=$CGROUP_CPUSET/nri-resmgr-test-05-2
 vm-command "rmdir $NRIRM_CGROUP; mkdir $NRIRM_CGROUP; echo 5-8,11 > $NRIRM_CGROUP/cpuset.cpus"
 
-terminate nri-resmgr
+terminate nri-resource-policy
 AVAILABLE_CPU="\"${NRIRM_SYS_PATH}${NRIRM_CGROUP}\""
-nri_resmgr_cfg=$(instantiate nri-resmgr-available-resources.cfg)
-launch nri-resmgr
+nri_resource_policy_cfg=$(instantiate nri-resource-policy-available-resources.cfg)
+launch nri-resource-policy
 test-and-verify-allowed 5 6 7 8
 vm-command "rmdir $NRIRM_CGROUP || true"
 
-# cleanup, do not leave weirdly configured nri-resmgr running
-terminate nri-resmgr
+# cleanup, do not leave weirdly configured nri-resource-policy running
+terminate nri-resource-policy

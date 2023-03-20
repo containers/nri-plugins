@@ -8,10 +8,10 @@ cleanup() {
 
 cleanup
 
-# Launch nri-resmgr with wanted metrics update interval and a
+# Launch nri-resource-policy with wanted metrics update interval and a
 # configuration that opens the instrumentation http server.
-terminate nri-resmgr
-nri_resmgr_cfg=${TEST_DIR}/balloons-metrics.cfg  nri_resmgr_extra_args="-metrics-interval 4s" launch nri-resmgr
+terminate nri-resource-policy
+nri_resource_policy_cfg=${TEST_DIR}/balloons-metrics.cfg  nri_resource_policy_extra_args="-metrics-interval 4s" launch nri-resource-policy
 
 vm-port-forward-enable
 
@@ -82,10 +82,6 @@ report allowed
 verify-metrics-has-line 'balloon="fast-dualcore\[1\]".*pod2c0.* 4'
 verify-metrics-has-line 'balloon="fast-dualcore\[0\]".*pod5c0.* 4'
 
-# # Re-launch nri-resmgr with test suite default parameters
-# terminate nri-resmgr
-# launch nri-resmgr
-
 cleanup
 
-terminate nri-resmgr
+terminate nri-resource-policy

@@ -231,7 +231,7 @@ func (p *nriPlugin) CreateContainer(pod *api.PodSandbox, container *api.Containe
 	}
 
 	c.InsertMount(&cache.Mount{
-		Container:   "/.nri-resmgr",
+		Container:   "/.nri-resource-policy",
 		Host:        m.cache.ContainerDirectory(c.GetCacheID()),
 		Readonly:    true,
 		Propagation: cache.MountHostToContainer,

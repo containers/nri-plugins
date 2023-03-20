@@ -7,12 +7,12 @@ cleanup-test-pods() {
 }
 cleanup-test-pods
 
-terminate nri-resmgr
+terminate nri-resource-policy
 
 AVAILABLE_CPU="cpuset:8-11"
 RESERVED_CPU="cpuset:10-11"
-nri_resmgr_cfg=$(instantiate nri-resmgr-reserved-annotations.cfg)
-launch nri-resmgr
+nri_resource_policy_cfg=$(instantiate nri-resource-policy-reserved-annotations.cfg)
+launch nri-resource-policy
 
 ANNOTATIONS='prefer-reserved-cpus.nri-resmgr.intel.com/pod: "true"'
 CONTCOUNT=1 create reserved-annotated
@@ -27,4 +27,4 @@ verify 'cpus["pod1c0"] == {"cpu08"}'
 
 cleanup-test-pods
 
-terminate nri-resmgr
+terminate nri-resource-policy

@@ -1,5 +1,5 @@
-terminate nri-resmgr
-nri_resmgr_cfg=${TEST_DIR}/balloons-namespace.cfg launch nri-resmgr
+terminate nri-resource-policy
+nri_resource_policy_cfg=${TEST_DIR}/balloons-namespace.cfg launch nri-resource-policy
 
 cleanup() {
     vm-command \
@@ -85,4 +85,4 @@ report allowed
 verify 'cpus["pod6c0"] == cpus["pod6c1"]'
 
 cleanup
-terminate nri-resmgr
+terminate nri-resource-policy

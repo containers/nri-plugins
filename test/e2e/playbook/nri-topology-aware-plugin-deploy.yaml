@@ -6,25 +6,25 @@
     - name: create default nri configuration file
       become: yes
       copy:
-        src: "{{ nri_resmgr_src }}/test/e2e/files/nri-resmgr.cfg"
-        dest: /etc/nri-resmgr/
+        src: "{{ nri_resource_policy_src }}/test/e2e/files/nri-resource-policy.cfg"
+        dest: /etc/nri-resource-policy/
         owner: root
         group: root
         mode: '0644'
 
-    - name: copy nri-resmgr plugins
+    - name: copy nri-resource-policy plugins
       copy: src="{{ item }}" dest="." mode=0755
       with_items:
-        - "{{ nri_resmgr_src }}/build/bin/nri-resmgr-topology-aware"
+        - "{{ nri_resource_policy_src }}/build/bin/nri-resource-policy-topology-aware"
 
-    - name: copy nri-resmgr deployment yaml
+    - name: copy nri-resource-policy deployment yaml
       copy: src="{{ item }}" dest="." mode=0644
       with_items:
-        - "{{ nri_resmgr_src }}/build/images/nri-resmgr-topology-aware-deployment-e2e.yaml"
+        - "{{ nri_resource_policy_src }}/build/images/nri-resource-policy-topology-aware-deployment-e2e.yaml"
 
-    - name: copy nri-resmgr deployment yaml to /etc/nri-resmgr/nri-resmgr-deployment.yaml
+    - name: copy nri-resource-policy deployment yaml to /etc/nri-resource-policy/nri-resource-policy-deployment.yaml
       become: yes
-      copy: src="{{ nri_resmgr_src }}/build/images/nri-resmgr-topology-aware-deployment-e2e.yaml" dest="/etc/nri-resmgr/nri-resmgr-deployment.yaml" mode=0644
+      copy: src="{{ nri_resource_policy_src }}/build/images/nri-resource-policy-topology-aware-deployment-e2e.yaml" dest="/etc/nri-resource-policy/nri-resource-policy-deployment.yaml" mode=0644
       register: result
       failed_when: result.state != "file"
 
@@ -32,17 +32,17 @@
       become: yes
       shell: "{{ item }}"
       with_items:
-        - sed 's/--force-config/--fallback-config/' /etc/nri-resmgr/nri-resmgr-deployment.yaml > /etc/nri-resmgr/nri-resmgr-deployment-fallback.yaml
+        - sed 's/--force-config/--fallback-config/' /etc/nri-resource-policy/nri-resource-policy-deployment.yaml > /etc/nri-resource-policy/nri-resource-policy-deployment-fallback.yaml
 
-    - name: get latest nri-resmgr deployment image name
+    - name: get latest nri-resource-policy deployment image name
       delegate_to: localhost
-      shell: "ls -1t {{ nri_resmgr_src }}/build/images/nri-resmgr-topology-aware-image-*.tar"
-      register: nri_resmgr_images
-      failed_when: nri_resmgr_images.rc != 0
+      shell: "ls -1t {{ nri_resource_policy_src }}/build/images/nri-resource-policy-topology-aware-image-*.tar"
+      register: nri_resource_policy_images
+      failed_when: nri_resource_policy_images.rc != 0
 
-    - name: copy latest nri-resmgr deployment image
-      copy: src="{{ nri_resmgr_images.stdout_lines[0] }}" dest="."
+    - name: copy latest nri-resource-policy deployment image
+      copy: src="{{ nri_resource_policy_images.stdout_lines[0] }}" dest="."
 
     - name: import nri plugin image
       become: yes
-      shell: "ctr -n k8s.io images import `basename {{ nri_resmgr_images.stdout_lines[0] }}`"
+      shell: "ctr -n k8s.io images import `basename {{ nri_resource_policy_images.stdout_lines[0] }}`"

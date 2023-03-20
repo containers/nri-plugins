@@ -62,7 +62,7 @@ func main() {
 
 	logger.Flush()
 	logger.SetupDebugToggleSignal(syscall.SIGUSR1)
-	log.Info("nri-resmgr (version %s, build %s) starting...", version.Version, version.Build)
+	log.Info("nri-resource-policy-balloons (version %s, build %s) starting...", version.Version, version.Build)
 
 	if err := instrumentation.Start(); err != nil {
 		log.Fatal("failed to set up instrumentation: %v", err)

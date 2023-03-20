@@ -14,7 +14,7 @@ export proxy
 usage() {
     echo "Usage: run_tests.sh TESTS_DIR"
     echo "TESTS_DIR is expected to be structured as POLICY/TOPOLOGY/TEST with files:"
-    echo "POLICY/nri-resmgr.cfg: configuration of nri-resmgr"
+    echo "POLICY/nri-resource_policy.cfg: configuration of nri-resource_policy"
     echo "POLICY/TOPOLOGY/topology.var.json: contents of the topology variable for run.sh"
     echo "POLICY/TOPOLOGY/TEST/code.var.sh: contents of the code var (that is, test script)"
 }
@@ -183,7 +183,7 @@ for POLICY_DIR in "$TESTS_ROOT_DIR"/*; do
             if ! [ -f "$CFG_FILE" ]; then
                 continue
             fi
-            export nri_resmgr_cfg=$CFG_FILE
+            export nri_resource_policy_cfg=$CFG_FILE
         done
         export-and-source-dir "$POLICY_DIR"
         for TOPOLOGY_DIR in "$POLICY_DIR"/*; do

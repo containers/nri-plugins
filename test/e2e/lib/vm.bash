@@ -45,7 +45,7 @@ vm-setup() {
     local playbook="$output_dir"
     local inventory="$playbook/inventory"
     local vagrantdir="$output_dir"
-    local files="$nri_resmgr_src/test/e2e/files"
+    local files="$nri_resource_policy_src/test/e2e/files"
     local distro_name=$(printf '%s\n' "$distro" | sed -e 's/[\/&]/\\&/g')
 
     mkdir -p "$inventory"
@@ -144,7 +144,7 @@ vm-play() {
 	  -i "${vm}," -u vagrant \
 	  --private-key=".vagrant/machines/${vm}/libvirt/private_key" \
 	  --ssh-common-args "-F .ssh-config" \
-	  --extra-vars "nri_resmgr_src=${nri_resmgr_src}"
+	  --extra-vars "nri_resource_policy_src=${nri_resource_policy_src}"
     )
 }
 
@@ -153,7 +153,7 @@ vm-nri-plugin-deploy() {
     local vm_name="$2"
     local policy="$3"
     local vagrantdir="$output_dir"
-    local playbook="$nri_resmgr_src/test/e2e/playbook"
+    local playbook="$nri_resource_policy_src/test/e2e/playbook"
 
      # We do not setup NRI plugin during provisioning because provisioning is
      # only run once but we can execute the tests multiple times and we might
@@ -266,8 +266,8 @@ vm-wait-pod-regexp() {
     # Wait until pod (found using regexp) is created and ready.
     #
     # Parameters:
-    #   pod-name-with-regexp: pod name, for example "nri-resmgr-"
-    #   would find the first pod that contains "nri-resmgr-" string.
+    #   pod-name-with-regexp: pod name, for example "nri-resource-policy-"
+    #   would find the first pod that contains "nri-resource-policy-" string.
     #
     # Optional parameters (VAR=VALUE):
     #   namespace: namespace to which instances are checked
@@ -354,14 +354,14 @@ vm-put-file() { # script API
     fi
 }
 
-vm-nri-resmgr-pod-name() {
-    echo "$(namespace=kube-system wait_t=5 vm-wait-pod-regexp nri-resmgr-)"
+vm-nri-resource-policy-pod-name() {
+    echo "$(namespace=kube-system wait_t=5 vm-wait-pod-regexp nri-resource-policy-)"
 }
 
-port_forward_log_file=/tmp/nri-resmgr-port-forward
+port_forward_log_file=/tmp/nri-resource-policy-port-forward
 
 vm-port-forward-enable() {
-    local pod_name=$(vm-nri-resmgr-pod-name)
+    local pod_name=$(vm-nri-resource-policy-pod-name)
 
     vm-port-forward-disable
 

@@ -20,9 +20,9 @@ vm-command "grep isolcpus /proc/cmdline" && {
 }
 
 # Do a fresh start
-terminate nri-resmgr
-nri_resmgr_cfg=$(instantiate nri-resmgr.cfg)
-launch nri-resmgr
+terminate nri-resource-policy
+nri_resource_policy_cfg=$(instantiate nri-resource-policy.cfg)
+launch nri-resource-policy
 
 # pod0: Test that 4 guaranteed containers eligible for isolated CPU allocation
 # gets evenly spread over NUMA nodes.
@@ -79,9 +79,9 @@ vm-command "kubectl delete pods --all --now"
 # pod4: Test that with pod colocation enabled containers within a pod get
 # colocated (assigned topologically close to each other) as opposed to being
 # evenly spread out.
-terminate nri-resmgr
-nri_resmgr_cfg=$(COLOCATE_PODS=true instantiate nri-resmgr.cfg)
-launch nri-resmgr
+terminate nri-resource-policy
+nri_resource_policy_cfg=$(COLOCATE_PODS=true instantiate nri-resource-policy.cfg)
+launch nri-resource-policy
 
 CONTCOUNT=4 CPU=100m create guaranteed
 report allowed
@@ -95,9 +95,9 @@ vm-command "kubectl delete pods --all --now"
 # pod{5,6,7}: Test that with namespace colocation enabled containers of pods
 # in the same namespace get colocated (assigned topologically close to each
 # other) as opposed to being evenly spread out.
-terminate nri-resmgr
-nri_resmgr_cfg=$(COLOCATE_NAMESPACES=true instantiate nri-resmgr.cfg)
-launch nri-resmgr
+terminate nri-resource-policy
+nri_resource_policy_cfg=$(COLOCATE_NAMESPACES=true instantiate nri-resource-policy.cfg)
+launch nri-resource-policy
 
 vm-command "kubectl create namespace test-ns"
 
@@ -113,7 +113,7 @@ verify \
 vm-command "kubectl delete pods -n test-ns --all --now"
 vm-command "kubectl delete namespace test-ns"
 
-# Restore default test configuration, restart nri-resmgr.
-terminate nri-resmgr
+# Restore default test configuration, restart nri-resource-policy.
+terminate nri-resource-policy
 
 echo $?

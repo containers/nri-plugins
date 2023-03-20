@@ -1,5 +1,5 @@
-terminate nri-resmgr
-nri_resmgr_cfg=${TEST_DIR}/balloons-isolated.cfg nri_resmgr_extra_args="-metrics-interval 4s" launch nri-resmgr
+terminate nri-resource-policy
+nri_resource_policy_cfg=${TEST_DIR}/balloons-isolated.cfg nri_resource_policy_extra_args="-metrics-interval 4s" launch nri-resource-policy
 
 vm-port-forward-enable
 
@@ -90,4 +90,4 @@ verify-metrics-has-line 'balloon="isolated-ctrs\[3\]"'
 
 vm-port-forward-disable
 
-terminate nri-resmgr
+terminate nri-resource-policy

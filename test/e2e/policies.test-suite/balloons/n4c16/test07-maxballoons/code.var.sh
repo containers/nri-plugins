@@ -5,8 +5,8 @@ cleanup() {
 
 cleanup
 
-terminate nri-resmgr
-nri_resmgr_cfg=${TEST_DIR}/balloons-maxballoons.cfg launch nri-resmgr
+terminate nri-resource-policy
+nri_resource_policy_cfg=${TEST_DIR}/balloons-maxballoons.cfg launch nri-resource-policy
 
 # pod0: allocate 1500/2000 mCPUs of the singleton balloon
 CPUREQ="1500m" CPULIM="1500m"
@@ -63,12 +63,12 @@ vm-command "kubectl delete pod pod5 --now"
 
 cleanup
 
-# Try starting nri-resmgr with a configuration where MinBalloons and
+# Try starting nri-resource-policy with a configuration where MinBalloons and
 # MaxBalloons of the same balloon type contradict.
-terminate nri-resmgr
-( ds_wait_t=1s nri_resmgr_cfg=${TEST_DIR}/balloons-maxballoons-impossible.cfg launch nri-resmgr ) && {
-    error "starting nri-resmgr succeeded, but was expected to fail due to impossible static balloons"
+terminate nri-resource-policy
+( ds_wait_t=1s nri_resource_policy_cfg=${TEST_DIR}/balloons-maxballoons-impossible.cfg launch nri-resource-policy ) && {
+    error "starting nri-resource-policy succeeded, but was expected to fail due to impossible static balloons"
 }
-echo "starting nri-resmgr with impossible static balloons configuration failed as expected"
+echo "starting nri-resource-policy with impossible static balloons configuration failed as expected"
 
-terminate nri-resmgr
+terminate nri-resource-policy

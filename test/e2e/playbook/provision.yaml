@@ -108,7 +108,7 @@
 
     - name: setup runtime systemd file
       copy:
-        src: "{{ nri_resmgr_src }}/test/e2e/files/{{ cri_runtime }}.service"
+        src: "{{ nri_resource_policy_src }}/test/e2e/files/{{ cri_runtime }}.service"
         dest: "/lib/systemd/system/{{ cri_runtime }}.service"
         owner: root
         group: root
@@ -138,7 +138,7 @@
 
     - name: copy containerd nri enable script
       copy:
-        src: "{{ nri_resmgr_src }}/test/e2e/files/containerd-nri-enable"
+        src: "{{ nri_resource_policy_src }}/test/e2e/files/containerd-nri-enable"
         dest: /usr/local/bin/containerd-nri-enable
         owner: root
         group: root
@@ -227,7 +227,7 @@
 
     - name: copy cilium install script
       copy:
-        src: "{{ nri_resmgr_src }}/test/e2e/files/cilium-install.sh"
+        src: "{{ nri_resource_policy_src }}/test/e2e/files/cilium-install.sh"
         dest: /usr/local/bin/cilium-install.sh
         owner: root
         group: root
