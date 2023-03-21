@@ -1,0 +1,18 @@
+[Unit]
+Description=cri-o container runtime
+Documentation=https://cri-o.io
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/crio
+
+Delegate=yes
+KillMode=process
+Restart=always
+LimitNPROC=infinity
+LimitCORE=infinity
+LimitNOFILE=1048576
+TasksMax=infinity
+
+[Install]
+WantedBy=multi-user.target

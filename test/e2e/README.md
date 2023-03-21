@@ -60,6 +60,7 @@ Before running E2E tests ensure that you have all the required components locall
     no_proxy
     dns_nameserver
     dns_search_domain
+    k8scri
     ```
 
     For example:

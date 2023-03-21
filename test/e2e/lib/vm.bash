@@ -144,7 +144,7 @@ vm-play() {
 	  -i "${vm}," -u vagrant \
 	  --private-key=".vagrant/machines/${vm}/libvirt/private_key" \
 	  --ssh-common-args "-F .ssh-config" \
-	  --extra-vars "nri_resource_policy_src=${nri_resource_policy_src}"
+	  --extra-vars "cri_runtime=${k8scri} nri_resource_policy_src=${nri_resource_policy_src}"
     )
 }
 

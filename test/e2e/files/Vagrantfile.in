@@ -15,7 +15,15 @@ HOSTNAME = "SERVER_NAME"
 N = 1
 
 CRI_RUNTIME = "#{ENV['k8scri']}"
-CONTAINERD_SRC = "#{ENV['containerd_src']}"
+CRIO_SRC = ""
+CONTAINERD_SRC = ""
+
+if CRI_RUNTIME == "containerd"
+  CONTAINERD_SRC = "#{ENV['containerd_src']}"
+else
+  CRIO_SRC = "#{ENV['crio_src']}"
+end
+
 NRI_RESOURCE_POLICY_SRC = "#{ENV['nri_resource_policy_src']}"
 OUTPUT_DIR = "#{ENV['OUTPUT_DIR']}"
 
@@ -75,6 +83,7 @@ Vagrant.configure("2") do |config|
       no_proxy: "#{ENV['NO_PROXY']}",
       cri_runtime: CRI_RUNTIME,
       containerd_src: CONTAINERD_SRC,
+      crio_src: CRIO_SRC,
       nri_resource_policy_src: NRI_RESOURCE_POLICY_SRC,
       outdir: OUTPUT_DIR,
     }

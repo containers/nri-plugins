@@ -49,7 +49,9 @@ fi
 
 # Assume containerd sources are found in parent dir of this repo.
 # If that is not the case, set containerd_src when calling the e2e script.
+# Same for cri-o if using that.
 export containerd_src=${containerd_src:-"$SRC_DIR"/../containerd}
+export crio_src=${crio_src:-"$SRC_DIR"/../cri-o}
 
 # Default topology if not given. The run_tests.sh script will figure out
 # the topology from the test directory structure and contents.
@@ -82,7 +84,11 @@ echo "    Runtime         = $k8scri"
 echo "    Output dir      = $OUTPUT_DIR"
 echo "    Test output dir = $TEST_OUTPUT_DIR"
 echo "    NRI dir         = $nri_resource_policy_src"
-echo "    Containerd dir  = $containerd_src"
+if [ "$k8scri" == "containerd" ]; then
+    echo "    Containerd dir  = $containerd_src"
+else
+    echo "    CRI-O dir       = $crio_src"
+fi
 echo "    Policy          = $POLICY"
 echo "    Topology        = $topology"
 echo
