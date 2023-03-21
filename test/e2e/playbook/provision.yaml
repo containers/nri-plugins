@@ -3,9 +3,18 @@
   become: yes
   become_user: root
   vars:
-    is_containerd: "{{ cri_runtime }} == containerd"
+    - cri_runtime: "{{ cri_runtime }}"
+    - is_containerd: false
+    - is_crio: false
 
   tasks:
+    - set_fact:
+        is_containerd: true
+      when: cri_runtime == "containerd"
+    - set_fact:
+        is_crio: true
+      when: cri_runtime == "crio"
+
     - name: setup DNS
       shell: "{{ item }}"
       with_items:
@@ -60,6 +69,7 @@
           - kubelet
           - kubeadm
           - kubectl
+          - systemd-container
         state: present
 
     - name: install apt packages
@@ -77,8 +87,15 @@
       dnf:
         pkg:
         - iproute-tc
+        - grubby
         state: present
         update_cache: yes
+      when: ansible_facts['distribution'] == "Fedora"
+
+    - name: disable SELinux
+      ansible.posix.selinux:
+        update_kernel_param: true
+        state: disabled
       when: ansible_facts['distribution'] == "Fedora"
 
     - name: remove the firewalld package
@@ -86,6 +103,15 @@
         name: firewalld
         state: absent
       when: ansible_facts['distribution'] == "Fedora"
+
+    - name: install additional cri-o packages
+      dnf:
+        pkg:
+        - podman
+        - cri-o
+        state: present
+        update_cache: yes
+      when: ansible_facts['distribution'] == "Fedora" and is_crio
 
     - name: install python pip based apps
       pip:
@@ -105,6 +131,16 @@
         - "{{ containerd_src }}/bin/containerd-shim-runc-v1"
         - "{{ containerd_src }}/bin/containerd-shim-runc-v2"
       when: is_containerd
+
+    # We need quite recent cri-o that has NRI support so use the one
+    # that is compiled from sources.
+    - name: copy cri-o sources
+      copy: src="{{ item }}" dest="/usr/bin" mode=0755
+      with_items:
+        - "{{ crio_src }}/bin/crio"
+        - "{{ crio_src }}/bin/crio-status"
+        - "{{ crio_src }}/bin/pinns"
+      when: is_crio
 
     - name: setup runtime systemd file
       copy:
@@ -143,6 +179,7 @@
         owner: root
         group: root
         mode: '0755'
+      when: is_containerd
 
     - name: configure containerd
       when: is_containerd
@@ -165,6 +202,7 @@
       shell: "{{ item }}"
       with_items:
         - /usr/local/bin/containerd-nri-enable
+      when: is_containerd
 
     - name: restart the containerd
       systemd:
@@ -172,6 +210,28 @@
         name: "{{ cri_runtime }}"
         daemon_reload: true
       when: is_containerd
+
+    - name: copy crio nri enable script
+      copy:
+        src: "{{ nri_resource_policy_src }}/test/e2e/files/crio-nri-enable"
+        dest: /usr/local/bin/crio-nri-enable
+        owner: root
+        group: root
+        mode: '0755'
+      when: is_crio
+
+    - name: enable nri for crio
+      shell: "{{ item }}"
+      with_items:
+        - /usr/local/bin/crio-nri-enable
+      when: is_crio
+
+    - name: restart the cri-o
+      systemd:
+        state: restarted
+        name: "{{ cri_runtime }}"
+        daemon_reload: true
+      when: is_crio
 
     - name: remove swapfile from /etc/fstab
       mount:
