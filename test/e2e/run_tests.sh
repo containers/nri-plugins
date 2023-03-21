@@ -238,8 +238,16 @@ ${code}"
                             echo "outdir=$outdir vm_name=node policy=$TESTS_POLICY_FILTER test_outdir=$test_outdir TEST_DIR=$TEST_DIR TOPOLOGY_DIR=$TOPOLOGY_DIR POLICY_DIR=$POLICY_DIR" > $TEST_PARAMS
 			fi
 
+			test_start_time=$(epochrealtime)
+
                         policy="$policy_name" test_outdir="$test_outdir" TEST_DIR=$TEST_DIR TOPOLOGY_DIR=$TOPOLOGY_DIR POLICY_DIR=$POLICY_DIR \
                             "$RUN_SH" test 2>&1 | tee "$test_outdir/run.sh.output"
+
+			test_end_time=$(epochrealtime)
+			test_time=$(echo "$test_end_time - $test_start_time" | bc)
+
+			printf "\nTest duration: $test_time sec\n\n" >> "$test_outdir/run.sh.output"
+
                         test_name="$policy_name/$(basename "$TOPOLOGY_DIR")/$(basename "$TEST_DIR")"
                         if grep -q "Test verdict: PASS" "$test_outdir/run.sh.output"; then
                             echo "PASS $test_name" >> "$summary_file"
