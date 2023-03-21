@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+mkdir -p /etc/crio
+
+cat >> /etc/crio/crio.conf <<EOF
+# CRI-O NRI configuration.
+[crio.nri]
+# Globally enable or disable NRI.
+enable_nri = true
+# NRI configuration file to use.
+# nri_config_file = "/etc/nri/nri.conf"
+# NRI socket path to create.
+# nri_socket_path = "/var/run/nri/nri.sock"
+# NRI plugin directory to use.
+# nri_plugin_dir = "/opt/nri/plugins"
+EOF
