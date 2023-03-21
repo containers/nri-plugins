@@ -75,6 +75,23 @@ if [ "$1" == "runtime-logs" ]; then
     exit
 fi
 
+script_source="$(< "$0") $(< "$LIB_DIR/vm.bash")"
+
+help() { # script API
+    # Usage: help [FUNCTION|all]
+    #
+    # Print help on all functions or on the FUNCTION available in script.
+    awk -v f="$1" \
+        '/^[a-z].*script API/{split($1,a,"(");if(f==""||f==a[1]||f=="all"){print "";print a[1]":";l=2}}
+         !/^    #/{l=l-1}
+         /^    #/{if(l>=1){split($0,a,"#"); print "   "a[2]; if (f=="") l=0}}' <<<"$script_source"
+}
+
+if [ "$1" == "help" ]; then
+    help
+    exit 0
+fi
+
 echo
 echo "    VM              = $vm_name"
 echo "    Distro          = $distro"
