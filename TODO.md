@@ -15,8 +15,8 @@ The estimated complexity and priority of a feature/task is defined like this:
 ## Reference Plugins (this repository)
 
 - admin/repo
-  - [ ] figure out resonable name for repo (`nri-plugins` ?) C1
-  - [ ] get repository on some neutral ground (`containerd` organization) C1
+  - [x] figure out resonable name for repo (`nri-plugins`) C1
+  - [x] get repository on some neutral ground (`containers` organization) C1
 - cache
   - [ ] rework/split up, make the core functionality be usable for other types of plugins, C4
   - [ ] get rid of CRI-specific representation/interfaces, NRI/CRI pod, container conversion, C4
@@ -38,10 +38,13 @@ The estimated complexity and priority of a feature/task is defined like this:
   - [x] drop AVX512 related bits
   - [ ] rework pkg hierarchy (with co-hosted plugins of other 'classes' in mind), C8
   - [ ] eliminate/replace `resmgr` in other user-visible 'artifacts' where appropriate, C1
-  - [ ] health check (with support for components to hook themselves into it), C2
+  - [x] health check (with support for components to hook themselves into it), C2
   - [ ] check and unify annotation naming for consistency, C1
   - [ ] structural logging (with better configurability), check what Patrik did, C2
   - [ ] agent usage should be optional and controllable, C2
+  - [ ] fix crun+cgroupv2 support (ineffective/broken for CPU and memory)
+      - [ ] set cgroup parameters using v2/unified notation if possible
+      - [ ] check if this fixes the problems with crun+cri-o
 - instrumentation
   - [ ] switch metrics collection to opentelemetry from opencensus
   - [ ] make sure default go runtime metrics gets properly exported
@@ -77,7 +80,7 @@ The estimated complexity and priority of a feature/task is defined like this:
 
 ## Containerd integration
 
-- [ ] sbserver support, C2
+- [x] sbserver support, C2
 
 
 ## CRI-O integration
