@@ -56,6 +56,8 @@ The estimated complexity and priority of a feature/task is defined like this:
   - [ ] e2e-tests on merge by CI/self-hosted runners, C4
   - [ ] migrate shell based e2e-tests into Ansible, C4
   - [ ] make topology-aware e2e test07-mixed-allocations more reliable, C1
+  - [ ] allow e2e tests to use the upstream containerd or cri-o instead of using
+        binaries compiled from local sources, C1
 - documentation
   - [ ] minimal README with instructions about how to build/deploy/try the plugins, C2
 
