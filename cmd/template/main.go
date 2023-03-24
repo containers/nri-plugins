@@ -21,14 +21,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/intel/nri-resmgr/pkg/config"
-	"github.com/intel/nri-resmgr/pkg/instrumentation"
-	"github.com/intel/nri-resmgr/pkg/resmgr"
+	"github.com/containers/nri-plugins/pkg/config"
+	"github.com/containers/nri-plugins/pkg/instrumentation"
+	"github.com/containers/nri-plugins/pkg/resmgr"
 
-	logger "github.com/intel/nri-resmgr/pkg/log"
-	version "github.com/intel/nri-resmgr/pkg/version"
+	logger "github.com/containers/nri-plugins/pkg/log"
+	version "github.com/containers/nri-plugins/pkg/version"
 
-	_ "github.com/intel/nri-resmgr/cmd/template/policy"
+	_ "github.com/containers/nri-plugins/cmd/template/policy"
 )
 
 var log = logger.Default()
@@ -62,7 +62,7 @@ func main() {
 
 	logger.Flush()
 	logger.SetupDebugToggleSignal(syscall.SIGUSR1)
-	log.Info("nri-resmgr (version %s, build %s) starting...", version.Version, version.Build)
+	log.Info("nri-resource-policy (version %s, build %s) starting...", version.Version, version.Build)
 
 	if err := instrumentation.Start(); err != nil {
 		log.Fatal("failed to set up instrumentation: %v", err)

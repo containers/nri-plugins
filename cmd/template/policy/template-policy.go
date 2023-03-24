@@ -17,11 +17,11 @@ package template
 import (
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/intel/nri-resmgr/pkg/cache"
-	"github.com/intel/nri-resmgr/pkg/introspect"
-	logger "github.com/intel/nri-resmgr/pkg/log"
-	policyapi "github.com/intel/nri-resmgr/pkg/policy"
-	"github.com/intel/nri-resmgr/pkg/resmgr/events"
+	"github.com/containers/nri-plugins/pkg/cache"
+	"github.com/containers/nri-plugins/pkg/introspect"
+	logger "github.com/containers/nri-plugins/pkg/log"
+	policyapi "github.com/containers/nri-plugins/pkg/policy"
+	"github.com/containers/nri-plugins/pkg/resmgr/events"
 )
 
 const (
