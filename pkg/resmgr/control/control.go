@@ -19,8 +19,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/containers/nri-plugins/pkg/cache"
 	logger "github.com/containers/nri-plugins/pkg/log"
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 )
 
 // Control is the interface for triggering controller-/domain-specific post-decision actions.

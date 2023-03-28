@@ -15,7 +15,7 @@
 package cpu
 
 import (
-	"github.com/containers/nri-plugins/pkg/cache"
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/intel/goresctrl/pkg/utils"
 )
 

@@ -17,7 +17,7 @@ package topologyaware
 import (
 	"time"
 
-	"github.com/containers/nri-plugins/pkg/cache"
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
 )
 

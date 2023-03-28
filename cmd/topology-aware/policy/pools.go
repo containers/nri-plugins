@@ -20,8 +20,8 @@ import (
 
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
-	"github.com/containers/nri-plugins/pkg/cache"
 	"github.com/containers/nri-plugins/pkg/kubernetes"
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	idset "github.com/intel/goresctrl/pkg/utils"
 )

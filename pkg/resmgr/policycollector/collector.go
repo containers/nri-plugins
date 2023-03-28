@@ -16,7 +16,7 @@ package policycollector
 
 import (
 	"github.com/containers/nri-plugins/pkg/metrics"
-	"github.com/containers/nri-plugins/pkg/policy"
+	"github.com/containers/nri-plugins/pkg/resmgr/policy"
 	"github.com/prometheus/client_golang/prometheus"
 )
 

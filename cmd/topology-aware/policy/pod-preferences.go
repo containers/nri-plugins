@@ -27,9 +27,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/containers/nri-plugins/pkg/cache"
 	"github.com/containers/nri-plugins/pkg/config"
 	"github.com/containers/nri-plugins/pkg/kubernetes"
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 )
 
 const (

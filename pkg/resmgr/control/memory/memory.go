@@ -19,10 +19,10 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/containers/nri-plugins/pkg/cache"
 	"github.com/containers/nri-plugins/pkg/cgroups"
-	"github.com/containers/nri-plugins/pkg/control"
 	logger "github.com/containers/nri-plugins/pkg/log"
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
+	"github.com/containers/nri-plugins/pkg/resmgr/control"
 )
 
 const (

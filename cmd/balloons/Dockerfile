@@ -6,7 +6,7 @@ WORKDIR /go/builder
 
 # Fetch go dependencies in a separate layer for caching
 COPY go.mod go.sum ./
-COPY pkg/topology/ pkg/topology/
+COPY pkg/resmgr/topology/ pkg/resmgr/topology/
 RUN go mod download
 
 # Build nri-resource-policy

@@ -22,9 +22,9 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
-	"github.com/containers/nri-plugins/pkg/cache"
-	"github.com/containers/nri-plugins/pkg/cpuallocator"
 	"github.com/containers/nri-plugins/pkg/kubernetes"
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
+	"github.com/containers/nri-plugins/pkg/resmgr/cpuallocator"
 	idset "github.com/intel/goresctrl/pkg/utils"
 )
 

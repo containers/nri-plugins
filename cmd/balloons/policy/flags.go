@@ -20,7 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	pkgcfg "github.com/containers/nri-plugins/pkg/config"
-	"github.com/containers/nri-plugins/pkg/cpuallocator"
+	"github.com/containers/nri-plugins/pkg/resmgr/cpuallocator"
 )
 
 type BalloonsOptions balloonsOptionsWrapped

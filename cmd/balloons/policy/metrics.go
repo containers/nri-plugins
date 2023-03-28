@@ -19,7 +19,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/containers/nri-plugins/pkg/policy"
+	"github.com/containers/nri-plugins/pkg/resmgr/policy"
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 )

@@ -22,7 +22,7 @@ import (
 
 	xhttp "github.com/containers/nri-plugins/pkg/http"
 	logger "github.com/containers/nri-plugins/pkg/log"
-	"github.com/containers/nri-plugins/pkg/topology"
+	"github.com/containers/nri-plugins/pkg/resmgr/topology"
 )
 
 // Pod describes a single pod and its containers.
