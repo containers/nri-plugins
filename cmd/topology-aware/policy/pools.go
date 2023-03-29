@@ -582,7 +582,7 @@ func (p *policy) allocatePool(container cache.Container, poolHint string) (Grant
 		}
 	}
 
-	p.allocations.grants[container.GetCacheID()] = grant
+	p.allocations.grants[container.GetID()] = grant
 
 	p.saveAllocations()
 
@@ -673,7 +673,7 @@ func (p *policy) applyGrant(grant Grant) {
 func (p *policy) releasePool(container cache.Container) (Grant, bool) {
 	log.Debug("* releasing resources allocated to %s", container.PrettyName())
 
-	grant, ok := p.allocations.grants[container.GetCacheID()]
+	grant, ok := p.allocations.grants[container.GetID()]
 	if !ok {
 		log.Debug("  => no grant found, nothing to do...")
 		return nil, false
@@ -684,7 +684,7 @@ func (p *policy) releasePool(container cache.Container) (Grant, bool) {
 	// Remove the grant from all supplys it uses.
 	grant.Release()
 
-	delete(p.allocations.grants, container.GetCacheID())
+	delete(p.allocations.grants, container.GetID())
 	p.saveAllocations()
 
 	return grant, true
@@ -704,7 +704,7 @@ func (p *policy) updateSharedAllocations(grant *Grant) {
 
 	for _, other := range p.allocations.grants {
 		if grant != nil {
-			if other.GetContainer().GetCacheID() == (*grant).GetContainer().GetCacheID() {
+			if other.GetContainer().GetID() == (*grant).GetContainer().GetID() {
 				continue
 			}
 		}

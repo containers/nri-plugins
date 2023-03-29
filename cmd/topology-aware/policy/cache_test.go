@@ -111,7 +111,7 @@ func TestAllocationMarshalling(t *testing.T) {
 					},
 					cache: &mockCache{
 						returnValue1ForLookupContainer: &mockContainer{
-							returnValueForGetCacheID: "1",
+							returnValueForGetID: "1",
 						},
 						returnValue2ForLookupContainer: true,
 					},

@@ -359,7 +359,7 @@ func (p *policy) ExportResourceData(c cache.Container) {
 		}
 	}
 
-	p.cache.WriteFile(c.GetCacheID(), ExportedResources, 0644, buf.Bytes())
+	p.cache.WriteFile(c.GetID(), ExportedResources, 0644, buf.Bytes())
 }
 
 // Introspect provides data for external introspection/visualization.

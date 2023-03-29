@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -216,8 +215,6 @@ type Container interface {
 	GetID() string
 	// GetPodID returns the pod ID of the container.
 	GetPodID() string
-	// GetCacheID returns the cacheID of the container.
-	GetCacheID() string
 	// GetName returns the name of the container.
 	GetName() string
 	// GetNamespace returns the namespace of the container.
@@ -374,7 +371,6 @@ type container struct {
 	cache         *cache            // our cache of objects
 	ID            string            // container runtime id
 	PodID         string            // associate pods runtime id
-	CacheID       string            // our cache id
 	Name          string            // container name
 	Namespace     string            // container namespace
 	State         ContainerState    // created/running/exited/unknown
@@ -488,8 +484,6 @@ type Cache interface {
 	// GetContainers returns all the containers known to the cache.
 	GetContainers() []Container
 
-	// GetContainerCacheIds returns the cache ids of all containers.
-	GetContainerCacheIds() []string
 	// GetContaineIds return the ids of all containers.
 	GetContainerIds() []string
 
@@ -669,22 +663,6 @@ func (cch *cache) ResetConfig() error {
 	return nil
 }
 
-// Derive cache id using pod uid, or allocate a new unused local cache id.
-func (cch *cache) createCacheID(c *container) string {
-	if pod, ok := c.cache.LookupPod(c.PodID); ok {
-		uid := pod.GetUID()
-		if uid != "" {
-			return uid + ":" + c.Name
-		}
-	}
-
-	cch.Warn("can't find unique id for pod %s, assigning local cache id", c.PodID)
-	id := "cache:" + strconv.FormatUint(cch.NextID, 16)
-	cch.NextID++
-
-	return id
-}
-
 // Insert a pod into the cache.
 func (cch *cache) InsertPod(id string, nriPod *nri.PodSandbox) (Pod, error) {
 	var err error
@@ -735,17 +713,11 @@ func (cch *cache) InsertContainer(ctr *nri.Container) (Container, error) {
 
 	err = c.fromNRI(ctr)
 	if err != nil {
-		return nil, cacheError("failed to insert container %s: %v", c.CacheID, err)
+		return nil, cacheError("failed to insert container %s: %v", c.ID, err)
 	}
 
-	c.CacheID = cch.createCacheID(c)
-
-	cch.Containers[c.CacheID] = c
-	if c.ID != "" {
-		cch.Containers[c.ID] = c
-	}
-
-	cch.createContainerDirectory(c.CacheID)
+	cch.Containers[c.ID] = c
+	cch.createContainerDirectory(c.ID)
 	cch.Save()
 
 	return c, nil
@@ -759,9 +731,8 @@ func (cch *cache) DeleteContainer(id string) Container {
 	}
 
 	cch.Debug("removing container %s", c.PrettyName())
-	cch.removeContainerDirectory(c.CacheID)
+	cch.removeContainerDirectory(c.ID)
 	delete(cch.Containers, c.ID)
-	delete(cch.Containers, c.CacheID)
 
 	cch.Save()
 
@@ -778,11 +749,7 @@ func (cch *cache) LookupContainer(id string) (Container, bool) {
 func (cch *cache) LookupContainerByCgroup(path string) (Container, bool) {
 	cch.Debug("resolving %s to a container...", path)
 
-	for id, c := range cch.Containers {
-		if id != c.CacheID {
-			continue
-		}
-
+	for _, c := range cch.Containers {
 		parent := ""
 		if pod, ok := c.GetPod(); ok {
 			parent = pod.GetCgroupParentDir()
@@ -831,14 +798,12 @@ func (cch *cache) RefreshPods(pods []*nri.PodSandbox) ([]Pod, []Pod, []Container
 			del = append(del, cch.DeletePod(pod.ID))
 		}
 	}
-	for id, c := range cch.Containers {
+	for _, c := range cch.Containers {
 		if _, ok := valid[c.PodID]; !ok {
-			cch.Debug("purging container %s of stale pod %s...", c.CacheID, c.PodID)
-			cch.DeleteContainer(c.CacheID)
+			cch.Debug("purging container %s of stale pod %s...", c.ID, c.PodID)
+			cch.DeleteContainer(c.ID)
 			c.State = ContainerStateStale
-			if id == c.CacheID {
-				containers = append(containers, c)
-			}
+			containers = append(containers, c)
 		}
 	}
 
@@ -866,14 +831,12 @@ func (cch *cache) RefreshContainers(containers []*nri.Container) ([]Container, [
 		}
 	}
 
-	for id, c := range cch.Containers {
+	for _, c := range cch.Containers {
 		if _, ok := valid[c.ID]; !ok {
-			cch.Debug("purging stale container %s (state: %v)...", c.CacheID, c.GetState())
-			cch.DeleteContainer(c.CacheID)
+			cch.Debug("purging stale container %s (state: %v)...", c.ID, c.GetState())
+			cch.DeleteContainer(c.ID)
 			c.State = ContainerStateStale
-			if id == c.CacheID {
-				del = append(del, c)
-			}
+			del = append(del, c)
 		}
 	}
 
@@ -885,7 +848,7 @@ func (cch *cache) markPending(c *container) {
 	if cch.pending == nil {
 		cch.pending = make(map[string]struct{})
 	}
-	cch.pending[c.CacheID] = struct{}{}
+	cch.pending[c.ID] = struct{}{}
 }
 
 // Get all containers with pending changes.
@@ -902,23 +865,7 @@ func (cch *cache) GetPendingContainers() []Container {
 
 // clear the pending state of the given container.
 func (cch *cache) clearPending(c *container) {
-	delete(cch.pending, c.CacheID)
-}
-
-// Get the cache ids of all cached containers.
-func (cch *cache) GetContainerCacheIds() []string {
-	ids := make([]string, len(cch.Containers))
-
-	idx := 0
-	for id, c := range cch.Containers {
-		if id != c.CacheID {
-			continue
-		}
-		ids[idx] = c.CacheID
-		idx++
-	}
-
-	return ids[0:idx]
+	delete(cch.pending, c.ID)
 }
 
 // Get the ids of all cached containers.
@@ -926,10 +873,7 @@ func (cch *cache) GetContainerIds() []string {
 	ids := make([]string, len(cch.Containers))
 
 	idx := 0
-	for id, c := range cch.Containers {
-		if id == c.CacheID {
-			continue
-		}
+	for _, c := range cch.Containers {
 		ids[idx] = c.ID
 		idx++
 	}
@@ -948,11 +892,8 @@ func (cch *cache) GetPods() []Pod {
 
 // GetContainers returns all the containers present in the cache.
 func (cch *cache) GetContainers() []Container {
-	containers := make([]Container, 0, len(cch.Containers)/2)
-	for id, container := range cch.Containers {
-		if id != container.CacheID {
-			continue
-		}
+	containers := make([]Container, 0, len(cch.Containers))
+	for _, container := range cch.Containers {
 		containers = append(containers, container)
 	}
 	return containers
@@ -1242,10 +1183,8 @@ func (cch *cache) Snapshot() ([]byte, error) {
 		s.Pods[id] = p
 	}
 
-	for id, c := range cch.Containers {
-		if id == c.CacheID {
-			s.Containers[c.CacheID] = c
-		}
+	for _, c := range cch.Containers {
+		s.Containers[c.ID] = c
 	}
 
 	for key, obj := range cch.policyData {
@@ -1296,10 +1235,7 @@ func (cch *cache) Restore(data []byte) error {
 	}
 	for _, c := range cch.Containers {
 		c.cache = cch
-		cch.Containers[c.CacheID] = c
-		if c.ID != "" {
-			cch.Containers[c.ID] = c
-		}
+		cch.Containers[c.ID] = c
 	}
 
 	return nil
@@ -1351,7 +1287,7 @@ func (cch *cache) ContainerDirectory(id string) string {
 	if !ok {
 		return ""
 	}
-	return filepath.Join(cch.dataDir, strings.Replace(c.CacheID, ":", "-", 1))
+	return filepath.Join(cch.dataDir, c.ID)
 }
 
 func (cch *cache) createContainerDirectory(id string) error {

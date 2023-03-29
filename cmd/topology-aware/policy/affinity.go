@@ -15,7 +15,7 @@
 package topologyaware
 
 import (
-	"github.com/containers/nri-plugins/pkg/resmgr/apis"
+	resmgr "github.com/containers/nri-plugins/pkg/resmgr/apis"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 )
 
@@ -60,7 +60,7 @@ func (p *policy) calculateContainerAffinity(container cache.Container) (map[stri
 	}
 
 	// self-affinity does not make sense, so remove any
-	delete(result, container.GetCacheID())
+	delete(result, container.GetID())
 
 	log.Debug("  => affinity: %v", result)
 

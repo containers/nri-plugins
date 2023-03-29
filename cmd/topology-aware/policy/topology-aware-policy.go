@@ -358,7 +358,7 @@ func (p *policy) GetTopologyZones() []*policyapi.TopologyZone {
 
 // ExportResourceData provides resource data to export for the container.
 func (p *policy) ExportResourceData(c cache.Container) map[string]string {
-	grant, ok := p.allocations.grants[c.GetCacheID()]
+	grant, ok := p.allocations.grants[c.GetID()]
 	if !ok {
 		return nil
 	}
@@ -423,7 +423,7 @@ func (p *policy) reallocateResources(containers []cache.Container, pools map[str
 	for _, c := range containers {
 		log.Debug("reallocating resources for %s...", c.PrettyName())
 
-		grant, err := p.allocatePool(c, pools[c.GetCacheID()])
+		grant, err := p.allocatePool(c, pools[c.GetID()])
 		if err != nil {
 			errors = multierror.Append(errors, err)
 		} else {
@@ -647,7 +647,7 @@ func (a *allocations) getContainerPoolHints() ([]cache.Container, map[string]str
 	for _, grant := range a.grants {
 		c := grant.GetContainer()
 		containers = append(containers, c)
-		hints[c.GetCacheID()] = grant.GetCPUNode().Name()
+		hints[c.GetID()] = grant.GetCPUNode().Name()
 	}
 	return containers, hints
 }

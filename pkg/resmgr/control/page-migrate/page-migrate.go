@@ -70,7 +70,6 @@ type migration struct {
 
 // container is the per container data we track locally.
 type container struct {
-	cacheID    string
 	id         string
 	prettyName string
 	cgroupDir  string
@@ -161,7 +160,6 @@ func (m *migration) insertContainer(cc cache.Container) error {
 	}
 
 	c := &container{
-		cacheID:    cc.GetCacheID(),
 		id:         cc.GetID(),
 		prettyName: cc.PrettyName(),
 		cgroupDir:  cc.GetCgroupDir(),
@@ -172,7 +170,7 @@ func (m *migration) insertContainer(cc cache.Container) error {
 			c.prettyName)
 	}
 
-	m.containers[c.cacheID] = c
+	m.containers[c.id] = c
 
 	return nil
 }
@@ -181,11 +179,11 @@ func (m *migration) insertContainer(cc cache.Container) error {
 func (m *migration) updateContainer(cc cache.Container) error {
 	pm := cc.GetPageMigration()
 	if pm == nil {
-		delete(m.containers, cc.GetCacheID())
+		delete(m.containers, cc.GetID())
 		return nil
 	}
 
-	c, ok := m.containers[cc.GetCacheID()]
+	c, ok := m.containers[cc.GetID()]
 	if !ok {
 		return m.insertContainer(cc)
 	}
@@ -196,13 +194,8 @@ func (m *migration) updateContainer(cc cache.Container) error {
 
 // deleteContainer creates a local copy of the container.
 func (m *migration) deleteContainer(cc cache.Container) error {
-	delete(m.containers, cc.GetCacheID())
+	delete(m.containers, cc.GetID())
 	return nil
-}
-
-// GetCacheID replicates the respective cache.Container function.
-func (c *container) GetCacheID() string {
-	return c.cacheID
 }
 
 // GetID replicates the respective cache.Container function.
