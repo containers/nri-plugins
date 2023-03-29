@@ -1,11 +1,10 @@
 package testutils
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/containers/nri-plugins/pkg/multierror"
 )
 
 // VerifyDeepEqual checks that two values (including structures) are equal, or else it fails the test.
@@ -24,7 +23,7 @@ func VerifyError(t *testing.T, err error, expectedCount int, expectedSubstrings 
 			t.Errorf("error expected, got nil")
 			return false
 		}
-		merr := multierror.New(err)
+		merr := errors.New(err.Error())
 		errors := strings.Split(merr.Error(), "\n")
 		if len(errors) != expectedCount {
 			t.Errorf("expected %d errors, but got %d: %v", expectedCount, errors, merr)
