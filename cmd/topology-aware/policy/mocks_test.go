@@ -583,9 +583,6 @@ func (m *mockPod) GetEffectiveAnnotation(key, container string) (string, bool) {
 func (m *mockPod) GetCgroupParentDir() string {
 	panic("unimplemented")
 }
-func (m *mockPod) GetPodResourceRequirements() cache.PodResourceRequirements {
-	panic("unimplemented")
-}
 func (m *mockPod) GetContainerAffinity(string) ([]*cache.Affinity, error) {
 	panic("unimplemented")
 }

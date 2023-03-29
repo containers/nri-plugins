@@ -48,26 +48,7 @@ func (p *pod) fromNRI(pod *nri.PodSandbox) error {
 		p.cache.Error("%v", err)
 	}
 
-	p.parseResourceAnnotations()
-
 	return nil
-}
-
-// Get the init containers of a pod.
-func (p *pod) GetInitContainers() []Container {
-	if p.Resources == nil {
-		return nil
-	}
-
-	containers := []Container{}
-
-	for _, c := range p.cache.Containers {
-		if _, ok := p.Resources.InitContainers[c.ID]; ok {
-			containers = append(containers, c)
-		}
-	}
-
-	return containers
 }
 
 // Get the normal containers of a pod.
@@ -75,15 +56,9 @@ func (p *pod) GetContainers() []Container {
 	containers := []Container{}
 
 	for _, c := range p.cache.Containers {
-		if c.PodID != p.ID {
-			continue
+		if c.PodID == p.ID {
+			containers = append(containers, c)
 		}
-		if p.Resources != nil {
-			if _, ok := p.Resources.InitContainers[c.ID]; ok {
-				continue
-			}
-		}
-		containers = append(containers, c)
 	}
 
 	return containers
@@ -316,21 +291,6 @@ func (p *pod) discoverQOSClass() error {
 		p.ID, p.CgroupParent)
 }
 
-// Get the resource requirements of a pod.
-func (p *pod) GetPodResourceRequirements() PodResourceRequirements {
-	if p.Resources == nil {
-		return PodResourceRequirements{}
-	}
-
-	return *p.Resources
-}
-
-// Parse per container resource requirements from webhook annotations.
-func (p *pod) parseResourceAnnotations() {
-	p.Resources = &PodResourceRequirements{}
-	p.GetAnnotationObject(KeyResourceAnnotation, p.Resources, nil)
-}
-
 // Determine the QoS class of the pod.
 func (p *pod) GetQOSClass() v1.PodQOSClass {
 	return p.QOSClass
@@ -448,7 +408,7 @@ func (p *pod) getTasks(recursive, processes bool) ([]string, error) {
 		return pids, nil
 	}
 
-	for _, c := range append(p.GetInitContainers(), p.GetContainers()...) {
+	for _, c := range p.GetContainers() {
 		if c.GetState() == ContainerStateRunning {
 			if processes {
 				childPids, err = c.GetProcesses()

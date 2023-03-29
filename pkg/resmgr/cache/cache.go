@@ -83,20 +83,10 @@ const (
 	PodStateStale = PodState(int32(PodStateNotReady) + 1)
 )
 
-// PodResourceRequirements are per container resource requirements, annotated by our webhook.
-type PodResourceRequirements struct {
-	// InitContainers is the resource requirements by init containers.
-	InitContainers map[string]v1.ResourceRequirements `json:"initContainers"`
-	// Containers is the resource requirements by normal container.
-	Containers map[string]v1.ResourceRequirements `json:"containers"`
-}
-
 // Pod is the exposed interface from a cached pod.
 type Pod interface {
 	resmgr.Evaluable
 	fmt.Stringer
-	// GetInitContainers returns the init containers of the pod.
-	GetInitContainers() []Container
 	// GetContainers returns the (non-init) containers of the pod.
 	GetContainers() []Container
 	// GetContainer returns the named container of the pod.
@@ -150,10 +140,6 @@ type Pod interface {
 	GetEffectiveAnnotation(key, container string) (string, bool)
 	// GetCgroupParentDir returns the pods cgroup parent directory.
 	GetCgroupParentDir() string
-	// GetPodResourceRequirements returns container resource requirements if the
-	// necessary associated annotation put in place by the CRI resource manager
-	// webhook was found.
-	GetPodResourceRequirements() PodResourceRequirements
 	// GetContainerAffinity returns the affinity expressions for the named container.
 	GetContainerAffinity(string) ([]*Affinity, error)
 	// ScopeExpression returns an affinity expression for defining this pod as the scope.
@@ -181,8 +167,7 @@ type pod struct {
 	CgroupParent string            // cgroup parent directory
 	containers   map[string]string // container name to ID map
 
-	Resources *PodResourceRequirements // annotated resource requirements
-	Affinity  *podContainerAffinity    // annotated container affinity
+	Affinity *podContainerAffinity // annotated container affinity
 }
 
 // ContainerState is the container state in the runtime.
