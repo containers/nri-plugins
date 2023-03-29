@@ -258,10 +258,6 @@ func (c *container) GetPodID() string {
 	return c.PodID
 }
 
-func (c *container) GetCacheID() string {
-	return c.CacheID
-}
-
 func (c *container) GetName() string {
 	return c.Name
 }

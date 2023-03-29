@@ -66,8 +66,8 @@ func TestColdStart(t *testing.T) {
 				&mockSystemNode{id: 2, memFree: 50000, memTotal: 50000, memType: system.MemoryTypePMEM, distance: []int{5, 1, 5}},
 			},
 			container: &mockContainer{
-				name:                     "demo-coldstart-container",
-				returnValueForGetCacheID: "1234",
+				name:                "demo-coldstart-container",
+				returnValueForGetID: "1234",
 				pod: &mockPod{
 					coldStartTimeout:                   1000 * time.Millisecond,
 					returnValue1FotGetResmgrAnnotation: "demo-coldstart-container: pmem,dram",
@@ -112,7 +112,7 @@ func TestColdStart(t *testing.T) {
 				t.Errorf("Expected coldstart value '%v', but got '%v'", tc.expectedColdStartTimeout, grant.ColdStart())
 			}
 
-			policy.allocations.grants[tc.container.GetCacheID()] = grant
+			policy.allocations.grants[tc.container.GetID()] = grant
 
 			mems := grant.Memset()
 			if len(mems) != 1 || mems.Members()[0] != tc.expectedPMEMSystemNodeID {

@@ -112,7 +112,7 @@ func newCachedGrant(cg Grant) *cachedGrant {
 	ccg.Exclusive = cg.ExclusiveCPUs().String()
 	ccg.Part = cg.CPUPortion()
 	ccg.CPUType = cg.CPUType()
-	ccg.Container = cg.GetContainer().GetCacheID()
+	ccg.Container = cg.GetContainer().GetID()
 	ccg.Pool = cg.GetCPUNode().Name()
 	ccg.MemoryPool = cg.GetMemoryNode().Name()
 	ccg.MemType = cg.MemoryType()

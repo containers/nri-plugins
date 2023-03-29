@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/containers/nri-plugins/pkg/kubernetes"
-	"github.com/containers/nri-plugins/pkg/resmgr/apis"
+	resmgr "github.com/containers/nri-plugins/pkg/resmgr/apis"
 )
 
 const (
@@ -83,7 +83,7 @@ func (cch *cache) EvaluateAffinity(a *Affinity) map[string]int32 {
 	results := make(map[string]int32)
 	for _, c := range cch.FilterScope(a.Scope) {
 		if a.Match.Evaluate(c) {
-			id := c.GetCacheID()
+			id := c.GetID()
 			results[id] += a.Weight
 		}
 	}

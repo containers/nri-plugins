@@ -300,7 +300,7 @@ func (d *demoter) scanPages() {
 		d.resetDirtyBit(container)
 
 		// Give the pages to the page moving goroutine. Copy the page pool so that there's no race.
-		d.updateDemoter(container.GetCacheID(), copyPagePool(pagePool), pmemNodes.Clone())
+		d.updateDemoter(container.GetID(), copyPagePool(pagePool), pmemNodes.Clone())
 	}
 
 	d.stopUnusedDemoters(d.migration.containers)

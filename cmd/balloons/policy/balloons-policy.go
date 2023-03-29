@@ -107,7 +107,7 @@ func (bln Balloon) PrettyName() string {
 }
 
 // ContainerIDs returns IDs of containers assigned in a balloon.
-// (Using cache.Container.GetCacheID()'s)
+// (Using cache.Container.GetID()'s)
 func (bln Balloon) ContainerIDs() []string {
 	cIDs := []string{}
 	for _, ctrIDs := range bln.PodIDs {
@@ -224,8 +224,8 @@ func (p *balloons) Sync(add []cache.Container, del []cache.Container) error {
 func (p *balloons) AllocateResources(c cache.Container) error {
 	log.Debug("allocating resources for container %s (request %d mCPU, limit %d mCPU)...",
 		c.PrettyName(),
-		p.containerRequestedMilliCpus(c.GetCacheID()),
-		p.containerLimitedMilliCpus(c.GetCacheID()))
+		p.containerRequestedMilliCpus(c.GetID()),
+		p.containerLimitedMilliCpus(c.GetID()))
 	bln, err := p.allocateBalloon(c)
 	if err != nil {
 		return balloonsError("balloon allocation for container %s failed: %w", c.PrettyName(), err)
@@ -235,7 +235,7 @@ func (p *balloons) AllocateResources(c cache.Container) error {
 	}
 	// Resize selected balloon to fit the new container, unless it
 	// uses the ReservedResources CPUs, which is a fixed set.
-	reqMilliCpus := p.containerRequestedMilliCpus(c.GetCacheID()) + p.requestedMilliCpus(bln)
+	reqMilliCpus := p.containerRequestedMilliCpus(c.GetID()) + p.requestedMilliCpus(bln)
 	// Even if all containers in a balloon request is 0 mCPU in
 	// total (all are BestEffort, for example), force the size of
 	// the balloon to be enough for at least 1 mCPU
@@ -313,7 +313,7 @@ func (b *balloons) GetTopologyZones() []*policy.TopologyZone {
 // balloonByContainer returns a balloon that contains a container.
 func (p *balloons) balloonByContainer(c cache.Container) *Balloon {
 	podID := c.GetPodID()
-	cID := c.GetCacheID()
+	cID := c.GetID()
 	for _, bln := range p.balloons {
 		for _, ctrID := range bln.PodIDs[podID] {
 			if ctrID == cID {
@@ -619,7 +619,7 @@ func (p *balloons) chooseBalloonInstance(blnDef *BalloonDef, fm FillMethod, c ca
 	if blnDef == p.balloons[1].Def {
 		return p.balloons[1], nil
 	}
-	reqMilliCpus := p.containerRequestedMilliCpus(c.GetCacheID())
+	reqMilliCpus := p.containerRequestedMilliCpus(c.GetID())
 	// Handle fill methods that do not use existing instances of
 	// balloonDef.
 	switch fm {
@@ -1266,14 +1266,14 @@ func (p *balloons) assignContainer(c cache.Container, bln *Balloon) {
 	// TODO: inflate the balloon (add CPUs / reconfigure balloons)
 	// if necessary
 	podID := c.GetPodID()
-	bln.PodIDs[podID] = append(bln.PodIDs[podID], c.GetCacheID())
+	bln.PodIDs[podID] = append(bln.PodIDs[podID], c.GetID())
 	p.updatePinning(bln)
 }
 
 // dismissContainer removes a container from a balloon
 func (p *balloons) dismissContainer(c cache.Container, bln *Balloon) {
 	podID := c.GetPodID()
-	bln.PodIDs[podID] = removeString(bln.PodIDs[podID], c.GetCacheID())
+	bln.PodIDs[podID] = removeString(bln.PodIDs[podID], c.GetID())
 	if len(bln.PodIDs[podID]) == 0 {
 		delete(bln.PodIDs, podID)
 	}

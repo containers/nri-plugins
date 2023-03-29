@@ -255,7 +255,6 @@ type mockContainer struct {
 	name                                  string
 	namespace                             string
 	returnValueForGetResourceRequirements v1.ResourceRequirements
-	returnValueForGetCacheID              string
 	returnValueForGetID                   string
 	memoryLimit                           int64
 	cpuset                                cpuset.CPUSet
@@ -278,12 +277,12 @@ func (m *mockContainer) GetID() string {
 func (m *mockContainer) GetPodID() string {
 	panic("unimplemented")
 }
-func (m *mockContainer) GetCacheID() string {
-	if len(m.returnValueForGetCacheID) == 0 {
+func (m *mockContainer) GetID() string {
+	if len(m.returnValueForGetID) == 0 {
 		return "0"
 	}
 
-	return m.returnValueForGetCacheID
+	return m.returnValueForGetID
 }
 func (m *mockContainer) GetName() string {
 	return m.name
@@ -640,9 +639,6 @@ func (m *mockCache) GetPods() []cache.Pod {
 	panic("unimplemented")
 }
 func (m *mockCache) GetContainers() []cache.Container {
-	panic("unimplemented")
-}
-func (m *mockCache) GetContainerCacheIds() []string {
 	panic("unimplemented")
 }
 func (m *mockCache) GetContainerIds() []string {
