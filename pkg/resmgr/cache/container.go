@@ -160,14 +160,6 @@ func (c *container) fromNRI(nric *nri.Container) error {
 		c.LinuxReq = &criv1.LinuxContainerResources{}
 	}
 
-	if pod.Resources != nil {
-		if r, ok := pod.Resources.InitContainers[c.Name]; ok {
-			c.Resources = r
-		} else if r, ok := pod.Resources.Containers[c.Name]; ok {
-			c.Resources = r
-		}
-	}
-
 	if len(c.Resources.Requests) == 0 && len(c.Resources.Limits) == 0 {
 		c.Resources = estimateComputeResources(c.LinuxReq, pod.CgroupParent)
 	}

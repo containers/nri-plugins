@@ -23,7 +23,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	resapi "k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/util/sets"
 	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 	kubecm "k8s.io/kubernetes/pkg/kubelet/cm"
 
@@ -185,75 +184,6 @@ func cgroupParentToQOS(dir string) corev1.PodQOSClass {
 	}
 
 	return qos
-}
-
-// resourcesToQOS tries to map Pod container resources (from annotation) to QOS class.
-func resourcesToQOS(podResources *PodResourceRequirements) corev1.PodQOSClass {
-	var qos corev1.PodQOSClass
-
-	if podResources == nil {
-		return qos
-	}
-
-	requests := corev1.ResourceList{}
-	limits := corev1.ResourceList{}
-	zeroQuantity := resapi.MustParse("0")
-	isGuaranteed := true
-	for _, resources := range podResources.Containers {
-		// process requests
-		for name, quantity := range resources.Requests {
-			if !isSupportedQoSComputeResource(name) {
-				continue
-			}
-			if quantity.Cmp(zeroQuantity) == 1 {
-				delta := quantity.DeepCopy()
-				if _, exists := requests[name]; !exists {
-					requests[name] = delta
-				} else {
-					delta.Add(requests[name])
-					requests[name] = delta
-				}
-			}
-		}
-		// process limits
-		qosLimitsFound := sets.NewString()
-		for name, quantity := range resources.Limits {
-			if !isSupportedQoSComputeResource(name) {
-				continue
-			}
-			if quantity.Cmp(zeroQuantity) == 1 {
-				qosLimitsFound.Insert(string(name))
-				delta := quantity.DeepCopy()
-				if _, exists := limits[name]; !exists {
-					limits[name] = delta
-				} else {
-					delta.Add(limits[name])
-					limits[name] = delta
-				}
-			}
-		}
-
-		if !qosLimitsFound.HasAll(string(corev1.ResourceMemory), string(corev1.ResourceCPU)) {
-			isGuaranteed = false
-		}
-	}
-	if len(requests) == 0 && len(limits) == 0 {
-		return corev1.PodQOSBestEffort
-	}
-	// Check is requests match limits for all resources.
-	if isGuaranteed {
-		for name, req := range requests {
-			if lim, exists := limits[name]; !exists || lim.Cmp(req) != 0 {
-				isGuaranteed = false
-				break
-			}
-		}
-	}
-	if isGuaranteed &&
-		len(requests) == len(limits) {
-		return corev1.PodQOSGuaranteed
-	}
-	return corev1.PodQOSBurstable
 }
 
 // findContainerDir brute-force searches for a container cgroup dir.
