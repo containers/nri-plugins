@@ -13,6 +13,8 @@ userid="$2"
 dockerid="$3"
 kvmid="$4"
 
+CONF_DIR=/mnt/conf
+
 STOPPED=0
 trap ctrl_c INT TERM
 
@@ -51,28 +53,53 @@ chown -R runner:runner /home/runner/.docker
 sudo -n -u runner vagrant box add --name generic/fedora37 /mnt/vagrant/generic-fedora37-4.2.14.box
 
 # We want Qemu networking to contact our special dnsmasq resolver so that we
-# can catch our special domain queries. So set the /etc/resolv.conf in the
+# can catch special domain queries. So set the /etc/resolv.conf in the
 # container to point to localhost, and configure dnsmasq with the dns
 # that points to outside world.
 
-cp /etc/resolv.conf /mnt/conf/resolv.conf.orig
+cp /etc/resolv.conf $CONF_DIR/resolv.conf.orig
 
 echo "nameserver 127.0.0.1" > /etc/resolv.conf
 echo "search runner" >> /etc/resolv.conf
 
 LOCALIP=$(ip addr show dev eth0 | awk '/inet / { print $2 }' | cut -f1 -d/)
-sed -i "s/LOCALIP/$LOCALIP/" /mnt/conf/dnsmasq.conf
+sed -i "s/LOCALIP/$LOCALIP/" $CONF_DIR/dnsmasq.conf
 
-dnsmasq -C /mnt/conf/dnsmasq.conf
+dnsmasq -C $CONF_DIR/dnsmasq.conf
+
+# Create cert directory
+/usr/lib/squid/security_file_certgen -c -s /var/lib/ssl_db -M 16MB
+
+# Copy the SSL certs so that MITM works with squid
+mkdir -p /etc/squid/certs
+cp $CONF_DIR/ssl-cert/*.pem /etc/squid/certs/
+
+# This will force Vagrant to accept our self signed cert
+export SSL_CERT_FILE=/etc/squid/certs/squid-ca-cert.pem
+
+# Create squid swap directories (this does not start proxy yet)
+chown proxy:proxy /mnt/squid
+squid -f $CONF_DIR/squid.conf -z --foreground
+
+# We then start squid in order to cache the rpm/deb packages
+# and handle generic http traffic
+squid -f $CONF_DIR/squid.conf
 
 # Set the DNS server point to our address
 dns_nameserver=$LOCALIP
-dns_search_domain=""
+dns_search_domain="runner"
 
 cd /mnt/actions-runner
 
+export http_proxy=http://proxy.runner:3128
+export https_proxy=http://proxy.runner:3128
+export HTTP_PROXY=http://proxy.runner:3128
+export HTTPS_PROXY=http://proxy.runner:3128
+
+export RUN_INSIDE_CONTAINER=1
+
 if [ -z "$TESTING" ]; then
-    sudo --preserve-env=http_proxy,https_proxy,no_proxy,HTTP_PROXY,HTTPS_PROXY,NO_PROXY,containerd_src,crio_src,dns_nameserver,dns_search_domain \
+    sudo --preserve-env=RUN_INSIDE_CONTAINER,SSL_CERT_FILE,http_proxy,https_proxy,no_proxy,HTTP_PROXY,HTTPS_PROXY,NO_PROXY,containerd_src,crio_src,dns_nameserver,dns_search_domain \
 	 -n -u runner ./run.sh &
 
     wait

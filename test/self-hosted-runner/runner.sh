@@ -171,6 +171,7 @@ start_docker_container() {
     docker container run --pull never \
 	   "$SOURCES" \
 	   -v "${PREFIX}/mnt/actions-runner:/mnt/actions-runner" \
+	   -v "${PREFIX}/mnt/squid:/mnt/squid" \
 	   -v "${PREFIX}/mnt/vagrant:/mnt/vagrant:ro" \
 	   -v "${PREFIX}/mnt/env:/mnt/env:ro" \
 	   -v "${PREFIX}/mnt/conf:/mnt/conf" \
@@ -189,8 +190,70 @@ setup_dnsmasq() {
     cp -p dnsmasq.conf.in ${PREFIX}/mnt/conf/dnsmasq.conf
 }
 
+setup_cert() {
+    local dir
+
+    dir="$1"
+
+    mkdir -p "$dir"
+    (cd "$dir"; \
+     openssl req -new -newkey rsa:2048 -sha256 -days 365 -nodes -x509 \
+	    -extensions v3_ca -keyout squid-ca-key.pem -out squid-ca-cert.pem \
+	    -subj "/DC=." > /dev/null 2>&1
+     cat squid-ca-cert.pem squid-ca-key.pem > squid-ca-cert-key.pem
+    )
+}
+
+setup_squid() {
+    local proxy_http proxy_http_port proxy_https proxy_https_port
+    local proxy_host proxy_host_s
+
+    proxy_host="$1"
+    proxy_host_s="$2"
+
+    mkdir -p ${PREFIX}/mnt/conf
+
+    proxy_host=$(awk -F// '{ print $2 }' <<EOF
+$proxy_host
+EOF
+)
+    proxy_http=$(cut -d: -f1 <<EOF
+$proxy_host
+EOF
+)
+    proxy_http_port=$(cut -d: -f2 <<EOF
+$proxy_host
+EOF
+)
+
+    proxy_host_s=$(awk -F// '{ print $2 }' <<EOF
+$proxy_host_s
+EOF
+)
+    proxy_https=$(cut -d: -f1 <<EOF
+$proxy_host_s
+EOF
+)
+    proxy_https_port=$(cut -d: -f2 <<EOF
+$proxy_host_s
+EOF
+)
+
+    PROXY_HTTP=$proxy_http PROXY_HTTP_PORT=$proxy_http_port \
+    PROXY_HTTPS=$proxy_https PROXY_HTTPS_PORT=$proxy_https_port \
+    envsubst < squid.conf.in > ${PREFIX}/mnt/conf/squid.conf
+
+    if ! [ "$proxy_http" = "$proxy_https" -a \
+           "$proxy_http_port" = "$proxy_https_port" ]; then
+	sed -i "s/#HTTPS//" ${PREFIX}/mnt/conf/squid.conf
+    fi
+
+    setup_cert ${PREFIX}/mnt/conf/ssl-cert
+}
+
 while [ $STOPPED -eq 0 ]; do
     setup_dnsmasq
+    setup_squid "$http_proxy" "$https_proxy"
 
     if [ -z "$TESTING" ]; then
 	GH_RUNNER_TOKEN=$(get_runner_token)

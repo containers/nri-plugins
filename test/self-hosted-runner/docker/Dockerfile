@@ -40,7 +40,9 @@ RUN apt-get update -y && apt-get install -y \
   sudo \
   bc \
   lsb-release \
-  dnsmasq
+  dnsmasq \
+  squid-openssl \
+  iputils-ping
 
 RUN if [ ! -f /usr/share/keyrings/docker-archive-keyring.gpg ]; then \
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg; \
@@ -56,4 +58,5 @@ RUN apt-get install -y vagrant vagrant-libvirt bridge-utils make \
     libvirt-daemon guestfs-tools qemu-kvm libvirt-daemon-system \
     qemu ebtables libxslt-dev libxml2-dev libvirt-dev zlib1g-dev ruby-dev
 
+COPY squid.conf /etc/squid/
 COPY runner-in-container.sh /shr/
