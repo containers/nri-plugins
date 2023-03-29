@@ -17,8 +17,8 @@ package resmgr
 import (
 	"time"
 
-	"github.com/containers/nri-plugins/pkg/cache"
 	logger "github.com/containers/nri-plugins/pkg/log"
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/metrics"
 )
 

@@ -16,7 +16,7 @@ package topologyaware
 
 import (
 	config "github.com/containers/nri-plugins/pkg/config"
-	"github.com/containers/nri-plugins/pkg/topology"
+	"github.com/containers/nri-plugins/pkg/resmgr/topology"
 )
 
 // Options captures our configurable policy parameters.

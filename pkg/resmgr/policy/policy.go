@@ -24,10 +24,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
-	"github.com/containers/nri-plugins/pkg/cache"
 	"github.com/containers/nri-plugins/pkg/config"
-	"github.com/containers/nri-plugins/pkg/introspect"
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
+	"github.com/containers/nri-plugins/pkg/resmgr/introspect"
 	"github.com/prometheus/client_golang/prometheus"
 
 	logger "github.com/containers/nri-plugins/pkg/log"

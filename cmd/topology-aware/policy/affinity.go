@@ -15,8 +15,8 @@
 package topologyaware
 
 import (
-	"github.com/containers/nri-plugins/pkg/apis/resmgr"
-	"github.com/containers/nri-plugins/pkg/cache"
+	"github.com/containers/nri-plugins/pkg/resmgr/apis"
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 )
 
 // Calculate pool affinities for the given container.

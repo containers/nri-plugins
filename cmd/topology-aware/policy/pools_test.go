@@ -21,8 +21,8 @@ import (
 	"path"
 	"testing"
 
-	"github.com/containers/nri-plugins/pkg/cache"
-	policyapi "github.com/containers/nri-plugins/pkg/policy"
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
+	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 
 	v1 "k8s.io/api/core/v1"
 	resapi "k8s.io/apimachinery/pkg/api/resource"

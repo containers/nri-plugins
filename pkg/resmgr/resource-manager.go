@@ -25,23 +25,23 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/containers/nri-plugins/pkg/agent"
-	"github.com/containers/nri-plugins/pkg/cache"
 	pkgcfg "github.com/containers/nri-plugins/pkg/config"
-	"github.com/containers/nri-plugins/pkg/control"
 	"github.com/containers/nri-plugins/pkg/healthz"
 	"github.com/containers/nri-plugins/pkg/instrumentation"
-	"github.com/containers/nri-plugins/pkg/introspect"
 	"github.com/containers/nri-plugins/pkg/log"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/pidfile"
-	"github.com/containers/nri-plugins/pkg/policy"
+	"github.com/containers/nri-plugins/pkg/resmgr/agent"
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	config "github.com/containers/nri-plugins/pkg/resmgr/config"
+	"github.com/containers/nri-plugins/pkg/resmgr/control"
+	"github.com/containers/nri-plugins/pkg/resmgr/introspect"
 	"github.com/containers/nri-plugins/pkg/resmgr/metrics"
+	"github.com/containers/nri-plugins/pkg/resmgr/policy"
+	"github.com/containers/nri-plugins/pkg/resmgr/topology"
 	"github.com/containers/nri-plugins/pkg/sysfs"
-	"github.com/containers/nri-plugins/pkg/topology"
 
-	policyCollector "github.com/containers/nri-plugins/pkg/policycollector"
+	policyCollector "github.com/containers/nri-plugins/pkg/resmgr/policycollector"
 )
 
 // ResourceManager is the interface we expose for controlling the CRI resource manager.

@@ -21,8 +21,8 @@ import (
 	"sync"
 
 	"github.com/containers/nri-plugins/pkg/log"
-	policyapi "github.com/containers/nri-plugins/pkg/policy"
 	"github.com/containers/nri-plugins/pkg/resmgr/config"
+	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 	nrtapi "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/typed/topology/v1alpha2"
 	k8sclient "k8s.io/client-go/kubernetes"
 )

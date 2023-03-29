@@ -19,10 +19,10 @@ import (
 
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
-	"github.com/containers/nri-plugins/pkg/cache"
 	pkgcfg "github.com/containers/nri-plugins/pkg/config"
-	"github.com/containers/nri-plugins/pkg/control"
 	logger "github.com/containers/nri-plugins/pkg/log"
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
+	"github.com/containers/nri-plugins/pkg/resmgr/control"
 	"github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/intel/goresctrl/pkg/utils"
 )

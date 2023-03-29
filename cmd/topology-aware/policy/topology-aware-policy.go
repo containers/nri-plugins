@@ -23,13 +23,13 @@ import (
 	"github.com/containers/nri-plugins/pkg/multierror"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/containers/nri-plugins/pkg/cache"
 	"github.com/containers/nri-plugins/pkg/config"
-	"github.com/containers/nri-plugins/pkg/cpuallocator"
-	"github.com/containers/nri-plugins/pkg/introspect"
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
+	"github.com/containers/nri-plugins/pkg/resmgr/cpuallocator"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
+	"github.com/containers/nri-plugins/pkg/resmgr/introspect"
 
-	policyapi "github.com/containers/nri-plugins/pkg/policy"
+	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	idset "github.com/intel/goresctrl/pkg/utils"
 )
