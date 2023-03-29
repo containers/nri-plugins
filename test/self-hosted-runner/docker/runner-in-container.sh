@@ -50,12 +50,35 @@ chown -R runner:runner /home/runner/.docker
 # TODO: loop here all the images found and import them all
 sudo -n -u runner vagrant box add --name generic/fedora37 /mnt/vagrant/generic-fedora37-4.2.14.box
 
+# We want Qemu networking to contact our special dnsmasq resolver so that we
+# can catch our special domain queries. So set the /etc/resolv.conf in the
+# container to point to localhost, and configure dnsmasq with the dns
+# that points to outside world.
+
+cp /etc/resolv.conf /mnt/conf/resolv.conf.orig
+
+echo "nameserver 127.0.0.1" > /etc/resolv.conf
+echo "search runner" >> /etc/resolv.conf
+
+LOCALIP=$(ip addr show dev eth0 | awk '/inet / { print $2 }' | cut -f1 -d/)
+sed -i "s/LOCALIP/$LOCALIP/" /mnt/conf/dnsmasq.conf
+
+dnsmasq -C /mnt/conf/dnsmasq.conf
+
+# Set the DNS server point to our address
+dns_nameserver=$LOCALIP
+dns_search_domain=""
+
 cd /mnt/actions-runner
 
-sudo --preserve-env=http_proxy,https_proxy,no_proxy,HTTP_PROXY,HTTPS_PROXY,NO_PROXY,containerd_src,dns_nameserver,dns_search_domain \
-     -n -u runner ./run.sh &
+if [ -z "$TESTING" ]; then
+    sudo --preserve-env=http_proxy,https_proxy,no_proxy,HTTP_PROXY,HTTPS_PROXY,NO_PROXY,containerd_src,crio_src,dns_nameserver,dns_search_domain \
+	 -n -u runner ./run.sh &
 
-wait
+    wait
+else
+    bash
+fi
 
 if [ $STOPPED -eq 1 ]; then
     exit 1
