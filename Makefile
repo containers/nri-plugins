@@ -178,7 +178,25 @@ $(BIN_PATH)/nri-resource-policy-balloons: \
 # test targets
 #
 
-test-gopkgs: ginkgo-tests ginkgo-subpkgs-tests
+test-gopkgs: ginkgo-test-setup ginkgo-tests ginkgo-subpkgs-tests ginkgo-test-cleanup
+
+ginkgo-test-setup:
+	$(Q)for i in $$(find . -name $(TEST_SETUP)); do \
+	    echo "+ Running test setup $$i..."; \
+	    (cd $${i%/*}; \
+	        if [ -x "$(TEST_SETUP)" ]; then \
+	            ./$(TEST_SETUP); \
+	        fi); \
+	done
+
+ginkgo-test-cleanup:
+	$(Q)for i in $$(find . -name $(TEST_CLEANUP)); do \
+	    echo "- Running test cleanup $$i..."; \
+	    (cd $${i%/*}; \
+	        if [ -x "$(TEST_CLEANUP)" ]; then \
+	            ./$(TEST_CLEANUP); \
+	        fi); \
+	done
 
 ginkgo-tests:
 	$(Q)$(GINKGO) run \
@@ -191,23 +209,18 @@ ginkgo-tests:
 	    --coverprofile $(COVERAGE_PATH)/coverprofile \
 	    --keep-separate-coverprofiles \
 	    --succinct \
+            --skip-package $$(echo $(GO_SUBPKGS) | tr -s '\t ' ',') \
 	    -r .; \
 	$(GO_CMD) tool cover -html=$(COVERAGE_PATH)/coverprofile -o $(COVERAGE_PATH)/coverage.html
 
 ginkgo-subpkgs-tests: # TODO(klihub): coverage ?
 	$(Q)for i in $(GO_SUBPKGS); do \
 	    (cd $$i; \
-	        if [ -x "$(TEST_SETUP)" ]; then \
-	            ./$(TEST_SETUP); \
-	        fi; \
 	        $(GINKGO) run \
 	            --race \
 	            --trace \
 	            --succinct \
-	            -r . || exit 1; \
-	        if [ -x "$(TEST_CLEANUP)" ]; then \
-	            ./"$(TEST_CLEANUP)"; \
-	        fi); \
+	            -r . || exit 1); \
 	done
 
 codecov: SHELL := $(shell which bash)
