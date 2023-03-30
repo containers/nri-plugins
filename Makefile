@@ -70,7 +70,8 @@ DOCKER_PULL := --pull
 
 PLUGINS := \
 	nri-resource-policy-topology-aware \
-	nri-resource-policy-balloons
+	nri-resource-policy-balloons \
+	nri-resource-policy-template
 
 
 ifneq ($(V),1)
@@ -169,6 +170,14 @@ $(BIN_PATH)/nri-resource-policy-topology-aware: \
 $(BIN_PATH)/nri-resource-policy-balloons: \
     $(shell for f in cmd/balloons/*.go; do echo $$f; done; \
                 for dir in $(shell $(GO_DEPS) ./cmd/balloons/... | \
+                          grep '/nri-resource-policy/' | \
+                          sed 's#github.com/containers/nri-plugins/##g'); do \
+                find $$dir -name \*.go; \
+            done | sort | uniq)
+
+$(BIN_PATH)/nri-resource-policy-template: \
+    $(shell for f in cmd/template/*.go; do echo $$f; done; \
+                for dir in $(shell $(GO_DEPS) ./cmd/template/... | \
                           grep '/nri-resource-policy/' | \
                           sed 's#github.com/containers/nri-plugins/##g'); do \
                 find $$dir -name \*.go; \
