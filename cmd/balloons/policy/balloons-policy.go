@@ -24,11 +24,11 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
 	pkgcfg "github.com/containers/nri-plugins/pkg/config"
+	"github.com/containers/nri-plugins/pkg/cpuallocator"
 	"github.com/containers/nri-plugins/pkg/kubernetes"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	cpucontrol "github.com/containers/nri-plugins/pkg/resmgr/control/cpu"
-	"github.com/containers/nri-plugins/pkg/resmgr/cpuallocator"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	"github.com/containers/nri-plugins/pkg/resmgr/introspect"
 	policy "github.com/containers/nri-plugins/pkg/resmgr/policy"
