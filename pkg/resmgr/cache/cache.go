@@ -74,23 +74,10 @@ var allControllers = []string{CPU, NRI, RDT, BlockIO, Memory}
 // PodState is the pod state in the runtime.
 type PodState int32
 
-const (
-	// PodStateReady marks a pod ready.
-	PodStateReady = PodState(int32(criv1.PodSandboxState_SANDBOX_READY))
-	// PodStateNotReady marks a pod as not ready.
-	PodStateNotReady = PodState(int32(criv1.PodSandboxState_SANDBOX_NOTREADY))
-	// PodStateStale marks a pod as removed.
-	PodStateStale = PodState(int32(PodStateNotReady) + 1)
-)
-
 // Pod is the exposed interface from a cached pod.
 type Pod interface {
-	resmgr.Evaluable
-	fmt.Stringer
-	// GetContainers returns the (non-init) containers of the pod.
+	// GetContainers returns the containers of the pod.
 	GetContainers() []Container
-	// GetContainer returns the named container of the pod.
-	GetContainer(string) (Container, bool)
 	// GetId returns the pod id of the pod.
 	GetID() string
 	// GetUID returns the (kubernetes) unique id of the pod.
@@ -99,37 +86,24 @@ type Pod interface {
 	GetName() string
 	// GetNamespace returns the namespace of the pod.
 	GetNamespace() string
-	// GetState returns the PodState of the pod.
-	GetState() PodState
 	// GetQOSClass returns the PodQOSClass of the pod.
 	GetQOSClass() v1.PodQOSClass
-	// GetLabelKeys returns the keys of all pod labels as a string slice.
-	GetLabelKeys() []string
 	// GetLabel returns the value of the given label and whether it was found.
 	GetLabel(string) (string, bool)
-	// GetResmgrLabelKeys returns pod label keys (without the namespace
-	// part) in nri-resource-policy namespace.
-	GetResmgrLabelKeys() []string
+	// GetAnnotation returns the value of the given annotation and whether it was found.
+	GetAnnotation(key string) (string, bool)
+	// GetCgroupParent returns the pods cgroup parent directory.
+	GetCgroupParent() string
+
+	// PrettyName returns $namespace/$name as the pretty name for the pod.
+	PrettyName() string
+
 	// GetResmgrLabel returns the value of a pod label from the
 	// nri-resource-policy namespace.
 	GetResmgrLabel(string) (string, bool)
-	// GetAnnotationKeys returns the keys of all pod annotations as a string slice.
-	GetAnnotationKeys() []string
-	// GetAnnotation returns the value of the given annotation and whether it was found.
-	GetAnnotation(key string) (string, bool)
-	// GetAnnotationObject decodes the value of the given annotation with the given function.
-	GetAnnotationObject(key string, objPtr interface{},
-		decode func([]byte, interface{}) error) (bool, error)
-	// GetResmgrAnnotationKeys returns pod annotation keys (without the
-	// namespace part) in nri-resource-policy namespace as a string slice.
-	GetResmgrAnnotationKeys() []string
 	// GetAnnotation returns the value of a pod annotation from the
 	// nri-resource-policy namespace and whether it was found.
 	GetResmgrAnnotation(key string) (string, bool)
-	// GetResmgrAnnotationObject decodes the value of the given annotation in the
-	// nri-resource-policy namespace.
-	GetResmgrAnnotationObject(key string, objPtr interface{},
-		decode func([]byte, interface{}) error) (bool, error)
 	// GetEffectiveAnnotation returns the effective annotation for a container.
 	// For any given key $K and container $C it will look for annotations in
 	// this order and return the first one found:
@@ -138,12 +112,17 @@ type Pod interface {
 	//     $K
 	// and return the value of the first key found.
 	GetEffectiveAnnotation(key, container string) (string, bool)
-	// GetCgroupParentDir returns the pods cgroup parent directory.
-	GetCgroupParentDir() string
+
 	// GetContainerAffinity returns the affinity expressions for the named container.
 	GetContainerAffinity(string) ([]*Affinity, error)
 	// ScopeExpression returns an affinity expression for defining this pod as the scope.
 	ScopeExpression() *resmgr.Expression
+
+	// Pods can be subject for expression evaluation.
+	resmgr.Evaluable
+
+	// We have String() for pods.
+	fmt.Stringer
 
 	// GetProcesses returns the pids of all processes in the pod either excluding
 	// container processes, if called with false, or including those if called with true.
@@ -155,19 +134,11 @@ type Pod interface {
 
 // A cached pod.
 type pod struct {
-	cache        *cache            // our cache of object
-	ID           string            // pod sandbox runtime id
-	UID          string            // (k8s) unique id
-	Name         string            // pod sandbox name
-	Namespace    string            // pod namespace
-	State        PodState          // ready/not ready
-	QOSClass     v1.PodQOSClass    // pod QoS class
-	Labels       map[string]string // pod labels
-	Annotations  map[string]string // pod annotations
-	CgroupParent string            // cgroup parent directory
-	containers   map[string]string // container name to ID map
-
-	Affinity *podContainerAffinity // annotated container affinity
+	cache      *cache                // our cache of object
+	Pod        *nri.PodSandbox       // pod data from NRI
+	QOSClass   v1.PodQOSClass        // pod QOS class
+	Affinity   *podContainerAffinity // annotated container affinity
+	prettyName string                // cached PrettyName()
 }
 
 // ContainerState is the container state in the runtime.
@@ -447,7 +418,7 @@ type Cachable interface {
 // itself upon startup.
 type Cache interface {
 	// InsertPod inserts a pod into the cache, using a runtime request or reply.
-	InsertPod(id string, pod *nri.PodSandbox) (Pod, error)
+	InsertPod(pod *nri.PodSandbox) (Pod, error)
 	// DeletePod deletes a pod from the cache.
 	DeletePod(id string) Pod
 	// LookupPod looks up a pod in the cache.
@@ -532,14 +503,14 @@ var (
 	cacheFilePerm = &permissions{prefer: 0644, reject: 0022}
 	dataDirPerm   = &permissions{prefer: 0755, reject: 0022}
 	dataFilePerm  = &permissions{prefer: 0644, reject: 0022}
+	log           = logger.Get("cache")
 )
 
 // Our cache of objects.
 type cache struct {
-	sync.Mutex    `json:"-"` // we're lockable
-	logger.Logger `json:"-"` // cache logger instance
-	filePath      string     // where to store to/load from
-	dataDir       string     // container data directory
+	sync.Mutex `json:"-"` // we're lockable
+	filePath   string     // where to store to/load from
+	dataDir    string     // container data directory
 
 	Pods       map[string]*pod       // known/cached pods
 	Containers map[string]*container // known/cache containers
@@ -569,7 +540,6 @@ func NewCache(options Options) (Cache, error) {
 	cch := &cache{
 		filePath:   filepath.Join(options.CacheDir, "cache"),
 		dataDir:    filepath.Join(options.CacheDir, "containers"),
-		Logger:     logger.NewLogger("cache"),
 		Pods:       make(map[string]*pod),
 		Containers: make(map[string]*container),
 		NextID:     1,
@@ -607,7 +577,7 @@ func (cch *cache) SetActivePolicy(policy string) error {
 
 // ResetActivePolicy clears the active policy any any policy-specific data from the cache.
 func (cch *cache) ResetActivePolicy() error {
-	cch.Warn("clearing all data for active policy (%q) from cache...",
+	log.Warn("clearing all data for active policy (%q) from cache...",
 		cch.PolicyName)
 
 	cch.PolicyName = ""
@@ -649,19 +619,9 @@ func (cch *cache) ResetConfig() error {
 }
 
 // Insert a pod into the cache.
-func (cch *cache) InsertPod(id string, nriPod *nri.PodSandbox) (Pod, error) {
-	var err error
-
-	p := &pod{cache: cch, ID: id}
-
-	err = p.fromNRI(nriPod)
-	if err != nil {
-		cch.Error("failed to insert pod %s: %v", id, err)
-		return nil, err
-	}
-
-	cch.Pods[p.ID] = p
-
+func (cch *cache) InsertPod(nriPod *nri.PodSandbox) (Pod, error) {
+	p := cch.createPod(nriPod)
+	cch.Pods[nriPod.GetId()] = p
 	cch.Save()
 
 	return p, nil
@@ -674,7 +634,7 @@ func (cch *cache) DeletePod(id string) Pod {
 		return nil
 	}
 
-	cch.Debug("removing pod %s (%s)", p.Name, p.ID)
+	log.Debug("removing pod %s (%s)", p.PrettyName(), p.GetID())
 	delete(cch.Pods, id)
 
 	cch.Save()
@@ -715,7 +675,7 @@ func (cch *cache) DeleteContainer(id string) Container {
 		return nil
 	}
 
-	cch.Debug("removing container %s", c.PrettyName())
+	log.Debug("removing container %s", c.PrettyName())
 	cch.removeContainerDirectory(c.ID)
 	delete(cch.Containers, c.ID)
 
@@ -732,12 +692,12 @@ func (cch *cache) LookupContainer(id string) (Container, bool) {
 
 // LookupContainerByCgroup looks up the container for the given cgroup path.
 func (cch *cache) LookupContainerByCgroup(path string) (Container, bool) {
-	cch.Debug("resolving %s to a container...", path)
+	log.Debug("resolving %s to a container...", path)
 
 	for _, c := range cch.Containers {
 		parent := ""
 		if pod, ok := c.GetPod(); ok {
-			parent = pod.GetCgroupParentDir()
+			parent = pod.GetCgroupParent()
 		}
 		if parent == "" {
 			continue
@@ -766,10 +726,10 @@ func (cch *cache) RefreshPods(pods []*nri.PodSandbox) ([]Pod, []Pod, []Container
 	for _, item := range pods {
 		valid[item.Id] = struct{}{}
 		if _, ok := cch.Pods[item.Id]; !ok {
-			cch.Debug("inserting discovered pod %s...", item.Id)
-			pod, err := cch.InsertPod(item.Id, item)
+			log.Debug("inserting discovered pod %s...", item.Id)
+			pod, err := cch.InsertPod(item)
 			if err != nil {
-				cch.Error("failed to insert discovered pod %s to cache: %v",
+				log.Error("failed to insert discovered pod %s to cache: %v",
 					item.Id, err)
 			} else {
 				add = append(add, pod)
@@ -777,15 +737,14 @@ func (cch *cache) RefreshPods(pods []*nri.PodSandbox) ([]Pod, []Pod, []Container
 		}
 	}
 	for _, pod := range cch.Pods {
-		if _, ok := valid[pod.ID]; !ok {
-			cch.Debug("purging stale pod %s...", pod.ID)
-			pod.State = PodStateStale
-			del = append(del, cch.DeletePod(pod.ID))
+		if _, ok := valid[pod.GetID()]; !ok {
+			log.Debug("purging stale pod %s...", pod.GetID())
+			del = append(del, cch.DeletePod(pod.GetID()))
 		}
 	}
 	for _, c := range cch.Containers {
 		if _, ok := valid[c.PodID]; !ok {
-			cch.Debug("purging container %s of stale pod %s...", c.ID, c.PodID)
+			log.Debug("purging container %s of stale pod %s...", c.ID, c.PodID)
 			cch.DeleteContainer(c.ID)
 			c.State = ContainerStateStale
 			containers = append(containers, c)
@@ -805,10 +764,10 @@ func (cch *cache) RefreshContainers(containers []*nri.Container) ([]Container, [
 	for _, c := range containers {
 		valid[c.Id] = struct{}{}
 		if _, ok := cch.Containers[c.Id]; !ok {
-			cch.Debug("inserting discovered container %s...", c.Id)
+			log.Debug("inserting discovered container %s...", c.Id)
 			inserted, err := cch.InsertContainer(c)
 			if err != nil {
-				cch.Error("failed to insert discovered container %s to cache: %v",
+				log.Error("failed to insert discovered container %s to cache: %v",
 					c.Id, err)
 			} else {
 				add = append(add, inserted)
@@ -818,7 +777,7 @@ func (cch *cache) RefreshContainers(containers []*nri.Container) ([]Container, [
 
 	for _, c := range cch.Containers {
 		if _, ok := valid[c.ID]; !ok {
-			cch.Debug("purging stale container %s (state: %v)...", c.ID, c.GetState())
+			log.Debug("purging stale container %s (state: %v)...", c.ID, c.GetState())
 			cch.DeleteContainer(c.ID)
 			c.State = ContainerStateStale
 			del = append(del, c)
@@ -888,11 +847,11 @@ func (cch *cache) GetContainers() []Container {
 func (cch *cache) SetPolicyEntry(key string, obj interface{}) {
 	cch.policyData[key] = obj
 
-	if cch.DebugEnabled() {
+	if log.DebugEnabled() {
 		if data, err := marshalEntry(obj); err != nil {
-			cch.Error("marshalling of policy entry '%s' failed: %v", key, err)
+			log.Error("marshalling of policy entry '%s' failed: %v", key, err)
 		} else {
-			cch.Debug("policy entry '%s' set to '%s'", key, string(data))
+			log.Debug("policy entry '%s' set to '%s'", key, string(data))
 		}
 	}
 }
@@ -920,18 +879,18 @@ func (cch *cache) GetPolicyEntry(key string, ptr interface{}) bool {
 
 		// first access to key since startup
 		if err := unmarshalEntry([]byte(entry), ptr); err != nil {
-			cch.Fatal("failed to unmarshal '%s' policy entry for key '%s' (%T): %v",
+			log.Fatal("failed to unmarshal '%s' policy entry for key '%s' (%T): %v",
 				cch.PolicyName, key, ptr, err)
 		}
 
 		if err := cch.cacheEntry(key, ptr); err != nil {
-			cch.Fatal("failed to cache '%s' policy entry for key '%s': %v",
+			log.Fatal("failed to cache '%s' policy entry for key '%s': %v",
 				cch.PolicyName, key, err)
 		}
 	} else {
 		// subsequent accesses to key
 		if err := cch.setEntry(key, ptr, obj); err != nil {
-			cch.Fatal("failed use cached entry for key '%s' of policy '%s': %v",
+			log.Fatal("failed use cached entry for key '%s' of policy '%s': %v",
 				key, cch.PolicyName, err)
 		}
 	}
@@ -1106,7 +1065,7 @@ func (cch *cache) checkPerm(what, path string, isDir bool, p *permissions) (bool
 	expected := p.prefer
 	rejected := p.reject
 	if ((expected | rejected) &^ os.ModePerm) != 0 {
-		cch.Panic("internal error: current permissions check only handles permission bits (rwx)")
+		log.Panic("internal error: current permissions check only handles permission bits (rwx)")
 	}
 
 	// check that we don't have any of the rejectable permission bits set
@@ -1117,7 +1076,7 @@ func (cch *cache) checkPerm(what, path string, isDir bool, p *permissions) (bool
 
 	// warn if permissions are less strict than the preferred defaults
 	if (existing | expected) != expected {
-		cch.Warn("existing %s %q has less strict permissions %v than expected %v",
+		log.Warn("existing %s %q has less strict permissions %v than expected %v",
 			what, path, existing, expected)
 	}
 
@@ -1216,7 +1175,6 @@ func (cch *cache) Restore(data []byte) error {
 
 	for _, p := range cch.Pods {
 		p.cache = cch
-		p.containers = make(map[string]string)
 	}
 	for _, c := range cch.Containers {
 		c.cache = cch
@@ -1228,7 +1186,7 @@ func (cch *cache) Restore(data []byte) error {
 
 // Save the state of the cache.
 func (cch *cache) Save() error {
-	cch.Debug("saving cache to file '%s'...", cch.filePath)
+	log.Debug("saving cache to file '%s'...", cch.filePath)
 
 	data, err := cch.Snapshot()
 	if err != nil {
@@ -1249,16 +1207,16 @@ func (cch *cache) Save() error {
 
 // Load loads the last saved state of the cache.
 func (cch *cache) Load() error {
-	cch.Debug("loading cache from file '%s'...", cch.filePath)
+	log.Debug("loading cache from file '%s'...", cch.filePath)
 
 	data, err := os.ReadFile(cch.filePath)
 
 	switch {
 	case os.IsNotExist(err):
-		cch.Debug("no cache file '%s', nothing to restore", cch.filePath)
+		log.Debug("no cache file '%s', nothing to restore", cch.filePath)
 		return nil
 	case len(data) == 0:
-		cch.Debug("empty cache file '%s', nothing to restore", cch.filePath)
+		log.Debug("empty cache file '%s', nothing to restore", cch.filePath)
 		return nil
 	case err != nil:
 		return cacheError("failed to load cache from file '%s': %v", cch.filePath, err)

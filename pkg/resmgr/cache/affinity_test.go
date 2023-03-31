@@ -16,6 +16,8 @@ package cache
 
 import (
 	"testing"
+
+	nri "github.com/containerd/nri/pkg/api"
 )
 
 func TestSimpleParsingSymmetry(t *testing.T) {
@@ -65,7 +67,12 @@ c4: [ c5 ]
 	for _, tc := range tcases {
 		t.Run(tc.name, func(t *testing.T) {
 			pca := podContainerAffinity{}
-			if !pca.parseSimple(&pod{Name: "testpod"}, tc.source, 1) {
+			pod := &pod{
+				Pod: &nri.PodSandbox{
+					Name: "testpod",
+				},
+			}
+			if !pca.parseSimple(pod, tc.source, 1) {
 				t.Errorf("failed to parse simple container affinity %q", tc.source)
 				return
 			}
@@ -162,7 +169,12 @@ func TestStrictParsing(t *testing.T) {
 	for _, tc := range tcases {
 		t.Run(tc.name, func(t *testing.T) {
 			pca := podContainerAffinity{}
-			err := pca.parseFull(&pod{Name: "testpod"}, tc.source, 1)
+			pod := &pod{
+				Pod: &nri.PodSandbox{
+					Name: "testpod",
+				},
+			}
+			err := pca.parseFull(pod, tc.source, 1)
 			if tc.invalid && err == nil {
 				t.Errorf("parsing invalid affinity expression should have failed")
 				return
