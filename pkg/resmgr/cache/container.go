@@ -45,7 +45,7 @@ func (c *container) fromNRI(nric *nri.Container) error {
 
 	c.ID = nric.Id
 	c.Name = nric.Name
-	c.Namespace = pod.Namespace
+	c.Namespace = pod.GetNamespace()
 	c.State = ContainerState(int32(criv1.ContainerState_CONTAINER_RUNNING)) // XXX TODO
 	c.Image = "unknown"
 	c.Command = make([]string, len(nric.Args))
@@ -58,12 +58,12 @@ func (c *container) fromNRI(nric *nri.Container) error {
 	if hintSetting, ok := c.GetEffectiveAnnotation(TopologyHintsKey); ok {
 		preference, err := strconv.ParseBool(hintSetting)
 		if err != nil {
-			c.cache.Error("invalid annotation %q=%q: %v", TopologyHintsKey, hintSetting, err)
+			log.Error("invalid annotation %q=%q: %v", TopologyHintsKey, hintSetting, err)
 		} else {
 			genHints = preference
 		}
 	}
-	c.cache.Info("automatic topology hint generation %s for %q",
+	log.Info("automatic topology hint generation %s for %q",
 		map[bool]string{false: "disabled", true: "enabled"}[genHints], c.PrettyName())
 
 	c.Mounts = make(map[string]*Mount)
@@ -161,7 +161,7 @@ func (c *container) fromNRI(nric *nri.Container) error {
 	}
 
 	if len(c.Resources.Requests) == 0 && len(c.Resources.Limits) == 0 {
-		c.Resources = estimateComputeResources(c.LinuxReq, pod.CgroupParent)
+		c.Resources = estimateComputeResources(c.LinuxReq, pod.GetCgroupParent())
 	}
 
 	if err := c.setDefaults(); err != nil {
@@ -364,7 +364,7 @@ func (c *container) GetAnnotation(key string, objPtr interface{}) (string, bool)
 
 	if objPtr != nil {
 		if err := json.Unmarshal([]byte(jsonStr), objPtr); err != nil {
-			c.cache.Error("failed to unmarshal annotation %s (%s) of pod %s into %T",
+			log.Error("failed to unmarshal annotation %s (%s) of pod %s into %T",
 				key, jsonStr, c.ID, objPtr)
 			return "", false
 		}
@@ -674,16 +674,16 @@ func getKubeletHint(cpus, mems string) (ret topology.Hints) {
 func (c *container) GetAffinity() ([]*Affinity, error) {
 	pod, ok := c.GetPod()
 	if !ok {
-		c.cache.Error("internal error: can't find Pod for container %s", c.PrettyName())
+		log.Error("internal error: can't find Pod for container %s", c.PrettyName())
 	}
 	affinity, err := pod.GetContainerAffinity(c.GetName())
 	if err != nil {
 		return nil, err
 	}
 	affinity = append(affinity, c.implicitAffinities(len(affinity) > 0)...)
-	c.cache.Debug("affinity for container %s:", c.PrettyName())
+	log.Debug("affinity for container %s:", c.PrettyName())
 	for _, a := range affinity {
-		c.cache.Debug("  - %s", a.String())
+		log.Debug("  - %s", a.String())
 	}
 
 	return affinity, nil
@@ -694,7 +694,7 @@ func (c *container) GetCgroupDir() string {
 		return c.CgroupDir
 	}
 	if pod, ok := c.GetPod(); ok {
-		parent, podID := pod.GetCgroupParentDir(), pod.GetID()
+		parent, podID := pod.GetCgroupParent(), pod.GetID()
 		ID := c.GetID()
 		c.CgroupDir = findContainerDir(parent, podID, ID)
 	}
@@ -812,12 +812,12 @@ func (c *container) implicitAffinities(hasExplicit bool) []*Affinity {
 	for name, generate := range c.cache.implicit {
 		implicit := generate(c, hasExplicit)
 		if implicit == nil {
-			c.cache.Debug("no implicit affinity %s for container %s",
+			log.Debug("no implicit affinity %s for container %s",
 				name, c.PrettyName())
 			continue
 		}
 
-		c.cache.Debug("using implicit affinity %s for %s", name, c.PrettyName())
+		log.Debug("using implicit affinity %s for %s", name, c.PrettyName())
 		affinities = append(affinities, implicit)
 	}
 	return affinities

@@ -15,48 +15,35 @@
 package cache
 
 import (
-	"encoding/json"
-	"strconv"
 	"strings"
 
 	nri "github.com/containerd/nri/pkg/api"
 	v1 "k8s.io/api/core/v1"
-	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 
 	"github.com/containers/nri-plugins/pkg/cgroups"
 	"github.com/containers/nri-plugins/pkg/kubernetes"
 	resmgr "github.com/containers/nri-plugins/pkg/resmgr/apis"
 )
 
-const (
-	// KeyResourceAnnotation is the annotation key our webhook uses.
-	KeyResourceAnnotation = "resource-policy.nri.io/resources"
-)
-
-// Create a pod from an NRI request.
-func (p *pod) fromNRI(pod *nri.PodSandbox) error {
-	p.containers = make(map[string]string)
-	p.UID = pod.Uid
-	p.Name = pod.Name
-	p.Namespace = pod.Namespace
-	p.State = PodState(int32(criv1.PodSandboxState_SANDBOX_READY))
-	p.Labels = pod.Labels
-	p.Annotations = pod.Annotations
-	p.CgroupParent = pod.GetLinux().GetCgroupParent()
-
-	if err := p.discoverQOSClass(); err != nil {
-		p.cache.Error("%v", err)
+// Create and initialize a cached pod.
+func (cch *cache) createPod(nriPod *nri.PodSandbox) *pod {
+	p := &pod{
+		cache: cch,
+		Pod:   nriPod,
 	}
 
-	return nil
+	if err := p.parseCgroupForQOSClass(); err != nil {
+		log.Error("pod %s: %v", p.PrettyName(), err)
+	}
+
+	return p
 }
 
-// Get the normal containers of a pod.
 func (p *pod) GetContainers() []Container {
 	containers := []Container{}
 
 	for _, c := range p.cache.Containers {
-		if c.PodID == p.ID {
+		if c.PodID == p.GetID() {
 			containers = append(containers, c)
 		}
 	}
@@ -64,239 +51,85 @@ func (p *pod) GetContainers() []Container {
 	return containers
 }
 
-// Get container pointer by its name.
-func (p *pod) getContainer(name string) *container {
-	var found *container
-
-	if id, ok := p.containers[name]; ok {
-		return p.cache.Containers[id]
-	}
-
-	for _, c := range p.GetContainers() {
-		cptr := c.(*container)
-		p.containers[cptr.Name] = cptr.ID
-		if cptr.Name == name {
-			found = cptr
-		}
-	}
-
-	return found
-}
-
-// Get container by its name.
-func (p *pod) GetContainer(name string) (Container, bool) {
-	c := p.getContainer(name)
-
-	return c, c != nil
-}
-
-// Get the id of a pod.
 func (p *pod) GetID() string {
-	return p.ID
+	return p.Pod.GetId()
 }
 
-// Get the (k8s) unique id of a pod.
 func (p *pod) GetUID() string {
-	return p.UID
+	return p.Pod.GetUid()
 }
 
-// Get the name of a pod.
 func (p *pod) GetName() string {
-	return p.Name
+	return p.Pod.GetName()
 }
 
-// Get the namespace of a pod.
 func (p *pod) GetNamespace() string {
-	return p.Namespace
+	return p.Pod.GetNamespace()
 }
 
-// Get the PodState of a pod.
-func (p *pod) GetState() PodState {
-	return p.State
-}
-
-// Get the keys of all labels of a pod.
-func (p *pod) GetLabelKeys() []string {
-	keys := make([]string, len(p.Labels))
-
-	idx := 0
-	for key := range p.Labels {
-		keys[idx] = key
-		idx++
-	}
-
-	return keys
-}
-
-// Get the label for a key of a pod.
 func (p *pod) GetLabel(key string) (string, bool) {
-	value, ok := p.Labels[key]
+	value, ok := p.Pod.GetLabels()[key]
 	return value, ok
 }
 
-// Get all label keys in the nri-resource-policy namespace.
-func (p *pod) GetResmgrLabelKeys() []string {
-	return keysInNamespace(p.Labels, kubernetes.ResmgrKeyNamespace)
-}
-
-// Get the label for the given key in the nri-resource-policy namespace.
-func (p *pod) GetResmgrLabel(key string) (string, bool) {
-	value, ok := p.Labels[kubernetes.ResmgrKey(key)]
-	return value, ok
-}
-
-// Get the keys of all annotations of a pod.
-func (p *pod) GetAnnotationKeys() []string {
-	keys := make([]string, len(p.Annotations))
-
-	idx := 0
-	for key := range p.Annotations {
-		keys[idx] = key
-		idx++
-	}
-
-	return keys
-}
-
-// Get pod annotation for the given key.
 func (p *pod) GetAnnotation(key string) (string, bool) {
-	value, ok := p.Annotations[key]
+	value, ok := p.Pod.GetAnnotations()[key]
 	return value, ok
 }
 
-// Get and decode/unmarshal pod annotation for the given key.
-func (p *pod) GetAnnotationObject(key string, objPtr interface{},
-	decode func([]byte, interface{}) error) (bool, error) {
-	var err error
+func (p *pod) GetCgroupParent() string {
+	return p.Pod.GetLinux().GetCgroupParent()
+}
 
-	value, ok := p.GetAnnotation(key)
-	if !ok {
-		return false, nil
+func (p *pod) PrettyName() string {
+	if p.prettyName != "" {
+		return p.prettyName
 	}
 
-	// decode with decoder function, if given
-	if decode != nil {
-		err = decode([]byte(value), objPtr)
-		return true, err
-	}
-
-	// decode with type-specific default decoder
-	switch objPtr.(type) {
-	case *string:
-		*objPtr.(*string) = value
-	case *bool:
-		*objPtr.(*bool), err = strconv.ParseBool(value)
-	case *int:
-		var i int64
-		i, err = strconv.ParseInt(value, 0, 0)
-		*objPtr.(*int) = int(i)
-	case *uint:
-		var i uint64
-		i, err = strconv.ParseUint(value, 0, 0)
-		*objPtr.(*uint) = uint(i)
-	case *int64:
-		*objPtr.(*int64), err = strconv.ParseInt(value, 0, 64)
-	case *uint64:
-		*objPtr.(*uint64), err = strconv.ParseUint(value, 0, 64)
+	namespace := p.GetNamespace()
+	switch namespace {
+	case "default":
+		p.prettyName = ""
+	case "":
+		p.prettyName = "<unknown-namespace>/"
 	default:
-		err = json.Unmarshal([]byte(value), objPtr)
+		p.prettyName = namespace + "/"
 	}
 
-	if err != nil {
-		p.cache.Error("failed to decode annotation %s (%s): %v", key, value, err)
+	name := p.GetName()
+	if name == "" {
+		name = "<unknown-pod>"
 	}
 
-	return true, err
+	p.prettyName += name
+	return p.prettyName
 }
 
-// Get the keys of all annotation in the nri-resource-policy namespace.
-func (p *pod) GetResmgrAnnotationKeys() []string {
-	return keysInNamespace(p.Annotations, kubernetes.ResmgrKeyNamespace)
+func (p *pod) GetResmgrLabel(key string) (string, bool) {
+	value, ok := p.GetLabel(kubernetes.ResmgrKey(key))
+	return value, ok
 }
 
-// Get the value of the given annotation in the nri-resource-policy namespace.
 func (p *pod) GetResmgrAnnotation(key string) (string, bool) {
 	return p.GetAnnotation(kubernetes.ResmgrKey(key))
 }
 
-// Get and decode the pod annotation for the key in the nri-resource-policy namespace..
-func (p *pod) GetResmgrAnnotationObject(key string, objPtr interface{},
-	decode func([]byte, interface{}) error) (bool, error) {
-	return p.GetAnnotationObject(kubernetes.ResmgrKey(key), objPtr, decode)
-}
-
-// Get the effective annotation for the container.
 func (p *pod) GetEffectiveAnnotation(key, container string) (string, bool) {
-	if v, ok := p.Annotations[key+"/container."+container]; ok {
+	annotations := p.Pod.GetAnnotations()
+	if v, ok := annotations[key+"/container."+container]; ok {
 		return v, true
 	}
-	if v, ok := p.Annotations[key+"/pod"]; ok {
+	if v, ok := annotations[key+"/pod"]; ok {
 		return v, true
 	}
-	v, ok := p.Annotations[key]
+	v, ok := annotations[key]
 	return v, ok
 }
 
-// Get the cgroup parent directory of a pod, if known.
-func (p *pod) GetCgroupParentDir() string {
-	return p.CgroupParent
-}
-
-// discover a pod's QoS class by parsing the cgroup parent directory.
-func (p *pod) discoverQOSClass() error {
-	if p.CgroupParent == "" {
-		p.QOSClass = v1.PodQOSBestEffort
-		return cacheError("%s: unknown cgroup parent/QoS class", p.ID)
-	}
-
-	dirs := strings.Split(p.CgroupParent[1:], "/")
-	if len(dirs) < 1 {
-		return cacheError("%s: failed to parse %q for QoS class",
-			p.ID, p.CgroupParent)
-
-	}
-
-	// consume any potential --cgroup-root passed to kubelet
-	if dirs[0] != "kubepods.slice" && dirs[0] != "kubepods" {
-		dirs = dirs[1:]
-	}
-	if len(dirs) < 1 {
-		return cacheError("%s: failed to parse %q for QoS class",
-			p.ID, p.CgroupParent)
-	}
-
-	// consume potential kubepods[.slice]
-	if dirs[0] == "kubepods.slice" || dirs[0] == "kubepods" {
-		dirs = dirs[1:]
-	}
-	if len(dirs) < 1 {
-		return cacheError("%s: failed to parse %q for QoS class",
-			p.ID, p.CgroupParent)
-	}
-
-	// check for besteffort, burstable, or lack thereof indicating guaranteed
-	switch dir := dirs[0]; {
-	case dir == "kubepods-besteffort.slice" || dir == "besteffort":
-		p.QOSClass = v1.PodQOSBestEffort
-		return nil
-	case dir == "kubepods-burstable.slice" || dir == "burstable":
-		p.QOSClass = v1.PodQOSBurstable
-		return nil
-	case strings.HasPrefix(dir, "kubepods-pod") || strings.HasPrefix(dir, "pod"):
-		p.QOSClass = v1.PodQOSGuaranteed
-		return nil
-	}
-
-	return cacheError("%s: failed to parse %q for QoS class",
-		p.ID, p.CgroupParent)
-}
-
-// Determine the QoS class of the pod.
 func (p *pod) GetQOSClass() v1.PodQOSClass {
 	return p.QOSClass
 }
 
-// GetContainerAffinity returns the annotated affinity for the named container.
 func (p *pod) GetContainerAffinity(name string) ([]*Affinity, error) {
 	if p.Affinity != nil {
 		return (*p.Affinity)[name], nil
@@ -309,7 +142,7 @@ func (p *pod) GetContainerAffinity(name string) ([]*Affinity, error) {
 		weight := DefaultWeight
 		if !affinity.parseSimple(p, value, weight) {
 			if err := affinity.parseFull(p, value, weight); err != nil {
-				p.cache.Error("%v", err)
+				log.Error("%v", err)
 				return nil, err
 			}
 		}
@@ -319,18 +152,18 @@ func (p *pod) GetContainerAffinity(name string) ([]*Affinity, error) {
 		weight := -DefaultWeight
 		if !affinity.parseSimple(p, value, weight) {
 			if err := affinity.parseFull(p, value, weight); err != nil {
-				p.cache.Error("%v", err)
+				log.Error("%v", err)
 				return nil, err
 			}
 		}
 	}
 
-	if p.cache.DebugEnabled() {
-		p.cache.Debug("Pod container affinity for %s:", p.GetName())
+	if log.DebugEnabled() {
+		log.Debug("Pod container affinity for %s:", p.GetName())
 		for id, ca := range *affinity {
-			p.cache.Debug("  - container %s:", id)
+			log.Debug("  - container %s:", id)
 			for _, a := range ca {
-				p.cache.Debug("    * %s", a.String())
+				log.Debug("    * %s", a.String())
 			}
 		}
 	}
@@ -340,59 +173,53 @@ func (p *pod) GetContainerAffinity(name string) ([]*Affinity, error) {
 	return (*p.Affinity)[name], nil
 }
 
-// ScopeExpression returns an affinity expression for defining this pod as the scope.
 func (p *pod) ScopeExpression() *resmgr.Expression {
 	return &resmgr.Expression{
-		//      Domain: LabelsDomain,
 		Key:    kubernetes.PodNameLabel,
 		Op:     resmgr.Equals,
 		Values: []string{p.GetName()},
 	}
 }
 
-// String returns a string representation of pod.
-func (p *pod) String() string {
-	return p.Name
-}
-
 // Eval returns the value of a key for expression evaluation.
 func (p *pod) Eval(key string) interface{} {
 	switch key {
 	case resmgr.KeyName:
-		return p.Name
+		return p.GetName()
 	case resmgr.KeyNamespace:
-		return p.Namespace
+		return p.GetNamespace()
 	case resmgr.KeyQOSClass:
 		return p.GetQOSClass()
 	case resmgr.KeyLabels:
-		return p.Labels
+		return p.Pod.GetLabels()
 	case resmgr.KeyID:
-		return p.ID
+		return p.GetID()
 	case resmgr.KeyUID:
-		return p.UID
+		return p.GetUID()
 	default:
 		return cacheError("Pod cannot evaluate of %q", key)
 	}
 }
 
-// GetProcesses returns the pids of processes in a pod.
+func (p *pod) String() string {
+	return p.PrettyName()
+}
+
 func (p *pod) GetProcesses(recursive bool) ([]string, error) {
 	return p.getTasks(recursive, true)
 }
 
-// GetTasks returns the pids of threads in a pod.
 func (p *pod) GetTasks(recursive bool) ([]string, error) {
 	return p.getTasks(recursive, false)
 }
 
-// getTasks returns the pids of processes or threads in a pod.
 func (p *pod) getTasks(recursive, processes bool) ([]string, error) {
 	var pids, childPids []string
 	var err error
 
-	dir := p.GetCgroupParentDir()
+	dir := p.GetCgroupParent()
 	if dir == "" {
-		return nil, cacheError("%s: unknown cgroup parent directory", p.Name)
+		return nil, cacheError("%s: unknown cgroup parent directory", p.PrettyName())
 	}
 
 	if processes {
@@ -401,7 +228,7 @@ func (p *pod) getTasks(recursive, processes bool) ([]string, error) {
 		pids, err = cgroups.Cpu.Group(dir).GetTasks()
 	}
 	if err != nil {
-		return nil, cacheError("%s: failed to read pids: %v", p.Name, err)
+		return nil, cacheError("%s: failed to read pids: %v", p.PrettyName(), err)
 	}
 
 	if !recursive {
@@ -420,10 +247,27 @@ func (p *pod) getTasks(recursive, processes bool) ([]string, error) {
 				continue
 			}
 
-			p.cache.Error("%s: failed to read pids of %s: %v", p.Name,
-				c.PrettyName(), err)
+			log.Error("%s: failed to read pids of %s: %v", p.PrettyName(), c.GetName(), err)
 		}
 	}
 
 	return pids, nil
+}
+
+func (p *pod) parseCgroupForQOSClass() error {
+	dir := p.GetCgroupParent()
+	switch {
+	case strings.Contains(dir, "besteffort"):
+		p.QOSClass = v1.PodQOSBestEffort
+	case strings.Contains(dir, "burstable"):
+		p.QOSClass = v1.PodQOSBurstable
+	default:
+		p.QOSClass = v1.PodQOSGuaranteed
+	}
+
+	if dir == "" {
+		return cacheError("unknown cgroup parent/QoS class")
+	}
+
+	return nil
 }

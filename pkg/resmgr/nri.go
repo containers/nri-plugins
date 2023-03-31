@@ -180,7 +180,7 @@ func (p *nriPlugin) RunPodSandbox(pod *api.PodSandbox) (retErr error) {
 	m.Lock()
 	defer m.Unlock()
 
-	m.cache.InsertPod(pod.Id, pod)
+	m.cache.InsertPod(pod)
 	return nil
 }
 
