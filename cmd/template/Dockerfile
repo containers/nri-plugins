@@ -13,7 +13,7 @@ RUN go mod download
 COPY . .
 
 RUN make clean
-RUN make build-static
+RUN make PLUGINS=nri-resource-policy-template build-plugins-static
 
 FROM gcr.io/distroless/static
 
