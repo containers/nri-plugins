@@ -13,12 +13,9 @@ RUN go mod download
 COPY . .
 
 RUN make clean
-RUN make build-static
+RUN make PLUGINS=nri-resource-policy-topology-aware build-plugins-static
 
 FROM gcr.io/distroless/static
-#debian:bullseye-slim
-#gcr.io/distroless/base
-#gcr.io/distroless/static
 
 COPY --from=builder /go/builder/build/bin/nri-resource-policy-topology-aware /bin/nri-resource-policy-topology-aware
 

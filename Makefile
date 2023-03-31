@@ -116,6 +116,9 @@ verify: verify-godeps verify-fmt
 
 build-plugins: $(foreach bin,$(PLUGINS),$(BIN_PATH)/$(bin))
 
+build-plugins-static:
+	$(MAKE) STATIC=1 build-plugins
+
 build-check:
 	$(Q)$(GO_BUILD) -v $(GO_MODULES)
 
