@@ -38,8 +38,8 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/introspect"
 	"github.com/containers/nri-plugins/pkg/resmgr/metrics"
 	"github.com/containers/nri-plugins/pkg/resmgr/policy"
-	"github.com/containers/nri-plugins/pkg/resmgr/topology"
 	"github.com/containers/nri-plugins/pkg/sysfs"
+	"github.com/containers/nri-plugins/pkg/topology"
 
 	policyCollector "github.com/containers/nri-plugins/pkg/resmgr/policycollector"
 )

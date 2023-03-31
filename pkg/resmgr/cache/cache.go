@@ -34,7 +34,7 @@ import (
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/apis"
 	"github.com/containers/nri-plugins/pkg/resmgr/config"
-	"github.com/containers/nri-plugins/pkg/resmgr/topology"
+	"github.com/containers/nri-plugins/pkg/topology"
 	idset "github.com/intel/goresctrl/pkg/utils"
 )
 
