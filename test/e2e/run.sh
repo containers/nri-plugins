@@ -173,6 +173,17 @@ resolve-template() {
     return 1
 }
 
+get-ctr-id() { # script API
+    # Usage: get-ctr-id pod ctr
+    #
+    # Runs kubectl get pod $pod -ojson | jq '.status.containerStatuses | \
+    #   .[] | select ( .name == "$ctr" ) | .containerID' | sed 's:.*//::g;s:"::g'
+    local pod="$1" ctr="$2"
+    vm-command-q "kubectl get pod $pod -ojson | \
+                 jq '.status.containerStatuses | .[] | select ( .name == \"$ctr\" ) | .containerID'" |\
+                 tr -d '"' | sed 's:.*//::g'
+}
+
 delete() { # script API
     # Usage: delete PARAMETERS
     #
