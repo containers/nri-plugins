@@ -213,15 +213,47 @@ func FindSysFsDevice(dev string) (string, error) {
 		}
 	}
 
-	major := unix.Major(rdev)
-	minor := unix.Minor(rdev)
+	major := int64(unix.Major(rdev))
+	minor := int64(unix.Minor(rdev))
 	if major == 0 {
 		return "", errors.Errorf("%s is a virtual device node", dev)
 	}
-	devPath := fmt.Sprintf("/sys/dev/%s/%d:%d", devType, major, minor)
+
+	realDevPath, err := findSysFsDevice(devType, major, minor)
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to find sysfs device for %s", dev)
+	}
+
+	return realDevPath, nil
+}
+
+// FindGivenSysFsDevice returns the physical device with the given device type,
+// major, and minor numbers.
+func FindGivenSysFsDevice(devType string, major, minor int64) (string, error) {
+	switch devType {
+	case "block", "char":
+	case "b":
+		devType = "block"
+	case "c":
+		devType = "char"
+	default:
+		return "", fmt.Errorf("invalid device type %q", devType)
+	}
+
+	realDevPath, err := findSysFsDevice(devType, major, minor)
+	if err != nil {
+		return "", errors.Wrapf(err, "failed find sysfs device for %s device %d/%d",
+			devType, major, minor)
+	}
+
+	return realDevPath, nil
+}
+
+func findSysFsDevice(devType string, major, minor int64) (string, error) {
+	devPath := sysRoot + fmt.Sprintf("/sys/dev/%s/%d:%d", devType, major, minor)
 	realDevPath, err := filepath.EvalSymlinks(devPath)
 	if err != nil {
-		return "", errors.Wrapf(err, "failed get realpath for %s", devPath)
+		return "", errors.Wrapf(err, "failed to get realpath for %s", devPath)
 	}
 	return realDevPath, nil
 }
