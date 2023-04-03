@@ -24,7 +24,7 @@ import (
 
 	"github.com/containers/nri-plugins/pkg/cgroups"
 	"github.com/containers/nri-plugins/pkg/kubernetes"
-	"github.com/containers/nri-plugins/pkg/resmgr/apis"
+	resmgr "github.com/containers/nri-plugins/pkg/resmgr/apis"
 	"github.com/containers/nri-plugins/pkg/topology"
 
 	"github.com/containerd/nri/pkg/api"
@@ -97,7 +97,7 @@ func (c *container) fromCreateRequest(req *criv1.CreateContainerRequest) error {
 		}
 
 		if genHints {
-			if hints := getTopologyHints(m.HostPath, m.ContainerPath, m.Readonly); len(hints) > 0 {
+			if hints := getTopologyHintsForMount(m.HostPath, m.ContainerPath, m.Readonly); len(hints) > 0 {
 				c.TopologyHints = topology.MergeTopologyHints(c.TopologyHints, hints)
 			}
 		}
@@ -111,7 +111,7 @@ func (c *container) fromCreateRequest(req *criv1.CreateContainerRequest) error {
 			Permissions: d.Permissions,
 		}
 		if genHints {
-			if hints := getTopologyHints(d.HostPath, d.ContainerPath, strings.IndexAny(d.Permissions, "wm") == -1); len(hints) > 0 {
+			if hints := getTopologyHintsForMount(d.HostPath, d.ContainerPath, strings.IndexAny(d.Permissions, "wm") == -1); len(hints) > 0 {
 				c.TopologyHints = topology.MergeTopologyHints(c.TopologyHints, hints)
 			}
 		}
@@ -247,7 +247,7 @@ func (c *container) fromNRI(nric *nri.Container) error {
 		}
 
 		if genHints {
-			if hints := getTopologyHints(m.Destination, m.Source, readOnly); len(hints) > 0 {
+			if hints := getTopologyHintsForMount(m.Source, m.Destination, readOnly); len(hints) > 0 {
 				c.TopologyHints = topology.MergeTopologyHints(c.TopologyHints, hints)
 			}
 		}
@@ -258,7 +258,10 @@ func (c *container) fromNRI(nric *nri.Container) error {
 	//   devices. We only convert these for topology hint generation.
 	c.Devices = make(map[string]*Device)
 	for _, d := range nric.GetLinux().GetDevices() {
-		var permissions string
+		var (
+			permissions string
+			readOnly    = true
+		)
 
 		if perm := d.FileMode.Get(); perm != nil {
 			if *perm&os.FileMode(0444) != os.FileMode(0) {
@@ -266,6 +269,7 @@ func (c *container) fromNRI(nric *nri.Container) error {
 			}
 			if *perm&os.FileMode(0222) != os.FileMode(0) {
 				permissions += "w"
+				readOnly = false
 			}
 			permissions += "m"
 		} else {
@@ -278,8 +282,23 @@ func (c *container) fromNRI(nric *nri.Container) error {
 			Permissions: permissions,
 		}
 
-		if genHints {
-			if hints := getTopologyHints(d.Path, d.Path, strings.IndexAny(permissions, "wm") == -1); len(hints) > 0 {
+		for _, lcd := range nric.GetLinux().GetResources().GetDevices() {
+			if lcd.GetMajor().GetValue() != d.Major {
+				continue
+			}
+			if lcd.GetMinor().GetValue() != d.Minor {
+				continue
+			}
+			if lcd.Type != d.Type {
+				continue
+			}
+			if strings.IndexAny(lcd.Access, "wm") > -1 {
+				readOnly = false
+			}
+			break
+		}
+		if genHints && !readOnly {
+			if hints := getTopologyHintsForDevice(d.Type, d.Major, d.Minor); len(hints) > 0 {
 				c.TopologyHints = topology.MergeTopologyHints(c.TopologyHints, hints)
 			}
 		}
@@ -833,7 +852,7 @@ func (c *container) SetCpusetMems(value string) {
 	c.markPending(CRI)
 }
 
-func getTopologyHints(hostPath, containerPath string, readOnly bool) topology.Hints {
+func getTopologyHintsForMount(hostPath, containerPath string, readOnly bool) topology.Hints {
 
 	if readOnly {
 		// if device or path is read-only, assume it as non-important for now
@@ -863,6 +882,17 @@ func getTopologyHints(hostPath, containerPath string, readOnly bool) topology.Hi
 	}
 
 	if devPath, err := topology.FindSysFsDevice(hostPath); err == nil {
+		// errors are ignored
+		if hints, err := topology.NewTopologyHints(devPath); err == nil && len(hints) > 0 {
+			return hints
+		}
+	}
+
+	return topology.Hints{}
+}
+
+func getTopologyHintsForDevice(devType string, major, minor int64) topology.Hints {
+	if devPath, err := topology.FindGivenSysFsDevice(devType, major, minor); err == nil {
 		// errors are ignored
 		if hints, err := topology.NewTopologyHints(devPath); err == nil && len(hints) > 0 {
 			return hints
