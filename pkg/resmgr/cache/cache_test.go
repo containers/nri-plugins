@@ -1,4 +1,4 @@
-// Copyright 2019 Intel Corporation. All Rights Reserved.
+// Copyright The NRI Plugins Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,71 +12,112 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package cache
+package cache_test
 
 import (
-	"testing"
+	"fmt"
 
-	kubecm "k8s.io/kubernetes/pkg/kubelet/cm"
+	nri "github.com/containerd/nri/pkg/api"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 )
 
-const (
-	// anything below 2 millicpus will yield 0 as an estimate
-	minNonZeroRequest = 2
-	// check CPU request/limit estimate accuracy up to this many CPU cores
-	maxCPU = (kubecm.MaxShares / kubecm.SharesPerCPU) * kubecm.MilliCPUToCPU
-	// we expect our estimates to be within 1 millicpu from the real ones
-	expectedAccuracy = 1
-)
+var _ = Describe("Cache", func() {
+	It("can be created without errors", func() {
+		makeCache()
+	})
 
-func TestCPURequestCalculationAccuracy(t *testing.T) {
-	for request := 0; request < maxCPU; request++ {
-		shares := MilliCPUToShares(request)
-		estimate := SharesToMilliCPU(shares)
-
-		diff := int64(request) - estimate
-		if diff > expectedAccuracy || diff < -expectedAccuracy {
-			if diff < 0 {
-				diff = -diff
+	It("can insert pods", func() {
+		var (
+			c       cache.Cache
+			nriPods = []*nri.PodSandbox{
+				makePod(),
+				makePod(),
+				makePod(),
 			}
-			if request > minNonZeroRequest {
-				t.Errorf("CPU request %v: estimate %v, unexpected inaccuracy %v > %v",
-					request, estimate, diff, expectedAccuracy)
-			} else {
-				t.Logf("CPU request %v: estimate %v, inaccuracy %v > %v (OK, this was expected)",
-					request, estimate, diff, expectedAccuracy)
-			}
-		}
+		)
 
-		// fail if our estimates are not accurate for full CPUs worth of millicpus
-		if (request%1000) == 0 && diff != 0 {
-			t.Errorf("CPU request %v != estimate %v (diff %v)", request, estimate, diff)
+		c, _, _ = makePopulatedCache(nriPods, nil)
+
+		for _, nriPod := range nriPods {
+			pod, err := c.InsertPod(nriPod)
+			Expect(pod).ToNot(BeNil())
+			Expect(err).To(BeNil())
 		}
+	})
+
+	It("can look up inserted pods", func() {
+		var (
+			c       cache.Cache
+			nriPods = []*nri.PodSandbox{
+				makePod(),
+				makePod(),
+				makePod(),
+			}
+		)
+
+		c, _, _ = makePopulatedCache(nriPods, nil)
+
+		for _, nriPod := range nriPods {
+			pod, err := c.InsertPod(nriPod)
+			Expect(pod).ToNot(BeNil())
+			Expect(err).To(BeNil())
+
+			chk, ok := c.LookupPod(pod.GetID())
+			Expect(chk).ToNot(BeNil())
+			Expect(ok).To(BeTrue())
+		}
+	})
+
+	It("properly indicates pod lookup failure", func() {
+		var (
+			c       cache.Cache
+			nriPods = []*nri.PodSandbox{
+				makePod(),
+				makePod(),
+				makePod(),
+			}
+		)
+
+		c, _, _ = makePopulatedCache(nriPods, nil)
+
+		pod, ok := c.LookupPod("xyzzy-foobar")
+		Expect(pod).To(BeNil())
+		Expect(ok).To(BeFalse())
+	})
+})
+
+func makeCache() cache.Cache {
+	c, err := cache.NewCache(cache.Options{CacheDir: GinkgoT().TempDir()})
+	Expect(c).ToNot(BeNil())
+	Expect(err).To(BeNil())
+	if err != nil {
+		panic(fmt.Errorf("failed to create cache: %w", err))
 	}
+	return c
 }
 
-func TestCPULimitCalculationAccuracy(t *testing.T) {
-	for limit := int64(0); limit < int64(maxCPU); limit++ {
-		quota, period := MilliCPUToQuota(limit)
-		estimate := QuotaToMilliCPU(quota, period)
+func makePopulatedCache(nriPods []*nri.PodSandbox, nriCtrs []*nri.Container) (cache.Cache, []cache.Pod, []cache.Container) {
+	var (
+		c    = makeCache()
+		pods []cache.Pod
+		ctrs []cache.Container
+	)
 
-		diff := limit - estimate
-		if diff > expectedAccuracy || diff < -expectedAccuracy {
-			if diff < 0 {
-				diff = -diff
-			}
-			if quota != kubecm.MinQuotaPeriod {
-				t.Errorf("CPU limit %v: estimate %v, unexpected inaccuracy %v > %v",
-					limit, estimate, diff, expectedAccuracy)
-			} else {
-				t.Logf("CPU limit %v: estimate %v, inaccuracy %v > %v (OK, this was expected)",
-					limit, estimate, diff, expectedAccuracy)
-			}
-		}
-
-		// fail if our estimates are not accurate for full CPUs worth of millicpus
-		if (limit%1000) == 0 && diff != 0 {
-			t.Errorf("CPU limit %v != estimate %v (diff %v)", limit, estimate, diff)
-		}
+	for _, nriPod := range nriPods {
+		pod, err := c.InsertPod(nriPod)
+		Expect(pod).ToNot(BeNil())
+		Expect(err).To(BeNil())
+		pods = append(pods, pod)
 	}
+	for _, nriCtr := range nriCtrs {
+		ctr, err := c.InsertContainer(nriCtr)
+		Expect(ctr).ToNot(BeNil())
+		Expect(err).To(BeNil())
+		ctrs = append(ctrs, ctr)
+	}
+
+	return c, pods, ctrs
 }

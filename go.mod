@@ -9,6 +9,8 @@ require (
 	github.com/containers/nri-plugins/pkg/topology v0.0.0
 	github.com/intel/goresctrl v0.3.0
 	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.0
+	github.com/onsi/ginkgo/v2 v2.5.0
+	github.com/onsi/gomega v1.24.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.14.0
 	github.com/prometheus/client_model v0.3.0
@@ -21,8 +23,7 @@ require (
 	k8s.io/api v0.25.4
 	k8s.io/apimachinery v0.25.4
 	k8s.io/client-go v0.25.4
-	k8s.io/cri-api v0.25.4
-	k8s.io/klog/v2 v2.70.1
+	k8s.io/klog/v2 v2.80.1
 	k8s.io/kubernetes v1.25.4
 	sigs.k8s.io/yaml v1.3.0
 )
@@ -113,12 +114,13 @@ require (
 	k8s.io/cloud-provider v0.24.1 // indirect
 	k8s.io/component-base v0.25.4 // indirect
 	k8s.io/component-helpers v0.25.4 // indirect
+	k8s.io/cri-api v0.25.4 // indirect
 	k8s.io/csi-translation-lib v0.24.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20220803162953-67bda5d908f1 // indirect
 	k8s.io/kube-scheduler v0.24.1 // indirect
 	k8s.io/kubelet v0.24.1 // indirect
 	k8s.io/mount-utils v0.24.1 // indirect
-	k8s.io/utils v0.0.0-20220728103510-ee6ede2d64ed // indirect
+	k8s.io/utils v0.0.0-20230313181309-38a27ef9d749 // indirect
 	sigs.k8s.io/json v0.0.0-20220713155537-f223a00ba0e2 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
 )
