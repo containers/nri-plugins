@@ -119,9 +119,8 @@ func (p *nriPlugin) syncWithNRI(pods []*api.PodSandbox, containers []*api.Contai
 	m.Info("synchronizing cache state with NRI/CRI runtime...")
 
 	add, del := []cache.Container{}, []cache.Container{}
-	status := map[string]*cache.PodStatus{}
 
-	_, _, deleted := m.cache.RefreshPods(pods, status)
+	_, _, deleted := m.cache.RefreshPods(pods)
 	for _, c := range deleted {
 		m.Info("discovered stale container %s...", c.GetID())
 		del = append(del, c)
@@ -181,7 +180,7 @@ func (p *nriPlugin) RunPodSandbox(pod *api.PodSandbox) (retErr error) {
 	m.Lock()
 	defer m.Unlock()
 
-	m.cache.InsertPod(pod.Id, pod, nil)
+	m.cache.InsertPod(pod.Id, pod)
 	return nil
 }
 

@@ -18,7 +18,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/containers/nri-plugins/pkg/resmgr/apis"
+	nri "github.com/containerd/nri/pkg/api"
+	resmgr "github.com/containers/nri-plugins/pkg/resmgr/apis"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/config"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
@@ -656,7 +657,7 @@ type mockCache struct {
 	returnValue2ForLookupContainer bool
 }
 
-func (m *mockCache) InsertPod(string, interface{}, *cache.PodStatus) (cache.Pod, error) {
+func (m *mockCache) InsertPod(string, *nri.PodSandbox) (cache.Pod, error) {
 	panic("unimplemented")
 }
 func (m *mockCache) DeletePod(string) cache.Pod {
@@ -665,7 +666,7 @@ func (m *mockCache) DeletePod(string) cache.Pod {
 func (m *mockCache) LookupPod(string) (cache.Pod, bool) {
 	panic("unimplemented")
 }
-func (m *mockCache) InsertContainer(interface{}) (cache.Container, error) {
+func (m *mockCache) InsertContainer(*nri.Container) (cache.Container, error) {
 	panic("unimplemented")
 }
 func (m *mockCache) UpdateContainerID(string, interface{}) (cache.Container, error) {
@@ -732,10 +733,10 @@ func (m *mockCache) ResetConfig() error {
 func (m *mockCache) Save() error {
 	return nil
 }
-func (m *mockCache) RefreshPods(interface{}, map[string]*cache.PodStatus) ([]cache.Pod, []cache.Pod, []cache.Container) {
+func (m *mockCache) RefreshPods([]*nri.PodSandbox) ([]cache.Pod, []cache.Pod, []cache.Container) {
 	panic("unimplemented")
 }
-func (m *mockCache) RefreshContainers(interface{}) ([]cache.Container, []cache.Container) {
+func (m *mockCache) RefreshContainers([]*nri.Container) ([]cache.Container, []cache.Container) {
 	panic("unimplemented")
 }
 func (m *mockCache) ContainerDirectory(string) string {
