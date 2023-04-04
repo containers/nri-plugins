@@ -34,156 +34,6 @@ import (
 	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
-// Create a container for a create request.
-func (c *container) fromCreateRequest(req *criv1.CreateContainerRequest) error {
-	c.PodID = req.PodSandboxId
-
-	pod, ok := c.cache.Pods[c.PodID]
-	if !ok {
-		return cacheError("can't find cached pod %s for container to create", c.PodID)
-	}
-
-	cfg := req.Config
-	if cfg == nil {
-		return cacheError("container of pod %s has no config", c.PodID)
-	}
-	meta := cfg.Metadata
-	if meta == nil {
-		return cacheError("container of pod %s has no request metadata", c.PodID)
-	}
-	podCfg := req.SandboxConfig
-	if podCfg == nil {
-		return cacheError("container of pod %s has no request pod config data", c.PodID)
-	}
-	podMeta := podCfg.Metadata
-	if podMeta == nil {
-		return cacheError("container of pod %s has no request pod metadata", c.PodID)
-	}
-
-	c.Name = meta.Name
-	c.Namespace = podMeta.Namespace
-	c.State = ContainerStateCreating
-	c.Image = cfg.GetImage().GetImage()
-	c.Command = cfg.Command
-	c.Args = cfg.Args
-	c.Labels = cfg.Labels
-	c.Annotations = cfg.Annotations
-
-	c.Env = make(map[string]string)
-	for _, kv := range cfg.Envs {
-		c.Env[kv.Key] = kv.Value
-	}
-
-	genHints := true
-	if hintSetting, ok := c.GetEffectiveAnnotation(TopologyHintsKey); ok {
-		preference, err := strconv.ParseBool(hintSetting)
-		if err != nil {
-			c.cache.Error("invalid annotation %q=%q: %v", TopologyHintsKey, hintSetting, err)
-		} else {
-			genHints = preference
-		}
-	}
-	c.cache.Info("automatic topology hint generation %s for %q",
-		map[bool]string{false: "disabled", true: "enabled"}[genHints], c.PrettyName())
-
-	c.Mounts = make(map[string]*Mount)
-	for _, m := range cfg.Mounts {
-		c.Mounts[m.ContainerPath] = &Mount{
-			Container:   m.ContainerPath,
-			Host:        m.HostPath,
-			Readonly:    m.Readonly,
-			Relabel:     m.SelinuxRelabel,
-			Propagation: MountType(m.Propagation),
-		}
-
-		if genHints {
-			if hints := getTopologyHintsForMount(m.HostPath, m.ContainerPath, m.Readonly); len(hints) > 0 {
-				c.TopologyHints = topology.MergeTopologyHints(c.TopologyHints, hints)
-			}
-		}
-	}
-
-	c.Devices = make(map[string]*Device)
-	for _, d := range cfg.Devices {
-		c.Devices[d.ContainerPath] = &Device{
-			Container:   d.ContainerPath,
-			Host:        d.HostPath,
-			Permissions: d.Permissions,
-		}
-		if genHints {
-			if hints := getTopologyHintsForMount(d.HostPath, d.ContainerPath, strings.IndexAny(d.Permissions, "wm") == -1); len(hints) > 0 {
-				c.TopologyHints = topology.MergeTopologyHints(c.TopologyHints, hints)
-			}
-		}
-	}
-
-	c.Tags = make(map[string]string)
-
-	c.LinuxReq = cfg.GetLinux().GetResources()
-
-	if pod.Resources != nil {
-		if r, ok := pod.Resources.InitContainers[c.Name]; ok {
-			c.Resources = r
-		} else if r, ok := pod.Resources.Containers[c.Name]; ok {
-			c.Resources = r
-		}
-	}
-
-	if len(c.Resources.Requests) == 0 && len(c.Resources.Limits) == 0 {
-		c.Resources = estimateComputeResources(c.LinuxReq, pod.CgroupParent)
-	}
-
-	c.TopologyHints = topology.MergeTopologyHints(c.TopologyHints, getKubeletHint(c.GetCpusetCpus(), c.GetCpusetMems()))
-
-	if err := c.setDefaults(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// Create container from a container list response.
-func (c *container) fromListResponse(lrc *criv1.Container) error {
-	c.PodID = lrc.PodSandboxId
-
-	pod, ok := c.cache.Pods[c.PodID]
-	if !ok {
-		return cacheError("can't find cached pod %s for listed container", c.PodID)
-	}
-
-	meta := lrc.Metadata
-	if meta == nil {
-		return cacheError("listed container of pod %s has no metadata", c.PodID)
-	}
-
-	c.ID = lrc.Id
-	c.Name = meta.Name
-	c.Namespace = pod.Namespace
-	c.State = ContainerState(int32(lrc.State))
-	c.Image = lrc.GetImage().GetImage()
-	c.Labels = lrc.Labels
-	c.Annotations = lrc.Annotations
-	c.Tags = make(map[string]string)
-
-	if pod.Resources != nil {
-		if r, ok := pod.Resources.InitContainers[c.Name]; ok {
-			c.Resources = r
-		} else if r, ok := pod.Resources.Containers[c.Name]; ok {
-			c.Resources = r
-		}
-	}
-
-	if len(c.Resources.Requests) == 0 && len(c.Resources.Limits) == 0 {
-		c.Resources = estimateComputeResources(c.LinuxReq, pod.CgroupParent)
-	}
-
-	if err := c.setDefaults(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 // Create container from an NRI request.
 func (c *container) fromNRI(nric *nri.Container) error {
 	c.PodID = nric.PodSandboxId
@@ -655,12 +505,12 @@ func (c *container) GetLinuxResources() *criv1.LinuxContainerResources {
 
 func (c *container) SetCommand(value []string) {
 	c.Command = value
-	c.markPending(CRI)
+	c.markPending(NRI)
 }
 
 func (c *container) SetArgs(value []string) {
 	c.Args = value
-	c.markPending(CRI)
+	c.markPending(NRI)
 }
 
 func (c *container) SetLabel(key, value string) {
@@ -668,13 +518,13 @@ func (c *container) SetLabel(key, value string) {
 		c.Labels = make(map[string]string)
 	}
 	c.Labels[key] = value
-	c.markPending(CRI)
+	c.markPending(NRI)
 }
 
 func (c *container) DeleteLabel(key string) {
 	if _, ok := c.Labels[key]; ok {
 		delete(c.Labels, key)
-		c.markPending(CRI)
+		c.markPending(NRI)
 	}
 }
 
@@ -683,13 +533,13 @@ func (c *container) SetAnnotation(key, value string) {
 		c.Annotations = make(map[string]string)
 	}
 	c.Annotations[key] = value
-	c.markPending(CRI)
+	c.markPending(NRI)
 }
 
 func (c *container) DeleteAnnotation(key string) {
 	if _, ok := c.Annotations[key]; ok {
 		delete(c.Annotations, key)
-		c.markPending(CRI)
+		c.markPending(NRI)
 	}
 }
 
@@ -698,13 +548,13 @@ func (c *container) SetEnv(key, value string) {
 		c.Env = make(map[string]string)
 	}
 	c.Env[key] = value
-	c.markPending(CRI)
+	c.markPending(NRI)
 }
 
 func (c *container) UnsetEnv(key string) {
 	if _, ok := c.Env[key]; ok {
 		delete(c.Env, key)
-		c.markPending(CRI)
+		c.markPending(NRI)
 	}
 }
 
@@ -713,13 +563,13 @@ func (c *container) InsertMount(m *Mount) {
 		c.Mounts = make(map[string]*Mount)
 	}
 	c.Mounts[m.Container] = m
-	c.markPending(CRI)
+	c.markPending(NRI)
 }
 
 func (c *container) DeleteMount(path string) {
 	if _, ok := c.Mounts[path]; ok {
 		delete(c.Mounts, path)
-		c.markPending(CRI)
+		c.markPending(NRI)
 	}
 }
 
@@ -728,13 +578,13 @@ func (c *container) InsertDevice(d *Device) {
 		c.Devices = make(map[string]*Device)
 	}
 	c.Devices[d.Container] = d
-	c.markPending(CRI)
+	c.markPending(NRI)
 }
 
 func (c *container) DeleteDevice(path string) {
 	if _, ok := c.Devices[path]; ok {
 		delete(c.Devices, path)
-		c.markPending(CRI)
+		c.markPending(NRI)
 	}
 }
 
@@ -793,7 +643,7 @@ func (c *container) GetCpusetMems() string {
 
 func (c *container) SetLinuxResources(req *criv1.LinuxContainerResources) {
 	c.LinuxReq = req
-	c.markPending(CRI)
+	c.markPending(NRI)
 }
 
 func (c *container) SetCPUPeriod(value int64) {
@@ -801,7 +651,7 @@ func (c *container) SetCPUPeriod(value int64) {
 		c.LinuxReq = &criv1.LinuxContainerResources{}
 	}
 	c.LinuxReq.CpuPeriod = value
-	c.markPending(CRI)
+	c.markPending(NRI)
 }
 
 func (c *container) SetCPUQuota(value int64) {
@@ -809,7 +659,7 @@ func (c *container) SetCPUQuota(value int64) {
 		c.LinuxReq = &criv1.LinuxContainerResources{}
 	}
 	c.LinuxReq.CpuQuota = value
-	c.markPending(CRI)
+	c.markPending(NRI)
 }
 
 func (c *container) SetCPUShares(value int64) {
@@ -817,7 +667,7 @@ func (c *container) SetCPUShares(value int64) {
 		c.LinuxReq = &criv1.LinuxContainerResources{}
 	}
 	c.LinuxReq.CpuShares = value
-	c.markPending(CRI)
+	c.markPending(NRI)
 }
 
 func (c *container) SetMemoryLimit(value int64) {
@@ -825,7 +675,7 @@ func (c *container) SetMemoryLimit(value int64) {
 		c.LinuxReq = &criv1.LinuxContainerResources{}
 	}
 	c.LinuxReq.MemoryLimitInBytes = value
-	c.markPending(CRI)
+	c.markPending(NRI)
 }
 
 func (c *container) SetOomScoreAdj(value int64) {
@@ -833,7 +683,7 @@ func (c *container) SetOomScoreAdj(value int64) {
 		c.LinuxReq = &criv1.LinuxContainerResources{}
 	}
 	c.LinuxReq.OomScoreAdj = value
-	c.markPending(CRI)
+	c.markPending(NRI)
 }
 
 func (c *container) SetCpusetCpus(value string) {
@@ -841,7 +691,7 @@ func (c *container) SetCpusetCpus(value string) {
 		c.LinuxReq = &criv1.LinuxContainerResources{}
 	}
 	c.LinuxReq.CpusetCpus = value
-	c.markPending(CRI)
+	c.markPending(NRI)
 }
 
 func (c *container) SetCpusetMems(value string) {
@@ -849,7 +699,7 @@ func (c *container) SetCpusetMems(value string) {
 		c.LinuxReq = &criv1.LinuxContainerResources{}
 	}
 	c.LinuxReq.CpusetMems = value
-	c.markPending(CRI)
+	c.markPending(NRI)
 }
 
 func getTopologyHintsForMount(hostPath, containerPath string, readOnly bool) topology.Hints {

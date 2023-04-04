@@ -25,72 +25,13 @@ import (
 
 	"github.com/containers/nri-plugins/pkg/cgroups"
 	"github.com/containers/nri-plugins/pkg/kubernetes"
-	"github.com/containers/nri-plugins/pkg/resmgr/apis"
+	resmgr "github.com/containers/nri-plugins/pkg/resmgr/apis"
 )
 
 const (
 	// KeyResourceAnnotation is the annotation key our webhook uses.
 	KeyResourceAnnotation = "resource-policy.nri.io/resources"
 )
-
-// Create a pod from a run request.
-func (p *pod) fromRunRequest(req *criv1.RunPodSandboxRequest) error {
-	cfg := req.Config
-	if cfg == nil {
-		return cacheError("pod %s has no config", p.ID)
-	}
-	meta := cfg.Metadata
-	if meta == nil {
-		return cacheError("pod %s has no request metadata", p.ID)
-	}
-
-	p.containers = make(map[string]string)
-	p.UID = meta.Uid
-	p.Name = meta.Name
-	p.Namespace = meta.Namespace
-	p.State = PodState(int32(PodStateReady))
-	p.Labels = cfg.Labels
-	p.Annotations = cfg.Annotations
-	p.CgroupParent = cfg.GetLinux().GetCgroupParent()
-
-	if err := p.discoverQOSClass(); err != nil {
-		p.cache.Error("%v", err)
-	}
-
-	p.parseResourceAnnotations()
-
-	return nil
-}
-
-// Create a pod from a list response.
-func (p *pod) fromListResponse(pod *criv1.PodSandbox, status *PodStatus) error {
-	meta := pod.Metadata
-	if meta == nil {
-		return cacheError("pod %s has no reply metadata", p.ID)
-	}
-
-	p.containers = make(map[string]string)
-	p.UID = meta.Uid
-	p.Name = meta.Name
-	p.Namespace = meta.Namespace
-	p.State = PodState(int32(pod.State))
-	p.Labels = pod.Labels
-	p.Annotations = pod.Annotations
-
-	if status == nil {
-		p.cache.Error("pod %s has no associated status query data", p.ID)
-	} else {
-		p.CgroupParent = status.CgroupParent
-	}
-
-	if err := p.discoverQOSClass(); err != nil {
-		p.cache.Error("%v", err)
-	}
-
-	p.parseResourceAnnotations()
-
-	return nil
-}
 
 // Create a pod from an NRI request.
 func (p *pod) fromNRI(pod *nri.PodSandbox) error {
@@ -528,59 +469,4 @@ func (p *pod) getTasks(recursive, processes bool) ([]string, error) {
 	}
 
 	return pids, nil
-}
-
-// ParsePodStatus parses a PodSandboxStatusResponse into a PodStatus.
-func ParsePodStatus(response *criv1.PodSandboxStatusResponse) (*PodStatus, error) {
-	var name string
-
-	type infoRuntimeSpec struct {
-		Annotations map[string]string `json:"annotations"`
-	}
-	type infoConfig struct {
-		Linux *struct {
-			CgroupParent string `json:"cgroup_parent"`
-		} `json:"linux"`
-	}
-	type statusInfo struct {
-		RuntimeSpec *infoRuntimeSpec `json:"runtimeSpec"`
-		Config      *infoConfig      `json:"config"`
-	}
-
-	if response.Status.Metadata != nil {
-		name = response.Status.Metadata.Name
-	} else {
-		name = response.Status.Id
-	}
-
-	blob, ok := response.Info["info"]
-	if !ok {
-		return nil, cacheError("%s: missing info in pod status response", name)
-	}
-	info := statusInfo{}
-	if err := json.Unmarshal([]byte(blob), &info); err != nil {
-		return nil, cacheError("%s: failed to extract pod status info: %v",
-			name, err)
-	}
-
-	ps := &PodStatus{}
-
-	if info.Config != nil { // containerd
-		// CgroupParent: Info["config"]["linux"]["cgroup_parent"]
-		ps.CgroupParent = info.Config.Linux.CgroupParent
-	} else if info.RuntimeSpec != nil { // cri-o
-		// CgroupParent: Info["info"]["runtimeSpec"]["annotations"][crioCgroupParent]
-		const (
-			crioCgroupParent = "io.kubernetes.cri-o.CgroupParent"
-		)
-
-		ps.CgroupParent = info.RuntimeSpec.Annotations[crioCgroupParent]
-	}
-
-	if ps.CgroupParent == "" {
-		return nil, cacheError("%s: failed to extract cgroup parent from pod status",
-			name)
-	}
-
-	return ps, nil
 }
