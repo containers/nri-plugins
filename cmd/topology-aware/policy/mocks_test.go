@@ -27,7 +27,6 @@ import (
 	"github.com/intel/goresctrl/pkg/sst"
 	idset "github.com/intel/goresctrl/pkg/utils"
 	v1 "k8s.io/api/core/v1"
-	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 )
 
@@ -262,9 +261,6 @@ type mockContainer struct {
 	pod                                   cache.Pod
 }
 
-func (m *mockContainer) PrettyName() string {
-	return m.name
-}
 func (m *mockContainer) GetPod() (cache.Pod, bool) {
 	if m.pod == nil {
 		return &mockPod{}, false
@@ -272,17 +268,14 @@ func (m *mockContainer) GetPod() (cache.Pod, bool) {
 	return m.pod, true
 }
 func (m *mockContainer) GetID() string {
-	return m.returnValueForGetID
-}
-func (m *mockContainer) GetPodID() string {
-	panic("unimplemented")
-}
-func (m *mockContainer) GetID() string {
 	if len(m.returnValueForGetID) == 0 {
 		return "0"
 	}
 
 	return m.returnValueForGetID
+}
+func (m *mockContainer) GetPodID() string {
+	panic("unimplemented")
 }
 func (m *mockContainer) GetName() string {
 	return m.name
@@ -303,37 +296,34 @@ func (m *mockContainer) GetQOSClass() v1.PodQOSClass {
 
 	return m.returnValueForQOSClass
 }
-func (m *mockContainer) GetImage() string {
-	panic("unimplemented")
-}
-func (m *mockContainer) GetCommand() []string {
-	panic("unimplemented")
-}
 func (m *mockContainer) GetArgs() []string {
-	panic("unimplemented")
-}
-func (m *mockContainer) GetLabelKeys() []string {
 	panic("unimplemented")
 }
 func (m *mockContainer) GetLabel(string) (string, bool) {
 	panic("unimplemented")
 }
-func (m *mockContainer) GetLabels() map[string]string {
-	panic("unimplemented")
-}
 func (m *mockContainer) GetResmgrLabelKeys() []string {
-	panic("unimplemented")
-}
-func (m *mockContainer) GetResmgrLabel(string) (string, bool) {
-	panic("unimplemented")
-}
-func (m *mockContainer) GetAnnotationKeys() []string {
 	panic("unimplemented")
 }
 func (m *mockContainer) GetAnnotation(string, interface{}) (string, bool) {
 	panic("unimplemented")
 }
-func (m *mockContainer) GetResmgrAnnotationKeys() []string {
+func (m *mockContainer) GetEnv(string) (string, bool) {
+	panic("unimplemented")
+}
+func (m *mockContainer) GetAnnotations() map[string]string {
+	panic("unimplemented")
+}
+func (m *mockContainer) GetMounts() []*cache.Mount {
+	panic("unimplemented")
+}
+func (m *mockContainer) GetDevices() []*cache.Device {
+	panic("unimplemented")
+}
+func (m *mockContainer) PrettyName() string {
+	return m.name
+}
+func (m *mockContainer) GetResmgrLabel(string) (string, bool) {
 	panic("unimplemented")
 }
 func (m *mockContainer) GetResmgrAnnotation(string, interface{}) (string, bool) {
@@ -346,74 +336,22 @@ func (m *mockContainer) GetEffectiveAnnotation(key string) (string, bool) {
 	}
 	return pod.GetEffectiveAnnotation(key, m.name)
 }
-func (m *mockContainer) GetAnnotations() map[string]string {
+func (m *mockContainer) Eval(string) interface{} {
 	panic("unimplemented")
 }
-func (m *mockContainer) GetEnvKeys() []string {
-	panic("unimplemented")
-}
-func (m *mockContainer) GetEnv(string) (string, bool) {
-	panic("unimplemented")
-}
-func (m *mockContainer) GetMounts() []cache.Mount {
-	panic("unimplemented")
+func (m *mockContainer) String() string {
+	return "mockContainer"
 }
 func (m *mockContainer) GetResourceRequirements() v1.ResourceRequirements {
 	return m.returnValueForGetResourceRequirements
 }
-func (m *mockContainer) GetLinuxResources() *criv1.LinuxContainerResources {
-	panic("unimplemented")
-}
-func (m *mockContainer) SetCommand([]string) {
-	panic("unimplemented")
-}
-func (m *mockContainer) SetArgs([]string) {
-	panic("unimplemented")
-}
-func (m *mockContainer) SetAnnotation(string, string) {
-	panic("unimplemented")
-}
-func (m *mockContainer) DeleteAnnotation(string) {
-	panic("unimplemented")
-}
-func (m *mockContainer) SetEnv(string, string) {
-	panic("unimplemented")
-}
-func (m *mockContainer) UnsetEnv(string) {
-	panic("unimplemented")
-}
 func (m *mockContainer) InsertMount(*cache.Mount) {
-	panic("unimplemented")
-}
-func (m *mockContainer) DeleteMount(string) {
 	panic("unimplemented")
 }
 func (m *mockContainer) GetTopologyHints() topology.Hints {
 	return topology.Hints{}
 }
-func (m *mockContainer) GetCPUPeriod() int64 {
-	panic("unimplemented")
-}
-func (m *mockContainer) GetCPUQuota() int64 {
-	panic("unimplemented")
-}
-func (m *mockContainer) GetCPUShares() int64 {
-	panic("unimplemented")
-}
-func (m *mockContainer) GetMemoryLimit() int64 {
-	return m.memoryLimit
-}
-func (m *mockContainer) GetOomScoreAdj() int64 {
-	panic("unimplemented")
-}
-func (m *mockContainer) GetCpusetCpus() string {
-	return m.cpuset.String()
-}
-func (m *mockContainer) GetCpusetMems() string {
-	panic("unimplemented")
-}
-func (m *mockContainer) SetLinuxResources(*criv1.LinuxContainerResources) {
-	panic("unimplemented")
+func (m *mockContainer) SetCPUShares(int64) {
 }
 func (m *mockContainer) SetCPUPeriod(int64) {
 	panic("unimplemented")
@@ -421,26 +359,24 @@ func (m *mockContainer) SetCPUPeriod(int64) {
 func (m *mockContainer) SetCPUQuota(int64) {
 	panic("unimplemented")
 }
-func (m *mockContainer) SetCPUShares(int64) {
-}
-func (m *mockContainer) SetMemoryLimit(int64) {
-	panic("unimplemented")
-}
-func (m *mockContainer) SetOomScoreAdj(int64) {
-	panic("unimplemented")
-}
 func (m *mockContainer) SetCpusetCpus(string) {
 }
 func (m *mockContainer) SetCpusetMems(string) {
 }
-func (m *mockContainer) UpdateCriCreateRequest(*criv1.CreateContainerRequest) error {
+func (m *mockContainer) SetMemoryLimit(int64) {
 	panic("unimplemented")
 }
-func (m *mockContainer) CriUpdateRequest() (*criv1.UpdateContainerResourcesRequest, error) {
+func (m *mockContainer) GetPendingAdjustment() *nri.ContainerAdjustment {
+	panic("unimplemented")
+}
+func (m *mockContainer) GetPendingUpdate() *nri.ContainerUpdate {
 	panic("unimplemented")
 }
 func (m *mockContainer) GetAffinity() ([]*cache.Affinity, error) {
 	return nil, nil
+}
+func (m *mockContainer) GetCgroupDir() string {
+	panic("unimplemented")
 }
 func (m *mockContainer) SetRDTClass(string) {
 	panic("unimplemented")
@@ -484,19 +420,10 @@ func (m *mockContainer) SetTag(string, string) (string, bool) {
 func (m *mockContainer) DeleteTag(string) (string, bool) {
 	panic("unimplemented")
 }
-func (m *mockContainer) String() string {
-	return "mockContainer"
-}
-func (m *mockContainer) Eval(string) interface{} {
-	panic("unimplemented")
-}
 func (m *mockContainer) GetProcesses() ([]string, error) {
 	panic("unimplemented")
 }
 func (m *mockContainer) GetTasks() ([]string, error) {
-	panic("unimplemented")
-}
-func (m *mockContainer) GetCgroupDir() string {
 	panic("unimplemented")
 }
 

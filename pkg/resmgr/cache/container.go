@@ -16,7 +16,7 @@ package cache
 
 import (
 	"encoding/json"
-	"os"
+	"fmt"
 	"regexp"
 	"sort"
 	"strconv"
@@ -27,174 +27,138 @@ import (
 	resmgr "github.com/containers/nri-plugins/pkg/resmgr/apis"
 	"github.com/containers/nri-plugins/pkg/topology"
 
-	"github.com/containerd/nri/pkg/api"
 	nri "github.com/containerd/nri/pkg/api"
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	resapi "k8s.io/apimachinery/pkg/api/resource"
-	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
-// Create container from an NRI request.
-func (c *container) fromNRI(nric *nri.Container) error {
-	c.PodID = nric.PodSandboxId
-
-	pod, ok := c.cache.Pods[c.PodID]
+// Create and initialize a cached container.
+func (cch *cache) createContainer(nriCtr *nri.Container) (*container, error) {
+	podID := nriCtr.GetPodSandboxId()
+	_, ok := cch.Pods[podID]
 	if !ok {
-		return cacheError("can't find cached pod %s for listed container", c.PodID)
+		return nil, cacheError("can't find cached pod %s for container %s (%s)",
+			podID, nriCtr.GetId(), nriCtr.GetName())
 	}
 
-	c.ID = nric.Id
-	c.Name = nric.Name
-	c.Namespace = pod.GetNamespace()
-	c.State = ContainerState(int32(criv1.ContainerState_CONTAINER_RUNNING)) // XXX TODO
-	c.Image = "unknown"
-	c.Command = make([]string, len(nric.Args))
-	copy(c.Command, nric.Args)
-	c.Labels = nric.Labels
-	c.Annotations = nric.Annotations
-	c.Tags = make(map[string]string)
+	c := &container{
+		cache: cch,
+		Ctr:   nriCtr,
+		State: nriCtr.GetState(),
+		Tags:  make(map[string]string),
+	}
 
-	genHints := true
-	if hintSetting, ok := c.GetEffectiveAnnotation(TopologyHintsKey); ok {
-		preference, err := strconv.ParseBool(hintSetting)
-		if err != nil {
-			log.Error("invalid annotation %q=%q: %v", TopologyHintsKey, hintSetting, err)
+	c.generateTopologyHints()
+	c.estimateResourceRequirements()
+
+	if err := c.setDefaults(); err != nil {
+		return nil, err
+	}
+
+	return c, nil
+}
+
+func (c *container) generateTopologyHints() {
+	if preference, ok := c.GetEffectiveAnnotation(TopologyHintsKey); ok {
+		if genHints, err := strconv.ParseBool(preference); err != nil {
+			log.Error("ignoring invalid annotation '%s=%s': %v", TopologyHintsKey, preference, err)
 		} else {
-			genHints = preference
-		}
-	}
-	log.Info("automatic topology hint generation %s for %q",
-		map[bool]string{false: "disabled", true: "enabled"}[genHints], c.PrettyName())
-
-	c.Mounts = make(map[string]*Mount)
-	for _, m := range nric.Mounts {
-		var (
-			propagation MountType
-			readOnly    bool
-			relabel     bool
-		)
-		for _, o := range m.Options {
-			switch o {
-			case "ro":
-				readOnly = true
-			case "rprivate":
-				propagation = MountPrivate
-			case "rshared":
-				propagation = MountBidirectional
-			case "rslave":
-				propagation = MountHostToContainer
-			case api.SELinuxRelabel:
-				relabel = true
-			}
-		}
-
-		c.Mounts[m.Destination] = &Mount{
-			Container:   m.Destination,
-			Host:        m.Source,
-			Readonly:    readOnly,
-			Relabel:     relabel,
-			Propagation: propagation,
-		}
-
-		if genHints {
-			if hints := getTopologyHintsForMount(m.Source, m.Destination, readOnly); len(hints) > 0 {
-				c.TopologyHints = topology.MergeTopologyHints(c.TopologyHints, hints)
+			if !genHints {
+				log.Info("automatic topology hint generation disabled for %q", c.PrettyName)
+				return
 			}
 		}
 	}
 
-	// Notes:
-	//   This is a way off/a bit wierd... Currently, we don't allow/handle altering
-	//   devices. We only convert these for topology hint generation.
-	c.Devices = make(map[string]*Device)
-	for _, d := range nric.GetLinux().GetDevices() {
-		var (
-			permissions string
-			readOnly    = true
-		)
-
-		if perm := d.FileMode.Get(); perm != nil {
-			if *perm&os.FileMode(0444) != os.FileMode(0) {
-				permissions = "r"
-			}
-			if *perm&os.FileMode(0222) != os.FileMode(0) {
-				permissions += "w"
-				readOnly = false
-			}
-			permissions += "m"
-		} else {
-			permissions = "r"
+	for _, m := range c.Ctr.GetMounts() {
+		readOnly := isReadOnlyMount(m)
+		if hints := getTopologyHintsForMount(m.Destination, m.Source, readOnly); len(hints) > 0 {
+			c.TopologyHints = topology.MergeTopologyHints(c.TopologyHints, hints)
 		}
+	}
 
-		c.Devices[d.Path] = &Device{
-			Container:   d.Path,
-			Host:        d.Path,
-			Permissions: permissions,
-		}
-
-		for _, lcd := range nric.GetLinux().GetResources().GetDevices() {
-			if lcd.GetMajor().GetValue() != d.Major {
-				continue
-			}
-			if lcd.GetMinor().GetValue() != d.Minor {
-				continue
-			}
-			if lcd.Type != d.Type {
-				continue
-			}
-			if strings.IndexAny(lcd.Access, "wm") > -1 {
-				readOnly = false
-			}
-			break
-		}
-		if genHints && !readOnly {
+	for _, d := range c.Ctr.GetLinux().GetDevices() {
+		if !isReadOnlyDevice(c.Ctr.GetLinux().GetResources().GetDevices(), d) {
 			if hints := getTopologyHintsForDevice(d.Type, d.Major, d.Minor); len(hints) > 0 {
 				c.TopologyHints = topology.MergeTopologyHints(c.TopologyHints, hints)
 			}
 		}
 	}
-
-	if lcr := nric.GetLinux().GetResources(); lcr != nil {
-		c.LinuxReq = toCRILinuxResources(lcr, nric.GetLinux().GetOomScoreAdj().GetValue())
-	} else {
-		c.LinuxReq = &criv1.LinuxContainerResources{}
-	}
-
-	if len(c.Resources.Requests) == 0 && len(c.Resources.Limits) == 0 {
-		c.Resources = estimateComputeResources(c.LinuxReq, pod.GetCgroupParent())
-	}
-
-	if err := c.setDefaults(); err != nil {
-		return err
-	}
-
-	return nil
 }
 
-// toCRILinuxResources returns resources for CRI.
-func toCRILinuxResources(r *api.LinuxResources, oomScoreAdj int64) *criv1.LinuxContainerResources {
-	if r == nil {
-		return nil
+func isReadOnlyMount(m *nri.Mount) bool {
+	for _, o := range m.Options {
+		if o == "ro" {
+			return true
+		}
 	}
-	o := &criv1.LinuxContainerResources{}
-	if r.Memory != nil {
-		o.MemoryLimitInBytes = r.Memory.GetLimit().GetValue()
-		o.OomScoreAdj = oomScoreAdj
+	return false
+}
+
+func isReadOnlyDevice(rules []*nri.LinuxDeviceCgroup, d *nri.LinuxDevice) bool {
+	readOnly := true
+
+	for _, r := range rules {
+		rType, rMajor, rMinor := r.Type, r.GetMajor().GetValue(), r.GetMinor().GetValue()
+		switch {
+		case rType == "" && rMajor == 0 && rMinor == 0:
+			if strings.IndexAny(r.Access, "w") > -1 {
+				readOnly = false
+			}
+		case d.Type == rType && d.Major == rMajor && d.Minor == rMinor:
+			if strings.IndexAny(r.Access, "w") > -1 {
+				readOnly = false
+			}
+			return readOnly
+		}
 	}
-	if r.Cpu != nil {
-		o.CpuShares = int64(r.Cpu.GetShares().GetValue())
-		o.CpuPeriod = int64(r.Cpu.GetPeriod().GetValue())
-		o.CpuQuota = r.Cpu.GetQuota().GetValue()
-		o.CpusetCpus = r.Cpu.Cpus
-		o.CpusetMems = r.Cpu.Mems
+
+	return readOnly
+}
+
+// Estimate resource requirements using the containers cgroup parameters and QoS class.
+func (c *container) estimateResourceRequirements() {
+	qosClass := c.GetQOSClass()
+
+	resources := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{},
+		Limits:   corev1.ResourceList{},
 	}
-	for _, l := range r.HugepageLimits {
-		o.HugepageLimits = append(o.HugepageLimits, &criv1.HugepageLimit{
-			PageSize: l.PageSize,
-			Limit:    l.Limit,
-		})
+
+	lnx := c.Ctr.GetLinux().GetResources()
+	cpu := lnx.GetCpu()
+	shares := int64(cpu.GetShares().GetValue())
+
+	// calculate CPU request
+	if value := SharesToMilliCPU(shares); value > 0 {
+		qty := resapi.NewMilliQuantity(value, resapi.DecimalSI)
+		resources.Requests[corev1.ResourceCPU] = *qty
 	}
-	return o
+
+	// get memory limit
+	if value := lnx.GetMemory().GetLimit().GetValue(); value > 0 {
+		qty := resapi.NewQuantity(value, resapi.DecimalSI)
+		resources.Limits[corev1.ResourceMemory] = *qty
+	}
+
+	// calculate CPU limit, set memory request if known
+	switch qosClass {
+	case corev1.PodQOSGuaranteed:
+		resources.Limits[corev1.ResourceCPU] = resources.Requests[corev1.ResourceCPU]
+		resources.Requests[corev1.ResourceMemory] = resources.Limits[corev1.ResourceMemory]
+	default:
+		fallthrough
+	case corev1.PodQOSBestEffort, corev1.PodQOSBurstable:
+		quota := cpu.GetQuota().GetValue()
+		period := int64(cpu.GetPeriod().GetValue())
+		if value := QuotaToMilliCPU(quota, period); value > 0 {
+			qty := resapi.NewMilliQuantity(value, resapi.DecimalSI)
+			resources.Limits[corev1.ResourceCPU] = *qty
+		}
+	}
+
+	c.Requirements = resources
 }
 
 func (c *container) setDefaults() error {
@@ -229,33 +193,41 @@ func (c *container) PrettyName() string {
 	if c.prettyName != "" {
 		return c.prettyName
 	}
-	if pod, ok := c.GetPod(); !ok {
-		c.prettyName = c.PodID + ":" + c.Name
+
+	if pod, ok := c.GetPod(); ok {
+		c.prettyName = pod.PrettyName()
 	} else {
-		c.prettyName = pod.GetName() + ":" + c.Name
+		c.prettyName = fmt.Sprintf("<unknown-pod %s>", c.GetPodID())
 	}
+	c.prettyName += "/" + c.GetName()
+
 	return c.prettyName
 }
 
 func (c *container) GetPod() (Pod, bool) {
-	pod, found := c.cache.Pods[c.PodID]
-	return pod, found
+	if pod, ok := c.cache.Pods[c.GetPodID()]; ok {
+		return pod, ok
+	}
+	return nil, false
 }
 
 func (c *container) GetID() string {
-	return c.ID
+	return c.Ctr.GetId()
 }
 
 func (c *container) GetPodID() string {
-	return c.PodID
+	return c.Ctr.GetPodSandboxId()
 }
 
 func (c *container) GetName() string {
-	return c.Name
+	return c.Ctr.GetName()
 }
 
 func (c *container) GetNamespace() string {
-	return c.Namespace
+	if pod, ok := c.GetPod(); ok {
+		return pod.GetNamespace()
+	}
+	return ""
 }
 
 func (c *container) UpdateState(state ContainerState) {
@@ -267,97 +239,25 @@ func (c *container) GetState() ContainerState {
 }
 
 func (c *container) GetQOSClass() v1.PodQOSClass {
-	var qos v1.PodQOSClass
-
-	if pod, found := c.GetPod(); found {
-		qos = pod.GetQOSClass()
+	if pod, ok := c.GetPod(); ok {
+		return pod.GetQOSClass()
 	}
-
-	return qos
-}
-
-func (c *container) GetImage() string {
-	return c.Image
-}
-
-func (c *container) GetCommand() []string {
-	command := make([]string, len(c.Command))
-	copy(command, c.Command)
-	return command
+	return ""
 }
 
 func (c *container) GetArgs() []string {
-	args := make([]string, len(c.Args))
-	copy(args, c.Args)
+	args := make([]string, len(c.Ctr.GetArgs()))
+	copy(args, c.Ctr.GetArgs())
 	return args
 }
 
-func keysInNamespace(m map[string]string, namespace string) []string {
-	keys := make([]string, 0, len(m))
-
-	for key := range m {
-		split := strings.SplitN(key, "/", 2)
-		if len(split) == 2 && split[0] == namespace {
-			keys = append(keys, split[1])
-		} else if len(split) == 1 && len(namespace) == 0 {
-			keys = append(keys, split[0])
-		}
-	}
-
-	return keys
-}
-
-func (c *container) GetLabelKeys() []string {
-	keys := make([]string, len(c.Labels))
-
-	idx := 0
-	for key := range c.Labels {
-		keys[idx] = key
-		idx++
-	}
-
-	return keys
-}
-
 func (c *container) GetLabel(key string) (string, bool) {
-	value, ok := c.Labels[key]
+	value, ok := c.Ctr.GetLabels()[key]
 	return value, ok
-}
-
-func (c *container) GetResmgrLabelKeys() []string {
-	return keysInNamespace(c.Labels, kubernetes.ResmgrKeyNamespace)
-}
-
-func (c *container) GetResmgrLabel(key string) (string, bool) {
-	value, ok := c.Labels[kubernetes.ResmgrKey(key)]
-	return value, ok
-}
-
-func (c *container) GetLabels() map[string]string {
-	if c.Labels == nil {
-		return nil
-	}
-	labels := make(map[string]string, len(c.Labels))
-	for key, value := range c.Labels {
-		labels[key] = value
-	}
-	return labels
-}
-
-func (c *container) GetAnnotationKeys() []string {
-	keys := make([]string, len(c.Annotations))
-
-	idx := 0
-	for key := range c.Annotations {
-		keys[idx] = key
-		idx++
-	}
-
-	return keys
 }
 
 func (c *container) GetAnnotation(key string, objPtr interface{}) (string, bool) {
-	jsonStr, ok := c.Annotations[key]
+	jsonStr, ok := c.Ctr.GetAnnotations()[key]
 	if !ok {
 		return "", false
 	}
@@ -365,7 +265,7 @@ func (c *container) GetAnnotation(key string, objPtr interface{}) (string, bool)
 	if objPtr != nil {
 		if err := json.Unmarshal([]byte(jsonStr), objPtr); err != nil {
 			log.Error("failed to unmarshal annotation %s (%s) of pod %s into %T",
-				key, jsonStr, c.ID, objPtr)
+				key, jsonStr, c.GetID(), objPtr)
 			return "", false
 		}
 	}
@@ -373,8 +273,61 @@ func (c *container) GetAnnotation(key string, objPtr interface{}) (string, bool)
 	return jsonStr, true
 }
 
-func (c *container) GetResmgrAnnotationKeys() []string {
-	return keysInNamespace(c.Annotations, kubernetes.ResmgrKeyNamespace)
+func (c *container) GetEnv(key string) (string, bool) {
+	for _, env := range c.Ctr.GetEnv() {
+		if idx := strings.IndexRune(env, '='); 0 < idx {
+			k, v := env[0:idx], ""
+			if idx < len(env)-1 {
+				v = env[idx+1:]
+			}
+			if k == key {
+				return v, true
+			}
+		}
+	}
+	return "", false
+}
+
+func (c *container) GetMounts() []*Mount {
+	var mounts []*Mount
+
+	for _, m := range c.Ctr.GetMounts() {
+		var options []string
+		for _, o := range m.Options {
+			options = append(options, o)
+		}
+		mounts = append(mounts, &Mount{
+			Destination: m.Destination,
+			Source:      m.Source,
+			Type:        m.Type,
+			Options:     options,
+		})
+	}
+
+	return mounts
+}
+
+func (c *container) GetDevices() []*Device {
+	var devices []*Device
+
+	for _, d := range c.Ctr.GetLinux().GetDevices() {
+		devices = append(devices, &Device{
+			Path:     d.Path,
+			Type:     d.Type,
+			Major:    d.Major,
+			Minor:    d.Minor,
+			FileMode: nri.FileMode(d.GetFileMode()),
+			Uid:      nri.UInt32(d.Uid),
+			Gid:      nri.UInt32(d.Gid),
+		})
+	}
+
+	return devices
+}
+
+func (c *container) GetResmgrLabel(key string) (string, bool) {
+	value, ok := c.GetLabel(kubernetes.ResmgrKey(key))
+	return value, ok
 }
 
 func (c *container) GetResmgrAnnotation(key string, objPtr interface{}) (string, bool) {
@@ -386,227 +339,161 @@ func (c *container) GetEffectiveAnnotation(key string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	return pod.GetEffectiveAnnotation(key, c.Name)
-}
-
-func (c *container) GetAnnotations() map[string]string {
-	if c.Annotations == nil {
-		return nil
-	}
-	annotations := make(map[string]string, len(c.Annotations))
-	for key, value := range c.Annotations {
-		annotations[key] = value
-	}
-	return annotations
-}
-
-func (c *container) GetEnvKeys() []string {
-	keys := make([]string, len(c.Env))
-
-	idx := 0
-	for key := range c.Env {
-		keys[idx] = key
-		idx++
-	}
-
-	return keys
-}
-
-func (c *container) GetEnv(key string) (string, bool) {
-	value, ok := c.Env[key]
-	return value, ok
-}
-
-func (c *container) GetMounts() []Mount {
-	mounts := make([]Mount, len(c.Mounts))
-
-	idx := 0
-	for _, m := range c.Mounts {
-		mounts[idx] = *m
-		idx++
-	}
-
-	return mounts
+	return pod.GetEffectiveAnnotation(key, c.GetName())
 }
 
 func (c *container) GetResourceRequirements() v1.ResourceRequirements {
+	return c.Requirements
+}
+
+func (c *container) GetLinuxResources() *nri.LinuxResources {
 	return c.Resources
-}
-
-func (c *container) GetLinuxResources() *criv1.LinuxContainerResources {
-	if c.LinuxReq == nil {
-		return nil
-	}
-
-	return &(*c.LinuxReq)
-}
-
-func (c *container) SetCommand(value []string) {
-	c.Command = value
-	c.markPending(NRI)
-}
-
-func (c *container) SetArgs(value []string) {
-	c.Args = value
-	c.markPending(NRI)
-}
-
-func (c *container) SetAnnotation(key, value string) {
-	if c.Annotations == nil {
-		c.Annotations = make(map[string]string)
-	}
-	c.Annotations[key] = value
-	c.markPending(NRI)
-}
-
-func (c *container) DeleteAnnotation(key string) {
-	if _, ok := c.Annotations[key]; ok {
-		delete(c.Annotations, key)
-		c.markPending(NRI)
-	}
-}
-
-func (c *container) SetEnv(key, value string) {
-	if c.Env == nil {
-		c.Env = make(map[string]string)
-	}
-	c.Env[key] = value
-	c.markPending(NRI)
-}
-
-func (c *container) UnsetEnv(key string) {
-	if _, ok := c.Env[key]; ok {
-		delete(c.Env, key)
-		c.markPending(NRI)
-	}
-}
-
-func (c *container) InsertMount(m *Mount) {
-	if c.Mounts == nil {
-		c.Mounts = make(map[string]*Mount)
-	}
-	c.Mounts[m.Container] = m
-	c.markPending(NRI)
-}
-
-func (c *container) DeleteMount(path string) {
-	if _, ok := c.Mounts[path]; ok {
-		delete(c.Mounts, path)
-		c.markPending(NRI)
-	}
 }
 
 func (c *container) GetTopologyHints() topology.Hints {
 	return c.TopologyHints
 }
 
-func (c *container) GetCPUPeriod() int64 {
-	if c.LinuxReq == nil {
-		return 0
+func (c *container) getPendingRequest() interface{} {
+	if c.request == nil {
+		if c.GetState() == ContainerStateCreating {
+			c.request = &nri.ContainerAdjustment{}
+		} else {
+			c.request = &nri.ContainerUpdate{
+				ContainerId: c.GetID(),
+			}
+		}
 	}
-	return c.LinuxReq.CpuPeriod
+	return c.request
 }
 
-func (c *container) GetCPUQuota() int64 {
-	if c.LinuxReq == nil {
-		return 0
+func (c *container) GetPendingAdjustment() *nri.ContainerAdjustment {
+	if c.request == nil {
+		return nil
 	}
-	return c.LinuxReq.CpuQuota
+
+	req, ok := c.request.(*nri.ContainerAdjustment)
+	if !ok {
+		log.Error("%s: queried pending adjustment has mismatching type %T",
+			c.PrettyName(), c.request)
+		req = nil
+	}
+
+	c.request = nil
+	return req
 }
 
-func (c *container) GetCPUShares() int64 {
-	if c.LinuxReq == nil {
-		return 0
+func (c *container) GetPendingUpdate() *nri.ContainerUpdate {
+	if c.request == nil {
+		return nil
 	}
-	return c.LinuxReq.CpuShares
+
+	req, ok := c.request.(*nri.ContainerUpdate)
+	if !ok {
+		log.Error("%s: queried pending update has mismatching type %T",
+			c.PrettyName(), c.request)
+		req = nil
+	}
+
+	c.request = nil
+	return req
 }
 
-func (c *container) GetMemoryLimit() int64 {
-	if c.LinuxReq == nil {
-		return 0
-	}
-	return c.LinuxReq.MemoryLimitInBytes
-}
+func (c *container) InsertMount(m *Mount) {
+	var adjust *nri.ContainerAdjustment
 
-func (c *container) GetOomScoreAdj() int64 {
-	if c.LinuxReq == nil {
-		return 0
+	adjust, ok := c.getPendingRequest().(*nri.ContainerAdjustment)
+	if !ok {
+		log.Error("%s: can't insert mount %s -> %s, container is not being created",
+			c.PrettyName(), m.Source, m.Destination)
+		return
 	}
-	return c.LinuxReq.OomScoreAdj
-}
 
-func (c *container) GetCpusetCpus() string {
-	if c.LinuxReq == nil {
-		return ""
-	}
-	return c.LinuxReq.CpusetCpus
-}
-
-func (c *container) GetCpusetMems() string {
-	if c.LinuxReq == nil {
-		return ""
-	}
-	return c.LinuxReq.CpusetMems
-}
-
-func (c *container) SetLinuxResources(req *criv1.LinuxContainerResources) {
-	c.LinuxReq = req
-	c.markPending(NRI)
-}
-
-func (c *container) SetCPUPeriod(value int64) {
-	if c.LinuxReq == nil {
-		c.LinuxReq = &criv1.LinuxContainerResources{}
-	}
-	c.LinuxReq.CpuPeriod = value
-	c.markPending(NRI)
-}
-
-func (c *container) SetCPUQuota(value int64) {
-	if c.LinuxReq == nil {
-		c.LinuxReq = &criv1.LinuxContainerResources{}
-	}
-	c.LinuxReq.CpuQuota = value
+	adjust.AddMount(m)
 	c.markPending(NRI)
 }
 
 func (c *container) SetCPUShares(value int64) {
-	if c.LinuxReq == nil {
-		c.LinuxReq = &criv1.LinuxContainerResources{}
+	switch req := c.getPendingRequest().(type) {
+	case *nri.ContainerAdjustment:
+		req.SetLinuxCPUShares(uint64(value))
+	case *nri.ContainerUpdate:
+		req.SetLinuxCPUShares(uint64(value))
+	default:
+		log.Error("%s: can't set CPU shares (%d): incorrect pending request type %T",
+			c.PrettyName(), value, c.request)
+		return
 	}
-	c.LinuxReq.CpuShares = value
 	c.markPending(NRI)
 }
 
-func (c *container) SetMemoryLimit(value int64) {
-	if c.LinuxReq == nil {
-		c.LinuxReq = &criv1.LinuxContainerResources{}
+func (c *container) SetCPUQuota(value int64) {
+	switch req := c.getPendingRequest().(type) {
+	case *nri.ContainerAdjustment:
+		req.SetLinuxCPUQuota(value)
+	case *nri.ContainerUpdate:
+		req.SetLinuxCPUQuota(value)
+	default:
+		log.Error("%s: can't set CPU quota (%d): incorrect pending request type %T",
+			c.PrettyName(), value, c.request)
+		return
 	}
-	c.LinuxReq.MemoryLimitInBytes = value
 	c.markPending(NRI)
 }
 
-func (c *container) SetOomScoreAdj(value int64) {
-	if c.LinuxReq == nil {
-		c.LinuxReq = &criv1.LinuxContainerResources{}
+func (c *container) SetCPUPeriod(value int64) {
+	switch req := c.getPendingRequest().(type) {
+	case *nri.ContainerAdjustment:
+		req.SetLinuxCPUPeriod(value)
+	case *nri.ContainerUpdate:
+		req.SetLinuxCPUPeriod(value)
+	default:
+		log.Error("%s: can't set CPU period (%d): incorrect pending request type %T",
+			c.PrettyName(), value, c.request)
+		return
 	}
-	c.LinuxReq.OomScoreAdj = value
 	c.markPending(NRI)
 }
 
 func (c *container) SetCpusetCpus(value string) {
-	if c.LinuxReq == nil {
-		c.LinuxReq = &criv1.LinuxContainerResources{}
+	switch req := c.getPendingRequest().(type) {
+	case *nri.ContainerAdjustment:
+		req.SetLinuxCPUSetCPUs(value)
+	case *nri.ContainerUpdate:
+		req.SetLinuxCPUSetCPUs(value)
+	default:
+		log.Error("%s: can't set cpuset CPUs (%s): incorrect pending request type %T",
+			c.PrettyName(), value, c.request)
+		return
 	}
-	c.LinuxReq.CpusetCpus = value
 	c.markPending(NRI)
 }
 
 func (c *container) SetCpusetMems(value string) {
-	if c.LinuxReq == nil {
-		c.LinuxReq = &criv1.LinuxContainerResources{}
+	switch req := c.getPendingRequest().(type) {
+	case *nri.ContainerAdjustment:
+		req.SetLinuxCPUSetMems(value)
+	case *nri.ContainerUpdate:
+		req.SetLinuxCPUSetMems(value)
+	default:
+		log.Error("%s: can't set cpuset memory (%s): incorrect pending request type %T",
+			c.PrettyName(), value, c.request)
+		return
 	}
-	c.LinuxReq.CpusetMems = value
+	c.markPending(NRI)
+}
+
+func (c *container) SetMemoryLimit(value int64) {
+	switch req := c.getPendingRequest().(type) {
+	case *nri.ContainerAdjustment:
+		req.SetLinuxMemoryLimit(value)
+	case *nri.ContainerUpdate:
+		req.SetLinuxMemoryLimit(value)
+	default:
+		log.Error("%s: can't set memory limit (%d): incorrect pending request type %T",
+			c.PrettyName(), value, c.request)
+		return
+	}
 	c.markPending(NRI)
 }
 
@@ -832,21 +719,21 @@ func (c *container) Eval(key string) interface{} {
 	case resmgr.KeyPod:
 		pod, ok := c.GetPod()
 		if !ok {
-			return cacheError("%s: failed to find pod %s", c.PrettyName(), c.PodID)
+			return cacheError("%s: failed to find pod %s", c.PrettyName(), c.GetPodID())
 		}
 		return pod
 	case resmgr.KeyName:
-		return c.Name
+		return c.GetName()
 	case resmgr.KeyNamespace:
-		return c.Namespace
+		return c.GetNamespace()
 	case resmgr.KeyQOSClass:
 		return c.GetQOSClass()
 	case resmgr.KeyLabels:
-		return c.Labels
+		return c.Ctr.GetLabels()
 	case resmgr.KeyTags:
 		return c.Tags
 	case resmgr.KeyID:
-		return c.ID
+		return c.GetID()
 	default:
 		return cacheError("%s: Container cannot evaluate of %q", c.PrettyName(), key)
 	}

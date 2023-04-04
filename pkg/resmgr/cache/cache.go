@@ -25,7 +25,6 @@ import (
 
 	nri "github.com/containerd/nri/pkg/api"
 	v1 "k8s.io/api/core/v1"
-	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
@@ -142,29 +141,25 @@ type pod struct {
 }
 
 // ContainerState is the container state in the runtime.
-type ContainerState int32
+type ContainerState = nri.ContainerState
 
 const (
-	// ContainerStateCreated marks a container created, not running.
-	ContainerStateCreated = ContainerState(int32(criv1.ContainerState_CONTAINER_CREATED))
-	// ContainerStateRunning marks a container created, running.
-	ContainerStateRunning = ContainerState(int32(criv1.ContainerState_CONTAINER_RUNNING))
-	// ContainerStateExited marks a container exited.
-	ContainerStateExited = ContainerState(int32(criv1.ContainerState_CONTAINER_EXITED))
+	// ContainerStateCreating marks a container being created.
+	ContainerStateCreating = ContainerState(nri.ContainerState_CONTAINER_UNKNOWN - 1)
 	// ContainerStateUnknown marks a container to be in an unknown state.
-	ContainerStateUnknown = ContainerState(int32(criv1.ContainerState_CONTAINER_UNKNOWN))
-	// ContainerStateCreating marks a container as being created.
-	ContainerStateCreating = ContainerState(int32(ContainerStateUnknown) + 1)
+	ContainerStateUnknown = nri.ContainerState_CONTAINER_UNKNOWN
+	// ContainerStateCreated marks a container created, not running.
+	ContainerStateCreated = nri.ContainerState_CONTAINER_CREATED
+	// ContainerStateRunning marks a container created, running.
+	ContainerStateRunning = nri.ContainerState_CONTAINER_RUNNING
+	// ContainerStateExited marks a container exited.
+	ContainerStateExited = nri.ContainerState_CONTAINER_STOPPED
 	// ContainerStateStale marks a container removed.
-	ContainerStateStale = ContainerState(int32(ContainerStateUnknown) + 2)
+	ContainerStateStale = ContainerState(nri.ContainerState_CONTAINER_STOPPED + 1)
 )
 
 // Container is the exposed interface from a cached container.
 type Container interface {
-	resmgr.Evaluable
-	fmt.Stringer
-	// PrettyName returns the user-friendly <podname>:<containername> for the container.
-	PrettyName() string
 	// GetPod returns the pod of the container and a boolean indicating if there was one.
 	GetPod() (Pod, bool)
 	// GetID returns the ID of the container.
@@ -181,100 +176,63 @@ type Container interface {
 	GetState() ContainerState
 	// GetQOSClass returns the QoS class the pod would have if this was its only container.
 	GetQOSClass() v1.PodQOSClass
-	// GetImage returns the image of the container.
-	GetImage() string
-	// GetCommand returns the container command.
-	GetCommand() []string
 	// GetArgs returns the container command arguments.
 	GetArgs() []string
-	// GetLabelKeys returns the keys of all labels of the container.
-	GetLabelKeys() []string
 	// GetLabel returns the value of a container label.
 	GetLabel(string) (string, bool)
-	// GetLabels returns a copy of all container labels.
-	GetLabels() map[string]string
-	// GetResmgrLabelKeys returns container label keys (without the namespace
-	// part) in nri-resource-policy namespace.
-	GetResmgrLabelKeys() []string
+	// GetAnnotation returns the value of a container annotation.
+	GetAnnotation(key string, objPtr interface{}) (string, bool)
+	// GetEnv returns the value of a container environment variable.
+	GetEnv(string) (string, bool)
+	// GetMounts returns all the mounts of the container.
+	GetMounts() []*Mount
+	// GetDevices returns all the linux devices of the container.
+	GetDevices() []*Device
+
+	// PrettyName returns the user-friendly $namespace/$pod/$container for the container.
+	PrettyName() string
+
 	// GetResmgrLabel returns the value of a container label from the
 	// nri-resource-policy namespace.
 	GetResmgrLabel(string) (string, bool)
-	// GetAnnotationKeys returns the keys of all annotations of the container.
-	GetAnnotationKeys() []string
-	// GetAnnotation returns the value of a container annotation.
-	GetAnnotation(key string, objPtr interface{}) (string, bool)
-	// GetResmgrAnnotationKeys returns container annotation keys (without the
-	// namespace part) in nri-resource-policy namespace.
-	GetResmgrAnnotationKeys() []string
-	// GetAnnotation returns the value of a container annotation from the
+	// GetResmgrAnnotation returns the value of a container annotation from the
 	// nri-resource-policy namespace.
 	GetResmgrAnnotation(key string, objPtr interface{}) (string, bool)
 	// GetEffectiveAnnotation returns the effective annotation for the container from the pod.
 	GetEffectiveAnnotation(key string) (string, bool)
-	// GetAnnotations returns a copy of all container annotations.
-	GetAnnotations() map[string]string
-	// GetEnvKeys returns the keys of all container environment variables.
-	GetEnvKeys() []string
-	// GetEnv returns the value of a container environment variable.
-	GetEnv(string) (string, bool)
-	// GetMounts returns all the mounts of the container.
-	GetMounts() []Mount
+
+	// Containers can be subject for expression evaluation.
+	resmgr.Evaluable
+
+	// We have String() for containers.
+	fmt.Stringer
+
 	// GetResourceRequirements returns the webhook-annotated requirements for ths container.
 	GetResourceRequirements() v1.ResourceRequirements
-	// GetLinuxResources returns the CRI linux resource request of the container.
-	GetLinuxResources() *criv1.LinuxContainerResources
 
-	// SetCommand sets the container command.
-	SetCommand([]string)
-	// SetArgs sets the container command arguments.
-	SetArgs([]string)
-	// SetAnnotation sets the value for a container annotation.
-	SetAnnotation(string, string)
-	// DeleteAnnotation removes a container annotation.
-	DeleteAnnotation(string)
-	// SetEnv sets a container environment variable.
-	SetEnv(string, string)
-	// UnsetEnv unsets a container environment variable.
-	UnsetEnv(string)
 	// InsertMount inserts a mount into the container.
 	InsertMount(*Mount)
-	// DeleteMount removes a mount from the container.
-	DeleteMount(string)
 
 	// Get any attached topology hints.
 	GetTopologyHints() topology.Hints
 
-	// GetCPUPeriod gets the CFS CPU period of the container.
-	GetCPUPeriod() int64
-	// GetCpuQuota gets the CFS CPU quota of the container.
-	GetCPUQuota() int64
-	// GetCPUShares gets the CFS CPU shares of the container.
-	GetCPUShares() int64
-	// GetmemoryLimit gets the memory limit in bytes for the container.
-	GetMemoryLimit() int64
-	// GetOomScoreAdj gets the OOM score adjustment for the container.
-	GetOomScoreAdj() int64
-	// GetCpusetCPUs gets the cgroup cpuset.cpus of the container.
-	GetCpusetCpus() string
-	// GetCpusetMems gets the cgroup cpuset.mems of the container.
-	GetCpusetMems() string
-
-	// SetLinuxResources sets the Linux-specific resource request of the container.
-	SetLinuxResources(*criv1.LinuxContainerResources)
-	// SetCPUPeriod sets the CFS CPU period of the container.
-	SetCPUPeriod(int64)
-	// SetCPUQuota sets the CFS CPU quota of the container.
-	SetCPUQuota(int64)
 	// SetCPUShares sets the CFS CPU shares of the container.
 	SetCPUShares(int64)
-	// SetmemoryLimit sets the memory limit in bytes for the container.
-	SetMemoryLimit(int64)
-	// SetOomScoreAdj sets the OOM score adjustment for the container.
-	SetOomScoreAdj(int64)
+	// SetCPUQuota sets the CFS CPU quota of the container.
+	SetCPUQuota(int64)
+	// SetCPUPeriod sets the CFS CPU period of the container.
+	SetCPUPeriod(int64)
 	// SetCpusetCpu sets the cgroup cpuset.cpus of the container.
 	SetCpusetCpus(string)
 	// SetCpusetMems sets the cgroup cpuset.mems of the container.
 	SetCpusetMems(string)
+	// SetmemoryLimit sets the memory limit in bytes for the container.
+	SetMemoryLimit(int64)
+
+	// GetPendingAdjusmentn clears and returns any pending adjustment for the container.
+	GetPendingAdjustment() *nri.ContainerAdjustment
+	// GetPendingUpdate clears and returns any pending update for the container.
+	GetPendingUpdate() *nri.ContainerUpdate
 
 	// GetAffinity returns the annotated affinity expressions for this container.
 	GetAffinity() ([]*Affinity, error)
@@ -324,25 +282,17 @@ type Container interface {
 
 // A cached container.
 type container struct {
-	cache         *cache            // our cache of objects
-	ID            string            // container runtime id
-	PodID         string            // associate pods runtime id
-	Name          string            // container name
-	Namespace     string            // container namespace
-	State         ContainerState    // created/running/exited/unknown
-	Image         string            // containers image
-	Command       []string          // command to run in container
-	Args          []string          // arguments for command
-	Labels        map[string]string // container labels
-	Annotations   map[string]string // container annotations
-	Env           map[string]string // environment variables
-	Mounts        map[string]*Mount // mounts
+	cache *cache         // our cache of objects
+	Ctr   *nri.Container // container data from NRI
+	State ContainerState // current state of the container
+
+	Requirements v1.ResourceRequirements
+	request      interface{}
+
+	Resources *nri.LinuxResources
+
 	TopologyHints topology.Hints    // Set of topology hints for all containers within Pod
 	Tags          map[string]string // container tags (local dynamic labels)
-
-	Resources v1.ResourceRequirements        // container resources (from webhook annotation)
-	LinuxReq  *criv1.LinuxContainerResources // used to estimate Resources if we lack annotations
-	req       *interface{}                   // pending CRI request
 
 	CgroupDir    string       // cgroup directory relative to a(ny) controller.
 	RDTClass     string       // RDT class this container is assigned to.
@@ -355,31 +305,8 @@ type container struct {
 	prettyName string // cached PrettyName()
 }
 
-// MountType is a propagation type.
-type MountType int32
-
-const (
-	// MountPrivate is a private container mount.
-	MountPrivate MountType = MountType(criv1.MountPropagation_PROPAGATION_PRIVATE)
-	// MountHostToContainer is a host-to-container mount.
-	MountHostToContainer MountType = MountType(criv1.MountPropagation_PROPAGATION_HOST_TO_CONTAINER)
-	// MountBidirectional is a bidirectional mount.
-	MountBidirectional MountType = MountType(criv1.MountPropagation_PROPAGATION_BIDIRECTIONAL)
-)
-
-// Mount is a filesystem entry mounted inside a container.
-type Mount struct {
-	// Container is the path inside the container.
-	Container string
-	// Host is the path on the host.
-	Host string
-	// Readonly specifies if the mount is read-only or read-write.
-	Readonly bool
-	// Relabels denotes SELinux relabeling.
-	Relabel bool
-	// Propagation identifies the mount propagation type.
-	Propagation MountType
-}
+type Mount = nri.Mount
+type Device = nri.LinuxDevice
 
 // PageMigrate contains the policy/preferences for container page migration.
 type PageMigrate struct {
@@ -656,13 +583,13 @@ func (cch *cache) InsertContainer(ctr *nri.Container) (Container, error) {
 		cache: cch,
 	}
 
-	err = c.fromNRI(ctr)
+	c, err = cch.createContainer(ctr)
 	if err != nil {
-		return nil, cacheError("failed to insert container %s: %v", c.ID, err)
+		return nil, cacheError("failed to insert container %s: %v", c.GetID(), err)
 	}
 
-	cch.Containers[c.ID] = c
-	cch.createContainerDirectory(c.ID)
+	cch.Containers[c.GetID()] = c
+	cch.createContainerDirectory(c.GetID())
 	cch.Save()
 
 	return c, nil
@@ -676,8 +603,8 @@ func (cch *cache) DeleteContainer(id string) Container {
 	}
 
 	log.Debug("removing container %s", c.PrettyName())
-	cch.removeContainerDirectory(c.ID)
-	delete(cch.Containers, c.ID)
+	cch.removeContainerDirectory(c.GetID())
+	delete(cch.Containers, c.GetID())
 
 	cch.Save()
 
@@ -743,9 +670,9 @@ func (cch *cache) RefreshPods(pods []*nri.PodSandbox) ([]Pod, []Pod, []Container
 		}
 	}
 	for _, c := range cch.Containers {
-		if _, ok := valid[c.PodID]; !ok {
-			log.Debug("purging container %s of stale pod %s...", c.ID, c.PodID)
-			cch.DeleteContainer(c.ID)
+		if _, ok := valid[c.GetPodID()]; !ok {
+			log.Debug("purging container %s of stale pod %s...", c.GetID(), c.GetPodID())
+			cch.DeleteContainer(c.GetID())
 			c.State = ContainerStateStale
 			containers = append(containers, c)
 		}
@@ -776,9 +703,9 @@ func (cch *cache) RefreshContainers(containers []*nri.Container) ([]Container, [
 	}
 
 	for _, c := range cch.Containers {
-		if _, ok := valid[c.ID]; !ok {
-			log.Debug("purging stale container %s (state: %v)...", c.ID, c.GetState())
-			cch.DeleteContainer(c.ID)
+		if _, ok := valid[c.GetID()]; !ok {
+			log.Debug("purging stale container %s (state: %v)...", c.GetID(), c.GetState())
+			cch.DeleteContainer(c.GetID())
 			c.State = ContainerStateStale
 			del = append(del, c)
 		}
@@ -792,7 +719,7 @@ func (cch *cache) markPending(c *container) {
 	if cch.pending == nil {
 		cch.pending = make(map[string]struct{})
 	}
-	cch.pending[c.ID] = struct{}{}
+	cch.pending[c.GetID()] = struct{}{}
 }
 
 // Get all containers with pending changes.
@@ -809,7 +736,7 @@ func (cch *cache) GetPendingContainers() []Container {
 
 // clear the pending state of the given container.
 func (cch *cache) clearPending(c *container) {
-	delete(cch.pending, c.ID)
+	delete(cch.pending, c.GetID())
 }
 
 // Get the ids of all cached containers.
@@ -818,7 +745,7 @@ func (cch *cache) GetContainerIds() []string {
 
 	idx := 0
 	for _, c := range cch.Containers {
-		ids[idx] = c.ID
+		ids[idx] = c.GetID()
 		idx++
 	}
 
@@ -1128,7 +1055,7 @@ func (cch *cache) Snapshot() ([]byte, error) {
 	}
 
 	for _, c := range cch.Containers {
-		s.Containers[c.ID] = c
+		s.Containers[c.GetID()] = c
 	}
 
 	for key, obj := range cch.policyData {
@@ -1178,7 +1105,7 @@ func (cch *cache) Restore(data []byte) error {
 	}
 	for _, c := range cch.Containers {
 		c.cache = cch
-		cch.Containers[c.ID] = c
+		cch.Containers[c.GetID()] = c
 	}
 
 	return nil
@@ -1230,7 +1157,7 @@ func (cch *cache) ContainerDirectory(id string) string {
 	if !ok {
 		return ""
 	}
-	return filepath.Join(cch.dataDir, c.ID)
+	return filepath.Join(cch.dataDir, c.GetID())
 }
 
 func (cch *cache) createContainerDirectory(id string) error {
