@@ -37,7 +37,6 @@ type Pod struct {
 type Container struct {
 	ID            string        // container CRI ID
 	Name          string        // container name
-	Command       []string      // command
 	Args          []string      // and its arguments
 	CPURequest    int64         // CPU requested in milli-CPU (guaranteed amount)
 	CPULimit      int64         // CPU limit in milli-CPU (maximum allowed CPU)

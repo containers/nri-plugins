@@ -382,11 +382,10 @@ func (p *policy) Introspect() *introspect.State {
 
 		for _, c := range containers {
 			container := &introspect.Container{
-				ID:      c.GetID(),
-				Name:    c.GetName(),
-				Command: c.GetCommand(),
-				Args:    c.GetArgs(),
-				Hints:   introspect.TopologyHints(c.GetTopologyHints()),
+				ID:    c.GetID(),
+				Name:  c.GetName(),
+				Args:  c.GetArgs(),
+				Hints: introspect.TopologyHints(c.GetTopologyHints()),
 			}
 			resources := c.GetResourceRequirements()
 			if req, ok := resources.Requests[corev1.ResourceCPU]; ok {

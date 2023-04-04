@@ -43,7 +43,7 @@ func (p *pod) GetContainers() []Container {
 	containers := []Container{}
 
 	for _, c := range p.cache.Containers {
-		if c.PodID == p.GetID() {
+		if c.GetPodID() == p.GetID() {
 			containers = append(containers, c)
 		}
 	}

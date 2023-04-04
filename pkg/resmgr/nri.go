@@ -17,7 +17,6 @@ package resmgr
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
@@ -224,21 +223,22 @@ func (p *nriPlugin) CreateContainer(pod *api.PodSandbox, container *api.Containe
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to cache container")
 	}
+	c.UpdateState(cache.ContainerStateCreating)
 
 	if err := m.policy.AllocateResources(c); err != nil {
 		return nil, nil, errors.Wrap(err, "failed to allocate resources")
 	}
 
 	c.InsertMount(&cache.Mount{
-		Container:   "/.nri-resource-policy",
-		Host:        m.cache.ContainerDirectory(c.GetID()),
-		Readonly:    true,
-		Propagation: cache.MountHostToContainer,
+		Destination: "/.nri-resource-policy",
+		Source:      m.cache.ContainerDirectory(c.GetID()),
+		Type:        "bind",
+		Options:     []string{"bind", "ro", "rslave"},
 	})
 	m.policy.ExportResourceData(c)
 	m.updateTopologyZones()
 
-	adjust = p.getPendingCreate(container)
+	adjust = p.getPendingAdjustment(container)
 	updates = p.getPendingUpdates(container)
 
 	return adjust, updates, nil
@@ -351,180 +351,42 @@ func (p *nriPlugin) updateContainers() (retErr error) {
 	return nil
 }
 
-func (p *nriPlugin) getPendingCreate(container *api.Container) *api.ContainerAdjustment {
-	m := p.resmgr
-	c, ok := m.cache.LookupContainer(container.GetId())
-	if !ok {
-		return nil
+func (p *nriPlugin) getPendingAdjustment(container *api.Container) *api.ContainerAdjustment {
+	if c, ok := p.resmgr.cache.LookupContainer(container.GetId()); ok {
+		adjust := c.GetPendingAdjustment()
+		for _, ctrl := range c.GetPending() {
+			c.ClearPending(ctrl)
+		}
+		return adjust
 	}
 
-	for _, ctrl := range c.GetPending() {
-		c.ClearPending(ctrl)
-	}
-
-	a := &api.ContainerAdjustment{}
-	p.adjustDevices(a, container, c)
-	p.adjustResources(a, container, c)
-	p.adjustAnnotations(a, container, c)
-	p.adjustEnv(a, container, c)
-	p.adjustMounts(a, container, c)
-
-	return a
+	return nil
 }
 
 func (p *nriPlugin) getPendingUpdates(creating *api.Container) []*api.ContainerUpdate {
 	m := p.resmgr
 	updates := []*api.ContainerUpdate{}
-	for _, container := range m.cache.GetPendingContainers() {
-		id := container.GetID()
-		if creating != nil && creating.GetId() == id {
+	for _, c := range m.cache.GetPendingContainers() {
+		if creating != nil && creating.GetId() == c.GetID() {
 			continue
 		}
 
-		u := &api.ContainerUpdate{
-			ContainerId: id,
-		}
-		p.updateResources(u, container)
-		updates = append(updates, u)
+		if u := c.GetPendingUpdate(); u != nil {
+			if bioc := c.GetBlockIOClass(); bioc != "" {
+				u.SetLinuxBlockIOClass(bioc)
+			}
+			if rdtc := c.GetRDTClass(); rdtc != "" {
+				u.SetLinuxRDTClass(rdtc)
+			}
+			updates = append(updates, u)
 
-		for _, ctrl := range container.GetPending() {
-			container.ClearPending(ctrl)
+			for _, ctrl := range c.GetPending() {
+				c.ClearPending(ctrl)
+			}
 		}
 	}
 
 	return updates
-}
-
-func toNRILinuxResources(container cache.Container) *api.LinuxResources {
-	cr := container.GetLinuxResources()
-	if cr == nil {
-		return nil
-	}
-
-	r := &api.LinuxResources{
-		Cpu: &api.LinuxCPU{
-			Period: api.UInt64(cr.CpuPeriod),
-			Quota:  api.Int64(cr.CpuQuota),
-			Shares: api.UInt64(cr.CpuShares),
-			Cpus:   cr.CpusetCpus,
-			Mems:   cr.CpusetMems,
-		},
-		Memory: &api.LinuxMemory{
-			Limit: api.Int64(cr.MemoryLimitInBytes),
-		},
-	}
-	for _, l := range r.HugepageLimits {
-		r.HugepageLimits = append(r.HugepageLimits, &api.HugepageLimit{
-			PageSize: l.PageSize,
-			Limit:    l.Limit,
-		})
-	}
-
-	return r
-}
-
-func (p *nriPlugin) adjustDevices(a *api.ContainerAdjustment, c *api.Container, cc cache.Container) {
-	// Notes: we don't alter devices.
-}
-
-func (p *nriPlugin) adjustResources(a *api.ContainerAdjustment, c *api.Container, cc cache.Container) {
-	ccr := cc.GetLinuxResources()
-	a.SetLinuxCPUPeriod(ccr.CpuPeriod)
-	a.SetLinuxCPUQuota(ccr.CpuQuota)
-	a.SetLinuxCPUShares(uint64(ccr.CpuShares))
-	a.SetLinuxCPUSetCPUs(ccr.CpusetCpus)
-	a.SetLinuxCPUSetMems(ccr.CpusetMems)
-	a.SetLinuxMemoryLimit(ccr.MemoryLimitInBytes)
-	for _, l := range ccr.HugepageLimits {
-		a.AddLinuxHugepageLimit(l.PageSize, l.Limit)
-	}
-}
-
-func (p *nriPlugin) adjustMounts(a *api.ContainerAdjustment, c *api.Container, cc cache.Container) {
-	// Notes: we never remove mounts, just inject new ones.
-nextMount:
-	for _, mnt := range cc.GetMounts() {
-		for _, m := range c.GetMounts() {
-			if m.Destination == mnt.Container {
-				continue nextMount
-			}
-		}
-
-		options := []string{"rbind"}
-
-		switch mnt.Propagation {
-		case cache.MountPrivate:
-			options = append(options, "rprivate")
-		case cache.MountHostToContainer:
-			options = append(options, "rslave")
-		case cache.MountBidirectional:
-			options = append(options, "rshared")
-		}
-		if mnt.Readonly {
-			options = append(options, "ro")
-		}
-		if mnt.Relabel {
-			options = append(options, api.SELinuxRelabel)
-		}
-
-		a.AddMount(&api.Mount{
-			Destination: mnt.Container,
-			Source:      mnt.Host,
-			Options:     options,
-		})
-	}
-}
-
-func (p *nriPlugin) adjustEnv(a *api.ContainerAdjustment, c *api.Container, cc cache.Container) {
-	old := map[string]string{}
-	for _, e := range c.GetEnv() {
-		kv := strings.SplitN(e, "=", 2)
-		if len(kv) < 2 || kv[0] == "" {
-			continue
-		}
-		old[kv[0]] = kv[1]
-	}
-	for _, k := range cc.GetEnvKeys() {
-		if _, ok := old[k]; ok {
-			a.RemoveEnv(k)
-		}
-		v, _ := cc.GetEnv(k)
-		if v != "" {
-			a.AddEnv(k, v)
-		}
-	}
-}
-
-func (p *nriPlugin) adjustAnnotations(a *api.ContainerAdjustment, c *api.Container, cc cache.Container) {
-	old := c.GetAnnotations()
-	for k, v := range cc.GetAnnotations() {
-		if ov, ok := old[k]; ok {
-			if ov == v {
-				continue
-			}
-			a.RemoveAnnotation(k)
-		}
-		a.AddAnnotation(k, v)
-	}
-}
-
-func (p *nriPlugin) updateResources(u *api.ContainerUpdate, c cache.Container) {
-	cr := c.GetLinuxResources()
-	u.SetLinuxCPUPeriod(cr.CpuPeriod)
-	u.SetLinuxCPUQuota(cr.CpuQuota)
-	u.SetLinuxCPUShares(uint64(cr.CpuShares))
-	u.SetLinuxCPUSetCPUs(cr.CpusetCpus)
-	u.SetLinuxCPUSetMems(cr.CpusetMems)
-	u.SetLinuxMemoryLimit(cr.MemoryLimitInBytes)
-	for _, l := range cr.HugepageLimits {
-		u.AddLinuxHugepageLimit(l.PageSize, l.Limit)
-	}
-	if bioc := c.GetBlockIOClass(); bioc != "" {
-		u.SetLinuxBlockIOClass(bioc)
-	}
-	if rdtc := c.GetRDTClass(); rdtc != "" {
-		u.SetLinuxRDTClass(rdtc)
-	}
 }
 
 const (

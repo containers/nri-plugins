@@ -22,8 +22,6 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	resapi "k8s.io/apimachinery/pkg/api/resource"
-	criv1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 	kubecm "k8s.io/kubernetes/pkg/kubelet/cm"
 
 	"github.com/containers/nri-plugins/pkg/cgroups"
@@ -38,49 +36,6 @@ func IsPodQOSClassName(class string) bool {
 		return true
 	}
 	return false
-}
-
-// estimateComputeResources calculates resource requests/limits from a CRI request.
-func estimateComputeResources(lnx *criv1.LinuxContainerResources, cgroupParent string) corev1.ResourceRequirements {
-	var qos corev1.PodQOSClass
-
-	resources := corev1.ResourceRequirements{
-		Requests: corev1.ResourceList{},
-		Limits:   corev1.ResourceList{},
-	}
-
-	if lnx == nil {
-		return resources
-	}
-
-	if cgroupParent != "" {
-		qos = cgroupParentToQOS(cgroupParent)
-	}
-
-	// calculate CPU request
-	if value := SharesToMilliCPU(lnx.CpuShares); value > 0 {
-		qty := resapi.NewMilliQuantity(value, resapi.DecimalSI)
-		resources.Requests[corev1.ResourceCPU] = *qty
-	}
-
-	// get memory limit
-	if value := lnx.MemoryLimitInBytes; value > 0 {
-		qty := resapi.NewQuantity(value, resapi.DecimalSI)
-		resources.Limits[corev1.ResourceMemory] = *qty
-	}
-
-	// set or calculate CPU limit, set memory request if known
-	if qos == corev1.PodQOSGuaranteed {
-		resources.Limits[corev1.ResourceCPU] = resources.Requests[corev1.ResourceCPU]
-		resources.Requests[corev1.ResourceMemory] = resources.Limits[corev1.ResourceMemory]
-	} else {
-		if value := QuotaToMilliCPU(lnx.CpuQuota, lnx.CpuPeriod); value > 0 {
-			qty := resapi.NewMilliQuantity(value, resapi.DecimalSI)
-			resources.Limits[corev1.ResourceCPU] = *qty
-		}
-	}
-
-	return resources
 }
 
 // SharesToMilliCPU converts CFS CPU shares to milliCPU.
