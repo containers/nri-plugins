@@ -441,56 +441,6 @@ func (c *container) GetMounts() []Mount {
 	return mounts
 }
 
-func (c *container) GetMountByHost(path string) *Mount {
-	for _, m := range c.Mounts {
-		if m.Host == path {
-			return &(*m)
-		}
-	}
-
-	return nil
-}
-
-func (c *container) GetMountByContainer(path string) *Mount {
-	m, ok := c.Mounts[path]
-	if !ok {
-		return nil
-	}
-
-	return &(*m)
-}
-
-func (c *container) GetDevices() []Device {
-	devices := make([]Device, len(c.Devices))
-
-	idx := 0
-	for _, d := range c.Devices {
-		devices[idx] = *d
-		idx++
-	}
-
-	return devices
-}
-
-func (c *container) GetDeviceByHost(path string) *Device {
-	for _, d := range c.Devices {
-		if d.Host == path {
-			return &(*d)
-		}
-	}
-
-	return nil
-}
-
-func (c *container) GetDeviceByContainer(path string) *Device {
-	d, ok := c.Devices[path]
-	if !ok {
-		return nil
-	}
-
-	return &(*d)
-}
-
 func (c *container) GetResourceRequirements() v1.ResourceRequirements {
 	return c.Resources
 }
@@ -511,21 +461,6 @@ func (c *container) SetCommand(value []string) {
 func (c *container) SetArgs(value []string) {
 	c.Args = value
 	c.markPending(NRI)
-}
-
-func (c *container) SetLabel(key, value string) {
-	if c.Labels == nil {
-		c.Labels = make(map[string]string)
-	}
-	c.Labels[key] = value
-	c.markPending(NRI)
-}
-
-func (c *container) DeleteLabel(key string) {
-	if _, ok := c.Labels[key]; ok {
-		delete(c.Labels, key)
-		c.markPending(NRI)
-	}
 }
 
 func (c *container) SetAnnotation(key, value string) {
@@ -569,21 +504,6 @@ func (c *container) InsertMount(m *Mount) {
 func (c *container) DeleteMount(path string) {
 	if _, ok := c.Mounts[path]; ok {
 		delete(c.Mounts, path)
-		c.markPending(NRI)
-	}
-}
-
-func (c *container) InsertDevice(d *Device) {
-	if c.Devices == nil {
-		c.Devices = make(map[string]*Device)
-	}
-	c.Devices[d.Container] = d
-	c.markPending(NRI)
-}
-
-func (c *container) DeleteDevice(path string) {
-	if _, ok := c.Devices[path]; ok {
-		delete(c.Devices, path)
 		c.markPending(NRI)
 	}
 }
@@ -843,77 +763,6 @@ func (c *container) GetTasks() ([]string, error) {
 		return nil, cacheError("%s: unknown cgroup directory", c.PrettyName())
 	}
 	return cgroups.Cpu.Group(dir).GetTasks()
-}
-
-func (c *container) SetCRIRequest(req interface{}) error {
-	if c.req != nil {
-		return cacheError("can't set pending container request: another pending")
-	}
-	c.req = &req
-	return nil
-}
-
-func (c *container) GetCRIRequest() (interface{}, bool) {
-	if c.req == nil {
-		return nil, false
-	}
-
-	return *c.req, true
-}
-
-func (c *container) ClearCRIRequest() (interface{}, bool) {
-	req, ok := c.GetCRIRequest()
-	c.req = nil
-	return req, ok
-}
-
-func (c *container) GetCRIEnvs() []*criv1.KeyValue {
-	envs := make([]*criv1.KeyValue, len(c.Env), len(c.Env))
-	idx := 0
-	for k, v := range c.Env {
-		envs[idx] = &criv1.KeyValue{
-			Key:   k,
-			Value: v,
-		}
-		idx++
-	}
-	return envs
-}
-
-func (c *container) GetCRIMounts() []*criv1.Mount {
-	if c.Mounts == nil {
-		return nil
-	}
-	mounts := make([]*criv1.Mount, len(c.Mounts), len(c.Mounts))
-	idx := 0
-	for _, m := range c.Mounts {
-		mounts[idx] = &criv1.Mount{
-			ContainerPath:  m.Container,
-			HostPath:       m.Host,
-			Readonly:       m.Readonly,
-			SelinuxRelabel: m.Relabel,
-			Propagation:    criv1.MountPropagation(m.Propagation),
-		}
-		idx++
-	}
-	return mounts
-}
-
-func (c *container) GetCRIDevices() []*criv1.Device {
-	if c.Devices == nil {
-		return nil
-	}
-	devices := make([]*criv1.Device, len(c.Devices), len(c.Devices))
-	idx := 0
-	for _, d := range c.Devices {
-		devices[idx] = &criv1.Device{
-			ContainerPath: d.Container,
-			HostPath:      d.Host,
-			Permissions:   d.Permissions,
-		}
-		idx++
-	}
-	return devices
 }
 
 func (c *container) markPending(controllers ...string) {

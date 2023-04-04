@@ -266,17 +266,6 @@ type Container interface {
 	GetEnv(string) (string, bool)
 	// GetMounts returns all the mounts of the container.
 	GetMounts() []Mount
-	// GetMountByHost returns the container path corresponding to the host path.
-	// XXX We should remove this as is might not be unique.
-	GetMountByHost(string) *Mount
-	// GetmountByContainer returns the host path mounted to a container path.
-	GetMountByContainer(string) *Mount
-	// GetDevices returns the devices of the container.
-	GetDevices() []Device
-	// GetDeviceByHost returns the device for a host path.
-	GetDeviceByHost(string) *Device
-	// GetDeviceByContainer returns the device for a container path.
-	GetDeviceByContainer(string) *Device
 	// GetResourceRequirements returns the webhook-annotated requirements for ths container.
 	GetResourceRequirements() v1.ResourceRequirements
 	// GetLinuxResources returns the CRI linux resource request of the container.
@@ -286,10 +275,6 @@ type Container interface {
 	SetCommand([]string)
 	// SetArgs sets the container command arguments.
 	SetArgs([]string)
-	// SetLabel sets the value for a container label.
-	SetLabel(string, string)
-	// DeleteLabel removes a container label.
-	DeleteLabel(string)
 	// SetAnnotation sets the value for a container annotation.
 	SetAnnotation(string, string)
 	// DeleteAnnotation removes a container annotation.
@@ -302,10 +287,6 @@ type Container interface {
 	InsertMount(*Mount)
 	// DeleteMount removes a mount from the container.
 	DeleteMount(string)
-	// InsertDevice inserts a device into the container.
-	InsertDevice(*Device)
-	// DeleteDevice removes a device from the container.
-	DeleteDevice(string)
 
 	// Get any attached topology hints.
 	GetTopologyHints() topology.Hints
@@ -373,20 +354,6 @@ type Container interface {
 	// GetTasks returns the pids of threads in the container.
 	GetTasks() ([]string, error)
 
-	// SetCRIRequest sets the current pending CRI request of the container.
-	SetCRIRequest(req interface{}) error
-	// GetCRIRequest returns the current pending CRI request of the container.
-	GetCRIRequest() (interface{}, bool)
-	// ClearCRIRequest clears and returns the current pending CRI request of the container.
-	ClearCRIRequest() (interface{}, bool)
-
-	// GetCRIEnvs returns container environment variables.
-	GetCRIEnvs() []*criv1.KeyValue
-	// GetCRIMounts returns container mounts.
-	GetCRIMounts() []*criv1.Mount
-	// GetCRIDevices returns container devices.
-	GetCRIDevices() []*criv1.Device
-
 	// GetPending gets the names of the controllers with pending changes.
 	GetPending() []string
 	// HasPending checks if the container has pending chanhes for the given controller.
@@ -404,23 +371,22 @@ type Container interface {
 
 // A cached container.
 type container struct {
-	cache         *cache             // our cache of objects
-	ID            string             // container runtime id
-	PodID         string             // associate pods runtime id
-	CacheID       string             // our cache id
-	Name          string             // container name
-	Namespace     string             // container namespace
-	State         ContainerState     // created/running/exited/unknown
-	Image         string             // containers image
-	Command       []string           // command to run in container
-	Args          []string           // arguments for command
-	Labels        map[string]string  // container labels
-	Annotations   map[string]string  // container annotations
-	Env           map[string]string  // environment variables
-	Mounts        map[string]*Mount  // mounts
-	Devices       map[string]*Device // devices
-	TopologyHints topology.Hints     // Set of topology hints for all containers within Pod
-	Tags          map[string]string  // container tags (local dynamic labels)
+	cache         *cache            // our cache of objects
+	ID            string            // container runtime id
+	PodID         string            // associate pods runtime id
+	CacheID       string            // our cache id
+	Name          string            // container name
+	Namespace     string            // container namespace
+	State         ContainerState    // created/running/exited/unknown
+	Image         string            // containers image
+	Command       []string          // command to run in container
+	Args          []string          // arguments for command
+	Labels        map[string]string // container labels
+	Annotations   map[string]string // container annotations
+	Env           map[string]string // environment variables
+	Mounts        map[string]*Mount // mounts
+	TopologyHints topology.Hints    // Set of topology hints for all containers within Pod
+	Tags          map[string]string // container tags (local dynamic labels)
 
 	Resources v1.ResourceRequirements        // container resources (from webhook annotation)
 	LinuxReq  *criv1.LinuxContainerResources // used to estimate Resources if we lack annotations
@@ -461,16 +427,6 @@ type Mount struct {
 	Relabel bool
 	// Propagation identifies the mount propagation type.
 	Propagation MountType
-}
-
-// Device is a device exposed to a container.
-type Device struct {
-	// Container is the device path inside the container.
-	Container string
-	// Host is the device path on the host side.
-	Host string
-	// Permissions specify the device permissions for the container.
-	Permissions string
 }
 
 // PageMigrate contains the policy/preferences for container page migration.
@@ -517,8 +473,6 @@ type Cache interface {
 	LookupPod(id string) (Pod, bool)
 	// InsertContainer inserts a container into the cache, using a runtime request or reply.
 	InsertContainer(*nri.Container) (Container, error)
-	// UpdateContainerID updates a containers runtime id.
-	UpdateContainerID(cacheID string, msg interface{}) (Container, error)
 	// DeleteContainer deletes a container from the cache.
 	DeleteContainer(id string) Container
 	// LookupContainer looks up a container in the cache.
@@ -792,28 +746,6 @@ func (cch *cache) InsertContainer(ctr *nri.Container) (Container, error) {
 	}
 
 	cch.createContainerDirectory(c.CacheID)
-	cch.Save()
-
-	return c, nil
-}
-
-// UpdateContainerID updates a containers runtime id.
-func (cch *cache) UpdateContainerID(cacheID string, msg interface{}) (Container, error) {
-	c, ok := cch.Containers[cacheID]
-	if !ok {
-		return nil, cacheError("%s: failed to update ID, container not found",
-			cacheID)
-	}
-
-	reply, ok := msg.(*criv1.CreateContainerResponse)
-	if !ok {
-		return nil, cacheError("%s: failed to update ID from message %T",
-			c.PrettyName(), msg)
-	}
-
-	c.ID = reply.ContainerId
-	cch.Containers[c.ID] = c
-
 	cch.Save()
 
 	return c, nil
