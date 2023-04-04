@@ -15,12 +15,13 @@
 package topologyaware
 
 import (
-	system "github.com/containers/nri-plugins/pkg/sysfs"
-	"github.com/containers/nri-plugins/pkg/topology"
-	idset "github.com/intel/goresctrl/pkg/utils"
-	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 	"strconv"
 	"strings"
+
+	system "github.com/containers/nri-plugins/pkg/sysfs"
+	"github.com/containers/nri-plugins/pkg/topology"
+	"github.com/containers/nri-plugins/pkg/utils/cpuset"
+	idset "github.com/intel/goresctrl/pkg/utils"
 )
 
 // Calculate the hint score of the given hint and CPUSet.

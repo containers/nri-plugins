@@ -19,8 +19,8 @@ import (
 
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/topology"
+	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
-	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
 	"github.com/containers/nri-plugins/pkg/kubernetes"
 )
@@ -396,7 +396,7 @@ func (n *node) discoverSupply(assignedNUMANodes []idset.ID) Supply {
 				n.Name())
 		}
 
-		n.noderes = newSupply(n, cpuset.NewCPUSet(), cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, 0, nil, nil)
+		n.noderes = newSupply(n, cpuset.New(), cpuset.New(), cpuset.New(), 0, 0, nil, nil)
 		for _, c := range n.children {
 			supply := c.GetSupply()
 			n.noderes.Cumulate(supply)
@@ -410,7 +410,7 @@ func (n *node) discoverSupply(assignedNUMANodes []idset.ID) Supply {
 		log.Debug("%s: discovering attached/assigned resources...", n.Name())
 
 		mmap := createMemoryMap(0, 0, 0)
-		cpus := cpuset.NewCPUSet()
+		cpus := cpuset.New()
 
 		for _, nodeID := range assignedNUMANodes {
 			node := n.System().Node(nodeID)

@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"strings"
 
-	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
+	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/utils"
@@ -730,7 +730,7 @@ func readCPUsetFile(base, entry string) (cpuset.CPUSet, error) {
 
 	blob, err := ioutil.ReadFile(path)
 	if err != nil {
-		return cpuset.NewCPUSet(), sysfsError(path, "failed to read sysfs entry: %v", err)
+		return cpuset.New(), sysfsError(path, "failed to read sysfs entry: %v", err)
 	}
 
 	return cpuset.Parse(strings.Trim(string(blob), "\n"))
@@ -770,16 +770,16 @@ func (sys *system) discoverNodes() error {
 			memoryNodeIDs, err)
 	}
 
-	cpuNodesBuilder := cpuset.NewBuilder()
+	cpuNodesSlice := []int{}
 	for id, node := range sys.nodes {
 		if node.cpus.Size() > 0 {
-			cpuNodesBuilder.Add(int(id))
+			cpuNodesSlice = append(cpuNodesSlice, int(id))
 		}
 		if normalMemNodes.Contains(int(id)) {
 			node.normalMem = true
 		}
 	}
-	cpuNodes := cpuNodesBuilder.Result()
+	cpuNodes := cpuset.New(cpuNodesSlice...)
 
 	sys.Logger.Info("NUMA nodes with CPUs: %s", cpuNodes.String())
 	sys.Logger.Info("NUMA nodes with (any) memory: %s", memoryNodes.String())
@@ -1051,7 +1051,7 @@ func (p *cpuPackage) DieCPUSet(id idset.ID) cpuset.CPUSet {
 	if dieCPUs, ok := p.dieCPUs[id]; ok {
 		return CPUSetFromIDSet(dieCPUs)
 	}
-	return cpuset.NewCPUSet()
+	return cpuset.New()
 }
 
 func (p *cpuPackage) SstInfo() *sst.SstPackageInfo {

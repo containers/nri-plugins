@@ -19,8 +19,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
 	"github.com/containers/nri-plugins/pkg/kubernetes"

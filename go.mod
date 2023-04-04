@@ -25,6 +25,7 @@ require (
 	k8s.io/client-go v0.25.4
 	k8s.io/klog/v2 v2.80.1
 	k8s.io/kubernetes v1.25.4
+	k8s.io/utils v0.0.0-20230313181309-38a27ef9d749
 	sigs.k8s.io/yaml v1.3.0
 )
 
@@ -120,7 +121,6 @@ require (
 	k8s.io/kube-scheduler v0.24.1 // indirect
 	k8s.io/kubelet v0.24.1 // indirect
 	k8s.io/mount-utils v0.24.1 // indirect
-	k8s.io/utils v0.0.0-20230313181309-38a27ef9d749 // indirect
 	sigs.k8s.io/json v0.0.0-20220713155537-f223a00ba0e2 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
 )

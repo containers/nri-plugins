@@ -17,7 +17,7 @@ package cpu
 import (
 	"fmt"
 
-	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
+	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 
 	pkgcfg "github.com/containers/nri-plugins/pkg/config"
 	logger "github.com/containers/nri-plugins/pkg/log"
@@ -154,7 +154,7 @@ func (ctl *cpuctl) enforceUncore(assignments cpuClassAssignments, affectedCPUs .
 		return nil
 	}
 
-	cpus := cpuset.NewCPUSet(affectedCPUs...)
+	cpus := cpuset.New(affectedCPUs...)
 
 	for _, cpuPkgID := range ctl.system.PackageIDs() {
 		cpuPkg := ctl.system.Package(cpuPkgID)
@@ -163,7 +163,7 @@ func (ctl *cpuctl) enforceUncore(assignments cpuClassAssignments, affectedCPUs .
 
 			// Check if this die is affected by the specified cpuset
 			if cpus.Size() == 0 || dieCPUs.Intersection(cpus).Size() > 0 {
-				min, max, minCls, maxCls := effectiveUncoreFreqs(utils.NewIDSet(dieCPUs.ToSlice()...), ctl.config.Classes, assignments)
+				min, max, minCls, maxCls := effectiveUncoreFreqs(utils.NewIDSet(dieCPUs.List()...), ctl.config.Classes, assignments)
 
 				if min == 0 && max == 0 {
 					log.Debug("no uncore frequency limits for cpu package/die %d/%d", cpuPkgID, cpuDieID)

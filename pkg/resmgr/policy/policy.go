@@ -20,9 +20,9 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
 	"github.com/containers/nri-plugins/pkg/config"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"

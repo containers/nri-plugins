@@ -24,8 +24,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
 	"github.com/containers/nri-plugins/pkg/cgroups"
 	"github.com/containers/nri-plugins/pkg/config"
