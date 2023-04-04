@@ -20,8 +20,8 @@ import (
 	"strings"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/policy"
+	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	"github.com/prometheus/client_golang/prometheus"
-	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 )
 
 // Prometheus Metric descriptor indices and descriptor table

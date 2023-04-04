@@ -18,7 +18,7 @@ import (
 	"strconv"
 	"strings"
 
-	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
+	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 // ShortCPUSet prints the cpuset as a string, trying to further shorten compared to .String().

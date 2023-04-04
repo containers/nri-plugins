@@ -18,10 +18,10 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	corev1 "k8s.io/api/core/v1"
 	resapi "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
 	pkgcfg "github.com/containers/nri-plugins/pkg/config"
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
@@ -158,7 +158,7 @@ func CreateBalloonsPolicy(policyOptions *policy.BackendOptions) policy.Backend {
 		p.allowed = policyOptions.System.CPUSet().Difference(policyOptions.System.Offlined())
 	}
 	// p.reserved: CPUs reserved for kube-system pods, subset of p.allowed.
-	p.reserved = cpuset.NewCPUSet()
+	p.reserved = cpuset.New()
 	if reserved, ok := p.options.Reserved[policy.DomainCPU]; ok {
 		switch v := reserved.(type) {
 		case cpuset.CPUSet:
@@ -492,7 +492,7 @@ func (p *balloons) resetCpuClass() error {
 	// containers on the balloon, including the reserved balloon.
 	//
 	// TODO: don't depend on cpu controller directly
-	cpucontrol.Assign(p.cch, p.bpoptions.IdleCpuClass, p.allowed.ToSliceNoSort()...)
+	cpucontrol.Assign(p.cch, p.bpoptions.IdleCpuClass, p.allowed.UnsortedList()...)
 	log.Debugf("resetCpuClass available: %s; reserved: %s", p.allowed, p.reserved)
 	return nil
 }
@@ -517,7 +517,7 @@ func (p *balloons) useCpuClass(bln *Balloon) error {
 	// - User-defined CPU AllocatorPriority: bln.Def.AllocatorPriority.
 	// - All existing balloon instances: p.balloons.
 	// - CPU configurations by user: bln.Def.CpuClass (for bln in p.balloons)
-	cpucontrol.Assign(p.cch, bln.Def.CpuClass, bln.Cpus.ToSliceNoSort()...)
+	cpucontrol.Assign(p.cch, bln.Def.CpuClass, bln.Cpus.UnsortedList()...)
 	log.Debugf("useCpuClass Cpus: %s; CpuClass: %s", bln.Cpus, bln.Def.CpuClass)
 	return nil
 }
@@ -526,7 +526,7 @@ func (p *balloons) useCpuClass(bln *Balloon) error {
 func (p *balloons) forgetCpuClass(bln *Balloon) {
 	// Use p.IdleCpuClass for bln.Cpus.
 	// Usual inputs: see useCpuClass
-	cpucontrol.Assign(p.cch, p.bpoptions.IdleCpuClass, bln.Cpus.ToSliceNoSort()...)
+	cpucontrol.Assign(p.cch, p.bpoptions.IdleCpuClass, bln.Cpus.UnsortedList()...)
 	log.Debugf("forgetCpuClass Cpus: %s; CpuClass: %s", bln.Cpus, bln.Def.CpuClass)
 }
 
@@ -559,7 +559,7 @@ func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, erro
 		// So does the default balloon unless its CPU counts are tweaked.
 		cpus = p.reserved
 	} else {
-		addFromCpus, _, err := p.cpuTreeAllocator.ResizeCpus(cpuset.NewCPUSet(), p.freeCpus, blnDef.MinCpus)
+		addFromCpus, _, err := p.cpuTreeAllocator.ResizeCpus(cpuset.New(), p.freeCpus, blnDef.MinCpus)
 		if err != nil {
 			return nil, balloonsError("failed to choose a cpuset for allocating first %d CPUs from %#s", blnDef.MinCpus, p.freeCpus)
 		}
@@ -574,7 +574,7 @@ func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, erro
 		Instance:       freeInstance,
 		PodIDs:         make(map[string][]string),
 		Cpus:           cpus,
-		SharedIdleCpus: cpuset.NewCPUSet(),
+		SharedIdleCpus: cpuset.New(),
 		Mems:           p.closestMems(cpus),
 	}
 	if confCpus {
@@ -1094,7 +1094,7 @@ func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
 	}
 	// No errors in balloon creation, take new configuration into use.
 	p.bpoptions = *bpoptions
-	p.updatePinning(p.shareIdleCpus(p.freeCpus, cpuset.NewCPUSet())...)
+	p.updatePinning(p.shareIdleCpus(p.freeCpus, cpuset.New())...)
 	// (Re)configures all CPUs in balloons.
 	p.resetCpuClass()
 	for _, bln := range p.balloons {
@@ -1187,7 +1187,7 @@ func (p *balloons) resizeBalloon(bln *Balloon, newMilliCpus int) error {
 		log.Debugf("- old freeCpus: %#s, old bln.Cpus: %#s, releasing: %#s", p.freeCpus, bln.Cpus, removeFromCpus)
 		p.freeCpus = p.freeCpus.Union(removeFromCpus)
 		bln.Cpus = bln.Cpus.Difference(removeFromCpus)
-		p.updatePinning(p.shareIdleCpus(removeFromCpus, cpuset.NewCPUSet())...)
+		p.updatePinning(p.shareIdleCpus(removeFromCpus, cpuset.New())...)
 	}
 	log.Debugf("- resize successful: %s, freecpus: %#s", bln, p.freeCpus)
 	p.updatePinning(bln)
@@ -1225,7 +1225,7 @@ func (p *balloons) shareIdleCpus(addCpus, removeCpus cpuset.CPUSet) []*Balloon {
 			if topoLevel == CPUTopologyLevelUndefined {
 				continue
 			}
-			idleCpusInTopoLevel := cpuset.NewCPUSet()
+			idleCpusInTopoLevel := cpuset.New()
 			p.cpuTree.DepthFirstWalk(func(t *cpuTreeNode) error {
 				// Dive in correct topology level.
 				if t.level != topoLevel {

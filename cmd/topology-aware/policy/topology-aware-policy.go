@@ -15,10 +15,10 @@
 package topologyaware
 
 import (
+	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	resapi "k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 
 	"github.com/containers/nri-plugins/pkg/multierror"
 	"github.com/prometheus/client_golang/prometheus"
