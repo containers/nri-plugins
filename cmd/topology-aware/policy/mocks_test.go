@@ -359,21 +359,6 @@ func (m *mockContainer) GetEnv(string) (string, bool) {
 func (m *mockContainer) GetMounts() []cache.Mount {
 	panic("unimplemented")
 }
-func (m *mockContainer) GetMountByHost(string) *cache.Mount {
-	panic("unimplemented")
-}
-func (m *mockContainer) GetMountByContainer(string) *cache.Mount {
-	panic("unimplemented")
-}
-func (m *mockContainer) GetDevices() []cache.Device {
-	panic("unimplemented")
-}
-func (m *mockContainer) GetDeviceByHost(string) *cache.Device {
-	panic("unimplemented")
-}
-func (m *mockContainer) GetDeviceByContainer(string) *cache.Device {
-	panic("unimplemented")
-}
 func (m *mockContainer) GetResourceRequirements() v1.ResourceRequirements {
 	return m.returnValueForGetResourceRequirements
 }
@@ -384,12 +369,6 @@ func (m *mockContainer) SetCommand([]string) {
 	panic("unimplemented")
 }
 func (m *mockContainer) SetArgs([]string) {
-	panic("unimplemented")
-}
-func (m *mockContainer) SetLabel(string, string) {
-	panic("unimplemented")
-}
-func (m *mockContainer) DeleteLabel(string) {
 	panic("unimplemented")
 }
 func (m *mockContainer) SetAnnotation(string, string) {
@@ -408,12 +387,6 @@ func (m *mockContainer) InsertMount(*cache.Mount) {
 	panic("unimplemented")
 }
 func (m *mockContainer) DeleteMount(string) {
-	panic("unimplemented")
-}
-func (m *mockContainer) InsertDevice(*cache.Device) {
-	panic("unimplemented")
-}
-func (m *mockContainer) DeleteDevice(string) {
 	panic("unimplemented")
 }
 func (m *mockContainer) GetTopologyHints() topology.Hints {
@@ -493,24 +466,6 @@ func (m *mockContainer) SetPageMigration(*cache.PageMigrate) {
 }
 func (m *mockContainer) GetPageMigration() *cache.PageMigrate {
 	return nil
-}
-func (m *mockContainer) SetCRIRequest(req interface{}) error {
-	panic("unimplemented")
-}
-func (m *mockContainer) GetCRIRequest() (interface{}, bool) {
-	panic("unimplemented")
-}
-func (m *mockContainer) ClearCRIRequest() (interface{}, bool) {
-	panic("unimplemented")
-}
-func (m *mockContainer) GetCRIEnvs() []*criv1.KeyValue {
-	panic("unimplemented")
-}
-func (m *mockContainer) GetCRIMounts() []*criv1.Mount {
-	panic("unimplemented")
-}
-func (m *mockContainer) GetCRIDevices() []*criv1.Device {
-	panic("unimplemented")
 }
 func (m *mockContainer) GetPending() []string {
 	panic("unimplemented")
@@ -667,9 +622,6 @@ func (m *mockCache) LookupPod(string) (cache.Pod, bool) {
 	panic("unimplemented")
 }
 func (m *mockCache) InsertContainer(*nri.Container) (cache.Container, error) {
-	panic("unimplemented")
-}
-func (m *mockCache) UpdateContainerID(string, interface{}) (cache.Container, error) {
 	panic("unimplemented")
 }
 func (m *mockCache) DeleteContainer(string) cache.Container {
