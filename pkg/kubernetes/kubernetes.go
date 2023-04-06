@@ -16,21 +16,16 @@ limitations under the License.
 
 package kubernetes
 
-import (
-	core "k8s.io/kubernetes/pkg/apis/core"
-	kubelet "k8s.io/kubernetes/pkg/kubelet/types"
-)
-
 const (
 	// ResmgrKeyNamespace is a NRI Resource Policy namespace
 	ResmgrKeyNamespace = "resource-policy.nri.io"
 
 	// NamespaceSystem is the kubernetes system namespace.
-	NamespaceSystem = core.NamespaceSystem
-	// PodNameLabel is the label key for the kubernetes pod name.
-	PodNameLabel = kubelet.KubernetesPodNameLabel
-	// ContainerNameLabel is the label key for the kubernetes container name.
-	ContainerNameLabel = kubelet.KubernetesContainerNameLabel
+	NamespaceSystem = "kube-system"
+	// PodNameLabel is the key for the kubernetes pod name label.
+	PodNameLabel = "io.kubernetes.pod.name"
+	// ContainerNameLabel is the key for the kubernetes container name label.
+	ContainerNameLabel = "io.kubernetes.container.name"
 )
 
 // ResmgrKey returns a full namespaced name of a resource manager specific key
