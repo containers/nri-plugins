@@ -22,12 +22,19 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	kubecm "k8s.io/kubernetes/pkg/kubelet/cm"
 
 	"github.com/containers/nri-plugins/pkg/cgroups"
+	"github.com/containers/nri-plugins/pkg/kubernetes"
 )
 
-var memoryCapacity int64
+var (
+	memoryCapacity int64
+
+	SharesToMilliCPU = kubernetes.SharesToMilliCPU
+	QuotaToMilliCPU  = kubernetes.QuotaToMilliCPU
+	MilliCPUToShares = kubernetes.MilliCPUToShares
+	MilliCPUToQuota  = kubernetes.MilliCPUToQuota
+)
 
 // IsPodQOSClassName returns true if the given class is one of the Pod QOS classes.
 func IsPodQOSClassName(class string) bool {
@@ -36,52 +43,6 @@ func IsPodQOSClassName(class string) bool {
 		return true
 	}
 	return false
-}
-
-// SharesToMilliCPU converts CFS CPU shares to milliCPU.
-func SharesToMilliCPU(shares int64) int64 {
-	return sharesToMilliCPU(shares)
-}
-
-// QuotaToMilliCPU converts CFS quota and period to milliCPU.
-func QuotaToMilliCPU(quota, period int64) int64 {
-	return quotaToMilliCPU(quota, period)
-}
-
-// sharesToMilliCPU converts CFS CPU shares to milliCPU.
-func sharesToMilliCPU(shares int64) int64 {
-	if shares == kubecm.MinShares {
-		return 0
-	}
-	return int64(float64(shares*kubecm.MilliCPUToCPU)/float64(kubecm.SharesPerCPU) + 0.5)
-}
-
-// quotaToMilliCPU converts CFS quota and period to milliCPU.
-func quotaToMilliCPU(quota, period int64) int64 {
-	if quota == 0 || period == 0 {
-		return 0
-	}
-	return int64(float64(quota*kubecm.MilliCPUToCPU)/float64(period) + 0.5)
-}
-
-// MilliCPUToShares converts milliCPU to CFS CPU shares.
-func MilliCPUToShares(milliCPU int) int64 {
-	return int64(kubecm.MilliCPUToShares(int64(milliCPU)))
-}
-
-// MilliCPUToQuota converts milliCPU to CFS quota and period values.
-func MilliCPUToQuota(milliCPU int64) (int64, int64) {
-	if milliCPU == 0 {
-		return 0, 0
-	}
-
-	period := int64(kubecm.QuotaPeriod)
-	quota := (milliCPU * period) / kubecm.MilliCPUToCPU
-	if quota < kubecm.MinQuotaPeriod {
-		quota = kubecm.MinQuotaPeriod
-	}
-
-	return quota, period
 }
 
 // getMemoryCapacity parses memory capacity from /proc/meminfo (mimicking cAdvisor).

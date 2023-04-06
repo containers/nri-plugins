@@ -17,15 +17,15 @@ package cache_test
 import (
 	. "github.com/onsi/ginkgo/v2"
 
+	"github.com/containers/nri-plugins/pkg/kubernetes"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
-	kubecm "k8s.io/kubernetes/pkg/kubelet/cm"
 )
 
 const (
 	// anything below 2 millicpus will yield 0 as an estimate
 	minNonZeroRequest = 2
 	// check CPU request/limit estimate accuracy up to this many CPU cores
-	maxCPU = (kubecm.MaxShares / kubecm.SharesPerCPU) * kubecm.MilliCPUToCPU
+	maxCPU = (kubernetes.MaxShares / kubernetes.SharesPerCPU) * kubernetes.MilliCPUToCPU
 	// we expect our estimates to be within 1 millicpu from the real ones
 	expectedAccuracy = 1
 )
@@ -71,7 +71,7 @@ var _ = Describe("CPU limit", func() {
 				if diff < 0 {
 					diff = -diff
 				}
-				if quota != kubecm.MinQuotaPeriod {
+				if quota != kubernetes.MinQuotaPeriod {
 					t.Errorf("CPU limit %v: estimate %v, unexpected inaccuracy %v > %v",
 						limit, estimate, diff, expectedAccuracy)
 				} else {
