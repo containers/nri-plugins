@@ -289,6 +289,10 @@ install-ginkgo:
 images: $(foreach dir,$(IMAGE_DIRS),image-$(dir)) \
 	$(foreach dir,$(IMAGE_DIRS),image-deployment-$(dir))
 
+images-push: $(foreach dir,$(IMAGE_DIRS),image-push-$(dir))
+
+images-load: $(foreach dir,$(IMAGE_DIRS),image-load-$(dir))
+
 image-deployment-%:
 	$(Q)mkdir -p $(IMAGE_PATH); \
 	img=$(patsubst image-deployment-%,%,$@); tag=nri-resource-policy-$$img; \
@@ -315,6 +319,25 @@ image-%:
 	    $(DOCKER) build . -f "cmd/$$bin/Dockerfile" \
 	    --build-arg GO_VERSION=$${go_version} \
 	    -t $(IMAGE_REPO)$$tag:$(IMAGE_VERSION)
+
+image-tag-%:
+	img=$(patsubst image-deployment-%,%,$@); tag=nri-resource-policy-$$img; \
+	NRI_IMAGE_INFO=`$(DOCKER) images --filter=reference=$${tag} --format '{{.ID}} {{.Repository}}:{{.Tag}} (created {{.CreatedSince}}, {{.CreatedAt}})' | head -n 1`; \
+	NRI_IMAGE_REPOTAG=`awk '{print $$2}' <<< "$${NRI_IMAGE_INFO}"`; \
+	$(DOCKER) tag "$${NRI_IMAGE_REPOTAG}"
+
+# Load the newest image to local Docker
+image-load-%:
+	img=$(patsubst image-load-%,%,$@); file=nri-resource-policy-$$img; \
+	tar=`ls -1t build/images/$$file-*.tar | head -1`; \
+	echo "Loading $${tar}"; \
+	$(DOCKER) load -i "$${tar}"
+
+image-push-%: image-% image-tag-%
+	$(Q)bin=$(patsubst image-push-%,%,$@); \
+		if [ -z "$(IMAGE_REPO)" ]; then echo "ERROR: no IMAGE_REPO specified"; exit 1; fi; \
+		if [ "$$bin" != "template" ]; then \
+			$(DOCKER) push $(IMAGE_REPO)$$bin:$(IMAGE_VERSION); fi
 
 pkg/sysfs/sst_types%.go: pkg/sysfs/_sst_types%.go pkg/sysfs/gen_sst_types.sh
 	$(Q)cd $(@D) && \

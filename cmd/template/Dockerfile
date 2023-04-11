@@ -17,6 +17,10 @@ RUN make PLUGINS=nri-resource-policy-template build-plugins-static
 
 FROM gcr.io/distroless/static
 
+LABEL org.opencontainers.image.source=https://github.com/containers/nri-plugins
+LABEL org.opencontainers.image.description="NRI template resource policy plugin"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+
 COPY --from=builder /go/builder/build/bin/nri-resource-policy-template /bin/nri-resource-policy-template
 
 ENTRYPOINT ["/bin/nri-resource-policy-template"]
