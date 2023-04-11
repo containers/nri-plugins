@@ -19,4 +19,4 @@ FROM gcr.io/distroless/static
 
 COPY --from=builder /go/builder/build/bin/nri-resource-policy-template /bin/nri-resource-policy-template
 
-ENTRYPOINT ["/bin/nri-resource-policy"]
+ENTRYPOINT ["/bin/nri-resource-policy-template"]
