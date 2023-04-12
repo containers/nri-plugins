@@ -1,0 +1,39 @@
+name: Build and Push Docker Images
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  REGISTRY: ghcr.io
+  REGISTRY_USER: ${{ github.actor }}
+  ORG: ${{ github.repository_owner }}
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Build images
+        run: |
+          make images
+
+      - name: Log in to registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ env.REGISTRY_USER }} --password-stdin
+
+      - name: Push images
+        run: |
+          for i in build/images/*.tar; do
+              image=${i##*/}; image=${image%-image*}
+              v=${i##*-image-}; v=${v%.tar}
+              docker load -i $i
+              echo docker tag $v ${{ env.REGISTRY }}/${{ env.ORG }}/$image:unstable
+              echo docker push ${{ env.REGISTRY }}/${{ env.ORG }}/$image:unstable
+          done
