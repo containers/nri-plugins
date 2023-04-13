@@ -16,7 +16,6 @@ package topology
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,11 +32,11 @@ var (
 
 const (
 	// ProviderKubelet is a constant to distinguish that topology hint comes
-	// from parameters passed to CRI create/update requests from Kubelet
+	// from parameters passed to CRI create/update requests from Kubelet.
 	ProviderKubelet = "kubelet"
 )
 
-// Hint represents various hints that can be detected from sysfs for the device
+// Hint represents various hints that can be detected from sysfs for the device.
 type Hint struct {
 	Provider string
 	CPUs     string
@@ -45,7 +44,7 @@ type Hint struct {
 	Sockets  string
 }
 
-// Hints represents set of hints collected from multiple providers
+// Hints represents set of hints collected from multiple providers.
 type Hints map[string]Hint
 
 // SetSysRoot sets the sysfs root directory to use.
@@ -54,17 +53,20 @@ func SetSysRoot(root string) {
 }
 
 func getDevicesFromVirtual(realDevPath string) (devs []string, err error) {
-	if !filepath.HasPrefix(realDevPath, "/sys/devices/virtual") {
-		return nil, fmt.Errorf("%s is not a virtual device", realDevPath)
+	relPath, err := filepath.Rel("/sys/devices/virtual", realDevPath)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to find relative path")
 	}
 
-	relPath, _ := filepath.Rel("/sys/devices/virtual", realDevPath)
+	if strings.HasPrefix(relPath, "..") {
+		return nil, errors.Errorf("%s is not a virtual device", realDevPath)
+	}
 
 	dir, file := filepath.Split(relPath)
 	switch dir {
 	case "vfio/":
 		iommuGroup := filepath.Join(sysRoot, "/sys/kernel/iommu_groups", file, "devices")
-		files, err := ioutil.ReadDir(iommuGroup)
+		files, err := os.ReadDir(iommuGroup)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to read IOMMU group %s", iommuGroup)
 		}
@@ -126,7 +128,8 @@ func getTopologyHint(sysFSPath string) (*Hint, error) {
 	return &hint, nil
 }
 
-// NewTopologyHints return array of hints for the device and its slaves (e.g. RAID).
+// NewTopologyHints return array of hints for the main device and its
+// depended devices (e.g. RAID).
 func NewTopologyHints(devPath string) (hints Hints, err error) {
 	hints = make(Hints)
 	realDevPath, err := filepath.EvalSymlinks(devPath)
@@ -144,15 +147,15 @@ func NewTopologyHints(devPath string) (hints Hints, err error) {
 		}
 	}
 	fromVirtual, _ := getDevicesFromVirtual(realDevPath)
-	slaves, _ := filepath.Glob(filepath.Join(realDevPath, "slaves/*"))
-	for _, device := range append(slaves, fromVirtual...) {
+	deps, _ := filepath.Glob(filepath.Join(realDevPath, "slaves/*"))
+	for _, device := range append(deps, fromVirtual...) {
 		deviceHints, er := NewTopologyHints(device)
 		if er != nil {
 			return nil, er
 		}
 		hints = MergeTopologyHints(hints, deviceHints)
 	}
-	return
+	return hints, err
 }
 
 // MergeTopologyHints combines org and hints.
@@ -258,10 +261,10 @@ func findSysFsDevice(devType string, major, minor int64) (string, error) {
 	return realDevPath, nil
 }
 
-// readFilesInDirectory small helper to fill struct with content from sysfs entry
+// readFilesInDirectory small helper to fill struct with content from sysfs entry.
 func readFilesInDirectory(fileMap map[string]*string, dir string) error {
 	for k, v := range fileMap {
-		b, err := ioutil.ReadFile(filepath.Join(dir, k))
+		b, err := os.ReadFile(filepath.Join(dir, k))
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue
@@ -273,7 +276,7 @@ func readFilesInDirectory(fileMap map[string]*string, dir string) error {
 	return nil
 }
 
-// mapKeys is a small helper that returns slice of keys for a given map
+// mapKeys is a small helper that returns slice of keys for a given map.
 func mapKeys(m map[string]bool) []string {
 	ret := make([]string, len(m))
 	i := 0
