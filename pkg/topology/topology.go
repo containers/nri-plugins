@@ -253,12 +253,12 @@ func FindGivenSysFsDevice(devType string, major, minor int64) (string, error) {
 }
 
 func findSysFsDevice(devType string, major, minor int64) (string, error) {
-	devPath := sysRoot + fmt.Sprintf("/sys/dev/%s/%d:%d", devType, major, minor)
+	devPath := fmt.Sprintf("/sys/dev/%s/%d:%d", devType, major, minor)
 	realDevPath, err := filepath.EvalSymlinks(devPath)
 	if err != nil {
 		return "", errors.Wrapf(err, "failed to get realpath for %s", devPath)
 	}
-	return realDevPath, nil
+	return filepath.Join(sysRoot, realDevPath), nil
 }
 
 // readFilesInDirectory small helper to fill struct with content from sysfs entry.
