@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
 
 env:
   REGISTRY: ghcr.io
@@ -23,7 +26,8 @@ jobs:
 
       - name: Build images
         run: |
-          make images
+          make image-template
+          make image-deployment-template
 
       - name: Log in to registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ env.REGISTRY_USER }} --password-stdin
@@ -34,6 +38,6 @@ jobs:
               image=${i##*/}; image=${image%-image*}
               v=${i##*-image-}; v=${v%.tar}
               docker load -i $i
-              echo docker tag $v ${{ env.REGISTRY }}/${{ env.ORG }}/$image:unstable
-              echo docker push ${{ env.REGISTRY }}/${{ env.ORG }}/$image:unstable
+              docker tag $v ${{ env.REGISTRY }}/${{ env.ORG }}/nri-plugins/$image:unstable
+              docker push ${{ env.REGISTRY }}/${{ env.ORG }}/nri-plugins/$image:unstable
           done
