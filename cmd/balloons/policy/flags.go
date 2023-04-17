@@ -23,7 +23,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
 )
 
-type BalloonsOptions balloonsOptionsWrapped
+type Options balloonsOptionsWrapped
 
 // BalloonsOptions contains configuration options specific to this policy.
 type balloonsOptionsWrapped struct {
@@ -31,9 +31,9 @@ type balloonsOptionsWrapped struct {
 	PinCPU *bool `json:"PinCPU,omitempty"`
 	// PinMemory controls pinning containers to memory nodes.
 	PinMemory *bool `json:"PinMemory,omitempty"`
-	// IdleCpuClass controls how unusded CPUs outside any a
+	// IdleCPUClass controls how unusded CPUs outside any a
 	// balloons are (re)configured.
-	IdleCpuClass string `json:"IdleCPUClass",omitempty"`
+	IdleCPUClass string `json:"IdleCPUClass"`
 	// ReservedPoolNamespaces is a list of namespace globs that
 	// will be allocated to reserved CPUs.
 	ReservedPoolNamespaces []string `json:"ReservedPoolNamespaces,omitempty"`
@@ -54,7 +54,7 @@ type BalloonDef struct {
 	// Namespaces control which namespaces are assigned into
 	// balloon instances from this definition. This is used by
 	// namespace assign methods.
-	Namespaces []string `json:"Namespaces",omitempty`
+	Namespaces []string `json:"Namespaces"`
 	// MaxCpus specifies the maximum number of CPUs exclusively
 	// usable by containers in a balloon. Balloon size will not be
 	// inflated larger than MaxCpus.
@@ -69,9 +69,9 @@ type BalloonDef struct {
 	// resizing a balloon. At init, balloons with highest priority
 	// CPUs are allocated first.
 	AllocatorPriority cpuallocator.CPUPriority `json:"AllocatorPriority"`
-	// CpuClass controls how CPUs of a balloon are (re)configured
+	// CPUClass controls how CPUs of a balloon are (re)configured
 	// whenever a balloon is created, inflated or deflated.
-	CpuClass string `json:"CpuClass"`
+	CPUClass string `json:"CPUClass"`
 	// MinBalloons is the number of balloon instances that always
 	// exist even if they would become empty. At init this number
 	// of instances will be created before assigning any
@@ -105,11 +105,11 @@ type BalloonDef struct {
 	ShareIdleCpusInSame CPUTopologyLevel `json:"ShareIdleCPUsInSame,omitempty"`
 }
 
-var defaultPinCPU bool = true
-var defaultPinMemory bool = true
+var defaultPinCPU = true
+var defaultPinMemory = true
 
 // DeepCopy creates a deep copy of a BalloonsOptions
-func (bo *BalloonsOptions) DeepCopy() *BalloonsOptions {
+func (bo *Options) DeepCopy() *Options {
 	outBo := *bo
 	outBo.ReservedPoolNamespaces = make([]string, len(bo.ReservedPoolNamespaces))
 	copy(outBo.ReservedPoolNamespaces, bo.ReservedPoolNamespaces)
@@ -135,7 +135,7 @@ func (bdef *BalloonDef) DeepCopy() *BalloonDef {
 
 // defaultBalloonsOptions returns a new BalloonsOptions instance, all initialized to defaults.
 func defaultBalloonsOptions() interface{} {
-	return &BalloonsOptions{
+	return &Options{
 		ReservedPoolNamespaces: []string{metav1.NamespaceSystem},
 		PinCPU:                 &defaultPinCPU,
 		PinMemory:              &defaultPinMemory,
@@ -143,16 +143,16 @@ func defaultBalloonsOptions() interface{} {
 }
 
 // Our runtime configuration.
-var balloonsOptions = defaultBalloonsOptions().(*BalloonsOptions)
+var balloonsOptions = defaultBalloonsOptions().(*Options)
 
 // UnmarshalJSON makes sure all options from previous unmarshals get
 // cleared before unmarshaling new data to the same address.
-func (bo *BalloonsOptions) UnmarshalJSON(data []byte) error {
+func (bo *Options) UnmarshalJSON(data []byte) error {
 	bow := balloonsOptionsWrapped{}
 	if err := json.Unmarshal(data, &bow); err != nil {
 		return err
 	}
-	*bo = BalloonsOptions(bow)
+	*bo = Options(bow)
 	return nil
 }
 

@@ -56,13 +56,13 @@ const (
 // balloons contains configuration and runtime attributes of the balloons policy
 type balloons struct {
 	options          *policy.BackendOptions // configuration common to all policies
-	bpoptions        BalloonsOptions        // balloons-specific configuration
+	bpoptions        Options                // balloons-specific configuration
 	cch              cache.Cache            // nri-resource-policy cache
 	allowed          cpuset.CPUSet          // bounding set of CPUs we're allowed to use
 	reserved         cpuset.CPUSet          // system-/kube-reserved CPUs
 	freeCpus         cpuset.CPUSet          // CPUs to be included in growing or new ballons
-	cpuTree          *cpuTreeNode           // system CPU topology
-	cpuTreeAllocator *cpuTreeAllocator      // CPU allocator from system CPU topology
+	cpuTree          *CPUTreeNode           // system CPU topology
+	cpuTreeAllocator *CPUTreeAllocator      // CPU allocator from system CPU topology
 
 	reservedBalloonDef *BalloonDef // built-in definition of the reserved balloon
 	defaultBalloonDef  *BalloonDef // built-in definition of the default balloon
@@ -145,7 +145,7 @@ func CreateBalloonsPolicy(policyOptions *policy.BackendOptions) policy.Backend {
 		cpuAllocator: cpuallocator.NewCPUAllocator(policyOptions.System),
 	}
 	log.Info("creating %s policy...", PolicyName)
-	if p.cpuTree, err = NewCpuTreeFromSystem(); err != nil {
+	if p.cpuTree, err = NewCPUTreeFromSystem(); err != nil {
 		log.Errorf("creating CPU topology tree failed: %s", err)
 	}
 	log.Debug("CPU topology: %s", p.cpuTree)
@@ -306,7 +306,7 @@ func (p *balloons) Introspect(*introspect.State) {
 }
 
 // GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
-func (b *balloons) GetTopologyZones() []*policy.TopologyZone {
+func (p *balloons) GetTopologyZones() []*policy.TopologyZone {
 	return nil
 }
 
@@ -419,11 +419,11 @@ func (p *balloons) containerRequestedMilliCpus(contID string) int {
 	if !ok {
 		return 0
 	}
-	reqCpu, ok := cont.GetResourceRequirements().Requests[corev1.ResourceCPU]
+	reqCPU, ok := cont.GetResourceRequirements().Requests[corev1.ResourceCPU]
 	if !ok {
 		return 0
 	}
-	return int(reqCpu.MilliValue())
+	return int(reqCPU.MilliValue())
 }
 
 func (p *balloons) containerLimitedMilliCpus(contID string) int {
@@ -431,11 +431,11 @@ func (p *balloons) containerLimitedMilliCpus(contID string) int {
 	if !ok {
 		return 0
 	}
-	reqCpu, ok := cont.GetResourceRequirements().Limits[corev1.ResourceCPU]
+	reqCPU, ok := cont.GetResourceRequirements().Limits[corev1.ResourceCPU]
 	if !ok {
 		return 0
 	}
-	return int(reqCpu.MilliValue())
+	return int(reqCPU.MilliValue())
 }
 
 // requestedMilliCpus sums up and returns CPU requests of all
@@ -476,34 +476,34 @@ func largest(sliceLen int, valueOf func(i int) int) (int, int) {
 	return largestIndex, largestValue
 }
 
-// resetCpuClass resets CPU configurations globally. All balloons can
+// resetCPUClass resets CPU configurations globally. All balloons can
 // be ignored, their CPU configurations will be applied later.
-func (p *balloons) resetCpuClass() error {
+func (p *balloons) resetCPUClass() error {
 	// Usual inputs:
 	// - p.allowed (cpuset.CPUset): all CPUs available for this
 	//   policy.
-	// - p.IdleCpuClass (string): CPU class for allowed CPUs.
+	// - p.IdleCPUClass (string): CPU class for allowed CPUs.
 	//
 	// Other inputs, if needed:
 	// - p.reserved (cpuset.CPUset): CPUs of ReservedResources
 	//   (typically for kube-system containers).
 	//
-	// Note: p.useCpuClass(balloon) will be called before assigning
+	// Note: p.useCPUClass(balloon) will be called before assigning
 	// containers on the balloon, including the reserved balloon.
 	//
 	// TODO: don't depend on cpu controller directly
-	cpucontrol.Assign(p.cch, p.bpoptions.IdleCpuClass, p.allowed.ToSliceNoSort()...)
-	log.Debugf("resetCpuClass available: %s; reserved: %s", p.allowed, p.reserved)
+	cpucontrol.Assign(p.cch, p.bpoptions.IdleCPUClass, p.allowed.ToSliceNoSort()...)
+	log.Debugf("resetCPUClass available: %s; reserved: %s", p.allowed, p.reserved)
 	return nil
 }
 
-// useCpuClass configures CPUs of a balloon.
-func (p *balloons) useCpuClass(bln *Balloon) error {
+// useCPUClass configures CPUs of a balloon.
+func (p *balloons) useCPUClass(bln *Balloon) error {
 	// Usual inputs:
 	// - CPUs that cpuallocator has reserved for this balloon:
 	//   bln.Cpus (cpuset.CPUSet).
 	// - User-defined CPU configuration for CPUs of balloon of this type:
-	//   bln.Def.CpuClass (string).
+	//   bln.Def.CPUClass (string).
 	// - Current configuration(?): feel free to add data
 	//   structure for this. For instance policy-global p.cpuConfs,
 	//   or balloon-local bln.cpuConfs.
@@ -516,18 +516,18 @@ func (p *balloons) useCpuClass(bln *Balloon) error {
 	// - Container details: access p.cch with bln.ContainerIDs().
 	// - User-defined CPU AllocatorPriority: bln.Def.AllocatorPriority.
 	// - All existing balloon instances: p.balloons.
-	// - CPU configurations by user: bln.Def.CpuClass (for bln in p.balloons)
-	cpucontrol.Assign(p.cch, bln.Def.CpuClass, bln.Cpus.ToSliceNoSort()...)
-	log.Debugf("useCpuClass Cpus: %s; CpuClass: %s", bln.Cpus, bln.Def.CpuClass)
+	// - CPU configurations by user: bln.Def.CPUClass (for bln in p.balloons)
+	cpucontrol.Assign(p.cch, bln.Def.CPUClass, bln.Cpus.ToSliceNoSort()...)
+	log.Debugf("useCPUClass Cpus: %s; CPUClass: %s", bln.Cpus, bln.Def.CPUClass)
 	return nil
 }
 
-// forgetCpuClass is called when CPUs of a balloon are released from duty.
-func (p *balloons) forgetCpuClass(bln *Balloon) {
-	// Use p.IdleCpuClass for bln.Cpus.
-	// Usual inputs: see useCpuClass
-	cpucontrol.Assign(p.cch, p.bpoptions.IdleCpuClass, bln.Cpus.ToSliceNoSort()...)
-	log.Debugf("forgetCpuClass Cpus: %s; CpuClass: %s", bln.Cpus, bln.Def.CpuClass)
+// forgetCPUClass is called when CPUs of a balloon are released from duty.
+func (p *balloons) forgetCPUClass(bln *Balloon) {
+	// Use p.IdleCPUClass for bln.Cpus.
+	// Usual inputs: see useCPUClass
+	cpucontrol.Assign(p.cch, p.bpoptions.IdleCPUClass, bln.Cpus.ToSliceNoSort()...)
+	log.Debugf("forgetCPUClass Cpus: %s; CPUClass: %s", bln.Cpus, bln.Def.CPUClass)
 }
 
 func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, error) {
@@ -559,11 +559,11 @@ func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, erro
 		// So does the default balloon unless its CPU counts are tweaked.
 		cpus = p.reserved
 	} else {
-		addFromCpus, _, err := p.cpuTreeAllocator.ResizeCpus(cpuset.NewCPUSet(), p.freeCpus, blnDef.MinCpus)
+		addFromCPUs, _, err := p.cpuTreeAllocator.ResizeCpus(cpuset.NewCPUSet(), p.freeCpus, blnDef.MinCpus)
 		if err != nil {
 			return nil, balloonsError("failed to choose a cpuset for allocating first %d CPUs from %#s", blnDef.MinCpus, p.freeCpus)
 		}
-		cpus, err = p.cpuAllocator.AllocateCpus(&addFromCpus, blnDef.MinCpus, blnDef.AllocatorPriority)
+		cpus, err = p.cpuAllocator.AllocateCpus(&addFromCPUs, blnDef.MinCpus, blnDef.AllocatorPriority)
 		if err != nil {
 			return nil, balloonsError("could not allocate %d MinCpus for balloon %s[%d]: %w", blnDef.MinCpus, blnDef.Name, freeInstance, err)
 		}
@@ -578,7 +578,7 @@ func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, erro
 		Mems:           p.closestMems(cpus),
 	}
 	if confCpus {
-		if err = p.useCpuClass(bln); err != nil {
+		if err = p.useCPUClass(bln); err != nil {
 			log.Errorf("failed to apply CPU configuration to new balloon %s[%d] (cpus: %s): %w", blnDef.Name, freeInstance, cpus, err)
 			return nil, err
 		}
@@ -596,7 +596,7 @@ func (p *balloons) deleteBalloon(bln *Balloon) {
 		}
 	}
 	p.balloons = remainingBalloons
-	p.forgetCpuClass(bln)
+	p.forgetCPUClass(bln)
 	p.freeCpus = p.freeCpus.Union(bln.Cpus)
 	p.cpuAllocator.ReleaseCpus(&bln.Cpus, bln.Cpus.Size(), bln.Def.AllocatorPriority)
 }
@@ -664,9 +664,8 @@ func (p *balloons) chooseBalloonInstance(blnDef *BalloonDef, fm FillMethod, c ca
 			if fm == FillNewBalloonMust {
 				return nil, balloonsError("not enough CPUs to run container %s requesting %s mCPU. %s.MaxCPUs: %d mCPU, free CPUs: %s",
 					c.PrettyName(), reqMilliCpus, blnDef.Name, blnDef.MaxCpus*1000, p.freeCpus.Size()*1000)
-			} else {
-				return nil, nil
 			}
+			return nil, nil
 		}
 		// Make the existence of the new balloon official by
 		// adding it to the balloons slice.
@@ -679,7 +678,7 @@ func (p *balloons) chooseBalloonInstance(blnDef *BalloonDef, fm FillMethod, c ca
 		if newBln.Cpus.Size() > 0 {
 			// Make sure CPUs in the balloon use correct
 			// CPU class.
-			if err = p.useCpuClass(newBln); err != nil {
+			if err = p.useCPUClass(newBln); err != nil {
 				log.Errorf("failed to apply CPU configuration to new balloon %s (cpus: %s): %s",
 					newBln.PrettyName(), newBln.Cpus, err)
 				undo()
@@ -706,9 +705,8 @@ func (p *balloons) chooseBalloonInstance(blnDef *BalloonDef, fm FillMethod, c ca
 				}
 			}
 			return nil, nil
-		} else {
-			return nil, balloonsError("fill method %s failed: cannot find pod for container %s", fm, c.PrettyName())
 		}
+		return nil, balloonsError("fill method %s failed: cannot find pod for container %s", fm, c.PrettyName())
 	}
 	// Handle fill methods that need existing instances of
 	// balloonDef, and fail if there are no instances.
@@ -845,8 +843,8 @@ func (p *balloons) getPodMilliCPU(podID string) int64 {
 	cpuRequested := int64(0)
 	for _, c := range p.cch.GetContainers() {
 		if c.GetPodID() == podID {
-			if reqCpu, ok := c.GetResourceRequirements().Requests[corev1.ResourceCPU]; ok {
-				cpuRequested += reqCpu.MilliValue()
+			if reqCPU, ok := c.GetResourceRequirements().Requests[corev1.ResourceCPU]; ok {
+				cpuRequested += reqCPU.MilliValue()
 			}
 		}
 	}
@@ -855,7 +853,7 @@ func (p *balloons) getPodMilliCPU(podID string) int64 {
 
 // changesBalloons returns true if two balloons policy configurations
 // may lead into different balloon instances or workload assignment.
-func changesBalloons(opts0, opts1 *BalloonsOptions) bool {
+func changesBalloons(opts0, opts1 *Options) bool {
 	if opts0 == nil && opts1 == nil {
 		return false
 	}
@@ -869,34 +867,34 @@ func changesBalloons(opts0, opts1 *BalloonsOptions) bool {
 	o1 := opts1.DeepCopy()
 	// Ignore differences in CPU class names. Every other change
 	// potentially changes balloons or workloads.
-	o0.IdleCpuClass = ""
-	o1.IdleCpuClass = ""
+	o0.IdleCPUClass = ""
+	o1.IdleCPUClass = ""
 	for i := range o0.BalloonDefs {
-		o0.BalloonDefs[i].CpuClass = ""
-		o1.BalloonDefs[i].CpuClass = ""
+		o0.BalloonDefs[i].CPUClass = ""
+		o1.BalloonDefs[i].CPUClass = ""
 	}
 	return utils.DumpJSON(o0) != utils.DumpJSON(o1)
 }
 
-// changesCpuClasses returns true if two balloons policy
+// changesCPUClasses returns true if two balloons policy
 // configurations can lead to using different CPU classes on
-// corresponding balloon instances. Calling changesCpuClasses(o0, o1)
+// corresponding balloon instances. Calling changesCPUClasses(o0, o1)
 // makes sense only if changesBalloons(o0, o1) has returned false.
-func changesCpuClasses(opts0, opts1 *BalloonsOptions) bool {
+func changesCPUClasses(opts0, opts1 *Options) bool {
 	if opts0 == nil && opts1 == nil {
 		return false
 	}
 	if opts0 == nil || opts1 == nil {
 		return true
 	}
-	if opts0.IdleCpuClass != opts1.IdleCpuClass {
+	if opts0.IdleCPUClass != opts1.IdleCPUClass {
 		return true
 	}
 	if len(opts0.BalloonDefs) != len(opts1.BalloonDefs) {
 		return true
 	}
 	for i := range opts0.BalloonDefs {
-		if opts0.BalloonDefs[i].CpuClass != opts1.BalloonDefs[i].CpuClass {
+		if opts0.BalloonDefs[i].CPUClass != opts1.BalloonDefs[i].CPUClass {
 			return true
 		}
 	}
@@ -909,7 +907,7 @@ func (p *balloons) configNotify(event pkgcfg.Event, source pkgcfg.Source) error 
 	defer log.Debug("effective configuration:\n%s\n", utils.DumpJSON(p.bpoptions))
 	newBalloonsOptions := balloonsOptions.DeepCopy()
 	if !changesBalloons(&p.bpoptions, newBalloonsOptions) {
-		if !changesCpuClasses(&p.bpoptions, newBalloonsOptions) {
+		if !changesCPUClasses(&p.bpoptions, newBalloonsOptions) {
 			log.Info("no configuration changes")
 		} else {
 			log.Info("configuration changes only on CPU classes")
@@ -919,12 +917,12 @@ func (p *balloons) configNotify(event pkgcfg.Event, source pkgcfg.Source) error 
 			// instance holds a direct reference to its
 			// BalloonDef.
 			for i := range p.bpoptions.BalloonDefs {
-				p.bpoptions.BalloonDefs[i].CpuClass = newBalloonsOptions.BalloonDefs[i].CpuClass
+				p.bpoptions.BalloonDefs[i].CPUClass = newBalloonsOptions.BalloonDefs[i].CPUClass
 			}
 			// (Re)configures all CPUs in balloons.
-			p.resetCpuClass()
+			p.resetCPUClass()
 			for _, bln := range p.balloons {
-				p.useCpuClass(bln)
+				p.useCPUClass(bln)
 			}
 		}
 		return nil
@@ -966,7 +964,7 @@ func (p *balloons) applyBalloonDef(balloons *[]*Balloon, blnDef *BalloonDef, fre
 			return balloonsError("cannot reconfigure the reserved balloon MinBalloons")
 		}
 		p.reservedBalloonDef.AllocatorPriority = blnDef.AllocatorPriority
-		p.reservedBalloonDef.CpuClass = blnDef.CpuClass
+		p.reservedBalloonDef.CPUClass = blnDef.CPUClass
 		p.reservedBalloonDef.Namespaces = blnDef.Namespaces
 	case defaultBalloon.Def.Name:
 		// Case 2: reconfigure the "default" balloon.
@@ -980,7 +978,7 @@ func (p *balloons) applyBalloonDef(balloons *[]*Balloon, blnDef *BalloonDef, fre
 		p.defaultBalloonDef.MinCpus = blnDef.MinCpus
 		p.defaultBalloonDef.MaxCpus = blnDef.MaxCpus
 		p.defaultBalloonDef.AllocatorPriority = blnDef.AllocatorPriority
-		p.defaultBalloonDef.CpuClass = blnDef.CpuClass
+		p.defaultBalloonDef.CPUClass = blnDef.CPUClass
 		p.defaultBalloonDef.Namespaces = blnDef.Namespaces
 		if !defaultUsesReservedCpus {
 			// Overwrite existing default balloon instance
@@ -1014,7 +1012,7 @@ func (p *balloons) applyBalloonDef(balloons *[]*Balloon, blnDef *BalloonDef, fre
 	return nil
 }
 
-func (p *balloons) validateConfig(bpoptions *BalloonsOptions) error {
+func (p *balloons) validateConfig(bpoptions *Options) error {
 	for _, blnDef := range bpoptions.BalloonDefs {
 		if blnDef.MaxCpus != NoLimit && blnDef.MinCpus > blnDef.MaxCpus {
 			return balloonsError("MinCpus (%d) > MaxCpus (%d) in balloon type %q",
@@ -1029,7 +1027,7 @@ func (p *balloons) validateConfig(bpoptions *BalloonsOptions) error {
 }
 
 // setConfig takes new balloon configuration into use.
-func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
+func (p *balloons) setConfig(bpoptions *Options) error {
 	// TODO: revert allocations (p.freeCpus) to old ones if the
 	// configuration is invalid. Currently bad configuration
 	// leaves a mess in bookkeeping.
@@ -1096,9 +1094,9 @@ func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
 	p.bpoptions = *bpoptions
 	p.updatePinning(p.shareIdleCpus(p.freeCpus, cpuset.NewCPUSet())...)
 	// (Re)configures all CPUs in balloons.
-	p.resetCpuClass()
+	p.resetCPUClass()
 	for _, bln := range p.balloons {
-		p.useCpuClass(bln)
+		p.useCPUClass(bln)
 	}
 	return nil
 }
@@ -1142,31 +1140,31 @@ func (p *balloons) resizeBalloon(bln *Balloon, newMilliCpus int) error {
 		log.Debugf("not resizing %s to %d mCPU, using fixed CPUs", bln, newMilliCpus)
 		return nil
 	}
-	oldCpuCount := bln.Cpus.Size()
-	newCpuCount := (newMilliCpus + 999) / 1000
-	if bln.Def.MaxCpus > NoLimit && newCpuCount > bln.Def.MaxCpus {
-		newCpuCount = bln.Def.MaxCpus
+	oldCPUCount := bln.Cpus.Size()
+	newCPUCount := (newMilliCpus + 999) / 1000
+	if bln.Def.MaxCpus > NoLimit && newCPUCount > bln.Def.MaxCpus {
+		newCPUCount = bln.Def.MaxCpus
 	}
-	if bln.Def.MinCpus > 0 && newCpuCount < bln.Def.MinCpus {
-		newCpuCount = bln.Def.MinCpus
+	if bln.Def.MinCpus > 0 && newCPUCount < bln.Def.MinCpus {
+		newCPUCount = bln.Def.MinCpus
 	}
 	log.Debugf("resize %s to fit %d mCPU", bln, newMilliCpus)
-	log.Debugf("- change full CPUs from %d to %d", oldCpuCount, newCpuCount)
+	log.Debugf("- change full CPUs from %d to %d", oldCPUCount, newCPUCount)
 	log.Debugf("- freecpus: %#s", p.freeCpus)
-	if oldCpuCount == newCpuCount {
+	if oldCPUCount == newCPUCount {
 		return nil
 	}
-	cpuCountDelta := newCpuCount - oldCpuCount
-	p.forgetCpuClass(bln)
-	defer p.useCpuClass(bln)
+	cpuCountDelta := newCPUCount - oldCPUCount
+	p.forgetCPUClass(bln)
+	defer p.useCPUClass(bln)
 	if cpuCountDelta > 0 {
 		// Inflate the balloon.
-		addFromCpus, _, err := p.cpuTreeAllocator.ResizeCpus(bln.Cpus, p.freeCpus, cpuCountDelta)
+		addFromCPUs, _, err := p.cpuTreeAllocator.ResizeCpus(bln.Cpus, p.freeCpus, cpuCountDelta)
 		if err != nil {
 			return balloonsError("resize/inflate: failed to choose a cpuset for allocating additional %d CPUs: %w", cpuCountDelta, err)
 		}
-		log.Debugf("- allocate CPUs %d from %#s", cpuCountDelta, addFromCpus)
-		newCpus, err := p.cpuAllocator.AllocateCpus(&addFromCpus, newCpuCount-oldCpuCount, bln.Def.AllocatorPriority)
+		log.Debugf("- allocate CPUs %d from %#s", cpuCountDelta, addFromCPUs)
+		newCpus, err := p.cpuAllocator.AllocateCpus(&addFromCPUs, newCPUCount-oldCPUCount, bln.Def.AllocatorPriority)
 		if err != nil {
 			return balloonsError("resize/inflate: allocating %d CPUs for %s failed: %w", cpuCountDelta, bln, err)
 		}
@@ -1175,19 +1173,19 @@ func (p *balloons) resizeBalloon(bln *Balloon, newMilliCpus int) error {
 		p.updatePinning(p.shareIdleCpus(p.freeCpus, newCpus)...)
 	} else {
 		// Deflate the balloon.
-		_, removeFromCpus, err := p.cpuTreeAllocator.ResizeCpus(bln.Cpus, p.freeCpus, cpuCountDelta)
+		_, removeFromCPUs, err := p.cpuTreeAllocator.ResizeCpus(bln.Cpus, p.freeCpus, cpuCountDelta)
 		if err != nil {
 			return balloonsError("resize/deflate: failed to choose a cpuset for releasing %d CPUs: %w", -cpuCountDelta, err)
 		}
-		log.Debugf("- releasing %d CPUs from cpuset %#s", -cpuCountDelta, removeFromCpus)
-		_, err = p.cpuAllocator.ReleaseCpus(&removeFromCpus, -cpuCountDelta, bln.Def.AllocatorPriority)
+		log.Debugf("- releasing %d CPUs from cpuset %#s", -cpuCountDelta, removeFromCPUs)
+		_, err = p.cpuAllocator.ReleaseCpus(&removeFromCPUs, -cpuCountDelta, bln.Def.AllocatorPriority)
 		if err != nil {
 			return balloonsError("resize/deflate: releasing %d CPUs from %s failed: %w", -cpuCountDelta, bln, err)
 		}
-		log.Debugf("- old freeCpus: %#s, old bln.Cpus: %#s, releasing: %#s", p.freeCpus, bln.Cpus, removeFromCpus)
-		p.freeCpus = p.freeCpus.Union(removeFromCpus)
-		bln.Cpus = bln.Cpus.Difference(removeFromCpus)
-		p.updatePinning(p.shareIdleCpus(removeFromCpus, cpuset.NewCPUSet())...)
+		log.Debugf("- old freeCpus: %#s, old bln.Cpus: %#s, releasing: %#s", p.freeCpus, bln.Cpus, removeFromCPUs)
+		p.freeCpus = p.freeCpus.Union(removeFromCPUs)
+		bln.Cpus = bln.Cpus.Difference(removeFromCPUs)
+		p.updatePinning(p.shareIdleCpus(removeFromCPUs, cpuset.NewCPUSet())...)
 	}
 	log.Debugf("- resize successful: %s, freecpus: %#s", bln, p.freeCpus)
 	p.updatePinning(bln)
@@ -1200,7 +1198,7 @@ func (p *balloons) updatePinning(blns ...*Balloon) {
 		bln.Mems = p.closestMems(cpus)
 		for _, cID := range bln.ContainerIDs() {
 			if c, ok := p.cch.LookupContainer(cID); ok {
-				p.pinCpuMem(c, cpus, bln.Mems)
+				p.pinCPUMem(c, cpus, bln.Mems)
 			}
 		}
 	}
@@ -1226,7 +1224,7 @@ func (p *balloons) shareIdleCpus(addCpus, removeCpus cpuset.CPUSet) []*Balloon {
 				continue
 			}
 			idleCpusInTopoLevel := cpuset.NewCPUSet()
-			p.cpuTree.DepthFirstWalk(func(t *cpuTreeNode) error {
+			p.cpuTree.DepthFirstWalk(func(t *CPUTreeNode) error {
 				// Dive in correct topology level.
 				if t.level != topoLevel {
 					return nil
@@ -1237,7 +1235,7 @@ func (p *balloons) shareIdleCpus(addCpus, removeCpus cpuset.CPUSet) []*Balloon {
 					idleCpusInTopoLevel = idleCpusInTopoLevel.Union(t.cpus.Intersection(addCpus))
 				}
 				// Do not walk deeper than the correct level.
-				return WalkSkipChildren
+				return ErrWalkSkipChildren
 			})
 			if idleCpusInTopoLevel.Size() == 0 {
 				continue
@@ -1279,14 +1277,14 @@ func (p *balloons) dismissContainer(c cache.Container, bln *Balloon) {
 	}
 }
 
-// pinCpuMem pins container to CPUs and memory nodes if flagged
-func (p *balloons) pinCpuMem(c cache.Container, cpus cpuset.CPUSet, mems idset.IDSet) {
+// pinCPUMem pins container to CPUs and memory nodes if flagged
+func (p *balloons) pinCPUMem(c cache.Container, cpus cpuset.CPUSet, mems idset.IDSet) {
 	if p.bpoptions.PinCPU == nil || *p.bpoptions.PinCPU {
 		log.Debug("  - pinning %s to cpuset: %s", c.PrettyName(), cpus)
 		c.SetCpusetCpus(cpus.String())
-		if reqCpu, ok := c.GetResourceRequirements().Requests[corev1.ResourceCPU]; ok {
-			mCpu := int(reqCpu.MilliValue())
-			c.SetCPUShares(int64(cache.MilliCPUToShares(mCpu)))
+		if reqCPU, ok := c.GetResourceRequirements().Requests[corev1.ResourceCPU]; ok {
+			mCPU := int(reqCPU.MilliValue())
+			c.SetCPUShares(int64(cache.MilliCPUToShares(mCPU)))
 		}
 	}
 	if p.bpoptions.PinMemory == nil || *p.bpoptions.PinMemory {

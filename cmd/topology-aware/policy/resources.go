@@ -829,21 +829,21 @@ func (cs *supply) DumpAllocatable() string {
 			cpu += sep + fmt.Sprintf("grantedReserved:%dm", cs.grantedReserved)
 		}
 	}
-	local_grantedShared := cs.grantedShared
-	total_grantedShared := cs.node.GrantedSharedCPU()
+	localGrantedShared := cs.grantedShared
+	totalGrantedShared := cs.node.GrantedSharedCPU()
 	if !cs.sharable.IsEmpty() {
 		cpu += sep + fmt.Sprintf("sharable:%s (", kubernetes.ShortCPUSet(cs.sharable))
 		sep = ""
-		if local_grantedShared > 0 || total_grantedShared > 0 {
+		if localGrantedShared > 0 || totalGrantedShared > 0 {
 			cpu += fmt.Sprintf("grantedShared:")
 			kind := ""
-			if local_grantedShared > 0 {
-				cpu += fmt.Sprintf("%dm", local_grantedShared)
+			if localGrantedShared > 0 {
+				cpu += fmt.Sprintf("%dm", localGrantedShared)
 				kind = "local"
 				sep = "/"
 			}
-			if total_grantedShared > 0 {
-				cpu += sep + fmt.Sprintf("%dm", total_grantedShared)
+			if totalGrantedShared > 0 {
+				cpu += sep + fmt.Sprintf("%dm", totalGrantedShared)
 				kind += sep + "subtree"
 			}
 			cpu += " " + kind
@@ -1041,7 +1041,7 @@ func (cr *request) Isolate() bool {
 
 // MemAmountToAllocate retuns how much memory we need to reserve for a request.
 func (cr *request) MemAmountToAllocate() uint64 {
-	var amount uint64 = 0
+	var amount uint64
 	switch cr.GetContainer().GetQOSClass() {
 	case v1.PodQOSBurstable:
 		// May be a request and/or limit. We focus on the limit because we

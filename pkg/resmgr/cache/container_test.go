@@ -112,7 +112,7 @@ func TestGetTopologyHints(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			output := getTopologyHints(tc.hostPath, tc.containerPath, tc.readOnly)
+			output := getTopologyHintsForMount(tc.hostPath, tc.containerPath, tc.readOnly)
 			if len(output) != tc.expectedLen {
 				t.Errorf("expected len of hints: %d, got: %d, hints: %+v", tc.expectedLen, len(output), output)
 			}
