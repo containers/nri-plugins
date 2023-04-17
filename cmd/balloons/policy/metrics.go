@@ -67,7 +67,7 @@ type Metrics struct {
 type BalloonMetrics struct {
 	// Balloon type metrics
 	DefName  string
-	CpuClass string
+	CPUClass string
 	MinCpus  int
 	MaxCpus  int
 	// Balloon instance metrics
@@ -100,11 +100,11 @@ func (p *balloons) PollMetrics() policy.Metrics {
 	policyMetrics := &Metrics{}
 	policyMetrics.Balloons = make([]*BalloonMetrics, len(p.balloons))
 	for index, bln := range p.balloons {
-		cpuLoc := p.cpuTree.CpuLocations(bln.Cpus)
+		cpuLoc := p.cpuTree.CPULocations(bln.Cpus)
 		bm := &BalloonMetrics{}
 		policyMetrics.Balloons[index] = bm
 		bm.DefName = bln.Def.Name
-		bm.CpuClass = bln.Def.CpuClass
+		bm.CPUClass = bln.Def.CPUClass
 		bm.MinCpus = bln.Def.MinCpus
 		bm.MaxCpus = bln.Def.MaxCpus
 		bm.PrettyName = bln.PrettyName()
@@ -154,7 +154,7 @@ func (p *balloons) CollectMetrics(m policy.Metrics) ([]prometheus.Metric, error)
 			prometheus.GaugeValue,
 			float64(bm.Cpus.Size()),
 			bm.DefName,
-			bm.CpuClass,
+			bm.CPUClass,
 			strconv.Itoa(bm.MinCpus),
 			strconv.Itoa(bm.MaxCpus),
 			bm.PrettyName,

@@ -287,7 +287,7 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		expectedFull           int
 		expectedFraction       int
 		expectedIsolate        bool
-		expectedCpuType        cpuClass
+		expectedCPUType        cpuClass
 		disabled               bool
 		reservedPoolNamespaces []string
 	}{
@@ -340,7 +340,7 @@ func TestCpuAllocationPreferences(t *testing.T) {
 				returnValueFotGetQOSClass: corev1.PodQOSBurstable,
 			},
 			expectedFraction: 2000,
-			expectedCpuType:  cpuReserved,
+			expectedCPUType:  cpuReserved,
 		},
 		{
 			name: "return request's value for burstable QoS",
@@ -908,7 +908,7 @@ func TestCpuAllocationPreferences(t *testing.T) {
 				returnValueFotGetQOSClass: corev1.PodQOSBurstable,
 			},
 			expectedFraction:       2000,
-			expectedCpuType:        cpuReserved,
+			expectedCPUType:        cpuReserved,
 			reservedPoolNamespaces: []string{"foobar"},
 		},
 		{
@@ -925,7 +925,7 @@ func TestCpuAllocationPreferences(t *testing.T) {
 				returnValueFotGetQOSClass: corev1.PodQOSBurstable,
 			},
 			expectedFraction:       2000,
-			expectedCpuType:        cpuReserved,
+			expectedCPUType:        cpuReserved,
 			reservedPoolNamespaces: []string{"foobar*"},
 		},
 		{
@@ -942,7 +942,7 @@ func TestCpuAllocationPreferences(t *testing.T) {
 				returnValueFotGetQOSClass: corev1.PodQOSBurstable,
 			},
 			expectedFraction:       2000,
-			expectedCpuType:        cpuReserved,
+			expectedCPUType:        cpuReserved,
 			reservedPoolNamespaces: []string{"barfoo", "foobar*"},
 		},
 		{
@@ -959,7 +959,7 @@ func TestCpuAllocationPreferences(t *testing.T) {
 				returnValueFotGetQOSClass: corev1.PodQOSBurstable,
 			},
 			expectedFraction:       2000,
-			expectedCpuType:        cpuNormal,
+			expectedCPUType:        cpuNormal,
 			reservedPoolNamespaces: []string{"barfoo", "foobar?"},
 		},
 		{
@@ -976,7 +976,7 @@ func TestCpuAllocationPreferences(t *testing.T) {
 				returnValueFotGetQOSClass: corev1.PodQOSBurstable,
 			},
 			expectedFraction:       2000,
-			expectedCpuType:        cpuNormal,
+			expectedCPUType:        cpuNormal,
 			reservedPoolNamespaces: []string{"barfoo", "foobar?"},
 		},
 		{
@@ -993,7 +993,7 @@ func TestCpuAllocationPreferences(t *testing.T) {
 				returnValueFotGetQOSClass: corev1.PodQOSBurstable,
 			},
 			expectedFraction:       2000,
-			expectedCpuType:        cpuNormal,
+			expectedCPUType:        cpuNormal,
 			reservedPoolNamespaces: []string{"barfoo", "foobar?", "testing"},
 		},
 		{
@@ -1011,7 +1011,7 @@ func TestCpuAllocationPreferences(t *testing.T) {
 				returnValueFotGetQOSClass: corev1.PodQOSBurstable,
 			},
 			expectedFraction: 0,
-			expectedCpuType:  cpuNormal,
+			expectedCPUType:  cpuNormal,
 		},
 		{
 			name: "return request's value for reserved cpu annotation container",
@@ -1027,7 +1027,7 @@ func TestCpuAllocationPreferences(t *testing.T) {
 				returnValueFotGetQOSClass: corev1.PodQOSBurstable,
 			},
 			expectedFraction: 0,
-			expectedCpuType:  cpuReserved,
+			expectedCPUType:  cpuReserved,
 		},
 	}
 
@@ -1040,9 +1040,9 @@ func TestCpuAllocationPreferences(t *testing.T) {
 			opt.ReservedPoolNamespaces = tc.reservedPoolNamespaces
 			full, fraction, isolate, cpuType := cpuAllocationPreferences(tc.pod, tc.container)
 			if full != tc.expectedFull || fraction != tc.expectedFraction ||
-				isolate != tc.expectedIsolate || cpuType != tc.expectedCpuType {
+				isolate != tc.expectedIsolate || cpuType != tc.expectedCPUType {
 				t.Errorf("Expected (%v, %v, %v, %s), but got (%v, %v, %v, %s)",
-					tc.expectedFull, tc.expectedFraction, tc.expectedIsolate, tc.expectedCpuType,
+					tc.expectedFull, tc.expectedFraction, tc.expectedIsolate, tc.expectedCPUType,
 					full, fraction, isolate, cpuType)
 			}
 		})

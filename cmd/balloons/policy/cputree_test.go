@@ -65,34 +65,34 @@ func (csit cpusInTopology) dumps(nameCpus map[string]cpuset.CPUSet) string {
 	return strings.Join(lines, "\n")
 }
 
-func newCpuTreeFromInt5(pdnct [5]int) (*cpuTreeNode, cpusInTopology) {
+func newCPUTreeFromInt5(pdnct [5]int) (*CPUTreeNode, cpusInTopology) {
 	pkgs := pdnct[0]
 	dies := pdnct[1]
 	numas := pdnct[2]
 	cores := pdnct[3]
 	threads := pdnct[4]
 	cpuID := 0
-	sysTree := NewCpuTree("system")
+	sysTree := NewCPUTree("system")
 	sysTree.level = CPUTopologyLevelSystem
 	csit := cpusInTopology{}
 	for packageID := 0; packageID < pkgs; packageID++ {
-		packageTree := NewCpuTree(fmt.Sprintf("p%d", packageID))
+		packageTree := NewCPUTree(fmt.Sprintf("p%d", packageID))
 		packageTree.level = CPUTopologyLevelPackage
 		sysTree.AddChild(packageTree)
 		for dieID := 0; dieID < dies; dieID++ {
-			dieTree := NewCpuTree(fmt.Sprintf("p%dd%d", packageID, dieID))
+			dieTree := NewCPUTree(fmt.Sprintf("p%dd%d", packageID, dieID))
 			dieTree.level = CPUTopologyLevelDie
 			packageTree.AddChild(dieTree)
 			for numaID := 0; numaID < numas; numaID++ {
-				numaTree := NewCpuTree(fmt.Sprintf("p%dd%dn%d", packageID, dieID, numaID))
+				numaTree := NewCPUTree(fmt.Sprintf("p%dd%dn%d", packageID, dieID, numaID))
 				numaTree.level = CPUTopologyLevelNuma
 				dieTree.AddChild(numaTree)
 				for coreID := 0; coreID < cores; coreID++ {
-					coreTree := NewCpuTree(fmt.Sprintf("p%dd%dn%dc%02d", packageID, dieID, numaID, coreID))
+					coreTree := NewCPUTree(fmt.Sprintf("p%dd%dn%dc%02d", packageID, dieID, numaID, coreID))
 					coreTree.level = CPUTopologyLevelCore
 					numaTree.AddChild(coreTree)
 					for threadID := 0; threadID < threads; threadID++ {
-						threadTree := NewCpuTree(fmt.Sprintf("p%dd%dn%dc%02dt%d", packageID, dieID, numaID, coreID, threadID))
+						threadTree := NewCPUTree(fmt.Sprintf("p%dd%dn%dc%02dt%d", packageID, dieID, numaID, coreID, threadID))
 						threadTree.level = CPUTopologyLevelThread
 						coreTree.AddChild(threadTree)
 						threadTree.AddCpus(cpuset.NewCPUSet(cpuID))
@@ -101,7 +101,7 @@ func newCpuTreeFromInt5(pdnct [5]int) (*cpuTreeNode, cpusInTopology) {
 							packageTree.name, dieTree.name, numaTree.name, coreTree.name, threadTree.name,
 							fmt.Sprintf("cpu%d", cpuID),
 						}
-						cpuID += 1
+						cpuID++
 					}
 				}
 			}
@@ -121,23 +121,23 @@ func verifyNotOn(t *testing.T, nameContents string, cpus cpuset.CPUSet, csit cpu
 
 func verifySame(t *testing.T, topoLevel string, cpus cpuset.CPUSet, csit cpusInTopology) {
 	seenName := ""
-	seenCpuID := -1
+	seenCPUID := -1
 	for _, cpuID := range cpus.ToSlice() {
 		cit := csit[cpuID]
 		thisName := cit.TopoName(topoLevel)
-		thisCpuID := cit.cpuID
+		thisCPUID := cit.cpuID
 		if thisName == "" {
 			t.Errorf("unexpected (invalid) topology level %q", topoLevel)
 		}
 		if seenName == "" {
 			seenName = thisName
-			seenCpuID = cit.cpuID
+			seenCPUID = cit.cpuID
 		}
 		if seenName != thisName {
 			t.Errorf("expected the same %s, got: cpu%d in %s, cpu%d in %s",
 				topoLevel,
-				seenCpuID, seenName,
-				thisCpuID, thisName)
+				seenCPUID, seenName,
+				thisCPUID, thisName)
 		}
 	}
 }
@@ -414,7 +414,7 @@ func TestResizeCpus(t *testing.T) {
 	}
 	for _, tc := range tcases {
 		t.Run(tc.name, func(t *testing.T) {
-			tree, csit := newCpuTreeFromInt5(tc.topology)
+			tree, csit := newCPUTreeFromInt5(tc.topology)
 			treeA := tree.NewAllocator(cpuTreeAllocatorOptions{
 				topologyBalancing: tc.allocatorTB,
 			})
@@ -514,11 +514,11 @@ func TestResizeCpus(t *testing.T) {
 
 func TestWalk(t *testing.T) {
 	t.Run("single-node tree", func(t *testing.T) {
-		tree := NewCpuTree("system")
+		tree := NewCPUTree("system")
 		tree.level = CPUTopologyLevelSystem
 		foundName := "unfound"
 		foundLevel := CPUTopologyLevelUndefined
-		rv := tree.DepthFirstWalk(func(tn *cpuTreeNode) error {
+		rv := tree.DepthFirstWalk(func(tn *CPUTreeNode) error {
 			foundName = tn.name
 			foundLevel = tn.level
 			return nil
@@ -537,18 +537,18 @@ func TestWalk(t *testing.T) {
 	})
 
 	t.Run("fetch first core", func(t *testing.T) {
-		tree, _ := newCpuTreeFromInt5([5]int{2, 2, 2, 2, 2})
+		tree, _ := newCPUTreeFromInt5([5]int{2, 2, 2, 2, 2})
 		foundCount := 0
 		foundName := ""
-		rv := tree.DepthFirstWalk(func(tn *cpuTreeNode) error {
-			foundCount += 1
+		rv := tree.DepthFirstWalk(func(tn *CPUTreeNode) error {
+			foundCount++
 			if tn.level == CPUTopologyLevelCore {
 				foundName = tn.name
-				return WalkStop
+				return ErrWalkStop
 			}
 			return nil
 		})
-		if rv != WalkStop {
+		if rv != ErrWalkStop {
 			t.Errorf("expected WalkStop error, got %s", rv)
 		}
 		if foundCount != 5 {
@@ -560,12 +560,12 @@ func TestWalk(t *testing.T) {
 	})
 
 	t.Run("skip children", func(t *testing.T) {
-		tree, _ := newCpuTreeFromInt5([5]int{2, 2, 2, 2, 2})
+		tree, _ := newCPUTreeFromInt5([5]int{2, 2, 2, 2, 2})
 		foundCount := 0
-		rv := tree.DepthFirstWalk(func(tn *cpuTreeNode) error {
-			foundCount += 1
+		rv := tree.DepthFirstWalk(func(tn *CPUTreeNode) error {
+			foundCount++
 			if tn.level == CPUTopologyLevelDie {
-				return WalkSkipChildren
+				return ErrWalkSkipChildren
 			}
 			return nil
 		})
@@ -579,10 +579,10 @@ func TestWalk(t *testing.T) {
 }
 
 func TestCpuLocations(t *testing.T) {
-	tree, _ := newCpuTreeFromInt5([5]int{2, 2, 2, 4, 2})
+	tree, _ := newCPUTreeFromInt5([5]int{2, 2, 2, 4, 2})
 	cpus := cpuset.NewCPUSet(0, 1, 3, 4, 16)
-	systemlocations := tree.CpuLocations(cpus)
-	package1locations := tree.children[1].CpuLocations(cpus)
+	systemlocations := tree.CPULocations(cpus)
+	package1locations := tree.children[1].CPULocations(cpus)
 	if len(package1locations) != 5 {
 		t.Errorf("expected package1locations length 5, got %d", len(package1locations))
 		return

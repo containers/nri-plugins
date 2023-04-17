@@ -27,7 +27,7 @@ func VerifyError(t *testing.T, err error, expectedCount int, expectedSubstrings 
 		merr := multierror.New(err)
 		errors := strings.Split(merr.Error(), "\n")
 		if len(errors) != expectedCount {
-			t.Errorf("expected %d errors, but got %d: %v", expectedCount, errors, merr)
+			t.Errorf("expected %d errors, but got %v: %v", expectedCount, errors, merr)
 			return false
 		}
 

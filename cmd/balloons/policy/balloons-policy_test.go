@@ -21,8 +21,8 @@ import (
 func TestChangesBalloons(t *testing.T) {
 	tcases := []struct {
 		name          string
-		opts1         *BalloonsOptions
-		opts2         *BalloonsOptions
+		opts1         *Options
+		opts2         *Options
 		expectedValue bool
 	}{
 		{
@@ -31,54 +31,54 @@ func TestChangesBalloons(t *testing.T) {
 		},
 		{
 			name:          "one option is nil",
-			opts2:         &BalloonsOptions{},
+			opts2:         &Options{},
 			expectedValue: true,
 		},
 		{
 			name: "reserved pool namespaces differ by len",
-			opts1: &BalloonsOptions{
-				IdleCpuClass:           "icc0",
+			opts1: &Options{
+				IdleCPUClass:           "icc0",
 				ReservedPoolNamespaces: []string{"ns0"},
 			},
-			opts2: &BalloonsOptions{
-				IdleCpuClass:           "icc0",
+			opts2: &Options{
+				IdleCPUClass:           "icc0",
 				ReservedPoolNamespaces: []string{},
 			},
 			expectedValue: true,
 		},
 		{
 			name: "reserved pool namespaces differ by content",
-			opts1: &BalloonsOptions{
-				IdleCpuClass:           "icc0",
+			opts1: &Options{
+				IdleCPUClass:           "icc0",
 				ReservedPoolNamespaces: []string{"ns0"},
 			},
-			opts2: &BalloonsOptions{
-				IdleCpuClass:           "icc0",
+			opts2: &Options{
+				IdleCPUClass:           "icc0",
 				ReservedPoolNamespaces: []string{"ns1"},
 			},
 			expectedValue: true,
 		},
 		{
 			name: "idle cpu classes differ",
-			opts1: &BalloonsOptions{
-				IdleCpuClass:           "icc0",
+			opts1: &Options{
+				IdleCPUClass:           "icc0",
 				ReservedPoolNamespaces: []string{"ns0"},
 			},
-			opts2: &BalloonsOptions{
-				IdleCpuClass:           "icc1",
+			opts2: &Options{
+				IdleCPUClass:           "icc1",
 				ReservedPoolNamespaces: []string{"ns0"},
 			},
 			expectedValue: false,
 		},
 		{
 			name: "balloon defs differ",
-			opts1: &BalloonsOptions{
-				IdleCpuClass:           "icc0",
+			opts1: &Options{
+				IdleCPUClass:           "icc0",
 				ReservedPoolNamespaces: []string{"ns0"},
 				BalloonDefs:            []*BalloonDef{},
 			},
-			opts2: &BalloonsOptions{
-				IdleCpuClass:           "icc1",
+			opts2: &Options{
+				IdleCPUClass:           "icc1",
 				ReservedPoolNamespaces: []string{"ns0"},
 				BalloonDefs:            []*BalloonDef{},
 			},
