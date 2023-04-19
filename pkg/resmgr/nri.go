@@ -226,8 +226,10 @@ func (p *nriPlugin) CreateContainer(pod *api.PodSandbox, container *api.Containe
 	c.UpdateState(cache.ContainerStateCreating)
 
 	if err := m.policy.AllocateResources(c); err != nil {
+		c.UpdateState(cache.ContainerStateStale)
 		return nil, nil, errors.Wrap(err, "failed to allocate resources")
 	}
+	c.UpdateState(cache.ContainerStateCreated)
 
 	c.InsertMount(&cache.Mount{
 		Destination: "/.nri-resource-policy",
