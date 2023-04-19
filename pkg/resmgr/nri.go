@@ -365,11 +365,11 @@ func (p *nriPlugin) getPendingAdjustment(container *api.Container) *api.Containe
 	return nil
 }
 
-func (p *nriPlugin) getPendingUpdates(creating *api.Container) []*api.ContainerUpdate {
+func (p *nriPlugin) getPendingUpdates(skip *api.Container) []*api.ContainerUpdate {
 	m := p.resmgr
 	updates := []*api.ContainerUpdate{}
 	for _, c := range m.cache.GetPendingContainers() {
-		if creating != nil && creating.GetId() == c.GetID() {
+		if skip != nil && skip.GetId() == c.GetID() {
 			continue
 		}
 
