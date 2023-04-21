@@ -67,6 +67,8 @@ usage: ./scripts/run-test.sh
 
 ## How to setup tracing
 
+# In containerd
+
 * https://github.com/containerd/containerd/blob/main/docs/tracing.md
    * enable tracing in the containerd config
 ```toml
@@ -80,3 +82,18 @@ usage: ./scripts/run-test.sh
 ```
 * Use port 30318 instead of 4318 when configuring the container runtime for otlp with http
 * Use port 30317 instead of 4317 when configuring the container runtime for otlp with grpc
+
+# In crio
+
+```console
+mkdir -p /etc/crio/crio.conf.d
+cat > /etc/crio/crio.conf.d/10-enable-tracing.conf <<EOF
+[crio.tracing]
+enable_tracing = true
+tracing_endpoint = "127.0.0.1:30317"
+tracing_sampling_rate_per_million = 1000000
+EOF
+systemctl restart crio
+```
+
+See also https://github.com/cri-o/cri-o/blob/main/docs/crio.conf.5.md#criotracing-table

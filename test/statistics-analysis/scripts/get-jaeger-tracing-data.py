@@ -33,7 +33,7 @@ def createTextOutputFromResult(processedDict):
     return result
 
 
-def processSpansAndTraces(url, start, end):
+def processSpansAndTraces(url, start, end, runtime):
     result = {
         "runtime.v1.RuntimeService/RunPodSandbox": [],
         "runtime.v1.RuntimeService/CreateContainer": [],
@@ -44,7 +44,7 @@ def processSpansAndTraces(url, start, end):
         "runtime.v1.RuntimeService/RemovePodSandbox": []
     }
     for key in result:
-        output = getQueryOutput(url, key, start, end)
+        output = getQueryOutput(url, key, start, end, runtime)
 
         if output["errors"] != None:
             print("query for operation {} failed".format(key))
@@ -57,7 +57,12 @@ def processSpansAndTraces(url, start, end):
             spans = trace["spans"]
             for span in spans:
                 operationName = span["operationName"]
-                result[operationName].append(span)
+
+                # crio has /runtime.v1... in the operationName
+                operationName.lstrip("/")
+
+                if operationName in result:
+                    result[operationName].append(span)
         
         result[key].sort(key=lambda datapoint: datapoint["startTime"])
 
@@ -66,11 +71,11 @@ def processSpansAndTraces(url, start, end):
 
     return result
 
-def getQueryOutput(url, operationName, start, end):
-    return requests.get(url + "/api/traces", { "service": "containerd", "operation": operationName, "start": start, "end": end}).json()
+def getQueryOutput(url, operationName, start, end, runtime):
+    return requests.get(url + "/api/traces", { "service": runtime, "operation": operationName, "start": start, "end": end}).json()
 
-def handleQueryOutput(url, csv, start, end):
-    processedDict = processSpansAndTraces(url, start, end)
+def handleQueryOutput(url, csv, start, end, runtime):
+    processedDict = processSpansAndTraces(url, start, end, runtime)
 
     if csv is not None:
         with open(csv, "w+") as csv_file:
@@ -86,10 +91,11 @@ def main():
     parser.add_argument("-c", "--csv", help="output csv file, otherwise print out json data")
     parser.add_argument("-s", "--start", type=int, help="the start of the Jaeger tracing query interval as UTC timestamp in seconds")
     parser.add_argument("-e", "--end", type=int, help="the end of the Jaeger tracing query interval as UTC timestamp in seconds")
+    parser.add_argument("-r", "--runtime", help="container runtime name (containerd or crio), default is containerd", required = False, default = "containerd")
     args = parser.parse_args(sys.argv[1:])
 
     # Jaeger tracing uses microseconds.
-    print(handleQueryOutput(args.url, args.csv, int(args.start) * 1000000, int(args.end) * 1000000))
+    print(handleQueryOutput(args.url, args.csv, int(args.start) * 1000000, int(args.end) * 1000000, args.runtime))
 
 if __name__ == "__main__":
     main()
