@@ -68,7 +68,7 @@ run_test() {
 
     local current_time=$(date +"%Y-%m-%d %H:%M:%S")
 
-    ${SCRIPT_DIR}/run-test.sh $PARAMS -l $test
+    RUNTIME="$RUNTIME" ${SCRIPT_DIR}/run-test.sh $PARAMS -l $test
 
     journalctl --since="$current_time" -u $RUNTIME > "$LOG_DIR/$prefix-$RUNTIME-$test.log"
 }

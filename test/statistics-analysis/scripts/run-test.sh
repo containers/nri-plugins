@@ -12,6 +12,7 @@ SLEEP_AFTER_TEST="15s"
 WORKLOAD="stress-ng"
 PREFIX=""
 OUTPUT_PREFIX=""
+RUNTIME=${RUNTIME:-containerd}
 
 usage () {
     cat << EOF
@@ -104,6 +105,8 @@ if nc -z 127.0.0.1 30000; then
         -l "container_cpu_usage_seconds_total,container_memory_usage_bytes,container_memory_working_set_bytes" -s "${START_TIME}" -e "${END_TIME}" -c "${BASE_DIR}/output/${OUTPUT_FILE_PREFIX}-prometheus.csv"
 fi
 
-python3 ${SCRIPT_DIR}/get-jaeger-tracing-data.py http://127.0.0.1:30001 -c "${BASE_DIR}/output/${OUTPUT_FILE_PREFIX}-jaeger.csv" -s "${START_TIME}" -e "${END_TIME}"
+echo Executing: python3 ${SCRIPT_DIR}/get-jaeger-tracing-data.py http://127.0.0.1:30001 -c "${BASE_DIR}/output/${OUTPUT_FILE_PREFIX}-jaeger.csv" -s "${START_TIME}" -e "${END_TIME}" -r "$RUNTIME"
+
+python3 ${SCRIPT_DIR}/get-jaeger-tracing-data.py http://127.0.0.1:30001 -c "${BASE_DIR}/output/${OUTPUT_FILE_PREFIX}-jaeger.csv" -s "${START_TIME}" -e "${END_TIME}" -r "$RUNTIME"
 
 echo "test complete, start time: ${START_TIME}, end time: ${END_TIME}"
