@@ -34,21 +34,21 @@ const (
 
 // MilliCPUToQuota converts milliCPU to CFS quota and period values.
 // (Almost) identical to the same function in kubelet.
-func MilliCPUToQuota(milliCPU int64, period int64) int64 {
+func MilliCPUToQuota(milliCPU int64) (quota, period int64) {
 	if milliCPU == 0 {
-		return 0
+		return 0, 0
 	}
 
 	// TODO(klihub): this is behind the CPUSFSQuotaPerdiod feature gate in kubelet
-	period = QuotaPeriod
+	period = int64(QuotaPeriod)
 
-	quota := (milliCPU * period) / MilliCPUToCPU
+	quota = (milliCPU * period) / MilliCPUToCPU
 
 	if quota < MinQuotaPeriod {
 		quota = MinQuotaPeriod
 	}
 
-	return quota
+	return quota, period
 }
 
 // MilliCPUToShares converts the milliCPU to CFS shares.
