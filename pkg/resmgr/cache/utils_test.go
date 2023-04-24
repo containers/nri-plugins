@@ -34,8 +34,8 @@ var _ = Describe("CPU request", func() {
 	It("estimated with reasonable accuracy", func() {
 		t := GinkgoT()
 		for request := 0; request < maxCPU; request++ {
-			shares := cache.MilliCPUToShares(request)
-			estimate := cache.SharesToMilliCPU(shares)
+			shares := cache.MilliCPUToShares(int64(request))
+			estimate := cache.SharesToMilliCPU(int64(shares))
 
 			diff := int64(request) - estimate
 			if diff > expectedAccuracy || diff < -expectedAccuracy {
