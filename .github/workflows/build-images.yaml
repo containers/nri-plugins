@@ -35,9 +35,9 @@ jobs:
       - name: Push images
         run: |
           for i in build/images/*.tar; do
-              image=${i##*/}; image=${image%-image*}
+              image=${i##*/}; image=${image%-image*}; image=${image#nri-resource-policy-}
               v=${i##*-image-}; v=${v%.tar}
               docker load -i $i
-              docker tag $v ${{ env.REGISTRY }}/${{ env.ORG }}/nri-plugins/$image:unstable
-              docker push ${{ env.REGISTRY }}/${{ env.ORG }}/nri-plugins/$image:unstable
+              docker tag $v ${{ env.REGISTRY }}/${{ env.ORG }}/nri-plugins:$image-$v
+              docker push ${{ env.REGISTRY }}/${{ env.ORG }}/nri-plugins:$image-$v
           done
