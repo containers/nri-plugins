@@ -115,32 +115,49 @@ func (p *nriPlugin) Configure(cfg, runtime, version string) (stub.EventMask, err
 func (p *nriPlugin) syncWithNRI(pods []*api.PodSandbox, containers []*api.Container) ([]cache.Container, []cache.Container, error) {
 	m := p.resmgr
 
-	m.Info("synchronizing cache state with NRI/CRI runtime...")
+	allocated := []cache.Container{}
+	released := []cache.Container{}
 
-	add, del := []cache.Container{}, []cache.Container{}
+	m.Info("synchronizing cache state with NRI runtime...")
 
 	_, _, deleted := m.cache.RefreshPods(pods)
 	for _, c := range deleted {
 		m.Info("discovered stale container %s...", c.GetID())
-		del = append(del, c)
+		released = append(released, c)
 	}
 
-	added, deleted := m.cache.RefreshContainers(containers)
-	for _, c := range added {
-		if c.GetState() != cache.ContainerStateRunning {
-			m.Info("ignoring discovered container %s (in state %v)...",
-				c.GetID(), c.GetState())
-			continue
-		}
-		m.Info("discovered out-of-sync running container %s...", c.GetID())
-		add = append(add, c)
-	}
+	_, deleted = m.cache.RefreshContainers(containers)
 	for _, c := range deleted {
 		m.Info("discovered stale container %s...", c.GetID())
-		del = append(del, c)
+		released = append(released, c)
 	}
 
-	return add, del, nil
+	/* Go through all containers in the cache and check if we need to keep
+	 * or remove their resource allocations.
+	 */
+	ctrs := m.cache.GetContainers()
+	for _, c := range ctrs {
+		switch c.GetState() {
+		case cache.ContainerStateRunning, cache.ContainerStateCreated:
+			m.Info("discovered out-of-sync running container %s...", c.GetID())
+			allocated = append(allocated, c)
+
+			/* By adding out-of-sync container to released list, we force re-allocation of
+			 * the resources when calling policy.Start()
+			 */
+			released = append(released, c)
+
+		case cache.ContainerStateExited:
+			/* Treat stopped containers as deleted */
+			m.Info("discovered stale stopped container %s...", c.GetID())
+			released = append(released, c)
+
+		default:
+			m.Info("ignoring discovered container %s (in state %v)...", c.GetID(), c.GetState())
+		}
+	}
+
+	return allocated, released, nil
 }
 
 func (p *nriPlugin) Synchronize(pods []*api.PodSandbox, containers []*api.Container) (updates []*api.ContainerUpdate, retErr error) {
@@ -152,13 +169,13 @@ func (p *nriPlugin) Synchronize(pods []*api.PodSandbox, containers []*api.Contai
 
 	m := p.resmgr
 
-	add, del, err := p.syncWithNRI(pods, containers)
+	allocated, released, err := p.syncWithNRI(pods, containers)
 	if err != nil {
 		p.resmgr.Error("failed to synchronize with NRI: %v", err)
 		return nil, err
 	}
 
-	if err := m.policy.Start(add, del); err != nil {
+	if err := m.policy.Start(allocated, released); err != nil {
 		return nil, errors.Wrapf(err,
 			"failed to start policy %s", policy.ActivePolicy())
 	}
