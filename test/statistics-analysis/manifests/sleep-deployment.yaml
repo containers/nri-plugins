@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sleep
+  labels:
+    app: sleep
+spec:
+  replicas: ${NUMBER_OF_REPLICAS}
+  selector:
+    matchLabels:
+      app: sleep
+  template:
+    metadata:
+      labels:
+        app: sleep
+    spec:
+      containers:
+      - name: sleep
+        image: quay.io/crio/busybox:latest
+        imagePullPolicy: IfNotPresent
+        command:
+          - sh
+          - -c
+          - sleep 604800
+        resources:
+          requests:
+            cpu: 10m
+            memory: 20M
+          limits:
+            cpu: 10m
