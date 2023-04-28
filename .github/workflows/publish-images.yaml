@@ -40,7 +40,7 @@ jobs:
           for tarball in *.tar; do
               echo "- Publishing image for tarball $tarball..."
               docker load -i $tarball
-              img=${tarball%-image*}
+              img=${tarball#nri-}; img=${img%-image*}
               sha=${tarball##*-image-}; sha=${sha%.tar}
               echo "  - image:  $img"
               echo "  - digest: $sha"
@@ -61,6 +61,6 @@ jobs:
                       ;;
               esac
               echo "  - tag: $tag"
-              docker tag $sha $IMAGE_LOCATION/nri-plugin-$img:$tag
-              docker push $IMAGE_LOCATION/nri-plugin-$img:$tag
+              docker tag $sha $IMAGE_LOCATION/nri-$img:$tag
+              docker push $IMAGE_LOCATION/nri-$img:$tag
           done
