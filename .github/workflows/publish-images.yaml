@@ -1,0 +1,66 @@
+name: Build and Push Container Images
+
+on:
+  push:
+    branches:
+      - main
+      - release-**
+    tags:
+      - v*
+
+env:
+  REGISTRY: ghcr.io
+  REGISTRY_USER: ${{ github.repository_owner }}
+  REGISTRY_PATH: ${{ github.repository }}
+
+jobs:
+  build-and-publish-images:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Build images
+        run: make images
+
+      - name: Log in to registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+              docker login ${{ env.REGISTRY }} -u ${{ env.REGISTRY_USER }} --password-stdin
+
+      - name: Push images
+        run: |
+          GITREF=${{ github.ref }}
+          IMAGE_LOCATION=${{ env.REGISTRY }}/${{ env.REGISTRY_PATH }}
+          cd build/images
+          for tarball in *.tar; do
+              echo "- Publishing image for tarball $tarball..."
+              docker load -i $tarball
+              img=${tarball%-image*}
+              sha=${tarball##*-image-}; sha=${sha%.tar}
+              echo "  - image:  $img"
+              echo "  - digest: $sha"
+              echo "  - digging out tag from git ref $GITREF..."
+              case $GITREF in
+                  refs/tags/v*)
+                      tag="${GITREF#refs/tags/v}"
+                      ;;
+                  refs/heads/main)
+                      tag=unstable
+                      ;;
+                  refs/heads/release-*)
+                      tag="${GITREF#refs/heads/release-}-unstable"
+                      ;;
+                  *)
+                      echo "error: can't determine tag."
+                      exit 1
+                      ;;
+              esac
+              echo "  - tag: $tag"
+              docker tag $sha $IMAGE_LOCATION/nri-plugin-$img:$tag
+              docker push $IMAGE_LOCATION/nri-plugin-$img:$tag
+          done
