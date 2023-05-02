@@ -15,18 +15,15 @@ The estimated complexity and priority of a feature/task is defined like this:
 ## Reference Plugins (this repository)
 
 - admin/repo
-  - [x] figure out resonable name for repo (`nri-plugins`) C1
-  - [x] get repository on some neutral ground (`containers` organization) C1
+  - [ ] get proper permissions so that self-hosted runner scripts can create/destroy runner C1
 - cache
   - [ ] rework/split up, make the core functionality be usable for other types of plugins, C4
   - [ ] get rid of CRI-specific representation/interfaces, NRI/CRI pod, container conversion, C4
   - [ ] eliminate need for saving cache to disk, C2
 - config
-  - [x] (finish readding) config via agent
-  - [x] fallback config via ConfigMap (bind-mounted in deployment file)
   - [ ] switch to using CRDs (from ConfigMaps), C2
   - [ ] consider usig 1 CRD per policy as opposed to a single 'union' CRD, C2
-  - [x] remove config-like external adjustment via CRD support
+  - [ ] create helm chart support for the resource policies, C1
 - policies
   - [ ] remove support for multiple policies in a single binary, C1
   - [ ] balloons: implement topology hint support, C2
@@ -35,10 +32,8 @@ The estimated complexity and priority of a feature/task is defined like this:
   - [ ] topology-aware: legacy block I/O, RDT support if needed, C2
   - [ ] topology-aware: cleanup/refactor (rewrite nodes, supply, request, grant), C4
 - misc/infra/other
-  - [x] drop AVX512 related bits
   - [ ] rework pkg hierarchy (with co-hosted plugins of other 'classes' in mind), C8
   - [ ] eliminate/replace `resmgr` in other user-visible 'artifacts' where appropriate, C1
-  - [x] health check (with support for components to hook themselves into it), C2
   - [ ] check and unify annotation naming for consistency, C1
   - [ ] structural logging (with better configurability), check what Patrik did, C2
   - [ ] agent usage should be optional and controllable, C2
@@ -64,10 +59,6 @@ The estimated complexity and priority of a feature/task is defined like this:
 
 ## NRI Core (https://github.com/containerd/nri)
 
-- [x] change default socket path to `/var/run/nri/nri.sock` (to allow reconnect from container), C1
-- [x] change socket permissions to `0700`, C1
-- [x] get rid of NRI config file, C1
-- [x] replace config file `disableConnections` with `WithDisableExternalConnections()`, C1
 - [ ] Darwin support, C4
 - [ ] Windows support, C8
 - [ ] add warning to documentation about socket 'access security', C1
@@ -82,7 +73,6 @@ The estimated complexity and priority of a feature/task is defined like this:
 
 ## Containerd integration
 
-- [x] sbserver support, C2
 
 
 ## CRI-O integration
