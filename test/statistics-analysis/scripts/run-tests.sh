@@ -47,6 +47,30 @@ get_pod_name() {
     echo $pod
 }
 
+resolve_deployment() {
+    local name=$1
+    local deployment="${!name}"
+
+    if [ "$name" == "baseline" ]; then
+	return 0
+    fi
+    if [ -z "$deployment" ] || [ -f "$deployment" ]; then
+	return 0
+    fi
+
+    case $deployment in
+	1|yes)
+	    deployment="$BASE_DIR/../../build/images/nri-resource-policy-${name//_/-}-deployment.yaml"
+	    if [ -f "$deployment" ]; then
+		eval "$name=$deployment"
+		return 0
+	    fi
+    esac
+
+    echo 2>&1 "$name deployment file \"$deployment\" not found"
+    exit 1
+}
+
 pod=""
 
 START_TIME=$(date +%s)
@@ -123,6 +147,14 @@ cleanup_all
 jaeger_labels=""
 prometheus_labels=""
 sep=""
+
+for test in baseline template topology_aware balloons; do
+    resolve_deployment $test
+    if [ -n "${!test}" ]; then
+	echo "$test: ${!test}"
+    fi
+done
+
 for test in baseline template topology_aware balloons
 do
     case $test in
@@ -134,7 +166,7 @@ do
             # the baseline setup does not measure resource usage
             ;;
         template)
-            if [ -z "$template" -o ! -f "$template" ]; then
+            if [ -z "$template" ]; then
                 continue
             fi
             jaeger_labels="$jaeger_labels${sep}template-jaeger"; sep=","
@@ -142,7 +174,7 @@ do
             kubectl apply -f "$template"
             ;;
         topology_aware)
-            if [ -z "$topology_aware" -o ! -f "$topology_aware" ]; then
+            if [ -z "$topology_aware" ]; then
                 continue
             fi
             jaeger_labels="$jaeger_labels${sep}topology_aware-jaeger"; sep=","
@@ -150,7 +182,7 @@ do
             kubectl apply -f "$topology_aware"
             ;;
         balloons)
-            if [ -z "$balloons" -o ! -f "$balloons" ]; then
+            if [ -z "$balloons" ]; then
                 continue
             fi
             jaeger_labels="$jaeger_labels${sep}balloons-jaeger"; sep=","
