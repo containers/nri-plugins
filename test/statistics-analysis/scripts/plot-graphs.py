@@ -129,6 +129,12 @@ def parseLabels(labelArg):
     return labels, stripped
 
 def main():
+    importTest = argparse.ArgumentParser(description="Check python imports.")
+    importTest.add_argument("-T", "--test-imports", required=False, default=False, action="store_true", help="test python imports and exit")
+    test, unknown = importTest.parse_known_args(sys.argv[1:])
+    if test.test_imports:
+        sys.exit(0)
+
     parser = argparse.ArgumentParser(description="Get jaeger tracing data.")
     parser.add_argument("directory", help="directory containing output to scan")
     parser.add_argument("-l", "--labels", required=True, help="comma-separated list of labels used in the test setups")
