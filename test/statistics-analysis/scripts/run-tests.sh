@@ -7,6 +7,8 @@ LOG_DIR="$BASE_DIR/output"
 RUNTIME=${RUNTIME:-containerd}
 OUTPUT_PREFIX=""
 
+PREREQUISITES="python3 nc envsubst"
+
 mkdir -p "$LOG_DIR"
 
 PARAMS="$*"
@@ -45,6 +47,24 @@ get_pod_name() {
     fi
 
     echo $pod
+}
+
+check_prereqs() {
+    local p='' t=''
+
+    for p in $@; do
+        if ! t="$(type -f $p)"; then
+            echo "missing prerequisite $p"
+            fail=1
+        fi
+    done
+
+    if [ -z "$fail" ]; then
+        return 0
+    fi
+
+    echo "missing dependencies/prerequisites, aborting tests"
+    exit 1
 }
 
 resolve_deployment() {
@@ -140,13 +160,9 @@ echo "template       : ${template:-skipped}"
 
 cleanup_all
 
-
-# Note that with this script, we always run the baseline unless user
-# sets "baseline=0" when starting the script, and those resource policy
-# tests that user has supplied deployment file.
-jaeger_labels=""
-prometheus_labels=""
-sep=""
+# Check that we have all prerequisites and deployment files.
+check_prereqs $PREREQUISITES
+plot_graphs --test-imports
 
 for test in baseline template topology_aware balloons; do
     resolve_deployment $test
@@ -154,6 +170,15 @@ for test in baseline template topology_aware balloons; do
 	echo "$test: ${!test}"
     fi
 done
+
+
+
+# Note that with this script, we always run the baseline unless user
+# sets "baseline=0" when starting the script, and those resource policy
+# tests that user has supplied deployment file.
+jaeger_labels=""
+prometheus_labels=""
+sep=""
 
 for test in baseline template topology_aware balloons
 do
