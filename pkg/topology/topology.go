@@ -27,7 +27,8 @@ import (
 
 // to mock in tests
 var (
-	sysRoot = ""
+	sysRoot        = ""
+	log     Logger = &nopLogger{}
 )
 
 const (
@@ -47,9 +48,26 @@ type Hint struct {
 // Hints represents set of hints collected from multiple providers.
 type Hints map[string]Hint
 
+// Logger is interface we expect from an optional, externally set logger.
+type Logger interface {
+	Debugf(format string, v ...interface{})
+}
+
 // SetSysRoot sets the sysfs root directory to use.
 func SetSysRoot(root string) {
 	sysRoot = root
+}
+
+// SetLogger sets the external logger used for (debug) logging.
+func SetLogger(l Logger) Logger {
+	old := log
+	log = l
+	return old
+}
+
+// ResetLogger resets any externally set logger.
+func ResetLogger() {
+	log = &nopLogger{}
 }
 
 func getDevicesFromVirtual(realDevPath string) (devs []string, err error) {
@@ -77,6 +95,7 @@ func getDevicesFromVirtual(realDevPath string) (devs []string, err error) {
 			}
 			devs = append(devs, realDev)
 		}
+		log.Debugf("devices from virtual %s: %s", realDevPath, strings.Join(devs, ","))
 		return devs, nil
 	default:
 		return nil, nil
@@ -84,6 +103,8 @@ func getDevicesFromVirtual(realDevPath string) (devs []string, err error) {
 }
 
 func getTopologyHint(sysFSPath string) (*Hint, error) {
+	log.Debugf("getting topology hint for %s", sysFSPath)
+
 	hint := Hint{Provider: sysFSPath}
 	fileMap := map[string]*string{
 		"local_cpulist": &hint.CPUs,
@@ -125,6 +146,11 @@ func getTopologyHint(sysFSPath string) (*Hint, error) {
 			hint.NUMAs = ""
 		}
 	}
+
+	if hint.CPUs != "" || hint.NUMAs != "" || hint.Sockets != "" {
+		log.Debugf("  => %s", hint.String())
+	}
+
 	return &hint, nil
 }
 
@@ -286,3 +312,7 @@ func mapKeys(m map[string]bool) []string {
 	}
 	return ret
 }
+
+type nopLogger struct{}
+
+func (*nopLogger) Debugf(string, ...interface{}) {}
