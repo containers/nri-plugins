@@ -1,0 +1,19 @@
+# Default values for nri-plugins.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+---
+image:
+  name: ghcr.io/containers/nri-plugins/nri-resource-policy-topology-aware
+  # tag, if defined will use the given image tag, otherwise Chart.AppVersion will be used
+  tag: unstable
+  pullPolicy: Always
+
+config:
+  ReservedResources:
+    cpu: 750m
+
+hostPort: 8891
+
+resources:
+  cpu: 500m
+  memory: 512Mi
