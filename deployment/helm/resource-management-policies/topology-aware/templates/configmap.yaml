@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nri-resource-policy-topology-aware-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "topology-aware-plugin.labels" . | nindent 4 }}
+data:
+  policy: |+
+    {{- toYaml .Values.config | nindent 4 }}

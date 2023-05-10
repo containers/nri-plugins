@@ -1,0 +1,15 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nri-resource-policy-topology-aware
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "topology-aware-plugin.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - watch
