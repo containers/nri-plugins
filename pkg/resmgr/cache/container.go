@@ -60,30 +60,56 @@ func (cch *cache) createContainer(nriCtr *nri.Container) (*container, error) {
 }
 
 func (c *container) generateTopologyHints() {
+	var (
+		mountHints  = true
+		deviceHints = true
+	)
+
 	if preference, ok := c.GetEffectiveAnnotation(TopologyHintsKey); ok {
-		if genHints, err := strconv.ParseBool(preference); err != nil {
-			log.Error("ignoring invalid annotation '%s=%s': %v", TopologyHintsKey, preference, err)
-		} else {
+		if genHints, err := strconv.ParseBool(preference); err == nil {
 			if !genHints {
 				log.Info("automatic topology hint generation disabled for %q", c.PrettyName)
 				return
 			}
+		} else {
+			mountHints = false
+			deviceHints = false
+			switch preference {
+			case "devices", "devs":
+				deviceHints = true
+			case "mounts":
+				mountHints = true
+			case "enabled", "true", "all":
+				mountHints = true
+				deviceHints = true
+			case "disabled", "false", "none":
+			default:
+				log.Error("ignoring invalid annotation '%s=%s': %v", TopologyHintsKey, preference, err)
+			}
 		}
 	}
 
-	for _, m := range c.Ctr.GetMounts() {
-		readOnly := isReadOnlyMount(m)
-		if hints := getTopologyHintsForMount(m.Destination, m.Source, readOnly); len(hints) > 0 {
-			c.TopologyHints = topology.MergeTopologyHints(c.TopologyHints, hints)
-		}
-	}
-
-	for _, d := range c.Ctr.GetLinux().GetDevices() {
-		if !isReadOnlyDevice(c.Ctr.GetLinux().GetResources().GetDevices(), d) {
-			if hints := getTopologyHintsForDevice(d.Type, d.Major, d.Minor); len(hints) > 0 {
+	if mountHints {
+		for _, m := range c.Ctr.GetMounts() {
+			readOnly := isReadOnlyMount(m)
+			if hints := getTopologyHintsForMount(m.Destination, m.Source, readOnly); len(hints) > 0 {
 				c.TopologyHints = topology.MergeTopologyHints(c.TopologyHints, hints)
 			}
 		}
+	} else {
+		log.Info("automatic topology hint generation disabled for mounts")
+	}
+
+	if deviceHints {
+		for _, d := range c.Ctr.GetLinux().GetDevices() {
+			if !isReadOnlyDevice(c.Ctr.GetLinux().GetResources().GetDevices(), d) {
+				if hints := getTopologyHintsForDevice(d.Type, d.Major, d.Minor); len(hints) > 0 {
+					c.TopologyHints = topology.MergeTopologyHints(c.TopologyHints, hints)
+				}
+			}
+		}
+	} else {
+		log.Info("automatic topology hint generation disabled for devices")
 	}
 }
 
