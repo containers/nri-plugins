@@ -21,8 +21,6 @@ import (
 	"strings"
 	"time"
 
-	"go.opencensus.io/trace"
-
 	"github.com/containers/nri-plugins/pkg/config"
 	"github.com/containers/nri-plugins/pkg/utils"
 )
@@ -31,21 +29,15 @@ import (
 type Sampling float64
 
 const (
-	// Disabled is the trace configuration for disabling tracing.
+	// Disabled is the sampling ratio to disable tracing altogether.
 	Disabled Sampling = 0.0
-	// Production is a trace configuration for production use.
+	// Production is the sampling ratio for production environments.
 	Production Sampling = 0.1
-	// Testing is a trace configuration for testing.
+	// Testing is the sampling ration for test environments.
 	Testing Sampling = 1.0
 
-	// defaultSampling is the default sampling frequency.
-	defaultSampling = "0"
 	// defaultReportPeriod is the default report period
 	defaultReportPeriod = "15s"
-	// defaultJaegerCollector is the default Jaeger collector endpoint.
-	defaultJaegerCollector = ""
-	// defaultJaegerAgent is the default Jaeger agent endpoint.
-	defaultJaegerAgent = ""
 	// defaultHTTPEndpoint is the default HTTP endpoint serving Prometheus /metrics.
 	defaultHTTPEndpoint = ""
 	// defaultPrometheusExport is the default state for Prometheus exporting.
@@ -58,12 +50,11 @@ type options optstruct
 type optstruct struct {
 	// Sampling is the sampling frequency for traces.
 	Sampling Sampling
+	// TracingCollector is the endpoint for collecting tracing data.
+	TracingCollector string
+
 	// ReportPeriod is the OpenCensus view reporting period.
 	ReportPeriod time.Duration
-	// jaegerCollector is the URL to the Jaeger HTTP Thrift collector.
-	JaegerCollector string
-	// jaegerAgent, if set, defines the address of a Jaeger agent to send spans to.
-	JaegerAgent string
 	// HTTPEndpoint is our HTTP endpoint, used among others to export Prometheus /metrics.
 	HTTPEndpoint string
 	// PrometheusExport defines whether we export /metrics to/for Prometheus.
@@ -139,12 +130,9 @@ func (s Sampling) String() string {
 	return strconv.FormatFloat(float64(s), 'f', -1, 64)
 }
 
-// Sampler returns a trace.Sampler corresponding to the Sampling value.
-func (s Sampling) Sampler() trace.Sampler {
-	if s == Disabled {
-		return trace.NeverSample()
-	}
-	return trace.ProbabilitySampler(float64(s))
+// Ratio returns the sampling ratio for the Sampling value.
+func (s Sampling) Ratio() float64 {
+	return float64(s)
 }
 
 // parseEnv parses the environment for default values.
@@ -171,14 +159,6 @@ func defaultOptions() interface{} {
 	}
 
 	params := map[string]param{
-		"JAEGER_COLLECTOR": {
-			defaultJaegerCollector,
-			func(v string) error { o.JaegerCollector = v; return nil },
-		},
-		"JAEGER_AGENT": {
-			defaultJaegerAgent,
-			func(v string) error { o.JaegerAgent = v; return nil },
-		},
 		"HTTP_ENDPOINT": {
 			defaultHTTPEndpoint,
 			func(v string) error { o.HTTPEndpoint = v; return nil },
@@ -193,10 +173,6 @@ func defaultOptions() interface{} {
 				o.PrometheusExport = enabled
 				return nil
 			},
-		},
-		"SAMPLING_FREQUENCY": {
-			defaultSampling,
-			func(v string) error { return o.Sampling.Parse(v) },
 		},
 		"REPORT_PERIOD": {
 			defaultReportPeriod,

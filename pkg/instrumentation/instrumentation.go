@@ -23,7 +23,7 @@ import (
 
 const (
 	// ServiceName is our service name in external tracing and metrics services.
-	ServiceName = "CRI-RM"
+	ServiceName = "NRI-Resource-Plugin"
 )
 
 // Our logger instance.
@@ -38,14 +38,6 @@ func GetHTTPMux() *http.ServeMux {
 		return nil
 	}
 	return svc.http.GetMux()
-}
-
-// TracingEnabled returns true if the Jaeger tracing sampler is not disabled.
-func TracingEnabled() bool {
-	if svc == nil {
-		return false
-	}
-	return svc.TracingEnabled()
 }
 
 // Start our internal instrumentation services.

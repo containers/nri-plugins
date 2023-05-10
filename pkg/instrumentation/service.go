@@ -18,13 +18,13 @@ import (
 	"sync"
 
 	"github.com/containers/nri-plugins/pkg/http"
+	"github.com/containers/nri-plugins/pkg/instrumentation/tracing"
 )
 
 // service is the state of our instrumentation services: HTTP endpoint, trace/metrics exporters.
 type service struct {
 	sync.RWMutex              // we're RW-lockable
 	http         *http.Server // HTTP server
-	tracing      *tracing     // tracing data exporter
 	metrics      *metrics     // metrics data exporter
 }
 
@@ -32,7 +32,6 @@ type service struct {
 func newService() *service {
 	return &service{
 		http:    http.NewServer(),
-		tracing: &tracing{},
 		metrics: &metrics{},
 	}
 }
@@ -48,10 +47,12 @@ func (s *service) Start() error {
 	if err != nil {
 		return instrumentationError("failed to start HTTP server: %v", err)
 	}
-	err = s.tracing.start(opt.JaegerAgent, opt.JaegerCollector, opt.Sampling)
+
+	err = s.startTracing()
 	if err != nil {
-		return instrumentationError("failed to start tracing: %v", err)
+		return instrumentationError("failed to start tracing exporter: %v", err)
 	}
+
 	err = s.metrics.start(s.http.GetMux(), opt.ReportPeriod, opt.PrometheusExport)
 	if err != nil {
 		return instrumentationError("failed to start metrics: %v", err)
@@ -60,14 +61,26 @@ func (s *service) Start() error {
 	return nil
 }
 
+func (s *service) startTracing() error {
+	return tracing.Start(
+		tracing.WithServiceName(ServiceName),
+		tracing.WithCollectorEndpoint(opt.TracingCollector),
+		tracing.WithSamplingRatio(opt.Sampling.Ratio()),
+	)
+}
+
 // Stop stops instrumentation services.
 func (s *service) Stop() {
 	s.Lock()
 	defer s.Unlock()
 
 	s.metrics.stop()
-	s.tracing.stop()
+	s.stopTracing()
 	s.http.Stop()
+}
+
+func (s *service) stopTracing() {
+	tracing.Stop()
 }
 
 // reconfigure reconfigures instrumentation services.
@@ -79,10 +92,13 @@ func (s *service) reconfigure() error {
 	if err != nil {
 		return instrumentationError("failed to reconfigure HTTP server: %v", err)
 	}
-	err = s.tracing.reconfigure(opt.JaegerAgent, opt.JaegerCollector, opt.Sampling)
+
+	s.stopTracing()
+	err = s.startTracing()
 	if err != nil {
-		return instrumentationError("failed to reconfigure tracing: %v", err)
+		return instrumentationError("failed to reconfigure tracing exporter: %v")
 	}
+
 	err = s.metrics.reconfigure(s.http.GetMux(), opt.ReportPeriod, opt.PrometheusExport)
 	if err != nil {
 		return instrumentationError("failed to reconfigure metrics: %v", err)
@@ -94,12 +110,4 @@ func (s *service) reconfigure() error {
 func (s *service) Restart() error {
 	s.Stop()
 	return s.Start()
-}
-
-// TracingEnabled returns true if the Jaeger tracing sampler is not disabled.
-func (s *service) TracingEnabled() bool {
-	s.RLock()
-	defer s.RUnlock()
-
-	return float64(opt.Sampling) > 0.0
 }
