@@ -505,6 +505,8 @@ func getTopologyHintsForMount(hostPath, containerPath string, readOnly bool) top
 		return topology.Hints{}
 	}
 
+	log.Debug("getting topology hints for mount %s (at %s)", hostPath, containerPath)
+
 	// ignore topology information for small files in /etc, service files in /var/lib/kubelet and host libraries mounts
 	ignoredTopologyPaths := []string{"/.nri-resource-policy", "/etc/", "/dev/termination-log", "/lib/", "/lib64/", "/usr/lib/", "/usr/lib32/", "/usr/lib64/"}
 
@@ -537,6 +539,8 @@ func getTopologyHintsForMount(hostPath, containerPath string, readOnly bool) top
 }
 
 func getTopologyHintsForDevice(devType string, major, minor int64) topology.Hints {
+	log.Debug("getting topology hints for device <%s %d,%d>", devType, major, minor)
+
 	if devPath, err := topology.FindGivenSysFsDevice(devType, major, minor); err == nil {
 		// errors are ignored
 		if hints, err := topology.NewTopologyHints(devPath); err == nil && len(hints) > 0 {

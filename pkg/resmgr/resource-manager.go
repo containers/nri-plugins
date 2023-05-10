@@ -76,6 +76,10 @@ type resmgr struct {
 	agent        agent.ResourceManagerAgent
 }
 
+const (
+	topologyLogger = "topology-hints"
+)
+
 // NewResourceManager creates a new ResourceManager instance.
 func NewResourceManager() (ResourceManager, error) {
 	m := &resmgr{Logger: logger.NewLogger("resource-manager")}
@@ -86,6 +90,7 @@ func NewResourceManager() (ResourceManager, error) {
 
 	sysfs.SetSysRoot(opt.HostRoot)
 	topology.SetSysRoot(opt.HostRoot)
+	topology.SetLogger(logger.Get(topologyLogger))
 
 	m.Info("running as an NRI plugin...")
 	nrip, err := newNRIPlugin(m)
