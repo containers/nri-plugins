@@ -57,13 +57,6 @@ func (s *service) Start() error {
 		return instrumentationError("failed to start metrics: %v", err)
 	}
 
-	if err := registerGrpcViews(); err != nil {
-		s.metrics.stop()
-		s.tracing.stop()
-		s.http.Stop()
-		return err
-	}
-
 	return nil
 }
 
@@ -72,7 +65,6 @@ func (s *service) Stop() {
 	s.Lock()
 	defer s.Unlock()
 
-	unregisterGrpcViews()
 	s.metrics.stop()
 	s.tracing.stop()
 	s.http.Stop()
