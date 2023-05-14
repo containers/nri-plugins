@@ -17,7 +17,10 @@ package instrumentation
 import (
 	"fmt"
 
+	promcli "github.com/prometheus/client_golang/prometheus"
+
 	"github.com/containers/nri-plugins/pkg/http"
+	"github.com/containers/nri-plugins/pkg/instrumentation/metrics"
 	logger "github.com/containers/nri-plugins/pkg/log"
 )
 
@@ -31,6 +34,11 @@ var log = logger.NewLogger("instrumentation")
 
 // Our instrumentation service instance.
 var svc = newService()
+
+// RegisterGatherer registers a prometheus metrics gatherer.
+func RegisterGatherer(g promcli.Gatherer) {
+	metrics.RegisterGatherer(g)
+}
 
 // GetHTTPMux returns our HTTP request mux for external services.
 func GetHTTPMux() *http.ServeMux {

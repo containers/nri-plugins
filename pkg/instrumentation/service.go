@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	"github.com/containers/nri-plugins/pkg/http"
+	"github.com/containers/nri-plugins/pkg/instrumentation/metrics"
 	"github.com/containers/nri-plugins/pkg/instrumentation/tracing"
 )
 
@@ -25,14 +26,12 @@ import (
 type service struct {
 	sync.RWMutex              // we're RW-lockable
 	http         *http.Server // HTTP server
-	metrics      *metrics     // metrics data exporter
 }
 
 // newService creates an instance of our instrumentation services.
 func newService() *service {
 	return &service{
-		http:    http.NewServer(),
-		metrics: &metrics{},
+		http: http.NewServer(),
 	}
 }
 
@@ -53,9 +52,9 @@ func (s *service) Start() error {
 		return instrumentationError("failed to start tracing exporter: %v", err)
 	}
 
-	err = s.metrics.start(s.http.GetMux(), opt.ReportPeriod, opt.PrometheusExport)
+	err = s.startMetrics()
 	if err != nil {
-		return instrumentationError("failed to start metrics: %v", err)
+		return instrumentationError("failed to start metrics exporter: %v", err)
 	}
 
 	return nil
@@ -69,18 +68,31 @@ func (s *service) startTracing() error {
 	)
 }
 
+func (s *service) startMetrics() error {
+	return metrics.Start(
+		GetHTTPMux(),
+		metrics.WithExporterDisabled(!opt.PrometheusExport),
+		metrics.WithServiceName(ServiceName),
+		metrics.WithPeriod(opt.ReportPeriod),
+	)
+}
+
 // Stop stops instrumentation services.
 func (s *service) Stop() {
 	s.Lock()
 	defer s.Unlock()
 
-	s.metrics.stop()
+	s.stopMetrics()
 	s.stopTracing()
 	s.http.Stop()
 }
 
 func (s *service) stopTracing() {
 	tracing.Stop()
+}
+
+func (s *service) stopMetrics() {
+	metrics.Stop()
 }
 
 // reconfigure reconfigures instrumentation services.
@@ -99,10 +111,12 @@ func (s *service) reconfigure() error {
 		return instrumentationError("failed to reconfigure tracing exporter: %v")
 	}
 
-	err = s.metrics.reconfigure(s.http.GetMux(), opt.ReportPeriod, opt.PrometheusExport)
+	s.stopMetrics()
+	err = s.startMetrics()
 	if err != nil {
-		return instrumentationError("failed to reconfigure metrics: %v", err)
+		return instrumentationError("failed to reconfigure metrics exporter: %v")
 	}
+
 	return nil
 }
 
