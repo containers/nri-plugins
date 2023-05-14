@@ -55,8 +55,10 @@ type optstruct struct {
 
 	// ReportPeriod is the OpenCensus view reporting period.
 	ReportPeriod time.Duration
+
 	// HTTPEndpoint is our HTTP endpoint, used among others to export Prometheus /metrics.
 	HTTPEndpoint string
+
 	// PrometheusExport defines whether we export /metrics to/for Prometheus.
 	PrometheusExport bool `json:"PrometheusExport"`
 }
@@ -163,17 +165,6 @@ func defaultOptions() interface{} {
 			defaultHTTPEndpoint,
 			func(v string) error { o.HTTPEndpoint = v; return nil },
 		},
-		"PROMETHEUS_EXPORT": {
-			defaultPrometheusExport,
-			func(v string) error {
-				enabled, err := utils.ParseEnabled(v)
-				if err != nil {
-					return err
-				}
-				o.PrometheusExport = enabled
-				return nil
-			},
-		},
 		"REPORT_PERIOD": {
 			defaultReportPeriod,
 			func(v string) error {
@@ -182,6 +173,17 @@ func defaultOptions() interface{} {
 					return err
 				}
 				o.ReportPeriod = d
+				return nil
+			},
+		},
+		"PROMETHEUS_EXPORT": {
+			defaultPrometheusExport,
+			func(v string) error {
+				enabled, err := utils.ParseEnabled(v)
+				if err != nil {
+					return err
+				}
+				o.PrometheusExport = enabled
 				return nil
 			},
 		},
