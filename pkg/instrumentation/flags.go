@@ -200,9 +200,10 @@ func defaultOptions() interface{} {
 func configNotify(event config.Event, source config.Source) error {
 	log.Info("instrumentation configuration is now %v", opt)
 
-	log.Info("reconfiguring...")
-	if err := svc.reconfigure(); err != nil {
+	if err := reconfigure(); err != nil {
 		log.Error("failed to restart instrumentation: %v", err)
+	} else {
+		log.Info("instrumentation services restarted")
 	}
 
 	return nil
