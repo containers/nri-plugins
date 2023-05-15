@@ -32,10 +32,11 @@ create-env: env.in
 cleanup:
 	$(Q)rm -f .*.stamp
 
-run: base-image-done
+run: base-image-done download-vm-done
 	PREFIX=$(PREFIX) ./runner.sh
 
-download-vm: .vm-image.done.stamp
+download-vm: download-vm-done
+download-vm-done: .vm-image.done.stamp
 .vm-image.done.stamp:
 	$(Q)mkdir -p $(VM_DIR) && \
 	curl --progress-bar -L $(VM_BASE_IMAGE) > $(VM_DIR)/$(VM_BASE_IMAGE_FILENAME) && \
