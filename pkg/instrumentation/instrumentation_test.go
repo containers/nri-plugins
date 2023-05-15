@@ -46,10 +46,9 @@ func TestPrometheusConfiguration(t *testing.T) {
 		opt.HTTPEndpoint = ":0"
 	}
 
-	s := newService()
-	s.Start()
+	Start()
 
-	address := s.http.GetAddress()
+	address := srv.GetAddress()
 	if strings.HasSuffix(opt.HTTPEndpoint, ":0") {
 		opt.HTTPEndpoint = address
 	}
@@ -57,19 +56,20 @@ func TestPrometheusConfiguration(t *testing.T) {
 	checkPrometheus(t, address, !opt.PrometheusExport)
 
 	opt.PrometheusExport = !opt.PrometheusExport
-	s.reconfigure()
+	reconfigure()
 	checkPrometheus(t, address, !opt.PrometheusExport)
 
 	opt.PrometheusExport = !opt.PrometheusExport
-	s.reconfigure()
+	reconfigure()
 	checkPrometheus(t, address, !opt.PrometheusExport)
 
 	opt.PrometheusExport = !opt.PrometheusExport
-	s.reconfigure()
+	reconfigure()
 	checkPrometheus(t, address, !opt.PrometheusExport)
 
-	s.http.Shutdown(true)
-	s.Stop()
+	srv.Shutdown(true)
+
+	Stop()
 }
 
 func checkPrometheus(t *testing.T, server string, shouldFail bool) {

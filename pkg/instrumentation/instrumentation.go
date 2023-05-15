@@ -16,11 +16,13 @@ package instrumentation
 
 import (
 	"fmt"
+	"sync"
 
 	promcli "github.com/prometheus/client_golang/prometheus"
 
 	"github.com/containers/nri-plugins/pkg/http"
 	"github.com/containers/nri-plugins/pkg/instrumentation/metrics"
+	"github.com/containers/nri-plugins/pkg/instrumentation/tracing"
 	logger "github.com/containers/nri-plugins/pkg/log"
 )
 
@@ -29,11 +31,14 @@ const (
 	ServiceName = "NRI-Resource-Plugin"
 )
 
-// Our logger instance.
-var log = logger.NewLogger("instrumentation")
-
-// Our instrumentation service instance.
-var svc = newService()
+var (
+	// Our logger instance.
+	log = logger.NewLogger("instrumentation")
+	// Our HTTP server instance.
+	srv = http.NewServer()
+	// Lock to protect against reconfiguration.
+	lock sync.RWMutex
+)
 
 // RegisterGatherer registers a prometheus metrics gatherer.
 func RegisterGatherer(g promcli.Gatherer) {
@@ -42,33 +47,105 @@ func RegisterGatherer(g promcli.Gatherer) {
 
 // GetHTTPMux returns our HTTP request mux for external services.
 func GetHTTPMux() *http.ServeMux {
-	if svc == nil {
-		return nil
-	}
-	return svc.http.GetMux()
+	return srv.GetMux()
 }
 
 // Start our internal instrumentation services.
 func Start() error {
-	if svc == nil {
-		return instrumentationError("cannot start, no instrumentation service instance")
-	}
-	return svc.Start()
+	log.Info("starting instrumentation services...")
+
+	lock.Lock()
+	defer lock.Unlock()
+
+	return start()
 }
 
-// Stop stops our internal instrumentation services.
+// Stop our internal instrumentation services.
 func Stop() {
-	if svc != nil {
-		svc.Stop()
+	lock.Lock()
+	defer lock.Unlock()
+
+	stop()
+}
+
+// Restart our internal instrumentation services.
+func Restart() error {
+	lock.Lock()
+	defer lock.Unlock()
+
+	stop()
+	return start()
+}
+
+func start() error {
+	err := startHTTPServer()
+	if err != nil {
+		return instrumentationError("failed to start HTTP server: %v", err)
+	}
+
+	err = startTracing()
+	if err != nil {
+		return instrumentationError("failed to start tracing exporter: %v", err)
+	}
+
+	err = startMetrics()
+	if err != nil {
+		return instrumentationError("failed to start metrics exporter: %v", err)
+	}
+
+	return nil
+}
+
+func startHTTPServer() error {
+	if srv == nil {
+		return nil
+	}
+	return srv.Start(opt.HTTPEndpoint)
+}
+
+func startTracing() error {
+	return tracing.Start(
+		tracing.WithServiceName(ServiceName),
+		tracing.WithCollectorEndpoint(opt.TracingCollector),
+		tracing.WithSamplingRatio(opt.Sampling.Ratio()),
+	)
+}
+
+func startMetrics() error {
+	return metrics.Start(
+		GetHTTPMux(),
+		metrics.WithExporterDisabled(!opt.PrometheusExport),
+		metrics.WithServiceName(ServiceName),
+		metrics.WithPeriod(opt.ReportPeriod),
+	)
+}
+
+func stop() {
+	stopMetrics()
+	stopTracing()
+	stopHTTPServer()
+}
+
+func stopHTTPServer() {
+	if srv != nil {
+		srv.Stop()
 	}
 }
 
-// Restart restarts our internal instrumentation services.
-func Restart() error {
-	if svc == nil {
-		return instrumentationError("cannot restart, no instrumentation service instance")
-	}
-	return svc.Restart()
+func stopTracing() {
+	tracing.Stop()
+}
+
+func stopMetrics() {
+	metrics.Stop()
+}
+
+func reconfigure() error {
+	lock.Lock()
+	defer lock.Unlock()
+
+	stop()
+	return start()
 }
 
 // instrumentationError produces a formatted instrumentation-specific error.
