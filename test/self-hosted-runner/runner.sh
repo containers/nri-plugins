@@ -135,7 +135,7 @@ get_latest_runner() {
     latest_runner_version=$(curl -I -v -s https://github.com/actions/runner/releases/latest 2>&1 | sed -n 's/^< location: \(.*\)$/\1/p' | awk -F/ '{ print $NF }' | sed 's/v//' | tr -d '\r')
 
     if [ -e "$LATEST_RUNNER" ]; then
-	if [ -f "${PREFIX}/actions-runner.tar.gz" ]; then
+	if [ -s "${PREFIX}/actions-runner.tar.gz" ]; then
 	    github_self_hosted_runner_version=$(cat $LATEST_RUNNER)
 	    if [ "$github_self_hosted_runner_version" == "$latest_runner_version" ]; then
 		return
