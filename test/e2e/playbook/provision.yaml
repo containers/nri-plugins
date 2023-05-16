@@ -94,7 +94,6 @@
 
     - name: disable SELinux
       ansible.posix.selinux:
-        update_kernel_param: true
         state: disabled
       when: ansible_facts['distribution'] == "Fedora"
 
