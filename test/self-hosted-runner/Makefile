@@ -1,9 +1,11 @@
 PREFIX ?= `pwd`/shr
 
+# Outer container image settings
 BASE_IMAGE_BUILD_CMD ?= docker build
 BASE_IMAGE_BUILD_EXTRA_OPTS ?=
 BASE_IMAGE ?= ubuntu:22.04
 
+# Inner e2e VM image settings (this is run inside the outer container)
 VM_BASE_IMAGE ?= https://vagrantcloud.com/generic/boxes/fedora37/versions/4.2.14/providers/libvirt.box
 VM_BASE_IMAGE_FILENAME ?= generic-fedora37-4.2.14.box
 VM_DIR ?= $(PREFIX)/mnt/vagrant

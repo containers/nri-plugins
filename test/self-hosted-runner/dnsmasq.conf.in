@@ -1,0 +1,5 @@
+port=53
+resolv-file=/mnt/conf/resolv.conf.orig
+
+address=/proxy.runner/LOCALIP
+address=/mirror.runner/LOCALIP

@@ -24,6 +24,12 @@ else
   CRIO_SRC = "#{ENV['crio_src']}"
 end
 
+if "#{ENV['RUN_INSIDE_CONTAINER']}" == "1"
+  RUN_INSIDE_CONTAINER=1
+else
+  RUN_INSIDE_CONTAINER=0
+end
+
 NRI_RESOURCE_POLICY_SRC = "#{ENV['nri_resource_policy_src']}"
 OUTPUT_DIR = "#{ENV['OUTPUT_DIR']}"
 
@@ -86,6 +92,7 @@ Vagrant.configure("2") do |config|
       crio_src: CRIO_SRC,
       nri_resource_policy_src: NRI_RESOURCE_POLICY_SRC,
       outdir: OUTPUT_DIR,
+      run_inside_container: RUN_INSIDE_CONTAINER,
     }
   end
 end

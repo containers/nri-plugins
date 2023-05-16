@@ -1,0 +1,51 @@
+# Listen on port 3128
+http_port 3128 ssl-bump generate-host-certificates=on cert=/etc/squid/certs/squid-ca-cert-key.pem dynamic_cert_mem_cache_size=16MB options=NO_SSLv3,NO_TLSv1,NO_TLSv1_1,SINGLE_DH_USE,SINGLE_ECDH_USE cipher=HIGH:MEDIUM:!RC4:!aNULL:!eNULL:!LOW:!3DES:!MD5:!EXP:!PSK:!SRP:!DSS
+
+# Custom config SSL-MITM mode
+tls_outgoing_options options=NO_SSLv3,NO_TLSv1,NO_TLSv1_1,SINGLE_DH_USE,SINGLE_ECDH_USE cipher=HIGH:MEDIUM:!RC4:!aNULL:!eNULL:!LOW:!3DES:!MD5:!EXP:!PSK:!SRP:!DSS
+
+sslcrtd_program /usr/lib/squid/security_file_certgen -s /var/lib/ssl_db -M 16MB
+
+acl step1 at_step SslBump1
+ssl_bump peek step1
+ssl_bump bump all
+
+# Define ACLs for forwarding requests to another proxy
+never_direct allow all
+always_direct deny all
+cache_peer $PROXY_HTTP parent $PROXY_HTTP_PORT 0 no-query default
+http_access allow all
+
+# Create a disk-based cache of up to 10GB in size:
+# (10000 is the size in MB. 16 and 256 seem to set how many subdirectories
+#  are created, and are default values.)
+cache_dir ufs /mnt/squid 10000 16 256
+
+# Use the LFUDA cache eviction policy -- Least Frequently Used, with
+#  Dynamic Aging. http://www.squid-cache.org/Doc/config/cache_replacement_policy/
+# It's more important to me to keep bigger files in cache than to keep
+# more, smaller files -- We are optimizing for bandwidth savings, not latency.
+cache_replacement_policy heap LFUDA
+
+# The top two are new lines, and probably aren't everything you would ever
+# want to cache. They're cached for 129600 minutes, which is 90 days.
+# refresh-ims and override-expire are described in the configuration here:
+#  http://www.squid-cache.org/Doc/config/refresh_pattern/
+# but basically, refresh-ims makes squid check with the backend server
+# when someone does a conditional get, to be cautious.
+# override-expire lets us override the specified expiry time. (This is
+#  illegal per the RFC, but works for our specific purposes.)
+refresh_pattern -i .rpm$ 129600 100% 129600 refresh-ims override-expire
+refresh_pattern -i .deb$ 129600 100% 129600 refresh-ims override-expire
+refresh_pattern -i .iso$ 129600 100% 129600 refresh-ims override-expire
+refresh_pattern -i .box$ 129600 100% 129600 refresh-ims override-expire
+refresh_pattern -i .tar.gz$ 129600 100% 129600 refresh-ims override-expire
+refresh_pattern ^ftp:           1440    20%     10080
+refresh_pattern ^gopher:        1440    0%      1440
+refresh_pattern -i (/cgi-bin/|\?) 0     0%      0
+refresh_pattern .               0       20%     4320
+
+# Squid defaults to not caching objects over 4MB, which may be
+# a reasonable default, but is awful behavior on our
+# pseudo-mirror. Let's make it 4GB:
+maximum_object_size 4096 MB
