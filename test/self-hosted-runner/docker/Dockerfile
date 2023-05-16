@@ -39,7 +39,8 @@ RUN apt-get update -y && apt-get install -y \
   gnupg \
   sudo \
   bc \
-  lsb-release
+  lsb-release \
+  moreutils
 
 RUN if [ ! -f /usr/share/keyrings/docker-archive-keyring.gpg ]; then \
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg; \
