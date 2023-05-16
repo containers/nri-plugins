@@ -22,5 +22,15 @@ if [ -f /mnt/env ]; then
     . /mnt/env
 fi
 
+# Make sure ts does not print error
+export LC_ALL=C
+
+echo "Test started" | ts '[%Y-%m-%d %H:%M:%S %z]'
+
 # Run the actual tests inside another VM.
-./run_tests.sh $1 "$GITHUB_WORKSPACE/e2e-test-results"
+./run_tests.sh $1 "$GITHUB_WORKSPACE/e2e-test-results" | ts -s '(%H:%M:%.S)'
+RET=$?
+
+echo "Test stopped" | ts '[%Y-%m-%d %H:%M:%S %z]'
+
+exit $RET
