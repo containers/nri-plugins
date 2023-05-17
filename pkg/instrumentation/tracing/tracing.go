@@ -134,9 +134,10 @@ func (t *tracing) start(options ...Option) error {
 			append(
 				[]attribute.KeyValue{
 					semconv.ServiceName(t.service),
+					semconv.HostNameKey.String(hostname),
+					semconv.ProcessPIDKey.Int64(int64(os.Getpid())),
 					attribute.String("Version", version.Version),
 					attribute.String("Build", version.Build),
-					attribute.String("hostname", hostname),
 				},
 				t.identity...,
 			)...,
