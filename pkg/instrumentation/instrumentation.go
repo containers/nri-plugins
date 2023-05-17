@@ -26,6 +26,8 @@ import (
 	logger "github.com/containers/nri-plugins/pkg/log"
 )
 
+type KeyValue = tracing.KeyValue
+
 const (
 	// ServiceName is our service name in external tracing and metrics services.
 	ServiceName = "nri-resource-policy"
@@ -38,6 +40,11 @@ var (
 	srv = http.NewServer()
 	// Lock to protect against reconfiguration.
 	lock sync.RWMutex
+	// Our identity for instrumentation.
+	identity []tracing.KeyValue
+
+	// Attribute allows setting up identity without an import of tracing.
+	Attribute = tracing.Attribute
 )
 
 // RegisterGatherer registers a prometheus metrics gatherer.
@@ -48,6 +55,11 @@ func RegisterGatherer(g promcli.Gatherer) {
 // GetHTTPMux returns our HTTP request mux for external services.
 func GetHTTPMux() *http.ServeMux {
 	return srv.GetMux()
+}
+
+// SetIdentity sets (extra) process identity attributes for tracing.
+func SetIdentity(attrs ...KeyValue) {
+	identity = attrs
 }
 
 // Start our internal instrumentation services.
@@ -106,6 +118,7 @@ func startHTTPServer() error {
 func startTracing() error {
 	return tracing.Start(
 		tracing.WithServiceName(ServiceName),
+		tracing.WithIdentity(identity...),
 		tracing.WithCollectorEndpoint(opt.TracingCollector),
 		tracing.WithSamplingRatio(opt.Sampling.Ratio()),
 	)
