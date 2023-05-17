@@ -15,70 +15,20 @@
 package main
 
 import (
-	"flag"
-	"os"
-	"strings"
-	"syscall"
-	"time"
-
-	"github.com/containers/nri-plugins/pkg/config"
-	"github.com/containers/nri-plugins/pkg/instrumentation"
-	"github.com/containers/nri-plugins/pkg/resmgr"
-
+	policy "github.com/containers/nri-plugins/cmd/topology-aware/policy"
 	logger "github.com/containers/nri-plugins/pkg/log"
-	version "github.com/containers/nri-plugins/pkg/version"
-
-	_ "github.com/containers/nri-plugins/cmd/topology-aware/policy"
+	resmgr "github.com/containers/nri-plugins/pkg/resmgr/main"
 )
 
 var log = logger.Default()
 
 func main() {
-	rate := logger.Rate{Limit: logger.Every(1 * time.Minute)}
-	logger.SetGrpcLogger("grpc", &rate)
-	logger.SetStdLogger("stdlog")
-
-	printConfig := flag.Bool("print-config", false, "Print configuration and exit.")
-	flag.Parse()
-
-	switch {
-	case *printConfig:
-		config.Print(nil)
-		os.Exit(0)
-
-	default:
-		if args := flag.Args(); len(args) > 0 {
-			switch args[0] {
-			case "config-help", "help":
-				config.Describe(args[1:]...)
-				os.Exit(0)
-			default:
-				log.Error("unknown command line arguments: %s", strings.Join(flag.Args(), ","))
-				flag.Usage()
-				os.Exit(1)
-			}
-		}
-	}
-
-	logger.Flush()
-	logger.SetupDebugToggleSignal(syscall.SIGUSR1)
-	log.Info("nri-resource-policy-topology-aware (version %s, build %s) starting...", version.Version, version.Build)
-
-	if err := instrumentation.Start(); err != nil {
-		log.Fatal("failed to set up instrumentation: %v", err)
-	}
-	defer instrumentation.Stop()
-
-	m, err := resmgr.NewResourceManager()
+	resmgr, err := resmgr.New(policy.PolicyName)
 	if err != nil {
-		log.Fatal("failed to create resource manager instance: %v", err)
+		log.Fatalf("%v", err)
 	}
 
-	if err := m.Start(); err != nil {
-		log.Fatal("failed to start resource manager: %v", err)
-	}
-
-	for {
-		time.Sleep(15 * time.Second)
+	if err := resmgr.Run(); err != nil {
+		log.Fatalf("%v", err)
 	}
 }
