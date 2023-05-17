@@ -109,6 +109,10 @@ func (m *Main) parseCmdline() {
 }
 
 func (m *Main) startTracing() error {
+	instrumentation.SetIdentity(
+		instrumentation.Attribute("resource-manager.policy", m.policy),
+	)
+
 	err := instrumentation.Start()
 	if err != nil {
 		return fmt.Errorf("failed to set up instrumentation: %v", err)
