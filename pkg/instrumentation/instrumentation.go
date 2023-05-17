@@ -28,7 +28,7 @@ import (
 
 const (
 	// ServiceName is our service name in external tracing and metrics services.
-	ServiceName = "NRI-Resource-Plugin"
+	ServiceName = "nri-resource-policy"
 )
 
 var (
