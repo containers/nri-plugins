@@ -26,7 +26,7 @@ base-image-done: .base-image.done.stamp
 	    touch "$@"; \
 	fi;
 
-create-env: env.in
+env create-env: env.in
 	$(Q)cp -i env.in env
 
 cleanup:
