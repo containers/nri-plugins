@@ -16,12 +16,11 @@ package resmgr
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"sync"
-
-	//	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -200,8 +199,8 @@ func (m *resmgr) setupCache() error {
 		return resmgrError("failed to create cache: %v", err)
 	}
 
-	// If we ended up loading an existing cache and that cache has
-	// an empty configuration saved, remove that configuration now.
+	// If we ended up having a cache which has an empty configuration
+	// saved, remove that configuration now.
 	// Policies tend to expect *some* CPU reservation which is not
 	// present if the configuration is fully empty. Not having any
 	// configuration (in the cache or from the agent) should cause
@@ -214,8 +213,28 @@ func (m *resmgr) setupCache() error {
 		m.cache.ResetConfig()
 	}
 
-	return nil
+	if opt.EnableTestAPIs {
+		mux := instrumentation.GetHTTPMux()
+		mux.HandleFunc("/cache-state", m.dumpCacheState)
+	}
 
+	return nil
+}
+
+// dumpCacheState prints internal cache state. This is used by e2e tests to verify current state.
+func (m *resmgr) dumpCacheState(w http.ResponseWriter, req *http.Request) {
+	log.Debug("output cache...")
+
+	m.Lock()
+	defer m.Unlock()
+
+	data, err := m.cache.Snapshot()
+	if err != nil {
+		fmt.Fprintf(w, "Failed to print cache: %v\r\n", err)
+		return
+	}
+
+	fmt.Fprintf(w, "%s\r\n", data)
 }
 
 // checkOpts checks the command line options for obvious errors.
@@ -518,5 +537,5 @@ func (m *resmgr) rebalance(method string) error {
 		// TODO: fix this
 	}
 
-	return m.cache.Save()
+	return nil
 }

@@ -406,9 +406,6 @@ type Cache interface {
 	// ResetConfig clears any stored configuration from the cache.
 	ResetConfig() error
 
-	// Save requests a cache save.
-	Save() error
-
 	// RefreshPods purges/inserts stale/new pods/containers using a pod sandbox list response.
 	RefreshPods([]*nri.PodSandbox) ([]Pod, []Pod, []Container)
 	// RefreshContainers purges/inserts stale/new containers using a container list response.
@@ -420,6 +417,9 @@ type Cache interface {
 	OpenFile(string, string, os.FileMode) (*os.File, error)
 	// WriteFile writes a container data file, creating it if necessary.
 	WriteFile(string, string, os.FileMode, []byte) error
+
+	// Snapshot gets current cache content in JSON format
+	Snapshot() ([]byte, error)
 }
 
 const (
@@ -445,7 +445,6 @@ var (
 // Our cache of objects.
 type cache struct {
 	sync.Mutex `json:"-"` // we're lockable
-	filePath   string     // where to store to/load from
 	dataDir    string     // container data directory
 
 	Pods       map[string]*pod       // known/cached pods
@@ -471,10 +470,9 @@ type Options struct {
 	CacheDir string
 }
 
-// NewCache instantiates a new cache. Load it from the given path if it exists.
+// NewCache instantiates a new cache.
 func NewCache(options Options) (Cache, error) {
 	cch := &cache{
-		filePath:   filepath.Join(options.CacheDir, "cache"),
 		dataDir:    filepath.Join(options.CacheDir, "containers"),
 		Pods:       make(map[string]*pod),
 		Containers: make(map[string]*container),
@@ -484,16 +482,7 @@ func NewCache(options Options) (Cache, error) {
 		implicit:   make(map[string]ImplicitAffinity),
 	}
 
-	if _, err := cch.checkPerm("cache", cch.filePath, false, cacheFilePerm); err != nil {
-		return nil, cacheError("refusing to use existing cache file: %v", err)
-	}
-	if err := cch.mkdirAll("cache", options.CacheDir, cacheDirPerm); err != nil {
-		return nil, err
-	}
 	if err := cch.mkdirAll("container", cch.dataDir, dataDirPerm); err != nil {
-		return nil, err
-	}
-	if err := cch.Load(); err != nil {
 		return nil, err
 	}
 
@@ -508,7 +497,7 @@ func (cch *cache) GetActivePolicy() string {
 // SetActivePolicy updaes the name of the active policy stored in the cache.
 func (cch *cache) SetActivePolicy(policy string) error {
 	cch.PolicyName = policy
-	return cch.Save()
+	return nil
 }
 
 // ResetActivePolicy clears the active policy any any policy-specific data from the cache.
@@ -520,18 +509,12 @@ func (cch *cache) ResetActivePolicy() error {
 	cch.policyData = make(map[string]interface{})
 	cch.PolicyJSON = make(map[string]string)
 
-	return cch.Save()
+	return nil
 }
 
 // SetConfig caches the given configuration.
 func (cch *cache) SetConfig(cfg config.RawConfig) error {
-	old := cch.Cfg
 	cch.Cfg = cfg
-
-	if err := cch.Save(); err != nil {
-		cch.Cfg = old
-		return err
-	}
 
 	return nil
 }
@@ -543,13 +526,7 @@ func (cch *cache) GetConfig() config.RawConfig {
 
 // ResetConfig clears any stored configuration from the cache.
 func (cch *cache) ResetConfig() error {
-	old := cch.Cfg
 	cch.Cfg = nil
-
-	if err := cch.Save(); err != nil {
-		cch.Cfg = old
-		return err
-	}
 
 	return nil
 }
@@ -558,7 +535,6 @@ func (cch *cache) ResetConfig() error {
 func (cch *cache) InsertPod(nriPod *nri.PodSandbox) (Pod, error) {
 	p := cch.createPod(nriPod)
 	cch.Pods[nriPod.GetId()] = p
-	cch.Save()
 
 	return p, nil
 }
@@ -572,8 +548,6 @@ func (cch *cache) DeletePod(id string) Pod {
 
 	log.Debug("removing pod %s (%s)", p.PrettyName(), p.GetID())
 	delete(cch.Pods, id)
-
-	cch.Save()
 
 	return p
 }
@@ -599,7 +573,6 @@ func (cch *cache) InsertContainer(ctr *nri.Container) (Container, error) {
 
 	cch.Containers[c.GetID()] = c
 	cch.createContainerDirectory(c.GetID())
-	cch.Save()
 
 	return c, nil
 }
@@ -614,8 +587,6 @@ func (cch *cache) DeleteContainer(id string) Container {
 	log.Debug("removing container %s", c.PrettyName())
 	cch.removeContainerDirectory(c.GetID())
 	delete(cch.Containers, c.GetID())
-
-	cch.Save()
 
 	return c
 }
@@ -1082,83 +1053,6 @@ func (cch *cache) Snapshot() ([]byte, error) {
 	}
 
 	return data, nil
-}
-
-// Restore restores a previously takes snapshot of the cache.
-func (cch *cache) Restore(data []byte) error {
-	s := snapshot{
-		Pods:       make(map[string]*pod),
-		Containers: make(map[string]*container),
-		PolicyJSON: make(map[string]string),
-	}
-
-	if err := json.Unmarshal(data, &s); err != nil {
-		return cacheError("failed to unmarshal snapshot data: %v", err)
-	}
-
-	if s.Version != CacheVersion {
-		return cacheError("can't restore snapshot, version '%s' != running version %s",
-			s.Version, CacheVersion)
-	}
-
-	cch.Pods = s.Pods
-	cch.Containers = s.Containers
-	cch.Cfg = s.Cfg
-	cch.NextID = s.NextID
-	cch.PolicyJSON = s.PolicyJSON
-	cch.PolicyName = s.PolicyName
-	cch.policyData = make(map[string]interface{})
-
-	for _, p := range cch.Pods {
-		p.cache = cch
-	}
-	for _, c := range cch.Containers {
-		c.cache = cch
-		cch.Containers[c.GetID()] = c
-	}
-
-	return nil
-}
-
-// Save the state of the cache.
-func (cch *cache) Save() error {
-	log.Debug("saving cache to file '%s'...", cch.filePath)
-
-	data, err := cch.Snapshot()
-	if err != nil {
-		return cacheError("failed to save cache: %v", err)
-	}
-
-	tmpPath := cch.filePath + ".saving"
-	if err = os.WriteFile(tmpPath, data, cacheFilePerm.prefer); err != nil {
-		return cacheError("failed to write cache to file %q: %v", tmpPath, err)
-	}
-	if err := os.Rename(tmpPath, cch.filePath); err != nil {
-		return cacheError("failed to rename %q to %q: %v",
-			tmpPath, cch.filePath, err)
-	}
-
-	return nil
-}
-
-// Load loads the last saved state of the cache.
-func (cch *cache) Load() error {
-	log.Debug("loading cache from file '%s'...", cch.filePath)
-
-	data, err := os.ReadFile(cch.filePath)
-
-	switch {
-	case os.IsNotExist(err):
-		log.Debug("no cache file '%s', nothing to restore", cch.filePath)
-		return nil
-	case len(data) == 0:
-		log.Debug("empty cache file '%s', nothing to restore", cch.filePath)
-		return nil
-	case err != nil:
-		return cacheError("failed to load cache from file '%s': %v", cch.filePath, err)
-	}
-
-	return cch.Restore(data)
 }
 
 func (cch *cache) ContainerDirectory(id string) string {
