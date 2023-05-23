@@ -76,6 +76,7 @@ spec:
             - /tmp/nri-resource-policy.pid
             - -metrics-interval
             - 5s
+            - --enable-test-apis
           ports:
             - containerPort: 8891
               name: metrics

@@ -13,7 +13,6 @@ cleanup() {
         kubectl delete namespace $testns || :; \
         kubectl delete namespace btype1ns0 || :; \
 	kubectl -n kube-system delete configmap nri-resource-policy-config.default || :"
-    vm-port-forward-disable
     terminate nri-resource-policy
 
     # Just in case the cache says that the policy is "topology-aware"
@@ -35,7 +34,6 @@ vm-command "kubectl create namespace btype1ns0"
 
 AVAILABLE_CPU="cpuset:0,4-15" BTYPE2_NAMESPACE0='"*"' BTYPE1_MAXCPUS='0' apply-configmap
 sleep 3
-vm-port-forward-enable
 
 # pod0 in btype0, annotation
 CPUREQ=1 MEMREQ="100M" CPULIM=1 MEMLIM="100M"
