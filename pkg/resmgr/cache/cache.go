@@ -21,7 +21,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	nri "github.com/containerd/nri/pkg/api"
 	v1 "k8s.io/api/core/v1"
@@ -444,8 +443,7 @@ var (
 
 // Our cache of objects.
 type cache struct {
-	sync.Mutex `json:"-"` // we're lockable
-	dataDir    string     // container data directory
+	dataDir string // container data directory
 
 	Pods       map[string]*pod       // known/cached pods
 	Containers map[string]*container // known/cache containers
