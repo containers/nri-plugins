@@ -165,7 +165,7 @@ $(BIN_PATH)/%: .static.%.$(STATIC)
 $(BIN_PATH)/nri-resource-policy-topology-aware: \
     $(shell for f in cmd/topology-aware/*.go; do echo $$f; done; \
             for dir in $(shell $(GO_DEPS) ./cmd/topology-aware/... | \
-                          grep '/nri-plugins/' | \
+                          grep -E '(/nri-plugins/)|(cmd/topology-aware/)' | \
                           sed 's#github.com/containers/nri-plugins/##g'); do \
                 find $$dir -name \*.go; \
             done | sort | uniq)
@@ -173,7 +173,7 @@ $(BIN_PATH)/nri-resource-policy-topology-aware: \
 $(BIN_PATH)/nri-resource-policy-balloons: \
     $(shell for f in cmd/balloons/*.go; do echo $$f; done; \
                 for dir in $(shell $(GO_DEPS) ./cmd/balloons/... | \
-                          grep '/nri-plugins/' | \
+                          grep -E '(/nri-plugins/)|(cmd/balloons/)' | \
                           sed 's#github.com/containers/nri-plugins/##g'); do \
                 find $$dir -name \*.go; \
             done | sort | uniq)
@@ -181,7 +181,7 @@ $(BIN_PATH)/nri-resource-policy-balloons: \
 $(BIN_PATH)/nri-resource-policy-template: \
     $(shell for f in cmd/template/*.go; do echo $$f; done; \
                 for dir in $(shell $(GO_DEPS) ./cmd/template/... | \
-                          grep '/nri-plugins/' | \
+                          grep -E '(/nri-plugins/)|(cmd/template/)' | \
                           sed 's#github.com/containers/nri-plugins/##g'); do \
                 find $$dir -name \*.go; \
             done | sort | uniq)
