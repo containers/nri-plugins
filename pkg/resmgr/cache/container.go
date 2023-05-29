@@ -523,6 +523,15 @@ func (c *container) SetMemoryLimit(value int64) {
 	c.markPending(NRI)
 }
 
+var (
+	// More complext rules, for Kubelet secrets and config maps
+	ignoredTopologyPathRegexps = []*regexp.Regexp{
+		// Kubelet directory can be different, but we can detect it by structure inside of it.
+		// For now, we can safely ignore exposed config maps and secrets for topology hints.
+		regexp.MustCompile(`(kubelet)?/pods/[[:xdigit:]-]+/volumes/kubernetes.io~(configmap|secret)/`),
+	}
+)
+
 func getTopologyHintsForMount(hostPath, containerPath string, readOnly bool) topology.Hints {
 
 	if readOnly {
@@ -542,12 +551,6 @@ func getTopologyHintsForMount(hostPath, containerPath string, readOnly bool) top
 		}
 	}
 
-	// More complext rules, for Kubelet secrets and config maps
-	ignoredTopologyPathRegexps := []*regexp.Regexp{
-		// Kubelet directory can be different, but we can detect it by structure inside of it.
-		// For now, we can safely ignore exposed config maps and secrets for topology hints.
-		regexp.MustCompile(`(kubelet)?/pods/[[:xdigit:]-]+/volumes/kubernetes.io~(configmap|secret)/`),
-	}
 	for _, re := range ignoredTopologyPathRegexps {
 		if re.MatchString(hostPath) || re.MatchString(containerPath) {
 			return topology.Hints{}
