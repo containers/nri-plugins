@@ -430,3 +430,46 @@ metadata:
     prefer-reserved-cpus.resource-policy.nri.io/pod: "true"
     prefer-reserved-cpus.resource-policy.nri.io/container.special: "false"
 ```
+
+## Allowing or denying mount/device paths via annotations
+
+User is able mark certain pods and containers to have allowed or denied
+paths for mounts or devices. What this means is that when the system
+is generating topology hints, it will consult this allowed / denied path
+list to determine what hints are created. The deny path list is checked
+first and then the allowed path list. This means that you can deny all
+the mount/device paths and then allow only the needed ones for example.
+User can either set the path with "prefix" (this is the default) or with
+"glob" type. The "prefix" type means that the prefix of the mount/device
+path is checked for matches. The "glob" type means that user is able to
+put wildcards to the matched paths.
+
+For example:
+
+```yaml
+metadata:
+  annotations:
+    allow.topologyhints.resource-policy.nri.io/pod: |+
+      type: prefix
+      paths:
+        - /foo/bar/whitelisted-path1
+        - /xy-zy/another-whitelisted-path1
+    allow.topologyhints.resource-policy.nri.io/container.pod0c0: |+
+      type: glob
+      paths:
+        - /whitelisted-path*2
+        - /xy-zy/another-whitelisted-path2
+    deny.topologyhints.resource-policy.nri.io: |+
+      type: prefix
+      paths:
+        - /foo/bar/blacklisted-path3
+    deny.topologyhints.resource-policy.nri.io/pod: |+
+      type: glob
+      paths:
+        - /blacklisted-path*4
+    deny.topologyhints.resource-policy.nri.io/container.pod0c1: |+
+      type: prefix
+      paths:
+        - /foo/bar/blacklisted-path5
+        - /xy-zy/another-blacklisted-path5
+```

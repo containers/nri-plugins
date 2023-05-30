@@ -17,6 +17,7 @@ package cache
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -30,7 +31,59 @@ import (
 	nri "github.com/containerd/nri/pkg/api"
 	v1 "k8s.io/api/core/v1"
 	resapi "k8s.io/apimachinery/pkg/api/resource"
+	"sigs.k8s.io/yaml"
 )
+
+type MatchType int
+
+const (
+	PrefixMatch MatchType = iota
+	GlobMatch
+)
+
+type PathList struct {
+	Type  MatchType `yaml:"type"`
+	Paths []string  `yaml:"paths"`
+}
+
+func (t *MatchType) UnmarshalJSON(data []byte) error {
+	switch string(data) {
+	case "\"prefix\"":
+		*t = PrefixMatch
+	case "\"glob\"":
+		*t = GlobMatch
+	default:
+		return fmt.Errorf("invalid MatchType %s", string(data))
+	}
+
+	return nil
+}
+
+func (c *container) getAllowDenyPathList(typeStr string) (*PathList, bool, error) {
+	var hints string
+	var v PathList
+	var ok bool
+
+	if hints, ok = c.GetEffectiveAnnotation(typeStr + "." + TopologyHintsKey); !ok {
+		log.Debug("Cannot get %s hints for %s", typeStr, c.GetName())
+		return nil, false, nil
+	}
+
+	if err := yaml.Unmarshal([]byte(hints), &v); err != nil {
+		log.Debug("Error (%v) when trying to parse \"%s\"", err, hints)
+		return nil, false, err
+	}
+
+	return &v, true, nil
+}
+
+func (c *container) getAllowPathList() (*PathList, bool, error) {
+	return c.getAllowDenyPathList("allow")
+}
+
+func (c *container) getDenyPathList() (*PathList, bool, error) {
+	return c.getAllowDenyPathList("deny")
+}
 
 // Create and initialize a cached container.
 func (cch *cache) createContainer(nriCtr *nri.Container) (*container, error) {
@@ -56,6 +109,62 @@ func (cch *cache) createContainer(nriCtr *nri.Container) (*container, error) {
 	}
 
 	return c, nil
+}
+
+func checkAllowedAndDeniedPaths(hostPath string, allowPathList, denyPathList *PathList) bool {
+	var denied bool
+
+	// Currently we first check deny list, and then allow list
+	if denyPathList != nil {
+		for _, path := range denyPathList.Paths {
+			var matched bool
+			var err error
+
+			if denyPathList.Type == GlobMatch {
+				matched, err = filepath.Match(path, hostPath)
+			} else {
+				// Note that match requires pattern to match all of name, not just a substring.
+				matched = strings.HasPrefix(hostPath, path)
+			}
+
+			if err != nil {
+				log.Error("Malformed pattern \"%s\"", matched)
+				return false
+			}
+
+			if matched {
+				log.Debug("Deny match, removing %s from hints", path)
+				denied = true
+				break
+			}
+		}
+	}
+
+	if allowPathList != nil {
+		for _, path := range allowPathList.Paths {
+			var matched bool
+			var err error
+
+			if allowPathList.Type == GlobMatch {
+				matched, err = filepath.Match(path, hostPath)
+			} else {
+				// Note that match requires pattern to match all of name, not just a substring.
+				matched = strings.HasPrefix(hostPath, path)
+			}
+
+			if err != nil {
+				log.Error("Malformed pattern \"%s\"", matched)
+				return denied
+			}
+
+			if matched {
+				log.Debug("Allow match, adding %s to hints", path)
+				return false
+			}
+		}
+	}
+
+	return denied
 }
 
 func (c *container) generateTopologyHints() {
@@ -88,10 +197,25 @@ func (c *container) generateTopologyHints() {
 		}
 	}
 
+	allowPathList, ok, err := c.getAllowPathList()
+	if ok {
+		// Ignore any errors as that indicates that there were no hints specified
+		if err == nil {
+			log.Debug("Allow hints %v", allowPathList)
+		}
+	}
+
+	denyPathList, ok, err := c.getDenyPathList()
+	if ok {
+		if err == nil {
+			log.Debug("Deny hints %v", denyPathList)
+		}
+	}
+
 	if mountHints {
 		for _, m := range c.Ctr.GetMounts() {
 			readOnly := isReadOnlyMount(m)
-			if hints := getTopologyHintsForMount(m.Destination, m.Source, readOnly); len(hints) > 0 {
+			if hints := getTopologyHintsForMount(m.Destination, m.Source, readOnly, allowPathList, denyPathList); len(hints) > 0 {
 				c.TopologyHints = topology.MergeTopologyHints(c.TopologyHints, hints)
 			}
 		}
@@ -102,7 +226,7 @@ func (c *container) generateTopologyHints() {
 	if deviceHints {
 		for _, d := range c.Ctr.GetLinux().GetDevices() {
 			if !isReadOnlyDevice(c.Ctr.GetLinux().GetResources().GetDevices(), d) {
-				if hints := getTopologyHintsForDevice(d.Type, d.Major, d.Minor); len(hints) > 0 {
+				if hints := getTopologyHintsForDevice(d.Type, d.Major, d.Minor, allowPathList, denyPathList); len(hints) > 0 {
 					c.TopologyHints = topology.MergeTopologyHints(c.TopologyHints, hints)
 				}
 			}
@@ -530,7 +654,7 @@ var (
 	}
 )
 
-func getTopologyHintsForMount(hostPath, containerPath string, readOnly bool) topology.Hints {
+func getTopologyHintsForMount(hostPath, containerPath string, readOnly bool, allowPathList, denyPathList *PathList) topology.Hints {
 
 	if readOnly {
 		// if device or path is read-only, assume it as non-important for now
@@ -555,7 +679,19 @@ func getTopologyHintsForMount(hostPath, containerPath string, readOnly bool) top
 		}
 	}
 
+	// First check the hostPath before resolving to device path
+	if denied := checkAllowedAndDeniedPaths(hostPath, allowPathList, denyPathList); denied {
+		// Ignoring hints for this path
+		return topology.Hints{}
+	}
+
 	if devPath, err := topology.FindSysFsDevice(hostPath); err == nil {
+		// Check against the resolved device path
+		if denied := checkAllowedAndDeniedPaths(devPath, allowPathList, denyPathList); denied {
+			// Ignoring hints for this path
+			return topology.Hints{}
+		}
+
 		// errors are ignored
 		if hints, err := topology.NewTopologyHints(devPath); err == nil && len(hints) > 0 {
 			return hints
@@ -565,10 +701,15 @@ func getTopologyHintsForMount(hostPath, containerPath string, readOnly bool) top
 	return topology.Hints{}
 }
 
-func getTopologyHintsForDevice(devType string, major, minor int64) topology.Hints {
+func getTopologyHintsForDevice(devType string, major, minor int64, allowPathList, denyPathList *PathList) topology.Hints {
 	log.Debug("getting topology hints for device <%s %d,%d>", devType, major, minor)
 
 	if devPath, err := topology.FindGivenSysFsDevice(devType, major, minor); err == nil {
+		if denied := checkAllowedAndDeniedPaths(devPath, allowPathList, denyPathList); denied {
+			// Ignoring hints for this device
+			return topology.Hints{}
+		}
+
 		// errors are ignored
 		if hints, err := topology.NewTopologyHints(devPath); err == nil && len(hints) > 0 {
 			return hints
