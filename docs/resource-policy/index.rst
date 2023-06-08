@@ -8,7 +8,6 @@ Resource Policy Plugin
    :caption: Contents:
 
    introduction.md
-   quick-start.md
    installation.md
    setup.md
    policy/index.rst
