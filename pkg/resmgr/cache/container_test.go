@@ -17,14 +17,58 @@ package cache_test
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"syscall"
 
+	"github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
+	"github.com/containers/nri-plugins/pkg/topology"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 
 	nri "github.com/containerd/nri/pkg/api"
+	"github.com/pkg/errors"
+	"golang.org/x/sys/unix"
+	"sigs.k8s.io/yaml"
 )
+
+var (
+	testdataDir     string
+	enableDebugging bool = false
+
+	cpulist  string = "0-7"
+	numanode string = "0"
+)
+
+var _ = BeforeSuite(func() {
+	pwd, err := os.Getwd()
+	if err != nil {
+		panic(fmt.Errorf("unable to get current directory: %w", err))
+	}
+
+	if path, err := filepath.EvalSymlinks(pwd); err == nil {
+		pwd = path
+	}
+
+	l := log.Get("topology-hints")
+	topology.SetLogger(l)
+
+	c := log.Get("cache")
+
+	if enableDebugging {
+		l.EnableDebug(true)
+		c.EnableDebug(true)
+	}
+
+	testdataDir = pwd + "/testdata"
+	topology.SetSysRoot(testdataDir)
+})
+
+var _ = AfterSuite(func() {
+	topology.SetSysRoot("")
+})
 
 var _ = Describe("Container", func() {
 	It("can return its ID", func() {
@@ -627,6 +671,233 @@ var _ = Describe("Container", func() {
 		Expect(value).To(Equal(limit))
 	})
 })
+
+var _ = Describe("Container", func() {
+	It("properly filters topology hints for mounts", func() {
+		var (
+			annotations1 = map[string]string{
+				"allow.topologyhints.resource-policy.nri.io": `type: prefix
+paths:
+  - /boot
+  - /path/allowed
+`,
+				"deny.topologyhints.resource-policy.nri.io": `type: prefix
+paths:
+  - /path/denied
+  - /denied
+`,
+			}
+			annotations2 = map[string]string{
+				"allow.topologyhints.resource-policy.nri.io": `type: prefix
+paths:
+  - /bar2
+  - /allowedpath2
+`,
+				"deny.topologyhints.resource-policy.nri.io": `type: prefix
+paths:
+  - /deniedpath2
+  - /boot
+`,
+			}
+			annotations3 = map[string]string{
+				"allow.topologyhints.resource-policy.nri.io/pod": `type: glob
+paths:
+  - /boo*
+  - /anotherglobbedpath*2
+`,
+				"deny.topologyhints.resource-policy.nri.io/pod": `type: glob
+paths:
+  - /*
+  - /yet*anotherglobbedpath2
+`,
+			}
+			annotations4 = map[string]string{
+				"allow.topologyhints.resource-policy.nri.io/pod": `type: glob
+paths:
+  - /a*
+  - /anotherglobbedpath*2
+`,
+				"deny.topologyhints.resource-policy.nri.io/pod": `type: glob
+paths:
+  - /b*
+  - /yet*anotherglobbedpath2
+`,
+			}
+			annotations5 = map[string]string{
+				"allow.topologyhints.resource-policy.nri.io/pod": `paths:
+  - /boot
+  - /anotherglobbedpath*2
+`,
+				"deny.topologyhints.resource-policy.nri.io/pod": `type: glob
+paths:
+  - /*
+  - /yet*anotherglobbedpath2
+`,
+			}
+			annotations6 = map[string]string{
+				"allow.topologyhints.resource-policy.nri.io/pod": `this will fail unmarshaling
+  - /boot
+  - /anotherglobbedpath*2
+`,
+				"deny.topologyhints.resource-policy.nri.io/pod": `type: glob
+paths:
+  - /*
+  - /yet*anotherglobbedpath2
+`,
+			}
+		)
+
+		Expect(checkAllowedHints(annotations1, 1)).To(Equal(true))
+		Expect(checkAllowedHints(annotations2, 0)).To(Equal(true))
+		Expect(checkAllowedHints(annotations3, 1)).To(Equal(true))
+		Expect(checkAllowedHints(annotations4, 0)).To(Equal(true))
+		Expect(checkAllowedHints(annotations5, 1)).To(Equal(true))
+		Expect(checkAllowedHints(annotations6, 0)).To(Equal(false))
+	})
+})
+
+func checkAllowedHints(annotations map[string]string, expectedHints int) bool {
+	var (
+		// Note that we assume here that /boot is installed in a non virtual
+		// device node so that the code in topology.go can resolve it to a real device.
+		hostPath = "/boot"
+		mounts   = []*nri.Mount{
+			{
+				Source:      "/dir",
+				Destination: hostPath,
+				Type:        "bind",
+				Options:     []string{"bind", "rw"},
+			},
+		}
+		nriPods = []*nri.PodSandbox{
+			makePod(WithPodAnnotations(annotations)),
+		}
+		nriCtrs = []*nri.Container{
+			makeCtr(WithCtrPodID(nriPods[0].GetId()),
+				WithCtrState(cache.ContainerStateRunning),
+				WithCtrMounts(mounts),
+			),
+		}
+		pathList cache.PathList
+	)
+
+	// We must setup the test-data directory so that the container.go:generateTopologyHints()
+	// can do its magic and resolve the mount directory to proper sysfs device path.
+	// This will work properly on non virtual devices and we are relaying here that /boot
+	// directory is mounted to one. That is why the /boot directory is used as a mount path
+	// above. So we first try to figure out where the host /boot directory is located, if
+	// it is not pointing to real device, then this test cannot pass as topology.go will
+	// check that (major number is 0 which indicates a virtual device node) and we just give a
+	// warning message.
+	err := setupSysFsDevice(hostPath)
+	Expect(err).To(BeNil())
+
+	_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
+	for _, ctr := range ctrs {
+		// First part of the checks make sure that the yaml
+		// above is properly set. Not strictly necessary but
+		// make sure we do not have wrong stuff there.
+		ann := "allow" + "." + cache.TopologyHintsKey
+		allow, ok := ctr.GetEffectiveAnnotation(ann)
+		if !ok {
+			fmt.Errorf("unable to get annotation %s (%s)", ann, allow)
+			return false
+		}
+
+		if err := yaml.Unmarshal([]byte(allow), &pathList); err != nil {
+			fmt.Errorf("Error (%v) when trying to parse \"%s\"", err, allow)
+			return false
+		}
+
+		ann = "deny" + "." + cache.TopologyHintsKey
+		deny, ok := ctr.GetEffectiveAnnotation(ann)
+		if !ok {
+			fmt.Errorf("unable to get annotation %s (%s)", ann, deny)
+			return false
+		}
+
+		if err := yaml.Unmarshal([]byte(deny), &pathList); err != nil {
+			fmt.Errorf("Error (%v) when trying to parse \"%s\"", err, deny)
+			return false
+		}
+
+		// Then we check that we get proper hints from the APIs
+		hints := ctr.GetTopologyHints()
+		Expect(len(hints)).To(Equal(expectedHints))
+
+		for _, hint := range hints {
+			Expect(hint.CPUs).To(Equal(cpulist))
+			Expect(hint.NUMAs).To(Equal(numanode))
+		}
+	}
+
+	return true
+}
+
+func createSysFsDevice(devType string, major, minor int64) error {
+	devPath := fmt.Sprintf("/sys/dev/%s/%d:%d", devType, major, minor)
+	if err := os.MkdirAll(testdataDir+"/"+devPath, 0770); err != nil {
+		return err
+	}
+
+	realDevPath, err := filepath.EvalSymlinks(devPath)
+	if err := os.MkdirAll(testdataDir+"/"+realDevPath, 0770); err != nil {
+		return err
+	}
+
+	realDevPath = testdataDir + "/" + realDevPath
+
+	// Then create two files that topology.go expects to find somewhere there in the sysfs
+	f, err := os.Create(realDevPath + "/local_cpulist")
+	if err != nil {
+		return err
+	}
+
+	f.Write([]byte(cpulist))
+	f.Close()
+
+	f, err = os.Create(realDevPath + "/numa_node")
+	if err != nil {
+		return err
+	}
+
+	f.Write([]byte(numanode))
+	f.Close()
+
+	return nil
+}
+
+func setupSysFsDevice(dev string) error {
+	fi, err := os.Stat(dev)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return errors.Wrapf(err, "no such file %s", dev)
+		}
+		return errors.Wrapf(err, "unable to get stat for %s", dev)
+	}
+
+	devType := "block"
+	rdev := fi.Sys().(*syscall.Stat_t).Dev
+	if mode := fi.Mode(); mode&os.ModeDevice != 0 {
+		rdev = fi.Sys().(*syscall.Stat_t).Rdev
+		if mode&os.ModeCharDevice != 0 {
+			devType = "char"
+		}
+	}
+
+	major := int64(unix.Major(rdev))
+	minor := int64(unix.Minor(rdev))
+	if major == 0 {
+		return errors.Errorf("%s is a virtual device node", dev)
+	}
+
+	err = createSysFsDevice(devType, major, minor)
+	if err != nil {
+		return errors.Wrapf(err, "failed to find sysfs device for %s", dev)
+	}
+
+	return nil
+}
 
 type CtrOption func(*nri.Container) error
 
