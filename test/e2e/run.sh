@@ -326,6 +326,8 @@ launch() { # script API
 
 		vm-command "fuser --kill nri-resource-policy.output.txt 2>/dev/null"
 		vm-command "kubectl -n kube-system logs "$POD" -f >nri-resource-policy.output.txt 2>&1 &"
+
+		vm-port-forward-enable
 	    else
 		error "nri-resource-policy pod not found"
 	    fi
@@ -346,6 +348,7 @@ terminate() { # script API
     local target="$1"
     case $target in
         "nri-resource-policy")
+	    vm-port-forward-disable
 	    vm-command "kubectl delete -f /etc/nri-resource-policy/nri-resource-policy-deployment.yaml"
             ;;
         *)
