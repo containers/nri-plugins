@@ -10,13 +10,3 @@ rules:
   verbs:
   - get
   - watch
-- apiGroups:
-  - topology.node.k8s.io
-  resources:
-  - noderesourcetopologies
-  verbs:
-  - create
-  - get
-  - list
-  - update
-  - delete
