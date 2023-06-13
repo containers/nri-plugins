@@ -106,8 +106,8 @@ if [ -z "$build_subdir" ]; then
     build_subdir=${_version:+v$_version}
     # Fallback to base-ref i.e. name of the branch or tag
     if [ -z "$build_subdir" ]; then
-        # For master branch we use the name 'devel'
-        [ "$_base_ref" = "master" ] && build_subdir=devel || build_subdir=$_base_ref
+        # For main branch we use the name 'devel'
+        [ "$_base_ref" = "main" ] && build_subdir=devel || build_subdir=$_base_ref
     fi
 fi
 
@@ -130,8 +130,8 @@ if [ "$release_tag" ]; then
 
 fi
 
-# Only update the releases "site" from master
-if [ "$GITHUB_REF" = "refs/heads/master" ]; then
+# Only update the releases "site" from main
+if [ "$GITHUB_REF" = "refs/heads/main" ]; then
     echo "Building releases/"
     sphinx-build docs/releases "$build_dir"/releases
 fi
