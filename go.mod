@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	contrib.go.opencensus.io/exporter/prometheus v0.4.2
-	github.com/containerd/nri v0.3.0
+	github.com/containerd/nri v0.3.1-0.20230601014931-040229d0100f
 	github.com/containers/nri-plugins/pkg/topology v0.0.0
 	github.com/intel/goresctrl v0.3.0
 	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.0

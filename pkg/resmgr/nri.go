@@ -103,11 +103,11 @@ func (p *nriPlugin) onClose() {
 	p.restart()
 }
 
-func (p *nriPlugin) Configure(cfg, runtime, version string) (stub.EventMask, error) {
+func (p *nriPlugin) Configure(ctx context.Context, cfg, runtime, version string) (stub.EventMask, error) {
 	event := Configure
 
 	_, span := tracing.StartSpan(
-		context.TODO(),
+		ctx,
 		event,
 		tracing.WithAttributes(
 			tracing.Attribute(SpanTagRuntimeName, runtime),
@@ -174,11 +174,11 @@ func (p *nriPlugin) syncWithNRI(pods []*api.PodSandbox, containers []*api.Contai
 	return allocated, released, nil
 }
 
-func (p *nriPlugin) Synchronize(pods []*api.PodSandbox, containers []*api.Container) (updates []*api.ContainerUpdate, retErr error) {
+func (p *nriPlugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, containers []*api.Container) (updates []*api.ContainerUpdate, retErr error) {
 	event := Synchronize
 
 	_, span := tracing.StartSpan(
-		context.TODO(),
+		ctx,
 		event,
 	)
 	defer func() {
@@ -208,11 +208,11 @@ func (p *nriPlugin) Synchronize(pods []*api.PodSandbox, containers []*api.Contai
 	return p.getPendingUpdates(nil), nil
 }
 
-func (p *nriPlugin) RunPodSandbox(pod *api.PodSandbox) (retErr error) {
+func (p *nriPlugin) RunPodSandbox(ctx context.Context, pod *api.PodSandbox) (retErr error) {
 	event := RunPodSandbox
 
 	_, span := tracing.StartSpan(
-		context.TODO(),
+		ctx,
 		event,
 		tracing.WithAttributes(podSpanTags(pod)...),
 	)
@@ -233,11 +233,11 @@ func (p *nriPlugin) RunPodSandbox(pod *api.PodSandbox) (retErr error) {
 	return nil
 }
 
-func (p *nriPlugin) StopPodSandbox(pod *api.PodSandbox) (retErr error) {
+func (p *nriPlugin) StopPodSandbox(ctx context.Context, pod *api.PodSandbox) (retErr error) {
 	event := StopPodSandbox
 
 	_, span := tracing.StartSpan(
-		context.TODO(),
+		ctx,
 		event,
 		tracing.WithAttributes(podSpanTags(pod)...),
 	)
@@ -253,11 +253,11 @@ func (p *nriPlugin) StopPodSandbox(pod *api.PodSandbox) (retErr error) {
 	return nil
 }
 
-func (p *nriPlugin) RemovePodSandbox(pod *api.PodSandbox) (retErr error) {
+func (p *nriPlugin) RemovePodSandbox(ctx context.Context, pod *api.PodSandbox) (retErr error) {
 	event := RemovePodSandbox
 
 	_, span := tracing.StartSpan(
-		context.TODO(),
+		ctx,
 		event,
 		tracing.WithAttributes(podSpanTags(pod)...),
 	)
@@ -278,11 +278,11 @@ func (p *nriPlugin) RemovePodSandbox(pod *api.PodSandbox) (retErr error) {
 	return nil
 }
 
-func (p *nriPlugin) CreateContainer(pod *api.PodSandbox, container *api.Container) (adjust *api.ContainerAdjustment, updates []*api.ContainerUpdate, retErr error) {
+func (p *nriPlugin) CreateContainer(ctx context.Context, pod *api.PodSandbox, container *api.Container) (adjust *api.ContainerAdjustment, updates []*api.ContainerUpdate, retErr error) {
 	event := CreateContainer
 
 	_, span := tracing.StartSpan(
-		context.TODO(),
+		ctx,
 		event,
 		tracing.WithAttributes(containerSpanTags(pod, container)...),
 	)
@@ -326,11 +326,11 @@ func (p *nriPlugin) CreateContainer(pod *api.PodSandbox, container *api.Containe
 	return adjust, updates, nil
 }
 
-func (p *nriPlugin) StartContainer(pod *api.PodSandbox, container *api.Container) (retErr error) {
+func (p *nriPlugin) StartContainer(ctx context.Context, pod *api.PodSandbox, container *api.Container) (retErr error) {
 	event := StartContainer
 
 	_, span := tracing.StartSpan(
-		context.TODO(),
+		ctx,
 		event,
 		tracing.WithAttributes(containerSpanTags(pod, container)...),
 	)
@@ -367,11 +367,11 @@ func (p *nriPlugin) StartContainer(pod *api.PodSandbox, container *api.Container
 	return nil
 }
 
-func (p *nriPlugin) UpdateContainer(pod *api.PodSandbox, container *api.Container) (updates []*api.ContainerUpdate, retErr error) {
+func (p *nriPlugin) UpdateContainer(ctx context.Context, pod *api.PodSandbox, container *api.Container, res *api.LinuxResources) (updates []*api.ContainerUpdate, retErr error) {
 	event := UpdateContainer
 
 	_, span := tracing.StartSpan(
-		context.TODO(),
+		ctx,
 		event,
 		tracing.WithAttributes(containerSpanTags(pod, container)...),
 	)
@@ -393,11 +393,11 @@ func (p *nriPlugin) UpdateContainer(pod *api.PodSandbox, container *api.Containe
 	return nil, nil
 }
 
-func (p *nriPlugin) StopContainer(pod *api.PodSandbox, container *api.Container) (updates []*api.ContainerUpdate, retErr error) {
+func (p *nriPlugin) StopContainer(ctx context.Context, pod *api.PodSandbox, container *api.Container) (updates []*api.ContainerUpdate, retErr error) {
 	event := StopContainer
 
 	_, span := tracing.StartSpan(
-		context.TODO(),
+		ctx,
 		event,
 		tracing.WithAttributes(containerSpanTags(pod, container)...),
 	)
@@ -429,11 +429,11 @@ func (p *nriPlugin) StopContainer(pod *api.PodSandbox, container *api.Container)
 	return p.getPendingUpdates(container), nil
 }
 
-func (p *nriPlugin) RemoveContainer(pod *api.PodSandbox, container *api.Container) (retErr error) {
+func (p *nriPlugin) RemoveContainer(ctx context.Context, pod *api.PodSandbox, container *api.Container) (retErr error) {
 	event := RemoveContainer
 
 	_, span := tracing.StartSpan(
-		context.TODO(),
+		ctx,
 		event,
 		tracing.WithAttributes(containerSpanTags(pod, container)...),
 	)
