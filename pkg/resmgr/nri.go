@@ -379,7 +379,7 @@ func (p *nriPlugin) UpdateContainer(ctx context.Context, pod *api.PodSandbox, co
 		span.End(tracing.WithStatus(retErr))
 	}()
 
-	p.dump(in, event, pod, container)
+	p.dump(in, event, pod, container, res)
 	defer func() {
 		p.dump(out, event, updates, retErr)
 	}()
@@ -575,7 +575,7 @@ func (p *nriPlugin) dump(dir, event string, args ...interface{}) {
 			p.Info("%s %s", dir, event)
 		}
 
-	case CreateContainer, StartContainer, UpdateContainer, StopContainer, RemoveContainer:
+	case CreateContainer, StartContainer, StopContainer, RemoveContainer:
 		if dir == in {
 			if len(args) != 2 {
 				p.Error("%s %s <dump error, %d args, expected (pod, container)>",
@@ -598,6 +598,59 @@ func (p *nriPlugin) dump(dir, event string, args ...interface{}) {
 
 			p.Info("%s %s %s/%s:%s", dir, event, pod.GetNamespace(), pod.GetName(), ctr.GetName())
 			p.dumpDetails(dir, event, ctr)
+		} else {
+			if len(args) < 1 {
+				p.Error("%s %s <dump error, missing args>", dir, event)
+				return
+			}
+
+			err := args[len(args)-1]
+			if err != nil {
+				p.Error("%s %s FAILED: %v", dir, event, err.(error))
+				return
+			}
+
+			p.Info("%s %s", dir, event)
+
+			switch event {
+			case CreateContainer:
+				p.dumpDetails(dir, event, args[0])
+				p.dumpDetails(dir, event, args[1])
+			case StopContainer, UpdateContainer:
+				p.dumpDetails(dir, event, args[0])
+			}
+		}
+
+	case UpdateContainer:
+		if dir == in {
+			if len(args) != 3 {
+				p.Error("%s %s <dump error, %d args, expected (pod, container, resources)>",
+					dir, event, len(args))
+				return
+			}
+
+			pod, ok := args[0].(*api.PodSandbox)
+			if !ok {
+				p.Error("%s %s <dump error, args %T, %T, %T, expected (pod, container, resources)>",
+					dir, event, args[0], args[1], args[2])
+				return
+			}
+			ctr, ok := args[1].(*api.Container)
+			if !ok {
+				p.Error("%s %s <dump error, args %T, %T, %T, expected (pod, container, resources)>",
+					dir, event, args[0], args[1], args[2])
+				return
+			}
+			res, ok := args[2].(*api.LinuxResources)
+			if !ok {
+				p.Error("%s %s <dump error, args %T, %T, %T, expected (pod, container, resources)>",
+					dir, event, args[0], args[1], args[2])
+				return
+			}
+
+			p.Info("%s %s %s/%s:%s", dir, event, pod.GetNamespace(), pod.GetName(), ctr.GetName())
+			p.dumpDetails(dir, event, ctr)
+			p.dumpDetails(dir, event, res)
 		} else {
 			if len(args) < 1 {
 				p.Error("%s %s <dump error, missing args>", dir, event)
@@ -711,7 +764,7 @@ func (p *nriPlugin) dumpDetails(dir, event string, arg interface{}) {
 
 	if dir == in {
 		switch event {
-		case RunPodSandbox, CreateContainer, Synchronize:
+		case RunPodSandbox, CreateContainer, UpdateContainer, Synchronize:
 		default:
 			// we only dump details for the requests listed above
 			return
@@ -733,6 +786,10 @@ func (p *nriPlugin) dumpDetails(dir, event string, arg interface{}) {
 	case *api.Container:
 		data := marshal("container", obj)
 		p.DebugBlock(dir+"   <ctr> ", "%s", data)
+
+	case *api.LinuxResources:
+		data := marshal("updated resources", obj)
+		p.DebugBlock(dir+"   <update> ", "%s", data)
 
 	case *api.ContainerAdjustment:
 		data := marshal("adjustment", obj)
