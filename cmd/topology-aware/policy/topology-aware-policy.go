@@ -141,15 +141,24 @@ func (p *policy) Sync(add []cache.Container, del []cache.Container) error {
 func (p *policy) AllocateResources(container cache.Container) error {
 	log.Debug("allocating resources for %s...", container.PrettyName())
 
-	grant, err := p.allocatePool(container, "")
+	err := p.allocateResources(container, "")
+	if err != nil {
+		return err
+	}
+
+	p.root.Dump("<post-alloc>")
+
+	return nil
+}
+
+func (p *policy) allocateResources(container cache.Container, poolHint string) error {
+	grant, err := p.allocatePool(container, poolHint)
 	if err != nil {
 		return policyError("failed to allocate resources for %s: %v",
 			container.PrettyName(), err)
 	}
 	p.applyGrant(grant)
 	p.updateSharedAllocations(&grant)
-
-	p.root.Dump("<post-alloc>")
 
 	return nil
 }
@@ -168,8 +177,24 @@ func (p *policy) ReleaseResources(container cache.Container) error {
 }
 
 // UpdateResources is a resource allocation update request for this policy.
-func (p *policy) UpdateResources(c cache.Container) error {
-	log.Debug("(not) updating container %s...", c.PrettyName())
+func (p *policy) UpdateResources(container cache.Container) error {
+	log.Debug("updating (reallocating) container %s...", container.PrettyName())
+
+	grant, found := p.releasePool(container)
+	if !found {
+		log.Warnf("can't find allocation to update for %s", container.PrettyName())
+		return p.AllocateResources(container)
+	}
+	p.updateSharedAllocations(&grant)
+
+	poolHint := grant.GetCPUNode().Name()
+	err := p.allocateResources(container, poolHint)
+	if err != nil {
+		return err
+	}
+
+	p.root.Dump("<post-update>")
+
 	return nil
 }
 
