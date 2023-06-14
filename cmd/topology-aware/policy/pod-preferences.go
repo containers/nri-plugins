@@ -426,7 +426,12 @@ func cpuAllocationPreferences(pod cache.Pod, container cache.Container) (int, in
 	//
 
 	namespace := container.GetNamespace()
-	request := container.GetResourceRequirements().Requests[corev1.ResourceCPU]
+
+	reqs, ok := container.GetResourceUpdates()
+	if !ok {
+		reqs = container.GetResourceRequirements()
+	}
+	request := reqs.Requests[corev1.ResourceCPU]
 	qosClass := pod.GetQOSClass()
 	fraction := int(request.MilliValue())
 
@@ -525,7 +530,10 @@ func podMemoryTypePreference(pod cache.Pod, c cache.Container) memoryType {
 
 // memoryAllocationPreference returns the amount and kind of memory to allocate.
 func memoryAllocationPreference(pod cache.Pod, c cache.Container) (uint64, uint64, memoryType) {
-	resources := c.GetResourceRequirements()
+	resources, ok := c.GetResourceUpdates()
+	if !ok {
+		resources = c.GetResourceRequirements()
+	}
 	mtype := memoryTypePreference(pod, c)
 	req, lim := uint64(0), uint64(0)
 

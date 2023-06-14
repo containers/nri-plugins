@@ -345,6 +345,12 @@ func (m *mockContainer) String() string {
 func (m *mockContainer) GetResourceRequirements() v1.ResourceRequirements {
 	return m.returnValueForGetResourceRequirements
 }
+func (m *mockContainer) SetResourceUpdates(*nri.LinuxResources) bool {
+	return false
+}
+func (m *mockContainer) GetResourceUpdates() (v1.ResourceRequirements, bool) {
+	return v1.ResourceRequirements{}, false
+}
 func (m *mockContainer) InsertMount(*cache.Mount) {
 	panic("unimplemented")
 }
