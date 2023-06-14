@@ -388,9 +388,22 @@ func (p *nriPlugin) UpdateContainer(ctx context.Context, pod *api.PodSandbox, co
 	m.Lock()
 	defer m.Unlock()
 
-	// XXX TODO(klihub): hook in policy processing
+	c, ok := m.cache.LookupContainer(container.Id)
+	if !ok {
+		return nil, nil
+	}
 
-	return nil, nil
+	if realUpdates := c.SetResourceUpdates(res); !realUpdates {
+		p.Warn("UpdateContainer with identical resources, ignoring it...")
+		return nil, nil
+	}
+	//r := cache.EstimateResourceRequirements(res, c.GetQOSClass())
+
+	if err := m.policy.UpdateResources(c); err != nil {
+		return nil, errors.Wrap(err, "failed to update resources")
+	}
+
+	return p.getPendingUpdates(nil), nil
 }
 
 func (p *nriPlugin) StopContainer(ctx context.Context, pod *api.PodSandbox, container *api.Container) (updates []*api.ContainerUpdate, retErr error) {
