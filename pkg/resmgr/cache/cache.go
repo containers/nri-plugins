@@ -207,8 +207,16 @@ type Container interface {
 	// We have String() for containers.
 	fmt.Stringer
 
-	// GetResourceRequirements returns the webhook-annotated requirements for ths container.
+	// GetResourceRequirements returns the resource requirements for this container.
+	// The requirements are calculated from the containers cgroup parameters.
 	GetResourceRequirements() v1.ResourceRequirements
+
+	// SetResourceUpdates sets updated resources for a container. Returns true if the
+	// resources were really updated.
+	SetResourceUpdates(*nri.LinuxResources) bool
+	// GetResourceUpdates() returns any updated resource requirements for this container.
+	// The updates are calculated from the cgroups parameters in the resource update.
+	GetResourceUpdates() (v1.ResourceRequirements, bool)
 
 	// InsertMount inserts a mount into the container.
 	InsertMount(*Mount)
@@ -286,8 +294,9 @@ type container struct {
 	Ctr   *nri.Container // container data from NRI
 	State ContainerState // current state of the container
 
-	Requirements v1.ResourceRequirements
-	request      interface{}
+	Requirements    v1.ResourceRequirements
+	ResourceUpdates *v1.ResourceRequirements
+	request         interface{}
 
 	Resources *nri.LinuxResources
 

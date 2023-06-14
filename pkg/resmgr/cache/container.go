@@ -28,7 +28,6 @@ import (
 	"github.com/containers/nri-plugins/pkg/topology"
 
 	nri "github.com/containerd/nri/pkg/api"
-	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	resapi "k8s.io/apimachinery/pkg/api/resource"
 )
@@ -145,46 +144,9 @@ func isReadOnlyDevice(rules []*nri.LinuxDeviceCgroup, d *nri.LinuxDevice) bool {
 
 // Estimate resource requirements using the containers cgroup parameters and QoS class.
 func (c *container) estimateResourceRequirements() {
+	r := c.Ctr.GetLinux().GetResources()
 	qosClass := c.GetQOSClass()
-
-	resources := corev1.ResourceRequirements{
-		Requests: corev1.ResourceList{},
-		Limits:   corev1.ResourceList{},
-	}
-
-	lnx := c.Ctr.GetLinux().GetResources()
-	cpu := lnx.GetCpu()
-	shares := int64(cpu.GetShares().GetValue())
-
-	// calculate CPU request
-	if value := SharesToMilliCPU(shares); value > 0 {
-		qty := resapi.NewMilliQuantity(value, resapi.DecimalSI)
-		resources.Requests[corev1.ResourceCPU] = *qty
-	}
-
-	// get memory limit
-	if value := lnx.GetMemory().GetLimit().GetValue(); value > 0 {
-		qty := resapi.NewQuantity(value, resapi.DecimalSI)
-		resources.Limits[corev1.ResourceMemory] = *qty
-	}
-
-	// calculate CPU limit, set memory request if known
-	switch qosClass {
-	case corev1.PodQOSGuaranteed:
-		resources.Limits[corev1.ResourceCPU] = resources.Requests[corev1.ResourceCPU]
-		resources.Requests[corev1.ResourceMemory] = resources.Limits[corev1.ResourceMemory]
-	default:
-		fallthrough
-	case corev1.PodQOSBestEffort, corev1.PodQOSBurstable:
-		quota := cpu.GetQuota().GetValue()
-		period := int64(cpu.GetPeriod().GetValue())
-		if value := QuotaToMilliCPU(quota, period); value > 0 {
-			qty := resapi.NewMilliQuantity(value, resapi.DecimalSI)
-			resources.Limits[corev1.ResourceCPU] = *qty
-		}
-	}
-
-	c.Requirements = resources
+	c.Requirements = estimateResourceRequirements(r, qosClass)
 }
 
 func (c *container) setDefaults() error {
@@ -370,6 +332,42 @@ func (c *container) GetEffectiveAnnotation(key string) (string, bool) {
 
 func (c *container) GetResourceRequirements() v1.ResourceRequirements {
 	return c.Requirements
+}
+
+func (c *container) SetResourceUpdates(r *nri.LinuxResources) bool {
+	updated := estimateResourceRequirements(r, c.GetQOSClass())
+
+	same := true
+	orig := c.Requirements
+	if c.ResourceUpdates != nil {
+		orig = *c.ResourceUpdates
+	}
+
+	for res, qty := range updated.Requests {
+		old, ok := orig.Requests[res]
+		if !ok || qty.Cmp(old) != 0 {
+			same = false
+			break
+		}
+	}
+	for res, qty := range updated.Limits {
+		old, ok := orig.Limits[res]
+		if !ok || qty.Cmp(old) != 0 {
+			same = false
+			break
+		}
+	}
+
+	c.ResourceUpdates = &updated
+	return !same
+}
+
+func (c *container) GetResourceUpdates() (v1.ResourceRequirements, bool) {
+	if c.ResourceUpdates == nil {
+		return v1.ResourceRequirements{}, false
+	}
+
+	return *c.ResourceUpdates, true
 }
 
 func (c *container) GetLinuxResources() *nri.LinuxResources {
