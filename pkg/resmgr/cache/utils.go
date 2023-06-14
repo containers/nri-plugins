@@ -21,7 +21,9 @@ import (
 	"strconv"
 	"strings"
 
+	nri "github.com/containerd/nri/pkg/api"
 	corev1 "k8s.io/api/core/v1"
+	resapi "k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/containers/nri-plugins/pkg/cgroups"
 	"github.com/containers/nri-plugins/pkg/kubernetes"
@@ -35,6 +37,47 @@ var (
 	MilliCPUToShares = kubernetes.MilliCPUToShares
 	MilliCPUToQuota  = kubernetes.MilliCPUToQuota
 )
+
+// Try to estimate CRI resource requirements from NRI resources.
+func estimateResourceRequirements(r *nri.LinuxResources, qosClass corev1.PodQOSClass) corev1.ResourceRequirements {
+	resources := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{},
+		Limits:   corev1.ResourceList{},
+	}
+
+	cpu := r.GetCpu()
+	shares := int64(cpu.GetShares().GetValue())
+
+	// calculate CPU request
+	if value := SharesToMilliCPU(shares); value > 0 {
+		qty := resapi.NewMilliQuantity(value, resapi.DecimalSI)
+		resources.Requests[corev1.ResourceCPU] = *qty
+	}
+
+	// get memory limit
+	if value := r.GetMemory().GetLimit().GetValue(); value > 0 {
+		qty := resapi.NewQuantity(value, resapi.DecimalSI)
+		resources.Limits[corev1.ResourceMemory] = *qty
+	}
+
+	// calculate CPU limit, set memory request if known
+	switch qosClass {
+	case corev1.PodQOSGuaranteed:
+		resources.Limits[corev1.ResourceCPU] = resources.Requests[corev1.ResourceCPU]
+		resources.Requests[corev1.ResourceMemory] = resources.Limits[corev1.ResourceMemory]
+	default:
+		fallthrough
+	case corev1.PodQOSBestEffort, corev1.PodQOSBurstable:
+		quota := cpu.GetQuota().GetValue()
+		period := int64(cpu.GetPeriod().GetValue())
+		if value := QuotaToMilliCPU(quota, period); value > 0 {
+			qty := resapi.NewMilliQuantity(value, resapi.DecimalSI)
+			resources.Limits[corev1.ResourceCPU] = *qty
+		}
+	}
+
+	return resources
+}
 
 // IsPodQOSClassName returns true if the given class is one of the Pod QOS classes.
 func IsPodQOSClassName(class string) bool {
