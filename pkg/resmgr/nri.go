@@ -683,7 +683,6 @@ func (p *nriPlugin) dump(dir, event string, args ...interface{}) {
 
 			p.Info("%s %s", dir, event)
 			p.dumpDetails(dir, event, args[0])
-			p.dumpDetails(dir, event, args[0])
 		}
 
 	default:
