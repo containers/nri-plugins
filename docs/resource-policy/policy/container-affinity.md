@@ -28,7 +28,7 @@ Policies try to place a container
 ## Affinity Annotation Syntax
 
 *Affinities* are defined as the `resource-policy.nri.io/affinity` annotation.
-*Anti-affinities* are defined as the `resource-manager.nri.io/anti-affinity`
+*Anti-affinities* are defined as the `resource-policy.nri.io/anti-affinity`
 annotation. They are specified in the `metadata` section of the `Pod YAML`, under
 `annotations` as a dictionary, with each dictionary key being the name of the
 *container* within the Pod to which the annotation belongs to.
@@ -36,7 +36,7 @@ annotation. They are specified in the `metadata` section of the `Pod YAML`, unde
 ```yaml
 metadata:
   anotations:
-    resource-manager.nri.io/affinity: |
+    resource-policy.nri.io/affinity: |
       container1:
         - scope:
             key: key-ref
@@ -55,13 +55,13 @@ metadata:
           weight: w
 ```
 
-An anti-affinity is defined similarly but using `resource-manager.nri.io/anti-affinity`
+An anti-affinity is defined similarly but using `resource-policy.nri.io/anti-affinity`
 as the annotation key.
 
 ```yaml
 metadata:
   anotations:
-    resource-manager.nri.io/anti-affinity: |
+    resource-policy.nri.io/anti-affinity: |
       container1:
         - scope:
             key: key-ref
@@ -197,7 +197,7 @@ container `wolf`.
 ```yaml
 metadata:
   annotations:
-    resource-manager.nri.io/affinity: |
+    resource-policy.nri.io/affinity: |
       peter:
       - match:
           key: name
@@ -205,7 +205,7 @@ metadata:
           values:
           - sheep
         weight: 5
-    resource-manager.nri.io/anti-affinity: |
+    resource-policy.nri.io/anti-affinity: |
       peter:
       - match:
           key: name
@@ -223,9 +223,9 @@ one needs to give just the names of the containers, like in the example below.
 
 ```yaml
   annotations:
-    resource-manager.nri.io/affinity: |
+    resource-policy.nri.io/affinity: |
       container3: [ container1 ]
-    resource-manager.nri.io/anti-affinity: |
+    resource-policy.nri.io/anti-affinity: |
       container3: [ container2 ]
       container4: [ container2, container3 ]
 ```
@@ -243,14 +243,14 @@ The equivalent annotation in full syntax would be
 ```yaml
 metadata:
   annotations:
-    resource-manager.nri.io/affinity: |+
+    resource-policy.nri.io/affinity: |+
       container3:
       - match:
           key: labels/io.kubernetes.container.name
           operator: In
           values:
           - container1
-    resource-manager.nri.io/anti-affinity: |+
+    resource-policy.nri.io/anti-affinity: |+
       container3:
       - match:
           key: labels/io.kubernetes.container.name
