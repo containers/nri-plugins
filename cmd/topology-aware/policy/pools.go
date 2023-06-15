@@ -657,7 +657,11 @@ func (p *policy) applyGrant(grant Grant) {
 		//     processes in the same pool. Also the 'data' process should run fine, since
 		//     it does not need to compete for CPU with any other processes in the system
 		//     as long as that allocation is genuinely system-wide exclusive.
-		container.SetCPUShares(int64(cache.MilliCPUToShares(int64(cpuPortion))))
+		milliCPU := cpuPortion
+		if milliCPU == 0 {
+			milliCPU = 1000 * grant.ExclusiveCPUs().Size()
+		}
+		container.SetCPUShares(int64(cache.MilliCPUToShares(int64(milliCPU))))
 	}
 
 	if mems != "" {
