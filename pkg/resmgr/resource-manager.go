@@ -293,7 +293,7 @@ func (m *resmgr) setupControllers() error {
 
 // startControllers start the resource controllers.
 func (m *resmgr) startControllers() error {
-	if err := m.control.StartStopControllers(m.cache); err != nil {
+	if err := m.control.StartStopControllers(m.cache, opt.EnableTestAPIs); err != nil {
 		return resmgrError("failed to start resource controllers: %v", err)
 	}
 

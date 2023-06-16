@@ -26,7 +26,7 @@ import (
 // Control is the interface for triggering controller-/domain-specific post-decision actions.
 type Control interface {
 	// StartStopControllers starts/stops all controllers according to configuration.
-	StartStopControllers(cache.Cache) error
+	StartStopControllers(cache.Cache, bool) error
 	// PreCreateHooks runs the pre-create hooks of all registered controllers.
 	RunPreCreateHooks(cache.Container) error
 	// RunPreStartHooks runs the pre-start hooks of all registered controllers.
@@ -103,8 +103,8 @@ func NewControl() (Control, error) {
 }
 
 // StartStopController starts/stops all controllers according to configuration.
-func (c *control) StartStopControllers(cache cache.Cache) error {
-	c.cache = cache
+func (c *control) StartStopControllers(cc cache.Cache, enableTestAPIs bool) error {
+	c.cache = cc
 
 	log.Info("syncing controllers with configuration...")
 
@@ -123,7 +123,12 @@ func (c *control) StartStopControllers(cache cache.Cache) error {
 			continue
 		}
 
-		err := controller.c.Start(cache)
+		if !enableTestAPIs && controller.name == cache.E2ETest {
+			// only enable e2e test controller if we have the cmd line option set
+			continue
+		}
+
+		err := controller.c.Start(cc)
 
 		if err != nil {
 			log.Error("controller %s: failed to start: %v", controller.name, err)
