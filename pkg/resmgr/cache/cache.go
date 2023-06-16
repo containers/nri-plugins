@@ -49,6 +49,8 @@ const (
 	Memory = "memory"
 	// PageMigration marks changes that can be applied by the PageMigration controller.
 	PageMigration = "page-migration"
+	// E2ETest marks changes that can be applied by the e2e test controller.
+	E2ETest = "e2e-test"
 
 	// RDTClassKey is the pod annotation key for specifying a container RDT class.
 	RDTClassKey = "rdtclass" + "." + kubernetes.ResmgrKeyNamespace
@@ -68,7 +70,7 @@ const (
 )
 
 // allControllers is a slice of all controller domains.
-var allControllers = []string{CPU, NRI, RDT, BlockIO, Memory}
+var allControllers = []string{CPU, NRI, RDT, BlockIO, Memory, E2ETest}
 
 // PodState is the pod state in the runtime.
 type PodState int32
