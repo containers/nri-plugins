@@ -119,6 +119,10 @@ func NewResourceManager() (ResourceManager, error) {
 		return nil, err
 	}
 
+	if err := m.setupControllers(); err != nil {
+		return nil, err
+	}
+
 	if err := m.setupIntrospection(); err != nil {
 		return nil, err
 	}
@@ -140,6 +144,10 @@ func (m *resmgr) Start() error {
 	defer m.Unlock()
 
 	if err := m.nri.start(); err != nil {
+		return err
+	}
+
+	if err := m.startControllers(); err != nil {
 		return err
 	}
 
@@ -270,6 +278,26 @@ func (m *resmgr) setupIntrospection() error {
 func (m *resmgr) setupHealthCheck() {
 	mux := instrumentation.GetHTTPMux()
 	healthz.Setup(mux)
+}
+
+// setupControllers sets up the resource controllers.
+func (m *resmgr) setupControllers() error {
+	var err error
+
+	if m.control, err = control.NewControl(); err != nil {
+		return resmgrError("failed to create resource controller: %v", err)
+	}
+
+	return nil
+}
+
+// startControllers start the resource controllers.
+func (m *resmgr) startControllers() error {
+	if err := m.control.StartStopControllers(m.cache); err != nil {
+		return resmgrError("failed to start resource controllers: %v", err)
+	}
+
+	return nil
 }
 
 // startIntrospection starts serving the external introspection requests.
