@@ -233,19 +233,33 @@ func (p *nriPlugin) RunPodSandbox(ctx context.Context, pod *api.PodSandbox) (ret
 	return nil
 }
 
-func (p *nriPlugin) StopPodSandbox(ctx context.Context, pod *api.PodSandbox) (retErr error) {
+func (p *nriPlugin) StopPodSandbox(ctx context.Context, podSandbox *api.PodSandbox) (retErr error) {
 	event := StopPodSandbox
 
 	_, span := tracing.StartSpan(
 		ctx,
 		event,
-		tracing.WithAttributes(podSpanTags(pod)...),
+		tracing.WithAttributes(podSpanTags(podSandbox)...),
 	)
 	defer func() {
 		span.End(tracing.WithStatus(retErr))
 	}()
 
-	p.dump(in, event, pod)
+	m := p.resmgr
+
+	released := []cache.Container{}
+	pod, _ := m.cache.LookupPod(podSandbox.GetId())
+
+	for _, c := range pod.GetContainers() {
+		released = append(released, c)
+	}
+
+	if err := p.runPostReleaseHooks(event, released...); err != nil {
+		m.Error("%s: failed to run post-release hooks for pod %s: %v",
+			event, pod.GetName(), err)
+	}
+
+	p.dump(in, event, podSandbox)
 	defer func() {
 		p.dump(out, event, retErr)
 	}()
@@ -253,44 +267,57 @@ func (p *nriPlugin) StopPodSandbox(ctx context.Context, pod *api.PodSandbox) (re
 	return nil
 }
 
-func (p *nriPlugin) RemovePodSandbox(ctx context.Context, pod *api.PodSandbox) (retErr error) {
+func (p *nriPlugin) RemovePodSandbox(ctx context.Context, podSandbox *api.PodSandbox) (retErr error) {
 	event := RemovePodSandbox
 
 	_, span := tracing.StartSpan(
 		ctx,
 		event,
-		tracing.WithAttributes(podSpanTags(pod)...),
+		tracing.WithAttributes(podSpanTags(podSandbox)...),
 	)
 	defer func() {
 		span.End(tracing.WithStatus(retErr))
 	}()
 
-	p.dump(in, event, pod)
+	p.dump(in, event, podSandbox)
 	defer func() {
 		p.dump(out, event, retErr)
 	}()
 
 	m := p.resmgr
+
+	released := []cache.Container{}
+	pod, _ := m.cache.LookupPod(podSandbox.GetId())
+
+	for _, c := range pod.GetContainers() {
+		released = append(released, c)
+	}
+
+	if err := p.runPostReleaseHooks(event, released...); err != nil {
+		m.Error("%s: failed to run post-release hooks for pod %s: %v",
+			event, pod.GetName(), err)
+	}
+
 	m.Lock()
 	defer m.Unlock()
 
-	m.cache.DeletePod(pod.Id)
+	m.cache.DeletePod(podSandbox.GetId())
 	return nil
 }
 
-func (p *nriPlugin) CreateContainer(ctx context.Context, pod *api.PodSandbox, container *api.Container) (adjust *api.ContainerAdjustment, updates []*api.ContainerUpdate, retErr error) {
+func (p *nriPlugin) CreateContainer(ctx context.Context, podSandbox *api.PodSandbox, container *api.Container) (adjust *api.ContainerAdjustment, updates []*api.ContainerUpdate, retErr error) {
 	event := CreateContainer
 
 	_, span := tracing.StartSpan(
 		ctx,
 		event,
-		tracing.WithAttributes(containerSpanTags(pod, container)...),
+		tracing.WithAttributes(containerSpanTags(podSandbox, container)...),
 	)
 	defer func() {
 		span.End(tracing.WithStatus(retErr))
 	}()
 
-	p.dump(in, event, pod, container)
+	p.dump(in, event, podSandbox, container)
 	defer func() {
 		p.dump(out, event, adjust, updates, retErr)
 	}()
@@ -317,6 +344,14 @@ func (p *nriPlugin) CreateContainer(ctx context.Context, pod *api.PodSandbox, co
 		Type:        "bind",
 		Options:     []string{"bind", "ro", "rslave"},
 	})
+
+	if err := p.runPostAllocateHooks(event, c); err != nil {
+		m.Error("%s: failed to run post-allocate hooks for %s: %v",
+			event, container.GetName(), err)
+		p.runPostReleaseHooks(event, c)
+		return nil, nil, errors.Wrap(err, "failed to allocate container resources")
+	}
+
 	m.policy.ExportResourceData(c)
 	m.updateTopologyZones()
 
@@ -362,6 +397,11 @@ func (p *nriPlugin) StartContainer(ctx context.Context, pod *api.PodSandbox, con
 
 	if _, err := m.policy.HandleEvent(e); err != nil {
 		m.Error("%s: policy failed to handle event %s: %v", event, e.Type, err)
+	}
+
+	if err := p.runPostStartHooks(event, c); err != nil {
+		m.Error("%s: failed to run post-start hooks for %s: %v",
+			event, c.PrettyName(), err)
 	}
 
 	return nil
@@ -851,4 +891,82 @@ func containerSpanTags(pod *api.PodSandbox, ctr *api.Container) []tracing.KeyVal
 		tracing.Attribute(SpanTagCtrID, ctr.GetId()),
 		tracing.Attribute(SpanTagCtrName, ctr.GetName()),
 	)
+}
+
+// runPostAllocateHooks runs the necessary hooks after allocating resources for some containers.
+func (p *nriPlugin) runPostAllocateHooks(method string, created cache.Container) error {
+	m := p.resmgr
+	for _, c := range m.cache.GetPendingContainers() {
+		if c == created {
+			if err := m.control.RunPreCreateHooks(c); err != nil {
+				m.Warn("%s pre-create hook failed for %s: %v",
+					method, c.PrettyName(), err)
+			}
+			continue
+		}
+
+		switch c.GetState() {
+		case cache.ContainerStateRunning, cache.ContainerStateCreated:
+			if err := m.control.RunPostUpdateHooks(c); err != nil {
+				m.Warn("%s post-update hook failed for %s: %v",
+					method, c.PrettyName(), err)
+			}
+		default:
+			m.Warn("%s: skipping container %s (in state %v)", method,
+				c.PrettyName(), c.GetState())
+		}
+	}
+	return nil
+}
+
+// runPostStartHooks runs the necessary hooks after having started a container.
+func (p *nriPlugin) runPostStartHooks(method string, c cache.Container) error {
+	m := p.resmgr
+	if err := m.control.RunPostStartHooks(c); err != nil {
+		m.Error("%s: post-start hook failed for %s: %v", method, c.PrettyName(), err)
+	}
+	return nil
+}
+
+// runPostReleaseHooks runs the necessary hooks after releaseing resources of some containers
+func (p *nriPlugin) runPostReleaseHooks(method string, released ...cache.Container) error {
+	m := p.resmgr
+	for _, c := range released {
+		if err := m.control.RunPostStopHooks(c); err != nil {
+			m.Warn("post-stop hook failed for %s: %v", c.PrettyName(), err)
+		}
+	}
+	for _, c := range m.cache.GetPendingContainers() {
+		switch state := c.GetState(); state {
+		case cache.ContainerStateStale, cache.ContainerStateExited:
+			if err := m.control.RunPostStopHooks(c); err != nil {
+				m.Warn("post-stop hook failed for %s: %v", c.PrettyName(), err)
+			}
+		case cache.ContainerStateRunning, cache.ContainerStateCreated:
+			if err := m.control.RunPostUpdateHooks(c); err != nil {
+				m.Warn("post-update hook failed for %s: %v", c.PrettyName(), err)
+			}
+		default:
+			m.Warn("%s: skipping pending container %s (in state %v)",
+				method, c.PrettyName(), c.GetState())
+		}
+	}
+	return nil
+}
+
+// runPostUpdateHooks runs the necessary hooks after reconcilation.
+func (p *nriPlugin) runPostUpdateHooks(method string) error {
+	m := p.resmgr
+	for _, c := range m.cache.GetPendingContainers() {
+		switch c.GetState() {
+		case cache.ContainerStateRunning, cache.ContainerStateCreated:
+			if err := m.control.RunPostUpdateHooks(c); err != nil {
+				return err
+			}
+		default:
+			m.Warn("%s: skipping container %s (in state %v)", method,
+				c.PrettyName(), c.GetState())
+		}
+	}
+	return nil
 }
