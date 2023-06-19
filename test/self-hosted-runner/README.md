@@ -4,8 +4,8 @@ Github self hosted action runner setup
 This package describes how to setup Github action-runner [[1]](#s1) to run in
 self hosted environment [[2]](#s2).
 
-The setup is devided into two parts, in step 1) a generic Ubuntu 22.04 image
-is used as a base and new software like Go compiler etc. is installed into it.
+The setup is divided into two parts, in step 1) a generic Ubuntu 22.04 image
+is used as a base and new software like Go compiler etc. is installed to it.
 Then in step 2) this base image is used to run the actual e2e tests in it.
 A freshly installed Ubuntu image is used for each e2e test run.
 
@@ -21,9 +21,9 @@ There are several layer of VMs and host OS here:
   directory.
 
 * The actual e2e tests are run inside a Vagrant created VM inside the Docker
-  container. The the e2e scripts use ansible tool to install the actual VM
-  image used in the testing. The desired e2e OS is selected by the github
-  workflow file and is not selected by the action runner scripts.
+  container. The e2e scripts use Ansible tool to install the actual VM
+  image used in testing. The desired e2e OS is selected by the github
+  workflow file and not by the action runner scripts.
 
 Note that the self hosted runner needs to be configured in Github side first.
 You need to create a Github App that is able to create runner registration
@@ -37,10 +37,10 @@ registration token using an App:
 
 * Create a private key file (PEM) for that and download it. [[4]](#s4)
 
-* Install the Github App onto your account and desired repository.
+* Install the Github App onto your account and desired repository. [[5]](#s5)
 
-This will allow the `runner.sh` script to create an access token which can
-then create the self-hosted registration token needed to run the e2e tests.
+This will allow the `runner.sh` script to create an access token which is then
+used to create the self-hosted registration token needed to run the e2e tests.
 
 Details
 -------
@@ -50,23 +50,23 @@ Docker.
 
 For Fedora, this means you need to install these packages to your host:
 
-```
-   $ sudo dnf install docker make
+```shell
+  sudo dnf install docker make
 ```
 
 For Ubuntu, you need to install these packages to your host:
 
-```
-   $ sudo apt install make
-   $ sudo sh -c "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg"
-   $ sudo sh -c 'echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null'
-   $ sudo sh -c "apt-get update -y && apt-get install -y docker-ce docker-ce-cli containerd.io"
+```shell
+  sudo apt install make
+  sudo sh -c "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg"
+  sudo sh -c 'echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null'
+  sudo sh -c "apt-get update -y && apt-get install -y docker-ce docker-ce-cli containerd.io"
 ```
 
 Create a configuration file for the runner:
 
-```
-   $ make create-env
+```shell
+  make create-env
 ```
 
 Edit the generated env file, and add relevant parameters from github action
@@ -77,8 +77,8 @@ Final step is to configure and run the self-hosted action runner.
 Note that at this point, the runner will contact github so the Github
 configuration settings in the env configuration file needs to be set properly.
 
-```
-   $ make run
+```shell
+  make run
 ```
 
 The `make run` will launch `runner.sh` which will create the runner container
@@ -98,3 +98,5 @@ to be ready to serve new job requests.
 [3]<a name="s3"></a> https://docs.github.com/en/developers/apps/building-github-apps/creating-a-github-app
 
 [4]<a name="s4"></a> https://docs.github.com/en/developers/apps/authenticating-with-github-apps#generating-a-private-key
+
+[5]<a name="s5"></a> https://docs.github.com/en/apps/using-github-apps/installing-your-own-github-app
