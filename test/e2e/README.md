@@ -6,28 +6,28 @@ Before running E2E tests ensure that you have all the required components locall
 1. Build NRI resource policy static binaries. You need to be at the root of the NRI-resource-policy directory.
 
     ```shell
-    $ make build
+    make build
     ```
 
 2. Build the container image. You need to be at the root of the NRI-resource-policy directory.
 
     ```shell
-    $ make images
+    make images
     ```
 
 3. Build containerd binaries that include NRI support (minimum tag version [`containerd 1.7.0-beta.1`](https://github.com/containerd/containerd/releases/tag/v1.7.0-beta.1) or +)
 
     ```shell
-    $ git clone https://github.com/containerd/containerd.git
-    $ cd containerd
-    $ make build
+    git clone https://github.com/containerd/containerd.git
+    cd containerd
+    make
     ```
 
 4. Then run the tests.
 
     ```shell
-    $ cd test/e2e
-    $ ./run_tests.sh policies.test-suite
+    cd test/e2e
+    ./run_tests.sh policies.test-suite
     ```
 
     The default test output directory name is generated from the used topology
@@ -35,7 +35,7 @@ Before running E2E tests ensure that you have all the required components locall
     The test output directory can be given as a 2nd paramter to the script.
 
     ```shell
-    $ ./run_tests.sh policies.test-suite ~/output-directory
+    ./run_tests.sh policies.test-suite ~/output-directory
     ```
 
     Note that Vagrant VM is stored into the output directory. If you want to
@@ -43,7 +43,7 @@ Before running E2E tests ensure that you have all the required components locall
     this:
 
     ```shell
-    $ cd ~/output-directory && vagrant destroy -f
+    cd ~/output-directory && vagrant destroy -f
     ```
 
     The e2e test runs can be can be configured by setting various options as
@@ -66,21 +66,22 @@ Before running E2E tests ensure that you have all the required components locall
     For example:
 
     ```shell
-    $ https_proxy=http://proxy.example.com dns_nameserver=8.8.8.8 dns_search_domain=example.com ./run_tests.sh policies.test-suite
+    https_proxy=http://proxy.example.com dns_nameserver=8.8.8.8 dns_search_domain=example.com ./run_tests.sh policies.test-suite
     ```
 
 5. You can login to the e2e test VM:
 
     ```shell
-    $ cd ~/output-directory
-    $ make ssh
+    cd ~/output-directory
+    make ssh
     ```
 
 6. While the e2e tests are running, you can monitor the status of the tests:
 
     ```shell
-    $ cd ~/output-directory
-    $ <nri-plugins-root-directory>/test/e2e/report-test-status.sh
+    cd ~/output-directory
+    <nri-plugins-root-directory>/test/e2e/report-test-status.sh
+
     policies.test-suite balloons test01-basic-placement : PASS
     policies.test-suite balloons test02-prometheus-metrics : PASS
     policies.test-suite balloons test03-reserved : PASS
