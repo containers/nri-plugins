@@ -96,4 +96,4 @@ EOF
 systemctl restart crio
 ```
 
-See also https://github.com/cri-o/cri-o/blob/main/docs/crio.conf.5.md#criotracing-table
+See also [`crio tracing`](https://github.com/cri-o/cri-o/blob/main/docs/crio.conf.5.md#criotracing-table) for more details.
