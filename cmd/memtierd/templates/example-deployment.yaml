@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: example-pod
+  labels:
+    app: example-pod
+  annotations:
+    class.memtierd.nri: "example-configuration"
+spec:
+  containers:
+  - name: example-pod-1
+    image: <some-registry/image>
+    imagePullPolicy: Always
+    securityContext:
+      privileged: true
+    volumeMounts:
+      - name: host-volume
+        mountPath: /host
+      - name: host-bitmap
+        mountPath: /sys/kernel/mm/page_idle/bitmap
+  volumes:
+    - name: host-volume
+      hostPath:
+        path: /
+    - name: host-bitmap
+      hostPath:
+        path: /sys/kernel/mm/page_idle/bitmap
