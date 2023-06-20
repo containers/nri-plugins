@@ -1,7 +1,5 @@
-.. NRI Resource Policy documentation master file
-
-Resource Policy Plugin
-======================
+Resource Policy Plugins
+=======================
 
 .. toctree::
    :maxdepth: 2
@@ -10,7 +8,6 @@ Resource Policy Plugin
    introduction.md
    installation.md
    setup.md
-   policy/index.rst
-   node-agent.md
+   configuration.rst
 
    developers-guide/index.rst
