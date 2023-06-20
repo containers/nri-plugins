@@ -40,6 +40,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/policy"
 	"github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/topology"
+	goresctrlpath "github.com/intel/goresctrl/pkg/path"
 
 	policyCollector "github.com/containers/nri-plugins/pkg/resmgr/policycollector"
 )
@@ -91,6 +92,10 @@ func NewResourceManager() (ResourceManager, error) {
 	sysfs.SetSysRoot(opt.HostRoot)
 	topology.SetSysRoot(opt.HostRoot)
 	topology.SetLogger(logger.Get(topologyLogger))
+
+	if opt.HostRoot != "" {
+		goresctrlpath.SetPrefix(opt.HostRoot)
+	}
 
 	m.Info("running as an NRI plugin...")
 	nrip, err := newNRIPlugin(m)
