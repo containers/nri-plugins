@@ -7,6 +7,8 @@ Welcome to NRI Plugins documentation
    :maxdepth: 2
    :caption: Contents:
 
+   introduction.md
+
    resource-policy/index.rst
 
    contributing.md

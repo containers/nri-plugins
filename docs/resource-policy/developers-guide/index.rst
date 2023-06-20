@@ -5,3 +5,4 @@ Developer's Guide
 
    architecture.md
    testing.rst
+   cpu-allocator.md
