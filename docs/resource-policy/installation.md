@@ -39,13 +39,16 @@ following components: DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-r
 
 1. Install the plugin using Helm. Replace release name with the desired name
    for your Helm release. In this example, we named it as topology-aware. The
-default values for topology-aware resource policy plugin are stored in
-values.yaml file. If you wish to provide custom values to the Helm
-chart, refer to the [table](#helm-parameters) below, which describes the
-available parameters that can be modified before installation.
+   default values for topology-aware resource policy plugin are stored in
+   values.yaml file. If you wish to provide custom values to the Helm
+   chart, refer to the [table](#helm-parameters) below, which describes the
+   available parameters that can be modified before installation. It's important
+   to note that specifying the namespace (using `--namespace`) is crucial when
+   installing the Helm chart, as failing to do so may result in broken YAML
+   manifests.
 
     ```sh
-    helm install topology-aware deployment/helm/resource-management-policies/topology-aware/
+    helm install topology-aware --namespace kube-system deployment/helm/resource-management-policies/topology-aware/
     ```
 
 1. Verify the status of the daemonset to ensure that the plugin is running successfully
