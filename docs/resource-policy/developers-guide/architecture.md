@@ -34,7 +34,7 @@ Kubernetes CRDs and ConfigMaps.
 
 ## Components
 
-### [Node Agent](/pkg/resmgr/agent/)
+### [Node Agent](tree:/pkg/resmgr/agent)
 
 The node agent is a component internal to NRI-RP itself. All interactions
 by NRI-RP with the Kubernetes Control Plane go through the node agent with
@@ -50,7 +50,7 @@ The agent interface implements the following functionality:
 The config interface is defined and has its gRPC server running in
 NRI-RP. The agent acts as a gRPC client for this interface. The low-level
 cluster interface is defined and has its gRPC server running in the agent,
-with the [convenience layer](/pkg/resmgr/agent) defined in NRI-RP.
+with the [convenience layer](tree:/pkg/resmgr/agent) defined in NRI-RP.
 NRI-RP acts as a gRPC client for the low-level plumbing interface.
 
 Additionally, the stock node agent that comes with NRI-RP implements schemes
@@ -59,7 +59,7 @@ for:
    - management of dynamic adjustments to container resource assignments
 
 
-### [Resource Manager](/pkg/resmgr/)
+### [Resource Manager](tree:/pkg/resmgr/)
 
 NRI-RP implements an event processing pipeline. In addition to NRI events,
 it processes a set of other events that are not directly related to or the
@@ -127,7 +127,7 @@ following, based on the event type:
    4. Release the pipeline lock.
 
 
-### [Cache](/pkg/resmgr/cache/)
+### [Cache](tree:/pkg/resmgr/cache/)
 
 The cache is a shared internal storage location within NRI-RP. It tracks the
 runtime state of pods and containers known to NRI-RP, as well as the state
@@ -161,14 +161,14 @@ the policy's event handler with the injected event as an argument and with
 the cache properly locked.
 
 
-### [Generic Policy Layer](/pkg/resmgr/policy/policy.go)
+### [Generic Policy Layer](blob:/pkg/resmgr/policy/policy.go)
 
 The generic policy layer defines the abstract interface the rest of NRI-RP
 uses to interact with policy implementations and takes care of the details
 of activating and dispatching calls through to the configured active policy.
 
 
-### [Generic Resource Controller Layer](/pkg/resmgr/control/control.go)
+### [Generic Resource Controller Layer](blob:/pkg/resmgr/control/control.go)
 
 The generic resource controller layer defines the abstract interface the rest
 of NRI-RP uses to interact with resource controller implementations and takes
@@ -176,7 +176,7 @@ care of the details of dispatching calls to the controller implementations
 for post-policy enforcment of decisions.
 
 
-### [Metrics Collector](/pkg/metrics/)
+### [Metrics Collector](tree:/pkg/metrics/)
 
 The metrics collector gathers a set of runtime metrics about the containers
 running on the node. NRI-RP can be configured to periodically evaluate this
@@ -185,19 +185,19 @@ resources is and to attempt a rebalancing/reallocation if it is deemed
 both possible and necessary.
 
 
-### [Policy Implementations](/cmd/)
+### [Policy Implementations](tree:/cmd/)
 
-#### [Topology Aware](/cmd/topology-aware/)
+#### [Topology Aware](tree:/cmd/topology-aware/)
 
 A topology-aware policy capable of handling multiple tiers/types of memory,
 typically a DRAM/PMEM combination configured in 2-layer memory mode.
 
-#### [Balloons](/cmd/balloons/)
+#### [Balloons](tree:/cmd/balloons/)
 
 A balloons policy allows user to define fine grained control how the
 computer resources are distributed to workloads.
 
-#### [Template](/cmd/template/)
+#### [Template](tree:/cmd/template/)
 
 The template policy can be used as a base for developing new policies.
 It provides hooks that the policy developer can fill to define fine grained
