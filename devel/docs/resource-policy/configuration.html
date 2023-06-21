@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dynamic Configuration &mdash; NRI Plugins 0.0.0-276-g19bbdd5 documentation</title>
+  <title>Configuration &mdash; NRI Plugins 0.0.0-276-g19bbdd5 documentation</title>
       <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -20,8 +20,8 @@
     <script src="../../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../../genindex.html" />
     <link rel="search" title="Search" href="../../search.html" />
-    <link rel="next" title="Developer’s Guide" href="developers-guide/index.html" />
-    <link rel="prev" title="Balloons Policy" href="policy/balloons.html" /> 
+    <link rel="next" title="Policies" href="policy/index.html" />
+    <link rel="prev" title="Setup and Usage" href="setup.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -53,9 +53,9 @@
 <li class="toctree-l2"><a class="reference internal" href="introduction.html">Introduction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="setup.html">Setup and Usage</a></li>
-<li class="toctree-l2 current"><a class="reference internal" href="configuration.html">Configuration</a><ul class="current">
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Configuration</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="policy/index.html">Policies</a></li>
-<li class="toctree-l3 current"><a class="current reference internal" href="#">Dynamic Configuration</a></li>
+<li class="toctree-l3"><a class="reference internal" href="node-agent.html">Dynamic Configuration</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="developers-guide/index.html">Developer’s Guide</a></li>
@@ -80,10 +80,9 @@
   <ul class="wy-breadcrumbs">
       <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
           <li class="breadcrumb-item"><a href="index.html">Resource Policy Plugins</a></li>
-          <li class="breadcrumb-item"><a href="configuration.html">Configuration</a></li>
-      <li class="breadcrumb-item active">Dynamic Configuration</li>
+      <li class="breadcrumb-item active">Configuration</li>
       <li class="wy-breadcrumbs-aside">
-            <a href="../../_sources/docs/resource-policy/node-agent.md.txt" rel="nofollow"> View page source</a>
+            <a href="../../_sources/docs/resource-policy/configuration.rst.txt" rel="nofollow"> View page source</a>
       </li>
   </ul>
   <hr/>
@@ -91,38 +90,22 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="dynamic-configuration">
-<h1>Dynamic Configuration<a class="headerlink" href="#dynamic-configuration" title="Permalink to this heading"></a></h1>
-<p>NRI Resource Policy plugin can be configured dynamically using ConfigMaps.</p>
-<p>The plugin daemon monitors two ConfigMaps for the node, a primary node-specific one
-and a secondary group-specific or default one, depending on whether the node
-belongs to a configuration group. The node-specific ConfigMap always takes
-precedence over the others.</p>
-<p>The names of these ConfigMaps are</p>
-<ol class="arabic simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">nri-resource-policy-config.node.$NODE_NAME</span></code>: primary, node-specific configuration</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">nri-resource-policy-config.group.$GROUP_NAME</span></code>: secondary group-specific node
-configuration</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">nri-resource-policy-config.default</span></code>: secondary: secondary default node
-configuration</p></li>
-</ol>
-<p>You can assign a node to a configuration group by setting the
-<code class="docutils literal notranslate"><span class="pre">resource-policy.nri.io/group</span></code> label on the node to the name of
-the configuration group. You can remove a node from its group by deleting
-the node group label.</p>
-<p>There is a
-<span class="xref myst">sample ConfigMap spec</span>
-that contains a node-specific, a group-specific, and a default ConfigMap
-example. See <a class="reference internal" href="policy/index.html"><span class="doc std std-doc">any available policy-specific documentation</span></a>
-for more information on the policy configurations.</p>
+  <section id="configuration">
+<h1>Configuration<a class="headerlink" href="#configuration" title="Permalink to this heading"></a></h1>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="policy/index.html">Policies</a></li>
+<li class="toctree-l1"><a class="reference internal" href="node-agent.html">Dynamic Configuration</a></li>
+</ul>
+</div>
 </section>
 
 
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="policy/balloons.html" class="btn btn-neutral float-left" title="Balloons Policy" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="developers-guide/index.html" class="btn btn-neutral float-right" title="Developer’s Guide" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="setup.html" class="btn btn-neutral float-left" title="Setup and Usage" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="policy/index.html" class="btn btn-neutral float-right" title="Policies" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

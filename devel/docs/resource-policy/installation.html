@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Installation &mdash; NRI Plugins 0.0.0-262-gd42d018 documentation</title>
+  <title>Installation &mdash; NRI Plugins 0.0.0-276-g19bbdd5 documentation</title>
       <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -48,12 +48,22 @@
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
-<li class="toctree-l1 current"><a class="reference internal" href="index.html">Resource Policy Plugin</a><ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../introduction.html">Introduction</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">Resource Policy Plugins</a><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="introduction.html">Introduction</a></li>
-<li class="toctree-l2 current"><a class="current reference internal" href="#">Installation</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Installation</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#installing-the-helm-chart">Installing the Helm Chart</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#uninstalling-the-chart">Uninstalling the Chart</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#helm-parameters">Helm parameters</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#manual-installation">Manual installation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#manual-uninstallation">Manual uninstallation</a></li>
+</ul>
+</li>
 <li class="toctree-l2"><a class="reference internal" href="setup.html">Setup and Usage</a></li>
-<li class="toctree-l2"><a class="reference internal" href="policy/index.html">Policies</a></li>
-<li class="toctree-l2"><a class="reference internal" href="node-agent.html">Dynamic Configuration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="configuration.html">Configuration</a></li>
 <li class="toctree-l2"><a class="reference internal" href="developers-guide/index.html">Developer’s Guide</a></li>
 </ul>
 </li>
@@ -75,7 +85,7 @@
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
       <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
-          <li class="breadcrumb-item"><a href="index.html">Resource Policy Plugin</a></li>
+          <li class="breadcrumb-item"><a href="index.html">Resource Policy Plugins</a></li>
       <li class="breadcrumb-item active">Installation</li>
       <li class="wy-breadcrumbs-aside">
             <a href="../../_sources/docs/resource-policy/installation.md.txt" rel="nofollow"> View page source</a>
@@ -88,6 +98,244 @@
              
   <section id="installation">
 <h1>Installation<a class="headerlink" href="#installation" title="Permalink to this heading"></a></h1>
+<p>This repository hosts a collection of plugins of various types, one of which is the resource
+policy plugins. In this example, we will demonstrate the installation process for the topology-aware
+plugin, which falls under the resource policy type. The installation methods outlined
+here can be applied to any other plugin hosted in this repository, regardless of its type.</p>
+<p>Currently, there are two installation methods available.</p>
+<ol class="arabic simple">
+<li><p><a class="reference internal" href="#installing-the-helm-chart"><span class="std std-doc">Helm</span></a></p></li>
+<li><p><a class="reference internal" href="#manual-installation"><span class="std std-doc">Manual</span></a></p></li>
+</ol>
+<p>Regardless of the chosen installation method, the NRI plugin installation includes the
+following components: DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-related objects.</p>
+<section id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p>Container runtime:</p>
+<ul>
+<li><p>containerD:</p>
+<ul>
+<li><p>At least <a class="reference external" href="https://github.com/containerd/containerd/releases/tag/v1.7.0">containerd 1.7.0</a> release version to use the NRI feature</p></li>
+<li><p>Enable NRI feature by following [these](TODO link) detailed instructions.</p></li>
+</ul>
+</li>
+<li><p>CRI-O</p>
+<ul>
+<li><p>At least <a class="reference external" href="https://github.com/cri-o/cri-o/releases/tag/v1.26.0">v1.26.0</a> release version to use the NRI feature</p></li>
+<li><p>Enable NRI feature by following [these](TODO link) detailed instructions.</p></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p>Kubernetes 1.24+</p></li>
+<li><p>Helm 3.0.0+</p></li>
+</ul>
+</section>
+<section id="installing-the-helm-chart">
+<h2>Installing the Helm Chart<a class="headerlink" href="#installing-the-helm-chart" title="Permalink to this heading"></a></h2>
+<ol class="arabic">
+<li><p>Clone the project to your local machine</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>git clone https://github.com/containers/nri-plugins.git
+</pre></div>
+</div>
+</li>
+<li><p>Navigate to the project directory</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span> nri-plugins
+</pre></div>
+</div>
+</li>
+<li><p>Install the plugin using Helm. Replace release name with the desired name
+for your Helm release. In this example, we named it as topology-aware. The
+default values for topology-aware resource policy plugin are stored in
+values.yaml file. If you wish to provide custom values to the Helm
+chart, refer to the <a class="reference internal" href="#helm-parameters"><span class="std std-doc">table</span></a> below, which describes the
+available parameters that can be modified before installation.</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm install topology-aware deployment/helm/resource-management-policies/topology-aware/
+</pre></div>
+</div>
+</li>
+<li><p>Verify the status of the daemonset to ensure that the plugin is running successfully</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl get daemonset -n kube-system nri-resource-policy
+
+NAME                  DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE
+nri-resource-policy   <span class="m">1</span>         <span class="m">1</span>         <span class="m">0</span>       <span class="m">1</span>            <span class="m">0</span>           kubernetes.io/os<span class="o">=</span>linux   4m33s
+</pre></div>
+</div>
+</li>
+</ol>
+<p>That’s it! You have now installed the topology-aware NRI resource policy plugin using Helm.</p>
+</section>
+<section id="uninstalling-the-chart">
+<h2>Uninstalling the Chart<a class="headerlink" href="#uninstalling-the-chart" title="Permalink to this heading"></a></h2>
+<p>To uninstall plugin chart just deleting it with the release name is enough:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>helm delete topology-aware
+</pre></div>
+</div>
+<p>Note: this removes DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-related objects associated with the chart.</p>
+<section id="helm-parameters">
+<h3>Helm parameters<a class="headerlink" href="#helm-parameters" title="Permalink to this heading"></a></h3>
+<p>The tables below present an overview of the parameters available for users to customize with their own values, along
+with the default values, for the Topology-aware and Balloons plugins Helm charts.</p>
+<section id="topology-aware">
+<h4>Topology-aware<a class="headerlink" href="#topology-aware" title="Permalink to this heading"></a></h4>
+<table border="1" class="docutils">
+<thead>
+<tr>
+<th>Name</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>namespace</code></td>
+<td>kube-system</td>
+<td>cpecify the namespace to use for deploying DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-related objects</td>
+</tr>
+<tr>
+<td><code>image.name</code></td>
+<td><a href="ghcr.io/containers/nri-plugins/nri-resource-policy-topology-aware">ghcr.io/containers/nri-plugins/nri-resource-policy-topology-aware</a></td>
+<td>container image name</td>
+</tr>
+<tr>
+<td><code>image.tag</code></td>
+<td>unstable</td>
+<td>container image tag</td>
+</tr>
+<tr>
+<td><code>image.pullPolicy</code></td>
+<td>Always</td>
+<td>image pull policy</td>
+</tr>
+<tr>
+<td><code>quota.cpu</code></td>
+<td>500m</td>
+<td>cpu qouta for the Pod</td>
+</tr>
+<tr>
+<td><code>quota.memory</code></td>
+<td>512Mi</td>
+<td>memory qouta for the Pod</td>
+</tr>
+<tr>
+<td><code>metrics.port</code></td>
+<td>8891</td>
+<td>metrics port on the container</td>
+</tr>
+<tr>
+<td><code>metrics.hostPort</code></td>
+<td>8891</td>
+<td>metrics port to expose on the host</td>
+</tr>
+<tr>
+<td><code>config</code></td>
+<td><pre><code>Active: balloons</code><br><code>ReservedResources:</code><br><code>  cpu: 750m</code></pre></td>
+<td>plugin configuration data</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="balloons">
+<h4>Balloons<a class="headerlink" href="#balloons" title="Permalink to this heading"></a></h4>
+<table border="1" class="docutils">
+<thead>
+<tr>
+<th>Name</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>namespace</code></td>
+<td>kube-system</td>
+<td>specify the namespace to use for deploying DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-related objects</td>
+</tr>
+<tr>
+<td><code>image.name</code></td>
+<td><a href="ghcr.io/containers/nri-plugins/nri-resource-policy-balloons">ghcr.io/containers/nri-plugins/nri-resource-policy-balloons</a></td>
+<td>container image name</td>
+</tr>
+<tr>
+<td><code>image.tag</code></td>
+<td>unstable</td>
+<td>container image tag</td>
+</tr>
+<tr>
+<td><code>image.pullPolicy</code></td>
+<td>Always</td>
+<td>image pull policy</td>
+</tr>
+<tr>
+<td><code>quota.cpu</code></td>
+<td>500m</td>
+<td>cpu qouta for the Pod</td>
+</tr>
+<tr>
+<td><code>quota.memory</code></td>
+<td>512Mi</td>
+<td>Memory qouta for the Pod</td>
+</tr>
+<tr>
+<td><code>metrics.port</code></td>
+<td>8891</td>
+<td>metrics port on the container</td>
+</tr>
+<tr>
+<td><code>metrics.hostPort</code></td>
+<td>8891</td>
+<td>metrics port to expose on the host</td>
+</tr>
+<tr>
+<td><code>config</code></td>
+<td><pre><code>Active: topology-aware</code><br><code>ReservedResources:</code><br><code>  cpu: 750m</code></pre></td>
+<td>plugin configuration data</td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+</section>
+<section id="manual-installation">
+<h2>Manual installation<a class="headerlink" href="#manual-installation" title="Permalink to this heading"></a></h2>
+<p>For the manual installation we will be using templating tool to generate Kubernetes YAML manifests.</p>
+<ol class="arabic">
+<li><p>Clone the project to your local machine</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>git clone https://github.com/containers/nri-plugins.git
+</pre></div>
+</div>
+</li>
+<li><p>Navigate to the project directory</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span> nri-plugins
+</pre></div>
+</div>
+</li>
+<li><p>If there are any specific configuration values you need to modify, navigate to the plugins <a class="reference external" href="https://github.com/containers/nri-plugins/tree/main/deployment/overlays">directory</a> containing the Kustomization file and update the desired configuration values according to your environment in the Kustomization file.</p></li>
+<li><p>Use kustomize to generate the Kubernetes manifests for the desired plugin and apply the generated manifests to your Kubernetes cluster using kubectl.</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>kustomize build deployment/overlays/topology-aware/ <span class="p">|</span> kubectl apply -f -
+</pre></div>
+</div>
+</li>
+<li><p>Verify the status of the DaemonSet to ensure that the plugin is running successfully</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl get daemonset -n kube-system nri-resource-policy
+
+NAME                  DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE
+nri-resource-policy   <span class="m">1</span>         <span class="m">1</span>         <span class="m">0</span>       <span class="m">1</span>            <span class="m">0</span>           kubernetes.io/os<span class="o">=</span>linux   4m33s
+</pre></div>
+</div>
+</li>
+</ol>
+<p>That’s it! You have now installed the topology-aware NRI resource policy plugin using kutomize.</p>
+</section>
+<section id="manual-uninstallation">
+<h2>Manual uninstallation<a class="headerlink" href="#manual-uninstallation" title="Permalink to this heading"></a></h2>
+<p>To uninstall plugin manifests you can run the following command:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>kustomize build deployment/overlays/topology-aware/ <span class="p">|</span> kubectl delete -f -
+</pre></div>
+</div>
+<p>Note: this removes DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-related objects associated with the chart.</p>
+</section>
 </section>
 
 

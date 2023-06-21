@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CPU Allocator &mdash; NRI Plugins 0.0.0-262-gd42d018 documentation</title>
+  <title>CPU Allocator &mdash; NRI Plugins 0.0.0-276-g19bbdd5 documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -20,8 +20,8 @@
     <script src="../../../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../../../genindex.html" />
     <link rel="search" title="Search" href="../../../search.html" />
-    <link rel="next" title="Dynamic Configuration" href="../node-agent.html" />
-    <link rel="prev" title="Container Affinity and Anti-Affinity" href="container-affinity.html" /> 
+    <link rel="next" title="Contributing" href="../../contributing.html" />
+    <link rel="prev" title="End-to-End tests" href="e2e-test.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -48,14 +48,15 @@
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
-<li class="toctree-l1 current"><a class="reference internal" href="../index.html">Resource Policy Plugin</a><ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../index.html">Resource Policy Plugins</a><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="../introduction.html">Introduction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../installation.html">Installation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../setup.html">Setup and Usage</a></li>
-<li class="toctree-l2 current"><a class="reference internal" href="index.html">Policies</a><ul class="current">
-<li class="toctree-l3"><a class="reference internal" href="topology-aware.html">Topology-Aware Policy</a></li>
-<li class="toctree-l3"><a class="reference internal" href="balloons.html">Balloons Policy</a></li>
-<li class="toctree-l3"><a class="reference internal" href="container-affinity.html">Container Affinity and Anti-Affinity</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../configuration.html">Configuration</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="index.html">Developer’s Guide</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="architecture.html">Architecture</a></li>
+<li class="toctree-l3"><a class="reference internal" href="testing.html">Testing</a></li>
 <li class="toctree-l3 current"><a class="current reference internal" href="#">CPU Allocator</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#topology-based-allocation">Topology Based Allocation</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#cpu-prioritization">CPU Prioritization</a></li>
@@ -63,8 +64,6 @@
 </li>
 </ul>
 </li>
-<li class="toctree-l2"><a class="reference internal" href="../node-agent.html">Dynamic Configuration</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../developers-guide/index.html">Developer’s Guide</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="../../contributing.html">Contributing</a></li>
@@ -85,11 +84,11 @@
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
       <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
-          <li class="breadcrumb-item"><a href="../index.html">Resource Policy Plugin</a></li>
-          <li class="breadcrumb-item"><a href="index.html">Policies</a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Resource Policy Plugins</a></li>
+          <li class="breadcrumb-item"><a href="index.html">Developer’s Guide</a></li>
       <li class="breadcrumb-item active">CPU Allocator</li>
       <li class="wy-breadcrumbs-aside">
-            <a href="../../../_sources/docs/resource-policy/policy/cpu-allocator.md.txt" rel="nofollow"> View page source</a>
+            <a href="../../../_sources/docs/resource-policy/developers-guide/cpu-allocator.md.txt" rel="nofollow"> View page source</a>
       </li>
   </ul>
   <hr/>
@@ -162,8 +161,8 @@ will be marked as high priority cores.</p>
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="container-affinity.html" class="btn btn-neutral float-left" title="Container Affinity and Anti-Affinity" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="../node-agent.html" class="btn btn-neutral float-right" title="Dynamic Configuration" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="e2e-test.html" class="btn btn-neutral float-left" title="End-to-End tests" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../../contributing.html" class="btn btn-neutral float-right" title="Contributing" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>
