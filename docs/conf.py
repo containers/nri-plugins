@@ -224,7 +224,7 @@ def fixLocalMDAnchors(app, doctree, docname):
     for node in doctree.traverse(nodes.reference):
         uri = node.get('refuri')
 
-        if isHTTPLink(uri):
+        if uri == None or isHTTPLink(uri):
             continue
 
         filePath = normalizePath(docname,uri)
