@@ -17,10 +17,12 @@ following components: DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-r
 
 - Container runtime:
     - containerD:
-        - At least [containerd 1.7.0](https://github.com/containerd/containerd/releases/tag/v1.7.0) release version to use the NRI feature
+        - At least [containerd 1.7.0](https://github.com/containerd/containerd/releases/tag/v1.7.0)
+            release version to use the NRI feature
         - Enable NRI feature by following [these](TODO link) detailed instructions.
     - CRI-O
-        - At least [v1.26.0](https://github.com/cri-o/cri-o/releases/tag/v1.26.0) release version to use the NRI feature
+        - At least [v1.26.0](https://github.com/cri-o/cri-o/releases/tag/v1.26.0) release version to
+            use the NRI feature
         - Enable NRI feature by following [these](TODO link) detailed instructions.
 - Kubernetes 1.24+
 - Helm 3.0.0+
@@ -74,36 +76,32 @@ Note: this removes DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-rela
 
 ### Helm parameters
 
-The tables below present an overview of the parameters available for users to customize with their own values, along
-with the default values, for the Topology-aware and Balloons plugins Helm charts.
+The tables below present an overview of the parameters available for users to customize with their own values,
+along with the default values, for the Topology-aware and Balloons plugins Helm charts.
 
 #### Topology-aware
 
-| Name               | Default                                                                                                                                    | Description                                          |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
-| `namespace`        | kube-system                                                                                                                                | cpecify the namespace to use for deploying DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-related objects                                                                                                                                                            |
-| `image.name`       | [ghcr.io/containers/nri-plugins/nri-resource-policy-topology-aware](ghcr.io/containers/nri-plugins/nri-resource-policy-topology-aware)     | container image name                                 |
-| `image.tag`        | unstable                                                                                                                                   | container image tag                                  |
-| `image.pullPolicy` | Always                                                                                                                                     | image pull policy                                    |
-| `quota.cpu`        | 500m                                                                                                                                       | cpu qouta for the Pod                                |
-| `quota.memory`     | 512Mi                                                                                                                                      | memory qouta for the Pod                             |
-| `metrics.port`     | 8891                                                                                                                                       | metrics port on the container                        |
-| `metrics.hostPort` | 8891                                                                                                                                       | metrics port to expose on the host                   |
-| `config`           | <pre><code>Active: balloons</code><br><code>ReservedResources:</code><br><code>  cpu: 750m</code></pre>                                                                                                                                                                                                                                                                 | plugin configuration data                            |
+| Name               | Default                                                                                                                       | Description                                          |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `image.name`       | [ghcr.io/containers/nri-plugins/nri-resource-policy-topology-aware](ghcr.io/containers/nri-plugins/nri-resource-policy-topology-aware)    | container image name                                 |
+| `image.tag`        | unstable                                                                                                                      | container image tag                                  |
+| `image.pullPolicy` | Always                                                                                                                        | image pull policy                                    |
+| `resources.cpu`    | 500m                                                                                                                          | cpu resources for the Pod                            |
+| `resources.memory` | 512Mi                                                                                                                         | memory qouta for the Pod                             | 
+| `hostPort`         | 8891                                                                                                                          | metrics port to expose on the host                   |
+| `config`           | <pre><code>ReservedResources:</code><br><code>  cpu: 750m</code></pre>                                                        | plugin configuration data                            |
 
 #### Balloons
 
-| Name               | Default                                                                                                                                    | Description                                          |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
-| `namespace`        | kube-system                                                                                                                                | specify the namespace to use for deploying DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-related objects                                                                                                                                                            |
-| `image.name`       | [ghcr.io/containers/nri-plugins/nri-resource-policy-balloons](ghcr.io/containers/nri-plugins/nri-resource-policy-balloons)                 | container image name                                 |
-| `image.tag`        | unstable                                                                                                                                   | container image tag                                  |
-| `image.pullPolicy` | Always                                                                                                                                     | image pull policy                                    |
-| `quota.cpu`        | 500m                                                                                                                                       | cpu qouta for the Pod                                |
-| `quota.memory`     | 512Mi                                                                                                                                      | Memory qouta for the Pod                             |
-| `metrics.port`     | 8891                                                                                                                                       | metrics port on the container                        |
-| `metrics.hostPort` | 8891                                                                                                                                       | metrics port to expose on the host                   |
-| `config`           | <pre><code>Active: topology-aware</code><br><code>ReservedResources:</code><br><code>  cpu: 750m</code></pre>                                                                                                                                                                                                                                                           | plugin configuration data                            |
+| Name               | Default                                                                                                                       | Description                                          |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `image.name`       | [ghcr.io/containers/nri-plugins/nri-resource-policy-balloons](ghcr.io/containers/nri-plugins/nri-resource-policy-balloons)    | container image name                                 |
+| `image.tag`        | unstable                                                                                                                      | container image tag                                  |
+| `image.pullPolicy` | Always                                                                                                                        | image pull policy                                    |
+| `resources.cpu`    | 500m                                                                                                                          | cpu resources for the Pod                            |
+| `resources.memory` | 512Mi                                                                                                                         | memory qouta for the Pod                             | 
+| `hostPort`         | 8891                                                                                                                          | metrics port to expose on the host                   |
+| `config`           | <pre><code>ReservedResources:</code><br><code>  cpu: 750m</code></pre>                                                        | plugin configuration data                            |
 
 ## Manual installation
 
@@ -118,9 +116,13 @@ For the manual installation we will be using templating tool to generate Kuberne
     cd nri-plugins
     ```
 
-1. If there are any specific configuration values you need to modify, navigate to the plugins [directory](https://github.com/containers/nri-plugins/tree/main/deployment/overlays) containing the Kustomization file and update the desired configuration values according to your environment in the Kustomization file.
+1. If there are any specific configuration values you need to modify, navigate to the plugins
+    [directory](https://github.com/containers/nri-plugins/tree/main/deployment/overlays) containing
+    the Kustomization file and update the desired configuration
+    values according to your environment in the Kustomization file.
 
-1. Use kustomize to generate the Kubernetes manifests for the desired plugin and apply the generated manifests to your Kubernetes cluster using kubectl.
+1. Use kustomize to generate the Kubernetes manifests for the desired plugin and apply the generated
+    manifests to your Kubernetes cluster using kubectl.
 
     ```sh
     kustomize build deployment/overlays/topology-aware/ | kubectl apply -f -
@@ -145,4 +147,5 @@ To uninstall plugin manifests you can run the following command:
 kustomize build deployment/overlays/topology-aware/ | kubectl delete -f -
 ```
 
-Note: this removes DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-related objects associated with the chart.
+Note: this removes DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-related objects associated
+with the chart.
