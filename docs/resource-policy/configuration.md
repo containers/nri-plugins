@@ -23,5 +23,5 @@ the node group label.
 There is a
 [sample ConfigMap spec](/sample-configs/nri-resource-policy-configmap.example.yaml)
 that contains a node-specific, a group-specific, and a default ConfigMap
-example. See [any available policy-specific documentation](policy/index.rst)
+example. See [any available policy-specific documentation](policy/index.md)
 for more information on the policy configurations.
