@@ -7,8 +7,8 @@ here can be applied to any other plugin hosted in this repository, regardless of
 
 Currently, there are two installation methods available.
 
-1. [Helm](#Helm)
-2. [Manual](#Manual)
+1. [Helm](#installing-the-helm-chart)
+2. [Manual](#manual-installation)
 
 Regardless of the chosen installation method, the NRI plugin installation includes the
 following components: DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-related objects.
@@ -37,7 +37,12 @@ following components: DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-r
     cd nri-plugins
     ```
 
-1. Install the plugin using Helm. Replace release name with the desired name for your Helm release. In this example, we named it as topology-aware. The default values for topology-aware resource policy plugin are stored in [values.yaml](TODO) file. If you wish to provide custom values to the Helm chart, refer to the [table](#Helm-parameters) below, which describes the available parameters that can be modified before installation.
+1. Install the plugin using Helm. Replace release name with the desired name
+   for your Helm release. In this example, we named it as topology-aware. The
+default values for topology-aware resource policy plugin are stored in
+values.yaml file. If you wish to provide custom values to the Helm
+chart, refer to the [table](#helm-parameters) below, which describes the
+available parameters that can be modified before installation.
 
     ```sh
     helm install topology-aware deployment/helm/resource-management-policies/topology-aware/
@@ -45,7 +50,7 @@ following components: DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-r
 
 1. Verify the status of the daemonset to ensure that the plugin is running successfully
 
-    ```terminal
+    ```bash
     kubectl get daemonset -n kube-system nri-resource-policy
     
     NAME                  DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE
@@ -120,7 +125,7 @@ For the manual installation we will be using templating tool to generate Kuberne
 
 1. Verify the status of the DaemonSet to ensure that the plugin is running successfully
 
-    ```terminal
+    ```bash
     kubectl get daemonset -n kube-system nri-resource-policy
     
     NAME                  DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE
