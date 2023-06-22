@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Setup and Usage &mdash; NRI Plugins 0.0.0-282-gd6a11df documentation</title>
+  <title>Setup and Usage &mdash; NRI Plugins 0.0.0-284-gb4308f1 documentation</title>
       <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -99,7 +99,7 @@
 you need to do, assuming you already have a Kubernetes* cluster up and
 running, using either <code class="docutils literal notranslate"><span class="pre">containerd</span></code> or <code class="docutils literal notranslate"><span class="pre">cri-o</span></code> as the runtime.</p>
 <ul class="simple">
-<li><p><a class="reference internal" href="installation.html"><span class="doc std std-doc">Install</span></a> NRI Resource Policy DaemonSet deployment file.</p></li>
+<li><p><a class="reference internal" href="installation.html"><span class="std std-doc">Install</span></a> NRI Resource Policy DaemonSet deployment file.</p></li>
 <li><p>Runtime (containerd / cri-o) configuration</p></li>
 </ul>
 <p>For NRI Resource Policy, you need to provide a configuration file. The default
@@ -110,7 +110,7 @@ You can edit it as needed.</p>
 <h2>Setting up NRI Resource Policy<a class="headerlink" href="#setting-up-nri-resource-policy" title="Permalink to this heading"></a></h2>
 <section id="using-nri-resource-policy-agent-and-a-configmap">
 <h3>Using NRI Resource Policy Agent and a ConfigMap<a class="headerlink" href="#using-nri-resource-policy-agent-and-a-configmap" title="Permalink to this heading"></a></h3>
-<p>The <a class="reference internal" href="node-agent.html"><span class="doc std std-doc">NRI Resource Policy Node Agent</span></a> can monitor and fetch configuration
+<p>The <a class="reference internal" href="node-agent.html"><span class="std std-doc">NRI Resource Policy Node Agent</span></a> can monitor and fetch configuration
 from the ConfigMap and pass it on to NRI Resource Policy plugin.
 By default, it automatically tries to use the agent to acquire configuration,
 unless you override this by forcing a static local configuration using
@@ -119,7 +119,7 @@ When using the agent, it is also possible to provide an initial fallback for
 configuration using the <code class="docutils literal notranslate"><span class="pre">--fallback-config</span> <span class="pre">&lt;config-file&gt;</span></code>. This file is
 used before the very first configuration is successfully acquired from the
 agent.</p>
-<p>See the <a class="reference internal" href="node-agent.html"><span class="doc std std-doc">Node Agent</span></a> about how to set up and configure the agent.</p>
+<p>See the <a class="reference internal" href="node-agent.html"><span class="std std-doc">Node Agent</span></a> about how to set up and configure the agent.</p>
 </section>
 </section>
 <section id="logging-and-debugging">

@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Installation &mdash; NRI Plugins 0.0.0-282-gd6a11df documentation</title>
+  <title>Installation &mdash; NRI Plugins 0.0.0-284-gb4308f1 documentation</title>
       <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -104,8 +104,8 @@ plugin, which falls under the resource policy type. The installation methods out
 here can be applied to any other plugin hosted in this repository, regardless of its type.</p>
 <p>Currently, there are two installation methods available.</p>
 <ol class="arabic simple">
-<li><p><a class="reference internal" href="#installing-the-helm-chart"><span class="std std-doc">Helm</span></a></p></li>
-<li><p><a class="reference internal" href="#manual-installation"><span class="std std-doc">Manual</span></a></p></li>
+<li><p><a class="reference internal" href="#installing-the-helm-chart">Helm</a></p></li>
+<li><p><a class="reference internal" href="#manual-installation">Manual</a></p></li>
 </ol>
 <p>Regardless of the chosen installation method, the NRI plugin installation includes the
 following components: DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-related objects.</p>
@@ -151,7 +151,7 @@ use the NRI feature</p></li>
 for your Helm release. In this example, we named it as topology-aware. The
 default values for topology-aware resource policy plugin are stored in
 values.yaml file. If you wish to provide custom values to the Helm
-chart, refer to the <a class="reference internal" href="#helm-parameters"><span class="std std-doc">table</span></a> below, which describes the
+chart, refer to the <a class="reference internal" href="#helm-parameters">table</a> below, which describes the
 available parameters that can be modified before installation. It’s important
 to note that specifying the namespace (using <code class="docutils literal notranslate"><span class="pre">--namespace</span></code>) is crucial when
 installing the Helm chart, as failing to do so may result in broken YAML
