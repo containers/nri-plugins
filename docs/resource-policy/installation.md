@@ -56,10 +56,10 @@ following components: DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-r
 1. Verify the status of the daemonset to ensure that the plugin is running successfully
 
     ```bash
-    kubectl get daemonset -n kube-system nri-resource-policy
+    kubectl get daemonset -n kube-system nri-resource-policy-topology-aware
     
-    NAME                  DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE
-    nri-resource-policy   1         1         0       1            0           kubernetes.io/os=linux   4m33s
+    NAME                                 DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE
+    nri-resource-policy-topology-aware   1         1         0       1            0           kubernetes.io/os=linux   4m33s
     ```
 
 That's it! You have now installed the topology-aware NRI resource policy plugin using Helm.
