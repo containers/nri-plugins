@@ -15,20 +15,18 @@ You can edit it as needed.
 
 ## Setting up NRI Resource Policy
 
-### Using NRI Resource Policy Agent and a ConfigMap
+### Dynamic configuration with ConfigMaps
 
-The [NRI Resource Policy Node Agent][agent] can monitor and fetch configuration
-from the ConfigMap and pass it on to NRI Resource Policy plugin.
-By default, it automatically tries to use the agent to acquire configuration,
-unless you override this by forcing a static local configuration using
-the `--force-config <config-file>` option.
-When using the agent, it is also possible to provide an initial fallback for
-configuration using the `--fallback-config <config-file>`. This file is
+The resource policies plugins support[dynamic configuration][configuration]
+using ConfigMaps. Plugins watch changes in the ConfigMap and reconfigure
+themselves on any update.  Tt is possible to provide an initial fallback for
+configuration using the `--fallback-config <config-file>` flag. This file is
 used before the very first configuration is successfully acquired from the
-agent.
+ConfigMap.
 
-See the [Node Agent][agent] about how to set up and configure the agent.
-
+Dynamic configuration can be disabled with a static local configuration using
+the `--force-config <config-file>` flag.  See the [Node Agent][agent] about
+how to set up and configure the agent.
 
 ## Logging and debugging
 
@@ -58,4 +56,4 @@ the environment but off in the configuration, it will be turned off
 eventually.
 
 <!-- Links -->
-[agent]: node-agent.md
+[configuration]: configuration.md

@@ -130,11 +130,11 @@ policy:
 
 ## Configuring the Policy
 
-The policy has a number of configuration options which affect its default behavior.
-These options can be supplied as part of the
-[dynamic configuration](../setup.md#using-nri-resource-policy-agent-and-a-configmap)
-received via the [`node agent`](../node-agent.md), or in a fallback or forced
-configuration file. These configuration options are
+The policy has a number of configuration options which affect its default
+behavior. These options can be supplied as part of the
+[dynamic configuration](../setup.md#dynamic-configuration-with-configmaps)
+or in a fallback or forced configuration file. These configuration options
+are
 
   - `PinCPU`
     * whether to pin workloads to assigned pool CPU sets

@@ -8,7 +8,7 @@ Resource Policy Plugins
    introduction.md
    installation.md
    setup.md
-   node-agent.md
+   configuration.md
    policy/index.rst
 
    developers-guide/index.rst
