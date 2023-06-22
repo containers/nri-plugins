@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Installation &mdash; NRI Plugins 0.0.0-276-g19bbdd5 documentation</title>
+  <title>Installation &mdash; NRI Plugins 0.0.0-279-gf3f5ef2 documentation</title>
       <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -116,13 +116,15 @@ following components: DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-r
 <ul>
 <li><p>containerD:</p>
 <ul>
-<li><p>At least <a class="reference external" href="https://github.com/containerd/containerd/releases/tag/v1.7.0">containerd 1.7.0</a> release version to use the NRI feature</p></li>
+<li><p>At least <a class="reference external" href="https://github.com/containerd/containerd/releases/tag/v1.7.0">containerd 1.7.0</a>
+release version to use the NRI feature</p></li>
 <li><p>Enable NRI feature by following [these](TODO link) detailed instructions.</p></li>
 </ul>
 </li>
 <li><p>CRI-O</p>
 <ul>
-<li><p>At least <a class="reference external" href="https://github.com/cri-o/cri-o/releases/tag/v1.26.0">v1.26.0</a> release version to use the NRI feature</p></li>
+<li><p>At least <a class="reference external" href="https://github.com/cri-o/cri-o/releases/tag/v1.26.0">v1.26.0</a> release version to
+use the NRI feature</p></li>
 <li><p>Enable NRI feature by following [these](TODO link) detailed instructions.</p></li>
 </ul>
 </li>
@@ -150,16 +152,19 @@ for your Helm release. In this example, we named it as topology-aware. The
 default values for topology-aware resource policy plugin are stored in
 values.yaml file. If you wish to provide custom values to the Helm
 chart, refer to the <a class="reference internal" href="#helm-parameters"><span class="std std-doc">table</span></a> below, which describes the
-available parameters that can be modified before installation.</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm install topology-aware deployment/helm/resource-management-policies/topology-aware/
+available parameters that can be modified before installation. It’s important
+to note that specifying the namespace (using <code class="docutils literal notranslate"><span class="pre">--namespace</span></code>) is crucial when
+installing the Helm chart, as failing to do so may result in broken YAML
+manifests.</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm install topology-aware --namespace kube-system deployment/helm/resource-management-policies/topology-aware/
 </pre></div>
 </div>
 </li>
 <li><p>Verify the status of the daemonset to ensure that the plugin is running successfully</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl get daemonset -n kube-system nri-resource-policy
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl get daemonset -n kube-system nri-resource-policy-topology-aware
 
-NAME                  DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE
-nri-resource-policy   <span class="m">1</span>         <span class="m">1</span>         <span class="m">0</span>       <span class="m">1</span>            <span class="m">0</span>           kubernetes.io/os<span class="o">=</span>linux   4m33s
+NAME                                 DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE
+nri-resource-policy-topology-aware   <span class="m">1</span>         <span class="m">1</span>         <span class="m">0</span>       <span class="m">1</span>            <span class="m">0</span>           kubernetes.io/os<span class="o">=</span>linux   4m33s
 </pre></div>
 </div>
 </li>
@@ -175,8 +180,8 @@ nri-resource-policy   <span class="m">1</span>         <span class="m">1</span> 
 <p>Note: this removes DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-related objects associated with the chart.</p>
 <section id="helm-parameters">
 <h3>Helm parameters<a class="headerlink" href="#helm-parameters" title="Permalink to this heading"></a></h3>
-<p>The tables below present an overview of the parameters available for users to customize with their own values, along
-with the default values, for the Topology-aware and Balloons plugins Helm charts.</p>
+<p>The tables below present an overview of the parameters available for users to customize with their own values,
+along with the default values, for the Topology-aware and Balloons plugins Helm charts.</p>
 <section id="topology-aware">
 <h4>Topology-aware<a class="headerlink" href="#topology-aware" title="Permalink to this heading"></a></h4>
 <table border="1" class="docutils">
@@ -188,11 +193,6 @@ with the default values, for the Topology-aware and Balloons plugins Helm charts
 </tr>
 </thead>
 <tbody>
-<tr>
-<td><code>namespace</code></td>
-<td>kube-system</td>
-<td>cpecify the namespace to use for deploying DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-related objects</td>
-</tr>
 <tr>
 <td><code>image.name</code></td>
 <td><a href="ghcr.io/containers/nri-plugins/nri-resource-policy-topology-aware">ghcr.io/containers/nri-plugins/nri-resource-policy-topology-aware</a></td>
@@ -209,28 +209,23 @@ with the default values, for the Topology-aware and Balloons plugins Helm charts
 <td>image pull policy</td>
 </tr>
 <tr>
-<td><code>quota.cpu</code></td>
+<td><code>resources.cpu</code></td>
 <td>500m</td>
-<td>cpu qouta for the Pod</td>
+<td>cpu resources for the Pod</td>
 </tr>
 <tr>
-<td><code>quota.memory</code></td>
+<td><code>resources.memory</code></td>
 <td>512Mi</td>
 <td>memory qouta for the Pod</td>
 </tr>
 <tr>
-<td><code>metrics.port</code></td>
-<td>8891</td>
-<td>metrics port on the container</td>
-</tr>
-<tr>
-<td><code>metrics.hostPort</code></td>
+<td><code>hostPort</code></td>
 <td>8891</td>
 <td>metrics port to expose on the host</td>
 </tr>
 <tr>
 <td><code>config</code></td>
-<td><pre><code>Active: balloons</code><br><code>ReservedResources:</code><br><code>  cpu: 750m</code></pre></td>
+<td><pre><code>ReservedResources:</code><br><code>  cpu: 750m</code></pre></td>
 <td>plugin configuration data</td>
 </tr>
 </tbody>
@@ -248,11 +243,6 @@ with the default values, for the Topology-aware and Balloons plugins Helm charts
 </thead>
 <tbody>
 <tr>
-<td><code>namespace</code></td>
-<td>kube-system</td>
-<td>specify the namespace to use for deploying DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-related objects</td>
-</tr>
-<tr>
 <td><code>image.name</code></td>
 <td><a href="ghcr.io/containers/nri-plugins/nri-resource-policy-balloons">ghcr.io/containers/nri-plugins/nri-resource-policy-balloons</a></td>
 <td>container image name</td>
@@ -268,28 +258,23 @@ with the default values, for the Topology-aware and Balloons plugins Helm charts
 <td>image pull policy</td>
 </tr>
 <tr>
-<td><code>quota.cpu</code></td>
+<td><code>resources.cpu</code></td>
 <td>500m</td>
-<td>cpu qouta for the Pod</td>
+<td>cpu resources for the Pod</td>
 </tr>
 <tr>
-<td><code>quota.memory</code></td>
+<td><code>resources.memory</code></td>
 <td>512Mi</td>
-<td>Memory qouta for the Pod</td>
+<td>memory qouta for the Pod</td>
 </tr>
 <tr>
-<td><code>metrics.port</code></td>
-<td>8891</td>
-<td>metrics port on the container</td>
-</tr>
-<tr>
-<td><code>metrics.hostPort</code></td>
+<td><code>hostPort</code></td>
 <td>8891</td>
 <td>metrics port to expose on the host</td>
 </tr>
 <tr>
 <td><code>config</code></td>
-<td><pre><code>Active: topology-aware</code><br><code>ReservedResources:</code><br><code>  cpu: 750m</code></pre></td>
+<td><pre><code>ReservedResources:</code><br><code>  cpu: 750m</code></pre></td>
 <td>plugin configuration data</td>
 </tr>
 </tbody>
@@ -311,8 +296,12 @@ with the default values, for the Topology-aware and Balloons plugins Helm charts
 </pre></div>
 </div>
 </li>
-<li><p>If there are any specific configuration values you need to modify, navigate to the plugins <a class="reference external" href="https://github.com/containers/nri-plugins/tree/main/deployment/overlays">directory</a> containing the Kustomization file and update the desired configuration values according to your environment in the Kustomization file.</p></li>
-<li><p>Use kustomize to generate the Kubernetes manifests for the desired plugin and apply the generated manifests to your Kubernetes cluster using kubectl.</p>
+<li><p>If there are any specific configuration values you need to modify, navigate to the plugins
+<a class="reference external" href="https://github.com/containers/nri-plugins/tree/main/deployment/overlays">directory</a> containing
+the Kustomization file and update the desired configuration
+values according to your environment in the Kustomization file.</p></li>
+<li><p>Use kustomize to generate the Kubernetes manifests for the desired plugin and apply the generated
+manifests to your Kubernetes cluster using kubectl.</p>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>kustomize build deployment/overlays/topology-aware/ <span class="p">|</span> kubectl apply -f -
 </pre></div>
 </div>
@@ -334,7 +323,8 @@ nri-resource-policy   <span class="m">1</span>         <span class="m">1</span> 
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>kustomize build deployment/overlays/topology-aware/ <span class="p">|</span> kubectl delete -f -
 </pre></div>
 </div>
-<p>Note: this removes DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-related objects associated with the chart.</p>
+<p>Note: this removes DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-related objects associated
+with the chart.</p>
 </section>
 </section>
 
