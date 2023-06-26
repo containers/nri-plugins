@@ -1,0 +1,26 @@
+name: helm linter
+
+on: 
+  pull_request:
+    paths-ignore:
+      - 'deployment/helm/**'
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: v3.11.2
+
+      - name: Run balloons linter
+        run: helm lint deployment/helm/resource-management-policies/balloons
+
+      - name: Run topology-aware linter
+        run: helm lint deployment/helm/resource-management-policies/topology-aware/
