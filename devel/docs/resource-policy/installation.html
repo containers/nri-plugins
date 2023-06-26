@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Installation &mdash; NRI Plugins 0.1.0-7-ge4a9659 documentation</title>
+  <title>Installation &mdash; NRI Plugins 0.1.0-9-g44ef13a documentation</title>
       <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -155,8 +155,8 @@ values.yaml file. If you wish to provide custom values to the Helm
 chart, refer to the <a class="reference internal" href="#helm-parameters">table</a> below, which describes the
 available parameters that can be modified before installation. It’s important
 to note that specifying the namespace (using <code class="docutils literal notranslate"><span class="pre">--namespace</span></code>) is crucial when
-installing the Helm chart, as failing to do so may result in broken YAML
-manifests.</p>
+installing the Helm chart. If no namespace is specified, the manifests will
+be installed in the default namespace.</p>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm install topology-aware --namespace kube-system deployment/helm/resource-management-policies/topology-aware/
 </pre></div>
 </div>
