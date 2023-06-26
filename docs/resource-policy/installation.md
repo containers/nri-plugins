@@ -46,8 +46,8 @@ following components: DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-r
    chart, refer to the [table](#helm-parameters) below, which describes the
    available parameters that can be modified before installation. It's important
    to note that specifying the namespace (using `--namespace`) is crucial when
-   installing the Helm chart, as failing to do so may result in broken YAML
-   manifests.
+   installing the Helm chart. If no namespace is specified, the manifests will
+   be installed in the default namespace.
 
     ```sh
     helm install topology-aware --namespace kube-system deployment/helm/resource-management-policies/topology-aware/
