@@ -23,7 +23,6 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	"github.com/containers/nri-plugins/pkg/resmgr/policy"
-	"github.com/pkg/errors"
 	"sigs.k8s.io/yaml"
 
 	"github.com/containerd/nri/pkg/api"
@@ -61,7 +60,7 @@ func (p *nriPlugin) createStub() error {
 	p.Info("creating plugin stub...")
 
 	if p.stub, err = stub.New(p, opts...); err != nil {
-		return errors.Wrap(err, "failed to create NRI plugin stub")
+		return fmt.Errorf("failed to create NRI plugin stub: %w", err)
 	}
 
 	return nil
@@ -79,7 +78,7 @@ func (p *nriPlugin) start() error {
 	}
 
 	if err := p.stub.Start(context.Background()); err != nil {
-		return errors.Wrap(err, "failed to start NRI plugin")
+		return fmt.Errorf("failed to start NRI plugin: %w", err)
 	}
 
 	return nil
@@ -199,8 +198,7 @@ func (p *nriPlugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, con
 	}
 
 	if err := m.policy.Start(allocated, released); err != nil {
-		return nil, errors.Wrapf(err,
-			"failed to start policy %s", policy.ActivePolicy())
+		return nil, fmt.Errorf("failed to start policy %s: %w", policy.ActivePolicy(), err)
 	}
 
 	m.updateTopologyZones()
@@ -328,13 +326,13 @@ func (p *nriPlugin) CreateContainer(ctx context.Context, podSandbox *api.PodSand
 
 	c, err := m.cache.InsertContainer(container)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to cache container")
+		return nil, nil, fmt.Errorf("failed to cache container: %w", err)
 	}
 	c.UpdateState(cache.ContainerStateCreating)
 
 	if err := m.policy.AllocateResources(c); err != nil {
 		c.UpdateState(cache.ContainerStateStale)
-		return nil, nil, errors.Wrap(err, "failed to allocate resources")
+		return nil, nil, fmt.Errorf("failed to allocate resources: %w", err)
 	}
 	c.UpdateState(cache.ContainerStateCreated)
 
@@ -349,7 +347,7 @@ func (p *nriPlugin) CreateContainer(ctx context.Context, podSandbox *api.PodSand
 		m.Error("%s: failed to run post-allocate hooks for %s: %v",
 			event, container.GetName(), err)
 		p.runPostReleaseHooks(event, c)
-		return nil, nil, errors.Wrap(err, "failed to allocate container resources")
+		return nil, nil, fmt.Errorf("failed to allocate container resources: %w", err)
 	}
 
 	m.policy.ExportResourceData(c)
@@ -440,7 +438,7 @@ func (p *nriPlugin) UpdateContainer(ctx context.Context, pod *api.PodSandbox, co
 	//r := cache.EstimateResourceRequirements(res, c.GetQOSClass())
 
 	if err := m.policy.UpdateResources(c); err != nil {
-		return nil, errors.Wrap(err, "failed to update resources")
+		return nil, fmt.Errorf("failed to update resources: %w", err)
 	}
 
 	return p.getPendingUpdates(nil), nil
@@ -473,7 +471,7 @@ func (p *nriPlugin) StopContainer(ctx context.Context, pod *api.PodSandbox, cont
 	}
 
 	if err := m.policy.ReleaseResources(c); err != nil {
-		return nil, errors.Wrap(err, "failed to release resources")
+		return nil, fmt.Errorf("failed to release resources: %w", err)
 	}
 
 	c.UpdateState(cache.ContainerStateExited)

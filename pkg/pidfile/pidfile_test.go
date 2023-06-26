@@ -15,12 +15,12 @@
 package pidfile
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
 
@@ -244,7 +244,7 @@ func TestOwnerPid(t *testing.T) {
 func mkTestDir(t *testing.T) (string, error) {
 	tmp, err := ioutil.TempDir("", ".pidfile-test*")
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to create test directory")
+		return "", fmt.Errorf("failed to create test directory: %w", err)
 	}
 
 	t.Cleanup(func() {

@@ -21,8 +21,6 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-
-	"github.com/pkg/errors"
 )
 
 var (
@@ -51,18 +49,18 @@ func Write() error {
 
 	err := os.MkdirAll(filepath.Dir(pidFilePath), 0755)
 	if err != nil {
-		return errors.Wrap(err, "failed to create PID file")
+		return fmt.Errorf("failed to create PID file: %w", err)
 	}
 
 	pidFile, err = os.OpenFile(pidFilePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
 	if err != nil {
-		return errors.Wrap(err, "failed to create PID file")
+		return fmt.Errorf("failed to create PID file: %w", err)
 	}
 
 	_, err = pidFile.Write([]byte(fmt.Sprintf("%d\n", os.Getpid())))
 	if err != nil {
 		close()
-		return errors.Wrap(err, "failed to write PID file")
+		return fmt.Errorf("failed to write PID file: %w", err)
 	}
 
 	return nil
@@ -82,11 +80,11 @@ func Read() (int, error) {
 		if os.IsNotExist(err) {
 			return 0, nil
 		}
-		return -1, errors.Wrap(err, "failed to read PID file")
+		return -1, fmt.Errorf("failed to read PID file: %w", err)
 	}
 
 	if pid, err = strconv.Atoi(strings.TrimRight(string(buf), "\n")); err != nil {
-		return -1, errors.Wrapf(err, "invalid PID (%q) in PID file", string(buf))
+		return -1, fmt.Errorf("invalid PID (%q) in PID file: %w", string(buf), err)
 	}
 
 	return pid, nil
@@ -134,7 +132,7 @@ func OwnerPid() (int, error) {
 
 	p, err = os.FindProcess(pid)
 	if err != nil {
-		return -1, errors.Wrapf(err, "FindProcess() failed for PID %d", pid)
+		return -1, fmt.Errorf("FindProcess() failed for PID %d: %w", pid, err)
 	}
 
 	err = p.Signal(syscall.Signal(0))
@@ -145,7 +143,7 @@ func OwnerPid() (int, error) {
 		return pid, nil
 	}
 
-	return -1, errors.Wrapf(err, "failed to check process %d", pid)
+	return -1, fmt.Errorf("failed to check process %d: %w", pid, err)
 }
 
 // defaultPath returns the default pidfile path.
