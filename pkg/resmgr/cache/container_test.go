@@ -29,7 +29,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	nri "github.com/containerd/nri/pkg/api"
-	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 	"sigs.k8s.io/yaml"
 )
@@ -871,9 +870,9 @@ func setupSysFsDevice(dev string) error {
 	fi, err := os.Stat(dev)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return errors.Wrapf(err, "no such file %s", dev)
+			return fmt.Errorf("no such file %s: %w", dev, err)
 		}
-		return errors.Wrapf(err, "unable to get stat for %s", dev)
+		return fmt.Errorf("unable to get stat for %s: %w", dev, err)
 	}
 
 	devType := "block"
@@ -888,12 +887,12 @@ func setupSysFsDevice(dev string) error {
 	major := int64(unix.Major(rdev))
 	minor := int64(unix.Minor(rdev))
 	if major == 0 {
-		return errors.Errorf("%s is a virtual device node", dev)
+		return fmt.Errorf("%s is a virtual device node", dev)
 	}
 
 	err = createSysFsDevice(devType, major, minor)
 	if err != nil {
-		return errors.Wrapf(err, "failed to find sysfs device for %s", dev)
+		return fmt.Errorf("failed to find sysfs device for %s: %w", dev, err)
 	}
 
 	return nil

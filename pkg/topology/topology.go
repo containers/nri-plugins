@@ -21,7 +21,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 )
 
@@ -73,11 +72,11 @@ func ResetLogger() {
 func getDevicesFromVirtual(realDevPath string) (devs []string, err error) {
 	relPath, err := filepath.Rel("/sys/devices/virtual", realDevPath)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to find relative path")
+		return nil, fmt.Errorf("unable to find relative path: %w", err)
 	}
 
 	if strings.HasPrefix(relPath, "..") {
-		return nil, errors.Errorf("%s is not a virtual device", realDevPath)
+		return nil, fmt.Errorf("%s is not a virtual device", realDevPath)
 	}
 
 	dir, file := filepath.Split(relPath)
@@ -86,12 +85,12 @@ func getDevicesFromVirtual(realDevPath string) (devs []string, err error) {
 		iommuGroup := filepath.Join(sysRoot, "/sys/kernel/iommu_groups", file, "devices")
 		files, err := os.ReadDir(iommuGroup)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to read IOMMU group %s", iommuGroup)
+			return nil, fmt.Errorf("failed to read IOMMU group %s: %w", iommuGroup, err)
 		}
 		for _, file := range files {
 			realDev, err := filepath.EvalSymlinks(filepath.Join(iommuGroup, file.Name()))
 			if err != nil {
-				return nil, errors.Wrapf(err, "failed to get real path for %s", file.Name())
+				return nil, fmt.Errorf("failed to get real path for %s: %w", file.Name(), err)
 			}
 			devs = append(devs, realDev)
 		}
@@ -160,7 +159,7 @@ func NewTopologyHints(devPath string) (hints Hints, err error) {
 	hints = make(Hints)
 	realDevPath, err := filepath.EvalSymlinks(devPath)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed get realpath for %s", devPath)
+		return nil, fmt.Errorf("failed get realpath for %s: %w", devPath, err)
 	}
 	for p := realDevPath; strings.HasPrefix(p, sysRoot+"/sys/devices/"); p = filepath.Dir(p) {
 		hint, err := getTopologyHint(p)
@@ -230,7 +229,7 @@ func FindSysFsDevice(dev string) (string, error) {
 		if os.IsNotExist(err) {
 			return "", nil
 		}
-		return "", errors.Wrapf(err, "unable to get stat for %s", dev)
+		return "", fmt.Errorf("unable to get stat for %s: %w", dev, err)
 	}
 
 	devType := "block"
@@ -245,12 +244,12 @@ func FindSysFsDevice(dev string) (string, error) {
 	major := int64(unix.Major(rdev))
 	minor := int64(unix.Minor(rdev))
 	if major == 0 {
-		return "", errors.Errorf("%s is a virtual device node", dev)
+		return "", fmt.Errorf("%s is a virtual device node: %w", dev, err)
 	}
 
 	realDevPath, err := findSysFsDevice(devType, major, minor)
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to find sysfs device for %s", dev)
+		return "", fmt.Errorf("failed to find sysfs device for %s: %w", dev, err)
 	}
 
 	return realDevPath, nil
@@ -271,8 +270,8 @@ func FindGivenSysFsDevice(devType string, major, minor int64) (string, error) {
 
 	realDevPath, err := findSysFsDevice(devType, major, minor)
 	if err != nil {
-		return "", errors.Wrapf(err, "failed find sysfs device for %s device %d/%d",
-			devType, major, minor)
+		return "", fmt.Errorf("failed find sysfs device for %s device %d/%d: %w",
+			devType, major, minor, err)
 	}
 
 	return realDevPath, nil
@@ -282,7 +281,7 @@ func findSysFsDevice(devType string, major, minor int64) (string, error) {
 	devPath := fmt.Sprintf("/sys/dev/%s/%d:%d", devType, major, minor)
 	realDevPath, err := filepath.EvalSymlinks(devPath)
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to get realpath for %s", devPath)
+		return "", fmt.Errorf("failed to get realpath for %s: %w", devPath, err)
 	}
 	return filepath.Join(sysRoot, realDevPath), nil
 }
@@ -295,7 +294,7 @@ func readFilesInDirectory(fileMap map[string]*string, dir string) error {
 			if os.IsNotExist(err) {
 				continue
 			}
-			return errors.Wrapf(err, "%s: unable to read file %q", dir, k)
+			return fmt.Errorf("%s: unable to read file %q: %w", dir, k, err)
 		}
 		*v = strings.TrimSpace(string(b))
 	}
