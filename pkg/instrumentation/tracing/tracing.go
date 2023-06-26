@@ -24,7 +24,6 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/jaeger"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
@@ -211,7 +210,6 @@ func (t *tracing) shutdown() {
 func getExporter(endpoint string) (sdktrace.SpanExporter, error) {
 	var (
 		u   *url.URL
-		exp sdktrace.SpanExporter
 		err error
 	)
 
@@ -221,10 +219,9 @@ func getExporter(endpoint string) (sdktrace.SpanExporter, error) {
 	//   exporters use defaults defined by the OTLP library. These are:
 	//     - otlp-http, http: localhost:4318
 	//     - otlp-grpc, grpc: localhost:4317
-	//     - jaeger: $OTEL_EXPORTER_JAEGER_ENDPOINT or http://localhost:14268/api/traces
 
 	switch endpoint {
-	case "otlp-http", "http", "otlp-grpc", "grpc", "jaeger":
+	case "otlp-http", "http", "otlp-grpc", "grpc":
 		u = &url.URL{Scheme: endpoint}
 	default:
 		u, err = url.Parse(endpoint)
@@ -239,23 +236,13 @@ func getExporter(endpoint string) (sdktrace.SpanExporter, error) {
 		if u.Host != "" {
 			opts = append(opts, otlptracehttp.WithEndpoint(u.Host))
 		}
-		exp, err = otlptracehttp.New(context.Background(), opts...)
-		return exp, err
+		return otlptracehttp.New(context.Background(), opts...)
 	case "otlp-grpc", "grpc":
 		opts := []otlptracegrpc.Option{otlptracegrpc.WithInsecure()}
 		if u.Host != "" {
 			opts = append(opts, otlptracegrpc.WithEndpoint(u.Host))
 		}
-		exp, err = otlptracegrpc.New(context.Background(), opts...)
-		return exp, err
-	case "jaeger":
-		var opts []jaeger.CollectorEndpointOption
-		if u.Host != "" {
-			u.Scheme = "http"
-			opts = append(opts, jaeger.WithEndpoint(u.String()))
-		}
-		exp, err = jaeger.New(jaeger.WithCollectorEndpoint(opts...))
-		return exp, err
+		return otlptracegrpc.New(context.Background(), opts...)
 	}
 
 	return nil, fmt.Errorf("unsupported tracing endpoint %q", endpoint)

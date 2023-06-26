@@ -114,8 +114,7 @@ spec:
                       tracing data collection. Endpoints are specified as full URLs,
                       or as plain URL schemes which then imply scheme-specific defaults.
                       The supported schemes and their default URLs are: - otlp-http,
-                      http: localhost:4318 - otlp-grpc, grpc: localhost:4317 - jaeger:
-                      $OTEL_EXPORTER_JAEGER_ENDPOINT or http://localhost:14268/api/traces'
+                      http: localhost:4318 - otlp-grpc, grpc: localhost:4317'
                     example: otlp-http://localhost:4318
                     type: string
                 type: object
