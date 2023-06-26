@@ -15,7 +15,7 @@ EOF
 
 # Helper function for detecting available versions from the current directory
 create_versions_js() {
-    _baseurl="/nri-resource-policy"
+    _baseurl="/nri-plugins"
 
     echo -e "function getVersionsMenuItems() {\n  return ["
     # 'stable' is a symlink pointing to the latest version
