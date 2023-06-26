@@ -1,13 +1,11 @@
-# Welcome to NRI Plugins documentation
+# Welcome to Memtierd demo documentation
 
 ```{toctree}
 ---
 maxdepth: 2
 caption: Contents
 ---
-introduction.md
-resource-policy/index.rst
-contributing.md
-../demo/memtierd/index.md
+README.md
+Replicating-the-demo.md
 Project GitHub repository <https://github.com/containers/nri-plugins>
 ```

@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: meme-pod-lowprio
+  labels:
+    app: meme-pod-lowprio
+  annotations:
+    class.memtierd.nri: "low-prio"
+spec:
+  containers:
+  - name: meme-pod-lowprio-1-container
+    image: <your registry>/meme
+    imagePullPolicy: Always
+    securityContext:
+      privileged: true
+    volumeMounts:
+      - name: host-volume
+        mountPath: /host
+      - name: host-bitmap
+        mountPath: /sys/kernel/mm/page_idle/bitmap
+  - name: meme-pod-lowprio-2-container
+    image: <your registry>/meme
+    imagePullPolicy: Always
+    securityContext:
+      privileged: true
+    volumeMounts:
+      - name: host-volume
+        mountPath: /host
+      - name: host-bitmap
+        mountPath: /sys/kernel/mm/page_idle/bitmap
+  volumes:
+    - name: host-volume
+      hostPath:
+        path: /
+    - name: host-bitmap
+      hostPath:
+        path: /sys/kernel/mm/page_idle/bitmap
