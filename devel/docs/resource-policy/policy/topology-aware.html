@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins 0.1.0-1-g5a078b5 documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins 0.1.0-4-g1212598 documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -46,20 +46,33 @@
   </form>
 </div>
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
-              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
 <li class="toctree-l1 current"><a class="reference internal" href="../index.html">Resource Policy Plugins</a><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="../introduction.html">Introduction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../installation.html">Installation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../setup.html">Setup and Usage</a></li>
-<li class="toctree-l2 current"><a class="reference internal" href="../configuration.html">Configuration</a><ul class="current">
-<li class="toctree-l3 current"><a class="reference internal" href="index.html">Policies</a><ul class="current">
-<li class="toctree-l4 current"><a class="current reference internal" href="#">Topology-Aware Policy</a></li>
-<li class="toctree-l4"><a class="reference internal" href="balloons.html">Balloons Policy</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../configuration.html">Dynamic Configuration</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="index.html">Policies</a><ul class="current">
+<li class="toctree-l3 current"><a class="current reference internal" href="#">Topology-Aware Policy</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#background">Background</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#overview">Overview</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#features">Features</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#activating-the-policy">Activating the Policy</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#configuring-the-policy">Configuring the Policy</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#policy-cpu-allocation-preferences">Policy CPU Allocation Preferences</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#container-cpu-allocation-preference-annotations">Container CPU Allocation Preference Annotations</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#cold-start">Cold Start</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#dynamic-page-demotion">Dynamic Page Demotion</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#container-memory-requests-and-limits">Container memory requests and limits</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#reserved-pool-namespaces">Reserved pool namespaces</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#reserved-cpu-annotations">Reserved CPU annotations</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#allowing-or-denying-mount-device-paths-via-annotations">Allowing or denying mount/device paths via annotations</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#container-affinity-and-anti-affinity">Container Affinity and Anti-Affinity</a></li>
 </ul>
 </li>
-<li class="toctree-l3"><a class="reference internal" href="../node-agent.html">Dynamic Configuration</a></li>
+<li class="toctree-l3"><a class="reference internal" href="balloons.html">Balloons Policy</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="../developers-guide/index.html">Developer’s Guide</a></li>
@@ -84,7 +97,6 @@
   <ul class="wy-breadcrumbs">
       <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
           <li class="breadcrumb-item"><a href="../index.html">Resource Policy Plugins</a></li>
-          <li class="breadcrumb-item"><a href="../configuration.html">Configuration</a></li>
           <li class="breadcrumb-item"><a href="index.html">Policies</a></li>
       <li class="breadcrumb-item active">Topology-Aware Policy</li>
       <li class="wy-breadcrumbs-aside">
@@ -255,11 +267,11 @@ fragment in the configuration for <code class="docutils literal notranslate"><sp
 </section>
 <section id="configuring-the-policy">
 <h2>Configuring the Policy<a class="headerlink" href="#configuring-the-policy" title="Permalink to this heading"></a></h2>
-<p>The policy has a number of configuration options which affect its default behavior.
-These options can be supplied as part of the
-<a class="reference internal" href="../setup.html#using-nri-resource-policy-agent-and-a-configmap"><span class="std std-ref">dynamic configuration</span></a>
-received via the <a class="reference internal" href="../node-agent.html"><span class="std std-doc"><code class="docutils literal notranslate"><span class="pre">node</span> <span class="pre">agent</span></code></span></a>, or in a fallback or forced
-configuration file. These configuration options are</p>
+<p>The policy has a number of configuration options which affect its default
+behavior. These options can be supplied as part of the
+<a class="reference internal" href="../setup.html#dynamic-configuration-with-configmaps"><span class="std std-ref">dynamic configuration</span></a>
+or in a fallback or forced configuration file. These configuration options
+are</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">PinCPU</span></code></p>
 <ul>
