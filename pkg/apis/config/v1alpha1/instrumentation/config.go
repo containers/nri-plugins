@@ -30,7 +30,6 @@ type Config struct {
 	// URLs are:
 	//   - otlp-http, http: localhost:4318
 	//   - otlp-grpc, grpc: localhost:4317
-	//   - jaeger: $OTEL_EXPORTER_JAEGER_ENDPOINT or http://localhost:14268/api/traces
 	// +optional
 	// +kubebuilder:example="otlp-http://localhost:4318"
 	TracingCollector string `json:"tracingCollector,omitempty"`
