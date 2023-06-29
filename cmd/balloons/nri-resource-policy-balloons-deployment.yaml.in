@@ -121,7 +121,7 @@ spec:
           path: /var/run/nri-resource-policy
       - name: resource-policyconfig
         configMap:
-          name: nri-resource-policy-config
+          name: fallback-config
       - name: nrisockets
         hostPath:
           path: /var/run/nri
@@ -138,5 +138,5 @@ data:
       Debug: resource-manager,cache,policy,resource-control
 kind: ConfigMap
 metadata:
-  name: nri-resource-policy-config
+  name: fallback-config
   namespace: kube-system
