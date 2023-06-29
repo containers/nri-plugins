@@ -19,7 +19,6 @@ The estimated complexity and priority of a feature/task is defined like this:
 - cache
   - [ ] rework/split up, make the core functionality be usable for other types of plugins, C4
   - [ ] get rid of CRI-specific representation/interfaces, NRI/CRI pod, container conversion, C4
-  - [ ] eliminate need for saving cache to disk, C2
 - config
   - [ ] switch to using CRDs (from ConfigMaps), C2
   - [ ] consider usig 1 CRD per policy as opposed to a single 'union' CRD, C2

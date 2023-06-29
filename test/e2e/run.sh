@@ -39,8 +39,6 @@ export VM_SSH_USER=vagrant
 export nri_resource_policy_src=${nri_resource_policy_src:-"$SRC_DIR"}
 export nri_resource_policy_cfg=${nri_resource_policy_cfg:-"${SRC_DIR}/test/e2e/files/nri-resource-policy-topology-aware.cfg"}
 
-nri_resource_policy_cache="/var/lib/nri-resource-policy/cache"
-
 if [ "$k8scri" == "containerd" ]; then
     k8scri_sock="/var/run/containerd/containerd.sock"
 else
@@ -569,10 +567,7 @@ cpu_ids = lambda i: set_ids(i, '[cpu]')
 
 get-py-cache() {
     # Fetch current nri-resource-policy cache from a virtual machine.
-    vm-command "cat \"$nri_resource_policy_cache\"" >/dev/null 2>&1 || {
-        command-error "fetching cache file failed"
-    }
-    cat > "${TEST_OUTPUT_DIR}/cache" <<<"$COMMAND_OUTPUT"
+    vm-command-q "curl --silent --noproxy localhost http://localhost:8891/cache-state" > "${TEST_OUTPUT_DIR}/cache" <<<"$COMMAND_OUTPUT"
     py_cache="
 import json
 cache=json.load(open(\"${TEST_OUTPUT_DIR}/cache\"))

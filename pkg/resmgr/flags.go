@@ -67,6 +67,7 @@ func init() {
 		"Configuration used to override the one stored in the cache. Disables the agent.")
 	flag.StringVar(&opt.ForceConfigSignal, "force-config-signal", "SIGHUP",
 		"Signal used to reload forced configuration.")
+	flag.BoolVar(&opt.EnableTestAPIs, "enable-test-apis", false, "Allow enabling various test APIs.")
 	flag.DurationVar(&opt.MetricsTimer, "metrics-interval", 0,
 		"Interval for polling/gathering runtime metrics data. Use 'disable' for disabling.")
 	flag.DurationVar(&opt.RebalanceTimer, "rebalance-interval", 0,

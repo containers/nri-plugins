@@ -30,7 +30,6 @@ const (
 
 func (p *policy) saveAllocations() {
 	p.cache.SetPolicyEntry(keyAllocations, cache.Cachable(&p.allocations))
-	p.cache.Save()
 }
 
 func (p *policy) restoreAllocations(allocations *allocations) error {

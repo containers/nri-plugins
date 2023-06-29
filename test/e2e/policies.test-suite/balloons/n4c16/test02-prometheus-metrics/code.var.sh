@@ -2,7 +2,6 @@
 
 cleanup() {
     vm-command "kubectl delete pods --all --now"
-    vm-port-forward-disable
     return 0
 }
 
@@ -12,8 +11,6 @@ cleanup
 # configuration that opens the instrumentation http server.
 terminate nri-resource-policy
 nri_resource_policy_cfg=${TEST_DIR}/balloons-metrics.cfg  nri_resource_policy_extra_args="-metrics-interval 4s" launch nri-resource-policy
-
-vm-port-forward-enable
 
 verify-metrics-has-line 'balloon="default\[0\]"'
 verify-metrics-has-line 'balloon="reserved\[0\]"'
