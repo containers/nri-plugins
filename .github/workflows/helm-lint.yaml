@@ -2,7 +2,7 @@ name: helm linter
 
 on: 
   pull_request:
-    paths-ignore:
+    paths:
       - 'deployment/helm/**'
 
 jobs:
