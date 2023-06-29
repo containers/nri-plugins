@@ -5,8 +5,8 @@ namespace: kube-system
 
 images:
 - name: '*'
-  newName: nri-resource-policy-balloons
-  newTag: devel
+  newName: ghcr.io/containers/nri-plugins/nri-resource-policy-balloons
+  newTag: unstable
 
 resources:
 - ../../base/crds
