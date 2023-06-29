@@ -73,7 +73,7 @@ spec:
           path: /var/run/nri-resource-policy
       - name: resource-policyconfig
         configMap:
-          name: nri-resource-policy-config
+          name: nri-resource-policy-config.default
       - name: nrisockets
         hostPath:
           path: /var/run/nri
