@@ -17,6 +17,19 @@ verify "cpus['pod1c0'] == {'cpu08', 'cpu09', 'cpu10'}" \
        "cpus['pod1c1'] == {'cpu08', 'cpu09', 'cpu10'}" \
        "mems['pod1c0'] == {'node2'}" \
        "mems['pod1c1'] == {'node2'}"
+vm-command "kubectl delete pods pod1 --now"
+
+# Relaunch NRI-plugins with a set of CPUs from a different socket compared
+# to where pod0 is currently running. Restoring pod0 to current CPUs will fail
+# so the workload should be moved to new CPUs.
+terminate nri-resource-policy
+AVAILABLE_CPU="cpuset:0-1,11-14"
+nri_resource_policy_cfg=$(instantiate nri-resource-policy-available-resources.cfg)
+launch nri-resource-policy
+report allowed
+verify "cpus['pod0c0'] == {'cpu12', 'cpu13', 'cpu14'}" \
+       "mems['pod0c0'] == {'node3'}"
+
 vm-command "kubectl delete pods --all --now"
 reset counters
 
