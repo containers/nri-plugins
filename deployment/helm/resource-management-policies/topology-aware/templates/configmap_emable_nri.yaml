@@ -1,0 +1,31 @@
+{{- if .Values.nri.enable }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: patch-containerd-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "topology-aware-plugin.labels" . | nindent 4 }}
+data:
+  patch_nri.sh: |
+   #!/bin/bash
+
+   config_file="/home/config.toml" 
+   cp /etc/containerd/config.toml "$config_file"
+
+   # Check if the disable field is set to false under [plugins."io.containerd.nri.v1.nri"]
+   status=$(awk -F ' = ' '/^\[plugins\."io\.containerd\.nri\.v1\.nri"\]/{flag=1} flag && /disable/{print $2; exit}' "$config_file")
+   if [ "$status" = "false" ]; then
+      echo "NRI is already enabled..."
+   elif [ "$status" = "true" ]; then
+      # Enable the NRI plugin in containerd
+      sed '/\[plugins.\"io.containerd.nri.v1.nri/,/^$/s/disable = true/disable = false/' -i "$config_file"
+      cp -f "$config_file" /etc/containerd/config.toml
+      echo "Restarting containerd...."
+      nsenter -t 1 -m systemctl restart containerd
+      echo "NRI has now been enabled..."
+   else
+      echo "NRI plugin entry doesn't exist in the continerd config file."
+      echo "Doing nothing..."
+   fi
+{{- end }}

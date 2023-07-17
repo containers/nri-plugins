@@ -102,6 +102,7 @@ along with the default values, for the Topology-aware and Balloons plugins Helm 
 | `resources.memory` | 512Mi                                                                                                                         | memory qouta for the Pod                             | 
 | `hostPort`         | 8891                                                                                                                          | metrics port to expose on the host                   |
 | `config`           | <pre><code>ReservedResources:</code><br><code>  cpu: 750m</code></pre>                                                        | plugin configuration data                            |
+| `nri.enable`       | false                                                                                                                         | enable/disbale NRI in containerd                     |
 
 ## Manual installation
 

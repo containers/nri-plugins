@@ -17,6 +17,20 @@ spec:
       serviceAccount: nri-resource-policy-topology-aware
       nodeSelector:
         kubernetes.io/os: "linux"
+      {{- if .Values.nri.enable }}
+      hostPID: true
+      initContainers:
+      - name: patch-containerd
+        image: ubuntu:22.04
+        command: ["/tmp/patch_nri.sh"]
+        volumeMounts:
+        - name: patch-containerd-config
+          mountPath: /tmp
+        - name: containerd-config
+          mountPath: /etc/containerd/config.toml
+        securityContext:
+          privileged: true
+      {{- end }}
       containers:
         - name: nri-resource-policy-topology-aware
           args:
@@ -78,3 +92,13 @@ spec:
         hostPath:
           path: /var/run/nri
           type: Directory
+      {{- if .Values.nri.enable }}
+      - name: patch-containerd-config
+        configMap:
+          name: patch-containerd-config
+          defaultMode: 0777
+      - name: containerd-config
+        hostPath:
+          path: /etc/containerd/config.toml
+          type: File
+      {{- end }}
