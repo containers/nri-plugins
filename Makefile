@@ -297,27 +297,7 @@ verify-fmt:
 install-ginkgo:
 	$(Q)$(GO_INSTALL) -mod=mod github.com/onsi/ginkgo/v2/ginkgo
 
-images: $(foreach dir,$(IMAGE_DIRS),image-$(dir)) \
-	$(foreach dir,$(IMAGE_DIRS),image-deployment-$(dir))
-
-image-deployment-%:
-	$(Q)mkdir -p $(IMAGE_PATH); \
-	img=$(patsubst image-deployment-%,%,$@); tag=nri-resource-policy-$$img; \
-	NRI_IMAGE_INFO=`$(DOCKER) images --filter=reference=$${tag} --format '{{.ID}} {{.Repository}}:{{.Tag}} (created {{.CreatedSince}}, {{.CreatedAt}})' | head -n 1`; \
-	NRI_IMAGE_ID=`awk '{print $$1}' <<< "$${NRI_IMAGE_INFO}"`; \
-	NRI_IMAGE_REPOTAG=`awk '{print $$2}' <<< "$${NRI_IMAGE_INFO}"`; \
-	NRI_IMAGE_TAR=`realpath "$(IMAGE_PATH)/$${tag}-image-$${NRI_IMAGE_ID}.tar"`; \
-	$(DOCKER) image save "$${NRI_IMAGE_REPOTAG}" > "$${NRI_IMAGE_TAR}"; \
-	sed -e "s|IMAGE_PLACEHOLDER|$${NRI_IMAGE_REPOTAG}|g" \
-            -e 's|^\(\s*\)tolerations:$$|\1tolerations:\n\1  - {"key": "cmk", "operator": "Equal", "value": "true", "effect": "NoSchedule"}|g' \
-            -e 's/imagePullPolicy: Always/imagePullPolicy: Never/g' \
-            < "`pwd`/cmd/$${img}/$${tag}-deployment.yaml.in" \
-            > "$(IMAGE_PATH)/$${tag}-deployment.yaml"; \
-	sed -e "s|IMAGE_PLACEHOLDER|$${NRI_IMAGE_REPOTAG}|g" \
-            -e 's|^\(\s*\)tolerations:$$|\1tolerations:\n\1  - {"key": "cmk", "operator": "Equal", "value": "true", "effect": "NoSchedule"}|g' \
-            -e 's/imagePullPolicy: Always/imagePullPolicy: Never/g' \
-            < "`pwd`/test/e2e/files/$${tag}-deployment.yaml.in" \
-            > "$(IMAGE_PATH)/$${tag}-deployment-e2e.yaml"
+images: $(foreach dir,$(IMAGE_DIRS),image-$(dir))
 
 image-%:
 	$(Q)mkdir -p $(IMAGE_PATH); \
