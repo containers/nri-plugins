@@ -139,6 +139,14 @@ For the manual installation we will be using templating tool to generate Kuberne
 
 That's it! You have now installed the topology-aware NRI resource policy plugin using kutomize.
 
+Also, you can use the following **helm** command to install the NRI resource policy plugin in the **nri-plugins/deployment/helm/resource-management-policies/balloons** directory.
+
+```
+helm install balloons . --namespace kube-system
+```
+
+*Note: please specify the kube-system namespace.*
+
 ## Manual uninstallation
 
 To uninstall plugin manifests you can run the following command:
@@ -149,3 +157,5 @@ kustomize build deployment/overlays/topology-aware/ | kubectl delete -f -
 
 Note: this removes DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-related objects associated
 with the chart.
+
+Also, you can use the **helm uninstall balloons --namespace kube-system** to uninstall the NRI resource policy plugin.

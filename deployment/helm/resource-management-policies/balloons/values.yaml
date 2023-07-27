@@ -6,11 +6,54 @@ image:
   name: ghcr.io/containers/nri-plugins/nri-resource-policy-balloons
   # tag, if defined will use the given image tag, otherwise Chart.AppVersion will be used
   tag: unstable
-  pullPolicy: Always
+  pullPolicy: IfNotPresent
 
 config:
+  Active: balloons
   ReservedResources:
     cpu: 750m
+  balloons:
+    PinCPU: true
+    PinMemory: true
+    BalloonTypes:
+      - Name: btype0
+        MinCPUs: 2
+        MaxCPUs: 2
+        AllocationPriority: 0
+        CPUClass: classA
+        PreferNewBalloons: true
+        PreferSpreadingPods: false
+        MinBalloons: 1
+      - Name: btype2
+        Namespaces:
+          - "*"
+          - btype2ns1
+        MinCPUs: 4
+        MaxCPUs: 8
+        MinBalloons: 1
+        AllocatorPriority: 2
+        CPUClass: classB
+        PreferNewBalloons: false
+        PreferSpreadingPods: false
+cpu:
+  classes:
+    default:
+      minFreq: 1800000
+      maxFreq: 2800000
+    classA:
+      minFreq: 1100000
+      maxFreq: 1100000
+    classB:
+      minFreq: 1000000
+      maxFreq: 3000000
+    classC:
+      minFreq: 1100000
+      maxFreq: 3100000
+      energyPerformancePreference: 1
+
+instrumentation:
+  HTTPEndpoint: :8891
+  PrometheusExport: true
 
 hostPort: 8891
 

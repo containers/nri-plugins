@@ -1,10 +1,15 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: nri-resource-policy-config.default
+  name: nri-resource-policy-config
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "balloons-plugin.labels" . | nindent 4 }}
 data:
-  policy: |+
-    {{- toYaml .Values.config | nindent 4 }}
+  nri-resource-policy.cfg: |+
+    policy:
+      {{- toYaml .Values.config | nindent 6 }}
+    instrumentation:
+      {{- toYaml .Values.instrumentation | nindent 6 }}
+    cpu:
+      {{- toYaml .Values.cpu | nindent 6 }}
