@@ -6,8 +6,10 @@ name: NRI Resource Policy CI
 on:
 #  pull_request:
 #    branches: [ "main" ]
-  schedule:
-    - cron: '0 4 * * *'
+# The cron should only enabled after there is a self hosted runner
+# that can serve the request.
+#  schedule:
+#    - cron: '0 4 * * *'
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
