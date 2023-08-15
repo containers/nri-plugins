@@ -7,5 +7,4 @@ metadata:
     {{- include "balloons-plugin.labels" . | nindent 4 }}
 data:
   nri-resource-policy.cfg: |
-  policy:
-    {{- toYaml .Values.config | nindent 6 }}
+    {{- toYaml .Values.config | nindent 4 }}
