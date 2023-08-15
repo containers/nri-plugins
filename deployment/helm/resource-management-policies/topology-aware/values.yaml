@@ -9,8 +9,9 @@ image:
   pullPolicy: Always
 
 config:
-  ReservedResources:
-    cpu: 750m
+  policy:
+    ReservedResources:
+      cpu: 750m
 
 hostPort: 8891
 
