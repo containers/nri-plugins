@@ -4,7 +4,7 @@ description: |
   Topology-aware NRI resource policy plugin is a NRI plugin that will
   apply hardware-aware resource allocation policies to the containers
   running in the system.
-name: nri-resource-policy
+name: nri-resource-policy-topology-aware
 sources:
  - https://github.com/containers/nri-plugins
 home: https://github.com/containers/nri-plugins
