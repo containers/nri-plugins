@@ -41,9 +41,13 @@ spec:
           image: {{ .Values.image.name }}:{{ .Values.image.tag | default .Chart.AppVersion }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
+            {{ if .Values.privilegedMode }}
+            privileged: true
+            {{ else }}
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+            {{ end }}
           resources:
             requests:
               cpu: {{ .Values.resources.cpu }}
@@ -53,6 +57,10 @@ spec:
             mountPath: /var/lib/nri-resource-policy
           - name: hostsysfs
             mountPath: /host/sys
+          {{ if .Values.privilegedMode }}
+          - name: hostdev
+            mountPath: /host/dev
+          {{ end }}
           - name: resource-policysockets
             mountPath: /var/run/nri-resource-policy
           - name: resource-policyconfig
@@ -68,6 +76,12 @@ spec:
         hostPath:
           path: /sys
           type: Directory
+      {{ if .Values.privilegedMode }}
+      - name: hostdev
+        hostPath:
+          path: /dev
+          type: Directory
+      {{ end }}
       - name: resource-policysockets
         hostPath:
           path: /var/run/nri-resource-policy
