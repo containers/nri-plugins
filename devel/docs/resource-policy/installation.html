@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Installation &mdash; NRI Plugins 0.1.0-18-gccfa36a documentation</title>
+  <title>Installation &mdash; NRI Plugins 0.1.0-20-g2098889 documentation</title>
       <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -139,12 +139,12 @@ use the NRI feature</p></li>
 <h2>Installing the Helm Chart<a class="headerlink" href="#installing-the-helm-chart" title="Permalink to this heading"></a></h2>
 <ol class="arabic">
 <li><p>Clone the project to your local machine</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>git clone https://github.com/containers/nri-plugins.git
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/containers/nri-plugins.git
 </pre></div>
 </div>
 </li>
 <li><p>Navigate to the project directory</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span> nri-plugins
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>nri-plugins
 </pre></div>
 </div>
 </li>
@@ -157,15 +157,15 @@ available parameters that can be modified before installation. It’s important
 to note that specifying the namespace (using <code class="docutils literal notranslate"><span class="pre">--namespace</span></code>) is crucial when
 installing the Helm chart. If no namespace is specified, the manifests will
 be installed in the default namespace.</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm install topology-aware --namespace kube-system deployment/helm/resource-management-policies/topology-aware/
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>topology-aware<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>deployment/helm/resource-management-policies/topology-aware/
 </pre></div>
 </div>
 </li>
 <li><p>Verify the status of the daemonset to ensure that the plugin is running successfully</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl get daemonset -n kube-system nri-resource-policy-topology-aware
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl<span class="w"> </span>get<span class="w"> </span>daemonset<span class="w"> </span>-n<span class="w"> </span>kube-system<span class="w"> </span>nri-resource-policy-topology-aware
 
-NAME                                 DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE
-nri-resource-policy-topology-aware   <span class="m">1</span>         <span class="m">1</span>         <span class="m">0</span>       <span class="m">1</span>            <span class="m">0</span>           kubernetes.io/os<span class="o">=</span>linux   4m33s
+NAME<span class="w">                                 </span>DESIRED<span class="w">   </span>CURRENT<span class="w">   </span>READY<span class="w">   </span>UP-TO-DATE<span class="w">   </span>AVAILABLE<span class="w">   </span>NODE<span class="w"> </span>SELECTOR<span class="w">            </span>AGE
+nri-resource-policy-topology-aware<span class="w">   </span><span class="m">1</span><span class="w">         </span><span class="m">1</span><span class="w">         </span><span class="m">0</span><span class="w">       </span><span class="m">1</span><span class="w">            </span><span class="m">0</span><span class="w">           </span>kubernetes.io/os<span class="o">=</span>linux<span class="w">   </span>4m33s
 </pre></div>
 </div>
 </li>
@@ -175,7 +175,7 @@ nri-resource-policy-topology-aware   <span class="m">1</span>         <span clas
 <section id="uninstalling-the-chart">
 <h2>Uninstalling the Chart<a class="headerlink" href="#uninstalling-the-chart" title="Permalink to this heading"></a></h2>
 <p>To uninstall plugin chart just deleting it with the release name is enough:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>helm delete topology-aware
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>delete<span class="w"> </span>topology-aware
 </pre></div>
 </div>
 <p>Note: this removes DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-related objects associated with the chart.</p>
@@ -288,12 +288,12 @@ along with the default values, for the Topology-aware and Balloons plugins Helm 
 <p>For the manual installation we will be using templating tool to generate Kubernetes YAML manifests.</p>
 <ol class="arabic">
 <li><p>Clone the project to your local machine</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>git clone https://github.com/containers/nri-plugins.git
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/containers/nri-plugins.git
 </pre></div>
 </div>
 </li>
 <li><p>Navigate to the project directory</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span> nri-plugins
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>nri-plugins
 </pre></div>
 </div>
 </li>
@@ -303,15 +303,15 @@ the Kustomization file and update the desired configuration
 values according to your environment in the Kustomization file.</p></li>
 <li><p>Use kustomize to generate the Kubernetes manifests for the desired plugin and apply the generated
 manifests to your Kubernetes cluster using kubectl.</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>kustomize build deployment/overlays/topology-aware/ <span class="p">|</span> kubectl apply -f -
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>kustomize<span class="w"> </span>build<span class="w"> </span>deployment/overlays/topology-aware/<span class="w"> </span><span class="p">|</span><span class="w"> </span>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>-
 </pre></div>
 </div>
 </li>
 <li><p>Verify the status of the DaemonSet to ensure that the plugin is running successfully</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl get daemonset -n kube-system nri-resource-policy
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl<span class="w"> </span>get<span class="w"> </span>daemonset<span class="w"> </span>-n<span class="w"> </span>kube-system<span class="w"> </span>nri-resource-policy
 
-NAME                  DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE
-nri-resource-policy   <span class="m">1</span>         <span class="m">1</span>         <span class="m">0</span>       <span class="m">1</span>            <span class="m">0</span>           kubernetes.io/os<span class="o">=</span>linux   4m33s
+NAME<span class="w">                  </span>DESIRED<span class="w">   </span>CURRENT<span class="w">   </span>READY<span class="w">   </span>UP-TO-DATE<span class="w">   </span>AVAILABLE<span class="w">   </span>NODE<span class="w"> </span>SELECTOR<span class="w">            </span>AGE
+nri-resource-policy<span class="w">   </span><span class="m">1</span><span class="w">         </span><span class="m">1</span><span class="w">         </span><span class="m">0</span><span class="w">       </span><span class="m">1</span><span class="w">            </span><span class="m">0</span><span class="w">           </span>kubernetes.io/os<span class="o">=</span>linux<span class="w">   </span>4m33s
 </pre></div>
 </div>
 </li>
@@ -321,7 +321,7 @@ nri-resource-policy   <span class="m">1</span>         <span class="m">1</span> 
 <section id="manual-uninstallation">
 <h2>Manual uninstallation<a class="headerlink" href="#manual-uninstallation" title="Permalink to this heading"></a></h2>
 <p>To uninstall plugin manifests you can run the following command:</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>kustomize build deployment/overlays/topology-aware/ <span class="p">|</span> kubectl delete -f -
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>kustomize<span class="w"> </span>build<span class="w"> </span>deployment/overlays/topology-aware/<span class="w"> </span><span class="p">|</span><span class="w"> </span>kubectl<span class="w"> </span>delete<span class="w"> </span>-f<span class="w"> </span>-
 </pre></div>
 </div>
 <p>Note: this removes DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-related objects associated

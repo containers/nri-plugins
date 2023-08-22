@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins 0.1.0-18-gccfa36a documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins 0.1.0-20-g2098889 documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -258,10 +258,10 @@ typically found on some special-purpose computing systems</p></li>
 <h2>Activating the Policy<a class="headerlink" href="#activating-the-policy" title="Permalink to this heading"></a></h2>
 <p>You can activate the <code class="docutils literal notranslate"><span class="pre">topology-aware</span></code> policy by using the following configuration
 fragment in the configuration for <code class="docutils literal notranslate"><span class="pre">nri-resource-policy-topology-aware</span></code>:</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">policy</span><span class="p">:</span><span class="w"></span>
-<span class="w">  </span><span class="nt">Active</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">topology-aware</span><span class="w"></span>
-<span class="w">  </span><span class="nt">ReservedResources</span><span class="p">:</span><span class="w"></span>
-<span class="w">    </span><span class="nt">CPU</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">750m</span><span class="w"></span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">policy</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">Active</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">topology-aware</span>
+<span class="w">  </span><span class="nt">ReservedResources</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">CPU</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">750m</span>
 </pre></div>
 </div>
 </section>
@@ -433,14 +433,14 @@ container both of these exist, the container-specific one takes precedence.</p>
 <h3>Shared, Exclusive, and Isolated CPU Preference<a class="headerlink" href="#shared-exclusive-and-isolated-cpu-preference" title="Permalink to this heading"></a></h3>
 <p>A container can opt in to or opt out from shared CPU allocation using the
 following Pod annotation.</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span><span class="w"></span>
-<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span><span class="w"></span>
-<span class="w">    </span><span class="c1"># opt in container C1 to shared CPU core allocation</span><span class="w"></span>
-<span class="w">    </span><span class="nt">prefer-shared-cpus.resource-policy.nri.io/container.C1</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span><span class="w"></span>
-<span class="w">    </span><span class="c1"># opt in the whole pod to shared CPU core allocation</span><span class="w"></span>
-<span class="w">    </span><span class="nt">prefer-shared-cpus.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span><span class="w"></span>
-<span class="w">    </span><span class="c1"># selectively opt out container C2 from shared CPU core allocation</span><span class="w"></span>
-<span class="w">    </span><span class="nt">prefer-shared-cpus.resource-policy.nri.io/container.C2</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;false&quot;</span><span class="w"></span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="c1"># opt in container C1 to shared CPU core allocation</span>
+<span class="w">    </span><span class="nt">prefer-shared-cpus.resource-policy.nri.io/container.C1</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+<span class="w">    </span><span class="c1"># opt in the whole pod to shared CPU core allocation</span>
+<span class="w">    </span><span class="nt">prefer-shared-cpus.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+<span class="w">    </span><span class="c1"># selectively opt out container C2 from shared CPU core allocation</span>
+<span class="w">    </span><span class="nt">prefer-shared-cpus.resource-policy.nri.io/container.C2</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;false&quot;</span>
 </pre></div>
 </div>
 <p>Opting in to exclusive allocation happens by opting out from shared allocation,
@@ -448,14 +448,14 @@ and opting out from exclusive allocation happens by opting in to shared
 allocation.</p>
 <p>A container can opt in to or opt out from isolated exclusive CPU core
 allocation using the following Pod annotation.</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span><span class="w"></span>
-<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span><span class="w"></span>
-<span class="w">    </span><span class="c1"># opt in container C1 to isolated exclusive CPU core allocation</span><span class="w"></span>
-<span class="w">    </span><span class="nt">prefer-isolated-cpus.resource-policy.nri.io/container.C1</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span><span class="w"></span>
-<span class="w">    </span><span class="c1"># opt in the whole pod to isolated exclusive CPU core allocation</span><span class="w"></span>
-<span class="w">    </span><span class="nt">prefer-isolated-cpus.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span><span class="w"></span>
-<span class="w">    </span><span class="c1"># selectively opt out container C2 from isolated exclusive CPU core allocation</span><span class="w"></span>
-<span class="w">    </span><span class="nt">prefer-isolated-cpus.resource-policy.nri.io/container.C2</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;false&quot;</span><span class="w"></span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="c1"># opt in container C1 to isolated exclusive CPU core allocation</span>
+<span class="w">    </span><span class="nt">prefer-isolated-cpus.resource-policy.nri.io/container.C1</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+<span class="w">    </span><span class="c1"># opt in the whole pod to isolated exclusive CPU core allocation</span>
+<span class="w">    </span><span class="nt">prefer-isolated-cpus.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+<span class="w">    </span><span class="c1"># selectively opt out container C2 from isolated exclusive CPU core allocation</span>
+<span class="w">    </span><span class="nt">prefer-isolated-cpus.resource-policy.nri.io/container.C2</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;false&quot;</span>
 </pre></div>
 </div>
 <p>These Pod annotations have no effect on containers which are not eligible for
@@ -474,14 +474,14 @@ would like the policy to disregard them altogether. For instance, when a local
 volume is used by a container but not in any performance critical manner.</p>
 <p>Containers can be annotated to opt out from and selectively opt in to hint-aware
 pool selection using the following Pod annotations.</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span><span class="w"></span>
-<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span><span class="w"></span>
-<span class="w">    </span><span class="c1"># only disregard hints for container C1</span><span class="w"></span>
-<span class="w">    </span><span class="nt">topologyhints.resource-policy.nri.io/container.C1</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;false&quot;</span><span class="w"></span>
-<span class="w">    </span><span class="c1"># disregard hints for all containers by default</span><span class="w"></span>
-<span class="w">    </span><span class="nt">topologyhints.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;false&quot;</span><span class="w"></span>
-<span class="w">    </span><span class="c1"># but take hints into account for container C2</span><span class="w"></span>
-<span class="w">    </span><span class="nt">topologyhints.resource-policy.nri.io/container.C2</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span><span class="w"></span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="c1"># only disregard hints for container C1</span>
+<span class="w">    </span><span class="nt">topologyhints.resource-policy.nri.io/container.C1</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;false&quot;</span>
+<span class="w">    </span><span class="c1"># disregard hints for all containers by default</span>
+<span class="w">    </span><span class="nt">topologyhints.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;false&quot;</span>
+<span class="w">    </span><span class="c1"># but take hints into account for container C2</span>
+<span class="w">    </span><span class="nt">topologyhints.resource-policy.nri.io/container.C2</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
 </pre></div>
 </div>
 <p>Topology hint generation is globally enabled by default. Therefore, using the
@@ -513,23 +513,23 @@ controller is added to the workload only after the cold start timeout is
 done. The effect of this is that allocated large unused memory areas of
 memory don’t need to be migrated to PMEM, because it was allocated there to
 begin with. Cold start is configured like this in the pod metadata:</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span><span class="w"></span>
-<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span><span class="w"></span>
-<span class="w">    </span><span class="nt">memory-type.resource-policy.nri.io/container.container1</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dram,pmem</span><span class="w"></span>
-<span class="w">    </span><span class="nt">cold-start.resource-policy.nri.io/container.container1</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span><span class="w"></span>
-<span class="w">      </span><span class="no">duration: 60s</span><span class="w"></span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">memory-type.resource-policy.nri.io/container.container1</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dram,pmem</span>
+<span class="w">    </span><span class="nt">cold-start.resource-policy.nri.io/container.container1</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">duration: 60s</span>
 </pre></div>
 </div>
 <p>Again, alternatively you can use the following deprecated Pod annotation syntax
 to achieve the same, but support for this syntax is subject to be dropped in a
 future release:</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span><span class="w"></span>
-<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span><span class="w"></span>
-<span class="w">    </span><span class="nt">resource-policy.nri.io/memory-type</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span><span class="w"></span>
-<span class="w">      </span><span class="no">container1: dram,pmem</span><span class="w"></span>
-<span class="w">    </span><span class="nt">resource-policy.nri.io/cold-start</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span><span class="w"></span>
-<span class="w">      </span><span class="no">container1:</span><span class="w"></span>
-<span class="w">        </span><span class="no">duration: 60s</span><span class="w"></span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">resource-policy.nri.io/memory-type</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">container1: dram,pmem</span>
+<span class="w">    </span><span class="nt">resource-policy.nri.io/cold-start</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">container1:</span>
+<span class="w">        </span><span class="no">duration: 60s</span>
 </pre></div>
 </div>
 <p>In the above example, <code class="docutils literal notranslate"><span class="pre">container1</span></code> would be initially granted only PMEM
@@ -545,12 +545,12 @@ The configuration for this feature is done using three configuration keys:
 <code class="docutils literal notranslate"><span class="pre">DirtyBitScanPeriod</span></code>, <code class="docutils literal notranslate"><span class="pre">PageMovePeriod</span></code>, and <code class="docutils literal notranslate"><span class="pre">PageMoveCount</span></code>. All of these
 parameters need to be set to non-zero values in order for dynamic page demotion
 to get enabled. See this configuration file fragment as an example:</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">policy</span><span class="p">:</span><span class="w"></span>
-<span class="w">  </span><span class="nt">Active</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">topology-aware</span><span class="w"></span>
-<span class="w">  </span><span class="nt">topology-aware</span><span class="p">:</span><span class="w"></span>
-<span class="w">    </span><span class="nt">DirtyBitScanPeriod</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10s</span><span class="w"></span>
-<span class="w">    </span><span class="nt">PageMovePeriod</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2s</span><span class="w"></span>
-<span class="w">    </span><span class="nt">PageMoveCount</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1000</span><span class="w"></span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">policy</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">Active</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">topology-aware</span>
+<span class="w">  </span><span class="nt">topology-aware</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">DirtyBitScanPeriod</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10s</span>
+<span class="w">    </span><span class="nt">PageMovePeriod</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2s</span>
+<span class="w">    </span><span class="nt">PageMoveCount</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1000</span>
 </pre></div>
 </div>
 <p>In this setup, every pid in every container in every non-system pod
@@ -576,10 +576,10 @@ configuration option in the policy section.
 The <code class="docutils literal notranslate"><span class="pre">ReservedPoolNamespaces</span></code> option is a list of namespace globs that will be
 allocated to reserved CPU class.</p>
 <p>For example:</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">policy</span><span class="p">:</span><span class="w"></span>
-<span class="w">  </span><span class="nt">Active</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">topology-aware</span><span class="w"></span>
-<span class="w">  </span><span class="nt">topology-aware</span><span class="p">:</span><span class="w"></span>
-<span class="w">    </span><span class="nt">ReservedPoolNamespaces</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;my-pool&quot;</span><span class="p p-Indicator">,</span><span class="s">&quot;reserved-*&quot;</span><span class="p p-Indicator">]</span><span class="w"></span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">policy</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">Active</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">topology-aware</span>
+<span class="w">  </span><span class="nt">topology-aware</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">ReservedPoolNamespaces</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;my-pool&quot;</span><span class="p p-Indicator">,</span><span class="s">&quot;reserved-*&quot;</span><span class="p p-Indicator">]</span>
 </pre></div>
 </div>
 <p>In this setup, all the workloads in <code class="docutils literal notranslate"><span class="pre">my-pool</span></code> namespace and those namespaces
@@ -594,10 +594,10 @@ by using annotations. Containers having a such annotation will only run on CPUs 
 aside according to the global CPU reservation, as configured by the ReservedResources
 configuration option in the policy section.</p>
 <p>For example:</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span><span class="w"></span>
-<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span><span class="w"></span>
-<span class="w">    </span><span class="nt">prefer-reserved-cpus.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span><span class="w"></span>
-<span class="w">    </span><span class="nt">prefer-reserved-cpus.resource-policy.nri.io/container.special</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;false&quot;</span><span class="w"></span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">prefer-reserved-cpus.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+<span class="w">    </span><span class="nt">prefer-reserved-cpus.resource-policy.nri.io/container.special</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;false&quot;</span>
 </pre></div>
 </div>
 </section>
@@ -614,31 +614,31 @@ User can either set the path with “prefix” (this is the default) or with
 path is checked for matches. The “glob” type means that user is able to
 put wildcards to the matched paths.</p>
 <p>For example:</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span><span class="w"></span>
-<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span><span class="w"></span>
-<span class="w">    </span><span class="nt">allow.topologyhints.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|+</span><span class="w"></span>
-<span class="w">      </span><span class="no">type: prefix</span><span class="w"></span>
-<span class="w">      </span><span class="no">paths:</span><span class="w"></span>
-<span class="w">        </span><span class="no">- /foo/bar/whitelisted-path1</span><span class="w"></span>
-<span class="w">        </span><span class="no">- /xy-zy/another-whitelisted-path1</span><span class="w"></span>
-<span class="w">    </span><span class="nt">allow.topologyhints.resource-policy.nri.io/container.pod0c0</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|+</span><span class="w"></span>
-<span class="w">      </span><span class="no">type: glob</span><span class="w"></span>
-<span class="w">      </span><span class="no">paths:</span><span class="w"></span>
-<span class="w">        </span><span class="no">- /whitelisted-path*2</span><span class="w"></span>
-<span class="w">        </span><span class="no">- /xy-zy/another-whitelisted-path2</span><span class="w"></span>
-<span class="w">    </span><span class="nt">deny.topologyhints.resource-policy.nri.io</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|+</span><span class="w"></span>
-<span class="w">      </span><span class="no">type: prefix</span><span class="w"></span>
-<span class="w">      </span><span class="no">paths:</span><span class="w"></span>
-<span class="w">        </span><span class="no">- /foo/bar/blacklisted-path3</span><span class="w"></span>
-<span class="w">    </span><span class="nt">deny.topologyhints.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|+</span><span class="w"></span>
-<span class="w">      </span><span class="no">type: glob</span><span class="w"></span>
-<span class="w">      </span><span class="no">paths:</span><span class="w"></span>
-<span class="w">        </span><span class="no">- /blacklisted-path*4</span><span class="w"></span>
-<span class="w">    </span><span class="nt">deny.topologyhints.resource-policy.nri.io/container.pod0c1</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|+</span><span class="w"></span>
-<span class="w">      </span><span class="no">type: prefix</span><span class="w"></span>
-<span class="w">      </span><span class="no">paths:</span><span class="w"></span>
-<span class="w">        </span><span class="no">- /foo/bar/blacklisted-path5</span><span class="w"></span>
-<span class="w">        </span><span class="no">- /xy-zy/another-blacklisted-path5</span><span class="w"></span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">allow.topologyhints.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|+</span>
+<span class="w">      </span><span class="no">type: prefix</span>
+<span class="w">      </span><span class="no">paths:</span>
+<span class="w">        </span><span class="no">- /foo/bar/whitelisted-path1</span>
+<span class="w">        </span><span class="no">- /xy-zy/another-whitelisted-path1</span>
+<span class="w">    </span><span class="nt">allow.topologyhints.resource-policy.nri.io/container.pod0c0</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|+</span>
+<span class="w">      </span><span class="no">type: glob</span>
+<span class="w">      </span><span class="no">paths:</span>
+<span class="w">        </span><span class="no">- /whitelisted-path*2</span>
+<span class="w">        </span><span class="no">- /xy-zy/another-whitelisted-path2</span>
+<span class="w">    </span><span class="nt">deny.topologyhints.resource-policy.nri.io</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|+</span>
+<span class="w">      </span><span class="no">type: prefix</span>
+<span class="w">      </span><span class="no">paths:</span>
+<span class="w">        </span><span class="no">- /foo/bar/blacklisted-path3</span>
+<span class="w">    </span><span class="nt">deny.topologyhints.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|+</span>
+<span class="w">      </span><span class="no">type: glob</span>
+<span class="w">      </span><span class="no">paths:</span>
+<span class="w">        </span><span class="no">- /blacklisted-path*4</span>
+<span class="w">    </span><span class="nt">deny.topologyhints.resource-policy.nri.io/container.pod0c1</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|+</span>
+<span class="w">      </span><span class="no">type: prefix</span>
+<span class="w">      </span><span class="no">paths:</span>
+<span class="w">        </span><span class="no">- /foo/bar/blacklisted-path5</span>
+<span class="w">        </span><span class="no">- /xy-zy/another-blacklisted-path5</span>
 </pre></div>
 </div>
 </section>
@@ -677,48 +677,48 @@ There are two types of affinities:</p>
 annotation. They are specified in the <code class="docutils literal notranslate"><span class="pre">metadata</span></code> section of the <code class="docutils literal notranslate"><span class="pre">Pod</span> <span class="pre">YAML</span></code>, under
 <code class="docutils literal notranslate"><span class="pre">annotations</span></code> as a dictionary, with each dictionary key being the name of the
 <em>container</em> within the Pod to which the annotation belongs to.</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span><span class="w"></span>
-<span class="w">  </span><span class="nt">anotations</span><span class="p">:</span><span class="w"></span>
-<span class="w">    </span><span class="nt">resource-policy.nri.io/affinity</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span><span class="w"></span>
-<span class="w">      </span><span class="no">container1:</span><span class="w"></span>
-<span class="w">        </span><span class="no">- scope:</span><span class="w"></span>
-<span class="w">            </span><span class="no">key: key-ref</span><span class="w"></span>
-<span class="w">            </span><span class="no">operator: op</span><span class="w"></span>
-<span class="w">            </span><span class="no">values:</span><span class="w"></span>
-<span class="w">            </span><span class="no">- value1</span><span class="w"></span>
-<span class="w">            </span><span class="no">...</span><span class="w"></span>
-<span class="w">            </span><span class="no">- valueN</span><span class="w"></span>
-<span class="w">          </span><span class="no">match:</span><span class="w"></span>
-<span class="w">            </span><span class="no">key: key-ref</span><span class="w"></span>
-<span class="w">            </span><span class="no">operator: op</span><span class="w"></span>
-<span class="w">            </span><span class="no">values:</span><span class="w"></span>
-<span class="w">            </span><span class="no">- value1</span><span class="w"></span>
-<span class="w">            </span><span class="no">...</span><span class="w"></span>
-<span class="w">            </span><span class="no">- valueN</span><span class="w"></span>
-<span class="w">          </span><span class="no">weight: w</span><span class="w"></span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">anotations</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">resource-policy.nri.io/affinity</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">container1:</span>
+<span class="w">        </span><span class="no">- scope:</span>
+<span class="w">            </span><span class="no">key: key-ref</span>
+<span class="w">            </span><span class="no">operator: op</span>
+<span class="w">            </span><span class="no">values:</span>
+<span class="w">            </span><span class="no">- value1</span>
+<span class="w">            </span><span class="no">...</span>
+<span class="w">            </span><span class="no">- valueN</span>
+<span class="w">          </span><span class="no">match:</span>
+<span class="w">            </span><span class="no">key: key-ref</span>
+<span class="w">            </span><span class="no">operator: op</span>
+<span class="w">            </span><span class="no">values:</span>
+<span class="w">            </span><span class="no">- value1</span>
+<span class="w">            </span><span class="no">...</span>
+<span class="w">            </span><span class="no">- valueN</span>
+<span class="w">          </span><span class="no">weight: w</span>
 </pre></div>
 </div>
 <p>An anti-affinity is defined similarly but using <code class="docutils literal notranslate"><span class="pre">resource-policy.nri.io/anti-affinity</span></code>
 as the annotation key.</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span><span class="w"></span>
-<span class="w">  </span><span class="nt">anotations</span><span class="p">:</span><span class="w"></span>
-<span class="w">    </span><span class="nt">resource-policy.nri.io/anti-affinity</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span><span class="w"></span>
-<span class="w">      </span><span class="no">container1:</span><span class="w"></span>
-<span class="w">        </span><span class="no">- scope:</span><span class="w"></span>
-<span class="w">            </span><span class="no">key: key-ref</span><span class="w"></span>
-<span class="w">            </span><span class="no">operator: op</span><span class="w"></span>
-<span class="w">            </span><span class="no">values:</span><span class="w"></span>
-<span class="w">            </span><span class="no">- value1</span><span class="w"></span>
-<span class="w">            </span><span class="no">...</span><span class="w"></span>
-<span class="w">            </span><span class="no">- valueN</span><span class="w"></span>
-<span class="w">          </span><span class="no">match:</span><span class="w"></span>
-<span class="w">            </span><span class="no">key: key-ref</span><span class="w"></span>
-<span class="w">            </span><span class="no">operator: op</span><span class="w"></span>
-<span class="w">            </span><span class="no">values:</span><span class="w"></span>
-<span class="w">            </span><span class="no">- value1</span><span class="w"></span>
-<span class="w">            </span><span class="no">...</span><span class="w"></span>
-<span class="w">            </span><span class="no">- valueN</span><span class="w"></span>
-<span class="w">          </span><span class="no">weight: w</span><span class="w"></span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">anotations</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">resource-policy.nri.io/anti-affinity</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">container1:</span>
+<span class="w">        </span><span class="no">- scope:</span>
+<span class="w">            </span><span class="no">key: key-ref</span>
+<span class="w">            </span><span class="no">operator: op</span>
+<span class="w">            </span><span class="no">values:</span>
+<span class="w">            </span><span class="no">- value1</span>
+<span class="w">            </span><span class="no">...</span>
+<span class="w">            </span><span class="no">- valueN</span>
+<span class="w">          </span><span class="no">match:</span>
+<span class="w">            </span><span class="no">key: key-ref</span>
+<span class="w">            </span><span class="no">operator: op</span>
+<span class="w">            </span><span class="no">values:</span>
+<span class="w">            </span><span class="no">- value1</span>
+<span class="w">            </span><span class="no">...</span>
+<span class="w">            </span><span class="no">- valueN</span>
+<span class="w">          </span><span class="no">weight: w</span>
 </pre></div>
 </div>
 </section>
@@ -829,22 +829,22 @@ A non-existent subkey evaluates to the empty string. For instance the joint key<
 <h3>Examples<a class="headerlink" href="#examples" title="Permalink to this heading"></a></h3>
 <p>Put the container <code class="docutils literal notranslate"><span class="pre">peter</span></code> close to the container <code class="docutils literal notranslate"><span class="pre">sheep</span></code> but far away from the
 container <code class="docutils literal notranslate"><span class="pre">wolf</span></code>.</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="w">    </span><span class="nt">resource-policy.nri.io/affinity</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span><span class="w"></span>
-<span class="w">      </span><span class="no">peter:</span><span class="w"></span>
-<span class="w">      </span><span class="no">- match:</span><span class="w"></span>
-<span class="w">          </span><span class="no">key: name</span><span class="w"></span>
-<span class="w">          </span><span class="no">operator: Equals</span><span class="w"></span>
-<span class="w">          </span><span class="no">values:</span><span class="w"></span>
-<span class="w">          </span><span class="no">- sheep</span><span class="w"></span>
-<span class="w">        </span><span class="no">weight: 5</span><span class="w"></span>
-<span class="w">    </span><span class="nt">resource-policy.nri.io/anti-affinity</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span><span class="w"></span>
-<span class="w">      </span><span class="no">peter:</span><span class="w"></span>
-<span class="w">      </span><span class="no">- match:</span><span class="w"></span>
-<span class="w">          </span><span class="no">key: name</span><span class="w"></span>
-<span class="w">          </span><span class="no">operator: Equals</span><span class="w"></span>
-<span class="w">          </span><span class="no">values:</span><span class="w"></span>
-<span class="w">          </span><span class="no">- wolf</span><span class="w"></span>
-<span class="w">        </span><span class="no">weight: 5</span><span class="w"></span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="w">    </span><span class="nt">resource-policy.nri.io/affinity</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">peter:</span>
+<span class="w">      </span><span class="no">- match:</span>
+<span class="w">          </span><span class="no">key: name</span>
+<span class="w">          </span><span class="no">operator: Equals</span>
+<span class="w">          </span><span class="no">values:</span>
+<span class="w">          </span><span class="no">- sheep</span>
+<span class="w">        </span><span class="no">weight: 5</span>
+<span class="w">    </span><span class="nt">resource-policy.nri.io/anti-affinity</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">peter:</span>
+<span class="w">      </span><span class="no">- match:</span>
+<span class="w">          </span><span class="no">key: name</span>
+<span class="w">          </span><span class="no">operator: Equals</span>
+<span class="w">          </span><span class="no">values:</span>
+<span class="w">          </span><span class="no">- wolf</span>
+<span class="w">        </span><span class="no">weight: 5</span>
 </pre></div>
 </div>
 </section>
@@ -853,12 +853,12 @@ container <code class="docutils literal notranslate"><span class="pre">wolf</spa
 <p>There is an alternative shorthand syntax for what is considered to be the most common
 case: defining affinities between containers within the same pod. With this notation
 one needs to give just the names of the containers, like in the example below.</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="w">  </span><span class="nt">annotations</span><span class="p">:</span><span class="w"></span>
-<span class="w">    </span><span class="nt">resource-policy.nri.io/affinity</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span><span class="w"></span>
-<span class="w">      </span><span class="no">container3: [ container1 ]</span><span class="w"></span>
-<span class="w">    </span><span class="nt">resource-policy.nri.io/anti-affinity</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span><span class="w"></span>
-<span class="w">      </span><span class="no">container3: [ container2 ]</span><span class="w"></span>
-<span class="w">      </span><span class="no">container4: [ container2, container3 ]</span><span class="w"></span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">resource-policy.nri.io/affinity</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">container3: [ container1 ]</span>
+<span class="w">    </span><span class="nt">resource-policy.nri.io/anti-affinity</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">container3: [ container2 ]</span>
+<span class="w">      </span><span class="no">container4: [ container2, container3 ]</span>
 </pre></div>
 </div>
 <p>This shorthand notation defines:</p>
@@ -876,29 +876,29 @@ one needs to give just the names of the containers, like in the example below.</
 </li>
 </ul>
 <p>The equivalent annotation in full syntax would be</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span><span class="w"></span>
-<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span><span class="w"></span>
-<span class="w">    </span><span class="nt">resource-policy.nri.io/affinity</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|+</span><span class="w"></span>
-<span class="w">      </span><span class="no">container3:</span><span class="w"></span>
-<span class="w">      </span><span class="no">- match:</span><span class="w"></span>
-<span class="w">          </span><span class="no">key: labels/io.kubernetes.container.name</span><span class="w"></span>
-<span class="w">          </span><span class="no">operator: In</span><span class="w"></span>
-<span class="w">          </span><span class="no">values:</span><span class="w"></span>
-<span class="w">          </span><span class="no">- container1</span><span class="w"></span>
-<span class="w">    </span><span class="nt">resource-policy.nri.io/anti-affinity</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|+</span><span class="w"></span>
-<span class="w">      </span><span class="no">container3:</span><span class="w"></span>
-<span class="w">      </span><span class="no">- match:</span><span class="w"></span>
-<span class="w">          </span><span class="no">key: labels/io.kubernetes.container.name</span><span class="w"></span>
-<span class="w">          </span><span class="no">operator: In</span><span class="w"></span>
-<span class="w">          </span><span class="no">values:</span><span class="w"></span>
-<span class="w">          </span><span class="no">- container2</span><span class="w"></span>
-<span class="w">      </span><span class="no">container4:</span><span class="w"></span>
-<span class="w">      </span><span class="no">- match:</span><span class="w"></span>
-<span class="w">          </span><span class="no">key: labels/io.kubernetes.container.name</span><span class="w"></span>
-<span class="w">          </span><span class="no">operator: In</span><span class="w"></span>
-<span class="w">          </span><span class="no">values:</span><span class="w"></span>
-<span class="w">          </span><span class="no">- container2</span><span class="w"></span>
-<span class="w">          </span><span class="no">- container3</span><span class="w"></span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">resource-policy.nri.io/affinity</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|+</span>
+<span class="w">      </span><span class="no">container3:</span>
+<span class="w">      </span><span class="no">- match:</span>
+<span class="w">          </span><span class="no">key: labels/io.kubernetes.container.name</span>
+<span class="w">          </span><span class="no">operator: In</span>
+<span class="w">          </span><span class="no">values:</span>
+<span class="w">          </span><span class="no">- container1</span>
+<span class="w">    </span><span class="nt">resource-policy.nri.io/anti-affinity</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|+</span>
+<span class="w">      </span><span class="no">container3:</span>
+<span class="w">      </span><span class="no">- match:</span>
+<span class="w">          </span><span class="no">key: labels/io.kubernetes.container.name</span>
+<span class="w">          </span><span class="no">operator: In</span>
+<span class="w">          </span><span class="no">values:</span>
+<span class="w">          </span><span class="no">- container2</span>
+<span class="w">      </span><span class="no">container4:</span>
+<span class="w">      </span><span class="no">- match:</span>
+<span class="w">          </span><span class="no">key: labels/io.kubernetes.container.name</span>
+<span class="w">          </span><span class="no">operator: In</span>
+<span class="w">          </span><span class="no">values:</span>
+<span class="w">          </span><span class="no">- container2</span>
+<span class="w">          </span><span class="no">- container3</span>
 </pre></div>
 </div>
 </section>
