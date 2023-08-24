@@ -90,6 +90,10 @@ along with the default values, for the Topology-aware and Balloons plugins Helm 
 | `resources.memory` | 512Mi                                                                                                                         | memory qouta for the Pod                             | 
 | `hostPort`         | 8891                                                                                                                          | metrics port to expose on the host                   |
 | `config`           | <pre><code>ReservedResources:</code><br><code>  cpu: 750m</code></pre>                                                        | plugin configuration data                            |
+| `nri.patchContainerdConfig`       | false                                                                                                          | enable/disable NRI in containerd.                    |
+| `initImage.name`   | [ghcr.io/containers/nri-plugins/config-manager](ghcr.io/containers/nri-plugins/config-manager)                                | init container image name                            |
+| `initImage.tag`    | unstable                                                                                                                      | init container image tag                             |
+| `initImage.pullPolicy` | Always                                                                                                                    | init container image pull policy                     |
 
 #### Balloons
 
@@ -102,6 +106,10 @@ along with the default values, for the Topology-aware and Balloons plugins Helm 
 | `resources.memory` | 512Mi                                                                                                                         | memory qouta for the Pod                             | 
 | `hostPort`         | 8891                                                                                                                          | metrics port to expose on the host                   |
 | `config`           | <pre><code>ReservedResources:</code><br><code>  cpu: 750m</code></pre>                                                        | plugin configuration data                            |
+| `nri.patchContainerdConfig`       | false                                                                                                          | enable/disable NRI in containerd.                    |
+| `initImage.name`   | [ghcr.io/containers/nri-plugins/config-manager](ghcr.io/containers/nri-plugins/config-manager)                                | init container image name                            |
+| `initImage.tag`    | unstable                                                                                                                      | init container image tag                             |
+| `initImage.pullPolicy` | Always                                                                                                                    | init container image pull policy                     |
 
 ## Manual installation
 
