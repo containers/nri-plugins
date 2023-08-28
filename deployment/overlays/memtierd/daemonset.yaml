@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app: nri-memtierd
+  name: nri-memtierd
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app: nri-memtierd
+  template:
+    metadata:
+      labels:
+        app: nri-memtierd
+    spec:
+      nodeSelector:
+        kubernetes.io/os: "linux"
+      hostPID: true
+      containers:
+        - name: nri-memtierd
+          command:
+            - nri-memtierd
+            - --idx
+            - "45"
+            - --config
+            - /etc/nri/memtierd/config.yaml
+            - --host-root
+            - /host
+            - -v
+          image: IMAGE_PLACEHOLDER
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: 250m
+              memory: 100Mi
+          securityContext:
+            privileged: true
+          volumeMounts:
+          - name: memtierd-config-vol
+            mountPath: /etc/nri/memtierd
+          - name: nri-sockets-vol
+            mountPath: /var/run/nri
+          - name: host-vol
+            mountPath: /host
+          - name: host-bitmap
+            mountPath: /sys/kernel/mm/page_idle/bitmap
+      volumes:
+      - name: memtierd-config-vol
+        configMap:
+          name: nri-memtierd-config.default
+      - name: nri-sockets-vol
+        hostPath:
+          path: /var/run/nri
+          type: Directory
+      - name: host-vol
+        hostPath:
+          path: /
+          type: Directory
+      - name: host-bitmap
+        hostPath:
+          path: /sys/kernel/mm/page_idle/bitmap

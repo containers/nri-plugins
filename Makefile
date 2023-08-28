@@ -71,7 +71,8 @@ PLUGINS ?= \
 	nri-resource-policy-topology-aware \
 	nri-resource-policy-balloons \
 	nri-resource-policy-template \
-	nri-memory-qos
+	nri-memory-qos \
+	nri-memtierd
 
 BINARIES ?= \
 	config-manager
