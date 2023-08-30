@@ -34,7 +34,6 @@ GOLICENSES_VERSION  ?= v1.6.0
 CONTAINER_RUN_CMD ?= docker run
 IMAGE_BUILD_CMD ?= docker build
 IMAGE_BUILD_EXTRA_OPTS ?=
-BUILDER_IMAGE ?= golang:1.19-bullseye
 
 GO_CMD     := go
 GO_BUILD   := $(GO_CMD) build
@@ -45,6 +44,7 @@ GO_LINT    := golint -set_exit_status
 GO_FMT     := gofmt
 GO_VET     := $(GO_CMD) vet
 GO_DEPS    := $(GO_CMD) list -f '{{ join .Deps "\n" }}'
+GO_VERSION ?= 1.20.7
 
 GO_MODULES := $(shell $(GO_CMD) list ./...)
 GO_SUBPKGS := $(shell find ./pkg -name go.mod | sed 's:/go.mod::g' | grep -v testdata)
@@ -322,9 +322,8 @@ image-deployment-%:
 image-%:
 	$(Q)mkdir -p $(IMAGE_PATH); \
 	bin=$(patsubst image-%,%,$@); tag=nri-resource-policy-$$bin; \
-	    go_version=`$(GO_CMD) list -m -f '{{.GoVersion}}'`; \
 	    $(DOCKER) build . -f "cmd/$$bin/Dockerfile" \
-	    --build-arg GO_VERSION=$${go_version} \
+	    --build-arg GO_VERSION=$(GO_VERSION) \
 	    -t $(IMAGE_REPO)$$tag:$(IMAGE_VERSION)
 
 pkg/sysfs/sst_types%.go: pkg/sysfs/_sst_types%.go pkg/sysfs/gen_sst_types.sh
