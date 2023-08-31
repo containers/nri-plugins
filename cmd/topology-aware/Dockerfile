@@ -1,6 +1,6 @@
-ARG GO_VERSION=1.19
+ARG GO_VERSION=1.20
 
-FROM golang:${GO_VERSION}-buster as builder
+FROM golang:${GO_VERSION}-bullseye as builder
 
 WORKDIR /go/builder
 
