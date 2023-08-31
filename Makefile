@@ -60,7 +60,8 @@ COVERAGE_PATH := $(BUILD_PATH)/coverage
 IMAGE_PATH    := $(BUILD_PATH)/images
 LICENSE_PATH  := $(BUILD_PATH)/licenses
 
-DOCKER := docker
+DOCKER       := docker
+DOCKER_BUILD := $(DOCKER) build
 
 # Extra options to pass to docker (for instance --network host).
 DOCKER_OPTIONS =
@@ -68,11 +69,21 @@ DOCKER_OPTIONS =
 # Set this to empty to prevent 'docker build' from trying to pull all image refs.
 DOCKER_PULL := --pull
 
-PLUGINS := \
+# Plugins and other binaries we build.
+#
+# Notes:
+#   All plugins have names matching nri-resource-policy-% or nri-%.
+#   All plugins are in the directory cmd/plugin/$dir, where $dir is
+#   the name of the plugin with the above mentioned prefixes removed.
+#   All other binaries are in the directory cmd/$dir, where $dir
+#   MUST NOT have an nri-% prefix.
+#
+PLUGINS ?= \
 	nri-resource-policy-topology-aware \
 	nri-resource-policy-balloons \
 	nri-resource-policy-template
 
+BINARIES ?=
 
 ifneq ($(V),1)
   Q := @
@@ -82,8 +93,9 @@ endif
 RANDOM_ID := "$(shell head -c20 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 
 ifdef STATIC
-    STATIC_LDFLAGS:=-extldflags=-static
-    BUILD_TAGS:=-tags osusergo,netgo
+    STATIC_LDFLAGS := -extldflags=-static
+    BUILD_TAGS     := -tags osusergo,netgo
+    STATIC_TYPE    := "static "
 endif
 
 LDFLAGS    = \
@@ -108,12 +120,12 @@ DOCKER_SITE_CMD := $(DOCKER) run --rm -v "`pwd`:/docs" --user=`id -u`:`id -g` \
 
 all: build
 
-build: build-plugins build-check
+build: build-plugins build-binaries build-check
 
 build-static:
 	$(MAKE) STATIC=1 build
 
-clean: clean-plugins
+clean: clean-plugins clean-binaries
 
 allclean: clean clean-cache
 
@@ -130,6 +142,13 @@ build-plugins: $(foreach bin,$(PLUGINS),$(BIN_PATH)/$(bin))
 build-plugins-static:
 	$(MAKE) STATIC=1 build-plugins
 
+build-binaries: $(foreach bin,$(BINARIES),$(BIN_PATH)/$(bin))
+
+build-binaries-static:
+	$(MAKE) STATIC=1 build-binaries
+
+build-images: images
+
 build-check:
 	$(Q)$(GO_BUILD) -v $(GO_MODULES)
 
@@ -143,6 +162,16 @@ clean-plugins:
 		rm -f $(BIN_PATH)/$$i; \
 	done
 
+clean-binaries:
+	$(Q)echo "Cleaning $(BINARIES)"; \
+	for i in $(BINARIES); do \
+		rm -f $(BIN_PATH)/$$i; \
+	done
+
+clean-images:
+	$(Q)echo "Cleaning exported images and deployment files."; \
+	rm -f $(IMAGE_PATH)/*
+
 clean-cache:
 	$(Q)$(GO_CMD) clean -cache -testcache
 
@@ -150,11 +179,23 @@ clean-cache:
 # plugins build targets
 #
 
-$(BIN_PATH)/%: .static.%.$(STATIC)
-	$(Q)src=./cmd/$(patsubst nri-resource-policy-%,%,$(notdir $@)); bin=$(notdir $@); \
-	echo "Building $$([ -n "$(STATIC)" ] && echo 'static ')$@ (version $(BUILD_VERSION), build $(BUILD_BUILDID))..."; \
+$(BIN_PATH)/nri-resource-policy-%: .static.%.$(STATIC)
+	$(Q)echo "Building $(STATIC_TYPE)$@ (version $(BUILD_VERSION), build $(BUILD_BUILDID))..."; \
+	src="./cmd/plugins/$(patsubst nri-resource-policy-%,%,$(notdir $@))"; \
+	mkdir -p $(BIN_PATH); \
+	cd "$$src" && $(GO_BUILD) $(BUILD_TAGS) $(LDFLAGS) $(GCFLAGS) -o $@
+
+$(BIN_PATH)/nri-%: .static.%.$(STATIC)
+	$(Q)echo "Building $(STATIC_TYPE)$@ (version $(BUILD_VERSION), build $(BUILD_BUILDID))..."; \
+	src="./cmd/plugins/$(patsubst nri-%,%,$(notdir $@))"; \
 	mkdir -p $(BIN_PATH) && \
-	$(GO_BUILD) $(BUILD_TAGS) $(LDFLAGS) $(GCFLAGS) -o $(BIN_PATH)/$$bin $$src
+	cd "$$src" && $(GO_BUILD) $(BUILD_TAGS) $(LDFLAGS) $(GCFLAGS) -o $@
+
+$(BIN_PATH)/%: .static.%.$(STATIC)
+	$(Q)echo "Building $(STATIC_TYPE)$@ (version $(BUILD_VERSION), build $(BUILD_BUILDID))..."; \
+	src="./cmd/$(notdir $@)"; \
+	mkdir -p $(BIN_PATH) && \
+	cd "$$src" && $(GO_BUILD) $(BUILD_TAGS) $(LDFLAGS) $(GCFLAGS) -o $@
 
 .static.%.$(STATIC):
 	$(Q)if [ ! -f "$@" ]; then \
@@ -170,29 +211,91 @@ $(BIN_PATH)/%: .static.%.$(STATIC)
 .PRECIOUS: $(foreach dir,$(BUILD_DIRS),.static.$(dir).1 .static.$(dir).)
 
 #
+# Image building test deployment generation targets
+#
+
+images: $(foreach p,$(PLUGINS),image.$(p)) $(foreach p,$(PLUGINS),image-deployment.$(p)) \
+	$(foreach p,$(BINARIES),image.$(p)) $(foreach p,$(BINARIES),image-deployment.$(p)) \
+
+image.nri-resource-policy-% \
+image.nri-% \
+image.%:
+	$(Q)mkdir -p $(IMAGE_PATH); \
+	case $@ in \
+	    *.nri-resource-policy-*) \
+		dir=$(patsubst image.nri-resource-policy-%,cmd/plugins/%,$@); \
+	        ;; \
+	    *.nri-*) \
+		dir=$(patsubst image.nri-%,cmd/plugins/%,$@); \
+	        ;; \
+	    *.*) \
+		dir=$(patsubst image.%,cmd/%,$@); \
+	        ;; \
+	esac; \
+	bin=$(patsubst image.%,%,$@); \
+	tag=$(patsubst image.%,%,$@); \
+	    $(DOCKER_BUILD) . -f "$$dir/Dockerfile" \
+	    --build-arg GO_VERSION=$(GO_VERSION) \
+	    -t $(IMAGE_REPO)$$tag:$(IMAGE_VERSION)
+
+image-deployment.nri-resource-policy-% \
+image-deployment.nri-% \
+image-deployment.%:
+	$(Q)mkdir -p $(IMAGE_PATH); \
+	case $@ in \
+	    *.nri-resource-policy-*) \
+		dir=$(patsubst image-deployment.nri-resource-policy-%,cmd/plugins/%,$@); \
+	        ;; \
+	    *.nri-*) \
+		dir=$(patsubst image-deployment.nri-%,cmd/plugins/%,$@); \
+	        ;; \
+	    *.*) \
+		dir=$(patsubst image-deployment.%,cmd/%,$@); \
+	        ;; \
+	esac; \
+	img=$(patsubst image-deployment.%,%,$@); \
+	tag=$$img; \
+	NRI_IMAGE_INFO=`$(DOCKER) images --filter=reference=$${tag} --format '{{.ID}} {{.Repository}}:{{.Tag}} (created {{.CreatedSince}}, {{.CreatedAt}})' | head -n 1`; \
+	NRI_IMAGE_ID=`awk '{print $$1}' <<< "$${NRI_IMAGE_INFO}"`; \
+	NRI_IMAGE_REPOTAG=`awk '{print $$2}' <<< "$${NRI_IMAGE_INFO}"`; \
+	NRI_IMAGE_TAR=`realpath "$(IMAGE_PATH)/$${tag}-image-$${NRI_IMAGE_ID}.tar"`; \
+	$(DOCKER) image save "$${NRI_IMAGE_REPOTAG}" > "$${NRI_IMAGE_TAR}"; \
+	in="`pwd`/$$dir/$${tag}-deployment.yaml.in"; \
+	out="$(IMAGE_PATH)/$${tag}-deployment.yaml"; \
+	[ ! -f "$$in" ] && exit 0 || :; \
+	sed -e "s|IMAGE_PLACEHOLDER|$${NRI_IMAGE_REPOTAG}|g" \
+            -e 's/imagePullPolicy: Always/imagePullPolicy: Never/g' \
+            < "$$in" > "$$out"; \
+	in="`pwd`/test/e2e/files/$${tag}-deployment.yaml.in"; \
+	out="$(IMAGE_PATH)/$${tag}-deployment-e2e.yaml"; \
+	sed -e "s|IMAGE_PLACEHOLDER|$${NRI_IMAGE_REPOTAG}|g" \
+            -e 's/imagePullPolicy: Always/imagePullPolicy: Never/g' \
+            < "$$in" > "$$out"
+
+#
 # plugin build dependencies
 #
 
 $(BIN_PATH)/nri-resource-policy-topology-aware: \
-    $(shell for f in cmd/topology-aware/*.go; do echo $$f; done; \
-            for dir in $(shell $(GO_DEPS) ./cmd/topology-aware/... | \
-                          grep -E '(/nri-plugins/)|(cmd/topology-aware/)' | \
+    $(shell for f in cmd/plugins/topology-aware/*.go; do echo $$f; done; \
+            for dir in $(shell $(GO_DEPS) ./cmd/plugins/topology-aware/... | \
+                          grep -E '(/nri-plugins/)|(cmd/plugins/topology-aware/)' | \
                           sed 's#github.com/containers/nri-plugins/##g'); do \
                 find $$dir -name \*.go; \
             done | sort | uniq)
 
 $(BIN_PATH)/nri-resource-policy-balloons: \
-    $(shell for f in cmd/balloons/*.go; do echo $$f; done; \
-                for dir in $(shell $(GO_DEPS) ./cmd/balloons/... | \
-                          grep -E '(/nri-plugins/)|(cmd/balloons/)' | \
+    $(shell for f in cmd/plugins/balloons/*.go; do echo $$f; done; \
+                for dir in $(shell $(GO_DEPS) ./cmd/plugins/balloons/... | \
+                          grep -E '(/nri-plugins/)|(cmd/plugins/balloons/)' | \
                           sed 's#github.com/containers/nri-plugins/##g'); do \
                 find $$dir -name \*.go; \
             done | sort | uniq)
 
 $(BIN_PATH)/nri-resource-policy-template: \
-    $(shell for f in cmd/template/*.go; do echo $$f; done; \
-                for dir in $(shell $(GO_DEPS) ./cmd/template/... | \
-                          grep -E '(/nri-plugins/)|(cmd/template/)' | \
+    $(shell for f in cmd/plugins/template/*.go; do echo $$f; done; \
+                for dir in $(shell $(GO_DEPS) ./cmd/plugins/template/... | \
+                          grep -E '(/nri-plugins/)|(cmd/plugins/template/)' | \
                           sed 's#github.com/containers/nri-plugins/##g'); do \
                 find $$dir -name \*.go; \
             done | sort | uniq)
@@ -297,35 +400,6 @@ verify-fmt:
 install-ginkgo:
 	$(Q)$(GO_INSTALL) -mod=mod github.com/onsi/ginkgo/v2/ginkgo
 
-images: $(foreach dir,$(IMAGE_DIRS),image-$(dir)) \
-	$(foreach dir,$(IMAGE_DIRS),image-deployment-$(dir))
-
-image-deployment-%:
-	$(Q)mkdir -p $(IMAGE_PATH); \
-	img=$(patsubst image-deployment-%,%,$@); tag=nri-resource-policy-$$img; \
-	NRI_IMAGE_INFO=`$(DOCKER) images --filter=reference=$${tag} --format '{{.ID}} {{.Repository}}:{{.Tag}} (created {{.CreatedSince}}, {{.CreatedAt}})' | head -n 1`; \
-	NRI_IMAGE_ID=`awk '{print $$1}' <<< "$${NRI_IMAGE_INFO}"`; \
-	NRI_IMAGE_REPOTAG=`awk '{print $$2}' <<< "$${NRI_IMAGE_INFO}"`; \
-	NRI_IMAGE_TAR=`realpath "$(IMAGE_PATH)/$${tag}-image-$${NRI_IMAGE_ID}.tar"`; \
-	$(DOCKER) image save "$${NRI_IMAGE_REPOTAG}" > "$${NRI_IMAGE_TAR}"; \
-	sed -e "s|IMAGE_PLACEHOLDER|$${NRI_IMAGE_REPOTAG}|g" \
-            -e 's|^\(\s*\)tolerations:$$|\1tolerations:\n\1  - {"key": "cmk", "operator": "Equal", "value": "true", "effect": "NoSchedule"}|g' \
-            -e 's/imagePullPolicy: Always/imagePullPolicy: Never/g' \
-            < "`pwd`/cmd/$${img}/$${tag}-deployment.yaml.in" \
-            > "$(IMAGE_PATH)/$${tag}-deployment.yaml"; \
-	sed -e "s|IMAGE_PLACEHOLDER|$${NRI_IMAGE_REPOTAG}|g" \
-            -e 's|^\(\s*\)tolerations:$$|\1tolerations:\n\1  - {"key": "cmk", "operator": "Equal", "value": "true", "effect": "NoSchedule"}|g' \
-            -e 's/imagePullPolicy: Always/imagePullPolicy: Never/g' \
-            < "`pwd`/test/e2e/files/$${tag}-deployment.yaml.in" \
-            > "$(IMAGE_PATH)/$${tag}-deployment-e2e.yaml"
-
-image-%:
-	$(Q)mkdir -p $(IMAGE_PATH); \
-	bin=$(patsubst image-%,%,$@); tag=nri-resource-policy-$$bin; \
-	    $(DOCKER) build . -f "cmd/$$bin/Dockerfile" \
-	    --build-arg GO_VERSION=$(GO_VERSION) \
-	    -t $(IMAGE_REPO)$$tag:$(IMAGE_VERSION)
-
 pkg/sysfs/sst_types%.go: pkg/sysfs/_sst_types%.go pkg/sysfs/gen_sst_types.sh
 	$(Q)cd $(@D) && \
 	    KERNEL_SRC_DIR=$(KERNEL_SRC_DIR) $(GO_GEN)
@@ -365,7 +439,7 @@ site-serve: .$(DOCKER_SITE_BUILDER_IMAGE).image.stamp
 	$(Q)$(DOCKER_SITE_CMD) -it $(DOCKER_SITE_BUILDER_IMAGE) make serve-html
 
 .$(DOCKER_SITE_BUILDER_IMAGE).image.stamp: docs/Dockerfile docs/requirements.txt
-	docker build -t $(DOCKER_SITE_BUILDER_IMAGE) docs
+	$(DOCKER_BUILD) -t $(DOCKER_SITE_BUILDER_IMAGE) docs
 	touch $@
 
 docs: site-build
