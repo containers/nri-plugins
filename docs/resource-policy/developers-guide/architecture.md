@@ -185,19 +185,19 @@ resources is and to attempt a rebalancing/reallocation if it is deemed
 both possible and necessary.
 
 
-### [Policy Implementations](tree:/cmd/)
+### [Policy Implementations](tree:/cmd/plugins)
 
-#### [Topology Aware](tree:/cmd/topology-aware/)
+#### [Topology Aware](tree:/cmd/plugins/topology-aware/)
 
 A topology-aware policy capable of handling multiple tiers/types of memory,
 typically a DRAM/PMEM combination configured in 2-layer memory mode.
 
-#### [Balloons](tree:/cmd/balloons/)
+#### [Balloons](tree:/cmd/plugins/balloons/)
 
 A balloons policy allows user to define fine grained control how the
 computer resources are distributed to workloads.
 
-#### [Template](tree:/cmd/template/)
+#### [Template](tree:/cmd/plugins/template/)
 
 The template policy can be used as a base for developing new policies.
 It provides hooks that the policy developer can fill to define fine grained
