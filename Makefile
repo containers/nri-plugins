@@ -31,13 +31,8 @@ DEB_VERSION   := $(shell scripts/build/get-buildid --deb --shell=no)
 TAR_VERSION   := $(shell scripts/build/get-buildid --tar --shell=no)
 GOLICENSES_VERSION  ?= v1.6.0
 
-CONTAINER_RUN_CMD ?= docker run
-IMAGE_BUILD_CMD ?= docker build
-IMAGE_BUILD_EXTRA_OPTS ?=
-
 GO_CMD     := go
 GO_BUILD   := $(GO_CMD) build
-GO_GEN     := $(GO_CMD) generate -x
 GO_INSTALL := $(GO_CMD) install
 GO_TEST    := $(GO_CMD) test
 GO_LINT    := golint -set_exit_status
@@ -62,12 +57,6 @@ LICENSE_PATH  := $(BUILD_PATH)/licenses
 
 DOCKER       := docker
 DOCKER_BUILD := $(DOCKER) build
-
-# Extra options to pass to docker (for instance --network host).
-DOCKER_OPTIONS =
-
-# Set this to empty to prevent 'docker build' from trying to pull all image refs.
-DOCKER_PULL := --pull
 
 # Plugins and other binaries we build.
 #
@@ -399,10 +388,6 @@ verify-fmt:
 
 install-ginkgo:
 	$(Q)$(GO_INSTALL) -mod=mod github.com/onsi/ginkgo/v2/ginkgo
-
-pkg/sysfs/sst_types%.go: pkg/sysfs/_sst_types%.go pkg/sysfs/gen_sst_types.sh
-	$(Q)cd $(@D) && \
-	    KERNEL_SRC_DIR=$(KERNEL_SRC_DIR) $(GO_GEN)
 
 report-licenses:
 	$(Q)mkdir -p $(LICENSE_PATH) && \
