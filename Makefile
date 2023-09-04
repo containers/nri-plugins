@@ -72,7 +72,8 @@ PLUGINS ?= \
 	nri-resource-policy-balloons \
 	nri-resource-policy-template
 
-BINARIES ?=
+BINARIES ?= \
+	config-manager
 
 ifneq ($(V),1)
   Q := @
