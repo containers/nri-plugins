@@ -23,13 +23,9 @@ ifdef IMAGE_REPO
     override IMAGE_REPO := $(IMAGE_REPO)/
 endif
 
-# Determine binary version and buildid, and versions for rpm, deb, and tar packages.
+# Determine binary version and buildid.
 BUILD_VERSION := $(shell scripts/build/get-buildid --version --shell=no)
 BUILD_BUILDID := $(shell scripts/build/get-buildid --buildid --shell=no)
-RPM_VERSION   := $(shell scripts/build/get-buildid --rpm --shell=no)
-DEB_VERSION   := $(shell scripts/build/get-buildid --deb --shell=no)
-TAR_VERSION   := $(shell scripts/build/get-buildid --tar --shell=no)
-GOLICENSES_VERSION  ?= v1.6.0
 
 GO_CMD     := go
 GO_BUILD   := $(GO_CMD) build
