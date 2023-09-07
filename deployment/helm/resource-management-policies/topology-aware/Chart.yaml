@@ -9,4 +9,4 @@ sources:
  - https://github.com/containers/nri-plugins
 home: https://github.com/containers/nri-plugins
 type: application
-version: 0.0.0
+version: v0.0.0

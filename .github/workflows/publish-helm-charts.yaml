@@ -1,0 +1,35 @@
+name: Publish Helm charts
+
+on:
+  release:
+    types:
+      - published
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+        contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          ref: main
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+
+      - name: Run chart publisher script
+        run: ./scripts/build/helm-publisher.sh ${{ join(github.event.release.assets.*.browser_download_url, ' ') }} 
+        shell: bash
+
+      - name: Push
+        run: |
+          git push https://${GITHUB_ACTOR}:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash

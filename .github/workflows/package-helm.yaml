@@ -1,0 +1,37 @@
+name: Package Helm charts
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+env:
+  CHARTS_DIR: deployment/helm/resource-management-policies/
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+
+      - name: Package Helm charts
+        run: |
+          helm package "$CHARTS_DIR"/*
+          find . -name '*.tgz' -print | while read SRC_FILE; do
+            DEST_FILE=$(echo $SRC_FILE | sed 's/v/helm-chart-v/g')
+            mv $SRC_FILE $DEST_FILE
+          done
+
+      - name: Upload Helm packages to GitHub releases
+        uses: softprops/action-gh-release@v1
+        with:
+          name: ${{ github.ref_name }}
+          draft: true
+          append_body: true
+          files: nri-resource-policy-*helm-chart*.tgz
