@@ -9,8 +9,9 @@ image:
   pullPolicy: Always
 
 config:
-  ReservedResources:
-    cpu: 750m
+  policy:
+    ReservedResources:
+      cpu: 750m
 
 hostPort: 8891
 
@@ -18,4 +19,14 @@ resources:
   cpu: 500m
   memory: 512Mi
 
+
 privilegedMode: true
+
+nri:
+  patchContainerdConfig: false
+
+initContainerImage:
+  name: ghcr.io/containers/nri-plugins/nri-resource-policy-config-manager
+  tag: unstable
+  pullPolicy: Always
+

@@ -17,6 +17,19 @@ spec:
       serviceAccount: nri-resource-policy-topology-aware
       nodeSelector:
         kubernetes.io/os: "linux"
+      {{- if .Values.nri.patchContainerdConfig }}
+      initContainers:
+      - name: patch-containerd
+        image: {{ .Values.initContainerImage.name }}:{{ .Values.initContainerImage.tag | default .Chart.AppVersion }}
+        imagePullPolicy: {{ .Values.initContainerImage.pullPolicy }}
+        volumeMounts:
+        - name: containerd-config
+          mountPath: /etc/containerd/config.toml
+        - name: dbus-socket
+          mountPath: /var/run/dbus/system_bus_socket
+        securityContext:
+          privileged: true
+      {{- end }}
       containers:
         - name: nri-resource-policy-topology-aware
           args:
@@ -92,3 +105,13 @@ spec:
         hostPath:
           path: /var/run/nri
           type: Directory
+      {{- if .Values.nri.patchContainerdConfig }}
+      - name: containerd-config
+        hostPath:
+          path: /etc/containerd/config.toml
+          type: File
+      - name: dbus-socket
+        hostPath:
+          path: /var/run/dbus/system_bus_socket
+          type: Socket
+      {{- end }}
