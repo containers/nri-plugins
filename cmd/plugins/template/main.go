@@ -1,4 +1,4 @@
-// Copyright 2022 Intel Corporation. All Rights Reserved.
+// Copyright 2023 Intel Corporation. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 package main
 
 import (
-	policy "github.com/containers/nri-plugins/cmd/topology-aware/policy"
+	policy "github.com/containers/nri-plugins/cmd/plugins/template/policy"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	resmgr "github.com/containers/nri-plugins/pkg/resmgr/main"
 )

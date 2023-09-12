@@ -15,7 +15,7 @@
 package main
 
 import (
-	policy "github.com/containers/nri-plugins/cmd/balloons/policy"
+	policy "github.com/containers/nri-plugins/cmd/plugins/balloons/policy"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	resmgr "github.com/containers/nri-plugins/pkg/resmgr/main"
 )
