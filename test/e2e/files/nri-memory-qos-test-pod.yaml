@@ -1,0 +1,55 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nri-memory-qos-test-pod
+  labels:
+    app: nri-memory-qos-test-pod
+  annotations:
+    # Set the default QoS class for all containers in this pod.
+    class.memory-qos.nri.io: silver
+
+    # Override the default class for the c0-lowprio container.
+    class.memory-qos.nri.io/c0-lowprio: bronze
+
+    # Never swap memory of the c2-noswap container.
+    memory.swap.max.memory-qos.nri.io/c2-noswap: "0"
+    memory.high.memory-qos.nri.io/c2-noswap: max
+spec:
+  containers:
+  - name: c0-lowprio
+    image: busybox
+    imagePullPolicy: IfNotPresent
+    command:
+      - sh
+      - -c
+      - dd count=1 bs=80M if=/dev/zero | sleep inf
+    resources:
+      requests:
+        memory: 64M
+      limits:
+        memory: 100M
+  - name: c1-normal
+    image: busybox
+    imagePullPolicy: IfNotPresent
+    command:
+      - sh
+      - -c
+      - dd count=1 bs=80M if=/dev/zero | sleep inf
+    resources:
+      requests:
+        memory: 64M
+      limits:
+        memory: 100M
+  - name: c2-noswap
+    image: busybox
+    imagePullPolicy: IfNotPresent
+    command:
+      - sh
+      - -c
+      - dd count=1 bs=80M if=/dev/zero | sleep inf
+    resources:
+      requests:
+        memory: 64M
+      limits:
+        memory: 100M
+  terminationGracePeriodSeconds: 1

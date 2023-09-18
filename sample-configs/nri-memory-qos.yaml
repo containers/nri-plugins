@@ -1,0 +1,8 @@
+classes:
+- name: bronze
+  swaplimitratio: 0.5
+- name: silver
+  swaplimitratio: 0.2
+unifiedannotations:
+- memory.swap.max
+- memory.high
