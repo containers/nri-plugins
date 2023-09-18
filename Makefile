@@ -70,7 +70,8 @@ DOCKER_BUILD := $(DOCKER) build
 PLUGINS ?= \
 	nri-resource-policy-topology-aware \
 	nri-resource-policy-balloons \
-	nri-resource-policy-template
+	nri-resource-policy-template \
+	nri-memory-qos
 
 BINARIES ?= \
 	config-manager
