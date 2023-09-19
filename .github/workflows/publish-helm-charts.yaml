@@ -6,7 +6,7 @@ on:
       - published
 
 concurrency:
-  group: ${{ github.workflow }}
+  group: gh-pages
   cancel-in-progress: false
 
 jobs:
