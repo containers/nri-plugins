@@ -15,10 +15,9 @@ jobs:
   update-gh-pages:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v1
-
-    - name: Fetch gh-pages
-      run: git fetch --no-tags --prune --depth=1 origin refs/heads/gh-pages:refs/heads/gh-pages
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Install build dependencies
       run: |
