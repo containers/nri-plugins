@@ -33,7 +33,6 @@ import (
 	resmgr "github.com/containers/nri-plugins/pkg/resmgr/apis"
 	"github.com/containers/nri-plugins/pkg/resmgr/config"
 	"github.com/containers/nri-plugins/pkg/topology"
-	idset "github.com/intel/goresctrl/pkg/utils"
 )
 
 const (
@@ -47,8 +46,6 @@ const (
 	BlockIO = "blockio"
 	// Memory marks changes that can be applied by the Memory controller.
 	Memory = "memory"
-	// PageMigration marks changes that can be applied by the PageMigration controller.
-	PageMigration = "page-migration"
 	// E2ETest marks changes that can be applied by the e2e test controller.
 	E2ETest = "e2e-test"
 
@@ -265,11 +262,6 @@ type Container interface {
 	// GetToptierLimit returns the top tier memory limit for the container.
 	GetToptierLimit() int64
 
-	// SetPageMigration sets the page migration policy/options for the container.
-	SetPageMigration(*PageMigrate)
-	// GetPageMigration returns the current page migration policy/options for the container.
-	GetPageMigration() *PageMigrate
-
 	// GetProcesses returns the pids of processes in the container.
 	GetProcesses() ([]string, error)
 	// GetTasks returns the pids of threads in the container.
@@ -305,11 +297,10 @@ type container struct {
 	TopologyHints topology.Hints    // Set of topology hints for all containers within Pod
 	Tags          map[string]string // container tags (local dynamic labels)
 
-	CgroupDir    string       // cgroup directory relative to a(ny) controller.
-	RDTClass     string       // RDT class this container is assigned to.
-	BlockIOClass string       // Block I/O class this container is assigned to.
-	ToptierLimit int64        // Top tier memory limit.
-	PageMigrate  *PageMigrate // Page migration policy/options for this container.
+	CgroupDir    string // cgroup directory relative to a(ny) controller.
+	RDTClass     string // RDT class this container is assigned to.
+	BlockIOClass string // Block I/O class this container is assigned to.
+	ToptierLimit int64  // Top tier memory limit.
 
 	pending map[string]struct{} // controllers with pending changes for this container
 
@@ -319,28 +310,6 @@ type container struct {
 type Mount = nri.Mount
 type Device = nri.LinuxDevice
 
-// PageMigrate contains the policy/preferences for container page migration.
-type PageMigrate struct {
-	SourceNodes idset.IDSet // idle memory pages on these NUMA nodes
-	TargetNodes idset.IDSet // should be migrated to these NUMA nodes
-}
-
-// Clone creates a copy of the page migration policy/preferences.
-func (pm *PageMigrate) Clone() *PageMigrate {
-	if pm == nil {
-		return nil
-	}
-	c := &PageMigrate{}
-	if pm.SourceNodes != nil {
-		c.SourceNodes = pm.SourceNodes.Clone()
-	}
-	if pm.TargetNodes != nil {
-		c.TargetNodes = pm.TargetNodes.Clone()
-	}
-	return c
-}
-
-// Cachable is an interface opaque cachable data must implement.
 type Cachable interface {
 	// Set value (via a pointer receiver) to the object.
 	Set(value interface{})

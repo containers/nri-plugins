@@ -787,15 +787,6 @@ func (c *container) GetToptierLimit() int64 {
 	return c.ToptierLimit
 }
 
-func (c *container) SetPageMigration(p *PageMigrate) {
-	c.PageMigrate = p
-	c.markPending(PageMigration)
-}
-
-func (c *container) GetPageMigration() *PageMigrate {
-	return c.PageMigrate
-}
-
 func (c *container) GetProcesses() ([]string, error) {
 	dir := c.GetCgroupDir()
 	if dir == "" {

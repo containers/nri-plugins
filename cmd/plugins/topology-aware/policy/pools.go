@@ -20,7 +20,6 @@ import (
 
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 
-	"github.com/containers/nri-plugins/pkg/kubernetes"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	idset "github.com/intel/goresctrl/pkg/utils"
@@ -667,7 +666,6 @@ func (p *policy) applyGrant(grant Grant) {
 	if mems != "" {
 		log.Debug("  => pinning to memory %s", mems)
 		container.SetCpusetMems(mems)
-		p.setDemotionPreferences(container, grant)
 	} else {
 		log.Debug("  => not pinning memory, memory set is empty...")
 	}
@@ -737,34 +735,6 @@ func (p *policy) updateSharedAllocations(grant *Grant) {
 			}
 		}
 	}
-}
-
-// setDemotionPreferences sets the dynamic demotion preferences a container.
-func (p *policy) setDemotionPreferences(c cache.Container, g Grant) {
-	log.Debug("%s: setting demotion preferences...", c.PrettyName())
-
-	// System containers should not be demoted.
-	if c.GetNamespace() == kubernetes.NamespaceSystem {
-		c.SetPageMigration(nil)
-		return
-	}
-
-	memType := g.GetMemoryNode().GetMemoryType()
-	if memType&memoryDRAM == 0 || memType&memoryPMEM == 0 {
-		c.SetPageMigration(nil)
-		return
-	}
-
-	dram := g.GetMemoryNode().GetMemset(memoryDRAM)
-	pmem := g.GetMemoryNode().GetMemset(memoryPMEM)
-
-	log.Debug("%s: eligible for demotion from %s to %s NUMA node(s)",
-		c.PrettyName(), dram, pmem)
-
-	c.SetPageMigration(&cache.PageMigrate{
-		SourceNodes: dram,
-		TargetNodes: pmem,
-	})
 }
 
 func (p *policy) filterInsufficientResources(req Request, originals []Node) []Node {
