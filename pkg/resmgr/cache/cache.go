@@ -44,8 +44,6 @@ const (
 	RDT = "rdt"
 	// BlockIO marks changes that can be applied by the BlockIO controller.
 	BlockIO = "blockio"
-	// Memory marks changes that can be applied by the Memory controller.
-	Memory = "memory"
 	// E2ETest marks changes that can be applied by the e2e test controller.
 	E2ETest = "e2e-test"
 
@@ -67,7 +65,7 @@ const (
 )
 
 // allControllers is a slice of all controller domains.
-var allControllers = []string{CPU, NRI, RDT, BlockIO, Memory, E2ETest}
+var allControllers = []string{CPU, NRI, RDT, BlockIO, E2ETest}
 
 // PodState is the pod state in the runtime.
 type PodState int32
@@ -256,11 +254,6 @@ type Container interface {
 	SetBlockIOClass(string)
 	// GetBlockIOClass returns the BlockIO class for this container.
 	GetBlockIOClass() string
-
-	// SetToptierLimit sets the tier memory limit for the container.
-	SetToptierLimit(int64)
-	// GetToptierLimit returns the top tier memory limit for the container.
-	GetToptierLimit() int64
 
 	// GetProcesses returns the pids of processes in the container.
 	GetProcesses() ([]string, error)

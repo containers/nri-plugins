@@ -30,7 +30,6 @@ import (
 
 	nri "github.com/containerd/nri/pkg/api"
 	v1 "k8s.io/api/core/v1"
-	resapi "k8s.io/apimachinery/pkg/api/resource"
 	"sigs.k8s.io/yaml"
 )
 
@@ -285,18 +284,6 @@ func (c *container) setDefaults() error {
 		class = string(c.GetQOSClass())
 	}
 	c.SetBlockIOClass(class)
-
-	limit, ok := c.GetEffectiveAnnotation(ToptierLimitKey)
-	if !ok {
-		c.ToptierLimit = ToptierLimitUnset
-	} else {
-		qty, err := resapi.ParseQuantity(limit)
-		if err != nil {
-			return cacheError("%q: failed to parse top tier limit annotation %q (%q): %v",
-				c.PrettyName(), ToptierLimitKey, limit, err)
-		}
-		c.SetToptierLimit(qty.Value())
-	}
 
 	return nil
 }
@@ -776,15 +763,6 @@ func (c *container) SetBlockIOClass(class string) {
 
 func (c *container) GetBlockIOClass() string {
 	return c.BlockIOClass
-}
-
-func (c *container) SetToptierLimit(limit int64) {
-	c.ToptierLimit = limit
-	c.markPending(Memory)
-}
-
-func (c *container) GetToptierLimit() int64 {
-	return c.ToptierLimit
 }
 
 func (c *container) GetProcesses() ([]string, error) {
