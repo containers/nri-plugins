@@ -19,11 +19,22 @@ following components: DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-r
     - containerD:
         - At least [containerd 1.7.0](https://github.com/containerd/containerd/releases/tag/v1.7.0)
             release version to use the NRI feature
-        - Enable NRI feature by following [these](TODO link) detailed instructions.
+        - Enable NRI feature by following [these](https://github.com/containerd/containerd/blob/main/docs/NRI.md#enabling-nri-support-in-containerd)
+          detailed instructions. You can optionally enable the NRI in containerd using the Helm chart
+          during the chart installation simply by omitting the `nri.patchContainerdConfig` parameter.
+          For instance,
+
+          ```sh
+          helm install topology-aware --namespace kube-system --set nri.patchContainerdConfig=true deployment/helm/resource-management-policies/topology-aware/
+          ```
+          
+          Dropping `nri.patchContainerdConfig` parameter, will create an init container to turn on
+          NRI feature in containerd and only after that proceed the plugin installation.
+
     - CRI-O
         - At least [v1.26.0](https://github.com/cri-o/cri-o/releases/tag/v1.26.0) release version to
             use the NRI feature
-        - Enable NRI feature by following [these](TODO link) detailed instructions.
+        - Enable NRI feature by following [these](https://github.com/cri-o/cri-o/blob/main/docs/crio.conf.5.md#crionri-table) detailed instructions.
 - Kubernetes 1.24+
 - Helm 3.0.0+
 
