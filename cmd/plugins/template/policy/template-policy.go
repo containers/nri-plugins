@@ -93,11 +93,6 @@ func (p *policy) UpdateResources(c cache.Container) error {
 	return nil
 }
 
-// Rebalance tries to find an optimal allocation of resources for the current containers.
-func (p *policy) Rebalance() (bool, error) {
-	return true, nil
-}
-
 // HandleEvent handles policy-specific events.
 func (p *policy) HandleEvent(e *events.Policy) (bool, error) {
 	log.Info("received policy event %s.%s with data %v...", e.Source, e.Type, e.Data)

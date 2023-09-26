@@ -111,8 +111,6 @@ type Backend interface {
 	ReleaseResources(cache.Container) error
 	// UpdateResources updates resource allocations of a container.
 	UpdateResources(cache.Container) error
-	// Rebalance tries an optimal allocation of resources for the current container.
-	Rebalance() (bool, error)
 	// HandleEvent processes the given event. The returned boolean indicates whether
 	// changes have been made to any of the containers while handling the event.
 	HandleEvent(*events.Policy) (bool, error)
@@ -140,8 +138,6 @@ type Policy interface {
 	ReleaseResources(cache.Container) error
 	// UpdateResources updates resource allocations of a container.
 	UpdateResources(cache.Container) error
-	// Rebalance tries to find an optimal allocation of resources for the current containers.
-	Rebalance() (bool, error)
 	// HandleEvent passes on the given event to the active policy. The returned boolean
 	// indicates whether changes have been made to any of the containers while handling
 	// the event.
@@ -319,11 +315,6 @@ func (p *policy) ReleaseResources(c cache.Container) error {
 // UpdateResources updates resource allocations of a container.
 func (p *policy) UpdateResources(c cache.Container) error {
 	return p.active.UpdateResources(c)
-}
-
-// Rebalance tries to find a more optimal allocation of resources for the current containers.
-func (p *policy) Rebalance() (bool, error) {
-	return p.active.Rebalance()
 }
 
 // HandleEvent passes on the given event to the active policy.

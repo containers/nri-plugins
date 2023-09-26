@@ -497,22 +497,3 @@ func (m *resmgr) setupConfigSignal(signame string) error {
 
 	return nil
 }
-
-// rebalance triggers a policy-specific rebalancing cycle of containers.
-func (m *resmgr) rebalance(method string) error {
-	if m.policy == nil {
-		return nil
-	}
-
-	changes, err := m.policy.Rebalance()
-
-	if err != nil {
-		m.Error("%s: rebalancing of containers failed: %v", method, err)
-	}
-
-	if changes {
-		// TODO: fix this
-	}
-
-	return m.cache.Save()
-}

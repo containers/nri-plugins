@@ -282,12 +282,6 @@ func (p *balloons) UpdateResources(c cache.Container) error {
 	return nil
 }
 
-// Rebalance tries to find an optimal allocation of resources for the current containers.
-func (p *balloons) Rebalance() (bool, error) {
-	log.Debug("(not) rebalancing containers...")
-	return false, nil
-}
-
 // HandleEvent handles policy-specific events.
 func (p *balloons) HandleEvent(*events.Policy) (bool, error) {
 	log.Debug("(not) handling event...")
