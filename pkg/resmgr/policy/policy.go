@@ -21,13 +21,11 @@ import (
 	"strconv"
 
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/containers/nri-plugins/pkg/config"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
-	"github.com/containers/nri-plugins/pkg/resmgr/introspect"
 	"github.com/prometheus/client_golang/prometheus"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
@@ -120,8 +118,6 @@ type Backend interface {
 	HandleEvent(*events.Policy) (bool, error)
 	// ExportResourceData provides resource data to export for the container.
 	ExportResourceData(cache.Container) map[string]string
-	// Introspect provides data for external introspection.
-	Introspect(*introspect.State)
 	// DescribeMetrics generates policy-specific prometheus metrics data descriptors.
 	DescribeMetrics() []*prometheus.Desc
 	// PollMetrics provides policy metrics for monitoring.
@@ -152,8 +148,6 @@ type Policy interface {
 	HandleEvent(*events.Policy) (bool, error)
 	// ExportResourceData exports/updates resource data for the container.
 	ExportResourceData(cache.Container)
-	// Introspect provides data for external introspection.
-	Introspect() *introspect.State
 	// DescribeMetrics generates policy-specific prometheus metrics data descriptors.
 	DescribeMetrics() []*prometheus.Desc
 	// PollMetrics provides policy metrics for monitoring.
@@ -211,12 +205,11 @@ type ZoneAttribute struct {
 
 // Policy instance/state.
 type policy struct {
-	options   Options            // policy options
-	cache     cache.Cache        // system state cache
-	active    Backend            // our active backend
-	system    system.System      // system/HW/topology info
-	inspsys   *introspect.System // ditto for introspection
-	sendEvent SendEventFn        // function to send event up to the resource manager
+	options   Options       // policy options
+	cache     cache.Cache   // system state cache
+	active    Backend       // our active backend
+	system    system.System // system/HW/topology info
+	sendEvent SendEventFn   // function to send event up to the resource manager
 }
 
 // backend is a registered Backend.
@@ -360,83 +353,6 @@ func (p *policy) ExportResourceData(c cache.Container) {
 	}
 
 	p.cache.WriteFile(c.GetID(), ExportedResources, 0644, buf.Bytes())
-}
-
-// Introspect provides data for external introspection/visualization.
-func (p *policy) Introspect() *introspect.State {
-	pods := p.cache.GetPods()
-	state := &introspect.State{Pods: make(map[string]*introspect.Pod, len(pods))}
-
-	for _, p := range pods {
-		containers := p.GetContainers()
-		if len(containers) == 0 {
-			continue
-		}
-
-		pod := &introspect.Pod{
-			ID:         p.GetID(),
-			UID:        p.GetUID(),
-			Name:       p.GetName(),
-			Containers: make(map[string]*introspect.Container, len(containers)),
-		}
-
-		for _, c := range containers {
-			container := &introspect.Container{
-				ID:    c.GetID(),
-				Name:  c.GetName(),
-				Args:  c.GetArgs(),
-				Hints: introspect.TopologyHints(c.GetTopologyHints()),
-			}
-			resources := c.GetResourceRequirements()
-			if req, ok := resources.Requests[corev1.ResourceCPU]; ok {
-				if value := req.MilliValue(); value > 0 {
-					container.CPURequest = value
-				}
-			}
-			if lim, ok := resources.Limits[corev1.ResourceCPU]; ok {
-				if value := lim.MilliValue(); value > 0 {
-					container.CPULimit = value
-				}
-			}
-			if req, ok := resources.Requests[corev1.ResourceMemory]; ok {
-				if value := req.Value(); value > 0 {
-					container.MemoryRequest = value
-				}
-			}
-			if lim, ok := resources.Limits[corev1.ResourceMemory]; ok {
-				if value := lim.Value(); value > 0 {
-					container.MemoryLimit = value
-				}
-			}
-			pod.Containers[container.ID] = container
-		}
-		state.Pods[pod.ID] = pod
-	}
-
-	if p.inspsys == nil {
-		sys := &introspect.System{
-			Sockets: make(map[int]*introspect.Socket, p.system.PackageCount()),
-			Nodes:   make(map[int]*introspect.Node, p.system.NUMANodeCount()),
-		}
-		for _, id := range p.system.PackageIDs() {
-			pkg := p.system.Package(id)
-			sys.Sockets[int(id)] = &introspect.Socket{ID: int(id), CPUs: pkg.CPUSet().String()}
-		}
-		for _, id := range p.system.NodeIDs() {
-			node := p.system.Node(id)
-			sys.Nodes[int(id)] = &introspect.Node{ID: int(id), CPUs: node.CPUSet().String()}
-		}
-		sys.Isolated = p.system.Isolated().String()
-		sys.Offlined = p.system.Offlined().String()
-		p.inspsys = sys
-	}
-
-	p.inspsys.Policy = p.active.Name()
-
-	state.System = p.inspsys
-	p.active.Introspect(state)
-
-	return state
 }
 
 // PollMetrics provides policy metrics for monitoring.

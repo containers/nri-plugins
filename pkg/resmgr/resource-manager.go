@@ -35,7 +35,6 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	config "github.com/containers/nri-plugins/pkg/resmgr/config"
 	"github.com/containers/nri-plugins/pkg/resmgr/control"
-	"github.com/containers/nri-plugins/pkg/resmgr/introspect"
 	"github.com/containers/nri-plugins/pkg/resmgr/metrics"
 	"github.com/containers/nri-plugins/pkg/resmgr/policy"
 	"github.com/containers/nri-plugins/pkg/sysfs"
@@ -63,17 +62,16 @@ type ResourceManager interface {
 type resmgr struct {
 	logger.Logger
 	sync.RWMutex
-	cache        cache.Cache        // cached state
-	policy       policy.Policy      // resource manager policy
-	policySwitch bool               // active policy is being switched
-	control      control.Control    // policy controllers/enforcement
-	conf         config.RawConfig   // pending for saving in cache
-	metrics      *metrics.Metrics   // metrics collector/pre-processor
-	events       chan interface{}   // channel for delivering events
-	stop         chan interface{}   // channel for signalling shutdown to goroutines
-	signals      chan os.Signal     // signal channel
-	introspect   *introspect.Server // server for external introspection
-	nri          *nriPlugin         // NRI plugins, if we're running as such
+	cache        cache.Cache      // cached state
+	policy       policy.Policy    // resource manager policy
+	policySwitch bool             // active policy is being switched
+	control      control.Control  // policy controllers/enforcement
+	conf         config.RawConfig // pending for saving in cache
+	metrics      *metrics.Metrics // metrics collector/pre-processor
+	events       chan interface{} // channel for delivering events
+	stop         chan interface{} // channel for signalling shutdown to goroutines
+	signals      chan os.Signal   // signal channel
+	nri          *nriPlugin       // NRI plugins, if we're running as such
 	agent        agent.ResourceManagerAgent
 }
 
@@ -128,10 +126,6 @@ func NewResourceManager() (ResourceManager, error) {
 		return nil, err
 	}
 
-	if err := m.setupIntrospection(); err != nil {
-		return nil, err
-	}
-
 	m.setupHealthCheck()
 
 	if err := m.setupAgent(); err != nil {
@@ -159,8 +153,6 @@ func (m *resmgr) Start() error {
 	if err := m.startEventProcessing(); err != nil {
 		return err
 	}
-
-	m.startIntrospection()
 
 	if err := m.startAgent(); err != nil {
 		return err
@@ -266,19 +258,6 @@ func (m *resmgr) setupPolicy() error {
 	return nil
 }
 
-// setupIntrospection prepares the resource manager for serving external introspection requests.
-func (m *resmgr) setupIntrospection() error {
-	mux := instrumentation.GetHTTPMux()
-
-	i, err := introspect.Setup(mux, m.policy.Introspect())
-	if err != nil {
-		return resmgrError("failed to set up introspection service: %v", err)
-	}
-	m.introspect = i
-
-	return nil
-}
-
 // setupHealthCheck prepares the resource manager for serving health-check requests.
 func (m *resmgr) setupHealthCheck() {
 	mux := instrumentation.GetHTTPMux()
@@ -303,22 +282,6 @@ func (m *resmgr) startControllers() error {
 	}
 
 	return nil
-}
-
-// startIntrospection starts serving the external introspection requests.
-func (m *resmgr) startIntrospection() {
-	m.introspect.Start()
-	m.updateIntrospection()
-}
-
-// stopInstrospection stops serving external introspection requests.
-func (m *resmgr) stopIntrospection() {
-	m.introspect.Stop()
-}
-
-// updateIntrospection pushes updated data for external introspection·
-func (m *resmgr) updateIntrospection() {
-	m.introspect.Set(m.policy.Introspect())
 }
 
 // updateTopologyZones updates the 'topology zone' CRDs.
