@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    {{- include "memtierd.labels" . | nindent 4 }}
+  name: nri-memtierd
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    matchLabels:
+    {{- include "memtierd.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+      {{- include "memtierd.labels" . | nindent 8 }}
+    spec:
+      nodeSelector:
+        kubernetes.io/os: "linux"
+      hostPID: true
+      containers:
+        - name: nri-memtierd
+          command:
+            - nri-memtierd
+            - --idx
+            - "45"
+            - --config
+            - /etc/nri/memtierd/config.yaml
+            {{- if .Values.outputDir }}
+            - --run-dir
+            - /run-dir
+            {{- end }}
+            - --cgroups-dir
+            - /sys/fs/cgroup
+            - -v
+          image: {{ .Values.image.name }}:{{ .Values.image.tag | default .Chart.AppVersion }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          resources:
+            requests:
+              cpu: {{ .Values.resources.cpu }}
+              memory: {{ .Values.resources.memory }}
+          securityContext:
+            privileged: true
+          volumeMounts:
+          - name: memtierd-config-vol
+            mountPath: /etc/nri/memtierd
+          - name: nrisockets
+            mountPath: /var/run/nri
+          - name: host-bitmap
+            mountPath: /sys/kernel/mm/page_idle/bitmap
+          - name: cgroups-vol
+            mountPath: /sys/fs/cgroup
+          {{- if .Values.outputDir }}
+          # Set outputDir parameter to access memtierd.output files from host
+          - name: run-dir-vol
+            mountPath: /run-dir
+          {{- end }}
+      volumes:
+      - name: memtierd-config-vol
+        configMap:
+          name: nri-memtierd-config.default
+      - name: nrisockets
+        hostPath:
+          path: /var/run/nri
+          type: Directory
+      - name: host-bitmap
+        hostPath:
+          path: /sys/kernel/mm/page_idle/bitmap
+      - name: cgroups-vol
+        hostPath:
+          path: /sys/fs/cgroup
+          type: Directory
+      {{- if .Values.outputDir }}
+      - name: run-dir-vol
+        hostPath:
+          path: {{ .Values.outputDir }}
+          type: DirectoryOrCreate
+      {{- end }}

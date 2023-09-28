@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    {{- include "memory-qos.labels" . | nindent 4 }}
+  name: nri-memory-qos
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    matchLabels:
+    {{- include "memory-qos.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+      {{- include "memory-qos.labels" . | nindent 8 }}
+    spec:
+      nodeSelector:
+        kubernetes.io/os: "linux"
+      containers:
+        - name: nri-memory-qos
+          command:
+            - nri-memory-qos
+            - --idx
+            - "40"
+            - --config
+            - /etc/nri/memory-qos/config.yaml
+            - -v
+          image: {{ .Values.image.name }}:{{ .Values.image.tag | default .Chart.AppVersion }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          resources:
+            requests:
+              cpu: {{ .Values.resources.cpu }}
+              memory: {{ .Values.resources.memory }}
+          volumeMounts:
+          - name: memory-qos-config-vol
+            mountPath: /etc/nri/memory-qos
+          - name: nrisockets
+            mountPath: /var/run/nri
+      volumes:
+      - name: memory-qos-config-vol
+        configMap:
+          name: nri-memory-qos-config.default
+      - name: nrisockets
+        hostPath:
+          path: /var/run/nri
+          type: Directory

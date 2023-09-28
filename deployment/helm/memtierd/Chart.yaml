@@ -1,0 +1,10 @@
+apiVersion: v2
+appVersion: "main"
+description: |
+  The memtierd NRI plugin enables managing workloads with Memtierd in Kubernetes.
+name: nri-memtierd
+sources:
+ - https://github.com/containers/nri-plugins
+home: https://github.com/containers/nri-plugins
+type: application
+version: v0.0.0
