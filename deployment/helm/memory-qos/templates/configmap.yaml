@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nri-memory-qos-config.default
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "memory-qos.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    classes:
+    - name: bronze
+      swaplimitratio: 0.5
+    - name: silver
+      swaplimitratio: 0.2
+    unifiedannotations:
+    - memory.swap.max
+    - memory.high

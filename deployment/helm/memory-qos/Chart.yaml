@@ -1,0 +1,11 @@
+apiVersion: v2
+appVersion: "main"
+description: |
+  The memory-qos NRI plugin adds two methods for controlling cgroups v2
+  memory.* parameters: QoS class and direct memory annotations.
+name: nri-memory-qos
+sources:
+ - https://github.com/containers/nri-plugins
+home: https://github.com/containers/nri-plugins
+type: application
+version: v0.0.0
