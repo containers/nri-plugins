@@ -25,8 +25,10 @@ spec:
             - "45"
             - --config
             - /etc/nri/memtierd/config.yaml
-            - --host-root
-            - /host
+            - --run-dir
+            - /run-dir
+            - --cgroups-dir
+            - /sys/fs/cgroup
             - -v
           image: IMAGE_PLACEHOLDER
           imagePullPolicy: IfNotPresent
@@ -41,9 +43,11 @@ spec:
             mountPath: /etc/nri/memtierd
           - name: nri-sockets-vol
             mountPath: /var/run/nri
-          - name: host-vol
-            mountPath: /host
-          - name: host-bitmap
+          - name: run-dir-vol
+            mountPath: /run-dir
+          - name: cgroups-vol
+            mountPath: /sys/fs/cgroup
+          - name: idlepage-vol
             mountPath: /sys/kernel/mm/page_idle/bitmap
       volumes:
       - name: memtierd-config-vol
@@ -53,13 +57,18 @@ spec:
         hostPath:
           path: /var/run/nri
           type: Directory
-      - name: host-vol
+      - name: run-dir-vol
         hostPath:
-          path: /
+          path: /var/run/nri-memtierd
+          type: DirectoryOrCreate
+      - name: cgroups-vol
+        hostPath:
+          path: /sys/fs/cgroup
           type: Directory
-      - name: host-bitmap
+      - name: idlepage-vol
         hostPath:
           path: /sys/kernel/mm/page_idle/bitmap
+          type: File
 ---
 apiVersion: v1
 kind: ConfigMap

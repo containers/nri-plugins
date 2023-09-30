@@ -82,7 +82,8 @@ type memtierdEnv struct {
 }
 
 type options struct {
-	HostRoot string
+	runDir     string
+	cgroupsDir string
 }
 
 const (
@@ -244,8 +245,6 @@ func (p *plugin) StartContainer(ctx context.Context, pod *api.PodSandbox, ctr *a
 	ppName := pprintCtr(pod, ctr)
 	log.Tracef("StartContainer: %s", ppName)
 
-	hostRoot := opt.HostRoot
-
 	namespace := pod.GetNamespace()
 	podName := pod.GetName()
 	containerName := ctr.GetName()
@@ -269,7 +268,7 @@ func (p *plugin) StartContainer(ctx context.Context, pod *api.PodSandbox, ctr *a
 	if err != nil {
 		return loggedErrorf("cannot detect cgroup v2 path for container %q: %v", ppName, err)
 	}
-	mtdEnv, err := newMemtierdEnv(fullCgroupsPath, namespace, podName, containerName, qoscls.MemtierdConfig, hostRoot)
+	mtdEnv, err := newMemtierdEnv(fullCgroupsPath, namespace, podName, containerName, qoscls.MemtierdConfig, opt.runDir)
 	if err != nil || mtdEnv == nil {
 		return loggedErrorf("failed to prepare memtierd run environment: %v", err)
 	}
@@ -385,9 +384,9 @@ func (p *plugin) getFullCgroupsPath(ctr *api.Container) (string, error) {
 
 // newMemtierdEnv prepares new memtierd run environment with a
 // configuration file template instantiated for managing a container.
-func newMemtierdEnv(fullCgroupPath string, namespace string, podName string, containerName string, memtierdConfigIn string, hostRoot string) (*memtierdEnv, error) {
+func newMemtierdEnv(fullCgroupPath string, namespace string, podName string, containerName string, memtierdConfigIn string, runDir string) (*memtierdEnv, error) {
 	// Create container directory if it doesn't exist
-	ctrDir := fmt.Sprintf("%s%s/memtierd/%s/%s/%s", hostRoot, os.TempDir(), namespace, podName, containerName)
+	ctrDir := fmt.Sprintf("%s/%s/%s/%s", runDir, namespace, podName, containerName)
 	if err := os.MkdirAll(ctrDir, 0755); err != nil {
 		return nil, fmt.Errorf("cannot create memtierd run directory %q: %w", ctrDir, err)
 	}
@@ -466,7 +465,8 @@ func main() {
 	flag.StringVar(&pluginName, "name", "", "plugin name to register to NRI")
 	flag.StringVar(&pluginIdx, "idx", "", "plugin index to register to NRI")
 	flag.StringVar(&configFile, "config", "", "configuration file name")
-	flag.StringVar(&opt.HostRoot, "host-root", "", "Directory prefix under which the host's tmp, etc. are mounted.")
+	flag.StringVar(&opt.cgroupsDir, "cgroups-dir", "", "cgroups root directory")
+	flag.StringVar(&opt.runDir, "run-dir", "", "Directory prefix for memtierd runtime environments")
 	flag.BoolVar(&verbose, "v", false, "verbose output")
 	flag.BoolVar(&veryVerbose, "vv", false, "very verbose output")
 	flag.Parse()
@@ -476,6 +476,10 @@ func main() {
 	}
 	if veryVerbose {
 		log.SetLevel(logrus.TraceLevel)
+	}
+
+	if opt.runDir == "" {
+		opt.runDir = filepath.Join(os.TempDir(), "nri-memtierd")
 	}
 
 	p := &plugin{
@@ -492,6 +496,8 @@ func main() {
 			log.Fatalf("error applying configuration from file %q: %s", configFile, err)
 		}
 	}
+
+	p.cgroupsDir = opt.cgroupsDir
 
 	if p.cgroupsDir == "" {
 		if err := p.detectCgroupsDir(); err != nil {
