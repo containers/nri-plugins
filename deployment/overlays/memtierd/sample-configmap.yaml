@@ -28,3 +28,27 @@ data:
             mover:
               intervalms: 20
               bandwidth: 50
+    - name: track-working-set-size
+      allowswap: false
+      memtierdconfig: |
+        policy:
+          name: age
+          config: |
+            intervalms: 20000
+            pidwatcher:
+              name: cgroups
+              config: |
+                cgroups:
+                  - $CGROUP2_ABS_PATH
+            tracker:
+              name: idlepage
+              config: |
+                pagesinregion: 512
+                maxcountperregion: 1
+                scanintervalms: 20000
+        routines:
+          - name: statactions
+            config: |
+              intervalms: 60000
+              intervalcommand: ["policy", "-dump", "accessed", "0,1m,30m,2h,24h,0"]
+              intervalcommandrunner: memtier
