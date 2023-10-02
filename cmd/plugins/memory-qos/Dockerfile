@@ -18,6 +18,6 @@ RUN make PLUGINS=nri-memory-qos build-plugins-static
 FROM gcr.io/distroless/static
 
 COPY --from=builder /go/builder/build/bin/nri-memory-qos /bin/nri-memory-qos
-COPY --from=builder /go/builder/cmd/plugins/memory-qos/sample-config.yaml /etc/nri/memory-qos/config.yaml
+COPY --from=builder /go/builder/sample-configs/nri-memory-qos.yaml /etc/nri/memory-qos/config.yaml
 
 ENTRYPOINT ["/bin/nri-memory-qos", "-idx", "40", "-config", "/etc/nri/memory-qos/config.yaml"]
