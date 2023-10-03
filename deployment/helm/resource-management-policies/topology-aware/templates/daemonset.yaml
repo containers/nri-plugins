@@ -90,7 +90,7 @@ spec:
       - name: nrisockets
         hostPath:
           path: /var/run/nri
-          type: Directory
+          type: DirectoryOrCreate
       {{- if .Values.nri.patchContainerdConfig }}
       - name: containerd-config
         hostPath:
