@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Installation &mdash; NRI Plugins 0.1.0-44-gc866a1d documentation</title>
+  <title>Installation &mdash; NRI Plugins 0.1.0-45-g325cfbf documentation</title>
       <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -327,6 +327,89 @@ along with the default values, for the Topology-aware and Balloons plugins Helm 
 <td><code>initImage.pullPolicy</code></td>
 <td>Always</td>
 <td>init container image pull policy</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="memtierd">
+<h4>Memtierd<a class="headerlink" href="#memtierd" title="Permalink to this heading"></a></h4>
+<table border="1" class="docutils">
+<thead>
+<tr>
+<th>Name</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>image.name</code></td>
+<td><a href="ghcr.io/containers/nri-plugins/nri-memtierd">ghcr.io/containers/nri-plugins/nri-memtierd</a></td>
+<td>container image name</td>
+</tr>
+<tr>
+<td><code>image.tag</code></td>
+<td>unstable</td>
+<td>container image tag</td>
+</tr>
+<tr>
+<td><code>image.pullPolicy</code></td>
+<td>Always</td>
+<td>image pull policy</td>
+</tr>
+<tr>
+<td><code>resources.cpu</code></td>
+<td>250m</td>
+<td>cpu resources for the Pod</td>
+</tr>
+<tr>
+<td><code>resources.memory</code></td>
+<td>100Mi</td>
+<td>memory qouta for the</td>
+</tr>
+<tr>
+<td><code>outputDir</code></td>
+<td>empty string</td>
+<td>host directory for memtierd.output files</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="memory-qos">
+<h4>Memory-qos<a class="headerlink" href="#memory-qos" title="Permalink to this heading"></a></h4>
+<table border="1" class="docutils">
+<thead>
+<tr>
+<th>Name</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>image.name</code></td>
+<td><a href="ghcr.io/containers/nri-plugins/nri-memory-qos">ghcr.io/containers/nri-plugins/nri-memory-qos</a></td>
+<td>container image name</td>
+</tr>
+<tr>
+<td><code>image.tag</code></td>
+<td>unstable</td>
+<td>container image tag</td>
+</tr>
+<tr>
+<td><code>image.pullPolicy</code></td>
+<td>Always</td>
+<td>image pull policy</td>
+</tr>
+<tr>
+<td><code>resources.cpu</code></td>
+<td>10m</td>
+<td>cpu resources for the Pod</td>
+</tr>
+<tr>
+<td><code>resources.memory</code></td>
+<td>100Mi</td>
+<td>memory qouta for the</td>
 </tr>
 </tbody>
 </table>

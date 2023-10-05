@@ -122,6 +122,27 @@ along with the default values, for the Topology-aware and Balloons plugins Helm 
 | `initImage.tag`    | unstable                                                                                                                      | init container image tag                             |
 | `initImage.pullPolicy` | Always                                                                                                                    | init container image pull policy                     |
 
+#### Memtierd
+
+| Name               | Default                                                                                                                       | Description                                          |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `image.name`       | [ghcr.io/containers/nri-plugins/nri-memtierd](ghcr.io/containers/nri-plugins/nri-memtierd)                                    | container image name                                 |
+| `image.tag`        | unstable                                                                                                                      | container image tag                                  |
+| `image.pullPolicy` | Always                                                                                                                        | image pull policy                                    |
+| `resources.cpu`    | 250m                                                                                                                          | cpu resources for the Pod                            |
+| `resources.memory` | 100Mi                                                                                                                         | memory qouta for the                                 |
+| `outputDir`        | empty string                                                                                                                  | host directory for memtierd.output files             |
+
+#### Memory-qos
+
+| Name               | Default                                                                                                                       | Description                                          |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `image.name`       | [ghcr.io/containers/nri-plugins/nri-memory-qos](ghcr.io/containers/nri-plugins/nri-memory-qos)                                | container image name                                 |
+| `image.tag`        | unstable                                                                                                                      | container image tag                                  |
+| `image.pullPolicy` | Always                                                                                                                        | image pull policy                                    |
+| `resources.cpu`    | 10m                                                                                                                           | cpu resources for the Pod                            |
+| `resources.memory` | 100Mi                                                                                                                         | memory qouta for the                                 |
+
 ## Manual installation
 
 For the manual installation we will be using templating tool to generate Kubernetes YAML manifests.
