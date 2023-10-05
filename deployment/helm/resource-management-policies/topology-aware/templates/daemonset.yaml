@@ -8,7 +8,7 @@ metadata:
 spec:
   selector:
     matchLabels:
-    {{- include "topology-aware-plugin.labels" . | nindent 6 }}
+    {{- include "topology-aware-plugin.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
