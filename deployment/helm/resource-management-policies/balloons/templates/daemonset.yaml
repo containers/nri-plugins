@@ -8,7 +8,7 @@ metadata:
 spec:
   selector:
     matchLabels:
-    {{- include "balloons-plugin.labels" . | nindent 6 }}
+    {{- include "balloons-plugin.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
