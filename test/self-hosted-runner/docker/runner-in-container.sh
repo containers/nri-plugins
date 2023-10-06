@@ -52,7 +52,7 @@ sudo -n -u runner vagrant box add --name generic/fedora37 /mnt/vagrant/generic-f
 
 cd /mnt/actions-runner
 
-sudo --preserve-env=http_proxy,https_proxy,no_proxy,HTTP_PROXY,HTTPS_PROXY,NO_PROXY,containerd_src,dns_nameserver,dns_search_domain \
+sudo --preserve-env=http_proxy,https_proxy,no_proxy,HTTP_PROXY,HTTPS_PROXY,NO_PROXY,containerd_version,dns_nameserver,dns_search_domain \
      -n -u runner ./run.sh &
 
 wait
