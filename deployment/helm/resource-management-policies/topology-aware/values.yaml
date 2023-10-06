@@ -23,6 +23,6 @@ nri:
   patchContainerdConfig: false
 
 initContainerImage:
-  name: ghcr.io/containers/nri-plugins/nri-resource-policy-config-manager
+  name: ghcr.io/containers/nri-plugins/nri-config-manager
   tag: unstable
   pullPolicy: Always
