@@ -6,6 +6,13 @@
     - cri_runtime: "{{ cri_runtime }}"
     - is_containerd: false
     - is_crio: false
+    - containerd_release: "{{ containerd_release }}"
+    - containerd_tarball: "https://github.com/containerd/containerd/releases/download/v{{ containerd_release }}/containerd-{{ containerd_release }}-linux-amd64.tar.gz"
+    - crio_release: "{{ crio_release }}"
+    - crio_tarball: "https://storage.googleapis.com/cri-o/artifacts/cri-o.amd64.v{{ crio_release }}.tar.gz"
+    - dns_nameserver: "{{ dns_nameserver }}"
+    - cni_plugin: "{{ cni_plugin }}"
+
 
   tasks:
     - set_fact:
@@ -119,27 +126,47 @@
           - tomli_w
         state: present
 
-    # We need quite recent containerd that has NRI support so use the one
-    # that is compiled from sources.
-    - name: copy containerd sources
-      copy: src="{{ item }}" dest="/usr/bin" mode=0755
+    # Install containerd from a release tarball to /usr/local.
+    - name: Install containerd binaries from release tarball
+      ansible.builtin.unarchive:
+        src: "{{ containerd_tarball }}"
+        dest: /usr/local
+        remote_src: yes
+      when: is_containerd and containerd_src == ""
+
+    # Install containerd binaries from compiled sources.
+    - name: Install containerd binaries from compiled sources
+      copy: src="{{ item }}" dest="/usr/local/bin" mode=0755
       with_items:
         - "{{ containerd_src }}/bin/ctr"
         - "{{ containerd_src }}/bin/containerd"
         - "{{ containerd_src }}/bin/containerd-shim"
         - "{{ containerd_src }}/bin/containerd-shim-runc-v1"
         - "{{ containerd_src }}/bin/containerd-shim-runc-v2"
-      when: is_containerd
+      when: is_containerd and containerd_src != ""
 
-    # We need quite recent cri-o that has NRI support so use the one
-    # that is compiled from sources.
-    - name: copy cri-o sources
-      copy: src="{{ item }}" dest="/usr/bin" mode=0755
+    # Install CRI-O from a release tarball to /usr/local.
+    - block:
+      - name: Fetch and extract CRI-O release tarball
+        ansible.builtin.unarchive:
+          src: "{{ crio_tarball }}"
+          dest: /usr/local
+          remote_src: yes
+
+      - name: Install CRI-O binaries from release tarball
+        ansible.builtin.shell:
+          cmd: ./install
+          chdir: /usr/local/cri-o
+      when: is_crio and crio_src == ""
+
+    # Install CRI-O binaries from compiled sources.
+    - name: Install CRI-O binaries from compiled sources
+      copy: src="{{ item }}" dest="/usr/local/bin" mode=0755
       with_items:
         - "{{ crio_src }}/bin/crio"
         - "{{ crio_src }}/bin/crio-status"
         - "{{ crio_src }}/bin/pinns"
-      when: is_crio
+      when: is_crio and crio_src != ""
 
     - name: setup runtime systemd file
       copy:
