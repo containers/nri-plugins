@@ -4,7 +4,7 @@ Documentation=https://cri-o.io
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/crio
+ExecStart=/usr/local/bin/crio
 
 Delegate=yes
 KillMode=process
