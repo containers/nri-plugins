@@ -61,12 +61,6 @@ fi
 
 echo "Work directory set to $PREFIX"
 
-if [ ! -f "$CONTAINERD_SRC/bin/ctr" ]; then
-    echo "########"
-    echo "WARNING: containerd sources / binaries not found in $CONTAINERD_SRC"
-    echo "########"
-fi
-
 get_runner_token() {
     local payload sig access_token app_private_key
 
@@ -164,7 +158,6 @@ start_docker_container() {
 	   -v "${PREFIX}/mnt/actions-runner:/mnt/actions-runner" \
 	   -v "${PREFIX}/mnt/vagrant:/mnt/vagrant:ro" \
 	   -v "${PREFIX}/mnt/env:/mnt/env:ro" \
-	   -v "${CONTAINERD_SRC}:/mnt/containerd:ro" \
 	   -v "/var/run/docker.sock:/var/run/docker.sock" \
 	   --device=/dev/kvm \
 	   --env-file "${PREFIX}/mnt/env" \
@@ -189,7 +182,6 @@ while [ $STOPPED -eq 0 ]; do
     # is exported to the container.
     echo dns_nameserver="$DNS_NAMESERVER" > ${PREFIX}/mnt/env
     echo dns_search_domain="$DNS_SEARCH_DOMAIN" >> ${PREFIX}/mnt/env
-    echo containerd_src=/mnt/containerd >> ${PREFIX}/mnt/env
     echo HTTP_PROXY="$HTTP_PROXY" >> ${PREFIX}/mnt/env
     echo HTTPS_PROXY="$HTTPS_PROXY" >> ${PREFIX}/mnt/env
     echo NO_PROXY="$NO_PROXY" >> ${PREFIX}/mnt/env
