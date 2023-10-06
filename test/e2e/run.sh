@@ -47,11 +47,20 @@ else
     k8scri_sock="/var/run/crio/crio.sock"
 fi
 
-# Assume containerd sources are found in parent dir of this repo.
-# If that is not the case, set containerd_src when calling the e2e script.
-# Same for cri-o if using that.
-export containerd_src=${containerd_src:-"$SRC_DIR"/../containerd}
-export crio_src=${crio_src:-"$SRC_DIR"/../cri-o}
+# If we run tests with containerd as the runtime, we install it
+# from a release tarball with the version given below... unless
+# a source directory is given, which is then expected to contain
+# a compiled version of containerd which we should install.
+export containerd_release=1.7.6
+export containerd_src=${containerd_src:-}
+
+
+# If we run tests with CRI-O as the runtime, we install it from
+# a release tarball with the version given below... unless a
+# source directory is given, which is then expected to contain
+# a compiled version of CRI-O which we should install.
+export crio_release=1.28.1
+export crio_src=${crio_src:-}
 
 # Default topology if not given. The run_tests.sh script will figure out
 # the topology from the test directory structure and contents.
@@ -102,9 +111,13 @@ echo "    Output dir      = $OUTPUT_DIR"
 echo "    Test output dir = $TEST_OUTPUT_DIR"
 echo "    NRI dir         = $nri_resource_policy_src"
 if [ "$k8scri" == "containerd" ]; then
-    echo "    Containerd dir  = $containerd_src"
+    echo "    Containerd"
+    echo "      release       = $containerd_release"
+    echo "      sources       = $containerd_src"
 else
-    echo "    CRI-O dir       = $crio_src"
+    echo "    CRI-O"
+    echo "      release       = $crio_release"
+    echo "      sources       = $crio_src"
 fi
 echo "    Policy          = $POLICY"
 echo "    Topology        = $topology"
