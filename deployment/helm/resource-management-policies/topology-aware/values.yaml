@@ -19,6 +19,9 @@ resources:
   cpu: 500m
   memory: 512Mi
 
+
+privilegedMode: true
+
 nri:
   patchContainerdConfig: false
 
@@ -26,3 +29,4 @@ initContainerImage:
   name: ghcr.io/containers/nri-plugins/nri-config-manager
   tag: unstable
   pullPolicy: Always
+
