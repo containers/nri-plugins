@@ -25,7 +25,7 @@ following components: DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-r
           For instance,
 
           ```sh
-          helm install topology-aware --namespace kube-system --set nri.patchContainerdConfig=true deployment/helm/resource-management-policies/topology-aware/
+          helm install topology-aware --namespace kube-system --set nri.patchContainerdConfig=true deployment/helm/topology-aware/
           ```
 
           Enabling `nri.patchContainerdConfig` creates an init container to turn on
@@ -61,7 +61,7 @@ following components: DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-r
    be installed in the default namespace.
 
     ```sh
-    helm install topology-aware --namespace kube-system deployment/helm/resource-management-policies/topology-aware/
+    helm install topology-aware --namespace kube-system deployment/helm/topology-aware/
     ```
 
 1. Verify the status of the daemonset to ensure that the plugin is running successfully

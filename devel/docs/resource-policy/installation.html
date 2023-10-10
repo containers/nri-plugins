@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Installation &mdash; NRI Plugins 0.1.0-53-g1687298 documentation</title>
+  <title>Installation &mdash; NRI Plugins 0.1.0-56-gb6c4b21 documentation</title>
       <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -124,7 +124,7 @@ release version to use the NRI feature</p></li>
 detailed instructions. You can optionally enable the NRI in containerd using the Helm chart
 during the chart installation simply by setting the <code class="docutils literal notranslate"><span class="pre">nri.patchContainerdConfig</span></code> parameter.
 For instance,</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>topology-aware<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>--set<span class="w"> </span>nri.patchContainerdConfig<span class="o">=</span><span class="nb">true</span><span class="w"> </span>deployment/helm/resource-management-policies/topology-aware/
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>topology-aware<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>--set<span class="w"> </span>nri.patchContainerdConfig<span class="o">=</span><span class="nb">true</span><span class="w"> </span>deployment/helm/topology-aware/
 </pre></div>
 </div>
 <p>Enabling <code class="docutils literal notranslate"><span class="pre">nri.patchContainerdConfig</span></code> creates an init container to turn on
@@ -167,7 +167,7 @@ available parameters that can be modified before installation. It’s important
 to note that specifying the namespace (using <code class="docutils literal notranslate"><span class="pre">--namespace</span></code>) is crucial when
 installing the Helm chart. If no namespace is specified, the manifests will
 be installed in the default namespace.</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>topology-aware<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>deployment/helm/resource-management-policies/topology-aware/
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>topology-aware<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>deployment/helm/topology-aware/
 </pre></div>
 </div>
 </li>
