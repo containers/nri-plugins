@@ -6,7 +6,7 @@ on:
       - "v*.*.*"
 
 env:
-  CHARTS_DIR: deployment/helm/resource-management-policies/
+  CHARTS_DIR: deployment/helm/
 
 jobs:
   release:
@@ -34,4 +34,4 @@ jobs:
           name: ${{ github.ref_name }}
           draft: true
           append_body: true
-          files: nri-resource-policy-*helm-chart*.tgz
+          files: nri-*helm-chart*.tgz
