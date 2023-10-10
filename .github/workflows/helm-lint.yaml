@@ -19,8 +19,5 @@ jobs:
         with:
           version: v3.11.2
 
-      - name: Run balloons linter
-        run: helm lint deployment/helm/resource-management-policies/balloons
-
-      - name: Run topology-aware linter
-        run: helm lint deployment/helm/resource-management-policies/topology-aware/
+      - name: Run linter for all the charts
+        run: helm lint deployment/helm/*
