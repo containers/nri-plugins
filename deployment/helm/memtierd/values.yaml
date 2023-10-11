@@ -13,3 +13,11 @@ resources:
   memory: 100Mi
 
 outputDir: ""
+
+nri:
+  patchRuntimeConfig: false
+
+initContainerImage:
+  name: ghcr.io/containers/nri-plugins/nri-config-manager
+  tag: unstable
+  pullPolicy: Always

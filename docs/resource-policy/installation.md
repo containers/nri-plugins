@@ -141,6 +141,11 @@ along with the default values, for the Topology-aware and Balloons plugins Helm 
 | `resources.cpu`    | 250m                                                                                                                          | cpu resources for the Pod                            |
 | `resources.memory` | 100Mi                                                                                                                         | memory qouta for the                                 |
 | `outputDir`        | empty string                                                                                                                  | host directory for memtierd.output files             |
+| `nri.patchRuntimeConfig` | false                                                                                                                   | enable NRI in containerd or CRI-O                    |
+| `initImage.name`   | [ghcr.io/containers/nri-plugins/config-manager](ghcr.io/containers/nri-plugins/config-manager)                                | init container image name                            |
+| `initImage.tag`    | unstable                                                                                                                      | init container image tag                             |
+| `initImage.pullPolicy` | Always                                                                                                                    | init container image pull policy                     |
+
 
 #### Memory-qos
 
@@ -151,6 +156,11 @@ along with the default values, for the Topology-aware and Balloons plugins Helm 
 | `image.pullPolicy` | Always                                                                                                                        | image pull policy                                    |
 | `resources.cpu`    | 10m                                                                                                                           | cpu resources for the Pod                            |
 | `resources.memory` | 100Mi                                                                                                                         | memory qouta for the                                 |
+| `nri.patchRuntimeConfig` | false                                                                                                                   | enable NRI in containerd or CRI-O                    |
+| `initImage.name`   | [ghcr.io/containers/nri-plugins/config-manager](ghcr.io/containers/nri-plugins/config-manager)                                | init container image name                            |
+| `initImage.tag`    | unstable                                                                                                                      | init container image tag                             |
+| `initImage.pullPolicy` | Always                                                                                                                    | init container image pull policy                     |
+
 
 ## Manual installation
 
