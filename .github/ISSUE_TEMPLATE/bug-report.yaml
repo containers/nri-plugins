@@ -1,0 +1,61 @@
+name: Bug report
+description: Report an issue
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: Please describe the bug
+      value: "A clear and concise description of what the bug is"
+    validations:
+      required: true
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: Expected behavior
+      description: Please describe the behavior you expected
+      value: "A clear and concise description of what you expected to happen"
+    validations:
+      required: true
+  - type: textarea
+    id: experienced_behavior
+    attributes:
+      label: Experienced behavior
+      description: Please describe the behavior you experienced
+      value: "A clear and concise description of what actually happened"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce the behavior
+      description: Please explain the steps to reproduce the experienced behavior
+      value: |-
+        Steps to reproduce the behavior
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Describe the environment you have
+      value: |-
+          - nri-plugins version:
+          - nri plugin(s) running:
+          - container runtime:
+          - OS:
+          - kernel:
+          - Kubernetes version:
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add any other context about the problem here
+      value: "Additional information about the bug"
+    validations:
+      required: false

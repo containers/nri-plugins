@@ -1,0 +1,19 @@
+name: Feature request
+description: Suggest an idea for this project
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the solution you'd like
+      value: "A clear and concise description of you want to happen."
+    validations:
+      required: true
+  - type: textarea
+    id: rationale
+    attributes:
+      label: Rationale
+      description: Describe why this is needed
+      value: "A clear and concise description of the use case and/or justification for the feature"
+    validations:
+      required: true
