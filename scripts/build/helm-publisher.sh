@@ -22,7 +22,7 @@ if [ -n "$charts_urls" ]; then
             if ! helm repo index . --url "$base_url" --merge "$index_file"; then
                 echo "Failed to update "$index_file" for: $base_url"
             fi
-            rm nri-resource-policy-*.tgz
+            rm *chart*.tgz
         fi
     done
 else
