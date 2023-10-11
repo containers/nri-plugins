@@ -3,6 +3,10 @@
 ## Prerequisites
 Before running E2E tests ensure that you have all the required components locally available as described below.
 
+0. Install dependencies:
+   - `vagrant`
+   - `qemu-system-x86`
+
 1. Build NRI resource policy static binaries. You need to be at the root of the NRI-resource-policy directory.
 
     ```shell
