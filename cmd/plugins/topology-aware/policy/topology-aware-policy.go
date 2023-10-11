@@ -18,7 +18,6 @@ import (
 	"errors"
 
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	resapi "k8s.io/apimachinery/pkg/api/resource"
 
@@ -28,7 +27,6 @@ import (
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
-	"github.com/containers/nri-plugins/pkg/resmgr/introspect"
 
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
@@ -199,33 +197,6 @@ func (p *policy) UpdateResources(container cache.Container) error {
 	return nil
 }
 
-// Rebalance tries to find an optimal allocation of resources for the current containers.
-func (p *policy) Rebalance() (bool, error) {
-	var errors error
-
-	containers := p.cache.GetContainers()
-	movable := []cache.Container{}
-
-	for _, c := range containers {
-		if c.GetQOSClass() != v1.PodQOSGuaranteed {
-			p.ReleaseResources(c)
-			movable = append(movable, c)
-		}
-	}
-
-	for _, c := range movable {
-		if err := p.AllocateResources(c); err != nil {
-			if errors == nil {
-				errors = err
-			} else {
-				errors = policyError("%v, %v", errors, err)
-			}
-		}
-	}
-
-	return true, errors
-}
-
 // HandleEvent handles policy-specific events.
 func (p *policy) HandleEvent(e *events.Policy) (bool, error) {
 	log.Debug("received policy event %s.%s with data %v...", e.Source, e.Type, e.Data)
@@ -254,45 +225,6 @@ func (p *policy) HandleEvent(e *events.Policy) (bool, error) {
 		return p.finishColdStart(c)
 	}
 	return false, nil
-}
-
-// Introspect provides data for external introspection.
-func (p *policy) Introspect(state *introspect.State) {
-	pools := make(map[string]*introspect.Pool, len(p.pools))
-	for _, node := range p.nodes {
-		cpus := node.GetSupply()
-		pool := &introspect.Pool{
-			Name:   node.Name(),
-			CPUs:   cpus.SharableCPUs().Union(cpus.IsolatedCPUs()).String(),
-			Memory: node.GetMemset(memoryAll).String(),
-		}
-		if parent := node.Parent(); !parent.IsNil() {
-			pool.Parent = parent.Name()
-		}
-		if children := node.Children(); len(children) > 0 {
-			pool.Children = make([]string, 0, len(children))
-			for _, c := range children {
-				pool.Children = append(pool.Children, c.Name())
-			}
-		}
-		pools[pool.Name] = pool
-	}
-	state.Pools = pools
-
-	assignments := make(map[string]*introspect.Assignment, len(p.allocations.grants))
-	for _, g := range p.allocations.grants {
-		a := &introspect.Assignment{
-			ContainerID:   g.GetContainer().GetID(),
-			CPUShare:      g.SharedPortion(),
-			ExclusiveCPUs: g.ExclusiveCPUs().Union(g.IsolatedCPUs()).String(),
-			Pool:          g.GetCPUNode().Name(),
-		}
-		if g.SharedPortion() > 0 || a.ExclusiveCPUs == "" {
-			a.SharedCPUs = g.SharedCPUs().String()
-		}
-		assignments[a.ContainerID] = a
-	}
-	state.Assignments = assignments
 }
 
 // DescribeMetrics generates policy-specific prometheus metrics data descriptors.

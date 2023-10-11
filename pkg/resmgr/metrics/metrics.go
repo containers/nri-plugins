@@ -29,7 +29,6 @@ import (
 
 	"github.com/containers/nri-plugins/pkg/instrumentation"
 	"github.com/containers/nri-plugins/pkg/metrics"
-	"github.com/containers/nri-plugins/pkg/resmgr/events"
 
 	// pull in all metrics collectors
 	_ "github.com/containers/nri-plugins/pkg/metrics/register"
@@ -39,8 +38,6 @@ import (
 type Options struct {
 	// PollInterval is the interval for polling raw metrics.
 	PollInterval time.Duration
-	// Events is the channel for delivering metrics events.
-	Events chan interface{}
 }
 
 // Metrics implements collecting, caching and processing of raw metrics.
@@ -58,10 +55,6 @@ var log = logger.NewLogger("metrics")
 
 // NewMetrics creates a new instance for metrics collecting and processing.
 func NewMetrics(opts Options) (*Metrics, error) {
-	if opts.Events == nil {
-		return nil, metricsError("invalid options, nil Event channel")
-	}
-
 	g, err := metrics.NewMetricGatherer()
 	if err != nil {
 		return nil, metricsError("failed to create raw metrics gatherer: %v", err)
@@ -136,16 +129,6 @@ func (m *Metrics) poll() error {
 	m.raw = f
 	m.pend = f
 	return nil
-}
-
-// sendEvent sends a metrics-based event for processing.
-func (m *Metrics) sendEvent(e *events.Metrics) error {
-	select {
-	case m.opts.Events <- e:
-		return nil
-	default:
-		return metricsError("failed to deliver event %v (channel full?)", *e)
-	}
 }
 
 // dump debug-dumps the given MetricFamily data

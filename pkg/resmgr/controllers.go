@@ -18,6 +18,4 @@ import (
 	// List of controllers to pull in.
 	_ "github.com/containers/nri-plugins/pkg/resmgr/control/cpu"
 	_ "github.com/containers/nri-plugins/pkg/resmgr/control/e2e-test"
-	_ "github.com/containers/nri-plugins/pkg/resmgr/control/memory"
-	_ "github.com/containers/nri-plugins/pkg/resmgr/control/page-migrate"
 )

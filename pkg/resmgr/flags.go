@@ -69,8 +69,6 @@ func init() {
 		"Signal used to reload forced configuration.")
 	flag.DurationVar(&opt.MetricsTimer, "metrics-interval", 0,
 		"Interval for polling/gathering runtime metrics data. Use 'disable' for disabling.")
-	flag.DurationVar(&opt.RebalanceTimer, "rebalance-interval", 0,
-		"Minimum interval between two container rebalancing attempts. Use 'disable' for disabling.")
 	flag.StringVar(&opt.StateDir, "state-dir", "/var/lib/nri-resource-policy",
 		"Permanent storage directory path for the resource manager to store its state in.")
 	flag.BoolVar(&opt.EnableTestAPIs, "enable-test-apis", false, "Allow enabling various test APIs (currently only 'e2e-test' test controller).")

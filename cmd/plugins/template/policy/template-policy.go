@@ -20,7 +20,6 @@ import (
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
-	"github.com/containers/nri-plugins/pkg/resmgr/introspect"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 )
 
@@ -94,20 +93,10 @@ func (p *policy) UpdateResources(c cache.Container) error {
 	return nil
 }
 
-// Rebalance tries to find an optimal allocation of resources for the current containers.
-func (p *policy) Rebalance() (bool, error) {
-	return true, nil
-}
-
 // HandleEvent handles policy-specific events.
 func (p *policy) HandleEvent(e *events.Policy) (bool, error) {
 	log.Info("received policy event %s.%s with data %v...", e.Source, e.Type, e.Data)
 	return true, nil
-}
-
-// Introspect provides data for external introspection.
-func (p *policy) Introspect(state *introspect.State) {
-	return
 }
 
 // DescribeMetrics generates policy-specific prometheus metrics data descriptors.

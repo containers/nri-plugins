@@ -396,18 +396,6 @@ func (m *mockContainer) SetBlockIOClass(string) {
 func (m *mockContainer) GetBlockIOClass() string {
 	panic("unimplemented")
 }
-func (m *mockContainer) SetToptierLimit(int64) {
-	panic("unimplemented")
-}
-func (m *mockContainer) GetToptierLimit() int64 {
-	panic("unimplemented")
-}
-func (m *mockContainer) SetPageMigration(*cache.PageMigrate) {
-	return
-}
-func (m *mockContainer) GetPageMigration() *cache.PageMigrate {
-	return nil
-}
 func (m *mockContainer) GetPending() []string {
 	panic("unimplemented")
 }

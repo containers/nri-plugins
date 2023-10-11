@@ -30,7 +30,6 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	cpucontrol "github.com/containers/nri-plugins/pkg/resmgr/control/cpu"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
-	"github.com/containers/nri-plugins/pkg/resmgr/introspect"
 	policy "github.com/containers/nri-plugins/pkg/resmgr/policy"
 	"github.com/containers/nri-plugins/pkg/utils"
 	idset "github.com/intel/goresctrl/pkg/utils"
@@ -283,12 +282,6 @@ func (p *balloons) UpdateResources(c cache.Container) error {
 	return nil
 }
 
-// Rebalance tries to find an optimal allocation of resources for the current containers.
-func (p *balloons) Rebalance() (bool, error) {
-	log.Debug("(not) rebalancing containers...")
-	return false, nil
-}
-
 // HandleEvent handles policy-specific events.
 func (p *balloons) HandleEvent(*events.Policy) (bool, error) {
 	log.Debug("(not) handling event...")
@@ -298,11 +291,6 @@ func (p *balloons) HandleEvent(*events.Policy) (bool, error) {
 // ExportResourceData provides resource data to export for the container.
 func (p *balloons) ExportResourceData(c cache.Container) map[string]string {
 	return nil
-}
-
-// Introspect provides data for external introspection.
-func (p *balloons) Introspect(*introspect.State) {
-	return
 }
 
 // GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.

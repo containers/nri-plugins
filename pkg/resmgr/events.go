@@ -15,8 +15,6 @@
 package resmgr
 
 import (
-	"time"
-
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/metrics"
@@ -33,7 +31,6 @@ func (m *resmgr) setupEventProcessing() error {
 	m.stop = make(chan interface{})
 	options := metrics.Options{
 		PollInterval: opt.MetricsTimer,
-		Events:       m.events,
 	}
 	if m.metrics, err = metrics.NewMetrics(options); err != nil {
 		return resmgrError("failed to create metrics (pre)processor: %v", err)
@@ -58,28 +55,12 @@ func (m *resmgr) startEventProcessing() error {
 
 	stop := m.stop
 	go func() {
-		var rebalanceTimer *time.Ticker
-		var rebalanceChan <-chan time.Time
-
-		if opt.RebalanceTimer > 0 {
-			rebalanceTimer = time.NewTicker(opt.RebalanceTimer)
-			rebalanceChan = rebalanceTimer.C
-		} else {
-			m.Info("periodic rebalancing is disabled")
-		}
 		for {
 			select {
 			case _ = <-stop:
-				if rebalanceTimer != nil {
-					rebalanceTimer.Stop()
-				}
 				return
 			case event := <-m.events:
 				m.processEvent(event)
-			case _ = <-rebalanceChan:
-				//if err := m.RebalanceContainers(); err != nil {
-				//	evtlog.Error("rebalancing failed: %v", err)
-				//}
 			}
 			logger.Flush()
 		}
