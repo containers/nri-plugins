@@ -113,8 +113,6 @@ The `topology-aware` policy has the following features:
         typically found on some special-purpose computing systems
   - cold start
     * pin workload exclusively to PMEM for an initial warm-up period
-  - dynamic page demotion
-    * forcibly migrate read-only and idle container memory pages to PMEM
 
 ## Activating the Policy
 
@@ -358,31 +356,6 @@ metadata:
 In the above example, `container1` would be initially granted only PMEM
 memory controller, but after 60 seconds the DRAM controller would be
 added to the container memset.
-
-## Dynamic Page Demotion
-
-The `topology-aware` policy also supports dynamic page demotion. With dynamic
-demotion enabled, rarely-used pages are periodically moved from DRAM to PMEM
-for those workloads which are assigned to use both DRAM and PMEM memory types.
-The configuration for this feature is done using three configuration keys:
-`DirtyBitScanPeriod`, `PageMovePeriod`, and `PageMoveCount`. All of these
-parameters need to be set to non-zero values in order for dynamic page demotion
-to get enabled. See this configuration file fragment as an example:
-
-```yaml
-policy:
-  Active: topology-aware
-  topology-aware:
-    DirtyBitScanPeriod: 10s
-    PageMovePeriod: 2s
-    PageMoveCount: 1000
-```
-
-In this setup, every pid in every container in every non-system pod
-fulfilling the memory container requirements would have their page ranges
-scanned for non-accessed pages every ten seconds. The result of the scan
-would be fed to a page-moving loop, which would attempt to move 1000 pages
-every two seconds from DRAM to PMEM.
 
 ## Container memory requests and limits
 
