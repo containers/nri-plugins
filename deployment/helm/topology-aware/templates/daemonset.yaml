@@ -17,14 +17,17 @@ spec:
       serviceAccount: nri-resource-policy-topology-aware
       nodeSelector:
         kubernetes.io/os: "linux"
-      {{- if .Values.nri.patchContainerdConfig }}
+      {{- if .Values.nri.patchRuntimeConfig }}
       initContainers:
-      - name: patch-containerd
+      - name: patch-runtime
         image: {{ .Values.initContainerImage.name }}:{{ .Values.initContainerImage.tag | default .Chart.AppVersion }}
         imagePullPolicy: {{ .Values.initContainerImage.pullPolicy }}
+        restartPolicy: Never
         volumeMounts:
         - name: containerd-config
-          mountPath: /etc/containerd/config.toml
+          mountPath: /etc/containerd
+        - name: crio-config
+          mountPath: /etc/crio/crio.conf.d
         - name: dbus-socket
           mountPath: /var/run/dbus/system_bus_socket
         securityContext:
@@ -91,11 +94,15 @@ spec:
         hostPath:
           path: /var/run/nri
           type: DirectoryOrCreate
-      {{- if .Values.nri.patchContainerdConfig }}
+      {{- if .Values.nri.patchRuntimeConfig }}
       - name: containerd-config
         hostPath:
-          path: /etc/containerd/config.toml
-          type: File
+          path: /etc/containerd/
+          type: DirectoryOrCreate
+      - name: crio-config
+        hostPath:
+          path: /etc/crio/crio.conf.d/
+          type: DirectoryOrCreate
       - name: dbus-socket
         hostPath:
           path: /var/run/dbus/system_bus_socket

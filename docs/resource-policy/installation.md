@@ -18,23 +18,32 @@ following components: DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-r
 - Container runtime:
     - containerD:
         - At least [containerd 1.7.0](https://github.com/containerd/containerd/releases/tag/v1.7.0)
-            release version to use the NRI feature
+            release version to use the NRI feature.
+
         - Enable NRI feature by following [these](https://github.com/containerd/containerd/blob/main/docs/NRI.md#enabling-nri-support-in-containerd)
           detailed instructions. You can optionally enable the NRI in containerd using the Helm chart
-          during the chart installation simply by setting the `nri.patchContainerdConfig` parameter.
+          during the chart installation simply by setting the `nri.patchRuntimeConfig` parameter.
           For instance,
 
           ```sh
-          helm install topology-aware --namespace kube-system --set nri.patchContainerdConfig=true deployment/helm/topology-aware/
+          helm install topology-aware --namespace kube-system --set nri.patchRuntimeConfig=true deployment/helm/topology-aware/
           ```
 
-          Enabling `nri.patchContainerdConfig` creates an init container to turn on
+          Enabling `nri.patchRuntimeConfig` creates an init container to turn on
           NRI feature in containerd and only after that proceed the plugin installation.
 
     - CRI-O
         - At least [v1.26.0](https://github.com/cri-o/cri-o/releases/tag/v1.26.0) release version to
             use the NRI feature
         - Enable NRI feature by following [these](https://github.com/cri-o/cri-o/blob/main/docs/crio.conf.5.md#crionri-table) detailed instructions.
+          You can optionally enable the NRI in CRI-O using the Helm chart
+          during the chart installation simply by setting the `nri.patchRuntimeConfig` parameter.
+          For instance,
+
+          ```sh
+          helm install topology-aware --namespace kube-system --set nri.patchRuntimeConfig=true deployment/helm/topology-aware/
+          ```
+
 - Kubernetes 1.24+
 - Helm 3.0.0+
 
@@ -94,14 +103,14 @@ along with the default values, for the Topology-aware and Balloons plugins Helm 
 
 | Name               | Default                                                                                                                       | Description                                          |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `image.name`       | [ghcr.io/containers/nri-plugins/nri-resource-policy-topology-aware](ghcr.io/containers/nri-plugins/nri-resource-policy-topology-aware)    | container image name                                 |
+| `image.name`       | [ghcr.io/containers/nri-plugins/nri-resource-policy-topology-aware](ghcr.io/containers/nri-plugins/nri-resource-policy-topology-aware)    | container image name                     |
 | `image.tag`        | unstable                                                                                                                      | container image tag                                  |
 | `image.pullPolicy` | Always                                                                                                                        | image pull policy                                    |
 | `resources.cpu`    | 500m                                                                                                                          | cpu resources for the Pod                            |
 | `resources.memory` | 512Mi                                                                                                                         | memory qouta for the Pod                             | 
 | `hostPort`         | 8891                                                                                                                          | metrics port to expose on the host                   |
 | `config`           | <pre><code>ReservedResources:</code><br><code>  cpu: 750m</code></pre>                                                        | plugin configuration data                            |
-| `nri.patchContainerdConfig`       | false                                                                                                          | enable/disable NRI in containerd.                    |
+| `nri.patchRuntimeConfig` | false                                                                                                                   | enable NRI in containerd or CRI-O                    |
 | `initImage.name`   | [ghcr.io/containers/nri-plugins/config-manager](ghcr.io/containers/nri-plugins/config-manager)                                | init container image name                            |
 | `initImage.tag`    | unstable                                                                                                                      | init container image tag                             |
 | `initImage.pullPolicy` | Always                                                                                                                    | init container image pull policy                     |
@@ -117,7 +126,7 @@ along with the default values, for the Topology-aware and Balloons plugins Helm 
 | `resources.memory` | 512Mi                                                                                                                         | memory qouta for the Pod                             | 
 | `hostPort`         | 8891                                                                                                                          | metrics port to expose on the host                   |
 | `config`           | <pre><code>ReservedResources:</code><br><code>  cpu: 750m</code></pre>                                                        | plugin configuration data                            |
-| `nri.patchContainerdConfig`       | false                                                                                                          | enable/disable NRI in containerd.                    |
+| `nri.patchRuntimeConfig` | false                                                                                                                   | enable NRI in containerd or CRI-O                    |
 | `initImage.name`   | [ghcr.io/containers/nri-plugins/config-manager](ghcr.io/containers/nri-plugins/config-manager)                                | init container image name                            |
 | `initImage.tag`    | unstable                                                                                                                      | init container image tag                             |
 | `initImage.pullPolicy` | Always                                                                                                                    | init container image pull policy                     |

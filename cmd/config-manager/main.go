@@ -29,33 +29,71 @@ import (
 )
 
 const (
-	tomlFilePath = "/etc/containerd/config.toml"
-	nriPluginKey = "io.containerd.nri.v1.nri"
-	disableKey   = "disable"
-	replaceMode  = "replace"
-	resultDone   = "done"
-	unit         = "containerd.service"
+	containerdConfigFile = "/etc/containerd/config.toml"
+	crioConfigFile       = "/etc/crio/crio.conf.d/10-enable-nri.conf"
+	nriPluginKey         = "io.containerd.nri.v1.nri"
+	replaceMode          = "replace"
+	resultDone           = "done"
+	containerdUnit       = "containerd.service"
+	crioUnit             = "crio.service"
 )
 
 func main() {
-	tomlMap, err := readConfig(tomlFilePath)
+	unit, err := detectRuntime()
 	if err != nil {
-		log.Fatalf("Error reading TOML file: %v", err)
+		log.Fatalf("failed to autodetect container runtime: %v", err)
 	}
 
-	updatedTomlMap := updateNRIPlugin(tomlMap)
-
-	err = writeConfig(tomlFilePath, updatedTomlMap)
-	if err != nil {
-		log.Fatalf("failed to write updated config into a file %q:, %v", tomlFilePath, err)
+	switch unit {
+	case containerdUnit:
+		err = enableNriForContainerd()
+	case crioUnit:
+		err = enableNriForCrio()
+	default:
+		log.Fatalf("unknown container runtime %q", unit)
 	}
 
-	err = restartSystemdUnit(unit)
 	if err != nil {
-		log.Fatalf("failed to restart containerd: %v", err)
+		log.Fatalf("error enabling NRI: %v", err)
 	}
+
+	if err = restartSystemdUnit(unit); err != nil {
+		log.Fatalf("failed to restart %q unit: %v", unit, err)
+	}
+
+	log.Println("enabled NRI for", unit)
 }
-func writeConfig(file string, config map[string]interface{}) error {
+
+func enableNriForContainerd() error {
+	tomlMap, err := readConfig(containerdConfigFile)
+	if err != nil {
+		return fmt.Errorf("error reading TOML file: %w", err)
+	}
+
+	updatedTomlMap := updateContainerdConfig(tomlMap)
+
+	err = writeToContainerdConfig(containerdConfigFile, updatedTomlMap)
+	if err != nil {
+		return fmt.Errorf("failed to write updated config into a file %q: %w", containerdConfigFile, err)
+	}
+	return nil
+}
+
+func enableNriForCrio() error {
+	f, err := os.Create(crioConfigFile)
+	if err != nil {
+		return fmt.Errorf("error creating a drop-in file for CRI-O: %w", err)
+	}
+	defer f.Close()
+
+	_, err = f.WriteString("[crio.nri]\nenable_nri = true\n")
+	if err != nil {
+		return fmt.Errorf("error writing a drop-in file for CRI-O: %w", err)
+	}
+	return nil
+}
+
+func writeToContainerdConfig(file string, config map[string]interface{}) error {
 	var buf bytes.Buffer
 	enc := tomlv2.NewEncoder(&buf)
 	enc.SetIndentTables(true)
@@ -90,10 +128,10 @@ func readConfig(file string) (map[string]interface{}, error) {
 	return tomlMap, nil
 }
 
-func updateNRIPlugin(config map[string]interface{}) map[string]interface{} {
+func updateContainerdConfig(config map[string]interface{}) map[string]interface{} {
 	plugins, exists := config["plugins"].(map[string]interface{})
 	if !exists {
-		log.Println("Top level plugins section not found, adding it to enable NRI...")
+		log.Println("top level plugins section not found, adding it to enable NRI...")
 		plugins = make(map[string]interface{})
 		config["plugins"] = plugins
 	}
@@ -105,15 +143,37 @@ func updateNRIPlugin(config map[string]interface{}) map[string]interface{} {
 		plugins[nriPluginKey] = nri
 	}
 
-	nri[disableKey] = false
-	log.Println("Enabled NRI...")
+	nri["disable"] = false
 	return config
+}
+
+func detectRuntime() (string, error) {
+	conn, err := dbus.NewSystemConnectionContext(context.Background())
+	if err != nil {
+		return "", fmt.Errorf("failed to create DBus connection: %w", err)
+	}
+	defer conn.Close()
+
+	// Filter out active container runtime (CRI-O or containerd) systemd units on the node.
+	// It is expected that only one container runtime systemd unit should be active at a time
+	// (either containerd or CRI-O).If more than one container runtime systemd unit is found
+	// to be in an active state, the process fails.
+	units, err := conn.ListUnitsByPatternsContext(context.Background(), []string{"active"}, []string{containerdUnit, crioUnit})
+	if err != nil {
+		return "", fmt.Errorf("failed to detect container runtime in use: %w", err)
+	}
+
+	if len(units) > 1 {
+		return "", fmt.Errorf("detected more than one container runtime on the host, expected one")
+	}
+
+	return units[0].Name, nil
 }
 
 func restartSystemdUnit(unit string) error {
 	conn, err := dbus.NewSystemConnectionContext(context.Background())
 	if err != nil {
-		return fmt.Errorf("failed to create DBus connection for unit %q: %w", unit, err)
+		return fmt.Errorf("failed to create DBus connection: %w", err)
 	}
 	defer conn.Close()
 

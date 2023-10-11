@@ -20,7 +20,8 @@ resources:
   memory: 512Mi
 
 nri:
-  patchContainerdConfig: false
+  patchRuntimeConfig: false
+
 
 initContainerImage:
   name: ghcr.io/containers/nri-plugins/nri-config-manager
