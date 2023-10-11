@@ -6,7 +6,7 @@ namespace: kube-system
 images:
 - name: '*'
   newName: ghcr.io/containers/nri-plugins/nri-memory-qos
-  newTag: unstable
+  newTag: 0.2.0
 
 resources:
 - daemonset.yaml
