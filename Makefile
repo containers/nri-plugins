@@ -45,6 +45,8 @@ GINKGO        := ginkgo
 TEST_SETUP    := test-setup.sh
 TEST_CLEANUP  := test-cleanup.sh
 
+E2E_RUN := k8scri=containerd ./run_tests.sh
+
 BUILD_PATH    := $(shell pwd)/build
 BIN_PATH      := $(BUILD_PATH)/bin
 COVERAGE_PATH := $(BUILD_PATH)/coverage
@@ -336,6 +338,16 @@ ginkgo-subpkgs-tests: # TODO(klihub): coverage ?
 	            --succinct \
 	            -r . || exit 1); \
 	done
+
+e2e-tests: build images
+	$(Q)[[ -x containerd/bin/containerd ]] || { \
+		echo "containerd/bin/containerd missing, consider:"; \
+		echo "  git clone https://github.com/containerd/containerd.git"; \
+		echo "  cd containerd && make && cd .."; \
+		exit 1; \
+	} && \
+	tests="$(if $(E2E_TESTS),$(E2E_TESTS),policies.test-suite)"; \
+        cd test/e2e && $(E2E_RUN) $$tests;
 
 codecov: SHELL := $(shell which bash)
 codecov:
