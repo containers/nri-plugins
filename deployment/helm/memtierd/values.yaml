@@ -19,5 +19,6 @@ nri:
 
 initContainerImage:
   name: ghcr.io/containers/nri-plugins/nri-config-manager
-  tag: unstable
+  # If not defined Chart.AppVersion will be used
+  #tag: unstable
   pullPolicy: Always
