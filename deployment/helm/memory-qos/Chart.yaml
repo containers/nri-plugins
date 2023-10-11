@@ -1,5 +1,5 @@
 apiVersion: v2
-appVersion: unstable
+appVersion: 0.2.0
 description: |
   The memory-qos NRI plugin adds two methods for controlling cgroups v2
   memory.* parameters: QoS class and direct memory annotations.

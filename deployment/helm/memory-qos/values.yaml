@@ -6,7 +6,7 @@ image:
   name: ghcr.io/containers/nri-plugins/nri-memory-qos
   # tag, if defined will use the given image tag, otherwise Chart.AppVersion will be used
   #tag: unstable
-  pullPolicy: Always
+  pullPolicy: IfNotPresent
 
 resources:
   cpu: 10m
@@ -19,4 +19,4 @@ initContainerImage:
   name: ghcr.io/containers/nri-plugins/nri-config-manager
   # If not defined Chart.AppVersion will be used
   #tag: unstable
-  pullPolicy: Always
+  pullPolicy: IfNotPresent

@@ -39,7 +39,7 @@ spec:
               fieldRef:
                 fieldPath: spec.nodeName
           image: IMAGE_PLACEHOLDER
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
