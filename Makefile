@@ -39,7 +39,7 @@ GO_LINT    := golint -set_exit_status
 GO_FMT     := gofmt
 GO_VET     := $(GO_CMD) vet
 GO_DEPS    := $(GO_CMD) list -f '{{ join .Deps "\n" }}'
-GO_VERSION ?= 1.20.7
+GO_VERSION ?= 1.20.10
 
 GO_MODULES := $(shell $(GO_CMD) list ./...)
 GO_SUBPKGS := $(shell find ./pkg -name go.mod | sed 's:/go.mod::g' | grep -v testdata)
