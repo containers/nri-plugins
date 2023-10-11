@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins 0.1.0-67-ga826ac6 documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins 0.1.0-74-g66ed9f4 documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -64,7 +64,6 @@
 <li class="toctree-l4"><a class="reference internal" href="#policy-cpu-allocation-preferences">Policy CPU Allocation Preferences</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#container-cpu-allocation-preference-annotations">Container CPU Allocation Preference Annotations</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#cold-start">Cold Start</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#dynamic-page-demotion">Dynamic Page Demotion</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#container-memory-requests-and-limits">Container memory requests and limits</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#reserved-pool-namespaces">Reserved pool namespaces</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#reserved-cpu-annotations">Reserved CPU annotations</a></li>
@@ -246,11 +245,6 @@ typically found on some special-purpose computing systems</p></li>
 <li><p>cold start</p>
 <ul>
 <li><p>pin workload exclusively to PMEM for an initial warm-up period</p></li>
-</ul>
-</li>
-<li><p>dynamic page demotion</p>
-<ul>
-<li><p>forcibly migrate read-only and idle container memory pages to PMEM</p></li>
 </ul>
 </li>
 </ul>
@@ -536,29 +530,6 @@ future release:</p>
 <p>In the above example, <code class="docutils literal notranslate"><span class="pre">container1</span></code> would be initially granted only PMEM
 memory controller, but after 60 seconds the DRAM controller would be
 added to the container memset.</p>
-</section>
-<section id="dynamic-page-demotion">
-<h2>Dynamic Page Demotion<a class="headerlink" href="#dynamic-page-demotion" title="Permalink to this heading"></a></h2>
-<p>The <code class="docutils literal notranslate"><span class="pre">topology-aware</span></code> policy also supports dynamic page demotion. With dynamic
-demotion enabled, rarely-used pages are periodically moved from DRAM to PMEM
-for those workloads which are assigned to use both DRAM and PMEM memory types.
-The configuration for this feature is done using three configuration keys:
-<code class="docutils literal notranslate"><span class="pre">DirtyBitScanPeriod</span></code>, <code class="docutils literal notranslate"><span class="pre">PageMovePeriod</span></code>, and <code class="docutils literal notranslate"><span class="pre">PageMoveCount</span></code>. All of these
-parameters need to be set to non-zero values in order for dynamic page demotion
-to get enabled. See this configuration file fragment as an example:</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">policy</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">Active</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">topology-aware</span>
-<span class="w">  </span><span class="nt">topology-aware</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">DirtyBitScanPeriod</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10s</span>
-<span class="w">    </span><span class="nt">PageMovePeriod</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2s</span>
-<span class="w">    </span><span class="nt">PageMoveCount</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1000</span>
-</pre></div>
-</div>
-<p>In this setup, every pid in every container in every non-system pod
-fulfilling the memory container requirements would have their page ranges
-scanned for non-accessed pages every ten seconds. The result of the scan
-would be fed to a page-moving loop, which would attempt to move 1000 pages
-every two seconds from DRAM to PMEM.</p>
 </section>
 <section id="container-memory-requests-and-limits">
 <h2>Container memory requests and limits<a class="headerlink" href="#container-memory-requests-and-limits" title="Permalink to this heading"></a></h2>
