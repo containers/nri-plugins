@@ -16,6 +16,22 @@ spec:
     spec:
       nodeSelector:
         kubernetes.io/os: "linux"
+      {{- if .Values.nri.patchRuntimeConfig }}
+      initContainers:
+      - name: patch-runtime
+        image: {{ .Values.initContainerImage.name }}:{{ .Values.initContainerImage.tag | default .Chart.AppVersion }}
+        imagePullPolicy: {{ .Values.initContainerImage.pullPolicy }}
+        restartPolicy: Never
+        volumeMounts:
+        - name: containerd-config
+          mountPath: /etc/containerd
+        - name: crio-config
+          mountPath: /etc/crio/crio.conf.d
+        - name: dbus-socket
+          mountPath: /var/run/dbus/system_bus_socket
+        securityContext:
+          privileged: true
+      {{- end }}
       containers:
         - name: nri-memory-qos
           command:
@@ -44,3 +60,17 @@ spec:
         hostPath:
           path: /var/run/nri
           type: Directory
+      {{- if .Values.nri.patchRuntimeConfig }}
+      - name: containerd-config
+        hostPath:
+          path: /etc/containerd/
+          type: DirectoryOrCreate
+      - name: crio-config
+        hostPath:
+          path: /etc/crio/crio.conf.d/
+          type: DirectoryOrCreate
+      - name: dbus-socket
+        hostPath:
+          path: /var/run/dbus/system_bus_socket
+          type: Socket
+      {{- end }}

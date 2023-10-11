@@ -11,3 +11,11 @@ image:
 resources:
   cpu: 10m
   memory: 100Mi
+
+nri:
+  patchRuntimeConfig: false
+
+initContainerImage:
+  name: ghcr.io/containers/nri-plugins/nri-config-manager
+  tag: unstable
+  pullPolicy: Always
