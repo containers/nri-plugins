@@ -2,4 +2,4 @@ module github.com/containers/nri-plugins/pkg/topology
 
 go 1.20
 
-require golang.org/x/sys v0.1.0
+require golang.org/x/sys v0.13.0
