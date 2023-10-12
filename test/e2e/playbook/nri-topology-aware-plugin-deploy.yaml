@@ -49,8 +49,8 @@
     - name: fix the image name when using cri-o
       become: yes
       shell: >
-        sed -i 's/image: nri-resource-policy-topology-aware:unknown/image: localhost\/nri-resource-policy-topology-aware:unknown/' /etc/nri-resource-policy/nri-resource-policy-deployment.yaml;
-        sed -i 's/image: nri-resource-policy-topology-aware:unknown/image: localhost\/nri-resource-policy-topology-aware:unknown/' /etc/nri-resource-policy/nri-resource-policy-deployment-fallback.yaml
+        sed -i 's#image: nri-#image: localhost/nri-#g' /etc/nri-resource-policy/nri-resource-policy-deployment.yaml;
+        sed -i 's#image: nri-#image: localhost/nri-#g' /etc/nri-resource-policy/nri-resource-policy-deployment-fallback.yaml
       when: is_crio
 
     - name: get latest nri-resource-policy deployment image name
@@ -68,9 +68,8 @@
       when: is_containerd
 
     - name: load nri plugin image when using cri-o
-      become: yes
+      become: no
       shell: "{{ item }}"
       with_items:
-        - "podman image load -i `basename {{ nri_resource_policy_images.stdout_lines[0] }}`"
-        - "podman image scp localhost/nri-resource-policy-topology-aware:unknown vagrant@localhost::"
+        - "sudo podman image load -i `basename {{ nri_resource_policy_images.stdout_lines[0] }}`"
       when: is_crio
