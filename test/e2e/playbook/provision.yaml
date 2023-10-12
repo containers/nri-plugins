@@ -31,6 +31,7 @@
         - echo "search  {{ dns_search_domain }}" >> /etc/resolv.conf
         - sed -i "s/DNS=.*$/DNS={{ dns_nameserver }}/" /etc/systemd/resolved.conf
         - sed -i "s/Domains=.*$/Domains={{ dns_search_domain }}/" /etc/systemd/resolved.conf
+      when: dns_nameserver != ""
 
     - name: setup DNS for Ubuntu
       shell: "{{ item }}"
