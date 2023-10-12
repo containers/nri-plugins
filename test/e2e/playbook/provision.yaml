@@ -336,6 +336,20 @@
         - cilium-install.sh
         - rm -f cilium-linux-amd64.tar.gz
 
+    - block:
+      - name: Copy CNI bridge plugin configuration
+        copy:
+          src: "{{ nri_resource_policy_src }}/test/e2e/files/10-bridge.conf.in"
+          dest: "/etc/cni/net.d/10-bridge.conf"
+          owner: root
+          group: root
+          mode: '0644'
+
+      - name: Update CNI bridge plugin configuration
+        become: yes
+        shell: "sed -i 's#CNI_NETWORK#{{ network }}#g' /etc/cni/net.d/10-bridge.conf"
+      when: cni_plugin == "bridge"
+
     - name: generate join command
       command: kubeadm token create --print-join-command
       register: join_command
