@@ -1,0 +1,14 @@
+{
+  "cniVersion": "0.4.0",
+  "name": "demonet",
+  "type": "bridge",
+  "isGateway": true,
+  "ipMasq": true,
+  "ipam": {
+    "type": "host-local",
+    "subnet": "CNI_NETWORK",
+    "routes": [
+      { "dst": "0.0.0.0/0" }
+    ]
+  }
+}
