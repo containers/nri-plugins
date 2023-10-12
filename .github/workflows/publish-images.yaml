@@ -47,7 +47,7 @@ jobs:
               echo "  - digging out tag from git ref $GITREF..."
               case $GITREF in
                   refs/tags/v*)
-                      tag="${GITREF#refs/tags/v}"
+                      tag="${GITREF#refs/tags/}"
                       ;;
                   refs/heads/main)
                       tag=unstable
