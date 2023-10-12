@@ -1,5 +1,5 @@
 apiVersion: v2
-appVersion: 0.2.0
+appVersion: v0.2.1
 description: |
   The balloons NRI resource policy plugin implements workload placement into
   “balloons” that are disjoint CPU pools.
