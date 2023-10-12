@@ -26,7 +26,7 @@ following components: DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-r
           For instance,
 
           ```sh
-          helm install topology-aware --namespace kube-system --set nri.patchRuntimeConfig=true deployment/helm/topology-aware/
+          helm install topology-aware nri-plugins/nri-resource-policy-topology-aware --namespace kube-system --set nri.patchRuntimeConfig=true
           ```
 
           Enabling `nri.patchRuntimeConfig` creates an init container to turn on
@@ -41,7 +41,7 @@ following components: DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-r
           For instance,
 
           ```sh
-          helm install topology-aware --namespace kube-system --set nri.patchRuntimeConfig=true deployment/helm/topology-aware/
+          helm install topology-aware nri-plugins/nri-resource-policy-topology-aware --namespace kube-system --set nri.patchRuntimeConfig=true
           ```
 
 - Kubernetes 1.24+
@@ -49,29 +49,35 @@ following components: DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-r
 
 ## Installing the Helm Chart
 
-1. Clone the project to your local machine
-    ```sh
-    git clone https://github.com/containers/nri-plugins.git
-    ```
-
-1. Navigate to the project directory
-    ```sh
-    cd nri-plugins
-    ```
-
-1. Install the plugin using Helm. Replace release name with the desired name
-   for your Helm release. In this example, we named it as topology-aware. The
-   default values for topology-aware resource policy plugin are stored in
-   values.yaml file. If you wish to provide custom values to the Helm
-   chart, refer to the [table](#helm-parameters) below, which describes the
-   available parameters that can be modified before installation. It's important
-   to note that specifying the namespace (using `--namespace`) is crucial when
-   installing the Helm chart. If no namespace is specified, the manifests will
-   be installed in the default namespace.
+1. Add the nri-plugins charts repository so that Helm install can find the actual charts.
 
     ```sh
-    helm install topology-aware --namespace kube-system deployment/helm/topology-aware/
+    helm repo add nri-plugins https://containers.github.io/nri-plugins
     ```
+
+1. List chart repositories to ensure that nri-plugins repo is added.
+
+    ```sh
+    helm repo list
+    ```
+
+1. Install the plugin. Replace release version with the desired version. If you wish to
+   provide custom values to the Helm chart, refer to the [table](#helm-parameters) below,
+   which describes the available parameters that can be modified before installation.
+   It's important to note that specifying the namespace (using `--namespace` or `-n`) is
+   crucial when installing the Helm chart. If no namespace is specified, the manifests
+   will be installed in the default namespace.
+
+    ```sh
+    helm install topology-aware nri-plugins/nri-resource-policy-topology-aware --namespace kube-system
+    ```
+
+    The helm repository is named `nri-plugins`, and in step 1, you have the
+    flexibility to choose any name when adding it. However, it's important to
+    note that `nri-resource-policy-topology-aware`, which serves as the path
+    to the chart, must accurately reflect the actual name of the chart. You
+    can find the path to each chart in the [helm parameters table](#helm-parameters).
+
 
 1. Verify the status of the daemonset to ensure that the plugin is running successfully
 
@@ -89,7 +95,7 @@ That's it! You have now installed the topology-aware NRI resource policy plugin 
 To uninstall plugin chart just deleting it with the release name is enough:
 
 ```bash
-helm delete topology-aware
+helm uninstall topology-aware --namespace kube-system
 ```
 
 Note: this removes DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-related objects associated with the chart.
@@ -100,6 +106,8 @@ The tables below present an overview of the parameters available for users to cu
 along with the default values, for the Topology-aware and Balloons plugins Helm charts.
 
 #### Topology-aware
+
+Path to the chart: `nri-resource-policy-topology-aware`
 
 | Name               | Default                                                                                                                       | Description                                          |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
@@ -117,6 +125,8 @@ along with the default values, for the Topology-aware and Balloons plugins Helm 
 
 #### Balloons
 
+Path to the chart: `nri-resource-policy-balloons`
+
 | Name               | Default                                                                                                                       | Description                                          |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
 | `image.name`       | [ghcr.io/containers/nri-plugins/nri-resource-policy-balloons](ghcr.io/containers/nri-plugins/nri-resource-policy-balloons)    | container image name                                 |
@@ -133,6 +143,8 @@ along with the default values, for the Topology-aware and Balloons plugins Helm 
 
 #### Memtierd
 
+Path to the chart: `nri-memtierd`
+
 | Name               | Default                                                                                                                       | Description                                          |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
 | `image.name`       | [ghcr.io/containers/nri-plugins/nri-memtierd](ghcr.io/containers/nri-plugins/nri-memtierd)                                    | container image name                                 |
@@ -148,6 +160,8 @@ along with the default values, for the Topology-aware and Balloons plugins Helm 
 
 
 #### Memory-qos
+
+Path to the chart: `nri-memory-qos`
 
 | Name               | Default                                                                                                                       | Description                                          |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
