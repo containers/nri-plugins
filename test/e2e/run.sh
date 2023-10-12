@@ -19,7 +19,7 @@ export COMMAND_OUTPUT_DIR="$TEST_OUTPUT_DIR"/commands
 
 distro=${distro:-$DEFAULT_DISTRO}
 export k8scri=${k8scri:-"containerd"}
-export cni_plugin=${cni_plugin:-bridge}
+export cni_plugin=${cni_plugin:-cilium}
 TOPOLOGY_DIR=${TOPOLOGY_DIR:=e2e}
 
 source "$LIB_DIR"/vm.bash
