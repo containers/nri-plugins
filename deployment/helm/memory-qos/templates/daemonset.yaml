@@ -14,6 +14,7 @@ spec:
       labels:
       {{- include "memory-qos.labels" . | nindent 8 }}
     spec:
+      restartPolicy: OnFailure
       nodeSelector:
         kubernetes.io/os: "linux"
       {{- if .Values.nri.patchRuntimeConfig }}
@@ -21,7 +22,6 @@ spec:
       - name: patch-runtime
         image: {{ .Values.initContainerImage.name }}:{{ .Values.initContainerImage.tag | default .Chart.AppVersion }}
         imagePullPolicy: {{ .Values.initContainerImage.pullPolicy }}
-        restartPolicy: Never
         volumeMounts:
         - name: containerd-config
           mountPath: /etc/containerd
