@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Installation &mdash; NRI Plugins 0.1.0-82-gea5ce41 documentation</title>
+  <title>Installation &mdash; NRI Plugins 0.1.0-84-g5ffea63 documentation</title>
       <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -124,7 +124,7 @@ release version to use the NRI feature.</p></li>
 detailed instructions. You can optionally enable the NRI in containerd using the Helm chart
 during the chart installation simply by setting the <code class="docutils literal notranslate"><span class="pre">nri.patchRuntimeConfig</span></code> parameter.
 For instance,</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>topology-aware<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>--set<span class="w"> </span>nri.patchRuntimeConfig<span class="o">=</span><span class="nb">true</span><span class="w"> </span>deployment/helm/topology-aware/
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>topology-aware<span class="w"> </span>nri-plugins/nri-resource-policy-topology-aware<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>--set<span class="w"> </span>nri.patchRuntimeConfig<span class="o">=</span><span class="nb">true</span>
 </pre></div>
 </div>
 <p>Enabling <code class="docutils literal notranslate"><span class="pre">nri.patchRuntimeConfig</span></code> creates an init container to turn on
@@ -140,7 +140,7 @@ use the NRI feature</p></li>
 You can optionally enable the NRI in CRI-O using the Helm chart
 during the chart installation simply by setting the <code class="docutils literal notranslate"><span class="pre">nri.patchRuntimeConfig</span></code> parameter.
 For instance,</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>topology-aware<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>--set<span class="w"> </span>nri.patchRuntimeConfig<span class="o">=</span><span class="nb">true</span><span class="w"> </span>deployment/helm/topology-aware/
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>topology-aware<span class="w"> </span>nri-plugins/nri-resource-policy-topology-aware<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>--set<span class="w"> </span>nri.patchRuntimeConfig<span class="o">=</span><span class="nb">true</span>
 </pre></div>
 </div>
 </li>
@@ -155,28 +155,30 @@ For instance,</p>
 <section id="installing-the-helm-chart">
 <h2>Installing the Helm Chart<a class="headerlink" href="#installing-the-helm-chart" title="Permalink to this heading"></a></h2>
 <ol class="arabic">
-<li><p>Clone the project to your local machine</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/containers/nri-plugins.git
+<li><p>Add the nri-plugins charts repository so that Helm install can find the actual charts.</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>repo<span class="w"> </span>add<span class="w"> </span>nri-plugins<span class="w"> </span>https://containers.github.io/nri-plugins
 </pre></div>
 </div>
 </li>
-<li><p>Navigate to the project directory</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>nri-plugins
+<li><p>List chart repositories to ensure that nri-plugins repo is added.</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>repo<span class="w"> </span>list
 </pre></div>
 </div>
 </li>
-<li><p>Install the plugin using Helm. Replace release name with the desired name
-for your Helm release. In this example, we named it as topology-aware. The
-default values for topology-aware resource policy plugin are stored in
-values.yaml file. If you wish to provide custom values to the Helm
-chart, refer to the <a class="reference internal" href="#helm-parameters">table</a> below, which describes the
-available parameters that can be modified before installation. It’s important
-to note that specifying the namespace (using <code class="docutils literal notranslate"><span class="pre">--namespace</span></code>) is crucial when
-installing the Helm chart. If no namespace is specified, the manifests will
-be installed in the default namespace.</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>topology-aware<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>deployment/helm/topology-aware/
+<li><p>Install the plugin. Replace release version with the desired version. If you wish to
+provide custom values to the Helm chart, refer to the <a class="reference internal" href="#helm-parameters">table</a> below,
+which describes the available parameters that can be modified before installation.
+It’s important to note that specifying the namespace (using <code class="docutils literal notranslate"><span class="pre">--namespace</span></code> or <code class="docutils literal notranslate"><span class="pre">-n</span></code>) is
+crucial when installing the Helm chart. If no namespace is specified, the manifests
+will be installed in the default namespace.</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>topology-aware<span class="w"> </span>nri-plugins/nri-resource-policy-topology-aware<span class="w"> </span>--namespace<span class="w"> </span>kube-system
 </pre></div>
 </div>
+<p>The helm repository is named <code class="docutils literal notranslate"><span class="pre">nri-plugins</span></code>, and in step 1, you have the
+flexibility to choose any name when adding it. However, it’s important to
+note that <code class="docutils literal notranslate"><span class="pre">nri-resource-policy-topology-aware</span></code>, which serves as the path
+to the chart, must accurately reflect the actual name of the chart. You
+can find the path to each chart in the <a class="reference internal" href="#helm-parameters">helm parameters table</a>.</p>
 </li>
 <li><p>Verify the status of the daemonset to ensure that the plugin is running successfully</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl<span class="w"> </span>get<span class="w"> </span>daemonset<span class="w"> </span>-n<span class="w"> </span>kube-system<span class="w"> </span>nri-resource-policy-topology-aware
@@ -192,7 +194,7 @@ nri-resource-policy-topology-aware<span class="w">   </span><span class="m">1</s
 <section id="uninstalling-the-chart">
 <h2>Uninstalling the Chart<a class="headerlink" href="#uninstalling-the-chart" title="Permalink to this heading"></a></h2>
 <p>To uninstall plugin chart just deleting it with the release name is enough:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>delete<span class="w"> </span>topology-aware
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>uninstall<span class="w"> </span>topology-aware<span class="w"> </span>--namespace<span class="w"> </span>kube-system
 </pre></div>
 </div>
 <p>Note: this removes DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-related objects associated with the chart.</p>
@@ -202,6 +204,7 @@ nri-resource-policy-topology-aware<span class="w">   </span><span class="m">1</s
 along with the default values, for the Topology-aware and Balloons plugins Helm charts.</p>
 <section id="topology-aware">
 <h4>Topology-aware<a class="headerlink" href="#topology-aware" title="Permalink to this heading"></a></h4>
+<p>Path to the chart: <code class="docutils literal notranslate"><span class="pre">nri-resource-policy-topology-aware</span></code></p>
 <table border="1" class="docutils">
 <thead>
 <tr>
@@ -271,6 +274,7 @@ along with the default values, for the Topology-aware and Balloons plugins Helm 
 </section>
 <section id="balloons">
 <h4>Balloons<a class="headerlink" href="#balloons" title="Permalink to this heading"></a></h4>
+<p>Path to the chart: <code class="docutils literal notranslate"><span class="pre">nri-resource-policy-balloons</span></code></p>
 <table border="1" class="docutils">
 <thead>
 <tr>
@@ -340,6 +344,7 @@ along with the default values, for the Topology-aware and Balloons plugins Helm 
 </section>
 <section id="memtierd">
 <h4>Memtierd<a class="headerlink" href="#memtierd" title="Permalink to this heading"></a></h4>
+<p>Path to the chart: <code class="docutils literal notranslate"><span class="pre">nri-memtierd</span></code></p>
 <table border="1" class="docutils">
 <thead>
 <tr>
@@ -404,6 +409,7 @@ along with the default values, for the Topology-aware and Balloons plugins Helm 
 </section>
 <section id="memory-qos">
 <h4>Memory-qos<a class="headerlink" href="#memory-qos" title="Permalink to this heading"></a></h4>
+<p>Path to the chart: <code class="docutils literal notranslate"><span class="pre">nri-memory-qos</span></code></p>
 <table border="1" class="docutils">
 <thead>
 <tr>
