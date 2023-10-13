@@ -8,6 +8,7 @@
     - is_crio: false
     - containerd_release: "{{ containerd_release }}"
     - containerd_tarball: "https://github.com/containerd/containerd/releases/download/v{{ containerd_release }}/containerd-{{ containerd_release }}-linux-amd64.tar.gz"
+    - containerd_service_file: "https://raw.githubusercontent.com/containerd/containerd/main/containerd.service"
     - crio_release: "{{ crio_release }}"
     - crio_tarball: "https://storage.googleapis.com/cri-o/artifacts/cri-o.amd64.v{{ crio_release }}.tar.gz"
     - dns_nameserver: "{{ dns_nameserver }}"
@@ -168,13 +169,20 @@
         - "{{ crio_src }}/bin/pinns"
       when: is_crio and crio_src != ""
 
-    - name: setup runtime systemd file
-      copy:
-        src: "{{ nri_resource_policy_src }}/test/e2e/files/{{ cri_runtime }}.service"
-        dest: "/lib/systemd/system/{{ cri_runtime }}.service"
+    - name: Install CRI-O systemd service file from compiled sources
+      copy: src="{{ item }}" dest="/lib/systemd/system/crio.service" mode=0644
+      with_items:
+        - "{{ crio_src }}/contrib/crio.service"
+      when: is_crio and crio_src != ""
+
+    - name: Install containerd systemd service file
+      ansible.builtin.get_url:
+        url: "{{ containerd_service_file }}"
+        dest: /lib/systemd/system/containerd.service
         owner: root
         group: root
         mode: '0644'
+      when: is_containerd
 
     - name: create service.d directory for the runtime
       file:
