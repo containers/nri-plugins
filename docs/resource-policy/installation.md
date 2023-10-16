@@ -64,12 +64,30 @@ following components: DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-r
 1. Install the plugin. Replace release version with the desired version. If you wish to
    provide custom values to the Helm chart, refer to the [table](#helm-parameters) below,
    which describes the available parameters that can be modified before installation.
-   It's important to note that specifying the namespace (using `--namespace` or `-n`) is
-   crucial when installing the Helm chart. If no namespace is specified, the manifests
-   will be installed in the default namespace.
+   Parameters can be specified either using the --set option or through the -f flag along
+   with the custom values.yaml file. It's important to note that specifying the namespace
+   (using `--namespace` or `-n`) is crucial when installing the Helm chart. If no namespace
+   is specified, the manifests will be installed in the default namespace.
 
     ```sh
+    # Install the topology-aware plugin with default values
     helm install topology-aware nri-plugins/nri-resource-policy-topology-aware --namespace kube-system
+
+    # Install the topology-aware plugin with custom values provided using the --set option
+    helm install topology-aware nri-plugins/nri-resource-policy-topology-aware --namespace kube-system --set nri.patchRuntimeConfig=true
+
+    # Install the topology-aware plugin with custom values specified in a custom values.yaml file
+    cat <<EOF > myPath/values.yaml
+    nri:
+      patchRuntimeConfig: true
+
+    tolerations:
+    - key: "node-role.kubernetes.io/control-plane"
+      operator: "Exists"
+      effect: "NoSchedule"
+    EOF
+
+    helm install topology-aware nri-plugins/nri-resource-policy-topology-aware --namespace kube-system -f myPath/values.yaml
     ```
 
     The helm repository is named `nri-plugins`, and in step 1, you have the
@@ -122,6 +140,7 @@ Path to the chart: `nri-resource-policy-topology-aware`
 | `initImage.name`   | [ghcr.io/containers/nri-plugins/config-manager](ghcr.io/containers/nri-plugins/config-manager)                                | init container image name                            |
 | `initImage.tag`    | unstable                                                                                                                      | init container image tag                             |
 | `initImage.pullPolicy` | Always                                                                                                                    | init container image pull policy                     |
+| `tolerations`      | []                                                                                                                            | specify taint toleration key, operator and effect    |
 
 #### Balloons
 
@@ -140,6 +159,7 @@ Path to the chart: `nri-resource-policy-balloons`
 | `initImage.name`   | [ghcr.io/containers/nri-plugins/config-manager](ghcr.io/containers/nri-plugins/config-manager)                                | init container image name                            |
 | `initImage.tag`    | unstable                                                                                                                      | init container image tag                             |
 | `initImage.pullPolicy` | Always                                                                                                                    | init container image pull policy                     |
+| `tolerations`      | []                                                                                                                            | specify taint toleration key, operator and effect    |
 
 #### Memtierd
 
@@ -157,6 +177,7 @@ Path to the chart: `nri-memtierd`
 | `initImage.name`   | [ghcr.io/containers/nri-plugins/config-manager](ghcr.io/containers/nri-plugins/config-manager)                                | init container image name                            |
 | `initImage.tag`    | unstable                                                                                                                      | init container image tag                             |
 | `initImage.pullPolicy` | Always                                                                                                                    | init container image pull policy                     |
+| `tolerations`      | []                                                                                                                            | specify taint toleration key, operator and effect    |
 
 
 #### Memory-qos
@@ -174,6 +195,7 @@ Path to the chart: `nri-memory-qos`
 | `initImage.name`   | [ghcr.io/containers/nri-plugins/config-manager](ghcr.io/containers/nri-plugins/config-manager)                                | init container image name                            |
 | `initImage.tag`    | unstable                                                                                                                      | init container image tag                             |
 | `initImage.pullPolicy` | Always                                                                                                                    | init container image pull policy                     |
+| `tolerations`      | []                                                                                                                            | specify taint toleration key, operator and effect    |
 
 
 ## Manual installation

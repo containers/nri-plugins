@@ -14,6 +14,10 @@ spec:
       labels:
       {{- include "memtierd.labels" . | nindent 8 }}
     spec:
+    {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
       nodeSelector:
         kubernetes.io/os: "linux"
       hostPID: true

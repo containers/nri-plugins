@@ -27,3 +27,12 @@ initContainerImage:
   # If not defined Chart.AppVersion will be used
   #tag: unstable
   pullPolicy: Always
+
+tolerations: []
+#
+# Example:
+#
+# tolerations:
+# - key: "node-role.kubernetes.io/control-plane"
+#   operator: "Exists"
+#   effect: "NoSchedule"
