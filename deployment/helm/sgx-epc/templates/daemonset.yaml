@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    {{- include "sgx-epc.labels" . | nindent 4 }}
+  name: nri-sgx-epc
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    matchLabels:
+    {{- include "sgx-epc.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+      {{- include "sgx-epc.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: Always
+      nodeSelector:
+        kubernetes.io/os: "linux"
+      {{- if .Values.nri.patchRuntimeConfig }}
+      initContainers:
+      - name: patch-runtime
+        image: {{ .Values.initContainerImage.name }}:{{ .Values.initContainerImage.tag | default .Chart.AppVersion }}
+        imagePullPolicy: {{ .Values.initContainerImage.pullPolicy }}
+        volumeMounts:
+        - name: containerd-config
+          mountPath: /etc/containerd
+        - name: crio-config
+          mountPath: /etc/crio/crio.conf.d
+        - name: dbus-socket
+          mountPath: /var/run/dbus/system_bus_socket
+        securityContext:
+          privileged: true
+      {{- end }}
+      containers:
+        - name: nri-sgx-epc
+          command:
+            - nri-sgx-epc
+            - --idx
+            - "40"
+          image: {{ .Values.image.name }}:{{ .Values.image.tag | default .Chart.AppVersion }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          resources:
+            requests:
+              cpu: {{ .Values.resources.cpu }}
+              memory: {{ .Values.resources.memory }}
+          volumeMounts:
+          - name: nrisockets
+            mountPath: /var/run/nri
+      volumes:
+      - name: nrisockets
+        hostPath:
+          path: /var/run/nri
+          type: DirectoryOrCreate
+      {{- if .Values.nri.patchRuntimeConfig }}
+      - name: containerd-config
+        hostPath:
+          path: /etc/containerd/
+          type: DirectoryOrCreate
+      - name: crio-config
+        hostPath:
+          path: /etc/crio/crio.conf.d/
+          type: DirectoryOrCreate
+      - name: dbus-socket
+        hostPath:
+          path: /var/run/dbus/system_bus_socket
+          type: Socket
+      {{- end }}

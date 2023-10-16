@@ -1,0 +1,22 @@
+# Default values for sgx-epc.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+---
+image:
+  name: ghcr.io/containers/nri-plugins/nri-sgx-epc
+  # tag, if defined will use the given image tag, otherwise Chart.AppVersion will be used
+  #tag: unstable
+  pullPolicy: Always
+
+resources:
+  cpu: 25m
+  memory: 100Mi
+
+nri:
+  patchRuntimeConfig: false
+
+initContainerImage:
+  name: ghcr.io/containers/nri-plugins/nri-config-manager
+  # If not defined Chart.AppVersion will be used
+  #tag: unstable
+  pullPolicy: Always

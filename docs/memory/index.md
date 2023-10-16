@@ -7,4 +7,5 @@ caption: Contents
 ---
 memory-qos.md
 memtierd.md
+sgx-epc.md
 ```
