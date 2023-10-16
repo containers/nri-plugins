@@ -14,7 +14,6 @@ spec:
       labels:
       {{- include "topology-aware-plugin.labels" . | nindent 8 }}
     spec:
-      restartPolicy: OnFailure
       serviceAccount: nri-resource-policy-topology-aware
       nodeSelector:
         kubernetes.io/os: "linux"

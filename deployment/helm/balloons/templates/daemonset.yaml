@@ -14,7 +14,6 @@ spec:
       labels:
       {{- include "balloons-plugin.labels" . | nindent 8 }}
     spec:
-      restartPolicy: OnFailure
       serviceAccount: nri-resource-policy-balloons
       nodeSelector:
         kubernetes.io/os: "linux"
