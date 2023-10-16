@@ -14,6 +14,10 @@ spec:
       labels:
       {{- include "memory-qos.labels" . | nindent 8 }}
     spec:
+    {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
       nodeSelector:
         kubernetes.io/os: "linux"
       {{- if .Values.nri.patchRuntimeConfig }}
