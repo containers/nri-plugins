@@ -67,11 +67,10 @@ dotgit_version() {
     fi
 
     case "$_v" in
-        v*) _v="${_v#v}"
-            ;;
+        v*) ;;
         *)
             _count=$(git rev-list --count HEAD)
-            _v="0.0.0-$_count-g$_id$_dirty"
+            _v="v0.0.0-$_count-g$_id$_dirty"
             ;;
     esac
 
@@ -127,7 +126,7 @@ unknown_version() {
 
 package_versions() {
     case "$VERSION" in
-        [0-9.]**-g[0-9a-f]*)
+        v[0-9.]**-g[0-9a-f]*)
             local _full="$VERSION"
             local _numeric=${_full%%-*}
             local _cntsha1=${_full#*-}
@@ -143,7 +142,7 @@ package_versions() {
             RPM=$(echo "$VERSION" | tr '+-' '_')
             DEB=$VERSION
             ;;
-        [0-9.]*)
+        v[0-9.]*)
             RPM=$VERSION
             DEB=$VERSION
             ;;
