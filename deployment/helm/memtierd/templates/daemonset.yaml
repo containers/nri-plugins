@@ -14,7 +14,6 @@ spec:
       labels:
       {{- include "memtierd.labels" . | nindent 8 }}
     spec:
-      restartPolicy: OnFailure
       nodeSelector:
         kubernetes.io/os: "linux"
       hostPID: true
