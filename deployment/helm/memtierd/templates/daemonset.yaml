@@ -76,7 +76,7 @@ spec:
       - name: nrisockets
         hostPath:
           path: /var/run/nri
-          type: Directory
+          type: DirectoryOrCreate
       - name: host-bitmap
         hostPath:
           path: /sys/kernel/mm/page_idle/bitmap
