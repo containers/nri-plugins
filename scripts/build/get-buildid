@@ -1,9 +1,8 @@
 #!/bin/bash
 
 #
-# Script to determine a version string, a buildid as well as related RPM
-# and debian package versions. These are determined using the following
-# sources in decreasing order of preference:
+# Script to determine a version string and a buildid. These are determined
+# using the following sources in decreasing order of preference:
 #
 #  1. git metadata:
 #    - version: git describe --tags --long --dirty
@@ -15,7 +14,7 @@
 #    - version: nri-resource-policy-(.*):
 #    - buildid: unknown
 #  4. date:
-#    - version: 0.0.0-$(date +%Y%m%d%H%M)
+#    - version: v0.0.0-$(date +%Y%m%d%H%M)
 #    - buildid: unknown
 #
 
@@ -24,8 +23,6 @@ VERSION_FILE=version
 BUILDID_FILE=buildid
 VERSION=""
 BUILDID=""
-RPM=""
-DEB=""
 
 fail() {
     echo "$*" 2>&1
@@ -42,7 +39,7 @@ print_usage() {
         echo "$*"
         _status=1
     fi
-    echo "usage $0 [--store[=<dir>]] [--version] [--buildid] [--rpm] [--deb] [--tar] [--all]"
+    echo "usage $0 [--store[=<dir>]] [--version] [--buildid] [--tar] [--all]"
     exit $_status
 }
 
@@ -139,12 +136,6 @@ package_versions() {
                 VERSION="$VERSION-$_cnt-g$_sha1"
             fi
             VERSION=$VERSION$_dirty
-            RPM=$(echo "$VERSION" | tr '+-' '_')
-            DEB=$VERSION
-            ;;
-        v[0-9.]*)
-            RPM=$VERSION
-            DEB=$VERSION
             ;;
         *)
             fail "can't parse version $VERSION"
@@ -164,14 +155,6 @@ print_variables() {
             buildid)
                 [ -n "$SHVAR" ] && _var='gitbuildid='
                 _val="$BUILDID"
-                ;;
-            rpm)
-                [ -n "$SHVAR" ] && _var='rpmversion='
-                _val="$RPM"
-                ;;
-            deb)
-                [ -n "$SHVAR" ] && _var='debversion='
-                _val="$DEB"
                 ;;
             tar)
                 [ -n "$SHVAR" ] && _var='tarversion='
@@ -217,17 +200,11 @@ while [ "$#" != "0" ]; do
         --buildid|-b)
             PRINT="$PRINT buildid"
             ;;
-        --rpm)
-            PRINT="$PRINT rpm"
-            ;;
-        --deb)
-            PRINT="$PRINT deb"
-            ;;
         --tar)
             PRINT="$PRINT tar"
             ;;
         --all)
-            PRINT="version buildid rpm deb tar"
+            PRINT="version buildid tar"
             ;;
         --shell*|--sh-syntax*)
             val="${1##*=}"
