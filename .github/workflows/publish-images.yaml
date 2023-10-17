@@ -53,7 +53,7 @@ jobs:
                       tag=unstable
                       ;;
                   refs/heads/release-*)
-                      tag="${GITREF#refs/heads/release-}-unstable"
+                      tag="v${GITREF#refs/heads/release-}-unstable"
                       ;;
                   *)
                       echo "error: can't determine tag."
