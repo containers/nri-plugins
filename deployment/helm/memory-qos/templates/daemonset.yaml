@@ -14,7 +14,6 @@ spec:
       labels:
       {{- include "memory-qos.labels" . | nindent 8 }}
     spec:
-      restartPolicy: OnFailure
       nodeSelector:
         kubernetes.io/os: "linux"
       {{- if .Values.nri.patchRuntimeConfig }}
