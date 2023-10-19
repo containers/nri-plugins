@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Installation &mdash; NRI Plugins v0.1.0-107-gb1bc946 documentation</title>
+  <title>Installation &mdash; NRI Plugins v0.1.0-108-g2babf1f documentation</title>
       <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -168,10 +168,28 @@ For instance,</p>
 <li><p>Install the plugin. Replace release version with the desired version. If you wish to
 provide custom values to the Helm chart, refer to the <a class="reference internal" href="#helm-parameters">table</a> below,
 which describes the available parameters that can be modified before installation.
-It’s important to note that specifying the namespace (using <code class="docutils literal notranslate"><span class="pre">--namespace</span></code> or <code class="docutils literal notranslate"><span class="pre">-n</span></code>) is
-crucial when installing the Helm chart. If no namespace is specified, the manifests
-will be installed in the default namespace.</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>topology-aware<span class="w"> </span>nri-plugins/nri-resource-policy-topology-aware<span class="w"> </span>--namespace<span class="w"> </span>kube-system
+Parameters can be specified either using the –set option or through the -f flag along
+with the custom values.yaml file. It’s important to note that specifying the namespace
+(using <code class="docutils literal notranslate"><span class="pre">--namespace</span></code> or <code class="docutils literal notranslate"><span class="pre">-n</span></code>) is crucial when installing the Helm chart. If no namespace
+is specified, the manifests will be installed in the default namespace.</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="c1"># Install the topology-aware plugin with default values</span>
+helm<span class="w"> </span>install<span class="w"> </span>topology-aware<span class="w"> </span>nri-plugins/nri-resource-policy-topology-aware<span class="w"> </span>--namespace<span class="w"> </span>kube-system
+
+<span class="c1"># Install the topology-aware plugin with custom values provided using the --set option</span>
+helm<span class="w"> </span>install<span class="w"> </span>topology-aware<span class="w"> </span>nri-plugins/nri-resource-policy-topology-aware<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>--set<span class="w"> </span>nri.patchRuntimeConfig<span class="o">=</span><span class="nb">true</span>
+
+<span class="c1"># Install the topology-aware plugin with custom values specified in a custom values.yaml file</span>
+cat<span class="w"> </span><span class="s">&lt;&lt;EOF &gt; myPath/values.yaml</span>
+<span class="s">nri:</span>
+<span class="s">  patchRuntimeConfig: true</span>
+
+<span class="s">tolerations:</span>
+<span class="s">- key: &quot;node-role.kubernetes.io/control-plane&quot;</span>
+<span class="s">  operator: &quot;Exists&quot;</span>
+<span class="s">  effect: &quot;NoSchedule&quot;</span>
+<span class="s">EOF</span>
+
+helm<span class="w"> </span>install<span class="w"> </span>topology-aware<span class="w"> </span>nri-plugins/nri-resource-policy-topology-aware<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>-f<span class="w"> </span>myPath/values.yaml
 </pre></div>
 </div>
 <p>The helm repository is named <code class="docutils literal notranslate"><span class="pre">nri-plugins</span></code>, and in step 1, you have the
@@ -269,6 +287,11 @@ along with the default values, for the Topology-aware and Balloons plugins Helm 
 <td>Always</td>
 <td>init container image pull policy</td>
 </tr>
+<tr>
+<td><code>tolerations</code></td>
+<td>[]</td>
+<td>specify taint toleration key, operator and effect</td>
+</tr>
 </tbody>
 </table>
 </section>
@@ -339,6 +362,11 @@ along with the default values, for the Topology-aware and Balloons plugins Helm 
 <td>Always</td>
 <td>init container image pull policy</td>
 </tr>
+<tr>
+<td><code>tolerations</code></td>
+<td>[]</td>
+<td>specify taint toleration key, operator and effect</td>
+</tr>
 </tbody>
 </table>
 </section>
@@ -404,6 +432,11 @@ along with the default values, for the Topology-aware and Balloons plugins Helm 
 <td>Always</td>
 <td>init container image pull policy</td>
 </tr>
+<tr>
+<td><code>tolerations</code></td>
+<td>[]</td>
+<td>specify taint toleration key, operator and effect</td>
+</tr>
 </tbody>
 </table>
 </section>
@@ -463,6 +496,11 @@ along with the default values, for the Topology-aware and Balloons plugins Helm 
 <td><code>initImage.pullPolicy</code></td>
 <td>Always</td>
 <td>init container image pull policy</td>
+</tr>
+<tr>
+<td><code>tolerations</code></td>
+<td>[]</td>
+<td>specify taint toleration key, operator and effect</td>
 </tr>
 </tbody>
 </table>
