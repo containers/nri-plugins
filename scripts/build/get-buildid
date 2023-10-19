@@ -117,7 +117,7 @@ parent_version() {
 }
 
 unknown_version() {
-    VERSION="0.0.0-$(date +%Y%m%d%H%M)"
+    VERSION="v0.0.0-$(date +%Y%m%d%H%M)"
     BUILDID=unknown
 }
 
@@ -136,6 +136,8 @@ package_versions() {
                 VERSION="$VERSION-$_cnt-g$_sha1"
             fi
             VERSION=$VERSION$_dirty
+            ;;
+        v[0-9.]*)
             ;;
         *)
             fail "can't parse version $VERSION"
