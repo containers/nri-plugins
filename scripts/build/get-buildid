@@ -120,7 +120,7 @@ parent_version() {
 }
 
 unknown_version() {
-    VERSION="0.0.0-$(date +%Y%m%d%H%M)"
+    VERSION="v0.0.0-$(date +%Y%m%d%H%M)"
     BUILDID=unknown
 }
 
@@ -145,6 +145,8 @@ package_versions() {
         v[0-9.]*)
             RPM=$VERSION
             DEB=$VERSION
+            ;;
+        v[0-9.]*)
             ;;
         *)
             fail "can't parse version $VERSION"
