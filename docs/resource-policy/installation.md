@@ -62,7 +62,7 @@ following components: DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-r
     ```
 
 1. Install the plugin. Replace release version with the desired version. If you wish to
-   provide custom values to the Helm chart, refer to the [table](#helm-parameters) below,
+   provide custom values to the Helm chart, refer to the [table](#available-parameters) below,
    which describes the available parameters that can be modified before installation.
    Parameters can be specified either using the --set option or through the -f flag along
    with the custom values.yaml file. It's important to note that specifying the namespace
@@ -94,7 +94,7 @@ following components: DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-r
     flexibility to choose any name when adding it. However, it's important to
     note that `nri-resource-policy-topology-aware`, which serves as the path
     to the chart, must accurately reflect the actual name of the chart. You
-    can find the path to each chart in the [helm parameters table](#helm-parameters).
+    can find the path to each chart in the [helm parameters table](#available-parameters).
 
 
 1. Verify the status of the daemonset to ensure that the plugin is running successfully
@@ -118,95 +118,25 @@ helm uninstall topology-aware --namespace kube-system
 
 Note: this removes DaemonSet, ConfigMap, CustomResourceDefinition, and RBAC-related objects associated with the chart.
 
-### Helm parameters
+## Available parameters
 
-The tables below present an overview of the parameters available for users to customize with their own values,
-along with the default values, for the Topology-aware and Balloons plugins Helm charts.
-
-#### Topology-aware
-
-Path to the chart: `nri-resource-policy-topology-aware`
-
-| Name               | Default                                                                                                                       | Description                                          |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `image.name`       | [ghcr.io/containers/nri-plugins/nri-resource-policy-topology-aware](ghcr.io/containers/nri-plugins/nri-resource-policy-topology-aware)    | container image name                     |
-| `image.tag`        | unstable                                                                                                                      | container image tag                                  |
-| `image.pullPolicy` | Always                                                                                                                        | image pull policy                                    |
-| `resources.cpu`    | 500m                                                                                                                          | cpu resources for the Pod                            |
-| `resources.memory` | 512Mi                                                                                                                         | memory qouta for the Pod                             | 
-| `hostPort`         | 8891                                                                                                                          | metrics port to expose on the host                   |
-| `config`           | <pre><code>ReservedResources:</code><br><code>  cpu: 750m</code></pre>                                                        | plugin configuration data                            |
-| `nri.patchRuntimeConfig` | false                                                                                                                   | enable NRI in containerd or CRI-O                    |
-| `initImage.name`   | [ghcr.io/containers/nri-plugins/config-manager](ghcr.io/containers/nri-plugins/config-manager)                                | init container image name                            |
-| `initImage.tag`    | unstable                                                                                                                      | init container image tag                             |
-| `initImage.pullPolicy` | Always                                                                                                                    | init container image pull policy                     |
-| `tolerations`      | []                                                                                                                            | specify taint toleration key, operator and effect    |
-
-#### Balloons
-
-Path to the chart: `nri-resource-policy-balloons`
-
-| Name               | Default                                                                                                                       | Description                                          |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `image.name`       | [ghcr.io/containers/nri-plugins/nri-resource-policy-balloons](ghcr.io/containers/nri-plugins/nri-resource-policy-balloons)    | container image name                                 |
-| `image.tag`        | unstable                                                                                                                      | container image tag                                  |
-| `image.pullPolicy` | Always                                                                                                                        | image pull policy                                    |
-| `resources.cpu`    | 500m                                                                                                                          | cpu resources for the Pod                            |
-| `resources.memory` | 512Mi                                                                                                                         | memory qouta for the Pod                             | 
-| `hostPort`         | 8891                                                                                                                          | metrics port to expose on the host                   |
-| `config`           | <pre><code>ReservedResources:</code><br><code>  cpu: 750m</code></pre>                                                        | plugin configuration data                            |
-| `nri.patchRuntimeConfig` | false                                                                                                                   | enable NRI in containerd or CRI-O                    |
-| `initImage.name`   | [ghcr.io/containers/nri-plugins/config-manager](ghcr.io/containers/nri-plugins/config-manager)                                | init container image name                            |
-| `initImage.tag`    | unstable                                                                                                                      | init container image tag                             |
-| `initImage.pullPolicy` | Always                                                                                                                    | init container image pull policy                     |
-| `tolerations`      | []                                                                                                                            | specify taint toleration key, operator and effect    |
-
-#### Memtierd
-
-Path to the chart: `nri-memtierd`
-
-| Name               | Default                                                                                                                       | Description                                          |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `image.name`       | [ghcr.io/containers/nri-plugins/nri-memtierd](ghcr.io/containers/nri-plugins/nri-memtierd)                                    | container image name                                 |
-| `image.tag`        | unstable                                                                                                                      | container image tag                                  |
-| `image.pullPolicy` | Always                                                                                                                        | image pull policy                                    |
-| `resources.cpu`    | 250m                                                                                                                          | cpu resources for the Pod                            |
-| `resources.memory` | 100Mi                                                                                                                         | memory qouta for the                                 |
-| `outputDir`        | empty string                                                                                                                  | host directory for memtierd.output files             |
-| `nri.patchRuntimeConfig` | false                                                                                                                   | enable NRI in containerd or CRI-O                    |
-| `initImage.name`   | [ghcr.io/containers/nri-plugins/config-manager](ghcr.io/containers/nri-plugins/config-manager)                                | init container image name                            |
-| `initImage.tag`    | unstable                                                                                                                      | init container image tag                             |
-| `initImage.pullPolicy` | Always                                                                                                                    | init container image pull policy                     |
-| `tolerations`      | []                                                                                                                            | specify taint toleration key, operator and effect    |
-
-
-#### Memory-qos
-
-Path to the chart: `nri-memory-qos`
-
-| Name               | Default                                                                                                                       | Description                                          |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `image.name`       | [ghcr.io/containers/nri-plugins/nri-memory-qos](ghcr.io/containers/nri-plugins/nri-memory-qos)                                | container image name                                 |
-| `image.tag`        | unstable                                                                                                                      | container image tag                                  |
-| `image.pullPolicy` | Always                                                                                                                        | image pull policy                                    |
-| `resources.cpu`    | 10m                                                                                                                           | cpu resources for the Pod                            |
-| `resources.memory` | 100Mi                                                                                                                         | memory qouta for the                                 |
-| `nri.patchRuntimeConfig` | false                                                                                                                   | enable NRI in containerd or CRI-O                    |
-| `initImage.name`   | [ghcr.io/containers/nri-plugins/config-manager](ghcr.io/containers/nri-plugins/config-manager)                                | init container image name                            |
-| `initImage.tag`    | unstable                                                                                                                      | init container image tag                             |
-| `initImage.pullPolicy` | Always                                                                                                                    | init container image pull policy                     |
-| `tolerations`      | []                                                                                                                            | specify taint toleration key, operator and effect    |
-
+To know what are the available Helm configuration options for currently available Helm charts, you can check:
+- [balloons parameters](../../deployment/helm/balloons/README.md)
+- [memory-qos parameters](../../deployment/helm/memory-qos/README.md)
+- [memtierd parameters](../../deployment/helm/memtierd/README.md)
+- [topology-aware parameters](../../deployment/helm/topology-aware/README.md)
 
 ## Manual installation
 
 For the manual installation we will be using templating tool to generate Kubernetes YAML manifests.
 1. Clone the project to your local machine
+
     ```sh
     git clone https://github.com/containers/nri-plugins.git
     ```
 
 1. Navigate to the project directory
+
     ```sh
     cd nri-plugins
     ```
