@@ -48,7 +48,7 @@ min and max frequencies on CPU cores and uncore.
 ## Deployment
 
 Deploy nri-resource-policy-balloons on each node as you would for any
-other policy. See [installation](../installation.md) for more details.
+other policy. See [deployment](../../deployment/index.md) for more details.
 
 ## Configuration
 
