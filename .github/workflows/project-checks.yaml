@@ -27,6 +27,14 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
+      - name: Git-check PR for conflict markers and trailing whitespace errors.
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          if ! git diff-index --check origin/${{ github.base_ref }} --; then
+              echo "This PR would introduce the above errors."
+              echo "Please fix them and update the PR."
+              exit 1
+          fi
       - name: make verify
         run: |
           make verify
