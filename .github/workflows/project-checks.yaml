@@ -30,6 +30,15 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
+      - name: Check PR for whitespace errors
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          if ! git diff-index --check origin/${{ github.base_ref }} --; then
+              echo "This PR would introduce the errors shown above."
+              echo "Please fix them and update the PR."
+              exit 1
+          fi
+
       - name: Verify dependencies
         run: |
           make verify-godeps
