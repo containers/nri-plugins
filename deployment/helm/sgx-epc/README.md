@@ -39,7 +39,7 @@ annotations and (a yet to be merged pull request to) the cgroup v2 misc controll
 
 ## Installing the Chart
 
-Path to the chart: `nri-sg-epc`.
+Path to the chart: `nri-sgx-epc`.
 
 ```sh
 helm repo add nri-plugins https://containers.github.io/nri-plugins
