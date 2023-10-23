@@ -49,7 +49,7 @@ The command above deploys memtierd NRI plugin on the Kubernetes cluster within t
 `kube-system` namespace with default configuration. To customize the available parameters
 as described in the [Configuration options]( #configuration-options) below, you have two
 options: you can use the `--set` flag or create a custom values.yaml file and provide it
-using the `-f` flag. For example: 
+using the `-f` flag. For example:
 
 ```sh
 # Install the memtierd plugin with custom values provided using the --set option
