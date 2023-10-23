@@ -10,4 +10,5 @@ balloons.md
 topology-aware.md
 memory-qos.md
 memtierd.md
+sgx-epc.md
 ```

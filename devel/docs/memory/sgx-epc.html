@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Resource Policy Plugins &mdash; NRI Plugins v0.1.0-114-ge09ca9b documentation</title>
+  <title>SGX EPC Limit Plugin &mdash; NRI Plugins v0.1.0-114-ge09ca9b documentation</title>
       <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -20,8 +20,8 @@
     <script src="../../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../../genindex.html" />
     <link rel="search" title="Search" href="../../search.html" />
-    <link rel="next" title="Introduction" href="introduction.html" />
-    <link rel="prev" title="Introduction" href="../introduction.html" /> 
+    <link rel="next" title="Deployment" href="../deployment/index.html" />
+    <link rel="prev" title="Memtierd NRI plugin" href="memtierd.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -49,15 +49,16 @@
               <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="../introduction.html">Introduction</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Resource Policy Plugins</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="introduction.html">Introduction</a></li>
-<li class="toctree-l2"><a class="reference internal" href="setup.html">Setup and Usage</a></li>
-<li class="toctree-l2"><a class="reference internal" href="configuration.html">Dynamic Configuration</a></li>
-<li class="toctree-l2"><a class="reference internal" href="policy/index.html">Policies</a></li>
-<li class="toctree-l2"><a class="reference internal" href="developers-guide/index.html">Developer’s Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../resource-policy/index.html">Resource Policy Plugins</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">Memory plugins</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="memory-qos.html">Memory QoS NRI plugin</a></li>
+<li class="toctree-l2"><a class="reference internal" href="memtierd.html">Memtierd NRI plugin</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">SGX EPC Limit Plugin</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#annotations">Annotations</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="../memory/index.html">Memory plugins</a></li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="../deployment/index.html">Deployment</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/containers/nri-plugins">Project GitHub repository</a></li>
@@ -77,9 +78,10 @@
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
       <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
-      <li class="breadcrumb-item active">Resource Policy Plugins</li>
+          <li class="breadcrumb-item"><a href="index.html">Memory plugins</a></li>
+      <li class="breadcrumb-item active">SGX EPC Limit Plugin</li>
       <li class="wy-breadcrumbs-aside">
-            <a href="../../_sources/docs/resource-policy/index.md.txt" rel="nofollow"> View page source</a>
+            <a href="../../_sources/docs/memory/sgx-epc.md.txt" rel="nofollow"> View page source</a>
       </li>
   </ul>
   <hr/>
@@ -87,39 +89,35 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="resource-policy-plugins">
-<h1>Resource Policy Plugins<a class="headerlink" href="#resource-policy-plugins" title="Permalink to this heading"></a></h1>
-<div class="toctree-wrapper compound">
-<p class="caption" role="heading"><span class="caption-text">Contents</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="introduction.html">Introduction</a></li>
-<li class="toctree-l1"><a class="reference internal" href="setup.html">Setup and Usage</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="setup.html#setting-up-nri-resource-policy">Setting up NRI Resource Policy</a></li>
-<li class="toctree-l2"><a class="reference internal" href="setup.html#logging-and-debugging">Logging and debugging</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="configuration.html">Dynamic Configuration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="policy/index.html">Policies</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="policy/topology-aware.html">Topology-Aware Policy</a></li>
-<li class="toctree-l2"><a class="reference internal" href="policy/balloons.html">Balloons Policy</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="developers-guide/index.html">Developer’s Guide</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="developers-guide/architecture.html">Architecture</a></li>
-<li class="toctree-l2"><a class="reference internal" href="developers-guide/testing.html">Testing</a></li>
-<li class="toctree-l2"><a class="reference internal" href="developers-guide/cpu-allocator.html">CPU Allocator</a></li>
-</ul>
-</li>
-</ul>
+  <section id="sgx-epc-limit-plugin">
+<h1>SGX EPC Limit Plugin<a class="headerlink" href="#sgx-epc-limit-plugin" title="Permalink to this heading"></a></h1>
+<p>The sgx-epc NRI plugin allows control over SGX encrypted page cache usage
+using the cgroup v2 misc controller and pod annotations.</p>
+<section id="annotations">
+<h2>Annotations<a class="headerlink" href="#annotations" title="Permalink to this heading"></a></h2>
+<p>You can annotate encrypted page cache limit for every container in the pod,
+or just a specific container using the following annotation notations:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nn">...</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="c1"># for all containers in the pod</span>
+<span class="w">    </span><span class="nt">epc-limit.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;32768&quot;</span>
+<span class="w">    </span><span class="c1"># alternative notation for all containers in the pod</span>
+<span class="w">    </span><span class="nt">epc-limit.nri.io</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;8192&quot;</span>
+<span class="w">    </span><span class="c1"># for container c0 in the pod</span>
+<span class="w">    </span><span class="nt">epc-limit.nri.io/container.c0</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;16384&quot;</span>
+<span class="nn">...</span>
+</pre></div>
 </div>
+</section>
 </section>
 
 
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="../introduction.html" class="btn btn-neutral float-left" title="Introduction" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="introduction.html" class="btn btn-neutral float-right" title="Introduction" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="memtierd.html" class="btn btn-neutral float-left" title="Memtierd NRI plugin" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../deployment/index.html" class="btn btn-neutral float-right" title="Deployment" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>
