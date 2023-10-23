@@ -1,0 +1,11 @@
+apiVersion: v2
+appVersion: unstable
+description: |
+  The sgx-epc NRI plugin allows control over SGX encrypted page cache usage using the
+  cgroup v2 misc controller and pod annotations.
+name: nri-sgx-epc
+sources:
+ - https://github.com/containers/nri-plugins
+home: https://github.com/containers/nri-plugins
+type: application
+version: v0.0.0

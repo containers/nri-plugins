@@ -71,7 +71,8 @@ PLUGINS ?= \
 	nri-resource-policy-balloons \
 	nri-resource-policy-template \
 	nri-memory-qos \
-	nri-memtierd
+	nri-memtierd \
+        nri-sgx-epc
 
 BINARIES ?= \
 	config-manager
