@@ -4,8 +4,8 @@ When you want to try NRI Resource Policy, here is the list of things
 you need to do, assuming you already have a Kubernetes\* cluster up and
 running, using either `containerd` or `cri-o` as the runtime.
 
-  * [Deploy](../deployment/index.md) NRI Resource Policy DaemonSet deployment file.
-  * Runtime (containerd / cri-o) configuration
+* [Deploy](../deployment/index.md) NRI Resource Policy DaemonSet deployment file.
+* Runtime (containerd / cri-o) configuration
 
 For NRI Resource Policy, you need to provide a configuration file. The default
 configuration ConfigMap file can be found in the DaemonSet deployment yaml file.
