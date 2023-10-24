@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.1.0-119-g1595a69 documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.1.0-120-ge6fdda5 documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -132,7 +132,8 @@ first decides the type of the balloon that will run the
 container. The decision is based on annotations of the pod, or the
 namespace if annotations are not given.</p></li>
 <li><p>Next the policy decides which balloon of the decided type will run
-the container. Options are:</p>
+the container. Options are:</p></li>
+</ol>
 <ul class="simple">
 <li><p>an existing balloon that already has enough CPUs to run its
 current and new containers</p></li>
@@ -140,7 +141,7 @@ current and new containers</p></li>
 new containers</p></li>
 <li><p>new balloon.</p></li>
 </ul>
-</li>
+<ol class="arabic simple" start="9">
 <li><p>When a CPU is added to a balloon or removed from it, the CPU is
 reconfigured based on balloon’s CPU class attributes, or idle CPU
 class attributes.</p></li>

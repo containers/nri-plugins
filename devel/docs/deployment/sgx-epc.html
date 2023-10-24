@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SGX EPC Limit Plugin &mdash; NRI Plugins v0.1.0-119-g1595a69 documentation</title>
+  <title>SGX EPC Limit Plugin &mdash; NRI Plugins v0.1.0-120-ge6fdda5 documentation</title>
       <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -110,26 +110,29 @@ annotations and (a yet to be merged pull request to) the cgroup v2 misc controll
 <ul>
 <li><p>At least <a class="reference external" href="https://github.com/containerd/containerd/releases/tag/v1.7.0">containerd 1.7.0</a>
 release version to use the NRI feature.</p></li>
-<li><p>Enable NRI feature by following <a class="reference external" href="https://github.com/containerd/containerd/blob/main/docs/NRI.md#enabling-nri-support-in-containerd">these</a>
-detailed instructions. You can optionally enable the NRI in containerd using the Helm chart
-during the chart installation simply by setting the <code class="docutils literal notranslate"><span class="pre">nri.patchRuntimeConfig</span></code> parameter.
-For instance,</p>
+<li><p>Enable NRI feature by following
+<a class="reference external" href="https://github.com/containerd/containerd/blob/main/docs/NRI.md#enabling-nri-support-in-containerd">these</a>
+detailed instructions. You can optionally enable the NRI in containerd
+using the Helm chart during the chart installation simply by setting the
+<code class="docutils literal notranslate"><span class="pre">nri.patchRuntimeConfig</span></code> parameter. For instance,</p>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>my-sgx-epc<span class="w"> </span>nri-plugins/nri-sgx-epc<span class="w"> </span>--set<span class="w"> </span>nri.patchRuntimeConfig<span class="o">=</span><span class="nb">true</span><span class="w"> </span>--namespace<span class="w"> </span>kube-system
 </pre></div>
 </div>
 <p>Enabling <code class="docutils literal notranslate"><span class="pre">nri.patchRuntimeConfig</span></code> creates an init container to turn on
-NRI feature in containerd and only after that proceed the plugin installation.</p>
+NRI feature in containerd and only after that proceed the plugin
+installation.</p>
 </li>
 </ul>
 </li>
 <li><p>CRI-O</p>
 <ul>
-<li><p>At least <a class="reference external" href="https://github.com/cri-o/cri-o/releases/tag/v1.26.0">v1.26.0</a> release version to
-use the NRI feature</p></li>
-<li><p>Enable NRI feature by following <a class="reference external" href="https://github.com/cri-o/cri-o/blob/main/docs/crio.conf.5.md#crionri-table">these</a> detailed instructions.
-You can optionally enable the NRI in CRI-O using the Helm chart
-during the chart installation simply by setting the <code class="docutils literal notranslate"><span class="pre">nri.patchRuntimeConfig</span></code> parameter.
-For instance,</p>
+<li><p>At least <a class="reference external" href="https://github.com/cri-o/cri-o/releases/tag/v1.26.0">v1.26.0</a>
+release version to use the NRI feature</p></li>
+<li><p>Enable NRI feature by following
+<a class="reference external" href="https://github.com/cri-o/cri-o/blob/main/docs/crio.conf.5.md#crionri-table">these</a>
+detailed instructions.  You can optionally enable the NRI in CRI-O using
+the Helm chart during the chart installation simply by setting the
+<code class="docutils literal notranslate"><span class="pre">nri.patchRuntimeConfig</span></code> parameter. For instance,</p>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>my-sgx-epc<span class="w"> </span>nri-plugins/nri-sgx-epc<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>--set<span class="w"> </span>nri.patchRuntimeConfig<span class="o">=</span><span class="nb">true</span>
 </pre></div>
 </div>
@@ -147,11 +150,11 @@ For instance,</p>
 helm<span class="w"> </span>install<span class="w"> </span>my-sgx-epc<span class="w"> </span>nri-plugins/nri-sgx-epc<span class="w"> </span>--namespace<span class="w"> </span>kube-system
 </pre></div>
 </div>
-<p>The command above deploys sgx-epc NRI plugin on the Kubernetes cluster within the
-<code class="docutils literal notranslate"><span class="pre">kube-system</span></code> namespace with default configuration. To customize the available parameters
-as described in the <a class="reference internal" href="#configuration-options">Configuration options</a> below, you have two
-options: you can use the <code class="docutils literal notranslate"><span class="pre">--set</span></code> flag or create a custom values.yaml file and provide it
-using the <code class="docutils literal notranslate"><span class="pre">-f</span></code> flag. For example:</p>
+<p>The command above deploys sgx-epc NRI plugin on the Kubernetes cluster within
+the <code class="docutils literal notranslate"><span class="pre">kube-system</span></code> namespace with default configuration. To customize the
+available parameters as described in the <a class="reference internal" href="#configuration-options">Configuration options</a>
+below, you have two options: you can use the <code class="docutils literal notranslate"><span class="pre">--set</span></code> flag or create a custom
+values.yaml file and provide it using the <code class="docutils literal notranslate"><span class="pre">-f</span></code> flag. For example:</p>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="c1"># Install the sgx-epc plugin with custom values provided using the --set option</span>
 helm<span class="w"> </span>install<span class="w"> </span>my-sgx-epc<span class="w"> </span>nri-plugins/nri-sgx-epc<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>--set<span class="w"> </span>nri.patchRuntimeConfig<span class="o">=</span><span class="nb">true</span>
 </pre></div>
@@ -180,8 +183,8 @@ helm<span class="w"> </span>install<span class="w"> </span>my-sgx-epc<span class
 </section>
 <section id="configuration-options">
 <h2>Configuration options<a class="headerlink" href="#configuration-options" title="Permalink to this heading"></a></h2>
-<p>The tables below present an overview of the parameters available for users to customize with their own values,
-along with the default values.</p>
+<p>The tables below present an overview of the parameters available for users to
+customize with their own values, along with the default values.</p>
 <table class="docutils align-default">
 <thead>
 <tr class="row-odd"><th class="head"><p>Name</p></th>
