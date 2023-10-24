@@ -41,11 +41,12 @@ by NRI-RP with the Kubernetes Control Plane go through the node agent with
 the node agent performing any direct interactions on behalf of NRI-RP.
 
 The agent interface implements the following functionality:
-  - push updated external configuration data to NRI-RP
-  - updating resource capacity of the node
-  - getting, setting, or removing labels on the node
-  - getting, setting, or removing annotations on the node
-  - getting, setting, or removing taints on the node
+
+- push updated external configuration data to NRI-RP
+- updating resource capacity of the node
+- getting, setting, or removing labels on the node
+- getting, setting, or removing annotations on the node
+- getting, setting, or removing taints on the node
 
 The config interface is defined and has its gRPC server running in
 NRI-RP. The agent acts as a gRPC client for this interface. The low-level
@@ -55,9 +56,9 @@ NRI-RP acts as a gRPC client for the low-level plumbing interface.
 
 Additionally, the stock node agent that comes with NRI-RP implements schemes
 for:
-   - configuration management for all NRI-RP instances
-   - management of dynamic adjustments to container resource assignments
 
+- configuration management for all NRI-RP instances
+- management of dynamic adjustments to container resource assignments
 
 ### [Resource Manager](tree:/pkg/resmgr/)
 
@@ -81,35 +82,37 @@ pipeline; hand it off for logging, then relay it to the server and the
 corresponding response back to the client.
 
 B. If the request needs to be intercepted for policying, do the following:
- 1. Lock the processing pipeline serialization lock.
- 2. Look up/create cache objects (pod/container) for the request.
- 3. If the request has no resource allocation consequences, do proxying
-    (step 6).
- 4. Otherwise, invoke the policy layer for resource allocation:
-    - Pass it on to the configured active policy, which will
-    - Allocate resources for the container.
-    - Update the assignments for the container in the cache.
-    - Update any other containers affected by the allocation in the cache.
- 5. Invoke the controller layer for post-policy processing, which will:
-    - Collect controllers with pending changes in their domain of control
-    - for each invoke the post-policy processing function corresponding to
-      the request.
-    - Clear pending markers for the controllers.
- 6. Proxy the request:
-    - Relay the request to the server.
-    - Send update requests for any additional affected containers.
-    - Update the cache if/as necessary based on the response.
-    - Relay the response back to the client.
- 7. Release the processing pipeline serialization lock.
+
+1. Lock the processing pipeline serialization lock.
+2. Look up/create cache objects (pod/container) for the request.
+3. If the request has no resource allocation consequences, do proxying
+   (step 6).
+4. Otherwise, invoke the policy layer for resource allocation:
+  - Pass it on to the configured active policy, which will
+  - Allocate resources for the container.
+  - Update the assignments for the container in the cache.
+  - Update any other containers affected by the allocation in the cache.
+5. Invoke the controller layer for post-policy processing, which will:
+  - Collect controllers with pending changes in their domain of control
+  - for each invoke the post-policy processing function corresponding to
+    the request.
+  - Clear pending markers for the controllers.
+6. Proxy the request:
+  - Relay the request to the server.
+  - Send update requests for any additional affected containers.
+  - Update the cache if/as necessary based on the response.
+  - Relay the response back to the client.
+7. Release the processing pipeline serialization lock.
 
 The high-level control flow of the event processing pipeline is one of the
 following, based on the event type:
 
- - For policy-specific events:
-   1. Engage the processing pipeline lock.
-   2. Call policy event handler.
-   3. Invoke the controller layer for post-policy processing (same as step 5 for requests).
-   4. Release the pipeline lock.
+- For policy-specific events:
+  1. Engage the processing pipeline lock.
+  2. Call policy event handler.
+  3. Invoke the controller layer for post-policy processing (same as step 5 for
+     requests).
+  4. Release the pipeline lock.
 
 ### [Cache](tree:/pkg/resmgr/cache/)
 
@@ -144,13 +147,11 @@ managers event loop. This causes a callback from the resource manager to
 the policy's event handler with the injected event as an argument and with
 the cache properly locked.
 
-
 ### [Generic Policy Layer](blob:/pkg/resmgr/policy/policy.go)
 
 The generic policy layer defines the abstract interface the rest of NRI-RP
 uses to interact with policy implementations and takes care of the details
 of activating and dispatching calls through to the configured active policy.
-
 
 ### [Generic Resource Controller Layer](blob:/pkg/resmgr/control/control.go)
 
@@ -159,7 +160,6 @@ of NRI-RP uses to interact with resource controller implementations and takes
 care of the details of dispatching calls to the controller implementations
 for post-policy enforcment of decisions.
 
-
 ### [Metrics Collector](tree:/pkg/metrics/)
 
 The metrics collector gathers a set of runtime metrics about the containers
@@ -167,7 +167,6 @@ running on the node. NRI-RP can be configured to periodically evaluate this
 collected data to determine how optimal the current assignment of container
 resources is and to attempt a rebalancing/reallocation if it is deemed
 both possible and necessary.
-
 
 ### [Policy Implementations](tree:/cmd/plugins)
 

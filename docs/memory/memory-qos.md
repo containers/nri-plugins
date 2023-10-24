@@ -6,6 +6,7 @@ parameters: memory QoS classes and direct memory annotations.
 ## Workload configuration
 
 There are two configuration methods:
+
 1. Memory QoS classes: memory parameters are calculated in the same
    way for all workloads that belong to the same class.
 2. Direct workload-specific memory parameters.
@@ -48,6 +49,7 @@ Plugin configuration lists memory QoS classes and their parameters
 that affect calculating actual memory parameters.
 
 `classes:` is followed by list of maps with following keys and values:
+
 - `name` (string): name of the memory QoS class, matches
   `class.memory-qos.nri.io` annotation values.
 - `swaplimitratio` (from 0.0 to 1.0): minimum ratio of container's
@@ -94,7 +96,8 @@ This configuration defines the following.
 
 - Containerd v1.7+
 - Enable NRI in /etc/containerd/config.toml:
-  ```
+
+  ```toml
   [plugins."io.containerd.nri.v1.nri"]
     disable = false
     disable_connections = false
