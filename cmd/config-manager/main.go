@@ -39,10 +39,11 @@ const (
 )
 
 func main() {
-	unit, err := detectRuntime()
+	unit, conn, err := detectRuntime()
 	if err != nil {
 		log.Fatalf("failed to autodetect container runtime: %v", err)
 	}
+	defer conn.Close()
 
 	switch unit {
 	case containerdUnit:
@@ -57,7 +58,7 @@ func main() {
 		log.Fatalf("error enabling NRI: %v", err)
 	}
 
-	if err = restartSystemdUnit(unit); err != nil {
+	if err = restartSystemdUnit(conn, unit); err != nil {
 		log.Fatalf("failed to restart %q unit: %v", unit, err)
 	}
 
@@ -147,12 +148,11 @@ func updateContainerdConfig(config map[string]interface{}) map[string]interface{
 	return config
 }
 
-func detectRuntime() (string, error) {
+func detectRuntime() (string, *dbus.Conn, error) {
 	conn, err := dbus.NewSystemConnectionContext(context.Background())
 	if err != nil {
-		return "", fmt.Errorf("failed to create DBus connection: %w", err)
+		return "", nil, fmt.Errorf("failed to create DBus connection: %w", err)
 	}
-	defer conn.Close()
 
 	// Filter out active container runtime (CRI-O or containerd) systemd units on the node.
 	// It is expected that only one container runtime systemd unit should be active at a time
@@ -160,31 +160,25 @@ func detectRuntime() (string, error) {
 	// to be in an active state, the process fails.
 	units, err := conn.ListUnitsByPatternsContext(context.Background(), []string{"active"}, []string{containerdUnit, crioUnit})
 	if err != nil {
-		return "", fmt.Errorf("failed to detect container runtime in use: %w", err)
+		return "", nil, fmt.Errorf("failed to detect container runtime in use: %w", err)
 	}
 
 	if len(units) == 0 {
-		return "", fmt.Errorf("failed to detect container runtime in use: got 0 systemd units")
+		return "", nil, fmt.Errorf("failed to detect container runtime in use: got 0 systemd units")
 	}
 
 	if len(units) > 1 {
-		return "", fmt.Errorf("detected more than one container runtime on the host, expected one")
+		return "", nil, fmt.Errorf("detected more than one container runtime on the host, expected one")
 	}
 
-	return units[0].Name, nil
+	return units[0].Name, conn, nil
 }
 
-func restartSystemdUnit(unit string) error {
-	conn, err := dbus.NewSystemConnectionContext(context.Background())
-	if err != nil {
-		return fmt.Errorf("failed to create DBus connection: %w", err)
-	}
-	defer conn.Close()
-
+func restartSystemdUnit(conn *dbus.Conn, unit string) error {
 	resC := make(chan string)
 	defer close(resC)
 
-	_, err = conn.RestartUnitContext(context.Background(), unit, replaceMode, resC)
+	_, err := conn.RestartUnitContext(context.Background(), unit, replaceMode, resC)
 	if err != nil {
 		return fmt.Errorf("failed to restart systemd unit %q: %w", unit, err)
 	}
