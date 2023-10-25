@@ -21,11 +21,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log"
 	"os"
 
 	"github.com/coreos/go-systemd/v22/dbus"
 	tomlv2 "github.com/pelletier/go-toml/v2"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -36,6 +36,10 @@ const (
 	resultDone           = "done"
 	containerdUnit       = "containerd.service"
 	crioUnit             = "crio.service"
+)
+
+var (
+	log = logrus.StandardLogger()
 )
 
 func main() {
@@ -66,6 +70,7 @@ func main() {
 }
 
 func enableNriForContainerd() error {
+	log.Infof("enabling NRI in containerd configuration...")
 	tomlMap, err := readConfig(containerdConfigFile)
 	if err != nil {
 		return fmt.Errorf("error reading TOML file: %w", err)
@@ -81,6 +86,7 @@ func enableNriForContainerd() error {
 }
 
 func enableNriForCrio() error {
+	log.Infof("enabling NRI in CRI-O configuration...")
 	f, err := os.Create(crioConfigFile)
 	if err != nil {
 		return fmt.Errorf("error creating a drop-in file for CRI-O: %w", err)
@@ -149,6 +155,7 @@ func updateContainerdConfig(config map[string]interface{}) map[string]interface{
 }
 
 func detectRuntime() (string, *dbus.Conn, error) {
+	log.Infof("setting up D-Bus connection...")
 	conn, err := dbus.NewSystemConnectionContext(context.Background())
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to create DBus connection: %w", err)
@@ -158,6 +165,7 @@ func detectRuntime() (string, *dbus.Conn, error) {
 	// It is expected that only one container runtime systemd unit should be active at a time
 	// (either containerd or CRI-O).If more than one container runtime systemd unit is found
 	// to be in an active state, the process fails.
+	log.Infof("looking for active runtime units on D-Bus...")
 	units, err := conn.ListUnitsByPatternsContext(context.Background(), []string{"active"}, []string{containerdUnit, crioUnit})
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to detect container runtime in use: %w", err)
@@ -171,6 +179,8 @@ func detectRuntime() (string, *dbus.Conn, error) {
 		return "", nil, fmt.Errorf("detected more than one container runtime on the host, expected one")
 	}
 
+	log.Infof("found %s...", units[0].Name)
+
 	return units[0].Name, conn, nil
 }
 
@@ -178,6 +188,7 @@ func restartSystemdUnit(conn *dbus.Conn, unit string) error {
 	resC := make(chan string)
 	defer close(resC)
 
+	log.Infof("restarting D-Bus unit %s...", unit)
 	_, err := conn.RestartUnitContext(context.Background(), unit, replaceMode, resC)
 	if err != nil {
 		return fmt.Errorf("failed to restart systemd unit %q: %w", unit, err)
