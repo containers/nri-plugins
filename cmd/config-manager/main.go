@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/coreos/go-systemd/v22/dbus"
 	tomlv2 "github.com/pelletier/go-toml/v2"
@@ -60,6 +61,19 @@ func main() {
 
 	if err != nil {
 		log.Fatalf("error enabling NRI: %v", err)
+	}
+
+	//
+	// TODO(klihub): Kludge warning...
+	//   If the runtime is CRI-O, it looks like we need to cut it some
+	//   slack, after we've been started up by it but before we restart
+	//   it. Otherwise it always reports our exit status as -1 (255).
+	//   We are an init-container so a non-zero exit status would prevent
+	//   other containers in our pod from ever starting...
+	//
+
+	if unit == crioUnit {
+		time.Sleep(3 * time.Second)
 	}
 
 	if err = restartSystemdUnit(conn, unit); err != nil {
