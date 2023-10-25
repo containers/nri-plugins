@@ -163,6 +163,10 @@ func detectRuntime() (string, error) {
 		return "", fmt.Errorf("failed to detect container runtime in use: %w", err)
 	}
 
+	if len(units) == 0 {
+		return "", fmt.Errorf("failed to detect container runtime in use: got 0 systemd units")
+	}
+
 	if len(units) > 1 {
 		return "", fmt.Errorf("detected more than one container runtime on the host, expected one")
 	}
