@@ -1,5 +1,5 @@
 apiVersion: v2
-appVersion: v0.2.1
+appVersion: v0.2.2
 description: |
   The memtierd NRI plugin enables managing workloads with Memtierd in Kubernetes.
 name: nri-memtierd
