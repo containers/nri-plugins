@@ -21,11 +21,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log"
 	"os"
+	"time"
 
 	"github.com/coreos/go-systemd/v22/dbus"
 	tomlv2 "github.com/pelletier/go-toml/v2"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -38,11 +39,16 @@ const (
 	crioUnit             = "crio.service"
 )
 
+var (
+	log = logrus.StandardLogger()
+)
+
 func main() {
-	unit, err := detectRuntime()
+	unit, conn, err := detectRuntime()
 	if err != nil {
 		log.Fatalf("failed to autodetect container runtime: %v", err)
 	}
+	defer conn.Close()
 
 	switch unit {
 	case containerdUnit:
@@ -57,7 +63,20 @@ func main() {
 		log.Fatalf("error enabling NRI: %v", err)
 	}
 
-	if err = restartSystemdUnit(unit); err != nil {
+	//
+	// TODO(klihub): Kludge warning...
+	//   If the runtime is CRI-O, it looks like we need to cut it some
+	//   slack, after we've been started up by it but before we restart
+	//   it. Otherwise it always reports our exit status as -1 (255).
+	//   We are an init-container so a non-zero exit status would prevent
+	//   other containers in our pod from ever starting...
+	//
+
+	if unit == crioUnit {
+		time.Sleep(3 * time.Second)
+	}
+
+	if err = restartSystemdUnit(conn, unit); err != nil {
 		log.Fatalf("failed to restart %q unit: %v", unit, err)
 	}
 
@@ -65,6 +84,7 @@ func main() {
 }
 
 func enableNriForContainerd() error {
+	log.Infof("enabling NRI in containerd configuration...")
 	tomlMap, err := readConfig(containerdConfigFile)
 	if err != nil {
 		return fmt.Errorf("error reading TOML file: %w", err)
@@ -80,6 +100,7 @@ func enableNriForContainerd() error {
 }
 
 func enableNriForCrio() error {
+	log.Infof("enabling NRI in CRI-O configuration...")
 	f, err := os.Create(crioConfigFile)
 	if err != nil {
 		return fmt.Errorf("error creating a drop-in file for CRI-O: %w", err)
@@ -147,40 +168,42 @@ func updateContainerdConfig(config map[string]interface{}) map[string]interface{
 	return config
 }
 
-func detectRuntime() (string, error) {
+func detectRuntime() (string, *dbus.Conn, error) {
+	log.Infof("setting up D-Bus connection...")
 	conn, err := dbus.NewSystemConnectionContext(context.Background())
 	if err != nil {
-		return "", fmt.Errorf("failed to create DBus connection: %w", err)
+		return "", nil, fmt.Errorf("failed to create DBus connection: %w", err)
 	}
-	defer conn.Close()
 
 	// Filter out active container runtime (CRI-O or containerd) systemd units on the node.
 	// It is expected that only one container runtime systemd unit should be active at a time
 	// (either containerd or CRI-O).If more than one container runtime systemd unit is found
 	// to be in an active state, the process fails.
+	log.Infof("looking for active runtime units on D-Bus...")
 	units, err := conn.ListUnitsByPatternsContext(context.Background(), []string{"active"}, []string{containerdUnit, crioUnit})
 	if err != nil {
-		return "", fmt.Errorf("failed to detect container runtime in use: %w", err)
+		return "", nil, fmt.Errorf("failed to detect container runtime in use: %w", err)
+	}
+
+	if len(units) == 0 {
+		return "", nil, fmt.Errorf("failed to detect container runtime in use: got 0 systemd units")
 	}
 
 	if len(units) > 1 {
-		return "", fmt.Errorf("detected more than one container runtime on the host, expected one")
+		return "", nil, fmt.Errorf("detected more than one container runtime on the host, expected one")
 	}
 
-	return units[0].Name, nil
+	log.Infof("found %s...", units[0].Name)
+
+	return units[0].Name, conn, nil
 }
 
-func restartSystemdUnit(unit string) error {
-	conn, err := dbus.NewSystemConnectionContext(context.Background())
-	if err != nil {
-		return fmt.Errorf("failed to create DBus connection: %w", err)
-	}
-	defer conn.Close()
-
+func restartSystemdUnit(conn *dbus.Conn, unit string) error {
 	resC := make(chan string)
 	defer close(resC)
 
-	_, err = conn.RestartUnitContext(context.Background(), unit, replaceMode, resC)
+	log.Infof("restarting D-Bus unit %s...", unit)
+	_, err := conn.RestartUnitContext(context.Background(), unit, replaceMode, resC)
 	if err != nil {
 		return fmt.Errorf("failed to restart systemd unit %q: %w", unit, err)
 	}
