@@ -6,7 +6,7 @@ namespace: kube-system
 images:
 - name: '*'
   newName: ghcr.io/containers/nri-plugins/nri-resource-policy-topology-aware
-  newTag: v0.2.2
+  newTag: v0.2.3
 
 resources:
 - ../../base/crds

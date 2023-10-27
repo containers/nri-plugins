@@ -1,5 +1,5 @@
 apiVersion: v2
-appVersion: v0.2.2
+appVersion: v0.2.3
 description: |
   Topology-aware NRI resource policy plugin is a NRI plugin that will
   apply hardware-aware resource allocation policies to the containers
