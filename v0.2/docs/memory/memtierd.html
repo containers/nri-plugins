@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Memtierd NRI plugin &mdash; NRI Plugins v0.2.2-6-g1890d14 documentation</title>
+  <title>Memtierd NRI plugin &mdash; NRI Plugins v0.2.2-7-g6f66b4e documentation</title>
       <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -20,7 +20,7 @@
     <script src="../../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../../genindex.html" />
     <link rel="search" title="Search" href="../../search.html" />
-    <link rel="next" title="Contributing" href="../contributing.html" />
+    <link rel="next" title="Deployment" href="../deployment/index.html" />
     <link rel="prev" title="Memory QoS NRI plugin" href="memory-qos.html" /> 
 </head>
 
@@ -73,6 +73,7 @@
 </li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="../deployment/index.html">Deployment</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/containers/nri-plugins">Project GitHub repository</a></li>
 </ul>
@@ -194,14 +195,14 @@ for more configuration options.</p>
 <ul>
 <li><p>Containerd v1.7+</p></li>
 <li><p>Enable NRI in /etc/containerd/config.toml:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">[</span><span class="n">plugins</span><span class="o">.</span><span class="s2">&quot;io.containerd.nri.v1.nri&quot;</span><span class="p">]</span>
-  <span class="n">disable</span> <span class="o">=</span> <span class="n">false</span>
-  <span class="n">disable_connections</span> <span class="o">=</span> <span class="n">false</span>
-  <span class="n">plugin_config_path</span> <span class="o">=</span> <span class="s2">&quot;/etc/nri/conf.d&quot;</span>
-  <span class="n">plugin_path</span> <span class="o">=</span> <span class="s2">&quot;/opt/nri/plugins&quot;</span>
-  <span class="n">plugin_registration_timeout</span> <span class="o">=</span> <span class="s2">&quot;5s&quot;</span>
-  <span class="n">plugin_request_timeout</span> <span class="o">=</span> <span class="s2">&quot;2s&quot;</span>
-  <span class="n">socket_path</span> <span class="o">=</span> <span class="s2">&quot;/var/run/nri/nri.sock&quot;</span>
+<div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="k">[plugins.&quot;io.containerd.nri.v1.nri&quot;]</span>
+<span class="w">  </span><span class="n">disable</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span>
+<span class="w">  </span><span class="n">disable_connections</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span>
+<span class="w">  </span><span class="n">plugin_config_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;/etc/nri/conf.d&quot;</span>
+<span class="w">  </span><span class="n">plugin_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;/opt/nri/plugins&quot;</span>
+<span class="w">  </span><span class="n">plugin_registration_timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;5s&quot;</span>
+<span class="w">  </span><span class="n">plugin_request_timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;2s&quot;</span>
+<span class="w">  </span><span class="n">socket_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;/var/run/nri/nri.sock&quot;</span>
 </pre></div>
 </div>
 </li>
@@ -280,7 +281,7 @@ mode.</p>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="memory-qos.html" class="btn btn-neutral float-left" title="Memory QoS NRI plugin" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="../contributing.html" class="btn btn-neutral float-right" title="Contributing" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="../deployment/index.html" class="btn btn-neutral float-right" title="Deployment" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

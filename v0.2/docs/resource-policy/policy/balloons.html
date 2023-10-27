@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.2.2-6-g1890d14 documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.2.2-7-g6f66b4e documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -51,7 +51,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
 <li class="toctree-l1 current"><a class="reference internal" href="../index.html">Resource Policy Plugins</a><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="../introduction.html">Introduction</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../installation.html">Installation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../setup.html">Setup and Usage</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../configuration.html">Dynamic Configuration</a></li>
 <li class="toctree-l2 current"><a class="reference internal" href="index.html">Policies</a><ul class="current">
@@ -71,6 +70,7 @@
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="../../memory/index.html">Memory plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../deployment/index.html">Deployment</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../contributing.html">Contributing</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/containers/nri-plugins">Project GitHub repository</a></li>
 </ul>
@@ -132,7 +132,8 @@ first decides the type of the balloon that will run the
 container. The decision is based on annotations of the pod, or the
 namespace if annotations are not given.</p></li>
 <li><p>Next the policy decides which balloon of the decided type will run
-the container. Options are:</p>
+the container. Options are:</p></li>
+</ol>
 <ul class="simple">
 <li><p>an existing balloon that already has enough CPUs to run its
 current and new containers</p></li>
@@ -140,7 +141,7 @@ current and new containers</p></li>
 new containers</p></li>
 <li><p>new balloon.</p></li>
 </ul>
-</li>
+<ol class="arabic simple" start="9">
 <li><p>When a CPU is added to a balloon or removed from it, the CPU is
 reconfigured based on balloon’s CPU class attributes, or idle CPU
 class attributes.</p></li>
@@ -149,7 +150,7 @@ class attributes.</p></li>
 <section id="deployment">
 <h2>Deployment<a class="headerlink" href="#deployment" title="Permalink to this heading"></a></h2>
 <p>Deploy nri-resource-policy-balloons on each node as you would for any
-other policy. See <a class="reference internal" href="../installation.html"><span class="std std-doc">installation</span></a> for more details.</p>
+other policy. See <a class="reference internal" href="../../deployment/index.html"><span class="std std-doc">deployment</span></a> for more details.</p>
 </section>
 <section id="configuration">
 <h2>Configuration<a class="headerlink" href="#configuration" title="Permalink to this heading"></a></h2>
@@ -183,6 +184,16 @@ in balloons when system is not fully loaded. The default is <code class="docutil
 pack new balloons tightly into the same NUMAs/dies/packages. This
 helps keeping large portions of hardware idle and entering into deep
 power saving states.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PreferSpreadOnPhysicalCores</span></code> prefers allocating logical CPUs
+(possibly hyperthreads) for a balloon from separate physical CPU
+cores. This prevents workloads in the balloon from interfering with
+themselves as they do not compete on the resources of the same CPU
+cores. On the other hand, it allows more interference between
+workloads in different balloons. The default is <code class="docutils literal notranslate"><span class="pre">false</span></code>: balloons
+are packed tightly to a minimum number of physical CPU cores. The
+value set here is the default for all balloon types, but it can be
+overridden with the balloon type specific setting with the same
+name.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">BalloonTypes</span></code> is a list of balloon type definitions. Each type can
 be configured with the following parameters:</p>
 <ul>
@@ -237,6 +248,8 @@ anywhere in the system.</p></li>
 the balloon.</p></li>
 </ul>
 </li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PreferSpreadOnPhysicalCores</span></code> overrides the policy level option
+with the same name in the scope of this balloon type.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">AllocatorPriority</span></code> (0: High, 1: Normal, 2: Low, 3: None). CPU
 allocator parameter, used when creating new or resizing existing
 balloons. If there are balloon types with pre-created balloons

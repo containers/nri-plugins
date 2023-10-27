@@ -35,11 +35,11 @@ min and max frequencies on CPU cores and uncore.
 
 7. Next the policy decides which balloon of the decided type will run
    the container. Options are:
-   - an existing balloon that already has enough CPUs to run its
-     current and new containers
-   - an existing balloon that can be inflated to fit its current and
-     new containers
-   - new balloon.
+  - an existing balloon that already has enough CPUs to run its
+    current and new containers
+  - an existing balloon that can be inflated to fit its current and
+    new containers
+  - new balloon.
 
 9. When a CPU is added to a balloon or removed from it, the CPU is
    reconfigured based on balloon's CPU class attributes, or idle CPU
@@ -48,7 +48,7 @@ min and max frequencies on CPU cores and uncore.
 ## Deployment
 
 Deploy nri-resource-policy-balloons on each node as you would for any
-other policy. See [installation](../installation.md) for more details.
+other policy. See [deployment](../../deployment/index.md) for more details.
 
 ## Configuration
 
@@ -83,6 +83,16 @@ Balloons policy parameters:
   pack new balloons tightly into the same NUMAs/dies/packages. This
   helps keeping large portions of hardware idle and entering into deep
   power saving states.
+- `PreferSpreadOnPhysicalCores` prefers allocating logical CPUs
+  (possibly hyperthreads) for a balloon from separate physical CPU
+  cores. This prevents workloads in the balloon from interfering with
+  themselves as they do not compete on the resources of the same CPU
+  cores. On the other hand, it allows more interference between
+  workloads in different balloons. The default is `false`: balloons
+  are packed tightly to a minimum number of physical CPU cores. The
+  value set here is the default for all balloon types, but it can be
+  overridden with the balloon type specific setting with the same
+  name.
 - `BalloonTypes` is a list of balloon type definitions. Each type can
   be configured with the following parameters:
   - `Name` of the balloon type. This is used in pod annotations to
@@ -98,8 +108,8 @@ Balloons policy parameters:
     is allowed to co-exist. The default is 0: creating new balloons is
     not limited by the number of existing balloons.
   - `MaxCPUs` specifies the maximum number of CPUs in any balloon of
-	this type. Balloons will not be inflated larger than this. 0 means
-	unlimited.
+    this type. Balloons will not be inflated larger than this. 0 means
+    unlimited.
   - `MinCPUs` specifies the minimum number of CPUs in any balloon of
     this type. When a balloon is created or deflated, it will always
     have at least this many CPUs, even if containers in the balloon
@@ -111,10 +121,10 @@ Balloons policy parameters:
     is `false`: prefer placing containers of the same pod to the same
     balloon(s).
   - `PreferPerNamespaceBalloon`: if `true`, containers in the same
-	namespace will be placed in the same balloon(s). On the other
-	hand, containers in different namespaces are preferrably placed in
-	different balloons. The default is `false`: namespace has no
-	effect on choosing the balloon of this type.
+    namespace will be placed in the same balloon(s). On the other
+    hand, containers in different namespaces are preferrably placed in
+    different balloons. The default is `false`: namespace has no
+    effect on choosing the balloon of this type.
   - `PreferNewBalloons`: if `true`, prefer creating new balloons over
     placing containers to existing balloons. This results in
     preferring exclusive CPUs, as long as there are enough free
@@ -133,6 +143,8 @@ Balloons policy parameters:
     - `numa`: ...in the same numa node(s) as the balloon.
     - `core`: ...allowed to use idle CPU threads in the same cores with
       the balloon.
+  - `PreferSpreadOnPhysicalCores` overrides the policy level option
+    with the same name in the scope of this balloon type.
   - `AllocatorPriority` (0: High, 1: Normal, 2: Low, 3: None). CPU
     allocator parameter, used when creating new or resizing existing
     balloons. If there are balloon types with pre-created balloons
@@ -140,6 +152,7 @@ Balloons policy parameters:
     `AllocatorPriority` are created first.
 
 Related configuration parameters:
+
 - `policy.ReservedResources.CPU` specifies the (number of) CPUs in the
   special `reserved` balloon. By default all containers in the
   `kube-system` namespace are assigned to the reserved balloon.
@@ -149,6 +162,7 @@ Related configuration parameters:
 ### Example
 
 Example configuration that runs all pods in balloons of 1-4 CPUs.
+
 ```yaml
 policy:
   Active: balloons

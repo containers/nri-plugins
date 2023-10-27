@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Memory plugins &mdash; NRI Plugins v0.2.2-7-g6f66b4e documentation</title>
+  <title>Deployment &mdash; NRI Plugins v0.2.2-7-g6f66b4e documentation</title>
       <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -20,8 +20,8 @@
     <script src="../../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../../genindex.html" />
     <link rel="search" title="Search" href="../../search.html" />
-    <link rel="next" title="Memory QoS NRI plugin" href="memory-qos.html" />
-    <link rel="prev" title="CPU Allocator" href="../resource-policy/developers-guide/cpu-allocator.html" /> 
+    <link rel="next" title="Balloons Policy Plugin" href="balloons.html" />
+    <link rel="prev" title="Memtierd NRI plugin" href="../memory/memtierd.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -50,12 +50,14 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="../introduction.html">Introduction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../resource-policy/index.html">Resource Policy Plugins</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Memory plugins</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="memory-qos.html">Memory QoS NRI plugin</a></li>
-<li class="toctree-l2"><a class="reference internal" href="memtierd.html">Memtierd NRI plugin</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../memory/index.html">Memory plugins</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Deployment</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="balloons.html">Balloons Policy Plugin</a></li>
+<li class="toctree-l2"><a class="reference internal" href="topology-aware.html">Topology-Aware Policy Plugin</a></li>
+<li class="toctree-l2"><a class="reference internal" href="memory-qos.html">Memory-QoS Plugin</a></li>
+<li class="toctree-l2"><a class="reference internal" href="memtierd.html">Memtierd Plugin</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="../deployment/index.html">Deployment</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/containers/nri-plugins">Project GitHub repository</a></li>
 </ul>
@@ -74,9 +76,9 @@
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
       <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
-      <li class="breadcrumb-item active">Memory plugins</li>
+      <li class="breadcrumb-item active">Deployment</li>
       <li class="wy-breadcrumbs-aside">
-            <a href="../../_sources/docs/memory/index.md.txt" rel="nofollow"> View page source</a>
+            <a href="../../_sources/docs/deployment/index.md.txt" rel="nofollow"> View page source</a>
       </li>
   </ul>
   <hr/>
@@ -84,22 +86,39 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="memory-plugins">
-<h1>Memory plugins<a class="headerlink" href="#memory-plugins" title="Permalink to this heading"></a></h1>
+  <section id="deployment">
+<h1>Deployment<a class="headerlink" href="#deployment" title="Permalink to this heading"></a></h1>
+<p>The only supported installation method of the NRI plugins at the moment is
+through Helm.</p>
 <div class="toctree-wrapper compound">
 <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="memory-qos.html">Memory QoS NRI plugin</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="memory-qos.html#workload-configuration">Workload configuration</a></li>
-<li class="toctree-l2"><a class="reference internal" href="memory-qos.html#plugin-configuration">Plugin configuration</a></li>
-<li class="toctree-l2"><a class="reference internal" href="memory-qos.html#developer-s-guide">Developer’s guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="balloons.html">Balloons Policy Plugin</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="balloons.html#prerequisites">Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="balloons.html#installing-the-chart">Installing the Chart</a></li>
+<li class="toctree-l2"><a class="reference internal" href="balloons.html#uninstalling-the-chart">Uninstalling the Chart</a></li>
+<li class="toctree-l2"><a class="reference internal" href="balloons.html#configuration-options">Configuration options</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="memtierd.html">Memtierd NRI plugin</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="memtierd.html#workload-configuration">Workload configuration</a></li>
-<li class="toctree-l2"><a class="reference internal" href="memtierd.html#plugin-configuration">Plugin configuration</a></li>
-<li class="toctree-l2"><a class="reference internal" href="memtierd.html#developer-s-guide">Developer’s guide</a></li>
-<li class="toctree-l2"><a class="reference internal" href="memtierd.html#security">Security</a></li>
+<li class="toctree-l1"><a class="reference internal" href="topology-aware.html">Topology-Aware Policy Plugin</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="topology-aware.html#prerequisites">Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="topology-aware.html#installing-the-chart">Installing the Chart</a></li>
+<li class="toctree-l2"><a class="reference internal" href="topology-aware.html#uninstalling-the-chart">Uninstalling the Chart</a></li>
+<li class="toctree-l2"><a class="reference internal" href="topology-aware.html#configuration-options">Configuration options</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="memory-qos.html">Memory-QoS Plugin</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="memory-qos.html#prerequisites">Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="memory-qos.html#installing-the-chart">Installing the Chart</a></li>
+<li class="toctree-l2"><a class="reference internal" href="memory-qos.html#uninstalling-the-chart">Uninstalling the Chart</a></li>
+<li class="toctree-l2"><a class="reference internal" href="memory-qos.html#configuration-options">Configuration options</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="memtierd.html">Memtierd Plugin</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="memtierd.html#prerequisites">Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="memtierd.html#installing-the-chart">Installing the Chart</a></li>
+<li class="toctree-l2"><a class="reference internal" href="memtierd.html#uninstalling-the-chart">Uninstalling the Chart</a></li>
+<li class="toctree-l2"><a class="reference internal" href="memtierd.html#configuration-options">Configuration options</a></li>
 </ul>
 </li>
 </ul>
@@ -110,8 +129,8 @@
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="../resource-policy/developers-guide/cpu-allocator.html" class="btn btn-neutral float-left" title="CPU Allocator" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="memory-qos.html" class="btn btn-neutral float-right" title="Memory QoS NRI plugin" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="../memory/memtierd.html" class="btn btn-neutral float-left" title="Memtierd NRI plugin" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="balloons.html" class="btn btn-neutral float-right" title="Balloons Policy Plugin" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

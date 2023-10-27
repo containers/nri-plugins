@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.2.2-6-g1890d14 documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.2.2-7-g6f66b4e documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -51,7 +51,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
 <li class="toctree-l1 current"><a class="reference internal" href="../index.html">Resource Policy Plugins</a><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="../introduction.html">Introduction</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../installation.html">Installation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../setup.html">Setup and Usage</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../configuration.html">Dynamic Configuration</a></li>
 <li class="toctree-l2 current"><a class="reference internal" href="index.html">Policies</a><ul class="current">
@@ -78,6 +77,7 @@
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="../../memory/index.html">Memory plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../deployment/index.html">Deployment</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../contributing.html">Contributing</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/containers/nri-plugins">Project GitHub repository</a></li>
 </ul>
@@ -236,8 +236,8 @@ fewer workloads</p></li>
 <li><p>DRAM is regular system main memory</p></li>
 <li><p>PMEM is large-capacity memory, such as
 <a class="reference external" href="https://www.intel.com/content/www/us/en/products/memory-storage/optane-dc-persistent-memory.html">Intel® Optane™ memory</a></p></li>
-<li><p><a class="reference external" href="https://en.wikipedia.org/wiki/High_Bandwidth_Memory">HBM</a> is high speed memory,
-typically found on some special-purpose computing systems</p></li>
+<li><p><a class="reference external" href="https://en.wikipedia.org/wiki/High_Bandwidth_Memory">HBM</a> is high
+speed memory, typically found on some special-purpose computing systems</p></li>
 </ul>
 </li>
 </ul>
@@ -292,17 +292,20 @@ would be otherwise eligible for exclusive CPU allocation</p></li>
 </li>
 <li><p><code class="docutils literal notranslate"><span class="pre">ReservedPoolNamespaces</span></code></p>
 <ul>
-<li><p>list of extra namespaces (or glob patters) that will be allocated to reserved CPUs</p></li>
+<li><p>list of extra namespaces (or glob patters) that will be allocated to
+reserved CPUs</p></li>
 </ul>
 </li>
 <li><p><code class="docutils literal notranslate"><span class="pre">ColocatePods</span></code></p>
 <ul>
-<li><p>whether try to allocate containers in a pod to the same or close by topology pools</p></li>
+<li><p>whether try to allocate containers in a pod to the same or close by
+topology pools</p></li>
 </ul>
 </li>
 <li><p><code class="docutils literal notranslate"><span class="pre">ColocateNamespaces</span></code></p>
 <ul>
-<li><p>whether try to allocate containers in a namespace to the same or close by topology pools</p></li>
+<li><p>whether try to allocate containers in a namespace to the same or close by
+topology pools</p></li>
 </ul>
 </li>
 </ul>
@@ -561,10 +564,10 @@ class so no need to mention <code class="docutils literal notranslate"><span cla
 </section>
 <section id="reserved-cpu-annotations">
 <h2>Reserved CPU annotations<a class="headerlink" href="#reserved-cpu-annotations" title="Permalink to this heading"></a></h2>
-<p>User is able to mark certain pods and containers to have a reserved CPU allocation
-by using annotations. Containers having a such annotation will only run on CPUs set
-aside according to the global CPU reservation, as configured by the ReservedResources
-configuration option in the policy section.</p>
+<p>User is able to mark certain pods and containers to have a reserved CPU
+allocation by using annotations. Containers having a such annotation will only
+run on CPUs set aside according to the global CPU reservation, as configured by
+the ReservedResources configuration option in the policy section.</p>
 <p>For example:</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
@@ -633,8 +636,10 @@ However as a general rule of thumb containers running</p>
 <p>These hints are expressed by <code class="docutils literal notranslate"><span class="pre">container</span> <span class="pre">affinity</span> <span class="pre">annotations</span></code> on the Pod.
 There are two types of affinities:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">affinity</span></code> (or <code class="docutils literal notranslate"><span class="pre">positive</span> <span class="pre">affinty</span></code>): cause affected containers to <em>pull</em> each other closer</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">anti-affinity</span></code> (or <code class="docutils literal notranslate"><span class="pre">negative</span> <span class="pre">affinity</span></code>): cause affected containers to <em>push</em> each other further away</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">affinity</span></code> (or <code class="docutils literal notranslate"><span class="pre">positive</span> <span class="pre">affinty</span></code>): cause affected containers to <em>pull</em> each
+other closer</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">anti-affinity</span></code> (or <code class="docutils literal notranslate"><span class="pre">negative</span> <span class="pre">affinity</span></code>): cause affected containers to <em>push</em>
+each other further away</p></li>
 </ul>
 <p>Policies try to place a container</p>
 <ul class="simple">
@@ -699,30 +704,34 @@ as the annotation key.</p>
 <p>An affinity consists of three parts:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">scope</span> <span class="pre">expression</span></code>: defines which containers this affinity is evaluated against</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">match</span> <span class="pre">expression</span></code>: defines for which containers (within the scope) the affinity applies to</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">match</span> <span class="pre">expression</span></code>: defines for which containers (within the scope) the
+affinity applies to</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">weight</span></code>: defines how <em>strong</em> a pull or a push the affinity causes</p></li>
 </ul>
 <p><em>Affinities</em> are also sometimes referred to as <em>positive affinities</em> while
 <em>anti-affinities</em> are referred to as <em>negative affinities</em>. The reason for this is
 that the only difference between these are that affinities have a <em>positive weight</em>
 while anti-affinities have a <em>negative weight</em>.</p>
-<p>The <em>scope</em> of an affinity defines the <em>bounding set of containers</em> the affinity can
-apply to. The affinity <em>expression</em> is evaluated against the containers <em>in scope</em> and
-it <em>selects the containers</em> the affinity really has an effect on. The <em>weight</em> specifies
-whether the effect is a <em>pull</em> or a <em>push</em>. <em>Positive</em> weights cause a <em>pull</em> while
-<em>negative</em> weights cause a <em>push</em>. Additionally, the <em>weight</em> specifies <em>how strong</em> the
-push or the pull is. This is useful in situations where the policy needs to make some
-compromises because an optimal placement is not possible. The weight then also acts as
-a way to specify preferences of priorities between the various compromises: the heavier
-the weight the stronger the pull or push and the larger the propbability that it will be
-honored, if this is possible at all.</p>
-<p>The scope can be omitted from an affinity in which case it implies <em>Pod scope</em>, in other
-words the scope of all containers that belong to the same Pod as the container for which
-which the affinity is defined.</p>
-<p>The weight can also be omitted in which case it defaults to -1 for anti-affinities
-and +1 for affinities. Weights are currently limited to the range [-1000,1000].</p>
-<p>Both the affinity scope and the expression select containers, therefore they are identical.
-Both of them are <em>expressions</em>. An expression consists of three parts:</p>
+<p>The <em>scope</em> of an affinity defines the <em>bounding set of containers</em> the
+affinity can apply to. The affinity <em>expression</em> is evaluated against the
+containers <em>in scope</em> and it <em>selects the containers</em> the affinity really has
+an effect on. The <em>weight</em> specifies whether the effect is a <em>pull</em> or a
+<em>push</em>. <em>Positive</em> weights cause a <em>pull</em> while <em>negative</em> weights cause a
+<em>push</em>. Additionally, the <em>weight</em> specifies <em>how strong</em> the push or the pull
+is. This is useful in situations where the policy needs to make some
+compromises because an optimal placement is not possible. The weight then also
+acts as a way to specify preferences of priorities between the various
+compromises: the heavier the weight the stronger the pull or push and the
+larger the propbability that it will be honored, if this is possible at all.</p>
+<p>The scope can be omitted from an affinity in which case it implies <em>Pod scope</em>,
+in other words the scope of all containers that belong to the same Pod as the
+container for which which the affinity is defined.</p>
+<p>The weight can also be omitted in which case it defaults to -1 for
+anti-affinities and +1 for affinities. Weights are currently limited to the
+range [-1000,1000].</p>
+<p>Both the affinity scope and the expression select containers, therefore they
+are identical. Both of them are <em>expressions</em>. An expression consists of three
+parts:</p>
 <ul class="simple">
 <li><p>key: specifies what <em>metadata</em> to pick from a container for evaluation</p></li>
 <li><p>operation (op): specifies what <em>logical operation</em> the expression evaluates</p></li>
@@ -758,44 +767,55 @@ either evaluates to true or false.
 a boolean true/false result. Currently the following operations are supported:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">Equals</span></code>: equality, true if the <em>value of key</em> equals the single item in <em>values</em></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">NotEqual</span></code>: inequality, true if the <em>value of key</em> is not equal to the single item in <em>values</em></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">NotEqual</span></code>: inequality, true if the <em>value of key</em> is not equal to the single
+item in <em>values</em></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">In</span></code>: membership, true if <em>value of key</em> equals to any among <em>values</em></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">NotIn</span></code>: negated membership, true if the <em>value of key</em> is not equal to any among <em>values</em></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">NotIn</span></code>: negated membership, true if the <em>value of key</em> is not equal to any
+among <em>values</em></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">Exists</span></code>: true if the given <em>key</em> exists with any value</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">NotExists</span></code>: true if the given <em>key</em> does not exist</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">AlwaysTrue</span></code>: always evaluates to true, can be used to denote node-global scope (all containers)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">AlwaysTrue</span></code>: always evaluates to true, can be used to denote node-global
+scope (all containers)</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">Matches</span></code>: true if the <em>value of key</em> matches the globbing pattern in values</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">MatchesNot</span></code>: true if the <em>value of key</em> does not match the globbing pattern in values</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">MatchesAny</span></code>: true if the <em>value of key</em> matches any of the globbing patterns in values</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">MatchesNone</span></code>: true if the <em>value of key</em> does not match any of the globbing patterns in values</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">MatchesNot</span></code>: true if the <em>value of key</em> does not match the globbing pattern
+in values</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">MatchesAny</span></code>: true if the <em>value of key</em> matches any of the globbing patterns
+in values</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">MatchesNone</span></code>: true if the <em>value of key</em> does not match any of the globbing
+patterns in values</p></li>
 </ul>
-<p>The effective affinity between containers C_1 and C_2, A(C_1, C_2) is the sum of the
-weights of all pairwise in-scope matching affinities W(C_1, C_2). To put it another way,
-evaluating an affinity for a container C_1 is done by first using the scope (expression)
-to determine which containers are in the scope of the affinity. Then, for each in-scope
-container C_2 for which the match expression evaluates to true, taking the weight of the
-affinity and adding it to the effective affinity A(C_1, C_2).</p>
-<p>Note that currently (for the topology-aware policy) this evaluation is asymmetric:
-A(C_1, C_2) and A(C_2, C_1) can and will be different unless the affinity annotations are
-crafted to prevent this (by making them fully symmetric). Moreover, A(C_1, C_2) is calculated
-and taken into consideration during resource allocation for C_1, while A(C_2, C_1)
-is calculated and taken into account during resource allocation for C_2. This might be
-changed in a future version.</p>
+<p>The effective affinity between containers C_1 and C_2, A(C_1, C_2) is the sum
+of the weights of all pairwise in-scope matching affinities W(C_1, C_2). To put
+it another way, evaluating an affinity for a container C_1 is done by first
+using the scope (expression) to determine which containers are in the scope of
+the affinity. Then, for each in-scope container C_2 for which the match
+expression evaluates to true, taking the weight of the affinity and adding it
+to the effective affinity A(C_1, C_2).</p>
+<p>Note that currently (for the topology-aware policy) this evaluation is
+asymmetric: A(C_1, C_2) and A(C_2, C_1) can and will be different unless the
+affinity annotations are crafted to prevent this (by making them fully
+symmetric). Moreover, A(C_1, C_2) is calculated and taken into consideration
+during resource allocation for C_1, while A(C_2, C_1) is calculated and taken
+into account during resource allocation for C_2. This might be changed in a
+future version.</p>
 <p>Currently affinity expressions lack support for boolean operators (and, or, not).
 Sometimes this limitation can be overcome by using joint keys, especially with
 matching operators. The joint key syntax allows joining the value of several keys
 with a separator into a single value. A joint key can be specified in a simple or
 full format:</p>
 <ul class="simple">
-<li><p>simple: <code class="docutils literal notranslate"><span class="pre">&lt;colon-separated-subkeys&gt;</span></code>, this is equivalent to <code class="docutils literal notranslate"><span class="pre">:::&lt;colon-separated-subkeys&gt;</span></code></p></li>
+<li><p>simple: <code class="docutils literal notranslate"><span class="pre">&lt;colon-separated-subkeys&gt;</span></code>, this is equivalent to
+<code class="docutils literal notranslate"><span class="pre">:::&lt;colon-separated-subkeys&gt;</span></code></p></li>
 <li><p>full:   <code class="docutils literal notranslate"><span class="pre">&lt;ksep&gt;&lt;vsep&gt;&lt;ksep-separated-keylist&gt;</span></code></p></li>
 </ul>
-<p>A joint key evaluates to the values of all the <code class="docutils literal notranslate"><span class="pre">&lt;ksep&gt;</span></code>-separated subkeys joined by <code class="docutils literal notranslate"><span class="pre">&lt;vsep&gt;</span></code>.
-A non-existent subkey evaluates to the empty string. For instance the joint key</p>
+<p>A joint key evaluates to the values of all the <code class="docutils literal notranslate"><span class="pre">&lt;ksep&gt;</span></code>-separated subkeys
+joined by <code class="docutils literal notranslate"><span class="pre">&lt;vsep&gt;</span></code>. A non-existent subkey evaluates to the empty string. For
+instance the joint key</p>
 <p><code class="docutils literal notranslate"><span class="pre">:pod/qosclass:pod/name:name</span></code></p>
 <p>evaluates to</p>
 <p><code class="docutils literal notranslate"><span class="pre">&lt;qosclass&gt;:&lt;pod</span> <span class="pre">name&gt;:&lt;container</span> <span class="pre">name&gt;</span></code></p>
-<p>For existence operators, a joint key is considered to exist if any of its subkeys exists.</p>
+<p>For existence operators, a joint key is considered to exist if any of its
+subkeys exists.</p>
 </section>
 <section id="examples">
 <h3>Examples<a class="headerlink" href="#examples" title="Permalink to this heading"></a></h3>

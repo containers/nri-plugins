@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>End-to-End tests &mdash; NRI Plugins v0.2.2-6-g1890d14 documentation</title>
+  <title>End-to-End tests &mdash; NRI Plugins v0.2.2-7-g6f66b4e documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -51,7 +51,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
 <li class="toctree-l1 current"><a class="reference internal" href="../index.html">Resource Policy Plugins</a><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="../introduction.html">Introduction</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../installation.html">Installation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../setup.html">Setup and Usage</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../configuration.html">Dynamic Configuration</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../policy/index.html">Policies</a></li>
@@ -68,6 +67,7 @@
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="../../memory/index.html">Memory plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../deployment/index.html">Deployment</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../contributing.html">Contributing</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/containers/nri-plugins">Project GitHub repository</a></li>
 </ul>
@@ -112,13 +112,13 @@
 <section id="usage">
 <h2>Usage<a class="headerlink" href="#usage" title="Permalink to this heading"></a></h2>
 <p>Run policy tests:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">cd</span> <span class="n">test</span><span class="o">/</span><span class="n">e2e</span>
-<span class="p">[</span><span class="n">VAR</span><span class="o">=</span><span class="n">VALUE</span><span class="o">...</span><span class="p">]</span> <span class="o">./</span><span class="n">run_tests</span><span class="o">.</span><span class="n">sh</span> <span class="n">policies</span><span class="o">.</span><span class="n">test</span><span class="o">-</span><span class="n">suite</span>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>test/e2e
+<span class="o">[</span><span class="nv">VAR</span><span class="o">=</span>VALUE...<span class="o">]</span><span class="w"> </span>./run_tests.sh<span class="w"> </span>policies.test-suite
 </pre></div>
 </div>
 <p>Run tests only on certain policy, topology, or only selected test:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">cd</span> <span class="n">test</span><span class="o">/</span><span class="n">e2e</span>
-<span class="p">[</span><span class="n">VAR</span><span class="o">=</span><span class="n">VALUE</span><span class="o">...</span><span class="p">]</span> <span class="o">./</span><span class="n">run_tests</span><span class="o">.</span><span class="n">sh</span> <span class="n">policies</span><span class="o">.</span><span class="n">test</span><span class="o">-</span><span class="n">suite</span><span class="p">[</span><span class="o">/</span><span class="n">POLICY</span><span class="p">[</span><span class="o">/</span><span class="n">TOPOLOGY</span><span class="p">[</span><span class="o">/</span><span class="n">testNN</span><span class="o">-*</span><span class="p">]]]</span>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>test/e2e
+<span class="o">[</span><span class="nv">VAR</span><span class="o">=</span>VALUE...<span class="o">]</span><span class="w"> </span>./run_tests.sh<span class="w"> </span>policies.test-suite<span class="o">[</span>/POLICY<span class="o">[</span>/TOPOLOGY<span class="o">[</span>/testNN-*<span class="o">]]]</span>
 </pre></div>
 </div>
 <p>Get help on available <code class="docutils literal notranslate"><span class="pre">VAR=VALUE</span></code>’s with <code class="docutils literal notranslate"><span class="pre">./run.sh</span> <span class="pre">help</span></code>.
@@ -162,26 +162,26 @@ is ignored and the test will run in the existing NUMA
 configuration.</p>
 <p>The <code class="docutils literal notranslate"><span class="pre">topology</span></code> variable is a JSON array of objects. Each object
 defines one or more NUMA nodes. Keys in objects:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="s2">&quot;mem&quot;</span>                 <span class="n">mem</span> <span class="p">(</span><span class="n">RAM</span><span class="p">)</span> <span class="n">size</span> <span class="n">on</span> <span class="n">each</span> <span class="n">NUMA</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">this</span> <span class="n">group</span><span class="o">.</span>
-                      <span class="n">The</span> <span class="n">default</span> <span class="ow">is</span> <span class="s2">&quot;0G&quot;</span><span class="o">.</span>
-<span class="s2">&quot;nvmem&quot;</span>               <span class="n">nvmem</span> <span class="p">(</span><span class="n">non</span><span class="o">-</span><span class="n">volatile</span> <span class="n">RAM</span><span class="p">)</span> <span class="n">size</span> <span class="n">on</span> <span class="n">each</span> <span class="n">NUMA</span> <span class="n">node</span>
-                      <span class="ow">in</span> <span class="n">this</span> <span class="n">group</span><span class="o">.</span> <span class="n">The</span> <span class="n">default</span> <span class="ow">is</span> <span class="s2">&quot;0G&quot;</span><span class="o">.</span>
-<span class="s2">&quot;cores&quot;</span>               <span class="n">number</span> <span class="n">of</span> <span class="n">CPU</span> <span class="n">cores</span> <span class="n">on</span> <span class="n">each</span> <span class="n">NUMA</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">this</span> <span class="n">group</span><span class="o">.</span>
-                      <span class="n">The</span> <span class="n">default</span> <span class="ow">is</span> <span class="mf">0.</span>
-<span class="s2">&quot;threads&quot;</span>             <span class="n">number</span> <span class="n">of</span> <span class="n">threads</span> <span class="n">on</span> <span class="n">each</span> <span class="n">CPU</span> <span class="n">core</span><span class="o">.</span>
-                      <span class="n">The</span> <span class="n">default</span> <span class="ow">is</span> <span class="mf">2.</span>
-<span class="s2">&quot;nodes&quot;</span>               <span class="n">number</span> <span class="n">of</span> <span class="n">NUMA</span> <span class="n">nodes</span> <span class="n">on</span> <span class="n">each</span> <span class="n">die</span><span class="o">.</span>
-                      <span class="n">The</span> <span class="n">default</span> <span class="ow">is</span> <span class="mf">1.</span>
-<span class="s2">&quot;dies&quot;</span>                <span class="n">number</span> <span class="n">of</span> <span class="n">dies</span> <span class="n">on</span> <span class="n">each</span> <span class="n">package</span><span class="o">.</span>
-                      <span class="n">The</span> <span class="n">default</span> <span class="ow">is</span> <span class="mf">1.</span>
-<span class="s2">&quot;packages&quot;</span>            <span class="n">number</span> <span class="n">of</span> <span class="n">packages</span><span class="o">.</span>
-                      <span class="n">The</span> <span class="n">default</span> <span class="ow">is</span> <span class="mf">1.</span>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>&quot;mem&quot;                 mem (RAM) size on each NUMA node in this group.
+                      The default is &quot;0G&quot;.
+&quot;nvmem&quot;               nvmem (non-volatile RAM) size on each NUMA node
+                      in this group. The default is &quot;0G&quot;.
+&quot;cores&quot;               number of CPU cores on each NUMA node in this group.
+                      The default is 0.
+&quot;threads&quot;             number of threads on each CPU core.
+                      The default is 2.
+&quot;nodes&quot;               number of NUMA nodes on each die.
+                      The default is 1.
+&quot;dies&quot;                number of dies on each package.
+                      The default is 1.
+&quot;packages&quot;            number of packages.
+                      The default is 1.
 </pre></div>
 </div>
 <p>Example:</p>
 <p>Run the test in a VM with two NUMA nodes. There are 4 CPUs (two cores, two
 threads per core by default) and 4G RAM in each node</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>e2e$ vm_name=my2x4 topology=&#39;[{&quot;mem&quot;:&quot;4G&quot;,&quot;cores&quot;:2,&quot;nodes&quot;:2}]&#39; ./run.sh
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>e2e$<span class="w"> </span><span class="nv">vm_name</span><span class="o">=</span>my2x4<span class="w"> </span><span class="nv">topology</span><span class="o">=</span><span class="s1">&#39;[{&quot;mem&quot;:&quot;4G&quot;,&quot;cores&quot;:2,&quot;nodes&quot;:2}]&#39;</span><span class="w"> </span>./run.sh
 </pre></div>
 </div>
 <p>Run the test in a VM with 32 CPUs in total: there are two packages
@@ -189,7 +189,7 @@ threads per core by default) and 4G RAM in each node</p>
 two NUMA nodes, each node containing 2 CPU cores, each core containing
 two threads. And with a NUMA node with 16G of non-volatile memory
 (NVRAM) but no CPUs.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>e2e$ vm_name=mynvram topology=&#39;[{&quot;mem&quot;:&quot;4G&quot;,&quot;cores&quot;:2,&quot;nodes&quot;:2,&quot;dies&quot;:2,&quot;packages&quot;:2},{&quot;nvmem&quot;:&quot;16G&quot;}]&#39; ./run.sh
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>e2e$<span class="w"> </span><span class="nv">vm_name</span><span class="o">=</span>mynvram<span class="w"> </span><span class="nv">topology</span><span class="o">=</span><span class="s1">&#39;[{&quot;mem&quot;:&quot;4G&quot;,&quot;cores&quot;:2,&quot;nodes&quot;:2,&quot;dies&quot;:2,&quot;packages&quot;:2},{&quot;nvmem&quot;:&quot;16G&quot;}]&#39;</span><span class="w"> </span>./run.sh
 </pre></div>
 </div>
 </section>
