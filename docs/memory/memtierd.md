@@ -31,6 +31,7 @@ The class of a pod or a container is defined using pod annotations:
 Plugin configuration lists workload classes and their attributes.
 
 `classes:` is followed by list of maps with following keys and values:
+
 - `name` (string): name of the class, matches
   `class.memtierd.nri.io` annotations.
 - `allowswap` (`true` or `false`): if `true`, allow OS to swap the
@@ -91,7 +92,8 @@ for more configuration options.
 
 - Containerd v1.7+
 - Enable NRI in /etc/containerd/config.toml:
-  ```
+
+  ```toml
   [plugins."io.containerd.nri.v1.nri"]
     disable = false
     disable_connections = false
@@ -101,7 +103,9 @@ for more configuration options.
     plugin_request_timeout = "2s"
     socket_path = "/var/run/nri/nri.sock"
   ```
+
 - To run the nri-memtierd plugin on a host, install memtierd on the host.
+
   ```bash
   GOBIN=/usr/local/bin go install github.com/intel/memtierd/cmd/memtierd@latest
   ```
