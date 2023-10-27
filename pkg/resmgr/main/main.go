@@ -74,8 +74,6 @@ func (m *Main) Run() error {
 }
 
 func (m *Main) setupLoggers() {
-	rate := logger.Rate{Limit: logger.Every(1 * time.Minute)}
-	logger.SetGrpcLogger("grpc", &rate)
 	logger.SetStdLogger("stdlog")
 	logger.SetupDebugToggleSignal(syscall.SIGUSR1)
 }
