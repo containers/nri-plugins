@@ -6,7 +6,6 @@ maxdepth: 2
 caption: Contents
 ---
 introduction.md
-installation.md
 setup.md
 configuration.md
 policy/index.md

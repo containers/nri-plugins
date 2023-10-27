@@ -3,6 +3,7 @@
 ## Prerequisites
 
 Install:
+
 - `docker`
 - `vagrant`
 
@@ -10,14 +11,14 @@ Install:
 
 Run policy tests:
 
-```
+```bash
 cd test/e2e
 [VAR=VALUE...] ./run_tests.sh policies.test-suite
 ```
 
 Run tests only on certain policy, topology, or only selected test:
 
-```
+```bash
 cd test/e2e
 [VAR=VALUE...] ./run_tests.sh policies.test-suite[/POLICY[/TOPOLOGY[/testNN-*]]]
 ```
@@ -65,7 +66,8 @@ configuration.
 
 The `topology` variable is a JSON array of objects. Each object
 defines one or more NUMA nodes. Keys in objects:
-```
+
+```text
 "mem"                 mem (RAM) size on each NUMA node in this group.
                       The default is "0G".
 "nvmem"               nvmem (non-volatile RAM) size on each NUMA node
@@ -82,12 +84,12 @@ defines one or more NUMA nodes. Keys in objects:
                       The default is 1.
 ```
 
-
 Example:
 
 Run the test in a VM with two NUMA nodes. There are 4 CPUs (two cores, two
 threads per core by default) and 4G RAM in each node
-```
+
+```bash
 e2e$ vm_name=my2x4 topology='[{"mem":"4G","cores":2,"nodes":2}]' ./run.sh
 ```
 
@@ -97,7 +99,7 @@ two NUMA nodes, each node containing 2 CPU cores, each core containing
 two threads. And with a NUMA node with 16G of non-volatile memory
 (NVRAM) but no CPUs.
 
-```
+```bash
 e2e$ vm_name=mynvram topology='[{"mem":"4G","cores":2,"nodes":2,"dies":2,"packages":2},{"nvmem":"16G"}]' ./run.sh
 ```
 
