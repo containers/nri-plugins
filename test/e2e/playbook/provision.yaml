@@ -176,6 +176,20 @@
         - "{{ crio_src }}/contrib/crio.service"
       when: is_crio and crio_src != ""
 
+    - block:
+      - name: Remove CRI-O crun configuration
+        ansible.builtin.file:
+          state: absent
+          path: /etc/crio/crio.conf.d/10-crun.conf
+
+      - name: Make runc the default CRI-O runtime
+        ansible.builtin.copy:
+          dest: /etc/crio/crio.conf.d/10-runc.conf
+          content: |
+            [crio.runtime]
+            default_runtime = "runc"
+      when: is_crio
+
     - name: Install containerd systemd service file
       ansible.builtin.get_url:
         url: "{{ containerd_service_file }}"
