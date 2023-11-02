@@ -1044,6 +1044,12 @@ func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
 	p.cpuTreeAllocator = p.cpuTree.NewAllocator(cpuTreeAllocatorOptions{
 		topologyBalancing: bpoptions.AllocatorTopologyBalancing,
 	})
+
+	// We can't delay taking new configuration into use beyond this point,
+	// because p.newBalloon() dereferences our options via p.bpoptions, so
+	// it would end up using the old configuration.
+	p.bpoptions = *bpoptions
+
 	// Instantiate built-in reserved and default balloons.
 	reservedBalloon, err := p.newBalloon(p.reservedBalloonDef, false)
 	if err != nil {
@@ -1080,8 +1086,7 @@ func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
 	for blnIdx, bln := range p.balloons {
 		log.Info("- balloon %d: %s", blnIdx, bln)
 	}
-	// No errors in balloon creation, take new configuration into use.
-	p.bpoptions = *bpoptions
+
 	p.updatePinning(p.shareIdleCpus(p.freeCpus, cpuset.New())...)
 	// (Re)configures all CPUs in balloons.
 	p.resetCpuClass()
