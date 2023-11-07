@@ -1,3 +1,7 @@
+ifneq ($(V),1)
+.SILENT:
+endif
+
 all: up
 
 install: .plugins.installed.stamp
@@ -6,7 +10,7 @@ install: .plugins.installed.stamp
 	vagrant plugin install dotenv
 	vagrant plugin install vagrant-proxyconf
 	vagrant plugin install vagrant-qemu
-	$(Q)if [ ! -f "$@" ]; then \
+	if [ ! -f "$@" ]; then \
 	    touch "$@"; \
 	fi;
 
@@ -19,8 +23,14 @@ up:
 down:
 	vagrant halt
 
-ssh: up
-	vagrant ssh
+ssh:
+	if [ -f .ssh-config ]; then \
+	    if ! ssh -F .ssh-config vagrant@node; then \
+	        $(MAKE) up && ssh -F .ssh-config vagrant@node; \
+	    fi \
+	else \
+	    vagrant up && vagrant ssh; \
+	fi
 
 status:
 	vagrant status
