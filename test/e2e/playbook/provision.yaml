@@ -342,8 +342,10 @@
           remote_src: yes
 
       - name: Run cilium installer
-        ansible.builtin.shell:
-          cmd: cilium install --wait
+        ansible.builtin.shell: "{{ item }}"
+        with_items:
+          - cilium install --wait
+          - cilium status --wait
       when: cni_plugin == "cilium"
 
     - block:
