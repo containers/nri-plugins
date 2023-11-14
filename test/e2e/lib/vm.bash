@@ -77,7 +77,7 @@ vm-setup() {
 	    -e "s/QEMU_MEM/$MEM/" \
 	    -e "s/QEMU_SMP/$CPU/" \
 	    -e "s/QEMU_EXTRA_ARGS/$EXTRA_ARGS/" \
-	    "$files/Vagrantfile.in" > "$vagrantdir/Vagrantfile"
+	    "$files/Vagrantfile.in" > "$vagrantdir/Vagrantfile.erb"
     fi
 
     if [ ! -f "$vagrantdir/Makefile" ]; then
@@ -110,7 +110,7 @@ vm-setup() {
      make install
 
      if [ ! -d .vagrant ]; then
-	 vagrant init $distro
+	 vagrant init --template Vagrantfile $distro || error "failed to vagrant init $distro"
      fi
 
      # If you want to force provisioning of already provisioned vm,
@@ -119,10 +119,10 @@ vm-setup() {
      # cannot be called second time. But this could be used
      # if the provisioning failed before kubernetes was setup.
      if [ ! -z "$provision" ]; then
-	 vagrant provision
+	 vagrant provision || error "failed to provision VM"
      fi
 
-     vagrant up --provider qemu
+     vagrant up --provider qemu || error "failed to bring up VM"
      vagrant ssh-config > .ssh-config
 
      # Add hostname alias to the ssh config so that we can ssh
