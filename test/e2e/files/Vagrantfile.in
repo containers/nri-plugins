@@ -29,6 +29,7 @@ else
 end
 
 CNI_PLUGIN = "#{ENV['cni_plugin']}"
+CNI_RELEASE = "#{ENV['cni_release']}"
 
 NRI_RESOURCE_POLICY_SRC = "#{ENV['nri_resource_policy_src']}"
 OUTPUT_DIR = "#{ENV['OUTPUT_DIR']}"
@@ -93,6 +94,7 @@ Vagrant.configure("2") do |config|
       crio_release: CRIO_RELEASE,
       crio_src: CRIO_SRC,
       cni_plugin: CNI_PLUGIN,
+      cni_release: CNI_RELEASE,
       nri_resource_policy_src: NRI_RESOURCE_POLICY_SRC,
       outdir: OUTPUT_DIR,
     }

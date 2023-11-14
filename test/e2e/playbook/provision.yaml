@@ -13,7 +13,8 @@
     - crio_tarball: "https://storage.googleapis.com/cri-o/artifacts/cri-o.amd64.v{{ crio_release }}.tar.gz"
     - dns_nameserver: "{{ dns_nameserver }}"
     - cni_plugin: "{{ cni_plugin }}"
-
+    - cni_release: "{{ cni_release }}"
+    - cilium_tarball: ""
 
   tasks:
     - set_fact:
@@ -334,19 +335,30 @@
         - kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true
         - kubectl taint nodes --all node-role.kubernetes.io/master- || true
 
-    - block:
-      - name: Fetch and extract cilium (installer) release tarball
-        ansible.builtin.unarchive:
-          src: "https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz"
-          dest: /usr/local/bin
-          remote_src: yes
-
-      - name: Run cilium installer
-        ansible.builtin.shell: "{{ item }}"
-        with_items:
-          - cilium install --wait
-          - cilium status --wait
+    - name: Install cilium CNI plugin
       when: cni_plugin == "cilium"
+      block:
+        - name: "Use irregular download path if cilium release is latest"
+          when: cni_release == "latest"
+          ansible.builtin.set_fact:
+            cilium_tarball: https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz
+
+        - name: "Use regular download path if cilium release is not latest"
+          when: cni_release != "latest"
+          ansible.builtin.set_fact:
+            cilium_tarball: https://github.com/cilium/cilium-cli/releases/download/{{ cni_release }}/cilium-linux-amd64.tar.gz
+
+        - name: "Fetch and extract {{ cni_release }} cilium (installer) release tarball"
+          ansible.builtin.unarchive:
+            src: "{{ cilium_tarball }}"
+            dest: /usr/local/bin
+            remote_src: true
+
+        - name: Run cilium installer
+          ansible.builtin.command: "{{ item }}"
+          with_items:
+            - cilium install --wait
+            - cilium status --wait
 
     - block:
       - name: Copy CNI bridge plugin configuration
