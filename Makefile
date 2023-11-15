@@ -102,6 +102,11 @@ LDFLAGS    = \
              -X=github.com/containers/nri-plugins/pkg/version.Build=$(BUILD_BUILDID) \
              -B 0x$(RANDOM_ID)"
 
+ifeq ($(DEBUG),1)
+    GCFLAGS ?= -gcflags "all=-N -l"
+    DOCKER_BUILD_DEBUG := --build-arg DEBUG=1
+endif
+
 # Documentation-related variables
 SPHINXOPTS    ?= -W
 SPHINXBUILD   = sphinx-build
@@ -139,12 +144,12 @@ verify: verify-godeps verify-fmt verify-generate verify-build verify-docs
 build-plugins: $(foreach bin,$(PLUGINS),$(BIN_PATH)/$(bin))
 
 build-plugins-static:
-	$(MAKE) STATIC=1 build-plugins
+	$(MAKE) STATIC=1 DEBUG=$(DEBUG) build-plugins
 
 build-binaries: $(foreach bin,$(BINARIES),$(BIN_PATH)/$(bin))
 
 build-binaries-static:
-	$(MAKE) STATIC=1 build-binaries
+	$(MAKE) STATIC=1 DEBUG=$(DEBUG) build-binaries
 
 build-images: images
 
@@ -236,6 +241,7 @@ image.%:
 	tag=$(patsubst image.%,%,$@); \
 	$(DOCKER_BUILD) . -f "$$dir/Dockerfile" \
 	    --build-arg GO_VERSION=$(GO_VERSION) \
+	    $(DOCKER_BUILD_DEBUG) \
 	    --build-arg IMAGE_VERSION=$(IMAGE_VERSION) \
 	    --build-arg BUILD_VERSION=$(BUILD_VERSION) \
 	    --build-arg BUILD_BUILDID=$(BUILD_BUILDID) \
@@ -507,7 +513,7 @@ generate-manifests: controller-gen
 generate-types: controller-gen
 	$(CONTROLLER_GEN) object:headerFile="./docs/license-header.go.txt" paths="./pkg/apis/..."
 
-# client generation rules 
+# client generation rules
 .PHONY: generate-clients
 generate-clients: $(GENERATE_GROUPS)
 	$(GENERATE_GROUPS) client \
