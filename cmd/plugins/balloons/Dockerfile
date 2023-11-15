@@ -5,7 +5,15 @@ FROM golang:${GO_VERSION}-bullseye AS builder
 ARG IMAGE_VERSION
 ARG BUILD_VERSION
 ARG BUILD_BUILDID
+ARG DEBUG=0
+
 WORKDIR /go/builder
+
+RUN mkdir -p /debug-extras; \
+    if [ "$DEBUG" = 1 ]; then \
+        mkdir -p /debug-extras/bin; \
+          GOBIN=/debug-extras/bin go install -tags osusergo,netgo -ldflags "-extldflags=-static" github.com/go-delve/delve/cmd/dlv@latest; \
+    fi
 
 # Fetch go dependencies in a separate layer for caching
 COPY go.mod go.sum ./
@@ -16,10 +24,24 @@ RUN go mod download
 COPY . .
 
 RUN make clean
-RUN make IMAGE_VERSION=${IMAGE_VERSION} BUILD_VERSION=${BUILD_VERSION} BUILD_BUILDID=${BUILD_BUILDID} PLUGINS=nri-resource-policy-balloons build-plugins-static
+RUN make IMAGE_VERSION=${IMAGE_VERSION} BUILD_VERSION=${BUILD_VERSION} BUILD_BUILDID=${BUILD_BUILDID} PLUGINS=nri-resource-policy-balloons DEBUG=$DEBUG V=$DEBUG build-plugins-static
+
+RUN cpgodir() { \
+        mkdir -p $2; \
+        find $1 -name '*.s' -o -name '*.go' | grep -v -E '/test/|/testdata/|_test.go' \
+        | xargs -I {} cp --parents {} $2; \
+    }; \
+    if [ "$DEBUG" = 1 ]; then \
+        cpgodir /go/pkg /debug-extras; \
+        cpgodir /go/builder/pkg /debug-extras; \
+        cpgodir /go/builder/cmd /debug-extras; \
+        cpgodir /go/builder/vendor /debug-extras; \
+        cpgodir /usr/local/go /debug-extras; \
+    fi
 
 FROM gcr.io/distroless/static
 
 COPY --from=builder /go/builder/build/bin/nri-resource-policy-balloons /bin/nri-resource-policy-balloons
+COPY --from=builder /debug-extras /
 
 ENTRYPOINT ["/bin/nri-resource-policy-balloons"]
