@@ -43,8 +43,6 @@ const (
 	RDT = "rdt"
 	// BlockIO marks changes that can be applied by the BlockIO controller.
 	BlockIO = "blockio"
-	// E2ETest marks changes that can be applied by the e2e test controller.
-	E2ETest = "e2e-test"
 
 	// RDTClassKey is the pod annotation key for specifying a container RDT class.
 	RDTClassKey = "rdtclass" + "." + kubernetes.ResmgrKeyNamespace
@@ -62,9 +60,6 @@ const (
 	// TopologyHintsKey can be used to opt out from automatic topology hint generation.
 	TopologyHintsKey = "topologyhints" + "." + kubernetes.ResmgrKeyNamespace
 )
-
-// allControllers is a slice of all controller domains.
-var allControllers = []string{CPU, NRI, RDT, BlockIO, E2ETest}
 
 // PodState is the pod state in the runtime.
 type PodState int32

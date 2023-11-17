@@ -18,25 +18,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"sync"
 
 	"github.com/containers/nri-plugins/pkg/instrumentation"
 
-	pkgcfg "github.com/containers/nri-plugins/pkg/config"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/control"
+
+	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/control"
 )
 
 const (
-	// ConfigModuleName is the configuration section for the e2e test controller.
-	ConfigModuleName = "e2e-test"
+	// EnvVarEnableTestAPIs controls if test APIS are enabled (currently e2e test controller).
+	EnvVarEnableTestAPIs = "ENABLE_TEST_APIS"
 
-	// E2ETestController is the name of the test controller.
-	E2ETestController = cache.E2ETest
-
-	// E2ETestControllerVersion is the running version of this controller.
-	E2ETestControllerVersion = "1"
+	// ControllerName is the name of this controller.
+	ControllerName = "e2e-test"
 
 	controllerEvent = "ControllerEvent"
 	preCreate       = "PreCreate"
@@ -46,18 +45,18 @@ const (
 	postStop        = "PostStop"
 )
 
+var (
+	enableTestAPIs = (os.Getenv(EnvVarEnableTestAPIs) != "")
+)
+
 // testctl encapsulates the runtime state of our test controller.
 type testctl struct {
 	sync.Mutex `json:"-"` // we're lockable
 	Log        map[string][]string
-	config     *config
-	configured bool
+	registered bool
 }
 
-type config struct {
-}
-
-var log logger.Logger = logger.NewLogger(E2ETestController)
+var log logger.Logger = logger.NewLogger(ControllerName)
 
 // Controller singleton instance.
 var singleton *testctl
@@ -66,38 +65,24 @@ var singleton *testctl
 func getE2ETestController() *testctl {
 	if singleton == nil {
 		singleton = &testctl{}
-		singleton.config = singleton.defaultOptions().(*config)
 		singleton.Log = make(map[string][]string)
 	}
 	return singleton
 }
 
-// Callback for runtime configuration notifications.
-func (ctl *testctl) configNotify(event pkgcfg.Event, source pkgcfg.Source) error {
-	if !ctl.configured {
-		// We don't want to configure until the controller has been fully
-		// started and initialized. We will configure on Start(), anyway.
-		return nil
-	}
-
-	log.Info("configuration update, applying new config")
-	return ctl.configure()
-}
-
 // Start initializes the controller for enforcing decisions.
-func (ctl *testctl) Start(cache cache.Cache) error {
-	log.Debug("Start called")
+func (ctl *testctl) Start(cache cache.Cache, cfg *cfgapi.Config) (bool, error) {
+	log.Debug("Start called (with test APIs %s)",
+		map[bool]string{false: "disabled", true: "enabled"})
 
-	if err := ctl.configure(); err != nil {
-		// Just print an error. A config update later on may be valid.
-		log.Error("failed apply /cpuinitial configuration: %v", err)
+	if !enableTestAPIs {
+		return false, nil
 	}
 
-	pkgcfg.GetModule(ConfigModuleName).AddNotify(getE2ETestController().configNotify)
-
+	ctl.registerHandler()
 	ctl.Log[controllerEvent] = append(ctl.Log[controllerEvent], "Start")
 
-	return nil
+	return true, nil
 }
 
 // Stop shuts down the controller.
@@ -158,22 +143,16 @@ func (ctl *testctl) dumpE2ETestControllerState(w http.ResponseWriter, req *http.
 	fmt.Fprintf(w, "%s\r\n", data)
 }
 
-func (ctl *testctl) configure() error {
-	if ctl.configured == false {
-		mux := instrumentation.HTTPServer().GetMux()
-		mux.HandleFunc("/e2e-test-controller-state", ctl.dumpE2ETestControllerState)
-		ctl.configured = true
+func (ctl *testctl) registerHandler() {
+	if ctl.registered {
+		return
 	}
-
-	return nil
-}
-
-func (ctl *testctl) defaultOptions() interface{} {
-	return &config{}
+	mux := instrumentation.HTTPServer().GetMux()
+	mux.HandleFunc("/e2e-test-controller-state", ctl.dumpE2ETestControllerState)
+	ctl.registered = true
 }
 
 // Register us as a controller.
 func init() {
-	control.Register(E2ETestController, "Test controller", getE2ETestController())
-	pkgcfg.Register(ConfigModuleName, "Test control", getE2ETestController().config, getE2ETestController().defaultOptions)
+	control.Register(ControllerName, "Test controller", getE2ETestController())
 }

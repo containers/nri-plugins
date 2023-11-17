@@ -19,7 +19,8 @@ import (
 
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 
-	pkgcfg "github.com/containers/nri-plugins/pkg/config"
+	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/control"
+	cfgcpu "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/control/cpu"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/control"
@@ -37,26 +38,14 @@ const (
 
 // cpuctl encapsulates the runtime state of our CPU enforcement/controller.
 type cpuctl struct {
-	cache   cache.Cache  // resource manager cache
-	system  sysfs.System // system topology
-	config  *config
-	started bool
+	cache         cache.Cache      // resource manager cache
+	system        sysfs.System     // system topology
+	classes       map[string]Class // configured CPU classes
+	uncoreEnabled bool             // whether we need to care about uncore
+	started       bool
 }
 
-type config struct {
-	Classes map[string]Class `json:"classes"`
-
-	// Private field for storing info if we need to care about uncore
-	uncoreEnabled bool
-}
-
-type Class struct {
-	MinFreq                     uint `json:"minFreq"`
-	MaxFreq                     uint `json:"maxFreq"`
-	EnergyPerformancePreference uint `json:"energyPerformancePreference"`
-	UncoreMinFreq               uint `json:"uncoreMinFreq"`
-	UncoreMaxFreq               uint `json:"uncoreMaxFreq"`
-}
+type Class = cfgcpu.Class
 
 var log logger.Logger = logger.NewLogger(CPUController)
 
@@ -67,16 +56,25 @@ var singleton *cpuctl
 func getCPUController() *cpuctl {
 	if singleton == nil {
 		singleton = &cpuctl{}
-		singleton.config = singleton.defaultOptions().(*config)
 	}
 	return singleton
 }
 
+// Check if our configuration is effectively empty.
+func isEmptyConfig(cfg *cfgapi.Config) bool {
+	return cfg == nil || cfg.CPU == nil || len(cfg.CPU.Classes) == 0
+}
+
 // Start initializes the controller for enforcing decisions.
-func (ctl *cpuctl) Start(cache cache.Cache) error {
+func (ctl *cpuctl) Start(cache cache.Cache, cfg *cfgapi.Config) (bool, error) {
+	if isEmptyConfig(cfg) {
+		log.Info("empty configuration, disabling controller")
+		return false, nil
+	}
+
 	sys, err := sysfs.DiscoverSystem()
 	if err != nil {
-		return fmt.Errorf("failed to discover system topology: %w", err)
+		return false, fmt.Errorf("failed to discover system topology: %w", err)
 	}
 
 	ctl.system = sys
@@ -85,17 +83,14 @@ func (ctl *cpuctl) Start(cache cache.Cache) error {
 	// DEBUG: dump the class assignments we have stored in the cache
 	log.Debug("retrieved cpu class assignments from cache:\n%s", utils.DumpJSON(getClassAssignments(ctl.cache)))
 
-	if err := ctl.configure(); err != nil {
+	if err := ctl.configure(cfg); err != nil {
 		// Just print an error. A config update later on may be valid.
 		log.Error("failed apply /cpuinitial configuration: %v", err)
 	}
 
-	// TODO: We probably could just remove this and the hooks if they are not used
-	pkgcfg.GetModule(ConfigModuleName).AddNotify(getCPUController().configNotify)
-
 	ctl.started = true
 
-	return nil
+	return true, nil
 }
 
 // Stop shuts down the controller.
@@ -129,12 +124,12 @@ func (ctl *cpuctl) PostStopHook(c cache.Container) error {
 
 // enforceCpufreq enforces a class-specific cpufreq configuration to a cpuset
 func (ctl *cpuctl) enforceCpufreq(class string, cpus ...int) error {
-	if _, ok := ctl.config.Classes[class]; !ok {
+	if _, ok := ctl.classes[class]; !ok {
 		return fmt.Errorf("non-existent cpu class %q", class)
 	}
 
-	min := int(ctl.config.Classes[class].MinFreq)
-	max := int(ctl.config.Classes[class].MaxFreq)
+	min := int(ctl.classes[class].MinFreq)
+	max := int(ctl.classes[class].MaxFreq)
 	log.Debug("enforcing cpu frequency limits {%d, %d} from class %q on %v", min, max, class, cpus)
 
 	if err := utils.SetCPUsScalingMinFreq(cpus, min); err != nil {
@@ -150,7 +145,7 @@ func (ctl *cpuctl) enforceCpufreq(class string, cpus ...int) error {
 
 // enforceUncore enforces uncore frequency limits
 func (ctl *cpuctl) enforceUncore(assignments cpuClassAssignments, affectedCPUs ...int) error {
-	if !ctl.config.uncoreEnabled {
+	if !ctl.uncoreEnabled {
 		return nil
 	}
 
@@ -163,7 +158,7 @@ func (ctl *cpuctl) enforceUncore(assignments cpuClassAssignments, affectedCPUs .
 
 			// Check if this die is affected by the specified cpuset
 			if cpus.Size() == 0 || dieCPUs.Intersection(cpus).Size() > 0 {
-				min, max, minCls, maxCls := effectiveUncoreFreqs(utils.NewIDSet(dieCPUs.List()...), ctl.config.Classes, assignments)
+				min, max, minCls, maxCls := effectiveUncoreFreqs(utils.NewIDSet(dieCPUs.List()...), ctl.classes, assignments)
 
 				if min == 0 && max == 0 {
 					log.Debug("no uncore frequency limits for cpu package/die %d/%d", cpuPkgID, cpuDieID)
@@ -231,28 +226,35 @@ func idSetIntersects(a, b utils.IDSet) bool {
 	return false
 }
 
-func (ctl *cpuctl) configure() error {
+func (ctl *cpuctl) configure(cfg *cfgapi.Config) error {
+	ctl.classes = nil
+	ctl.uncoreEnabled = false
+
+	if cfg != nil && cfg.CPU != nil {
+		ctl.classes = cfg.CPU.Classes
+	}
+
 	// Re-configure CPUs that are assigned to some known class
 	assignments := *getClassAssignments(ctl.cache)
 
 	// DEBUG: dump the class assignments we have stored in the cache
-	log.Debug("applying cpu controller configuration:\n%s", utils.DumpJSON(ctl.config))
+	log.Debug("applying cpu controller configuration:\n%s", utils.DumpJSON(ctl.classes))
 
 	// Sanity check
 	uncoreAvailable := utils.UncoreFreqAvailable()
-	for name, conf := range ctl.config.Classes {
+	for name, conf := range ctl.classes {
 		if conf.UncoreMinFreq != 0 || conf.UncoreMaxFreq != 0 {
 			if !uncoreAvailable {
 				return fmt.Errorf("uncore limits set in cpu class %q but uncore driver not available in the system, make sure that the intel_uncore_frequency driver is loaded", name)
 			}
-			ctl.config.uncoreEnabled = true
+			ctl.uncoreEnabled = true
 			break
 		}
 	}
 
 	// Configure the system
 	for class, cpus := range assignments {
-		if _, ok := ctl.config.Classes[class]; ok {
+		if _, ok := ctl.classes[class]; ok {
 			// Re-configure cpus (sysfs) according to new class parameters
 			if err := ctl.enforceCpufreq(class, cpus.SortedMembers()...); err != nil {
 				log.Error("cpufreq enforcement on re-configure failed: %v", err)
@@ -274,25 +276,9 @@ func (ctl *cpuctl) configure() error {
 	return nil
 }
 
-// Callback for runtime configuration notifications.
-func (ctl *cpuctl) configNotify(event pkgcfg.Event, source pkgcfg.Source) error {
-	if !ctl.started {
-		// We don't want to configure until the controller has been fully
-		// started and initialized. We will configure on Start(), anyway.
-		return nil
-	}
-
-	log.Info("configuration update, applying new config")
-	return ctl.configure()
-}
-
-func (ctl *cpuctl) defaultOptions() interface{} {
-	return &config{}
-}
-
-func (c *config) getClasses() map[string]Class {
-	ret := make(map[string]Class, len(c.Classes))
-	for k, v := range c.Classes {
+func (ctl *cpuctl) getClasses() map[string]Class {
+	ret := make(map[string]Class, len(ctl.classes))
+	for k, v := range ctl.classes {
 		ret[k] = v
 	}
 	return ret
@@ -301,5 +287,4 @@ func (c *config) getClasses() map[string]Class {
 // Register us as a controller.
 func init() {
 	control.Register(CPUController, "CPU controller", getCPUController())
-	pkgcfg.Register(ConfigModuleName, "CPU control", getCPUController().config, getCPUController().defaultOptions)
 }
