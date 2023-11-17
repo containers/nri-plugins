@@ -1,0 +1,77 @@
+config:
+  # PinCPU: allow containers to use only the CPUs in their balloons.
+  pinCPU: true
+  # PinMemory: allow containers to use only the closest memory to
+  # the CPUs in their balloons.
+  pinMemory: true
+  balloonTypes:
+    - name: two-cpu
+      minCPUs: 2
+      maxCPUs: 2
+      allocatorPriority: high
+      cpuClass: class2
+      preferNewBalloons: true
+
+    - name: three-cpu
+      namespaces:
+        - "three"
+      minCPUs: 3
+      allocatorPriority: normal
+      cpuClass: class3
+      preferSpreadingPods: true
+
+    - name: four-cpu
+      minCPUs: 4
+      maxCPUs: 8
+      minBalloons: 1
+      allocatorPriority: low
+      cpuClass: class4
+
+    - name: five-cpu
+      maxCPUs: 5
+      allocatorPriority: none
+      preferSpreadingPods: true
+      preferNewBalloons: true
+      cpuClass: class5
+
+  # Use only 15 CPUs in total, leave cpu0 for other than Kubernetes
+  # processes.
+  availableResources:
+    cpu: cpuset:1-15
+  # Reserve one of our CPUs (cpu15) for kube-system tasks.
+  reservedResources:
+    cpu: "1"
+
+  instrumentation:
+    httpEndpoint: ":8891"
+  log:
+    debug:
+      - nri-resource-policy
+      - resource-manager
+      - cache
+      - policy
+      - nri-plugin
+    source: true
+    klog:
+      skip_headers: true
+
+  control:
+    cpu:
+      classes:
+        default:
+          minFreq: 800
+          maxFreq: 2800
+        class2:
+          minFreq: 900
+          maxFreq: 2900
+        class3:
+          minFreq: 1000
+          maxFreq: 3000
+        class4:
+          minFreq: 1100
+          maxFreq: 3100
+          energyPerformancePreference: 1
+        class5:
+          minFreq: 1200
+          maxFreq: 3200
+          energyPerformancePreference: 2

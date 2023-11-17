@@ -1,0 +1,21 @@
+apiVersion: config.nri/v1alpha1
+kind: BalloonsPolicy
+metadata:
+  name: default
+  namespace: kube-system
+spec:
+  reservedResources:
+    cpu: 750m
+  allocatorTopologyBalancing: true
+  balloonTypes:
+  - name: dynamic
+    minCPUs: 33
+    maxCPUs: 32
+    maxBalloons: 8
+    preferNewBalloons: true
+    shareIdleCPUsInSame: numa
+  log:
+    debug:
+      - policy
+    klog:
+      skip_headers: true

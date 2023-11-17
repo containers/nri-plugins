@@ -1,5 +1,5 @@
-terminate nri-resource-policy
-nri_resource_policy_cfg=${TEST_DIR}/balloons-numa.cfg launch nri-resource-policy
+helm-terminate
+helm_config=${TEST_DIR}/balloons-numa.cfg helm-launch balloons
 
 # pod0: besteffort, make sure it still gets at least 1 CPU
 CPUREQ="" CPULIM="" MEMREQ="" MEMLIM=""
@@ -95,4 +95,4 @@ verify 'len(cpus["pod0c0"]) == 1' \
        'cpus["pod0c0"] == cpus["pod5c0"]' \
        'disjoint_sets(cpus["pod0c0"], cpus["pod6c0"])'
 
-terminate nri-resource-policy
+helm-terminate
