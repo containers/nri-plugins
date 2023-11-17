@@ -15,4 +15,5 @@ maxdepth: 1
 ---
 topology-aware.md
 balloons.md
+template.md
 ```
