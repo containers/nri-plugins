@@ -1,0 +1,24 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nri-resource-policy-template
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nri-plugin.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - config.nri
+  resources:
+  - templatepolicies
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - config.nri
+  resources:
+  - templatepolicies/status
+  verbs:
+  - get
+  - update
+  - patch
