@@ -165,7 +165,6 @@ Example configuration that runs all pods in balloons of 1-4 CPUs.
 
 ```yaml
 policy:
-  Active: balloons
   ReservedResources:
     CPU: 1
   balloons:

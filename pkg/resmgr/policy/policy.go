@@ -97,6 +97,8 @@ const (
 // A backends operates in a set of policy domains. Currently each policy domain
 // corresponds to some particular hardware resource (CPU, memory, cache, etc).
 type Backend interface {
+	// Setup initializes the policy backend with the given options.
+	Setup(*BackendOptions)
 	// Name gets the well-known name of this policy.
 	Name() string
 	// Description gives a verbose description about the policy implementation.
@@ -128,6 +130,8 @@ type Backend interface {
 
 // Policy is the exposed interface for container resource allocations decision making.
 type Policy interface {
+	// ActivePolicy returns the name of the policy backend in use.
+	ActivePolicy() string
 	// Start starts up policy, prepare for serving resource management requests.
 	Start([]cache.Container, []cache.Container) error
 	// Sync synchronizes the state of the active policy.
@@ -162,7 +166,7 @@ type Metrics interface{}
 //	for resource types (socket, die, NUMA node, etc.) and use them
 //	in policies (for instance for TA pool 'kind's)
 const (
-	// MemoryResource is resource name for memory
+	// MemoryResource is resource name fgggor memory
 	MemoryResource = "memory"
 	// CPUResource is the resource name for CPU
 	CPUResource = "cpu"
@@ -218,32 +222,11 @@ type backend struct {
 // Out logger instance.
 var log logger.Logger = logger.NewLogger("policy")
 
-// Registered backends.
-var backends = make(map[string]*backend)
-
 // Options passed to created/activated backend.
 var backendOpts = &BackendOptions{}
 
-// ActivePolicy returns the name of the policy to be activated.
-func ActivePolicy() string {
-	if opt.Policy != "" {
-		return opt.Policy
-	}
-
-	return DefaultPolicy()
-}
-
-// DefaultPolicy returns the name of the default policy.
-func DefaultPolicy() string {
-	for name := range backends {
-		return name
-	}
-
-	return ""
-}
-
-// NewPolicy creates a policy instance using the selected backend.
-func NewPolicy(cache cache.Cache, o *Options) (Policy, error) {
+// NewPolicy creates a policy instance using the given backend.
+func NewPolicy(backend Backend, cache cache.Cache, o *Options) (Policy, error) {
 	sys, err := system.DiscoverSystem()
 	if err != nil {
 		return nil, policyError("failed to discover system topology: %v", err)
@@ -253,15 +236,10 @@ func NewPolicy(cache cache.Cache, o *Options) (Policy, error) {
 		cache:   cache,
 		system:  sys,
 		options: *o,
+		active:  backend,
 	}
 
-	selected := ActivePolicy()
-	active, ok := backends[selected]
-	if !ok {
-		return nil, policyError("unknown policy '%s' requested", selected)
-	}
-
-	log.Info("activating '%s' policy...", active.name)
+	log.Info("activating '%s' policy...", backend.Name())
 
 	if len(opt.Available) != 0 {
 		log.Info("  with available resources:")
@@ -276,19 +254,22 @@ func NewPolicy(cache cache.Cache, o *Options) (Policy, error) {
 		}
 	}
 
-	if log.DebugEnabled() {
-		logger.Get(selected).EnableDebug(true)
-	}
-
 	backendOpts.Cache = p.cache
 	backendOpts.System = p.system
 	backendOpts.Available = opt.Available
 	backendOpts.Reserved = opt.Reserved
 	backendOpts.SendEvent = o.SendEvent
 
-	p.active = active.create(backendOpts)
+	p.active.Setup(backendOpts)
 
 	return p, nil
+}
+
+func (p *policy) ActivePolicy() string {
+	if p.active != nil {
+		return p.active.Name()
+	}
+	return ""
 }
 
 // Start starts up policy, preparing it for resving requests.
@@ -364,23 +345,6 @@ func (p *policy) CollectMetrics(m Metrics) ([]prometheus.Metric, error) {
 // GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
 func (p *policy) GetTopologyZones() []*TopologyZone {
 	return p.active.GetTopologyZones()
-}
-
-// Register registers a policy backend.
-func Register(name, description string, create CreateFn) error {
-	log.Info("registering policy '%s'...", name)
-
-	if o, ok := backends[name]; ok {
-		return policyError("policy %s already registered (%s)", name, o.description)
-	}
-
-	backends[name] = &backend{
-		name:        name,
-		description: description,
-		create:      create,
-	}
-
-	return nil
 }
 
 // ConstraintToString returns the given constraint as a string.

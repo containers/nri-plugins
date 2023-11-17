@@ -6,7 +6,6 @@
 #
 
 policy:
-  Active: balloons
   ReservedResources:
     CPU: 750m
 logger:

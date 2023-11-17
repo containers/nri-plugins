@@ -1,5 +1,4 @@
 policy:
-  Active: topology-aware
   ReservedResources:
     CPU: 750m
 instrumentation:

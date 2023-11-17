@@ -6,7 +6,6 @@
 #
 
 policy:
-  Active: template
   ReservedResources:
     CPU: 750m
 logger:

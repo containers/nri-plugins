@@ -23,7 +23,7 @@ import (
 var log = logger.Default()
 
 func main() {
-	resmgr, err := resmgr.New(policy.PolicyName)
+	resmgr, err := resmgr.New(policy.New())
 	if err != nil {
 		log.Fatalf("%v", err)
 	}

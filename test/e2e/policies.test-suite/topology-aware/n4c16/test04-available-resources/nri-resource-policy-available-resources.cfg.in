@@ -1,5 +1,4 @@
 policy:
-  Active: topology-aware
   AvailableResources:
     cpu: ${AVAILABLE_CPU}
   ReservedResources:
