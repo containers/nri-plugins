@@ -25,6 +25,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/config"
 	"github.com/containers/nri-plugins/pkg/instrumentation"
 	"github.com/containers/nri-plugins/pkg/resmgr"
+	"github.com/containers/nri-plugins/pkg/resmgr/policy"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
 	version "github.com/containers/nri-plugins/pkg/version"
@@ -35,20 +36,20 @@ var (
 )
 
 type Main struct {
-	policy string
+	policy policy.Backend
 	mgr    resmgr.ResourceManager
 }
 
-func New(policy string) (*Main, error) {
+func New(backend policy.Backend) (*Main, error) {
 	m := &Main{
-		policy: policy,
+		policy: backend,
 	}
 
 	m.setupLoggers()
 	m.parseCmdline()
 	m.startTracing()
 
-	mgr, err := resmgr.NewResourceManager()
+	mgr, err := resmgr.NewResourceManager(backend)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create resource manager: %w", err)
 	}
@@ -59,7 +60,7 @@ func New(policy string) (*Main, error) {
 }
 
 func (m *Main) Run() error {
-	log.Infof("starting '%s' policy version %s/build %s...", m.policy,
+	log.Infof("starting '%s' policy version %s/build %s...", m.policy.Name(),
 		version.Version, version.Build)
 
 	defer m.stopTracing()
@@ -108,7 +109,7 @@ func (m *Main) parseCmdline() {
 
 func (m *Main) startTracing() error {
 	instrumentation.SetIdentity(
-		instrumentation.Attribute("resource-manager.policy", m.policy),
+		instrumentation.Attribute("resource-manager.policy", m.policy.Name()),
 	)
 
 	err := instrumentation.Start()

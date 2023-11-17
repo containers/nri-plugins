@@ -121,7 +121,6 @@ fragment in the configuration for `nri-resource-policy-topology-aware`:
 
 ```yaml
 policy:
-  Active: topology-aware
   ReservedResources:
     CPU: 750m
 ```
@@ -381,7 +380,6 @@ For example:
 
 ```yaml
 policy:
-  Active: topology-aware
   topology-aware:
     ReservedPoolNamespaces: ["my-pool","reserved-*"]
 ```

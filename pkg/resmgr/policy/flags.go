@@ -20,7 +20,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -38,8 +37,6 @@ const (
 
 // Options captures our configurable parameters.
 type options struct {
-	// Policy is the name of the policy backend to activate.
-	Policy string `json:"Active"`
 	// Available hardware resources to use.
 	Available ConstraintSet `json:"AvailableResources,omitempty"`
 	// Reserved hardware resources, for system and kube tasks.
@@ -203,32 +200,9 @@ func (cs *ConstraintSet) setCPUMilliQuantity(value int) {
 	(*cs)[DomainCPU] = *qty
 }
 
-// AvailablePolicy describes an available policy.
-type AvailablePolicy struct {
-	// Name is the name of the policy.
-	Name string
-	// Description is a short description of the policy.
-	Description string
-}
-
-// AvailablePolicies returns the available policies and their descriptions.
-func AvailablePolicies() []*AvailablePolicy {
-	policies := make([]*AvailablePolicy, 0, len(backends))
-	for name, be := range backends {
-		policies = append(policies, &AvailablePolicy{
-			Name:        name,
-			Description: be.description,
-		})
-	}
-	sort.Slice(policies, func(i, j int) bool { return policies[i].Name < policies[j].Name })
-
-	return policies
-}
-
 // defaultOptions returns a new options instance, all initialized to defaults.
 func defaultOptions() interface{} {
 	opts := &options{
-		Policy:    DefaultPolicy(),
 		Available: ConstraintSet{},
 		Reserved:  ConstraintSet{},
 	}

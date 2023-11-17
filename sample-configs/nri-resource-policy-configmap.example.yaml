@@ -18,7 +18,6 @@ metadata:
   namespace: kube-system
 data:
   policy: |+
-    Active: topology-aware
     AvailableResources:
       cpu: cpuset:0-63
     ReservedResources:
@@ -84,7 +83,6 @@ metadata:
   namespace: kube-system
 data:
   policy: |+
-    Active: topology-aware
     AvailableResources:
       cpu: cpuset:0-63
     ReservedResources:
@@ -141,7 +139,6 @@ metadata:
   namespace: kube-system
 data:
   policy: |+
-    Active: topology-aware
     AvailableResources:
       cpu: cpuset:0-63
     ReservedResources:

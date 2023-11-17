@@ -65,7 +65,7 @@ const (
 )
 
 // NewResourceManager creates a new ResourceManager instance.
-func NewResourceManager() (ResourceManager, error) {
+func NewResourceManager(backend policy.Backend) (ResourceManager, error) {
 	m := &resmgr{Logger: logger.NewLogger("resource-manager")}
 
 	if err := m.setupCache(); err != nil {
@@ -87,7 +87,7 @@ func NewResourceManager() (ResourceManager, error) {
 	}
 	m.nri = nrip
 
-	if err := m.setupPolicy(); err != nil {
+	if err := m.setupPolicy(backend); err != nil {
 		return nil, err
 	}
 
@@ -163,10 +163,10 @@ func (m *resmgr) setupCache() error {
 }
 
 // setupPolicy sets up policy with the configured/active backend
-func (m *resmgr) setupPolicy() error {
+func (m *resmgr) setupPolicy(backend policy.Backend) error {
 	var err error
 
-	active := policy.ActivePolicy()
+	active := backend.Name()
 	cached := m.cache.GetActivePolicy()
 
 	if active != cached {
@@ -180,7 +180,7 @@ func (m *resmgr) setupPolicy() error {
 	}
 
 	options := &policy.Options{SendEvent: m.SendEvent}
-	if m.policy, err = policy.NewPolicy(m.cache, options); err != nil {
+	if m.policy, err = policy.NewPolicy(backend, m.cache, options); err != nil {
 		return resmgrError("failed to create policy %s: %v", active, err)
 	}
 
@@ -229,6 +229,6 @@ func (m *resmgr) registerPolicyMetricsCollector() error {
 	if pc.HasPolicySpecificMetrics() {
 		return pc.RegisterPolicyMetricsCollector()
 	}
-	m.Info("%s policy has no policy-specific metrics.", policy.ActivePolicy())
+	m.Info("%s policy has no policy-specific metrics.", m.policy.ActivePolicy())
 	return nil
 }

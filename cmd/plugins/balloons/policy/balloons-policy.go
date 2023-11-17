@@ -136,15 +136,20 @@ func (bln Balloon) MaxAvailMilliCpus(freeCpus cpuset.CPUSet) int {
 	return bln.Def.MaxCpus * 1000
 }
 
-// CreateBalloonsPolicy creates a new policy instance.
-func CreateBalloonsPolicy(policyOptions *policy.BackendOptions) policy.Backend {
+// New creates a new uninitialized balloons policy instance.
+func New() policy.Backend {
+	return &balloons{}
+}
+
+// Setup initializes the balloons policy instance.
+func (p *balloons) Setup(policyOptions *policy.BackendOptions) {
 	var err error
-	p := &balloons{
-		options:      policyOptions,
-		cch:          policyOptions.Cache,
-		cpuAllocator: cpuallocator.NewCPUAllocator(policyOptions.System),
-	}
-	log.Info("creating %s policy...", PolicyName)
+
+	p.options = policyOptions
+	p.cch = policyOptions.Cache
+	p.cpuAllocator = cpuallocator.NewCPUAllocator(policyOptions.System)
+
+	log.Info("setting up %s policy...", PolicyName)
 	if p.cpuTree, err = NewCpuTreeFromSystem(); err != nil {
 		log.Errorf("creating CPU topology tree failed: %s", err)
 	}
@@ -183,8 +188,6 @@ func CreateBalloonsPolicy(policyOptions *policy.BackendOptions) policy.Backend {
 	}
 	log.Debug("first effective configuration:\n%s\n", utils.DumpJSON(p.bpoptions))
 	pkgcfg.GetModule(PolicyPath).AddNotify(p.configNotify)
-
-	return p
 }
 
 // Name returns the name of this policy.
@@ -1330,9 +1333,4 @@ func max(a, b int) int {
 		return a
 	}
 	return b
-}
-
-// Register us as a policy implementation.
-func init() {
-	policy.Register(PolicyName, PolicyDescription, CreateBalloonsPolicy)
 }

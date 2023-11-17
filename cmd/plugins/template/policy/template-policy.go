@@ -46,12 +46,14 @@ type policy struct {
 var _ policyapi.Backend = &policy{}
 var log logger.Logger = logger.NewLogger("policy")
 
-// CreateTemplate creates a new policy instance.
-func CreateTemplatePolicy(opts *policyapi.BackendOptions) policyapi.Backend {
-	p := &policy{
-		cache: opts.Cache,
-	}
-	return p
+// New creates a new uninitialized template policy instance.
+func New() policyapi.Backend {
+	return &policy{}
+}
+
+// Setup initializes the template policy instance.
+func (p *policy) Setup(opts *policyapi.BackendOptions) {
+	p.cache = opts.Cache
 }
 
 // Name returns the name of this policy.
@@ -127,9 +129,4 @@ func (p *policy) ExportResourceData(c cache.Container) map[string]string {
 // Initialize or reinitialize the policy.
 func (p *policy) initialize() error {
 	return nil
-}
-
-// Register us as a policy implementation.
-func init() {
-	policyapi.Register(PolicyName, PolicyDescription, CreateTemplatePolicy)
 }

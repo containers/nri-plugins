@@ -5,7 +5,6 @@ metadata:
   namespace: kube-system
 data:
   policy: |+
-    Active: topology-aware
     ReservedResources:
       cpu: 750m
   instrumentation: |+

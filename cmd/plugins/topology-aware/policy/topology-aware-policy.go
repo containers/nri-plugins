@@ -76,14 +76,17 @@ var _ policyapi.Backend = &policy{}
 // Whether we have coldstart forced off due to PMEM in movable memory zones.
 var coldStartOff bool
 
-// CreateTopologyAwarePolicy creates a new policy instance.
-func CreateTopologyAwarePolicy(opts *policyapi.BackendOptions) policyapi.Backend {
-	p := &policy{
-		cache:        opts.Cache,
-		sys:          opts.System,
-		options:      opts,
-		cpuAllocator: cpuallocator.NewCPUAllocator(opts.System),
-	}
+// New creates a new uninitialized topology-aware policy instance.
+func New() policyapi.Backend {
+	return &policy{}
+}
+
+// Setup initializes the topology-aware policy instance.
+func (p *policy) Setup(opts *policyapi.BackendOptions) {
+	p.cache = opts.Cache
+	p.sys = opts.System
+	p.options = opts
+	p.cpuAllocator = cpuallocator.NewCPUAllocator(opts.System)
 
 	if err := p.initialize(); err != nil {
 		log.Fatal("failed to initialize %s policy: %v", PolicyName, err)
@@ -92,8 +95,6 @@ func CreateTopologyAwarePolicy(opts *policyapi.BackendOptions) policyapi.Backend
 	p.registerImplicitAffinities()
 
 	config.GetModule(policyapi.ConfigPath).AddNotify(p.configNotify)
-
-	return p
 }
 
 // Name returns the name of this policy.
@@ -608,9 +609,4 @@ func (a *allocations) getContainerPoolHints() ([]cache.Container, map[string]str
 		hints[c.GetID()] = grant.GetCPUNode().Name()
 	}
 	return containers, hints
-}
-
-// Register us as a policy implementation.
-func init() {
-	policyapi.Register(PolicyName, PolicyDescription, CreateTopologyAwarePolicy)
 }

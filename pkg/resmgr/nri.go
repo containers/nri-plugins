@@ -22,7 +22,6 @@ import (
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
-	"github.com/containers/nri-plugins/pkg/resmgr/policy"
 	"sigs.k8s.io/yaml"
 
 	"github.com/containerd/nri/pkg/api"
@@ -198,7 +197,7 @@ func (p *nriPlugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, con
 	}
 
 	if err := m.policy.Start(allocated, released); err != nil {
-		return nil, fmt.Errorf("failed to start policy %s: %w", policy.ActivePolicy(), err)
+		return nil, fmt.Errorf("failed to start policy %s: %w", m.policy.ActivePolicy(), err)
 	}
 
 	m.updateTopologyZones()
