@@ -4,12 +4,21 @@ metadata:
   name: nri-resource-policy-balloons
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "balloons-plugin.labels" . | nindent 4 }}
+    {{- include "nri-plugin.labels" . | nindent 4 }}
 rules:
 - apiGroups:
-  - ""
+  - config.nri
   resources:
-  - configmaps
+  - balloonspolicies
   verbs:
   - get
+  - list
   - watch
+- apiGroups:
+  - config.nri
+  resources:
+  - balloonspolicies/status
+  verbs:
+  - get
+  - update
+  - patch

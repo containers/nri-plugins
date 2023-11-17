@@ -96,7 +96,7 @@ customize with their own values, along with the default values.
 | `resources.cpu`          | 500m                                                                                                                          | cpu resources for the Pod                            |
 | `resources.memory`       | 512Mi                                                                                                                         | memory qouta for the Pod                             |
 | `hostPort`               | 8891                                                                                                                          | metrics port to expose on the host                   |
-| `config`                 | <pre><code>ReservedResources:</code><br><code>  cpu: 750m</code></pre>                                                        | plugin configuration data                            |
+| `config`                 | see [helm chart values](tree:/deployment/helm/balloons/values.yaml) for the default configuration                       | plugin configuration data                            |
 | `nri.patchRuntimeConfig` | false                                                                                                                         | enable NRI in containerd or CRI-O                    |
 | `initImage.name`         | [ghcr.io/containers/nri-plugins/config-manager](https://ghcr.io/containers/nri-plugins/config-manager)                        | init container image name                            |
 | `initImage.tag`          | unstable                                                                                                                      | init container image tag                             |

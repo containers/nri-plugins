@@ -3,7 +3,7 @@ kind: ClusterRole
 metadata:
   name: nri-resource-policy-balloons
   labels:
-    {{- include "balloons-plugin.labels" . | nindent 4 }}
+    {{- include "nri-plugin.labels" . | nindent 4 }}
 rules:
 - apiGroups:
   - ""
