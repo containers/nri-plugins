@@ -31,7 +31,6 @@ import (
 	"github.com/containers/nri-plugins/pkg/kubernetes"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	resmgr "github.com/containers/nri-plugins/pkg/resmgr/apis"
-	"github.com/containers/nri-plugins/pkg/resmgr/config"
 	"github.com/containers/nri-plugins/pkg/topology"
 )
 
@@ -363,13 +362,6 @@ type Cache interface {
 	// GetPolicyEntry gets the policy entry for a key.
 	GetPolicyEntry(string, interface{}) bool
 
-	// SetConfig caches the given configuration.
-	SetConfig(config.RawConfig) error
-	// GetConfig returns the current/cached configuration.
-	GetConfig() config.RawConfig
-	// ResetConfig clears any stored configuration from the cache.
-	ResetConfig() error
-
 	// Save requests a cache save.
 	Save() error
 
@@ -416,7 +408,6 @@ type cache struct {
 	Containers map[string]*container // known/cache containers
 	NextID     uint64                // next container cache id to use
 
-	Cfg        config.RawConfig       // cached/current configuration
 	PolicyName string                 // name of the active policy
 	policyData map[string]interface{} // opaque policy data
 	PolicyJSON map[string]string      // ditto in raw, unmarshaled form
@@ -485,37 +476,6 @@ func (cch *cache) ResetActivePolicy() error {
 	cch.PolicyJSON = make(map[string]string)
 
 	return cch.Save()
-}
-
-// SetConfig caches the given configuration.
-func (cch *cache) SetConfig(cfg config.RawConfig) error {
-	old := cch.Cfg
-	cch.Cfg = cfg
-
-	if err := cch.Save(); err != nil {
-		cch.Cfg = old
-		return err
-	}
-
-	return nil
-}
-
-// GetConfig returns the current/cached configuration.
-func (cch *cache) GetConfig() config.RawConfig {
-	return cch.Cfg
-}
-
-// ResetConfig clears any stored configuration from the cache.
-func (cch *cache) ResetConfig() error {
-	old := cch.Cfg
-	cch.Cfg = nil
-
-	if err := cch.Save(); err != nil {
-		cch.Cfg = old
-		return err
-	}
-
-	return nil
 }
 
 // Insert a pod into the cache.
@@ -1006,7 +966,6 @@ type snapshot struct {
 	Pods       map[string]*pod
 	Containers map[string]*container
 	NextID     uint64
-	Cfg        config.RawConfig
 	PolicyName string
 	PolicyJSON map[string]string
 }
@@ -1017,7 +976,6 @@ func (cch *cache) Snapshot() ([]byte, error) {
 		Version:    CacheVersion,
 		Pods:       make(map[string]*pod),
 		Containers: make(map[string]*container),
-		Cfg:        cch.Cfg,
 		NextID:     cch.NextID,
 		PolicyName: cch.PolicyName,
 		PolicyJSON: cch.PolicyJSON,
@@ -1067,7 +1025,6 @@ func (cch *cache) Restore(data []byte) error {
 
 	cch.Pods = s.Pods
 	cch.Containers = s.Containers
-	cch.Cfg = s.Cfg
 	cch.NextID = s.NextID
 	cch.PolicyJSON = s.PolicyJSON
 	cch.PolicyName = s.PolicyName

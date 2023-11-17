@@ -61,12 +61,6 @@ func init() {
 
 	flag.StringVar(&opt.PidFile, "pid-file", pidfile.GetPath(),
 		"PID file to write daemon PID to")
-	flag.StringVar(&opt.FallbackConfig, "fallback-config", "",
-		"Fallback configuration to use unless/until one is available from the cache or agent.")
-	flag.StringVar(&opt.ForceConfig, "force-config", "",
-		"Configuration used to override the one stored in the cache. Disables the agent.")
-	flag.StringVar(&opt.ForceConfigSignal, "force-config-signal", "SIGHUP",
-		"Signal used to reload forced configuration.")
 	flag.DurationVar(&opt.MetricsTimer, "metrics-interval", 0,
 		"Interval for polling/gathering runtime metrics data. Use 'disable' for disabling.")
 	flag.StringVar(&opt.StateDir, "state-dir", "/var/lib/nri-resource-policy",
