@@ -434,3 +434,94 @@ site-serve: .$(DOCKER_SITE_BUILDER_IMAGE).image.stamp
 	touch $@
 
 docs: site-build
+
+#
+# CRD et. al code generation
+#
+
+CRD_BASE_DIR := config/crd/bases
+HELM_TOP_DIR := deployment/helm
+
+# Location to install external generation tool binaries
+BUILD_AUX ?= $(shell pwd)/build-aux
+LOCALBIN ?= $(BUILD_AUX)/bin
+$(LOCALBIN):
+	mkdir -p $(LOCALBIN)
+
+## External generation tool binaries
+CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
+CLIENT_GEN ?= $(LOCALBIN)/client-gen
+
+GIT_CLONE    := git clone
+
+# External generation tool versions
+CONTROLLER_TOOLS_VERSION ?= v0.12.0
+CLIENT_GEN_VERSION ?= v0.28.1
+CODE_GENERATOR_REPO ?= https://github.com/kubernetes/code-generator
+CODE_GENERATOR_VERSION ?= v0.28.1
+GENERATE_GROUPS ?= $(BUILD_AUX)/code-generator/generate-groups.sh
+
+# controller-gen local installation rules
+.PHONY: controller-gen
+controller-gen: $(CONTROLLER_GEN)
+$(CONTROLLER_GEN): $(LOCALBIN)
+	test -s $@ && $@ --version | grep -q $(CONTROLLER_TOOLS_VERSION) || \
+	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
+
+# client-gen local installation rules
+.PHONY: client-gen
+client-gen: $(CLIENT_GEN)
+$(CLIENT_GEN): $(LOCALBIN)
+	test -s $@ && $@ --version | grep -q $(CLIENT_GEN_VERSION) || \
+	GOBIN=$(LOCALBIN) go install k8s.io/code-generator/cmd/client-gen@$(CLIENT_GEN_VERSION)
+
+# code-generator local installation rules
+.PHONY: $(GENERATE_GROUPS)
+$(GENERATE_GROUPS):
+	test -s $@ || \
+	$(GIT_CLONE) $(CODE_GENERATOR_REPO) -b $(CODE_GENERATOR_VERSION) $(dir $@) && \
+	cd $(dir $@) && \
+	for d in ./cmd/*; do go build $$d; done
+
+# CRD generation rules
+.PHONY: generate-manifests
+generate-manifests: controller-gen
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd paths="./pkg/apis/..." output:crd:artifacts:config=$(CRD_BASE_DIR)
+
+# code generation rules for CRD types (DeepCopy, DeepCopyInto, etc.)
+.PHONY: generate-types
+generate-types: controller-gen
+	$(CONTROLLER_GEN) object:headerFile="./docs/license-header.go.txt" paths="./pkg/apis/..."
+
+# client generation rules 
+.PHONY: generate-clients
+generate-clients: $(GENERATE_GROUPS)
+	$(GENERATE_GROUPS) client \
+	    github.com/containers/nri-plugins/pkg/generated \
+	    github.com/containers/nri-plugins/pkg/apis \
+	    "config:v1alpha1" --output-base=. \
+	    --go-header-file=./docs/license-header.go.txt && \
+	rm -fr pkg/generated && \
+	mv github.com/containers/nri-plugins/pkg/generated pkg && \
+	rm -fr github.com
+
+# golang code generation rules
+generate-go:
+	$(Q)$(GO_CMD) generate ./...
+
+# rule to update generated CRDs in our helm charts
+.PHONY: update-helm-crds
+update-helm-crds:
+	$(Q)for plugin in $(PLUGINS); do \
+	    plugin="$${plugin#nri-}"; plugin="$${plugin#resource-policy-}"; \
+            helm_dir=$(HELM_TOP_DIR)/$$plugin/crds; \
+	    if [ ! -d "$$helm_dir" ]; then \
+	        echo "No generated CRD found for $$plugin plugin..."; \
+	    else \
+	        echo "Updating Helm chart CRDs for $$plugin plugin..."; \
+	        cp $(CRD_BASE_DIR)/*_$${plugin//-/}*.yaml $$helm_dir; \
+	    fi; \
+	done
+
+# top level rule to (re)generate everything we need
+generate: generate-go generate-types generate-manifests generate-clients update-helm-crds
