@@ -1,0 +1,56 @@
+---
+- hosts: all
+  become: no
+  become_user: root
+  vars:
+    cri_runtime: "{{ cri_runtime }}"
+    is_containerd: false
+    is_crio: false
+    plugin_name: "{{ plugin_name }}"
+    image_ref: "unset"
+    test_image: "localhost/{{ plugin_name }}:testing"
+
+  tasks:
+    - set_fact:
+        is_containerd: true
+      when: cri_runtime == "containerd"
+    - set_fact:
+        is_crio: true
+      when: cri_runtime == "crio"
+
+    - name: copy helm charts
+      become: yes
+      copy:
+        src: "{{ nri_resource_policy_src }}/deployment/helm/{{ plugin_name }}"
+        dest: "./helm"
+
+    - name: get latest nri-resource-policy deployment image name
+      delegate_to: localhost
+      shell: "ls -1t {{ nri_resource_policy_src }}/build/images/nri-resource-policy-{{ plugin_name }}-image-*.tar"
+      register: nri_resource_policy_images
+      failed_when: nri_resource_policy_images.rc != 0
+
+    - name: copy latest nri-resource-policy deployment image
+      copy: src="{{ nri_resource_policy_images.stdout_lines[0] }}" dest="."
+
+    - name: parse image reference from image tarball
+      become: no
+      set_fact:
+        image_ref: "{{ nri_resource_policy_images.stdout_lines[0] | regex_replace('.*-image-([0-9a-z]*).tar', '\\1') }}"
+      delegate_to: localhost
+
+    - name: import and tag nri plugin image when using containerd
+      become: yes
+      shell: "{{ item }}"
+      with_items:
+        - ctr -n k8s.io images import `basename {{ nri_resource_policy_images.stdout_lines[0] }}`
+        - ctr -n k8s.io images tag --force `ctr -n k8s.io images ls | grep sha256:{{ image_ref }} | tr -s '\t' ' ' | cut -d ' ' -f1` {{ test_image }}
+      when: is_containerd
+
+    - name: load and tag nri plugin image when using cri-o
+      become: no
+      shell: "{{ item }}"
+      with_items:
+        - sudo podman image load -i `basename {{ nri_resource_policy_images.stdout_lines[0] }}`
+        - sudo podman image tag {{ image_ref }} {{ test_image }}
+      when: is_crio

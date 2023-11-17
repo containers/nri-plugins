@@ -3,18 +3,18 @@
   become: yes
   become_user: root
   vars:
-    - cri_runtime: "{{ cri_runtime }}"
-    - is_containerd: false
-    - is_crio: false
-    - containerd_release: "{{ containerd_release }}"
-    - containerd_tarball: "https://github.com/containerd/containerd/releases/download/v{{ containerd_release }}/containerd-{{ containerd_release }}-linux-amd64.tar.gz"
-    - containerd_service_file: "https://raw.githubusercontent.com/containerd/containerd/main/containerd.service"
-    - crio_release: "{{ crio_release }}"
-    - crio_tarball: "https://storage.googleapis.com/cri-o/artifacts/cri-o.amd64.v{{ crio_release }}.tar.gz"
-    - dns_nameserver: "{{ dns_nameserver }}"
-    - cni_plugin: "{{ cni_plugin }}"
-    - cni_release: "{{ cni_release }}"
-    - cilium_tarball: ""
+    cri_runtime: "{{ cri_runtime }}"
+    is_containerd: false
+    is_crio: false
+    containerd_release: "{{ containerd_release }}"
+    containerd_tarball: "https://github.com/containerd/containerd/releases/download/v{{ containerd_release }}/containerd-{{ containerd_release }}-linux-amd64.tar.gz"
+    containerd_service_file: "https://raw.githubusercontent.com/containerd/containerd/main/containerd.service"
+    crio_release: "{{ crio_release }}"
+    crio_tarball: "https://storage.googleapis.com/cri-o/artifacts/cri-o.amd64.v{{ crio_release }}.tar.gz"
+    dns_nameserver: "{{ dns_nameserver }}"
+    cni_plugin: "{{ cni_plugin }}"
+    cni_release: "{{ cni_release }}"
+    cilium_tarball: ""
 
   tasks:
     - set_fact:
@@ -80,6 +80,7 @@
           - kubeadm
           - kubectl
           - systemd-container
+          - helm
         state: present
 
     - name: install apt packages

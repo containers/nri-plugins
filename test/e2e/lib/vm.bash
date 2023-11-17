@@ -369,5 +369,18 @@ vm-port-forward-enable() {
 }
 
 vm-port-forward-disable() {
-    vm-command "fuser --kill $port_forward_log_file 2>/dev/null"
+    vm-command "fuser --kill $port_forward_log_file 2>/dev/null || :"
+}
+
+vm-start-log-collection() {
+    local log_file="${log_file:-nri-resource-policy.output.txt}"
+    local log_args="$*"
+
+    log_file="$log_file" vm-stop-log-collection
+    vm-command "kubectl logs -f $log_args >$log_file 2>&1 &"
+}
+
+vm-stop-log-collection() {
+    local log_file="${log_file:-nri-resource-policy.output.txt}"
+    vm-command "fuser --kill $log_file 2>/dev/null || :"
 }
