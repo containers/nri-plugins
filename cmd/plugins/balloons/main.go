@@ -15,7 +15,10 @@
 package main
 
 import (
+	"flag"
+
 	policy "github.com/containers/nri-plugins/cmd/plugins/balloons/policy"
+	agent "github.com/containers/nri-plugins/pkg/agent"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	resmgr "github.com/containers/nri-plugins/pkg/resmgr/main"
 )
@@ -23,12 +26,19 @@ import (
 var log = logger.Default()
 
 func main() {
-	resmgr, err := resmgr.New(policy.New())
+	flag.Parse()
+
+	agt, err := agent.New(agent.BalloonsConfigInterface())
+	if err != nil {
+		log.Fatal("%v", err)
+	}
+
+	mgr, err := resmgr.New(agt, policy.New())
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
 
-	if err := resmgr.Run(); err != nil {
+	if err := mgr.Run(); err != nil {
 		log.Fatalf("%v", err)
 	}
 }
