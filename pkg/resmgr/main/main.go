@@ -20,9 +20,8 @@ import (
 	"os"
 	"strings"
 	"syscall"
-	"time"
 
-	"github.com/containers/nri-plugins/pkg/config"
+	"github.com/containers/nri-plugins/pkg/agent"
 	"github.com/containers/nri-plugins/pkg/instrumentation"
 	"github.com/containers/nri-plugins/pkg/resmgr"
 	"github.com/containers/nri-plugins/pkg/resmgr/policy"
@@ -38,22 +37,22 @@ var (
 type Main struct {
 	policy policy.Backend
 	mgr    resmgr.ResourceManager
+	agt    *agent.Agent
 }
 
-func New(backend policy.Backend) (*Main, error) {
+func New(agt *agent.Agent, backend policy.Backend) (*Main, error) {
 	m := &Main{
 		policy: backend,
+		agt:    agt,
 	}
 
 	m.setupLoggers()
 	m.parseCmdline()
-	m.startTracing()
 
-	mgr, err := resmgr.NewResourceManager(backend)
+	mgr, err := resmgr.NewResourceManager(backend, agt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create resource manager: %w", err)
 	}
-
 	m.mgr = mgr
 
 	return m, nil
@@ -63,15 +62,15 @@ func (m *Main) Run() error {
 	log.Infof("starting '%s' policy version %s/build %s...", m.policy.Name(),
 		version.Version, version.Build)
 
+	m.startTracing()
 	defer m.stopTracing()
 
-	if err := m.mgr.Start(); err != nil {
-		return fmt.Errorf("failed to start resource manager: %w", err)
-	}
+	err := m.mgr.Start()
+	return err
+}
 
-	for {
-		time.Sleep(15 * time.Second)
-	}
+func (m *Main) ResourceManager() resmgr.ResourceManager {
+	return m.mgr
 }
 
 func (m *Main) setupLoggers() {
@@ -80,21 +79,13 @@ func (m *Main) setupLoggers() {
 }
 
 func (m *Main) parseCmdline() {
-	printCfg := flag.Bool("print-config", false, "Print default configuration and exit.")
-	flag.Parse()
-	logger.Flush()
-
-	switch {
-	case *printCfg:
-		config.Print(nil)
-		os.Exit(0)
+	if !flag.Parsed() {
+		flag.Parse()
 	}
+	logger.Flush()
 
 	if args := flag.Args(); len(args) > 0 {
 		switch args[0] {
-		case "config-help", "help":
-			config.Describe(args[1:]...)
-			os.Exit(0)
 		case "version":
 			fmt.Printf("version: %s\n", version.Version)
 			fmt.Printf("build: %s\n", version.Build)
