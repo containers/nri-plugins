@@ -160,7 +160,7 @@ func (ctl *testctl) dumpE2ETestControllerState(w http.ResponseWriter, req *http.
 
 func (ctl *testctl) configure() error {
 	if ctl.configured == false {
-		mux := instrumentation.GetHTTPMux()
+		mux := instrumentation.HTTPServer().GetMux()
 		mux.HandleFunc("/e2e-test-controller-state", ctl.dumpE2ETestControllerState)
 		ctl.configured = true
 	}

@@ -21,51 +21,33 @@ import (
 	"testing"
 )
 
-func TestSamplingIdempotency(t *testing.T) {
-	tcases := []Sampling{
-		Disabled,
-		Testing,
-		Production,
-		0.2, 0.25, 0.5, 0.75, 0.8,
-	}
-	for _, tc := range tcases {
-		var chk Sampling
-		if err := chk.Parse(tc.String()); err != nil {
-			t.Errorf("failed to parse Sampling.String() %q: %v", tc, err)
-		}
-		if chk != tc {
-			t.Errorf("expected sampling value for %q: %v, got: %v", tc, tc, chk)
-		}
-	}
-}
-
 func TestPrometheusConfiguration(t *testing.T) {
 	log.EnableDebug(true)
 
-	if opt.HTTPEndpoint == "" {
-		opt.HTTPEndpoint = ":0"
+	if cfg.HTTPEndpoint == "" {
+		cfg.HTTPEndpoint = ":0"
 	}
 
 	Start()
 
 	address := srv.GetAddress()
-	if strings.HasSuffix(opt.HTTPEndpoint, ":0") {
-		opt.HTTPEndpoint = address
+	if strings.HasSuffix(cfg.HTTPEndpoint, ":0") {
+		cfg.HTTPEndpoint = address
 	}
 
-	checkPrometheus(t, address, !opt.PrometheusExport)
+	checkPrometheus(t, address, !cfg.PrometheusExport)
 
-	opt.PrometheusExport = !opt.PrometheusExport
+	cfg.PrometheusExport = !cfg.PrometheusExport
 	reconfigure()
-	checkPrometheus(t, address, !opt.PrometheusExport)
+	checkPrometheus(t, address, !cfg.PrometheusExport)
 
-	opt.PrometheusExport = !opt.PrometheusExport
+	cfg.PrometheusExport = !cfg.PrometheusExport
 	reconfigure()
-	checkPrometheus(t, address, !opt.PrometheusExport)
+	checkPrometheus(t, address, !cfg.PrometheusExport)
 
-	opt.PrometheusExport = !opt.PrometheusExport
+	cfg.PrometheusExport = !cfg.PrometheusExport
 	reconfigure()
-	checkPrometheus(t, address, !opt.PrometheusExport)
+	checkPrometheus(t, address, !cfg.PrometheusExport)
 
 	srv.Shutdown(true)
 

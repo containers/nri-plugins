@@ -18,43 +18,48 @@ import (
 	"fmt"
 	"sync"
 
-	promcli "github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus"
 
+	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/instrumentation"
 	"github.com/containers/nri-plugins/pkg/http"
 	"github.com/containers/nri-plugins/pkg/instrumentation/metrics"
 	"github.com/containers/nri-plugins/pkg/instrumentation/tracing"
 	logger "github.com/containers/nri-plugins/pkg/log"
 )
 
-type KeyValue = tracing.KeyValue
-
 const (
 	// ServiceName is our service name in external tracing and metrics services.
 	ServiceName = "nri-resource-policy"
 )
 
+// KeyValue aliases tracing.KeyValue, for SetIdentity().
+type KeyValue = tracing.KeyValue
+
 var (
-	// Our logger instance.
-	log = logger.NewLogger("instrumentation")
-	// Our HTTP server instance.
-	srv = http.NewServer()
+	// Our runtime configuration.
+	cfg = &cfgapi.Config{}
 	// Lock to protect against reconfiguration.
 	lock sync.RWMutex
-	// Our identity for instrumentation.
-	identity []tracing.KeyValue
+	// Our HTTP server instance.
+	srv = http.NewServer()
+	// Our logger instance.
+	log = logger.NewLogger("instrumentation")
 
-	// Attribute allows setting up identity without an import of tracing.
+	// Our identity for instrumentation.
+	identity []KeyValue
+
+	// Attribute aliases tracing.Attribute(), for SetIdentity().
 	Attribute = tracing.Attribute
 )
 
 // RegisterGatherer registers a prometheus metrics gatherer.
-func RegisterGatherer(g promcli.Gatherer) {
+func RegisterGatherer(g prometheus.Gatherer) {
 	metrics.RegisterGatherer(g)
 }
 
-// GetHTTPMux returns our HTTP request mux for external services.
-func GetHTTPMux() *http.ServeMux {
-	return srv.GetMux()
+// HTTPServer returns our HTTP server.
+func HTTPServer() *http.Server {
+	return srv
 }
 
 // SetIdentity sets (extra) process identity attributes for tracing.
@@ -62,7 +67,7 @@ func SetIdentity(attrs ...KeyValue) {
 	identity = attrs
 }
 
-// Start our internal instrumentation services.
+// Start our instrumentation services.
 func Start() error {
 	log.Info("starting instrumentation services...")
 
@@ -72,7 +77,7 @@ func Start() error {
 	return start()
 }
 
-// Stop our internal instrumentation services.
+// Stop our instrumentation services.
 func Stop() {
 	lock.Lock()
 	defer lock.Unlock()
@@ -80,7 +85,7 @@ func Stop() {
 	stop()
 }
 
-// Restart our internal instrumentation services.
+// Restart our instrumentation services.
 func Restart() error {
 	lock.Lock()
 	defer lock.Unlock()
@@ -89,79 +94,40 @@ func Restart() error {
 	return start()
 }
 
+// Reconfigure our instrumentation services.
+func Reconfigure(newCfg *cfgapi.Config) error {
+	cfg = newCfg
+	return Restart()
+}
+
 func start() error {
-	err := startHTTPServer()
-	if err != nil {
-		return instrumentationError("failed to start HTTP server: %v", err)
+	if err := srv.Start(cfg.HTTPEndpoint); err != nil {
+		return fmt.Errorf("failed to start HTTP server: %v", err)
 	}
 
-	err = startTracing()
-	if err != nil {
-		return instrumentationError("failed to start tracing exporter: %v", err)
+	if err := tracing.Start(
+		tracing.WithServiceName(ServiceName),
+		tracing.WithIdentity(identity...),
+		tracing.WithCollectorEndpoint(cfg.TracingCollector),
+		tracing.WithSamplingRatio(float64(cfg.SamplingRatePerMillion)/float64(1000000)),
+	); err != nil {
+		return fmt.Errorf("failed to start tracing: %v", err)
 	}
 
-	err = startMetrics()
-	if err != nil {
-		return instrumentationError("failed to start metrics exporter: %v", err)
+	if err := metrics.Start(
+		srv.GetMux(),
+		metrics.WithExporterDisabled(!cfg.PrometheusExport),
+		metrics.WithServiceName(ServiceName),
+		metrics.WithPeriod(cfg.ReportPeriod.Duration),
+	); err != nil {
+		return fmt.Errorf("failed to start metrics: %v", err)
 	}
 
 	return nil
 }
 
-func startHTTPServer() error {
-	if srv == nil {
-		return nil
-	}
-	return srv.Start(opt.HTTPEndpoint)
-}
-
-func startTracing() error {
-	return tracing.Start(
-		tracing.WithServiceName(ServiceName),
-		tracing.WithIdentity(identity...),
-		tracing.WithCollectorEndpoint(opt.TracingCollector),
-		tracing.WithSamplingRatio(opt.Sampling.Ratio()),
-	)
-}
-
-func startMetrics() error {
-	return metrics.Start(
-		GetHTTPMux(),
-		metrics.WithExporterDisabled(!opt.PrometheusExport),
-		metrics.WithServiceName(ServiceName),
-		metrics.WithPeriod(opt.ReportPeriod),
-	)
-}
-
 func stop() {
-	stopMetrics()
-	stopTracing()
-	stopHTTPServer()
-}
-
-func stopHTTPServer() {
-	if srv != nil {
-		srv.Stop()
-	}
-}
-
-func stopTracing() {
-	tracing.Stop()
-}
-
-func stopMetrics() {
 	metrics.Stop()
-}
-
-func reconfigure() error {
-	lock.Lock()
-	defer lock.Unlock()
-
-	stop()
-	return start()
-}
-
-// instrumentationError produces a formatted instrumentation-specific error.
-func instrumentationError(format string, args ...interface{}) error {
-	return fmt.Errorf("instrumentation: "+format, args...)
+	tracing.Stop()
+	srv.Stop()
 }

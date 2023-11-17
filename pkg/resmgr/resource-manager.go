@@ -189,7 +189,7 @@ func (m *resmgr) setupPolicy(backend policy.Backend) error {
 
 // setupHealthCheck prepares the resource manager for serving health-check requests.
 func (m *resmgr) setupHealthCheck() {
-	mux := instrumentation.GetHTTPMux()
+	mux := instrumentation.HTTPServer().GetMux()
 	healthz.Setup(mux)
 }
 
