@@ -3,6 +3,7 @@
 
 *_gendata.go
 /build
+/build-aux
 /generate
 coverage.html
 coverage.txt
