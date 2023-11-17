@@ -206,8 +206,8 @@ $(BIN_PATH)/%: .static.%.$(STATIC)
 # Image building test deployment generation targets
 #
 
-images: $(foreach p,$(PLUGINS),image.$(p)) $(foreach p,$(PLUGINS),image-deployment.$(p)) \
-	$(foreach p,$(BINARIES),image.$(p)) $(foreach p,$(BINARIES),image-deployment.$(p)) \
+images: $(foreach p,$(PLUGINS),image.$(p)) \
+	$(foreach p,$(BINARIES),image.$(p))
 
 image.nri-resource-policy-% \
 image.nri-% \
@@ -228,41 +228,12 @@ image.%:
 	tag=$(patsubst image.%,%,$@); \
 	    $(DOCKER_BUILD) . -f "$$dir/Dockerfile" \
 	    --build-arg GO_VERSION=$(GO_VERSION) \
-	    -t $(IMAGE_REPO)$$tag:$(IMAGE_VERSION)
-
-image-deployment.nri-resource-policy-% \
-image-deployment.nri-% \
-image-deployment.%:
-	$(Q)mkdir -p $(IMAGE_PATH); \
-	case $@ in \
-	    *.nri-resource-policy-*) \
-		dir=$(patsubst image-deployment.nri-resource-policy-%,cmd/plugins/%,$@); \
-	        ;; \
-	    *.nri-*) \
-		dir=$(patsubst image-deployment.nri-%,cmd/plugins/%,$@); \
-	        ;; \
-	    *.*) \
-		dir=$(patsubst image-deployment.%,cmd/%,$@); \
-	        ;; \
-	esac; \
-	img=$(patsubst image-deployment.%,%,$@); \
-	tag=$$img; \
+	    -t $(IMAGE_REPO)$$tag:$(IMAGE_VERSION); \
 	NRI_IMAGE_INFO=`$(DOCKER) images --filter=reference=$${tag} --format '{{.ID}} {{.Repository}}:{{.Tag}} (created {{.CreatedSince}}, {{.CreatedAt}})' | head -n 1`; \
 	NRI_IMAGE_ID=`awk '{print $$1}' <<< "$${NRI_IMAGE_INFO}"`; \
 	NRI_IMAGE_REPOTAG=`awk '{print $$2}' <<< "$${NRI_IMAGE_INFO}"`; \
 	NRI_IMAGE_TAR=`realpath "$(IMAGE_PATH)/$${tag}-image-$${NRI_IMAGE_ID}.tar"`; \
-	$(DOCKER) image save "$${NRI_IMAGE_REPOTAG}" > "$${NRI_IMAGE_TAR}"; \
-	in="`pwd`/$$dir/$${tag}-deployment.yaml.in"; \
-	out="$(IMAGE_PATH)/$${tag}-deployment.yaml"; \
-	[ ! -f "$$in" ] && exit 0 || :; \
-	sed -e "s|IMAGE_PLACEHOLDER|$${NRI_IMAGE_REPOTAG}|g" \
-            -e 's/imagePullPolicy: Always/imagePullPolicy: Never/g' \
-            < "$$in" > "$$out"; \
-	in="`pwd`/test/e2e/files/$${tag}-deployment.yaml.in"; \
-	out="$(IMAGE_PATH)/$${tag}-deployment-e2e.yaml"; \
-	sed -e "s|IMAGE_PLACEHOLDER|$${NRI_IMAGE_REPOTAG}|g" \
-            -e 's/imagePullPolicy: Always/imagePullPolicy: Never/g' \
-            < "$$in" > "$$out"
+	$(DOCKER) image save "$${NRI_IMAGE_REPOTAG}" > "$${NRI_IMAGE_TAR}";
 
 #
 # plugin build dependencies
