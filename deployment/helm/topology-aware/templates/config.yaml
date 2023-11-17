@@ -1,0 +1,9 @@
+apiVersion: config.nri/v1alpha1
+kind: TopologyAwarePolicy
+metadata:
+  name: default
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nri-plugin.labels" . | nindent 4 }}
+spec:
+  {{- toYaml .Values.config | nindent 2 }}

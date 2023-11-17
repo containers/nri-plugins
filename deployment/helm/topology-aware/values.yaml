@@ -9,9 +9,18 @@ image:
   pullPolicy: Always
 
 config:
-  policy:
-    ReservedResources:
-      cpu: 750m
+  reservedResources:
+    cpu: 750m
+  log:
+    source: true
+    klog:
+      skip_headers: true
+  instrumentation:
+    reportPeriod: 60s
+    samplingRatePerMillion: 0
+
+plugin-test:
+  enableAPIs: false
 
 hostPort: 8891
 
@@ -21,6 +30,7 @@ resources:
 
 nri:
   patchRuntimeConfig: false
+
 
 initContainerImage:
   name: ghcr.io/containers/nri-plugins/nri-config-manager

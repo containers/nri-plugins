@@ -3,7 +3,7 @@ kind: ClusterRoleBinding
 metadata:
   name: nri-resource-policy-topology-aware
   labels:
-    {{- include "topology-aware-plugin.labels" . | nindent 4 }}
+    {{- include "nri-plugin.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
