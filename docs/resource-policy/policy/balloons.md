@@ -164,7 +164,6 @@ Related configuration parameters:
 Example configuration that runs all pods in balloons of 1-4 CPUs.
 
 ```yaml
-policy:
   ReservedResources:
     CPU: 1
   balloons:
@@ -193,8 +192,8 @@ cpu:
       uncoreMaxFreq: 2400
 ```
 
-See the [sample configmap](/sample-configs/balloons-policy.cfg) for a
-complete example.
+See the [sample configuration custom resource](/sample-configs/balloons-config.yaml) for a
+more complete example.
 
 ## Assigning a Container to a Balloon
 
