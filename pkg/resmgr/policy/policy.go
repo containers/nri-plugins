@@ -18,12 +18,9 @@ import (
 	"bytes"
 	"fmt"
 	"sort"
-	"strconv"
 
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	"github.com/containers/nri-plugins/pkg/config"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	"github.com/prometheus/client_golang/prometheus"
@@ -67,12 +64,10 @@ type BackendOptions struct {
 	System system.System
 	// System state/cache
 	Cache cache.Cache
-	// Resource availibility constraint
-	Available ConstraintSet
-	// Resource reservation constraint
-	Reserved ConstraintSet
 	// SendEvent is the function for delivering events up to the resource manager.
 	SendEvent SendEventFn
+	// Config is the policy-specific configuration.
+	Config interface{}
 }
 
 // CreateFn is the type for functions used to create a policy instance.
@@ -97,14 +92,16 @@ const (
 // A backends operates in a set of policy domains. Currently each policy domain
 // corresponds to some particular hardware resource (CPU, memory, cache, etc).
 type Backend interface {
-	// Setup initializes the policy backend with the given options.
-	Setup(*BackendOptions)
 	// Name gets the well-known name of this policy.
 	Name() string
 	// Description gives a verbose description about the policy implementation.
 	Description() string
+	// Setup initializes the policy backend with the given options.
+	Setup(*BackendOptions) error
+	// Reconfigure the policy backend.
+	Reconfigure(interface{}) error
 	// Start up and sycnhronizes the policy, using the given cache and resource constraints.
-	Start([]cache.Container, []cache.Container) error
+	Start() error
 	// Sync synchronizes the policy, allocating/releasing the given containers.
 	Sync([]cache.Container, []cache.Container) error
 	// AllocateResources allocates resources to/for a container.
@@ -133,7 +130,9 @@ type Policy interface {
 	// ActivePolicy returns the name of the policy backend in use.
 	ActivePolicy() string
 	// Start starts up policy, prepare for serving resource management requests.
-	Start([]cache.Container, []cache.Container) error
+	Start(interface{}) error
+	// Reconfigure the policy.
+	Reconfigure(interface{}) error
 	// Sync synchronizes the state of the active policy.
 	Sync([]cache.Container, []cache.Container) error
 	// AllocateResources allocates resources to a container.
@@ -166,7 +165,7 @@ type Metrics interface{}
 //	for resource types (socket, die, NUMA node, etc.) and use them
 //	in policies (for instance for TA pool 'kind's)
 const (
-	// MemoryResource is resource name fgggor memory
+	// MemoryResource is the resource name for memory
 	MemoryResource = "memory"
 	// CPUResource is the resource name for CPU
 	CPUResource = "cpu"
@@ -222,47 +221,15 @@ type backend struct {
 // Out logger instance.
 var log logger.Logger = logger.NewLogger("policy")
 
-// Options passed to created/activated backend.
-var backendOpts = &BackendOptions{}
-
 // NewPolicy creates a policy instance using the given backend.
 func NewPolicy(backend Backend, cache cache.Cache, o *Options) (Policy, error) {
-	sys, err := system.DiscoverSystem()
-	if err != nil {
-		return nil, policyError("failed to discover system topology: %v", err)
-	}
+	log.Info("creating '%s' policy...", backend.Name())
 
-	p := &policy{
+	return &policy{
 		cache:   cache,
-		system:  sys,
 		options: *o,
 		active:  backend,
-	}
-
-	log.Info("activating '%s' policy...", backend.Name())
-
-	if len(opt.Available) != 0 {
-		log.Info("  with available resources:")
-		for n, r := range opt.Available {
-			log.Info("    - %s=%s", n, ConstraintToString(r))
-		}
-	}
-	if len(opt.Reserved) != 0 {
-		log.Info("  with reserved resources:")
-		for n, r := range opt.Reserved {
-			log.Info("    - %s=%s", n, ConstraintToString(r))
-		}
-	}
-
-	backendOpts.Cache = p.cache
-	backendOpts.System = p.system
-	backendOpts.Available = opt.Available
-	backendOpts.Reserved = opt.Reserved
-	backendOpts.SendEvent = o.SendEvent
-
-	p.active.Setup(backendOpts)
-
-	return p, nil
+	}, nil
 }
 
 func (p *policy) ActivePolicy() string {
@@ -272,10 +239,31 @@ func (p *policy) ActivePolicy() string {
 	return ""
 }
 
-// Start starts up policy, preparing it for resving requests.
-func (p *policy) Start(add []cache.Container, del []cache.Container) error {
-	log.Info("starting policy '%s'...", p.active.Name())
-	return p.active.Start(add, del)
+// Start starts up policy, preparing it for serving requests.
+func (p *policy) Start(cfg interface{}) error {
+	sys, err := system.DiscoverSystem()
+	if err != nil {
+		return policyError("failed to discover system topology: %v", err)
+	}
+	p.system = sys
+
+	log.Info("activating '%s' policy...", p.active.Name())
+
+	if err := p.active.Setup(&BackendOptions{
+		Cache:     p.cache,
+		System:    p.system,
+		SendEvent: p.options.SendEvent,
+		Config:    cfg,
+	}); err != nil {
+		return err
+	}
+
+	return p.active.Start()
+}
+
+// Reconfigure the policy.
+func (p *policy) Reconfigure(cfg interface{}) error {
+	return p.active.Reconfigure(cfg)
 }
 
 // Sync synchronizes the active policy state.
@@ -345,29 +333,4 @@ func (p *policy) CollectMetrics(m Metrics) ([]prometheus.Metric, error) {
 // GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
 func (p *policy) GetTopologyZones() []*TopologyZone {
 	return p.active.GetTopologyZones()
-}
-
-// ConstraintToString returns the given constraint as a string.
-func ConstraintToString(value Constraint) string {
-	switch value.(type) {
-	case cpuset.CPUSet:
-		return "#" + value.(cpuset.CPUSet).String()
-	case int:
-		return strconv.Itoa(value.(int))
-	case string:
-		return value.(string)
-	case resource.Quantity:
-		qty := value.(resource.Quantity)
-		return qty.String()
-	default:
-		return fmt.Sprintf("<???(type:%T)>", value)
-	}
-}
-
-// configNotify is the configuration change notification callback for the genric policy layer.
-func configNotify(event config.Event, src config.Source) error {
-	// let the active policy know of changes
-	backendOpts.Available = opt.Available
-	backendOpts.Reserved = opt.Reserved
-	return nil
 }
