@@ -1,8 +1,8 @@
 # This test verifies that configuration updates via nri-resource-policy-agent
 # are handled properly in the balloons policy.
 
-terminate nri-resource-policy
-launch nri-resource-policy
+helm-terminate
+helm_config=$TEST_DIR/initial-balloons-config.cfg helm-launch balloons
 
 testns=e2e-balloons-test06
 
@@ -13,8 +13,7 @@ cleanup() {
         kubectl delete namespace $testns || :; \
         kubectl delete namespace btype1ns0 || :; \
 	kubectl -n kube-system delete configmap nri-resource-policy-config.default || :"
-    vm-port-forward-disable
-    terminate nri-resource-policy
+    helm-terminate
 
     # Just in case the cache says that the policy is "topology-aware"
     # (from earlier tests) then remove the cache to force "balloons" policy
@@ -22,20 +21,19 @@ cleanup() {
 }
 
 apply-configmap() {
-    vm-put-file $(instantiate balloons-configmap.yaml) balloons-configmap.yaml
-    vm-command "cat balloons-configmap.yaml"
-    vm-command "kubectl apply -f balloons-configmap.yaml"
+    vm-put-file $(instantiate balloons-config.yaml) balloons-config.yaml
+    vm-command "cat balloons-config.yaml"
+    vm-command "kubectl apply -f balloons-config.yaml"
 }
 
 cleanup
-nri_resource_policy_extra_args="-metrics-interval 1s" nri_resource_policy_config=fallback launch nri-resource-policy
+helm_config=$TEST_DIR/initial-balloons-config.cfg helm-launch balloons
 
 vm-command "kubectl create namespace $testns"
 vm-command "kubectl create namespace btype1ns0"
 
 AVAILABLE_CPU="cpuset:0,4-15" BTYPE2_NAMESPACE0='"*"' BTYPE1_MAXCPUS='0' apply-configmap
 sleep 3
-vm-port-forward-enable
 
 # pod0 in btype0, annotation
 CPUREQ=1 MEMREQ="100M" CPULIM=1 MEMLIM="100M"

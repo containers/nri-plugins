@@ -7,8 +7,8 @@ cleanup
 
 # Launch cri-resmgr with wanted metrics update interval and a
 # configuration that opens the instrumentation http server.
-terminate nri-resource-policy
-nri_resource_policy_cfg=${TEST_DIR}/balloons-allocator-opts.cfg launch nri-resource-policy
+helm-terminate
+helm_config=${TEST_DIR}/balloons-allocator-opts.cfg helm-launch balloons
 
 # pod0 in a 2-CPU balloon
 CPUREQ="100m" MEMREQ="100M" CPULIM="100m" MEMLIM="100M"
@@ -44,3 +44,4 @@ verify 'len(cores["pod3c0"]) == 1' \
        'cpus["pod3c0"] == cpus["pod3c1"]'
 
 cleanup
+helm-terminate

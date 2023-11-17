@@ -1,5 +1,5 @@
-terminate nri-resource-policy
-nri_resource_policy_cfg=${TEST_DIR}/balloons-namespace.cfg launch nri-resource-policy
+helm-terminate
+helm_config=${TEST_DIR}/balloons-namespace.cfg helm-launch balloons
 
 cleanup() {
     vm-command \
@@ -85,4 +85,4 @@ report allowed
 verify 'cpus["pod6c0"] == cpus["pod6c1"]'
 
 cleanup
-terminate nri-resource-policy
+helm-terminate

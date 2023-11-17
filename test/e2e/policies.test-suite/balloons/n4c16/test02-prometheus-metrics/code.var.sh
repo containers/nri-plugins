@@ -2,7 +2,6 @@
 
 cleanup() {
     vm-command "kubectl delete pods --all --now"
-    vm-port-forward-disable
     return 0
 }
 
@@ -10,10 +9,8 @@ cleanup
 
 # Launch nri-resource-policy with wanted metrics update interval and a
 # configuration that opens the instrumentation http server.
-terminate nri-resource-policy
-nri_resource_policy_cfg=${TEST_DIR}/balloons-metrics.cfg  nri_resource_policy_extra_args="-metrics-interval 4s" launch nri-resource-policy
-
-vm-port-forward-enable
+helm-terminate
+helm_config=${TEST_DIR}/balloons-metrics.cfg  helm-launch balloons
 
 verify-metrics-has-line 'balloon="default\[0\]"'
 verify-metrics-has-line 'balloon="reserved\[0\]"'
@@ -84,4 +81,4 @@ verify-metrics-has-line 'balloon="fast-dualcore\[0\]".*pod5c0.* 4'
 
 cleanup
 
-terminate nri-resource-policy
+helm-terminate

@@ -90,7 +90,7 @@ Before running E2E tests ensure that you have all the required components locall
     policies.test-suite balloons test02-prometheus-metrics : PASS
     policies.test-suite balloons test03-reserved : PASS
     policies.test-suite balloons test05-namespace : PASS
-    policies.test-suite balloons test06-update-configmap : PASS
+    policies.test-suite balloons test06-update-config : PASS
     policies.test-suite balloons test07-maxballoons : PASS
     policies.test-suite balloons test08-numa : PASS
     policies.test-suite balloons test09-isolated : PASS
