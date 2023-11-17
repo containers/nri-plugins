@@ -2,17 +2,17 @@ apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   labels:
-    {{- include "balloons-plugin.labels" . | nindent 4 }}
+    {{- include "nri-plugin.labels" . | nindent 4 }}
   name: nri-resource-policy-balloons
   namespace: {{ .Release.Namespace }}
 spec:
   selector:
     matchLabels:
-    {{- include "balloons-plugin.selectorLabels" . | nindent 6 }}
+    {{- include "nri-plugin.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-      {{- include "balloons-plugin.labels" . | nindent 8 }}
+      {{- include "nri-plugin.labels" . | nindent 8 }}
     spec:
     {{- with .Values.tolerations }}
       tolerations:
@@ -48,8 +48,8 @@ spec:
           args:
             - --host-root
             - /host
-            - --fallback-config
-            - /etc/nri-resource-policy/nri-resource-policy.cfg
+            - --config-namespace
+            - {{ .Release.Namespace }}
             - --pid-file
             - /tmp/nri-resource-policy.pid
             - -metrics-interval
@@ -64,6 +64,10 @@ spec:
             valueFrom:
               fieldRef:
                 fieldPath: spec.nodeName
+          {{- if ".Values.plugin-test.enableAPIs" }}
+          - name: ENABLE_TEST_APIS
+            value: "1"
+          {{- end }}
           image: {{ .Values.image.name }}:{{ .Values.image.tag | default .Chart.AppVersion }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
@@ -81,8 +85,6 @@ spec:
             mountPath: /host/sys
           - name: resource-policysockets
             mountPath: /var/run/nri-resource-policy
-          - name: resource-policyconfig
-            mountPath: /etc/nri-resource-policy
           - name: nrisockets
             mountPath: /var/run/nri
       volumes:
@@ -97,9 +99,6 @@ spec:
       - name: resource-policysockets
         hostPath:
           path: /var/run/nri-resource-policy
-      - name: resource-policyconfig
-        configMap:
-          name: nri-resource-policy-config.default
       - name: nrisockets
         hostPath:
           path: /var/run/nri
