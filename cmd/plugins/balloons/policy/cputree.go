@@ -15,7 +15,6 @@
 package balloons
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -23,19 +22,6 @@ import (
 
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
-)
-
-type CPUTopologyLevel int
-
-const (
-	CPUTopologyLevelUndefined CPUTopologyLevel = iota
-	CPUTopologyLevelSystem
-	CPUTopologyLevelPackage
-	CPUTopologyLevelDie
-	CPUTopologyLevelNuma
-	CPUTopologyLevelCore
-	CPUTopologyLevelThread
-	CPUTopologyLevelCount
 )
 
 // cpuTreeNode is a node in the CPU tree.
@@ -81,47 +67,6 @@ type cpuTreeAllocatorOptions struct {
 	// the opposite (packed allocations).
 	topologyBalancing           bool
 	preferSpreadOnPhysicalCores bool
-}
-
-// Strings returns topology level as a string
-func (ctl CPUTopologyLevel) String() string {
-	s, ok := cpuTopologyLevelToString[ctl]
-	if ok {
-		return s
-	}
-	return fmt.Sprintf("CPUTopologyLevelUnknown(%d)", ctl)
-}
-
-// cpuTopologyLevelToString defines names for all CPU topology levels.
-var cpuTopologyLevelToString = map[CPUTopologyLevel]string{
-	CPUTopologyLevelUndefined: "",
-	CPUTopologyLevelSystem:    "system",
-	CPUTopologyLevelPackage:   "package",
-	CPUTopologyLevelDie:       "die",
-	CPUTopologyLevelNuma:      "numa",
-	CPUTopologyLevelCore:      "core",
-	CPUTopologyLevelThread:    "thread",
-}
-
-// MarshalJSON()
-func (ctl CPUTopologyLevel) MarshalJSON() ([]byte, error) {
-	return json.Marshal(ctl.String())
-}
-
-// UnmarshalJSON unmarshals a JSON string to CPUTopologyLevel
-func (ctl *CPUTopologyLevel) UnmarshalJSON(data []byte) error {
-	var dataString string
-	if err := json.Unmarshal(data, &dataString); err != nil {
-		return err
-	}
-	name := strings.ToLower(dataString)
-	for ctlConst, ctlString := range cpuTopologyLevelToString {
-		if ctlString == name {
-			*ctl = ctlConst
-			return nil
-		}
-	}
-	return fmt.Errorf("invalid CPU topology level %q", name)
 }
 
 // String returns string representation of a CPU tree node.
@@ -274,12 +219,12 @@ func (t *cpuTreeNode) DepthFirstWalk(handler func(*cpuTreeNode) error) error {
 // topology elements over which a set of CPUs spans. Example:
 // systemNode.CpuLocations(cpuset:0,99) = [["system"],["p0", "p1"], ["p0d0", "p1d0"], ...]
 func (t *cpuTreeNode) CpuLocations(cpus cpuset.CPUSet) [][]string {
-	names := make([][]string, int(CPUTopologyLevelCount)-int(t.level))
+	names := make([][]string, int(CPUTopologyLevelCount)-t.level.Value())
 	t.DepthFirstWalk(func(tn *cpuTreeNode) error {
 		if tn.cpus.Intersection(cpus).Size() == 0 {
 			return WalkSkipChildren
 		}
-		levelIndex := int(tn.level) - int(t.level)
+		levelIndex := tn.level.Value() - t.level.Value()
 		names[levelIndex] = append(names[levelIndex], tn.name)
 		return nil
 	})

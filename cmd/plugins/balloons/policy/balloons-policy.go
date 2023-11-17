@@ -18,12 +18,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
-	corev1 "k8s.io/api/core/v1"
-	resapi "k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	pkgcfg "github.com/containers/nri-plugins/pkg/config"
+	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/balloons"
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
 	"github.com/containers/nri-plugins/pkg/kubernetes"
 	logger "github.com/containers/nri-plugins/pkg/log"
@@ -32,11 +27,14 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	policy "github.com/containers/nri-plugins/pkg/resmgr/policy"
 	"github.com/containers/nri-plugins/pkg/utils"
+	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
-	// PolicyName is the name used to activate this policy.
+	// PolicyName is the name of this policy.
 	PolicyName = "balloons"
 	// PolicyDescription is a short description of this policy.
 	PolicyDescription = "Flexible pools with per-pool CPU parameters"
@@ -55,7 +53,7 @@ const (
 // balloons contains configuration and runtime attributes of the balloons policy
 type balloons struct {
 	options          *policy.BackendOptions // configuration common to all policies
-	bpoptions        BalloonsOptions        // balloons-specific configuration
+	bpoptions        *BalloonsOptions       // balloons-specific configuration
 	cch              cache.Cache            // nri-resource-policy cache
 	allowed          cpuset.CPUSet          // bounding set of CPUs we're allowed to use
 	reserved         cpuset.CPUSet          // system-/kube-reserved CPUs
@@ -142,8 +140,15 @@ func New() policy.Backend {
 }
 
 // Setup initializes the balloons policy instance.
-func (p *balloons) Setup(policyOptions *policy.BackendOptions) {
+func (p *balloons) Setup(policyOptions *policy.BackendOptions) error {
 	var err error
+
+	bpoptions, ok := policyOptions.Config.(*BalloonsOptions)
+	if !ok {
+		return balloonsError("failed to initialize %s policy: config of wrong type %T",
+			PolicyName, policyOptions.Config)
+	}
+	bpoptions = bpoptions.DeepCopy()
 
 	p.options = policyOptions
 	p.cch = policyOptions.Cache
@@ -154,40 +159,57 @@ func (p *balloons) Setup(policyOptions *policy.BackendOptions) {
 		log.Errorf("creating CPU topology tree failed: %s", err)
 	}
 	log.Debug("CPU topology: %s", p.cpuTree)
+
 	// Handle common policy options: AvailableResources and ReservedResources.
 	// p.allowed: CPUs available for the policy
-	if allowed, ok := policyOptions.Available[policy.DomainCPU]; ok {
-		p.allowed = allowed.(cpuset.CPUSet)
-	} else {
+	amount, kind := bpoptions.AvailableResources.Get(cfgapi.CPU)
+	switch kind {
+	case cfgapi.AmountCPUSet:
+		cset, err := amount.ParseCPUSet()
+		if err != nil {
+			return balloonsError("failed to parse available CPU cpuset '%s': %w", amount, err)
+		}
+		p.allowed = cset
+	case cfgapi.AmountQuantity:
+		return balloonsError("can't handle CPU resources given as resource.Quantity (%v)", amount)
+	case cfgapi.AmountAbsent:
 		// Available CPUs not specified, default to all on-line CPUs.
 		p.allowed = policyOptions.System.CPUSet().Difference(policyOptions.System.Offlined())
 	}
+
 	// p.reserved: CPUs reserved for kube-system pods, subset of p.allowed.
-	p.reserved = cpuset.New()
-	if reserved, ok := p.options.Reserved[policy.DomainCPU]; ok {
-		switch v := reserved.(type) {
-		case cpuset.CPUSet:
-			p.reserved = p.allowed.Intersection(v)
-		case resapi.Quantity:
-			reserveCnt := (int(v.MilliValue()) + 999) / 1000
-			cpus, err := p.cpuAllocator.AllocateCpus(&p.allowed, reserveCnt, cpuallocator.PriorityNone)
-			if err != nil {
-				log.Fatal("failed to allocate reserved CPUs: %s", err)
-			}
-			p.reserved = cpus
-			p.allowed = p.allowed.Union(cpus)
+	amount, kind = bpoptions.ReservedResources.Get(cfgapi.CPU)
+	switch kind {
+	case cfgapi.AmountCPUSet:
+		cset, err := amount.ParseCPUSet()
+		if err != nil {
+			return balloonsError("failed to parse reserved CPU cpuset '%s': %v", amount, err)
 		}
+		p.reserved = p.allowed.Intersection(cset)
+	case cfgapi.AmountQuantity:
+		qty, err := amount.ParseQuantity()
+		if err != nil {
+			return balloonsError("failed to parse reserved CPU quantity '%s': %v", amount, err)
+		}
+		reserveCnt := (int(qty.MilliValue()) + 999) / 1000
+		cpus, err := p.cpuAllocator.AllocateCpus(&p.allowed, reserveCnt, cpuallocator.PriorityNone)
+		if err != nil {
+			return balloonsError("failed to allocate reserved CPUs: %s", err)
+		}
+		p.reserved = cpus
+		p.allowed = p.allowed.Union(cpus)
 	}
 	if p.reserved.IsEmpty() {
-		log.Fatal("%s cannot run without reserved CPUs that are also AvailableResources", PolicyName)
+		return balloonsError("%s cannot run without reserved CPUs that are also AvailableResources", PolicyName)
 	}
 	// Handle policy-specific options
 	log.Debug("creating %s configuration", PolicyName)
-	if err := p.setConfig(balloonsOptions); err != nil {
-		log.Fatal("failed to create %s policy: %v", PolicyName, err)
+	if err := p.setConfig(bpoptions); err != nil {
+		return balloonsError("failed to create %s policy: %v", PolicyName, err)
 	}
 	log.Debug("first effective configuration:\n%s\n", utils.DumpJSON(p.bpoptions))
-	pkgcfg.GetModule(PolicyPath).AddNotify(p.configNotify)
+
+	return nil
 }
 
 // Name returns the name of this policy.
@@ -201,10 +223,9 @@ func (p *balloons) Description() string {
 }
 
 // Start prepares this policy for accepting allocation/release requests.
-func (p *balloons) Start(add []cache.Container, del []cache.Container) error {
+func (p *balloons) Start() error {
 	log.Info("%s policy started", PolicyName)
-	// reassign all containers
-	return p.Sync(p.cch.GetContainers(), del)
+	return nil
 }
 
 // Sync synchronizes the active policy state.
@@ -573,7 +594,7 @@ func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, erro
 		if err != nil {
 			return nil, balloonsError("failed to choose a cpuset for allocating first %d CPUs from %#s", blnDef.MinCpus, p.freeCpus)
 		}
-		cpus, err = p.cpuAllocator.AllocateCpus(&addFromCpus, blnDef.MinCpus, blnDef.AllocatorPriority)
+		cpus, err = p.cpuAllocator.AllocateCpus(&addFromCpus, blnDef.MinCpus, blnDef.AllocatorPriority.Value())
 		if err != nil {
 			return nil, balloonsError("could not allocate %d MinCpus for balloon %s[%d]: %w", blnDef.MinCpus, blnDef.Name, freeInstance, err)
 		}
@@ -609,7 +630,7 @@ func (p *balloons) deleteBalloon(bln *Balloon) {
 	p.balloons = remainingBalloons
 	p.forgetCpuClass(bln)
 	p.freeCpus = p.freeCpus.Union(bln.Cpus)
-	p.cpuAllocator.ReleaseCpus(&bln.Cpus, bln.Cpus.Size(), bln.Def.AllocatorPriority)
+	p.cpuAllocator.ReleaseCpus(&bln.Cpus, bln.Cpus.Size(), bln.Def.AllocatorPriority.Value())
 }
 
 // freeBalloon clears a balloon and deletes it if allowed.
@@ -914,13 +935,17 @@ func changesCpuClasses(opts0, opts1 *BalloonsOptions) bool {
 	return false
 }
 
-// configNotify applies new configuration.
-func (p *balloons) configNotify(event pkgcfg.Event, source pkgcfg.Source) error {
-	log.Info("configuration %s", event)
+func (p *balloons) Reconfigure(newCfg interface{}) error {
+	balloonsOptions, ok := newCfg.(*BalloonsOptions)
+	if !ok {
+		return balloonsError("config data of unexpected type %T", newCfg)
+	}
+
+	log.Info("configuration update")
 	defer log.Debug("effective configuration:\n%s\n", utils.DumpJSON(p.bpoptions))
 	newBalloonsOptions := balloonsOptions.DeepCopy()
-	if !changesBalloons(&p.bpoptions, newBalloonsOptions) {
-		if !changesCpuClasses(&p.bpoptions, newBalloonsOptions) {
+	if !changesBalloons(p.bpoptions, newBalloonsOptions) {
+		if !changesCpuClasses(p.bpoptions, newBalloonsOptions) {
 			log.Info("no configuration changes")
 		} else {
 			log.Info("configuration changes only on CPU classes")
@@ -1007,7 +1032,7 @@ func (p *balloons) applyBalloonDef(balloons *[]*Balloon, blnDef *BalloonDef, fre
 	default:
 		// Case 3: create minimum amount (MinBalloons) of each user-defined balloons.
 		for allocPrio := cpuallocator.CPUPriority(0); allocPrio < cpuallocator.NumCPUPriorities; allocPrio++ {
-			if blnDef.AllocatorPriority != allocPrio {
+			if blnDef.AllocatorPriority.Value() != allocPrio {
 				continue
 			}
 			for blnIdx := 0; blnIdx < blnDef.MinBalloons; blnIdx++ {
@@ -1041,6 +1066,9 @@ func (p *balloons) validateConfig(bpoptions *BalloonsOptions) error {
 
 // setConfig takes new balloon configuration into use.
 func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
+	bpoptions = bpoptions.DeepCopy()
+	setOmittedDefaults(bpoptions)
+
 	// TODO: revert allocations (p.freeCpus) to old ones if the
 	// configuration is invalid. Currently bad configuration
 	// leaves a mess in bookkeeping.
@@ -1054,12 +1082,12 @@ func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
 	p.reservedBalloonDef = &BalloonDef{
 		Name:              reservedBalloonDefName,
 		MinBalloons:       1,
-		AllocatorPriority: 3,
+		AllocatorPriority: cfgapi.PriorityNone,
 	}
 	p.defaultBalloonDef = &BalloonDef{
 		Name:              defaultBalloonDefName,
 		MinBalloons:       1,
-		AllocatorPriority: 3,
+		AllocatorPriority: cfgapi.PriorityNone,
 	}
 	p.balloons = []*Balloon{}
 	p.freeCpus = p.allowed.Clone()
@@ -1072,7 +1100,7 @@ func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
 	// We can't delay taking new configuration into use beyond this point,
 	// because p.newBalloon() dereferences our options via p.bpoptions, so
 	// it would end up using the old configuration.
-	p.bpoptions = *bpoptions
+	p.bpoptions = bpoptions
 
 	// Instantiate built-in reserved and default balloons.
 	reservedBalloon, err := p.newBalloon(p.reservedBalloonDef, false)
@@ -1110,7 +1138,6 @@ func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
 	for blnIdx, bln := range p.balloons {
 		log.Info("- balloon %d: %s", blnIdx, bln)
 	}
-
 	p.updatePinning(p.shareIdleCpus(p.freeCpus, cpuset.New())...)
 	// (Re)configures all CPUs in balloons.
 	p.resetCpuClass()
@@ -1183,7 +1210,7 @@ func (p *balloons) resizeBalloon(bln *Balloon, newMilliCpus int) error {
 			return balloonsError("resize/inflate: failed to choose a cpuset for allocating additional %d CPUs: %w", cpuCountDelta, err)
 		}
 		log.Debugf("- allocate CPUs %d from %#s", cpuCountDelta, addFromCpus)
-		newCpus, err := p.cpuAllocator.AllocateCpus(&addFromCpus, newCpuCount-oldCpuCount, bln.Def.AllocatorPriority)
+		newCpus, err := p.cpuAllocator.AllocateCpus(&addFromCpus, newCpuCount-oldCpuCount, bln.Def.AllocatorPriority.Value())
 		if err != nil {
 			return balloonsError("resize/inflate: allocating %d CPUs for %s failed: %w", cpuCountDelta, bln, err)
 		}
@@ -1197,7 +1224,7 @@ func (p *balloons) resizeBalloon(bln *Balloon, newMilliCpus int) error {
 			return balloonsError("resize/deflate: failed to choose a cpuset for releasing %d CPUs: %w", -cpuCountDelta, err)
 		}
 		log.Debugf("- releasing %d CPUs from cpuset %#s", -cpuCountDelta, removeFromCpus)
-		_, err = p.cpuAllocator.ReleaseCpus(&removeFromCpus, -cpuCountDelta, bln.Def.AllocatorPriority)
+		_, err = p.cpuAllocator.ReleaseCpus(&removeFromCpus, -cpuCountDelta, bln.Def.AllocatorPriority.Value())
 		if err != nil {
 			return balloonsError("resize/deflate: releasing %d CPUs from %s failed: %w", -cpuCountDelta, bln, err)
 		}
@@ -1239,7 +1266,7 @@ func (p *balloons) shareIdleCpus(addCpus, removeCpus cpuset.CPUSet) []*Balloon {
 	if addCpus.Size() > 0 {
 		for blnIdx, bln := range p.balloons {
 			topoLevel := bln.Def.ShareIdleCpusInSame
-			if topoLevel == CPUTopologyLevelUndefined {
+			if topoLevel == cfgapi.CPUTopologyLevelUndefined {
 				continue
 			}
 			idleCpusInTopoLevel := cpuset.New()
