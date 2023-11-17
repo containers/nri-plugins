@@ -1,5 +1,5 @@
-terminate nri-resource-policy
-launch nri-resource-policy
+helm-terminate
+helm_config=$(COLOCATE_PODS=true instantiate helm-config.yaml) helm-launch topology-aware
 
 # pod0: require 10 out of 16 CPUs with two containers.
 # Both containers should fit in their own die. (8 CPUs per die.)
@@ -48,5 +48,4 @@ verify \
          set.union(cpus["pod3c0"],
                    cpus["pod2c0"], cpus["pod2c1"], cpus["pod2c2"], cpus["pod2c3"]))'
 
-terminate nri-resource-policy
-launch nri-resource-policy
+helm-terminate

@@ -1,8 +1,8 @@
 # Test that guaranteed and burstable pods get the CPUs they require
 # when there are enough CPUs available.
 
-terminate nri-resource-policy
-launch nri-resource-policy
+helm-terminate
+helm_config=$(COLOCATE_PODS=true instantiate helm-config.yaml) helm-launch topology-aware
 
 # pod0, fits in a core
 CPU=1 create guaranteed
@@ -136,4 +136,4 @@ verify \
     'len(cpus["pod4c0"]) >= 5' \
     'len(cpus["pod5c0"]) >= 4'
 
-terminate nri-resource-policy
+helm-terminate

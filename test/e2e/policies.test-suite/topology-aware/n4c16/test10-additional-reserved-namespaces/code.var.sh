@@ -13,11 +13,11 @@ cleanup-test-pods() {
 }
 cleanup-test-pods
 
-terminate nri-resource-policy
+helm-terminate
+RESERVED_POOL_NAMESPACES="reserved-pool reserved-* foobar"
 AVAILABLE_CPU="cpuset:8-11"
 RESERVED_CPU="cpuset:10-11"
-nri_resource_policy_cfg=$(instantiate nri-resource-policy-reserved-namespaces.cfg)
-launch nri-resource-policy
+helm_config=$(instantiate helm-config.yaml) helm-launch topology-aware
 
 CONTCOUNT=1 namespace=kube-system create besteffort
 CONTCOUNT=1 create besteffort
@@ -52,4 +52,4 @@ verify 'cpus["pod4c0"] == {"cpu10", "cpu11"}'
 
 cleanup-foobar-namespace
 
-terminate nri-resource-policy
+helm-terminate

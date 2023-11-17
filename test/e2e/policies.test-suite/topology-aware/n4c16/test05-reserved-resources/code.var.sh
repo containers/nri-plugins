@@ -16,27 +16,26 @@ cleanup-kube-system() {
 cleanup-kube-system
 
 # Test launch failure, Reserved CPUs is not subset of Available CPUs
-terminate nri-resource-policy
+helm-terminate
 RESERVED_CPU="cpuset:3,7,11,15"
-nri_resource_policy_cfg=$(instantiate nri-resource-policy-reserved.cfg)
-( launch nri-resource-policy ) && error "unexpected success" || {
+helm_config=$(instantiate helm-config.yaml)
+( launch_timeout=5s helm-launch topology-aware ) && error "unexpected success" || {
     echo "Launch failed as expected"
 }
 
 # Test launch failure, there are more reserved CPUs than available CPUs
-terminate nri-resource-policy
+helm-terminate
 RESERVED_CPU="11"
-nri_resource_policy_cfg=$(instantiate nri-resource-policy-reserved.cfg)
-( launch nri-resource-policy ) && error "unexpected success" || {
+helm_config=$(instantiate helm-config.yaml)
+( launch_timeout=5s helm-launch topology-aware ) && error "unexpected success" || {
     echo "Launch failed as expected"
 }
 
 # Test that BestEffort containers are allowed to run on both Reserved
 # CPUs when the CPUs are on the same NUMA node.
-terminate nri-resource-policy
+helm-terminate
 RESERVED_CPU="cpuset:10-11"
-nri_resource_policy_cfg=$(instantiate nri-resource-policy-reserved.cfg)
-launch nri-resource-policy
+helm_config=$(instantiate helm-config.yaml) helm-launch topology-aware
 
 namespace=kube-system CONTCOUNT=3 create besteffort
 report allowed
@@ -44,10 +43,9 @@ verify "cpus['pod0c0'] == cpus['pod0c1'] == cpus['pod0c2'] == {'cpu10', 'cpu11'}
 vm-command "kubectl delete -n kube-system pods pod0"
 
 # Test that BestEffort containers are pinned to reserved CPUs.
-terminate nri-resource-policy
+helm-terminate
 RESERVED_CPU="cpuset:7,11"
-nri_resource_policy_cfg=$(instantiate nri-resource-policy-reserved.cfg)
-launch nri-resource-policy
+helm_config=$(instantiate helm-config.yaml) helm-launch topology-aware
 
 namespace=kube-system CONTCOUNT=4 create besteffort
 report allowed
@@ -87,13 +85,12 @@ cleanup-kube-system
 # Test that the first available CPUs are reserved when reserving milli CPUs.
 # The number of reserved CPUs is the ceiling of the milli CPUs.
 reset counters
-terminate nri-resource-policy
+helm-terminate
 RESERVED_CPU="2250m"
-nri_resource_policy_cfg=$(instantiate nri-resource-policy-reserved.cfg)
-launch nri-resource-policy
+helm_config=$(instantiate helm-config.yaml) helm-launch topology-aware
 namespace=kube-system CPU=2 CONTCOUNT=1 create besteffort
 verify "cpus['pod0c0'] == {'cpu04', 'cpu05', 'cpu06'}"
 
 vm-command "kubectl delete -n kube-system pods/pod0"
 
-terminate nri-resource-policy
+helm-terminate

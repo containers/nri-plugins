@@ -14,11 +14,11 @@ restore_cache() {
 }
 
 # Make sure we have a cache.
-nri_resource_policy_cfg=$(instantiate nri-resource-policy.cfg)
 
-terminate nri-resource-policy
-launch nri-resource-policy
-terminate nri-resource-policy
+helm-terminate
+helm_config=$(instantiate helm-config.yaml)
+helm-launch topology-aware
+helm-terminate topology-aware
 
 # Turn cache into a symlink.
 symlink_cache
@@ -26,10 +26,11 @@ symlink_cache
 # Try to re-launch nri-resource-policy, check whether and how it fails.
 (
   trap 'restore_cache' 0
-  if (wait_t=5 ds_wait_t=none launch nri-resource-policy); then
+  if (launch_timeout=5s helm-launch topology-aware); then
       exit 1
   else
-      if ! vm-command "kubectl -n kube-system logs daemonset.apps/nri-resource-policy | \
+      vm-command "kubectl -n kube-system logs ds/nri-resource-policy-topology-aware"
+      if ! vm-command "kubectl -n kube-system logs ds/nri-resource-policy-topology-aware | \
           grep -q 'exists, but is a symbolic link'"; then
           exit 2
       else
@@ -39,7 +40,7 @@ symlink_cache
 )
 status=$?
 
-terminate nri-resource-policy
+helm-terminate
 
 # Check and report test status.
 case "$status" in

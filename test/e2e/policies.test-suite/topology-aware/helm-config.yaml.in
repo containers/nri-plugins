@@ -1,0 +1,26 @@
+config:
+  $([ -n "${AVAILABLE_CPU}" ] && echo "
+  availableResources:
+    cpu: ${AVAILABLE_CPU}")
+  reservedResources:
+    cpu: ${RESERVED_CPU:-750m}
+  colocatePods: ${COLOCATE_PODS:-false}
+  colocateNamespaces: ${COLOCATE_NAMESPACES:-false}
+  pinCPU: ${PIN_CPU:-true}
+  pinMemory: ${PIN_MEMORY:-true}
+  $([ -n "${RESERVED_POOL_NAMESPACES}" ] && echo "
+  reservedPoolNamespaces:$(for ns in ${RESERVED_POOL_NAMESPACES}; do echo "
+    - $ns"; done)
+  ")
+
+  instrumentation:
+    httpEndpoint: ":8891"
+  log:
+    debug:
+      - nri-resource-policy
+      - resource-manager
+      - cache
+      - policy
+    source: true
+    klog:
+      skip_headers: true

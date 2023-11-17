@@ -1,0 +1,25 @@
+apiVersion: config.nri/v1alpha1
+kind: TopologyAwarePolicy
+metadata:
+  name: default
+  namespace: kube-system
+spec:
+  pinCPU: true
+  pinMemory: true
+  preferIsolatedCPUs: true
+  preferSharedCPUs: false
+  colocatePods: false
+  colocateNamespaces: false
+  reservedResources:
+    cpu: ${RESERVED_CPU}
+  log:
+    debug:
+      - resource-manager
+      - policy
+      - cache
+    source: true
+    klog:
+      skip_headers: true
+  instrumentation:
+    reportPeriod: 60s
+    samplingRatePerMillion: 1000000
