@@ -90,13 +90,15 @@ customize with their own values, along with the default values.
 
 | Name                     | Default                                                                                                                       | Description                                          |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `image.name`             | [ghcr.io/containers/nri-plugins/nri-sgx-epc](https://ghcr.io/containers/nri-plugins/nri-sgx-epc)                                | container image name                                 |
+| `image.name`             | [ghcr.io/containers/nri-plugins/nri-sgx-epc](https://ghcr.io/containers/nri-plugins/nri-sgx-epc)                              | container image name                                 |
 | `image.tag`              | unstable                                                                                                                      | container image tag                                  |
 | `image.pullPolicy`       | Always                                                                                                                        | image pull policy                                    |
 | `resources.cpu`          | 25m                                                                                                                           | cpu resources for the Pod                            |
 | `resources.memory`       | 100Mi                                                                                                                         | memory qouta for the                                 |
 | `nri.patchRuntimeConfig` | false                                                                                                                         | enable NRI in containerd or CRI-O                    |
-| `initImage.name`         | [ghcr.io/containers/nri-plugins/config-manager](https://ghcr.io/containers/nri-plugins/config-manager)                                | init container image name                            |
+| `initImage.name`         | [ghcr.io/containers/nri-plugins/config-manager](https://ghcr.io/containers/nri-plugins/config-manager)                        | init container image name                            |
 | `initImage.tag`          | unstable                                                                                                                      | init container image tag                             |
 | `initImage.pullPolicy`   | Always                                                                                                                        | init container image pull policy                     |
 | `tolerations`            | []                                                                                                                            | specify taint toleration key, operator and effect    |
+| `affinity`               | []                                                                                                                            | specify node affinity                                |
+| `nodeSelector`           | []                                                                                                                            | specify node selector labels                         |

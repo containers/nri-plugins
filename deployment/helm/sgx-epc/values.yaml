@@ -29,3 +29,24 @@ tolerations: []
 # - key: "node-role.kubernetes.io/control-plane"
 #   operator: "Exists"
 #   effect: "NoSchedule"
+
+affinity: []
+#
+# Example:
+#
+# affinity:
+#   nodeAffinity:
+#     requiredDuringSchedulingIgnoredDuringExecution:
+#       nodeSelectorTerms:
+#       - matchExpressions:
+#         - key: topology.kubernetes.io/disk
+#           operator: In
+#           values:
+#           - ssd
+
+nodeSelector: []
+#
+# Example:
+#
+# nodeSelector:
+#  kubernetes.io/disk: "ssd"
