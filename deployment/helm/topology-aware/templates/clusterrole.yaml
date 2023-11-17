@@ -3,7 +3,7 @@ kind: ClusterRole
 metadata:
   name: nri-resource-policy-topology-aware
   labels:
-    {{- include "topology-aware-plugin.labels" . | nindent 4 }}
+    {{- include "nri-plugin.labels" . | nindent 4 }}
 rules:
 - apiGroups:
   - ""

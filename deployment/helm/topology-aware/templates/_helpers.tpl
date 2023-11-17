@@ -1,16 +1,16 @@
 {{/*
 Common labels
 */}}
-{{- define "topology-aware-plugin.labels" -}}
+{{- define "nri-plugin.labels" -}}
 helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
-{{ include "topology-aware-plugin.selectorLabels" . }}
+{{ include "nri-plugin.selectorLabels" . }}
 {{- end -}}
 
 {{/*
 Selector labels
 */}}
-{{- define "topology-aware-plugin.selectorLabels" -}}
+{{- define "nri-plugin.selectorLabels" -}}
 app.kubernetes.io/name: nri-resource-policy-topology-aware
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
