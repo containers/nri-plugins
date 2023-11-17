@@ -1,0 +1,53 @@
+# Default configuration
+# Used for all nodes without a node-specific or group-specific configuration.
+apiVersion: config.nri/v1alpha1
+kind: BalloonsPolicy
+metadata:
+  # The configuration object name also defines the scope of nodes the configuration
+  # applies to.
+  #
+  # Use 'default' for the default configuration which applies to all nodes which do
+  # not have a node-specific or a group-specific configuration.
+  #
+  # Use 'node.$NODE_NAME' for a node-specific configuration which only applies to
+  # $NODE_NAME. For instance for 'node-0' you would use
+  #   name: node.node-0
+  #
+  # Use 'group.$GROUP_NAME' for a group-specific configuration which applies to all
+  # nodes which are labelled to belong t that configuration group and don't have a
+  # node-specific configurations which then has the highest precedence. For instance,
+  # to configure 'group-0' with nodes 'node-A', 'node-B' and 'node-C' use
+  #   name: group.group-0
+  # Then label the nodes and remove any node-specific configuration:
+  #   for node in node-{A,B,C}; do
+  #     kubectl label node $node group.config.nri=group-0
+  #     kubectl delete -n $NAMESPACE balloonspolicies.config.nri/$node || :
+  #   done
+  #
+  name: default
+# Make sure you put the configuration in the same namespace than your plugin
+# which is kube-system by default.
+#  namespace: kube-system
+spec:
+  reservedResources:
+    cpu: 750m
+  pinCPU: true
+  pinMemory: true
+  idleCPUClass: normal
+  allocatorTopologyBalancing: true
+  balloonTypes:
+  - name: default
+    namespaces:
+      - default
+    minCPUs: 1
+    allocatorPriority: normal
+    shareIdleCPUsInSame: system
+  reservedPoolNamespaces:
+    - kube-system
+  log:
+    debug:
+      - policy
+#      - '*'
+#    source: true
+#    klog:
+#       skip_headers: true
