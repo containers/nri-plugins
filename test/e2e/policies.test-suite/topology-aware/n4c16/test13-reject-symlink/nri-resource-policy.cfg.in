@@ -1,9 +1,0 @@
-policy:
-  ReservedResources:
-    CPU: 750m
-instrumentation:
-  HTTPEndpoint: ":8891"
-logger:
-  Debug: nri-resource-policy,resource-manager,cache,policy
-  Klog:
-    skip_headers: true

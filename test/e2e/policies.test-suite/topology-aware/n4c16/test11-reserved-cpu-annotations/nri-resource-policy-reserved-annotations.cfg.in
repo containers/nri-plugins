@@ -1,9 +1,0 @@
-policy:
-  ReservedResources:
-    cpu: ${RESERVED_CPU}
-  AvailableResources:
-    cpu: ${AVAILABLE_CPU}
-instrumentation:
-  HTTPEndpoint: ":8891"
-logger:
-  Debug: nri-resource-policy,resource-manager,cache,policy

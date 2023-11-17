@@ -1,5 +1,5 @@
-terminate nri-resource-policy
-launch nri-resource-policy
+helm-terminate
+helm_config=$(instantiate helm-config.yaml) helm-launch topology-aware
 
 source $TEST_DIR/codelib.sh || {
     echo "error importing codelib.sh"
@@ -50,4 +50,4 @@ wait
 cleanup-test-pods
 
 # Restore default test configuration, restart nri-resource-policy.
-terminate nri-resource-policy
+helm-terminate
