@@ -15,8 +15,11 @@
 package template
 
 import (
+	"fmt"
+
 	"github.com/prometheus/client_golang/prometheus"
 
+	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/template"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
@@ -32,14 +35,10 @@ const (
 	PolicyPath = "policy." + PolicyName
 )
 
-// allocations is our cache.Cachable for saving resource allocations in the cache.
-type allocations struct {
-	policy *policy
-}
-
 // policy is our runtime state for this policy.
 type policy struct {
-	cache cache.Cache // pod/container cache
+	cfg   *cfgapi.Config // our runtime configuration
+	cache cache.Cache    // pod/container cache
 }
 
 // Make sure policy implements the policy.Backend interface.
@@ -49,11 +48,6 @@ var log logger.Logger = logger.NewLogger("policy")
 // New creates a new uninitialized template policy instance.
 func New() policyapi.Backend {
 	return &policy{}
-}
-
-// Setup initializes the template policy instance.
-func (p *policy) Setup(opts *policyapi.BackendOptions) {
-	p.cache = opts.Cache
 }
 
 // Name returns the name of this policy.
@@ -66,9 +60,32 @@ func (p *policy) Description() string {
 	return PolicyDescription
 }
 
+// Setup initializes the template policy instance.
+func (p *policy) Setup(opts *policyapi.BackendOptions) error {
+	cfg, ok := opts.Config.(*cfgapi.Config)
+	if !ok {
+		return fmt.Errorf("config data of wrong type %T", opts.Config)
+	}
+
+	p.cfg = cfg
+	p.cache = opts.Cache
+	return nil
+}
+
 // Start prepares this policy for accepting allocation/release requests.
-func (p *policy) Start(add []cache.Container, del []cache.Container) error {
-	return p.Sync(add, del)
+func (p *policy) Start() error {
+	log.Info("started...")
+	return nil
+}
+
+// Reconfigure this policy.
+func (p *policy) Reconfigure(newCfg interface{}) error {
+	cfg, ok := newCfg.(*cfgapi.Config)
+	if !ok {
+		return fmt.Errorf("config data of wrong type %T", newCfg)
+	}
+	p.cfg = cfg
+	return nil
 }
 
 // Sync synchronizes the state of this policy.
