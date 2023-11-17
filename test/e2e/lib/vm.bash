@@ -106,6 +106,7 @@ vm-setup() {
     fi
 
     (cd "$vagrantdir";
+     export ANSIBLE_PIPELINING=True;
      # Make sure the vagrant plugins are installed
      make install
 
@@ -140,6 +141,7 @@ vm-play() {
     local vagrantdir="$3"
 
     (cd "$vagrantdir";
+     export ANSIBLE_PIPELINING=True;
      ansible-playbook "$playbook" \
 	  -i "${vm}," -u vagrant \
 	  --private-key=".vagrant/machines/${vm}/libvirt/private_key" \

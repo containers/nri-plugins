@@ -34,8 +34,9 @@ export POLICY=${policy:-"topology-aware"}
 export DISPLAY=bogus-none
 export SSH_ASKPASS=/bin/false
 SSH_OPTS="-F $OUTPUT_DIR/.ssh-config"
-export SSH="ssh $SSH_OPTS"
-export SCP="scp $SSH_OPTS"
+SSH_PERSIST_OPTS="-o ControlMaster=auto -o ControlPersist=60 -o ControlPath=/tmp/ssh-%C"
+export SSH="ssh $SSH_OPTS $SSH_PERSIST_OPTS"
+export SCP="scp $SSH_OPTS $SSH_PERSIST_OPTS"
 export VM_SSH_USER=vagrant
 
 export nri_resource_policy_src=${nri_resource_policy_src:-"$SRC_DIR"}
