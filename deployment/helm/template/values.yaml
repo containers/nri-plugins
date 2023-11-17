@@ -1,0 +1,47 @@
+# Default values for nri-plugins.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+---
+image:
+  name: ghcr.io/containers/nri-plugins/nri-resource-policy-template
+  # tag, if defined will use the given image tag, otherwise Chart.AppVersion will be used
+  #tag: unstable
+  pullPolicy: Always
+
+config:
+  reservedResources:
+    cpu: 750m
+  log:
+    source: true
+    klog:
+      skip_headers: true
+  instrumentation:
+    reportPeriod: 60s
+    samplingRatePerMillion: 0
+
+plugin-test:
+    enableAPIs: false
+
+hostPort: 8891
+
+resources:
+  cpu: 500m
+  memory: 512Mi
+
+nri:
+  patchRuntimeConfig: false
+
+initContainerImage:
+  name: ghcr.io/containers/nri-plugins/nri-config-manager
+  # If not defined Chart.AppVersion will be used
+  #tag: unstable
+  pullPolicy: Always
+
+tolerations: []
+#
+# Example:
+#
+# tolerations:
+# - key: "node-role.kubernetes.io/control-plane"
+#   operator: "Exists"
+#   effect: "NoSchedule"
