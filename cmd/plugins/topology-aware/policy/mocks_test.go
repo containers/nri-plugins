@@ -21,7 +21,6 @@ import (
 	nri "github.com/containerd/nri/pkg/api"
 	resmgr "github.com/containers/nri-plugins/pkg/resmgr/apis"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
-	"github.com/containers/nri-plugins/pkg/resmgr/config"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/topology"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
@@ -562,15 +561,6 @@ func (m *mockCache) SetPolicyEntry(string, interface{}) {
 }
 func (m *mockCache) GetPolicyEntry(string, interface{}) bool {
 	return m.returnValueForGetPolicyEntry
-}
-func (m *mockCache) SetConfig(config.RawConfig) error {
-	panic("unimplemented")
-}
-func (m *mockCache) GetConfig() config.RawConfig {
-	panic("unimplemented")
-}
-func (m *mockCache) ResetConfig() error {
-	panic("unimplemented")
 }
 func (m *mockCache) Save() error {
 	return nil
