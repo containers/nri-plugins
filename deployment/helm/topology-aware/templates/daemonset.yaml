@@ -18,9 +18,16 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
     {{- end }}
+    {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
       serviceAccount: nri-resource-policy-topology-aware
       nodeSelector:
         kubernetes.io/os: "linux"
+    {{- with .Values.nodeSelector }}
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
       {{- if .Values.nri.patchRuntimeConfig }}
       initContainers:
       - name: patch-runtime
