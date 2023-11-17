@@ -21,7 +21,7 @@ import (
 
 // GetClasses returns all available CPU classes.
 func GetClasses() map[string]Class {
-	return getCPUController().config.getClasses()
+	return getCPUController().getClasses()
 }
 
 // Assign assigns a set of cpus to a class.

@@ -15,18 +15,31 @@
 package control
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
+
+	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/control"
+)
+
+const (
+	// EnvVarEnableTestAPIs controls if test APIS are enabled (currently e2e test controller).
+	EnvVarEnableTestAPIs = "ENABLE_TEST_APIS"
+)
+
+var (
+	enableTestAPIs = (os.Getenv(EnvVarEnableTestAPIs) != "")
 )
 
 // Control is the interface for triggering controller-/domain-specific post-decision actions.
 type Control interface {
 	// StartStopControllers starts/stops all controllers according to configuration.
-	StartStopControllers(cache.Cache, bool) error
+	StartStopControllers(*cfgapi.Config) error
 	// PreCreateHooks runs the pre-create hooks of all registered controllers.
 	RunPreCreateHooks(cache.Container) error
 	// RunPreStartHooks runs the pre-start hooks of all registered controllers.
@@ -42,7 +55,7 @@ type Control interface {
 // Controller is the interface all resource controllers must implement.
 type Controller interface {
 	// Start prepares the controller for resource control/decision enforcement.
-	Start(cache.Cache) error
+	Start(cache.Cache, *cfgapi.Config) (bool, error)
 	// Stop shuts down the controller.
 	Stop()
 	// PreCreateHook is the controller's pre-create hook.
@@ -59,8 +72,9 @@ type Controller interface {
 
 // control encapsulates our controller-agnostic runtime state.
 type control struct {
-	cache       cache.Cache   // resource manager cache
-	controllers []*controller // active controllers
+	cache       cache.Cache    // resource manager cache
+	controllers []*controller  // active controllers
+	cfg         *cfgapi.Config // runtime configuration
 }
 
 // controller represents a single registered controller.
@@ -68,7 +82,6 @@ type controller struct {
 	name        string     // controller name
 	description string     // controller description
 	c           Controller // controller interface
-	mode        mode       // controller mode
 	running     bool       // whether the controller is running
 }
 
@@ -88,8 +101,10 @@ var controllers = make(map[string]*controller)
 var log logger.Logger = logger.NewLogger("resource-control")
 
 // NewControl creates a new controller-agnostic instance.
-func NewControl() (Control, error) {
-	c := &control{}
+func NewControl(cc cache.Cache) (Control, error) {
+	c := &control{
+		cache: cc,
+	}
 
 	for _, controller := range controllers {
 		c.controllers = append(c.controllers, controller)
@@ -103,58 +118,37 @@ func NewControl() (Control, error) {
 }
 
 // StartStopController starts/stops all controllers according to configuration.
-func (c *control) StartStopControllers(cc cache.Cache, enableTestAPIs bool) error {
-	c.cache = cc
+func (c *control) StartStopControllers(cfg *cfgapi.Config) error {
+	var errs []error
+
+	c.cfg = cfg.DeepCopy()
 
 	log.Info("syncing controllers with configuration...")
 
 	for _, controller := range c.controllers {
-		if controller.mode == Disabled {
-			if controller.running {
-				controller.c.Stop()
-				controller.running = false
-			}
-			log.Info("controller %s: disabled", controller.name)
-			continue
-		}
-
 		if controller.running {
-			log.Info("controller %s: running", controller.name)
-			continue
-		}
-
-		if !enableTestAPIs && controller.name == cache.E2ETest {
-			// only enable e2e test controller if we have the cmd line option set
-			continue
-		}
-
-		err := controller.c.Start(cc)
-
-		if err != nil {
-			log.Error("controller %s: failed to start: %v", controller.name, err)
+			log.Infof("stopping controller %s", controller.name)
+			controller.c.Stop()
 			controller.running = false
-			switch controller.mode {
-			case Required:
-				return controlError("%s failed to start: %v", controller.name, err)
-			case Optional, Relaxed:
-				log.Warn("disabling %s, failed to start: %v", controller.name, err)
-				controller.mode = Disabled
-			}
-		} else {
-			controller.running = true
-			if controller.mode == Optional {
-				controller.mode = Required
-			}
 		}
 	}
 
 	for _, controller := range c.controllers {
-		state := map[bool]string{false: "inactive", true: "running"}
-		log.Info("controller %s is now %s, mode %s",
-			controller.name, state[controller.running], controller.mode)
+		log.Infof("starting controller %s", controller.name)
+		enabled, err := controller.c.Start(c.cache, cfg.DeepCopy())
+		if err != nil {
+			errs = append(errs, controlError("%s failed to start: %v", controller.name, err))
+		} else {
+			if enabled {
+				log.Infof("controller %s is enabled and running", controller.name)
+				controller.running = true
+			} else {
+				log.Infof("controller %s is disabled", controller.name)
+			}
+		}
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 // RunPreCreateHooks runs all registered controllers' PreCreate hooks.
@@ -209,7 +203,7 @@ func (c *control) RunPostStopHooks(container cache.Container) error {
 
 // runhook executes the given container hook according to the controller settings
 func (c *control) runhook(controller *controller, hook string, container cache.Container) error {
-	if controller.mode == Disabled || !controller.running {
+	if !controller.running {
 		return nil
 	}
 
@@ -231,10 +225,7 @@ func (c *control) runhook(controller *controller, hook string, container cache.C
 	log.Debug("running %s %s hook for container %s", controller.name, hook, container.PrettyName())
 
 	if err := fn(container); err != nil {
-		if controller.mode == Required {
-			return controlError("%s %s hook failed: %v", controller.name, hook, err)
-		}
-		log.Error("%s %s hook failed: %v", controller.name, hook, err)
+		return controlError("%s %s hook failed: %v", controller.name, hook, err)
 	}
 
 	return nil
