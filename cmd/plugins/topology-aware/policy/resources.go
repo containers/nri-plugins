@@ -958,11 +958,11 @@ func newRequest(container cache.Container) Request {
 		if err != nil {
 			log.Error("Failed to parse cold start preference")
 		} else {
-			if parsedColdStart.Duration > 0 {
+			if parsedColdStart.Duration.Duration > 0 {
 				if coldStartOff {
 					log.Error("coldstart disabled (movable non-DRAM memory zones present)")
 				} else {
-					coldStart = time.Duration(parsedColdStart.Duration)
+					coldStart = time.Duration(parsedColdStart.Duration.Duration)
 				}
 			}
 		}
@@ -1121,22 +1121,6 @@ func (cs *supply) GetScore(req Request) Score {
 	for provider, hint := range cr.container.GetTopologyHints() {
 		log.Debug(" - evaluating topology hint %s", hint)
 		score.hints[provider] = cs.node.HintScore(hint)
-	}
-
-	// calculate any fake hint scores
-	pod, _ := cr.container.GetPod()
-	key := pod.GetName() + ":" + cr.container.GetName()
-	if fakeHints, ok := opt.FakeHints[key]; ok {
-		for provider, hint := range fakeHints {
-			log.Debug(" - evaluating fake hint %s", hint)
-			score.hints[provider] = cs.node.HintScore(hint)
-		}
-	}
-	if fakeHints, ok := opt.FakeHints[cr.container.GetName()]; ok {
-		for provider, hint := range fakeHints {
-			log.Debug(" - evaluating fake hint %s", hint)
-			score.hints[provider] = cs.node.HintScore(hint)
-		}
 	}
 
 	return score
