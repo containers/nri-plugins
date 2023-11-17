@@ -1,4 +1,4 @@
-// Copyright 2023 Intel Corporation. All Rights Reserved.
+// Copyright 2022 Intel Corporation. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,20 +15,32 @@
 package main
 
 import (
+	"flag"
+
 	policy "github.com/containers/nri-plugins/cmd/plugins/template/policy"
+	agent "github.com/containers/nri-plugins/pkg/agent"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	resmgr "github.com/containers/nri-plugins/pkg/resmgr/main"
 )
 
-var log = logger.Default()
+var (
+	log = logger.Default()
+)
 
 func main() {
-	resmgr, err := resmgr.New(policy.New())
+	flag.Parse()
+
+	agt, err := agent.New(agent.TemplateConfigInterface())
+	if err != nil {
+		log.Fatal("%v", err)
+	}
+
+	mgr, err := resmgr.New(agt, policy.New())
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
 
-	if err := resmgr.Run(); err != nil {
+	if err := mgr.Run(); err != nil {
 		log.Fatalf("%v", err)
 	}
 }
