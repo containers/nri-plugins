@@ -39,7 +39,6 @@ export SCP="scp $SSH_OPTS"
 export VM_SSH_USER=vagrant
 
 export nri_resource_policy_src=${nri_resource_policy_src:-"$SRC_DIR"}
-export nri_resource_policy_cfg=${nri_resource_policy_cfg:-"${SRC_DIR}/test/e2e/files/nri-resource-policy-topology-aware.cfg"}
 
 nri_resource_policy_cache="/var/lib/nri-resource-policy/cache"
 
@@ -370,6 +369,188 @@ terminate() { # script API
             error "terminate: invalid target \"$target\""
             ;;
     esac
+}
+
+helm-launch() { # script API
+    # Usage: helm-launch TARGET
+    #
+    # Launch the given target plugin using helm. Start port-forwarding and log
+    # collection for the plugin.
+    #
+    # Supported TARGETs:
+    #     topology-aware, balloons: launch the given NRI resource policy plugin on VM.
+    #
+    # Environment variables:
+    #     helm_config: configuration helm override values for the plugin
+    #         default: $TEST_DIR/helm-config.yaml
+    #     daemonset_name: name of the DaemonSet to wait for
+    #     container_name: name of the container to collect logs for
+    #         default: nri-resource-policy-$TARGET
+    #     helm_name: helm installation name to use
+    #         default: test
+    #     launch_timeout: timeout to wait for DaemonSet to become available
+    #         default: 20s
+    #     cfgresource: config custom resource to wait for node status to change in
+    #         default: balloonspolicies/default or topologyawarepolicies/default
+    #
+    # Example:
+    #     helm_config=$(instantiate helm-config.yaml) helm-launch balloons
+    #
+
+    local helm_config="${helm_config:-$TEST_DIR/helm-config.yaml}"
+    local ds_name="${daemonset_name:-}" ctr_name="${container_name:-nri-resource-policy-$1}"
+    local helm_name="${helm_name:-test}" timeout="${launch_timeout:-20s}"
+    local plugin="$1" cfgresource=${cfgresource:-} cfgstatus
+    local deadline
+    shift
+
+    host-command "$SCP \"$helm_config\" $VM_HOSTNAME:" ||
+        command-error "copying \"$helm_config\" to VM failed"
+
+    vm-command "helm install --atomic -n kube-system $helm_name ./helm/$plugin \
+             --values=`basename ${helm_config}` \
+             --set image.name=localhost/$plugin \
+             --set image.tag=testing \
+             --set image.pullPolicy=Never \
+             --set resources.cpu=50m \
+             --set resources.memory=256Mi \
+             --set plugin-test.enableAPIs=true" ||
+        error "failed to helm install/start plugin $plugin"
+
+    case "$timeout" in
+        ""|"0"|"none")
+            timeout="0"
+            ;;
+    esac
+
+    if [ -z "$ds_name" ]; then
+        case "$plugin" in
+            *topology*aware*)
+                ds_name=nri-resource-policy-topology-aware
+                [ -z "$cfgresource" ] && cfgresource=topologyawarepolicies/default
+                ;;
+            *balloons*)
+                ds_name=nri-resource-policy-balloons
+                [ -z "$cfgresource" ] && cfgresource=balloonspolicies/default
+                ;;
+            *)
+                error "Can't wait for plugin $plugin to start, daemonset_name not set"
+                return 0
+                ;;
+        esac
+    fi
+
+    deadline=$(deadline-for-timeout $timeout)
+    vm-command "kubectl wait -n kube-system ds/${ds_name} --timeout=$timeout \
+                    --for=jsonpath='{.status.numberAvailable}'=1" || \
+        error "Timeout while waiting daemonset/${ds_name} to be available"
+
+    timeout=$(timeout-for-deadline $deadline)
+    timeout=$timeout wait-config-node-status $cfgresource
+
+    result=$(get-config-node-status-result $cfgresource)
+    if [ "$result" != "Success" ]; then
+        reason=$(get-config-node-status-error $cfgresource)
+        error "Plugin $plugin configuration failed: $reason"
+        return 1
+    fi
+
+    vm-start-log-collection -n kube-system ds/$ds_name -c $ctr_name
+    vm-port-forward-enable
+}
+
+helm-terminate() { # script API
+    # Usage: helm-terminate
+    #
+    # Stop a helm-launched plugin.
+    #
+    # Environment variables:
+    #     helm_name: helm installation name to stop,
+    #         default: test
+    #
+    # Example:
+    #     helm_name=custom-name helm-terminate
+    #
+
+    local helm_name="${helm_name:-test}"
+
+    vm-command "helm list -n kube-system | grep -q ^$helm_name"
+    if [ "$?" != "0" ]; then
+        return 0
+    fi
+    vm-command "helm uninstall -n kube-system test --wait --timeout 20s"
+    vm-port-forward-disable
+}
+
+deadline-for-timeout() {
+    local timeout="$1" now=$(date +%s) diff
+
+    case $timeout in
+        [0-9]*m*[0-9]*s)
+            diff="${timeout#*m}"; diff="${diff%s}"
+            diff=$(($diff + 60*${timeout%m*}))
+            ;;
+        [0-9]*m)
+            diff=$((${timeout%m} * 60))
+            ;;
+        [0-9]*s|[0-9]*)
+            diff="${timeout%s}"
+            ;;
+        *)
+            echo "can't handle timeout \"$timeout\""
+            exit 1
+            ;;
+    esac
+
+    echo $((now + diff))
+}
+
+timeout-for-deadline() {
+    local deadline="$1" now=$(date +%s)
+    local diff=$((deadline - now))
+
+    if [ "$diff" -gt 0 ]; then
+        echo "${diff}s"
+    else
+        echo 0s
+    fi
+}
+
+get-config-generation() {
+    local resource="$1"
+    vm-command-q "kubectl get -n kube-system $resource -ojsonpath={.metadata.generation}"
+}
+
+get-config-node-status-generation() {
+    local resource="$1" node="${node:-$VM_HOSTNAME}"
+    vm-command-q "kubectl get -n kube-system $resource \
+                      -ojsonpath=\"{.status.nodes['$node'].generation}\""
+}
+
+get-config-node-status-result() {
+    local resource="$1" node="${node:-$VM_HOSTNAME}"
+    vm-command-q "kubectl get -n kube-system $resource \
+                     -ojsonpath=\"{.status.nodes['$node'].status}\""
+}
+
+get-config-node-status-error() {
+    local resource="$1" node="${node:-$VM_HOSTNAME}"
+    vm-command-q "kubectl get -n kube-system $resource \
+                      -ojsonpath=\"{.status.nodes['$node'].error}\""
+}
+
+wait-config-node-status() {
+    local resource="$1" node="${node:-$VM_HOSTNAME}"
+    local timeout="${timeout:-5s}"
+    local deadline=$(deadline-for-timeout $timeout)
+    local generation jsonpath result errors
+
+    generation=$(get-config-generation $resource)
+    jsonpath="{.status.nodes['$node'].generation}"
+
+    vm-command-q "kubectl wait -n kube-system --timeout=$timeout \
+                      $resource --for=jsonpath=\"$jsonpath\"=$generation > /dev/null" ||
+        error "waiting for node $node update in $resource failed"
 }
 
 declare -a pulled_images_on_vm
