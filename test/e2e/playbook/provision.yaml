@@ -1,6 +1,7 @@
 ---
-- hosts: all
-  become: yes
+- name: Provision VM, set up single-node Kubernetes cluster
+  hosts: all
+  become: true
   become_user: root
   vars:
     cri_runtime: "{{ cri_runtime }}"
@@ -17,15 +18,17 @@
     cilium_tarball: ""
 
   tasks:
-    - set_fact:
+    - name: Check if runtime is containerd
+      ansible.builtin.set_fact:
         is_containerd: true
       when: cri_runtime == "containerd"
-    - set_fact:
+    - name: Check if runtime is CRI-O
+      ansible.builtin.set_fact:
         is_crio: true
       when: cri_runtime == "crio"
 
-    - name: setup DNS
-      shell: "{{ item }}"
+    - name: Setup DNS
+      ansible.builtin.command: "{{ item }}"
       with_items:
         - rm -f /etc/resolv.conf
         - echo "nameserver {{ dns_nameserver }}" > /etc/resolv.conf
@@ -34,34 +37,34 @@
         - sed -i "s/Domains=.*$/Domains={{ dns_search_domain }}/" /etc/systemd/resolved.conf
       when: dns_nameserver != ""
 
-    - name: setup DNS for Ubuntu
-      shell: "{{ item }}"
+    - name: Setup DNS for Ubuntu
+      ansible.builtin.shell: "{{ item }}"
       with_items:
         - sed -i 's/addresses\(.\) \[.*\]$/addresses\1 \[{{ dns_nameserver }}\]/' /etc/netplan/01-netcfg.yaml
       when: ansible_facts['distribution'] == "Ubuntu"
 
-    - name: disable swap
-      shell: "{{ item }}"
+    - name: Disable swap
+      ansible.builtin.shell: "{{ item }}"
       with_items:
         - for swp in `systemctl --type swap | awk '/\.swap/ { print $1 }'`; do systemctl stop "$swp"; systemctl mask "$swp"; done
         - swapoff --all
       when: ansible_swaptotal_mb > 0
 
-    - name: download public signing key Kubernetes
-      apt_key:
+    - name: Download public signing key Kubernetes
+      ansible.builtin.apt_key:
         url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
         state: present
       when: ansible_facts['distribution'] == "Ubuntu"
 
-    - name: adding apt repository for Kubernetes
-      apt_repository:
+    - name: Add apt repository for Kubernetes
+      ansible.builtin.apt_repository:
         repo: "deb https://apt.kubernetes.io/ kubernetes-xenial main"
         state: present
         filename: /etc/apt/sources.list.d/kubernetes.list
       when: ansible_facts['distribution'] == "Ubuntu"
 
-    - name: adding yum repository for Kubernetes
-      yum_repository:
+    - name: Add yum repository for Kubernetes
+      ansible.builtin.yum_repository:
         description: Kubernetes repository
         baseurl: "https://packages.cloud.google.com/yum/repos/kubernetes-el7-$basearch"
         gpgkey: "https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg"
@@ -69,8 +72,8 @@
         name: kubernetes
       when: ansible_facts['distribution'] == "Fedora"
 
-    - name: install common packages
-      package:
+    - name: Install common packages
+      ansible.builtin.package:
         name:
           - curl
           - runc
@@ -83,48 +86,48 @@
           - helm
         state: present
 
-    - name: install apt packages
-      apt:
+    - name: Install apt packages
+      ansible.builtin.apt:
         pkg:
           - apt-transport-https
           - ca-certificates
           - gnupg-agent
           - software-properties-common
         state: present
-        update_cache: yes
+        update_cache: true
       when: ansible_facts['distribution'] == "Ubuntu"
 
-    - name: install rpm packages
-      dnf:
+    - name: Install rpm packages
+      ansible.builtin.dnf:
         pkg:
-        - iproute-tc
-        - grubby
+          - iproute-tc
+          - grubby
         state: present
-        update_cache: yes
+        update_cache: true
       when: ansible_facts['distribution'] == "Fedora"
 
-    - name: disable SELinux
+    - name: Disable SELinux
       ansible.posix.selinux:
         state: disabled
       when: ansible_facts['distribution'] == "Fedora"
 
-    - name: remove the firewalld package
+    - name: Remove the firewalld package
       ansible.builtin.package:
         name: firewalld
         state: absent
       when: ansible_facts['distribution'] == "Fedora"
 
-    - name: install additional cri-o packages
-      dnf:
+    - name: Install additional cri-o packages
+      ansible.builtin.dnf:
         pkg:
-        - podman
-        - cri-o
+          - podman
+          - cri-o
         state: present
-        update_cache: yes
+        update_cache: true
       when: ansible_facts['distribution'] == "Fedora" and is_crio
 
-    - name: install python pip based apps
-      pip:
+    - name: Install python pip based apps
+      ansible.builtin.pip:
         name:
           - toml
           - tomli_w
@@ -135,12 +138,15 @@
       ansible.builtin.unarchive:
         src: "{{ containerd_tarball }}"
         dest: /usr/local
-        remote_src: yes
+        remote_src: true
       when: is_containerd and containerd_src == ""
 
     # Install containerd binaries from compiled sources.
     - name: Install containerd binaries from compiled sources
-      copy: src="{{ item }}" dest="/usr/local/bin" mode=0755
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "/usr/local/bin"
+        mode: '0755'
       with_items:
         - "{{ containerd_src }}/bin/ctr"
         - "{{ containerd_src }}/bin/containerd"
@@ -150,22 +156,26 @@
       when: is_containerd and containerd_src != ""
 
     # Install CRI-O from a release tarball to /usr/local.
-    - block:
-      - name: Fetch and extract CRI-O release tarball
-        ansible.builtin.unarchive:
-          src: "{{ crio_tarball }}"
-          dest: /usr/local
-          remote_src: yes
-
-      - name: Install CRI-O binaries from release tarball
-        ansible.builtin.shell:
-          cmd: ./install
-          chdir: /usr/local/cri-o
+    - name: Install CRI-O from release tarball
       when: is_crio and crio_src == ""
+      block:
+        - name: Fetch and extract CRI-O release tarball
+          ansible.builtin.unarchive:
+            src: "{{ crio_tarball }}"
+            dest: /usr/local
+            remote_src: true
+
+        - name: Install CRI-O binaries from release tarball
+          ansible.builtin.shell:
+            cmd: ./install
+            chdir: /usr/local/cri-o
 
     # Install CRI-O binaries from compiled sources.
     - name: Install CRI-O binaries from compiled sources
-      copy: src="{{ item }}" dest="/usr/local/bin" mode=0755
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "/usr/local/bin"
+        mode: '0755'
       with_items:
         - "{{ crio_src }}/bin/crio"
         - "{{ crio_src }}/bin/crio-status"
@@ -173,24 +183,27 @@
       when: is_crio and crio_src != ""
 
     - name: Install CRI-O systemd service file from compiled sources
-      copy: src="{{ item }}" dest="/lib/systemd/system/crio.service" mode=0644
-      with_items:
-        - "{{ crio_src }}/contrib/crio.service"
+      ansible.builtin.copy:
+        src: "{{ crio_src }}/contrib/crio.service"
+        dest: "/lib/systemd/system/crio.service"
+        mode: '0644'
       when: is_crio and crio_src != ""
 
-    - block:
-      - name: Remove CRI-O crun configuration
-        ansible.builtin.file:
-          state: absent
-          path: /etc/crio/crio.conf.d/10-crun.conf
-
-      - name: Make runc the default CRI-O runtime
-        ansible.builtin.copy:
-          dest: /etc/crio/crio.conf.d/10-runc.conf
-          content: |
-            [crio.runtime]
-            default_runtime = "runc"
+    - name: Configure runc as the default CRI-O runtime
       when: is_crio
+      block:
+        - name: Remove CRI-O crun configuration
+          ansible.builtin.file:
+            state: absent
+            path: /etc/crio/crio.conf.d/10-crun.conf
+
+        - name: Make runc the default CRI-O runtime
+          ansible.builtin.copy:
+            dest: /etc/crio/crio.conf.d/10-runc.conf
+            content: |
+              [crio.runtime]
+              default_runtime = "runc"
+            mode: '0644'
 
     - name: Install containerd systemd service file
       ansible.builtin.get_url:
@@ -201,30 +214,32 @@
         mode: '0644'
       when: is_containerd
 
-    - name: create service.d directory for the runtime
-      file:
+    - name: Create service.d directory for the runtime
+      ansible.builtin.file:
         path: "/etc/systemd/system/{{ cri_runtime }}.service.d"
         state: directory
+        mode: '0755'
 
-    - name: setting up proxies for the runtime
-      copy:
+    - name: Set up proxies for the runtime
+      ansible.builtin.copy:
         dest: "/etc/systemd/system/{{ cri_runtime }}.service.d/proxy.conf"
         content: |
           [Service]
           Environment=HTTP_PROXY="{{ http_proxy }}"
           Environment=HTTPS_PROXY="{{ https_proxy }}"
           Environment=NO_PROXY="{{ no_proxy }}"
+        mode: '0644'
 
     # First issue daemon-reload to pick up config changes
-    - name: start runtime
-      systemd:
+    - name: Start runtime
+      ansible.builtin.systemd:
         name: "{{ cri_runtime }}"
         daemon_reload: true
         state: started
         enabled: true
 
-    - name: copy containerd nri enable script
-      copy:
+    - name: Copy containerd nri enable script
+      ansible.builtin.copy:
         src: "{{ nri_resource_policy_src }}/test/e2e/files/containerd-nri-enable"
         dest: /usr/local/bin/containerd-nri-enable
         owner: root
@@ -232,38 +247,38 @@
         mode: '0755'
       when: is_containerd
 
-    - name: configure containerd
+    - name: Configure containerd
       when: is_containerd
-      shell: "{{ item }}"
+      ansible.builtin.command: "{{ item }}"
       with_items:
         - mkdir -p /etc/containerd
         - containerd config default > /etc/containerd/config.toml
         - sed -i 's/^.*disabled_plugins *= *.*$/disabled_plugins = []/' /etc/containerd/config.toml
         - sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
 
-    - name: setup nri
-      file:
+    - name: Setup NRI
+      ansible.builtin.file:
         path: "{{ item }}"
         state: directory
+        mode: '0755'
       with_items:
         - "/etc/nri/conf.d"
         - "/opt/nri/plugins"
 
-    - name: enable nri for containerd
-      shell: "{{ item }}"
-      with_items:
-        - /usr/local/bin/containerd-nri-enable
+    - name: Enable NRI for containerd
+      ansible.builtin.command:
+        cmd: /usr/local/bin/containerd-nri-enable
       when: is_containerd
 
-    - name: restart the containerd
-      systemd:
+    - name: Restart the containerd
+      ansible.builtin.systemd:
         state: restarted
         name: "{{ cri_runtime }}"
         daemon_reload: true
       when: is_containerd
 
-    - name: copy crio nri enable script
-      copy:
+    - name: Copy CRI-O NRI enable script
+      ansible.builtin.copy:
         src: "{{ nri_resource_policy_src }}/test/e2e/files/crio-nri-enable"
         dest: /usr/local/bin/crio-nri-enable
         owner: root
@@ -271,21 +286,20 @@
         mode: '0755'
       when: is_crio
 
-    - name: enable nri for crio
-      shell: "{{ item }}"
-      with_items:
-        - /usr/local/bin/crio-nri-enable
+    - name: Enable NRI for CRI-O
+      ansible.builtin.command:
+        cmd: /usr/local/bin/crio-nri-enable
       when: is_crio
 
-    - name: restart the cri-o
-      systemd:
+    - name: Restart CRI-O
+      ansible.builtin.systemd:
         state: restarted
         name: "{{ cri_runtime }}"
         daemon_reload: true
       when: is_crio
 
-    - name: remove swapfile from /etc/fstab
-      mount:
+    - name: Remove swapfile from /etc/fstab
+      ansible.posix.mount:
         name: "{{ item }}"
         fstype: swap
         state: absent
@@ -293,8 +307,8 @@
         - swap
         - none
 
-    - name: pre-flight requirements for k8s
-      shell: "{{ item }}"
+    - name: Fulfill pre-flight requirements for k8s
+      ansible.builtin.shell: "{{ item }}"
       with_items:
         - rm -f /etc/modules-load.d/k8s.conf
         - touch /etc/modules-load.d/k8s.conf
@@ -311,17 +325,18 @@
         - echo "net.ipv4.conf.*.rp_filter = 0" >> /etc/sysctl.d/k8s.conf
         - sysctl -p /etc/sysctl.d/k8s.conf || true
 
-    - name: restart kubelet
-      service:
+    - name: Restart kubelet
+      ansible.builtin.service:
         name: kubelet
-        daemon_reload: yes
+        daemon_reload: true
         state: restarted
 
-    - name: initialize the Kubernetes cluster using kubeadm
-      command: kubeadm init --pod-network-cidr="{{ network }}"
+    - name: Initialize the Kubernetes cluster using kubeadm
+      ansible.builtin.command:
+        cmd: kubeadm init --pod-network-cidr="{{ network }}"
 
-    - name: setup kubeconfig for vagrant user
-      command: "{{ item }}"
+    - name: Setup kubeconfig for vagrant user
+      ansible.builtin.command: "{{ item }}"
       with_items:
         - mkdir -p /home/vagrant/.kube
         - cp -i /etc/kubernetes/admin.conf /home/vagrant/.kube/config
@@ -329,9 +344,9 @@
         - mkdir -p /root/.kube
         - cp -i /etc/kubernetes/admin.conf /root/.kube/config
 
-    - name: install singlenode cluster
+    - name: Install single-node cluster
       become: false
-      shell: "{{ item }}"
+      ansible.builtin.shell: "{{ item }}"
       with_items:
         - kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true
         - kubectl taint nodes --all node-role.kubernetes.io/master- || true
@@ -361,27 +376,37 @@
             - cilium install --wait
             - cilium status --wait
 
-    - block:
-      - name: Copy CNI bridge plugin configuration
-        copy:
-          src: "{{ nri_resource_policy_src }}/test/e2e/files/10-bridge.conf.in"
-          dest: "/etc/cni/net.d/10-bridge.conf"
-          owner: root
-          group: root
-          mode: '0644'
-
-      - name: Update CNI bridge plugin configuration
-        become: yes
-        shell: "sed -i 's#CNI_NETWORK#{{ network }}#g' /etc/cni/net.d/10-bridge.conf"
+    - name: Configure bridge CNI plugin
       when: cni_plugin == "bridge"
+      block:
+        - name: Copy CNI bridge plugin configuration
+          ansible.builtin.copy:
+            src: "{{ nri_resource_policy_src }}/test/e2e/files/10-bridge.conf.in"
+            dest: "/etc/cni/net.d/10-bridge.conf"
+            owner: root
+            group: root
+            mode: '0644'
 
-    - name: generate join command
-      command: kubeadm token create --print-join-command
+        - name: Update CNI bridge plugin configuration
+          ansible.builtin.replace:
+            path: /etc/cni/net.d/10-bridge.conf
+            regexp: '(#CNI_NETWORK#)'
+            replace: "{{ network }}"
+
+    - name: Generate join command
+      ansible.builtin.command:
+        cmd: kubeadm token create --print-join-command
       register: join_command
 
-    - name: copy join command to local file
+    - name: Copy join command to local file
+      delegate_to: localhost
       become: false
-      local_action: copy content="{{ join_command.stdout_lines[0] }}" dest="{{ outdir }}/join-command"
+      ansible.builtin.copy:
+        content: "{{ join_command.stdout_lines[0] }}"
+        dest: "{{ outdir }}/join-command"
+        mode: '0644'
 
-    - name: enable kubelet to run always
-      command: systemctl enable --now kubelet
+    - name: Enable kubelet systemd service
+      ansible.builtin.systemd:
+        name: kubelet
+        enabled: true
