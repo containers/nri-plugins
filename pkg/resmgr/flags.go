@@ -38,11 +38,9 @@ type options struct {
 	ForceConfigSignal string
 	MetricsTimer      time.Duration
 	RebalanceTimer    time.Duration
-	DisableAgent      bool
 	NriPluginName     string
 	NriPluginIdx      string
 	NriSocket         string
-	EnableTestAPIs    bool
 }
 
 // ResourceManager command line options.
@@ -65,7 +63,4 @@ func init() {
 		"Interval for polling/gathering runtime metrics data. Use 'disable' for disabling.")
 	flag.StringVar(&opt.StateDir, "state-dir", "/var/lib/nri-resource-policy",
 		"Permanent storage directory path for the resource manager to store its state in.")
-	flag.BoolVar(&opt.EnableTestAPIs, "enable-test-apis", false, "Allow enabling various test APIs (currently only 'e2e-test' test controller).")
-	flag.BoolVar(&opt.DisableAgent, "disable-agent", false,
-		"Disable K8s cluster agent.")
 }

@@ -196,8 +196,8 @@ func (p *nriPlugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, con
 		return nil, err
 	}
 
-	if err := m.policy.Start(allocated, released); err != nil {
-		return nil, fmt.Errorf("failed to start policy %s: %w", m.policy.ActivePolicy(), err)
+	if err := m.policy.Sync(allocated, released); err != nil {
+		return nil, fmt.Errorf("failed to sync policy %s: %w", m.policy.ActivePolicy(), err)
 	}
 
 	m.updateTopologyZones()
