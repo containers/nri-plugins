@@ -16,14 +16,14 @@ package topologyaware
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	"k8s.io/apimachinery/pkg/api/resource"
-	resapi "k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/containers/nri-plugins/pkg/config"
+	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
@@ -34,7 +34,7 @@ import (
 )
 
 const (
-	// PolicyName is the name used to activate this policy implementation.
+	// PolicyName is the name of this policy.
 	PolicyName = "topology-aware"
 	// PolicyDescription is a short description of this policy.
 	PolicyDescription = "A policy for prototyping memory tiering."
@@ -54,6 +54,7 @@ type allocations struct {
 // policy is our runtime state for this policy.
 type policy struct {
 	options      *policyapi.BackendOptions // options we were created or reconfigured with
+	cfg          *cfgapi.Config
 	cache        cache.Cache               // pod/container cache
 	sys          system.System             // system/HW topology info
 	allowed      cpuset.CPUSet             // bounding set of CPUs we're allowed to use
@@ -70,6 +71,8 @@ type policy struct {
 	coldstartOff bool                      // coldstart forced off (have movable PMEM zones)
 }
 
+var opt = &cfgapi.Config{}
+
 // Make sure policy implements the policy.Backend interface.
 var _ policyapi.Backend = &policy{}
 
@@ -82,19 +85,29 @@ func New() policyapi.Backend {
 }
 
 // Setup initializes the topology-aware policy instance.
-func (p *policy) Setup(opts *policyapi.BackendOptions) {
+func (p *policy) Setup(opts *policyapi.BackendOptions) error {
+	cfg, ok := opts.Config.(*cfgapi.Config)
+	if !ok {
+		return policyError("failed initialize %s policy: config of wrong type %T",
+			PolicyName, opts.Config)
+	}
+	log.Infof("initial configuration: %+v", cfg)
+
+	p.cfg = cfg
 	p.cache = opts.Cache
 	p.sys = opts.System
 	p.options = opts
 	p.cpuAllocator = cpuallocator.NewCPUAllocator(opts.System)
 
+	opt = cfg
+
 	if err := p.initialize(); err != nil {
-		log.Fatal("failed to initialize %s policy: %v", PolicyName, err)
+		return policyError("failed to initialize %s policy: %w", PolicyName, err)
 	}
 
 	p.registerImplicitAffinities()
 
-	config.GetModule(policyapi.ConfigPath).AddNotify(p.configNotify)
+	return nil
 }
 
 // Name returns the name of this policy.
@@ -108,7 +121,7 @@ func (p *policy) Description() string {
 }
 
 // Start prepares this policy for accepting allocation/release requests.
-func (p *policy) Start(add []cache.Container, del []cache.Container) error {
+func (p *policy) Start() error {
 	if err := p.restoreCache(); err != nil {
 		return policyError("failed to start: %v", err)
 	}
@@ -121,7 +134,7 @@ func (p *policy) Start(add []cache.Container, del []cache.Container) error {
 
 	p.root.Dump("<post-start>")
 
-	return p.Sync(add, del)
+	return nil
 }
 
 // Sync synchronizes the state of this policy.
@@ -401,88 +414,41 @@ func (p *policy) reallocateResources(containers []cache.Container, pools map[str
 	return nil
 }
 
-func (p *policy) configNotify(event config.Event, source config.Source) error {
-	policyName := PolicyName
-	log.Info("%s configuration %s:", policyName, event)
-	log.Info("  - pin containers to CPUs: %v", opt.PinCPU)
-	log.Info("  - pin containers to memory: %v", opt.PinMemory)
-	log.Info("  - prefer isolated CPUs: %v", opt.PreferIsolated)
-	log.Info("  - prefer shared CPUs: %v", opt.PreferShared)
-	log.Info("  - reserved pool namespaces: %v", opt.ReservedPoolNamespaces)
-
-	var allowed, reserved cpuset.CPUSet
-	var reinit bool
-
-	if cpus, ok := p.options.Available[policyapi.DomainCPU]; ok {
-		if cset, ok := cpus.(cpuset.CPUSet); ok {
-			allowed = cset
-		}
-	}
-	if cpus, ok := p.options.Reserved[policyapi.DomainCPU]; ok {
-		switch v := cpus.(type) {
-		case cpuset.CPUSet:
-			reserved = v
-		case resapi.Quantity:
-			reserveCnt := (int(v.MilliValue()) + 999) / 1000
-			if reserveCnt != p.reserveCnt {
-				log.Warn("CPU reservation has changed (%v, was %v)",
-					reserveCnt, p.reserveCnt)
-				reinit = true
-			}
-		}
+func (p *policy) Reconfigure(newCfg interface{}) error {
+	cfg, ok := newCfg.(*cfgapi.Config)
+	if !ok {
+		return policyError("got config of wrong type %T", newCfg)
 	}
 
-	if !allowed.Equals(p.allowed) {
-		if !(allowed.Size() == 0 && p.allowed.Size() == 0) {
-			log.Warn("allowed cpuset changed (%s, was %s)",
-				p.allowed.String(), allowed.String())
-			reinit = true
-		}
-	}
-	if !reserved.Equals(p.reserved) {
-		if !(reserved.Size() == 0 && p.reserved.Size() == 0) {
-			log.Warn("reserved cpuset changed (%s, was %s)",
-				p.reserved.String(), reserved.String())
-			reinit = true
-		}
+	log.Infof("updated configuration: %+v", cfg)
+
+	savedPolicy := *p
+	allocations := savedPolicy.allocations.clone()
+
+	opt = cfg
+	p.cfg = cfg
+
+	if err := p.initialize(); err != nil {
+		*p = savedPolicy
+		return policyError("failed to reconfigure: %v", err)
 	}
 
-	//
-	// Notes:
-	//   If the allowed or reserved resources have changed, we need to
-	//   rebuild our pool hierarchy using the updated constraints and
-	//   also update the existing allocations accordingly. We do this
-	//   first reinitializing the policy then reloading the allocations
-	//   from the cache. If we fail, we restore the original state of
-	//   the policy and reject the new configuration.
-	//
-
-	if reinit {
-		log.Warn("reinitializing %s policy...", PolicyName)
-
-		savedPolicy := *p
-		allocations := savedPolicy.allocations.clone()
-
-		if err := p.initialize(); err != nil {
+	for _, grant := range allocations.grants {
+		if err := grant.RefetchNodes(); err != nil {
 			*p = savedPolicy
+			opt = p.cfg
 			return policyError("failed to reconfigure: %v", err)
 		}
-
-		for _, grant := range allocations.grants {
-			if err := grant.RefetchNodes(); err != nil {
-				*p = savedPolicy
-				return policyError("failed to reconfigure: %v", err)
-			}
-		}
-
-		log.Warn("updating existing allocations...")
-		if err := p.restoreAllocations(&allocations); err != nil {
-			*p = savedPolicy
-			return policyError("failed to reconfigure: %v", err)
-		}
-
-		p.root.Dump("<post-config>")
 	}
+
+	log.Warn("updating existing allocations...")
+	if err := p.restoreAllocations(&allocations); err != nil {
+		*p = savedPolicy
+		opt = p.cfg
+		return policyError("failed to reconfigure: %v", err)
+	}
+
+	p.root.Dump("<post-config>")
 
 	return nil
 }
@@ -509,23 +475,34 @@ func (p *policy) initialize() error {
 
 // Check the constraints passed to us.
 func (p *policy) checkConstraints() error {
-	if c, ok := p.options.Available[policyapi.DomainCPU]; ok {
-		p.allowed = c.(cpuset.CPUSet)
-	} else {
+	amount, kind := p.cfg.AvailableResources.Get(cfgapi.CPU)
+	switch kind {
+	case cfgapi.AmountCPUSet:
+		cset, err := amount.ParseCPUSet()
+		if err != nil {
+			return fmt.Errorf("failed to parse available CPU cpuset '%s': %w", amount, err)
+		}
+		p.allowed = cset
+	case cfgapi.AmountQuantity:
+		return fmt.Errorf("can't handle CPU resources given as resource.Quantity (%v)", amount)
+	case cfgapi.AmountAbsent:
 		// default to all online cpus
 		p.allowed = p.sys.CPUSet().Difference(p.sys.Offlined())
 	}
 
 	p.isolated = p.sys.Isolated().Intersection(p.allowed)
 
-	c, ok := p.options.Reserved[policyapi.DomainCPU]
-	if !ok {
+	amount, kind = p.cfg.ReservedResources.Get(cfgapi.CPU)
+	switch kind {
+	case cfgapi.AmountAbsent:
 		return policyError("cannot start without CPU reservation")
-	}
 
-	switch c.(type) {
-	case cpuset.CPUSet:
-		p.reserved = c.(cpuset.CPUSet)
+	case cfgapi.AmountCPUSet:
+		cset, err := amount.ParseCPUSet()
+		if err != nil {
+			return fmt.Errorf("failed to parse reserved CPU cpuset '%s': %w", amount, err)
+		}
+		p.reserved = cset
 		// check that all reserved CPUs are in the allowed set
 		if !p.reserved.Difference(p.allowed).IsEmpty() {
 			return policyError("invalid reserved cpuset %s, some CPUs (%s) are not "+
@@ -538,8 +515,12 @@ func (p *policy) checkConstraints() error {
 				p.reserved.Intersection(p.isolated))
 		}
 
-	case resapi.Quantity:
-		qty := c.(resapi.Quantity)
+	case cfgapi.AmountQuantity:
+		qty, err := amount.ParseQuantity()
+		if err != nil {
+			return fmt.Errorf("failed to parse reserved CPU quantity '%s': %w", amount, err)
+		}
+
 		p.reserveCnt = (int(qty.MilliValue()) + 999) / 1000
 		// Use CpuAllocator to pick reserved CPUs among
 		// allowed ones. Because using those CPUs is allowed,

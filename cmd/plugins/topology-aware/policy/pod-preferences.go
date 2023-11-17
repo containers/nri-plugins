@@ -27,7 +27,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/containers/nri-plugins/pkg/config"
 	"github.com/containers/nri-plugins/pkg/kubernetes"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 )
@@ -194,13 +193,13 @@ func coldStartPreference(pod cache.Pod, container cache.Container) (ColdStartPre
 			value, err)
 	}
 
-	if preference.Duration < 0 || time.Duration(preference.Duration) > time.Hour {
+	if preference.Duration.Duration < 0 || time.Duration(preference.Duration.Duration) > time.Hour {
 		return ColdStartPreference{}, policyError("cold start duration %s out of range",
 			preference.Duration.String())
 	}
 
 	log.Debug("%s: effective cold start preference %v",
-		container.PrettyName(), preference.Duration.String())
+		container.PrettyName(), preference.Duration.Duration.String())
 
 	return preference, nil
 }
@@ -286,7 +285,7 @@ func podSharedCPUPreference(pod cache.Pod, container cache.Container) (bool, boo
 // greater than 0, cold start is enabled and the DRAM controller is added to the container
 // after the duration has passed.
 type ColdStartPreference struct {
-	Duration config.Duration // `json:"duration,omitempty"`
+	Duration metav1.Duration // `json:"duration,omitempty"`
 }
 
 // podColdStartPreference figures out if the container memory should be first allocated from PMEM.
@@ -316,9 +315,9 @@ func podColdStartPreference(pod cache.Pod, container cache.Container) (ColdStart
 		return ColdStartPreference{}, nil
 	}
 
-	if preference.Duration < 0 || time.Duration(preference.Duration) > time.Hour {
+	if preference.Duration.Duration < 0 || time.Duration(preference.Duration.Duration) > time.Hour {
 		// Duration can't be negative. We also reject durations which are longer than one hour.
-		return ColdStartPreference{}, fmt.Errorf("failed to validate cold start timeout %s: value out of scope", preference.Duration.String())
+		return ColdStartPreference{}, fmt.Errorf("failed to validate cold start timeout %s: value out of scope", preference.Duration.Duration.String())
 	}
 
 	return preference, nil
