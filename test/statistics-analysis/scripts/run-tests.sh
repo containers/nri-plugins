@@ -67,27 +67,27 @@ check_prereqs() {
     exit 1
 }
 
-resolve_deployment() {
+resolve_helm_chart() {
     local name=$1
-    local deployment="${!name}"
+    local chart="${!name}"
 
     if [ "$name" == "baseline" ]; then
 	return 0
     fi
-    if [ -z "$deployment" ] || [ -f "$deployment" ]; then
+    if [ -z "$chart" -o -d "$chart" ]; then
 	return 0
     fi
 
-    case $deployment in
+    case $chart in
 	1|yes)
-	    deployment="$BASE_DIR/../../build/images/nri-resource-policy-${name//_/-}-deployment.yaml"
-	    if [ -f "$deployment" ]; then
-		eval "$name=$deployment"
+	    chart="$BASE_DIR/../../deployment/helm/${name//_/-}"
+	    if [ -d "$chart" ]; then
+		eval "$name=$chart"
 		return 0
 	    fi
     esac
 
-    echo 2>&1 "$name deployment file \"$deployment\" not found"
+    echo 2>&1 "$name helm chart \"$chart\" not found"
     exit 1
 }
 
@@ -119,7 +119,7 @@ run_test() {
 
 cleanup_resource_policy() {
     # Remove all deployments of nri-plugins
-    kubectl -n kube-system delete ds nri-resource-policy
+    helm uninstall -n kube-system test-plugin
 }
 
 cleanup_all() {
@@ -145,8 +145,8 @@ echo "***********"
 baseline="${baseline:-true}"
 
 if [ -z "$topology_aware" -o -z "$template" -o -z "$balloons" ]; then
-    echo "Cannot find topology-aware, balloons or template deployment yaml file. Set it before for example like this:"
-    echo "topology_aware=<dir>/nri-resource-policy-topology-aware-deployment.yaml balloons=<dir>/nri-resource-policy-balloons-deployment.yaml template=<dir>/nri-resource-policy-template-deployment.yaml ./scripts/run-tests.sh"
+    echo "Cannot find topology-aware, balloons or template helm charts. Set it before for example like this:"
+    echo "topology_aware=<helm dir>/topology-aware topology_aware_overrides=<helm overrides for topology-aware plugin> balloons=<helm dir>/balloons balloons_overrides=<helm overrides for balloons plugin> template=<helm dir>/template template_overrides=<helm overrides for template plugin> ./scripts/run-tests.sh"
     echo
     echo "Using only partial resource policy deployments in the test:"
 else
@@ -155,8 +155,11 @@ fi
 
 echo "baseline       : ${baseline:-skipped}"
 echo "topology_aware : ${topology_aware:-skipped}"
+echo "  - overrides  : ${topology_aware_overrides:-none}"
 echo "balloons       : ${balloons:-skipped}"
+echo "  - overrides  : ${balloons_overrides:-none}"
 echo "template       : ${template:-skipped}"
+echo "  - overrides  : ${template_overrides:-none}"
 
 cleanup_all
 
@@ -165,7 +168,7 @@ check_prereqs $PREREQUISITES
 plot_graphs --test-imports
 
 for test in baseline template topology_aware balloons; do
-    resolve_deployment $test
+    resolve_helm_chart $test
     if [ -n "${!test}" ]; then
 	echo "$test: ${!test}"
     fi
@@ -196,7 +199,7 @@ do
             fi
             jaeger_labels="$jaeger_labels${sep}template-jaeger"; sep=","
             prometheus_labels="template-prometheus"; sep=","
-            kubectl apply -f "$template"
+            helm install -n kube-system test-plugin "$template" $template_overrides
             ;;
         topology_aware)
             if [ -z "$topology_aware" ]; then
@@ -204,7 +207,7 @@ do
             fi
             jaeger_labels="$jaeger_labels${sep}topology_aware-jaeger"; sep=","
             prometheus_labels="$prometheus_labels${sep}topology_aware-prometheus"; sep=","
-            kubectl apply -f "$topology_aware"
+            helm install -n kube-system test-plugin "$topology_aware" $topology_aware_overrides
             ;;
         balloons)
             if [ -z "$balloons" ]; then
@@ -212,7 +215,7 @@ do
             fi
             jaeger_labels="$jaeger_labels${sep}balloons-jaeger"; sep=","
             prometheus_labels="$prometheus_labels${sep}balloons-prometheus"; sep=","
-            kubectl apply -f "$balloons"
+            helm install -n kube-system test-plugin "$balloons" $balloons_overrides
             ;;
     esac
 

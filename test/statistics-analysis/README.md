@@ -20,7 +20,7 @@ pip3 install -r requirements.txt
 3. Run the script, for example:
 
 ```console
-template=~/nri-plugins/build/images/nri-resource-policy-template-deployment.yaml topology_aware=~/nri-plugins/build/images/nri-resource-policy-topology-aware-deployment.yaml balloons=~/nri-plugins/build/images/nri-resource-policy-balloons-deployment.yaml ./scripts/run-tests.sh
+template=~/nri-plugins/deployment/helm/template topology_aware=~/nri-plugins/deployment/helm/topology-aware topology_aware_overrides="--set image.name=localhost/nri-resource-policy-topology-aware --set image.tag=v0.4.0" balloons=~/nri-plugins/deployment/helm/balloons balloons_overrides="--set image.name=localhost/nri-resource-policy-balloons --set image.tag=v0.4.0"./scripts/run-tests.sh
 ```
 
 4. Generate graphs with `plot-graphs.py`. If you use labels `baseline`, `template`, `topology-aware`, and `balloons` you can use the `post-run.sh` script.
