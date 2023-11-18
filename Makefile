@@ -434,3 +434,11 @@ site-serve: .$(DOCKER_SITE_BUILDER_IMAGE).image.stamp
 	touch $@
 
 docs: site-build
+
+#
+# rules for enabling project-specific git hooks
+#
+
+install-git-hooks:
+	$(Q)echo "Enabling in-tree git hook..."
+	git config core.hookspath .githooks
