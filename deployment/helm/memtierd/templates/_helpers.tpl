@@ -1,16 +1,16 @@
 {{/*
 Common labels
 */}}
-{{- define "memtierd.labels" -}}
+{{- define "nri-plugin.labels" -}}
 helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
-{{ include "memtierd.selectorLabels" . }}
+{{ include "nri-plugin.selectorLabels" . }}
 {{- end -}}
 
 {{/*
 Selector labels
 */}}
-{{- define "memtierd.selectorLabels" -}}
+{{- define "nri-plugin.selectorLabels" -}}
 app.kubernetes.io/name: nri-memtierd
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}

@@ -1,16 +1,16 @@
 {{/*
 Common labels
 */}}
-{{- define "sgx-epc.labels" -}}
+{{- define "nri-plugin.labels" -}}
 helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
-{{ include "sgx-epc.selectorLabels" . }}
+{{ include "nri-plugin.selectorLabels" . }}
 {{- end -}}
 
 {{/*
 Selector labels
 */}}
-{{- define "sgx-epc.selectorLabels" -}}
+{{- define "nri-plugin.selectorLabels" -}}
 app.kubernetes.io/name: nri-sgx-epc
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}

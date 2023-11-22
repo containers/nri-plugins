@@ -1,16 +1,16 @@
 {{/*
 Common labels
 */}}
-{{- define "memory-qos.labels" -}}
+{{- define "nri-plugin.labels" -}}
 helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
-{{ include "memory-qos.selectorLabels" . }}
+{{ include "nri-plugin.selectorLabels" . }}
 {{- end -}}
 
 {{/*
 Selector labels
 */}}
-{{- define "memory-qos.selectorLabels" -}}
+{{- define "nri-plugin.selectorLabels" -}}
 app.kubernetes.io/name: nri-memory-qos
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
