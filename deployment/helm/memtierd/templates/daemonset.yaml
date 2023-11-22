@@ -2,17 +2,17 @@ apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   labels:
-    {{- include "memtierd.labels" . | nindent 4 }}
+    {{- include "nri-plugin.labels" . | nindent 4 }}
   name: nri-memtierd
   namespace: {{ .Release.Namespace }}
 spec:
   selector:
     matchLabels:
-    {{- include "memtierd.selectorLabels" . | nindent 6 }}
+    {{- include "nri-plugin.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-      {{- include "memtierd.labels" . | nindent 8 }}
+      {{- include "nri-plugin.labels" . | nindent 8 }}
     spec:
     {{- with .Values.tolerations }}
       tolerations:

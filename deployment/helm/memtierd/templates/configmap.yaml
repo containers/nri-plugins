@@ -4,7 +4,7 @@ metadata:
   name: nri-memtierd-config.default
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "memtierd.labels" . | nindent 4 }}
+    {{- include "nri-plugin.labels" . | nindent 4 }}
 data:
   config.yaml: |
     classes:

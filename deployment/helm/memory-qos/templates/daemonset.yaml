@@ -2,17 +2,17 @@ apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   labels:
-    {{- include "memory-qos.labels" . | nindent 4 }}
+    {{- include "nri-plugin.labels" . | nindent 4 }}
   name: nri-memory-qos
   namespace: {{ .Release.Namespace }}
 spec:
   selector:
     matchLabels:
-    {{- include "memory-qos.selectorLabels" . | nindent 6 }}
+    {{- include "nri-plugin.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-      {{- include "memory-qos.labels" . | nindent 8 }}
+      {{- include "nri-plugin.labels" . | nindent 8 }}
     spec:
     {{- with .Values.tolerations }}
       tolerations:
