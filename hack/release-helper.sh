@@ -27,13 +27,6 @@ if ! [[ $version =~ ^v[0-9]+\.[0-9]+\..+$ ]]; then
     exit 1
 fi
 
-# Patch Kustomize
-echo "Patching kustomize files"
-find deployment/base deployment/overlays -name '*.yaml' | xargs -I '{}' \
-    sed -E -e s",newTag:.+$,newTag: $version," \
-           -e s",imagePullPolicy:.+$,imagePullPolicy: IfNotPresent," \
-           -i '{}'
-
 # Patch Helm charts
 echo "Patching Helm charts"
 find deployment/helm -name Chart.yaml | xargs -I '{}' \
