@@ -114,25 +114,11 @@ The `topology-aware` policy has the following features:
 - cold start
   - pin workload exclusively to PMEM for an initial warm-up period
 
-## Activating the Policy
-
-You can activate the `topology-aware` policy by using the following configuration
-fragment in the configuration for `nri-resource-policy-topology-aware`:
-
-```yaml
-policy:
-  Active: topology-aware
-  ReservedResources:
-    CPU: 750m
-```
-
 ## Configuring the Policy
 
 The policy has a number of configuration options which affect its default
-behavior. These options can be supplied as part of the
-[dynamic configuration](../setup.md#dynamic-configuration-with-configmaps)
-or in a fallback or forced configuration file. These configuration options
-are
+behavior. These options can be supplied as part of the effective
+[dynamic configuration][configuration] custom resource.
 
 - `PinCPU`
   - whether to pin workloads to assigned pool CPU sets
@@ -380,10 +366,7 @@ allocated to reserved CPU class.
 For example:
 
 ```yaml
-policy:
-  Active: topology-aware
-  topology-aware:
-    ReservedPoolNamespaces: ["my-pool","reserved-*"]
+  ReservedPoolNamespaces: ["my-pool","reserved-*"]
 ```
 
 In this setup, all the workloads in `my-pool` namespace and those namespaces
@@ -731,3 +714,6 @@ metadata:
           - container2
           - container3
 ```
+
+<!-- Links -->
+[configuration]: ../configuration.md

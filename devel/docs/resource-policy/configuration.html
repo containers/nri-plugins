@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dynamic Configuration &mdash; NRI Plugins v0.1.0-146-gbe77baf documentation</title>
+  <title>Dynamic Configuration &mdash; NRI Plugins v0.1.0-176-gf75d68b documentation</title>
       <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -90,27 +90,25 @@
              
   <section id="dynamic-configuration">
 <h1>Dynamic Configuration<a class="headerlink" href="#dynamic-configuration" title="Permalink to this heading"></a></h1>
-<p>NRI Resource Policy plugin can be configured dynamically using ConfigMaps.</p>
-<p>The plugin daemon monitors two ConfigMaps for the node, a primary node-specific one
-and a secondary group-specific or default one, depending on whether the node
-belongs to a configuration group. The node-specific ConfigMap always takes
+<p>NRI Resource Policy plugin can be configured dynamically using plugin-specific
+custom resources.</p>
+<p>The plugin daemon monitors two custom resources the node, a primary node-specific
+one and a secondary group-specific or default one, depending on whether the node
+belongs to a configuration group. The node-specific custom resource always takes
 precedence over the others.</p>
-<p>The names of these ConfigMaps are</p>
+<p>The names of these custom resources are</p>
 <ol class="arabic simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">nri-resource-policy-config.node.$NODE_NAME</span></code>: primary, node-specific configuration</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">nri-resource-policy-config.group.$GROUP_NAME</span></code>: secondary group-specific node
-configuration</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">nri-resource-policy-config.default</span></code>: secondary: secondary default node
-configuration</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">node.$NODE_NAME</span></code>: primary, node-specific configuration</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">group.$GROUP_NAME</span></code>: secondary group-specific node configuration</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">default</span></code>: secondary: secondary default node configuration</p></li>
 </ol>
 <p>You can assign a node to a configuration group by setting the
-<code class="docutils literal notranslate"><span class="pre">resource-policy.nri.io/group</span></code> label on the node to the name of
-the configuration group. You can remove a node from its group by deleting
-the node group label.</p>
-<p>There is a
-<a class="reference download internal" download="" href="../../_downloads/36c67ade35a837c924f87e006130752d/nri-resource-policy-configmap.example.yaml"><span class="xref download myst">sample ConfigMap spec</span></a>
-that contains a node-specific, a group-specific, and a default ConfigMap
-example. See <a class="reference internal" href="policy/index.html"><span class="std std-doc">any available policy-specific documentation</span></a>
+<code class="docutils literal notranslate"><span class="pre">group.config.nri</span></code> label on the node to the name of the configuration
+group. You can remove a node from its group by deleting the node group
+label.</p>
+<p>There are <a class="reference external" href="https://github.com/containers/nri-plugins/tree/f75d68baa0403674e27ff4e8eea0869f59dee092/sample-configs/">sample configuration</a> custom resources that
+contain contains a node-specific, a group-specific, and a default configuration.
+See <a class="reference internal" href="policy/index.html"><span class="std std-doc">any available policy-specific documentation</span></a>
 for more information on the policy configurations.</p>
 </section>
 

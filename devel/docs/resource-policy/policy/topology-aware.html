@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.1.0-146-gbe77baf documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.1.0-176-gf75d68b documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -58,7 +58,6 @@
 <li class="toctree-l4"><a class="reference internal" href="#background">Background</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#overview">Overview</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#features">Features</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#activating-the-policy">Activating the Policy</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#configuring-the-policy">Configuring the Policy</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#policy-cpu-allocation-preferences">Policy CPU Allocation Preferences</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#container-cpu-allocation-preference-annotations">Container CPU Allocation Preference Annotations</a></li>
@@ -71,6 +70,7 @@
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="balloons.html">Balloons Policy</a></li>
+<li class="toctree-l3"><a class="reference internal" href="template.html">Template Policy</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="../developers-guide/index.html">Developer’s Guide</a></li>
@@ -249,24 +249,11 @@ speed memory, typically found on some special-purpose computing systems</p></li>
 </li>
 </ul>
 </section>
-<section id="activating-the-policy">
-<h2>Activating the Policy<a class="headerlink" href="#activating-the-policy" title="Permalink to this heading"></a></h2>
-<p>You can activate the <code class="docutils literal notranslate"><span class="pre">topology-aware</span></code> policy by using the following configuration
-fragment in the configuration for <code class="docutils literal notranslate"><span class="pre">nri-resource-policy-topology-aware</span></code>:</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">policy</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">Active</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">topology-aware</span>
-<span class="w">  </span><span class="nt">ReservedResources</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">CPU</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">750m</span>
-</pre></div>
-</div>
-</section>
 <section id="configuring-the-policy">
 <h2>Configuring the Policy<a class="headerlink" href="#configuring-the-policy" title="Permalink to this heading"></a></h2>
 <p>The policy has a number of configuration options which affect its default
-behavior. These options can be supplied as part of the
-<a class="reference internal" href="../setup.html#dynamic-configuration-with-configmaps"><span class="std std-ref">dynamic configuration</span></a>
-or in a fallback or forced configuration file. These configuration options
-are</p>
+behavior. These options can be supplied as part of the effective
+<a class="reference internal" href="../configuration.html"><span class="std std-doc">dynamic configuration</span></a> custom resource.</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">PinCPU</span></code></p>
 <ul>
@@ -551,10 +538,7 @@ configuration option in the policy section.
 The <code class="docutils literal notranslate"><span class="pre">ReservedPoolNamespaces</span></code> option is a list of namespace globs that will be
 allocated to reserved CPU class.</p>
 <p>For example:</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">policy</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">Active</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">topology-aware</span>
-<span class="w">  </span><span class="nt">topology-aware</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">ReservedPoolNamespaces</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;my-pool&quot;</span><span class="p p-Indicator">,</span><span class="s">&quot;reserved-*&quot;</span><span class="p p-Indicator">]</span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="w">  </span><span class="nt">ReservedPoolNamespaces</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;my-pool&quot;</span><span class="p p-Indicator">,</span><span class="s">&quot;reserved-*&quot;</span><span class="p p-Indicator">]</span>
 </pre></div>
 </div>
 <p>In this setup, all the workloads in <code class="docutils literal notranslate"><span class="pre">my-pool</span></code> namespace and those namespaces
@@ -893,6 +877,7 @@ one needs to give just the names of the containers, like in the example below.</
 <span class="w">          </span><span class="no">- container3</span>
 </pre></div>
 </div>
+<!-- Links -->
 </section>
 </section>
 </section>

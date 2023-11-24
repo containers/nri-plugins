@@ -25,7 +25,7 @@ configuration of the resource assignment algorithm for the policy.
 
 Although NRI-RP can be configured using a static configuration file,
 the preferred way to configure all NRI-RP instances in a cluster is to use
-Kubernetes CRDs and ConfigMaps.
+Kubernetes custom resources.
 
 <p align="center">
 <!-- # It's a pity the markdown ![]()-syntax does not support aligning... -->

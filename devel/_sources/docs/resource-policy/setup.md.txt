@@ -4,56 +4,42 @@ When you want to try NRI Resource Policy, here is the list of things
 you need to do, assuming you already have a Kubernetes\* cluster up and
 running, using either `containerd` or `cri-o` as the runtime.
 
-* [Deploy](../deployment/index.md) NRI Resource Policy DaemonSet deployment file.
+* [Deploy](../deployment/index.md) NRI Resource Policy Helm Charts.
 * Runtime (containerd / cri-o) configuration
 
-For NRI Resource Policy, you need to provide a configuration file. The default
-configuration ConfigMap file can be found in the DaemonSet deployment yaml file.
-You can edit it as needed.
+Resource Policy plugins are configured using plugin-specific custom
+resources. The Helm charts for each policy contain a default configuration.
+This configuration can be overridden using extra helm options.
 
 **NOTE**: Currently, the available policies are a work in progress.
 
 ## Setting up NRI Resource Policy
 
-### Dynamic configuration with ConfigMaps
+### Dynamic Configuration with Custom Resources
 
 The resource policies plugins support[dynamic configuration][configuration]
-using ConfigMaps. Plugins watch changes in the ConfigMap and reconfigure
-themselves on any update.  Tt is possible to provide an initial fallback for
-configuration using the `--fallback-config <config-file>` flag. This file is
-used before the very first configuration is successfully acquired from the
-ConfigMap.
+using custom resources. Plugins watch changes in their configuration and
+reconfigure themselves on any update.
 
-Dynamic configuration can be disabled with a static local configuration using
-the `--force-config <config-file>` flag.  See the [Node Agent][agent] about
-how to set up and configure the agent.
+Cluster-based dynamic configuration is disabled if a local configuration
+file is supplied using the `--config-file <config-file>` command line option.
 
 ## Logging and debugging
 
-You can control logging with the klog command line options or by setting the
-corresponding environment variables. You can get the name of the environment
-variable for a command line option by prepending the `LOGGER_` prefix to the
-capitalized option name without any leading dashes. For instance, setting the
-environment variable `LOGGER_SKIP_HEADERS=true` has the same effect as using
-the `-skip_headers` command line option.
+You can control logging with the klog options in the configuration or by
+setting corresponding environment variables. You can get the name of the
+environment variable for a klog option by prepending the `LOGGER_` prefix
+to the capitalized option name without any leading dashes. For instance,
+setting the environment variable `LOGGER_SKIP_HEADERS=true` has the same
+effect as setting the log.klog.Skip_headers` config option
 
 Additionally, the `LOGGER_DEBUG` environment variable controls debug logs.
 These are globally disabled by default. You can turn on full debugging by
 setting `LOGGER_DEBUG='*'`.
 
-When using environment variables, be careful which configuration you pass to
-NRI Resource Policy using a file or ConfigMap. The environment is treated
-as default configuration but a file or a ConfigMap has higher precedence.
-If something is configured in both, the environment will only be in effect
-until the configuration is applied. However, in such a case if you later
-push an updated configuration to NRI Resource Policy with the overlapping
-settings removed, the original ones from the environment will be in effect
-again.
-
-For debug logs, the settings from the configuration are applied in addition
-to any settings in the environment. That said, if you turn something on in
-the environment but off in the configuration, it will be turned off
-eventually.
+When using environment variables, once configuration from a custom resource
+or a configuration file is taken into use, it suppresses the settings from
+the environment.
 
 <!-- Links -->
 [configuration]: configuration.md
