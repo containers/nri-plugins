@@ -31,8 +31,6 @@ const (
 	PolicyName = "template"
 	// PolicyDescription is a short description of this policy.
 	PolicyDescription = ""
-	// PolicyPath is the path of this policy in the configuration hierarchy.
-	PolicyPath = "policy." + PolicyName
 )
 
 // policy is our runtime state for this policy.
