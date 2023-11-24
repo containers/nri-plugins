@@ -38,8 +38,7 @@ const (
 	PolicyName = "balloons"
 	// PolicyDescription is a short description of this policy.
 	PolicyDescription = "Flexible pools with per-pool CPU parameters"
-	// PolicyPath is the path of this policy in the configuration hierarchy.
-	PolicyPath = "policy." + PolicyName
+
 	// balloonKey is a pod annotation key, the value is a pod balloon name.
 	balloonKey = "balloon." + PolicyName + "." + kubernetes.ResmgrKeyNamespace
 	// reservedBalloonDefName is the name in the reserved balloon definition.

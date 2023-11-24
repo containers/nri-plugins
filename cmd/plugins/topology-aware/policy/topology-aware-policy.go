@@ -38,8 +38,6 @@ const (
 	PolicyName = "topology-aware"
 	// PolicyDescription is a short description of this policy.
 	PolicyDescription = "A policy for prototyping memory tiering."
-	// PolicyPath is the path of this policy in the configuration hierarchy.
-	PolicyPath = "policy." + PolicyName
 
 	// ColdStartDone is the event generated for the end of a container cold start period.
 	ColdStartDone = "cold-start-done"
