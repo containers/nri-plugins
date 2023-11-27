@@ -67,7 +67,11 @@ type cpuTreeAllocatorOptions struct {
 	// the opposite (packed allocations).
 	topologyBalancing           bool
 	preferSpreadOnPhysicalCores bool
+	preferCloseToDevices        []string
+	preferFarFromDevices        []string
 }
+
+var emptyCpuSet = cpuset.New()
 
 // String returns string representation of a CPU tree node.
 func (t *cpuTreeNode) String() string {

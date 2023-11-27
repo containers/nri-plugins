@@ -568,10 +568,12 @@ func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, erro
 	// are type specific allocator options, otherwise use policy
 	// default allocator.
 	cpuTreeAllocator := p.cpuTreeAllocator
-	if blnDef.AllocatorTopologyBalancing != nil || blnDef.PreferSpreadOnPhysicalCores != nil {
+	if blnDef.AllocatorTopologyBalancing != nil || blnDef.PreferSpreadOnPhysicalCores != nil || len(blnDef.PreferCloseToDevices) > 0 || len(blnDef.PreferFarFromDevices) > 0 {
 		allocatorOptions := cpuTreeAllocatorOptions{
 			topologyBalancing:           p.bpoptions.AllocatorTopologyBalancing,
 			preferSpreadOnPhysicalCores: p.bpoptions.PreferSpreadOnPhysicalCores,
+			preferCloseToDevices:        blnDef.PreferCloseToDevices,
+			preferFarFromDevices:        blnDef.PreferFarFromDevices,
 		}
 		if blnDef.AllocatorTopologyBalancing != nil {
 			allocatorOptions.topologyBalancing = *blnDef.AllocatorTopologyBalancing
@@ -1091,6 +1093,8 @@ func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
 	p.balloons = []*Balloon{}
 	p.freeCpus = p.allowed.Clone()
 	p.freeCpus = p.freeCpus.Difference(p.reserved)
+	p.fillFarFromDevices(bpoptions.BalloonDefs)
+
 	p.cpuTreeAllocator = p.cpuTree.NewAllocator(cpuTreeAllocatorOptions{
 		topologyBalancing:           bpoptions.AllocatorTopologyBalancing,
 		preferSpreadOnPhysicalCores: bpoptions.PreferSpreadOnPhysicalCores,
@@ -1144,6 +1148,39 @@ func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
 		p.useCpuClass(bln)
 	}
 	return nil
+}
+
+// fillFarFromDevices adds BalloonDefs implicit device anti-affinities
+// towards devices that other BalloonDefs prefer to be close to.
+func (p *balloons) fillFarFromDevices(blnDefs []*BalloonDef) {
+	// devDefClose[device][blnDef.Name] equals true if and
+	// only if the blnDef prefers to be close to the device.
+	devDefClose := map[string]map[string]bool{}
+	// avoidDevs is a list of devices for which at least one
+	// balloon type prefers to be close to. The order of devices
+	// in the avoidDevs list is significant: devices in the
+	// beginning of the list will be more effectively avoided than
+	// devices later in the list.
+	avoidDevs := []string{}
+	for _, blnDef := range blnDefs {
+		for _, closeDev := range blnDef.PreferCloseToDevices {
+			if _, ok := devDefClose[closeDev]; !ok {
+				avoidDevs = append(avoidDevs, closeDev)
+				devDefClose[closeDev] = map[string]bool{}
+			}
+			devDefClose[closeDev][blnDef.Name] = true
+		}
+	}
+	// Add every device in avoidDev to PreferFarFromDevices lists
+	// of those balloon types that do not prefer to be close to
+	// the device.
+	for _, avoidDev := range avoidDevs {
+		for _, blnDef := range blnDefs {
+			if !devDefClose[avoidDev][blnDef.Name] {
+				blnDef.PreferFarFromDevices = append(blnDef.PreferFarFromDevices, avoidDev)
+			}
+		}
+	}
 }
 
 // closestMems returns memory node IDs good for pinning containers
