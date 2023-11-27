@@ -157,9 +157,10 @@ func getTopologyHint(sysFSPath string) (*Hint, error) {
 // depended devices (e.g. RAID).
 func NewTopologyHints(devPath string) (hints Hints, err error) {
 	hints = make(Hints)
-	realDevPath, err := filepath.EvalSymlinks(devPath)
+	hostDevPath := filepath.Join(sysRoot, devPath)
+	realDevPath, err := filepath.EvalSymlinks(hostDevPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed get realpath for %s: %w", devPath, err)
+		return nil, fmt.Errorf("failed to get realpath for %s: %w", hostDevPath, err)
 	}
 	for p := realDevPath; strings.HasPrefix(p, sysRoot+"/sys/devices/"); p = filepath.Dir(p) {
 		hint, err := getTopologyHint(p)
@@ -278,12 +279,12 @@ func FindGivenSysFsDevice(devType string, major, minor int64) (string, error) {
 }
 
 func findSysFsDevice(devType string, major, minor int64) (string, error) {
-	devPath := fmt.Sprintf("/sys/dev/%s/%d:%d", devType, major, minor)
+	devPath := fmt.Sprintf("%s/sys/dev/%s/%d:%d", sysRoot, devType, major, minor)
 	realDevPath, err := filepath.EvalSymlinks(devPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to get realpath for %s: %w", devPath, err)
 	}
-	return filepath.Join(sysRoot, realDevPath), nil
+	return realDevPath, nil
 }
 
 // readFilesInDirectory small helper to fill struct with content from sysfs entry.
