@@ -110,6 +110,15 @@ func newCpuTreeFromInt5(pdnct [5]int) (*cpuTreeNode, cpusInTopology) {
 	return sysTree, csit
 }
 
+func verifyOn(t *testing.T, nameContents string, cpus cpuset.CPUSet, csit cpusInTopology) {
+	for _, cpuID := range cpus.List() {
+		name := csit[cpuID].threadName
+		if !strings.Contains(name, nameContents) {
+			t.Errorf("cpu%d (%s) not in expected region %s", cpuID, name, nameContents)
+		}
+	}
+}
+
 func verifyNotOn(t *testing.T, nameContents string, cpus cpuset.CPUSet, csit cpusInTopology) {
 	for _, cpuID := range cpus.List() {
 		name := csit[cpuID].threadName
@@ -230,9 +239,11 @@ func TestResizeCpus(t *testing.T) {
 	}
 	tcases := []struct {
 		name                   string
-		topology               [5]int // package, die, numa, core, thread count
-		allocatorTB            bool   // allocator topologyBalancing
-		allocatorPSoPC         bool   // allocator preferSpreadOnPhysicalCores
+		topology               [5]int   // package, die, numa, core, thread count
+		allocatorTB            bool     // allocator topologyBalancing
+		allocatorPSoPC         bool     // allocator preferSpreadOnPhysicalCores
+		allocatorPCtD          []string // allocator preferCloseToDevices
+		allocatorPFfD          []string // allocator preferFarFromDevices
 		allocations            []int
 		deltas                 []int
 		allocate               bool
@@ -240,6 +251,7 @@ func TestResizeCpus(t *testing.T) {
 		expectCurrentOnSame    []string
 		expectCurrentNotOnSame []string
 		expectAllOnSame        []string
+		expectCurrentOn        []string
 		expectCurrentNotOn     []string
 		expectAddSizes         []int
 		expectDisjoint         []TopoCcids // which ccids should be disjoint
@@ -471,6 +483,51 @@ func TestResizeCpus(t *testing.T) {
 				{"package", []int{1, 2}}, {"package", []int{1, 2, 3}}, {"package", []int{1, 2, 3, 4}},
 			},
 		},
+		{
+			name:           "prefer close to devices",
+			topology:       [5]int{2, 1, 2, 2, 2},
+			allocatorTB:    true,
+			allocatorPSoPC: true,
+			allocatorPCtD: []string{
+				"/sys/cpus:4-7", // close to p0d0n1c*
+				"/sys/cpus:3",   // close to p0d0n0c01t1
+				"/sys/cpus:2-7", // close to p0d0n*
+			},
+			allocatorPFfD: []string{
+				"/sys/cpus:0-1", // far from p0d0n0c00t*
+			},
+			deltas: []int{
+				1, 3, 1, -1,
+				4, -3, 1, -1,
+			},
+			allocate: true,
+			operateOnCcid: []int{
+				1, 1, 1, 1, // container 1 allocates cpus 4-7
+				2, 2, 2, 2, // container 2 cannot get enough cpus from 2-7
+			},
+			expectCurrentOn: []string{
+				"p0d0n1", // cpus:4-7
+				"p0d0n1", // cpus:4-7
+				"p0d0",   // cpus:0-7
+				"p0d0n1", // cpus:4-7
+				// container 2
+				"p1",          // cpus:8-15
+				"p1",          // cpus:8-15
+				"",            // cpus:any
+				"p0d0n0c01t1", // cpus:3
+			},
+			expectCurrentNotOn: []string{
+				"p0d0n0",    // cpus:0-3
+				"p0d0n0",    // cpus:0-3
+				"p0d0n0c00", // cpus:0-1
+				"p0d0n0",    // cpus:0-3
+				// container 2
+				"p0d0n0c00", // cpus:0-1
+				"p0d0n0c00", // cpus:0-1
+				"p0d0n0c00", // cpus:0-1
+				"p0d0n0c00", // cpus:0-1
+			},
+		},
 	}
 	for _, tc := range tcases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -478,7 +535,14 @@ func TestResizeCpus(t *testing.T) {
 			treeA := tree.NewAllocator(cpuTreeAllocatorOptions{
 				topologyBalancing:           tc.allocatorTB,
 				preferSpreadOnPhysicalCores: tc.allocatorPSoPC,
+				preferCloseToDevices:        tc.allocatorPCtD,
+				preferFarFromDevices:        tc.allocatorPFfD,
 			})
+			for _, dev := range append(tc.allocatorPCtD, tc.allocatorPFfD...) {
+				treeA.cacheCloseCpuSets[dev] = []cpuset.CPUSet{
+					cpuset.MustParse(dev[len("/sys/cpus:"):]),
+				}
+			}
 			currentCpus := cpuset.New()
 			freeCpus := tree.Cpus()
 			if len(tc.allocations) > 0 {
@@ -546,6 +610,9 @@ func TestResizeCpus(t *testing.T) {
 					if i < len(tc.expectCurrentNotOnSame) && tc.expectCurrentNotOnSame[i] != "" {
 						verifyNotSame(t, tc.expectCurrentNotOnSame[i], currentCpus, csit)
 					}
+					if i < len(tc.expectCurrentOn) && tc.expectCurrentOn[i] != "" {
+						verifyOn(t, tc.expectCurrentOn[i], currentCpus, csit)
+					}
 					if i < len(tc.expectCurrentNotOn) && tc.expectCurrentNotOn[i] != "" {
 						verifyNotOn(t, tc.expectCurrentNotOn[i], currentCpus, csit)
 					}
@@ -584,7 +651,7 @@ func TestWalk(t *testing.T) {
 		foundLevel := CPUTopologyLevelUndefined
 		rv := tree.DepthFirstWalk(func(tn *cpuTreeNode) error {
 			foundName = tn.name
-			foundLevel = tn.level
+			foundLevel = string(tn.level)
 			return nil
 		})
 		if rv != nil {
