@@ -95,7 +95,7 @@ var log logger.Logger = logger.NewLogger("policy")
 
 // String is a stringer for a balloon.
 func (bln Balloon) String() string {
-	return fmt.Sprintf("%s{Cpus:%s, Mems:%s}", bln.PrettyName(), bln.Cpus, bln.Mems)
+	return fmt.Sprintf("%s{cpus:%q, mems:%q}", bln.PrettyName(), bln.Cpus, bln.Mems)
 }
 
 // PrettyName returns a unique name for a balloon.
@@ -505,7 +505,7 @@ func (p *balloons) resetCpuClass() error {
 	//
 	// TODO: don't depend on cpu controller directly
 	cpucontrol.Assign(p.cch, p.bpoptions.IdleCpuClass, p.allowed.UnsortedList()...)
-	log.Debugf("resetCpuClass available: %s; reserved: %s", p.allowed, p.reserved)
+	log.Debugf("reset class of available cpus: %q (reserved: %q)", p.allowed, p.reserved)
 	return nil
 }
 
@@ -530,7 +530,7 @@ func (p *balloons) useCpuClass(bln *Balloon) error {
 	// - All existing balloon instances: p.balloons.
 	// - CPU configurations by user: bln.Def.CpuClass (for bln in p.balloons)
 	cpucontrol.Assign(p.cch, bln.Def.CpuClass, bln.Cpus.UnsortedList()...)
-	log.Debugf("useCpuClass Cpus: %s; CpuClass: %s", bln.Cpus, bln.Def.CpuClass)
+	log.Debugf("apply class %q on CPUs %q", bln.Def.CpuClass, bln.Cpus)
 	return nil
 }
 
@@ -539,7 +539,7 @@ func (p *balloons) forgetCpuClass(bln *Balloon) {
 	// Use p.IdleCpuClass for bln.Cpus.
 	// Usual inputs: see useCpuClass
 	cpucontrol.Assign(p.cch, p.bpoptions.IdleCpuClass, bln.Cpus.UnsortedList()...)
-	log.Debugf("forgetCpuClass Cpus: %s; CpuClass: %s", bln.Cpus, bln.Def.CpuClass)
+	log.Debugf("forget class %q of cpus %q", bln.Def.CpuClass, bln.Cpus)
 }
 
 func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, error) {
@@ -591,7 +591,7 @@ func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, erro
 	} else {
 		addFromCpus, _, err := cpuTreeAllocator.ResizeCpus(cpuset.New(), p.freeCpus, blnDef.MinCpus)
 		if err != nil {
-			return nil, balloonsError("failed to choose a cpuset for allocating first %d CPUs from %#s", blnDef.MinCpus, p.freeCpus)
+			return nil, balloonsError("failed to choose a cpuset for allocating MinCpus: %d from free cpus %q", blnDef.MinCpus, p.freeCpus)
 		}
 		cpus, err = p.cpuAllocator.AllocateCpus(&addFromCpus, blnDef.MinCpus, blnDef.AllocatorPriority.Value())
 		if err != nil {
@@ -1194,8 +1194,8 @@ func (p *balloons) resizeBalloon(bln *Balloon, newMilliCpus int) error {
 		newCpuCount = bln.Def.MinCpus
 	}
 	log.Debugf("resize %s to fit %d mCPU", bln, newMilliCpus)
-	log.Debugf("- change full CPUs from %d to %d", oldCpuCount, newCpuCount)
-	log.Debugf("- freecpus: %#s", p.freeCpus)
+	log.Debugf("- change size from %d to %d full cpus", oldCpuCount, newCpuCount)
+	log.Debugf("- free cpus: %q", p.freeCpus)
 	if oldCpuCount == newCpuCount {
 		return nil
 	}
@@ -1208,13 +1208,16 @@ func (p *balloons) resizeBalloon(bln *Balloon, newMilliCpus int) error {
 		if err != nil {
 			return balloonsError("resize/inflate: failed to choose a cpuset for allocating additional %d CPUs: %w", cpuCountDelta, err)
 		}
-		log.Debugf("- allocate CPUs %d from %#s", cpuCountDelta, addFromCpus)
+		log.Debugf("- allocating %d CPUs from %q", cpuCountDelta, addFromCpus)
 		newCpus, err := p.cpuAllocator.AllocateCpus(&addFromCpus, newCpuCount-oldCpuCount, bln.Def.AllocatorPriority.Value())
 		if err != nil {
 			return balloonsError("resize/inflate: allocating %d CPUs for %s failed: %w", cpuCountDelta, bln, err)
 		}
+		oldBlnCpus := bln.Cpus
+		oldFreeCpus := p.freeCpus
 		p.freeCpus = p.freeCpus.Difference(newCpus)
 		bln.Cpus = bln.Cpus.Union(newCpus)
+		log.Debugf("- allocated, changed cpus: balloon from %q to %q, free from %q to %q", oldBlnCpus, bln.Cpus, oldFreeCpus, p.freeCpus)
 		p.updatePinning(p.shareIdleCpus(p.freeCpus, newCpus)...)
 	} else {
 		// Deflate the balloon.
@@ -1222,14 +1225,16 @@ func (p *balloons) resizeBalloon(bln *Balloon, newMilliCpus int) error {
 		if err != nil {
 			return balloonsError("resize/deflate: failed to choose a cpuset for releasing %d CPUs: %w", -cpuCountDelta, err)
 		}
-		log.Debugf("- releasing %d CPUs from cpuset %#s", -cpuCountDelta, removeFromCpus)
+		log.Debugf("- releasing %d CPUs from cpuset %q", -cpuCountDelta, removeFromCpus)
 		_, err = p.cpuAllocator.ReleaseCpus(&removeFromCpus, -cpuCountDelta, bln.Def.AllocatorPriority.Value())
 		if err != nil {
 			return balloonsError("resize/deflate: releasing %d CPUs from %s failed: %w", -cpuCountDelta, bln, err)
 		}
-		log.Debugf("- old freeCpus: %#s, old bln.Cpus: %#s, releasing: %#s", p.freeCpus, bln.Cpus, removeFromCpus)
+		oldBlnCpus := bln.Cpus
+		oldFreeCpus := p.freeCpus
 		p.freeCpus = p.freeCpus.Union(removeFromCpus)
 		bln.Cpus = bln.Cpus.Difference(removeFromCpus)
+		log.Debugf("- released, changed cpus: balloon from %q to %q, free from %q to %q", oldBlnCpus, bln.Cpus, oldFreeCpus, p.freeCpus)
 		p.updatePinning(p.shareIdleCpus(removeFromCpus, cpuset.New())...)
 	}
 	log.Debugf("- resize successful: %s, freecpus: %#s", bln, p.freeCpus)
