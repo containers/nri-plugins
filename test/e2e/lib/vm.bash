@@ -108,7 +108,7 @@ vm-setup() {
     (cd "$vagrantdir";
      export ANSIBLE_PIPELINING=True;
      # Make sure the vagrant plugins are installed
-     make install
+     make install || error "failed to check/install vagrant plugins"
 
      if [ ! -d .vagrant ]; then
 	 vagrant init --template Vagrantfile $distro || error "failed to vagrant init $distro"
@@ -129,7 +129,7 @@ vm-setup() {
      # Add hostname alias to the ssh config so that we can ssh
      # with shorter hostname "node"
      sed -i 's/^Host /Host node /' .ssh-config
-    )
+    ) || exit $?
 
     mkdir -p "$COMMAND_OUTPUT_DIR"
     rm -f "$COMMAND_OUTPUT_DIR"/0*
