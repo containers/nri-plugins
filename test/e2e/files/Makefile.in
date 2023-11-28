@@ -7,9 +7,9 @@ all: up
 install: .plugins.installed.stamp
 
 .plugins.installed.stamp:
-	vagrant plugin install dotenv
-	vagrant plugin install vagrant-proxyconf
-	vagrant plugin install vagrant-qemu
+	for plugin in dotenv vagrant-proxyconf vagrant-qemu; do \
+		vagrant plugin list | grep ^$$plugin || vagrant plugin install $$plugin || exit 1; \
+	done
 	if [ ! -f "$@" ]; then \
 	    touch "$@"; \
 	fi;
