@@ -34,6 +34,8 @@ import (
 var (
 	// Parent directory under which host sysfs, etc. is mounted (if non-standard location).
 	sysRoot = ""
+	// Our logger instance.
+	log = logger.NewLogger("sysfs")
 )
 
 const (
@@ -60,7 +62,7 @@ const (
 	// DiscoverAll requests full supported discovery.
 	DiscoverAll DiscoveryFlag = 0xffffffff
 	// DiscoverDefault is the default set of discovery flags.
-	DiscoverDefault DiscoveryFlag = (DiscoverCPUTopology | DiscoverMemTopology | DiscoverSst)
+	DiscoverDefault DiscoveryFlag = DiscoverAll
 )
 
 // MemoryType is an enum for the Node memory
@@ -99,16 +101,16 @@ type System interface {
 
 // System devices
 type system struct {
-	logger.Logger                          // our logger instance
-	flags         DiscoveryFlag            // system discovery flags
-	path          string                   // sysfs mount point
-	packages      map[idset.ID]*cpuPackage // physical packages
-	nodes         map[idset.ID]*node       // NUMA nodes
-	cpus          map[idset.ID]*cpu        // CPUs
-	cache         map[idset.ID]*Cache      // Cache
-	offline       idset.IDSet              // offlined CPUs
-	isolated      idset.IDSet              // isolated CPUs
-	threads       int                      // hyperthreads per core
+	logger.Logger                                      // our logger instance
+	flags         DiscoveryFlag                        // system discovery flags
+	path          string                               // sysfs mount point
+	packages      map[idset.ID]*cpuPackage             // physical packages
+	nodes         map[idset.ID]*node                   // NUMA nodes
+	cpus          map[idset.ID]*cpu                    // CPUs
+	caches        [][NumCacheTypes]map[idset.ID]*Cache // CPU caches
+	offline       idset.IDSet                          // offlined CPUs
+	isolated      idset.IDSet                          // isolated CPUs
+	threads       int                                  // hyperthreads per core
 }
 
 // CPUPackage is a physical package (a collection of CPUs).
@@ -171,6 +173,12 @@ type CPU interface {
 	Isolated() bool
 	SetFrequencyLimits(min, max uint64) error
 	SstClos() int
+	CacheCount() int
+	GetCaches() []*Cache
+	GetCachesByLevel(int) []*Cache
+	GetCacheByIndex(int) *Cache
+	GetLastLevelCaches() []*Cache
+	GetLastLevelCacheCPUSet() cpuset.CPUSet
 }
 
 type cpu struct {
@@ -187,6 +195,7 @@ type cpu struct {
 	online   bool        // whether this CPU is online
 	isolated bool        // whether this CPU is isolated
 	sstClos  int         // SST-CP CLOS the CPU is associated with
+	caches   []*Cache    // caches for this CPU
 }
 
 // CPUFreq is a CPU frequency scaling range
@@ -214,29 +223,23 @@ type MemInfo struct {
 	MemUsed  uint64
 }
 
-// CPU cache.
-//   Notes: cache-discovery is forced off now (by forcibly clearing the related discovery bit)
-//      Can't seem to make sense of the cache information exposed under sysfs. The cache ids
-//      do not seem to be unique, which IIUC is contrary to the documentation.
-
 // CacheType specifies a cache type.
-type CacheType string
+type CacheType int
 
 const (
-	// DataCache marks data cache.
-	DataCache CacheType = "Data"
-	// InstructionCache marks instruction cache.
-	InstructionCache CacheType = "Instruction"
-	// UnifiedCache marks a unified data/instruction cache.
-	UnifiedCache CacheType = "Unified"
+	DataCache        CacheType = iota // DataCache is a data only cache
+	InstructionCache                  // InstructionCache is an instruction only cache.
+	UnifiedCache                      // UnifiedCache is a unified data and instruction cache.
+	numCacheTypes
+	NumCacheTypes = int(numCacheTypes)
 )
 
-// Cache has details about cache.
+// Cache has details about a CPU cache.
 type Cache struct {
 	id    idset.ID    // cache id
+	level int         // cache type
 	kind  CacheType   // cache type
 	size  uint64      // cache size
-	level uint8       // cache level
 	cpus  idset.IDSet // CPUs sharing this cache
 }
 
@@ -264,7 +267,7 @@ func DiscoverSystemAt(path string, args ...DiscoveryFlag) (System, error) {
 	}
 
 	sys := &system{
-		Logger:  logger.NewLogger("sysfs"),
+		Logger:  log,
 		path:    path,
 		offline: idset.NewIDSet(),
 	}
@@ -278,7 +281,7 @@ func DiscoverSystemAt(path string, args ...DiscoveryFlag) (System, error) {
 
 // Discover performs system/hardware discovery.
 func (sys *system) Discover(flags DiscoveryFlag) error {
-	sys.flags |= (flags &^ DiscoverCache)
+	sys.flags |= flags
 
 	if (sys.flags & (DiscoverCPUTopology | DiscoverCache | DiscoverSst)) != 0 {
 		if err := sys.discoverCPUs(); err != nil {
@@ -359,18 +362,19 @@ func (sys *system) Discover(flags DiscoveryFlag) error {
 			sys.Debug("  base freq: %d", cpu.baseFreq)
 			sys.Debug("       freq: %d - %d", cpu.freq.min, cpu.freq.max)
 			sys.Debug("        epp: %d", cpu.epp)
+
+			for idx, c := range cpu.caches {
+				sys.Debug("    cache #%d:", idx)
+				sys.Debug("           id: %d", c.id)
+				sys.Debug("        level: %d", c.level)
+				sys.Debug("         kind: %s", c.kind)
+				sys.Debug("         size: %dK", c.size/1024)
+				sys.Debug("         cpus: %s", c.SharedCPUSet().String())
+			}
 		}
 
 		sys.Debug("offline CPUs: %s", sys.offline)
 		sys.Debug("isolated CPUs: %s", sys.isolated)
-
-		for id, cch := range sys.cache {
-			sys.Debug("cache #%d:", id)
-			sys.Debug("   type: %v", cch.kind)
-			sys.Debug("   size: %d", cch.size)
-			sys.Debug("  level: %d", cch.level)
-			sys.Debug("   CPUs: %s", cch.cpus)
-		}
 	}
 
 	return nil
@@ -634,7 +638,7 @@ func (sys *system) discoverCPU(path string) error {
 	if (sys.flags & DiscoverCache) != 0 {
 		entries, _ := filepath.Glob(filepath.Join(path, "cache/index[0-9]*"))
 		for _, entry := range entries {
-			if err := sys.discoverCache(entry); err != nil {
+			if err := sys.discoverCache(cpu, entry); err != nil {
 				return err
 			}
 		}
@@ -733,6 +737,120 @@ func (c *cpu) SetFrequencyLimits(min, max uint64) error {
 	}
 
 	return nil
+}
+
+// CacheCount returns the number of caches for this CPU.
+func (c *cpu) CacheCount() int {
+	return len(c.caches)
+}
+
+// GetCaches returns the caches for this CPU.
+func (c *cpu) GetCaches() []*Cache {
+	caches := make([]*Cache, 0, len(c.caches))
+	copy(caches, c.caches)
+	return caches
+}
+
+// GetCachesByLevel returns the caches of the given level for this CPU.
+func (c *cpu) GetCachesByLevel(level int) []*Cache {
+	var caches []*Cache
+
+	for _, cch := range c.caches {
+		if cch.level == level {
+			caches = append(caches, cch)
+		}
+	}
+
+	return caches
+}
+
+// GetCacheByIndex returns the cache of the given index for this CPU.
+func (c *cpu) GetCacheByIndex(idx int) *Cache {
+	if 0 <= idx && idx < len(c.caches) {
+		return c.caches[idx]
+	}
+	return nil
+}
+
+// GetLastLevelCaches returns the last level caches for this CPU.
+func (c *cpu) GetLastLevelCaches() []*Cache {
+	if len(c.caches) < 1 {
+		return nil
+	}
+
+	var (
+		caches    []*Cache
+		lastIndex = len(c.caches) - 1
+		lastLevel = c.caches[lastIndex].level
+	)
+
+	for idx := lastIndex; idx >= 0; idx-- {
+		cch := c.caches[idx]
+		caches = append(caches, cch)
+		if cch.level != lastLevel {
+			break
+		}
+	}
+
+	return caches
+}
+
+// GetLastLevelCacheCPUSet returns the cpuset for the last level caches of this CPU.
+func (c *cpu) GetLastLevelCacheCPUSet() cpuset.CPUSet {
+	if len(c.caches) < 1 {
+		return c.ThreadCPUSet()
+	}
+
+	var (
+		lastIndex = len(c.caches) - 1
+		lastLevel = c.caches[lastIndex].level
+		cpus      = cpuset.New()
+	)
+
+	for idx := lastIndex; idx >= 0; idx-- {
+		cch := c.caches[idx]
+		cpus = cpus.Union(CPUSetFromIDSet(cch.cpus))
+		if cch.level != lastLevel {
+			break
+		}
+	}
+
+	return cpus
+}
+
+func (c *Cache) ID() int {
+	if c == nil {
+		return 0
+	}
+	return c.id
+}
+
+func (c *Cache) Level() int {
+	if c == nil {
+		return 0
+	}
+	return c.level
+}
+
+func (c *Cache) Type() CacheType {
+	if c == nil {
+		return 0
+	}
+	return c.kind
+}
+
+func (c *Cache) Size() uint64 {
+	if c == nil {
+		return 0
+	}
+	return c.size
+}
+
+func (c *Cache) SharedCPUSet() cpuset.CPUSet {
+	if c == nil {
+		return cpuset.New()
+	}
+	return CPUSetFromIDSet(c.cpus)
 }
 
 // Discover NUMA nodes present in the system.
@@ -1058,28 +1176,21 @@ func (p *cpuPackage) SstInfo() *sst.SstPackageInfo {
 }
 
 // Discover cache associated with the given CPU.
-//
-// Notes:
-//
-//	I'm not sure how to interpret the cache information under sysfs.
-//	This code is now effectively disabled by forcing the associated
-//	discovery bit off in the discovery flags.
-func (sys *system) discoverCache(path string) error {
+func (sys *system) discoverCache(cpu *cpu, path string) error {
 	var id idset.ID
+
+	split := strings.Split(path, "/cache/index")
+	if len(split) != 2 {
+		return sysfsError(path, "unexpected cache path %s", path)
+	}
 
 	if _, err := readSysfsEntry(path, "id", &id); err != nil {
 		return sysfsError(path, "can't read cache id: %v", err)
 	}
 
-	if sys.cache == nil {
-		sys.cache = make(map[idset.ID]*Cache)
+	c := &Cache{
+		id: id,
 	}
-
-	if _, found := sys.cache[id]; found {
-		return nil
-	}
-
-	c := &Cache{id: id}
 
 	if _, err := readSysfsEntry(path, "level", &c.level); err != nil {
 		return sysfsError(path, "can't read cache level: %v", err)
@@ -1122,9 +1233,27 @@ func (sys *system) discoverCache(path string) error {
 		c.size = val*1000 + u - '0'
 	}
 
-	sys.cache[c.id] = c
+	cpu.caches = append(cpu.caches, sys.saveCache(c))
 
 	return nil
+}
+
+func (sys *system) saveCache(c *Cache) *Cache {
+	if len(sys.caches) < c.level {
+		caches := sys.caches
+		sys.caches = make([][NumCacheTypes]map[idset.ID]*Cache, c.level)
+		copy(sys.caches, caches)
+		for ct := 0; ct < NumCacheTypes; ct++ {
+			sys.caches[c.level-1][ct] = make(map[idset.ID]*Cache)
+		}
+	}
+
+	if cch, ok := sys.caches[c.level-1][int(c.kind)][c.id]; ok {
+		return cch
+	}
+
+	sys.caches[c.level-1][int(c.kind)][c.id] = c
+	return c
 }
 
 // eppStrings initialized this way to better catch changes in the enum
@@ -1159,4 +1288,16 @@ func EPPFromString(s string) EPP {
 		return v
 	}
 	return EPPUnknown
+}
+
+func (t CacheType) String() string {
+	switch t {
+	case DataCache:
+		return "Data"
+	case InstructionCache:
+		return "Instruction"
+	case UnifiedCache:
+		return "Unified"
+	}
+	return ""
 }
