@@ -56,7 +56,7 @@ func readSysfsEntry(base, entry string, ptr interface{}, args ...interface{}) (s
 
 	blob, err := ioutil.ReadFile(path)
 	if err != nil {
-		return "", sysfsError(path, "failed to read sysfs entry: %v", err)
+		return "", sysfsError(path, "failed to read sysfs entry: %w", err)
 	}
 	buf = strings.Trim(string(blob), "\n")
 
@@ -68,18 +68,18 @@ func readSysfsEntry(base, entry string, ptr interface{}, args ...interface{}) (s
 	case *string, *int, *uint, *int8, *uint8, *int16, *uint16, *int32, *uint32, *int64, *uint64:
 		err := parseValue(buf, ptr)
 		if err != nil {
-			return "", sysfsError(path, "%v", err)
+			return "", sysfsError(path, "%w", err)
 		}
 		return buf, nil
 
 	case *idset.IDSet, *[]int, *[]uint, *[]int8, *[]uint8, *[]int16, *[]uint16, *[]int32, *[]uint32, *[]int64, *[]uint64:
 		sep, err := getSeparator(" ", args)
 		if err != nil {
-			return "", sysfsError(path, "%v", err)
+			return "", sysfsError(path, "%w", err)
 		}
 		err = parseValueList(buf, sep, ptr)
 		if err != nil {
-			return "", sysfsError(path, "%v", err)
+			return "", sysfsError(path, "%w", err)
 		}
 		return buf, nil
 	case *EPP:
@@ -107,17 +107,17 @@ func writeSysfsEntry(base, entry string, val, oldp interface{}, args ...interfac
 	case string, int, uint, int8, uint8, int16, uint16, int32, uint32, int64, uint64:
 		buf, err = formatValue(val)
 		if err != nil {
-			return "", sysfsError(path, "%v", err)
+			return "", sysfsError(path, "%w", err)
 		}
 
 	case idset.IDSet, []int, []uint, []int8, []uint8, []int16, []uint16, []int32, []uint32, []int64, []uint64:
 		sep, err := getSeparator(" ", args)
 		if err != nil {
-			return "", sysfsError(path, "%v", err)
+			return "", sysfsError(path, "%w", err)
 		}
 		buf, err = formatValueList(sep, val)
 		if err != nil {
-			return "", sysfsError(path, "%v", err)
+			return "", sysfsError(path, "%w", err)
 		}
 
 	default:
@@ -126,12 +126,12 @@ func writeSysfsEntry(base, entry string, val, oldp interface{}, args ...interfac
 
 	f, err := os.OpenFile(path, os.O_WRONLY, 0)
 	if err != nil {
-		return "", sysfsError(path, "cannot open: %v", err)
+		return "", sysfsError(path, "cannot open: %w", err)
 	}
 	defer f.Close()
 
 	if _, err = f.Write([]byte(buf + "\n")); err != nil {
-		return "", sysfsError(path, "cannot write: %v", err)
+		return "", sysfsError(path, "cannot write: %w", err)
 	}
 
 	return old, nil
@@ -158,7 +158,7 @@ func parseValue(str string, value interface{}) error {
 	case *int, *int8, *int16, *int32, *int64:
 		v, err := strconv.ParseInt(str, 0, 0)
 		if err != nil {
-			return fmt.Errorf("invalid entry '%s': %v", str, err)
+			return fmt.Errorf("invalid entry '%s': %w", str, err)
 		}
 
 		switch value.(type) {
@@ -177,7 +177,7 @@ func parseValue(str string, value interface{}) error {
 	case *uint, *uint8, *uint16, *uint32, *uint64:
 		v, err := strconv.ParseUint(str, 0, 0)
 		if err != nil {
-			return fmt.Errorf("invalid entry: '%s': %v", str, err)
+			return fmt.Errorf("invalid entry: '%s': %w", str, err)
 		}
 
 		switch value.(type) {
@@ -237,17 +237,17 @@ func parseValueList(str, sep string, valuep interface{}) error {
 			if rng := strings.Split(s, "-"); len(rng) == 1 {
 				id, err := strconv.Atoi(s)
 				if err != nil {
-					return fmt.Errorf("invalid entry '%s': %v", s, err)
+					return fmt.Errorf("invalid entry '%s': %w", s, err)
 				}
 				value.(idset.IDSet).Add(idset.ID(id))
 			} else {
 				beg, err := strconv.Atoi(rng[0])
 				if err != nil {
-					return fmt.Errorf("invalid entry '%s': %v", s, err)
+					return fmt.Errorf("invalid entry '%s': %w", s, err)
 				}
 				end, err := strconv.Atoi(rng[1])
 				if err != nil {
-					return fmt.Errorf("invalid entry '%s': %v", s, err)
+					return fmt.Errorf("invalid entry '%s': %w", s, err)
 				}
 				for id := beg; id <= end; id++ {
 					value.(idset.IDSet).Add(idset.ID(id))
@@ -257,7 +257,7 @@ func parseValueList(str, sep string, valuep interface{}) error {
 		case []int, []int8, []int16, []int32, []int64:
 			v, err := strconv.ParseInt(s, 0, 0)
 			if err != nil {
-				return fmt.Errorf("invalid entry '%s': %v", s, err)
+				return fmt.Errorf("invalid entry '%s': %w", s, err)
 			}
 			switch value.(type) {
 			case []int:
@@ -275,7 +275,7 @@ func parseValueList(str, sep string, valuep interface{}) error {
 		case []uint, []uint8, []uint16, []uint32, []uint64:
 			v, err := strconv.ParseUint(s, 0, 0)
 			if err != nil {
-				return fmt.Errorf("invalid entry '%s': %v", s, err)
+				return fmt.Errorf("invalid entry '%s': %w", s, err)
 			}
 			switch value.(type) {
 			case []uint:

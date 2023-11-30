@@ -15,7 +15,9 @@
 package sysfs
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"io/ioutil"
 	"path/filepath"
 	"sort"
@@ -587,8 +589,14 @@ func (sys *system) discoverCPU(path string) error {
 		if _, err := readSysfsEntry(path, "topology/core_id", &cpu.core); err != nil {
 			return err
 		}
-		if _, err := readSysfsEntry(path, "topology/thread_siblings_list", &cpu.threads, ","); err != nil {
-			return err
+
+		if _, err := readSysfsEntry(path, "topology/core_cpus_list", &cpu.threads, ","); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				_, err = readSysfsEntry(path, "topology/thread_siblings_list", &cpu.threads, ",")
+			}
+			if err != nil {
+				return err
+			}
 		}
 	} else {
 		sys.offline.Add(cpu.id)
