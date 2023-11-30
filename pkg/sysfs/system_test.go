@@ -140,3 +140,58 @@ var _ = DescribeTable("LLC CPUSet",
 	Entry("CPU #0", "sample2", 0, "0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58,60,62,64,66,68,70,72,74,76,78,80,82,84,86,88,90,92,94,96,98,100,102,104,106,108,110"),
 	Entry("CPU #1", "sample2", 1, "1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35,37,39,41,43,45,47,49,51,53,55,57,59,61,63,65,67,69,71,73,75,77,79,81,83,85,87,89,91,93,95,97,99,101,103,105,107,109,111"),
 )
+
+var _ = DescribeTable("Unfiltered cluster detection",
+	func(sample string, pkg, die idset.ID, clusterIDs []idset.ID) {
+		sys := sampleSysfs[sample]
+		Expect(sys).ToNot(BeNil())
+
+		result := sys.Package(pkg).DieClusterIDs(die)
+		Expect(result).To(Equal(clusterIDs))
+	},
+
+	Entry("die #0 cluster IDs", "sample1", 0, 0, []idset.ID{0, 8, 16, 24, 32, 40}),
+)
+
+var _ = DescribeTable("Unfiltered cluster CPUSet",
+	func(sample string, pkg, die, cluster idset.ID, cpus string) {
+		sys := sampleSysfs[sample]
+		Expect(sys).ToNot(BeNil())
+
+		result := sys.Package(pkg).DieClusterCPUSet(die, cluster)
+		Expect(result.String()).To(Equal(cpus))
+	},
+
+	Entry("die #0, cluster #0", "sample1", 0, 0, 0, "0-1"),
+	Entry("die #0, cluster #32", "sample1", 0, 0, 8, "2-3"),
+	Entry("die #0, cluster #40", "sample1", 0, 0, 16, "4-5"),
+	Entry("die #0, cluster #40", "sample1", 0, 0, 24, "6-7"),
+	Entry("die #0, cluster #40", "sample1", 0, 0, 32, "8-11"),
+	Entry("die #0, cluster #40", "sample1", 0, 0, 40, "12-15"),
+)
+
+var _ = DescribeTable("Logical/hyperthread-filtered cluster detection",
+	func(sample string, pkg, die idset.ID, clusterIDs []idset.ID) {
+		sys := sampleSysfs[sample]
+		Expect(sys).ToNot(BeNil())
+
+		result := sys.Package(pkg).LogicalDieClusterIDs(die)
+		Expect(result).To(Equal(clusterIDs))
+	},
+
+	Entry("die #0 cluster IDs", "sample1", 0, 0, []idset.ID{0, 32, 40}),
+)
+
+var _ = DescribeTable("Logical/hyperthread-filtered cluster CPUSet",
+	func(sample string, pkg, die, cluster idset.ID, cpus string) {
+		sys := sampleSysfs[sample]
+		Expect(sys).ToNot(BeNil())
+
+		result := sys.Package(pkg).LogicalDieClusterCPUSet(die, cluster)
+		Expect(result.String()).To(Equal(cpus))
+	},
+
+	Entry("die #0, cluster #0", "sample1", 0, 0, 0, "0-7"),
+	Entry("die #0, cluster #32", "sample1", 0, 0, 32, "8-11"),
+	Entry("die #0, cluster #40", "sample1", 0, 0, 40, "12-15"),
+)

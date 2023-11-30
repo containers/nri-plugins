@@ -121,17 +121,23 @@ type CPUPackage interface {
 	NodeIDs() []idset.ID
 	DieNodeIDs(idset.ID) []idset.ID
 	DieCPUSet(idset.ID) cpuset.CPUSet
+	DieClusterIDs(idset.ID) []idset.ID
+	DieClusterCPUSet(idset.ID, idset.ID) cpuset.CPUSet
+	LogicalDieClusterIDs(idset.ID) []idset.ID
+	LogicalDieClusterCPUSet(idset.ID, idset.ID) cpuset.CPUSet
 	SstInfo() *sst.SstPackageInfo
 }
 
 type cpuPackage struct {
-	id       idset.ID                 // package id
-	cpus     idset.IDSet              // CPUs in this package
-	nodes    idset.IDSet              // nodes in this package
-	dies     idset.IDSet              // dies in this package
-	dieCPUs  map[idset.ID]idset.IDSet // CPUs per die
-	dieNodes map[idset.ID]idset.IDSet // NUMA nodes per die
-	sstInfo  *sst.SstPackageInfo      // Speed Select Technology info
+	id              idset.ID                              // package id
+	cpus            idset.IDSet                           // CPUs in this package
+	nodes           idset.IDSet                           // nodes in this package
+	dies            idset.IDSet                           // dies in this package
+	dieCPUs         map[idset.ID]idset.IDSet              // CPUs per die
+	dieNodes        map[idset.ID]idset.IDSet              // NUMA nodes per die
+	clusterCPUs     map[idset.ID]map[idset.ID]idset.IDSet // per die per cluster CPUs
+	logicalClusters map[idset.ID]map[idset.ID]idset.IDSet // clusters with combined hyperthreads
+	sstInfo         *sst.SstPackageInfo                   // Speed Select Technology info
 }
 
 // Node represents a NUMA node.
@@ -163,6 +169,7 @@ type CPU interface {
 	ID() idset.ID
 	PackageID() idset.ID
 	DieID() idset.ID
+	ClusterID() idset.ID
 	NodeID() idset.ID
 	CoreID() idset.ID
 	ThreadCPUSet() cpuset.CPUSet
@@ -186,6 +193,7 @@ type cpu struct {
 	id       idset.ID    // CPU id
 	pkg      idset.ID    // package id
 	die      idset.ID    // die id
+	cluster  idset.ID    // cluster id
 	node     idset.ID    // node id
 	core     idset.ID    // core id
 	threads  idset.IDSet // sibling/hyper-threads
@@ -339,6 +347,14 @@ func (sys *system) Discover(flags DiscoveryFlag) error {
 			for _, die := range pkg.DieIDs() {
 				sys.Debug("    die #%v nodes: %v", die, pkg.DieNodeIDs(die))
 				sys.Debug("    die #%v cpus: %s", die, pkg.DieCPUSet(die).String())
+				for _, cluster := range pkg.DieClusterIDs(die) {
+					sys.Debug("    die #%v cluster #%v cpus: %s", die, cluster,
+						pkg.DieClusterCPUSet(die, cluster).String())
+				}
+				for _, cluster := range pkg.LogicalDieClusterIDs(die) {
+					sys.Debug("    die #%v logical cluster #%v cpus: %s", die, cluster,
+						pkg.LogicalDieClusterCPUSet(die, cluster).String())
+				}
 			}
 		}
 
@@ -356,6 +372,7 @@ func (sys *system) Discover(flags DiscoveryFlag) error {
 			sys.Debug("CPU #%d:", id)
 			sys.Debug("        pkg: %d", cpu.pkg)
 			sys.Debug("        die: %d", cpu.die)
+			sys.Debug("    cluster: %d", cpu.cluster)
 			sys.Debug("       node: %d", cpu.node)
 			sys.Debug("       core: %d", cpu.core)
 			sys.Debug("    threads: %s", cpu.threads)
@@ -592,6 +609,7 @@ func (sys *system) discoverCPU(path string) error {
 			return err
 		}
 		readSysfsEntry(path, "topology/die_id", &cpu.die)
+		readSysfsEntry(path, "topology/cluster_id", &cpu.cluster)
 		if _, err := readSysfsEntry(path, "topology/core_id", &cpu.core); err != nil {
 			return err
 		}
@@ -660,6 +678,11 @@ func (c *cpu) PackageID() idset.ID {
 // DieID returns the die id of this CPU.
 func (c *cpu) DieID() idset.ID {
 	return c.die
+}
+
+// ClusterID returns the cluster id of this CPU.
+func (c *cpu) ClusterID() idset.ID {
+	return c.cluster
 }
 
 // NodeID returns the node id of this CPU.
@@ -1076,12 +1099,14 @@ func (sys *system) discoverPackages() error {
 		pkg, found := sys.packages[cpu.pkg]
 		if !found {
 			pkg = &cpuPackage{
-				id:       cpu.pkg,
-				cpus:     idset.NewIDSet(),
-				nodes:    idset.NewIDSet(),
-				dies:     idset.NewIDSet(),
-				dieCPUs:  make(map[idset.ID]idset.IDSet),
-				dieNodes: make(map[idset.ID]idset.IDSet),
+				id:              cpu.pkg,
+				cpus:            idset.NewIDSet(),
+				nodes:           idset.NewIDSet(),
+				dies:            idset.NewIDSet(),
+				dieCPUs:         make(map[idset.ID]idset.IDSet),
+				dieNodes:        make(map[idset.ID]idset.IDSet),
+				clusterCPUs:     make(map[idset.ID]map[idset.ID]idset.IDSet),
+				logicalClusters: make(map[idset.ID]map[idset.ID]idset.IDSet),
 			}
 			sys.packages[cpu.pkg] = pkg
 		}
@@ -1098,6 +1123,41 @@ func (sys *system) discoverPackages() error {
 			pkg.dieNodes[cpu.die] = idset.NewIDSet(cpu.node)
 		} else {
 			dieNodes.Add(cpu.node)
+		}
+
+		dieClusterCPUs, ok := pkg.clusterCPUs[cpu.die]
+		if !ok {
+			dieClusterCPUs = make(map[idset.ID]idset.IDSet)
+			pkg.clusterCPUs[cpu.die] = dieClusterCPUs
+		}
+
+		clusterCPUs, ok := dieClusterCPUs[cpu.cluster]
+		if !ok {
+			dieClusterCPUs[cpu.cluster] = idset.NewIDSet(cpu.id)
+		} else {
+			clusterCPUs.Add(cpu.id)
+		}
+	}
+
+	for _, pkg := range sys.packages {
+		for die, clusters := range pkg.clusterCPUs {
+			pkg.logicalClusters[die] = make(map[idset.ID]idset.IDSet)
+
+			htClusters := idset.NewIDSet()
+			allHTCPUs := idset.NewIDSet()
+			for cluster, cpuIDs := range clusters {
+				cpu := sys.cpus[cpuIDs.SortedMembers()[0]]
+				if cpuset.New(cpuIDs.Members()...).Equals(cpu.ThreadCPUSet()) {
+					htClusters.Add(cluster)
+					allHTCPUs.Add(cpu.ThreadCPUSet().List()...)
+				} else {
+					pkg.logicalClusters[die][cluster] = cpuIDs.Clone()
+				}
+			}
+			if htClusters.Size() > 0 {
+				first := sys.cpus[allHTCPUs.SortedMembers()[0]]
+				pkg.logicalClusters[die][first.cluster] = idset.NewIDSet(allHTCPUs.Members()...)
+			}
 		}
 	}
 
@@ -1167,6 +1227,50 @@ func (p *cpuPackage) DieNodeIDs(id idset.ID) []idset.ID {
 func (p *cpuPackage) DieCPUSet(id idset.ID) cpuset.CPUSet {
 	if dieCPUs, ok := p.dieCPUs[id]; ok {
 		return CPUSetFromIDSet(dieCPUs)
+	}
+	return cpuset.New()
+}
+
+// DieClusterIDs returns the cluster IDs in the given die of this package.
+func (p *cpuPackage) DieClusterIDs(die idset.ID) []idset.ID {
+	if dieClusters, ok := p.clusterCPUs[die]; ok {
+		ids := idset.NewIDSet()
+		for id := range dieClusters {
+			ids.Add(id)
+		}
+		return ids.SortedMembers()
+	}
+	return []idset.ID{}
+}
+
+// DieClusterCPUSet returns the CPUs of the given die and cluster.
+func (p *cpuPackage) DieClusterCPUSet(die idset.ID, cluster idset.ID) cpuset.CPUSet {
+	if dieClusters, ok := p.clusterCPUs[die]; ok {
+		if ids, ok := dieClusters[cluster]; ok {
+			return CPUSetFromIDSet(ids)
+		}
+	}
+	return cpuset.New()
+}
+
+// LogicalDieClusterIDs returns the logical cluster IDs in the given die of this package.
+func (p *cpuPackage) LogicalDieClusterIDs(die idset.ID) []idset.ID {
+	if dieClusters, ok := p.logicalClusters[die]; ok {
+		ids := idset.NewIDSet()
+		for id := range dieClusters {
+			ids.Add(id)
+		}
+		return ids.SortedMembers()
+	}
+	return []idset.ID{}
+}
+
+// LogicalDieClusterCPUSet returns the CPUs of the given die and logical cluster.
+func (p *cpuPackage) LogicalDieClusterCPUSet(die idset.ID, cluster idset.ID) cpuset.CPUSet {
+	if dieClusters, ok := p.logicalClusters[die]; ok {
+		if ids, ok := dieClusters[cluster]; ok {
+			return CPUSetFromIDSet(ids)
+		}
 	}
 	return cpuset.New()
 }
