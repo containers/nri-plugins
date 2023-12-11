@@ -15,8 +15,9 @@
 package sysfs
 
 import (
+	"errors"
 	"fmt"
-	"io/ioutil"
+	"io/fs"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -587,8 +588,14 @@ func (sys *system) discoverCPU(path string) error {
 		if _, err := readSysfsEntry(path, "topology/core_id", &cpu.core); err != nil {
 			return err
 		}
-		if _, err := readSysfsEntry(path, "topology/thread_siblings_list", &cpu.threads, ","); err != nil {
-			return err
+
+		if _, err := readSysfsEntry(path, "topology/core_cpus_list", &cpu.threads, ","); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				_, err = readSysfsEntry(path, "topology/thread_siblings_list", &cpu.threads, ",")
+			}
+			if err != nil {
+				return err
+			}
 		}
 	} else {
 		sys.offline.Add(cpu.id)
@@ -723,17 +730,6 @@ func (c *cpu) SetFrequencyLimits(min, max uint64) error {
 	}
 
 	return nil
-}
-
-func readCPUsetFile(base, entry string) (cpuset.CPUSet, error) {
-	path := filepath.Join(base, entry)
-
-	blob, err := ioutil.ReadFile(path)
-	if err != nil {
-		return cpuset.New(), sysfsError(path, "failed to read sysfs entry: %v", err)
-	}
-
-	return cpuset.Parse(strings.Trim(string(blob), "\n"))
 }
 
 // Discover NUMA nodes present in the system.
