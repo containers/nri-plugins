@@ -1,0 +1,12 @@
+# This kustomization.yaml is not intended to be run by itself,
+# since it depends on service name and namespace that are out of this kustomize package.
+# It should be run by config/default
+resources:
+# NOTE(fmuyassarov): We will copy the below CRD files (from the top level config/crd/bases)
+# during the bundle build process. We don't store the same copies here too to avoid duplication.
+- bases/config.nri_nriplugindeployments.yaml
+- bases/topology.node.k8s.io_noderesourcetopologies.yaml
+- bases/config.nri_balloonspolicies.yaml
+- bases/config.nri_templatepolicies.yaml
+- bases/config.nri_topologyawarepolicies.yaml
+#+kubebuilder:scaffold:crdkustomizeresource

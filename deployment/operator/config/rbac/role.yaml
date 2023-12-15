@@ -1,0 +1,54 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+  ##
+  ## Rules for the operator
+  ##
+  - apiGroups:
+      - config.nri
+    resources:
+      - nriplugindeployments
+    verbs:
+      - get
+      - list
+      - watch
+      - update
+  - apiGroups:
+      - config.nri
+    resources:
+      - nriplugindeployments/status
+    verbs:
+      - get
+      - update
+      - patch
+  - apiGroups:
+    - topology.node.k8s.io
+    resources:
+    - noderesourcetopologies
+    verbs:
+    - create
+    - get
+    - update
+  ##
+  ## Rules for config.nri/v1alpha1, Kind: NriPluginDeployment
+  ##
+  - verbs:
+    - "*"
+    apiGroups:
+    - "rbac.authorization.k8s.io"
+    - "apps"
+    - ""
+    resources:
+    - "clusterrolebindings"
+    - "clusterroles"
+    - "rolebindings"
+    - "roles"
+    - "daemonsets"
+    - "configmaps"
+    - "serviceaccounts"
+    - "namespaces"
+    - "secrets"
+ #+kubebuilder:scaffold:rules

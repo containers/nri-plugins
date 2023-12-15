@@ -1,0 +1,105 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: '[]'
+    capabilities: Basic Install
+    categories: Performance
+    certified: "false"
+    containerImage: ghcr.io/containers/nri-plugins/nri-plugins-operator:unstable
+    description: An operator that installs Node Resource Interface reference plugins.
+    repository: https://github.com/containers/nri-plugins-operator
+    support: "false"
+  name: nri-plugins-operator.v0.0.1
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: Represents the deployment of NRI plugin
+      displayName: NRI Plugin Deployment
+      kind: NriPluginDeployment
+      name: nriplugindeployments.config.nri
+      version: v1alpha1
+    - description: Describes node resources and their topology
+      displayName: Node Resource Topology (v1alpha1)
+      kind: NodeResourceTopology
+      name: noderesourcetopologies.topology.node.k8s.io
+      version: v1alpha1
+    - description: Describes node resources and their topology
+      displayName: Node Resource Topology (v1alpha2)
+      kind: NodeResourceTopology
+      name: noderesourcetopologies.topology.node.k8s.io
+      version: v1alpha2
+    - description: BalloonsPolicy represents the configuration for the balloons policy
+      displayName: Balloons Policy
+      kind: BalloonsPolicy
+      name: balloonspolicies.config.nri
+      version: v1alpha1
+    - description: TemplatePolicy represents the configuration for the template policy.
+      displayName: Template Policy
+      kind: TemplatePolicy
+      name: templatepolicies.config.nri
+      version: v1alpha1
+    - description: TopologyAwarePolicy represents the configuration for the topology-aware
+        policy.
+      displayName: Topology Aware Policy
+      kind: TopologyAwarePolicy
+      name: topologyawarepolicies.config.nri
+      version: v1alpha1
+  description: |-
+    The **nri-plugins-operator** deploys community maintained [nri-plugins](https://github.com/containers/nri-plugins) into a Kubernetes cluster.
+
+    # Node Resource Interface
+    NRI allows plugging domain- or vendor-specific custom logic into OCI- compatible runtimes. This logic can make controlled changes to containers or perform extra actions outside the scope of OCI at certain points in a containers lifecycle. This can be used, for instance, for improved allocation and management of devices and other container resources.
+
+    For more info, visit [https://github.com/containerd/nri](https://github.com/containerd/nri)
+
+    # Node Resource Interface reference plugins
+
+    The NRI plugins is a collection of Node Resource Interface based plugins to manage various aspects of pod and container life cycle. For example the resource policy plugins can be used to modify the container resource allocation depending on available system resources.
+
+    For more info, visit [https://github.com/containers/nri-plugins](https://github.com/containers/nri-plugins)
+
+    # License
+
+    nri-plugins-operator is distributed under the
+    [Apache License, Version 2.0](http://www.apache.org/licenses/LICENSE-2.0.txt).
+  displayName: NRI-Plugins-Operator
+  icon:
+  - base64data: PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTguNTEgMjU4LjUxIj48ZGVmcz48c3R5bGU+LmNscy0xe2ZpbGw6I2QxZDFkMTt9LmNscy0ye2ZpbGw6IzhkOGQ4Zjt9PC9zdHlsZT48L2RlZnM+PHRpdGxlPkFzc2V0IDQ8L3RpdGxlPjxnIGlkPSJMYXllcl8yIiBkYXRhLW5hbWU9IkxheWVyIDIiPjxnIGlkPSJMYXllcl8xLTIiIGRhdGEtbmFtZT0iTGF5ZXIgMSI+PHBhdGggY2xhc3M9ImNscy0xIiBkPSJNMTI5LjI1LDIwQTEwOS4xLDEwOS4xLDAsMCwxLDIwNi40LDIwNi40LDEwOS4xLDEwOS4xLDAsMSwxLDUyLjExLDUyLjExLDEwOC40NSwxMDguNDUsMCwwLDEsMTI5LjI1LDIwbTAtMjBoMEM1OC4xNiwwLDAsNTguMTYsMCwxMjkuMjVIMGMwLDcxLjA5LDU4LjE2LDEyOS4yNiwxMjkuMjUsMTI5LjI2aDBjNzEuMDksMCwxMjkuMjYtNTguMTcsMTI5LjI2LTEyOS4yNmgwQzI1OC41MSw1OC4xNiwyMDAuMzQsMCwxMjkuMjUsMFoiLz48cGF0aCBjbGFzcz0iY2xzLTIiIGQ9Ik0xNzcuNTQsMTAzLjQxSDE0MS42NkwxNTQuOSw2NS43NmMxLjI1LTQuNC0yLjMzLTguNzYtNy4yMS04Ljc2SDEwMi45M2E3LjMyLDcuMzIsMCwwLDAtNy40LDZsLTEwLDY5LjYxYy0uNTksNC4xNywyLjg5LDcuODksNy40LDcuODloMzYuOUwxMTUuNTUsMTk3Yy0xLjEyLDQuNDEsMi40OCw4LjU1LDcuMjQsOC41NWE3LjU4LDcuNTgsMCwwLDAsNi40Ny0zLjQ4TDE4NCwxMTMuODVDMTg2Ljg2LDEwOS4yNCwxODMuMjksMTAzLjQxLDE3Ny41NCwxMDMuNDFaIi8+PC9nPjwvZz48L3N2Zz4=
+    mediatype: image/svg+xml
+  install:
+    spec:
+      deployments: null
+    strategy: deployment
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - nri-plugins
+  - nri
+  - cri-o
+  - containerd
+  - kubernetes
+  - performance
+  links:
+  - name: NRI-Plugins
+    url: https://github.com/containers/nri-plugins
+  - name: NRI
+    url: https://github.com/containers/nri
+  maintainers:
+  - email: feruzjon.muyassarov@intel.com
+    name: nri-plugins project maintainers
+  maturity: alpha
+  minKubeVersion: 1.27.0
+  provider:
+    name: nri-plugins project owners
+    url: https://github.com/containers/nri-plugins
+  version: 0.0.1

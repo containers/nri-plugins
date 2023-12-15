@@ -1,0 +1,32 @@
+---
+- name: Add nri-plugins helm chart repo
+  kubernetes.core.helm_repository:
+    name: nri-plugins
+    repo_url: "https://containers.github.io/nri-plugins"
+
+- name: Plugin installation
+  block:
+    - name: Set plugin chart reference
+      set_fact:
+        chart_ref: "nri-plugins/nri-{{ 'resource-policy-' if pluginName in ['topology-aware', 'balloons'] else '' }}{{ pluginName }}"
+
+    - name: Deploy {{ pluginName }} plugin
+      kubernetes.core.helm:
+        name: "{{ pluginName }}"
+        chart_ref: "{{ chart_ref }}"
+        release_namespace: "{{ ansible_operator_meta.namespace }}"
+        chart_version: "{{ pluginVersion }}"
+        wait: True
+        create_namespace: True
+        values: "{{ values | default({}) }}"
+        skip_crds: True
+  when:
+  - state == "present"
+  - pluginName in ["topology-aware", "balloons", "memory-qos", "memtierd", "sgx-epc"]
+
+- name: Uninstall {{ pluginName }} plugin
+  kubernetes.core.helm:
+    name: "{{ pluginName }}"
+    namespace: "{{ ansible_operator_meta.namespace }}"
+    state: absent
+  when: state == "absent" or state == "revoked"

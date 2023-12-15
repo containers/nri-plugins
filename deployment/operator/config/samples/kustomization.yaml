@@ -1,0 +1,9 @@
+# NOTE(fmuyassarov): We will copy the below CR files (from the top level sample-configs/)
+# during the bundle build process. We don't store the same copies here too to avoid duplication.
+resources:
+- config.nri_v1alpha1_nriplugindeployment.yaml
+- balloons-config.yaml
+- template-config.yaml
+- topologyaware-config.yaml
+- noderesourcetopology.yaml
+#+kubebuilder:scaffold:manifestskustomizesamples
