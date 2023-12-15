@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.1.0-190-gb014264 documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.1.0-196-gca7c4f8 documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -162,7 +162,7 @@ more details on managing the configuration.</p>
 <section id="parameters">
 <h3>Parameters<a class="headerlink" href="#parameters" title="Permalink to this heading"></a></h3>
 <p>Balloons policy parameters:</p>
-<ul class="simple">
+<ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">PinCPU</span></code> controls pinning a container to CPUs of its balloon. The
 default is <code class="docutils literal notranslate"><span class="pre">true</span></code>: the container cannot use other CPUs.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">PinMemory</span></code> controls pinning a container to the memories that are
@@ -219,6 +219,8 @@ have at least this many CPUs, even if containers in the balloon
 request less.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">CpuClass</span></code> specifies the name of the CPU class according to which
 CPUs of balloons are configured.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PreferCloseToDevices</span></code>: prefer creating new balloons close to
+listed devices. List of strings</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">PreferSpreadingPods</span></code>: if <code class="docutils literal notranslate"><span class="pre">true</span></code>, containers of the same pod
 should be spread to different balloons of this type. The default
 is <code class="docutils literal notranslate"><span class="pre">false</span></code>: prefer placing containers of the same pod to the same
@@ -238,7 +240,7 @@ change, idle CPUs (that do not belong to any balloon) are reshared
 as extra CPUs to workloads in balloons with this option. The value
 sets locality of allowed extra CPUs that will be common to these
 workloads.</p>
-<ul>
+<ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">system</span></code>: workloads are allowed to use idle CPUs available
 anywhere in the system.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">package</span></code>: …allowed to use idle CPUs in the same package(s)
@@ -251,6 +253,19 @@ the balloon.</p></li>
 </li>
 <li><p><code class="docutils literal notranslate"><span class="pre">PreferSpreadOnPhysicalCores</span></code> overrides the policy level option
 with the same name in the scope of this balloon type.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PreferCloseToDevices</span></code> prefers creating new balloons close to
+listed devices. If all preferences cannot be fulfilled, preference
+to first devices in the list override preferences to devices after
+them. Adding this preference to any balloon type automatically
+adds corresponding anti-affinity to other balloon types that do
+not prefer to be close to the same device: they prefer being
+created away from the device. Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">PreferCloseToDevices</span><span class="p">:</span>
+  <span class="o">-</span> <span class="o">/</span><span class="n">sys</span><span class="o">/</span><span class="n">class</span><span class="o">/</span><span class="n">net</span><span class="o">/</span><span class="n">eth0</span>
+  <span class="o">-</span> <span class="o">/</span><span class="n">sys</span><span class="o">/</span><span class="n">class</span><span class="o">/</span><span class="n">block</span><span class="o">/</span><span class="n">sda</span>
+</pre></div>
+</div>
+</li>
 <li><p><code class="docutils literal notranslate"><span class="pre">AllocatorPriority</span></code> (0: High, 1: Normal, 2: Low, 3: None). CPU
 allocator parameter, used when creating new or resizing existing
 balloons. If there are balloon types with pre-created balloons
