@@ -1,0 +1,19 @@
+apiVersion: config.nri/v1alpha1
+kind: NriPluginDeployment
+metadata:
+  labels:
+    app.kubernetes.io/name: nriplugindeployment
+    app.kubernetes.io/instance: nriplugindeployment-sample
+    app.kubernetes.io/part-of: nri-plugins-operator
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: nri-plugins-operator
+  name: nriplugindeployment-sample
+  namespace: kube-system
+spec:
+  pluginName: topology-aware
+  pluginVersion: "v0.2.3"
+  state: present
+  values:
+    nri:
+      patchRuntimeConfig: true
+

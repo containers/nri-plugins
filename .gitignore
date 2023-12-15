@@ -3,6 +3,7 @@
 
 *_gendata.go
 /build
+/deployment/operator/bundle/
 /build-aux
 /generate
 coverage.html

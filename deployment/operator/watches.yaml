@@ -1,0 +1,12 @@
+---
+- version: v1alpha1
+  group: config.nri
+  kind: NriPluginDeployment
+  playbook: playbooks/plugin-deployment.yml
+  snakeCaseParameters: False
+  manageStatus: True
+  finalizer:
+    name: nriplugindeployment.config.nri/finalizer
+    vars:
+      state: revoked
+#+kubebuilder:scaffold:watch
