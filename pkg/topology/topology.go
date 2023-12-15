@@ -106,8 +106,16 @@ func getTopologyHint(sysFSPath string) (*Hint, error) {
 
 	hint := Hint{Provider: sysFSPath}
 	fileMap := map[string]*string{
+		// match /sys/devices/system/node/node0/cpulist
+		"cpulist": &hint.CPUs,
+		// match /sys/devices/pci0000:00/pci_bus/0000:00/cpulistaffinity
+		"cpulistaffinity": &hint.CPUs,
+		// match /sys/devices/pci0000:00/0000:00:01.0/local_cpulist
 		"local_cpulist": &hint.CPUs,
-		"numa_node":     &hint.NUMAs,
+		// match /sys/devices/pci0000:00/0000:00:01.0/numa_node
+		"numa_node": &hint.NUMAs,
+		// match /sys/devices/system/cpu/cpu0/cache/index0/shared_cpu_list
+		"shared_cpu_list": &hint.CPUs,
 	}
 	if err := readFilesInDirectory(fileMap, sysFSPath); err != nil {
 		return nil, err
