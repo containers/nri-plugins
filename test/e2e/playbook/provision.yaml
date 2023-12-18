@@ -28,7 +28,7 @@
       when: cri_runtime == "crio"
 
     - name: Setup DNS
-      ansible.builtin.command: "{{ item }}"
+      ansible.builtin.shell: "{{ item }}"
       with_items:
         - rm -f /etc/resolv.conf
         - echo "nameserver {{ dns_nameserver }}" > /etc/resolv.conf
@@ -249,7 +249,7 @@
 
     - name: Configure containerd
       when: is_containerd
-      ansible.builtin.command: "{{ item }}"
+      ansible.builtin.shell: "{{ item }}"
       with_items:
         - mkdir -p /etc/containerd
         - containerd config default > /etc/containerd/config.toml
