@@ -4,24 +4,24 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Memtierd Plugin &mdash; NRI Plugins v0.1.0-197-gc9ae08a documentation</title>
-      <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
-      <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+  <title>Template Policy Plugin &mdash; NRI Plugins v0.1.0-198-g4ab0206 documentation</title>
+      <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
-    <script src="../../_static/js/html5shiv.min.js"></script>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
   <![endif]-->
   
-        <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
-        <script src="../../_static/jquery.js"></script>
-        <script src="../../_static/underscore.js"></script>
-        <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
-        <script src="../../_static/doctools.js"></script>
-        <script src="../../_static/sphinx_highlight.js"></script>
-    <script src="../../_static/js/theme.js"></script>
-    <link rel="index" title="Index" href="../../genindex.html" />
-    <link rel="search" title="Search" href="../../search.html" />
-    <link rel="next" title="SGX EPC Limit Plugin" href="sgx-epc.html" />
-    <link rel="prev" title="Memory-QoS Plugin" href="memory-qos.html" /> 
+        <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+        <script src="../../../_static/sphinx_highlight.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link rel="next" title="Memory-QoS Plugin" href="memory-qos.html" />
+    <link rel="prev" title="Topology-Aware Policy Plugin" href="topology-aware.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -32,14 +32,14 @@
 
           
           
-          <a href="../index.html" class="icon icon-home">
+          <a href="../../index.html" class="icon icon-home">
             NRI Plugins
           </a>
               <div class="version">
                 devel
               </div>
 <div role="search">
-  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
     <input type="hidden" name="check_keywords" value="yes" />
     <input type="hidden" name="area" value="default" />
@@ -48,25 +48,29 @@
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
               <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
 <ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="../introduction.html">Introduction</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../resource-policy/index.html">Resource Policy Plugins</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../memory/index.html">Memory plugins</a></li>
-<li class="toctree-l1 current"><a class="reference internal" href="index.html">Deployment</a><ul class="current">
-<li class="toctree-l2"><a class="reference internal" href="balloons.html">Balloons Policy Plugin</a></li>
-<li class="toctree-l2"><a class="reference internal" href="topology-aware.html">Topology-Aware Policy Plugin</a></li>
-<li class="toctree-l2"><a class="reference internal" href="template.html">Template Policy Plugin</a></li>
-<li class="toctree-l2"><a class="reference internal" href="memory-qos.html">Memory-QoS Plugin</a></li>
-<li class="toctree-l2 current"><a class="current reference internal" href="#">Memtierd Plugin</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#installing-the-chart">Installing the Chart</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#uninstalling-the-chart">Uninstalling the Chart</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#configuration-options">Configuration options</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../resource-policy/index.html">Resource Policy Plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../memory/index.html">Memory plugins</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../index.html">Deployment</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="index.html">Helm</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="balloons.html">Balloons Policy Plugin</a></li>
+<li class="toctree-l3"><a class="reference internal" href="topology-aware.html">Topology-Aware Policy Plugin</a></li>
+<li class="toctree-l3 current"><a class="current reference internal" href="#">Template Policy Plugin</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#installing-the-chart">Installing the Chart</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#uninstalling-the-chart">Uninstalling the Chart</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#configuration-options">Configuration options</a></li>
 </ul>
 </li>
-<li class="toctree-l2"><a class="reference internal" href="sgx-epc.html">SGX EPC Limit Plugin</a></li>
+<li class="toctree-l3"><a class="reference internal" href="memory-qos.html">Memory-QoS Plugin</a></li>
+<li class="toctree-l3"><a class="reference internal" href="memtierd.html">Memtierd Plugin</a></li>
+<li class="toctree-l3"><a class="reference internal" href="sgx-epc.html">SGX EPC Limit Plugin</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../operator/index.html">Operator</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../contributing.html">Contributing</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/containers/nri-plugins">Project GitHub repository</a></li>
 </ul>
 
@@ -76,18 +80,19 @@
 
     <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
           <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="../index.html">NRI Plugins</a>
+          <a href="../../index.html">NRI Plugins</a>
       </nav>
 
       <div class="wy-nav-content">
         <div class="rst-content">
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
-      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
-          <li class="breadcrumb-item"><a href="index.html">Deployment</a></li>
-      <li class="breadcrumb-item active">Memtierd Plugin</li>
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Deployment</a></li>
+          <li class="breadcrumb-item"><a href="index.html">Helm</a></li>
+      <li class="breadcrumb-item active">Template Policy Plugin</li>
       <li class="wy-breadcrumbs-aside">
-            <a href="../../_sources/docs/deployment/memtierd.md.txt" rel="nofollow"> View page source</a>
+            <a href="../../../_sources/docs/deployment/helm/template.md.txt" rel="nofollow"> View page source</a>
       </li>
   </ul>
   <hr/>
@@ -95,10 +100,11 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="memtierd-plugin">
-<h1>Memtierd Plugin<a class="headerlink" href="#memtierd-plugin" title="Permalink to this heading"></a></h1>
-<p>This chart deploys memtierd Node Resource Interface (NRI) plugin. The memtierd
-NRI plugin enables managing workloads with Memtierd in Kubernetes.</p>
+  <section id="template-policy-plugin">
+<h1>Template Policy Plugin<a class="headerlink" href="#template-policy-plugin" title="Permalink to this heading"></a></h1>
+<p>This chart deploys the template Node Resource Interface (NRI) plugin. The template
+NRI resource policy plugin is a wireframe implementation without any actual policy
+logic. It serves as a template for creating new policy implementations.</p>
 <section id="prerequisites">
 <h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading"></a></h2>
 <ul>
@@ -115,7 +121,7 @@ release version to use the NRI feature.</p></li>
 detailed instructions. You can optionally enable the NRI in containerd
 using the Helm chart during the chart installation simply by setting the
 <code class="docutils literal notranslate"><span class="pre">nri.patchRuntimeConfig</span></code> parameter. For instance,</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>my-memtierd<span class="w"> </span>nri-plugins/nri-memtierd<span class="w"> </span>--set<span class="w"> </span>nri.patchRuntimeConfig<span class="o">=</span><span class="nb">true</span><span class="w"> </span>--namespace<span class="w"> </span>kube-system
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>my-template<span class="w"> </span>nri-plugins/nri-resource-policy-template<span class="w"> </span>--set<span class="w"> </span>nri.patchRuntimeConfig<span class="o">=</span><span class="nb">true</span><span class="w"> </span>--namespace<span class="w"> </span>kube-system
 </pre></div>
 </div>
 <p>Enabling <code class="docutils literal notranslate"><span class="pre">nri.patchRuntimeConfig</span></code> creates an init container to turn on
@@ -133,7 +139,7 @@ release version to use the NRI feature</p></li>
 detailed instructions.  You can optionally enable the NRI in CRI-O using
 the Helm chart during the chart installation simply by setting the
 <code class="docutils literal notranslate"><span class="pre">nri.patchRuntimeConfig</span></code> parameter. For instance,</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>my-memtierd<span class="w"> </span>nri-plugins/nri-memtierd<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>--set<span class="w"> </span>nri.patchRuntimeConfig<span class="o">=</span><span class="nb">true</span>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>my-template<span class="w"> </span>nri-plugins/nri-resource-policy-template<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>--set<span class="w"> </span>nri.patchRuntimeConfig<span class="o">=</span><span class="nb">true</span>
 </pre></div>
 </div>
 </li>
@@ -145,21 +151,21 @@ the Helm chart during the chart installation simply by setting the
 </section>
 <section id="installing-the-chart">
 <h2>Installing the Chart<a class="headerlink" href="#installing-the-chart" title="Permalink to this heading"></a></h2>
-<p>Path to the chart: <code class="docutils literal notranslate"><span class="pre">nri-memtierd</span></code>.</p>
+<p>Path to the chart: <code class="docutils literal notranslate"><span class="pre">nri-resource-policy-template</span></code></p>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>repo<span class="w"> </span>add<span class="w"> </span>nri-plugins<span class="w"> </span>https://containers.github.io/nri-plugins
-helm<span class="w"> </span>install<span class="w"> </span>my-memtierd<span class="w"> </span>nri-plugins/nri-memtierd<span class="w"> </span>--namespace<span class="w"> </span>kube-system
+helm<span class="w"> </span>install<span class="w"> </span>my-template<span class="w"> </span>nri-plugins/nri-resource-policy-template<span class="w"> </span>--namespace<span class="w"> </span>kube-system
 </pre></div>
 </div>
-<p>The command above deploys memtierd NRI plugin on the Kubernetes cluster within
+<p>The command above deploys the template NRI plugin on the Kubernetes cluster within
 the <code class="docutils literal notranslate"><span class="pre">kube-system</span></code> namespace with default configuration. To customize the
 available parameters as described in the <a class="reference internal" href="#configuration-options">Configuration options</a>
 below, you have two options: you can use the <code class="docutils literal notranslate"><span class="pre">--set</span></code> flag or create a custom
 values.yaml file and provide it using the <code class="docutils literal notranslate"><span class="pre">-f</span></code> flag. For example:</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="c1"># Install the memtierd plugin with custom values provided using the --set option</span>
-helm<span class="w"> </span>install<span class="w"> </span>my-memtierd<span class="w"> </span>nri-plugins/nri-memtierd<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>--set<span class="w"> </span>nri.patchRuntimeConfig<span class="o">=</span><span class="nb">true</span>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="c1"># Install the template plugin with custom values provided using the --set option</span>
+helm<span class="w"> </span>install<span class="w"> </span>my-template<span class="w"> </span>nri-plugins/nri-resource-policy-template<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>--set<span class="w"> </span>nri.patchRuntimeConfig<span class="o">=</span><span class="nb">true</span>
 </pre></div>
 </div>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="c1"># Install the nri-memtierd plugin with custom values specified in a custom values.yaml file</span>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="c1"># Install the template plugin with custom values specified in a custom values.yaml file</span>
 cat<span class="w"> </span><span class="s">&lt;&lt;EOF &gt; myPath/values.yaml</span>
 <span class="s">nri:</span>
 <span class="s">  patchRuntimeConfig: true</span>
@@ -170,14 +176,14 @@ cat<span class="w"> </span><span class="s">&lt;&lt;EOF &gt; myPath/values.yaml</
 <span class="s">  effect: &quot;NoSchedule&quot;</span>
 <span class="s">EOF</span>
 
-helm<span class="w"> </span>install<span class="w"> </span>my-memtierd<span class="w"> </span>nri-plugins/nri-memtierd<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>-f<span class="w"> </span>myPath/values.yaml
+helm<span class="w"> </span>install<span class="w"> </span>my-template<span class="w"> </span>nri-plugins/nri-resource-policy-template<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>-f<span class="w"> </span>myPath/values.yaml
 </pre></div>
 </div>
 </section>
 <section id="uninstalling-the-chart">
 <h2>Uninstalling the Chart<a class="headerlink" href="#uninstalling-the-chart" title="Permalink to this heading"></a></h2>
-<p>To uninstall the memtierd plugin run the following command:</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>delete<span class="w"> </span>my-memtierd<span class="w"> </span>--namespace<span class="w"> </span>kube-system
+<p>To uninstall the templates plugin run the following command:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>delete<span class="w"> </span>my-template<span class="w"> </span>--namespace<span class="w"> </span>kube-system
 </pre></div>
 </div>
 </section>
@@ -194,7 +200,7 @@ customize with their own values, along with the default values.</p>
 </thead>
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">image.name</span></code></p></td>
-<td><p><a class="reference external" href="https://ghcr.io/containers/nri-plugins/nri-memtierd">ghcr.io/containers/nri-plugins/nri-memtierd</a></p></td>
+<td><p><a class="reference external" href="https://ghcr.io/containers/nri-plugins/nri-resource-policy-template">ghcr.io/containers/nri-plugins/nri-resource-policy-template</a></p></td>
 <td><p>container image name</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">image.tag</span></code></p></td>
@@ -206,44 +212,40 @@ customize with their own values, along with the default values.</p>
 <td><p>image pull policy</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">resources.cpu</span></code></p></td>
-<td><p>250m</p></td>
+<td><p>500m</p></td>
 <td><p>cpu resources for the Pod</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">resources.memory</span></code></p></td>
-<td><p>100Mi</p></td>
-<td><p>memory qouta for the</p></td>
+<td><p>512Mi</p></td>
+<td><p>memory qouta for the Pod</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">outputDir</span></code></p></td>
-<td><p>empty string</p></td>
-<td><p>host directory for memtierd.output files</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">hostPort</span></code></p></td>
+<td><p>8891</p></td>
+<td><p>metrics port to expose on the host</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">nri.patchRuntimeConfig</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">config</span></code></p></td>
+<td><p>see <a class="reference external" href="https://github.com/containers/nri-plugins/tree/4ab020681f593265652930deeba17ea9c4674280/deployment/helm/template/values.yaml">helm chart values</a> for the default configuration</p></td>
+<td><p>plugin configuration data</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">nri.patchRuntimeConfig</span></code></p></td>
 <td><p>false</p></td>
 <td><p>enable NRI in containerd or CRI-O</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">initImage.name</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">initImage.name</span></code></p></td>
 <td><p><a class="reference external" href="https://ghcr.io/containers/nri-plugins/config-manager">ghcr.io/containers/nri-plugins/config-manager</a></p></td>
 <td><p>init container image name</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">initImage.tag</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">initImage.tag</span></code></p></td>
 <td><p>unstable</p></td>
 <td><p>init container image tag</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">initImage.pullPolicy</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">initImage.pullPolicy</span></code></p></td>
 <td><p>Always</p></td>
 <td><p>init container image pull policy</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">tolerations</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">tolerations</span></code></p></td>
 <td><p>[]</p></td>
 <td><p>specify taint toleration key, operator and effect</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">affinity</span></code></p></td>
-<td><p>[]</p></td>
-<td><p>specify node affinity</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">nodeSelector</span></code></p></td>
-<td><p>[]</p></td>
-<td><p>specify node selector labels</p></td>
 </tr>
 </tbody>
 </table>
@@ -254,8 +256,8 @@ customize with their own values, along with the default values.</p>
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="memory-qos.html" class="btn btn-neutral float-left" title="Memory-QoS Plugin" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="sgx-epc.html" class="btn btn-neutral float-right" title="SGX EPC Limit Plugin" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="topology-aware.html" class="btn btn-neutral float-left" title="Topology-Aware Policy Plugin" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="memory-qos.html" class="btn btn-neutral float-right" title="Memory-QoS Plugin" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>
@@ -298,7 +300,7 @@ customize with their own values, along with the default values.</p>
       </div>
     </div>
   
-  <script src="../../../versions.js"></script>
+  <script src="../../../../versions.js"></script>
   <script>
       var list = document.getElementById('versions')
       var menuItems = getVersionsMenuItems();
