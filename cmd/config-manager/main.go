@@ -180,22 +180,29 @@ func detectRuntime() (string, *dbus.Conn, error) {
 	// (either containerd or CRI-O).If more than one container runtime systemd unit is found
 	// to be in an active state, the process fails.
 	log.Infof("looking for active runtime units on D-Bus...")
-	units, err := conn.ListUnitsByPatternsContext(context.Background(), []string{"active"}, []string{containerdUnit, crioUnit})
+	units, err := conn.ListUnitsFilteredContext(context.Background(), []string{"active"})
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to detect container runtime in use: %w", err)
 	}
 
-	if len(units) == 0 {
+	expectedUnits := make([]dbus.UnitStatus, 0)
+	for _, unit := range units {
+		if unit.Name == containerdUnit || unit.Name == crioUnit {
+			expectedUnits = append(expectedUnits, unit)
+		}
+	}
+
+	if len(expectedUnits) == 0 {
 		return "", nil, fmt.Errorf("failed to detect container runtime in use: got 0 systemd units")
 	}
 
-	if len(units) > 1 {
+	if len(expectedUnits) > 1 {
 		return "", nil, fmt.Errorf("detected more than one container runtime on the host, expected one")
 	}
 
-	log.Infof("found %s...", units[0].Name)
+	log.Infof("found %s...", expectedUnits[0].Name)
 
-	return units[0].Name, conn, nil
+	return expectedUnits[0].Name, conn, nil
 }
 
 func restartSystemdUnit(conn *dbus.Conn, unit string) error {
