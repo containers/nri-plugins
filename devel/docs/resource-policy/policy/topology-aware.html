@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.1.0-202-g0241c49 documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.1.0-203-g1703824 documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -255,41 +255,41 @@ speed memory, typically found on some special-purpose computing systems</p></li>
 behavior. These options can be supplied as part of the effective
 <a class="reference internal" href="../configuration.html"><span class="std std-doc">dynamic configuration</span></a> custom resource.</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">PinCPU</span></code></p>
+<li><p><code class="docutils literal notranslate"><span class="pre">pinCPU</span></code></p>
 <ul>
 <li><p>whether to pin workloads to assigned pool CPU sets</p></li>
 </ul>
 </li>
-<li><p><code class="docutils literal notranslate"><span class="pre">PinMemory</span></code></p>
+<li><p><code class="docutils literal notranslate"><span class="pre">pinMemory</span></code></p>
 <ul>
 <li><p>whether to pin workloads to assigned pool memory zones</p></li>
 </ul>
 </li>
-<li><p><code class="docutils literal notranslate"><span class="pre">PreferIsolatedCPUs</span></code></p>
+<li><p><code class="docutils literal notranslate"><span class="pre">preferIsolatedCPUs</span></code></p>
 <ul>
 <li><p>whether isolated CPUs are preferred by default for workloads that are
 eligible for exclusive CPU allocation</p></li>
 </ul>
 </li>
-<li><p><code class="docutils literal notranslate"><span class="pre">PreferSharedCPUs</span></code></p>
+<li><p><code class="docutils literal notranslate"><span class="pre">preferSharedCPUs</span></code></p>
 <ul>
 <li><p>whether shared allocation is preferred by default for workloads that
 would be otherwise eligible for exclusive CPU allocation</p></li>
 </ul>
 </li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ReservedPoolNamespaces</span></code></p>
+<li><p><code class="docutils literal notranslate"><span class="pre">reservedPoolNamespaces</span></code></p>
 <ul>
 <li><p>list of extra namespaces (or glob patters) that will be allocated to
 reserved CPUs</p></li>
 </ul>
 </li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ColocatePods</span></code></p>
+<li><p><code class="docutils literal notranslate"><span class="pre">colocatePods</span></code></p>
 <ul>
 <li><p>whether try to allocate containers in a pod to the same or close by
 topology pools</p></li>
 </ul>
 </li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ColocateNamespaces</span></code></p>
+<li><p><code class="docutils literal notranslate"><span class="pre">colocateNamespaces</span></code></p>
 <ul>
 <li><p>whether try to allocate containers in a namespace to the same or close by
 topology pools</p></li>
@@ -367,7 +367,7 @@ groups.</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">mixed</span></code></p>
 <ul>
 <li><p>by default eligible for exclusive and isolated allocation</p></li>
-<li><p>not eligible for either if <code class="docutils literal notranslate"><span class="pre">PreferSharedCPUs</span></code> is set to true</p></li>
+<li><p>not eligible for either if <code class="docutils literal notranslate"><span class="pre">preferSharedCPUs</span></code> is set to true</p></li>
 <li><p>not eligible for either if annotated to opt out from exclusive allocation</p></li>
 <li><p>not eligible for isolated allocation if annotated to opt out</p></li>
 </ul>
@@ -475,7 +475,7 @@ opt out from hint-aware pool selection.</p>
 </section>
 <section id="implicit-topological-co-location-for-pods-and-namespaces">
 <h3>Implicit Topological Co-location for Pods and Namespaces<a class="headerlink" href="#implicit-topological-co-location-for-pods-and-namespaces" title="Permalink to this heading"></a></h3>
-<p>The <code class="docutils literal notranslate"><span class="pre">ColocatePods</span></code> or <code class="docutils literal notranslate"><span class="pre">ColocateNamespaces</span></code> configuration options control whether
+<p>The <code class="docutils literal notranslate"><span class="pre">colocatePods</span></code> or <code class="docutils literal notranslate"><span class="pre">colocateNamespaces</span></code> configuration options control whether
 the policy will try to co-locate, that is allocate topologically close, containers
 within the same Pod or K8s namespace.</p>
 <p>Both of these options are false by default. Setting them to true is a shorthand
@@ -535,10 +535,10 @@ Pod annotation.</p>
 Containers belonging to such namespaces will only run on CPUs set aside
 according to the global CPU reservation, as configured by the ReservedResources
 configuration option in the policy section.
-The <code class="docutils literal notranslate"><span class="pre">ReservedPoolNamespaces</span></code> option is a list of namespace globs that will be
+The <code class="docutils literal notranslate"><span class="pre">reservedPoolNamespaces</span></code> option is a list of namespace globs that will be
 allocated to reserved CPU class.</p>
 <p>For example:</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="w">  </span><span class="nt">ReservedPoolNamespaces</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;my-pool&quot;</span><span class="p p-Indicator">,</span><span class="s">&quot;reserved-*&quot;</span><span class="p p-Indicator">]</span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="w">  </span><span class="nt">reservedPoolNamespaces</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;my-pool&quot;</span><span class="p p-Indicator">,</span><span class="s">&quot;reserved-*&quot;</span><span class="p p-Indicator">]</span>
 </pre></div>
 </div>
 <p>In this setup, all the workloads in <code class="docutils literal notranslate"><span class="pre">my-pool</span></code> namespace and those namespaces
