@@ -18,7 +18,7 @@ KUBERNETES_VERSION := $(shell grep 'k8s.io/kubernetes ' go.mod | sed 's/^.* //')
 
 # Directories (in cmd) with go code we'll want to create Docker images from.
 IMAGE_DIRS  = $(shell find cmd -name Dockerfile | sed 's:cmd/::g;s:/.*::g' | uniq)
-IMAGE_VERSION  := $(shell git describe --dirty 2> /dev/null || echo unknown)
+IMAGE_VERSION  := $(shell git describe --dirty 2> /dev/null || echo v0.0.0-unknown)
 ifdef IMAGE_REPO
     override IMAGE_REPO := $(IMAGE_REPO)/
 endif
