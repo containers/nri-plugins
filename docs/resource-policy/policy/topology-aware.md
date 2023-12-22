@@ -120,23 +120,23 @@ The policy has a number of configuration options which affect its default
 behavior. These options can be supplied as part of the effective
 [dynamic configuration][configuration] custom resource.
 
-- `PinCPU`
+- `pinCPU`
   - whether to pin workloads to assigned pool CPU sets
-- `PinMemory`
+- `pinMemory`
   - whether to pin workloads to assigned pool memory zones
-- `PreferIsolatedCPUs`
+- `preferIsolatedCPUs`
   - whether isolated CPUs are preferred by default for workloads that are
     eligible for exclusive CPU allocation
-- `PreferSharedCPUs`
+- `preferSharedCPUs`
   - whether shared allocation is preferred by default for workloads that
     would be otherwise eligible for exclusive CPU allocation
-- `ReservedPoolNamespaces`
+- `reservedPoolNamespaces`
   - list of extra namespaces (or glob patters) that will be allocated to
     reserved CPUs
-- `ColocatePods`
+- `colocatePods`
   - whether try to allocate containers in a pod to the same or close by
     topology pools
-- `ColocateNamespaces`
+- `colocateNamespaces`
   - whether try to allocate containers in a namespace to the same or close by
     topology pools
 
@@ -186,7 +186,7 @@ groups.
   - always run on shared CPU cores
 - `mixed`
   - by default eligible for exclusive and isolated allocation
-  - not eligible for either if `PreferSharedCPUs` is set to true
+  - not eligible for either if `preferSharedCPUs` is set to true
   - not eligible for either if annotated to opt out from exclusive allocation
   - not eligible for isolated allocation if annotated to opt out
 - `multi-core`
@@ -295,7 +295,7 @@ opt out from hint-aware pool selection.
 
 ### Implicit Topological Co-location for Pods and Namespaces
 
-The `ColocatePods` or `ColocateNamespaces` configuration options control whether
+The `colocatePods` or `colocateNamespaces` configuration options control whether
 the policy will try to co-locate, that is allocate topologically close, containers
 within the same Pod or K8s namespace.
 
@@ -360,13 +360,13 @@ User is able to mark certain namespaces to have a reserved CPU allocation.
 Containers belonging to such namespaces will only run on CPUs set aside
 according to the global CPU reservation, as configured by the ReservedResources
 configuration option in the policy section.
-The `ReservedPoolNamespaces` option is a list of namespace globs that will be
+The `reservedPoolNamespaces` option is a list of namespace globs that will be
 allocated to reserved CPU class.
 
 For example:
 
 ```yaml
-  ReservedPoolNamespaces: ["my-pool","reserved-*"]
+  reservedPoolNamespaces: ["my-pool","reserved-*"]
 ```
 
 In this setup, all the workloads in `my-pool` namespace and those namespaces
