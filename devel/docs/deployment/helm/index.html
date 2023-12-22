@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Helm &mdash; NRI Plugins v0.1.0-201-g61b0d6d documentation</title>
+  <title>Helm &mdash; NRI Plugins v0.1.0-202-g0241c49 documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -95,6 +95,32 @@
              
   <section id="helm">
 <h1>Helm<a class="headerlink" href="#helm" title="Permalink to this heading"></a></h1>
+<p>All the available charts can be found in <a class="reference external" href="https://artifacthub.io/packages/search?ts_query_web=nri&amp;amp;verified_publisher=true&amp;amp;official=true&amp;amp;sort=relevance&amp;amp;page=1">artifacthub.io</a>.</p>
+<p><strong>NOTE:</strong> NRI-plugins Helm installation has been successfully verified in both local clusters and major Cloud Providers’ managed clusters, including:</p>
+<ul class="simple">
+<li><p>AWS EKS</p>
+<ul>
+<li><p>kubernetes version: 1.28.x</p></li>
+<li><p>containerd version: 1.7</p></li>
+<li><p>node image: Amazon Linux 2, Ubuntu 20.04,</p></li>
+</ul>
+</li>
+<li><p>Google GKE</p>
+<ul>
+<li><p>kubernetes version: 1.28.x</p></li>
+<li><p>containerd version: 1.7</p></li>
+<li><p>node image: Container-Optimized OS from Google (COS), Ubuntu 22.04</p></li>
+</ul>
+</li>
+<li><p>Azure AKS</p>
+<ul>
+<li><p>kubernetes version: 1.28.x</p></li>
+<li><p>containerd version: 1.7</p></li>
+<li><p>node image: Azure Linux Container Host, Ubuntu 20.04</p></li>
+</ul>
+</li>
+</ul>
+<p>While Ubuntu 20.04/22.04 was used across all three CSP environments, it’s worth noting that node images are not limited to Ubuntu 20.04/22.04 only. The majority of widely recognized Linux distributions should be suitable for use.</p>
 <div class="toctree-wrapper compound">
 <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
 <ul>

@@ -1,7 +1,6 @@
 # Deployment
 
-The only supported installation method of the NRI plugins at the moment is
-through Helm.
+Currently supported installation methods of the NRI plugins are Helm and Operator.
 
 ```{toctree}
 ---
