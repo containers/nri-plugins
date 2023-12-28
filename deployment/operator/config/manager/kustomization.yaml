@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: ghcr.io/containers/nri-plugins-operator
-  newTag: unstable
+  newTag: v0.3.2
