@@ -4,7 +4,7 @@ metadata:
   annotations:
     alm-examples: '[]'
     capabilities: Basic Install
-    categories: Performance
+    categories: OpenShift Optional
     certified: "false"
     containerImage: ghcr.io/containers/nri-plugins/nri-plugins-operator:unstable
     description: An operator that installs Node Resource Interface reference plugins.
