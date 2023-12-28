@@ -98,7 +98,7 @@ bundle: copy-crds kustomize operator-sdk ## Generate bundle manifests and metada
 	$(OPERATOR_SDK) generate kustomize manifests -q
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
-	OPERATOR_BUNDLE_CATEGORIES=categories.json $(OPERATOR_SDK) bundle validate ./bundle \
+	$(OPERATOR_SDK) bundle validate ./bundle \
 	--select-optional name=operatorhub \
 	--select-optional suite=operatorframework \
 	--select-optional name=good-practices \
