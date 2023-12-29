@@ -57,7 +57,7 @@ endif
 OPERATOR_SDK_VERSION ?= v1.32.0
 
 # Image URL to use all building/pushing image targets
-IMG ?= $(IMAGE_TAG_BASE):$(IMAGE_VERSION)
+IMAGE ?= $(IMAGE_TAG_BASE):$(IMAGE_VERSION)
 
 # (Default) operator image dockerfile and bundle image dockerfile.
 DOCKERFILE ?= Dockerfile
@@ -94,31 +94,37 @@ endif
 endif
 
 .PHONY: bundle
-bundle: copy-crds kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
+bundle: copy-crds kustomize operator-sdk kustomizations ## Generate bundle manifests and metadata, then validate generated files.
 	$(OPERATOR_SDK) generate kustomize manifests -q
-	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
+	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMAGE)
+	find config/manifests/bases -name nri-plugins-operator.clusterserviceversion.yaml | xargs -I '{}' \
+		sed -e "s|containerImage:.*|containerImage: $(IMAGE)|" -i '{}';
 	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
+	$(MAKE) bundle-validate
+	$(MAKE) cleanup-crds
+	
+.PHONY: bundle-validate
+bundle-validate:	
 	$(OPERATOR_SDK) bundle validate ./bundle \
 	--select-optional name=operatorhub \
 	--select-optional suite=operatorframework \
 	--select-optional name=good-practices \
-	--select-optional suite=operatorframework; \
-	$(MAKE) cleanup-crds;
+	--select-optional suite=operatorframework
 
 .PHONY: 	
 docker-build:
-	docker build -f $(DOCKERFILE) -t ${IMG} .
+	docker build -f $(DOCKERFILE) -t ${IMAGE} .
 
 .PHONY: docker-push
 docker-push:
-	docker push ${IMG}
+	docker push ${IMAGE}
 
 .PHONY: docker-save
 docker-save: docker-build
-	@img_name="${IMG}"; \
+	@img_name="${IMAGE}"; \
 	img_name="$${img_name##*/}"; \
 	img_name="$${img_name%:*}"; \
-	img_info=`docker images --filter=reference=${IMG} --format '{{.ID}} {{.Repository}}:{{.Tag}} (created {{.CreatedSince}}, {{.CreatedAt}})' | head -n 1`; \
+	img_info=`docker images --filter=reference=${IMAGE} --format '{{.ID}} {{.Repository}}:{{.Tag}} (created {{.CreatedSince}}, {{.CreatedAt}})' | head -n 1`; \
 	img_id=`awk '{print $$1}' <<< "$${img_info}"`; \
 	img_tag=`awk '{print $$2}' <<< "$${img_info}"`; \
 	img_tar=`realpath "$(IMAGE_PATH)/$${img_name}-image-$${img_id}.tar"`; \
@@ -161,7 +167,7 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
 	- docker buildx create --name project-v3-builder
 	docker buildx use project-v3-builder
-	- docker buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
+	- docker buildx build --push --platform=$(PLATFORMS) --tag ${IMAGE} -f Dockerfile.cross .
 	- docker buildx rm project-v3-builder
 	rm Dockerfile.cross
 
@@ -177,7 +183,7 @@ uninstall: copy-crds kustomize ## Uninstall CRDs from the K8s cluster specified 
 
 .PHONY: deploy
 deploy: kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMAGE}
 	$(KUSTOMIZE) build config/default | kubectl apply -f -
 
 .PHONY: undeploy
@@ -237,7 +243,10 @@ cleanup-crds: ## Clean up temporarily copied CRDs and CRs.
 	rm -f $(SAMPLE_DEST_DIR)/noderesourcetopology.yaml
 
 .PHONY: kustomizations
-kustomizations: config/manager/kustomization.yaml
+kustomizations: config/manager/kustomization.yaml config/manifests/bases/nri-plugins-operator.clusterserviceversion.yaml
 
 config/manager/kustomization.yaml: config/manager/kustomization.yaml.in
+	@cp $< $@
+
+config/manifests/bases/nri-plugins-operator.clusterserviceversion.yaml: config/manifests/bases/nri-plugins-operator.clusterserviceversion.yaml.in
 	@cp $< $@
