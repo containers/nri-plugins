@@ -22,7 +22,7 @@ future releases.
     - [ ] Run `go mod tidy`.
     - [ ] Run `git commit -m 'go.mod,go.sum: update dependencies.' go.{mod,sum}`, if necessary.
   - [ ] Update deployment files
-    - [ ] run `hack/release-helper.sh`
+    - [ ] run `scripts/hack/release-helper.sh`
     - [ ] commit changes, submit as a PR to GitHub
     - [ ] wait for the PR to be merged
   - [ ] Run `git tag -a -m "NRI plugins $VERSION" $VERSION`.
