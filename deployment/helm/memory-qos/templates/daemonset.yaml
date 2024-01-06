@@ -62,6 +62,9 @@ spec:
             mountPath: /etc/nri/memory-qos
           - name: nrisockets
             mountPath: /var/run/nri
+      {{- if .Values.nri.setPodPriorityClassNodeCritical }}
+      priorityClassName: system-node-critical
+      {{- end }}
       volumes:
       - name: memory-qos-config-vol
         configMap:

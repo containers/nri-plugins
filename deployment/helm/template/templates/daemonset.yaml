@@ -80,6 +80,9 @@ spec:
             mountPath: /var/run/nri-resource-policy
           - name: nrisockets
             mountPath: /var/run/nri
+      {{- if .Values.nri.setPodPriorityClassNodeCritical }}
+      priorityClassName: system-node-critical
+      {{- end }}
       volumes:
       - name: resource-policydata
         hostPath:
