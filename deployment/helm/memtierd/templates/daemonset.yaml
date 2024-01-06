@@ -80,6 +80,9 @@ spec:
           - name: run-dir-vol
             mountPath: /run-dir
           {{- end }}
+      {{- if .Values.nri.setPodPriorityClassNodeCritical }}
+      priorityClassName: system-node-critical
+      {{- end }}
       volumes:
       - name: memtierd-config-vol
         configMap:
