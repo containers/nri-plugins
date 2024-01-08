@@ -96,7 +96,6 @@ customize with their own values, along with the default values.
 | `resources.cpu`          | 25m                                                                                                                           | cpu resources for the Pod                            |
 | `resources.memory`       | 100Mi                                                                                                                         | memory qouta for the Pod                         |
 | `nri.patchRuntimeConfig` | false                                                                                                                         | enable NRI in containerd or CRI-O                    |
-| `nri.setPodPriorityClassNodeCritical` | false                                                                                                                         | enable [marking Pod as node critical](https://kubernetes.io/docs/tasks/administer-cluster/guaranteed-scheduling-critical-addon-pods/#marking-pod-as-critical)                       |
 | `initImage.name`         | [ghcr.io/containers/nri-plugins/config-manager](https://ghcr.io/containers/nri-plugins/config-manager)                                             |
 | init container image name                          |
 | `initImage.tag`          | unstable                                                                                                                      | init container image tag                             |
@@ -104,3 +103,4 @@ customize with their own values, along with the default values.
 | `tolerations`            | []                                                                                                                            | specify taint toleration key, operator and effect    |
 | `affinity`               | []                                                                                                                            | specify node affinity                                |
 | `nodeSelector`           | []                                                                                                                            | specify node selector labels                         |
+| `podPriorityClassNodeCritical` | false                                                                                                                         | enable [marking Pod as node critical](https://kubernetes.io/docs/tasks/administer-cluster/guaranteed-scheduling-critical-addon-pods/#marking-pod-as-critical)                       |

@@ -80,7 +80,7 @@ spec:
           - name: run-dir-vol
             mountPath: /run-dir
           {{- end }}
-      {{- if .Values.nri.setPodPriorityClassNodeCritical }}
+      {{- if .Values.podPriorityClassNodeCritical }}
       priorityClassName: system-node-critical
       {{- end }}
       volumes:
