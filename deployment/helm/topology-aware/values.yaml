@@ -30,10 +30,6 @@ resources:
 
 nri:
   patchRuntimeConfig: false
-  # NRI plugins should be considered as part of the container runtime.
-  # Therefore, adding the system-node-critical priority class to the DaemonSet,
-  # could mitigate potential risk in a running system under load.
-  setPodPriorityClassNodeCritical: false
 
 initContainerImage:
   name: ghcr.io/containers/nri-plugins/nri-config-manager
@@ -70,3 +66,8 @@ nodeSelector: []
 #
 # nodeSelector:
 #  kubernetes.io/disk: "ssd"
+
+# NRI plugins should be considered as part of the container runtime.
+# Therefore, adding the system-node-critical priority class to the DaemonSet,
+# could mitigate potential risk in a running system under load.
+podPriorityClassNodeCritical: false
