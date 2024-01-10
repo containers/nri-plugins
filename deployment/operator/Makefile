@@ -189,7 +189,7 @@ ARCH := $(shell uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
 
 .PHONY: kustomize
 KUSTOMIZE = $(shell pwd)/bin/kustomize
-kustomize: ## Download kustomize locally if necessary.
+kustomize: kustomizations ## Download kustomize locally if necessary.
 ifeq (,$(wildcard $(KUSTOMIZE)))
 ifeq (,$(shell which kustomize 2>/dev/null))
 	@{ \
@@ -235,3 +235,9 @@ cleanup-crds: ## Clean up temporarily copied CRDs and CRs.
 	rm -f $(SAMPLE_DEST_DIR)/template-config.yaml
 	rm -f $(SAMPLE_DEST_DIR)/topologyaware-config.yaml
 	rm -f $(SAMPLE_DEST_DIR)/noderesourcetopology.yaml
+
+.PHONY: kustomizations
+kustomizations: config/manager/kustomization.yaml
+
+config/manager/kustomization.yaml: config/manager/kustomization.yaml.in
+	@cp $< $@
