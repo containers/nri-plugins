@@ -333,7 +333,6 @@ func (p *nriPlugin) CreateContainer(ctx context.Context, podSandbox *api.PodSand
 		c.UpdateState(cache.ContainerStateStale)
 		return nil, nil, fmt.Errorf("failed to allocate resources: %w", err)
 	}
-	c.UpdateState(cache.ContainerStateCreated)
 
 	c.InsertMount(&cache.Mount{
 		Destination: "/.nri-resource-policy",
@@ -341,6 +340,8 @@ func (p *nriPlugin) CreateContainer(ctx context.Context, podSandbox *api.PodSand
 		Type:        "bind",
 		Options:     []string{"bind", "ro", "rslave"},
 	})
+
+	c.UpdateState(cache.ContainerStateCreated)
 
 	if err := p.runPostAllocateHooks(event, c); err != nil {
 		m.Error("%s: failed to run post-allocate hooks for %s: %v",
