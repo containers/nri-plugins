@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy Plugin &mdash; NRI Plugins v0.3.0-2-g398fdf5 documentation</title>
+  <title>Balloons Policy Plugin &mdash; NRI Plugins v0.3.1-2-gfcef94b documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -224,7 +224,7 @@ customize with their own values, along with the default values.</p>
 <td><p>metrics port to expose on the host</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">config</span></code></p></td>
-<td><p>see <a class="reference external" href="https://github.com/containers/nri-plugins/tree/398fdf5ebe03c8a05a3f353520d1b6df353bf85a/deployment/helm/balloons/values.yaml">helm chart values</a> for the default configuration</p></td>
+<td><p>see <a class="reference external" href="https://github.com/containers/nri-plugins/tree/fcef94b93ff1f26397699d57bd26fabc1053a368/deployment/helm/balloons/values.yaml">helm chart values</a> for the default configuration</p></td>
 <td><p>plugin configuration data</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">nri.patchRuntimeConfig</span></code></p></td>
@@ -254,6 +254,10 @@ customize with their own values, along with the default values.</p>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">nodeSelector</span></code></p></td>
 <td><p>[]</p></td>
 <td><p>specify node selector labels</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">podPriorityClassNodeCritical</span></code></p></td>
+<td><p>false</p></td>
+<td><p>enable <a class="reference external" href="https://kubernetes.io/docs/tasks/administer-cluster/guaranteed-scheduling-critical-addon-pods/#marking-pod-as-critical">marking Pod as node critical</a></p></td>
 </tr>
 </tbody>
 </table>
