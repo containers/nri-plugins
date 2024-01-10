@@ -126,7 +126,7 @@ allclean: clean clean-cache
 
 test: test-gopkgs
 
-verify: verify-godeps verify-fmt
+verify: verify-godeps verify-fmt verify-generate
 
 #
 # build targets
@@ -370,6 +370,17 @@ verify-fmt:
 	    echo "$$report" | sed 's/^/ERROR: /g'; \
 	    echo "ERROR: please run make reformat or go fmt by hand and commit any changes."; \
 	    exit 1; \
+	fi
+
+verify-generate: generate
+	$(Q) git diff --quiet; ec="$$?"; \
+	if [ "$$ec" != "0" ]; then \
+	    echo "ERROR: generated artifacts are not up-to-date."; \
+	    echo "ERROR:"; \
+	    git --no-pager diff | sed 's/^/ERROR: /g'; \
+	    echo "ERROR:"; \
+	    echo "ERROR: please run 'make generate' and commit these changes."; \
+	    exit "$$ec"; \
 	fi
 
 #
