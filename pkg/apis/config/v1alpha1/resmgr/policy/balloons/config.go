@@ -46,7 +46,7 @@ type Config struct {
 	PinMemory *bool `json:"pinMemory,omitempty"`
 	// IdleCpuClass controls how unusded CPUs outside any a
 	// balloons are (re)configured.
-	IdleCpuClass string `json:"idleCPUClass",omitempty"`
+	IdleCpuClass string `json:"idleCPUClass,omitempty"`
 	// ReservedPoolNamespaces is a list of namespace globs that
 	// will be allocated to reserved CPUs.
 	ReservedPoolNamespaces []string `json:"reservedPoolNamespaces,omitempty"`
@@ -185,10 +185,12 @@ type BalloonDef struct {
 	ShareIdleCpusInSame CPUTopologyLevel `json:"shareIdleCPUsInSame,omitempty"`
 	// PreferCloseToDevices: prefer creating new balloons of this
 	// type close to listed devices.
-	PreferCloseToDevices []string `json:"preferCloseToDevices",omitempty`
+	PreferCloseToDevices []string `json:"preferCloseToDevices,omitempty"`
 	// PreferFarFromDevices: prefer creating new balloons of this
 	// type far from listed devices.
-	PreferFarFromDevices []string `json:"preferFarFromDevices",omitempty`
+	// TODO: PreferFarFromDevices is considered too untested for usage. Hence,
+	// for the time being we prevent its usage through CRDs.
+	PreferFarFromDevices []string `json:"-"`
 }
 
 // String stringifies a BalloonDef
