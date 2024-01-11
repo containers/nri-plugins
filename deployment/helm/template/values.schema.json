@@ -10,7 +10,6 @@
             "type": "object",
             "required": [
                 "name",
-                "tag",
                 "pullPolicy"
             ],
             "properties": {
