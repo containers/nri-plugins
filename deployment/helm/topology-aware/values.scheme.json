@@ -41,6 +41,23 @@
                 }
             }
         },
+        "nri": {
+            "type": "object",
+            "required": [
+                "patchRuntimeConfig",
+                "pluginIndex"
+            ],
+            "properties": {
+                "patchRuntimeConfig": {
+                    "type": "boolean"
+                },
+                "pluginIndex": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 99
+                }
+            }
+        },
         "hostPort": {
             "type": "integer"
         }

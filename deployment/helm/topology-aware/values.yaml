@@ -30,6 +30,7 @@ resources:
 
 nri:
   patchRuntimeConfig: false
+  pluginIndex: 90
 
 
 initContainerImage:

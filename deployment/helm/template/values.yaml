@@ -30,6 +30,7 @@ resources:
 
 nri:
   patchRuntimeConfig: false
+  nriPluginIndex: 90
 
 initContainerImage:
   name: ghcr.io/containers/nri-plugins/nri-config-manager

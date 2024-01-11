@@ -48,7 +48,7 @@ spec:
           command:
             - nri-memtierd
             - --idx
-            - "45"
+            - "{{ printf "%02d" .Values.nri.pluginIndex }}"
             - --config
             - /etc/nri/memtierd/config.yaml
             {{- if .Values.outputDir }}
