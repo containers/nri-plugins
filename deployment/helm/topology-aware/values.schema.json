@@ -78,6 +78,9 @@
         },
         "hostPort": {
             "type": "integer"
+        },
+        "podPriorityClassNodeCritical": {
+            "type": "boolean"
         }
     }
  }
