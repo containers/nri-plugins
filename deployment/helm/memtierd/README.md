@@ -96,6 +96,7 @@ customize with their own values, along with the default values.
 | `resources.memory`       | 100Mi                                                                                                                         | memory qouta for the Pod                         |
 | `outputDir`              | empty string                                                                                                                  | host directory for memtierd.output files             |
 | `nri.patchRuntimeConfig` | false                                                                                                                         | enable NRI in containerd or CRI-O                    |
+| `nri.pluginIndex`        | 45                                                                                                                            | NRI plugin index to register with                    |
 | `initImage.name`         | [ghcr.io/containers/nri-plugins/config-manager](https://ghcr.io/containers/nri-plugins/config-manager)                        | init container image name                            |
 | `initImage.tag`          | unstable                                                                                                                      | init container image tag                             |
 | `initImage.pullPolicy`   | Always                                                                                                                        | init container image pull policy                     |

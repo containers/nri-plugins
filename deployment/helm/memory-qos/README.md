@@ -96,6 +96,7 @@ customize with their own values, along with the default values.
 | `resources.cpu`          | 10m                                                                                                                           | cpu resources for the Pod                            |
 | `resources.memory`       | 100Mi                                                                                                                         | memory qouta for the Pod                         |
 | `nri.patchRuntimeConfig` | false                                                                                                                         | enable NRI in containerd or CRI-O                    |
+| `nri.pluginIndex`        | 40                                                                                                                            | NRI plugin index to register with                    |
 | `initImage.name`         | [ghcr.io/containers/nri-plugins/config-manager](https://ghcr.io/containers/nri-plugins/config-manager)                        | init container image name                            |
 | `initImage.tag`          | unstable                                                                                                                      | init container image tag                             |
 | `initImage.pullPolicy`   | Always                                                                                                                        | init container image pull policy                     |
