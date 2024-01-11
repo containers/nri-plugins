@@ -25,6 +25,25 @@
                 }
             }
         },
+        "initContainerImage": {
+            "type": "object",
+            "required": [
+                "name",
+                "pullPolicy"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "tag": {
+                    "type": "string"
+                },
+                "pullPolicy": {
+                    "type": "string",
+                    "enum": ["Never", "Always", "IfNotPresent"]
+                }
+            }
+        },
         "resources": {
             "type": "object",
             "required": [
