@@ -9,7 +9,6 @@
             "type": "object",
             "required": [
                 "name",
-                "tag",
                 "pullPolicy"
             ],
             "properties": {
@@ -33,10 +32,10 @@
             ],
             "properties": {
                 "cpu": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "memory": {
-                    "type": "integer"
+                    "type": "string"
                 }
             }
         },
