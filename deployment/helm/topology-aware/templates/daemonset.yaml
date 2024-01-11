@@ -54,6 +54,8 @@ spec:
             - /tmp/nri-resource-policy.pid
             - -metrics-interval
             - 5s
+            - --nri-plugin-index
+            - "{{ printf "%02d" .Values.nri.pluginIndex }}"
           ports:
             - containerPort: 8891
               protocol: TCP

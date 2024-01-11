@@ -47,7 +47,7 @@ spec:
           command:
             - nri-memory-qos
             - --idx
-            - "40"
+            - "{{ printf "%02d" .Values.nri.pluginIndex }}"
             - --config
             - /etc/nri/memory-qos/config.yaml
             - -v
