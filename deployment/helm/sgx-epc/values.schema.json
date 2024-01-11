@@ -74,6 +74,9 @@
                     "maximum": 99
                 }
             }
+        },
+        "podPriorityClassNodeCritical": {
+            "type": "boolean"
         }
     }
  }
