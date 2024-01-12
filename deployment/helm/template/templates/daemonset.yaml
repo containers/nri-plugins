@@ -49,6 +49,10 @@ spec:
             - 5s
             - --nri-plugin-index
             - "{{ printf "%02d" .Values.nri.pluginIndex }}"
+            {{- if .Values.configGroupLabel }}
+            - --config-group-label
+            - {{ .Values.configGroupLabel }}
+            {{- end }}
           ports:
             - containerPort: 8891
               protocol: TCP

@@ -19,6 +19,8 @@ config:
     reportPeriod: 60s
     samplingRatePerMillion: 0
 
+# configGroupLabel: config.nri/group
+
 plugin-test:
   enableAPIs: false
 
