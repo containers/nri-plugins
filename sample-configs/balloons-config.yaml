@@ -20,7 +20,7 @@ metadata:
   #   name: group.group-0
   # Then label the nodes and remove any node-specific configuration:
   #   for node in node-{A,B,C}; do
-  #     kubectl label node $node group.config.nri=group-0
+  #     kubectl label node $node config.nri/group=group-0
   #     kubectl delete -n $NAMESPACE balloonspolicies.config.nri/$node || :
   #   done
   #
