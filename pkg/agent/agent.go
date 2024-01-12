@@ -118,7 +118,7 @@ var (
 // always used for the node. Otherwise either a group-specific or the default
 // configuration is used depending on whether the node belongs to a group. A
 // node can be assigned to a group by setting the group label on the node. By
-// default this group label is 'group.config.nri'.
+// default this group label is 'config.nri/group'.
 type Agent struct {
 	nodeName   string // kubernetes node name, defaults to $NODE_NAME
 	namespace  string // config resource namespace
@@ -610,7 +610,7 @@ var (
 )
 
 func init() {
-	groupLabel := "group." + cfgapi.SchemeGroupVersion.Group
+	groupLabel := cfgapi.SchemeGroupVersion.Group + "/group"
 
 	flag.StringVar(&defaultNamespace, "config-namespace", "kube-system",
 		"namespace for configuration CustomResources")
