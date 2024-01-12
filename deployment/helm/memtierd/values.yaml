@@ -16,6 +16,7 @@ outputDir: ""
 
 nri:
   patchRuntimeConfig: false
+  pluginIndex: 45
 
 initContainerImage:
   name: ghcr.io/containers/nri-plugins/nri-config-manager

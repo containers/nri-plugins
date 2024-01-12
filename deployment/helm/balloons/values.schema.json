@@ -10,7 +10,25 @@
             "type": "object",
             "required": [
                 "name",
-                "tag",
+                "pullPolicy"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "tag": {
+                    "type": "string"
+                },
+                "pullPolicy": {
+                    "type": "string",
+                    "enum": ["Never", "Always", "IfNotPresent"]
+                }
+            }
+        },
+        "initContainerImage": {
+            "type": "object",
+            "required": [
+                "name",
                 "pullPolicy"
             ],
             "properties": {
@@ -41,8 +59,28 @@
                 }
             }
         },
+        "nri": {
+            "type": "object",
+            "required": [
+                "patchRuntimeConfig",
+                "pluginIndex"
+            ],
+            "properties": {
+                "patchRuntimeConfig": {
+                    "type": "boolean"
+                },
+                "pluginIndex": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 99
+                }
+            }
+        },
         "hostPort": {
             "type": "integer"
+        },
+        "podPriorityClassNodeCritical": {
+            "type": "boolean"
         }
     }
  }

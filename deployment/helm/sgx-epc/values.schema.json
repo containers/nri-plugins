@@ -1,0 +1,82 @@
+{
+    "$schema": "http://json-schema.org/schema#",
+    "required": [
+        "image",
+        "resources"
+    ],
+    "properties": {
+        "image": {
+            "type": "object",
+            "required": [
+                "name",
+                "pullPolicy"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "tag": {
+                    "type": "string"
+                },
+                "pullPolicy": {
+                    "type": "string",
+                    "enum": ["Never", "Always", "IfNotPresent"]
+                }
+            }
+        },
+        "initContainerImage": {
+            "type": "object",
+            "required": [
+                "name",
+                "pullPolicy"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "tag": {
+                    "type": "string"
+                },
+                "pullPolicy": {
+                    "type": "string",
+                    "enum": ["Never", "Always", "IfNotPresent"]
+                }
+            }
+        },
+        "resources": {
+            "type": "object",
+            "required": [
+                "cpu",
+                "memory"
+            ],
+            "properties": {
+                "cpu": {
+                    "type": "string"
+                },
+                "memory": {
+                    "type": "string"
+                }
+            }
+        },
+        "nri": {
+            "type": "object",
+            "required": [
+                "patchRuntimeConfig",
+                "pluginIndex"
+            ],
+            "properties": {
+                "patchRuntimeConfig": {
+                    "type": "boolean"
+                },
+                "pluginIndex": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 99
+                }
+            }
+        },
+        "podPriorityClassNodeCritical": {
+            "type": "boolean"
+        }
+    }
+ }
