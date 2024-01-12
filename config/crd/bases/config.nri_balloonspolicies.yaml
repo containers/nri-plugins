@@ -106,6 +106,12 @@ spec:
                       items:
                         type: string
                       type: array
+                    preferCloseToDevices:
+                      description: 'PreferCloseToDevices: prefer creating new balloons
+                        of this type close to listed devices.'
+                      items:
+                        type: string
+                      type: array
                     preferNewBalloons:
                       description: 'PreferNewBalloons: prefer creating new balloons
                         over adding containers to existing balloons. The default is
@@ -297,7 +303,6 @@ spec:
                 description: Reserved (CPU) resources for kube-system namespace.
                 type: object
             required:
-            - idleCPUClass
             - reservedResources
             type: object
           status:
