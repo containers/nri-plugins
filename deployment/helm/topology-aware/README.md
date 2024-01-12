@@ -98,6 +98,7 @@ customize with their own values, along with the default values.
 | `resources.memory`       | 512Mi                                                                                                                         | memory qouta for the Pod                             |
 | `hostPort`               | 8891                                                                                                                          | metrics port to expose on the host                   |
 | `config`                 | see [helm chart values](tree:/deployment/helm/topology-aware/values.yaml) for the default configuration                       | plugin configuration data                            |
+| `configGroupLabel`       | config.nri/group                                                                                                        | node label for grouping configuration                |
 | `nri.patchRuntimeConfig` | false                                                                                                                         | enable NRI in containerd or CRI-O                    |
 | `nri.pluginIndex`        | 90                                                                                                                            | NRI plugin index to register with                    |
 | `initImage.name`         | [ghcr.io/containers/nri-plugins/config-manager](https://ghcr.io/containers/nri-plugins/config-manager)                        | init container image name                            |
