@@ -127,25 +127,19 @@ func (t *tracing) start(options ...Option) error {
 	log.Info("starting tracing exporter...")
 
 	hostname, _ := os.Hostname()
-	resource, err := resource.Merge(
-		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
-			append(
-				[]attribute.KeyValue{
-					semconv.ServiceName(t.service),
-					semconv.HostNameKey.String(hostname),
-					semconv.ProcessPIDKey.Int64(int64(os.Getpid())),
-					attribute.String("Version", version.Version),
-					attribute.String("Build", version.Build),
-				},
-				t.identity...,
-			)...,
-		),
+	resource := resource.NewWithAttributes(
+		semconv.SchemaURL,
+		append(
+			[]attribute.KeyValue{
+				semconv.ServiceName(t.service),
+				semconv.HostNameKey.String(hostname),
+				semconv.ProcessPIDKey.Int64(int64(os.Getpid())),
+				attribute.String("Version", version.Version),
+				attribute.String("Build", version.Build),
+			},
+			t.identity...,
+		)...,
 	)
-	if err != nil {
-		return fmt.Errorf("failed to create tracing resource: %w", err)
-	}
 
 	exporter, err := getExporter(t.endpoint)
 	if err != nil {
