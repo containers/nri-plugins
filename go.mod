@@ -5,6 +5,8 @@ go 1.22
 require (
 	contrib.go.opencensus.io/exporter/prometheus v0.4.2
 	github.com/containerd/nri v0.6.0
+	github.com/containerd/otelttrpc v0.0.0-20240305015340-ea5083fda723
+	github.com/containerd/ttrpc v1.2.3-0.20231030150553-baadfd8e7956
 	github.com/containers/nri-plugins/pkg/topology v0.0.0
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/fsnotify/fsnotify v1.6.0
@@ -39,7 +41,6 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
-	github.com/containerd/ttrpc v1.2.3-0.20231030150553-baadfd8e7956 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/emicklei/go-restful/v3 v3.9.0 // indirect
 	github.com/evanphx/json-patch v5.6.0+incompatible // indirect
