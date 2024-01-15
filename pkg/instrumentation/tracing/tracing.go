@@ -152,7 +152,7 @@ func (t *tracing) start(options ...Option) error {
 			sdktrace.NewBatchSpanProcessor(exporter),
 		),
 		sdktrace.WithSampler(
-			sdktrace.TraceIDRatioBased(t.sampling),
+			sdktrace.ParentBased(sdktrace.TraceIDRatioBased(t.sampling)),
 		),
 	)
 
