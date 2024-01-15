@@ -15,7 +15,7 @@ The names of these custom resources are
 3. `default`: secondary: secondary default node configuration
 
 You can assign a node to a configuration group by setting the
-`group.config.nri` label on the node to the name of the configuration
+`config.nri/group` label on the node to the name of the configuration
 group. You can remove a node from its group by deleting the node group
 label.
 
