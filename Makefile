@@ -16,8 +16,6 @@ SHELL := /bin/bash
 # Kubernetes version we pull in as modules and our external API versions.
 KUBERNETES_VERSION := $(shell grep 'k8s.io/kubernetes ' go.mod | sed 's/^.* //')
 
-# Directories (in cmd) with go code we'll want to create Docker images from.
-IMAGE_DIRS  = $(shell find cmd -name Dockerfile | sed 's:cmd/::g;s:/.*::g' | uniq)
 IMAGE_VERSION  := $(shell git describe --dirty 2> /dev/null || echo v0.0.0-unknown)
 ifdef IMAGE_REPO
     override IMAGE_REPO := $(IMAGE_REPO)/
@@ -392,9 +390,7 @@ install-ginkgo:
 
 report-licenses:
 	$(Q)mkdir -p $(LICENSE_PATH) && \
-	for cmd in $(IMAGE_DIRS); do \
-	    LICENSE_PKGS="$$LICENSE_PKGS ./cmd/$$cmd"; \
-	done && \
+	LICENSE_PKGS=`find ./cmd -name Dockerfile | xargs -l dirname`; \
 	go-licenses report $$LICENSE_PKGS \
 	        --ignore github.com/containers/nri-plugins \
 	        > $(LICENSE_PATH)/licenses.csv && \
