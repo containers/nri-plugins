@@ -17,19 +17,16 @@ package tracing
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.19.0"
 	"go.opentelemetry.io/otel/trace"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
@@ -44,7 +41,8 @@ type tracing struct {
 	identity []attribute.KeyValue
 	endpoint string
 	sampling float64
-	exporter sdktrace.SpanExporter
+	exporter *spanExporter
+	sampler  *sampler
 	provider *sdktrace.TracerProvider
 	tracer   trace.Tracer
 }
@@ -52,13 +50,16 @@ type tracing struct {
 var (
 	log = logger.Get("tracing")
 	trc = &tracing{
-		service: filepath.Base(os.Args[0]),
+		service:  filepath.Base(os.Args[0]),
+		sampler:  &sampler{},
+		exporter: &spanExporter{},
 	}
 )
 
 const (
-	// timeout for shutting down exporters and providers
-	shutdownTimeout = 5 * time.Second
+	// timeouts for flushing trace providers and shutting down exporters
+	flushTimeout    = 3 * time.Second
+	shutdownTimeout = 3 * time.Second
 )
 
 // WithCollectorEndpoint sets the given collector endpoint.
@@ -103,11 +104,19 @@ func Start(options ...Option) error {
 
 // Stop tracing.
 func Stop() {
-	trc.shutdown()
+	// Notes:
+	//   We only ever flush our provider, we never shut it down.
+	//
+	//   Our tracer provider is set as the global otel tracer provider.
+	//   We cannot shut it down, because once a global provider is set
+	//   it cannot be changed and once a provider is stopped it cannot
+	//   be restarted. Therefore, we effectively shut tracing down by
+	//   never sampling if tracing is disabled (endpoint == "").
+	trc.flush()
 }
 
 func (t *tracing) start(options ...Option) error {
-	t.shutdown()
+	log.Info("starting tracing exporter...")
 
 	for _, opt := range options {
 		if err := opt(t); err != nil {
@@ -115,16 +124,22 @@ func (t *tracing) start(options ...Option) error {
 		}
 	}
 
-	switch {
-	case t.endpoint == "":
-		log.Info("tracing disabled, no endpoint set")
-		return nil
-	case t.sampling == 0.0:
-		log.Info("tracing disabled, sampling ratio is 0.0")
+	err := t.exporter.setEndpoint(t.endpoint)
+	if err != nil {
+		return fmt.Errorf("failed to configure tracing exporter: %w", err)
+	}
+
+	if t.endpoint == "" {
+		log.Info("tracing effectively disabled, no endpoint set")
+		t.sampler.setSampler(nil)
 		return nil
 	}
 
-	log.Info("starting tracing exporter...")
+	t.sampler.setSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(t.sampling)))
+
+	if t.provider != nil {
+		return nil
+	}
 
 	hostname, _ := os.Hostname()
 	resource := resource.NewWithAttributes(
@@ -141,26 +156,18 @@ func (t *tracing) start(options ...Option) error {
 		)...,
 	)
 
-	exporter, err := getExporter(t.endpoint)
-	if err != nil {
-		return fmt.Errorf("failed to start tracing exporter: %w", err)
-	}
-
-	provider := sdktrace.NewTracerProvider(
+	t.provider = sdktrace.NewTracerProvider(
 		sdktrace.WithResource(resource),
 		sdktrace.WithSpanProcessor(
-			sdktrace.NewBatchSpanProcessor(exporter),
+			sdktrace.NewBatchSpanProcessor(t.exporter),
 		),
 		sdktrace.WithSampler(
-			sdktrace.ParentBased(sdktrace.TraceIDRatioBased(t.sampling)),
+			t.sampler,
 		),
 	)
+	t.tracer = t.provider.Tracer(t.service, trace.WithSchemaURL(semconv.SchemaURL))
 
-	t.exporter = exporter
-	t.provider = provider
-	t.tracer = provider.Tracer(t.service, trace.WithSchemaURL(semconv.SchemaURL))
-
-	otel.SetTracerProvider(provider)
+	otel.SetTracerProvider(t.provider)
 
 	propagator := propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
@@ -171,73 +178,15 @@ func (t *tracing) start(options ...Option) error {
 	return nil
 }
 
-func (t *tracing) shutdown() {
+func (t *tracing) flush() {
 	if t.provider == nil {
 		return
 	}
 
-	go func(p *sdktrace.TracerProvider, timeout time.Duration) {
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), flushTimeout)
+	defer cancel()
 
-		if err := p.ForceFlush(ctx); err != nil {
-			log.Errorf("failed to flush tracer provider: %v", err)
-		}
-		if err := p.Shutdown(ctx); err != nil {
-			log.Errorf("failed tp shutdown tracer provider: %v", err)
-		}
-	}(t.provider, shutdownTimeout)
-
-	go func(e sdktrace.SpanExporter, timeout time.Duration) {
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		defer cancel()
-
-		if err := e.Shutdown(ctx); err != nil {
-			log.Errorf("failed tp shutdown span exporter: %v", err)
-		}
-	}(t.exporter, shutdownTimeout)
-
-	t.provider = nil
-	t.exporter = nil
-}
-
-func getExporter(endpoint string) (sdktrace.SpanExporter, error) {
-	var (
-		u   *url.URL
-		err error
-	)
-
-	// Notes:
-	//   We allow collector endpoint URLs to be given as a plain scheme-prefix,
-	//   IOW, without a host, port, and path. If only a prefix is given, the
-	//   exporters use defaults defined by the OTLP library. These are:
-	//     - otlp-http, http: localhost:4318
-	//     - otlp-grpc, grpc: localhost:4317
-
-	switch endpoint {
-	case "otlp-http", "http", "otlp-grpc", "grpc":
-		u = &url.URL{Scheme: endpoint}
-	default:
-		u, err = url.Parse(endpoint)
-		if err != nil {
-			return nil, fmt.Errorf("invalid tracing endpoint %q: %w", endpoint, err)
-		}
+	if err := t.provider.ForceFlush(ctx); err != nil {
+		log.Errorf("failed to flush tracer provider: %v", err)
 	}
-
-	switch u.Scheme {
-	case "otlp-http", "http":
-		opts := []otlptracehttp.Option{otlptracehttp.WithInsecure()}
-		if u.Host != "" {
-			opts = append(opts, otlptracehttp.WithEndpoint(u.Host))
-		}
-		return otlptracehttp.New(context.Background(), opts...)
-	case "otlp-grpc", "grpc":
-		opts := []otlptracegrpc.Option{otlptracegrpc.WithInsecure()}
-		if u.Host != "" {
-			opts = append(opts, otlptracegrpc.WithEndpoint(u.Host))
-		}
-		return otlptracegrpc.New(context.Background(), opts...)
-	}
-
-	return nil, fmt.Errorf("unsupported tracing endpoint %q", endpoint)
 }

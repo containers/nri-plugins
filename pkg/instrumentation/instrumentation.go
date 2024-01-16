@@ -91,7 +91,13 @@ func Restart() error {
 	defer lock.Unlock()
 
 	stop()
-	return start()
+
+	err := start()
+	if err != nil {
+		log.Error("failed to start tracing: %v", err)
+	}
+
+	return err
 }
 
 // Reconfigure our instrumentation services.
