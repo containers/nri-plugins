@@ -4,13 +4,6 @@ SHELL := /bin/bash
 IMAGE_VERSION ?= $(shell git describe --dirty 2> /dev/null)
 IMAGE_PATH ?= .
 
-# VERSION defines the project version for the bundle.
-# Update this value when you upgrade the version of your project.
-# To re-generate a bundle for another specific version without changing the standard setup, you can:
-# - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
-# - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
-VERSION ?= $(shell echo $(IMAGE_VERSION) | sed 's/^v//')
-
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
 # To re-generate a bundle for other specific channels without changing the standard setup, you can:
@@ -34,13 +27,19 @@ BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 # This variable is used to construct full image tags for bundle and catalog images.
 #
 # For example, running 'make bundle-build bundle-push catalog-build catalog-push' will build and push both
-# ghcr.io/containers/nri-plugins-operator-bundle:$VERSION and ghcr.io/containers/nri-plugins-operator-catalog:$VERSION.
+# ghcr.io/containers/nri-plugins-operator-bundle:$IMAGE_VERSION and ghcr.io/containers/nri-plugins-operator-catalog:$IMAGE_VERSION.
 IMAGE_TAG_BASE ?= ghcr.io/containers/nri-plugins/nri-plugins-operator
 
 # BUNDLE_IMG defines the image:tag used for the bundle.
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
-BUNDLE_IMG ?= $(IMAGE_TAG_BASE)-bundle:v$(VERSION)
+BUNDLE_IMG ?= $(IMAGE_TAG_BASE)-bundle:$(IMAGE_VERSION)
 
+# VERSION defines the project version for the bundle.
+# Update this value when you upgrade the version of your project.
+# To re-generate a bundle for another specific version without changing the standard setup, you can:
+# - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
+# - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
+VERSION ?= $(shell echo $(IMAGE_VERSION) | sed 's/^v//')
 # BUNDLE_GEN_FLAGS are the flags passed to the operator-sdk generate bundle command
 BUNDLE_GEN_FLAGS ?= -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 
@@ -132,15 +131,15 @@ docker-save: docker-build
 
 .PHONY: bundle-build
 bundle-build: bundle ## Build the bundle image.
-	$(MAKE) DOCKERFILE=$(BUNDLE_DOCKERFILE) IMG=$(BUNDLE_IMG) docker-build
+	$(MAKE) DOCKERFILE=$(BUNDLE_DOCKERFILE) IMAGE=$(BUNDLE_IMG) docker-build
 
 .PHONY: bundle-push
 bundle-push: ## Push the bundle image.
-	$(MAKE) docker-push IMG=$(BUNDLE_IMG)
+	$(MAKE) docker-push IMAGE=$(BUNDLE_IMG)
 
 .PHONY: bundle-save ## Export the bundle image as a tarball.
 bundle-save: bundle-build
-	$(MAKE) DOCKERFILE=$(BUNDLE_DOCKERFILE) IMG=$(BUNDLE_IMG) docker-save
+	$(MAKE) DOCKERFILE=$(BUNDLE_DOCKERFILE) IMAGE=$(BUNDLE_IMG) docker-save
 
 .PHONY: image-build
 image-build: ## Build the operator image.
@@ -155,10 +154,10 @@ image-save: image-build ## Export the operator image as a tarball.
 	$(MAKE) docker-save
 
 # PLATFORMS defines the target platforms for  the manager image be build to provide support to multiple
-# architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
+# architectures. (i.e. make docker-buildx IMAGE=myregistry/mypoperator:0.0.1). To use this option you need to:
 # - able to use docker buildx . More info: https://docs.docker.com/build/buildx/
 # - have enable BuildKit, More info: https://docs.docker.com/develop/develop-images/build_enhancements/
-# - be able to push the image for your registry (i.e. if you do not inform a valid value via IMG=<myregistry/image:<tag>> than the export will fail)
+# - be able to push the image for your registry (i.e. if you do not inform a valid value via IMAGE=<myregistry/image:<tag>> than the export will fail)
 # To properly provided solutions that supports more than one platform you should use this option.
 PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 .PHONY: docker-buildx
