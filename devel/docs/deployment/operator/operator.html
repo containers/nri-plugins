@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NRI-Plugins-Operator &mdash; NRI Plugins v0.3.1-28-g0c0fa18 documentation</title>
+  <title>NRI-Plugins-Operator &mdash; NRI Plugins v0.3.1-29-g7f9cc23 documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -107,7 +107,7 @@ nri-plugin specified in the NriPluginDeployment.</p>
 <section id="installation">
 <h2>Installation<a class="headerlink" href="#installation" title="Permalink to this heading"></a></h2>
 <p>Build the operator image and push it to some registry</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>make<span class="w"> </span>-C<span class="w"> </span>deployment/operator<span class="w"> </span>docker-build<span class="w"> </span>docker-push<span class="w"> </span><span class="nv">IMG</span><span class="o">=</span><span class="s2">&quot;my-registry.com/nri-plugins-operator:unstable&quot;</span>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>make<span class="w"> </span>-C<span class="w"> </span>deployment/operator<span class="w"> </span>docker-build<span class="w"> </span>docker-push<span class="w"> </span><span class="nv">IMAGE</span><span class="o">=</span><span class="s2">&quot;my-registry.com/nri-plugins-operator:unstable&quot;</span>
 </pre></div>
 </div>
 <p>Deploy the operator in your cluster</p>
