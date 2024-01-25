@@ -19,7 +19,7 @@ import (
 
 	"k8s.io/client-go/rest"
 
-	api "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	nrt "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	scheme "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/scheme"
 	client "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/typed/topology/v1alpha2"
 )
@@ -43,7 +43,7 @@ func NewForConfigAndClient(c *rest.Config, httpCli *http.Client) (*Client, error
 }
 
 func setConfigDefaults(config *rest.Config) error {
-	gv := api.SchemeGroupVersion
+	gv := nrt.SchemeGroupVersion
 	config.GroupVersion = &gv
 	config.APIPath = "/apis"
 	config.NegotiatedSerializer = scheme.Codecs.WithoutConversion()

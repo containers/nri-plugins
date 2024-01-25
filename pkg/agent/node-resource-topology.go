@@ -22,7 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
-	nrtapi "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	nrt "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 )
 
 // UpdateNrtCR updates the node's node resource topology CR using the given data.
@@ -69,7 +69,7 @@ func (a *Agent) updateNrtCR(policy string, zones []*policyapi.TopologyZone) erro
 
 	// delete existing CR if we got no data from policy
 	// XXX TODO Deletion should be handled differently:
-	//   1. add expiration timestamp to nrtapi.NodeResourceTopology
+	//   1. add expiration timestamp to nrt.NodeResourceTopology
 	//   2. GC CRs that are past their expiration time (for instance by NFD)
 	//   3. make sure we refresh our CR (either here or preferably/easier
 	//      by triggering in resmgr an updateTopologyZones() during longer
@@ -86,8 +86,8 @@ func (a *Agent) updateNrtCR(policy string, zones []*policyapi.TopologyZone) erro
 
 	// otherwise update CR if one exists
 	if cr != nil {
-		cr.Attributes = nrtapi.AttributeList{
-			nrtapi.AttributeInfo{
+		cr.Attributes = nrt.AttributeList{
+			nrt.AttributeInfo{
 				Name:  "TopologyPolicy",
 				Value: policy,
 			},
@@ -104,13 +104,13 @@ func (a *Agent) updateNrtCR(policy string, zones []*policyapi.TopologyZone) erro
 	}
 
 	// or create a new one
-	cr = &nrtapi.NodeResourceTopology{
+	cr = &nrt.NodeResourceTopology{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: a.nodeName,
 		},
 
-		Attributes: nrtapi.AttributeList{
-			nrtapi.AttributeInfo{
+		Attributes: nrt.AttributeList{
+			nrt.AttributeInfo{
 				Name:  "TopologyPolicy",
 				Value: policy,
 			},
@@ -126,19 +126,19 @@ func (a *Agent) updateNrtCR(policy string, zones []*policyapi.TopologyZone) erro
 	return nil
 }
 
-func zonesToNrt(in []*policyapi.TopologyZone) nrtapi.ZoneList {
-	out := nrtapi.ZoneList{}
+func zonesToNrt(in []*policyapi.TopologyZone) nrt.ZoneList {
+	out := nrt.ZoneList{}
 	for _, i := range in {
-		resources := nrtapi.ResourceInfoList{}
+		resources := nrt.ResourceInfoList{}
 		for _, r := range i.Resources {
-			resources = append(resources, nrtapi.ResourceInfo{
+			resources = append(resources, nrt.ResourceInfo{
 				Name:        r.Name,
 				Capacity:    r.Capacity,
 				Allocatable: r.Allocatable,
 				Available:   r.Available,
 			})
 		}
-		out = append(out, nrtapi.Zone{
+		out = append(out, nrt.Zone{
 			Name:       i.Name,
 			Type:       i.Type,
 			Parent:     i.Parent,
@@ -149,10 +149,10 @@ func zonesToNrt(in []*policyapi.TopologyZone) nrtapi.ZoneList {
 	return out
 }
 
-func attributesToNrt(in []*policyapi.ZoneAttribute) nrtapi.AttributeList {
-	var out nrtapi.AttributeList
+func attributesToNrt(in []*policyapi.ZoneAttribute) nrt.AttributeList {
+	var out nrt.AttributeList
 	for _, i := range in {
-		out = append(out, nrtapi.AttributeInfo{
+		out = append(out, nrt.AttributeInfo{
 			Name:  i.Name,
 			Value: i.Value,
 		})
