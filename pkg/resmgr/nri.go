@@ -134,13 +134,13 @@ func (p *nriPlugin) syncWithNRI(pods []*api.PodSandbox, containers []*api.Contai
 
 	_, _, deleted := m.cache.RefreshPods(pods)
 	for _, c := range deleted {
-		m.Info("discovered stale container %s...", c.GetID())
+		m.Info("discovered stale container %s (%s)...", c.PrettyName(), c.GetID())
 		released = append(released, c)
 	}
 
 	_, deleted = m.cache.RefreshContainers(containers)
 	for _, c := range deleted {
-		m.Info("discovered stale container %s...", c.GetID())
+		m.Info("discovered stale container %s (%s)...", c.PrettyName(), c.GetID())
 		released = append(released, c)
 	}
 
@@ -151,7 +151,8 @@ func (p *nriPlugin) syncWithNRI(pods []*api.PodSandbox, containers []*api.Contai
 	for _, c := range ctrs {
 		switch c.GetState() {
 		case cache.ContainerStateRunning, cache.ContainerStateCreated:
-			m.Info("discovered out-of-sync running container %s...", c.GetID())
+			m.Info("discovered created/running container %s (%s)...",
+				c.PrettyName(), c.GetID())
 			allocated = append(allocated, c)
 
 			/* By adding out-of-sync container to released list, we force re-allocation of
@@ -161,11 +162,13 @@ func (p *nriPlugin) syncWithNRI(pods []*api.PodSandbox, containers []*api.Contai
 
 		case cache.ContainerStateExited:
 			/* Treat stopped containers as deleted */
-			m.Info("discovered stale stopped container %s...", c.GetID())
+			m.Info("discovered stopped container %s (%s)...",
+				c.PrettyName(), c.GetID())
 			released = append(released, c)
 
 		default:
-			m.Info("ignoring discovered container %s (in state %v)...", c.GetID(), c.GetState())
+			m.Info("discovered container %s (%s), in state %v, ignoring it...",
+				c.PrettyName(), c.GetID(), c.GetState())
 		}
 	}
 
