@@ -181,13 +181,14 @@ uninstall: copy-crds kustomize ## Uninstall CRDs from the K8s cluster specified 
 	$(MAKE) cleanup-crds
 
 .PHONY: deploy
-deploy: kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
+deploy: copy-crds kustomize kustomizations ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMAGE}
 	$(KUSTOMIZE) build config/default | kubectl apply -f -
 
 .PHONY: undeploy
 undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build config/default | kubectl delete -f -
+	$(MAKE) cleanup-crds
 
 OS := $(shell uname -s | tr '[:upper:]' '[:lower:]')
 ARCH := $(shell uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')

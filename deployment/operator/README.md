@@ -12,7 +12,7 @@ nri-plugin specified in the NriPluginDeployment.
 
 Build the operator image and push it to some registry
 ```shell
-make -C deployment/operator docker-build docker-push IMG="my-registry.com/nri-plugins-operator:unstable"
+make -C deployment/operator docker-build docker-push IMAGE="my-registry.com/nri-plugins-operator:unstable"
 ```
 
 Deploy the operator in your cluster
