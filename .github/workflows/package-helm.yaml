@@ -24,7 +24,7 @@ jobs:
         run: |
           find "$CHARTS_DIR" -name values.yaml | xargs -I '{}' \
               sed -e s"/pullPolicy:.*/pullPolicy: IfNotPresent/" -i '{}'
-          helm package --version "$GITHUB_REF_NAME" --app-version "$GITHUB_REF_NAME" "$CHARTS_DIR"/*
+          make helm-package
           find . -name '*.tgz' -print | while read SRC_FILE; do
             DEST_FILE=$(echo $SRC_FILE | sed 's/v/helm-chart-v/g')
             mv $SRC_FILE $DEST_FILE

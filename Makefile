@@ -500,19 +500,28 @@ generate-clients: $(GENERATE_GROUPS)
 generate-go:
 	$(Q)$(GO_CMD) generate ./...
 
-# rule to update generated CRDs in our helm charts
-.PHONY: update-helm-crds
-update-helm-crds:
-	$(Q)for plugin in $(PLUGINS); do \
-	    plugin="$${plugin#nri-}"; plugin="$${plugin#resource-policy-}"; \
-            helm_dir=$(HELM_TOP_DIR)/$$plugin/crds; \
-	    if [ ! -d "$$helm_dir" ]; then \
-	        echo "No generated CRD found for $$plugin plugin..."; \
-	    else \
-	        echo "Updating Helm chart CRDs for $$plugin plugin..."; \
-	        cp $(CRD_BASE_DIR)/*_$${plugin//-/}*.yaml $$helm_dir; \
-	    fi; \
-	done
-
 # top level rule to (re)generate everything we need
-generate: generate-go generate-types generate-manifests generate-clients update-helm-crds
+generate: generate-go generate-types generate-manifests generate-clients
+
+CRD_BASE_DIR := config/crd/bases
+HELM_TOP_DIR := deployment/helm
+
+.PHONY: helm-package
+helm-package: copy-helm-crds
+	helm package --version $(IMAGE_VERSION) --app-version $(IMAGE_VERSION) $(HELM_TOP_DIR)/*
+	$(MAKE) cleanup-helm-crds
+
+.PHONY: copy-helm-crds
+copy-helm-crds: ## Copy CRDs root directory to helm directory for packaging.
+	cp $(CRD_BASE_DIR)/topology.node.k8s.io_noderesourcetopologies.yaml $(HELM_TOP_DIR)/balloons/crds
+	cp $(CRD_BASE_DIR)/config.nri_balloonspolicies.yaml $(HELM_TOP_DIR)/balloons/crds
+	cp $(CRD_BASE_DIR)/topology.node.k8s.io_noderesourcetopologies.yaml $(HELM_TOP_DIR)/template/crds
+	cp $(CRD_BASE_DIR)/config.nri_templatepolicies.yaml $(HELM_TOP_DIR)/template/crds
+	cp $(CRD_BASE_DIR)/topology.node.k8s.io_noderesourcetopologies.yaml $(HELM_TOP_DIR)/topology-aware/crds
+	cp $(CRD_BASE_DIR)/config.nri_topologyawarepolicies.yaml $(HELM_TOP_DIR)/topology-aware/crds
+
+.PHONY: cleanup-helm-crds
+cleanup-helm-crds: ## Clean up temporarily copied CRDs.
+	rm -f $(HELM_TOP_DIR)/balloons/crds/*
+	rm -f $(HELM_TOP_DIR)/template/crds/*
+	rm -f $(HELM_TOP_DIR)/topology-aware/crds/*
