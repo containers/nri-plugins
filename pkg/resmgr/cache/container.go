@@ -446,6 +446,8 @@ func (c *container) GetResourceRequirements() v1.ResourceRequirements {
 }
 
 func (c *container) SetResourceUpdates(r *nri.LinuxResources) bool {
+	r = mergeNRIResources(r, c.Ctr.GetLinux().GetResources())
+
 	updated := estimateResourceRequirements(r, c.GetQOSClass())
 
 	same := true
@@ -471,6 +473,47 @@ func (c *container) SetResourceUpdates(r *nri.LinuxResources) bool {
 
 	c.ResourceUpdates = &updated
 	return !same
+}
+
+func mergeNRIResources(u *nri.LinuxResources, orig *nri.LinuxResources) *nri.LinuxResources {
+	log.Debug("merging resource update %+v with fallback/orig %+v", u, orig)
+
+	if u.Cpu == nil {
+		u.Cpu = &nri.LinuxCPU{}
+	}
+	if orig.Cpu != nil {
+		if u.Cpu.GetShares().GetValue() == 0 {
+			u.Cpu.Shares = nri.UInt64(orig.Cpu.Shares)
+		}
+		if u.Cpu.GetQuota().GetValue() == 0 {
+			u.Cpu.Quota = nri.Int64(orig.Cpu.Quota)
+		}
+		if u.Cpu.GetPeriod().GetValue() == 0 {
+			u.Cpu.Period = nri.UInt64(orig.Cpu.Period)
+		}
+		if u.Cpu.Cpus == "" {
+			u.Cpu.Cpus = orig.Cpu.Cpus
+		}
+		if u.Cpu.Mems == "" {
+			u.Cpu.Mems = orig.Cpu.Mems
+		}
+	}
+
+	if u.Memory == nil {
+		u.Memory = &nri.LinuxMemory{}
+	}
+	if orig.Memory != nil {
+		if u.Memory.GetLimit().GetValue() == 0 {
+			u.Memory.Limit = nri.Int64(orig.Memory.Limit)
+		}
+		if u.Memory.GetSwap().GetValue() == 0 {
+			u.Memory.Swap = nri.Int64(orig.Memory.Swap)
+		}
+	}
+
+	log.Debug("merged resource update: %+v", u)
+
+	return u
 }
 
 func (c *container) GetResourceUpdates() (v1.ResourceRequirements, bool) {
@@ -548,6 +591,29 @@ func (c *container) InsertMount(m *Mount) {
 	c.markPending(NRI)
 }
 
+func (c *container) ensureLinuxResources() {
+	if c.Ctr.Linux == nil {
+		c.Ctr.Linux = &nri.LinuxContainer{}
+	}
+	if c.Ctr.Linux.Resources == nil {
+		c.Ctr.Linux.Resources = &nri.LinuxResources{}
+	}
+}
+
+func (c *container) ensureLinuxResourcesCPU() {
+	c.ensureLinuxResources()
+	if c.Ctr.Linux.Resources.Cpu == nil {
+		c.Ctr.Linux.Resources.Cpu = &nri.LinuxCPU{}
+	}
+}
+
+func (c *container) ensureLinuxResourcesMemory() {
+	c.ensureLinuxResources()
+	if c.Ctr.Linux.Resources.Memory == nil {
+		c.Ctr.Linux.Resources.Memory = &nri.LinuxMemory{}
+	}
+}
+
 func (c *container) SetCPUShares(value int64) {
 	switch req := c.getPendingRequest().(type) {
 	case *nri.ContainerAdjustment:
@@ -560,6 +626,9 @@ func (c *container) SetCPUShares(value int64) {
 		return
 	}
 	c.markPending(NRI)
+
+	c.ensureLinuxResourcesCPU()
+	c.Ctr.Linux.Resources.Cpu.Shares = nri.UInt64(value)
 }
 
 func (c *container) SetCPUQuota(value int64) {
@@ -574,6 +643,9 @@ func (c *container) SetCPUQuota(value int64) {
 		return
 	}
 	c.markPending(NRI)
+
+	c.ensureLinuxResourcesCPU()
+	c.Ctr.Linux.Resources.Cpu.Quota = nri.Int64(value)
 }
 
 func (c *container) SetCPUPeriod(value int64) {
@@ -588,6 +660,9 @@ func (c *container) SetCPUPeriod(value int64) {
 		return
 	}
 	c.markPending(NRI)
+
+	c.ensureLinuxResourcesCPU()
+	c.Ctr.Linux.Resources.Cpu.Period = nri.UInt64(uint64(value))
 }
 
 func (c *container) SetCpusetCpus(value string) {
@@ -602,6 +677,9 @@ func (c *container) SetCpusetCpus(value string) {
 		return
 	}
 	c.markPending(NRI)
+
+	c.ensureLinuxResourcesCPU()
+	c.Ctr.Linux.Resources.Cpu.Cpus = value
 }
 
 func (c *container) SetCpusetMems(value string) {
@@ -616,6 +694,9 @@ func (c *container) SetCpusetMems(value string) {
 		return
 	}
 	c.markPending(NRI)
+
+	c.ensureLinuxResourcesCPU()
+	c.Ctr.Linux.Resources.Cpu.Mems = value
 }
 
 func (c *container) SetMemoryLimit(value int64) {
@@ -630,6 +711,54 @@ func (c *container) SetMemoryLimit(value int64) {
 		return
 	}
 	c.markPending(NRI)
+
+	c.ensureLinuxResourcesMemory()
+	c.Ctr.Linux.Resources.Memory.Limit = nri.Int64(value)
+}
+
+func (c *container) SetMemorySwap(value int64) {
+	switch req := c.getPendingRequest().(type) {
+	case *nri.ContainerAdjustment:
+		req.SetLinuxMemorySwap(value)
+	case *nri.ContainerUpdate:
+		req.SetLinuxMemorySwap(value)
+	default:
+		log.Error("%s: can't set memory swap (%d): incorrect pending request type %T",
+			c.PrettyName(), value, c.request)
+		return
+	}
+	c.markPending(NRI)
+
+	c.ensureLinuxResourcesMemory()
+	c.Ctr.Linux.Resources.Memory.Swap = nri.Int64(value)
+}
+
+func (c *container) GetCPUShares() int64 {
+	return int64(c.Ctr.GetLinux().GetResources().GetCpu().GetShares().GetValue())
+}
+
+func (c *container) GetCPUQuota() int64 {
+	return c.Ctr.GetLinux().GetResources().GetCpu().GetQuota().GetValue()
+}
+
+func (c *container) GetCPUPeriod() int64 {
+	return int64(c.Ctr.GetLinux().GetResources().GetCpu().GetPeriod().GetValue())
+}
+
+func (c *container) GetCpusetCpus() string {
+	return c.Ctr.GetLinux().GetResources().GetCpu().GetCpus()
+}
+
+func (c *container) GetCpusetMems() string {
+	return c.Ctr.GetLinux().GetResources().GetCpu().GetMems()
+}
+
+func (c *container) GetMemoryLimit() int64 {
+	return c.Ctr.GetLinux().GetResources().GetMemory().GetLimit().GetValue()
+}
+
+func (c *container) GetMemorySwap() int64 {
+	return c.Ctr.GetLinux().GetResources().GetMemory().GetSwap().GetValue()
 }
 
 var (

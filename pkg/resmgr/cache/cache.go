@@ -225,8 +225,25 @@ type Container interface {
 	SetCpusetCpus(string)
 	// SetCpusetMems sets the cgroup cpuset.mems of the container.
 	SetCpusetMems(string)
-	// SetmemoryLimit sets the memory limit in bytes for the container.
+	// SetMemoryLimit sets the memory limit in bytes for the container.
 	SetMemoryLimit(int64)
+	// SetMemorySwap sets the swap limit in bytes for the container.
+	SetMemorySwap(int64)
+
+	// GetCPUShares gets the CFS CPU shares of the container.
+	GetCPUShares() int64
+	// GetCPUQuota gets the CFS CPU quota of the container.
+	GetCPUQuota() int64
+	// GetCPUPeriod gets the CFS CPU period of the container.
+	GetCPUPeriod() int64
+	// GetCpusetCpu gets the cgroup cpuset.cpus of the container.
+	GetCpusetCpus() string
+	// GetCpusetMems gets the cgroup cpuset.mems of the container.
+	GetCpusetMems() string
+	// GetMemoryLimit gets the memory limit in bytes for the container.
+	GetMemoryLimit() int64
+	// GetMemorySwap gets the swap limit in bytes for the container.
+	GetMemorySwap() int64
 
 	// GetPendingAdjusmentn clears and returns any pending adjustment for the container.
 	GetPendingAdjustment() *nri.ContainerAdjustment

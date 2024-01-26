@@ -432,13 +432,36 @@ func (p *nriPlugin) UpdateContainer(ctx context.Context, pod *api.PodSandbox, co
 	}
 
 	if realUpdates := c.SetResourceUpdates(res); !realUpdates {
-		p.Warn("UpdateContainer with identical resources, ignoring it...")
-		return nil, nil
-	}
-	//r := cache.EstimateResourceRequirements(res, c.GetQOSClass())
-
-	if err := m.policy.UpdateResources(c); err != nil {
-		return nil, fmt.Errorf("failed to update resources: %w", err)
+		p.Warn("UpdateContainer with identical resources, short-circuiting it...")
+		if v := c.GetCPUShares(); v != 0 {
+			c.SetCPUShares(v)
+		}
+		if v := c.GetCPUQuota(); v != 0 {
+			c.SetCPUQuota(v)
+		}
+		if v := c.GetCPUPeriod(); v != 0 {
+			c.SetCPUPeriod(v)
+		}
+		if v := c.GetCpusetCpus(); v != "" {
+			c.SetCpusetCpus(v)
+		}
+		if v := c.GetCpusetMems(); v != "" {
+			c.SetCpusetMems(v)
+		}
+		if v := c.GetMemoryLimit(); v != 0 {
+			c.SetMemoryLimit(v)
+		}
+		if v := c.GetMemorySwap(); v != 0 {
+			c.SetMemorySwap(v)
+		}
+	} else {
+		old := c.GetResourceRequirements()
+		upd, _ := c.GetResourceUpdates()
+		p.Warn("UpdateContainer with real resource changes: %s -> %s",
+			old.String(), upd.String())
+		if err := m.policy.UpdateResources(c); err != nil {
+			return nil, fmt.Errorf("failed to update resources: %w", err)
+		}
 	}
 
 	return p.getPendingUpdates(nil), nil
