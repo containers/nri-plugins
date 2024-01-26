@@ -590,7 +590,7 @@ func (p *policy) allocatePool(container cache.Container, poolHint string) (Grant
 
 // Apply the result of allocation to the requesting container.
 func (p *policy) applyGrant(grant Grant) {
-	log.Debug("* applying grant %s", grant)
+	log.Info("* applying grant %s", grant)
 
 	container := grant.GetContainer()
 	cpuType := grant.CPUType()
@@ -630,9 +630,10 @@ func (p *policy) applyGrant(grant Grant) {
 
 	if opt.PinCPU {
 		if cpus != "" {
-			log.Debug("  => pinning to (%s) cpuset %s", kind, cpus)
+			log.Info("  => pinning %s to (%s) cpuset %s", container.PrettyName(), kind, cpus)
 		} else {
-			log.Debug("  => not pinning CPUs, allocated cpuset is empty...")
+			log.Info("  => not pinning %s CPUs, cpuset is empty...",
+				container.PrettyName())
 		}
 		container.SetCpusetCpus(cpus)
 
@@ -664,24 +665,24 @@ func (p *policy) applyGrant(grant Grant) {
 	}
 
 	if mems != "" {
-		log.Debug("  => pinning to memory %s", mems)
+		log.Debug("  => pinning %s to memory %s", container.PrettyName(), mems)
 		container.SetCpusetMems(mems)
 	} else {
-		log.Debug("  => not pinning memory, memory set is empty...")
+		log.Debug("  => not pinning %s memory, memory set is empty...", container.PrettyName())
 	}
 }
 
 // Release resources allocated by this grant.
 func (p *policy) releasePool(container cache.Container) (Grant, bool) {
-	log.Debug("* releasing resources allocated to %s", container.PrettyName())
+	log.Info("* releasing resources allocated to %s", container.PrettyName())
 
 	grant, ok := p.allocations.grants[container.GetID()]
 	if !ok {
-		log.Debug("  => no grant found, nothing to do...")
+		log.Info("  => no grant found, nothing to do...")
 		return nil, false
 	}
 
-	log.Debug("  => releasing grant %s...", grant)
+	log.Info("  => releasing grant %s...", grant)
 
 	// Remove the grant from all supplys it uses.
 	grant.Release()
@@ -695,13 +696,13 @@ func (p *policy) releasePool(container cache.Container) (Grant, bool) {
 // Update shared allocations effected by agrant.
 func (p *policy) updateSharedAllocations(grant *Grant) {
 	if grant != nil {
-		log.Debug("* updating shared allocations affected by %s", (*grant).String())
+		log.Info("* updating shared allocations affected by %s", (*grant).String())
 		if (*grant).CPUType() == cpuReserved {
-			log.Debug("  this grant uses reserved CPUs, does not affect shared allocations")
+			log.Info("  this grant uses reserved CPUs, does not affect shared allocations")
 			return
 		}
 	} else {
-		log.Debug("* updating shared allocations")
+		log.Info("* updating all shared allocations")
 	}
 
 	for _, other := range p.allocations.grants {
@@ -712,12 +713,12 @@ func (p *policy) updateSharedAllocations(grant *Grant) {
 		}
 
 		if other.CPUType() == cpuReserved {
-			log.Debug("  => %s not affected (only reserved CPUs)...", other)
+			log.Info("  => %s not affected (only reserved CPUs)...", other)
 			continue
 		}
 
 		if other.SharedPortion() == 0 && !other.ExclusiveCPUs().IsEmpty() {
-			log.Debug("  => %s not affected (only exclusive CPUs)...", other)
+			log.Info("  => %s not affected (only exclusive CPUs)...", other)
 			continue
 		}
 
@@ -725,11 +726,11 @@ func (p *policy) updateSharedAllocations(grant *Grant) {
 			shared := other.GetCPUNode().FreeSupply().SharableCPUs()
 			exclusive := other.ExclusiveCPUs()
 			if exclusive.IsEmpty() {
-				log.Debug("  => updating %s with shared CPUs of %s: %s...",
+				log.Info("  => updating %s with shared CPUs of %s: %s...",
 					other, other.GetCPUNode().Name(), shared.String())
 				other.GetContainer().SetCpusetCpus(shared.String())
 			} else {
-				log.Debug("  => updating %s with exclusive+shared CPUs of %s: %s+%s...",
+				log.Info("  => updating %s with exclusive+shared CPUs of %s: %s+%s...",
 					other, other.GetCPUNode().Name(), exclusive.String(), shared.String())
 				other.GetContainer().SetCpusetCpus(exclusive.Union(shared).String())
 			}
