@@ -48,7 +48,7 @@ spec:
           command:
             - nri-sgx-epc
             - --idx
-            - "{{ printf "%02d" .Values.nri.pluginIndex }}"
+            - "{{ printf "%02.0f" .Values.nri.pluginIndex }}"
           image: {{ .Values.image.name }}:{{ .Values.image.tag | default .Chart.AppVersion }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           resources:

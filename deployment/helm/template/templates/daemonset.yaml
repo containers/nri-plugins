@@ -48,7 +48,7 @@ spec:
             - -metrics-interval
             - 5s
             - --nri-plugin-index
-            - "{{ printf "%02d" .Values.nri.pluginIndex }}"
+            - "{{ printf "%02.0f" .Values.nri.pluginIndex }}"
             {{- if .Values.configGroupLabel }}
             - --config-group-label
             - {{ .Values.configGroupLabel }}
