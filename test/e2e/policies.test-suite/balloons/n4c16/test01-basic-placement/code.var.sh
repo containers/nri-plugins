@@ -12,7 +12,7 @@ cleanup() {
 cleanup
 
 # pod0: run on reserved CPUs
-namespace=kube-system CONTCOUNT=2 create balloons-busybox
+CPUREQ="" RESERVED_CPU=1 namespace=kube-system CONTCOUNT=2 create balloons-busybox
 report allowed
 verify 'cpus["pod0c0"] == cpus["pod0c1"]' \
        'len(cpus["pod0c0"]) == 1'

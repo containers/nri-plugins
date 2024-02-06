@@ -25,7 +25,7 @@ vm-command "kubectl create namespace my-exact-name"
 CPUREQ="100m" MEMREQ="100M" CPULIM="100m" MEMLIM="100M"
 namespace=kube-system create balloons-busybox
 report allowed
-verify 'cpus["pod0c0"] == {"cpu00", "cpu01", "cpu02"}'
+verify 'cpus["pod0c0"].issubset({"cpu00", "cpu01", "cpu02"})'
 
 # pod1: match first ReservedPoolNamespaces glob, multicontainer
 CPUREQ="1" MEMREQ="" CPULIM="1" MEMLIM=""
@@ -34,7 +34,7 @@ report allowed
 verify 'cpus["pod1c0"] == cpus["pod0c0"]' \
        'cpus["pod1c1"] == cpus["pod0c0"]'
 
-# pod2: match last ReservedPoolNamespaces glob, slightly overbook reserved CPU
+# pod2: match last ReservedPoolNamespaces glob
 CPUREQ="1" MEMREQ="" CPULIM="1" MEMLIM=""
 namespace=system-logs create balloons-busybox
 report allowed
@@ -55,12 +55,13 @@ report allowed
 verify 'len(cpus["pod4c0"]) == 3' \
        'disjoint_sets(cpus["pod0c0"], cpus["pod3c0"], cpus["pod4c0"])'
 
-# pod5: annotate otherwise a default pod to the reserved CPUs,
-# severely overbook reserved CPUs
+# pod5: annotate otherwise a default pod to the reserved CPUs.
+# The reserved balloon must inflate and still include the reserved cpuset.
 CPUREQ="2500m" MEMREQ="" CPULIM="2500m" MEMLIM=""
 POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: reserved" create balloons-busybox
 report allowed
-verify 'cpus["pod5c0"] == {"cpu00", "cpu01", "cpu02"}' \
+verify '{"cpu00", "cpu01", "cpu02"}.issubset(cpus["pod5c0"])' \
+       'len(cpus["pod5c0"]) > 4' \
        'disjoint_sets(cpus["pod5c0"], cpus["pod3c0"], cpus["pod4c0"])'
 
 cleanup
@@ -76,11 +77,14 @@ create balloons-busybox
 report allowed
 verify 'len(cpus["pod6c0"]) == 1'
 
-# pod7: kube-system
+# pod7: kube-system. The reserved balloon must have been deflated.
+# All CPUs remaining in the balloon must be in ReservedResources
+# cpuset, yet not all of them are allocated.
 CPUREQ="100m" MEMREQ="100M" CPULIM="100m" MEMLIM="100M"
 namespace=kube-system create balloons-busybox
 report allowed
-verify 'cpus["pod7c0"] == {"cpu00", "cpu01", "cpu02"}'
+verify 'cpus["pod7c0"].issubset({"cpu00", "cpu01", "cpu02"})' \
+       'len(cpus["pod7c0"]) < 3'
 
 cleanup
 
