@@ -84,5 +84,17 @@ namespace="e2e-d" CONTCOUNT=2 create balloons-busybox
 report allowed
 verify 'cpus["pod6c0"] == cpus["pod6c1"]'
 
+
+# pod7: preserve annotation should skip placing a container into any
+# balloon even if namespace wildcard in a balloon type matches.
+CPUREQ="100m" MEMREQ="100M" CPULIM="100m" MEMLIM="100M"
+POD_ANNOTATION='cpu.preserve.resource-policy.nri.io/container.pod7c1: "true"
+    memory.preserve.resource-policy.nri.io: "true"'
+namespace="e2e-d" CONTCOUNT=3 create balloons-busybox
+report allowed
+verify 'cpus["pod6c0"] == cpus["pod7c0"]' \
+       'len(cpus["pod7c1"]) > len(cpus["pod7c0"])' \
+       'len(cpus["pod7c1"]) == 16'
+
 cleanup
 helm-terminate

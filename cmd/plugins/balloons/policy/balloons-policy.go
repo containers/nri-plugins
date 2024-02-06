@@ -245,6 +245,10 @@ func (p *balloons) Sync(add []cache.Container, del []cache.Container) error {
 
 // AllocateResources is a resource allocation request for this policy.
 func (p *balloons) AllocateResources(c cache.Container) error {
+	if c.PreserveCpuResources() {
+		log.Infof("not handling resources of container %s, preserving CPUs %q and memory %q", c.PrettyName(), c.GetCpusetCpus(), c.GetCpusetMems())
+		return nil
+	}
 	log.Debug("allocating resources for container %s (request %d mCPU, limit %d mCPU)...",
 		c.PrettyName(),
 		p.containerRequestedMilliCpus(c.GetID()),
@@ -1375,8 +1379,12 @@ func (p *balloons) pinCpuMem(c cache.Container, cpus cpuset.CPUSet, mems idset.I
 		}
 	}
 	if p.bpoptions.PinMemory == nil || *p.bpoptions.PinMemory {
-		log.Debug("  - pinning %s to memory %s", c.PrettyName(), mems)
-		c.SetCpusetMems(mems.String())
+		if c.PreserveMemoryResources() {
+			log.Debug("  - preserving %s pinning to memory %q", c.PrettyName, c.GetCpusetMems())
+		} else {
+			log.Debug("  - pinning %s to memory %s", c.PrettyName(), mems)
+			c.SetCpusetMems(mems.String())
+		}
 	}
 }
 
