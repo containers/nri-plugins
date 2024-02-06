@@ -65,15 +65,15 @@ spec:
     cpu:
       classes:
         default:
-          minFreq: ${CPU_DEFAULT_MIN:-800}
-          maxFreq: ${CPU_DEFAULT_MAX:-2800}
+          minFreq: ${CPU_DEFAULT_MIN:-800000}
+          maxFreq: ${CPU_DEFAULT_MAX:-2800000}
         classA:
-          minFreq: ${CPU_CLASSA_MIN:-900}
-          maxFreq: ${CPU_CLASSA_MAX:-2900}
+          minFreq: ${CPU_CLASSA_MIN:-900000}
+          maxFreq: ${CPU_CLASSA_MAX:-2900000}
         classB:
-          minFreq: ${CPU_CLASSB_MIN:-1000}
-          maxFreq: ${CPU_CLASSB_MAX:-3000}
+          minFreq: ${CPU_CLASSB_MIN:-1000000}
+          maxFreq: ${CPU_CLASSB_MAX:-3000000}
         classC:
-          minFreq: ${CPU_CLASSC_MIN:-1100}
-          maxFreq: ${CPU_CLASSC_MAX:-3100}
+          minFreq: ${CPU_CLASSC_MIN:-1100000}
+          maxFreq: ${CPU_CLASSC_MAX:-3100000}
           energyPerformancePreference: ${CPU_CLASSC_EPP:-1}
