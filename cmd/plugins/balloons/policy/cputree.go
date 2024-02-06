@@ -71,6 +71,7 @@ type cpuTreeAllocatorOptions struct {
 	preferSpreadOnPhysicalCores bool
 	preferCloseToDevices        []string
 	preferFarFromDevices        []string
+	virtDevCpusets              map[string][]cpuset.CPUSet
 }
 
 var emptyCpuSet = cpuset.New()
@@ -401,9 +402,13 @@ func (t *cpuTreeNode) SplitLevel(splitLevel CPUTopologyLevel, cpuClassifier func
 // CPU tree branch.
 func (t *cpuTreeNode) NewAllocator(options cpuTreeAllocatorOptions) *cpuTreeAllocator {
 	ta := &cpuTreeAllocator{
-		root:              t,
-		options:           options,
-		cacheCloseCpuSets: map[string][]cpuset.CPUSet{},
+		root:    t,
+		options: options,
+	}
+	if options.virtDevCpusets == nil {
+		ta.cacheCloseCpuSets = map[string][]cpuset.CPUSet{}
+	} else {
+		ta.cacheCloseCpuSets = options.virtDevCpusets
 	}
 	if options.preferSpreadOnPhysicalCores {
 		newTree := t.SplitLevel(CPUTopologyLevelNuma,

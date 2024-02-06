@@ -3,9 +3,10 @@
 ## Overview
 
 The balloons policy implements workload placement into "balloons" that
-are disjoint CPU pools. Balloons can be inflated and deflated, that is
-CPUs added and removed, based on the CPU resource requests of
-containers. Balloons can be static or dynamically created and
+are disjoint CPU pools. Size of a balloon can be fixed, or the balloon
+can be dynamically inflated and deflated, that is CPUs added and
+removed, based on the CPU resource requests of containers running in
+the balloon. Balloons can be static or dynamically created and
 destroyed. CPUs in balloons can be configured, for example, by setting
 min and max frequencies on CPU cores and uncore.
 
@@ -52,8 +53,7 @@ other policy. See [deployment](../../deployment/index.md) for more details.
 
 ## Configuration
 
-The balloons policy is configured using the yaml-based configuration
-system of nri-resource-policy.
+The balloons policy is configured using BalloonsPolicy Custom Resources.
 See [setup and usage](../setup.md#setting-up-nri-resource-policy) for
 more details on managing the configuration.
 
@@ -65,8 +65,10 @@ Balloons policy parameters:
   - `cpu` specifies cpuset or number of CPUs in the special `reserved`
     balloon. By default all containers in the `kube-system` namespace
     are assigned to the reserved balloon. Examples: `cpu: cpuset:0,48`
-    uses two logical CPUs: cpu0 and cpu48. `cpu: 2000m` uses
-    any two CPUs.
+    uses two logical CPUs: cpu0 and cpu48. `cpu: 2000m` uses any two
+    CPUs. If minCPUs are explicitly defined for the `reserved`
+    balloon, that number of CPUs will be allocated from the `cpuset`
+    and more later (up to `maxCpus`) as needed.
 - `pinCPU` controls pinning a container to CPUs of its balloon. The
   default is `true`: the container cannot use other CPUs.
 - `pinMemory` controls pinning a container to the memories that are
@@ -99,8 +101,15 @@ Balloons policy parameters:
   value set here is the default for all balloon types, but it can be
   overridden with the balloon type specific setting with the same
   name.
-- `balloonTypes` is a list of balloon type definitions. Each type can
-  be configured with the following parameters:
+- `balloonTypes` is a list of balloon type definitions. The order of
+  the types is significant in balloon CPU allocation and in choosing a
+  balloon type for a new container. The first type with the highest
+  `allocatorPriority` will get CPUs before other balloons when their
+  `minBalloons` > 0. A new container without balloon annotations will
+  be assignd to the first balloon type with matching criteria, for
+  instance `namespaces: ["*"]`.
+
+  Each balloon type can be configured with following parameters:
   - `name` of the balloon type. This is used in pod annotations to
     assign containers to balloons of this type.
   - `namespaces` is a list of namespaces (wildcards allowed) whose
@@ -251,9 +260,10 @@ If a pod has no annotations, its namespace is matched to the
 used.
 
 If the namespace does not match, the container is assigned to the
-special `default` balloon, that means reserved CPUs unless `MinCPUs`
-or `MaxCPUs` of the `default` balloon type are explicitely defined in
-the `BalloonTypes` configuration.
+`default` balloon type. Parameters for this balloon type can be
+defined explicitly among other balloon types. If not defined, a
+built-in `default` balloon type is implicitly appended at the end of
+the balloon types list.
 
 ## Metrics and Debugging
 
