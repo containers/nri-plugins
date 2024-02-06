@@ -53,12 +53,6 @@ const (
 	// but refuse to run the container if the balloon cannot be
 	// created.
 	FillNewBalloonMust
-	// FillReservedBalloon: put a container into the reserved
-	// balloon.
-	FillReservedBalloon
-	// FillDefaultBalloon: put a container into the default
-	// balloon.
-	FillDefaultBalloon
 )
 
 var fillMethodNames = map[FillMethod]string{
@@ -71,8 +65,6 @@ var fillMethodNames = map[FillMethod]string{
 	FillSamePod:         "same-pod",
 	FillNewBalloon:      "new-balloon",
 	FillNewBalloonMust:  "new-balloon-must",
-	FillDefaultBalloon:  "default-balloon",
-	FillReservedBalloon: "reserved-balloon",
 }
 
 // String stringifies a FillMethod
