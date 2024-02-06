@@ -761,6 +761,16 @@ func (c *container) GetMemorySwap() int64 {
 	return c.Ctr.GetLinux().GetResources().GetMemory().GetSwap().GetValue()
 }
 
+func (c *container) PreserveCpuResources() bool {
+	value, ok := c.GetEffectiveAnnotation(PreserveCpuKey)
+	return ok && value == "true"
+}
+
+func (c *container) PreserveMemoryResources() bool {
+	value, ok := c.GetEffectiveAnnotation(PreserveMemoryKey)
+	return ok && value == "true"
+}
+
 var (
 	// More complext rules, for Kubelet secrets and config maps
 	ignoredTopologyPathRegexps = []*regexp.Regexp{

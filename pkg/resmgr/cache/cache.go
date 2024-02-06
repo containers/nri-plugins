@@ -59,6 +59,11 @@ const (
 
 	// TopologyHintsKey can be used to opt out from automatic topology hint generation.
 	TopologyHintsKey = "topologyhints" + "." + kubernetes.ResmgrKeyNamespace
+
+	// PreserveCpuKey means that CPU resources should not be touched.
+	PreserveCpuKey = "cpu.preserve." + kubernetes.ResmgrKeyNamespace
+	// PreserveMemoryKey means that memory resources should not be touched.
+	PreserveMemoryKey = "memory.preserve." + kubernetes.ResmgrKeyNamespace
 )
 
 // PodState is the pod state in the runtime.
@@ -244,6 +249,13 @@ type Container interface {
 	GetMemoryLimit() int64
 	// GetMemorySwap gets the swap limit in bytes for the container.
 	GetMemorySwap() int64
+
+	// PreserveCpuResources() returns true if CPU resources of the
+	// container must not be changed.
+	PreserveCpuResources() bool
+	// PreserveMemoryResources() returns true if memory resources
+	// of the container must not be changed.
+	PreserveMemoryResources() bool
 
 	// GetPendingAdjusmentn clears and returns any pending adjustment for the container.
 	GetPendingAdjustment() *nri.ContainerAdjustment
