@@ -59,19 +59,19 @@ config:
     cpu:
       classes:
         default:
-          minFreq: 800
-          maxFreq: 2800
+          minFreq: 800000
+          maxFreq: 2800000
         class2:
-          minFreq: 900
-          maxFreq: 2900
+          minFreq: 900000
+          maxFreq: 2900000
         class3:
-          minFreq: 1000
-          maxFreq: 3000
+          minFreq: 1000000
+          maxFreq: 3000000
         class4:
-          minFreq: 1100
-          maxFreq: 3100
+          minFreq: 1100000
+          maxFreq: 3100000
           energyPerformancePreference: 1
         class5:
-          minFreq: 1200
-          maxFreq: 3200
+          minFreq: 1200000
+          maxFreq: 3200000
           energyPerformancePreference: 2
