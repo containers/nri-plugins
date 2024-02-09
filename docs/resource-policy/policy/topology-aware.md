@@ -310,6 +310,22 @@ defined affinities with implicit co-location requires both careful consideration
 and a thorough understanding of affinity evaluation, or it should be avoided
 altogether.
 
+## Disabling CPU or Memory Pinning of a Container
+
+Some containers may need to run on all CPUs or access all memories
+without restrictions. Annotate these pods and containers to prevent
+the resource policy from touching their CPU or memory pinning.
+
+```yaml
+cpu.preserve.resource-policy.nri.io/container.CONTAINER_NAME: "true"
+cpu.preserve.resource-policy.nri.io/pod: "true"
+cpu.preserve.resource-policy.nri.io: "true"
+
+memory.preserve.resource-policy.nri.io/container.CONTAINER_NAME: "true"
+memory.preserve.resource-policy.nri.io/pod: "true"
+memory.preserve.resource-policy.nri.io: "true"
+```
+
 ## Cold Start
 
 The `topology-aware` policy supports "cold start" functionality. When cold start
