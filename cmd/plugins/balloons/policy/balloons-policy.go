@@ -1331,7 +1331,7 @@ func (p *balloons) shareIdleCpus(addCpus, removeCpus cpuset.CPUSet) []*Balloon {
 			bln.SharedIdleCpus = bln.SharedIdleCpus.Union(idleCpusInTopoLevel)
 			sharedNow := bln.SharedIdleCpus.Size()
 			if sharedBefore != sharedNow {
-				log.Debugf("balloon %d shares %d new idle CPU(s) in %s(s), %d in total (%s)",
+				log.Debugf("balloon %s shares %d new idle CPU(s) in %s(s), %d in total (%s)",
 					bln.PrettyName(), sharedNow-sharedBefore,
 					topoLevel, bln.SharedIdleCpus.Size(), bln.SharedIdleCpus)
 				updateBalloons[blnIdx] = struct{}{}
