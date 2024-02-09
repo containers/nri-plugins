@@ -347,7 +347,7 @@ func (p *policy) allocatePool(container cache.Container, poolHint string) (Grant
 	// the same pool. This assumption can be relaxed later, requires separate
 	// (but connected) scoring of memory and CPU.
 
-	if request.CPUType() == cpuReserved {
+	if request.CPUType() == cpuReserved || request.CPUType() == cpuPreserve {
 		pool = p.root
 	} else {
 		affinity, err := p.calculatePoolAffinities(request.GetContainer())
@@ -601,7 +601,8 @@ func (p *policy) applyGrant(grant Grant) {
 
 	cpus := ""
 	kind := ""
-	if cpuType == cpuNormal {
+	switch cpuType {
+	case cpuNormal:
 		if exclusive.IsEmpty() {
 			cpus = shared.String()
 			kind = "shared"
@@ -614,11 +615,13 @@ func (p *policy) applyGrant(grant Grant) {
 				cpus = exclusive.String()
 			}
 		}
-	} else if cpuType == cpuReserved {
+	case cpuReserved:
 		kind = "reserved"
 		cpus = reserved.String()
 		cpuPortion = grant.ReservedPortion()
-	} else {
+	case cpuPreserve:
+		// Will skip CPU pinning, may still pin memory.
+	default:
 		log.Debug("unsupported granted cpuType %s", cpuType)
 		return
 	}
@@ -629,13 +632,16 @@ func (p *policy) applyGrant(grant Grant) {
 	}
 
 	if opt.PinCPU {
-		if cpus != "" {
-			log.Info("  => pinning %s to (%s) cpuset %s", container.PrettyName(), kind, cpus)
+		if cpuType == cpuPreserve {
+			log.Info("  => preserving %s cpuset %s", container.PrettyName(), container.GetCpusetCpus())
 		} else {
-			log.Info("  => not pinning %s CPUs, cpuset is empty...",
-				container.PrettyName())
+			if cpus != "" {
+				log.Info("  => pinning %s to (%s) cpuset %s", container.PrettyName(), kind, cpus)
+			} else {
+				log.Info("  => not pinning %s CPUs, cpuset is empty...", container.PrettyName())
+			}
+			container.SetCpusetCpus(cpus)
 		}
-		container.SetCpusetCpus(cpus)
 
 		// Notes:
 		//     It is extremely important to ensure that the exclusive subset of mixed
@@ -664,11 +670,15 @@ func (p *policy) applyGrant(grant Grant) {
 		container.SetCPUShares(int64(cache.MilliCPUToShares(int64(milliCPU))))
 	}
 
-	if mems != "" {
-		log.Debug("  => pinning %s to memory %s", container.PrettyName(), mems)
-		container.SetCpusetMems(mems)
+	if grant.MemoryType() == memoryPreserve {
+		log.Debug("  => preserving %s memory pinning %s", container.PrettyName(), container.GetCpusetMems())
 	} else {
-		log.Debug("  => not pinning %s memory, memory set is empty...", container.PrettyName())
+		if mems != "" {
+			log.Debug("  => pinning %s to memory %s", container.PrettyName(), mems)
+		} else {
+			log.Debug("  => not pinning %s memory, memory set is empty...", container.PrettyName())
+		}
+		container.SetCpusetMems(mems)
 	}
 }
 
@@ -717,6 +727,11 @@ func (p *policy) updateSharedAllocations(grant *Grant) {
 			continue
 		}
 
+		if other.CPUType() == cpuPreserve {
+			log.Info("  => %s not affected (preserving CPU pinning)", other)
+			continue
+		}
+
 		if other.SharedPortion() == 0 && !other.ExclusiveCPUs().IsEmpty() {
 			log.Info("  => %s not affected (only exclusive CPUs)...", other)
 			continue
@@ -750,7 +765,7 @@ func (p *policy) filterInsufficientResources(req Request, originals []Node) []No
 		supply := node.FreeSupply()
 		reqMemType := req.MemoryType()
 
-		if reqMemType == memoryUnspec {
+		if reqMemType == memoryUnspec || reqMemType == memoryPreserve {
 			// The algorithm for handling unspecified memory allocations is the same as for handling a request
 			// with memory type all.
 			reqMemType = memoryAll
@@ -883,7 +898,7 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 	log.Debug("  - affinity is a TIE")
 
 	// 3) matching memory type wins
-	if reqType := request.MemoryType(); reqType != memoryUnspec {
+	if reqType := request.MemoryType(); reqType != memoryUnspec && reqType != memoryPreserve {
 		if node1.HasMemoryType(reqType) && !node2.HasMemoryType(reqType) {
 			log.Debug("  => %s WINS on memory type", node1.Name())
 			return true

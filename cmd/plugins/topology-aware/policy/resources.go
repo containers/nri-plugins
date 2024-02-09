@@ -456,7 +456,7 @@ func (cs *supply) AccountReleaseCPU(g Grant) {
 // allocateMemory tries to fulfill the memory allocation part of a request.
 func (cs *supply) allocateMemory(r Request) (memoryMap, error) {
 	reqType := r.MemoryType()
-	if reqType == memoryUnspec {
+	if reqType == memoryUnspec || reqType == memoryPreserve {
 		reqType = memoryAll
 	}
 

@@ -1,9 +1,12 @@
-# Test that
-# - containers marked in Annotations pinned on Reserved CPUs.
+# Test annotations:
+# - prefer-reserved-cpus
+# - cpu.preserve
+# - memory.preserve
 
 cleanup-test-pods() {
     ( vm-command "kubectl delete pods pod0 --now" ) || true
     ( vm-command "kubectl delete pods pod1 --now" ) || true
+    ( vm-command "kubectl delete pods pod2 --now" ) || true
 }
 cleanup-test-pods
 
@@ -23,6 +26,26 @@ report allowed
 
 verify 'cpus["pod0c0"] == {"cpu10", "cpu11"}'
 verify 'cpus["pod1c0"] == {"cpu08"}'
+
+ANNOTATIONS=(
+    'cpu.preserve.resource-policy.nri.io: "true"'
+    'memory.preserve.resource-policy.nri.io/container.pod2c1: "true"'
+    'memory.preserve.resource-policy.nri.io/container.pod2c2: "true"'
+    'cpu.preserve.resource-policy.nri.io/container.pod2c2: "false"'
+    'cpu.preserve.resource-policy.nri.io/container.pod2c3: "false"'
+    'memory.preserve.resource-policy.nri.io/container.pod2c3: "false"'
+)
+CONTCOUNT=4 CPU=100m MEM=100M create reserved-annotated
+report allowed
+
+verify 'len(cpus["pod2c0"]) == 16' \
+       'len(mems["pod2c0"]) == 4' \
+       'len(cpus["pod2c1"]) == 16' \
+       'len(mems["pod2c1"]) == 4' \
+       'len(cpus["pod2c2"]) == 1' \
+       'len(mems["pod2c2"]) == 4' \
+       'len(cpus["pod2c3"]) == 1' \
+       'len(mems["pod2c3"]) == 1'
 
 cleanup-test-pods
 

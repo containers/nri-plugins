@@ -62,11 +62,13 @@ type cpuClass int
 var cpuClassNames = map[cpuClass]string{
 	cpuNormal:   "normal",
 	cpuReserved: "reserved",
+	cpuPreserve: "preserve",
 }
 
 const (
 	cpuNormal cpuClass = iota
 	cpuReserved
+	cpuPreserve
 )
 
 // types by memory type name
@@ -93,6 +95,7 @@ const (
 	memoryDRAM
 	memoryPMEM
 	memoryHBM
+	memoryPreserve
 	memoryFirstUnusedBit
 	memoryAll = memoryFirstUnusedBit - 1
 
@@ -155,6 +158,9 @@ func sharedCPUsPreference(pod cache.Pod, container cache.Container) (bool, bool)
 // If the effective annotations are not found, this function falls back to
 // looking for the deprecated syntax by calling podMemoryTypePreference.
 func memoryTypePreference(pod cache.Pod, container cache.Container) memoryType {
+	if container.PreserveMemoryResources() {
+		return memoryPreserve
+	}
 	key := preferMemoryTypeKey
 	value, ok := pod.GetEffectiveAnnotation(key, container.GetName())
 	if !ok {
@@ -437,6 +443,8 @@ func cpuAllocationPreferences(pod cache.Pod, container cache.Container) (int, in
 	// easy cases: kube-system namespace, Burstable or BestEffort QoS class containers
 	preferReserved, explicitReservation := checkReservedCPUsAnnotations(container)
 	switch {
+	case container.PreserveCpuResources():
+		return 0, fraction, false, cpuPreserve
 	case preferReserved == true:
 		return 0, fraction, false, cpuReserved
 	case checkReservedPoolNamespaces(namespace) && !explicitReservation:
