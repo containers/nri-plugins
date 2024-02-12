@@ -19,7 +19,7 @@ import (
 	"time"
 
 	nri "github.com/containerd/nri/pkg/api"
-	resmgr "github.com/containers/nri-plugins/pkg/resmgr/apis"
+	resmgr "github.com/containers/nri-plugins/pkg/apis/resmgr/v1alpha1"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/topology"

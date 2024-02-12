@@ -28,9 +28,9 @@ import (
 
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 
+	resmgr "github.com/containers/nri-plugins/pkg/apis/resmgr/v1alpha1"
 	"github.com/containers/nri-plugins/pkg/kubernetes"
 	logger "github.com/containers/nri-plugins/pkg/log"
-	resmgr "github.com/containers/nri-plugins/pkg/resmgr/apis"
 	"github.com/containers/nri-plugins/pkg/topology"
 )
 

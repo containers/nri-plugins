@@ -20,9 +20,9 @@ import (
 	nri "github.com/containerd/nri/pkg/api"
 	v1 "k8s.io/api/core/v1"
 
+	resmgr "github.com/containers/nri-plugins/pkg/apis/resmgr/v1alpha1"
 	"github.com/containers/nri-plugins/pkg/cgroups"
 	"github.com/containers/nri-plugins/pkg/kubernetes"
-	resmgr "github.com/containers/nri-plugins/pkg/resmgr/apis"
 )
 
 // Create and initialize a cached pod.
