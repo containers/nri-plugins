@@ -23,9 +23,9 @@ import (
 	"strconv"
 	"strings"
 
+	resmgr "github.com/containers/nri-plugins/pkg/apis/resmgr/v1alpha1"
 	"github.com/containers/nri-plugins/pkg/cgroups"
 	"github.com/containers/nri-plugins/pkg/kubernetes"
-	resmgr "github.com/containers/nri-plugins/pkg/resmgr/apis"
 	"github.com/containers/nri-plugins/pkg/topology"
 
 	nri "github.com/containerd/nri/pkg/api"

@@ -15,7 +15,7 @@
 package topologyaware
 
 import (
-	resmgr "github.com/containers/nri-plugins/pkg/resmgr/apis"
+	resmgr "github.com/containers/nri-plugins/pkg/apis/resmgr/v1alpha1"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 )
 
