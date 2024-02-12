@@ -229,9 +229,9 @@ image.%:
 	esac; \
 	bin=$(patsubst image.%,%,$@); \
 	tag=$(patsubst image.%,%,$@); \
-	    $(DOCKER_BUILD) . -f "$$dir/Dockerfile" \
+	$(DOCKER_BUILD) . -f "$$dir/Dockerfile" \
 	    --build-arg GO_VERSION=$(GO_VERSION) \
-	    -t $(IMAGE_REPO)$$tag:$(IMAGE_VERSION); \
+	    -t $(IMAGE_REPO)$$tag:$(IMAGE_VERSION) || exit $$?; \
 	NRI_IMAGE_INFO=`$(DOCKER) images --filter=reference=$${tag} --format '{{.ID}} {{.Repository}}:{{.Tag}} (created {{.CreatedSince}}, {{.CreatedAt}})' | head -n 1`; \
 	NRI_IMAGE_ID=`awk '{print $$1}' <<< "$${NRI_IMAGE_INFO}"`; \
 	NRI_IMAGE_REPOTAG=`awk '{print $$2}' <<< "$${NRI_IMAGE_INFO}"`; \
