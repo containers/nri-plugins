@@ -15,6 +15,7 @@
 package balloons
 
 import (
+	"errors"
 	"strings"
 
 	policy "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
@@ -222,4 +223,16 @@ func (p CPUPriority) Value() cpuallocator.CPUPriority {
 		return cpuallocator.PriorityLow
 	}
 	return cpuallocator.PriorityNone
+}
+
+func (c *Config) Validate() error {
+	errs := []error{}
+	for _, blnDef := range c.BalloonDefs {
+		for _, expr := range blnDef.MatchExpressions {
+			if err := expr.Validate(); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+	return errors.Join(errs...)
 }
