@@ -8,6 +8,9 @@ metadata:
   "; fi)
   labels:
     app: ${NAME}
+  $(if [ -n "$POD_LABEL" ]; then echo "
+    $POD_LABEL
+  "; fi)
 spec:
   containers:
   $(for contnum in $(seq 1 ${CONTCOUNT}); do echo "
