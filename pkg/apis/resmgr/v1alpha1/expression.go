@@ -23,57 +23,6 @@ import (
 	logger "github.com/containers/nri-plugins/pkg/log"
 )
 
-// Evaluable is the interface objects need to implement to be evaluable against Expressions.
-type Evaluable interface {
-	Eval(string) interface{}
-}
-
-// Expression is used to describe a criteria to select objects within a domain.
-type Expression struct {
-	Key    string   `json:"key"`              // key to check values of/against
-	Op     Operator `json:"operator"`         // operator to apply to value of Key and Values
-	Values []string `json:"values,omitempty"` // value(s) for domain key
-}
-
-const (
-	KeyPod       = "pod"
-	KeyID        = "id"
-	KeyUID       = "uid"
-	KeyName      = "name"
-	KeyNamespace = "namespace"
-	KeyQOSClass  = "qosclass"
-	KeyLabels    = "labels"
-	KeyTags      = "tags"
-)
-
-// Operator defines the possible operators for an Expression.
-type Operator string
-
-const (
-	// Equals tests for equality with a single value.
-	Equals Operator = "Equals"
-	// NotEqual test for inequality with a single value.
-	NotEqual Operator = "NotEqual"
-	// In tests if the key's value is one of the specified set.
-	In Operator = "In"
-	// NotIn tests if the key's value is not one of the specified set.
-	NotIn Operator = "NotIn"
-	// Exists evalutes to true if the named key exists.
-	Exists Operator = "Exists"
-	// NotExist evalutes to true if the named key does not exist.
-	NotExist Operator = "NotExist"
-	// AlwaysTrue always evaluates to true.
-	AlwaysTrue Operator = "AlwaysTrue"
-	// Matches tests if the key value matches the only given globbing pattern.
-	Matches Operator = "Matches"
-	// MatchesNot is true if Matches would be false for the same key and pattern.
-	MatchesNot Operator = "MatchesNot"
-	// MatchesAny tests if the key value matches any of the given globbing patterns.
-	MatchesAny Operator = "MatchesAny"
-	// MatchesNone is true if MatchesAny would be false for the same key and patterns.
-	MatchesNone Operator = "MatchesNone"
-)
-
 // Our logger instance.
 var log = logger.NewLogger("expression")
 
@@ -81,6 +30,10 @@ var log = logger.NewLogger("expression")
 func (e *Expression) Validate() error {
 	if e == nil {
 		return exprError("nil expression")
+	}
+
+	if err := e.validateKey(); err != nil {
+		return err
 	}
 
 	switch e.Op {
@@ -99,11 +52,65 @@ func (e *Expression) Validate() error {
 
 	case In, NotIn:
 	case MatchesAny, MatchesNone:
+
 	case AlwaysTrue:
+		if e.Values != nil && len(e.Values) != 0 {
+			return exprError("invalid expression, '%s' does not take any values", e.Op)
+		}
 
 	default:
 		return exprError("invalid expression, unknown operator: %q", e.Op)
 	}
+	return nil
+}
+
+func (e *Expression) validateKey() error {
+	keys, _ := splitKeys(e.Key)
+
+VALIDATE_KEYS:
+	for _, key := range keys {
+		key = strings.TrimLeft(key, "/")
+		for {
+			prefKey, restKey, _ := strings.Cut(key, "/")
+			switch prefKey {
+			case KeyID, KeyUID, KeyName, KeyNamespace, KeyQOSClass:
+				if restKey != "" {
+					return exprError("invalid expression, trailing key %q after %q",
+						prefKey, restKey)
+				}
+
+			case KeyPod:
+				if restKey == "" {
+					return exprError("invalid expression, missing trailing pod key after %q",
+						prefKey)
+				}
+
+			case KeyLabels:
+				if restKey == "" {
+					return exprError("invalid expression, missing trailing map key after %q",
+						prefKey)
+				}
+				continue VALIDATE_KEYS // validate next key, assuming rest is label map key
+
+			case KeyTags:
+				if restKey == "" {
+					return exprError("invalid expression, missing trailing map key after %q",
+						prefKey)
+				}
+				continue VALIDATE_KEYS // validate next key, assuming rest is tag map key
+
+			default:
+				return exprError("invalid expression, unknown key %q", prefKey)
+			}
+
+			if restKey == "" {
+				break
+			}
+
+			key = restKey
+		}
+	}
+
 	return nil
 }
 
@@ -192,9 +199,15 @@ func (e *Expression) KeyValue(subject Evaluable) (string, bool) {
 }
 
 func splitKeys(keys string) ([]string, string) {
-	// joint key specs have two valid forms:
+	// We don't support boolean expressions but we support  'joint keys'.
+	// These can be used to emulate a boolean AND of multiple keys.
+	//
+	// Joint keys have two valid forms:
 	//   - ":keylist" (equivalent to ":::<colon-separated-keylist>")
-	//   - ":<ksep><vsep><ksep-separated-keylist>"
+	//   - ":<key-sep><value-sep><key-sep-separated-keylist>"
+	//
+	// The value of dereferencing such a key is the values of all individual
+	// keys concatenated and separated by value-sep.
 
 	if len(keys) < 4 || keys[0] != ':' {
 		return []string{keys}, ""
@@ -229,76 +242,63 @@ func validSeparator(b byte) bool {
 }
 
 // ResolveRef walks an object trying to resolve a reference to a value.
+//
+// Keys can be combined into compound keys using '/' as the separator.
+// For instance, "pod/labels/io.test.domain/my-label" refers to the
+// value of the "io.test.domain/my-label" label key of the pod of the
+// evaluated object.
 func ResolveRef(subject Evaluable, spec string) (string, bool, error) {
-	var obj interface{}
+	var (
+		key             = path.Clean(spec)
+		obj interface{} = subject
+	)
 
-	log.Debug("resolving %q @ %s...", spec, subject)
+	log.Debug("resolving %q in %s...", key, subject)
 
-	spec = path.Clean(spec)
-	ref := strings.Split(spec, "/")
-	if len(ref) == 1 {
-		if strings.Index(spec, ".") != -1 {
-			ref = []string{"labels", spec}
-		}
-	}
+	for {
+		log.Debug("- resolve %q in %s", key, obj)
 
-	obj = subject
-	for len(ref) > 0 {
-		key := ref[0]
-
-		log.Debug("resolve walking %q @ %s...", key, obj)
 		switch v := obj.(type) {
-		case string:
-			obj = v
+		case Evaluable:
+			pref, rest, _ := strings.Cut(key, "/")
+			obj = v.Eval(pref)
+			key = rest
+
 		case map[string]string:
 			value, ok := v[key]
 			if !ok {
 				return "", false, nil
 			}
 			obj = value
+			key = ""
+
 		case error:
 			return "", false, exprError("%s: failed to resolve %q: %v", subject, spec, v)
+
 		default:
-			e, ok := obj.(Evaluable)
-			if !ok {
-				return "", false, exprError("%s: failed to resolve %q, unexpected type %T",
-					subject, spec, obj)
-			}
-			obj = e.Eval(key)
+			return "", false, exprError("%s: failed to resolve %q (%q): wrong type %T",
+				subject, key, spec, v)
 		}
 
-		ref = ref[1:]
+		if key == "" {
+			break
+		}
 	}
 
-	str, ok := obj.(string)
+	s, ok := obj.(string)
 	if !ok {
-		return "", false, exprError("%s: reference %q resolved to non-string: %T",
+		return "", false, exprError("%s: failed to resolve %q: non-string type %T",
 			subject, spec, obj)
 	}
 
-	log.Debug("resolved %q @ %s => %s", spec, subject, str)
+	log.Debug("resolved %q in %s => %s", spec, subject, s)
 
-	return str, true, nil
+	return s, true, nil
 }
 
 // String returns the expression as a string.
 func (e *Expression) String() string {
 	return fmt.Sprintf("<%s %s %s>", e.Key, e.Op, strings.Join(e.Values, ","))
-}
-
-// DeepCopy creates a deep copy of the expression.
-func (e *Expression) DeepCopy() *Expression {
-	out := &Expression{}
-	e.DeepCopyInto(out)
-	return out
-}
-
-// DeepCopyInto copies the expression into another one.
-func (e *Expression) DeepCopyInto(out *Expression) {
-	out.Key = e.Key
-	out.Op = e.Op
-	out.Values = make([]string, len(e.Values))
-	copy(out.Values, e.Values)
 }
 
 // exprError returns a formatted error specific to expressions.
