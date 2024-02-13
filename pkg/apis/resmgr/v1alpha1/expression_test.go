@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
+	"github.com/stretchr/testify/require"
 )
 
 type evaluable struct {
@@ -86,7 +87,12 @@ func TestResolveRefAndKeyValue(t *testing.T) {
 	defer logger.Flush()
 
 	pod := newEvaluable("P1", "pns", "pqos",
-		map[string]string{"l1": "plone", "l2": "pltwo", "l5": "plfive"}, nil, nil)
+		map[string]string{
+			"l1":             "plone",
+			"l2":             "pltwo",
+			"l5":             "plfive",
+			"io.test/label1": "io.test/value1",
+		}, nil, nil)
 
 	tcases := []struct {
 		name      string
@@ -100,7 +106,11 @@ func TestResolveRefAndKeyValue(t *testing.T) {
 		{
 			name: "test resolving references",
 			subject: newEvaluable("C1", "cns", "cqos",
-				map[string]string{"l1": "clone", "l2": "cltwo", "l3": "clthree"},
+				map[string]string{
+					"l1": "clone",
+					"l2": "cltwo",
+					"l3": "clthree",
+				},
 				map[string]string{"t1": "ctone", "t2": "cttwo", "t3": "ctthree"}, pod),
 			keys: []string{
 				"name", "namespace", "qosclass",
@@ -111,34 +121,35 @@ func TestResolveRefAndKeyValue(t *testing.T) {
 				"pod/labels/l3",
 				"pod/labels/l4",
 				"pod/labels/l5",
+				"pod/labels/io.test/label1",
 				":,-pod/qosclass,pod/namespace,pod/name,name",
 			},
 			values: []string{
 				"C1", "cns", "cqos",
 				"clone", "cltwo", "clthree", "",
 				"ctone", "cttwo", "ctthree", "",
-				"plone", "pltwo", "", "", "plfive",
+				"plone", "pltwo", "", "", "plfive", "io.test/value1",
 				"",
 			},
 			keyvalues: []string{
 				"C1", "cns", "cqos",
 				"clone", "cltwo", "clthree", "",
 				"ctone", "cttwo", "ctthree", "",
-				"plone", "pltwo", "", "", "plfive",
+				"plone", "pltwo", "", "", "plfive", "io.test/value1",
 				"pqos-pns-P1-C1",
 			},
 			ok: []bool{
 				true, true, true,
 				true, true, true, false,
 				true, true, true, false,
-				true, true, false, false, true,
+				true, true, false, false, true, true,
 				false,
 			},
 			error: []bool{
 				false, false, false,
 				false, false, false, false,
 				false, false, false, false,
-				false, false, false, false, false,
+				false, false, false, false, false, false,
 				true,
 			},
 		},
@@ -373,6 +384,154 @@ func TestMatching(t *testing.T) {
 				if expected != got {
 					t.Errorf("%s: expected %s, got %s", expr, expected, got)
 				}
+			}
+		})
+	}
+}
+
+func TestValidation(t *testing.T) {
+	defer logger.Flush()
+
+	for _, tc := range []*struct {
+		name    string
+		expr    *Expression
+		invalid bool
+	}{
+		{
+			name: "valid ID reference",
+			expr: &Expression{
+				Key:    "id",
+				Op:     Equals,
+				Values: []string{"a"},
+			},
+		},
+		{
+			name: "valid uid reference",
+			expr: &Expression{
+				Key:    "uid",
+				Op:     Equals,
+				Values: []string{"a"},
+			},
+		},
+		{
+			name: "valid name reference",
+			expr: &Expression{
+				Key:    "name",
+				Op:     Equals,
+				Values: []string{"a"},
+			},
+		},
+		{
+			name: "valid namespace reference",
+			expr: &Expression{
+				Key:    "namespace",
+				Op:     Equals,
+				Values: []string{"a"},
+			},
+		},
+		{
+			name: "valid QoS class reference",
+			expr: &Expression{
+				Key:    "qosclass",
+				Op:     Equals,
+				Values: []string{"a"},
+			},
+		},
+		{
+			name: "valid label reference",
+			expr: &Expression{
+				Key:    "labels/io.kubernetes.application",
+				Op:     Equals,
+				Values: []string{"test"},
+			},
+		},
+		{
+			name: "valid pod reference",
+			expr: &Expression{
+				Key:    "pod/name",
+				Op:     Equals,
+				Values: []string{"test"},
+			},
+		},
+		{
+			name: "invalid pod reference, no trailing key",
+			expr: &Expression{
+				Key:    "pod",
+				Op:     Equals,
+				Values: []string{"test"},
+			},
+			invalid: true,
+		},
+		{
+			name: "invalid pod reference, unknown trailing key",
+			expr: &Expression{
+				Key:    "pod/foo",
+				Op:     Equals,
+				Values: []string{"test"},
+			},
+			invalid: true,
+		},
+		{
+			name: "invalid name reference, trailing key",
+			expr: &Expression{
+				Key:    "name/foo",
+				Op:     Equals,
+				Values: []string{"a"},
+			},
+			invalid: true,
+		},
+		{
+			name: "invalid equal, wrong number of arguments",
+			expr: &Expression{
+				Key:    "name",
+				Op:     Equals,
+				Values: []string{},
+			},
+			invalid: true,
+		},
+		{
+			name: "invalid NotEqual, wrong number of arguments",
+			expr: &Expression{
+				Key:    "name",
+				Op:     NotEqual,
+				Values: []string{"a", "b"},
+			},
+			invalid: true,
+		},
+		{
+			name: "invalid Matches, wrong number of arguments",
+			expr: &Expression{
+				Key:    "name",
+				Op:     Matches,
+				Values: []string{},
+			},
+			invalid: true,
+		},
+		{
+			name: "invalid MatchesNot, wrong number of arguments",
+			expr: &Expression{
+				Key:    "name",
+				Op:     MatchesNot,
+				Values: []string{"a", "b"},
+			},
+			invalid: true,
+		},
+		{
+			name: "invalid AlwaysTrue, wrong number of arguments",
+			expr: &Expression{
+				Key:    "name",
+				Op:     AlwaysTrue,
+				Values: []string{"c"},
+			},
+			invalid: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.expr.Validate()
+			if tc.invalid {
+				require.NotNil(t, err)
+			} else {
+				require.Nil(t, err)
 			}
 		})
 	}
