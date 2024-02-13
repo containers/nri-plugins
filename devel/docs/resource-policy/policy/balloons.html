@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.3.1-46-g80668ba documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.3.1-48-g3dc37b2 documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -107,9 +107,10 @@
 <section id="overview">
 <h2>Overview<a class="headerlink" href="#overview" title="Permalink to this heading"></a></h2>
 <p>The balloons policy implements workload placement into “balloons” that
-are disjoint CPU pools. Balloons can be inflated and deflated, that is
-CPUs added and removed, based on the CPU resource requests of
-containers. Balloons can be static or dynamically created and
+are disjoint CPU pools. Size of a balloon can be fixed, or the balloon
+can be dynamically inflated and deflated, that is CPUs added and
+removed, based on the CPU resource requests of containers running in
+the balloon. Balloons can be static or dynamically created and
 destroyed. CPUs in balloons can be configured, for example, by setting
 min and max frequencies on CPU cores and uncore.</p>
 </section>
@@ -155,8 +156,7 @@ other policy. See <a class="reference internal" href="../../deployment/index.htm
 </section>
 <section id="configuration">
 <h2>Configuration<a class="headerlink" href="#configuration" title="Permalink to this heading"></a></h2>
-<p>The balloons policy is configured using the yaml-based configuration
-system of nri-resource-policy.
+<p>The balloons policy is configured using BalloonsPolicy Custom Resources.
 See <a class="reference internal" href="../setup.html#setting-up-nri-resource-policy"><span class="std std-ref">setup and usage</span></a> for
 more details on managing the configuration.</p>
 <section id="parameters">
@@ -168,8 +168,10 @@ more details on managing the configuration.</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">cpu</span></code> specifies cpuset or number of CPUs in the special <code class="docutils literal notranslate"><span class="pre">reserved</span></code>
 balloon. By default all containers in the <code class="docutils literal notranslate"><span class="pre">kube-system</span></code> namespace
 are assigned to the reserved balloon. Examples: <code class="docutils literal notranslate"><span class="pre">cpu:</span> <span class="pre">cpuset:0,48</span></code>
-uses two logical CPUs: cpu0 and cpu48. <code class="docutils literal notranslate"><span class="pre">cpu:</span> <span class="pre">2000m</span></code> uses
-any two CPUs.</p></li>
+uses two logical CPUs: cpu0 and cpu48. <code class="docutils literal notranslate"><span class="pre">cpu:</span> <span class="pre">2000m</span></code> uses any two
+CPUs. If minCPUs are explicitly defined for the <code class="docutils literal notranslate"><span class="pre">reserved</span></code>
+balloon, that number of CPUs will be allocated from the <code class="docutils literal notranslate"><span class="pre">cpuset</span></code>
+and more later (up to <code class="docutils literal notranslate"><span class="pre">maxCpus</span></code>) as needed.</p></li>
 </ul>
 </li>
 <li><p><code class="docutils literal notranslate"><span class="pre">pinCPU</span></code> controls pinning a container to CPUs of its balloon. The
@@ -204,8 +206,14 @@ are packed tightly to a minimum number of physical CPU cores. The
 value set here is the default for all balloon types, but it can be
 overridden with the balloon type specific setting with the same
 name.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">balloonTypes</span></code> is a list of balloon type definitions. Each type can
-be configured with the following parameters:</p>
+<li><p><code class="docutils literal notranslate"><span class="pre">balloonTypes</span></code> is a list of balloon type definitions. The order of
+the types is significant in balloon CPU allocation and in choosing a
+balloon type for a new container. The first type with the highest
+<code class="docutils literal notranslate"><span class="pre">allocatorPriority</span></code> will get CPUs before other balloons when their
+<code class="docutils literal notranslate"><span class="pre">minBalloons</span></code> &gt; 0. A new container without balloon annotations will
+be assignd to the first balloon type with matching criteria, for
+instance <code class="docutils literal notranslate"><span class="pre">namespaces:</span> <span class="pre">[&quot;*&quot;]</span></code>.</p>
+<p>Each balloon type can be configured with following parameters:</p>
 <ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">name</span></code> of the balloon type. This is used in pod annotations to
 assign containers to balloons of this type.</p></li>
@@ -367,9 +375,10 @@ the default balloon type for all containers in the pod.</p>
 <code class="docutils literal notranslate"><span class="pre">Namespaces</span></code> of balloon types. The first matching balloon type is
 used.</p>
 <p>If the namespace does not match, the container is assigned to the
-special <code class="docutils literal notranslate"><span class="pre">default</span></code> balloon, that means reserved CPUs unless <code class="docutils literal notranslate"><span class="pre">MinCPUs</span></code>
-or <code class="docutils literal notranslate"><span class="pre">MaxCPUs</span></code> of the <code class="docutils literal notranslate"><span class="pre">default</span></code> balloon type are explicitely defined in
-the <code class="docutils literal notranslate"><span class="pre">BalloonTypes</span></code> configuration.</p>
+<code class="docutils literal notranslate"><span class="pre">default</span></code> balloon type. Parameters for this balloon type can be
+defined explicitly among other balloon types. If not defined, a
+built-in <code class="docutils literal notranslate"><span class="pre">default</span></code> balloon type is implicitly appended at the end of
+the balloon types list.</p>
 </section>
 <section id="metrics-and-debugging">
 <h2>Metrics and Debugging<a class="headerlink" href="#metrics-and-debugging" title="Permalink to this heading"></a></h2>
