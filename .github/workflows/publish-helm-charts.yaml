@@ -22,7 +22,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install Helm
-        uses: azure/setup-helm@v3
+        uses: azure/setup-helm@v4
 
       - name: Run chart publisher script
         run: ./scripts/build/helm-publisher.sh ${{ join(github.event.release.assets.*.browser_download_url, ' ') }} 
