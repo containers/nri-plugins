@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.3.1-57-gfda3d80 documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.3.1-62-g516da7f documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -220,6 +220,15 @@ assign containers to balloons of this type.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">namespaces</span></code> is a list of namespaces (wildcards allowed) whose
 pods should be assigned to this balloon type, unless overridden by
 pod annotations.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">matchExpressions</span></code> is a list of container match expressions. These
+expressions are evaluated for all containers which have not been
+assigned otherwise to other balloons. If an expression matches,
+IOW it evaluates to true, the container gets assigned to this
+balloon type. Container mach expressions have the same syntax and
+semantics as the scope and match expressions in container affinity
+annotations for the topology-aware policy.
+See the <a class="reference internal" href="topology-aware.html#affinity-semantics"><span class="std std-ref">affinity documentation</span></a>
+for a detailed description of expressions.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">minBalloons</span></code> is the minimum number of balloons of this type that
 is always present, even if the balloons would not have any
 containers. The default is 0: if a balloon has no containers, it
