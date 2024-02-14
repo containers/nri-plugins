@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.3.1-63-g5085371 documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.3.1-64-g42457cf documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -61,6 +61,7 @@
 <li class="toctree-l4"><a class="reference internal" href="#configuring-the-policy">Configuring the Policy</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#policy-cpu-allocation-preferences">Policy CPU Allocation Preferences</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#container-cpu-allocation-preference-annotations">Container CPU Allocation Preference Annotations</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#disabling-cpu-or-memory-pinning-of-a-container">Disabling CPU or Memory Pinning of a Container</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#cold-start">Cold Start</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#container-memory-requests-and-limits">Container memory requests and limits</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#reserved-pool-namespaces">Reserved pool namespaces</a></li>
@@ -488,6 +489,21 @@ defined affinities with implicit co-location requires both careful consideration
 and a thorough understanding of affinity evaluation, or it should be avoided
 altogether.</p>
 </section>
+</section>
+<section id="disabling-cpu-or-memory-pinning-of-a-container">
+<h2>Disabling CPU or Memory Pinning of a Container<a class="headerlink" href="#disabling-cpu-or-memory-pinning-of-a-container" title="Permalink to this heading"></a></h2>
+<p>Some containers may need to run on all CPUs or access all memories
+without restrictions. Annotate these pods and containers to prevent
+the resource policy from touching their CPU or memory pinning.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">cpu.preserve.resource-policy.nri.io/container.CONTAINER_NAME</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+<span class="nt">cpu.preserve.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+<span class="nt">cpu.preserve.resource-policy.nri.io</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+
+<span class="nt">memory.preserve.resource-policy.nri.io/container.CONTAINER_NAME</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+<span class="nt">memory.preserve.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+<span class="nt">memory.preserve.resource-policy.nri.io</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+</pre></div>
+</div>
 </section>
 <section id="cold-start">
 <h2>Cold Start<a class="headerlink" href="#cold-start" title="Permalink to this heading"></a></h2>
