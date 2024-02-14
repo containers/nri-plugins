@@ -4,12 +4,20 @@ on:
   push:
     tags:
       - "v*.*.*"
+    branches:
+      - main
 
 env:
   CHARTS_DIR: deployment/helm/
+  IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') && 'true' || 'false' }}
+  UNSTABLE_CHARTS: unstable-helm-charts
+  REGISTRY: ghcr.io
+  REGISTRY_USER: ${{ github.repository_owner }}
+  REGISTRY_PATH: ${{ github.repository }}
 
 jobs:
   release:
+    if: ${{ github.env.IS_RELEASE == 'true' }}
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -20,7 +28,7 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v4.0.0
 
-      - name: Package Helm charts
+      - name: Package Stable Helm Charts
         run: |
           find "$CHARTS_DIR" -name values.yaml | xargs -I '{}' \
               sed -e s"/pullPolicy:.*/pullPolicy: IfNotPresent/" -i '{}'
@@ -30,10 +38,66 @@ jobs:
             mv $SRC_FILE $DEST_FILE
           done
 
-      - name: Upload Helm packages to GitHub releases
+      - name: Upload Stable Helm Charts to GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           name: ${{ github.ref_name }}
           draft: true
           append_body: true
           files: nri-*helm-chart*.tgz
+
+  unstable:
+    concurrency:
+      group: unstable-helm-charts
+      cancel-in-progress: false
+    if: ${{ github.env.IS_RELEASE != 'true' }}
+    permissions:
+      packages: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deep Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4.0.0
+
+      - name: Package Unstable Helm Charts
+        id: package-charts
+        run: |
+          # For unstable chart verison we use:
+          #   - chart version: x.y-unstable derived from the latest tag x.y.z
+          #   - image version: 'unstable'.
+          majmin="$(git describe | sed -E 's/v([0-9]*\.[0-9]*).*$/\1/')"
+          CHART_VERSION="${majmin}-unstable"
+          APP_VERSION=unstable
+          # Package charts
+          find "$CHARTS_DIR" -name values.yaml | xargs -I '{}' \
+              sed -e s"/pullPolicy:.*/pullPolicy: Always/" -i '{}'
+          helm package --version "$CHART_VERSION" --app-version $APP_VERSION "$CHARTS_DIR"/*
+          find "$CHARTS_DIR" -name values.yaml | xargs -I '{}' \
+              git checkout '{}'
+          mkdir ../$UNSTABLE_CHARTS
+          find . -name '*.tgz' -print | while read SRC_FILE; do
+            DEST_FILE=$(echo $SRC_FILE | sed 's/v/helm-chart-v/g')
+            mv -v $SRC_FILE ../$UNSTABLE_CHARTS/$DEST_FILE
+          done
+
+      - name: Log In To Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+              helm registry login ${{ env.REGISTRY }}/${{ env.REGISTRY_PATH }} -u ${{ env.REGISTRY_USER }} --password-stdin
+
+      - name: Push Unstable Helm Charts To Registry
+        shell: bash
+        run: |
+          # Notes:
+          #   Currently we only publish unstable Helm charts from main/HEAD.
+          #   We have no active cleanup of old unstable charts in place. In
+          #   between new tags unstable chart have the same version, though.
+          pushd ../$UNSTABLE_CHARTS
+          for i in ./*.tgz; do
+              helm push $i oci://${{ env.REGISTRY }}/${{ env.REGISTRY_PATH }}
+          done
+          popd
