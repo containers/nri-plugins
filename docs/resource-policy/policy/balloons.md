@@ -12,7 +12,7 @@ min and max frequencies on CPU cores and uncore.
 
 ## How It Works
 
-1. User configures balloon types from which the policy instantiates
+1. User configures balloon types from which the policy creates
    balloons.
 
 2. A balloon has a set of CPUs and a set of containers that run on the
@@ -74,7 +74,7 @@ Balloons policy parameters:
 - `pinMemory` controls pinning a container to the memories that are
   closest to the CPUs of its balloon. The default is `true`: allow
   using memory only from the closest NUMA nodes. Warning: this may
-  cause kernel to kill workloads due to out-of-memory error when
+  cause kernel to kill containers due to out-of-memory error when
   closest NUMA nodes do not have enough memory. In this situation
   consider switching this option `false`.
 - `idleCPUClass` specifies the CPU class of those CPUs that do not
@@ -86,28 +86,34 @@ Balloons policy parameters:
   balloons. If `true`, new balloons are created using CPUs on
   NUMA/die/package with most free CPUs, that is, balloons are spread
   across the hardware topology. This helps inflating balloons within
-  the same NUMA/die/package and reduces interference between workloads
+  the same NUMA/die/package and reduces interference between containers
   in balloons when system is not fully loaded. The default is `false`:
   pack new balloons tightly into the same NUMAs/dies/packages. This
   helps keeping large portions of hardware idle and entering into deep
   power saving states.
 - `preferSpreadOnPhysicalCores` prefers allocating logical CPUs
   (possibly hyperthreads) for a balloon from separate physical CPU
-  cores. This prevents workloads in the balloon from interfering with
+  cores. This prevents containers in the balloon from interfering with
   themselves as they do not compete on the resources of the same CPU
   cores. On the other hand, it allows more interference between
-  workloads in different balloons. The default is `false`: balloons
+  containers in different balloons. The default is `false`: balloons
   are packed tightly to a minimum number of physical CPU cores. The
   value set here is the default for all balloon types, but it can be
   overridden with the balloon type specific setting with the same
   name.
 - `balloonTypes` is a list of balloon type definitions. The order of
-  the types is significant in balloon CPU allocation and in choosing a
-  balloon type for a new container. The first type with the highest
-  `allocatorPriority` will get CPUs before other balloons when their
-  `minBalloons` > 0. A new container without balloon annotations will
-  be assignd to the first balloon type with matching criteria, for
-  instance `namespaces: ["*"]`.
+  the types is significant in two cases.
+
+  In the first case the policy pre-creates balloons and allocates
+  their CPUs when it starts or is reconfigured, see `minBalloons` and
+  `minCPUs` below. Balloon types with the highest `allocatorPriority`
+  will get their CPUs in the listed order. Balloon types with a lower
+  `allocatorPriority` will get theirs in the same order after them.
+
+  In the second case the policy looks for a balloon type for a new
+  container. If annotations do not specify it, the container will be
+  be assignd to the first balloon type in the list with matching
+  criteria, for instance based on `namespaces` below.
 
   Each balloon type can be configured with following parameters:
   - `name` of the balloon type. This is used in pod annotations to
@@ -150,10 +156,10 @@ Balloons policy parameters:
     existing balloons over creating new ones.
   - `shareIdleCPUsInSame`: Whenever the number of or sizes of balloons
     change, idle CPUs (that do not belong to any balloon) are reshared
-    as extra CPUs to workloads in balloons with this option. The value
+    as extra CPUs to containers in balloons with this option. The value
     sets locality of allowed extra CPUs that will be common to these
-    workloads.
-    - `system`: workloads are allowed to use idle CPUs available
+    containers.
+    - `system`: containers are allowed to use idle CPUs available
       anywhere in the system.
     - `package`: ...allowed to use idle CPUs in the same package(s)
     (sockets) as the balloon.
@@ -193,15 +199,15 @@ Balloons policy parameters:
 - `instrumentation`: configures interface for runtime instrumentation.
   - `httpEndpoint`: the address the HTTP server listens on. Example:
     `:8891`.
-  - `prometheusExport`: if set to True, balloon instances, their CPUs
-     and assigned workloads are readable through `/metrics` from the
+  - `prometheusExport`: if set to True, balloons with their CPUs
+     and assigned containers are readable through `/metrics` from the
      httpEndpoint.
   - `reportPeriod`: `/metrics` aggregation interval.
 
 ### Example
 
 Example configuration that runs all pods in balloons of 1-4
-CPUs. Instrumentation enables reading CPUs and workloads in balloons
+CPUs. Instrumentation enables reading CPUs and containers in balloons
 from `http://localhost:8891/metrics`.
 
 ```yaml
