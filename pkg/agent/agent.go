@@ -485,18 +485,8 @@ func (a *Agent) updateNodeConfig(obj runtime.Object) {
 	if cfg == nil {
 		cfg = a.groupCfg
 	}
-	if cfg == nil {
-		log.Warnf("node (%s) has no effective configuration", a.nodeName)
-		return
-	}
 
-	err := a.notifyFn(cfg)
-	if err != nil {
-		log.Errorf("failed to apply configuration: %v", err)
-	}
-
-	a.patchConfigStatus(a.currentCfg, cfg, err)
-	a.currentCfg = cfg
+	a.updateConfig(cfg)
 }
 
 func (a *Agent) updateGroupConfig(obj runtime.Object) {
@@ -535,9 +525,23 @@ func (a *Agent) updateGroupConfig(obj runtime.Object) {
 		return
 	}
 
+	a.updateConfig(cfg)
+}
+
+func (a *Agent) updateConfig(cfg metav1.Object) {
 	if cfg == nil {
 		log.Warnf("node (%s) has no effective configuration", a.nodeName)
 		return
+	}
+
+	if v, ok := cfg.(cfgapi.Validator); ok {
+		if err := v.Validate(); err != nil {
+			log.Errorf("failed to validate configuration: %v", err)
+
+			a.patchConfigStatus(a.currentCfg, cfg, err)
+			a.currentCfg = cfg
+			return
+		}
 	}
 
 	err := a.notifyFn(cfg)
