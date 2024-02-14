@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.3.1-65-g68c19f8 documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.3.1-66-gc9e90b9 documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -118,7 +118,7 @@ min and max frequencies on CPU cores and uncore.</p>
 <section id="how-it-works">
 <h2>How It Works<a class="headerlink" href="#how-it-works" title="Permalink to this heading"></a></h2>
 <ol class="arabic simple">
-<li><p>User configures balloon types from which the policy instantiates
+<li><p>User configures balloon types from which the policy creates
 balloons.</p></li>
 <li><p>A balloon has a set of CPUs and a set of containers that run on the
 CPUs.</p></li>
@@ -180,7 +180,7 @@ default is <code class="docutils literal notranslate"><span class="pre">true</sp
 <li><p><code class="docutils literal notranslate"><span class="pre">pinMemory</span></code> controls pinning a container to the memories that are
 closest to the CPUs of its balloon. The default is <code class="docutils literal notranslate"><span class="pre">true</span></code>: allow
 using memory only from the closest NUMA nodes. Warning: this may
-cause kernel to kill workloads due to out-of-memory error when
+cause kernel to kill containers due to out-of-memory error when
 closest NUMA nodes do not have enough memory. In this situation
 consider switching this option <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">idleCPUClass</span></code> specifies the CPU class of those CPUs that do not
@@ -192,28 +192,32 @@ on reserved CPUs. This always includes the <code class="docutils literal notrans
 balloons. If <code class="docutils literal notranslate"><span class="pre">true</span></code>, new balloons are created using CPUs on
 NUMA/die/package with most free CPUs, that is, balloons are spread
 across the hardware topology. This helps inflating balloons within
-the same NUMA/die/package and reduces interference between workloads
+the same NUMA/die/package and reduces interference between containers
 in balloons when system is not fully loaded. The default is <code class="docutils literal notranslate"><span class="pre">false</span></code>:
 pack new balloons tightly into the same NUMAs/dies/packages. This
 helps keeping large portions of hardware idle and entering into deep
 power saving states.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">preferSpreadOnPhysicalCores</span></code> prefers allocating logical CPUs
 (possibly hyperthreads) for a balloon from separate physical CPU
-cores. This prevents workloads in the balloon from interfering with
+cores. This prevents containers in the balloon from interfering with
 themselves as they do not compete on the resources of the same CPU
 cores. On the other hand, it allows more interference between
-workloads in different balloons. The default is <code class="docutils literal notranslate"><span class="pre">false</span></code>: balloons
+containers in different balloons. The default is <code class="docutils literal notranslate"><span class="pre">false</span></code>: balloons
 are packed tightly to a minimum number of physical CPU cores. The
 value set here is the default for all balloon types, but it can be
 overridden with the balloon type specific setting with the same
 name.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">balloonTypes</span></code> is a list of balloon type definitions. The order of
-the types is significant in balloon CPU allocation and in choosing a
-balloon type for a new container. The first type with the highest
-<code class="docutils literal notranslate"><span class="pre">allocatorPriority</span></code> will get CPUs before other balloons when their
-<code class="docutils literal notranslate"><span class="pre">minBalloons</span></code> &gt; 0. A new container without balloon annotations will
-be assignd to the first balloon type with matching criteria, for
-instance <code class="docutils literal notranslate"><span class="pre">namespaces:</span> <span class="pre">[&quot;*&quot;]</span></code>.</p>
+the types is significant in two cases.</p>
+<p>In the first case the policy pre-creates balloons and allocates
+their CPUs when it starts or is reconfigured, see <code class="docutils literal notranslate"><span class="pre">minBalloons</span></code> and
+<code class="docutils literal notranslate"><span class="pre">minCPUs</span></code> below. Balloon types with the highest <code class="docutils literal notranslate"><span class="pre">allocatorPriority</span></code>
+will get their CPUs in the listed order. Balloon types with a lower
+<code class="docutils literal notranslate"><span class="pre">allocatorPriority</span></code> will get theirs in the same order after them.</p>
+<p>In the second case the policy looks for a balloon type for a new
+container. If annotations do not specify it, the container will be
+be assignd to the first balloon type in the list with matching
+criteria, for instance based on <code class="docutils literal notranslate"><span class="pre">namespaces</span></code> below.</p>
 <p>Each balloon type can be configured with following parameters:</p>
 <ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">name</span></code> of the balloon type. This is used in pod annotations to
@@ -265,11 +269,11 @@ CPUs. The default is <code class="docutils literal notranslate"><span class="pre
 existing balloons over creating new ones.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">shareIdleCPUsInSame</span></code>: Whenever the number of or sizes of balloons
 change, idle CPUs (that do not belong to any balloon) are reshared
-as extra CPUs to workloads in balloons with this option. The value
+as extra CPUs to containers in balloons with this option. The value
 sets locality of allowed extra CPUs that will be common to these
-workloads.</p>
+containers.</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">system</span></code>: workloads are allowed to use idle CPUs available
+<li><p><code class="docutils literal notranslate"><span class="pre">system</span></code>: containers are allowed to use idle CPUs available
 anywhere in the system.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">package</span></code>: …allowed to use idle CPUs in the same package(s)
 (sockets) as the balloon.</p></li>
@@ -318,8 +322,8 @@ class (kHz).</p></li>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">httpEndpoint</span></code>: the address the HTTP server listens on. Example:
 <code class="docutils literal notranslate"><span class="pre">:8891</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">prometheusExport</span></code>: if set to True, balloon instances, their CPUs
-and assigned workloads are readable through <code class="docutils literal notranslate"><span class="pre">/metrics</span></code> from the
+<li><p><code class="docutils literal notranslate"><span class="pre">prometheusExport</span></code>: if set to True, balloons with their CPUs
+and assigned containers are readable through <code class="docutils literal notranslate"><span class="pre">/metrics</span></code> from the
 httpEndpoint.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">reportPeriod</span></code>: <code class="docutils literal notranslate"><span class="pre">/metrics</span></code> aggregation interval.</p></li>
 </ul>
@@ -329,7 +333,7 @@ httpEndpoint.</p></li>
 <section id="example">
 <h3>Example<a class="headerlink" href="#example" title="Permalink to this heading"></a></h3>
 <p>Example configuration that runs all pods in balloons of 1-4
-CPUs. Instrumentation enables reading CPUs and workloads in balloons
+CPUs. Instrumentation enables reading CPUs and containers in balloons
 from <code class="docutils literal notranslate"><span class="pre">http://localhost:8891/metrics</span></code>.</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">config.nri/v1alpha1</span>
 <span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">BalloonsPolicy</span>
