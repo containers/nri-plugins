@@ -115,6 +115,15 @@ Balloons policy parameters:
   - `namespaces` is a list of namespaces (wildcards allowed) whose
     pods should be assigned to this balloon type, unless overridden by
     pod annotations.
+  - `matchExpressions` is a list of container match expressions. These
+    expressions are evaluated for all containers which have not been
+    assigned otherwise to other balloons. If an expression matches,
+    IOW it evaluates to true, the container gets assigned to this
+    balloon type. Container mach expressions have the same syntax and
+    semantics as the scope and match expressions in container affinity
+    annotations for the topology-aware policy.
+    See the [affinity documentation](./topology-aware.md#affinity-semantics)
+    for a detailed description of expressions.
   - `minBalloons` is the minimum number of balloons of this type that
     is always present, even if the balloons would not have any
     containers. The default is 0: if a balloon has no containers, it

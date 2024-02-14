@@ -35,3 +35,10 @@ func (c *BalloonsPolicy) PolicyConfig() interface{} {
 	}
 	return &c.Spec.Config
 }
+
+func (c *BalloonsPolicy) Validate() error {
+	if c == nil {
+		return nil
+	}
+	return c.Spec.Config.Validate()
+}

@@ -15,9 +15,11 @@
 package balloons
 
 import (
+	"errors"
 	"strings"
 
 	policy "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
+	resmgr "github.com/containers/nri-plugins/pkg/apis/resmgr/v1alpha1"
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
 )
 
@@ -124,6 +126,10 @@ type BalloonDef struct {
 	// balloon instances from this definition. This is used by
 	// namespace assign methods.
 	Namespaces []string `json:"namespaces,omitempty"`
+	// MatchExpressions specifies one or more expressions which are evaluated
+	// to see if a container should be assigned into balloon instances from
+	// this definition.
+	MatchExpressions []resmgr.Expression `json:"matchExpressions,omitempty"`
 	// MaxCpus specifies the maximum number of CPUs exclusively
 	// usable by containers in a balloon. Balloon size will not be
 	// inflated larger than MaxCpus.
@@ -217,4 +223,16 @@ func (p CPUPriority) Value() cpuallocator.CPUPriority {
 		return cpuallocator.PriorityLow
 	}
 	return cpuallocator.PriorityNone
+}
+
+func (c *Config) Validate() error {
+	errs := []error{}
+	for _, blnDef := range c.BalloonDefs {
+		for _, expr := range blnDef.MatchExpressions {
+			if err := expr.Validate(); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+	return errors.Join(errs...)
 }

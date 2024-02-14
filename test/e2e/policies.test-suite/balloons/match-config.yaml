@@ -1,0 +1,27 @@
+config:
+  reservedResources:
+    cpu: 750m
+  pinCPU: true
+  pinMemory: true
+  idleCPUClass: normal
+  allocatorTopologyBalancing: true
+  balloonTypes:
+  - name: special
+    matchExpressions:
+      - key: pod/labels/app.kubernetes.io/component
+        operator: Equals
+        values: [ "precious" ]
+    minCPUs: 2
+    maxCPUs: 2
+  - name: default
+    namespaces:
+      - default
+    minCPUs: 1
+    maxCPUs: 1
+    allocatorPriority: normal
+  reservedPoolNamespaces:
+    - kube-system
+  log:
+    debug:
+      - policy
+      - expression

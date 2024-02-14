@@ -83,6 +83,51 @@ spec:
                         CpuClass controls how CPUs of a balloon are (re)configured
                         whenever a balloon is created, inflated or deflated.
                       type: string
+                    matchExpressions:
+                      description: |-
+                        MatchExpressions specifies one or more expressions which are evaluated
+                        to see if a container should be assigned into balloon instances from
+                        this definition.
+                      items:
+                        description: |-
+                          Expression describes some runtime-evaluated condition. An expression
+                          consist of a key, an operator and a set of values. An expressions is
+                          evaluated against an object which implements the Evaluable interface.
+                          Evaluating an expression consists of looking up the value for the key
+                          in the object, then using the operator to check it agains the values
+                          of the expression. The result is a single boolean value. An object is
+                          said to satisfy the evaluated expression if this value is true. An
+                          expression can contain 0, 1 or more values depending on the operator.
+                        properties:
+                          key:
+                            description: Key is the expression key.
+                            type: string
+                          operator:
+                            description: Op is the expression operator.
+                            enum:
+                            - Equals
+                            - NotEqual
+                            - In
+                            - NotIn
+                            - Exists
+                            - NotExist
+                            - AlwaysTrue
+                            - Matches
+                            - MatchesNot
+                            - MatchesAny
+                            - MatchesNone
+                            type: string
+                          values:
+                            description: Values contains the values the key value
+                              is evaluated against.
+                            items:
+                              type: string
+                            type: array
+                        required:
+                        - key
+                        - operator
+                        type: object
+                      type: array
                     maxBalloons:
                       description: |-
                         MaxBalloons is the maximum number of balloon instances that
