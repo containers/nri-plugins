@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.3.1-64-g42457cf documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.3.1-65-g68c19f8 documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -61,6 +61,7 @@
 <li class="toctree-l4"><a class="reference internal" href="#deployment">Deployment</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#configuration">Configuration</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#assigning-a-container-to-a-balloon">Assigning a Container to a Balloon</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#disabling-cpu-or-memory-pinning-of-a-container">Disabling CPU or Memory Pinning of a Container</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#metrics-and-debugging">Metrics and Debugging</a></li>
 </ul>
 </li>
@@ -388,6 +389,21 @@ used.</p>
 defined explicitly among other balloon types. If not defined, a
 built-in <code class="docutils literal notranslate"><span class="pre">default</span></code> balloon type is implicitly appended at the end of
 the balloon types list.</p>
+</section>
+<section id="disabling-cpu-or-memory-pinning-of-a-container">
+<h2>Disabling CPU or Memory Pinning of a Container<a class="headerlink" href="#disabling-cpu-or-memory-pinning-of-a-container" title="Permalink to this heading"></a></h2>
+<p>Some containers may need to run on all CPUs or access all memories
+without restrictions. Annotate these pods and containers to prevent
+the resource policy from touching their CPU or memory pinning.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">cpu.preserve.resource-policy.nri.io/container.CONTAINER_NAME</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+<span class="nt">cpu.preserve.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+<span class="nt">cpu.preserve.resource-policy.nri.io</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+
+<span class="nt">memory.preserve.resource-policy.nri.io/container.CONTAINER_NAME</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+<span class="nt">memory.preserve.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+<span class="nt">memory.preserve.resource-policy.nri.io</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+</pre></div>
+</div>
 </section>
 <section id="metrics-and-debugging">
 <h2>Metrics and Debugging<a class="headerlink" href="#metrics-and-debugging" title="Permalink to this heading"></a></h2>

@@ -274,6 +274,22 @@ defined explicitly among other balloon types. If not defined, a
 built-in `default` balloon type is implicitly appended at the end of
 the balloon types list.
 
+## Disabling CPU or Memory Pinning of a Container
+
+Some containers may need to run on all CPUs or access all memories
+without restrictions. Annotate these pods and containers to prevent
+the resource policy from touching their CPU or memory pinning.
+
+```yaml
+cpu.preserve.resource-policy.nri.io/container.CONTAINER_NAME: "true"
+cpu.preserve.resource-policy.nri.io/pod: "true"
+cpu.preserve.resource-policy.nri.io: "true"
+
+memory.preserve.resource-policy.nri.io/container.CONTAINER_NAME: "true"
+memory.preserve.resource-policy.nri.io/pod: "true"
+memory.preserve.resource-policy.nri.io: "true"
+```
+
 ## Metrics and Debugging
 
 In order to enable more verbose logging and metrics exporting from the
