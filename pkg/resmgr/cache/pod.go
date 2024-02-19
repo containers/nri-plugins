@@ -16,6 +16,7 @@ package cache
 
 import (
 	"strings"
+	"time"
 
 	nri "github.com/containerd/nri/pkg/api"
 	v1 "k8s.io/api/core/v1"
@@ -30,6 +31,7 @@ func (cch *cache) createPod(nriPod *nri.PodSandbox) *pod {
 	p := &pod{
 		cache: cch,
 		Pod:   nriPod,
+		ctime: time.Now(),
 	}
 
 	if err := p.parseCgroupForQOSClass(); err != nil {
@@ -65,6 +67,10 @@ func (p *pod) GetName() string {
 
 func (p *pod) GetNamespace() string {
 	return p.Pod.GetNamespace()
+}
+
+func (p *pod) GetCtime() time.Time {
+	return p.ctime
 }
 
 func (p *pod) GetLabel(key string) (string, bool) {

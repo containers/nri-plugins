@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	nri "github.com/containerd/nri/pkg/api"
 	v1 "k8s.io/api/core/v1"
@@ -81,6 +82,8 @@ type Pod interface {
 	GetName() string
 	// GetNamespace returns the namespace of the pod.
 	GetNamespace() string
+	// GetCtime returns the creation time of the pod cache object.
+	GetCtime() time.Time
 	// GetQOSClass returns the PodQOSClass of the pod.
 	GetQOSClass() v1.PodQOSClass
 	// GetLabel returns the value of the given label and whether it was found.
@@ -134,6 +137,7 @@ type pod struct {
 	QOSClass   v1.PodQOSClass        // pod QOS class
 	Affinity   *podContainerAffinity // annotated container affinity
 	prettyName string                // cached PrettyName()
+	ctime      time.Time             // time of pod creation
 }
 
 // ContainerState is the container state in the runtime.
@@ -166,6 +170,8 @@ type Container interface {
 	GetName() string
 	// GetNamespace returns the namespace of the container.
 	GetNamespace() string
+	// GetCtime returns the creation time of the container cache object.
+	GetCtime() time.Time
 	// UpdateState updates the state of the container.
 	UpdateState(ContainerState)
 	// GetState returns the ContainerState of the container.
@@ -320,7 +326,8 @@ type container struct {
 
 	pending map[string]struct{} // controllers with pending changes for this container
 
-	prettyName string // cached PrettyName()
+	prettyName string    // cached PrettyName()
+	ctime      time.Time // creation time of the container cache object
 }
 
 type Mount = nri.Mount

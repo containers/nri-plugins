@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	resmgr "github.com/containers/nri-plugins/pkg/apis/resmgr/v1alpha1"
 	"github.com/containers/nri-plugins/pkg/cgroups"
@@ -98,6 +99,7 @@ func (cch *cache) createContainer(nriCtr *nri.Container) (*container, error) {
 		Ctr:   nriCtr,
 		State: nriCtr.GetState(),
 		Tags:  make(map[string]string),
+		ctime: time.Now(),
 	}
 
 	c.generateTopologyHints()
@@ -327,6 +329,10 @@ func (c *container) GetNamespace() string {
 		return pod.GetNamespace()
 	}
 	return ""
+}
+
+func (c *container) GetCtime() time.Time {
+	return c.ctime
 }
 
 func (c *container) UpdateState(state ContainerState) {
@@ -1141,4 +1147,19 @@ func CompareCPU(ci, cj Container) int {
 		return +1
 	}
 	return 0
+}
+
+func CompareContainerCtime(ci, cj Container) int {
+	ti, tj := ci.GetCtime(), cj.GetCtime()
+	return ti.Compare(tj)
+}
+
+func ComparePodCtime(ci, cj Container) int {
+	pi, oki := ci.GetPod()
+	pj, okj := cj.GetPod()
+	if !oki || !okj {
+		return 0
+	}
+	ti, tj := pi.GetCtime(), pj.GetCtime()
+	return ti.Compare(tj)
 }
