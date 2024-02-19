@@ -196,6 +196,9 @@ func (p *balloons) Sync(add []cache.Container, del []cache.Container) error {
 			log.Warnf("releasing resources for Sync produced an error: %v", err)
 		}
 	}
+
+	cache.SortContainers(add, cache.ComparePodCtime, cache.CompareContainerCtime)
+
 	for _, c := range add {
 		if err := p.AllocateResources(c); err != nil {
 			log.Warnf("allocating resources for Sync produced an error: %v", err)
