@@ -187,8 +187,8 @@ func (p *pod) ScopeExpression() *resmgr.Expression {
 	}
 }
 
-// Eval returns the value of a key for expression evaluation.
-func (p *pod) Eval(key string) interface{} {
+// EvalKey returns the value of a key for expression evaluation.
+func (p *pod) EvalKey(key string) interface{} {
 	switch key {
 	case resmgr.KeyName:
 		return p.GetName()
@@ -205,6 +205,11 @@ func (p *pod) Eval(key string) interface{} {
 	default:
 		return cacheError("Pod cannot evaluate of %q", key)
 	}
+}
+
+// EvalRef evaluates the value of a key reference for this pod.
+func (p *pod) EvalRef(key string) (string, bool) {
+	return resmgr.KeyValue(key, p)
 }
 
 func (p *pod) String() string {
