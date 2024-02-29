@@ -16,5 +16,8 @@ package resmgr
 
 // Evaluable is the interface objects need to implement to be evaluable against Expressions.
 type Evaluable interface {
-	Eval(string) interface{}
+	// EvalKey returns the value of a simple/single key.
+	EvalKey(string) interface{}
+	// EvalRef returns the value of a (potentially joint) key (reference).
+	EvalRef(string) (string, bool)
 }

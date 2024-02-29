@@ -994,7 +994,7 @@ func (c *container) String() string {
 	return c.PrettyName()
 }
 
-func (c *container) Eval(key string) interface{} {
+func (c *container) EvalKey(key string) interface{} {
 	switch key {
 	case resmgr.KeyPod:
 		pod, ok := c.GetPod()
@@ -1017,6 +1017,11 @@ func (c *container) Eval(key string) interface{} {
 	default:
 		return cacheError("%s: Container cannot evaluate of %q", c.PrettyName(), key)
 	}
+}
+
+// Eval evaluates a potentially joint key for the container.
+func (c *container) EvalRef(key string) (string, bool) {
+	return resmgr.KeyValue(key, c)
 }
 
 // CompareContainersFn compares two containers by some arbitrary property.
