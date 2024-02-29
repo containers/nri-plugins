@@ -122,7 +122,7 @@ func (e *Expression) Evaluate(subject Evaluable) bool {
 		return true
 	}
 
-	value, ok := e.KeyValue(subject)
+	value, ok := KeyValue(e.Key, subject)
 	result := false
 
 	switch e.Op {
@@ -173,14 +173,19 @@ func (e *Expression) Evaluate(subject Evaluable) bool {
 	return result
 }
 
-// KeyValue extracts the value of the expresssion key from a container.
-func (e *Expression) KeyValue(subject Evaluable) (string, bool) {
-	log.Debug("looking up %q @ %s...", e.Key, subject)
+// String returns the expression as a string.
+func (e *Expression) String() string {
+	return fmt.Sprintf("<%s %s %s>", e.Key, e.Op, strings.Join(e.Values, ","))
+}
+
+// KeyValue extracts the value of the expression in the scope of the given subject.
+func KeyValue(key string, subject Evaluable) (string, bool) {
+	log.Debug("looking up %q @ %s...", key, subject)
 
 	value := ""
 	ok := false
 
-	keys, vsep := splitKeys(e.Key)
+	keys, vsep := splitKeys(key)
 	if len(keys) == 1 {
 		value, ok, _ = ResolveRef(subject, keys[0])
 	} else {
@@ -193,7 +198,7 @@ func (e *Expression) KeyValue(subject Evaluable) (string, bool) {
 		value = strings.Join(vals, vsep)
 	}
 
-	log.Debug("%q @ %s => %q, %v", e.Key, subject, value, ok)
+	log.Debug("%q @ %s => %q, %v", key, subject, value, ok)
 
 	return value, ok
 }
@@ -261,7 +266,7 @@ func ResolveRef(subject Evaluable, spec string) (string, bool, error) {
 		switch v := obj.(type) {
 		case Evaluable:
 			pref, rest, _ := strings.Cut(key, "/")
-			obj = v.Eval(pref)
+			obj = v.EvalKey(pref)
 			key = rest
 
 		case map[string]string:
@@ -294,11 +299,6 @@ func ResolveRef(subject Evaluable, spec string) (string, bool, error) {
 	log.Debug("resolved %q in %s => %s", spec, subject, s)
 
 	return s, true, nil
-}
-
-// String returns the expression as a string.
-func (e *Expression) String() string {
-	return fmt.Sprintf("<%s %s %s>", e.Key, e.Op, strings.Join(e.Values, ","))
 }
 
 // exprError returns a formatted error specific to expressions.
