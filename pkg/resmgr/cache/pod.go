@@ -206,6 +206,11 @@ func (p *pod) EvalRef(key string) (string, bool) {
 	return resmgr.KeyValue(key, p)
 }
 
+// Expand a string with possible key references.
+func (p *pod) Expand(src string, mustResolve bool) (string, error) {
+	return resmgr.Expand(src, p, mustResolve)
+}
+
 func (p *pod) String() string {
 	return p.PrettyName()
 }

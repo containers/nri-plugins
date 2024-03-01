@@ -341,6 +341,10 @@ func (m *mockContainer) EvalKey(string) interface{} {
 func (m *mockContainer) EvalRef(string) (string, bool) {
 	panic("unimplemented")
 }
+func (m *mockContainer) Expand(string, bool) (string, error) {
+	panic("unimplemented")
+}
+
 func (m *mockContainer) String() string {
 	return "mockContainer"
 }
@@ -495,6 +499,9 @@ func (m *mockPod) EvalKey(string) interface{} {
 	panic("unimplemented")
 }
 func (m *mockPod) EvalRef(string) (string, bool) {
+	panic("unimplemented")
+}
+func (m *mockPod) Expand(string, bool) (string, error) {
 	panic("unimplemented")
 }
 func (m *mockPod) GetProcesses(bool) ([]string, error) {

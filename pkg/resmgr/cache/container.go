@@ -1025,6 +1025,11 @@ func (c *container) EvalRef(key string) (string, bool) {
 	return resmgr.KeyValue(key, c)
 }
 
+// Expand a string with possible key references.
+func (c *container) Expand(src string, mustResolve bool) (string, error) {
+	return resmgr.Expand(src, c, mustResolve)
+}
+
 // CompareContainersFn compares two containers by some arbitrary property.
 // It returns a negative integer, 0, or a positive integer, depending on
 // whether the first container is considered smaller, equal, or larger than
