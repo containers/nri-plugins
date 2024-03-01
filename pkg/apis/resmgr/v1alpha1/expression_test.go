@@ -598,3 +598,113 @@ func TestValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestSubstitute(t *testing.T) {
+	defer logger.Flush()
+
+	podLabels := map[string]string{"l1": "pl1v", "l2": "pl2v", "l5": "pl5v", "io.t/l1": "pio.t-l1v"}
+	pod := newEvaluable("pod1", "pod1-ns", "pod1-qos", podLabels, nil, nil)
+	ctrLabels := map[string]string{"l1": "cl1", "l2": "cl2", "l3": "cl3"}
+	ctr := newEvaluable("ctr1", "ctr1-ns", "ctr1-qos", ctrLabels, nil, pod)
+
+	tcases := []struct {
+		name        string
+		source      string
+		mustResolve bool
+		result      string
+		fail        bool
+	}{
+		{
+			name:   "single well-formed key",
+			source: "${pod/qosclass}",
+			result: "pod1-qos",
+		},
+		{
+			name:   "multiple well-formed keys concatenated",
+			source: "${pod/namespace}${pod/name}${pod/qosclass}",
+			result: "pod1-nspod1pod1-qos",
+		},
+		{
+			name:   "multiple well-formed keys, with non-empty separators",
+			source: "${pod/labels/io.t/l1}:${pod/labels/l2}",
+			result: "pio.t-l1v:pl2v",
+		},
+		{
+			name:   "single plain key",
+			source: "$pod/qosclass",
+			result: "pod1-qos",
+		},
+		{
+			name:   "multiple plain keys",
+			source: "$pod/namespace$pod/name$pod/qosclass",
+			result: "pod1-nspod1pod1-qos",
+		},
+		{
+			name:   "multiple well-formed keys concatenated",
+			source: "$pod/labels/io.t/l1$pod/labels/l2",
+			result: "pio.t-l1vpl2v",
+		},
+		{
+			name:   "unresolvable keys",
+			source: "${pod/foobar}${xyzzy}",
+			result: "",
+		},
+		{
+			name:   "mixed resolvable and unresolvable keys",
+			source: "${pod/labels/l5}$foobar${pod/name}",
+			result: "pl5vpod1",
+		},
+		{
+			name:        "unresolvable keys, with mustResolve set",
+			source:      "${pod/foobar}${xyzzy}",
+			mustResolve: true,
+			result:      "",
+			fail:        true,
+		},
+		{
+			name:   "multiple literal $s",
+			source: "$$$$$$",
+			result: "$$$",
+		},
+		{
+			name:   "trailing literal $",
+			source: "foobar$$",
+			result: "foobar$",
+		},
+		{
+			name:   "trailing incorrect $",
+			source: "foobar$",
+			result: "",
+			fail:   true,
+		},
+		{
+			name:   "unterminated reference",
+			source: "${foobar",
+			result: "",
+			fail:   true,
+		},
+		{
+			name:   "unterminated reference",
+			source: "${foobar$barfoo",
+			result: "",
+			fail:   true,
+		},
+		{
+			name:   "non-variable curly braces",
+			source: "{}$pod/name",
+			result: "{}pod1",
+		},
+	}
+
+	for _, tc := range tcases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := Substitute(tc.source, ctr, tc.mustResolve)
+			if !tc.fail {
+				require.Equal(t, tc.result, result)
+				require.Nil(t, err)
+			} else {
+				require.NotNil(t, err)
+			}
+		})
+	}
+}
