@@ -301,6 +301,155 @@ func ResolveRef(subject Evaluable, spec string) (string, bool, error) {
 	return s, true, nil
 }
 
+// Substitute performs non-recursive substitution of values for strings
+// containing 0 or more well-formed key references of the form ${key}.
+func OrigSubstitute(src string, subject Evaluable, mustResolve bool) (string, error) {
+	var (
+		str = &strings.Builder{}
+		key *strings.Builder
+	)
+
+	for i := 0; i < len(src); i++ {
+		log.Debug("scanning @ %s...", src[i:])
+		switch src[i] {
+		case '$':
+			if key != nil {
+				log.Debug("resolve previous ref %q...", key.String())
+				val, ok := subject.EvalRef(key.String())
+				if !ok && mustResolve {
+					return "", fmt.Errorf("unable to substitute %q, unresolvable key %q",
+						src, key.String())
+				}
+				str.WriteString(val)
+				key = nil
+			}
+			if i < len(src)-1 {
+				switch src[i+1] {
+				case '$':
+					log.Debug("[$]")
+					str.WriteByte('$')
+					i++
+				case '{':
+					log.Debug("start of new ref...")
+					key = &strings.Builder{}
+					i++
+				default:
+					key = &strings.Builder{}
+				}
+			}
+		case '}':
+			if key == nil {
+				return "", fmt.Errorf("malformed substitution %q (at %q)", src, src[i:])
+			}
+			log.Debug("resolve previous ref %q...", key.String())
+			val, ok := subject.EvalRef(key.String())
+			if !ok && mustResolve {
+				return "", fmt.Errorf("unable to substitute %q, unresolvable key %q",
+					src, key.String())
+			}
+			str.WriteString(val)
+			key = nil
+		default:
+			if key != nil {
+				key.WriteByte(src[i])
+			} else {
+				str.WriteByte(src[i])
+			}
+		}
+	}
+
+	if key != nil {
+		val, ok := subject.EvalRef(key.String())
+		if !ok && mustResolve {
+			return "", fmt.Errorf("unable to substitute %q, unresolvable key %q",
+				src, key.String())
+		}
+		str.WriteString(val)
+	}
+	return str.String(), nil
+}
+
+// Substitute performs non-recursive substitution of values for strings
+// containing 0 or more well-formed or plain (${key}, $key) references.
+func Substitute(src string, subject Evaluable, mustResolve bool) (string, error) {
+	var (
+		result = &strings.Builder{}
+		key    *strings.Builder
+		curly  bool
+	)
+
+	substKey := func() error {
+		val, ok := subject.EvalRef(key.String())
+		if !ok && mustResolve {
+			return fmt.Errorf("unable to substitute %q, failed to resolve key %q",
+				src, key.String())
+		}
+		result.WriteString(val)
+		key = nil
+
+		return nil
+	}
+
+	for i := 0; i < len(src); i++ {
+		switch src[i] {
+		case '$':
+			if curly {
+				return "", fmt.Errorf("malformed substitution %q, unterminated ${}", src)
+			}
+			if key != nil {
+				if err := substKey(); err != nil {
+					return "", err
+				}
+			}
+
+			if i < len(src)-1 {
+				switch src[i+1] {
+				case '$':
+					result.WriteByte('$')
+					i++
+				case '{':
+					curly = true
+					i++
+					fallthrough
+				default:
+					key = &strings.Builder{}
+				}
+			} else {
+				return "", fmt.Errorf("malformed substitution %q (at %q)", src, src[1:])
+			}
+
+		case '}':
+			if key == nil || !curly {
+				return "", fmt.Errorf("malformed substitution %q (at %q)", src, src[i:])
+			}
+
+			if err := substKey(); err != nil {
+				return "", err
+			}
+			key = nil
+			curly = false
+
+		default:
+			if key != nil {
+				key.WriteByte(src[i])
+			} else {
+				result.WriteByte(src[i])
+			}
+		}
+	}
+
+	if key != nil {
+		if curly {
+			return "", fmt.Errorf("malformed substitution %q, unterminated ${}", src)
+		}
+		if err := substKey(); err != nil {
+			return "", err
+		}
+	}
+
+	return result.String(), nil
+}
+
 // exprError returns a formatted error specific to expressions.
 func exprError(format string, args ...interface{}) error {
 	return fmt.Errorf("expression: "+format, args...)
