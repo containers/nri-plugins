@@ -39,6 +39,7 @@ var descriptors = []*prometheus.Desc{
 			"cpus_min",
 			"cpus_max",
 			"balloon",
+			"groups",
 			"cpus",
 			"cpus_count",
 			"numas",
@@ -72,6 +73,7 @@ type BalloonMetrics struct {
 	MaxCpus  int
 	// Balloon instance metrics
 	PrettyName            string
+	Groups                string
 	Cpus                  cpuset.CPUSet
 	CpusCount             int
 	Numas                 []string
@@ -108,6 +110,14 @@ func (p *balloons) PollMetrics() policy.Metrics {
 		bm.MinCpus = bln.Def.MinCpus
 		bm.MaxCpus = bln.Def.MaxCpus
 		bm.PrettyName = bln.PrettyName()
+		groups := []string{}
+		for group, cCount := range bln.Groups {
+			if cCount > 0 {
+				groups = append(groups, group)
+			}
+		}
+		sort.Strings(groups)
+		bm.Groups = strings.Join(groups, ",")
 		bm.Cpus = bln.Cpus
 		bm.CpusCount = bm.Cpus.Size()
 		if len(cpuLoc) > 3 {
@@ -158,6 +168,7 @@ func (p *balloons) CollectMetrics(m policy.Metrics) ([]prometheus.Metric, error)
 			strconv.Itoa(bm.MinCpus),
 			strconv.Itoa(bm.MaxCpus),
 			bm.PrettyName,
+			bm.Groups,
 			bm.Cpus.String(),
 			strconv.Itoa(bm.CpusCount),
 			strings.Join(bm.Numas, ","),
