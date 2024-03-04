@@ -40,6 +40,10 @@ const (
 	// it minimizes the amount of unused CPUs if the balloon is
 	// inflated to the maximum size.
 	FillPackedInflate
+	// FillSameGroup: put a container into a balloon with other
+	// containers that share the same evaluated GroupBy expression
+	// result, that is, the same group.
+	FillSameGroup
 	// FillSameNamespace: put a container into a balloon that already
 	// includes another container from the same namespace
 	FillSameNamespace
@@ -61,6 +65,7 @@ var fillMethodNames = map[FillMethod]string{
 	FillBalancedInflate: "balanced-inflate",
 	FillPacked:          "packed",
 	FillPackedInflate:   "packed-inflate",
+	FillSameGroup:       "same-group",
 	FillSameNamespace:   "same-namespace",
 	FillSamePod:         "same-pod",
 	FillNewBalloon:      "new-balloon",
