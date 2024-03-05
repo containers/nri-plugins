@@ -5,6 +5,8 @@
   become_user: root
   vars:
     cri_runtime: "{{ cri_runtime }}"
+    k8s_release: "{{ k8s_release }}"
+    k8s_version: "{{ k8s_version }}"
     is_containerd: false
     is_crio: false
     containerd_release: "{{ containerd_release }}"
@@ -50,15 +52,15 @@
         - swapoff --all
       when: ansible_swaptotal_mb > 0
 
-    - name: Download public signing key Kubernetes
+    - name: Download public signing key for Kubernetes
       ansible.builtin.apt_key:
-        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        url: https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/Release.key
         state: present
       when: ansible_facts['distribution'] == "Ubuntu"
 
     - name: Add apt repository for Kubernetes
       ansible.builtin.apt_repository:
-        repo: "deb https://apt.kubernetes.io/ kubernetes-xenial main"
+        repo: "https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/ /"
         state: present
         filename: /etc/apt/sources.list.d/kubernetes.list
       when: ansible_facts['distribution'] == "Ubuntu"
@@ -66,8 +68,8 @@
     - name: Add yum repository for Kubernetes
       ansible.builtin.yum_repository:
         description: Kubernetes repository
-        baseurl: "https://packages.cloud.google.com/yum/repos/kubernetes-el7-$basearch"
-        gpgkey: "https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg"
+        baseurl: "https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/rpm/"
+        gpgkey: "https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/rpm/repodata/repomd.xml.key"
         state: present
         name: kubernetes
       when: ansible_facts['distribution'] == "Fedora"
