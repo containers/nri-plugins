@@ -5,6 +5,7 @@
   become_user: root
   vars:
     cri_runtime: "{{ cri_runtime }}"
+    k8s_release: "{{ k8s_release }}"
     is_containerd: false
     is_crio: false
     containerd_release: "{{ containerd_release }}"
@@ -66,8 +67,8 @@
     - name: Add yum repository for Kubernetes
       ansible.builtin.yum_repository:
         description: Kubernetes repository
-        baseurl: "https://packages.cloud.google.com/yum/repos/kubernetes-el7-$basearch"
-        gpgkey: "https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg"
+        baseurl: "https://pkgs.k8s.io/core:/stable:/v{{ k8s_release }}/rpm"
+        gpgkey: "https://pkgs.k8s.io/core:/stable:/v{{ k8s_release }}/rpm/repodata/repomd.xml.key"
         state: present
         name: kubernetes
       when: ansible_facts['distribution'] == "Fedora"

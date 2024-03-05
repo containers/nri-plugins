@@ -14,6 +14,7 @@ HOSTNAME = "SERVER_NAME"
 # How many nodes to create
 N = 1
 
+K8S_RELEASE = "#{ENV['k8s_release']}"
 CRI_RUNTIME = "#{ENV['k8scri']}"
 CRIO_RELEASE = "1.28.1"
 CRIO_SRC = ""
@@ -88,6 +89,7 @@ Vagrant.configure("2") do |config|
       https_proxy: "#{ENV['HTTPS_PROXY']}",
       http_proxy: "#{ENV['HTTP_PROXY']}",
       no_proxy: "#{ENV['NO_PROXY']}",
+      k8s_release: K8S_RELEASE,
       cri_runtime: CRI_RUNTIME,
       containerd_release: CONTAINERD_RELEASE,
       containerd_src: CONTAINERD_SRC,

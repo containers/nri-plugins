@@ -23,6 +23,17 @@ export cni_plugin=${cni_plugin:-cilium}
 export cni_release=${cni_release:-latest}
 TOPOLOGY_DIR=${TOPOLOGY_DIR:=e2e}
 
+export k8s_release=${k8s_release:-"latest"}
+if [[ "$k8s_release" == "latest" ]]; then
+    # Detect latest k8s major.minor non-alpha release.
+    k8s_release="$(curl --silent https://github.com/kubernetes/kubernetes/releases | awk 'BEGIN{RS="\"";FS="tree/v"}/kubernetes\/tree/{print $2}' | grep -v alpha | awk -F. '{print $1"."$2}' | sort -uVr | head -n 1)"
+    if ! [[ "$k8s_release" == [1-9].[1-9]* ]]; then
+        echo "failed to detect k8s_release latest"
+        exit 1
+    fi
+    export k8s_release
+fi
+
 source "$LIB_DIR"/vm.bash
 
 export vm_name=${vm_name:=$(vm-create-name "$k8scri" "$(basename "$TOPOLOGY_DIR")" ${distro})}
@@ -108,6 +119,7 @@ fi
 echo
 echo "    VM              = $vm_name"
 echo "    Distro          = $distro"
+echo "    Kubernetes      = $k8s_release"
 echo "    Runtime         = $k8scri"
 echo "    Output dir      = $OUTPUT_DIR"
 echo "    Test output dir = $TEST_OUTPUT_DIR"
