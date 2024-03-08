@@ -39,12 +39,14 @@ GO_DEPS    := $(GO_CMD) list -f '{{ join .Deps "\n" }}'
 GO_VERSION ?= 1.22.1
 
 GO_MODULES := $(shell $(GO_CMD) list ./...)
-GO_SUBPKGS := $(shell find ./pkg -name go.mod | sed 's:/go.mod::g' | grep -v testdata)
+GO_SUBPKGS := $(shell find ./pkg -name go.mod | sed 's:/go.mod::g' | grep -v testdata | \
+                      tr -s ' \t\n' ' ')
 
 GOLANG_CILINT := golangci-lint
 GINKGO        := ginkgo
 TEST_SETUP    := test-setup.sh
 TEST_CLEANUP  := test-cleanup.sh
+TEST_PKGS     := .
 
 E2E_TESTS     ?= policies.test-suite
 RUN_E2E_TESTS := cd test/e2e; ./run_tests.sh
@@ -284,7 +286,7 @@ $(BIN_PATH)/nri-resource-policy-template: \
 test-gopkgs: ginkgo-test-setup ginkgo-tests ginkgo-subpkgs-tests ginkgo-test-cleanup
 
 ginkgo-test-setup:
-	$(Q)for i in $$(find . -name $(TEST_SETUP)); do \
+	$(Q)for i in $$(find $(TEST_PKGS) -name $(TEST_SETUP)); do \
 	    echo "+ Running test setup $$i..."; \
 	    (cd $${i%/*}; \
 	        if [ -x "$(TEST_SETUP)" ]; then \
@@ -293,7 +295,7 @@ ginkgo-test-setup:
 	done
 
 ginkgo-test-cleanup:
-	$(Q)for i in $$(find . -name $(TEST_CLEANUP)); do \
+	$(Q)for i in $$(find $(TEST_PKGS) -name $(TEST_CLEANUP)); do \
 	    echo "- Running test cleanup $$i..."; \
 	    (cd $${i%/*}; \
 	        if [ -x "$(TEST_CLEANUP)" ]; then \
@@ -313,11 +315,19 @@ ginkgo-tests:
 	    --keep-separate-coverprofiles \
 	    --succinct \
             --skip-package $$(echo $(GO_SUBPKGS) | tr -s '\t ' ',') \
-	    -r .; \
+	    -r $(TEST_PKGS); \
 	$(GO_CMD) tool cover -html=$(COVERAGE_PATH)/coverprofile -o $(COVERAGE_PATH)/coverage.html
 
-ginkgo-subpkgs-tests: # TODO(klihub): coverage ?
-	$(Q)for i in $(GO_SUBPKGS); do \
+ginkgo-subpkgs-tests: # TODO(klihub): coverage
+	@enabled=""; find $(TEST_PKGS) -type d | while read i; do \
+	    for j in $(GO_SUBPKGS); do \
+                if [ "$$j" == "$$i" ]; then \
+	            enabled="$$enabled $$j"; \
+	            break; \
+	        fi; \
+	    done; \
+        done; \
+	for i in $$enabled; do \
 	    (cd $$i; \
 	        $(GINKGO) run \
 	            --race \
