@@ -327,18 +327,20 @@ func (sys *system) Discover(flags DiscoveryFlag) error {
 	}
 
 	if sys.DebugEnabled() {
-		for id, pkg := range sys.packages {
+		for _, id := range sys.PackageIDs() {
+			pkg := sys.packages[id]
 			sys.Info("package #%d:", id)
 			sys.Debug("   cpus: %s", pkg.cpus)
 			sys.Debug("  nodes: %s", pkg.nodes)
 			sys.Debug("   dies: %s", pkg.dies)
-			for die := range pkg.dies {
+			for _, die := range pkg.DieIDs() {
 				sys.Debug("    die #%v nodes: %v", die, pkg.DieNodeIDs(die))
 				sys.Debug("    die #%v cpus: %s", die, pkg.DieCPUSet(die).String())
 			}
 		}
 
-		for id, node := range sys.nodes {
+		for _, id := range sys.NodeIDs() {
+			node := sys.nodes[id]
 			sys.Debug("node #%d:", id)
 			sys.Debug("      cpus: %s", node.cpus)
 			sys.Debug("  distance: %v", node.distance)
@@ -346,7 +348,8 @@ func (sys *system) Discover(flags DiscoveryFlag) error {
 			sys.Debug("       die: #%d", node.die)
 		}
 
-		for id, cpu := range sys.cpus {
+		for _, id := range sys.CPUIDs() {
+			cpu := sys.cpus[id]
 			sys.Debug("CPU #%d:", id)
 			sys.Debug("        pkg: %d", cpu.pkg)
 			sys.Debug("        die: %d", cpu.die)
