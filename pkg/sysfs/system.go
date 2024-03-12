@@ -100,6 +100,9 @@ type System interface {
 	OnlineCPUs() cpuset.CPUSet
 	IsolatedCPUs() cpuset.CPUSet
 	OfflineCPUs() cpuset.CPUSet
+	CoreKindCPUs(CoreKind) cpuset.CPUSet
+	CoreKinds() []CoreKind
+	AllThreadsForCPUs(cpuset.CPUSet) cpuset.CPUSet
 
 	Offlined() cpuset.CPUSet
 	Isolated() cpuset.CPUSet
@@ -118,6 +121,7 @@ type system struct {
 	presentCPUs   idset.IDSet                          // set of present CPUs
 	onlineCPUs    idset.IDSet                          // set of online CPUs
 	isolatedCPUs  idset.IDSet                          // set of isolated CPUs
+	coreKindCPUs  map[CoreKind]idset.IDSet             // CPU cores by kind (P-/E-cores)
 	threads       int                                  // hyperthreads per core
 }
 
@@ -194,6 +198,7 @@ type CPU interface {
 	GetCacheByIndex(int) *Cache
 	GetLastLevelCaches() []*Cache
 	GetLastLevelCacheCPUSet() cpuset.CPUSet
+	CoreKind() CoreKind
 }
 
 type cpu struct {
@@ -212,6 +217,7 @@ type cpu struct {
 	isolated bool        // whether this CPU is isolated
 	sstClos  int         // SST-CP CLOS the CPU is associated with
 	caches   []*Cache    // caches for this CPU
+	coreKind CoreKind    // P- or E-core
 }
 
 // CPUFreq is a CPU frequency scaling range
@@ -230,6 +236,25 @@ const (
 	EPPBalancePower
 	EPPPower
 	EPPUnknown
+)
+
+// CoreKind represents high-level classification of CPU cores, currently P- and E-cores
+type CoreKind int
+
+const (
+	PerformanceCore CoreKind = iota
+	EfficientCore
+)
+
+var (
+	coreKindCPUPath = map[CoreKind]string{
+		PerformanceCore: "devices/cpu_core/cpus",
+		EfficientCore:   "devices/cpu_atom/cpus",
+	}
+	coreKindNames = map[CoreKind]string{
+		PerformanceCore: "P-core",
+		EfficientCore:   "E-core",
+	}
 )
 
 // MemInfo contains data read from a NUMA node meminfo file.
@@ -352,6 +377,12 @@ func (sys *system) Discover(flags DiscoveryFlag) error {
 		sys.Debug("  -  offline: %s", sys.OfflineCPUs())
 		sys.Debug("  - isolated: %s", sys.IsolatedCPUs())
 
+		for kind, name := range coreKindNames {
+			if cpus := sys.CoreKindCPUs(kind); !cpus.IsEmpty() {
+				sys.Debug("  - %8s: %s", name, sys.CoreKindCPUs(kind))
+			}
+		}
+
 		for _, id := range sys.PackageIDs() {
 			pkg := sys.packages[id]
 			sys.Info("package #%d:", id)
@@ -388,7 +419,7 @@ func (sys *system) Discover(flags DiscoveryFlag) error {
 			sys.Debug("        die: %d", cpu.die)
 			sys.Debug("    cluster: %d", cpu.cluster)
 			sys.Debug("       node: %d", cpu.node)
-			sys.Debug("       core: %d", cpu.core)
+			sys.Debug("       core: %d (%s)", cpu.core, cpu.coreKind)
 			sys.Debug("    threads: %s", cpu.threads)
 			sys.Debug("  base freq: %d", cpu.baseFreq)
 			sys.Debug("       freq: %d - %d", cpu.freq.min, cpu.freq.max)
@@ -599,6 +630,30 @@ func (sys *system) OfflineCPUs() cpuset.CPUSet {
 	return CPUSetFromIDSet(offline)
 }
 
+// CoreKindCPUs gets the set of CPU cores by kind.
+func (sys *system) CoreKindCPUs(kind CoreKind) cpuset.CPUSet {
+	return CPUSetFromIDSet(sys.coreKindCPUs[kind])
+}
+
+// CoreKinds gets CPU cores kinds present in the system.
+func (sys *system) CoreKinds() []CoreKind {
+	kinds := []CoreKind{}
+	for kind := range sys.coreKindCPUs {
+		kinds = append(kinds, kind)
+	}
+	return kinds
+}
+
+func (sys *system) AllThreadsForCPUs(cpus cpuset.CPUSet) cpuset.CPUSet {
+	all := cpuset.New()
+	for _, id := range cpus.UnsortedList() {
+		if cpu, ok := sys.cpus[id]; ok {
+			all = all.Union(cpu.ThreadCPUSet())
+		}
+	}
+	return all
+}
+
 // Offlined gets the set of offlined CPUs.
 func (sys *system) Offlined() cpuset.CPUSet {
 	return sys.OfflineCPUs()
@@ -638,11 +693,82 @@ func (sys *system) discoverCPUs() error {
 		sys.Error("failed to get set of isolated cpus: %v", err)
 	}
 
+	sys.coreKindCPUs = make(map[CoreKind]idset.IDSet)
+
+	for kind, entry := range coreKindCPUPath {
+		cpus := idset.NewIDSet()
+		_, err = readSysfsEntry(sys.path, entry, &cpus, ",")
+		if err != nil {
+			sys.Error("failed to get set of %s cpus: %v", kind, err)
+			if kind == PerformanceCore {
+				cpus = sys.onlineCPUs.Clone()
+			}
+		}
+		if cpus.Size() > 0 {
+			sys.coreKindCPUs[kind] = cpus
+		}
+	}
+
 	entries, _ := filepath.Glob(filepath.Join(sys.path, sysfsCPUPath, "cpu[0-9]*"))
 	for _, entry := range entries {
 		if err := sys.discoverCPU(entry); err != nil {
 			return fmt.Errorf("failed to discover cpu for entry %s: %v", entry, err)
 		}
+	}
+
+	for kind, ids := range sys.coreKindCPUs {
+		for id := range ids {
+			if !sys.OnlineCPUs().Contains(id) {
+				continue
+			}
+			cpu := sys.cpus[id]
+			cpu.coreKind = kind
+		}
+	}
+
+	if err := sys.checkCoreKinds(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Perform a basic sanity checks of hybrid cores.
+func (sys *system) checkCoreKinds() error {
+	// If we have not detected any explicit core types, assume all cores to be P-cores.
+	if len(sys.coreKindCPUs) == 0 {
+		sys.coreKindCPUs[PerformanceCore] = sys.onlineCPUs.Clone()
+		return nil
+	}
+
+	var (
+		kinds = map[CoreKind]cpuset.CPUSet{}
+		all   = cpuset.New()
+	)
+
+	for kind := range sys.coreKindCPUs {
+		cores := sys.CoreKindCPUs(kind)
+
+		// All core types must be thread-complete.
+		if missing := sys.AllThreadsForCPUs(cores).Difference(cores); !missing.IsEmpty() {
+			return fmt.Errorf("%s CPUs (%s) miss threads (%s)", kind, cores, missing)
+		}
+
+		// A core can be of one type only.
+		for k, c := range kinds {
+			if common := cores.Intersection(c); !common.IsEmpty() {
+				return fmt.Errorf("%s CPUs (%s) and %s CPUs (%s) overlap (%s)",
+					kind, cores, k, c, common)
+			}
+		}
+
+		kinds[kind] = cores
+		all = all.Union(cores)
+	}
+
+	// All cores must be advertised as some type.
+	if missing := sys.OnlineCPUs().Difference(all); !missing.IsEmpty() {
+		return fmt.Errorf("some CPUs (%s) are neither marked to be of any core type", missing)
 	}
 
 	return nil
@@ -888,6 +1014,11 @@ func (c *cpu) GetLastLevelCacheCPUSet() cpuset.CPUSet {
 	}
 
 	return cpus
+}
+
+// CoreKind returns the core kind (P-/E-core) for this CPU.
+func (c *cpu) CoreKind() CoreKind {
+	return c.coreKind
 }
 
 func (c *Cache) ID() int {
@@ -1453,4 +1584,8 @@ func (t CacheType) String() string {
 		return "Unified"
 	}
 	return ""
+}
+
+func (k CoreKind) String() string {
+	return coreKindNames[k]
 }
