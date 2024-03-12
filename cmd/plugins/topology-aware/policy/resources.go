@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	v1 "k8s.io/api/core/v1"
 
@@ -26,6 +27,28 @@ import (
 	"github.com/containers/nri-plugins/pkg/kubernetes"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	idset "github.com/intel/goresctrl/pkg/utils"
+)
+
+type (
+	cpuPrio = cpuallocator.CPUPriority
+)
+
+const (
+	highPrio   = cpuallocator.PriorityHigh
+	normalPrio = cpuallocator.PriorityNormal
+	lowPrio    = cpuallocator.PriorityLow
+	nonePrio   = cpuallocator.PriorityNone
+)
+
+var (
+	defaultPrio = nonePrio
+
+	cpuPrioByName = map[string]cpuPrio{
+		"high":   highPrio,
+		"normal": normalPrio,
+		"low":    lowPrio,
+		"none":   nonePrio,
+	}
 )
 
 // Supply represents avaialbe CPU and memory capacity of a node.
@@ -95,6 +118,8 @@ type Request interface {
 	String() string
 	// CPUType returns the type of requested CPU.
 	CPUType() cpuClass
+	// CPUPrio returns the preferred priority of requested CPU.
+	CPUPrio() cpuPrio
 	// SetCPUType sets the type of requested CPU.
 	SetCPUType(cpuType cpuClass)
 	// FullCPUs return the number of full CPUs requested.
@@ -195,7 +220,7 @@ type Score interface {
 	SharedCapacity() int
 	Colocated() int
 	HintScores() map[string]float64
-
+	PrioCapacity(cpuPrio) int
 	String() string
 }
 
@@ -223,6 +248,7 @@ type request struct {
 	fraction  int             // amount of fractional CPU requested
 	isolate   bool            // prefer isolated exclusive CPUs
 	cpuType   cpuClass        // preferred CPU type (normal, reserved)
+	prio      cpuPrio         // CPU priority preference, ignored for fraction requests
 
 	memReq  uint64     // memory request
 	memLim  uint64     // memory limit
@@ -262,6 +288,7 @@ type score struct {
 	isolated  int                // remaining isolated CPUs
 	reserved  int                // remaining reserved CPUs
 	shared    int                // remaining shared capacity
+	prio      map[cpuPrio]int    // low/normal/high-prio CPU capacity
 	colocated int                // number of colocated containers
 	hints     map[string]float64 // hint scores
 }
@@ -575,7 +602,7 @@ func (cs *supply) AllocateCPU(r Request) (Grant, error) {
 	// allocate isolated exclusive CPUs or slice them off the sharable set
 	switch {
 	case full > 0 && cs.isolated.Size() >= full && cr.isolate:
-		exclusive, err = cs.takeCPUs(&cs.isolated, nil, full)
+		exclusive, err = cs.takeCPUs(&cs.isolated, nil, full, cr.CPUPrio())
 		if err != nil {
 			return nil, policyError("internal error: "+
 				"%s: can't take %d exclusive isolated CPUs from %s: %v",
@@ -583,7 +610,7 @@ func (cs *supply) AllocateCPU(r Request) (Grant, error) {
 		}
 
 	case full > 0 && cs.AllocatableSharedCPU() > 1000*full:
-		exclusive, err = cs.takeCPUs(&cs.sharable, nil, full)
+		exclusive, err = cs.takeCPUs(&cs.sharable, nil, full, cr.CPUPrio())
 		if err != nil {
 			return nil, policyError("internal error: "+
 				"%s: can't take %d exclusive CPUs from %s: %v",
@@ -764,8 +791,8 @@ func (cs *supply) ReserveMemory(g Grant) error {
 }
 
 // takeCPUs takes up to cnt CPUs from a given CPU set to another.
-func (cs *supply) takeCPUs(from, to *cpuset.CPUSet, cnt int) (cpuset.CPUSet, error) {
-	cset, err := cs.node.Policy().cpuAllocator.AllocateCpus(from, cnt, cpuallocator.PriorityHigh)
+func (cs *supply) takeCPUs(from, to *cpuset.CPUSet, cnt int, prio cpuPrio) (cpuset.CPUSet, error) {
+	cset, err := cs.node.Policy().cpuAllocator.AllocateCpus(from, cnt, prio)
 	if err != nil {
 		return cset, err
 	}
@@ -942,12 +969,12 @@ func (cs *supply) DumpMemoryState(prefix string) {
 // newRequest creates a new request for the given container.
 func newRequest(container cache.Container) Request {
 	pod, _ := container.GetPod()
-	full, fraction, isolate, cpuType := cpuAllocationPreferences(pod, container)
+	full, fraction, isolate, cpuType, prio := cpuAllocationPreferences(pod, container)
 	req, lim, mtype := memoryAllocationPreference(pod, container)
 	coldStart := time.Duration(0)
 
-	log.Debug("%s: CPU preferences: cpuType=%s, full=%v, fraction=%v, isolate=%v",
-		container.PrettyName(), cpuType, full, fraction, isolate)
+	log.Debug("%s: CPU preferences: cpuType=%s, full=%v, fraction=%v, isolate=%v, prio=%v",
+		container.PrettyName(), cpuType, full, fraction, isolate, prio)
 
 	if mtype == memoryUnspec {
 		mtype = defaultMemoryType
@@ -984,6 +1011,7 @@ func newRequest(container cache.Container) Request {
 		memLim:    lim,
 		memType:   mtype,
 		coldStart: coldStart,
+		prio:      prio,
 	}
 }
 
@@ -994,29 +1022,34 @@ func (cr *request) GetContainer() cache.Container {
 
 // String returns aprintable representation of the CPU request.
 func (cr *request) String() string {
-	mem := "<Memory request: limit:" + prettyMem(cr.memLim) + ", req:" + prettyMem(cr.memReq) + ">"
+	mem := fmt.Sprintf("<Memory request: limit: %s, req: %s>",
+		prettyMem(cr.memLim), prettyMem(cr.memReq))
 	isolated := map[bool]string{false: "", true: "isolated "}[cr.isolate]
 	switch {
 	case cr.full == 0 && cr.fraction == 0:
-		return fmt.Sprintf("<CPU request "+cr.container.PrettyName()+": ->") + mem
+		return fmt.Sprintf("<%s CPU request %s: none> %s", cr.prio, cr.container.PrettyName(), mem)
 
 	case cr.full > 0 && cr.fraction > 0:
-		return fmt.Sprintf("<CPU request "+cr.container.PrettyName()+": "+
-			"%sexclusive: %d, shared: %d>", isolated, cr.full, cr.fraction) + mem
+		return fmt.Sprintf("<%s CPU request "+cr.container.PrettyName()+": "+
+			"%sexclusive: %d, shared: %d>", cr.prio, isolated, cr.full, cr.fraction) + mem
 
 	case cr.full > 0:
-		return fmt.Sprintf("<CPU request "+
-			cr.container.PrettyName()+": %sexclusive: %d>", isolated, cr.full) + mem
+		return fmt.Sprintf("<%s CPU request %s: %sexclusive: %d> %s",
+			cr.prio, cr.container.PrettyName(), isolated, cr.full, mem)
 
 	default:
-		return fmt.Sprintf("<CPU request "+
-			cr.container.PrettyName()+": shared: %d>", cr.fraction) + mem
+		return fmt.Sprintf("<%s CPU request %s: shared %d> %s",
+			cr.prio, cr.container.PrettyName(), cr.fraction, mem)
 	}
 }
 
 // CPUType returns the requested type of CPU for the grant.
 func (cr *request) CPUType() cpuClass {
 	return cr.cpuType
+}
+
+func (cr *request) CPUPrio() cpuPrio {
+	return cr.prio
 }
 
 // SetCPUType sets the requested type of CPU for the grant.
@@ -1078,6 +1111,7 @@ func (cs *supply) GetScore(req Request) Score {
 	score := &score{
 		supply: cs,
 		req:    req,
+		prio:   map[cpuPrio]int{},
 	}
 
 	cr := req.(*request)
@@ -1105,6 +1139,27 @@ func (cs *supply) GetScore(req Request) Score {
 
 		// calculate fractional capacity
 		score.shared -= part
+
+		lpCPUs := cs.GetNode().System().CoreKindCPUs(sysfs.EfficientCore)
+		if lpCPUs.Size() == 0 {
+			lpCPUs = cs.GetNode().Policy().cpuAllocator.GetCPUPriorities()[lowPrio]
+		}
+		lpCPUs = lpCPUs.Intersection(cs.SharableCPUs())
+		lpCnt := lpCPUs.Size()
+		score.prio[lowPrio] = lpCnt*1000 - (1000*full + part)
+
+		hpCPUs := cs.GetNode().System().CoreKindCPUs(sysfs.PerformanceCore)
+		if hpCPUs.Size() == 0 {
+			hpCPUs = cs.GetNode().Policy().cpuAllocator.GetCPUPriorities()[highPrio]
+		}
+		hpCPUs = hpCPUs.Intersection(cs.SharableCPUs())
+		hpCnt := hpCPUs.Size()
+		score.prio[highPrio] = hpCnt*1000 - (1000*full + part)
+
+		npCPUs := cs.GetNode().Policy().cpuAllocator.GetCPUPriorities()[normalPrio]
+		npCPUs = npCPUs.Intersection(cs.SharableCPUs())
+		npCnt := npCPUs.Size()
+		score.prio[normalPrio] = npCnt*1000 - (1000*full + part)
 	}
 
 	// calculate colocation score
@@ -1202,6 +1257,10 @@ func (score *score) Colocated() int {
 
 func (score *score) HintScores() map[string]float64 {
 	return score.hints
+}
+
+func (score *score) PrioCapacity(prio cpuPrio) int {
+	return score.prio[prio]
 }
 
 func (score *score) String() string {

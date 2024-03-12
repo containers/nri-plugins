@@ -98,12 +98,15 @@ func (p *policy) Setup(opts *policyapi.BackendOptions) error {
 	p.cpuAllocator = cpuallocator.NewCPUAllocator(opts.System)
 
 	opt = cfg
+	defaultPrio = cfg.DefaultCPUPriority.Value()
 
 	if err := p.initialize(); err != nil {
 		return policyError("failed to initialize %s policy: %w", PolicyName, err)
 	}
 
 	p.registerImplicitAffinities()
+
+	log.Info("***** default CPU priority is %s", defaultPrio)
 
 	return nil
 }
@@ -425,6 +428,7 @@ func (p *policy) Reconfigure(newCfg interface{}) error {
 
 	opt = cfg
 	p.cfg = cfg
+	defaultPrio = cfg.DefaultCPUPriority.Value()
 
 	if err := p.initialize(); err != nil {
 		*p = savedPolicy
@@ -435,6 +439,7 @@ func (p *policy) Reconfigure(newCfg interface{}) error {
 		if err := grant.RefetchNodes(); err != nil {
 			*p = savedPolicy
 			opt = p.cfg
+			defaultPrio = p.cfg.DefaultCPUPriority.Value()
 			return policyError("failed to reconfigure: %v", err)
 		}
 	}
@@ -523,7 +528,7 @@ func (p *policy) checkConstraints() error {
 		// Use CpuAllocator to pick reserved CPUs among
 		// allowed ones. Because using those CPUs is allowed,
 		// they remain (they are put back) in the allowed set.
-		cset, err := p.cpuAllocator.AllocateCpus(&p.allowed, p.reserveCnt, cpuallocator.PriorityNormal)
+		cset, err := p.cpuAllocator.AllocateCpus(&p.allowed, p.reserveCnt, normalPrio)
 		p.allowed = p.allowed.Union(cset)
 		if err != nil {
 			log.Fatal("cannot reserve %dm CPUs for ReservedResources from AvailableResources: %s", qty.MilliValue(), err)

@@ -94,6 +94,19 @@ spec:
                     - classes
                     type: object
                 type: object
+              defaultCPUPriority:
+                default: none
+                description: |-
+                  DefaultCPUPriority (high, normal, low, none) is the preferred CPU
+                  priority for allocated CPUs when a container has not been annotated
+                  with any other CPU preference.
+                  Notes: Currently this option only affects exclusive CPU allocations.
+                enum:
+                - high
+                - normal
+                - low
+                - none
+                type: string
               instrumentation:
                 description: Config provides runtime configuration for instrumentation.
                 properties:

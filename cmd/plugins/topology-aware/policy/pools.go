@@ -844,30 +844,31 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 	//
 	// Our scoring/score sorting algorithm is:
 	//
-	// 1) - insufficient isolated, reserved or shared capacity loses
-	// 2) - if we have affinity, the higher affinity score wins
-	// 3) - if only one node matches the memory type request, it wins
-	// 4) - if we have topology hints
+	//   - insufficient isolated, reserved or shared capacity loses
+	//   - if we have affinity, the higher affinity score wins
+	//   - if only one node matches the memory type request, it wins
+	//   - if we have topology hints
 	//       * better hint score wins
 	//       * for a tie, prefer the lower node then the smaller id
-	// 5) - if a node is lower in the tree it wins
-	// 6) - for reserved allocations
+	//   - for low-prio and high-prio CPU preference, if only one node has such CPUs, it wins
+	//   - if a node is lower in the tree it wins
+	//   - for reserved allocations
 	//       * more unallocated reserved capacity per colocated container wins
-	// 7) - for (non-reserved) isolated allocations
+	//   - for (non-reserved) isolated allocations
 	//       * more isolated capacity wins
 	//       * for a tie, prefer the smaller id
-	// 8) - for (non-reserved) exclusive allocations
+	//   - for (non-reserved) exclusive allocations
 	//       * more slicable (shared) capacity wins
 	//       * for a tie, prefer the smaller id
-	// 9) - for (non-reserved) shared-only allocations
+	//   - for (non-reserved) shared-only allocations
 	//       * fewer colocated containers win
 	//       * for a tie prefer more shared capacity
-	// 10) - lower id wins
+	//   - lower id wins
 	//
 	// Before this comparison is reached, nodes with insufficient uncompressible resources
 	// (memory) have been filtered out.
 
-	// 1) a node with insufficient isolated or shared capacity loses
+	// a node with insufficient isolated or shared capacity loses
 	switch {
 	case cpuType == cpuNormal && ((isolated2 < 0 && isolated1 >= 0) || (shared2 <= 0 && shared1 > 0)):
 		log.Debug("  => %s loses, insufficent isolated or shared", node2.Name())
@@ -885,7 +886,7 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 
 	log.Debug("  - isolated/reserved/shared insufficiency is a TIE")
 
-	// 2) higher affinity score wins
+	// higher affinity score wins
 	if a1 > a2 {
 		log.Debug("  => %s loses on affinity", node2.Name())
 		return true
@@ -897,7 +898,7 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 
 	log.Debug("  - affinity is a TIE")
 
-	// 3) matching memory type wins
+	// matching memory type wins
 	if reqType := request.MemoryType(); reqType != memoryUnspec && reqType != memoryPreserve {
 		if node1.HasMemoryType(reqType) && !node2.HasMemoryType(reqType) {
 			log.Debug("  => %s WINS on memory type", node1.Name())
@@ -911,7 +912,7 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 		log.Debug("  - memory type is a TIE")
 	}
 
-	// 4) better topology hint score wins
+	// better topology hint score wins
 	hScores1 := score1.HintScores()
 	if len(hScores1) > 0 {
 		hScores2 := score2.HintScores()
@@ -960,7 +961,38 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 		}
 	}
 
-	// 5) a lower node wins
+	// for low-prio and high-prio CPU preference, the only fulfilling node wins
+	log.Debug("  - preferred CPU priority is %s", request.CPUPrio())
+	switch request.CPUPrio() {
+	case lowPrio:
+		lp1, lp2 := score1.PrioCapacity(lowPrio), score2.PrioCapacity(lowPrio)
+		log.Debug("  - lp1 %d vs. lp2 %d", lp1, lp2)
+		switch {
+		case lp1 == lp2:
+			log.Debug("  - low-prio CPU capacity is a TIE")
+		case lp1 >= 0 && lp2 < 0:
+			log.Debug("  => %s WINS based on low-prio CPU capacity", node1.Name())
+			return true
+		case lp1 < 0 && lp2 >= 0:
+			log.Debug("  => %s WINS based on low-prio CPU capacity", node2.Name())
+			return false
+		}
+
+	case highPrio:
+		hp1, hp2 := score1.PrioCapacity(highPrio), score2.PrioCapacity(highPrio)
+		switch {
+		case hp1 == hp2:
+			log.Debug("  - HighPrio CPU capacity is a TIE")
+		case hp1 >= 0 && hp2 < 0:
+			log.Debug("  => %s WINS based on high-prio CPU capacity", node1.Name())
+			return true
+		case hp1 < 0 && hp2 >= 0:
+			log.Debug("  => %s WINS based on high-prio CPU capacity", node2.Name())
+			return false
+		}
+	}
+
+	// a lower node wins
 	if depth1 > depth2 {
 		log.Debug("  => %s WINS on depth", node1.Name())
 		return true
@@ -973,11 +1005,11 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 	log.Debug("  - depth is a TIE")
 
 	if request.CPUType() == cpuReserved {
-		// 6) if requesting reserved CPUs, more reserved
-		//    capacity per colocated container wins. Reserved
-		//    CPUs cannot be precisely accounted as they run
-		//    also BestEffort containers that do not carry
-		//    information on their CPU needs.
+		// if requesting reserved CPUs, more reserved
+		// capacity per colocated container wins. Reserved
+		// CPUs cannot be precisely accounted as they run
+		// also BestEffort containers that do not carry
+		// information on their CPU needs.
 		if reserved1/(score1.Colocated()+1) > reserved2/(score2.Colocated()+1) {
 			return true
 		}
@@ -986,7 +1018,7 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 		}
 		log.Debug("  - reserved capacity is a TIE")
 	} else if request.CPUType() == cpuNormal {
-		// 7) more isolated capacity wins
+		// more isolated capacity wins
 		if request.Isolate() && (isolated1 > 0 || isolated2 > 0) {
 			if isolated1 > isolated2 {
 				return true
@@ -1001,7 +1033,23 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 			return id1 < id2
 		}
 
-		// 8) more slicable shared capacity wins
+		// for normal-prio CPU preference, the only fulfilling node wins
+		log.Debug("  - preferred CPU priority is %s", request.CPUPrio())
+		if request.CPUPrio() == normalPrio {
+			np1, np2 := score1.PrioCapacity(normalPrio), score2.PrioCapacity(normalPrio)
+			switch {
+			case np1 == np2:
+				log.Debug("  - normal-prio CPU capacity is a TIE")
+			case np1 >= 0 && np2 < 0:
+				log.Debug("  => %s WINS based on normal-prio CPU capacity", node1.Name())
+				return true
+			case np1 < 0 && np2 >= 0:
+				log.Debug("  => %s WINS based on normal-prio capacity", node2.Name())
+				return false
+			}
+		}
+
+		// more slicable shared capacity wins
 		if request.FullCPUs() > 0 && (shared1 > 0 || shared2 > 0) {
 			if shared1 > shared2 {
 				log.Debug("  => %s WINS on more slicable capacity", node1.Name())
@@ -1018,7 +1066,7 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 			return id1 < id2
 		}
 
-		// 9) fewer colocated containers win
+		// fewer colocated containers win
 		if score1.Colocated() < score2.Colocated() {
 			log.Debug("  => %s WINS on colocation score", node1.Name())
 			return true
@@ -1041,7 +1089,7 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 		}
 	}
 
-	// 10) lower id wins
+	// lower id wins
 	log.Debug("  => %s WINS based on lower id",
 		map[bool]string{true: node1.Name(), false: node2.Name()}[id1 < id2])
 
