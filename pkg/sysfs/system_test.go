@@ -29,6 +29,7 @@ type (
 	ID        = idset.ID
 	System    = sysfs.System
 	CacheType = sysfs.CacheType
+	CoreKind  = sysfs.CoreKind
 )
 
 var (
@@ -42,6 +43,9 @@ const (
 	Instruction = sysfs.InstructionCache
 	Unified     = sysfs.UnifiedCache
 	K           = uint64(1024)
+
+	PerformanceCore = sysfs.PerformanceCore
+	EfficientCore   = sysfs.EfficientCore
 )
 
 var _ = BeforeSuite(func() {
@@ -194,4 +198,16 @@ var _ = DescribeTable("Logical/hyperthread-filtered cluster CPUSet",
 	Entry("die #0, cluster #0", "sample1", 0, 0, 0, "0-7"),
 	Entry("die #0, cluster #32", "sample1", 0, 0, 32, "8-11"),
 	Entry("die #0, cluster #40", "sample1", 0, 0, 40, "12-15"),
+)
+
+var _ = DescribeTable("P-/E-Core CPU detection",
+	func(sample string, kind CoreKind, cpus string) {
+		sys := sampleSysfs[sample]
+		Expect(sys).ToNot(BeNil())
+		cset := sys.CoreKindCPUs(kind)
+		Expect(cset.String()).To(Equal(cpus))
+	},
+
+	Entry("P-Cores", "sample1", PerformanceCore, "0-7"),
+	Entry("E-Cores", "sample1", EfficientCore, "8-15"),
 )
