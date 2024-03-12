@@ -95,6 +95,12 @@ type System interface {
 	Node(id idset.ID) Node
 	NodeDistance(from, to idset.ID) int
 	CPU(id idset.ID) CPU
+	PossibleCPUs() cpuset.CPUSet
+	PresentCPUs() cpuset.CPUSet
+	OnlineCPUs() cpuset.CPUSet
+	IsolatedCPUs() cpuset.CPUSet
+	OfflineCPUs() cpuset.CPUSet
+
 	Offlined() cpuset.CPUSet
 	Isolated() cpuset.CPUSet
 }
@@ -108,8 +114,10 @@ type system struct {
 	nodes         map[idset.ID]*node                   // NUMA nodes
 	cpus          map[idset.ID]*cpu                    // CPUs
 	caches        [][NumCacheTypes]map[idset.ID]*Cache // CPU caches
-	offline       idset.IDSet                          // offlined CPUs
-	isolated      idset.IDSet                          // isolated CPUs
+	possibleCPUs  idset.IDSet                          // set of supported CPUs.possible CPUs
+	presentCPUs   idset.IDSet                          // set of present CPUs
+	onlineCPUs    idset.IDSet                          // set of online CPUs
+	isolatedCPUs  idset.IDSet                          // set of isolated CPUs
 	threads       int                                  // hyperthreads per core
 }
 
@@ -275,9 +283,8 @@ func DiscoverSystemAt(path string, args ...DiscoveryFlag) (System, error) {
 	}
 
 	sys := &system{
-		Logger:  log,
-		path:    path,
-		offline: idset.NewIDSet(),
+		Logger: log,
+		path:   path,
 	}
 
 	if err := sys.Discover(flags); err != nil {
@@ -338,6 +345,13 @@ func (sys *system) Discover(flags DiscoveryFlag) error {
 	}
 
 	if sys.DebugEnabled() {
+		sys.Debug("CPUs:")
+		sys.Debug("  - possible: %s", sys.PossibleCPUs())
+		sys.Debug("  -  present: %s", sys.PresentCPUs())
+		sys.Debug("  -   online: %s", sys.OnlineCPUs())
+		sys.Debug("  -  offline: %s", sys.OfflineCPUs())
+		sys.Debug("  - isolated: %s", sys.IsolatedCPUs())
+
 		for _, id := range sys.PackageIDs() {
 			pkg := sys.packages[id]
 			sys.Info("package #%d:", id)
@@ -389,9 +403,6 @@ func (sys *system) Discover(flags DiscoveryFlag) error {
 				sys.Debug("         cpus: %s", c.SharedCPUSet().String())
 			}
 		}
-
-		sys.Debug("offline CPUs: %s", sys.offline)
-		sys.Debug("isolated CPUs: %s", sys.isolated)
 	}
 
 	return nil
@@ -431,9 +442,9 @@ func (sys *system) SetCpusOnline(online bool, cpus idset.IDSet) (idset.IDSet, er
 				cpu.online = online
 
 				if online {
-					sys.offline.Del(id)
+					sys.onlineCPUs.Add(id)
 				} else {
-					sys.offline.Add(id)
+					sys.onlineCPUs.Del(id)
 				}
 			}
 		}
@@ -561,14 +572,41 @@ func (sys *system) CPU(id idset.ID) CPU {
 	return sys.cpus[id]
 }
 
+// PossibleCPUs gets the maximum set of possible CPUs in the system.
+func (sys *system) PossibleCPUs() cpuset.CPUSet {
+	return CPUSetFromIDSet(sys.possibleCPUs)
+}
+
+// PresentCPUs gets the set of CPUs present in the system.
+func (sys *system) PresentCPUs() cpuset.CPUSet {
+	return CPUSetFromIDSet(sys.presentCPUs)
+}
+
+// OnlineCPUs gets the set of online CPUs.
+func (sys *system) OnlineCPUs() cpuset.CPUSet {
+	return CPUSetFromIDSet(sys.onlineCPUs)
+}
+
+// IsolatedCPUs gets the set of kernel-isolated CPUs.
+func (sys *system) IsolatedCPUs() cpuset.CPUSet {
+	return CPUSetFromIDSet(sys.isolatedCPUs)
+}
+
+// OfflineCPUs gets the set of offline CPUs.
+func (sys *system) OfflineCPUs() cpuset.CPUSet {
+	offline := sys.presentCPUs.Clone()
+	offline.Del(sys.onlineCPUs.Members()...)
+	return CPUSetFromIDSet(offline)
+}
+
 // Offlined gets the set of offlined CPUs.
 func (sys *system) Offlined() cpuset.CPUSet {
-	return CPUSetFromIDSet(sys.offline)
+	return sys.OfflineCPUs()
 }
 
 // Isolated gets the set of isolated CPUs."
 func (sys *system) Isolated() cpuset.CPUSet {
-	return CPUSetFromIDSet(sys.isolated)
+	return sys.IsolatedCPUs()
 }
 
 // Discover Cpus present in the system.
@@ -579,7 +617,23 @@ func (sys *system) discoverCPUs() error {
 
 	sys.cpus = make(map[idset.ID]*cpu)
 
-	_, err := readSysfsEntry(sys.path, filepath.Join(sysfsCPUPath, "isolated"), &sys.isolated, ",")
+	base := filepath.Join(sys.path, sysfsCPUPath)
+	_, err := readSysfsEntry(base, "possible", &sys.possibleCPUs, ",")
+	if err != nil {
+		sys.Error("failed to get set of possible cpus: %v", err)
+	}
+
+	_, err = readSysfsEntry(base, "present", &sys.presentCPUs, ",")
+	if err != nil {
+		sys.Error("failed to get set of present cpus: %v", err)
+	}
+
+	_, err = readSysfsEntry(base, "online", &sys.onlineCPUs, ",")
+	if err != nil {
+		sys.Error("failed to get set of online cpus: %v", err)
+	}
+
+	_, err = readSysfsEntry(base, "isolated", &sys.isolatedCPUs, ",")
 	if err != nil {
 		sys.Error("failed to get set of isolated cpus: %v", err)
 	}
@@ -598,11 +652,8 @@ func (sys *system) discoverCPUs() error {
 func (sys *system) discoverCPU(path string) error {
 	cpu := &cpu{path: path, id: getEnumeratedID(path), online: true, sstClos: -1}
 
-	cpu.isolated = sys.isolated.Has(cpu.id)
-
-	if online, err := readSysfsEntry(path, "online", nil); err == nil {
-		cpu.online = (online != "" && online[0] != '0')
-	}
+	cpu.isolated = sys.isolatedCPUs.Has(cpu.id)
+	cpu.online = sys.onlineCPUs.Has(cpu.id)
 
 	if cpu.online {
 		if _, err := readSysfsEntry(path, "topology/physical_package_id", &cpu.pkg); err != nil {
@@ -622,8 +673,6 @@ func (sys *system) discoverCPU(path string) error {
 				return err
 			}
 		}
-	} else {
-		sys.offline.Add(cpu.id)
 	}
 
 	if _, err := readSysfsEntry(path, "cpufreq/base_frequency", &cpu.baseFreq); err != nil {
