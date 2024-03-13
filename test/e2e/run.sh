@@ -23,7 +23,34 @@ export cni_plugin=${cni_plugin:-cilium}
 export cni_release=${cni_release:-latest}
 TOPOLOGY_DIR=${TOPOLOGY_DIR:=e2e}
 
+K8S_REPO="https://github.com/kubernetes/kubernetes"
+export k8s_release=${k8s_release:-"latest"}
+export k8s_version=""
+
 source "$LIB_DIR"/vm.bash
+
+latest-github-release () {
+    local repo="$1"
+    local latest=$(wget -q -O- $repo/releases/latest | grep '/tree/v[0-9.]*' |
+                       sed -E 's:.*/tree/v([0-9]*\.[0-9]*)(\.[0-9]*).*:\1\2:g' | head -1)
+    if [ -z "$latest" ]; then
+        echo "failed to determine latest release of $repo"
+        exit 1
+    fi
+    echo "$latest"
+}
+
+if [ "$k8s_release" = "latest" ]; then
+    if ! k8s_release=$(latest-github-release $K8S_REPO); then
+        error "$k8s_release"
+    fi
+    echo "Latest Kubernetes release: $k8s_release"
+fi
+
+export k8s_version=$(echo $k8s_release | sed -E 's/([0-9]*\.[0-9]*)(\.[0-9]*)/\1/g')
+if [ -z "$k8s_version" ]; then
+    error "failed to determine latest Kubernetes version from \"$k8s_release"\"
+fi
 
 export vm_name=${vm_name:=$(vm-create-name "$k8scri" "$(basename "$TOPOLOGY_DIR")" ${distro})}
 ESCAPED_VM=$(printf '%s\n' "$vm_name" | sed -e 's/[\/]/-/g')
@@ -53,7 +80,16 @@ fi
 # from a release tarball with the version given below... unless
 # a source directory is given, which is then expected to contain
 # a compiled version of containerd which we should install.
-export containerd_release=${containerd_release:-1.7.6}
+CONTAINERD_REPO="https://github.com/containerd/containerd"
+export containerd_release=${containerd_release:-latest}
+
+if [ "$k8scri" = "containerd" -a "$containerd_release" = "latest" ]; then
+    if ! containerd_release=$(latest-github-release $CONTAINERD_REPO); then
+        error "$containerd_release"
+    fi
+    echo "Latest containerd release: $containerd_release"
+fi
+
 export containerd_src=${containerd_src:-}
 
 
@@ -61,8 +97,16 @@ export containerd_src=${containerd_src:-}
 # a release tarball with the version given below... unless a
 # source directory is given, which is then expected to contain
 # a compiled version of CRI-O which we should install.
-export crio_release=${crio_release:-1.28.1}
+CRIO_REPO="https://github.com/cri-o/cri-o"
+export crio_release=${crio_release:-latest}
 export crio_src=${crio_src:-}
+
+if [ "$k8scri" = "crio" -a "$crio_release" = "latest" ]; then
+    if ! crio_release=$(latest-github-release $CRIO_REPO); then
+        error "$crio_release"
+    fi
+    echo "Latest CRI-O release: $crio_release"
+fi
 
 # Default topology if not given. The run_tests.sh script will figure out
 # the topology from the test directory structure and contents.
@@ -108,6 +152,9 @@ fi
 echo
 echo "    VM              = $vm_name"
 echo "    Distro          = $distro"
+echo "    Kubernetes"
+echo "      - release     = $k8s_release"
+echo "      - version     = $k8s_version"
 echo "    Runtime         = $k8scri"
 echo "    Output dir      = $OUTPUT_DIR"
 echo "    Test output dir = $TEST_OUTPUT_DIR"
