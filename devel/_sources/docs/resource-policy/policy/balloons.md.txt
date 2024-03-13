@@ -262,7 +262,8 @@ spec:
 The balloon type of a container can be defined in pod annotations. In
 the example below, the first annotation sets the balloon type (`BT`)
 of a single container (`CONTAINER_NAME`). The last two annotations set
-the default balloon type for all containers in the pod.
+the balloon type for all containers in the pod. This will be used
+unless overridden with the container-specific balloon type.
 
 ```yaml
 balloon.balloons.resource-policy.nri.io/container.CONTAINER_NAME: BT
@@ -270,15 +271,14 @@ balloon.balloons.resource-policy.nri.io/pod: BT
 balloon.balloons.resource-policy.nri.io: BT
 ```
 
-If a pod has no annotations, its namespace is matched to the
-`Namespaces` of balloon types. The first matching balloon type is
-used.
+If the pod does not have these annotations, the container is matched
+to `matchExpressions` and `namespaces` of each type in the
+`balloonType`s list. The first matching balloon type is used.
 
-If the namespace does not match, the container is assigned to the
-`default` balloon type. Parameters for this balloon type can be
-defined explicitly among other balloon types. If not defined, a
-built-in `default` balloon type is implicitly appended at the end of
-the balloon types list.
+If the container does not match any of the balloon types, it is
+assigned to the `default` balloon type. Parameters for this balloon
+type can be defined explicitly among other balloon types. If they are
+not defined, a built-in `default` balloon type is used.
 
 ## Disabling CPU or Memory Pinning of a Container
 

@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.3.1-68-gad41e5e documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.3.1-69-gec0dec1 documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -379,20 +379,20 @@ from <code class="docutils literal notranslate"><span class="pre">http://localho
 <p>The balloon type of a container can be defined in pod annotations. In
 the example below, the first annotation sets the balloon type (<code class="docutils literal notranslate"><span class="pre">BT</span></code>)
 of a single container (<code class="docutils literal notranslate"><span class="pre">CONTAINER_NAME</span></code>). The last two annotations set
-the default balloon type for all containers in the pod.</p>
+the balloon type for all containers in the pod. This will be used
+unless overridden with the container-specific balloon type.</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">balloon.balloons.resource-policy.nri.io/container.CONTAINER_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">BT</span>
 <span class="nt">balloon.balloons.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">BT</span>
 <span class="nt">balloon.balloons.resource-policy.nri.io</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">BT</span>
 </pre></div>
 </div>
-<p>If a pod has no annotations, its namespace is matched to the
-<code class="docutils literal notranslate"><span class="pre">Namespaces</span></code> of balloon types. The first matching balloon type is
-used.</p>
-<p>If the namespace does not match, the container is assigned to the
-<code class="docutils literal notranslate"><span class="pre">default</span></code> balloon type. Parameters for this balloon type can be
-defined explicitly among other balloon types. If not defined, a
-built-in <code class="docutils literal notranslate"><span class="pre">default</span></code> balloon type is implicitly appended at the end of
-the balloon types list.</p>
+<p>If the pod does not have these annotations, the container is matched
+to <code class="docutils literal notranslate"><span class="pre">matchExpressions</span></code> and <code class="docutils literal notranslate"><span class="pre">namespaces</span></code> of each type in the
+<code class="docutils literal notranslate"><span class="pre">balloonType</span></code>s list. The first matching balloon type is used.</p>
+<p>If the container does not match any of the balloon types, it is
+assigned to the <code class="docutils literal notranslate"><span class="pre">default</span></code> balloon type. Parameters for this balloon
+type can be defined explicitly among other balloon types. If they are
+not defined, a built-in <code class="docutils literal notranslate"><span class="pre">default</span></code> balloon type is used.</p>
 </section>
 <section id="disabling-cpu-or-memory-pinning-of-a-container">
 <h2>Disabling CPU or Memory Pinning of a Container<a class="headerlink" href="#disabling-cpu-or-memory-pinning-of-a-container" title="Permalink to this heading"></a></h2>
