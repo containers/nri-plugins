@@ -1000,7 +1000,8 @@ func (c *container) String() string {
 	return c.PrettyName()
 }
 
-func (c *container) Eval(key string) interface{} {
+// EvalKey returns the value of a key for expression evaluation.
+func (c *container) EvalKey(key string) interface{} {
 	switch key {
 	case resmgr.KeyPod:
 		pod, ok := c.GetPod()
@@ -1023,6 +1024,16 @@ func (c *container) Eval(key string) interface{} {
 	default:
 		return cacheError("%s: Container cannot evaluate of %q", c.PrettyName(), key)
 	}
+}
+
+// EvalRef evaluates the value of a key reference for this container.
+func (c *container) EvalRef(key string) (string, bool) {
+	return resmgr.KeyValue(key, c)
+}
+
+// Expand a string with possible key references.
+func (c *container) Expand(src string, mustResolve bool) (string, error) {
+	return resmgr.Expand(src, c, mustResolve)
 }
 
 // CompareContainersFn compares two containers by some arbitrary property.

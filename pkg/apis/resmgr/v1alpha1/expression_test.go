@@ -43,7 +43,7 @@ func newEvaluable(name, ns, qos string, labels, tags map[string]string, p Evalua
 	}
 }
 
-func (e *evaluable) Eval(key string) interface{} {
+func (e *evaluable) EvalKey(key string) interface{} {
 	switch key {
 	case KeyName:
 		return e.name
@@ -63,6 +63,10 @@ func (e *evaluable) Eval(key string) interface{} {
 	default:
 		return fmt.Errorf("evaluable: cannot evaluate %q", key)
 	}
+}
+
+func (e *evaluable) EvalRef(key string) (string, bool) {
+	return KeyValue(key, e)
 }
 
 func (e *evaluable) String() string {
@@ -174,10 +178,68 @@ func TestResolveRefAndKeyValue(t *testing.T) {
 					Op:     Equals,
 					Values: []string{},
 				}
-				value, _ = expr.KeyValue(tc.subject)
+				value, _ = KeyValue(expr.Key, tc.subject)
 				if value != tc.keyvalues[i] {
 					t.Errorf("KeyValue %s@%q: expected %v, got %v",
 						tc.subject, tc.keys[i], tc.keyvalues[i], value)
+				}
+			}
+		})
+	}
+}
+
+func TestEvalRef(t *testing.T) {
+	defer logger.Flush()
+
+	podLabels := map[string]string{"l1": "pl1", "l2": "pl2", "l5": "pl5", "io.t/l1": "pio.t/l1"}
+	pod := newEvaluable("pod1", "pod1-ns", "pod1-qos", podLabels, nil, nil)
+	ctrLabels := map[string]string{"l1": "cl1", "l2": "cl2", "l3": "cl3"}
+	ctr := newEvaluable("ctr1", "ctr1-ns", "ctr1-qos", ctrLabels, nil, pod)
+
+	tcases := []struct {
+		name   string
+		keys   []string
+		values []string
+		ok     []bool
+	}{
+		{
+			name: "test resolving references",
+			keys: []string{
+				"name", "namespace", "qosclass",
+				"labels/l1", "labels/l2", "labels/l3", "labels/l4",
+				"pod/labels/l1", "pod/labels/l2", "pod/labels/l3", "pod/labels/l4", "pod/labels/l5",
+				"pod/labels/io.t/l", "pod/labels/io.t/l1",
+				":,-pod/qosclass,pod/namespace,pod/name,name",
+			},
+			values: []string{
+				"ctr1", "ctr1-ns", "ctr1-qos",
+				"cl1", "cl2", "cl3", "",
+				"pl1", "pl2", "", "", "pl5",
+				"", "pio.t/l1",
+				"pod1-qos-pod1-ns-pod1-ctr1",
+			},
+			ok: []bool{
+				true, true, true,
+				true, true, true, false,
+				true, true, false, false, true,
+				false, true,
+				true,
+			},
+		},
+	}
+
+	for _, tc := range tcases {
+		t.Run(tc.name, func(t *testing.T) {
+			for i := range tc.keys {
+				value, ok := ctr.EvalRef(tc.keys[i])
+				if !ok && tc.ok[i] {
+					t.Errorf("EvalRef %q for %s should have given %q, but failed",
+						tc.keys[i], ctr, tc.values[i])
+					continue
+				}
+				if value != tc.values[i] || ok != tc.ok[i] {
+					t.Errorf("EvalRef %q for %s: expected %v, %v got %v, %v",
+						tc.keys[i], ctr, tc.values[i], tc.ok[i], value, ok)
 				}
 			}
 		})
@@ -376,7 +438,7 @@ func TestMatching(t *testing.T) {
 				results := []string{}
 				for _, s := range tc.subjects {
 					if expr.Evaluate(s) {
-						results = append(results, s.Eval("name").(string))
+						results = append(results, s.EvalKey("name").(string))
 					}
 				}
 				expected := strings.Join(tc.expected[i], ",")
@@ -532,6 +594,134 @@ func TestValidation(t *testing.T) {
 				require.NotNil(t, err)
 			} else {
 				require.Nil(t, err)
+			}
+		})
+	}
+}
+
+func TestExpand(t *testing.T) {
+	defer logger.Flush()
+
+	podLabels := map[string]string{"l1": "pl1v", "l2": "pl2v", "l5": "pl5v", "io.t/l1": "pio.t-l1v"}
+	pod := newEvaluable("pod1", "pod1-ns", "pod1-qos", podLabels, nil, nil)
+	ctrLabels := map[string]string{"l1": "cl1", "l2": "cl2", "l3": "cl3"}
+	ctr := newEvaluable("ctr1", "ctr1-ns", "ctr1-qos", ctrLabels, nil, pod)
+
+	tcases := []struct {
+		name        string
+		source      string
+		mustResolve bool
+		result      string
+		fail        bool
+	}{
+		{
+			name:   "single well-formed key",
+			source: "${pod/qosclass}",
+			result: "pod1-qos",
+		},
+		{
+			name:   "multiple well-formed keys concatenated",
+			source: "${pod/namespace}${pod/name}${pod/qosclass}",
+			result: "pod1-nspod1pod1-qos",
+		},
+		{
+			name:   "multiple well-formed keys, with non-empty separators",
+			source: "${pod/labels/io.t/l1}:${pod/labels/l2}",
+			result: "pio.t-l1v:pl2v",
+		},
+		{
+			name:   "single plain key",
+			source: "$pod/qosclass",
+			result: "pod1-qos",
+		},
+		{
+			name:   "multiple plain keys",
+			source: "$pod/namespace$pod/name$pod/qosclass",
+			result: "pod1-nspod1pod1-qos",
+		},
+		{
+			name:   "multiple plain keys concatenated",
+			source: "$pod/labels/io.t/l1$pod/labels/l2",
+			result: "pio.t-l1vpl2v",
+		},
+		{
+			name:   "unresolvable keys",
+			source: "${pod/foobar}${xyzzy}",
+			result: "",
+		},
+		{
+			name:   "mixed resolvable and unresolvable keys",
+			source: "${pod/labels/l5}$foobar${pod/name}",
+			result: "pl5vpod1",
+		},
+		{
+			name:        "unresolvable keys, with mustResolve set",
+			source:      "${pod/foobar}${xyzzy}",
+			mustResolve: true,
+			result:      "",
+			fail:        true,
+		},
+		{
+			name:   "multiple literal $s",
+			source: "$$$$$$",
+			result: "$$$",
+		},
+		{
+			name:   "trailing literal $",
+			source: "foobar$$",
+			result: "foobar$",
+		},
+		{
+			name:   "trailing incorrect $",
+			source: "foobar$",
+			result: "",
+			fail:   true,
+		},
+		{
+			name:   "unterminated reference",
+			source: "${foobar",
+			result: "",
+			fail:   true,
+		},
+		{
+			name:   "unterminated reference",
+			source: "${foobar$barfoo",
+			result: "",
+			fail:   true,
+		},
+		{
+			name:   "unterminated reference",
+			source: "${foobar",
+			result: "",
+			fail:   true,
+		},
+		{
+			name:   "invalid reference, unexpected {",
+			source: "${foo{bar}",
+			result: "",
+			fail:   true,
+		},
+		{
+			name:   "invalid reference, unexpected }",
+			source: "$foo}",
+			result: "",
+			fail:   true,
+		},
+		{
+			name:   "non-variable curly braces",
+			source: "{}$pod/name",
+			result: "{}pod1",
+		},
+	}
+
+	for _, tc := range tcases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := Expand(tc.source, ctr, tc.mustResolve)
+			if !tc.fail {
+				require.Equal(t, tc.result, result)
+				require.Nil(t, err)
+			} else {
+				require.NotNil(t, err)
 			}
 		})
 	}

@@ -119,6 +119,9 @@ type Pod interface {
 	// Pods can be subject for expression evaluation.
 	resmgr.Evaluable
 
+	// Expand a string with possible key references.
+	Expand(string, bool) (string, error)
+
 	// We have String() for pods.
 	fmt.Stringer
 
@@ -205,6 +208,9 @@ type Container interface {
 
 	// Containers can be subject for expression evaluation.
 	resmgr.Evaluable
+
+	// Expand a string with possible key references.
+	Expand(string, bool) (string, error)
 
 	// We have String() for containers.
 	fmt.Stringer

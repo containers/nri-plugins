@@ -122,7 +122,7 @@ func (e *Expression) Evaluate(subject Evaluable) bool {
 		return true
 	}
 
-	value, ok := e.KeyValue(subject)
+	value, ok := KeyValue(e.Key, subject)
 	result := false
 
 	switch e.Op {
@@ -173,14 +173,19 @@ func (e *Expression) Evaluate(subject Evaluable) bool {
 	return result
 }
 
-// KeyValue extracts the value of the expresssion key from a container.
-func (e *Expression) KeyValue(subject Evaluable) (string, bool) {
-	log.Debug("looking up %q @ %s...", e.Key, subject)
+// String returns the expression as a string.
+func (e *Expression) String() string {
+	return fmt.Sprintf("<%s %s %s>", e.Key, e.Op, strings.Join(e.Values, ","))
+}
+
+// KeyValue extracts the value of the expression in the scope of the given subject.
+func KeyValue(key string, subject Evaluable) (string, bool) {
+	log.Debug("looking up %q @ %s...", key, subject)
 
 	value := ""
 	ok := false
 
-	keys, vsep := splitKeys(e.Key)
+	keys, vsep := splitKeys(key)
 	if len(keys) == 1 {
 		value, ok, _ = ResolveRef(subject, keys[0])
 	} else {
@@ -193,7 +198,7 @@ func (e *Expression) KeyValue(subject Evaluable) (string, bool) {
 		value = strings.Join(vals, vsep)
 	}
 
-	log.Debug("%q @ %s => %q, %v", e.Key, subject, value, ok)
+	log.Debug("%q @ %s => %q, %v", key, subject, value, ok)
 
 	return value, ok
 }
@@ -261,7 +266,7 @@ func ResolveRef(subject Evaluable, spec string) (string, bool, error) {
 		switch v := obj.(type) {
 		case Evaluable:
 			pref, rest, _ := strings.Cut(key, "/")
-			obj = v.Eval(pref)
+			obj = v.EvalKey(pref)
 			key = rest
 
 		case map[string]string:
@@ -296,9 +301,100 @@ func ResolveRef(subject Evaluable, spec string) (string, bool, error) {
 	return s, true, nil
 }
 
-// String returns the expression as a string.
-func (e *Expression) String() string {
-	return fmt.Sprintf("<%s %s %s>", e.Key, e.Op, strings.Join(e.Values, ","))
+// Expand performs non-recursive key substitution on strings containing 0 or
+// more well-formed or plain (${key}, $key) references, replacing each key
+// with its value when evaluated against the given subject. If mustResolve is
+// true, unresolvable references are flagged as an error. Otherwise they are
+// replaced by an empty string.
+func Expand(src string, subject Evaluable, mustResolve bool) (string, error) {
+	var (
+		result = &strings.Builder{}
+		buf    = result
+		key    *strings.Builder
+		curly  bool
+	)
+
+	substKeyValue := func() error {
+		val, ok := subject.EvalRef(key.String())
+		if !ok && mustResolve {
+			return fmt.Errorf("invalid substitution %q, unresolvable key %q",
+				src, key.String())
+		}
+
+		result.WriteString(val)
+		return nil
+	}
+
+	for i, c := range src {
+		if buf != key {
+			switch c {
+			case '$':
+				key = &strings.Builder{}
+				buf = key
+			default:
+				buf.WriteRune(c)
+			}
+			continue
+		}
+
+		// buf == key
+		switch c {
+		case '$':
+			if curly {
+				return "", fmt.Errorf("invalid substitution %q, unterminated '}' (at %q)",
+					src, src[i:])
+			}
+
+			if buf.Len() == 0 {
+				result.WriteByte('$')
+				key = nil
+				buf = result
+				continue
+			}
+
+			if err := substKeyValue(); err != nil {
+				return "", err
+			}
+
+			buf.Reset()
+
+		case '{':
+			if curly || buf.Len() != 0 {
+				return "", fmt.Errorf("invalid substitution %q, unexpected '{' (at %q)",
+					src, src[i:])
+			}
+			curly = true
+
+		case '}':
+			if !curly || buf.Len() == 0 {
+				return "", fmt.Errorf("invalid substitution %q, unexpected '}' (at %q)",
+					src, src[i:])
+			}
+
+			if err := substKeyValue(); err != nil {
+				return "", err
+			}
+
+			curly = false
+			key = nil
+			buf = result
+
+		default:
+			buf.WriteRune(c)
+		}
+	}
+
+	if buf == key {
+		if curly || buf.Len() == 0 {
+			return "", fmt.Errorf("invalid substitution %q, unterminated reference", src)
+		}
+
+		if err := substKeyValue(); err != nil {
+			return "", err
+		}
+	}
+
+	return result.String(), nil
 }
 
 // exprError returns a formatted error specific to expressions.

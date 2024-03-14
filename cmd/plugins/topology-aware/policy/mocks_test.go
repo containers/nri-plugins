@@ -335,9 +335,16 @@ func (m *mockContainer) GetEffectiveAnnotation(key string) (string, bool) {
 	}
 	return pod.GetEffectiveAnnotation(key, m.name)
 }
-func (m *mockContainer) Eval(string) interface{} {
+func (m *mockContainer) EvalKey(string) interface{} {
 	panic("unimplemented")
 }
+func (m *mockContainer) EvalRef(string) (string, bool) {
+	panic("unimplemented")
+}
+func (m *mockContainer) Expand(string, bool) (string, error) {
+	panic("unimplemented")
+}
+
 func (m *mockContainer) String() string {
 	return "mockContainer"
 }
@@ -488,7 +495,13 @@ func (m *mockPod) ScopeExpression() *resmgr.Expression {
 func (m *mockPod) String() string {
 	return "mockPod"
 }
-func (m *mockPod) Eval(string) interface{} {
+func (m *mockPod) EvalKey(string) interface{} {
+	panic("unimplemented")
+}
+func (m *mockPod) EvalRef(string) (string, bool) {
+	panic("unimplemented")
+}
+func (m *mockPod) Expand(string, bool) (string, error) {
 	panic("unimplemented")
 }
 func (m *mockPod) GetProcesses(bool) ([]string, error) {
