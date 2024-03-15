@@ -104,7 +104,15 @@ func getDevicesFromVirtual(realDevPath string) (devs []string, err error) {
 func getTopologyHint(sysFSPath string) (*Hint, error) {
 	log.Debugf("getting topology hint for %s", sysFSPath)
 
-	hint := Hint{Provider: sysFSPath}
+	plainPath := sysFSPath
+	if sysRoot != "" {
+		relPath, err := filepath.Rel(sysRoot, plainPath)
+		if err != nil {
+			return nil, fmt.Errorf("internal error: %v", err)
+		}
+		plainPath = filepath.Join("/", relPath)
+	}
+	hint := Hint{Provider: plainPath}
 	fileMap := map[string]*string{
 		// match /sys/devices/system/node/node0/cpulist
 		"cpulist": &hint.CPUs,

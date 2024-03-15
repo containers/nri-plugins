@@ -286,10 +286,10 @@ func TestNewTopologyHints(t *testing.T) {
 		},
 		{
 			name:  "pci card1",
-			input: sysRoot + "/sys/devices/pci0000:00/0000:00:02.0/drm/card1",
+			input: "/sys/devices/pci0000:00/0000:00:02.0/drm/card1",
 			output: Hints{
-				sysRoot + "/sys/devices/pci0000:00/0000:00:02.0": Hint{
-					Provider: sysRoot + "/sys/devices/pci0000:00/0000:00:02.0",
+				"/sys/devices/pci0000:00/0000:00:02.0": Hint{
+					Provider: "/sys/devices/pci0000:00/0000:00:02.0",
 					CPUs:     "0-7",
 					NUMAs:    "",
 					Sockets:  ""},
@@ -306,7 +306,7 @@ func TestNewTopologyHints(t *testing.T) {
 			case err == nil && test.expectedErr:
 				t.Fatalf("unexpected success: %+v", output)
 			case !reflect.DeepEqual(output, test.output):
-				t.Fatalf("expected: %q got: %q", test.output, output)
+				t.Fatalf("expected: %v got: %v", test.output, output)
 			}
 		})
 	}
