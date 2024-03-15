@@ -20,7 +20,6 @@ import (
 	"sigs.k8s.io/yaml"
 
 	resmgr "github.com/containers/nri-plugins/pkg/apis/resmgr/v1alpha1"
-	"github.com/containers/nri-plugins/pkg/kubernetes"
 )
 
 const (
@@ -169,7 +168,7 @@ func (pca *podContainerAffinity) parseSimple(pod *pod, value string, weight int3
 			&Affinity{
 				Scope: podScope,
 				Match: &resmgr.Expression{
-					Key:    kubernetes.ContainerNameLabel,
+					Key:    "name",
 					Op:     op,
 					Values: others,
 				},
