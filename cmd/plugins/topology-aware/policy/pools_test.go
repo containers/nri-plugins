@@ -21,6 +21,7 @@ import (
 	"path"
 	"testing"
 
+	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 
@@ -373,17 +374,19 @@ func TestPoolCreation(t *testing.T) {
 				panic(err)
 			}
 
-			reserved, _ := resapi.ParseQuantity("750m")
 			policyOptions := &policyapi.BackendOptions{
 				Cache:  &mockCache{},
 				System: sys,
-				Reserved: policyapi.ConstraintSet{
-					policyapi.DomainCPU: reserved,
+				Config: &cfgapi.Config{
+					ReservedResources: cfgapi.Constraints{
+						cfgapi.CPU: "750m",
+					},
 				},
 			}
 
 			log.EnableDebug(true)
-			policy := CreateTopologyAwarePolicy(policyOptions).(*policy)
+			policy := New().(*policy)
+			policy.Setup(policyOptions)
 			log.EnableDebug(false)
 
 			if policy.root.GetSupply().SharableCPUs().Size()+policy.root.GetSupply().IsolatedCPUs().Size()+policy.root.GetSupply().ReservedCPUs().Size() != tc.expectedRootNodeCPUs {
@@ -508,17 +511,19 @@ func TestWorkloadPlacement(t *testing.T) {
 				panic(err)
 			}
 
-			reserved, _ := resapi.ParseQuantity("750m")
 			policyOptions := &policyapi.BackendOptions{
 				Cache:  &mockCache{},
 				System: sys,
-				Reserved: policyapi.ConstraintSet{
-					policyapi.DomainCPU: reserved,
+				Config: &cfgapi.Config{
+					ReservedResources: cfgapi.Constraints{
+						cfgapi.CPU: "750m",
+					},
 				},
 			}
 
 			log.EnableDebug(true)
-			policy := CreateTopologyAwarePolicy(policyOptions).(*policy)
+			policy := New().(*policy)
+			policy.Setup(policyOptions)
 			log.EnableDebug(false)
 
 			scores, filteredPools := policy.sortPoolsByScore(tc.req, tc.affinities)
@@ -660,17 +665,19 @@ func TestContainerMove(t *testing.T) {
 				panic(err)
 			}
 
-			reserved, _ := resapi.ParseQuantity("750m")
 			policyOptions := &policyapi.BackendOptions{
 				Cache:  &mockCache{},
 				System: sys,
-				Reserved: policyapi.ConstraintSet{
-					policyapi.DomainCPU: reserved,
+				Config: &cfgapi.Config{
+					ReservedResources: cfgapi.Constraints{
+						cfgapi.CPU: "750m",
+					},
 				},
 			}
 
 			log.EnableDebug(true)
-			policy := CreateTopologyAwarePolicy(policyOptions).(*policy)
+			policy := New().(*policy)
+			policy.Setup(policyOptions)
 			log.EnableDebug(false)
 
 			grant1, err := policy.allocatePool(tc.container1, "")
@@ -931,17 +938,19 @@ func TestAffinities(t *testing.T) {
 				panic(err)
 			}
 
-			reserved, _ := resapi.ParseQuantity("750m")
 			policyOptions := &policyapi.BackendOptions{
 				Cache:  &mockCache{},
 				System: sys,
-				Reserved: policyapi.ConstraintSet{
-					policyapi.DomainCPU: reserved,
+				Config: &cfgapi.Config{
+					ReservedResources: cfgapi.Constraints{
+						cfgapi.CPU: "750m",
+					},
 				},
 			}
 
 			log.EnableDebug(true)
-			policy := CreateTopologyAwarePolicy(policyOptions).(*policy)
+			policy := New().(*policy)
+			policy.Setup(policyOptions)
 			log.EnableDebug(false)
 
 			affinities := map[int]int32{}

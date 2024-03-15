@@ -378,6 +378,9 @@ func (m *mockContainer) SetCpusetMems(string) {
 func (m *mockContainer) SetMemoryLimit(int64) {
 	panic("unimplemented")
 }
+func (m *mockContainer) SetMemorySwap(int64) {
+	panic("unimplemented")
+}
 func (m *mockContainer) GetPendingAdjustment() *nri.ContainerAdjustment {
 	panic("unimplemented")
 }
@@ -425,6 +428,36 @@ func (m *mockContainer) GetProcesses() ([]string, error) {
 }
 func (m *mockContainer) GetTasks() ([]string, error) {
 	panic("unimplemented")
+}
+func (m *mockContainer) GetCPUShares() int64 {
+	panic("unimplemented")
+}
+func (m *mockContainer) GetCPUQuota() int64 {
+	panic("unimplemented")
+}
+func (m *mockContainer) GetCPUPeriod() int64 {
+	panic("unimplemented")
+}
+func (m *mockContainer) GetCpusetCpus() string {
+	panic("unimplemented")
+}
+func (m *mockContainer) GetCpusetMems() string {
+	panic("unimplemented")
+}
+func (m *mockContainer) GetMemoryLimit() int64 {
+	panic("unimplemented")
+}
+func (m *mockContainer) GetMemorySwap() int64 {
+	panic("unimplemented")
+}
+func (m *mockContainer) GetCtime() time.Time {
+	panic("unimplemented")
+}
+func (m *mockContainer) PreserveCpuResources() bool {
+	return false
+}
+func (m *mockContainer) PreserveMemoryResources() bool {
+	return false
 }
 
 type mockPod struct {
@@ -508,6 +541,9 @@ func (m *mockPod) GetProcesses(bool) ([]string, error) {
 	panic("unimplemented")
 }
 func (m *mockPod) GetTasks(bool) ([]string, error) {
+	panic("unimplemented")
+}
+func (m *mockPod) GetCtime() time.Time {
 	panic("unimplemented")
 }
 
