@@ -37,4 +37,5 @@ future releases.
   - [ ] Publish the draft as a release.
   - [ ] Verify that the Helm repo was updated
   - [ ] Add a link to the tagged release in this issue.
+  - [ ] Generate the operator bundle by running make bundle within `deployment/operator` directory and submit the generated content to the [community-operators](https://github.com/k8s-operatorhub/community-operators).
 - [ ] Close this issue.
