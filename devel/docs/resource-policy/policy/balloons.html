@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.3.1-74-ge091be9 documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.3.1-81-g34db7ea documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -225,6 +225,11 @@ assign containers to balloons of this type.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">namespaces</span></code> is a list of namespaces (wildcards allowed) whose
 pods should be assigned to this balloon type, unless overridden by
 pod annotations.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">groupBy</span></code> groups containers into same balloon instances if
+their GroupBy expressions evaluate to the same group.
+Expressions are strings where key references like
+<code class="docutils literal notranslate"><span class="pre">${pod/labels/mylabel}</span></code> will be substituted with corresponding
+values.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">matchExpressions</span></code> is a list of container match expressions. These
 expressions are evaluated for all containers which have not been
 assigned otherwise to other balloons. If an expression matches,
