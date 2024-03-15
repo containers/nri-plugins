@@ -181,7 +181,7 @@ func (p *pod) GetContainerAffinity(name string) ([]*Affinity, error) {
 
 func (p *pod) ScopeExpression() *resmgr.Expression {
 	return &resmgr.Expression{
-		Key:    kubernetes.PodNameLabel,
+		Key:    "pod/name",
 		Op:     resmgr.Equals,
 		Values: []string{p.GetName()},
 	}
