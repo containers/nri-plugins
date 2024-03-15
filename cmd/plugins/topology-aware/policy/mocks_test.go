@@ -20,7 +20,9 @@ import (
 
 	nri "github.com/containerd/nri/pkg/api"
 	resmgr "github.com/containers/nri-plugins/pkg/apis/resmgr/v1alpha1"
+	"github.com/containers/nri-plugins/pkg/cpuallocator"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
+	"github.com/containers/nri-plugins/pkg/sysfs"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/topology"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
@@ -103,6 +105,22 @@ func (p *mockCPUPackage) DieNodeIDs(idset.ID) []idset.ID {
 	return []idset.ID{}
 }
 
+func (p *mockCPUPackage) DieClusterIDs(idset.ID) []idset.ID {
+	return []idset.ID{}
+}
+
+func (p *mockCPUPackage) DieClusterCPUSet(idset.ID, idset.ID) cpuset.CPUSet {
+	return cpuset.New()
+}
+
+func (p *mockCPUPackage) LogicalDieClusterIDs(idset.ID) []idset.ID {
+	return []idset.ID{}
+}
+
+func (p *mockCPUPackage) LogicalDieClusterCPUSet(idset.ID, idset.ID) cpuset.CPUSet {
+	return cpuset.New()
+}
+
 func (p *mockCPUPackage) SstInfo() *sst.SstPackageInfo {
 	return &sst.SstPackageInfo{}
 }
@@ -156,6 +174,33 @@ func (c *mockCPU) SstClos() int {
 	return -1
 }
 
+func (c *mockCPU) CacheCount() int {
+	return 0
+}
+func (c *mockCPU) GetCaches() []*sysfs.Cache {
+	panic("unimplemented")
+}
+func (c *mockCPU) GetCachesByLevel(int) []*sysfs.Cache {
+	panic("unimplemented")
+}
+func (c *mockCPU) GetCacheByIndex(int) *sysfs.Cache {
+	panic("unimplemented")
+}
+func (c *mockCPU) GetLastLevelCaches() []*sysfs.Cache {
+	panic("unimplemented")
+}
+func (c *mockCPU) GetLastLevelCacheCPUSet() cpuset.CPUSet {
+	panic("unimplemented")
+}
+
+func (c *mockCPU) ClusterID() int {
+	return 0
+}
+
+func (c *mockCPU) CoreKind() sysfs.CoreKind {
+	return sysfs.PerformanceCore
+}
+
 type mockSystem struct {
 	isolatedCPU  int
 	nodes        []system.Node
@@ -187,6 +232,27 @@ func (fake *mockSystem) Discover(flags system.DiscoveryFlag) error {
 }
 func (fake *mockSystem) Package(idset.ID) system.CPUPackage {
 	return &mockCPUPackage{}
+}
+func (fake *mockSystem) PossibleCPUs() cpuset.CPUSet {
+	return fake.CPUSet()
+}
+func (fake *mockSystem) PresentCPUs() cpuset.CPUSet {
+	return fake.CPUSet()
+}
+func (fake *mockSystem) OnlineCPUs() cpuset.CPUSet {
+	return fake.CPUSet()
+}
+func (fake *mockSystem) IsolatedCPUs() cpuset.CPUSet {
+	return fake.Isolated()
+}
+func (fake *mockSystem) OfflineCPUs() cpuset.CPUSet {
+	return cpuset.New()
+}
+func (fake *mockSystem) CoreKindCPUs(sysfs.CoreKind) cpuset.CPUSet {
+	return cpuset.New()
+}
+func (fake *mockSystem) AllThreadsForCPUs(cpuset.CPUSet) cpuset.CPUSet {
+	return cpuset.New()
 }
 func (fake *mockSystem) Offlined() cpuset.CPUSet {
 	return cpuset.New()
@@ -629,3 +695,21 @@ func (m *mockCache) OpenFile(string, string, os.FileMode) (*os.File, error) {
 func (m *mockCache) WriteFile(string, string, os.FileMode, []byte) error {
 	panic("unimplemented")
 }
+
+type mockCPUAllocator struct{}
+
+func (m *mockCPUAllocator) AllocateCpus(from *cpuset.CPUSet, cnt int, prefer cpuallocator.CPUPriority) (cpuset.CPUSet, error) {
+	return cpuset.New(0), nil
+}
+
+func (m *mockCPUAllocator) ReleaseCpus(from *cpuset.CPUSet, cnt int, prefer cpuallocator.CPUPriority) (cpuset.CPUSet, error) {
+	return cpuset.New(0), nil
+}
+
+func (m *mockCPUAllocator) GetCPUPriorities() map[cpuallocator.CPUPriority]cpuset.CPUSet {
+	return map[cpuallocator.CPUPriority]cpuset.CPUSet{}
+}
+
+var (
+	_ cpuallocator.CPUAllocator = &mockCPUAllocator{}
+)

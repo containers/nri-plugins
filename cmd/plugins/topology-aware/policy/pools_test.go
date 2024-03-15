@@ -230,11 +230,12 @@ func TestMemoryLimitFiltering(t *testing.T) {
 				sys: &mockSystem{
 					nodes: tc.numaNodes,
 				},
-				pools:       tc.nodes,
-				cache:       &mockCache{},
-				root:        tc.nodes[0],
-				nodeCnt:     len(tc.nodes),
-				allocations: allocations{},
+				pools:        tc.nodes,
+				cache:        &mockCache{},
+				root:         tc.nodes[0],
+				nodeCnt:      len(tc.nodes),
+				allocations:  allocations{},
+				cpuAllocator: &mockCPUAllocator{},
 			}
 			// back pointers
 			for _, node := range tc.nodes {

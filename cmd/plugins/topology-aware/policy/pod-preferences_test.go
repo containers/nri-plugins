@@ -1038,7 +1038,7 @@ func TestCpuAllocationPreferences(t *testing.T) {
 			}
 			opt.PreferIsolated, opt.PreferShared = tc.preferIsolated, tc.preferShared
 			opt.ReservedPoolNamespaces = tc.reservedPoolNamespaces
-			full, fraction, isolate, cpuType := cpuAllocationPreferences(tc.pod, tc.container)
+			full, fraction, isolate, cpuType, _ := cpuAllocationPreferences(tc.pod, tc.container)
 			if full != tc.expectedFull || fraction != tc.expectedFraction ||
 				isolate != tc.expectedIsolate || cpuType != tc.expectedCpuType {
 				t.Errorf("Expected (%v, %v, %v, %s), but got (%v, %v, %v, %s)",
