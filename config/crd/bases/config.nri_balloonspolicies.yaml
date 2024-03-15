@@ -83,6 +83,14 @@ spec:
                         CpuClass controls how CPUs of a balloon are (re)configured
                         whenever a balloon is created, inflated or deflated.
                       type: string
+                    groupBy:
+                      description: |-
+                        GroupBy groups containers into same balloon instances if
+                        their GroupBy expressions evaluate to the same group.
+                        Expressions are strings where key references like
+                        ${pod/labels/mylabel} will be substituted with
+                        corresponding values.
+                      type: string
                     matchExpressions:
                       description: |-
                         MatchExpressions specifies one or more expressions which are evaluated

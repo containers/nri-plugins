@@ -121,6 +121,11 @@ Balloons policy parameters:
   - `namespaces` is a list of namespaces (wildcards allowed) whose
     pods should be assigned to this balloon type, unless overridden by
     pod annotations.
+  - `groupBy` groups containers into same balloon instances if
+    their GroupBy expressions evaluate to the same group.
+    Expressions are strings where key references like
+    `${pod/labels/mylabel}` will be substituted with corresponding
+    values.
   - `matchExpressions` is a list of container match expressions. These
     expressions are evaluated for all containers which have not been
     assigned otherwise to other balloons. If an expression matches,

@@ -90,7 +90,10 @@ type Balloon struct {
 	// - len(PodIDs) is the number of pods in the balloon.
 	// - len(PodIDs[podID]) is the number of containers of podID
 	//   currently assigned to the balloon.
-	PodIDs       map[string][]string
+	PodIDs map[string][]string
+	// Groups is a multiset (group-by-value -> appearance-count)
+	// of evaluated GroupBy expressions on containers in the balloon.
+	Groups       map[string]int
 	cpuTreeAlloc *cpuTreeAllocator
 }
 
@@ -302,6 +305,18 @@ func (p *balloons) balloonByContainer(c cache.Container) *Balloon {
 		}
 	}
 	return nil
+}
+
+// balloonsByGroup returns balloons that contain containers on which
+// balloon's GroupBy expression evaluates given group.
+func (p *balloons) balloonsByGroup(group string) []*Balloon {
+	blns := []*Balloon{}
+	for _, bln := range p.balloons {
+		if bln.Groups[group] > 0 {
+			blns = append(blns, bln)
+		}
+	}
+	return blns
 }
 
 // balloonsByNamespace returns balloons that contain containers in a
@@ -563,6 +578,7 @@ func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, erro
 	bln := &Balloon{
 		Def:            blnDef,
 		Instance:       freeInstance,
+		Groups:         make(map[string]int),
 		PodIDs:         make(map[string][]string),
 		Cpus:           cpus,
 		SharedIdleCpus: cpuset.New(),
@@ -669,6 +685,18 @@ func (p *balloons) chooseBalloonInstance(blnDef *BalloonDef, fm FillMethod, c ca
 			p.updatePinning(p.shareIdleCpus(p.freeCpus, newBln.Cpus)...)
 		}
 		return newBln, nil
+	case FillSameGroup:
+		group, err := c.Expand(blnDef.GroupBy, true)
+		if err != nil {
+			log.Errorf("error choosing balloon for container %q based on groupBy: %s", c.PrettyName(), err)
+			return nil, nil
+		}
+		for _, bln := range p.balloonsByGroup(group) {
+			if bln.Def == blnDef && p.maxFreeMilliCpus(bln) >= reqMilliCpus {
+				return bln, nil
+			}
+		}
+		return nil, nil
 	case FillSameNamespace:
 		for _, bln := range p.balloonsByNamespace(c.GetNamespace()) {
 			if bln.Def == blnDef && p.maxFreeMilliCpus(bln) >= reqMilliCpus {
@@ -754,6 +782,9 @@ func (p *balloons) allocateBalloon(c cache.Container) (*Balloon, error) {
 // definition for a container.
 func (p *balloons) allocateBalloonOfDef(blnDef *BalloonDef, c cache.Container) (*Balloon, error) {
 	fillChain := []FillMethod{}
+	if blnDef.GroupBy != "" {
+		fillChain = append(fillChain, FillSameGroup)
+	}
 	if !blnDef.PreferSpreadingPods {
 		fillChain = append(fillChain, FillSamePod)
 	}
@@ -1346,11 +1377,20 @@ func (p *balloons) shareIdleCpus(addCpus, removeCpus cpuset.CPUSet) []*Balloon {
 	return updatedBalloons
 }
 
+// updateGroups updates the number of groups present in the balloon.
+func (bln *Balloon) updateGroups(c cache.Container, delta int) {
+	if bln.Def.GroupBy != "" {
+		group, _ := c.Expand(bln.Def.GroupBy, false)
+		bln.Groups[group] += delta
+	}
+}
+
 // assignContainer adds a container to a balloon
 func (p *balloons) assignContainer(c cache.Container, bln *Balloon) {
 	log.Info("assigning container %s to balloon %s", c.PrettyName(), bln)
 	podID := c.GetPodID()
 	bln.PodIDs[podID] = append(bln.PodIDs[podID], c.GetID())
+	bln.updateGroups(c, 1)
 	p.updatePinning(bln)
 }
 
@@ -1361,6 +1401,7 @@ func (p *balloons) dismissContainer(c cache.Container, bln *Balloon) {
 	if len(bln.PodIDs[podID]) == 0 {
 		delete(bln.PodIDs, podID)
 	}
+	bln.updateGroups(c, -1)
 }
 
 // pinCpuMem pins container to CPUs and memory nodes if flagged

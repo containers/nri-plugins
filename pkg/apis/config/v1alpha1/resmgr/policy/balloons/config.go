@@ -126,6 +126,12 @@ type BalloonDef struct {
 	// balloon instances from this definition. This is used by
 	// namespace assign methods.
 	Namespaces []string `json:"namespaces,omitempty"`
+	// GroupBy groups containers into same balloon instances if
+	// their GroupBy expressions evaluate to the same group.
+	// Expressions are strings where key references like
+	// ${pod/labels/mylabel} will be substituted with
+	// corresponding values.
+	GroupBy string `json:"groupBy,omitempty"`
 	// MatchExpressions specifies one or more expressions which are evaluated
 	// to see if a container should be assigned into balloon instances from
 	// this definition.
