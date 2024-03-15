@@ -1,5 +1,5 @@
 # Build Stage
-ARG GO_VERSION=1.20
+ARG GO_VERSION=1.22
 
 FROM golang:${GO_VERSION}-bullseye as build
 WORKDIR /go/builder
