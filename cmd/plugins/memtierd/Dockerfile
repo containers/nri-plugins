@@ -1,10 +1,8 @@
-ARG GO_VERSION=1.20
-
-FROM golang:${GO_VERSION}-bullseye as builder
+FROM golang:1.22-bullseye as builder
 
 WORKDIR /go/builder
 
-RUN GOBIN=/bin go install -tags osusergo,netgo -ldflags "-extldflags=-static" github.com/intel/memtierd/cmd/memtierd@c67204d6af3e5f64cd396f1c29aafa729e4363ba
+RUN GOBIN=/bin go install -tags osusergo,netgo -ldflags "-extldflags=-static" github.com/intel/memtierd/cmd/memtierd@v0.1.1
 
 # Fetch go dependencies in a separate layer for caching
 COPY go.mod go.sum ./
