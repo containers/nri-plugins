@@ -18,6 +18,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strings"
+
 	"testing"
 )
 
@@ -37,17 +38,20 @@ func TestPrometheusConfiguration(t *testing.T) {
 
 	checkPrometheus(t, address, !cfg.PrometheusExport)
 
-	cfg.PrometheusExport = !cfg.PrometheusExport
-	reconfigure()
-	checkPrometheus(t, address, !cfg.PrometheusExport)
+	newCfg := *cfg
+	newCfg.PrometheusExport = !newCfg.PrometheusExport
+	Reconfigure(&newCfg)
+	checkPrometheus(t, address, !newCfg.PrometheusExport)
 
-	cfg.PrometheusExport = !cfg.PrometheusExport
-	reconfigure()
-	checkPrometheus(t, address, !cfg.PrometheusExport)
+	newCfg = *cfg
+	newCfg.PrometheusExport = !newCfg.PrometheusExport
+	Reconfigure(&newCfg)
+	checkPrometheus(t, address, !newCfg.PrometheusExport)
 
-	cfg.PrometheusExport = !cfg.PrometheusExport
-	reconfigure()
-	checkPrometheus(t, address, !cfg.PrometheusExport)
+	newCfg = *cfg
+	newCfg.PrometheusExport = !newCfg.PrometheusExport
+	Reconfigure(&newCfg)
+	checkPrometheus(t, address, !newCfg.PrometheusExport)
 
 	srv.Shutdown(true)
 
