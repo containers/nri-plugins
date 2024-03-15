@@ -17,7 +17,8 @@ The CPU allocator also does automatic CPU prioritization by detecting CPU
 features and their configuration parameters. Currently, NRI Resource Policy
 supports CPU priority detection based on the `intel_pstate` scaling
 driver in the Linux CPUFreq subsystem, and, Intel Speed Select Technology
-(SST).
+(SST), or based on the detected core types on hybrid CPU architecture
+systems.
 
 CPUs are divided into three priority classes, i.e. *high*, *normal* and *low*.
 Policies utilizing the CPU allocator may choose to prefer certain priority
@@ -59,3 +60,10 @@ correspondingly.
 
 CPU cores with high EPP priority (relative to the other cores in the system)
 will be marked as high priority cores.
+
+### Hybrid CPU Architecture
+
+On systems with a hybrid CPU architecture, where some cores are optimized for
+performance and others for power consumption, performance optimized cores are
+classified as high priority CPUs while energy efficient cores as low priority
+CPUs.
