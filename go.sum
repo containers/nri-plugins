@@ -70,8 +70,11 @@ github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDk
 github.com/cncf/udpa/go v0.0.0-20191209042840-269d4d468f6f/go.mod h1:M8M6+tZqaGXZJjfX53e64911xZQV5JYwmTeXPW+k8Sc=
 github.com/containerd/nri v0.5.0 h1:bwCtKpi8i5FCA8g8WjIZNod91CEfIloYpV0+TH2prnQ=
 github.com/containerd/nri v0.5.0/go.mod h1:qIu2NlP3r/qK4YGnNuQf0De4VPqQWP2i2CVBfAZbGzg=
+github.com/containerd/nri v0.6.0 h1:hdztxwL0gCS1CrCa9bvD1SoJiFN4jBuRQhplCvCPMj8=
+github.com/containerd/nri v0.6.0/go.mod h1:F7OZfO4QTPqw5r87aq+syZJwiVvRYLIlHZiZDBV1W3A=
 github.com/containerd/ttrpc v1.1.1-0.20220420014843-944ef4a40df3 h1:BhCp66ofL8oYcdelc3CBXc2/Pfvvgx+s+mrp9TvNgn8=
 github.com/containerd/ttrpc v1.1.1-0.20220420014843-944ef4a40df3/go.mod h1:YYyNVhZrTMiaf51Vj6WhAJqJw+vl/nzABhj8pWrzle4=
+github.com/containerd/ttrpc v1.2.3-0.20231030150553-baadfd8e7956/go.mod h1:ieWsXucbb8Mj9PH0rXCw1i8IunRbbAiDkpXkbfflWBM=
 github.com/coreos/go-systemd/v22 v22.5.0 h1:RrqgGjYQKalulkV8NGVIfkXQf6YYmOyiJKk8iXXhfZs=
 github.com/coreos/go-systemd/v22 v22.5.0/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSVTIJ3seZv2GcEnc=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
