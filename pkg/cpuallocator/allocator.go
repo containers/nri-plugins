@@ -88,10 +88,10 @@ type topologyCache struct {
 	pkg  map[idset.ID]cpuset.CPUSet
 	node map[idset.ID]cpuset.CPUSet
 	core map[idset.ID]cpuset.CPUSet
+	kind map[sysfs.CoreKind]cpuset.CPUSet
 
 	cpuPriorities cpuPriorities // CPU priority mapping
 	clusters      []*cpuCluster // CPU clusters
-
 }
 
 type cpuPriorities [NumCPUPriorities]cpuset.CPUSet
@@ -101,6 +101,7 @@ type cpuCluster struct {
 	die     idset.ID
 	cluster idset.ID
 	cpus    cpuset.CPUSet
+	kind    sysfs.CoreKind
 }
 
 // IDFilter helps filtering Ids.
@@ -200,6 +201,17 @@ func (a *allocatorHelper) takeIdleClusters() {
 	var (
 		offline  = a.sys.OfflineCPUs()
 		pickIdle = func(c *cpuCluster) (bool, cpuset.CPUSet) {
+			// we only take E-clusters for low-prio requests
+			if a.prefer != PriorityLow && c.kind == sysfs.EfficientCore {
+				a.Debug("  - omit %s, CPU preference is %s", c, a.prefer)
+				return false, emptyCPUSet
+			}
+			// we only take P-clusters for other than low-prio requests
+			if a.prefer == PriorityLow && c.kind == sysfs.PerformanceCore {
+				a.Debug("  - omit %s, CPU preference is %s", c, a.prefer)
+				return false, emptyCPUSet
+			}
+
 			// we only take fully idle clusters
 			cset := c.cpus.Difference(offline)
 			free := cset.Intersection(a.from)
@@ -826,7 +838,7 @@ func (c *topologyCache) sstClosPriority(sys sysfs.System, pkgID idset.ID) map[in
 func (c *topologyCache) discoverCpufreqPriority(sys sysfs.System, pkgID idset.ID) [NumCPUPriorities][]idset.ID {
 	var prios [NumCPUPriorities][]idset.ID
 
-	// Group cpus by base frequency and energy performance profile
+	// Group cpus by base frequency, core kind and energy performance profile
 	freqs := map[uint64][]idset.ID{}
 	epps := map[sysfs.EPP][]idset.ID{}
 	cpuIDs := c.pkg[pkgID].List()
@@ -874,14 +886,19 @@ func (c *topologyCache) discoverCpufreqPriority(sys sysfs.System, pkgID idset.ID
 			}
 		}
 
-		// All cpus NOT in the lowest performance epp are considered high prio
+		// All E-cores are unconditionally considered low prio.
+		// All cpus NOT in the lowest performance epp are considered high prio.
 		// NOTE: higher EPP value denotes lower performance preference
-		if len(eppList) > 1 {
-			epp := cpu.EPP()
-			if int(epp) < eppList[len(eppList)-1] {
-				p = PriorityHigh
-			} else {
-				p = PriorityLow
+		if cpu.CoreKind() == sysfs.EfficientCore {
+			p = PriorityLow
+		} else {
+			if len(eppList) > 1 {
+				epp := cpu.EPP()
+				if int(epp) < eppList[len(eppList)-1] {
+					p = PriorityHigh
+				} else {
+					p = PriorityLow
+				}
 			}
 		}
 
@@ -907,17 +924,23 @@ func (c *topologyCache) discoverCPUClusters(sys sysfs.System) {
 					die:     die,
 					cluster: cl,
 					cpus:    cpus,
+					kind:    sys.CPU(cpus.List()[0]).CoreKind(),
 				})
 			}
 		}
 		if len(clusters) > 1 {
 			log.Debug("package #%d has %d clusters:", id, len(clusters))
 			for _, cl := range clusters {
-				log.Debug("  die #%d, cluster #%d: cpus %s",
-					cl.die, cl.cluster, cl.cpus)
+				log.Debug("  die #%d, cluster #%d: %s cpus %s",
+					cl.die, cl.cluster, cl.kind, cl.cpus)
 			}
 			c.clusters = append(c.clusters, clusters...)
 		}
+	}
+
+	c.kind = map[sysfs.CoreKind]cpuset.CPUSet{}
+	for _, kind := range sys.CoreKinds() {
+		c.kind[kind] = sys.CoreKindCPUs(kind)
 	}
 }
 
@@ -941,6 +964,20 @@ func (p CPUPriority) String() string {
 func (c *cpuPriorities) cmpCPUSet(csetA, csetB cpuset.CPUSet, prefer CPUPriority, cpuCnt int) int {
 	if prefer == PriorityNone {
 		return 0
+	}
+
+	// For low prio request, favor cpuset with the tightest fit.
+	if cpuCnt > 0 && prefer == PriorityLow {
+		prefA := csetA.Intersection(c[prefer]).Size()
+		prefB := csetB.Intersection(c[prefer]).Size()
+		// both sets have enough preferred CPUs, return the smaller one (tighter fit)
+		if prefA >= cpuCnt && prefB >= cpuCnt {
+			return prefB - prefA
+		}
+		// only one set has enough preferred CPUs, return the bigger/only one
+		if prefA >= cpuCnt || prefB >= cpuCnt {
+			return prefA - prefB
+		}
 	}
 
 	// Favor cpuset having CPUs with priorities equal to or lower than what was requested
@@ -984,6 +1021,6 @@ func (c *cpuCluster) HasSmallerIDsThan(o *cpuCluster) bool {
 }
 
 func (c *cpuCluster) String() string {
-	return fmt.Sprintf("cluster #%d/%d/%d, %d CPUs (%s)", c.pkg, c.die, c.cluster,
-		c.cpus.Size(), c.cpus)
+	return fmt.Sprintf("cluster #%d/%d/%d, %d %s CPUs (%s)", c.pkg, c.die, c.cluster,
+		c.cpus.Size(), c.kind, c.cpus)
 }

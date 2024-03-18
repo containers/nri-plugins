@@ -317,3 +317,433 @@ func TestClusteredAllocation(t *testing.T) {
 		})
 	}
 }
+
+func TestClusteredCoreKindAllocation(t *testing.T) {
+	if v := os.Getenv("ENABLE_DEBUG"); v != "" {
+		logger.EnableDebug(logSource)
+	}
+
+	// Create tmpdir and decompress testdata there
+	tmpdir, err := ioutil.TempDir("", "nri-resource-policy-test-")
+	if err != nil {
+		t.Fatalf("failed to create tmpdir: %v", err)
+	}
+	defer os.RemoveAll(tmpdir)
+
+	if err := utils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), tmpdir); err != nil {
+		t.Fatalf("failed to decompress testdata: %v", err)
+	}
+
+	// Discover mock system from the testdata
+	sys, err := sysfs.DiscoverSystemAt(
+		path.Join(tmpdir, "sysfs", "2-socket-4-node-40-core", "sys"),
+		sysfs.DiscoverCPUTopology, sysfs.DiscoverMemTopology)
+	if err != nil {
+		t.Fatalf("failed to discover mock system: %v", err)
+	}
+
+	cluster1 := []*cpuCluster{
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 0,
+			cpus:    cpuset.MustParse("0-3"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 1,
+			cpus:    cpuset.MustParse("4-7"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 2,
+			cpus:    cpuset.MustParse("8-11"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 3,
+			cpus:    cpuset.MustParse("12-15"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 4,
+			cpus:    cpuset.MustParse("16-19"),
+			kind:    sysfs.EfficientCore,
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 5,
+			cpus:    cpuset.MustParse("40-43"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 6,
+			cpus:    cpuset.MustParse("44-47"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 7,
+			cpus:    cpuset.MustParse("48-51"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 8,
+			cpus:    cpuset.MustParse("52-55"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 9,
+			cpus:    cpuset.MustParse("56-59"),
+			kind:    sysfs.EfficientCore,
+		},
+
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 0,
+			cpus:    cpuset.MustParse("20,22,24,26"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 1,
+			cpus:    cpuset.MustParse("21,23,25,27"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 2,
+			cpus:    cpuset.MustParse("28-31"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 3,
+			cpus:    cpuset.MustParse("32-35"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 4,
+			cpus:    cpuset.MustParse("36-39"),
+			kind:    sysfs.EfficientCore,
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 5,
+			cpus:    cpuset.MustParse("60-63"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 6,
+			cpus:    cpuset.MustParse("64-67"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 7,
+			cpus:    cpuset.MustParse("68-71"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 8,
+			cpus:    cpuset.MustParse("72-75"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 9,
+			cpus:    cpuset.MustParse("76-79"),
+			kind:    sysfs.EfficientCore,
+		},
+	}
+
+	cluster2 := []*cpuCluster{
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 0,
+			cpus:    cpuset.MustParse("0-3"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 1,
+			cpus:    cpuset.MustParse("4-7"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 2,
+			cpus:    cpuset.MustParse("8-11"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 3,
+			cpus:    cpuset.MustParse("12-15"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 4,
+			cpus:    cpuset.MustParse("16-19"),
+			kind:    sysfs.EfficientCore,
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 5,
+			cpus:    cpuset.MustParse("40-43"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 6,
+			cpus:    cpuset.MustParse("44-47"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 7,
+			cpus:    cpuset.MustParse("48-51"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 8,
+			cpus:    cpuset.MustParse("52-55"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 9,
+			cpus:    cpuset.MustParse("56-59"),
+			kind:    sysfs.EfficientCore,
+		},
+
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 0,
+			cpus:    cpuset.MustParse("20,22,24,26"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 1,
+			cpus:    cpuset.MustParse("21,23,25,27"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 2,
+			cpus:    cpuset.MustParse("28-31"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 3,
+			cpus:    cpuset.MustParse("32-35"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 4,
+			cpus:    cpuset.MustParse("36-37"),
+			kind:    sysfs.EfficientCore,
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 5,
+			cpus:    cpuset.MustParse("38-39"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 6,
+			cpus:    cpuset.MustParse("60-63"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 7,
+			cpus:    cpuset.MustParse("64-67"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 8,
+			cpus:    cpuset.MustParse("68-71"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 9,
+			cpus:    cpuset.MustParse("72-75"),
+			kind:    sysfs.PerformanceCore,
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 10,
+			cpus:    cpuset.MustParse("76-79"),
+			kind:    sysfs.EfficientCore,
+		},
+	}
+
+	pkg0 := cpuset.MustParse("0-19,40-59")
+	pkg1 := cpuset.MustParse("20-39,60-79")
+	all := pkg0.Union(pkg1)
+
+	tcs := []struct {
+		description string
+		clusters    []*cpuCluster
+		from        cpuset.CPUSet
+		prefer      CPUPriority
+		cnt         int
+		expected    cpuset.CPUSet
+	}{
+		{
+			description: "P-cores worth one cluster",
+			clusters:    cluster1,
+			from:        all,
+			prefer:      PriorityNormal,
+			cnt:         4,
+			expected:    cpuset.MustParse("0-3"),
+		},
+		{
+			description: "P-cores worth 2 clusters",
+			clusters:    cluster1,
+			from:        all,
+			prefer:      PriorityNormal,
+			cnt:         8,
+			expected:    cpuset.MustParse("0-7"),
+		},
+		{
+			description: "P-cores worth all clusters in a package",
+			clusters:    cluster1,
+			from:        all,
+			prefer:      PriorityNormal,
+			cnt:         32,
+			expected:    cpuset.MustParse("0-15,40-55"),
+		},
+		{
+			description: "E-cores worth 1 cluster",
+			clusters:    cluster1,
+			from:        all,
+			prefer:      PriorityLow,
+			cnt:         4,
+			expected:    cpuset.MustParse("16-19"),
+		},
+		{
+			description: "E-cores worth 2 clusters",
+			clusters:    cluster1,
+			from:        all,
+			prefer:      PriorityLow,
+			cnt:         8,
+			expected:    cpuset.MustParse("16-19,56-59"),
+		},
+		{
+			description: "P-cores worth 1 cluster more than in the 1st package",
+			clusters:    cluster1,
+			from:        all,
+			prefer:      PriorityNormal,
+			cnt:         36,
+			expected:    cpuset.MustParse("0-15,40-55,20,22,24,26"),
+		},
+		{
+			description: "P-cores worth 2 clusters more than in the 1st package",
+			clusters:    cluster1,
+			from:        all,
+			prefer:      PriorityNormal,
+			cnt:         40,
+			expected:    cpuset.MustParse("0-15,20-27,40-55"),
+		},
+		{
+			description: "E-cores worth 1 clusters, should take tighter fit",
+			clusters:    cluster2,
+			from:        all,
+			prefer:      PriorityLow,
+			cnt:         2,
+			expected:    cpuset.MustParse("36-37"),
+		},
+		{
+			description: "E-cores worth 2 clusters, should take tighter fit",
+			clusters:    cluster2,
+			from:        all,
+			prefer:      PriorityLow,
+			cnt:         6,
+			expected:    cpuset.MustParse("36-37,76-79"),
+		},
+		{
+			description: "E-cores worth 2 clusters, should take single die",
+			clusters:    cluster2,
+			from:        all,
+			prefer:      PriorityLow,
+			cnt:         8,
+			expected:    cpuset.MustParse("16-19,56-59"),
+		},
+	}
+
+	// Run tests
+	for _, tc := range tcs {
+		t.Run(tc.description, func(t *testing.T) {
+			topoCache := newTopologyCache(sys)
+			topoCache.clusters = tc.clusters
+			a := newAllocatorHelper(sys, topoCache)
+			a.from = tc.from
+			a.prefer = tc.prefer
+			a.cnt = tc.cnt
+			result := a.allocate()
+			if !result.Equals(tc.expected) {
+				t.Errorf("expected %q, result was %q", tc.expected, result)
+			}
+		})
+	}
+}
