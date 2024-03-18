@@ -160,7 +160,14 @@ func (a *allocatorHelper) takeIdlePackages() {
 	// pick idle packages
 	pkgs := pickIds(a.sys.PackageIDs(),
 		func(id idset.ID) bool {
+			// Consider a package idle if all online preferred CPUs are idle.
+			// In particular, on hybrid core architectures exclude
+			//   - exclude E-cores from allocations with <= PriorityNormal preference
+			//   - exclude P-cores from allocations with  > PriorityLow preferences
 			cset := a.topology.pkg[id].Difference(offline)
+			if a.prefer < NumCPUPriorities {
+				cset = cset.Intersection(a.topology.cpuPriorities[a.prefer])
+			}
 			return cset.Intersection(a.from).Equals(cset)
 		})
 
@@ -178,6 +185,9 @@ func (a *allocatorHelper) takeIdlePackages() {
 	// take as many idle packages as we need/can
 	for _, id := range pkgs {
 		cset := a.topology.pkg[id].Difference(offline)
+		if a.prefer < NumCPUPriorities {
+			cset = cset.Intersection(a.topology.cpuPriorities[a.prefer])
+		}
 		a.Debug(" => considering package %v (#%s)...", id, cset)
 		if a.cnt >= cset.Size() {
 			a.Debug(" => taking package %v...", id)
@@ -704,9 +714,17 @@ func (c *topologyCache) discoverCPUPriorities(sys sysfs.System) {
 			cpuPriorities = c.discoverCpufreqPriority(sys, id)
 		}
 
+		ecores := c.kind[sysfs.EfficientCore]
+		ocores := sys.OnlineCPUs().Difference(ecores)
+
 		for p, cpus := range cpuPriorities {
 			source := map[bool]string{true: "sst", false: "cpufreq"}[sstActive]
 			cset := sysfs.CPUSetFromIDSet(idset.NewIDSet(cpus...))
+
+			if p != int(PriorityLow) && ocores.Size() > 0 {
+				cset = cset.Difference(ecores)
+			}
+
 			log.Debug("package #%d (%s): %d %s priority cpus (%v)", id, source, len(cpus), CPUPriority(p), cset)
 			prio[p] = prio[p].Union(cset)
 		}
