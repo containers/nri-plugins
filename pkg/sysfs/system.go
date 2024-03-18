@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -254,6 +255,10 @@ var (
 	coreKindNames = map[CoreKind]string{
 		PerformanceCore: "P-core",
 		EfficientCore:   "E-core",
+	}
+	coreKindEnvOverrides = map[CoreKind]string{
+		PerformanceCore: "OVERRIDE_SYS_CORE_CPUS",
+		EfficientCore:   "OVERRIDE_SYS_ATOM_CPUS",
 	}
 )
 
@@ -695,17 +700,32 @@ func (sys *system) discoverCPUs() error {
 
 	sys.coreKindCPUs = make(map[CoreKind]idset.IDSet)
 
-	for kind, entry := range coreKindCPUPath {
-		cpus := idset.NewIDSet()
-		_, err = readSysfsEntry(sys.path, entry, &cpus, ",")
-		if err != nil {
-			sys.Error("failed to get set of %s cpus: %v", kind, err)
-			if kind == PerformanceCore {
-				cpus = sys.onlineCPUs.Clone()
+	for kind, name := range coreKindEnvOverrides {
+		if override := os.Getenv(name); override != "" {
+			log.Warn("using CPU core kind environment override (%s=%s)...", name, override)
+			cpus, err := cpuset.Parse(override)
+			if err != nil {
+				return fmt.Errorf("failed to parse %s env. override %q: %v", kind, override, err)
+			}
+			if cpus.Size() > 0 {
+				sys.coreKindCPUs[kind] = idset.NewIDSet(cpus.UnsortedList()...)
 			}
 		}
-		if cpus.Size() > 0 {
-			sys.coreKindCPUs[kind] = cpus
+	}
+
+	if len(sys.coreKindCPUs) == 0 {
+		for kind, entry := range coreKindCPUPath {
+			cpus := idset.NewIDSet()
+			_, err = readSysfsEntry(sys.path, entry, &cpus, ",")
+			if err != nil {
+				sys.Error("failed to get set of %s cpus: %v", kind, err)
+				if kind == PerformanceCore {
+					cpus = sys.onlineCPUs.Clone()
+				}
+			}
+			if cpus.Size() > 0 {
+				sys.coreKindCPUs[kind] = cpus
+			}
 		}
 	}
 
@@ -713,16 +733,6 @@ func (sys *system) discoverCPUs() error {
 	for _, entry := range entries {
 		if err := sys.discoverCPU(entry); err != nil {
 			return fmt.Errorf("failed to discover cpu for entry %s: %v", entry, err)
-		}
-	}
-
-	for kind, ids := range sys.coreKindCPUs {
-		for id := range ids {
-			if !sys.OnlineCPUs().Contains(id) {
-				continue
-			}
-			cpu := sys.cpus[id]
-			cpu.coreKind = kind
 		}
 	}
 
@@ -735,11 +745,40 @@ func (sys *system) discoverCPUs() error {
 
 // Perform a basic sanity checks of hybrid cores.
 func (sys *system) checkCoreKinds() error {
-	// If we have not detected any explicit core types, assume all cores to be P-cores.
-	if len(sys.coreKindCPUs) == 0 {
+	switch len(sys.coreKindCPUs) {
+	case 0:
+		// If we have not detected any explicit core types, assume all cores to be P-cores.
 		sys.coreKindCPUs[PerformanceCore] = sys.onlineCPUs.Clone()
-		return nil
+
+	case 1:
+		// Allow and fix up partial core type overrides. If we only have one core type,
+		// expand that type to be thread-complete. Since currently we only know of two
+		// core types, set up the other type to cover all the remaining/missing cores.
+		for kind, ids := range sys.coreKindCPUs {
+			given := kind
+			gcset := sys.AllThreadsForCPUs(CPUSetFromIDSet(ids))
+
+			if !gcset.Equals(sys.OnlineCPUs()) {
+				var other CoreKind
+
+				if given == PerformanceCore {
+					other = EfficientCore
+				} else {
+					other = PerformanceCore
+				}
+
+				ocset := sys.OnlineCPUs().Difference(gcset)
+				sys.coreKindCPUs[given] = idset.NewIDSet(gcset.UnsortedList()...)
+				sys.coreKindCPUs[other] = idset.NewIDSet(ocset.UnsortedList()...)
+				break
+			}
+		}
 	}
+
+	// Perform sanity checks on the core types:
+	//   - all core types must be thread-complete.
+	//   - a core can be of one type only
+	//   - all cores must be of some type
 
 	var (
 		kinds = map[CoreKind]cpuset.CPUSet{}
@@ -749,12 +788,12 @@ func (sys *system) checkCoreKinds() error {
 	for kind := range sys.coreKindCPUs {
 		cores := sys.CoreKindCPUs(kind)
 
-		// All core types must be thread-complete.
+		// core types must be thread-complete
 		if missing := sys.AllThreadsForCPUs(cores).Difference(cores); !missing.IsEmpty() {
 			return fmt.Errorf("%s CPUs (%s) miss threads (%s)", kind, cores, missing)
 		}
 
-		// A core can be of one type only.
+		// a core can belong to only one type
 		for k, c := range kinds {
 			if common := cores.Intersection(c); !common.IsEmpty() {
 				return fmt.Errorf("%s CPUs (%s) and %s CPUs (%s) overlap (%s)",
@@ -766,9 +805,18 @@ func (sys *system) checkCoreKinds() error {
 		all = all.Union(cores)
 	}
 
-	// All cores must be advertised as some type.
+	// all cores must be of sometype
 	if missing := sys.OnlineCPUs().Difference(all); !missing.IsEmpty() {
 		return fmt.Errorf("some CPUs (%s) are neither marked to be of any core type", missing)
+	}
+
+	// set/store core types per CPU
+	for kind, ids := range sys.coreKindCPUs {
+		for id := range ids {
+			if cpu, ok := sys.cpus[id]; ok {
+				cpu.coreKind = kind
+			}
+		}
 	}
 
 	return nil
