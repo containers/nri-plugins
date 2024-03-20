@@ -17,7 +17,7 @@ metadata:
 spec:
   containers:
   - name: c0-lowprio
-    image: busybox
+    image: quay.io/prometheus/busybox
     imagePullPolicy: IfNotPresent
     command:
       - sh
@@ -29,7 +29,7 @@ spec:
       limits:
         memory: 100M
   - name: c1-normal
-    image: busybox
+    image: quay.io/prometheus/busybox
     imagePullPolicy: IfNotPresent
     command:
       - sh
@@ -41,7 +41,7 @@ spec:
       limits:
         memory: 100M
   - name: c2-noswap
-    image: busybox
+    image: quay.io/prometheus/busybox
     imagePullPolicy: IfNotPresent
     command:
       - sh
