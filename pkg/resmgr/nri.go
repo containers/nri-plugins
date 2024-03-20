@@ -26,6 +26,8 @@ import (
 
 	"github.com/containerd/nri/pkg/api"
 	stub "github.com/containerd/nri/pkg/stub"
+	"github.com/containerd/otelttrpc"
+	"github.com/containerd/ttrpc"
 )
 
 type nriPlugin struct {
@@ -52,6 +54,18 @@ func (p *nriPlugin) createStub() error {
 			stub.WithPluginIdx(opt.NriPluginIdx),
 			stub.WithSocketPath(opt.NriSocket),
 			stub.WithOnClose(p.onClose),
+			stub.WithTTRPCOptions(
+				[]ttrpc.ClientOpts{
+					ttrpc.WithUnaryClientInterceptor(
+						otelttrpc.UnaryClientInterceptor(),
+					),
+				},
+				[]ttrpc.ServerOpt{
+					ttrpc.WithUnaryServerInterceptor(
+						otelttrpc.UnaryServerInterceptor(),
+					),
+				},
+			),
 		}
 		err error
 	)
