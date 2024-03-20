@@ -1,0 +1,393 @@
+#!/bin/bash
+
+set -o pipefail
+
+#
+# Default configuration, overridable on the command line.
+#
+
+# RESULT_ROOT:   directory for publishing results
+# RESULT_NAME:   subdirectory for publishing results of this test run
+# SKIP_WORKTREE: skip preparing worktree, assume it is already done
+# E2E_TESTS:     e2e tests to run
+
+# REMOTE_REPO: remote repository to clone
+REMOTE_REPO="${REMOTE_REPO:-https://github.com/containers/nri-plugins}"
+# CLONED_REPO: local location to clone to
+CLONED_REPO="${CLONED_REPO:-/opt/e2e-test/nri-plugins/nri-plugins}"
+# TEST_BRANCH: branch to clone and test
+TEST_BRANCH="${TEST_BRANCH:-main}"
+# RESULT_ROOT: directory for publishing each run's results under
+RESULT_ROOT="${RESULT_ROOT:-/opt/e2e-test/nri-plugins/results}"
+# RESULT_NAME: name of new test run
+RESULT_NAME="${RESULT_NAME:-$(date +%Y-%m-%d-%H-%M)}"
+# PROXIES_SRC: bash-sourcable file to set up proxies in the environment
+PROXIES_SRC=""
+# SKIP_WORKTREE: if set to non-empty, assume worktree already exists
+SKIP_WORKTREE="${SKIP_WORKTREE:-}"
+# E2E_TESTS: end-to-end tests to run instead of full test set
+E2E_TESTS="${E2E_TESTS:-}"
+
+# This script.
+SELF="$0"
+TEST_SUITE_DIR=policies.test-suite
+GIT_SHA1="git.sha1"
+GIT_DESC="git.describe"
+
+
+#
+# Derived configuration, set up after command line parsing
+#
+# RESULT_DIR: directory for publishing results of this test run
+# WORKTREE:   git worktree for this test run
+# LOG:        log file for this test run
+
+RESULT_DIR=""
+LOG=""
+WORKTREE=""
+
+usage() {
+    local exit_code="${exit_code:-0}"
+
+    echo "usage: ${1:-$SELF} [options] [<e2e-tests>]"
+    echo
+    echo "The possible options are:"
+    echo "  --source-proxies <file>   source proxy environment variables from file"
+    echo "  --remote|r <repo>         remote repository to clone/fetch from"
+    echo "  --branch|-b <branch>      name of the remote branch to test"
+    echo "  --local|-l <dir>          local directory to clone remote respository into"
+    echo "  --results|--out|-o <dir>  top-level directory for publishing results"
+    echo "  --name|-n <name>          subdirectory for results of this run"
+    echo "  --skip-worktree           skip worktree preparation, assume already done"
+    echo "  --trace|-t|-x)            run with set -x"
+    echo "  --help                    show this help"
+
+    exit $exit_code
+}
+
+info() {
+    echo 1>&2 "$@"
+}
+
+error() {
+    echo 1>&2 "error: $@"
+}
+
+fatal() {
+    echo 1>&2 "fatal error: $@"
+    exit 1
+}
+
+must-cd() {
+    if ! cd "$1"; then
+        fatal "failed to change directory to $1"
+    fi
+}
+
+must-mkdir() {
+    local dir="$1"; shift
+    if ! mkdir -p "$dir"; then
+        fatal "failed to create ${*:+$* }directory $dir"
+    fi
+}
+
+must-mv() {
+    if ! mv $*; then
+        fatal "mv $* failed"
+    fi
+}
+
+source_proxies() {
+    local var
+
+    if [ -z "$PROXIES_SRC" ]; then
+        info "no proxies to set up..."
+        return 0
+    fi
+
+    info "setting up proxies..."
+    if ! source "$PROXIES_SRC"; then
+        fatal "failed to source proxies from $src"
+    fi
+
+    for var in http_proxy https_proxy no_proxy HTTP_PROXY HTTPS_PROXY NO_PROXY; do
+        if [ -n "${!var}" ]; then
+            info "exporting proxy envrionment variable $var (with value ${!var})..."
+            export $var
+        fi
+    done
+}
+
+prepare_worktree() {
+    local worktree_dir="$(dirname $CLONED_REPO)/worktree"
+
+    WORKTREE="$worktree_dir/$RESULT_NAME"
+    case "$SKIP_WORKTREE" in
+        1|true|yes|y)
+            WORKTREE="$(realpath $WORKTREE)"
+            must-cd "$WORKTREE"
+            return 0
+            ;;
+    esac
+
+    if [ ! -e "$CLONED_REPO" ]; then
+        if ! git clone "$REMOTE_REPO" "$LOCAL_REPO"; then
+            fatal "failed to clone $REMOTE_REPO to $CLONED_REPO"
+        fi
+        must-cd "$LOCAL_REPO"
+    else
+        must-cd "$CLONED_REPO"
+        if ! git remote -v | grep origin | grep -q "$REMOTE_REPO"; then
+            fatal "existing clone $CLONED_REPO has other origin than $REMOTE_REPO"
+        fi
+        if ! git fetch origin; then
+            fatal "failed to fetch $REMOTE_REPO"
+        fi
+    fi
+
+    WORKTREE="$(realpath $WORKTREE)"
+    info "setting up git worktree $WORKTREE..."
+    if ! git worktree add "$WORKTREE" "origin/$TEST_BRANCH"; then
+        fatal "failed to add git worktree $WORKTREE"
+    fi
+
+    if [ -x "$WORKTREE/scripts/testing/e2e-runner" ]; then
+        exec "$WORKTREE/scripts/testing/e2e-runner" \
+             --skip-worktree \
+             ${PROXIES_SRC:+--source-proxies }${PROXIES_SRC:-} \
+             --remote "$REMOTE_REPO" \
+             --branch "$TEST_BRANCH" \
+             --local "$CLONED_REPO" \
+             --results "$RESULT_ROOT" \
+             --name "$RESULT_NAME" \
+             "$E2E_TESTS"
+    else
+        must-cd "$WORKTREE"
+    fi
+}
+
+prepare_result_dir() {
+    local dir="$RESULT_DIR"
+    local log="$dir/${SELF##*/}.log"
+
+    info "creating result dir $dir..."
+    must-mkdir "$dir" "result"
+
+    if ! touch "$log"; then
+        fatal "failed to create log file $log"
+    fi
+    LOG="$log"
+
+    info "Redirecting output to log file $LOG..."
+    if ! exec &>"$LOG"; then
+        fatal "log redirection failed"
+    fi
+}
+
+run_e2e_tests() {
+    local tests
+
+    info "running e2e tests ${E2E_TESTS:-with the default test set}..."
+    must-cd "$WORKTREE"
+    if [ -n "$E2E_TESTS" ]; then
+        make E2E_TESTS="$E2E_TESTS" e2e-tests
+    else
+        make e2e-tests
+    fi
+}
+
+cleanup_test_vms() {
+    local src
+
+    info "cleaning up test VMs..."
+    must-cd "$WORKTREE"
+    for src in test/e2e/n[0-9]*c[0-9]*-c*; do
+        (cd "$src" && vagrant destroy --force)
+    done
+}
+
+collect_git_info() {
+    local describe="$RESULT_DIR/$GIT_DESC"
+    local sha1="$RESULT_DIR/$GIT_SHA1"
+
+    info "collecting info about worktree..."
+    must-cd "$WORKTREE"
+    git describe > "$describe"
+    git log -1 --pretty=%H > "$sha1"
+}
+
+collect_results() {
+    local src dst
+
+    info "collecting test results..."
+    must-cd "$WORKTREE"
+    for src in test/e2e/n[0-9]*c[0-9]*-c*; do
+        dst=$RESULT_DIR/${src#test/e2e/}
+        must-mkdir "$dst" "result"
+        must-mv "$src/$TEST_SUITE_DIR" "$dst"
+    done
+}
+
+cleanup_worktree() {
+    info "cleaning up worktree $WORKTREE..."
+    must-cd "$CLONED_REPO"
+    if ! git worktree remove --force "$WORKTREE"; then
+        fatal "failed to remove worktree $WORKTREE..."
+    fi
+}
+
+generate_summary() {
+    local summary="$RESULT_DIR/summary.txt"
+    local vm dir f test result failed
+
+    info "generating summary $summary..."
+    rm -f "$summary"
+    if ! touch "$summary"; then
+        error "failed to create $summary"
+        return
+    fi
+
+    for vm in $RESULT_DIR/n[0-9]*c[0-9]*-c*; do
+        echo "${vm##*/}:" >> "$summary"
+        for dir in $(find $vm/$TEST_SUITE_DIR -name 'test[0-9]*-*' -type d); do
+            for f in  $dir/*.output; do
+                mv $f $f.txt
+            done
+            test="${dir##*$TEST_SUITE_DIR/}"
+            result="- FAIL"
+            if [ -f "$dir/summary.txt" ]; then
+                if grep -q PASS "$dir/summary.txt"; then
+                    result="+ PASS"
+                fi
+            fi
+            if [ "$result" = "FAIL" ]; then
+                failed=true
+            fi
+            echo "  $result $test"
+        done | sort >> "$summary"
+    done
+}
+
+generate_index() {
+    local index="$RESULT_ROOT/index.html"
+    local run status sha1 desc
+
+    info "updating index $index..."
+    rm -f "$index"
+    if ! touch "$index"; then
+        error "failed to create $index"
+        return 1
+    fi
+
+    >>$index cat <<EOF
+    <html>
+      <head><title>NRI Reference Plugins Test Results</title></head>
+      <body>
+EOF
+
+    echo "      <ul>" >> "$index"
+    for run in $(ls -1 $RESULT_ROOT --sort=time); do
+        case $run in
+            [0-9][0-9][0-9][0-9]-*) ;;
+             *) continue
+                ;;
+        esac
+        if [ ! -e "$RESULT_ROOT/$run/summary.txt" ] || grep -q FAIL "$RESULT_ROOT/$run/summary.txt"; then
+            status="FAIL"
+        else
+            status="PASS"
+        fi
+        sha1=$(get_test_entry $run $GIT_SHA1 unknown-sha1)
+        desc=$(get_test_entry $run $GIT_DESC unknown-git-version)
+        echo "        <li>$status <a href=\"$run\">$run (version $desc, $sha1) </a></li>" >> "$index"
+    done
+    echo "      </ul>" >> "$index"
+
+    >>"$index" cat <<EOF
+      </body>
+    </html>
+EOF
+}
+
+get_test_entry() {
+    local run="$1" entry="$2" default="${3:-unknown}"
+    local file="$RESULT_ROOT/$run/$entry" buf
+
+    if [ ! -e "$file" ]; then
+        echo "$default"
+        return 0
+    fi
+    if ! buf="$(cat $file)"; then
+        echo "$default"
+        return 0
+    fi
+
+    echo "$buf"
+    return 0
+}
+
+#
+# main script
+#
+
+HANDOVER_ARGS=""
+
+while [  "$#" -gt 0 ] && [ "${1#-}" != "$1" ]; do
+    case $1 in
+        --source-proxies)
+            PROXIES_SRC="$2"
+            shift 2
+            ;;
+        --remote|-r)
+            REMOTE_REPO="$2"
+            shift 2
+            ;;
+        --branch|-b)
+            TEST_BRANCH="$2"
+            shift 2
+            ;;
+        --local|-l)
+            CLONED_REPO="$2"
+            shift 2
+            ;;
+        --results|--out|-o)
+            RESULT_ROOT="$2"
+            shift 2
+            ;;
+        --name|-n)
+            RESULT_NAME="$2"
+            shift 2
+            ;;
+        --skip-worktree)
+            SKIP_WORKTREE=1
+            shift
+            ;;
+
+        --trace|-t|-x)
+            set -x
+            shift
+            ;;
+        --help|-h)
+            usage $0
+            ;;
+
+        *)
+            fatal "unknown command line option $1"
+            ;;
+        esac
+done
+
+E2E_TESTS="$*"
+RESULT_DIR="$RESULT_ROOT/$RESULT_NAME"
+
+source_proxies
+prepare_worktree
+prepare_result_dir
+run_e2e_tests
+cleanup_test_vms
+collect_git_info
+collect_results
+cleanup_worktree
+generate_summary
+generate_index
+
