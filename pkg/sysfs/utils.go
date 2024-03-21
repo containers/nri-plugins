@@ -362,9 +362,5 @@ func IDSetFromCPUSet(cset cpuset.CPUSet) idset.IDSet {
 
 // CPUSetFromIDSet returns a cpuset.CPUSet corresponding to an id set.
 func CPUSetFromIDSet(s idset.IDSet) cpuset.CPUSet {
-	cpus := []int{}
-	for id := range s {
-		cpus = append(cpus, int(id))
-	}
-	return cpuset.New(cpus...)
+	return cpuset.New(s.Members()...)
 }

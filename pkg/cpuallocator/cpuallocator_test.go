@@ -24,6 +24,8 @@ import (
 
 	"github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/utils"
+
+	logger "github.com/containers/nri-plugins/pkg/log"
 )
 
 func TestAllocatorHelper(t *testing.T) {
@@ -91,6 +93,222 @@ func TestAllocatorHelper(t *testing.T) {
 			a := newAllocatorHelper(sys, topoCache)
 			a.from = tc.from
 			a.prefer = tc.prefer
+			a.cnt = tc.cnt
+			result := a.allocate()
+			if !result.Equals(tc.expected) {
+				t.Errorf("expected %q, result was %q", tc.expected, result)
+			}
+		})
+	}
+}
+
+func TestClusteredAllocation(t *testing.T) {
+	if v := os.Getenv("ENABLE_DEBUG"); v != "" {
+		logger.EnableDebug(logSource)
+	}
+
+	// Create tmpdir and decompress testdata there
+	tmpdir, err := ioutil.TempDir("", "nri-resource-policy-test-")
+	if err != nil {
+		t.Fatalf("failed to create tmpdir: %v", err)
+	}
+	defer os.RemoveAll(tmpdir)
+
+	if err := utils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), tmpdir); err != nil {
+		t.Fatalf("failed to decompress testdata: %v", err)
+	}
+
+	// Discover mock system from the testdata
+	sys, err := sysfs.DiscoverSystemAt(
+		path.Join(tmpdir, "sysfs", "2-socket-4-node-40-core", "sys"),
+		sysfs.DiscoverCPUTopology, sysfs.DiscoverMemTopology)
+	if err != nil {
+		t.Fatalf("failed to discover mock system: %v", err)
+	}
+	topoCache := newTopologyCache(sys)
+
+	// Fake cpu priorities: 5 cores from pkg #0 as high prio
+	// Package CPUs: #0: [0-19,40-59], #1: [20-39,60-79]
+	topoCache.cpuPriorities = [NumCPUPriorities]cpuset.CPUSet{
+		cpuset.MustParse("0-79"),
+	}
+
+	topoCache.clusters = []*cpuCluster{
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 0,
+			cpus:    cpuset.MustParse("0-3"),
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 1,
+			cpus:    cpuset.MustParse("4-7"),
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 2,
+			cpus:    cpuset.MustParse("8-11"),
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 3,
+			cpus:    cpuset.MustParse("12-15"),
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 4,
+			cpus:    cpuset.MustParse("16-19"),
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 5,
+			cpus:    cpuset.MustParse("40-43"),
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 6,
+			cpus:    cpuset.MustParse("44-47"),
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 7,
+			cpus:    cpuset.MustParse("48-51"),
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 8,
+			cpus:    cpuset.MustParse("52-55"),
+		},
+		{
+			pkg:     0,
+			die:     0,
+			cluster: 9,
+			cpus:    cpuset.MustParse("56-59"),
+		},
+
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 0,
+			cpus:    cpuset.MustParse("20,22,24,26"),
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 1,
+			cpus:    cpuset.MustParse("21,23,25,27"),
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 2,
+			cpus:    cpuset.MustParse("28-31"),
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 3,
+			cpus:    cpuset.MustParse("32-35"),
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 4,
+			cpus:    cpuset.MustParse("36-39"),
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 5,
+			cpus:    cpuset.MustParse("60-63"),
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 6,
+			cpus:    cpuset.MustParse("64-67"),
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 7,
+			cpus:    cpuset.MustParse("68-71"),
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 8,
+			cpus:    cpuset.MustParse("72-75"),
+		},
+		{
+			pkg:     1,
+			die:     0,
+			cluster: 9,
+			cpus:    cpuset.MustParse("76-79"),
+		},
+	}
+
+	pkg0 := cpuset.MustParse("0-19,40-59")
+	pkg1 := cpuset.MustParse("20-39,60-79")
+
+	tcs := []struct {
+		description string
+		from        cpuset.CPUSet
+		cnt         int
+		expected    cpuset.CPUSet
+	}{
+		{
+			description: "CPU cores worth one cluster",
+			from:        pkg0,
+			cnt:         4,
+			expected:    cpuset.MustParse("0-3"),
+		},
+		{
+			description: "CPU cores worth 2 clusters",
+			from:        pkg0,
+			cnt:         8,
+			expected:    cpuset.MustParse("0-7"),
+		},
+		{
+			description: "CPU cores worth 4 clusters in a package",
+			from:        pkg0,
+			cnt:         16,
+			expected:    cpuset.MustParse("0-15"),
+		},
+		{
+			description: "CPU cores worth all clusters in a package",
+			from:        pkg0,
+			cnt:         40,
+			expected:    cpuset.MustParse("0-19,40-59"),
+		},
+		{
+			description: "CPU cores 1 cluster more than available in the 1st package",
+			from:        pkg0.Union(pkg1),
+			cnt:         44,
+			expected:    cpuset.MustParse("0-19,20,22,24,26,40-59"),
+		},
+		{
+			description: "CPU cores 2 clusters more than available in the 1st package",
+			from:        pkg0.Union(pkg1),
+			cnt:         48,
+			expected:    cpuset.MustParse("0-27,40-59"),
+		},
+	}
+
+	// Run tests
+	for _, tc := range tcs {
+		t.Run(tc.description, func(t *testing.T) {
+			a := newAllocatorHelper(sys, topoCache)
+			a.from = tc.from
 			a.cnt = tc.cnt
 			result := a.allocate()
 			if !result.Equals(tc.expected) {

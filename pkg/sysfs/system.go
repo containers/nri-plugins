@@ -34,6 +34,8 @@ import (
 var (
 	// Parent directory under which host sysfs, etc. is mounted (if non-standard location).
 	sysRoot = ""
+	// Our logger instance.
+	log = logger.NewLogger("sysfs")
 )
 
 const (
@@ -60,7 +62,7 @@ const (
 	// DiscoverAll requests full supported discovery.
 	DiscoverAll DiscoveryFlag = 0xffffffff
 	// DiscoverDefault is the default set of discovery flags.
-	DiscoverDefault DiscoveryFlag = (DiscoverCPUTopology | DiscoverMemTopology | DiscoverSst)
+	DiscoverDefault DiscoveryFlag = DiscoverAll
 )
 
 // MemoryType is an enum for the Node memory
@@ -93,22 +95,30 @@ type System interface {
 	Node(id idset.ID) Node
 	NodeDistance(from, to idset.ID) int
 	CPU(id idset.ID) CPU
+	PossibleCPUs() cpuset.CPUSet
+	PresentCPUs() cpuset.CPUSet
+	OnlineCPUs() cpuset.CPUSet
+	IsolatedCPUs() cpuset.CPUSet
+	OfflineCPUs() cpuset.CPUSet
+
 	Offlined() cpuset.CPUSet
 	Isolated() cpuset.CPUSet
 }
 
 // System devices
 type system struct {
-	logger.Logger                          // our logger instance
-	flags         DiscoveryFlag            // system discovery flags
-	path          string                   // sysfs mount point
-	packages      map[idset.ID]*cpuPackage // physical packages
-	nodes         map[idset.ID]*node       // NUMA nodes
-	cpus          map[idset.ID]*cpu        // CPUs
-	cache         map[idset.ID]*Cache      // Cache
-	offline       idset.IDSet              // offlined CPUs
-	isolated      idset.IDSet              // isolated CPUs
-	threads       int                      // hyperthreads per core
+	logger.Logger                                      // our logger instance
+	flags         DiscoveryFlag                        // system discovery flags
+	path          string                               // sysfs mount point
+	packages      map[idset.ID]*cpuPackage             // physical packages
+	nodes         map[idset.ID]*node                   // NUMA nodes
+	cpus          map[idset.ID]*cpu                    // CPUs
+	caches        [][NumCacheTypes]map[idset.ID]*Cache // CPU caches
+	possibleCPUs  idset.IDSet                          // set of supported CPUs.possible CPUs
+	presentCPUs   idset.IDSet                          // set of present CPUs
+	onlineCPUs    idset.IDSet                          // set of online CPUs
+	isolatedCPUs  idset.IDSet                          // set of isolated CPUs
+	threads       int                                  // hyperthreads per core
 }
 
 // CPUPackage is a physical package (a collection of CPUs).
@@ -119,17 +129,23 @@ type CPUPackage interface {
 	NodeIDs() []idset.ID
 	DieNodeIDs(idset.ID) []idset.ID
 	DieCPUSet(idset.ID) cpuset.CPUSet
+	DieClusterIDs(idset.ID) []idset.ID
+	DieClusterCPUSet(idset.ID, idset.ID) cpuset.CPUSet
+	LogicalDieClusterIDs(idset.ID) []idset.ID
+	LogicalDieClusterCPUSet(idset.ID, idset.ID) cpuset.CPUSet
 	SstInfo() *sst.SstPackageInfo
 }
 
 type cpuPackage struct {
-	id       idset.ID                 // package id
-	cpus     idset.IDSet              // CPUs in this package
-	nodes    idset.IDSet              // nodes in this package
-	dies     idset.IDSet              // dies in this package
-	dieCPUs  map[idset.ID]idset.IDSet // CPUs per die
-	dieNodes map[idset.ID]idset.IDSet // NUMA nodes per die
-	sstInfo  *sst.SstPackageInfo      // Speed Select Technology info
+	id              idset.ID                              // package id
+	cpus            idset.IDSet                           // CPUs in this package
+	nodes           idset.IDSet                           // nodes in this package
+	dies            idset.IDSet                           // dies in this package
+	dieCPUs         map[idset.ID]idset.IDSet              // CPUs per die
+	dieNodes        map[idset.ID]idset.IDSet              // NUMA nodes per die
+	clusterCPUs     map[idset.ID]map[idset.ID]idset.IDSet // per die per cluster CPUs
+	logicalClusters map[idset.ID]map[idset.ID]idset.IDSet // clusters with combined hyperthreads
+	sstInfo         *sst.SstPackageInfo                   // Speed Select Technology info
 }
 
 // Node represents a NUMA node.
@@ -161,6 +177,7 @@ type CPU interface {
 	ID() idset.ID
 	PackageID() idset.ID
 	DieID() idset.ID
+	ClusterID() idset.ID
 	NodeID() idset.ID
 	CoreID() idset.ID
 	ThreadCPUSet() cpuset.CPUSet
@@ -171,6 +188,12 @@ type CPU interface {
 	Isolated() bool
 	SetFrequencyLimits(min, max uint64) error
 	SstClos() int
+	CacheCount() int
+	GetCaches() []*Cache
+	GetCachesByLevel(int) []*Cache
+	GetCacheByIndex(int) *Cache
+	GetLastLevelCaches() []*Cache
+	GetLastLevelCacheCPUSet() cpuset.CPUSet
 }
 
 type cpu struct {
@@ -178,6 +201,7 @@ type cpu struct {
 	id       idset.ID    // CPU id
 	pkg      idset.ID    // package id
 	die      idset.ID    // die id
+	cluster  idset.ID    // cluster id
 	node     idset.ID    // node id
 	core     idset.ID    // core id
 	threads  idset.IDSet // sibling/hyper-threads
@@ -187,6 +211,7 @@ type cpu struct {
 	online   bool        // whether this CPU is online
 	isolated bool        // whether this CPU is isolated
 	sstClos  int         // SST-CP CLOS the CPU is associated with
+	caches   []*Cache    // caches for this CPU
 }
 
 // CPUFreq is a CPU frequency scaling range
@@ -214,29 +239,23 @@ type MemInfo struct {
 	MemUsed  uint64
 }
 
-// CPU cache.
-//   Notes: cache-discovery is forced off now (by forcibly clearing the related discovery bit)
-//      Can't seem to make sense of the cache information exposed under sysfs. The cache ids
-//      do not seem to be unique, which IIUC is contrary to the documentation.
-
 // CacheType specifies a cache type.
-type CacheType string
+type CacheType int
 
 const (
-	// DataCache marks data cache.
-	DataCache CacheType = "Data"
-	// InstructionCache marks instruction cache.
-	InstructionCache CacheType = "Instruction"
-	// UnifiedCache marks a unified data/instruction cache.
-	UnifiedCache CacheType = "Unified"
+	DataCache        CacheType = iota // DataCache is a data only cache
+	InstructionCache                  // InstructionCache is an instruction only cache.
+	UnifiedCache                      // UnifiedCache is a unified data and instruction cache.
+	numCacheTypes
+	NumCacheTypes = int(numCacheTypes)
 )
 
-// Cache has details about cache.
+// Cache has details about a CPU cache.
 type Cache struct {
 	id    idset.ID    // cache id
+	level int         // cache type
 	kind  CacheType   // cache type
 	size  uint64      // cache size
-	level uint8       // cache level
 	cpus  idset.IDSet // CPUs sharing this cache
 }
 
@@ -264,9 +283,8 @@ func DiscoverSystemAt(path string, args ...DiscoveryFlag) (System, error) {
 	}
 
 	sys := &system{
-		Logger:  logger.NewLogger("sysfs"),
-		path:    path,
-		offline: idset.NewIDSet(),
+		Logger: log,
+		path:   path,
 	}
 
 	if err := sys.Discover(flags); err != nil {
@@ -278,7 +296,7 @@ func DiscoverSystemAt(path string, args ...DiscoveryFlag) (System, error) {
 
 // Discover performs system/hardware discovery.
 func (sys *system) Discover(flags DiscoveryFlag) error {
-	sys.flags |= (flags &^ DiscoverCache)
+	sys.flags |= flags
 
 	if (sys.flags & (DiscoverCPUTopology | DiscoverCache | DiscoverSst)) != 0 {
 		if err := sys.discoverCPUs(); err != nil {
@@ -327,6 +345,13 @@ func (sys *system) Discover(flags DiscoveryFlag) error {
 	}
 
 	if sys.DebugEnabled() {
+		sys.Debug("CPUs:")
+		sys.Debug("  - possible: %s", sys.PossibleCPUs())
+		sys.Debug("  -  present: %s", sys.PresentCPUs())
+		sys.Debug("  -   online: %s", sys.OnlineCPUs())
+		sys.Debug("  -  offline: %s", sys.OfflineCPUs())
+		sys.Debug("  - isolated: %s", sys.IsolatedCPUs())
+
 		for _, id := range sys.PackageIDs() {
 			pkg := sys.packages[id]
 			sys.Info("package #%d:", id)
@@ -336,6 +361,14 @@ func (sys *system) Discover(flags DiscoveryFlag) error {
 			for _, die := range pkg.DieIDs() {
 				sys.Debug("    die #%v nodes: %v", die, pkg.DieNodeIDs(die))
 				sys.Debug("    die #%v cpus: %s", die, pkg.DieCPUSet(die).String())
+				for _, cluster := range pkg.DieClusterIDs(die) {
+					sys.Debug("    die #%v cluster #%v cpus: %s", die, cluster,
+						pkg.DieClusterCPUSet(die, cluster).String())
+				}
+				for _, cluster := range pkg.LogicalDieClusterIDs(die) {
+					sys.Debug("    die #%v logical cluster #%v cpus: %s", die, cluster,
+						pkg.LogicalDieClusterCPUSet(die, cluster).String())
+				}
 			}
 		}
 
@@ -353,23 +386,22 @@ func (sys *system) Discover(flags DiscoveryFlag) error {
 			sys.Debug("CPU #%d:", id)
 			sys.Debug("        pkg: %d", cpu.pkg)
 			sys.Debug("        die: %d", cpu.die)
+			sys.Debug("    cluster: %d", cpu.cluster)
 			sys.Debug("       node: %d", cpu.node)
 			sys.Debug("       core: %d", cpu.core)
 			sys.Debug("    threads: %s", cpu.threads)
 			sys.Debug("  base freq: %d", cpu.baseFreq)
 			sys.Debug("       freq: %d - %d", cpu.freq.min, cpu.freq.max)
 			sys.Debug("        epp: %d", cpu.epp)
-		}
 
-		sys.Debug("offline CPUs: %s", sys.offline)
-		sys.Debug("isolated CPUs: %s", sys.isolated)
-
-		for id, cch := range sys.cache {
-			sys.Debug("cache #%d:", id)
-			sys.Debug("   type: %v", cch.kind)
-			sys.Debug("   size: %d", cch.size)
-			sys.Debug("  level: %d", cch.level)
-			sys.Debug("   CPUs: %s", cch.cpus)
+			for idx, c := range cpu.caches {
+				sys.Debug("    cache #%d:", idx)
+				sys.Debug("           id: %d", c.id)
+				sys.Debug("        level: %d", c.level)
+				sys.Debug("         kind: %s", c.kind)
+				sys.Debug("         size: %dK", c.size/1024)
+				sys.Debug("         cpus: %s", c.SharedCPUSet().String())
+			}
 		}
 	}
 
@@ -410,9 +442,9 @@ func (sys *system) SetCpusOnline(online bool, cpus idset.IDSet) (idset.IDSet, er
 				cpu.online = online
 
 				if online {
-					sys.offline.Del(id)
+					sys.onlineCPUs.Add(id)
 				} else {
-					sys.offline.Add(id)
+					sys.onlineCPUs.Del(id)
 				}
 			}
 		}
@@ -540,14 +572,41 @@ func (sys *system) CPU(id idset.ID) CPU {
 	return sys.cpus[id]
 }
 
+// PossibleCPUs gets the maximum set of possible CPUs in the system.
+func (sys *system) PossibleCPUs() cpuset.CPUSet {
+	return CPUSetFromIDSet(sys.possibleCPUs)
+}
+
+// PresentCPUs gets the set of CPUs present in the system.
+func (sys *system) PresentCPUs() cpuset.CPUSet {
+	return CPUSetFromIDSet(sys.presentCPUs)
+}
+
+// OnlineCPUs gets the set of online CPUs.
+func (sys *system) OnlineCPUs() cpuset.CPUSet {
+	return CPUSetFromIDSet(sys.onlineCPUs)
+}
+
+// IsolatedCPUs gets the set of kernel-isolated CPUs.
+func (sys *system) IsolatedCPUs() cpuset.CPUSet {
+	return CPUSetFromIDSet(sys.isolatedCPUs)
+}
+
+// OfflineCPUs gets the set of offline CPUs.
+func (sys *system) OfflineCPUs() cpuset.CPUSet {
+	offline := sys.presentCPUs.Clone()
+	offline.Del(sys.onlineCPUs.Members()...)
+	return CPUSetFromIDSet(offline)
+}
+
 // Offlined gets the set of offlined CPUs.
 func (sys *system) Offlined() cpuset.CPUSet {
-	return CPUSetFromIDSet(sys.offline)
+	return sys.OfflineCPUs()
 }
 
 // Isolated gets the set of isolated CPUs."
 func (sys *system) Isolated() cpuset.CPUSet {
-	return CPUSetFromIDSet(sys.isolated)
+	return sys.IsolatedCPUs()
 }
 
 // Discover Cpus present in the system.
@@ -558,7 +617,23 @@ func (sys *system) discoverCPUs() error {
 
 	sys.cpus = make(map[idset.ID]*cpu)
 
-	_, err := readSysfsEntry(sys.path, filepath.Join(sysfsCPUPath, "isolated"), &sys.isolated, ",")
+	base := filepath.Join(sys.path, sysfsCPUPath)
+	_, err := readSysfsEntry(base, "possible", &sys.possibleCPUs, ",")
+	if err != nil {
+		sys.Error("failed to get set of possible cpus: %v", err)
+	}
+
+	_, err = readSysfsEntry(base, "present", &sys.presentCPUs, ",")
+	if err != nil {
+		sys.Error("failed to get set of present cpus: %v", err)
+	}
+
+	_, err = readSysfsEntry(base, "online", &sys.onlineCPUs, ",")
+	if err != nil {
+		sys.Error("failed to get set of online cpus: %v", err)
+	}
+
+	_, err = readSysfsEntry(base, "isolated", &sys.isolatedCPUs, ",")
 	if err != nil {
 		sys.Error("failed to get set of isolated cpus: %v", err)
 	}
@@ -577,17 +652,15 @@ func (sys *system) discoverCPUs() error {
 func (sys *system) discoverCPU(path string) error {
 	cpu := &cpu{path: path, id: getEnumeratedID(path), online: true, sstClos: -1}
 
-	cpu.isolated = sys.isolated.Has(cpu.id)
-
-	if online, err := readSysfsEntry(path, "online", nil); err == nil {
-		cpu.online = (online != "" && online[0] != '0')
-	}
+	cpu.isolated = sys.isolatedCPUs.Has(cpu.id)
+	cpu.online = sys.onlineCPUs.Has(cpu.id)
 
 	if cpu.online {
 		if _, err := readSysfsEntry(path, "topology/physical_package_id", &cpu.pkg); err != nil {
 			return err
 		}
 		readSysfsEntry(path, "topology/die_id", &cpu.die)
+		readSysfsEntry(path, "topology/cluster_id", &cpu.cluster)
 		if _, err := readSysfsEntry(path, "topology/core_id", &cpu.core); err != nil {
 			return err
 		}
@@ -600,8 +673,6 @@ func (sys *system) discoverCPU(path string) error {
 				return err
 			}
 		}
-	} else {
-		sys.offline.Add(cpu.id)
 	}
 
 	if _, err := readSysfsEntry(path, "cpufreq/base_frequency", &cpu.baseFreq); err != nil {
@@ -634,7 +705,7 @@ func (sys *system) discoverCPU(path string) error {
 	if (sys.flags & DiscoverCache) != 0 {
 		entries, _ := filepath.Glob(filepath.Join(path, "cache/index[0-9]*"))
 		for _, entry := range entries {
-			if err := sys.discoverCache(entry); err != nil {
+			if err := sys.discoverCache(cpu, entry); err != nil {
 				return err
 			}
 		}
@@ -656,6 +727,11 @@ func (c *cpu) PackageID() idset.ID {
 // DieID returns the die id of this CPU.
 func (c *cpu) DieID() idset.ID {
 	return c.die
+}
+
+// ClusterID returns the cluster id of this CPU.
+func (c *cpu) ClusterID() idset.ID {
+	return c.cluster
 }
 
 // NodeID returns the node id of this CPU.
@@ -733,6 +809,120 @@ func (c *cpu) SetFrequencyLimits(min, max uint64) error {
 	}
 
 	return nil
+}
+
+// CacheCount returns the number of caches for this CPU.
+func (c *cpu) CacheCount() int {
+	return len(c.caches)
+}
+
+// GetCaches returns the caches for this CPU.
+func (c *cpu) GetCaches() []*Cache {
+	caches := make([]*Cache, 0, len(c.caches))
+	copy(caches, c.caches)
+	return caches
+}
+
+// GetCachesByLevel returns the caches of the given level for this CPU.
+func (c *cpu) GetCachesByLevel(level int) []*Cache {
+	var caches []*Cache
+
+	for _, cch := range c.caches {
+		if cch.level == level {
+			caches = append(caches, cch)
+		}
+	}
+
+	return caches
+}
+
+// GetCacheByIndex returns the cache of the given index for this CPU.
+func (c *cpu) GetCacheByIndex(idx int) *Cache {
+	if 0 <= idx && idx < len(c.caches) {
+		return c.caches[idx]
+	}
+	return nil
+}
+
+// GetLastLevelCaches returns the last level caches for this CPU.
+func (c *cpu) GetLastLevelCaches() []*Cache {
+	if len(c.caches) < 1 {
+		return nil
+	}
+
+	var (
+		caches    []*Cache
+		lastIndex = len(c.caches) - 1
+		lastLevel = c.caches[lastIndex].level
+	)
+
+	for idx := lastIndex; idx >= 0; idx-- {
+		cch := c.caches[idx]
+		caches = append(caches, cch)
+		if cch.level != lastLevel {
+			break
+		}
+	}
+
+	return caches
+}
+
+// GetLastLevelCacheCPUSet returns the cpuset for the last level caches of this CPU.
+func (c *cpu) GetLastLevelCacheCPUSet() cpuset.CPUSet {
+	if len(c.caches) < 1 {
+		return c.ThreadCPUSet()
+	}
+
+	var (
+		lastIndex = len(c.caches) - 1
+		lastLevel = c.caches[lastIndex].level
+		cpus      = cpuset.New()
+	)
+
+	for idx := lastIndex; idx >= 0; idx-- {
+		cch := c.caches[idx]
+		cpus = cpus.Union(CPUSetFromIDSet(cch.cpus))
+		if cch.level != lastLevel {
+			break
+		}
+	}
+
+	return cpus
+}
+
+func (c *Cache) ID() int {
+	if c == nil {
+		return 0
+	}
+	return c.id
+}
+
+func (c *Cache) Level() int {
+	if c == nil {
+		return 0
+	}
+	return c.level
+}
+
+func (c *Cache) Type() CacheType {
+	if c == nil {
+		return 0
+	}
+	return c.kind
+}
+
+func (c *Cache) Size() uint64 {
+	if c == nil {
+		return 0
+	}
+	return c.size
+}
+
+func (c *Cache) SharedCPUSet() cpuset.CPUSet {
+	if c == nil {
+		return cpuset.New()
+	}
+	return CPUSetFromIDSet(c.cpus)
 }
 
 // Discover NUMA nodes present in the system.
@@ -958,12 +1148,14 @@ func (sys *system) discoverPackages() error {
 		pkg, found := sys.packages[cpu.pkg]
 		if !found {
 			pkg = &cpuPackage{
-				id:       cpu.pkg,
-				cpus:     idset.NewIDSet(),
-				nodes:    idset.NewIDSet(),
-				dies:     idset.NewIDSet(),
-				dieCPUs:  make(map[idset.ID]idset.IDSet),
-				dieNodes: make(map[idset.ID]idset.IDSet),
+				id:              cpu.pkg,
+				cpus:            idset.NewIDSet(),
+				nodes:           idset.NewIDSet(),
+				dies:            idset.NewIDSet(),
+				dieCPUs:         make(map[idset.ID]idset.IDSet),
+				dieNodes:        make(map[idset.ID]idset.IDSet),
+				clusterCPUs:     make(map[idset.ID]map[idset.ID]idset.IDSet),
+				logicalClusters: make(map[idset.ID]map[idset.ID]idset.IDSet),
 			}
 			sys.packages[cpu.pkg] = pkg
 		}
@@ -980,6 +1172,41 @@ func (sys *system) discoverPackages() error {
 			pkg.dieNodes[cpu.die] = idset.NewIDSet(cpu.node)
 		} else {
 			dieNodes.Add(cpu.node)
+		}
+
+		dieClusterCPUs, ok := pkg.clusterCPUs[cpu.die]
+		if !ok {
+			dieClusterCPUs = make(map[idset.ID]idset.IDSet)
+			pkg.clusterCPUs[cpu.die] = dieClusterCPUs
+		}
+
+		clusterCPUs, ok := dieClusterCPUs[cpu.cluster]
+		if !ok {
+			dieClusterCPUs[cpu.cluster] = idset.NewIDSet(cpu.id)
+		} else {
+			clusterCPUs.Add(cpu.id)
+		}
+	}
+
+	for _, pkg := range sys.packages {
+		for die, clusters := range pkg.clusterCPUs {
+			pkg.logicalClusters[die] = make(map[idset.ID]idset.IDSet)
+
+			htClusters := idset.NewIDSet()
+			allHTCPUs := idset.NewIDSet()
+			for cluster, cpuIDs := range clusters {
+				cpu := sys.cpus[cpuIDs.SortedMembers()[0]]
+				if cpuset.New(cpuIDs.Members()...).Equals(cpu.ThreadCPUSet()) {
+					htClusters.Add(cluster)
+					allHTCPUs.Add(cpu.ThreadCPUSet().List()...)
+				} else {
+					pkg.logicalClusters[die][cluster] = cpuIDs.Clone()
+				}
+			}
+			if htClusters.Size() > 0 {
+				first := sys.cpus[allHTCPUs.SortedMembers()[0]]
+				pkg.logicalClusters[die][first.cluster] = idset.NewIDSet(allHTCPUs.Members()...)
+			}
 		}
 	}
 
@@ -1053,33 +1280,70 @@ func (p *cpuPackage) DieCPUSet(id idset.ID) cpuset.CPUSet {
 	return cpuset.New()
 }
 
+// DieClusterIDs returns the cluster IDs in the given die of this package.
+func (p *cpuPackage) DieClusterIDs(die idset.ID) []idset.ID {
+	if dieClusters, ok := p.clusterCPUs[die]; ok {
+		ids := idset.NewIDSet()
+		for id := range dieClusters {
+			ids.Add(id)
+		}
+		return ids.SortedMembers()
+	}
+	return []idset.ID{}
+}
+
+// DieClusterCPUSet returns the CPUs of the given die and cluster.
+func (p *cpuPackage) DieClusterCPUSet(die idset.ID, cluster idset.ID) cpuset.CPUSet {
+	if dieClusters, ok := p.clusterCPUs[die]; ok {
+		if ids, ok := dieClusters[cluster]; ok {
+			return CPUSetFromIDSet(ids)
+		}
+	}
+	return cpuset.New()
+}
+
+// LogicalDieClusterIDs returns the logical cluster IDs in the given die of this package.
+func (p *cpuPackage) LogicalDieClusterIDs(die idset.ID) []idset.ID {
+	if dieClusters, ok := p.logicalClusters[die]; ok {
+		ids := idset.NewIDSet()
+		for id := range dieClusters {
+			ids.Add(id)
+		}
+		return ids.SortedMembers()
+	}
+	return []idset.ID{}
+}
+
+// LogicalDieClusterCPUSet returns the CPUs of the given die and logical cluster.
+func (p *cpuPackage) LogicalDieClusterCPUSet(die idset.ID, cluster idset.ID) cpuset.CPUSet {
+	if dieClusters, ok := p.logicalClusters[die]; ok {
+		if ids, ok := dieClusters[cluster]; ok {
+			return CPUSetFromIDSet(ids)
+		}
+	}
+	return cpuset.New()
+}
+
 func (p *cpuPackage) SstInfo() *sst.SstPackageInfo {
 	return p.sstInfo
 }
 
 // Discover cache associated with the given CPU.
-//
-// Notes:
-//
-//	I'm not sure how to interpret the cache information under sysfs.
-//	This code is now effectively disabled by forcing the associated
-//	discovery bit off in the discovery flags.
-func (sys *system) discoverCache(path string) error {
+func (sys *system) discoverCache(cpu *cpu, path string) error {
 	var id idset.ID
+
+	split := strings.Split(path, "/cache/index")
+	if len(split) != 2 {
+		return sysfsError(path, "unexpected cache path %s", path)
+	}
 
 	if _, err := readSysfsEntry(path, "id", &id); err != nil {
 		return sysfsError(path, "can't read cache id: %v", err)
 	}
 
-	if sys.cache == nil {
-		sys.cache = make(map[idset.ID]*Cache)
+	c := &Cache{
+		id: id,
 	}
-
-	if _, found := sys.cache[id]; found {
-		return nil
-	}
-
-	c := &Cache{id: id}
 
 	if _, err := readSysfsEntry(path, "level", &c.level); err != nil {
 		return sysfsError(path, "can't read cache level: %v", err)
@@ -1122,9 +1386,27 @@ func (sys *system) discoverCache(path string) error {
 		c.size = val*1000 + u - '0'
 	}
 
-	sys.cache[c.id] = c
+	cpu.caches = append(cpu.caches, sys.saveCache(c))
 
 	return nil
+}
+
+func (sys *system) saveCache(c *Cache) *Cache {
+	if len(sys.caches) < c.level {
+		caches := sys.caches
+		sys.caches = make([][NumCacheTypes]map[idset.ID]*Cache, c.level)
+		copy(sys.caches, caches)
+		for ct := 0; ct < NumCacheTypes; ct++ {
+			sys.caches[c.level-1][ct] = make(map[idset.ID]*Cache)
+		}
+	}
+
+	if cch, ok := sys.caches[c.level-1][int(c.kind)][c.id]; ok {
+		return cch
+	}
+
+	sys.caches[c.level-1][int(c.kind)][c.id] = c
+	return c
 }
 
 // eppStrings initialized this way to better catch changes in the enum
@@ -1159,4 +1441,16 @@ func EPPFromString(s string) EPP {
 		return v
 	}
 	return EPPUnknown
+}
+
+func (t CacheType) String() string {
+	switch t {
+	case DataCache:
+		return "Data"
+	case InstructionCache:
+		return "Instruction"
+	case UnifiedCache:
+		return "Unified"
+	}
+	return ""
 }
