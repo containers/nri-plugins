@@ -21,6 +21,11 @@ config:
 
 # configGroupLabel: config.nri/group
 
+# Extra environment variables to inject.
+# extraEnv:
+#   VAR1: VAL1
+#   VAR2: VAL2
+
 plugin-test:
     enableAPIs: false
 
