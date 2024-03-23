@@ -980,6 +980,24 @@ func (c *cpuPriorities) cmpCPUSet(csetA, csetB cpuset.CPUSet, prefer CPUPriority
 		}
 	}
 
+	// For high prio request, favor the tightest fit falling back to normal prio
+	if cpuCnt > 0 && prefer == PriorityHigh {
+		prefA := csetA.Intersection(c[prefer]).Size()
+		prefB := csetB.Intersection(c[prefer]).Size()
+		if prefA == 0 && prefB == 0 {
+			prefA = csetA.Intersection(c[PriorityNormal]).Size()
+			prefB = csetB.Intersection(c[PriorityNormal]).Size()
+		}
+		// both sets have enough preferred CPUs, return the smaller one (tighter fit)
+		if prefA >= cpuCnt && prefB >= cpuCnt {
+			return prefB - prefA
+		}
+		// only one set has enough preferred CPUs, return the bigger/only one
+		if prefA >= cpuCnt || prefB >= cpuCnt {
+			return prefA - prefB
+		}
+	}
+
 	// Favor cpuset having CPUs with priorities equal to or lower than what was requested
 	for prio := prefer; prio < NumCPUPriorities; prio++ {
 		prefA := csetA.Intersection(c[prio]).Size()
