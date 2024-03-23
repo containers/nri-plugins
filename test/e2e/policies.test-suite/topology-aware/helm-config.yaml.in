@@ -24,3 +24,10 @@ config:
     source: true
     klog:
       skip_headers: true
+
+$([ -n "${!EXTRA_ENV_*}" ] && echo "
+extraEnv:
+  $(for var in ${!EXTRA_ENV_*}; do [[ "${!var}" != "" ]] && echo "
+  ${var#EXTRA_ENV_}: ${!var}
+  "; done)
+")
