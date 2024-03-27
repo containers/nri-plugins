@@ -2,6 +2,9 @@ ARG GO_VERSION=1.22
 
 FROM golang:${GO_VERSION}-bullseye as builder
 
+ARG IMAGE_VERSION
+ARG BUILD_VERSION
+ARG BUILD_BUILDID
 WORKDIR /go/builder
 
 # Fetch go dependencies in a separate layer for caching
@@ -13,7 +16,7 @@ RUN go mod download
 COPY . .
 
 RUN make clean
-RUN make PLUGINS=nri-resource-policy-template build-plugins-static
+RUN make IMAGE_VERSION=${IMAGE_VERSION} BUILD_VERSION=${BUILD_VERSION} BUILD_BUILDID=${BUILD_BUILDID} PLUGINS=nri-resource-policy-template build-plugins-static
 
 FROM gcr.io/distroless/static
 
