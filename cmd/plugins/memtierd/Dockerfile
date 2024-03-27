@@ -1,5 +1,8 @@
 FROM golang:1.22-bullseye as builder
 
+ARG IMAGE_VERSION
+ARG BUILD_VERSION
+ARG BUILD_BUILDID
 WORKDIR /go/builder
 
 RUN GOBIN=/bin go install -tags osusergo,netgo -ldflags "-extldflags=-static" github.com/intel/memtierd/cmd/memtierd@v0.1.1
@@ -13,7 +16,7 @@ RUN go mod download
 COPY . .
 
 RUN make clean
-RUN make PLUGINS=nri-memtierd build-plugins-static
+RUN make IMAGE_VERSION=${IMAGE_VERSION} BUILD_VERSION=${BUILD_VERSION} BUILD_BUILDID=${BUILD_BUILDID} PLUGINS=nri-memtierd build-plugins-static
 
 FROM gcr.io/distroless/static
 ENV PATH=/bin
