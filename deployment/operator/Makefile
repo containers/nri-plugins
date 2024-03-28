@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 
 # Default image version (tag) and image save path.
-IMAGE_VERSION ?= $(shell git describe --dirty 2> /dev/null)
+IMAGE_VERSION ?= $(shell git describe --tags --dirty 2> /dev/null)
 IMAGE_PATH ?= .
 
 # CHANNELS define the bundle channels used in the bundle.
