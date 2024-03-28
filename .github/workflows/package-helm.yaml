@@ -10,7 +10,6 @@ on:
 
 env:
   CHARTS_DIR: deployment/helm/
-  IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') && 'true' || 'false' }}
   UNSTABLE_CHARTS: unstable-helm-charts
   REGISTRY: ghcr.io
   REGISTRY_USER: ${{ github.repository_owner }}
@@ -18,7 +17,7 @@ env:
 
 jobs:
   release:
-    if: ${{ github.env.IS_RELEASE == 'true' }}
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -48,10 +47,10 @@ jobs:
           files: nri-*helm-chart*.tgz
 
   unstable:
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     concurrency:
       group: unstable-helm-charts
       cancel-in-progress: false
-    if: ${{ github.env.IS_RELEASE != 'true' }}
     permissions:
       packages: write
     runs-on: ubuntu-latest
