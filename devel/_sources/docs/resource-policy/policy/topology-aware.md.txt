@@ -139,6 +139,12 @@ behavior. These options can be supplied as part of the effective
 - `colocateNamespaces`
   - whether try to allocate containers in a namespace to the same or close by
     topology pools
+- `defaultCPUPriority`
+  - is the default CPU prioritization, used when a container has not been
+    annotated with any other CPU preferences. The possible values are: `high`,
+    `normal`, `low`, and `none`. Currently this option only affects exclusive
+    CPU allocations. For a more detailed discussion of CPU prioritization see
+    the [cpu allocator](../developers-guide/cpu-allocator.md) documentation.
 
 ## Policy CPU Allocation Preferences
 
@@ -225,7 +231,7 @@ preferences the policy would otherwise apply to them. These Pod annotations
 can be given both with per pod and per container resolution. If for any
 container both of these exist, the container-specific one takes precedence.
 
-### Shared, Exclusive, and Isolated CPU Preference
+### Shared, Exclusive, and Isolated CPU Preference, CPU Priorities
 
 A container can opt in to or opt out from shared CPU allocation using the
 following Pod annotation.
@@ -239,6 +245,9 @@ metadata:
     prefer-shared-cpus.resource-policy.nri.io/pod: "true"
     # selectively opt out container C2 from shared CPU core allocation
     prefer-shared-cpus.resource-policy.nri.io/container.C2: "false"
+    # prefer low-prio CPUs for all others except the 'pump' container
+    prefer-cpu-priority.resource-policy.nri.io/pod: low
+    prefer-cpu-priority.resource-policy.nri.io/container.pump: high
 ```
 
 Opting in to exclusive allocation happens by opting out from shared allocation,

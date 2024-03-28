@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Template Policy Plugin &mdash; NRI Plugins v0.4.0-24-g1144de7 documentation</title>
+  <title>Template Policy Plugin &mdash; NRI Plugins v0.4.0-31-g8e4c550 documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -219,43 +219,47 @@ customize with their own values, along with the default values.</p>
 <td><p>512Mi</p></td>
 <td><p>memory qouta for the Pod</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">hostPort</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">extraEnv</span></code></p></td>
+<td><p>{}</p></td>
+<td><p>extra environment variables to inject (string map)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">hostPort</span></code></p></td>
 <td><p>8891</p></td>
 <td><p>metrics port to expose on the host</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">config</span></code></p></td>
-<td><p>see <a class="reference external" href="https://github.com/containers/nri-plugins/tree/1144de7fce00a7b5e4bafc131eb18e76683ac8a4/deployment/helm/template/values.yaml">helm chart values</a> for the default configuration</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">config</span></code></p></td>
+<td><p>see <a class="reference external" href="https://github.com/containers/nri-plugins/tree/8e4c5509a633fc4c3f61e8e90a6ecf2663e48ff6/deployment/helm/template/values.yaml">helm chart values</a> for the default configuration</p></td>
 <td><p>plugin configuration data</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">configGroupLabel</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">configGroupLabel</span></code></p></td>
 <td><p>config.nri/group</p></td>
 <td><p>node label for grouping configuration</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">nri.patchRuntimeConfig</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">nri.patchRuntimeConfig</span></code></p></td>
 <td><p>false</p></td>
 <td><p>enable NRI in containerd or CRI-O</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">nri.pluginIndex</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">nri.pluginIndex</span></code></p></td>
 <td><p>90</p></td>
 <td><p>NRI plugin index to register with</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">initImage.name</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">initImage.name</span></code></p></td>
 <td><p><a class="reference external" href="https://ghcr.io/containers/nri-plugins/config-manager">ghcr.io/containers/nri-plugins/config-manager</a></p></td>
 <td><p>init container image name</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">initImage.tag</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">initImage.tag</span></code></p></td>
 <td><p>unstable</p></td>
 <td><p>init container image tag</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">initImage.pullPolicy</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">initImage.pullPolicy</span></code></p></td>
 <td><p>Always</p></td>
 <td><p>init container image pull policy</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">tolerations</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">tolerations</span></code></p></td>
 <td><p>[]</p></td>
 <td><p>specify taint toleration key, operator and effect</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">podPriorityClassNodeCritical</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">podPriorityClassNodeCritical</span></code></p></td>
 <td><p>false</p></td>
 <td><p>enable <a class="reference external" href="https://kubernetes.io/docs/tasks/administer-cluster/guaranteed-scheduling-critical-addon-pods/#marking-pod-as-critical">marking Pod as node critical</a></p></td>
 </tr>

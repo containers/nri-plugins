@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CPU Allocator &mdash; NRI Plugins v0.4.0-24-g1144de7 documentation</title>
+  <title>CPU Allocator &mdash; NRI Plugins v0.4.0-31-g8e4c550 documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -116,7 +116,8 @@ request “near” each other in order to minimize memory latencies between CPUs
 features and their configuration parameters. Currently, NRI Resource Policy
 supports CPU priority detection based on the <code class="docutils literal notranslate"><span class="pre">intel_pstate</span></code> scaling
 driver in the Linux CPUFreq subsystem, and, Intel Speed Select Technology
-(SST).</p>
+(SST), or based on the detected core types on hybrid CPU architecture
+systems.</p>
 <p>CPUs are divided into three priority classes, i.e. <em>high</em>, <em>normal</em> and <em>low</em>.
 Policies utilizing the CPU allocator may choose to prefer certain priority
 class for certain types of workloads. For example, prefer (and preserve) high
@@ -155,6 +156,13 @@ will be flagged as high priority.  Low base frequency will map to low priority,
 correspondingly.</p>
 <p>CPU cores with high EPP priority (relative to the other cores in the system)
 will be marked as high priority cores.</p>
+</section>
+<section id="hybrid-cpu-architecture">
+<h3>Hybrid CPU Architecture<a class="headerlink" href="#hybrid-cpu-architecture" title="Permalink to this heading"></a></h3>
+<p>On systems with a hybrid CPU architecture, where some cores are optimized for
+performance and others for power consumption, performance optimized cores are
+classified as high priority CPUs while energy efficient cores as low priority
+CPUs.</p>
 </section>
 </section>
 </section>

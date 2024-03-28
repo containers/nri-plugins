@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.4.0-24-g1144de7 documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.4.0-31-g8e4c550 documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -296,6 +296,15 @@ topology pools</p></li>
 topology pools</p></li>
 </ul>
 </li>
+<li><p><code class="docutils literal notranslate"><span class="pre">defaultCPUPriority</span></code></p>
+<ul>
+<li><p>is the default CPU prioritization, used when a container has not been
+annotated with any other CPU preferences. The possible values are: <code class="docutils literal notranslate"><span class="pre">high</span></code>,
+<code class="docutils literal notranslate"><span class="pre">normal</span></code>, <code class="docutils literal notranslate"><span class="pre">low</span></code>, and <code class="docutils literal notranslate"><span class="pre">none</span></code>. Currently this option only affects exclusive
+CPU allocations. For a more detailed discussion of CPU prioritization see
+the <a class="reference internal" href="../developers-guide/cpu-allocator.html"><span class="std std-doc">cpu allocator</span></a> documentation.</p></li>
+</ul>
+</li>
 </ul>
 </section>
 <section id="policy-cpu-allocation-preferences">
@@ -415,8 +424,8 @@ dynamically as exclusive CPU cores are allocated and released in the pool.</p>
 preferences the policy would otherwise apply to them. These Pod annotations
 can be given both with per pod and per container resolution. If for any
 container both of these exist, the container-specific one takes precedence.</p>
-<section id="shared-exclusive-and-isolated-cpu-preference">
-<h3>Shared, Exclusive, and Isolated CPU Preference<a class="headerlink" href="#shared-exclusive-and-isolated-cpu-preference" title="Permalink to this heading"></a></h3>
+<section id="shared-exclusive-and-isolated-cpu-preference-cpu-priorities">
+<h3>Shared, Exclusive, and Isolated CPU Preference, CPU Priorities<a class="headerlink" href="#shared-exclusive-and-isolated-cpu-preference-cpu-priorities" title="Permalink to this heading"></a></h3>
 <p>A container can opt in to or opt out from shared CPU allocation using the
 following Pod annotation.</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
@@ -427,6 +436,9 @@ following Pod annotation.</p>
 <span class="w">    </span><span class="nt">prefer-shared-cpus.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
 <span class="w">    </span><span class="c1"># selectively opt out container C2 from shared CPU core allocation</span>
 <span class="w">    </span><span class="nt">prefer-shared-cpus.resource-policy.nri.io/container.C2</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;false&quot;</span>
+<span class="w">    </span><span class="c1"># prefer low-prio CPUs for all others except the &#39;pump&#39; container</span>
+<span class="w">    </span><span class="nt">prefer-cpu-priority.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">low</span>
+<span class="w">    </span><span class="nt">prefer-cpu-priority.resource-policy.nri.io/container.pump</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">high</span>
 </pre></div>
 </div>
 <p>Opting in to exclusive allocation happens by opting out from shared allocation,
