@@ -1,6 +1,6 @@
 module github.com/containers/nri-plugins
 
-go 1.22
+go 1.22.1
 
 require (
 	contrib.go.opencensus.io/exporter/prometheus v0.4.2
