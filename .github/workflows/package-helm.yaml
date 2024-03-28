@@ -6,6 +6,7 @@ on:
       - "v*.*.*"
     branches:
       - main
+      - release-*
 
 env:
   CHARTS_DIR: deployment/helm/
@@ -71,7 +72,11 @@ jobs:
           #   - image version: 'unstable'.
           majmin="$(git describe --tags | sed -E 's/(v[0-9]*\.[0-9]*).*$/\1/')"
           CHART_VERSION="${majmin}-unstable"
-          APP_VERSION=unstable
+          if [  $GITHUB_REF_NAME = "main" ]; then
+              APP_VERSION=unstable
+          else
+              APP_VERSION="${majmin}-unstable"
+          fi
           # Package charts
           find "$CHARTS_DIR" -name values.yaml | xargs -I '{}' \
               sed -e s"/pullPolicy:.*/pullPolicy: Always/" -i '{}'
