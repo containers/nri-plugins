@@ -69,7 +69,7 @@ jobs:
           # For unstable chart verison we use:
           #   - chart version: x.y-unstable derived from the latest tag x.y.z
           #   - image version: 'unstable'.
-          majmin="$(git describe | sed -E 's/v([0-9]*\.[0-9]*).*$/\1/')"
+          majmin="$(git describe | sed -E 's/(v[0-9]*\.[0-9]*).*$/\1/')"
           CHART_VERSION="${majmin}-unstable"
           APP_VERSION=unstable
           # Package charts
@@ -98,6 +98,6 @@ jobs:
           #   between new tags unstable chart have the same version, though.
           pushd ../$UNSTABLE_CHARTS
           for i in ./*.tgz; do
-              helm push $i oci://${{ env.REGISTRY }}/${{ env.REGISTRY_PATH }}
+              helm push $i oci://${{ env.REGISTRY }}/${{ env.REGISTRY_PATH }}/helm-charts
           done
           popd
