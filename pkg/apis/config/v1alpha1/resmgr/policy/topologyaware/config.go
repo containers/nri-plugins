@@ -15,7 +15,10 @@
 package topologyaware
 
 import (
+	"strings"
+
 	policy "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
+	"github.com/containers/nri-plugins/pkg/cpuallocator"
 )
 
 type (
@@ -32,6 +35,27 @@ const (
 	AmountQuantity = policy.AmountQuantity
 	AmountCPUSet   = policy.AmountCPUSet
 )
+
+type CPUPriority string
+
+const (
+	PriorityHigh   CPUPriority = "high"
+	PriorityNormal CPUPriority = "normal"
+	PriorityLow    CPUPriority = "low"
+	PriorityNone   CPUPriority = "none"
+)
+
+func (p CPUPriority) Value() cpuallocator.CPUPriority {
+	switch strings.ToLower(string(p)) {
+	case string(PriorityHigh):
+		return cpuallocator.PriorityHigh
+	case string(PriorityNormal):
+		return cpuallocator.PriorityNormal
+	case string(PriorityLow):
+		return cpuallocator.PriorityLow
+	}
+	return cpuallocator.PriorityNone
+}
 
 // +k8s:deepcopy-gen=true
 // +optional
@@ -77,4 +101,12 @@ type Config struct {
 	// of it.
 	// +kubebuilder:validation:Required
 	ReservedResources Constraints `json:"reservedResources"`
+	// DefaultCPUPriority (high, normal, low, none) is the preferred CPU
+	// priority for allocated CPUs when a container has not been annotated
+	// with any other CPU preference.
+	// Notes: Currently this option only affects exclusive CPU allocations.
+	// +kubebuilder:validation:Enum=high;normal;low;none
+	// +kubebuilder:default=none
+	// +kubebuilder:validation:Format:string
+	DefaultCPUPriority CPUPriority `json:"defaultCPUPriority,omitempty"`
 }

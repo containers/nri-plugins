@@ -96,6 +96,7 @@ customize with their own values, along with the default values.
 | `image.pullPolicy`       | Always                                                                                                                        | image pull policy                                    |
 | `resources.cpu`          | 500m                                                                                                                          | cpu resources for the Pod                            |
 | `resources.memory`       | 512Mi                                                                                                                         | memory qouta for the Pod                             |
+| `extraEnv`               | {}                                                                                                                            | extra environment variables to inject (string map)   |
 | `hostPort`               | 8891                                                                                                                          | metrics port to expose on the host                   |
 | `config`                 | see [helm chart values](tree:/deployment/helm/topology-aware/values.yaml) for the default configuration                       | plugin configuration data                            |
 | `configGroupLabel`       | config.nri/group                                                                                                        | node label for grouping configuration                |

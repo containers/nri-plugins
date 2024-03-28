@@ -42,6 +42,8 @@ const (
 	keyColdStartPreference = "cold-start"
 	// annotation key for reserved pools
 	keyReservedCPUsPreference = "prefer-reserved-cpus"
+	// annotation key for CPU Priority preference
+	keyCpuPriorityPreference = "prefer-cpu-priority"
 
 	// effective annotation key for isolated CPU preference
 	preferIsolatedCPUsKey = keyIsolationPreference + "." + kubernetes.ResmgrKeyNamespace
@@ -53,6 +55,8 @@ const (
 	preferColdStartKey = keyColdStartPreference + "." + kubernetes.ResmgrKeyNamespace
 	// annotation key for reserved pools
 	preferReservedCPUsKey = keyReservedCPUsPreference + "." + kubernetes.ResmgrKeyNamespace
+	// effective annotation key for CPU priority preference
+	preferCpuPriorityKey = keyCpuPriorityPreference + "." + kubernetes.ResmgrKeyNamespace
 )
 
 // cpuClass is a type of CPU to allocate
@@ -151,6 +155,36 @@ func sharedCPUsPreference(pod cache.Pod, container cache.Container) (bool, bool)
 	log.Debug("%s: effective shared CPU preference %v", container.PrettyName(), preference)
 
 	return preference, true
+}
+
+// cpuPrioPreference returns the CPU priority preference for the given container
+// and whether the container was explicitly annotated with this setting.
+func cpuPrioPreference(pod cache.Pod, container cache.Container, fallback cpuPrio) cpuPrio {
+	key := preferCpuPriorityKey
+	value, ok := pod.GetEffectiveAnnotation(key, container.GetName())
+
+	if !ok {
+		prio := fallback
+		log.Debug("%s: implicit CPU priority preference %q", container.PrettyName(), prio)
+		return prio
+	}
+
+	if value == "default" {
+		prio := defaultPrio
+		log.Debug("%s: explicit default CPU priority preference %q", container.PrettyName(), prio)
+		return prio
+	}
+
+	prio, ok := cpuPrioByName[value]
+	if !ok {
+		log.Error("%s: invalid CPU priority preference %q", container.PrettyName(), value)
+		prio := fallback
+		log.Debug("%s: implicit CPU priority preference %q", container.PrettyName(), prio)
+		return prio
+	}
+
+	log.Debug("%s: explicit CPU priority preference %q", container.PrettyName(), prio)
+	return prio
 }
 
 // memoryTypePreference returns what type of memory should be allocated for the container.
@@ -370,7 +404,8 @@ func checkReservedCPUsAnnotations(c cache.Container) (bool, bool) {
 // 2. fraction: amount of fractional CPU in milli-CPU
 // 3. isolate: (bool) whether to prefer isolated full CPUs
 // 4. cpuType: (cpuClass) class of CPU to allocate (reserved vs. normal)
-func cpuAllocationPreferences(pod cache.Pod, container cache.Container) (int, int, bool, cpuClass) {
+// 5. cpuPrio: preferred CPU allocator priority for CPU allocation.
+func cpuAllocationPreferences(pod cache.Pod, container cache.Container) (int, int, bool, cpuClass, cpuPrio) {
 	//
 	// CPU allocation preferences for a container consist of
 	//
@@ -439,20 +474,21 @@ func cpuAllocationPreferences(pod cache.Pod, container cache.Container) (int, in
 	request := reqs.Requests[corev1.ResourceCPU]
 	qosClass := pod.GetQOSClass()
 	fraction := int(request.MilliValue())
+	prio := defaultPrio // ignored for fractional allocations
 
 	// easy cases: kube-system namespace, Burstable or BestEffort QoS class containers
 	preferReserved, explicitReservation := checkReservedCPUsAnnotations(container)
 	switch {
 	case container.PreserveCpuResources():
-		return 0, fraction, false, cpuPreserve
+		return 0, fraction, false, cpuPreserve, prio
 	case preferReserved == true:
-		return 0, fraction, false, cpuReserved
+		return 0, fraction, false, cpuReserved, prio
 	case checkReservedPoolNamespaces(namespace) && !explicitReservation:
-		return 0, fraction, false, cpuReserved
+		return 0, fraction, false, cpuReserved, prio
 	case qosClass == corev1.PodQOSBurstable:
-		return 0, fraction, false, cpuNormal
+		return 0, fraction, false, cpuNormal, prio
 	case qosClass == corev1.PodQOSBestEffort:
-		return 0, 0, false, cpuNormal
+		return 0, 0, false, cpuNormal, prio
 	}
 
 	// complex case: Guaranteed QoS class containers
@@ -460,39 +496,40 @@ func cpuAllocationPreferences(pod cache.Pod, container cache.Container) (int, in
 	fraction = fraction % 1000
 	preferIsolated, explicitIsolated := isolatedCPUsPreference(pod, container)
 	preferShared, explicitShared := sharedCPUsPreference(pod, container)
+	prio = cpuPrioPreference(pod, container, defaultPrio) // ignored for fractional allocations
 
 	switch {
 	// sub-core CPU request
 	case cores == 0:
-		return 0, fraction, false, cpuNormal
+		return 0, fraction, false, cpuNormal, prio
 		// 1 <= CPU request < 2
 	case cores < 2:
 		// fractional allocation, potentially mixed
 		if fraction > 0 {
 			if preferShared {
-				return 0, 1000*cores + fraction, false, cpuNormal
+				return 0, 1000*cores + fraction, false, cpuNormal, prio
 			}
-			return cores, fraction, preferIsolated, cpuNormal
+			return cores, fraction, preferIsolated, cpuNormal, prio
 		}
 		// non-fractional allocation
 		if preferShared && explicitShared {
-			return 0, 1000*cores + fraction, false, cpuNormal
+			return 0, 1000*cores + fraction, false, cpuNormal, prio
 		}
-		return cores, fraction, preferIsolated, cpuNormal
+		return cores, fraction, preferIsolated, cpuNormal, prio
 		// CPU request >= 2
 	default:
 		// fractional allocation, only mixed if explicitly annotated as unshared
 		if fraction > 0 {
 			if !preferShared && explicitShared {
-				return cores, fraction, preferIsolated && explicitIsolated, cpuNormal
+				return cores, fraction, preferIsolated && explicitIsolated, cpuNormal, prio
 			}
-			return 0, 1000*cores + fraction, false, cpuNormal
+			return 0, 1000*cores + fraction, false, cpuNormal, prio
 		}
 		// non-fractional allocation
 		if preferShared && explicitShared {
-			return 0, 1000 * cores, false, cpuNormal
+			return 0, 1000 * cores, false, cpuNormal, prio
 		}
-		return cores, fraction, preferIsolated && explicitIsolated, cpuNormal
+		return cores, fraction, preferIsolated && explicitIsolated, cpuNormal, prio
 	}
 }
 

@@ -65,6 +65,7 @@ type allocatorHelper struct {
 type CPUAllocator interface {
 	AllocateCpus(from *cpuset.CPUSet, cnt int, prefer CPUPriority) (cpuset.CPUSet, error)
 	ReleaseCpus(from *cpuset.CPUSet, cnt int, prefer CPUPriority) (cpuset.CPUSet, error)
+	GetCPUPriorities() map[CPUPriority]cpuset.CPUSet
 }
 
 type CPUPriority int
@@ -674,6 +675,16 @@ func (ca *cpuAllocator) ReleaseCpus(from *cpuset.CPUSet, cnt int, prefer CPUPrio
 	ca.Debug("ReleaseCpus(#%s, %d) => kept: #%s, released: #%s", oset, cnt, from, result)
 
 	return result, err
+}
+
+// GetCPUPriorities returns the CPUSets for the discovered priorities.
+func (ca *cpuAllocator) GetCPUPriorities() map[CPUPriority]cpuset.CPUSet {
+	prios := make(map[CPUPriority]cpuset.CPUSet)
+	for prio := CPUPriority(0); prio < NumCPUPriorities; prio++ {
+		cset := ca.topologyCache.cpuPriorities[prio]
+		prios[prio] = cset.Clone()
+	}
+	return prios
 }
 
 func newTopologyCache(sys sysfs.System) topologyCache {

@@ -95,7 +95,8 @@ func TestColdStart(t *testing.T) {
 				allocations: allocations{
 					grants: make(map[string]Grant, 0),
 				},
-				options: &policyapi.BackendOptions{},
+				options:      &policyapi.BackendOptions{},
+				cpuAllocator: &mockCPUAllocator{},
 			}
 			policy.allocations.policy = policy
 			policy.options.SendEvent = sendEvent
