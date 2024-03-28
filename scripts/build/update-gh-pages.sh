@@ -139,7 +139,7 @@ fi
 #
 # Update gh-pages branch
 #
-commit_hash=`git describe --dirty --always`
+commit_hash=`git describe --tags --dirty --always`
 
 # Switch to work in the gh-pages worktree
 pushd "$build_dir"
