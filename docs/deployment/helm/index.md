@@ -32,14 +32,14 @@ are stored alongside plugin images in the OCI image registry.
 Unstable charts can be discovered using [skopeo](https://github.com/containers/skopeo).
 For instance, one can list the available charts for the balloons plugin using this
 skopeo command:
-`skopeo list-tags docker://ghcr.io/containers/nri-plugins/nri-resource-policy-balloons`
+`skopeo list-tags docker://ghcr.io/containers/nri-plugins/helm-charts/nri-resource-policy-balloons`
 
 ### Using Unstable Helm Charts
 
 Once discovered, unstable Helm charts can be used like any other. For instance, to use
-the `$X.$Y-unstable` version of the chart to install the development version of the
+the `v$X.$Y-unstable` version of the chart to install the development version of the
 balloons plugin one can use this command:
-`helm install --devel -n kube-system test oci://ghcr.io/containers/nri-plugins/nri-resource-policy-balloons --version $X.$Y-unstable --set image.tag=unstable --set image.pullPolicy=Always`
+`helm install --devel -n kube-system test oci://ghcr.io/containers/nri-plugins/helm-charts/nri-resource-policy-balloons --version v$X.$Y-unstable --set image.tag=unstable --set image.pullPolicy=Always`
 
 ```{toctree}
 ---
