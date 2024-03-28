@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Helm &mdash; NRI Plugins v0.4.1 documentation</title>
+  <title>Helm &mdash; NRI Plugins v0.4.1-7-g76de965 documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -53,12 +53,12 @@
 <li class="toctree-l1"><a class="reference internal" href="../../memory/index.html">Memory plugins</a></li>
 <li class="toctree-l1 current"><a class="reference internal" href="../index.html">Deployment</a><ul class="current">
 <li class="toctree-l2 current"><a class="current reference internal" href="#">Helm</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="balloons.html">Balloons Policy Plugin</a></li>
-<li class="toctree-l3"><a class="reference internal" href="topology-aware.html">Topology-Aware Policy Plugin</a></li>
-<li class="toctree-l3"><a class="reference internal" href="template.html">Template Policy Plugin</a></li>
-<li class="toctree-l3"><a class="reference internal" href="memory-qos.html">Memory-QoS Plugin</a></li>
-<li class="toctree-l3"><a class="reference internal" href="memtierd.html">Memtierd Plugin</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sgx-epc.html">SGX EPC Limit Plugin</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#stable-helm-charts">Stable Helm Charts</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#unstable-helm-charts">Unstable Helm Charts</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#discovering-unstable-helm-charts">Discovering Unstable Helm Charts</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#using-unstable-helm-charts">Using Unstable Helm Charts</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="../operator/index.html">Operator</a></li>
@@ -95,6 +95,8 @@
              
   <section id="helm">
 <h1>Helm<a class="headerlink" href="#helm" title="Permalink to this heading"></a></h1>
+<section id="stable-helm-charts">
+<h2>Stable Helm Charts<a class="headerlink" href="#stable-helm-charts" title="Permalink to this heading"></a></h2>
 <p>All the available charts can be found in <a class="reference external" href="https://artifacthub.io/packages/search?ts_query_web=nri&amp;amp;verified_publisher=true&amp;amp;official=true&amp;amp;sort=relevance&amp;amp;page=1">artifacthub.io</a>.</p>
 <p><strong>NOTE:</strong> NRI-plugins Helm installation has been successfully verified in both local clusters and major Cloud Providers’ managed clusters, including:</p>
 <ul class="simple">
@@ -121,6 +123,25 @@
 </li>
 </ul>
 <p>While Ubuntu 20.04/22.04 was used across all three CSP environments, it’s worth noting that node images are not limited to Ubuntu 20.04/22.04 only. The majority of widely recognized Linux distributions should be suitable for use.</p>
+</section>
+<section id="unstable-helm-charts">
+<h2>Unstable Helm Charts<a class="headerlink" href="#unstable-helm-charts" title="Permalink to this heading"></a></h2>
+<p>Helm charts are also published from the main/development branch after each merge.
+These charts reference the latest development images tagged as <code class="docutils literal notranslate"><span class="pre">unstable</span></code> and are
+are stored alongside plugin images in the OCI image registry.</p>
+<section id="discovering-unstable-helm-charts">
+<h3>Discovering Unstable Helm Charts<a class="headerlink" href="#discovering-unstable-helm-charts" title="Permalink to this heading"></a></h3>
+<p>Unstable charts can be discovered using <a class="reference external" href="https://github.com/containers/skopeo">skopeo</a>.
+For instance, one can list the available charts for the balloons plugin using this
+skopeo command:
+<code class="docutils literal notranslate"><span class="pre">skopeo</span> <span class="pre">list-tags</span> <span class="pre">docker://ghcr.io/containers/nri-plugins/helm-charts/nri-resource-policy-balloons</span></code></p>
+</section>
+<section id="using-unstable-helm-charts">
+<h3>Using Unstable Helm Charts<a class="headerlink" href="#using-unstable-helm-charts" title="Permalink to this heading"></a></h3>
+<p>Once discovered, unstable Helm charts can be used like any other. For instance, to use
+the <code class="docutils literal notranslate"><span class="pre">v$X.$Y-unstable</span></code> version of the chart to install the development version of the
+balloons plugin one can use this command:
+<code class="docutils literal notranslate"><span class="pre">helm</span> <span class="pre">install</span> <span class="pre">--devel</span> <span class="pre">-n</span> <span class="pre">kube-system</span> <span class="pre">test</span> <span class="pre">oci://ghcr.io/containers/nri-plugins/helm-charts/nri-resource-policy-balloons</span> <span class="pre">--version</span> <span class="pre">v$X.$Y-unstable</span> <span class="pre">--set</span> <span class="pre">image.tag=unstable</span> <span class="pre">--set</span> <span class="pre">image.pullPolicy=Always</span></code></p>
 <div class="toctree-wrapper compound">
 <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
 <ul>
@@ -168,6 +189,8 @@
 </li>
 </ul>
 </div>
+</section>
+</section>
 </section>
 
 
