@@ -16,7 +16,7 @@ SHELL := /bin/bash
 # Kubernetes version we pull in as modules and our external API versions.
 KUBERNETES_VERSION := $(shell grep 'k8s.io/kubernetes ' go.mod | sed 's/^.* //')
 
-IMAGE_VERSION  := $(shell git describe --dirty 2> /dev/null || echo v0.0.0-unknown)
+IMAGE_VERSION  ?= $(shell git describe --dirty 2> /dev/null || echo v0.0.0-unknown)
 ifdef IMAGE_REPO
     override IMAGE_REPO := $(IMAGE_REPO)/
 endif
@@ -25,8 +25,8 @@ export IMAGE_VERSION
 export IMAGE_PATH
 
 # Determine binary version and buildid.
-BUILD_VERSION := $(shell scripts/build/get-buildid --version --shell=no)
-BUILD_BUILDID := $(shell scripts/build/get-buildid --buildid --shell=no)
+BUILD_VERSION ?= $(shell scripts/build/get-buildid --version --shell=no)
+BUILD_BUILDID ?= $(shell scripts/build/get-buildid --buildid --shell=no)
 
 GO_CMD     := go
 GO_BUILD   := $(GO_CMD) build
@@ -231,6 +231,9 @@ image.%:
 	tag=$(patsubst image.%,%,$@); \
 	$(DOCKER_BUILD) . -f "$$dir/Dockerfile" \
 	    --build-arg GO_VERSION=$(GO_VERSION) \
+	    --build-arg IMAGE_VERSION=$(IMAGE_VERSION) \
+	    --build-arg BUILD_VERSION=$(BUILD_VERSION) \
+	    --build-arg BUILD_BUILDID=$(BUILD_BUILDID) \
 	    -t $(IMAGE_REPO)$$tag:$(IMAGE_VERSION) || exit $$?; \
 	NRI_IMAGE_INFO=`$(DOCKER) images --filter=reference=$${tag} --format '{{.ID}} {{.Repository}}:{{.Tag}} (created {{.CreatedSince}}, {{.CreatedAt}})' | head -n 1`; \
 	NRI_IMAGE_ID=`awk '{print $$1}' <<< "$${NRI_IMAGE_INFO}"`; \
