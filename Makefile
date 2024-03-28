@@ -16,7 +16,7 @@ SHELL := /bin/bash
 # Kubernetes version we pull in as modules and our external API versions.
 KUBERNETES_VERSION := $(shell grep 'k8s.io/kubernetes ' go.mod | sed 's/^.* //')
 
-IMAGE_VERSION  ?= $(shell git describe --dirty 2> /dev/null || echo v0.0.0-unknown)
+IMAGE_VERSION  ?= $(shell git describe --tags --dirty 2> /dev/null || echo v0.0.0-unknown)
 ifdef IMAGE_REPO
     override IMAGE_REPO := $(IMAGE_REPO)/
 endif
