@@ -3,7 +3,7 @@ name: Package Helm charts
 on:
   push:
     tags:
-      - "v*.*.*"
+      - v[0-9]+.[0-9]+.[0-9]+
     branches:
       - main
       - release-*
