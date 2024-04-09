@@ -88,6 +88,9 @@ nodeSelector: []
 #  kubernetes.io/disk: "ssd"
 
 # NRI plugins should be considered as part of the container runtime.
-# Therefore, adding the system-node-critical priority class to the DaemonSet,
-# could mitigate potential risk in a running system under load.
-podPriorityClassNodeCritical: false
+# By default we make them part of the system-node-critical priority
+# class. This should mitigate the potential risk of a plugin getting
+# evicted under heavy system load. It should also ensure that during
+# autoscaling enough new nodes are brought up to leave room for the
+# plugin on each new node.
+podPriorityClassNodeCritical: true
