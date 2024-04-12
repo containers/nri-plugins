@@ -1183,6 +1183,15 @@ func (sys *system) discoverNodes() error {
 		return fmt.Errorf("failed to parse nodes with memory (%q): %v",
 			memoryNodeIDs, err)
 	}
+	onlineNodeIDs, err := readSysfsEntry(sysNodesPath, "online", nil)
+	if err != nil {
+		return fmt.Errorf("failed to discover online nodes: %v", err)
+	}
+	onlineNodes, err := cpuset.Parse(onlineNodeIDs)
+	if err != nil {
+		return fmt.Errorf("failed to parse online nodes (%q): %v",
+			onlineNodeIDs, err)
+	}
 
 	cpuNodesSlice := []int{}
 	for id, node := range sys.nodes {
@@ -1199,7 +1208,8 @@ func (sys *system) discoverNodes() error {
 	sys.Logger.Info("NUMA nodes with (any) memory: %s", memoryNodes.String())
 	sys.Logger.Info("NUMA nodes with normal memory: %s", normalMemNodes.String())
 
-	dramNodes := memoryNodes.Intersection(cpuNodes)
+	noMemNodes := onlineNodes.Difference(memoryNodes)
+	dramNodes := cpuNodes.Clone()
 	pmemOrHbmNodes := memoryNodes.Difference(dramNodes)
 
 	dramNodeIds := IDSetFromCPUSet(dramNodes)
@@ -1208,6 +1218,11 @@ func (sys *system) discoverNodes() error {
 	infos := make(map[idset.ID]*MemInfo)
 	dramAvg := uint64(0)
 	if len(pmemOrHbmNodeIds) > 0 && len(dramNodeIds) > 0 {
+		dramCnt := uint64(len(dramNodeIds) - noMemNodes.Size())
+		if dramCnt == 0 {
+			return fmt.Errorf("no dram nodes in the system, cannot determine memory types")
+		}
+
 		// There is special memory present in the system.
 
 		// FIXME assumption: if a node only has memory (and no CPUs), it's PMEM or HBM. Otherwise it's DRAM.
@@ -1224,7 +1239,7 @@ func (sys *system) discoverNodes() error {
 				dramTotal += info.MemTotal
 			}
 		}
-		dramAvg = dramTotal / uint64(len(dramNodeIds))
+		dramAvg = dramTotal / dramCnt
 		if dramAvg == 0 {
 			// FIXME: should be no reason to bail out when memory types are properly determined.
 			return fmt.Errorf("no dram in the system, cannot determine special memory types")
