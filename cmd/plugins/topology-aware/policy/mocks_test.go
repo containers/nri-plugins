@@ -285,11 +285,11 @@ func (fake *mockSystem) SocketCount() int {
 func (fake *mockSystem) NUMANodeCount() int {
 	return len(fake.nodes)
 }
-func (fake *mockSystem) ThreadCount() int {
-	if fake.cpuCount == 0 {
-		return 1
-	}
-	return fake.cpuCount
+func (fake *mockSystem) MinThreadCount() int {
+	return 2
+}
+func (fake *mockSystem) MaxThreadCount() int {
+	return 2
 }
 func (fake *mockSystem) PackageIDs() []idset.ID {
 	ids := make([]idset.ID, len(fake.nodes))
