@@ -17,13 +17,13 @@ annotations and (a yet to be merged pull request to) the cgroup v2 misc controll
       [these](https://github.com/containerd/containerd/blob/main/docs/NRI.md#enabling-nri-support-in-containerd)
       detailed instructions. You can optionally enable the NRI in containerd
       using the Helm chart during the chart installation simply by setting the
-      `nri.patchRuntimeConfig` parameter. For instance,
+      `nri.runtime.patchConfig` parameter. For instance,
 
       ```sh
-      helm install my-sgx-epc nri-plugins/nri-sgx-epc --set nri.patchRuntimeConfig=true --namespace kube-system
+      helm install my-sgx-epc nri-plugins/nri-sgx-epc --set nri.runtime.patchConfig=true --namespace kube-system
       ```
 
-      Enabling `nri.patchRuntimeConfig` creates an init container to turn on
+      Enabling `nri.runtime.patchConfig` creates an init container to turn on
       NRI feature in containerd and only after that proceed the plugin
       installation.
 
@@ -34,10 +34,10 @@ annotations and (a yet to be merged pull request to) the cgroup v2 misc controll
       [these](https://github.com/cri-o/cri-o/blob/main/docs/crio.conf.5.md#crionri-table)
       detailed instructions.  You can optionally enable the NRI in CRI-O using
       the Helm chart during the chart installation simply by setting the
-      `nri.patchRuntimeConfig` parameter. For instance,
+      `nri.runtime.patchConfig` parameter. For instance,
 
       ```sh
-      helm install my-sgx-epc nri-plugins/nri-sgx-epc --namespace kube-system --set nri.patchRuntimeConfig=true
+      helm install my-sgx-epc nri-plugins/nri-sgx-epc --namespace kube-system --set nri.runtime.patchConfig=true
       ```
 
 ## Installing the Chart
@@ -57,14 +57,17 @@ values.yaml file and provide it using the `-f` flag. For example:
 
 ```sh
 # Install the sgx-epc plugin with custom values provided using the --set option
-helm install my-sgx-epc nri-plugins/nri-sgx-epc --namespace kube-system --set nri.patchRuntimeConfig=true
+helm install my-sgx-epc nri-plugins/nri-sgx-epc --namespace kube-system --set nri.runtime.patchConfig=true
 ```
 
 ```sh
 # Install the sgx-epc plugin with custom values specified in a custom values.yaml file
 cat <<EOF > myPath/values.yaml
 nri:
-  patchRuntimeConfig: true
+  runtime:
+    patchConfig: true
+  plugin:
+    index: 10
 
 tolerations:
 - key: "node-role.kubernetes.io/control-plane"
@@ -95,8 +98,10 @@ customize with their own values, along with the default values.
 | `image.pullPolicy`       | Always                                                                                                                        | image pull policy                                    |
 | `resources.cpu`          | 25m                                                                                                                           | cpu resources for the Pod                            |
 | `resources.memory`       | 100Mi                                                                                                                         | memory qouta for the Pod                         |
-| `nri.patchRuntimeConfig` | false                                                                                                                         | enable NRI in containerd or CRI-O                    |
-| `nri.pluginIndex`        | 40                                                                                                                            | NRI plugin index to register with                    |
+| `nri.runtime.config.pluginRegistrationTimeout` | ""                                                                                                      | set NRI plugin registration timeout in NRI config of containerd or CRI-O |
+| `nri.runtime.config.pluginRequestTimeout`      | ""                                                                                                      | set NRI plugin request timeout in NRI config of containerd or CRI-O |
+| `nri.runtime.patchConfig` | false                                                                                                                        | patch NRI configuration in containerd or CRI-O       |
+| `nri.plugin.index`        | 90                                                                                                                           | NRI plugin index to register with            
 | `initImage.name`         | [ghcr.io/containers/nri-plugins/config-manager](https://ghcr.io/containers/nri-plugins/config-manager)                        | init container image name                            |
 | `initImage.tag`          | unstable                                                                                                                      | init container image tag                             |
 | `initImage.pullPolicy`   | Always                                                                                                                        | init container image pull policy                     |

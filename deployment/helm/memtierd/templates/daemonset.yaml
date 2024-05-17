@@ -28,9 +28,16 @@ spec:
         {{- toYaml . | nindent 8 }}
     {{- end }}
       hostPID: true
-      {{- if .Values.nri.patchRuntimeConfig }}
+      {{- if .Values.nri.runtime.patchConfig }}
       initContainers:
       - name: patch-runtime
+        {{- if (not (or (eq .Values.nri.runtime.config nil) (eq .Values.nri.runtime.config.pluginRegistrationTimeout ""))) }}
+        args:
+          - -nri-plugin-registration-timeout
+          - {{ .Values.nri.runtime.config.pluginRegistrationTimeout }}
+          - -nri-plugin-request-timeout
+          - {{ .Values.nri.runtime.config.pluginRequestTimeout }}
+        {{- end }}
         image: {{ .Values.initContainerImage.name }}:{{ .Values.initContainerImage.tag | default .Chart.AppVersion }}
         imagePullPolicy: {{ .Values.initContainerImage.pullPolicy }}
         volumeMounts:
@@ -48,7 +55,7 @@ spec:
           command:
             - nri-memtierd
             - --idx
-            - "{{ .Values.nri.pluginIndex | int | printf "%02d"  }}"
+            - "{{ .Values.nri.plugin.index | int | printf "%02d"  }}"
             - --config
             - /etc/nri/memtierd/config.yaml
             {{- if .Values.outputDir }}
@@ -104,7 +111,7 @@ spec:
           path: {{ .Values.outputDir }}
           type: DirectoryOrCreate
       {{- end }}
-      {{- if .Values.nri.patchRuntimeConfig }}
+      {{- if .Values.nri.runtime.patchConfig }}
       - name: containerd-config
         hostPath:
           path: /etc/containerd/

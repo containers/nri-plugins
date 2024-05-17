@@ -65,17 +65,52 @@
         "nri": {
             "type": "object",
             "required": [
-                "patchRuntimeConfig",
-                "pluginIndex"
+                "plugin",
+                "runtime"
             ],
             "properties": {
-                "patchRuntimeConfig": {
-                    "type": "boolean"
+                "plugin": {
+                    "type": "object",
+                    "required": [
+                        "index"
+                    ],
+                    "properties": {
+                        "index": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 99
+                        }
+                    }
                 },
-                "pluginIndex": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 99
+                "runtime": {
+                    "type": "object",
+                    "required": [
+                        "patchConfig"
+                    ],
+                    "properties": {
+                        "patchConfig": {
+                            "type": "boolean"
+                        },
+                        "config": {
+                            "type": "object",
+                            "required": [
+                                "pluginRegistrationTimeout",
+                                "pluginRequestTimeout"
+                            ],
+                            "properties": {
+                                "pluginRegistrationTimeout": {
+                                    "type": "string",
+                                    "$comment": "allowed range is 5-30s",
+                                    "pattern": "^(([5-9])|([1-2][0-9])|(30))s$"
+                                },
+                                "pluginRequestTimeout": {
+                                    "type": "string",
+                                    "$comment": "allowed range is 2-30s",
+                                    "pattern": "^(([2-9])|([1-2][0-9])|(30))s$"
+                                }
+                            }
+                        }
+                    }
                 }
             }
         },
