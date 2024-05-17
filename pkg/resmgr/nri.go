@@ -17,6 +17,7 @@ package resmgr
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/containers/nri-plugins/pkg/instrumentation/tracing"
 	logger "github.com/containers/nri-plugins/pkg/log"
@@ -106,13 +107,9 @@ func (p *nriPlugin) stop() {
 	p.stub.Stop()
 }
 
-func (p *nriPlugin) restart() error {
-	return p.start()
-}
-
 func (p *nriPlugin) onClose() {
-	p.resmgr.Warn("connection to NRI/runtime lost, trying to reconnect...")
-	p.restart()
+	p.Error("connection to NRI/runtime lost, exiting...")
+	os.Exit(1)
 }
 
 func (p *nriPlugin) Configure(ctx context.Context, cfg, runtime, version string) (stub.EventMask, error) {
