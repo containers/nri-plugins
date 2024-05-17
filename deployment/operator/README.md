@@ -39,7 +39,13 @@ spec:
   state: present
   values:
     nri:
-      patchRuntimeConfig: true
+      plugin:
+        index: 90
+      runtime:
+        patchConfig: true
+#       config:
+#         pluginRegistrationTimeout: 5s
+#         pluginRequestTimeout: 2s
     tolerations:
       - key: "node-role.kubernetes.io/control-plane"
         operator: "Exists"
