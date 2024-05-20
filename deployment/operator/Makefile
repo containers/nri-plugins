@@ -101,7 +101,7 @@ bundle: copy-crds kustomize operator-sdk kustomizations ## Generate bundle manif
 	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
 	$(MAKE) bundle-validate
 	$(MAKE) cleanup-crds
-	
+
 .PHONY: bundle-validate
 bundle-validate:	
 	$(OPERATOR_SDK) bundle validate ./bundle \
