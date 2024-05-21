@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NRI-Plugins-Operator &mdash; NRI Plugins v0.5.0-12-g712848d0 documentation</title>
+  <title>NRI-Plugins-Operator &mdash; NRI Plugins v0.5.0-17-g1f45c70f documentation</title>
       <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -116,7 +116,13 @@ nri-plugin specified in the NriPluginDeployment.</p>
 <span class="w">  </span><span class="nt">state</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">present</span>
 <span class="w">  </span><span class="nt">values</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">nri</span><span class="p">:</span>
-<span class="w">      </span><span class="nt">patchRuntimeConfig</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">plugin</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">index</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">90</span>
+<span class="w">      </span><span class="nt">runtime</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">patchConfig</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="c1">#       config:</span>
+<span class="c1">#         pluginRegistrationTimeout: 5s</span>
+<span class="c1">#         pluginRequestTimeout: 2s</span>
 <span class="w">    </span><span class="nt">tolerations</span><span class="p">:</span>
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;node-role.kubernetes.io/control-plane&quot;</span>
 <span class="w">        </span><span class="nt">operator</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Exists&quot;</span>

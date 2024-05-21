@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy Plugin &mdash; NRI Plugins v0.5.0-12-g712848d0 documentation</title>
+  <title>Topology-Aware Policy Plugin &mdash; NRI Plugins v0.5.0-17-g1f45c70f documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -115,11 +115,11 @@ release version to use the NRI feature.</p></li>
 <a class="reference external" href="https://github.com/containerd/containerd/blob/main/docs/NRI.md#enabling-nri-support-in-containerd">these</a>
 detailed instructions. You can optionally enable the NRI in containerd
 using the Helm chart during the chart installation simply by setting the
-<code class="docutils literal notranslate"><span class="pre">nri.patchRuntimeConfig</span></code> parameter. For instance,</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>my-topology-aware<span class="w"> </span>nri-plugins/nri-resource-policy-topology-aware<span class="w"> </span>--set<span class="w"> </span>nri.patchRuntimeConfig<span class="o">=</span><span class="nb">true</span><span class="w"> </span>--namespace<span class="w"> </span>kube-system
+<code class="docutils literal notranslate"><span class="pre">nri.runtime.patchConfig</span></code> parameter. For instance,</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>my-topology-aware<span class="w"> </span>nri-plugins/nri-resource-policy-topology-aware<span class="w"> </span>--set<span class="w"> </span>nri.runtime.patchConfig<span class="o">=</span><span class="nb">true</span><span class="w"> </span>--namespace<span class="w"> </span>kube-system
 </pre></div>
 </div>
-<p>Enabling <code class="docutils literal notranslate"><span class="pre">nri.patchRuntimeConfig</span></code> creates an init container to turn on
+<p>Enabling <code class="docutils literal notranslate"><span class="pre">nri.runtime.patchConfig</span></code> creates an init container to turn on
 NRI feature in containerd and only after that proceed the plugin
 installation.</p>
 </li>
@@ -133,8 +133,8 @@ release version to use the NRI feature</p></li>
 <a class="reference external" href="https://github.com/cri-o/cri-o/blob/main/docs/crio.conf.5.md#crionri-table">these</a>
 detailed instructions.  You can optionally enable the NRI in CRI-O using
 the Helm chart during the chart installation simply by setting the
-<code class="docutils literal notranslate"><span class="pre">nri.patchRuntimeConfig</span></code> parameter. For instance,</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>my-topology-aware<span class="w"> </span>nri-plugins/nri-resource-policy-topology-aware<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>--set<span class="w"> </span>nri.patchRuntimeConfig<span class="o">=</span><span class="nb">true</span>
+<code class="docutils literal notranslate"><span class="pre">nri.runtime.patchConfig</span></code> parameter. For instance,</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>my-topology-aware<span class="w"> </span>nri-plugins/nri-resource-policy-topology-aware<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>--set<span class="w"> </span>nri.runtime.patchConfig<span class="o">=</span><span class="nb">true</span>
 </pre></div>
 </div>
 </li>
@@ -157,13 +157,16 @@ available parameters as described in the <a class="reference internal" href="#co
 below, you have two options: you can use the <code class="docutils literal notranslate"><span class="pre">--set</span></code> flag or create a custom
 values.yaml file and provide it using the <code class="docutils literal notranslate"><span class="pre">-f</span></code> flag. For example:</p>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="c1"># Install the topology-aware plugin with custom values provided using the --set option</span>
-helm<span class="w"> </span>install<span class="w"> </span>my-topology-aware<span class="w"> </span>nri-plugins/nri-resource-policy-topology-aware<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>--set<span class="w"> </span>nri.patchRuntimeConfig<span class="o">=</span><span class="nb">true</span>
+helm<span class="w"> </span>install<span class="w"> </span>my-topology-aware<span class="w"> </span>nri-plugins/nri-resource-policy-topology-aware<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>--set<span class="w"> </span>nri.runtime.patchConfig<span class="o">=</span><span class="nb">true</span>
 </pre></div>
 </div>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="c1"># Install the topology-aware plugin with custom values specified in a custom values.yaml file</span>
 cat<span class="w"> </span><span class="s">&lt;&lt;EOF &gt; myPath/values.yaml</span>
 <span class="s">nri:</span>
-<span class="s">  patchRuntimeConfig: true</span>
+<span class="s">  runtime:</span>
+<span class="s">    patchConfig: true</span>
+<span class="s">  plugin:</span>
+<span class="s">    index: 10</span>
 
 <span class="s">tolerations:</span>
 <span class="s">- key: &quot;node-role.kubernetes.io/control-plane&quot;</span>
@@ -223,18 +226,26 @@ customize with their own values, along with the default values.</p>
 <td><p>metrics port to expose on the host</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">config</span></code></p></td>
-<td><p>see <a class="reference external" href="https://github.com/containers/nri-plugins/tree/712848d01e460b8f2966b5e2ca41cd5462a0b7e6/deployment/helm/topology-aware/values.yaml">helm chart values</a> for the default configuration</p></td>
+<td><p>see <a class="reference external" href="https://github.com/containers/nri-plugins/tree/1f45c70f6aa07e6be68c6c18f744b5c4bc48d0cc/deployment/helm/topology-aware/values.yaml">helm chart values</a> for the default configuration</p></td>
 <td><p>plugin configuration data</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">configGroupLabel</span></code></p></td>
 <td><p>config.nri/group</p></td>
 <td><p>node label for grouping configuration</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">nri.patchRuntimeConfig</span></code></p></td>
-<td><p>false</p></td>
-<td><p>enable NRI in containerd or CRI-O</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">nri.runtime.config.pluginRegistrationTimeout</span></code></p></td>
+<td><p>“”</p></td>
+<td><p>set NRI plugin registration timeout in NRI config of containerd or CRI-O</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">nri.pluginIndex</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">nri.runtime.config.pluginRequestTimeout</span></code></p></td>
+<td><p>“”</p></td>
+<td><p>set NRI plugin request timeout in NRI config of containerd or CRI-O</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">nri.runtime.patchConfig</span></code></p></td>
+<td><p>false</p></td>
+<td><p>patch NRI configuration in containerd or CRI-O</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">nri.plugin.index</span></code></p></td>
 <td><p>90</p></td>
 <td><p>NRI plugin index to register with</p></td>
 </tr>
