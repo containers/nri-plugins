@@ -15,5 +15,5 @@ spec:
   state: present
   values:
     nri:
-      patchRuntimeConfig: true
-
+      runtime:
+        patchConfig: true

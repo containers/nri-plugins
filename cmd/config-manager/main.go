@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"time"
@@ -43,7 +44,26 @@ var (
 	log = logrus.StandardLogger()
 )
 
+type nriConfig struct {
+	registrationTimeout string
+	requestTimeout      string
+}
+
 func main() {
+	var cfg nriConfig
+
+	flag.StringVar(&cfg.requestTimeout,
+		"nri-plugin-request-timeout", "", "NRI plugin request timeout to patch, as time.Duration")
+	flag.StringVar(&cfg.registrationTimeout,
+		"nri-plugin-registration-timeout", "", "NRI plugin registration timeout to patch, as time.Duration")
+
+	flag.Parse()
+
+	err := cfg.check()
+	if err != nil {
+		log.Fatalf("invalid NRI configuration requested: %v", err)
+	}
+
 	unit, conn, err := detectRuntime()
 	if err != nil {
 		log.Fatalf("failed to autodetect container runtime: %v", err)
@@ -52,9 +72,9 @@ func main() {
 
 	switch unit {
 	case containerdUnit:
-		err = enableNriForContainerd()
+		err = configureNriForContainerd(&cfg)
 	case crioUnit:
-		err = enableNriForCrio()
+		err = configureNriForCrio(&cfg)
 	default:
 		log.Fatalf("unknown container runtime %q", unit)
 	}
@@ -83,14 +103,14 @@ func main() {
 	log.Println("enabled NRI for", unit)
 }
 
-func enableNriForContainerd() error {
-	log.Infof("enabling NRI in containerd configuration...")
+func configureNriForContainerd(cfg *nriConfig) error {
+	log.Infof("configuring NRI for containerd...")
 	tomlMap, err := readConfig(containerdConfigFile)
 	if err != nil {
 		return fmt.Errorf("error reading TOML file: %w", err)
 	}
 
-	updatedTomlMap := updateContainerdConfig(tomlMap)
+	updatedTomlMap := updateContainerdConfig(tomlMap, cfg)
 
 	err = writeToContainerdConfig(containerdConfigFile, updatedTomlMap)
 	if err != nil {
@@ -99,8 +119,8 @@ func enableNriForContainerd() error {
 	return nil
 }
 
-func enableNriForCrio() error {
-	log.Infof("enabling NRI in CRI-O configuration...")
+func configureNriForCrio(cfg *nriConfig) error {
+	log.Infof("configuring NRI for CRI-O...")
 	f, err := os.Create(crioConfigFile)
 	if err != nil {
 		return fmt.Errorf("error creating a drop-in file for CRI-O: %w", err)
@@ -111,6 +131,12 @@ func enableNriForCrio() error {
 	if err != nil {
 		return fmt.Errorf("error writing a drop-in file for CRI-O: %w", err)
 	}
+
+	err = cfg.writeCrioConfig(f)
+	if err != nil {
+		return fmt.Errorf("error writing NRI configuration for CRI-O: %w", err)
+	}
+
 	return nil
 }
 
@@ -149,7 +175,7 @@ func readConfig(file string) (map[string]interface{}, error) {
 	return tomlMap, nil
 }
 
-func updateContainerdConfig(config map[string]interface{}) map[string]interface{} {
+func updateContainerdConfig(config map[string]interface{}, cfg *nriConfig) map[string]interface{} {
 	plugins, exists := config["plugins"].(map[string]interface{})
 	if !exists {
 		log.Println("top level plugins section not found, adding it to enable NRI...")
@@ -165,7 +191,71 @@ func updateContainerdConfig(config map[string]interface{}) map[string]interface{
 	}
 
 	nri["disable"] = false
+
+	cfg.updateContainerdConfig(config)
+
 	return config
+}
+
+func (cfg *nriConfig) check() error {
+	switch {
+	case cfg.registrationTimeout == "" && cfg.requestTimeout == "":
+		return nil
+	case cfg.registrationTimeout != "" && cfg.requestTimeout == "":
+		return fmt.Errorf("NRI plugin registration timeout set without request timeout")
+	case cfg.registrationTimeout == "" && cfg.requestTimeout != "":
+		return fmt.Errorf("NRI plugin request timeout set without registration timeout")
+	}
+
+	register, err := time.ParseDuration(cfg.registrationTimeout)
+	if err != nil {
+		return fmt.Errorf("invalid plugin registration timeout: %w", err)
+	}
+	request, err := time.ParseDuration(cfg.requestTimeout)
+	if err != nil {
+		return fmt.Errorf("invalid plugin request timeout: %w", err)
+	}
+
+	if register <= request {
+		return fmt.Errorf("NRI plugin registration timeout (%s) must be > request timeout (%s)",
+			register, request)
+	}
+
+	return nil
+}
+
+func (cfg *nriConfig) writeCrioConfig(f *os.File) error {
+	const (
+		registrationTimeout = "nri_plugin_registration_timeout"
+		requestTimeout      = "nri_plugin_request_timeout"
+	)
+	if cfg.registrationTimeout != "" {
+		key, value := registrationTimeout, "\""+cfg.registrationTimeout+"\""
+		if _, err := f.WriteString(key + " = " + value + "\n"); err != nil {
+			return err
+		}
+	}
+	if cfg.requestTimeout != "" {
+		key, value := requestTimeout, "\""+cfg.requestTimeout+"\""
+		if _, err := f.WriteString(key + " = " + value + "\n"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (cfg *nriConfig) updateContainerdConfig(tomlCfg map[string]interface{}) {
+	const (
+		registrationTimeout = "plugin_registration_timeout"
+		requestTimeout      = "plugin_request_timeout"
+	)
+
+	if cfg.registrationTimeout != "" {
+		tomlCfg[registrationTimeout] = cfg.registrationTimeout
+	}
+	if cfg.requestTimeout != "" {
+		tomlCfg[requestTimeout] = cfg.requestTimeout
+	}
 }
 
 func detectRuntime() (string, *dbus.Conn, error) {

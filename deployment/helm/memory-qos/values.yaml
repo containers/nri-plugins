@@ -13,8 +13,13 @@ resources:
   memory: 100Mi
 
 nri:
-  patchRuntimeConfig: false
-  pluginIndex: 40
+  plugin:
+    index: 90
+  runtime:
+    patchConfig: false
+#   config:
+#     pluginRegistrationTimeout: 5s
+#     pluginRequestTimeout: 2s
 
 initContainerImage:
   name: ghcr.io/containers/nri-plugins/nri-config-manager

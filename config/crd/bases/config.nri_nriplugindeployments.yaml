@@ -69,8 +69,23 @@ spec:
                     nri:
                       type: object
                       properties:
-                        patchRuntimeConfig:
-                          type: boolean
+                        runtime:
+                          type: object
+                          properties:
+                            patchConfig:
+                              type: boolean
+                            config:
+                              type: object
+                              required:
+                              - pluginRegistrationTimeout
+                              - pluginRequestTimeout
+                              properties:
+                                pluginRegistrationTimeout:
+                                  type: string
+                                  pattern: "^(([5-9])|([1-2][0-9])|(30))s$"
+                                pluginRequestTimeout:
+                                  type: string
+                                  pattern: "^(([2-9])|([1-2][0-9])|(30))s$"
                     image:
                       type: object
                       description: image defines Plugin DeamonSet image name and tag
