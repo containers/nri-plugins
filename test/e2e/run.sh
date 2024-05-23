@@ -23,27 +23,47 @@ export cni_plugin=${cni_plugin:-cilium}
 export cni_release=${cni_release:-latest}
 TOPOLOGY_DIR=${TOPOLOGY_DIR:=e2e}
 
-K8S_REPO="https://github.com/kubernetes/kubernetes"
+GH_K8S_REPO="kubernetes/kubernetes"
 export k8s_release=${k8s_release:-"latest"}
 export k8s_version=""
 
 source "$LIB_DIR"/vm.bash
 
+list-github-releases () {
+    local repo="$1" max="${max_releases:-20}" page=1 tags="" more="" sep=""
+    local total=0 cnt=-1
+
+    while [ "$cnt" != 0 -a "$total" -lt "$max" ]; do
+        echo -n "fetching releases for $repo (page $page)..." 1>&2
+        if more=$(wget -q "https://github.com/$repo/releases?page=$page" -O- | \
+                      grep -E '.*/releases/tag/v[0-9]+.[0-9]+.[0-9]+"' | \
+                      sed -E 's|.*/releases/tag/(v[0-9]+.[0-9]+.[0-9]+).*|\1|g')
+        then
+            tags="$tags$sep$more"
+            sep=" "
+            cnt="$(echo $more | wc -w)"
+            total=$((total+cnt))
+            echo " got $cnt more, $total in total..." 1>&2
+            page=$((page+1))
+        else
+            echo "failed to determine latest github release for $repo"
+            return 1
+        fi
+    done
+
+    echo "$tags" | tr -s ' ' '\n' | sort -Vr
+}
+
 latest-github-release () {
-    local repo="$1"
-    local latest=$(wget -q -O- $repo/releases/latest | grep '/tree/v[0-9.]*' |
-                       sed -E 's:.*/tree/v([0-9]*\.[0-9]*)(\.[0-9]*).*:\1\2:g' | head -1)
-    if [ -z "$latest" ]; then
-        echo "failed to determine latest release of $repo"
-        exit 1
-    fi
-    echo "$latest"
+    list-github-releases "$1" | head -1
+    return $?
 }
 
 if [ "$k8s_release" = "latest" ]; then
-    if ! k8s_release=$(latest-github-release $K8S_REPO); then
+    if ! k8s_release=$(latest-github-release $GH_K8S_REPO); then
         error "$k8s_release"
     fi
+    k8s_release="${k8s_release#v}"
     echo "Latest Kubernetes release: $k8s_release"
 fi
 
@@ -80,13 +100,14 @@ fi
 # from a release tarball with the version given below... unless
 # a source directory is given, which is then expected to contain
 # a compiled version of containerd which we should install.
-CONTAINERD_REPO="https://github.com/containerd/containerd"
+GH_CONTAINERD_REPO="containerd/containerd"
 export containerd_release=${containerd_release:-latest}
 
 if [ "$k8scri" = "containerd" -a "$containerd_release" = "latest" ]; then
-    if ! containerd_release=$(latest-github-release $CONTAINERD_REPO); then
+    if ! containerd_release=$(latest-github-release $GH_CONTAINERD_REPO); then
         error "$containerd_release"
     fi
+    containerd_release="${containerd_release#v}"
     echo "Latest containerd release: $containerd_release"
 fi
 
@@ -97,12 +118,12 @@ export containerd_src=${containerd_src:-}
 # a release tarball with the version given below... unless a
 # source directory is given, which is then expected to contain
 # a compiled version of CRI-O which we should install.
-CRIO_REPO="https://github.com/cri-o/cri-o"
+GH_CRIO_REPO="cri-o/cri-o"
 export crio_release=${crio_release:-latest}
 export crio_src=${crio_src:-}
 
 if [ "$k8scri" = "crio" -a "$crio_release" = "latest" ]; then
-    if ! crio_release=$(latest-github-release $CRIO_REPO); then
+    if ! crio_release=$(latest-github-release $GH_CRIO_REPO); then
         error "$crio_release"
     fi
     echo "Latest CRI-O release: $crio_release"
