@@ -60,8 +60,14 @@ latest-github-release () {
 }
 
 if [ "$k8s_release" = "latest" ]; then
-    if ! k8s_release=$(latest-github-release $GH_K8S_REPO); then
-        error "$k8s_release"
+    if latest_k8s_release=$(vm-load-cached-var "$OUTPUT_DIR" latest_k8s_release); then
+        echo "Loaded cached latest_k8s_release=$latest_k8s_release..."
+        k8s_release="$latest_k8s_release"
+    else
+        if ! k8s_release=$(latest-github-release $GH_K8S_REPO); then
+            error "$k8s_release"
+        fi
+        vm-save-cached-var "$OUTPUT_DIR" latest_k8s_release $k8s_release
     fi
     k8s_release="${k8s_release#v}"
     echo "Latest Kubernetes release: $k8s_release"
@@ -104,12 +110,19 @@ GH_CONTAINERD_REPO="containerd/containerd"
 export containerd_release=${containerd_release:-latest}
 
 if [ "$k8scri" = "containerd" -a "$containerd_release" = "latest" ]; then
-    if ! containerd_release=$(latest-github-release $GH_CONTAINERD_REPO); then
-        error "$containerd_release"
+    if latest_containerd_release=$(vm-load-cached-var "$OUTPUT_DIR" latest_containerd_release); then
+        echo "Loaded cached latest_containerd_release=$latest_containerd_release..."
+        containerd_release="$latest_containerd_release"
+    else
+        if ! containerd_release=$(latest-github-release $GH_CONTAINERD_REPO); then
+            error "$containerd_release"
+        fi
+        vm-save-cached-var "$OUTPUT_DIR" latest_containerd_release $containerd_release
     fi
     containerd_release="${containerd_release#v}"
     echo "Latest containerd release: $containerd_release"
 fi
+
 
 export containerd_src=${containerd_src:-}
 
@@ -123,9 +136,16 @@ export crio_release=${crio_release:-latest}
 export crio_src=${crio_src:-}
 
 if [ "$k8scri" = "crio" -a "$crio_release" = "latest" ]; then
-    if ! crio_release=$(latest-github-release $GH_CRIO_REPO); then
-        error "$crio_release"
+    if latest_crio_release=$(vm-load-cached-var "$OUTPUT_DIR" latest_crio_release); then
+        echo "Loaded cached latest_crio_release=$latest_crio_release..."
+        crio_release="$latest_crio_release"
+    else
+        if ! crio_release=$(latest-github-release $GH_CRIO_REPO); then
+            error "$crio_release"
+        fi
+        vm-save-cached-var "$OUTPUT_DIR" latest_crio_release $crio_release
     fi
+    crio_release="${crio_release#v}"
     echo "Latest CRI-O release: $crio_release"
 fi
 

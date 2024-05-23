@@ -36,6 +36,58 @@ vm-create-name() {
     echo "${topology}-${distro}-${runtime}"
 }
 
+vm-save-cached-var() {
+    local output_dir="$1"
+    local var="$2"
+    local val="${3:-}"
+    local cache_dir="$output_dir/cache"
+
+    if [ $# = 3 ]; then
+        val="$3"
+    else
+        val="${!var}"
+    fi
+
+    if [ -z "$val" ]; then
+        echo "WARNING: not saving cached empty value for variable $var..." 1>&2
+        return 0
+    fi
+
+    if [ ! -d "$cache_dir" ]; then
+        mkdir -p "$cache_dir" || \
+            error "failed to create cache dir $cache_dir"
+    fi
+
+    echo "$val" > "$cache_dir/$var"
+    if [ $? = 0 ]; then
+        echo "saved cached variable $var=$val..." 1>&2
+        return 0
+    fi
+
+    return 1
+}
+
+vm-load-cached-var() {
+    local output_dir="$1"
+    local var="$2"
+    local cache_dir="$output_dir/cache"
+    local val
+
+    if [ ! -d "$cache_dir" -o ! -f "$cache_dir/$var" ]; then
+        return 1
+    fi
+
+    val="$(cat $cache_dir/$var)"
+    if [ $? = 0 ]; then
+        echo "loaded cached variable $var=$val..." 1>&2
+        echo $val
+        return 0
+    fi
+
+    error "failed to load cached variable $var" 1>&2
+    return 1
+}
+
 vm-setup() {
     local output_dir="$1"
     local vmname="$2"
