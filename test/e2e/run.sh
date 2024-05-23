@@ -23,25 +23,40 @@ export cni_plugin=${cni_plugin:-cilium}
 export cni_release=${cni_release:-latest}
 TOPOLOGY_DIR=${TOPOLOGY_DIR:=e2e}
 
-K8S_REPO="https://github.com/kubernetes/kubernetes"
+GH_K8S_REPO="kubernetes/kubernetes"
 export k8s_release=${k8s_release:-"latest"}
 export k8s_version=""
 
 source "$LIB_DIR"/vm.bash
 
+list-github-releases () {
+    local repo="$1" max="${max_releases:-20}" page=1 tags="" more="" sep=""
+    local total=0 cnt=-1
+
+    while [ "$cnt" != 0 -a "$total" -lt "$max" ]; do
+        echo -n "fetching releases for $repo (page $page)..." 1>&2
+        if more=$(wget -q "https://github.com/$repo/releases?page=$page" -O- | \
+                      grep -E '.*/releases/tag/v[0-9]+.[0-9]+.[0-9]+"' | \
+                      sed -E 's|.*/releases/tag/(v[0-9]+.[0-9]+.[0-9]+).*|\1|g')
+        then
+            tags="$tags$sep$more"
+            sep=" "
+            cnt="$(echo $more | wc -w)"
+            total=$((total+cnt))
+            echo " got $cnt more, $total in total..." 1>&2
+            let page=$page+1
+        fi
+    done
+
+    echo "$tags" | tr -s ' ' '\n' | sort -Vr
+}
+
 latest-github-release () {
-    local repo="$1"
-    local latest=$(wget -q -O- $repo/releases/latest | grep '/tree/v[0-9.]*' |
-                       sed -E 's:.*/tree/v([0-9]*\.[0-9]*)(\.[0-9]*).*:\1\2:g' | head -1)
-    if [ -z "$latest" ]; then
-        echo "failed to determine latest release of $repo"
-        exit 1
-    fi
-    echo "$latest"
+    list-github-releases "$1" | head -1
 }
 
 if [ "$k8s_release" = "latest" ]; then
-    if ! k8s_release=$(latest-github-release $K8S_REPO); then
+    if ! k8s_release=$(latest-github-release $GH_K8S_REPO); then
         error "$k8s_release"
     fi
     echo "Latest Kubernetes release: $k8s_release"
