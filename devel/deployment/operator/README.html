@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NRI-Plugins-Operator &mdash; NRI Plugins v0.5.0-19-g72cefbcd documentation</title>
+  <title>NRI-Plugins-Operator &mdash; NRI Plugins v0.5.0-21-g49aad00e documentation</title>
       <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -117,12 +117,12 @@ nri-plugin specified in the NriPluginDeployment.</p>
 <span class="w">  </span><span class="nt">values</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">nri</span><span class="p">:</span>
 <span class="w">      </span><span class="nt">plugin</span><span class="p">:</span>
-<span class="w">        </span><span class="nt">index</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">90</span>
+<span class="w">        </span><span class="nt">index</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">90</span><span class="w">                       </span><span class="c1"># optional</span>
 <span class="w">      </span><span class="nt">runtime</span><span class="p">:</span>
-<span class="w">        </span><span class="nt">patchConfig</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-<span class="c1">#       config:</span>
-<span class="c1">#         pluginRegistrationTimeout: 5s</span>
-<span class="c1">#         pluginRequestTimeout: 2s</span>
+<span class="w">        </span><span class="nt">patchConfig</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">               </span><span class="c1"># optional</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span><span class="w">                         </span><span class="c1"># optional</span>
+<span class="w">          </span><span class="nt">pluginRegistrationTimeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5s</span>
+<span class="w">          </span><span class="nt">pluginRequestTimeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2s</span>
 <span class="w">    </span><span class="nt">tolerations</span><span class="p">:</span>
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;node-role.kubernetes.io/control-plane&quot;</span>
 <span class="w">        </span><span class="nt">operator</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Exists&quot;</span>
@@ -149,6 +149,15 @@ plugin version is mutable, and updating it will uninstall the current version be
 <li><p><code class="docutils literal notranslate"><span class="pre">spec.state</span></code>: Determines whether to install (<code class="docutils literal notranslate"><span class="pre">present</span></code>) or uninstall (<code class="docutils literal notranslate"><span class="pre">absent</span></code>) the plugin.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">spec.values</span></code>: Allows users to provide custom values for manipulating Helm chart values. This field is immutable,
 requiring users to recreate the object to pass new values.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">spec.values.nri.plugin.index</span></code>: A plugin index to register to NRI. The plugin index is used by NRI to determine in
+which order the plugin is hooked into pod and container lifecycle event processing with respect to any other.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">spec.values.nri.runtime.patchConfig</span></code>: Enable/Disable NRI on the current runtime.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">spec.values.nri.runtime.config.pluginRegistrationTimeout</span></code>: Timeout for a plugin to register itself with NRI. Ensure
+that both timeouts are either left unspecified or specified together, and <code class="docutils literal notranslate"><span class="pre">patchConfig</span></code> must be set to true to update
+the timeouts. Timeouts will have no effect if <code class="docutils literal notranslate"><span class="pre">patchConfig</span></code> is set to false.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">spec.values.nri.runtime.config.pluginRequestTimeout</span></code>: Timeout for a plugin to handle an event/request. Timeout for
+a plugin to register itself with NRI. Ensure that both timeouts are either left unspecified or specified together, and <code class="docutils literal notranslate"><span class="pre">patchConfig</span></code> must be set to true to update
+the timeouts. Timeouts will have no effect if <code class="docutils literal notranslate"><span class="pre">patchConfig</span></code> is set to false.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">spec.status</span></code>: Tracks the basic state of the resource and includes basic messages in case the operator encounters
 issues while reconciling the object.</p></li>
 </ul>

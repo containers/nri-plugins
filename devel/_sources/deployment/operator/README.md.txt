@@ -40,12 +40,12 @@ spec:
   values:
     nri:
       plugin:
-        index: 90
+        index: 90                       # optional
       runtime:
-        patchConfig: true
-#       config:
-#         pluginRegistrationTimeout: 5s
-#         pluginRequestTimeout: 2s
+        patchConfig: true               # optional
+        config:                         # optional
+          pluginRegistrationTimeout: 5s
+          pluginRequestTimeout: 2s
     tolerations:
       - key: "node-role.kubernetes.io/control-plane"
         operator: "Exists"
@@ -71,5 +71,14 @@ spec:
 - `spec.state`: Determines whether to install (`present`) or uninstall (`absent`) the plugin.
 - `spec.values`: Allows users to provide custom values for manipulating Helm chart values. This field is immutable, 
   requiring users to recreate the object to pass new values.
+- `spec.values.nri.plugin.index`: A plugin index to register to NRI. The plugin index is used by NRI to determine in
+  which order the plugin is hooked into pod and container lifecycle event processing with respect to any other.
+- `spec.values.nri.runtime.patchConfig`: Enable/Disable NRI on the current runtime.
+- `spec.values.nri.runtime.config.pluginRegistrationTimeout`: Timeout for a plugin to register itself with NRI. Ensure
+  that both timeouts are either left unspecified or specified together, and `patchConfig` must be set to true to update
+  the timeouts. Timeouts will have no effect if `patchConfig` is set to false.
+- `spec.values.nri.runtime.config.pluginRequestTimeout`: Timeout for a plugin to handle an event/request. Timeout for
+  a plugin to register itself with NRI. Ensure that both timeouts are either left unspecified or specified together, and `patchConfig` must be set to true to update
+  the timeouts. Timeouts will have no effect if `patchConfig` is set to false.
 - `spec.status`: Tracks the basic state of the resource and includes basic messages in case the operator encounters 
   issues while reconciling the object.
