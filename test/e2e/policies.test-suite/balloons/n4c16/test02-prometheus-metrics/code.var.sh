@@ -21,11 +21,19 @@ verify-metrics-has-no-line 'balloon_type="flex"'
 
 # pod0 in full-core[0]
 CPUREQ="100m" MEMREQ="100M" CPULIM="100m" MEMLIM="100M"
-POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: full-core" CONTCOUNT=2 create balloons-busybox
+POD_ANNOTATION=(
+    "balloon.balloons.resource-policy.nri.io: full-core"
+    "hide-hyperthreads.resource-policy.nri.io/container.pod0c1: \"false\""
+)
+CONTCOUNT=2 create balloons-busybox
+unset POD_ANNOTATION
 report allowed
 verify-metrics-has-line 'balloon="default\[0\]"'
 verify-metrics-has-line 'balloon="reserved\[0\]"'
 verify-metrics-has-line 'balloons{balloon="full-core\[0\]",balloon_type="full-core",containers="pod0/pod0c0,pod0/pod0c1",cpu_class="normal",cpus=".*",cpus_allowed=".*",cpus_allowed_count="2",cpus_count="2",cpus_max="2",cpus_min="2",dies="p[01]d0",dies_count="1",groups="",mems="[0-3]",numas="p[01]d0n[0-3]",numas_count="1",packages="p[01]",packages_count="1",sharedidlecpus="",sharedidlecpus_count="0",tot_req_millicpu="(199|200)"} 2'
+verify 'len(cpus["pod0c0"]) == 1' \
+       'len(cpus["pod0c1"]) == 2' \
+       'cpus["pod0c0"].issubset(cpus["pod0c1"])'
 
 # pod1 in fast-dualcore[0]
 CPUREQ="200m" MEMREQ="" CPULIM="200m" MEMLIM=""

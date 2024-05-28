@@ -32,7 +32,7 @@ type cpuTreeNode struct {
 	parent   *cpuTreeNode
 	children []*cpuTreeNode
 	cpus     cpuset.CPUSet // union of CPUs of child nodes
-
+	sys      system.System
 }
 
 // cpuTreeNodeAttributes contains various attributes of a CPU tree
@@ -95,6 +95,13 @@ func (t *cpuTreeNode) PrettyPrint() string {
 		return nil
 	})
 	return strings.Join(lines, "\n")
+}
+
+func (t *cpuTreeNode) system() system.System {
+	if t.sys != nil || t.parent == nil {
+		return t.sys
+	}
+	return t.parent.system()
 }
 
 // String returns cpuTreeNodeAttributes as a string.
@@ -247,6 +254,7 @@ func NewCpuTreeFromSystem() (*cpuTreeNode, error) {
 	}
 	// TODO: split deep nested loops into functions
 	sysTree := NewCpuTree("system")
+	sysTree.sys = sys
 	sysTree.level = CPUTopologyLevelSystem
 	for _, packageID := range sys.PackageIDs() {
 		packageTree := NewCpuTree(fmt.Sprintf("p%d", packageID))

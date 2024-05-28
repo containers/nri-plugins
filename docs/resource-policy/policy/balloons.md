@@ -181,6 +181,17 @@ Balloons policy parameters:
     - `numa`: ...in the same numa node(s) as the balloon.
     - `core`: ...allowed to use idle CPU threads in the same cores with
       the balloon.
+  - `hideHyperthreads`: "soft" disable hyperthreads. If `true`, only
+    one hyperthread from every physical CPU core in the balloon is
+    allowed to be used by containers in the balloon. Hidden
+    hyperthreads are not available to any container in the system
+    either. If containers in the balloon are allowed to share idle
+    CPUs (see `shareIdleCPUsInSame`), hyperthreads of idle CPUs, too,
+    are hidden from the containers. If containers in another balloon
+    share the same idle CPUs, those containers are allowed to use both
+    hyperthreads of the idle CPUs if `hideHyperthreads` is `false` for
+    the other balloon. The default is `false`: containers are allowed
+    to use all hyperthreads of balloon's CPUs and shared idle CPUs.
   - `preferSpreadOnPhysicalCores` overrides the policy level option
     with the same name in the scope of this balloon type.
   - `preferCloseToDevices` prefers creating new balloons close to
@@ -300,6 +311,28 @@ memory.preserve.resource-policy.nri.io/container.CONTAINER_NAME: "true"
 memory.preserve.resource-policy.nri.io/pod: "true"
 memory.preserve.resource-policy.nri.io: "true"
 ```
+
+### Selectively Disabling Hyperthreading
+
+If a container opts to hide hyperthreads, it is allowed to use only
+one hyperthread from every physical CPU core allocated to it. Note
+that as a result the container may be allowed to run on only half of
+the CPUs it has requested. In case of workloads that do not benefit
+from hyperthreading this nevertheless results in better performance
+compared to running on all hyperthreads of the same CPU cores. If
+container's CPU allocation is exclusive, no other container can run on
+hidden hyperthreads either.
+
+```yaml
+metadata:
+  annotations:
+    # allow the "LLM" container to use only single thread per physical CPU core
+    hide-hyperthreads.resource-policy.nri.io/container.LLM: "true"
+```
+
+The `hide-hyperthreads` pod annotation overrides the
+`hideHyperthreads` balloon type parameter value for selected
+containers in the pod.
 
 ## Metrics and Debugging
 

@@ -46,11 +46,17 @@ cleanup
 
 # pod4: first two containers to the first instance, 3rd to new four-cpu instance
 CPUREQ="3" MEMREQ="" CPULIM="3" MEMLIM=""
-POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: four-cpu" CONTCOUNT=3 create balloons-busybox
+POD_ANNOTATION=(
+    "balloon.balloons.resource-policy.nri.io: four-cpu"
+    "hide-hyperthreads.resource-policy.nri.io/container.pod4c1: \"true\""
+)
+CONTCOUNT=3 create balloons-busybox
+unset POD_ANNOTATION
 report allowed
-verify 'cpus["pod4c0"] == cpus["pod4c1"]' \
+verify 'cpus["pod4c1"].issubset(cpus["pod4c0"])' \
        'disjoint_sets(cpus["pod4c2"], cpus["pod4c0"])' \
        'len(cpus["pod4c0"]) == 6' \
+       'len(cpus["pod4c1"]) == 3' \
        'len(cpus["pod4c2"]) == 4'
 
 cleanup

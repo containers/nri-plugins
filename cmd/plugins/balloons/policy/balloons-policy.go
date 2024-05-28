@@ -17,6 +17,7 @@ package balloons
 import (
 	"fmt"
 	"path/filepath"
+	"strconv"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/balloons"
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
@@ -41,6 +42,8 @@ const (
 
 	// balloonKey is a pod annotation key, the value is a pod balloon name.
 	balloonKey = "balloon." + PolicyName + "." + kubernetes.ResmgrKeyNamespace
+	// hideHyperthreadsKey is a pod annotation key for pod/container-specific hyperthread allowance.
+	hideHyperthreadsKey = "hide-hyperthreads." + kubernetes.ResmgrKeyNamespace
 	// reservedBalloonDefName is the name in the reserved balloon definition.
 	reservedBalloonDefName = "reserved"
 	// defaultBalloonDefName is the name in the default balloon definition.
@@ -1313,14 +1316,36 @@ func (p *balloons) resizeBalloon(bln *Balloon, newMilliCpus int) error {
 
 func (p *balloons) updatePinning(blns ...*Balloon) {
 	for _, bln := range blns {
-		cpus := bln.Cpus.Union(bln.SharedIdleCpus)
-		bln.Mems = p.closestMems(cpus)
+		var cpusNoHt cpuset.CPUSet
+		var allowedCpus cpuset.CPUSet
+		pinnableCpus := bln.Cpus.Union(bln.SharedIdleCpus)
+		bln.Mems = p.closestMems(pinnableCpus)
 		for _, cID := range bln.ContainerIDs() {
 			if c, ok := p.cch.LookupContainer(cID); ok {
-				p.pinCpuMem(c, cpus, bln.Mems)
+				if runWithoutHyperthreads(c, bln) {
+					if cpusNoHt.Size() == 0 {
+						cpusNoHt = p.cpuTree.system().SingleThreadForCPUs(pinnableCpus)
+					}
+					allowedCpus = cpusNoHt
+				} else {
+					allowedCpus = pinnableCpus
+				}
+				p.pinCpuMem(c, allowedCpus, bln.Mems)
 			}
 		}
 	}
+}
+
+// runWithoutHyperthreads returns true if a container should run using
+// only single hyperthread from each physical core.
+func runWithoutHyperthreads(c cache.Container, bln *Balloon) bool {
+	// Is balloon type configuration overridden by annotation?
+	if value, ok := c.GetEffectiveAnnotation(hideHyperthreadsKey); ok {
+		if hide, err := strconv.ParseBool(value); err == nil {
+			return hide
+		}
+	}
+	return bln.Def.HideHyperthreads != nil && *bln.Def.HideHyperthreads
 }
 
 // shareIdleCpus adds addCpus and removes removeCpus to those balloons
