@@ -4,7 +4,9 @@ metadata:
   name: ${NAME}
   $(if [ -n "$POD_ANNOTATION" ]; then echo "
   annotations:
-    $POD_ANNOTATION
+    $(for ann in "${POD_ANNOTATION[@]}"; do echo "
+    $ann
+    "; done)
   "; fi)
   labels:
     app: ${NAME}

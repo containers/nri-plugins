@@ -43,6 +43,11 @@ func (in *BalloonDef) DeepCopyInto(out *BalloonDef) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.HideHyperthreads != nil {
+		in, out := &in.HideHyperthreads, &out.HideHyperthreads
+		*out = new(bool)
+		**out = **in
+	}
 	if in.AllocatorTopologyBalancing != nil {
 		in, out := &in.AllocatorTopologyBalancing, &out.AllocatorTopologyBalancing
 		*out = new(bool)

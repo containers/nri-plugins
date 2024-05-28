@@ -156,6 +156,19 @@ type BalloonDef struct {
 	// PreferSpreadOnPhysicalCores is the balloon type specific
 	// parameter of the policy level parameter with the same name.
 	PreferSpreadOnPhysicalCores *bool `json:"preferSpreadOnPhysicalCores,omitempty"`
+	// HideHyperthreads allows containers in a balloon use only
+	// one hyperthread from each physical CPU core in the
+	// balloon. For instance, if a balloon contains 16 logical
+	// CPUs from 8 physical cores and this option is true, then
+	// containers in the balloon will be allowed to use 8 logical
+	// CPUs, one from each physical core. This option is best used
+	// with PreferSpreadOnPhysicalCores=false in order to allocate
+	// all hyperthreads of each physical core into the same
+	// balloon, but allow containers to use only one hyperthread
+	// from each core. This will ensure that hidden hyperthreads
+	// will remain completely idle as they cannot be allocated to
+	// other balloons.
+	HideHyperthreads *bool `json:"hideHyperthreads,omitempty"`
 	// AllocatorTopologyBalancing is the balloon type specific
 	// parameter of the policy level parameter with the same name.
 	AllocatorTopologyBalancing *bool `json:"allocatorTopologyBalancing,omitempty"`

@@ -91,6 +91,21 @@ spec:
                         ${pod/labels/mylabel} will be substituted with
                         corresponding values.
                       type: string
+                    hideHyperthreads:
+                      description: |-
+                        HideHyperthreads allows containers in a balloon use only
+                        one hyperthread from each physical CPU core in the
+                        balloon. For instance, if a balloon contains 16 logical
+                        CPUs from 8 physical cores and this option is true, then
+                        containers in the balloon will be allowed to use 8 logical
+                        CPUs, one from each physical core. This option is best used
+                        with PreferSpreadOnPhysicalCores=false in order to allocate
+                        all hyperthreads of each physical core into the same
+                        balloon, but allow containers to use only one hyperthread
+                        from each core. This will ensure that hidden hyperthreads
+                        will remain completely idle as they cannot be allocated to
+                        other balloons.
+                      type: boolean
                     matchExpressions:
                       description: |-
                         MatchExpressions specifies one or more expressions which are evaluated
