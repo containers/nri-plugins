@@ -195,6 +195,10 @@ spec:
                       items:
                         type: string
                       type: array
+                    preferIsolCpus:
+                      default: false
+                      description: 'preferIsolCpus: prefer kernel isolated cpus'
+                      type: boolean
                     preferNewBalloons:
                       description: |-
                         PreferNewBalloons: prefer creating new balloons over adding
