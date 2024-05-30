@@ -62,7 +62,6 @@ func TestMapKeys(t *testing.T) {
 	for _, tc := range cases {
 		test := tc
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
 			output := mapKeys(test.input)
 			sort.Strings(output)
 			if !reflect.DeepEqual(output, test.output) {
@@ -106,7 +105,6 @@ func TestFindSysFsDevice(t *testing.T) {
 	for _, tc := range cases {
 		test := tc
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
 			output, err := FindSysFsDevice(test.input)
 			switch {
 			case err != nil && !test.expectedErr:
@@ -257,7 +255,6 @@ func TestMergeTopologyHints(t *testing.T) {
 	for _, tc := range cases {
 		test := tc
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
 			output := MergeTopologyHints(test.inputA, test.inputB)
 			if !reflect.DeepEqual(output, test.expectedOutput) {
 				t.Fatalf("expected output: %+v got: %+v", test.expectedOutput, output)
