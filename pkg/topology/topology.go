@@ -314,6 +314,9 @@ func findSysFsDevice(devType string, major, minor int64) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to get realpath for %s: %w", devPath, err)
 	}
+	if sysRoot != "" && strings.HasPrefix(realDevPath, sysRoot) {
+		realDevPath = strings.TrimPrefix(realDevPath, sysRoot)
+	}
 	return realDevPath, nil
 }
 
