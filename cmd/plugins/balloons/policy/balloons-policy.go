@@ -53,6 +53,9 @@ const (
 	// virtDevReservedCpus is the name of a virtual device close to
 	// CPUs that are configured as ReservedResources.
 	virtDevReservedCpus = "reserved CPUs"
+	// virtDevIsolatedCpus is the name of a virtual device close to
+	// host isolated CPUs.
+	virtDevIsolatedCpus = "isolated CPUs"
 )
 
 // balloons contains configuration and runtime attributes of the balloons policy
@@ -558,6 +561,7 @@ func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, erro
 		preferFarFromDevices:        blnDef.PreferFarFromDevices,
 		virtDevCpusets: map[string][]cpuset.CPUSet{
 			virtDevReservedCpus: {p.reserved},
+			virtDevIsolatedCpus: {p.options.System.Isolated()},
 		},
 	}
 	if blnDef.AllocatorTopologyBalancing != nil {
@@ -994,6 +998,9 @@ func (p *balloons) validateConfig(bpoptions *BalloonsOptions) error {
 					blnDef.Name, blnDef.MaxBalloons)
 			}
 		}
+		if blnDef.PreferIsolCpus && blnDef.ShareIdleCpusInSame != "" {
+			log.Warn("WARNING: using PreferIsolCpus with ShareIdleCpusInSame is highly discouraged")
+		}
 	}
 	return nil
 }
@@ -1030,6 +1037,7 @@ func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
 	if err = p.validateConfig(bpoptions); err != nil {
 		return balloonsError("invalid configuration: %w", err)
 	}
+	p.fillCloseToDevices(bpoptions.BalloonDefs)
 	p.fillFarFromDevices(bpoptions.BalloonDefs)
 
 	// Preparation and configuration validation is now done
@@ -1189,6 +1197,14 @@ func (p *balloons) fillBuiltinBalloonDefs(bpoptions *BalloonsOptions) (*BalloonD
 	return reservedBalloonDef, defaultBalloonDef, nil
 }
 
+func (p *balloons) fillCloseToDevices(blnDefs []*BalloonDef) {
+	for _, blnDef := range blnDefs {
+		if blnDef.PreferIsolCpus {
+			blnDef.PreferCloseToDevices = append(blnDef.PreferCloseToDevices, virtDevIsolatedCpus)
+		}
+	}
+}
+
 // fillFarFromDevices adds BalloonDefs implicit device anti-affinities
 // towards devices that other BalloonDefs prefer to be close to.
 func (p *balloons) fillFarFromDevices(blnDefs []*BalloonDef) {
@@ -1201,6 +1217,9 @@ func (p *balloons) fillFarFromDevices(blnDefs []*BalloonDef) {
 	// beginning of the list will be more effectively avoided than
 	// devices later in the list.
 	avoidDevs := []string{}
+	if p.options.System.Isolated().Size() != 0 {
+		avoidDevs = append(avoidDevs, virtDevIsolatedCpus)
+	}
 	for _, blnDef := range blnDefs {
 		for _, closeDev := range blnDef.PreferCloseToDevices {
 			if _, ok := devDefClose[closeDev]; !ok {
@@ -1361,6 +1380,7 @@ func (p *balloons) shareIdleCpus(addCpus, removeCpus cpuset.CPUSet) []*Balloon {
 			}
 		}
 	}
+	addCpus = addCpus.Difference(p.options.System.Isolated())
 	if addCpus.Size() > 0 {
 		for blnIdx, bln := range p.balloons {
 			topoLevel := bln.Def.ShareIdleCpusInSame
