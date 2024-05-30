@@ -67,24 +67,13 @@ func (a *Agent) updateNrtCR(policy string, zones []*policyapi.TopologyZone) erro
 		}
 	}
 
-	// delete existing CR if we got no data from policy
 	// XXX TODO Deletion should be handled differently:
 	//   1. add expiration timestamp to nrt.NodeResourceTopology
 	//   2. GC CRs that are past their expiration time (for instance by NFD)
 	//   3. make sure we refresh our CR (either here or preferably/easier
 	//      by triggering in resmgr an updateTopologyZones() during longer
 	//      periods of inactivity)
-	if len(zones) == 0 {
-		if cr != nil {
-			err := cli.Delete(ctx, a.nodeName, metav1.DeleteOptions{})
-			if err != nil && !errors.IsNotFound(err) {
-				return fmt.Errorf("failed to delete node resource topology CR: %w", err)
-			}
-		}
-		return nil
-	}
-
-	// otherwise update CR if one exists
+	// update CR if one exists
 	if cr != nil {
 		cr.Attributes = nrt.AttributeList{
 			nrt.AttributeInfo{

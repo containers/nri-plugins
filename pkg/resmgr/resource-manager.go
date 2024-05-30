@@ -271,10 +271,11 @@ func (m *resmgr) startControllers() error {
 
 // updateTopologyZones updates the 'topology zone' CRDs.
 func (m *resmgr) updateTopologyZones() {
-	m.Info("updating topology zones...")
-	err := m.agent.UpdateNrtCR(m.policy.ActivePolicy(), m.policy.GetTopologyZones())
-	if err != nil {
-		m.Error("failed to update topology zones: %v", err)
+	if zones := m.policy.GetTopologyZones(); len(zones) != 0 {
+		m.Info("updating topology zones...")
+		if err := m.agent.UpdateNrtCR(m.policy.ActivePolicy(), zones); err != nil {
+			m.Error("failed to update topology zones: %v", err)
+		}
 	}
 }
 
