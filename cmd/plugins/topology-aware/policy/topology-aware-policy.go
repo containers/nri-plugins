@@ -27,10 +27,10 @@ import (
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
+	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
-	idset "github.com/intel/goresctrl/pkg/utils"
 )
 
 const (
@@ -66,7 +66,8 @@ type policy struct {
 	depth        int                       // tree depth
 	allocations  allocations               // container pool assignments
 	cpuAllocator cpuallocator.CPUAllocator // CPU allocator used by the policy
-	coldstartOff bool                      // coldstart forced off (have movable PMEM zones)
+	memAllocator *libmem.Allocator
+	coldstartOff bool // coldstart forced off (have movable PMEM zones)
 }
 
 var opt = &cfgapi.Config{}
@@ -84,6 +85,8 @@ func New() policyapi.Backend {
 
 // Setup initializes the topology-aware policy instance.
 func (p *policy) Setup(opts *policyapi.BackendOptions) error {
+	var err error
+
 	cfg, ok := opts.Config.(*cfgapi.Config)
 	if !ok {
 		return policyError("failed initialize %s policy: config of wrong type %T",
@@ -96,6 +99,10 @@ func (p *policy) Setup(opts *policyapi.BackendOptions) error {
 	p.sys = opts.System
 	p.options = opts
 	p.cpuAllocator = cpuallocator.NewCPUAllocator(opts.System)
+	p.memAllocator, err = libmem.NewAllocator(libmem.WithSystemNodes(opts.System))
+	if err != nil {
+		return policyError("failed to initialize %s policy: %w", err)
+	}
 
 	opt = cfg
 	defaultPrio = cfg.DefaultCPUPriority.Value()
@@ -273,8 +280,10 @@ func (p *policy) GetTopologyZones() []*policyapi.TopologyZone {
 
 		total := pool.GetSupply().(*supply)
 		free := pool.FreeSupply().(*supply)
-		capacity := int64(total.mem[memoryAll])
-		available := int64(free.mem[memoryAll] - free.ExtraMemoryReservation(memoryAll))
+
+		memZone := libmem.NewNodeMask(pool.GetMemset(memoryAll).Members()...)
+		capacity := p.memAllocator.ZoneCapacity(memZone)
+		available := p.memAllocator.ZoneFree(memZone)
 
 		memory := &policyapi.ZoneResource{
 			Name:        policyapi.MemoryResource,
@@ -351,23 +360,10 @@ func (p *policy) ExportResourceData(c cache.Container) map[string]string {
 		data[policyapi.ExportExclusiveCPUs] = exclusive
 	}
 
-	mems := grant.Memset()
-	dram := idset.NewIDSet()
-	pmem := idset.NewIDSet()
-	hbm := idset.NewIDSet()
-	for _, id := range mems.SortedMembers() {
-		node := p.sys.Node(id)
-		switch node.GetMemoryType() {
-		case system.MemoryTypeDRAM:
-			dram.Add(id)
-		case system.MemoryTypePMEM:
-			pmem.Add(id)
-			/*
-				case system.MemoryTypeHBM:
-					hbm.Add(id)
-			*/
-		}
-	}
+	mems := grant.GetMemoryZone()
+	dram := mems.And(p.memAllocator.Masks().NodesByTypes(libmem.TypeMaskDRAM))
+	pmem := mems.And(p.memAllocator.Masks().NodesByTypes(libmem.TypeMaskPMEM))
+	hbm := mems.And(p.memAllocator.Masks().NodesByTypes(libmem.TypeMaskHBM))
 	data["ALL_MEMS"] = mems.String()
 	if dram.Size() > 0 {
 		data["DRAM_MEMS"] = dram.String()

@@ -298,7 +298,6 @@ func (n *node) Dump(prefix string, level ...int) {
 	n.self.node.dump(prefix, lvl)
 	log.Debug("%s  - %s", idt, n.noderes.DumpCapacity())
 	log.Debug("%s  - %s", idt, n.freeres.DumpAllocatable())
-	n.freeres.DumpMemoryState(idt + "  ")
 	if n.mem.Size() > 0 {
 		log.Debug("%s  - normal memory: %v", idt, n.mem)
 	}
@@ -309,15 +308,8 @@ func (n *node) Dump(prefix string, level ...int) {
 		log.Debug("%s  - PMEM memory: %v", idt, n.pMem)
 	}
 	for _, grant := range n.policy.allocations.grants {
-		cpuNodeID := grant.GetCPUNode().NodeID()
-		memNodeID := grant.GetMemoryNode().NodeID()
-		switch {
-		case cpuNodeID == n.id && memNodeID == n.id:
-			log.Debug("%s    + cpu+mem %s", idt, grant)
-		case cpuNodeID == n.id:
-			log.Debug("%s    + cpuonly %s", idt, grant)
-		case memNodeID == n.id:
-			log.Debug("%s    + memonly %s", idt, grant)
+		if grant.GetCPUNode().NodeID() == n.id {
+			log.Debug("%s    + %s", idt, grant)
 		}
 	}
 	if !n.Parent().IsNil() {
@@ -396,7 +388,7 @@ func (n *node) discoverSupply(assignedNUMANodes []idset.ID) Supply {
 				n.Name())
 		}
 
-		n.noderes = newSupply(n, cpuset.New(), cpuset.New(), cpuset.New(), 0, 0, nil, nil)
+		n.noderes = newSupply(n, cpuset.New(), cpuset.New(), cpuset.New(), 0, 0)
 		for _, c := range n.children {
 			supply := c.GetSupply()
 			n.noderes.Cumulate(supply)
@@ -409,7 +401,6 @@ func (n *node) discoverSupply(assignedNUMANodes []idset.ID) Supply {
 	} else {
 		log.Debug("%s: discovering attached/assigned resources...", n.Name())
 
-		mmap := createMemoryMap(0, 0, 0)
 		cpus := cpuset.New()
 
 		for _, nodeID := range assignedNUMANodes {
@@ -424,18 +415,15 @@ func (n *node) discoverSupply(assignedNUMANodes []idset.ID) Supply {
 			switch node.GetMemoryType() {
 			case system.MemoryTypeDRAM:
 				n.mem.Add(nodeID)
-				mmap.AddDRAM(meminfo.MemTotal)
 				shortCPUs := kubernetes.ShortCPUSet(nodeCPUs)
 				log.Debug("  + assigned DRAM NUMA node #%d (cpuset: %s, DRAM %.2fM)",
 					nodeID, shortCPUs, float64(meminfo.MemTotal)/float64(1024*1024))
 			case system.MemoryTypePMEM:
 				n.pMem.Add(nodeID)
-				mmap.AddPMEM(meminfo.MemTotal)
 				log.Debug("  + assigned PMEM NUMA node #%d (DRAM %.2fM)", nodeID,
 					float64(meminfo.MemTotal)/float64(1024*1024))
 			case system.MemoryTypeHBM:
 				n.hbm.Add(nodeID)
-				mmap.AddHBM(meminfo.MemTotal)
 				log.Debug("  + assigned HBMEM NUMA node #%d (DRAM %.2fM)",
 					nodeID, float64(meminfo.MemTotal)/float64(1024*1024))
 			default:
@@ -463,7 +451,7 @@ func (n *node) discoverSupply(assignedNUMANodes []idset.ID) Supply {
 		isolated := cpus.Intersection(n.policy.isolated)
 		reserved := cpus.Intersection(n.policy.reserved).Difference(isolated)
 		sharable := cpus.Difference(isolated).Difference(reserved)
-		n.noderes = newSupply(n, isolated, reserved, sharable, 0, 0, mmap, nil)
+		n.noderes = newSupply(n, isolated, reserved, sharable, 0, 0)
 		log.Debug("  = %s", n.noderes.DumpCapacity())
 	}
 
@@ -491,8 +479,6 @@ func (n *node) AssignNUMANodes(ids []idset.ID) {
 
 // assignNUMANodes assigns the given set of NUMA nodes to this one.
 func (n *node) assignNUMANodes(ids []idset.ID) {
-	mem := createMemoryMap(0, 0, 0)
-
 	for _, numaNodeID := range ids {
 		if n.mem.Has(numaNodeID) || n.pMem.Has(numaNodeID) || n.hbm.Has(numaNodeID) {
 			log.Warn("*** NUMA node #%d already discovered by or assigned to %s",
@@ -500,27 +486,17 @@ func (n *node) assignNUMANodes(ids []idset.ID) {
 			continue
 		}
 		numaNode := n.policy.sys.Node(numaNodeID)
-		memTotal := uint64(0)
-		if meminfo, err := numaNode.MemoryInfo(); err != nil {
-			log.Error("%s: failed to get memory info for NUMA node #%d",
-				n.Name(), numaNodeID)
-		} else {
-			memTotal = meminfo.MemTotal
-		}
 		switch numaNode.GetMemoryType() {
 		case system.MemoryTypeDRAM:
-			mem.Add(memTotal, 0, 0)
 			n.mem.Add(numaNodeID)
 			log.Info("*** DRAM NUMA node #%d assigned to pool node %q",
 				numaNodeID, n.Name())
 		case system.MemoryTypePMEM:
 			n.pMem.Add(numaNodeID)
-			mem.Add(0, memTotal, 0)
 			log.Info("*** PMEM NUMA node #%d assigned to pool node %q",
 				numaNodeID, n.Name())
 		case system.MemoryTypeHBM:
 			n.hbm.Add(numaNodeID)
-			mem.Add(0, 0, memTotal)
 			log.Info("*** HBM NUMA node #%d assigned to pool node %q",
 				numaNodeID, n.Name())
 		default:
@@ -528,9 +504,6 @@ func (n *node) assignNUMANodes(ids []idset.ID) {
 				numaNodeID, numaNode.GetMemoryType())
 		}
 	}
-
-	n.noderes.AssignMemory(mem)
-	n.freeres.AssignMemory(mem)
 }
 
 // Discover the set of memory attached to this node.
