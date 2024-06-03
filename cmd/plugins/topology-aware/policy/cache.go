@@ -16,11 +16,12 @@ package topologyaware
 
 import (
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
+	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
-	idset "github.com/intel/goresctrl/pkg/utils"
 )
 
 const (
@@ -60,29 +61,57 @@ func (p *policy) restoreAllocations(allocations *allocations) error {
 
 // reinstateGrants tries to restore the given grants exactly as such.
 func (p *policy) reinstateGrants(grants map[string]Grant) error {
+	// TODO(klihub):
+	//    Our grant reinstating is now too simplistic. restoreMemOffer
+	//    blindly assumes it can take offers for known containers. But
+	//    during reconfiguration (as opposed to restarts) we already
+	//    have existing allocations for known containers, so we can't
+	//    ask for offers for them. We could try to Reallocate() here,
+	//    but the later parts on these code paths expect offers, not
+	//    container zone updates. So the simplest for now is to just
+	//    release memory for all grants... we'll then ask for offers
+	//    for them with affinity to the zone they had been allocated
+	//    to...
+
+	for id, grant := range grants {
+		if err := p.releaseMem(id); err != nil && !errors.Is(err, libmem.ErrUnknownRequest) {
+			log.Error("failed to release memory for grant %s: %v", grant, err)
+		}
+	}
+
 	for id, grant := range grants {
 		c := grant.GetContainer()
 
 		pool := grant.GetCPUNode()
 		supply := pool.FreeSupply()
 
-		if err := supply.Reserve(grant); err != nil {
+		o, err := p.restoreMemOffer(grant)
+		if err != nil {
+			return policyError("failed to get libmem offer for pool %q, grant of %s: %w",
+				pool.Name(), c.PrettyName(), err)
+		}
+
+		updates, err := supply.Reserve(grant, o)
+		if err != nil {
 			return policyError("failed to update pool %q with CPU grant of %q: %v",
 				pool.Name(), c.PrettyName(), err)
 		}
 
-		log.Info("updated pool %q with reinstated CPU grant of %q",
-			pool.Name(), c.PrettyName())
-
-		pool = grant.GetMemoryNode()
-		if err := supply.ReserveMemory(grant); err != nil {
-			grant.GetCPUNode().FreeSupply().ReleaseCPU(grant)
-			return policyError("failed to update pool %q with extra memory of %q: %v",
-				pool.Name(), c.PrettyName(), err)
+		for uID, uZone := range updates {
+			if ug, ok := p.allocations.grants[uID]; !ok {
+				log.Error("failed to update grant %s to memory zone to %s, grant not found",
+					uID, uZone)
+			} else {
+				ug.SetMemoryZone(uZone)
+				if opt.PinMemory {
+					ug.GetContainer().SetCpusetMems(uZone.MemsetString())
+				}
+				log.Info("updated grant %s to memory zone %s", uID, uZone)
+			}
 		}
 
-		log.Info("updated pool %q with reinstanted memory reservation of %q",
-			pool.Name(), c.PrettyName())
+		log.Info("updated pool %q with reinstated CPU grant of %q, memory zone %s",
+			pool.Name(), c.PrettyName(), grant.GetMemoryZone())
 
 		p.allocations.grants[id] = grant
 		p.applyGrant(grant)
@@ -94,16 +123,15 @@ func (p *policy) reinstateGrants(grants map[string]Grant) error {
 }
 
 type cachedGrant struct {
-	Exclusive   string
-	Part        int
-	CPUType     cpuClass
-	Container   string
-	Pool        string
-	MemoryPool  string
-	MemType     memoryType
-	Memset      idset.IDSet
-	MemoryLimit memoryMap
-	ColdStart   time.Duration
+	Exclusive  string
+	Part       int
+	CPUType    cpuClass
+	Container  string
+	Pool       string
+	MemoryPool libmem.NodeMask
+	MemType    memoryType
+	MemSize    int64
+	ColdStart  time.Duration
 }
 
 func newCachedGrant(cg Grant) *cachedGrant {
@@ -113,15 +141,9 @@ func newCachedGrant(cg Grant) *cachedGrant {
 	ccg.CPUType = cg.CPUType()
 	ccg.Container = cg.GetContainer().GetID()
 	ccg.Pool = cg.GetCPUNode().Name()
-	ccg.MemoryPool = cg.GetMemoryNode().Name()
+	ccg.MemoryPool = cg.GetMemoryZone()
 	ccg.MemType = cg.MemoryType()
-	ccg.Memset = cg.Memset().Clone()
-
-	ccg.MemoryLimit = make(memoryMap)
-	for key, value := range cg.MemLimit() {
-		ccg.MemoryLimit[key] = value
-	}
-
+	ccg.MemSize = cg.GetMemorySize()
 	ccg.ColdStart = cg.ColdStart()
 
 	return ccg
@@ -144,14 +166,11 @@ func (ccg *cachedGrant) ToGrant(policy *policy) (Grant, error) {
 		cpuset.MustParse(ccg.Exclusive),
 		ccg.Part,
 		ccg.MemType,
-		ccg.MemoryLimit,
 		ccg.ColdStart,
 	)
 
-	if g.Memset().String() != ccg.Memset.String() {
-		log.Error("cache error: mismatch in stored/recalculated memset: %s != %s",
-			ccg.Memset, g.Memset())
-	}
+	g.SetMemoryZone(ccg.MemoryPool)
+	g.SetMemorySize(ccg.MemSize)
 
 	return g, nil
 }
