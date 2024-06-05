@@ -290,8 +290,22 @@ type Cache struct {
 }
 
 // SetSysRoot sets the sys root directory.
-func SetSysRoot(path string) {
-	sysRoot = path
+func SetSysRoot(root string) {
+	if root != "" {
+		sysRoot = filepath.Clean(root)
+		if sysRoot != "" && !filepath.IsAbs(sysRoot) {
+			a, err := filepath.Abs(sysRoot)
+			if err != nil {
+				panic(fmt.Errorf("failed to resolve %q to absolute path: %v", sysRoot, err))
+			}
+			sysRoot = a
+		}
+		if sysRoot == "/" {
+			sysRoot = ""
+		}
+	} else {
+		sysRoot = ""
+	}
 }
 
 // DiscoverSystem performs discovery of the running systems details.
