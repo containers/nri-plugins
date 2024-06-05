@@ -15,10 +15,12 @@
 package topology
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
+
 	"testing"
 )
 
@@ -66,6 +68,67 @@ func TestMapKeys(t *testing.T) {
 			sort.Strings(output)
 			if !reflect.DeepEqual(output, test.output) {
 				t.Fatalf("expected output: %+v got: %+v", test.output, output)
+			}
+		})
+	}
+}
+
+func TestSetSysRoot(t *testing.T) {
+	type testCase struct {
+		name   string
+		cwd    string
+		input  string
+		result string
+	}
+	for _, tc := range []*testCase{
+		{
+			name:   "empty sysroot",
+			input:  "",
+			result: "",
+		},
+		{
+			name:   "/ sysroot",
+			input:  "/",
+			result: "",
+		},
+		{
+			name:   "less obvious / sysroot",
+			input:  "/../../..////../",
+			result: "",
+		},
+		{
+			name:   "non-clean absolute path",
+			input:  "/a/b/../c",
+			result: "/a/c",
+		},
+		{
+			name:   "clean absolute path",
+			input:  "/mnt/host",
+			result: "/mnt/host",
+		},
+		{
+			name:   "non-clean relative path",
+			cwd:    "/tmp",
+			input:  "../foo/bar",
+			result: "/foo/bar",
+		},
+		{
+			name:   "clean relative path",
+			cwd:    "/tmp",
+			input:  "foo/bar",
+			result: "/tmp/foo/bar",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.cwd != "" {
+				if err := os.Chdir(tc.cwd); err != nil {
+					t.Skip(fmt.Sprintf("%s: failed to change directory to %s: %v",
+						tc.name, tc.cwd, err))
+				}
+			}
+			SetSysRoot(tc.input)
+			if sysRoot != tc.result {
+				t.Fatalf("expected %s, got %s", tc.result, sysRoot)
 			}
 		})
 	}

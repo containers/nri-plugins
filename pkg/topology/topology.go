@@ -54,7 +54,21 @@ type Logger interface {
 
 // SetSysRoot sets the sysfs root directory to use.
 func SetSysRoot(root string) {
-	sysRoot = root
+	if root != "" {
+		sysRoot = filepath.Clean(root)
+		if sysRoot != "" && !filepath.IsAbs(sysRoot) {
+			a, err := filepath.Abs(sysRoot)
+			if err != nil {
+				panic(fmt.Errorf("failed to resolve %q to absolute path: %v", sysRoot, err))
+			}
+			sysRoot = a
+		}
+		if sysRoot == "/" {
+			sysRoot = ""
+		}
+	} else {
+		sysRoot = ""
+	}
 }
 
 // SetLogger sets the external logger used for (debug) logging.
