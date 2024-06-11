@@ -977,7 +977,7 @@ func newRequest(container cache.Container) Request {
 		container.PrettyName(), cpuType, full, fraction, isolate, prio)
 
 	if mtype == memoryUnspec {
-		mtype = defaultMemoryType
+		mtype = defaultMemoryType &^ memoryHBM
 	}
 
 	if mtype&memoryPMEM != 0 && mtype&memoryDRAM != 0 {
