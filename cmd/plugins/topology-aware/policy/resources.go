@@ -1442,13 +1442,10 @@ func (cg *grant) String() string {
 			cg.node.FreeSupply().SharableCPUs(), cg.SharedPortion())
 	}
 
-	mem := cg.allocatedMem.String()
-	if mem != "" {
-		mem = ", MemLimit: " + mem
-	}
+	memset := ", MemPin: " + cg.memset.String()
 
 	return fmt.Sprintf("<grant for %s from %s: %s%s%s%s%s%s>",
-		cg.container.PrettyName(), cg.node.Name(), cpuType, isolated, exclusive, reserved, shared, mem)
+		cg.container.PrettyName(), cg.node.Name(), cpuType, isolated, exclusive, reserved, shared, memset)
 }
 
 func (cg *grant) AccountAllocateCPU() {
