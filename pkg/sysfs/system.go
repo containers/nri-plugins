@@ -78,6 +78,18 @@ const (
 	MemoryTypeHBM
 )
 
+func (t MemoryType) String() string {
+	switch t {
+	case MemoryTypeDRAM:
+		return "DRAM"
+	case MemoryTypePMEM:
+		return "PMEM"
+	case MemoryTypeHBM:
+		return "HBM"
+	}
+	return fmt.Sprintf("%%(BAD-MemoryType:%d)", t)
+}
+
 // System devices
 type System interface {
 	Discover(flags DiscoveryFlag) error
