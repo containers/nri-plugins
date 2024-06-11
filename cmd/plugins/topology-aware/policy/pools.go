@@ -105,6 +105,7 @@ func (p *policy) buildPoolsByTopology() error {
 	}
 
 	// create pool nodes for NUMA nodes
+	hbmNodes := map[idset.ID]system.Node{}  // collected HBM-only nodes
 	pmemNodes := map[idset.ID]system.Node{} // collected PMEM-only nodes
 	dramNodes := map[idset.ID]system.Node{} // collected DRAM-only nodes
 	numaSurrogates := map[idset.ID]Node{}   // surrogate leaf nodes for omitted NUMA nodes
@@ -118,6 +119,10 @@ func (p *policy) buildPoolsByTopology() error {
 		case system.MemoryTypePMEM:
 			pmemNodes[numaNodeID] = numaSysNode
 			log.Debug("        - omitted pool \"NUMA node #%d\": PMEM node", numaNodeID)
+			continue // don't create pool, will assign to a closest DRAM node
+		case system.MemoryTypeHBM:
+			hbmNodes[numaNodeID] = numaSysNode
+			log.Debug("        - omitted pool \"NUMA node #%d\": HBM node", numaNodeID)
 			continue // don't create pool, will assign to a closest DRAM node
 		default:
 			log.Warn("        - ignored pool \"NUMA node #%d\": unhandled memory type %v",
@@ -157,11 +162,19 @@ func (p *policy) buildPoolsByTopology() error {
 		log.Debug("        + created pool %q", numaNode.Parent().Name()+"/"+numaNode.Name())
 	}
 
-	// set up assignment of PMEM and DRAM node resources to pool nodes and surrogates
+	// set up assignment of PMEM, HBM and DRAM node resources to pool nodes and surrogates
 	assigned := p.assignNUMANodes(numaSurrogates, pmemNodes, dramNodes)
+	hbms := p.assignNUMANodes(numaSurrogates, hbmNodes, dramNodes)
+	for n, ids := range hbms {
+		assigned[n] = idset.NewIDSet(append(assigned[n], ids...)...).SortedMembers()
+	}
+
 	log.Debug("NUMA node to pool assignment:")
 	for n, numaNodeIDs := range assigned {
 		log.Debug("  pool %q: NUMA nodes #%s", n.Name(), idset.NewIDSet(numaNodeIDs...))
+		for _, id := range numaNodeIDs {
+			log.Debug("    - #%d: %s", id, p.sys.Node(id).GetMemoryType())
+		}
 	}
 
 	// enumerate pools, calculate depth, discover resource capacity, assign NUMA nodes
@@ -181,13 +194,13 @@ func (p *policy) buildPoolsByTopology() error {
 		return nil
 	})
 
-	// make sure all PMEM nodes got assigned
+	// make sure all PMEM, HBM nodes got assigned
 	if len(assigned) > 0 {
-		for node, pmem := range assigned {
-			log.Error("failed to assign PMEM NUMA nodes #%s (to NUMA node/surrogate %s %v)",
-				idset.NewIDSet(pmem...), node.Name(), node)
+		for node, xmem := range assigned {
+			log.Error("failed to assign PMEM or HBM NUMA nodes #%s (to NUMA node/surrogate %s %v)",
+				idset.NewIDSet(xmem...), node.Name(), node)
 		}
-		log.Fatal("internal error: unassigned PMEM NUMA nodes remaining")
+		log.Fatal("internal error: unassigned PMEM or HBM NUMA nodes remaining")
 	}
 
 	p.root.Dump("<pool-setup>")
@@ -209,18 +222,18 @@ func (p *policy) parentNumaNodeCountWithCPUs(numaNode system.Node) int {
 	return count
 }
 
-// assignNUMANodes assigns each PMEM node to one of the closest DRAM nodes
-func (p *policy) assignNUMANodes(surrogates map[idset.ID]Node, pmem, dram map[idset.ID]system.Node) map[Node][]idset.ID {
-	// collect the closest DRAM NUMA nodes (sorted by idset.ID) for each PMEM NUMA node.
+// assignNUMANodes assigns each PMEM or HBM node to one of the closest DRAM nodes
+func (p *policy) assignNUMANodes(surrogates map[idset.ID]Node, xmem, dram map[idset.ID]system.Node) map[Node][]idset.ID {
+	// collect the closest DRAM NUMA nodes (sorted by idset.ID) for each XMEM NUMA node.
 	closest := map[idset.ID][]idset.ID{}
-	for pmemID := range pmem {
+	for xmemID := range xmem {
 		var min []idset.ID
 		for dramID := range dram {
 			if len(min) < 1 {
 				min = []idset.ID{dramID}
 			} else {
-				minDist := p.sys.NodeDistance(pmemID, min[0])
-				newDist := p.sys.NodeDistance(pmemID, dramID)
+				minDist := p.sys.NodeDistance(xmemID, min[0])
+				newDist := p.sys.NodeDistance(xmemID, dramID)
 				switch {
 				case newDist == minDist:
 					min = append(min, dramID)
@@ -230,15 +243,16 @@ func (p *policy) assignNUMANodes(surrogates map[idset.ID]Node, pmem, dram map[id
 			}
 		}
 		sort.Slice(min, func(i, j int) bool { return min[i] < min[j] })
-		closest[pmemID] = min
+		closest[xmemID] = min
 	}
 
 	assigned := map[Node][]idset.ID{}
 
-	// assign each PMEM node to the closest DRAM surrogate with the least PMEM assigned
-	for pmemID, min := range closest {
+	// assign each PMEM or HBM node to the closest DRAM surrogate with the least nodes assigned
+	for xmemID, min := range closest {
 		var taker Node
 		var takerID idset.ID
+		var xnode = p.sys.Node(xmemID)
 
 		for _, dramID := range min {
 			if taker == nil {
@@ -252,12 +266,14 @@ func (p *policy) assignNUMANodes(surrogates map[idset.ID]Node, pmem, dram map[id
 			}
 		}
 		if taker == nil {
-			log.Panic("failed to assign CPU-less PMEM node #%d to any surrogate", pmemID)
+			log.Panic("failed to assign CPU-less %s node #%d to any surrogate",
+				xnode.GetMemoryType(), xmemID)
 		}
 
-		assigned[taker] = append(assigned[taker], pmemID)
-		log.Debug("        + PMEM node #%d assigned to %s with distance %v", pmemID, taker.Name(),
-			p.sys.NodeDistance(pmemID, takerID))
+		assigned[taker] = append(assigned[taker], xmemID)
+		log.Debug("        + %s node #%d assigned to %s with distance %v",
+			xnode.GetMemoryType(), xmemID, taker.Name(),
+			p.sys.NodeDistance(xmemID, takerID))
 	}
 
 	// assign each DRAM node to its own surrogate (can be the DRAM node itself)
