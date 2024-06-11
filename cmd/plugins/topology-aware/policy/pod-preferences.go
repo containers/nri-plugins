@@ -207,7 +207,7 @@ func memoryTypePreference(pod cache.Pod, container cache.Container) memoryType {
 		return memoryUnspec
 	}
 
-	log.Debug("%s: effective cold start preference %v", container.PrettyName(), mtype)
+	log.Debug("%s: effective memory type preference %v", container.PrettyName(), mtype)
 
 	return mtype
 }
