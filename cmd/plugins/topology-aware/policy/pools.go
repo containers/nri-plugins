@@ -15,6 +15,7 @@
 package topologyaware
 
 import (
+	"fmt"
 	"math"
 	"sort"
 
@@ -588,6 +589,25 @@ func (p *policy) allocatePool(container cache.Container, poolHint string) (Grant
 	return grant, nil
 }
 
+// setPreferredCpusetCpus pins container's CPUs according to what has been
+// allocated for it, taking into account if the container should run
+// with hyperthreads hidden.
+func (p *policy) setPreferredCpusetCpus(container cache.Container, allocated cpuset.CPUSet, info string) {
+	allow := allocated
+	hidingInfo := ""
+	pod, ok := container.GetPod()
+	if ok && hideHyperthreadsPreference(pod, container) {
+		allow = p.sys.SingleThreadForCPUs(allocated)
+		if allow.Size() != allocated.Size() {
+			hidingInfo = fmt.Sprintf(" (hide %d hyperthreads, remaining cpuset: %s)", allocated.Size()-allow.Size(), allow)
+		} else {
+			hidingInfo = " (no hyperthreads to hide)"
+		}
+	}
+	log.Info("%s%s", info, hidingInfo)
+	container.SetCpusetCpus(allow.String())
+}
+
 // Apply the result of allocation to the requesting container.
 func (p *policy) applyGrant(grant Grant) {
 	log.Info("* applying grant %s", grant)
@@ -599,25 +619,25 @@ func (p *policy) applyGrant(grant Grant) {
 	shared := grant.SharedCPUs()
 	cpuPortion := grant.SharedPortion()
 
-	cpus := ""
+	cpus := cpuset.New()
 	kind := ""
 	switch cpuType {
 	case cpuNormal:
 		if exclusive.IsEmpty() {
-			cpus = shared.String()
+			cpus = shared
 			kind = "shared"
 		} else {
 			kind = "exclusive"
 			if cpuPortion > 0 {
 				kind += "+shared"
-				cpus = exclusive.Union(shared).String()
+				cpus = exclusive.Union(shared)
 			} else {
-				cpus = exclusive.String()
+				cpus = exclusive
 			}
 		}
 	case cpuReserved:
 		kind = "reserved"
-		cpus = reserved.String()
+		cpus = reserved
 		cpuPortion = grant.ReservedPortion()
 	case cpuPreserve:
 		// Will skip CPU pinning, may still pin memory.
@@ -635,12 +655,14 @@ func (p *policy) applyGrant(grant Grant) {
 		if cpuType == cpuPreserve {
 			log.Info("  => preserving %s cpuset %s", container.PrettyName(), container.GetCpusetCpus())
 		} else {
-			if cpus != "" {
-				log.Info("  => pinning %s to (%s) cpuset %s", container.PrettyName(), kind, cpus)
+			if cpus.Size() > 0 {
+				p.setPreferredCpusetCpus(container, cpus,
+					fmt.Sprintf("  => pinning %s to (%s) cpuset %s",
+						container.PrettyName(), kind, cpus))
 			} else {
 				log.Info("  => not pinning %s CPUs, cpuset is empty...", container.PrettyName())
+				container.SetCpusetCpus("")
 			}
-			container.SetCpusetCpus(cpus)
 		}
 
 		// Notes:
@@ -741,13 +763,13 @@ func (p *policy) updateSharedAllocations(grant *Grant) {
 			shared := other.GetCPUNode().FreeSupply().SharableCPUs()
 			exclusive := other.ExclusiveCPUs()
 			if exclusive.IsEmpty() {
-				log.Info("  => updating %s with shared CPUs of %s: %s...",
-					other, other.GetCPUNode().Name(), shared.String())
-				other.GetContainer().SetCpusetCpus(shared.String())
+				p.setPreferredCpusetCpus(other.GetContainer(), shared,
+					fmt.Sprintf("  => updating %s with shared CPUs of %s: %s...",
+						other, other.GetCPUNode().Name(), shared.String()))
 			} else {
-				log.Info("  => updating %s with exclusive+shared CPUs of %s: %s+%s...",
-					other, other.GetCPUNode().Name(), exclusive.String(), shared.String())
-				other.GetContainer().SetCpusetCpus(exclusive.Union(shared).String())
+				p.setPreferredCpusetCpus(other.GetContainer(), exclusive.Union(shared),
+					fmt.Sprintf("  => updating %s with exclusive+shared CPUs of %s: %s+%s...",
+						other, other.GetCPUNode().Name(), exclusive.String(), shared.String()))
 			}
 		}
 	}

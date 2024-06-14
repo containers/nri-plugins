@@ -38,12 +38,13 @@ vm-command "kubectl delete pods --all --now"
 
 # pod1: Test that 4 guaranteed containers not eligible for isolated CPU allocation
 # gets evenly spread over NUMA nodes.
-CONTCOUNT=4 CPU=3 create guaranteed
+CONTCOUNT=4 CPU=3 ANN0='hide-hyperthreads.resource-policy.nri.io/container.pod1c2: "true"' create guaranteed
 report allowed
 verify \
     'len(cpus["pod1c0"]) == 3' \
     'len(cpus["pod1c1"]) == 3' \
-    'len(cpus["pod1c2"]) == 3' \
+    'len(cpus["pod1c2"]) == 2' \
+    'len(cores["pod1c2"]) == 2' \
     'len(cpus["pod1c3"]) == 3' \
     'disjoint_sets(cpus["pod1c0"], cpus["pod1c1"], cpus["pod1c2"], cpus["pod1c3"])' \
     'disjoint_sets(nodes["pod1c0"], nodes["pod1c1"], nodes["pod1c2"], nodes["pod1c3"])'

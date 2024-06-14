@@ -44,6 +44,8 @@ const (
 	keyReservedCPUsPreference = "prefer-reserved-cpus"
 	// annotation key for CPU Priority preference
 	keyCpuPriorityPreference = "prefer-cpu-priority"
+	// annotation key for hiding hyperthreads from allocated CPU sets
+	keyHideHyperthreads = "hide-hyperthreads"
 
 	// effective annotation key for isolated CPU preference
 	preferIsolatedCPUsKey = keyIsolationPreference + "." + kubernetes.ResmgrKeyNamespace
@@ -57,6 +59,8 @@ const (
 	preferReservedCPUsKey = keyReservedCPUsPreference + "." + kubernetes.ResmgrKeyNamespace
 	// effective annotation key for CPU priority preference
 	preferCpuPriorityKey = keyCpuPriorityPreference + "." + kubernetes.ResmgrKeyNamespace
+	// effective annotation key for hiding hyperthreads
+	hideHyperthreadsKey = keyHideHyperthreads + "." + kubernetes.ResmgrKeyNamespace
 )
 
 // cpuClass is a type of CPU to allocate
@@ -185,6 +189,20 @@ func cpuPrioPreference(pod cache.Pod, container cache.Container, fallback cpuPri
 
 	log.Debug("%s: explicit CPU priority preference %q", container.PrettyName(), prio)
 	return prio
+}
+
+// hideHyperthreadsPreference returns if a container should run using
+// only single hyperthread from each physical core.
+func hideHyperthreadsPreference(pod cache.Pod, container cache.Container) bool {
+	value, ok := container.GetEffectiveAnnotation(hideHyperthreadsKey)
+	if !ok {
+		return false
+	}
+	hide, err := strconv.ParseBool(value)
+	if err != nil {
+		return false
+	}
+	return hide
 }
 
 // memoryTypePreference returns what type of memory should be allocated for the container.
