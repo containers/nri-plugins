@@ -251,6 +251,9 @@ func (fake *mockSystem) OfflineCPUs() cpuset.CPUSet {
 func (fake *mockSystem) CoreKindCPUs(sysfs.CoreKind) cpuset.CPUSet {
 	return cpuset.New()
 }
+func (fake *mockSystem) CoreKinds() []sysfs.CoreKind {
+	return nil
+}
 func (fake *mockSystem) AllThreadsForCPUs(cpuset.CPUSet) cpuset.CPUSet {
 	return cpuset.New()
 }
