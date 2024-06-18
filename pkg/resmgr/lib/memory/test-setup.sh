@@ -1,0 +1,1 @@
+../../../sysfs/test-setup.sh
