@@ -3,7 +3,7 @@
 # Declare variables to be passed into your templates.
 ---
 image:
-  name: ghcr.io/containers/nri-plugins/nri-resource-policy-topology-aware
+  name: ghcr.io/AMDEPYC/nri-plugins/nri-resource-policy-topology-aware
   # tag, if defined will use the given image tag, otherwise Chart.AppVersion will be used
   #tag: unstable
   pullPolicy: Always
@@ -40,12 +40,12 @@ nri:
     index: 90
   runtime:
     patchConfig: false
-#   config:
-#     pluginRegistrationTimeout: 5s
-#     pluginRequestTimeout: 2s
+   config:
+     pluginRegistrationTimeout: 5s
+     pluginRequestTimeout: 4s
 
 initContainerImage:
-  name: ghcr.io/containers/nri-plugins/nri-config-manager
+  name: ghcr.io/AMDEPYC/nri-plugins/nri-config-manager
   # If not defined Chart.AppVersion will be used
   #tag: unstable
   pullPolicy: Always

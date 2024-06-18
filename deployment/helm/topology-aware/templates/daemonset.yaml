@@ -88,7 +88,8 @@ spec:
           image: {{ .Values.image.name }}:{{ .Values.image.tag | default .Chart.AppVersion }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
-            allowPrivilegeEscalation: false
+            allowPrivilegeEscalation: true
+            privileged: true
             capabilities:
               drop: ["ALL"]
           resources:
