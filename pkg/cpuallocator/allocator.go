@@ -946,7 +946,7 @@ func (c *topologyCache) discoverCPUClusters(sys sysfs.System) {
 		pkg := sys.Package(id)
 		clusters := []*cpuCluster{}
 		for _, die := range pkg.DieIDs() {
-			for _, cl := range pkg.LogicalDieClusterIDs(id) {
+			for _, cl := range pkg.LogicalDieClusterIDs(die) {
 				if cpus := pkg.LogicalDieClusterCPUSet(die, cl); cpus.Size() > 0 {
 					clusters = append(clusters, &cpuCluster{
 						pkg:     id,
