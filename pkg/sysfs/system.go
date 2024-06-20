@@ -1413,6 +1413,9 @@ func (sys *system) discoverPackages() error {
 				pkg.logicalClusters[die][first.cluster] = idset.NewIDSet(allHTCPUs.Members()...)
 			}
 		}
+		if len(pkg.logicalClusters) == 0 {
+			pkg.logicalClusters = pkg.clusterCPUs
+		}
 	}
 
 	return nil
