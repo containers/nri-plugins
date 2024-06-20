@@ -271,6 +271,24 @@ metadata:
 These Pod annotations have no effect on containers which are not eligible for
 exclusive allocation.
 
+### Selectively Disabling Hyperthreading
+
+If a container opts to hide hyperthreads, it is allowed to use only
+one hyperthread from every physical CPU core allocated to it. Note
+that as a result the container may be allowed to run on only half of
+the CPUs it has requested. In case of workloads that do not benefit
+from hyperthreading this nevertheless results in better performance
+compared to running on all hyperthreads of the same CPU cores. If
+container's CPU allocation is exclusive, no other container can run on
+hidden hyperthreads either.
+
+```yaml
+metadata:
+  annotations:
+    # allow the "LLM" container to use only single thread per physical CPU core
+    hide-hyperthreads.resource-policy.nri.io/container.LLM: "true"
+```
+
 ### Implicit Hardware Topology Hints
 
 `NRI Resource Policy` automatically generates HW `Topology Hints` for devices

@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.5.0-36-g9143f220 documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.5.0-37-g1e6050db documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -458,6 +458,23 @@ allocation using the following Pod annotation.</p>
 </div>
 <p>These Pod annotations have no effect on containers which are not eligible for
 exclusive allocation.</p>
+</section>
+<section id="selectively-disabling-hyperthreading">
+<h3>Selectively Disabling Hyperthreading<a class="headerlink" href="#selectively-disabling-hyperthreading" title="Permalink to this heading"></a></h3>
+<p>If a container opts to hide hyperthreads, it is allowed to use only
+one hyperthread from every physical CPU core allocated to it. Note
+that as a result the container may be allowed to run on only half of
+the CPUs it has requested. In case of workloads that do not benefit
+from hyperthreading this nevertheless results in better performance
+compared to running on all hyperthreads of the same CPU cores. If
+container’s CPU allocation is exclusive, no other container can run on
+hidden hyperthreads either.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="c1"># allow the &quot;LLM&quot; container to use only single thread per physical CPU core</span>
+<span class="w">    </span><span class="nt">hide-hyperthreads.resource-policy.nri.io/container.LLM</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+</pre></div>
+</div>
 </section>
 <section id="implicit-hardware-topology-hints">
 <h3>Implicit Hardware Topology Hints<a class="headerlink" href="#implicit-hardware-topology-hints" title="Permalink to this heading"></a></h3>
