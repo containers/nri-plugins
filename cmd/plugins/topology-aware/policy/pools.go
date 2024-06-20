@@ -27,7 +27,8 @@ import (
 
 // buildPoolsByTopology builds a hierarchical tree of pools based on HW topology.
 func (p *policy) buildPoolsByTopology() error {
-	if err := p.checkHWTopology(); err != nil {
+	omitDies, err := p.checkHWTopology()
+	if err != nil {
 		return err
 	}
 
@@ -87,20 +88,22 @@ func (p *policy) buildPoolsByTopology() error {
 
 	// create dies for every socket, but only if we have more than one die in the socket
 	numaDies := map[idset.ID]Node{} // created die Nodes per NUMA node id
-	for socketID, socket := range sockets {
-		dieIDs := p.sys.Package(socketID).DieIDs()
-		if len(dieIDs) < 2 {
-			log.Debug("      - omitted pool %q (die count: %d)", socket.Name()+"/die #0",
-				len(dieIDs))
-			continue
-		}
-		for _, dieID := range dieIDs {
-			die := p.NewDieNode(dieID, socket)
-			p.nodes[die.Name()] = die
-			for _, numaNodeID := range p.sys.Package(socketID).DieNodeIDs(dieID) {
-				numaDies[numaNodeID] = die
+	if !omitDies {
+		for socketID, socket := range sockets {
+			dieIDs := p.sys.Package(socketID).DieIDs()
+			if len(dieIDs) < 2 {
+				log.Debug("      - omitted pool %q (die count: %d)", socket.Name()+"/die #0",
+					len(dieIDs))
+				continue
 			}
-			log.Debug("      + created pool %q", die.Parent().Name()+"/"+die.Name())
+			for _, dieID := range dieIDs {
+				die := p.NewDieNode(dieID, socket)
+				p.nodes[die.Name()] = die
+				for _, numaNodeID := range p.sys.Package(socketID).DieNodeIDs(dieID) {
+					numaDies[numaNodeID] = die
+				}
+				log.Debug("      + created pool %q", die.Parent().Name()+"/"+die.Name())
+			}
 		}
 	}
 
@@ -287,7 +290,7 @@ func (p *policy) assignNUMANodes(surrogates map[idset.ID]Node, xmem, dram map[id
 }
 
 // checkHWTopology verifies our otherwise implicit assumptions about the HW.
-func (p *policy) checkHWTopology() error {
+func (p *policy) checkHWTopology() (bool, error) {
 	// NUMA nodes (memory controllers) should not be shared by multiple sockets.
 	socketNodes := map[idset.ID]cpuset.CPUSet{}
 	for _, socketID := range p.sys.PackageIDs() {
@@ -302,7 +305,7 @@ func (p *policy) checkHWTopology() error {
 			if shared := nodes1.Intersection(nodes2); !shared.IsEmpty() {
 				log.Error("can't handle HW topology: sockets #%v, #%v share NUMA node(s) #%s",
 					id1, id2, shared.String())
-				return policyError("unhandled HW topology: sockets #%v, #%v share NUMA node(s) #%s",
+				return false, policyError("unhandled HW topology: sockets #%v, #%v share NUMA node(s) #%s",
 					id1, id2, shared.String())
 			}
 		}
@@ -319,12 +322,10 @@ func (p *policy) checkHWTopology() error {
 				}
 				nodes2 := idset.NewIDSet(pkg.DieNodeIDs(id2)...)
 				if shared := system.CPUSetFromIDSet(nodes1).Intersection(system.CPUSetFromIDSet(nodes2)); !shared.IsEmpty() {
-					log.Error("can't handle HW topology: "+
+					log.Error("will ignore dies: "+
 						"socket #%v, dies #%v,%v share NUMA node(s) #%s",
 						socketID, id1, id2, shared.String())
-					return policyError("unhandled HW topology: "+
-						"socket #%v, dies #%v,#%v share NUMA node(s) #%s",
-						socketID, id1, id2, shared.String())
+					return true, nil
 				}
 			}
 		}
@@ -338,13 +339,13 @@ func (p *policy) checkHWTopology() error {
 			if d1 != d2 {
 				log.Error("asymmetric NUMA distance (#%d, #%d): %d != %d",
 					from, to, d1, d2)
-				return policyError("asymmetric NUMA distance (#%d, #%d): %d != %d",
+				return false, policyError("asymmetric NUMA distance (#%d, #%d): %d != %d",
 					from, to, d1, d2)
 			}
 		}
 	}
 
-	return nil
+	return false, nil
 }
 
 // Pick a pool and allocate resource from it to the container.
