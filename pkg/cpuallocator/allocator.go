@@ -947,14 +947,15 @@ func (c *topologyCache) discoverCPUClusters(sys sysfs.System) {
 		clusters := []*cpuCluster{}
 		for _, die := range pkg.DieIDs() {
 			for _, cl := range pkg.LogicalDieClusterIDs(id) {
-				cpus := pkg.LogicalDieClusterCPUSet(die, cl)
-				clusters = append(clusters, &cpuCluster{
-					pkg:     id,
-					die:     die,
-					cluster: cl,
-					cpus:    cpus,
-					kind:    sys.CPU(cpus.List()[0]).CoreKind(),
-				})
+				if cpus := pkg.LogicalDieClusterCPUSet(die, cl); cpus.Size() > 0 {
+					clusters = append(clusters, &cpuCluster{
+						pkg:     id,
+						die:     die,
+						cluster: cl,
+						cpus:    cpus,
+						kind:    sys.CPU(cpus.List()[0]).CoreKind(),
+					})
+				}
 			}
 		}
 		if len(clusters) > 1 {
