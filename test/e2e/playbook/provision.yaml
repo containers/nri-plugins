@@ -52,17 +52,34 @@
         - swapoff --all
       when: ansible_swaptotal_mb > 0
 
-    - name: Download public signing key for Kubernetes
-      ansible.builtin.apt_key:
-        url: https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/Release.key
-        state: present
+    - name: Add Kubernetes APT repository to sources.list.d
+      ansible.builtin.copy:
+        content: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/ /"
+        dest: /etc/apt/sources.list.d/kubernetes.list
+        mode: '0644'
       when: ansible_facts['distribution'] == "Ubuntu"
 
-    - name: Add apt repository for Kubernetes
-      ansible.builtin.apt_repository:
-        repo: "https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/ /"
-        state: present
-        filename: /etc/apt/sources.list.d/kubernetes.list
+    - name: Download Kubernetes APT key
+      ansible.builtin.get_url:
+        url: https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/Release.key
+        dest: /tmp/kubernetes-release.key
+        mode: '0644'
+      when: ansible_facts['distribution'] == "Ubuntu"
+
+    - name: Convert the Kubernetes APT key to keyring format
+      ansible.builtin.command:
+        cmd: gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg /tmp/kubernetes-release.key
+      when: ansible_facts['distribution'] == "Ubuntu"
+
+    - name: Clean up temporary key file
+      ansible.builtin.file:
+        path: /tmp/kubernetes-release.key
+        state: absent
+      when: ansible_facts['distribution'] == "Ubuntu"
+
+    - name: Update APT package index
+      ansible.builtin.apt:
+        update_cache: yes
       when: ansible_facts['distribution'] == "Ubuntu"
 
     - name: Add yum repository for Kubernetes
