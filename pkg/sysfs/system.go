@@ -212,6 +212,7 @@ type CPU interface {
 	GetCaches() []*Cache
 	GetCachesByLevel(int) []*Cache
 	GetCacheByIndex(int) *Cache
+	GetNthLevelCacheCPUSet(n int) cpuset.CPUSet
 	GetLastLevelCaches() []*Cache
 	GetLastLevelCacheCPUSet() cpuset.CPUSet
 	CoreKind() CoreKind
@@ -1094,6 +1095,25 @@ func (c *cpu) GetLastLevelCaches() []*Cache {
 	}
 
 	return caches
+}
+
+// GetNthLevelCacheCPUSet returns the cpuset for the nth level caches of this CPU.
+func (c *cpu) GetNthLevelCacheCPUSet(n int) cpuset.CPUSet {
+	if len(c.caches) < 1 {
+		return c.ThreadCPUSet()
+	}
+
+	cpus := cpuset.New()
+
+	for _, cch := range c.caches {
+		if cch.level == n {
+			cpus = cpus.Union(CPUSetFromIDSet(cch.cpus))
+		} else if cch.level > n {
+			break
+		}
+	}
+
+	return cpus
 }
 
 // GetLastLevelCacheCPUSet returns the cpuset for the last level caches of this CPU.
