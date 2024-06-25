@@ -212,15 +212,17 @@ func (a *allocatorHelper) takeIdleClusters() {
 	var (
 		offline  = a.sys.OfflineCPUs()
 		pickIdle = func(c *cpuCluster) (bool, cpuset.CPUSet) {
-			// we only take E-clusters for low-prio requests
-			if a.prefer != PriorityLow && c.kind == sysfs.EfficientCore {
-				a.Debug("  - omit %s, CPU preference is %s", c, a.prefer)
-				return false, emptyCPUSet
-			}
-			// we only take P-clusters for other than low-prio requests
-			if a.prefer == PriorityLow && c.kind == sysfs.PerformanceCore {
-				a.Debug("  - omit %s, CPU preference is %s", c, a.prefer)
-				return false, emptyCPUSet
+			if len(a.topology.kind) > 1 {
+				// we only take E-clusters for low-prio requests
+				if a.prefer != PriorityLow && c.kind == sysfs.EfficientCore {
+					a.Debug("  - omit %s, CPU preference is %s", c, a.prefer)
+					return false, emptyCPUSet
+				}
+				// we only take P-clusters for other than low-prio requests
+				if a.prefer == PriorityLow && c.kind == sysfs.PerformanceCore {
+					a.Debug("  - omit %s, CPU preference is %s", c, a.prefer)
+					return false, emptyCPUSet
+				}
 			}
 
 			// we only take fully idle clusters
