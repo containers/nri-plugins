@@ -91,6 +91,29 @@
         name: kubernetes
       when: ansible_facts['distribution'] == "Fedora"
 
+    - name: Download the Helm install script
+      ansible.builtin.get_url:
+        url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        dest: /tmp/get_helm.sh
+        mode: '0644'
+
+    - name: Change permissions to make the script executable
+      ansible.builtin.file:
+        path: /tmp/get_helm.sh
+        mode: '0700'
+        state: file
+
+    - name: Execute the Helm install script
+      ansible.builtin.command:
+        cmd: /tmp/get_helm.sh
+      environment:
+        VERIFY_CHECKSUM: "false"
+
+    - name: Clean up the Helm install script
+      ansible.builtin.file:
+        path: /tmp/get_helm.sh
+        state: absent
+
     - name: Install common packages
       ansible.builtin.package:
         name:
@@ -102,7 +125,6 @@
           - kubeadm
           - kubectl
           - systemd-container
-          - helm
         state: present
 
     - name: Install apt packages
