@@ -102,7 +102,8 @@ type System interface {
 	SocketCount() int
 	CPUCount() int
 	NUMANodeCount() int
-	ThreadCount() int
+	MinThreadCount() int
+	MaxThreadCount() int
 	CPUSet() cpuset.CPUSet
 	Package(id idset.ID) CPUPackage
 	Node(id idset.ID) Node
@@ -136,7 +137,8 @@ type system struct {
 	onlineCPUs    idset.IDSet                          // set of online CPUs
 	isolatedCPUs  idset.IDSet                          // set of isolated CPUs
 	coreKindCPUs  map[CoreKind]idset.IDSet             // CPU cores by kind (P-/E-cores)
-	threads       int                                  // hyperthreads per core
+	minThreads    int                                  // min. hyperthreads per core
+	maxThreads    int                                  // max. hyperthreads per core
 }
 
 // CPUPackage is a physical package (a collection of CPUs).
@@ -605,9 +607,14 @@ func (sys *system) NUMANodeCount() int {
 	return cnt
 }
 
-// ThreadCount returns the number of threads per core discovered.
-func (sys *system) ThreadCount() int {
-	return sys.threads
+// MinThreadCount returns the minimum number of threads per core discovered.
+func (sys *system) MinThreadCount() int {
+	return sys.minThreads
+}
+
+// MaxThreadCount returns the maximum number of threads per core discovered.
+func (sys *system) MaxThreadCount() int {
+	return sys.maxThreads
 }
 
 // CPUSet gets the ids of all CPUs present in the system as a CPUSet.
@@ -913,14 +920,16 @@ func (sys *system) discoverCPU(path string) error {
 		return fmt.Errorf("exactly one node per cpu allowed")
 	}
 
-	if sys.threads < 1 {
-		sys.threads = 1
-	}
-	if cpu.threads.Size() > sys.threads {
-		sys.threads = cpu.threads.Size()
-	}
-
 	sys.cpus[cpu.id] = cpu
+
+	if threadCnt := cpu.threads.Size(); threadCnt > 0 {
+		if sys.minThreads == 0 || threadCnt < sys.minThreads {
+			sys.minThreads = threadCnt
+		}
+		if sys.maxThreads == 0 || threadCnt > sys.maxThreads {
+			sys.maxThreads = threadCnt
+		}
+	}
 
 	if (sys.flags & DiscoverCache) != 0 {
 		entries, _ := filepath.Glob(filepath.Join(path, "cache/index[0-9]*"))
