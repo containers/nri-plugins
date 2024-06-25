@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.5.0-41-g46f5a402 documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.5.0-42-gfd75dffe documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -288,6 +288,17 @@ anywhere in the system.</p></li>
 the balloon.</p></li>
 </ul>
 </li>
+<li><p><code class="docutils literal notranslate"><span class="pre">hideHyperthreads</span></code>: “soft” disable hyperthreads. If <code class="docutils literal notranslate"><span class="pre">true</span></code>, only
+one hyperthread from every physical CPU core in the balloon is
+allowed to be used by containers in the balloon. Hidden
+hyperthreads are not available to any container in the system
+either. If containers in the balloon are allowed to share idle
+CPUs (see <code class="docutils literal notranslate"><span class="pre">shareIdleCPUsInSame</span></code>), hyperthreads of idle CPUs, too,
+are hidden from the containers. If containers in another balloon
+share the same idle CPUs, those containers are allowed to use both
+hyperthreads of the idle CPUs if <code class="docutils literal notranslate"><span class="pre">hideHyperthreads</span></code> is <code class="docutils literal notranslate"><span class="pre">false</span></code> for
+the other balloon. The default is <code class="docutils literal notranslate"><span class="pre">false</span></code>: containers are allowed
+to use all hyperthreads of balloon’s CPUs and shared idle CPUs.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">preferSpreadOnPhysicalCores</span></code> overrides the policy level option
 with the same name in the scope of this balloon type.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">preferCloseToDevices</span></code> prefers creating new balloons close to
@@ -413,6 +424,26 @@ the resource policy from touching their CPU or memory pinning.</p>
 <span class="nt">memory.preserve.resource-policy.nri.io</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
 </pre></div>
 </div>
+<section id="selectively-disabling-hyperthreading">
+<h3>Selectively Disabling Hyperthreading<a class="headerlink" href="#selectively-disabling-hyperthreading" title="Permalink to this heading"></a></h3>
+<p>If a container opts to hide hyperthreads, it is allowed to use only
+one hyperthread from every physical CPU core allocated to it. Note
+that as a result the container may be allowed to run on only half of
+the CPUs it has requested. In case of workloads that do not benefit
+from hyperthreading this nevertheless results in better performance
+compared to running on all hyperthreads of the same CPU cores. If
+container’s CPU allocation is exclusive, no other container can run on
+hidden hyperthreads either.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="c1"># allow the &quot;LLM&quot; container to use only single thread per physical CPU core</span>
+<span class="w">    </span><span class="nt">hide-hyperthreads.resource-policy.nri.io/container.LLM</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">hide-hyperthreads</span></code> pod annotation overrides the
+<code class="docutils literal notranslate"><span class="pre">hideHyperthreads</span></code> balloon type parameter value for selected
+containers in the pod.</p>
+</section>
 </section>
 <section id="metrics-and-debugging">
 <h2>Metrics and Debugging<a class="headerlink" href="#metrics-and-debugging" title="Permalink to this heading"></a></h2>
