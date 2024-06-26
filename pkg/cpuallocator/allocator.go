@@ -38,10 +38,13 @@ const (
 	AllocIdleNodes
 	// AllocIdleClusters requests allocation of full idle CPU clusters.
 	AllocIdleClusters
+	// AllocCacheGroups requests allocation and splitting of idle and used cache groups
+	AllocCacheGroups
 	// AllocIdleCores requests allocation of full idle cores (all threads in core).
 	AllocIdleCores
+
 	// AllocDefault is the default allocation preferences.
-	AllocDefault = AllocIdlePackages | AllocIdleClusters | AllocIdleCores
+	AllocDefault = AllocIdlePackages | AllocIdleClusters | AllocCacheGroups | AllocIdleCores
 
 	logSource = "cpuallocator"
 )
@@ -399,6 +402,526 @@ func (a *allocatorHelper) takeIdleClusters() {
 	}
 }
 
+// Allocate idle or partial CPU last-level cache groups.
+func (a *allocatorHelper) takeCacheGroups() {
+	log.Debug("* takeCacheGroups()...")
+
+	if len(a.topology.cacheGroups) <= 1 {
+		return
+	}
+
+	if a.cnt < 2 {
+		// TODO(klihub): we could also decide based on some criteria, perhaps some
+		// caller preference, if it was better to handle such containers here and,
+		// for instance, allocate them using already fragmented groups
+		return
+	}
+
+	//
+	// The allocation strategy here is roughly the following:
+	//
+	// 1. collect cache group candidates:
+	//    a. ignore cache groups with conflicting allocation prio
+	//    b. pick idle cache groups as 'preferred'
+	//    c. pick other cache groups with some free CPUs left as 'usable'
+	// 2. sort preferred cache groups: prefer tightest fitting package and die
+	// 3. sort usable cache groups:
+	//    a. prefer same package and die as the best preferred group, if we have any
+	//    b. otherwise prefer looser groups from tightest fitting package and die
+	// 4. bail out if no single package can satisfy the request
+	// 5. allocate preferred groups
+	//    a. take as many full groups as we can
+	//    b. split up a preferred group if we have to
+	// 6. allocate usable groups
+	//    a. try allocating a single group with exactly matching size (IOW free CPUs)
+	//    b. try allocating the smallest number of groups of a single size
+	//    c. allocate using the smallest number of groups (largest to smallest)
+	//
+	// Notes:
+	//   We might consider letting the requestor control some aspects of allocation,
+	//   for instance:
+	//     - use only full idle groups (ideal maximum isolation)
+	//     - use only full idle groups, and 1 fragmented (maximum isolation)
+	//     - try using only fragmented groups (for lesser workloads, to preserve idle groups)
+	//       o take fewest groups possible (take from large to small, minimize interference)
+	//       o fragment fewest groups possible (take from small to large, preserve large groups)
+
+	var (
+		offline    = a.sys.OfflineCPUs()
+		pickGroups = func(g *cacheGroup) (pickVerdict, cpuset.CPUSet) {
+			if len(a.topology.kind) > 1 {
+				// only take E-groups for low-prio requests, or if we have none other
+				if a.prefer != PriorityLow && g.kind == sysfs.EfficientCore {
+					log.Debug("  - ignore %s (CPU preference is %s)", g, a.prefer)
+					return pickIgnore, emptyCPUSet
+				}
+				// only take P-groups for other than low-prio requests, or if we have none other
+				if a.prefer == PriorityLow && g.kind == sysfs.PerformanceCore {
+					log.Debug("  - ignore %s (CPU preference is %s)", g, a.prefer)
+					return pickIgnore, emptyCPUSet
+				}
+			}
+
+			cset := g.cpus.Difference(offline)
+			free := cset.Intersection(a.from)
+
+			// ignore groups without usable CPUs
+			if free.IsEmpty() {
+				log.Debug("  - ignore %s (no usable CPUs)", g)
+				return pickIgnore, emptyCPUSet
+			}
+
+			// prefer fully usable idle groups
+			if free.Equals(cset) {
+				log.Debug("  + prefer %s (%d CPUs: %s)", g, free.Size(), free)
+				return pickPrefer, free
+			}
+
+			// take also groups with some usable CPUs left
+			log.Debug("  o usable %s (%d free CPUs: %s)", g, free.Size(), free)
+			return pickUsable, free
+		}
+
+		sortIdle = func(gA, gB *cacheGroup, s *cacheGroupSorter) (r int) {
+			defer func() {
+				switch {
+				case r < 0:
+					log.Debug("  + prefer %s", gA)
+					log.Debug("      over %s", gB)
+				case r > 0:
+					log.Debug("  + prefer %s", gB)
+					log.Debug("      over %s", gA)
+				default: // currently should not happen
+					log.Debug("  - either %s", gA)
+					log.Debug("        or %s", gB)
+				}
+			}()
+
+			dieFullA := s.preferDieCPUCount(gA.pkg, gA.die)
+			dieFullB := s.preferDieCPUCount(gB.pkg, gB.die)
+			pkgFullA := s.preferPkgCPUCount(gA.pkg)
+			pkgFullB := s.preferPkgCPUCount(gB.pkg)
+
+			diePartA := s.usableDieCPUCount(gA.pkg, gA.die)
+			diePartB := s.usableDieCPUCount(gB.pkg, gB.die)
+			pkgPartA := s.usablePkgCPUCount(gA.pkg)
+			pkgPartB := s.usablePkgCPUCount(gB.pkg)
+
+			full, part := s.full, s.part
+
+			// if only one die can satisfy the request, prefer that one
+			if dieFullA >= full && dieFullB < full {
+				if diePartA >= part {
+					return -1
+				}
+			}
+			if dieFullA < full && dieFullB >= full {
+				if diePartB >= part {
+					return 1
+				}
+			}
+			if dieFullA >= full && dieFullB >= full {
+				if diePartA >= part && diePartB < part {
+					return -1
+				}
+				if diePartA < part && diePartB >= part {
+					return 1
+				}
+			}
+
+			// if both dies can satisfy the request, prefer tighter one
+			if dieFullA >= full && dieFullB >= full {
+				if diePartA >= part && diePartB >= part {
+					if diff := dieFullA - dieFullB; diff != 0 {
+						return diff
+					}
+					if diff := diePartA - diePartB; diff != 0 {
+						return diff
+					}
+					// for a tie prefer smaller package, die, and group IDs
+					if gA.pkg != gB.pkg {
+						return gA.pkg - gB.pkg
+					}
+					if gA.die != gB.die {
+						return gA.die - gB.die
+					}
+					return gA.id - gB.id
+				}
+			}
+
+			// if only one package can satisfy the request, prefer that one
+			if pkgFullA >= full && pkgFullB < full {
+				if pkgPartA >= part {
+					return -1
+				}
+			}
+			if pkgFullA < full && pkgFullB >= full {
+				if pkgPartB >= part {
+					return 1
+				}
+			}
+			if pkgFullA >= full && pkgFullB >= full {
+				if pkgPartA >= part && pkgPartB < part {
+					return -1
+				}
+				if pkgPartA < part && pkgPartB >= part {
+					return 1
+				}
+			}
+
+			// if both packages can satisfy the request, prefer tighter one
+			if pkgFullA >= full && pkgFullB >= full {
+				if pkgPartA >= part && pkgPartB >= part {
+					if diff := pkgFullA - pkgFullB; diff != 0 {
+						return diff
+					}
+					if diff := pkgPartA - pkgPartB; diff != 0 {
+						return diff
+					}
+					// for a tie prefer smaller package, die, and group IDs
+					if gA.pkg != gB.pkg {
+						return gA.pkg - gB.pkg
+					}
+					if gA.die != gB.die {
+						return gA.die - gB.die
+					}
+					return gA.id - gB.id
+				}
+			}
+
+			// equality: sort by group ID.
+			return gA.id - gB.id
+		}
+
+		sortUsed = func(gA, gB *cacheGroup, s *cacheGroupSorter) (r int) {
+			defer func() {
+				switch {
+				case r < 0:
+					log.Debug("  + prefer %s", gA)
+					log.Debug("      over %s", gB)
+				case r > 0:
+					log.Debug("  + prefer %s", gB)
+					log.Debug("      over %s", gA)
+				default:
+					log.Debug("  - either %s", gA)
+					log.Debug("        or %s", gB)
+				}
+			}()
+
+			var (
+				diePartA = s.usableDieCPUCount(gA.pkg, gA.die)
+				diePartB = s.usableDieCPUCount(gB.pkg, gB.die)
+				csetA    = s.cpus[gA]
+				csetB    = s.cpus[gB]
+				full     = s.full
+				part     = s.part
+				idle     *cacheGroup
+			)
+
+			if len(s.prefer) > 0 {
+				idle = s.prefer[0]
+			}
+
+			// if we are going to use idle groups prefer other groups from the same die and pkg
+			if full > 0 && idle != nil {
+				dieIdle := s.preferDieCPUCount(idle.pkg, idle.die)
+				pkgIdle := s.preferPkgCPUCount(idle.pkg)
+
+				if gA.pkg == pkgIdle && gB.pkg != pkgIdle {
+					return -1
+				}
+				if gA.pkg != pkgIdle && gB.pkg == pkgIdle {
+					return 1
+				}
+				if gA.pkg == pkgIdle && gB.pkg == pkgIdle {
+					if gA.die == dieIdle && gB.die != dieIdle {
+						return -1
+					}
+					if gA.die != dieIdle && gB.die == dieIdle {
+						return 1
+					}
+					// for a tie prefer looser (bigger) group, smaller group ID
+					if gA.die == dieIdle && gB.die == dieIdle {
+						if diff := csetA.Size() - csetB.Size(); diff != 0 {
+							return -diff
+						}
+						return gA.id - gB.id
+					}
+				}
+				// equality: both are unusable, don't need to sort them
+				return 0
+			}
+
+			// if we only have used groups, prefer tighter satisfying package and die
+			total := full + part
+
+			if diePartA >= total && diePartB < total {
+				return -1
+			}
+			if diePartA < total && diePartB >= total {
+				return 1
+			}
+			if diePartA >= total && diePartB >= total {
+				if diff := diePartA - diePartB; diff != 0 {
+					return diff
+				}
+				// for a tie prefer looser (bigger) group, smaller package, die, and group IDs
+				if diff := csetA.Size() - csetB.Size(); diff != 0 {
+					return -diff
+				}
+				if gA.pkg != gB.pkg {
+					return gA.pkg - gB.pkg
+				}
+				if gA.die != gB.die {
+					return gA.die - gB.die
+				}
+				return gA.id - gB.id
+			}
+
+			// equality: both are unusable, don't need to sort them
+			return 0
+		}
+
+		sorter = &cacheGroupSorter{
+			pick:       pickGroups,
+			sortPrefer: sortIdle,
+			sortUsable: sortUsed,
+		}
+	)
+
+	log.Debug("looking for %d CPUs (prio %s) from %s", a.cnt, a.prefer, a.from)
+
+	sorter.sortCacheGroups(a)
+
+	var (
+		preferPkgCPUs int
+		usablePkgCPUs int
+		chosenPkg     int
+
+		result = a.result
+		from   = a.from
+		cnt    = a.cnt
+	)
+
+	switch {
+	case len(sorter.prefer) > 0:
+		chosenPkg = sorter.prefer[0].pkg
+		preferPkgCPUs = sorter.preferPkgCPUCount(chosenPkg)
+		usablePkgCPUs = sorter.usablePkgCPUCount(chosenPkg)
+	case len(sorter.usable) > 0:
+		chosenPkg = sorter.usable[0].pkg
+		usablePkgCPUs = sorter.usablePkgCPUCount(chosenPkg)
+	}
+
+	if preferPkgCPUs+usablePkgCPUs < a.cnt {
+		log.Debug("=> no package can satisfy the allocation")
+		return
+	}
+
+	//
+	// take full idle cache groups, splitting up the last one if necessary
+	//
+
+	log.Debug("trying to take idle cache groups...")
+	for i, g := range sorter.prefer {
+		if cnt <= 0 {
+			break
+		}
+
+		cset := sorter.cpus[g]
+
+		if cnt >= cset.Size() {
+			log.Debug("=> took full idle cache group %d. %s", i, g)
+
+			result = result.Union(cset)
+			from = from.Difference(cset)
+			cnt -= cset.Size()
+			continue
+		}
+
+		// partially allocate the rest from this group
+		ta := newAllocatorHelper(a.sys, a.topology)
+		ta.prefer = a.prefer
+		ta.flags = AllocIdleCores
+		ta.from = cset
+		ta.cnt = cnt
+		use := ta.allocate()
+
+		log.Debug("=> took %d CPUs (%s) from idle cache group %d. %s", use.Size(), use, i, g)
+
+		result = result.Union(use)
+		from = from.Difference(use)
+		cnt -= use.Size()
+	}
+
+	if cnt <= 0 {
+		a.result = result
+		a.from = from
+		a.cnt = cnt
+		return
+	}
+
+	//
+	// allocate non-idle usable cache groups
+	//
+	// We try a few strategies to fulfill the allocation in this order:
+	//   1. try to find a single group with the exact number of CPUs
+	//   2. try to find the minimal number of same-sized groups
+	//   3. fulfill request by taking groups in decreasing size order
+	//
+
+	log.Debug("%d more CPUs needed", cnt)
+
+	var (
+		groupsBySize = map[int][]*cacheGroup{}
+		totalByIndex = make([]int, 0, len(sorter.usable))
+		totalCPUs    = 0
+	)
+
+	for i := 0; i <= len(sorter.usable)-1; i++ {
+		g := sorter.usable[i]
+		cset := sorter.cpus[g]
+
+		// don't ever cross package boundary, ignore the rest of the groups
+		if g.pkg != chosenPkg {
+			break
+		}
+
+		groupsBySize[cset.Size()] = append(groupsBySize[cset.Size()], g)
+		totalCPUs += cset.Size()
+		totalByIndex = append(totalByIndex, totalCPUs)
+	}
+
+	if totalCPUs < cnt {
+		log.Debug("=> internal error: total cache group CPUs %d <= expected %d", totalCPUs, cnt)
+	}
+
+	// try to pick a single exact sized group if possible
+	log.Debug("trying to find a single cache group with %d CPUs...", cnt)
+
+	if groups, ok := groupsBySize[cnt]; ok {
+		g := groups[0]
+		cset := sorter.cpus[g]
+
+		log.Debug("=> took reamining %d CPUs (%s) of usable cache group %s", cnt, cset, g)
+
+		result = result.Union(cset)
+		from = from.Difference(cset)
+
+		if cset.Size() != cnt {
+			log.Error("=> internal error: group size by cnt %d != expected %d", cset.Size(), cnt)
+			return
+		}
+
+		a.result = result
+		a.from = from
+		a.cnt = 0
+		return
+	}
+
+	// try picking the smallest number of groups of a single size
+	log.Debug("trying to find cache groups of a single size for %d more CPUs...", cnt)
+
+	size := 0
+	take := 0
+	for grpSize, groups := range groupsBySize {
+		if grpSize > 0 && grpSize < cnt && cnt%grpSize == 0 {
+			if n := cnt / grpSize; n < len(groups) && n < take {
+				size = grpSize
+				take = n
+			}
+		}
+	}
+
+	if take != 0 && size > 1 { // don't take (so easily) more than one single CPU groups
+		for i, g := range groupsBySize[size] {
+			cset := sorter.cpus[g]
+
+			log.Debug("=> took %d./%d %d remaining CPUs (%s) of usable cache group of size %d %s",
+				i+1, take, cset.Size(), cset, size, g)
+
+			result = result.Union(cset)
+			from = from.Difference(cset)
+			cnt -= cset.Size()
+		}
+
+		if cnt != 0 {
+			log.Error("internal error: remaining cnt %d, expected 0", cnt)
+			return
+		}
+
+		a.result = result
+		a.from = from
+		a.cnt = 0
+	}
+
+	// use up smallest number of groups possible (start with the largest group)
+	log.Debug("=> taking cache groups in decreasing size order for %d more CPUs...", cnt)
+
+	var (
+		grpCnt = 0
+		cpuCnt = 0
+	)
+
+	for i, total := range totalByIndex {
+		grpCnt, cpuCnt = i+1, total
+
+		if cnt <= total {
+			break
+		}
+	}
+
+	if cpuCnt < cnt {
+		log.Debug("=> internal error: %d CPUs in usable cache groups < needed %d", cpuCnt, cnt)
+		return
+	}
+
+	for i := 0; i < grpCnt; i++ {
+		g := sorter.usable[i]
+		cset := sorter.cpus[g]
+
+		if cnt < cset.Size() {
+			break
+		}
+
+		log.Debug("=> took %d./%d remaining CPUs (%s) of usable cache group %s", i, grpCnt, cset, g)
+
+		result = result.Union(cset)
+		from = from.Difference(cset)
+		cnt -= cset.Size()
+	}
+
+	if cnt > 0 {
+		// need to take only part of the last group we use
+		g := sorter.usable[grpCnt-1]
+		cset := sorter.cpus[g]
+
+		ta := newAllocatorHelper(a.sys, a.topology)
+		ta.prefer = a.prefer
+		ta.flags = AllocIdleCores
+		ta.from = cset
+		ta.cnt = cnt
+		use := ta.allocate()
+
+		log.Debug("=> took %d./%d %d CPUs (%s) from cache group %s",
+			grpCnt, grpCnt, use.Size(), use, g)
+
+		result = result.Union(use)
+		from = from.Difference(use)
+		cnt -= use.Size()
+	}
+
+	if cnt != 0 {
+		log.Error("=> internal error: %d unallocated cache group CPUs remain", cnt)
+		return
+	}
+
+	a.result = result
+	a.from = from
+	a.cnt = 0
+	return
+}
+
 // Allocate full idle CPU cores.
 func (a *allocatorHelper) takeIdleCores() {
 	a.Debug("* takeIdleCores()...")
@@ -552,6 +1075,9 @@ func (a *allocatorHelper) allocate() cpuset.CPUSet {
 		if a.cnt > 0 && (a.flags&AllocIdleClusters) != 0 {
 			a.takeIdleClusters()
 		}
+		if a.cnt > 0 && (a.flags&AllocCacheGroups) != 0 {
+			a.takeCacheGroups()
+		}
 		if a.cnt > 0 && (a.flags&AllocIdleCores) != 0 {
 			a.takeIdleCores()
 		}
@@ -645,6 +1171,158 @@ func (a *allocatorHelper) sortCPUClusters(s *clusterSorter) {
 	s.pkgCPUCnt = pkgCPUCnt
 	s.dieCPUCnt = dieCPUCnt
 	s.cpus = cpus
+}
+
+type pickVerdict int
+
+const (
+	pickPrefer pickVerdict = iota
+	pickUsable
+	pickIgnore
+)
+
+type cacheGroupSorter struct {
+	// function to pick preferred and usable cache groups
+	pick func(*cacheGroup) (pickVerdict, cpuset.CPUSet)
+	// functions for sorting picked cache groups
+	sortPrefer func(a, b *cacheGroup, s *cacheGroupSorter) int
+	sortUsable func(a, b *cacheGroup, s *cacheGroupSorter) int
+
+	// preferred groups, available CPU count per package and die
+	prefer    []*cacheGroup
+	preferPkg map[idset.ID]int
+	preferDie map[idset.ID]map[idset.ID]int
+
+	// other usable groups, available CPU count per package and die
+	usable    []*cacheGroup
+	usablePkg map[idset.ID]int
+	usableDie map[idset.ID]map[idset.ID]int
+
+	// available CPUs per group
+	cpus map[*cacheGroup]cpuset.CPUSet
+
+	// full and partial groups worth of requested CPUs
+	full int
+	part int
+}
+
+func (s *cacheGroupSorter) preferPkgCPUCount(pkg idset.ID) int {
+	return s.preferPkg[pkg]
+}
+
+func (s *cacheGroupSorter) preferDieCPUCount(pkg, die idset.ID) int {
+	return s.preferDie[pkg][die]
+}
+
+func (s *cacheGroupSorter) usablePkgCPUCount(pkg idset.ID) int {
+	return s.usablePkg[pkg]
+}
+
+func (s *cacheGroupSorter) usableDieCPUCount(pkg, die idset.ID) int {
+	return s.usableDie[pkg][die]
+}
+
+func (s *cacheGroupSorter) CPUSet(g *cacheGroup) cpuset.CPUSet {
+	return s.cpus[g]
+}
+
+func (s *cacheGroupSorter) sortCacheGroups(a *allocatorHelper) {
+	s.prefer = []*cacheGroup{}
+	s.preferPkg = map[idset.ID]int{}
+	s.preferDie = map[idset.ID]map[idset.ID]int{}
+	s.usable = []*cacheGroup{}
+	s.usablePkg = map[idset.ID]int{}
+	s.usableDie = map[idset.ID]map[idset.ID]int{}
+	s.cpus = map[*cacheGroup]cpuset.CPUSet{}
+
+	log.Debug("picking suitable cache groups")
+
+	// Notes:
+	//   We blindly assume here that all cache groups of interest are of
+	//   the same size and use this assumption to split the request into
+	//   full cache size multiples and the remaining partial allocation.
+
+	s.part = a.cnt % a.topology.cacheGroups[0].cpus.Size()
+	s.full = a.cnt - s.part
+
+	// collect preferred and usable groups, count their CPUs per package and die
+	for _, g := range a.topology.cacheGroups {
+		verdict, cset := s.pick(g)
+		switch verdict {
+		case pickPrefer:
+			// collect preferred group and usable CPUs
+			s.prefer = append(s.prefer, g)
+			s.cpus[g] = cset
+
+			// count preferred usable CPUs per package and die
+			if _, ok := s.preferDie[g.pkg]; !ok {
+				s.preferDie[g.pkg] = map[idset.ID]int{}
+			}
+			s.preferDie[g.pkg][g.die] += cset.Size()
+			s.preferPkg[g.pkg] += cset.Size()
+
+		case pickUsable:
+			// collect non-preferred but usable group and CPUs
+			s.usable = append(s.usable, g)
+			s.cpus[g] = cset
+
+			// count usable CPUs per package and die
+			if _, ok := s.usableDie[g.pkg]; !ok {
+				s.usableDie[g.pkg] = map[idset.ID]int{}
+			}
+			s.usableDie[g.pkg][g.die] += cset.Size()
+			s.usablePkg[g.pkg] += cset.Size()
+
+		case pickIgnore:
+			continue
+		}
+	}
+
+	if log.DebugEnabled() {
+		if len(s.preferPkg) > 0 {
+			log.Debug("number of preferred cache group CPUs per package/die:")
+			for pkg, cnt := range s.preferPkg {
+				log.Debug("  - package #%d: %d", pkg, cnt)
+			}
+			for pkg, dies := range s.preferDie {
+				for die, cnt := range dies {
+					log.Debug("  - die #%d/%d %d", pkg, die, cnt)
+				}
+			}
+		} else {
+			log.Debug("no preferred cache groups found")
+		}
+
+		if len(s.usablePkg) > 0 {
+			log.Debug("number of non-preferred but usable cache group CPUs per package/die:")
+			for pkg, cnt := range s.usablePkg {
+				log.Debug("  - package #%d: %d", pkg, cnt)
+			}
+			for pkg, dies := range s.usableDie {
+				for die, cnt := range dies {
+					log.Debug("  - die #%d/%d %d", pkg, die, cnt)
+				}
+			}
+		} else {
+			log.Debug("no non-preferred but usable cache groups found")
+		}
+	}
+
+	// sort preferred groups
+	if len(s.prefer) > 0 {
+		log.Debug("sorting preferred cache groups")
+		slices.SortFunc(s.prefer, func(gA, gB *cacheGroup) int {
+			return s.sortPrefer(gA, gB, s)
+		})
+	}
+
+	// sort other usable groups
+	if len(s.usable) > 0 {
+		log.Debug("sorting non-preferred but usable cache groups")
+		slices.SortFunc(s.usable, func(gA, gB *cacheGroup) int {
+			return s.sortUsable(gA, gB, s)
+		})
+	}
 }
 
 func (ca *cpuAllocator) allocateCpus(from *cpuset.CPUSet, cnt int, prefer CPUPriority) (cpuset.CPUSet, error) {
