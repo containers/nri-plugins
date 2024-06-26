@@ -1072,11 +1072,17 @@ func (a *allocatorHelper) allocate() cpuset.CPUSet {
 		if (a.flags & AllocIdlePackages) != 0 {
 			a.takeIdlePackages()
 		}
-		if a.cnt > 0 && (a.flags&AllocIdleClusters) != 0 {
-			a.takeIdleClusters()
-		}
-		if a.cnt > 0 && (a.flags&AllocCacheGroups) != 0 {
-			a.takeCacheGroups()
+		if len(a.topology.kind) > 1 {
+			if a.cnt > 0 && (a.flags&AllocIdleClusters) != 0 {
+				a.takeIdleClusters()
+			}
+			if a.cnt > 0 && (a.flags&AllocCacheGroups) != 0 {
+				a.takeCacheGroups()
+			}
+		} else {
+			if a.cnt > 0 && (a.flags&AllocCacheGroups) != 0 {
+				a.takeCacheGroups()
+			}
 		}
 		if a.cnt > 0 && (a.flags&AllocIdleCores) != 0 {
 			a.takeIdleCores()
