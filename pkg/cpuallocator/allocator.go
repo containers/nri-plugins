@@ -93,6 +93,7 @@ type topologyCache struct {
 
 	cpuPriorities cpuPriorities // CPU priority mapping
 	clusters      []*cpuCluster // CPU clusters
+	cacheGroups   []*cacheGroup // CPU cache groups
 }
 
 type cpuPriorities [NumCPUPriorities]cpuset.CPUSet
@@ -103,6 +104,15 @@ type cpuCluster struct {
 	cluster idset.ID
 	cpus    cpuset.CPUSet
 	kind    sysfs.CoreKind
+}
+
+type cacheGroup struct {
+	id   int
+	pkg  idset.ID
+	die  idset.ID
+	node idset.ID
+	cpus cpuset.CPUSet
+	kind sysfs.CoreKind
 }
 
 // IDFilter helps filtering Ids.
@@ -706,6 +716,7 @@ func newTopologyCache(sys sysfs.System) topologyCache {
 	}
 
 	c.discoverCPUClusters(sys)
+	c.discoverCacheGroups(sys)
 	c.discoverCPUPriorities(sys)
 
 	return c
@@ -974,6 +985,128 @@ func (c *topologyCache) discoverCPUClusters(sys sysfs.System) {
 	}
 }
 
+func (c *topologyCache) pickCacheLevelForGrouping(sys sysfs.System) int {
+	if sys == nil {
+		return -1
+	}
+
+	online := sys.OnlineCPUs()
+	for _, id := range online.List() {
+		cpu := sys.CPU(id)
+		pkg := sys.Package(cpu.PackageID())
+		for n := cpu.CacheCount() - 1; n > 0; n-- {
+			cpus := cpu.GetNthLevelCacheCPUSet(n)
+
+			switch {
+			case cpus.Size() == 0 || cpus.Size() == 1:
+				continue
+			case cpus.Equals(cpu.ThreadCPUSet().Intersection(online)):
+				continue
+			case cpus.Equals(pkg.DieCPUSet(cpu.DieID()).Intersection(online)):
+				continue
+			case cpus.Equals(pkg.CPUSet().Intersection(online)):
+				continue
+			}
+
+			return n
+		}
+	}
+
+	return -1
+}
+
+func (c *topologyCache) discoverCacheGroups(sys sysfs.System) {
+	if sys == nil {
+		return
+	}
+
+	n := c.pickCacheLevelForGrouping(sys)
+	if n < 0 {
+		log.Info("no cache level provides useful CPU grouping")
+		return
+	}
+
+	log.Info("picked cache level %d for CPU grouping", n)
+
+	online := sys.OnlineCPUs()
+	for _, id := range sys.PackageIDs() {
+		pkg := sys.Package(id)
+		groups := []*cacheGroup{}
+		assigned := idset.NewIDSet()
+
+		for _, cpuID := range pkg.CPUSet().Intersection(online).List() {
+			if assigned.Has(cpuID) {
+				continue
+			}
+
+			cpu := sys.CPU(cpuID)
+			cpus := cpu.GetNthLevelCacheCPUSet(n).Intersection(online)
+
+			switch {
+			case cpus.Size() == 0 || cpus.Size() == 1:
+				continue
+			case cpus.Equals(cpu.ThreadCPUSet().Intersection(online)):
+				continue
+			case cpus.Equals(pkg.DieCPUSet(cpu.DieID()).Intersection(online)):
+				continue
+			case cpus.Equals(pkg.CPUSet().Intersection(online)):
+				continue
+			}
+
+			groups = append(groups, &cacheGroup{
+				pkg:  cpu.PackageID(),
+				die:  cpu.DieID(),
+				node: cpu.NodeID(),
+				cpus: cpus.Clone(),
+				kind: cpu.CoreKind(), // TODO(klihub): maybe verify all CPUs are the same kind
+			})
+			assigned.Add(cpus.UnsortedList()...)
+		}
+
+		if len(groups) > 1 {
+			c.cacheGroups = append(c.cacheGroups, groups...)
+		}
+	}
+
+	// sort groups by package, die, NUMA node, and lowest CPU ID.
+	slices.SortFunc(c.cacheGroups, func(a, b *cacheGroup) int {
+		if diff := a.pkg - b.pkg; diff != 0 {
+			return diff
+		}
+		if diff := a.die - b.die; diff != 0 {
+			return diff
+		}
+		if diff := a.node - b.node; diff != 0 {
+			return diff
+		}
+		return a.cpus.List()[0] - b.cpus.List()[0]
+	})
+
+	for idx, g := range c.cacheGroups {
+		g.id = idx
+
+		for _, cpuID := range g.cpus.UnsortedList() {
+			cpu := sys.CPU(cpuID)
+			if cpu.PackageID() != g.pkg {
+				log.Panic("CPU #%d in cache group #%d has package #%d != #%d",
+					cpuID, g.id, cpu.PackageID(), g.pkg)
+			}
+			if cpu.DieID() != g.die {
+				log.Panic("CPU #%d in cache group #%d has die #%d != #%d",
+					cpuID, g.id, cpu.DieID(), g.die)
+			}
+			if cpu.NodeID() != g.node {
+				log.Panic("CPU #%d in cache group #%d has node #%d != #%d",
+					cpuID, g.id, cpu.NodeID(), g.die)
+			}
+		}
+
+		cpu := sys.CPU(g.cpus.List()[0])
+		log.Debug("cache group #%d: pkg #%d/die #%d/node #%d %s cpus %s",
+			g.id, cpu.PackageID(), cpu.DieID(), cpu.NodeID(), g.kind, g.cpus)
+	}
+}
+
 func (p CPUPriority) String() string {
 	switch p {
 	case PriorityHigh:
@@ -1070,5 +1203,23 @@ func (c *cpuCluster) HasSmallerIDsThan(o *cpuCluster) bool {
 
 func (c *cpuCluster) String() string {
 	return fmt.Sprintf("cluster #%d/%d/%d, %d %s CPUs (%s)", c.pkg, c.die, c.cluster,
+		c.cpus.Size(), c.kind, c.cpus)
+}
+
+func (c *cacheGroup) PackageID() int {
+	return c.pkg
+}
+
+func (c *cacheGroup) DieID(sys sysfs.System) int {
+	cpu := sys.CPU(c.cpus.List()[0])
+	return cpu.DieID()
+}
+
+func (c *cacheGroup) SmallestCoreID(sys sysfs.System) int {
+	return c.cpus.List()[0]
+}
+
+func (c *cacheGroup) String() string {
+	return fmt.Sprintf("group #%d/%d, %d %s CPUs (%s)", c.pkg, c.id,
 		c.cpus.Size(), c.kind, c.cpus)
 }
