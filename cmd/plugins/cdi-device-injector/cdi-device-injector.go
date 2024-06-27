@@ -19,6 +19,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -41,12 +42,13 @@ var (
 
 // our injector plugin
 type plugin struct {
-	stub     stub.Stub
-	cdiCache *cdiCache
+	stub                    stub.Stub
+	allowedCDIDevicePattern string
+	cdiCache                *cdiCache
 }
 
 // CreateContainer handles container creation requests.
-func (p *plugin) CreateContainer(_ context.Context, pod *api.PodSandbox, container *api.Container) (_ *api.ContainerAdjustment, _ []*api.ContainerUpdate, err error) {
+func (p *plugin) CreateContainer(ctx context.Context, pod *api.PodSandbox, container *api.Container) (_ *api.ContainerAdjustment, _ []*api.ContainerUpdate, err error) {
 	defer func() {
 		if err != nil {
 			log.Error(err)
@@ -60,6 +62,10 @@ func (p *plugin) CreateContainer(_ context.Context, pod *api.PodSandbox, contain
 		log.Infof("CreateContainer %s", name)
 	}
 
+	if p.allowedCDIDevicePattern == "" {
+		return nil, nil, nil
+	}
+
 	cdiDevices, err := parseCdiDevices(pod.Annotations, container.Name)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to parse CDI Device annotations: %w", err)
@@ -69,8 +75,17 @@ func (p *plugin) CreateContainer(_ context.Context, pod *api.PodSandbox, contain
 		return nil, nil, nil
 	}
 
+	var allowedCDIDevices []string
+	for _, cdiDevice := range cdiDevices {
+		match, _ := filepath.Match(p.allowedCDIDevicePattern, cdiDevice)
+		if !match {
+			continue
+		}
+		allowedCDIDevices = append(allowedCDIDevices, cdiDevice)
+	}
+
 	adjust := &api.ContainerAdjustment{}
-	if _, err := p.cdiCache.InjectDevices(adjust, cdiDevices...); err != nil {
+	if _, err := p.cdiCache.InjectDevices(adjust, allowedCDIDevices...); err != nil {
 		return nil, nil, fmt.Errorf("CDI device injection failed: %w", err)
 	}
 
@@ -143,10 +158,11 @@ func dump(args ...interface{}) {
 
 func main() {
 	var (
-		pluginName string
-		pluginIdx  string
-		opts       []stub.Option
-		err        error
+		pluginName              string
+		pluginIdx               string
+		allowedCDIDevicePattern string
+		opts                    []stub.Option
+		err                     error
 	)
 
 	log = logrus.StandardLogger()
@@ -156,6 +172,7 @@ func main() {
 
 	flag.StringVar(&pluginName, "name", "", "plugin name to register to NRI")
 	flag.StringVar(&pluginIdx, "idx", "", "plugin index to register to NRI")
+	flag.StringVar(&allowedCDIDevicePattern, "allowed-cdi-device-pattern", "*", "glob pattern for allowed CDI device names")
 	flag.BoolVar(&verbose, "verbose", false, "enable (more) verbose logging")
 	flag.Parse()
 
@@ -167,6 +184,7 @@ func main() {
 	}
 
 	p := &plugin{
+		allowedCDIDevicePattern: allowedCDIDevicePattern,
 		cdiCache: &cdiCache{
 			// TODO: We should allow this to be configured
 			Cache: cdi.GetDefaultCache(),
