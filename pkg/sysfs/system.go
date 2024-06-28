@@ -20,6 +20,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -934,6 +935,13 @@ func (sys *system) discoverCPU(path string) error {
 
 	if (sys.flags & DiscoverCache) != 0 {
 		entries, _ := filepath.Glob(filepath.Join(path, "cache/index[0-9]*"))
+		slices.SortFunc(entries, func(a, b string) int {
+			a = strings.TrimPrefix(filepath.Base(a), "index")
+			b = strings.TrimPrefix(filepath.Base(b), "index")
+			idxA, _ := strconv.Atoi(a)
+			idxB, _ := strconv.Atoi(b)
+			return idxA - idxB
+		})
 		for _, entry := range entries {
 			if err := sys.discoverCache(cpu, entry); err != nil {
 				return err
@@ -1060,6 +1068,8 @@ func (c *cpu) GetCachesByLevel(level int) []*Cache {
 	for _, cch := range c.caches {
 		if cch.level == level {
 			caches = append(caches, cch)
+		} else if cch.level > level {
+			break
 		}
 	}
 
