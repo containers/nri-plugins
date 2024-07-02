@@ -19,6 +19,7 @@ import (
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
+	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 )
 
 // trigger cold start for the container if necessary.
@@ -63,8 +64,13 @@ func (p *policy) finishColdStart(c cache.Container) (bool, error) {
 		return false, policyError("coldstart: no grant found for %s", c.PrettyName())
 	}
 
-	log.Info("restoring memset to grant %v", g)
-	g.RestoreMemset()
+	log.Info("reallocating %s after coldstart", g)
+	err := g.ReallocMemory(p.memZoneType(g.GetMemoryZone()) | libmem.TypeMaskDRAM)
+	if err != nil {
+		log.Error("failed to reallocate %s after coldstart: %v", g, err)
+	} else {
+		log.Info("reallocated %s", g)
+	}
 	g.ClearTimer()
 
 	return true, nil

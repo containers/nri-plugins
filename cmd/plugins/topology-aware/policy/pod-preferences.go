@@ -29,6 +29,7 @@ import (
 
 	"github.com/containers/nri-plugins/pkg/kubernetes"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
+	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 )
 
 const (
@@ -87,25 +88,17 @@ var memoryNamedTypes = map[string]memoryType{
 	"mixed": memoryAll,
 }
 
-// names by memory type
-var memoryTypeNames = map[memoryType]string{
-	memoryDRAM: "DRAM",
-	memoryPMEM: "PMEM",
-	memoryHBM:  "HBM",
-}
-
 // memoryType is bitmask of types of memory to allocate
-type memoryType int
+type memoryType libmem.TypeMask
 
 // memoryType bits
 const (
-	memoryUnspec memoryType = (0x1 << iota) >> 1
-	memoryDRAM
-	memoryPMEM
-	memoryHBM
-	memoryPreserve
-	memoryFirstUnusedBit
-	memoryAll = memoryFirstUnusedBit - 1
+	memoryUnspec   = memoryType(libmem.TypeMask(0))
+	memoryDRAM     = memoryType(libmem.TypeMaskDRAM)
+	memoryPMEM     = memoryType(libmem.TypeMaskPMEM)
+	memoryHBM      = memoryType(libmem.TypeMaskHBM)
+	memoryPreserve = memoryType(libmem.TypeMaskHBM << 1)
+	memoryAll      = memoryType(memoryDRAM | memoryPMEM | memoryHBM)
 
 	// type of memory to use if none specified
 	defaultMemoryType = memoryAll
@@ -591,19 +584,23 @@ func podMemoryTypePreference(pod cache.Pod, c cache.Container) memoryType {
 }
 
 // memoryAllocationPreference returns the amount and kind of memory to allocate.
-func memoryAllocationPreference(pod cache.Pod, c cache.Container) (uint64, uint64, memoryType) {
+func memoryAllocationPreference(pod cache.Pod, c cache.Container) (int64, int64, memoryType) {
+	var (
+		req int64
+		lim int64
+	)
+
 	resources, ok := c.GetResourceUpdates()
 	if !ok {
 		resources = c.GetResourceRequirements()
 	}
 	mtype := memoryTypePreference(pod, c)
-	req, lim := uint64(0), uint64(0)
 
 	if memReq, ok := resources.Requests[corev1.ResourceMemory]; ok {
-		req = uint64(memReq.Value())
+		req = memReq.Value()
 	}
 	if memLim, ok := resources.Limits[corev1.ResourceMemory]; ok {
-		lim = uint64(memLim.Value())
+		lim = memLim.Value()
 	}
 
 	return req, lim, mtype
@@ -619,15 +616,7 @@ func (t cpuClass) String() string {
 
 // String stringifies a memoryType.
 func (t memoryType) String() string {
-	str := ""
-	sep := ""
-	for _, bit := range []memoryType{memoryDRAM, memoryPMEM, memoryHBM} {
-		if int(t)&int(bit) != 0 {
-			str += sep + memoryTypeNames[bit]
-			sep = ","
-		}
-	}
-	return str
+	return libmem.TypeMask(t).String()
 }
 
 // parseMemoryType parses a memory type string, ideally produced by String()
@@ -673,4 +662,8 @@ func (t *memoryType) UnmarshalJSON(data []byte) error {
 
 	*t = mtype
 	return nil
+}
+
+func (t memoryType) TypeMask() libmem.TypeMask {
+	return libmem.TypeMask(t)
 }

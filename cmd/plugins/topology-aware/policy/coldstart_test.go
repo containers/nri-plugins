@@ -22,6 +22,7 @@ import (
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
+	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	idset "github.com/intel/goresctrl/pkg/utils"
@@ -62,8 +63,8 @@ func TestColdStart(t *testing.T) {
 		{
 			name: "three node cold start",
 			numaNodes: []system.Node{
-				&mockSystemNode{id: 1, memFree: 10000, memTotal: 10000, memType: system.MemoryTypeDRAM, distance: []int{5, 5, 1}},
-				&mockSystemNode{id: 2, memFree: 50000, memTotal: 50000, memType: system.MemoryTypePMEM, distance: []int{5, 1, 5}},
+				&mockSystemNode{id: 0, memFree: 10000, memTotal: 10000, memType: system.MemoryTypeDRAM, distance: []int{1, 5}},
+				&mockSystemNode{id: 1, memFree: 50000, memTotal: 50000, memType: system.MemoryTypePMEM, distance: []int{5, 1}},
 			},
 			container: &mockContainer{
 				name:                "demo-coldstart-container",
@@ -77,8 +78,8 @@ func TestColdStart(t *testing.T) {
 			},
 			expectedColdStartTimeout: 1000 * time.Millisecond,
 			expectedDRAMNodeID:       101,
-			expectedDRAMSystemNodeID: idset.ID(1),
-			expectedPMEMSystemNodeID: idset.ID(2),
+			expectedDRAMSystemNodeID: 0,
+			expectedPMEMSystemNodeID: 1,
 			expectedPMEMNodeID:       102,
 		},
 	}
@@ -100,6 +101,11 @@ func TestColdStart(t *testing.T) {
 			}
 			policy.allocations.policy = policy
 			policy.options.SendEvent = sendEvent
+			ma, err := libmem.NewAllocator(libmem.WithSystemNodes(policy.sys))
+			if err != nil {
+				panic(err)
+			}
+			policy.memAllocator = ma
 
 			if err := policy.buildPoolsByTopology(); err != nil {
 				t.Errorf("failed to build topology pool")
@@ -115,8 +121,8 @@ func TestColdStart(t *testing.T) {
 
 			policy.allocations.grants[tc.container.GetID()] = grant
 
-			mems := grant.Memset()
-			if len(mems) != 1 || mems.Members()[0] != tc.expectedPMEMSystemNodeID {
+			mems := grant.GetMemoryZone()
+			if mems.Size() != 1 || mems.Slice()[0] != tc.expectedPMEMSystemNodeID {
 				t.Errorf("Expected one memory controller %v, got: %v", tc.expectedPMEMSystemNodeID, mems)
 			}
 
@@ -135,11 +141,11 @@ func TestColdStart(t *testing.T) {
 
 			time.Sleep(tc.expectedColdStartTimeout * 2)
 
-			newMems := grant.Memset()
-			if len(newMems) != 2 {
-				t.Errorf("Expected two memory controllers, got %d: %v", len(newMems), newMems)
+			newMems := grant.GetMemoryZone()
+			if newMems.Size() != 2 {
+				t.Errorf("Expected two memory controllers, got %d: %s", newMems.Size(), newMems)
 			}
-			if !newMems.Has(tc.expectedPMEMSystemNodeID) || !newMems.Has(tc.expectedDRAMSystemNodeID) {
+			if !newMems.Contains(tc.expectedPMEMSystemNodeID) || !newMems.Contains(tc.expectedDRAMSystemNodeID) {
 				t.Errorf("Didn't get all expected system nodes in mems, got: %v", newMems)
 			}
 		})
