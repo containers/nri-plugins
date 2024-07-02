@@ -7,5 +7,6 @@ function getVersionsMenuItems() {
     { name: 'v0.3', url: '/nri-plugins/v0.3' },
     { name: 'v0.4', url: '/nri-plugins/v0.4' },
     { name: 'v0.5', url: '/nri-plugins/v0.5' },
+    { name: 'v0.7', url: '/nri-plugins/v0.7' },
   ];
 }
