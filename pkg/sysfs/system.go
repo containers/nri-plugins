@@ -20,6 +20,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -212,6 +213,7 @@ type CPU interface {
 	GetCaches() []*Cache
 	GetCachesByLevel(int) []*Cache
 	GetCacheByIndex(int) *Cache
+	GetNthLevelCacheCPUSet(n int) cpuset.CPUSet
 	GetLastLevelCaches() []*Cache
 	GetLastLevelCacheCPUSet() cpuset.CPUSet
 	CoreKind() CoreKind
@@ -933,6 +935,13 @@ func (sys *system) discoverCPU(path string) error {
 
 	if (sys.flags & DiscoverCache) != 0 {
 		entries, _ := filepath.Glob(filepath.Join(path, "cache/index[0-9]*"))
+		slices.SortFunc(entries, func(a, b string) int {
+			a = strings.TrimPrefix(filepath.Base(a), "index")
+			b = strings.TrimPrefix(filepath.Base(b), "index")
+			idxA, _ := strconv.Atoi(a)
+			idxB, _ := strconv.Atoi(b)
+			return idxA - idxB
+		})
 		for _, entry := range entries {
 			if err := sys.discoverCache(cpu, entry); err != nil {
 				return err
@@ -1059,6 +1068,8 @@ func (c *cpu) GetCachesByLevel(level int) []*Cache {
 	for _, cch := range c.caches {
 		if cch.level == level {
 			caches = append(caches, cch)
+		} else if cch.level > level {
+			break
 		}
 	}
 
@@ -1094,6 +1105,25 @@ func (c *cpu) GetLastLevelCaches() []*Cache {
 	}
 
 	return caches
+}
+
+// GetNthLevelCacheCPUSet returns the cpuset for the nth level caches of this CPU.
+func (c *cpu) GetNthLevelCacheCPUSet(n int) cpuset.CPUSet {
+	if len(c.caches) < 1 {
+		return c.ThreadCPUSet()
+	}
+
+	cpus := cpuset.New()
+
+	for _, cch := range c.caches {
+		if cch.level == n {
+			cpus = cpus.Union(CPUSetFromIDSet(cch.cpus))
+		} else if cch.level > n {
+			break
+		}
+	}
+
+	return cpus
 }
 
 // GetLastLevelCacheCPUSet returns the cpuset for the last level caches of this CPU.
