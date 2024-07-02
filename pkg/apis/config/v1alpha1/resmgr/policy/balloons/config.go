@@ -216,6 +216,9 @@ type BalloonDef struct {
 	// TODO: PreferFarFromDevices is considered too untested for usage. Hence,
 	// for the time being we prevent its usage through CRDs.
 	PreferFarFromDevices []string `json:"-"`
+	// preferIsolCpus: prefer kernel isolated cpus
+	// +kubebuilder:default:=false
+	PreferIsolCpus bool `json:"preferIsolCpus,omitempty"`
 }
 
 // String stringifies a BalloonDef

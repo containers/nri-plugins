@@ -21,6 +21,7 @@ config:
     minBalloons: 0
     allocatorPriority: normal
     shareIdleCPUsInSame: system
+    preferIsolCpus: false
   reservedPoolNamespaces:
     - kube-system
   log:
@@ -30,6 +31,8 @@ config:
   instrumentation:
     reportPeriod: 60s
     samplingRatePerMillion: 0
+    httpEndpoint: :8891
+    prometheusExport: true
 
 # configGroupLabel: config.nri/group
 

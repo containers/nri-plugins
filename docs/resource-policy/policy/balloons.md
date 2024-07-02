@@ -168,6 +168,11 @@ Balloons policy parameters:
     preferring exclusive CPUs, as long as there are enough free
     CPUs. The default is `false`: prefer filling and inflating
     existing balloons over creating new ones.
+  - `preferIsolCpus`: if `true`, prefer system isolated CPUs for this
+    balloon. If the workload increases and requires more isolated CPUs
+    than are available, the balloon will inflate by taking additional
+    non-isolated CPUs as well. The default is `false`: don't prefer
+    isoleted CPUs.
   - `shareIdleCPUsInSame`: Whenever the number of or sizes of balloons
     change, idle CPUs (that do not belong to any balloon) are reshared
     as extra CPUs to containers in balloons with this option. The value
