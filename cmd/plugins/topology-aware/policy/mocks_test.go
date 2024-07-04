@@ -254,6 +254,9 @@ func (fake *mockSystem) CoreKindCPUs(sysfs.CoreKind) cpuset.CPUSet {
 func (fake *mockSystem) AllThreadsForCPUs(cpuset.CPUSet) cpuset.CPUSet {
 	return cpuset.New()
 }
+func (fake *mockSystem) SingleThreadForCPUs(cpuset.CPUSet) cpuset.CPUSet {
+	return cpuset.New()
+}
 func (fake *mockSystem) Offlined() cpuset.CPUSet {
 	return cpuset.New()
 }
