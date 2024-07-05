@@ -10,3 +10,33 @@ host-command() {
     command-end ${PIPESTATUS[0]}
     return $COMMAND_STATUS
 }
+
+host-wait-vm-ssh-server() {
+    local _vagrantdir="$1"
+    local _deadline=${deadline:-}
+    local _once=1
+
+    if [ -z "$_vagrantdir" ]; then
+        echo 1>&2 "host-wait-vm-ssh-server: missing vagrant directory"
+        return 1
+    fi
+
+    if [ -z "$_deadline" ]; then
+        _deadline=$(( $(date +%s) + ${timeout:-30} ))
+    fi
+
+    while [ -n "$_once" ] || (( $(date +%s) < $_deadline )); do
+        if [ ! -f $_vagrantdir/.ssh-config ]; then
+            sleep 1
+        else
+            $SSH -o ConnectTimeout=1 node true
+            if [ $? = 0 ]; then
+                return 0
+            fi
+        fi
+        _once=""
+    done
+
+    echo 1>&2 "host-wait-vm-ssh-server: timeout waiting for $_vagrantdir ssh server"
+    return 1
+}
