@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.7.0-4-gf6d27199 documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.7.0-7-g9704e94d documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -272,6 +272,14 @@ placing containers to existing balloons. This results in
 preferring exclusive CPUs, as long as there are enough free
 CPUs. The default is <code class="docutils literal notranslate"><span class="pre">false</span></code>: prefer filling and inflating
 existing balloons over creating new ones.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">preferIsolCpus</span></code>: if <code class="docutils literal notranslate"><span class="pre">true</span></code>,prefer system isolated CPUs (refer to
+kernel command line parameter “isolcpus”) for this balloon. Warning:
+if there are not enough isolated CPUs in the system for balloons that
+prefer them, balloons may include normal CPUs, too. This kind of
+mixed-CPU balloons require special attention when implementing
+programs that run on them. Therefore it is recommended to limit the
+number of balloon CPUs (see maxCPUs) and allocate CPUs upfront (see
+minBalloons, minCPUs) when using preferIsolCpus. The default is <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">shareIdleCPUsInSame</span></code>: Whenever the number of or sizes of balloons
 change, idle CPUs (that do not belong to any balloon) are reshared
 as extra CPUs to containers in balloons with this option. The value
