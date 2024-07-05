@@ -1,6 +1,5 @@
 reboot-node() {
-    vm-reboot
-    timeout=600 host-wait-vm-ssh-server $OUTPUT_DIR
+    timeout=600 vm-reboot
 }
 
 restart-kubelet() {
