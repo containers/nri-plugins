@@ -915,32 +915,6 @@ $py_assertion
     return 0
 }
 
-host-wait-vm-ssh-server() {
-    local _vagrantdir="$1"
-    local _timeout=${timeout:-10}
-    local _waited
-
-    if [ -z "$_vagrantdir" ]; then
-        echo 1>&2 "host-wait-vm-ssh-server: missing vagrant directory"
-        return 1
-    fi
-
-    _waited=0; while (( $_waited < $_timeout )); do
-        if [ ! -f $_vagrantdir/.ssh-config ]; then
-            sleep 1
-        else
-            $SSH -o ConnectTimeout=1 node true
-            if [ $? == 0 ]; then
-                return 0
-            fi
-        fi
-        _waited=$((_waited + 1))
-    done
-
-    echo 1>&2 "host-wait-vm-ssh-server: timeout waiting for $_vagrantdir ssh server"
-    return 1
-}
-
 fedora-set-kernel-cmdline() {
     local e2e_defaults="$*"
     vm-command "mkdir -p /etc/default; touch /etc/default/grub; sed -i '/e2e:fedora-set-kernel-cmdline/d' /etc/default/grub"
