@@ -936,15 +936,6 @@ ubuntu-set-kernel-cmdline() {
     }
 }
 
-vm-reboot() { # script API
-    # Usage: vm-reboot
-    #
-    # Reboots the virtual machine and waits that the ssh server starts
-    # responding again.
-    vm-command "reboot"
-    sleep 5
-}
-
 # Defaults to use in case the test case does not define these values.
 yaml_in_defaults="CPU=1 MEM=100M ISO=true CPUREQ=1 CPULIM=2 MEMREQ=100M MEMLIM=200M CONTCOUNT=1"
 
