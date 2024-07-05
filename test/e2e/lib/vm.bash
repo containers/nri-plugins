@@ -249,6 +249,35 @@ vm-command-q() {
     $SSH "$VM_HOSTNAME" sudo bash -l <<<"$1"
 }
 
+vm-reboot() { # script API
+    # Usage: vm-reboot
+    #
+    # Reboots the virtual machine and waits that the ssh server starts
+    # responding again.
+
+    local _deadline=${deadline:-}
+    local _vagrantdir=${1:-$OUTPUT_DIR}
+
+    if [ -z "$deadline" ]; then
+        _deadline=$(( $(date +%s) + ${timeout:-60} ))
+    fi
+
+    (
+        cd $_vagrantdir
+        while (( $(date +%s) < $_deadline )); do
+            vagrant halt
+            sleep 5
+            vagrant halt --force
+            sleep 3
+            vagrant up --no-provision
+            if [ $? = 0 ]; then
+                break
+            fi
+        done
+    )
+    deadline=$_deadline host-wait-vm-ssh-server $_vagrantdir
+}
+
 vm-mem-hotplug() { # script API
     # Usage: vm-mem-hotplug MEMORY
     #
