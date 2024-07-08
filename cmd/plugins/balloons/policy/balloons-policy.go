@@ -56,6 +56,9 @@ const (
 	// virtDevIsolatedCpus is the name of a virtual device close to
 	// host isolated CPUs.
 	virtDevIsolatedCpus = "isolated CPUs"
+	// virtDevPreferredCpus represents a virtual device that is
+	// associated with a user-preferred set of CPUs
+	virtDevPreferredCpus = "user preferred CPUs"
 )
 
 // balloons contains configuration and runtime attributes of the balloons policy
@@ -560,8 +563,9 @@ func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, erro
 		preferCloseToDevices:        blnDef.PreferCloseToDevices,
 		preferFarFromDevices:        blnDef.PreferFarFromDevices,
 		virtDevCpusets: map[string][]cpuset.CPUSet{
-			virtDevReservedCpus: {p.reserved},
-			virtDevIsolatedCpus: {p.options.System.Isolated()},
+			virtDevReservedCpus:  {p.reserved},
+			virtDevIsolatedCpus:  {p.options.System.Isolated()},
+			virtDevPreferredCpus: {cpuset.MustParse(blnDef.PreferCpus)},
 		},
 	}
 	if blnDef.AllocatorTopologyBalancing != nil {
@@ -1202,6 +1206,9 @@ func (p *balloons) fillCloseToDevices(blnDefs []*BalloonDef) {
 		if blnDef.PreferIsolCpus {
 			blnDef.PreferCloseToDevices = append(blnDef.PreferCloseToDevices, virtDevIsolatedCpus)
 		}
+		if cpuset.MustParse(blnDef.PreferCpus).Size() != 0 {
+			blnDef.PreferCloseToDevices = append(blnDef.PreferCloseToDevices, virtDevPreferredCpus)
+		}
 	}
 }
 
@@ -1221,6 +1228,9 @@ func (p *balloons) fillFarFromDevices(blnDefs []*BalloonDef) {
 		avoidDevs = append(avoidDevs, virtDevIsolatedCpus)
 	}
 	for _, blnDef := range blnDefs {
+		if cpuset.MustParse(blnDef.PreferCpus).Size() != 0 {
+			avoidDevs = append(avoidDevs, virtDevPreferredCpus)
+		}
 		for _, closeDev := range blnDef.PreferCloseToDevices {
 			if _, ok := devDefClose[closeDev]; !ok {
 				avoidDevs = append(avoidDevs, closeDev)

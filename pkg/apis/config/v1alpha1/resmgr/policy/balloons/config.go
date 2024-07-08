@@ -219,6 +219,8 @@ type BalloonDef struct {
 	// preferIsolCpus: prefer kernel isolated cpus
 	// +kubebuilder:default:=false
 	PreferIsolCpus bool `json:"preferIsolCpus,omitempty"`
+	// preferCpus: user-preferred set of CPUs.
+	PreferCpus string `json:"preferCpus,omitempty"`
 }
 
 // String stringifies a BalloonDef

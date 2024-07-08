@@ -195,6 +195,9 @@ spec:
                       items:
                         type: string
                       type: array
+                    preferCpus:
+                      description: 'preferCpus: user-preferred set of CPUs.'
+                      type: string
                     preferIsolCpus:
                       default: false
                       description: 'preferIsolCpus: prefer kernel isolated cpus'
