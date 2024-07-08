@@ -20,6 +20,7 @@ vm-command "grep isolcpus /proc/cmdline" && {
 }
 
 # Do a fresh start
+helm-terminate
 helm_config=$(instantiate helm-config.yaml) helm-launch topology-aware
 
 # pod0: Test that 4 guaranteed containers eligible for isolated CPU allocation
