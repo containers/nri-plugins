@@ -62,3 +62,4 @@ verify "cpus['pod1c0'] == {'cpu00', 'cpu01'}"
 verify "cpus['pod1c1'] == {'cpu00', 'cpu01'}"
 
 cleanup
+helm-terminate
