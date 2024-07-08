@@ -1,0 +1,1 @@
+../../../sysfs/test-cleanup.sh

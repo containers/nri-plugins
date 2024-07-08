@@ -22,6 +22,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
+	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	idset "github.com/intel/goresctrl/pkg/utils"
 )
@@ -351,9 +352,12 @@ func (p *policy) checkHWTopology() (bool, error) {
 
 // Pick a pool and allocate resource from it to the container.
 func (p *policy) allocatePool(container cache.Container, poolHint string) (Grant, error) {
-	var pool Node
+	var (
+		pool  Node
+		offer *libmem.Offer
+	)
 
-	request := newRequest(container)
+	request := newRequest(container, p.memAllocator.Masks().AvailableTypes())
 
 	if p.root.FreeSupply().ReservedCPUs().IsEmpty() && request.CPUType() == cpuReserved {
 		// Fallback to allocating reserved CPUs from the shared pool
@@ -361,12 +365,13 @@ func (p *policy) allocatePool(container cache.Container, poolHint string) (Grant
 		request.SetCPUType(cpuNormal)
 	}
 
-	// Assumption: in the beginning the CPUs and memory will be allocated from
-	// the same pool. This assumption can be relaxed later, requires separate
-	// (but connected) scoring of memory and CPU.
-
 	if request.CPUType() == cpuReserved || request.CPUType() == cpuPreserve {
 		pool = p.root
+		o, err := p.getMemOffer(pool, request)
+		if err != nil {
+			return nil, policyError("failed to get offer for request %s: %v", request, err)
+		}
+		offer = o
 	} else {
 		affinity, err := p.calculatePoolAffinities(request.GetContainer())
 
@@ -406,198 +411,35 @@ func (p *policy) allocatePool(container cache.Container, poolHint string) (Grant
 		if pool == nil {
 			pool = pools[0]
 		}
+
+		offer = scores[pool.NodeID()].Offer()
+		if offer == nil {
+			return nil, policyError("failed to get offer for request %s", request)
+		}
 	}
 
 	supply := pool.FreeSupply()
-	grant, err := supply.Allocate(request)
+	grant, updates, err := supply.Allocate(request, offer)
 	if err != nil {
 		return nil, policyError("failed to allocate %s from %s: %v",
 			request, supply.DumpAllocatable(), err)
 	}
 
-	log.Debug("allocated req '%s' to memory node '%s' (memset %s,%s,%s)",
-		container.PrettyName(), grant.GetMemoryNode().Name(),
-		grant.GetMemoryNode().GetMemset(memoryDRAM),
-		grant.GetMemoryNode().GetMemset(memoryPMEM),
-		grant.GetMemoryNode().GetMemset(memoryHBM))
-
-	// In case the workload is assigned to a memory node with multiple
-	// child nodes, there is no guarantee that the workload will
-	// allocate memory "nicely". Instead we'll have to make the
-	// conservative assumption that the memory will all be allocated
-	// from one single node, and that node can be any of the child
-	// nodes in the system. Thus, we'll need to reserve the memory
-	// from all child nodes, and move the containers already
-	// assigned to the child nodes upwards in the topology tree, if
-	// they no longer fit to the child node that they are in. In
-	// other words, they'll need to have a wider range of memory
-	// node options in order to fit to memory.
-	//
-	//
-	// Example:
-	//
-	// Workload 1 and Workload 2 are running on the leaf nodes:
-	//
-	//                    +----------------+
-	//                    |Total mem: 4G   |
-	//                    |Total CPUs: 4   |            Workload 1:
-	//                    |Reserved:       |
-	//                    |  1.5G          |             1G mem
-	//                    |                |
-	//                    |                |            Workload 2:
-	//                    |                |
-	//                    +----------------+             0.5G mem
-	//                       /          \
-	//                      /            \
-	//                     /              \
-	//                    /                \
-	//                   /                  \
-	//                  /                    \
-	//                 /                      \
-	//                /                        \
-	//  +----------------+                  +----------------+
-	//  |Total mem: 2G   |                  |Total mem: 2G   |
-	//  |Total CPUs: 2   |                  |Total CPUs: 2   |
-	//  |Reserved:       |                  |Reserved:       |
-	//  |  1G            |                  |  0.5G          |
-	//  |                |                  |                |
-	//  |                |                  |                |
-	//  |     * WL 1     |                  |     * WL 2     |
-	//  +----------------+                  +----------------+
-	//
-	//
-	// Then Workload 3 comes in and is assigned to the root node. Memory
-	// reservations are done on the leaf nodes:
-	//
-	//                    +----------------+
-	//                    |Total mem: 4G   |
-	//                    |Total CPUs: 4   |            Workload 1:
-	//                    |Reserved:       |
-	//                    |  3G            |             1G mem
-	//                    |                |
-	//                    |                |            Workload 2:
-	//                    |  * WL 3        |
-	//                    +----------------+             0.5G mem
-	//                       /          \
-	//                      /            \              Workload 3:
-	//                     /              \
-	//                    /                \             1.5G mem
-	//                   /                  \
-	//                  /                    \
-	//                 /                      \
-	//                /                        \
-	//  +----------------+                  +----------------+
-	//  |Total mem: 2G   |                  |Total mem: 2G   |
-	//  |Total CPUs: 2   |                  |Total CPUs: 2   |
-	//  |Reserved:       |                  |Reserved:       |
-	//  |  2.5G          |                  |  2G            |
-	//  |                |                  |                |
-	//  |                |                  |                |
-	//  |     * WL 1     |                  |     * WL 2     |
-	//  +----------------+                  +----------------+
-	//
-	//
-	// Workload 1 no longer fits to the leaf node, because the total
-	// reservation from the leaf node is over the memory maximum.
-	// Thus, it's moved upwards in the tree to the root node. Memory
-	// resevations are again updated accordingly:
-	//
-	//                    +----------------+
-	//                    |Total mem: 4G   |
-	//                    |Total CPUs: 4   |            Workload 1:
-	//                    |Reserved:       |
-	//                    |  3G            |             1G mem
-	//                    |                |
-	//                    |  * WL 1        |            Workload 2:
-	//                    |  * WL 3        |
-	//                    +----------------+             0.5G mem
-	//                       /          \
-	//                      /            \              Workload 3:
-	//                     /              \
-	//                    /                \             1.5G mem
-	//                   /                  \
-	//                  /                    \
-	//                 /                      \
-	//                /                        \
-	//  +----------------+                  +----------------+
-	//  |Total mem: 2G   |                  |Total mem: 2G   |
-	//  |Total CPUs: 2   |                  |Total CPUs: 2   |
-	//  |Reserved:       |                  |Reserved:       |
-	//  |  2.5G          |                  |  3G            |
-	//  |                |                  |                |
-	//  |                |                  |                |
-	//  |                |                  |     * WL 2     |
-	//  +----------------+                  +----------------+
-	//
-	//
-	// Now Workload 2 doesn't fit to the leaf node either. It's also moved
-	// to the root node:
-	//
-	//                    +----------------+
-	//                    |Total mem: 4G   |
-	//                    |Total CPUs: 4   |            Workload 1:
-	//                    |Reserved:       |
-	//                    |  3G            |             1G mem
-	//                    |  * WL 2        |
-	//                    |  * WL 1        |            Workload 2:
-	//                    |  * WL 3        |
-	//                    +----------------+             0.5G mem
-	//                       /          \
-	//                      /            \              Workload 3:
-	//                     /              \
-	//                    /                \             1.5G mem
-	//                   /                  \
-	//                  /                    \
-	//                 /                      \
-	//                /                        \
-	//  +----------------+                  +----------------+
-	//  |Total mem: 2G   |                  |Total mem: 2G   |
-	//  |Total CPUs: 2   |                  |Total CPUs: 2   |
-	//  |Reserved:       |                  |Reserved:       |
-	//  |  3G            |                  |  3G            |
-	//  |                |                  |                |
-	//  |                |                  |                |
-	//  |                |                  |                |
-	//  +----------------+                  +----------------+
-	//
-
-	// We need to analyze all existing containers which are a subset of current grant.
-	memset := grant.GetMemoryNode().GetMemset(grant.MemoryType())
-
-	// Add an extra memory reservation to all subnodes.
-	// TODO: no need to do any of this if no memory request
-	grant.UpdateExtraMemoryReservation()
-
-	// See how much memory reservations the workloads on the
-	// nodes up from this one cause to the node. We only need to
-	// analyze the workloads up until this node, because it's
-	// guaranteed that the subtree can hold the workloads.
-
-	// If it turns out that the current workloads no longer fit
-	// to the node with the reservations from nodes from above
-	// in the tree, move all nodes upward. Note that this
-	// creates a reservation of the same size to the node, so in
-	// effect the node has to be empty of its "own" workloads.
-	// In this case move all the workloads one level up in the tree.
-
-	changed := true
-	for changed {
-		changed = false
-		for _, oldGrant := range p.allocations.grants {
-			oldMemset := oldGrant.GetMemoryNode().GetMemset(grant.MemoryType())
-			if oldMemset.Size() < memset.Size() && memset.Has(oldMemset.Members()...) {
-				changed, err = oldGrant.ExpandMemset()
-				if err != nil {
-					return nil, err
-				}
-				if changed {
-					log.Debug("* moved container %s upward to node %s to guarantee memory",
-						oldGrant.GetContainer().PrettyName(), oldGrant.GetMemoryNode().Name())
-					break
-				}
+	for id, z := range updates {
+		g, ok := p.allocations.grants[id]
+		if !ok {
+			log.Error("offer commit returned zone update %s for unknown container %s", z, id)
+		} else {
+			log.Info("updating memory allocation for %s to %s", g.GetContainer().PrettyName(), z)
+			g.SetMemoryZone(z)
+			if opt.PinMemory {
+				g.GetContainer().SetCpusetMems(z.MemsetString())
 			}
 		}
 	}
+
+	log.Debug("allocated req '%s' to memory zone %s", container.PrettyName(),
+		grant.GetMemoryZone())
 
 	p.allocations.grants[container.GetID()] = grant
 
@@ -663,9 +505,9 @@ func (p *policy) applyGrant(grant Grant) {
 		return
 	}
 
-	mems := ""
+	mems := libmem.NodeMask(0)
 	if opt.PinMemory {
-		mems = grant.Memset().String()
+		mems = grant.GetMemoryZone()
 	}
 
 	if opt.PinCPU {
@@ -712,12 +554,12 @@ func (p *policy) applyGrant(grant Grant) {
 	if grant.MemoryType() == memoryPreserve {
 		log.Debug("  => preserving %s memory pinning %s", container.PrettyName(), container.GetCpusetMems())
 	} else {
-		if mems != "" {
+		if mems != libmem.NodeMask(0) {
 			log.Debug("  => pinning %s to memory %s", container.PrettyName(), mems)
 		} else {
 			log.Debug("  => not pinning %s memory, memory set is empty...", container.PrettyName())
 		}
-		container.SetCpusetMems(mems)
+		container.SetCpusetMems(mems.MemsetString())
 	}
 }
 
@@ -792,53 +634,27 @@ func (p *policy) updateSharedAllocations(grant *Grant) {
 	}
 }
 
-func (p *policy) filterInsufficientResources(req Request, originals []Node) []Node {
-	sufficient := make([]Node, 0)
+func (p *policy) filterInsufficientResources(req Request, pools []Node) []Node {
+	filtered := make([]Node, 0)
 
-	for _, node := range originals {
-		// TODO: Need to filter based on the memory demotion scheme here. For example, if the request is
-		// of memory type memoryAll, the memory used might be PMEM until it's full and after that DRAM. If
-		// it's DRAM, amount of PMEM should not be considered and so on. How to find this out in a live
-		// system?
-
-		supply := node.FreeSupply()
-		reqMemType := req.MemoryType()
-
-		if reqMemType == memoryUnspec || reqMemType == memoryPreserve {
-			// The algorithm for handling unspecified memory allocations is the same as for handling a request
-			// with memory type all.
-			reqMemType = memoryAll
+	required := req.MemAmountToAllocate()
+	for _, node := range pools {
+		memType := req.MemoryType()
+		if memType == memoryUnspec || memType == memoryPreserve {
+			memType = memoryAll
 		}
 
-		required := req.MemAmountToAllocate()
-
-		for _, memType := range []memoryType{memoryPMEM, memoryDRAM, memoryHBM} {
-			if reqMemType&memType != 0 {
-				extra := supply.ExtraMemoryReservation(memType)
-				free := supply.MemoryLimit()[memType]
-				if extra > free {
-					continue
-				}
-				if required+extra <= free {
-					sufficient = append(sufficient, node)
-					required = 0
-					break
-				}
-				if req.ColdStart() > 0 {
-					// For a "cold start" request, the memory request must fit completely in the PMEM. So reject the node.
-					break
-				}
-				// Subtracting unsigned integers.
-				// Here free >= extra, that is, (free - extra) is non-negative,
-				// and required > free - extra, that is, required stays positive.
-				required -= (free - extra)
-			}
-		}
-		if required > 0 {
-			log.Debug("%s: filtered out %s with insufficient memory", req.GetContainer().PrettyName(), node.Name())
+		available := p.poolZoneFree(node, memType)
+		if available < required {
+			log.Debug("%s has insufficient available memory (%s < %s)", node.Name(),
+				prettyMem(available), prettyMem(required))
+		} else {
+			log.Debug("%s has enough available memory", node.Name())
+			filtered = append(filtered, node)
 		}
 	}
-	return sufficient
+
+	return filtered
 }
 
 // Score pools against the request and sort them by score.
@@ -873,6 +689,7 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 	isolated2, reserved2, shared2 := score2.IsolatedCapacity(), score2.ReservedCapacity(), score2.SharedCapacity()
 	a1 := affinityScore(affinity, node1)
 	a2 := affinityScore(affinity, node2)
+	o1, o2 := score1.Offer(), score2.Offer()
 
 	log.Debug("comparing scores for %s and %s", node1.Name(), node2.Name())
 	log.Debug("  %s: %s, affinity score %f", node1.Name(), score1.String(), a1)
@@ -936,6 +753,46 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 	}
 
 	log.Debug("  - affinity is a TIE")
+
+	// better matching or tighter memory offer wins
+	switch {
+	case o1 != nil && o2 == nil:
+		log.Debug("  => %s loses on memory offer (failed offer)", node2.Name())
+		return true
+	case o1 == nil && o2 != nil:
+		log.Debug("  => %s loses on memory offer (failed offer)", node1.Name())
+		return false
+	case o1 == nil && o2 == nil:
+		log.Debug("  - memory offer is a TIE (both failed)")
+	default:
+		m1, m2 := o1.NodeMask(), o2.NodeMask()
+		t1, t2 := p.memZoneType(m1), p.memZoneType(m2)
+		memType := request.MemoryType()
+
+		if t1 == memType.TypeMask() && t2 != memType.TypeMask() {
+			log.Debug("   - %s loses on mis-matching type (%s != %s)", node2.Name(), t2, memType)
+			return true
+		}
+		if t1 != memType.TypeMask() && t2 == memType.TypeMask() {
+			log.Debug("   - %s loses on mis-matching type (%s != %s)", node1.Name(), t1, memType)
+			return false
+		}
+		log.Debug("   - offer memory types are a tie (%s vs %s)", t1, t2)
+
+		if m1.Size() < m2.Size() {
+			log.Debug("   - %s loses on memory offer (%s less tight than %s)",
+				node2.Name(), m2, m1)
+			return true
+		}
+		if m2.Size() < m1.Size() {
+			log.Debug("   - %s loses on memory offer (%s less tight than %s)",
+				node1.Name(), m1, m2)
+			return false
+		}
+		if m2.Size() == m1.Size() {
+			log.Debug("   - memory offers are a TIE (%s vs. %s)", m1, m2)
+		}
+	}
 
 	// matching memory type wins
 	if reqType := request.MemoryType(); reqType != memoryUnspec && reqType != memoryPreserve {
