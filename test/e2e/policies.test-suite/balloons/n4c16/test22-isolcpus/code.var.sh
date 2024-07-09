@@ -51,15 +51,21 @@ helm_config=${TEST_DIR}/balloons-isolcpus.cfg helm-launch balloons
 vm-command "kubectl create namespace $ns"
 
 # pod0: should run on non-isolated CPUs
-CONTCOUNT=2 namespace="default" create balloons-busybox
+CONTCOUNT=2 CPU=1 namespace="default" create balloons-busybox
 report allowed
-verify "set.union(cpus['pod0c0'], cpus['pod0c1']).isdisjoint({'cpu00', 'cpu01'})"
+verify "set.union(cpus['pod0c0'], cpus['pod0c1']).isdisjoint({'cpu00', 'cpu01', 'cpu14', 'cpu15'})"
 
 # pod1: runs on system isolated CPUs
-CONTCOUNT=2 namespace="$ns" create balloons-busybox
+CONTCOUNT=2 CPU=1 namespace="$ns" create balloons-busybox
 report allowed
 verify "cpus['pod1c0'] == {'cpu00', 'cpu01'}" 
 verify "cpus['pod1c1'] == {'cpu00', 'cpu01'}"
+
+# pod2: runs on system isolated CPUs
+CONTCOUNT=2 CPU=1 namespace="$ns" create balloons-busybox
+report allowed
+verify "cpus['pod2c0'] == {'cpu00', 'cpu01', 'cpu14', 'cpu15'}"
+verify "cpus['pod2c1'] == {'cpu00', 'cpu01', 'cpu14', 'cpu15'}"
 
 cleanup
 helm-terminate
