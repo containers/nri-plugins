@@ -6,7 +6,7 @@ require (
 	contrib.go.opencensus.io/exporter/prometheus v0.4.2
 	github.com/containerd/nri v0.6.0
 	github.com/containerd/otelttrpc v0.0.0-20240305015340-ea5083fda723
-	github.com/containerd/ttrpc v1.2.3-0.20231030150553-baadfd8e7956
+	github.com/containerd/ttrpc v1.2.3
 	github.com/containers/nri-plugins/pkg/topology v0.0.0
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/fsnotify/fsnotify v1.6.0
@@ -104,3 +104,5 @@ require (
 )
 
 replace github.com/containers/nri-plugins/pkg/topology v0.0.0 => ./pkg/topology
+
+replace github.com/containerd/nri => ../nri
