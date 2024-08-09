@@ -66,27 +66,29 @@ func (p *plugin) CreateContainer(ctx context.Context, pod *api.PodSandbox, conta
 		return nil, nil, nil
 	}
 
-	cdiDevices, err := parseCdiDevices(pod.Annotations, container.Name)
+	cdiDeviceNames, err := parseCdiDevices(pod.Annotations, container.Name)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to parse CDI Device annotations: %w", err)
 	}
 
-	if len(cdiDevices) == 0 {
+	if len(cdiDeviceNames) == 0 {
 		return nil, nil, nil
 	}
 
-	var allowedCDIDevices []string
-	for _, cdiDevice := range cdiDevices {
-		match, _ := filepath.Match(p.allowedCDIDevicePattern, cdiDevice)
+	var cdiDevices []*api.CDIDevice
+	for _, cdiDeviceName := range cdiDeviceNames {
+		match, _ := filepath.Match(p.allowedCDIDevicePattern, cdiDeviceName)
 		if !match {
 			continue
 		}
-		allowedCDIDevices = append(allowedCDIDevices, cdiDevice)
+
+		cdiDevices = append(cdiDevices, &api.CDIDevice{
+			Name: cdiDeviceName,
+		})
 	}
 
-	adjust := &api.ContainerAdjustment{}
-	if _, err := p.cdiCache.InjectDevices(adjust, allowedCDIDevices...); err != nil {
-		return nil, nil, fmt.Errorf("CDI device injection failed: %w", err)
+	adjust := &api.ContainerAdjustment{
+		CDIDevices: cdiDevices,
 	}
 
 	return adjust, nil, nil
