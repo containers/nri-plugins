@@ -39,7 +39,6 @@ const (
 	PolicyName = "balloons"
 	// PolicyDescription is a short description of this policy.
 	PolicyDescription = "Flexible pools with per-pool CPU parameters"
-
 	// balloonKey is a pod annotation key, the value is a pod balloon name.
 	balloonKey = "balloon." + PolicyName + "." + kubernetes.ResmgrKeyNamespace
 	// hideHyperthreadsKey is a pod annotation key for pod/container-specific hyperthread allowance.
@@ -56,6 +55,12 @@ const (
 	// virtDevIsolatedCpus is the name of a virtual device close to
 	// host isolated CPUs.
 	virtDevIsolatedCpus = "isolated CPUs"
+	// virtDevECores is the name of a virtual device close to
+	// power efficient cores.
+	virtDevECores = "efficient cores"
+	// virtDevPCores is the name of a virtual device close to
+	// high performance cores.
+	virtDevPCores = "performance cores"
 )
 
 // balloons contains configuration and runtime attributes of the balloons policy
@@ -562,6 +567,8 @@ func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, erro
 		virtDevCpusets: map[string][]cpuset.CPUSet{
 			virtDevReservedCpus: {p.reserved},
 			virtDevIsolatedCpus: {p.options.System.Isolated()},
+			virtDevECores:       {p.cpuAllocator.GetCPUPriorities()[cpuallocator.PriorityLow]},
+			virtDevPCores:       {p.cpuAllocator.GetCPUPriorities()[cpuallocator.PriorityHigh]},
 		},
 	}
 	if blnDef.AllocatorTopologyBalancing != nil {
@@ -1201,6 +1208,12 @@ func (p *balloons) fillCloseToDevices(blnDefs []*BalloonDef) {
 	for _, blnDef := range blnDefs {
 		if blnDef.PreferIsolCpus {
 			blnDef.PreferCloseToDevices = append(blnDef.PreferCloseToDevices, virtDevIsolatedCpus)
+		}
+		if blnDef.PreferCoreType == "performance" {
+			blnDef.PreferCloseToDevices = append(blnDef.PreferCloseToDevices, virtDevPCores)
+		}
+		if blnDef.PreferCoreType == "efficient" {
+			blnDef.PreferCloseToDevices = append(blnDef.PreferCloseToDevices, virtDevECores)
 		}
 	}
 }

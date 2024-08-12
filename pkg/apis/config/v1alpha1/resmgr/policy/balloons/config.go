@@ -219,6 +219,11 @@ type BalloonDef struct {
 	// preferIsolCpus: prefer kernel isolated cpus
 	// +kubebuilder:default:=false
 	PreferIsolCpus bool `json:"preferIsolCpus,omitempty"`
+	// preferCoreType: prefer performance or efficient (P/E) CPU cores on
+	// hybrid architectures.
+	// +optional
+	// +kubebuilder:validation:Enum:=efficient;performance
+	PreferCoreType string `json:"preferCoreType,omitempty"`
 }
 
 // String stringifies a BalloonDef
