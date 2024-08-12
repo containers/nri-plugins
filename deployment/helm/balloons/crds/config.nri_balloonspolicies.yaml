@@ -195,6 +195,14 @@ spec:
                       items:
                         type: string
                       type: array
+                    preferCoreType:
+                      description: |-
+                        preferCoreType: prefer performance or efficient (P/E) CPU cores on
+                        hybrid architectures.
+                      enum:
+                      - efficient
+                      - performance
+                      type: string
                     preferIsolCpus:
                       default: false
                       description: 'preferIsolCpus: prefer kernel isolated cpus'
