@@ -154,6 +154,9 @@ Balloons policy parameters:
     separate `cpu.classes` objects, see below.
   - `preferCloseToDevices`: prefer creating new balloons close to
     listed devices. List of strings
+  - `preferCoreType`:  specifies preferences of the core type which
+    could be either power efficient (`efficient`) or high performance
+    (`performance`).
   - `preferSpreadingPods`: if `true`, containers of the same pod
     should be spread to different balloons of this type. The default
     is `false`: prefer placing containers of the same pod to the same
@@ -168,7 +171,7 @@ Balloons policy parameters:
     preferring exclusive CPUs, as long as there are enough free
     CPUs. The default is `false`: prefer filling and inflating
     existing balloons over creating new ones.
-  - `preferIsolCpus`: if `true`,prefer system isolated CPUs (refer to
+  - `preferIsolCpus`: if `true`, prefer system isolated CPUs (refer to
     kernel command line parameter "isolcpus") for this balloon. Warning:
     if there are not enough isolated CPUs in the system for balloons that
     prefer them, balloons may include normal CPUs, too. This kind of
