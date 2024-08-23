@@ -61,6 +61,11 @@ more details on managing the configuration.
 
 Balloons policy parameters:
 
+- `availableResources`:
+  - `cpu` specifies cpuset that is managed by the balloons policy. All
+    balloons created by the policy can utilize only CPUs in this set.
+    Example: `cpu: cpuset:48-95,144-191` allows the policy to manage
+    only 48+48 vCPUs on socket 1 in a two-socket 192-CPU system.
 - `reservedResources`:
   - `cpu` specifies cpuset or number of CPUs in the special `reserved`
     balloon. By default all containers in the `kube-system` namespace
