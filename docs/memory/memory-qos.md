@@ -79,7 +79,7 @@ unifiedannotations:
 
 This configuration defines the following.
 
-- If a container belogs to the memory QoS class `bronze` has allocated
+- If a container belongs to the memory QoS class `bronze` has allocated
   half of the memory of its `resources.limits.memory`, next
   allocations will cause kernel to swap out corresponding amount of
   container's memory. In other words, when container's memory usage is

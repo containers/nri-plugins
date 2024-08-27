@@ -277,7 +277,7 @@ func readFromFileInDir(baseDir string, filenames []string) (string, error) {
 	return "", nil
 }
 
-// SetBlkioParameters writes OCI BlockIO parameters to files in cgroups blkio contoller directory.
+// SetBlkioParameters writes OCI BlockIO parameters to files in cgroups blkio controller directory.
 func SetBlkioParameters(cgroupsDir string, blockIO OciBlockIOParameters) error {
 	log.Debug("configuring cgroups blkio controller in directory %#v with parameters %+v", cgroupsDir, blockIO)
 	errs := []error{}

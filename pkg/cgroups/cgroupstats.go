@@ -64,7 +64,7 @@ type NumaLine struct {
 	Nodes map[string]int64
 }
 
-// NumaStat has parsed contets of a NUMA statistics file.
+// NumaStat has parsed contents of a NUMA statistics file.
 type NumaStat struct {
 	Total       NumaLine
 	File        NumaLine

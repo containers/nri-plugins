@@ -128,7 +128,7 @@ type Pod interface {
 	// GetProcesses returns the pids of all processes in the pod either excluding
 	// container processes, if called with false, or including those if called with true.
 	GetProcesses(bool) ([]string, error)
-	// GetTasks returns the pids of all threads in the pod either excluding cotnainer
+	// GetTasks returns the pids of all threads in the pod either excluding container
 	// processes, if called with false, or including those if called with true.
 	GetTasks(bool) ([]string, error)
 }
@@ -339,7 +339,7 @@ type container struct {
 type Mount = nri.Mount
 type Device = nri.LinuxDevice
 
-type Cachable interface {
+type Cacheable interface {
 	// Set value (via a pointer receiver) to the object.
 	Set(value interface{})
 	// Get the object that should be cached.
@@ -349,7 +349,7 @@ type Cachable interface {
 // Cache is the primary interface exposed for tracking pods and containers.
 //
 // Cache tracks pods and containers in the runtime, mostly by processing CRI
-// requests and responses which the cache is fed as these are being procesed.
+// requests and responses which the cache is fed as these are being processed.
 // Cache also saves its state upon changes to secondary storage and restores
 // itself upon startup.
 type Cache interface {
@@ -368,7 +368,7 @@ type Cache interface {
 	// LookupContainerByCgroup looks up a container for the given cgroup path.
 	LookupContainerByCgroup(path string) (Container, bool)
 
-	// GetPendingContainers returs all containers with pending changes.
+	// GetPendingContainers returns all containers with pending changes.
 	GetPendingContainers() []Container
 
 	// GetPods returns all the pods known to the cache.
@@ -497,7 +497,7 @@ func (cch *cache) GetActivePolicy() string {
 	return cch.PolicyName
 }
 
-// SetActivePolicy updaes the name of the active policy stored in the cache.
+// SetActivePolicy updates the name of the active policy stored in the cache.
 func (cch *cache) SetActivePolicy(policy string) error {
 	cch.PolicyName = policy
 	return cch.Save()
@@ -849,8 +849,8 @@ func unmarshalEntry(data []byte, ptr interface{}) error {
 
 // Cache an unmarshaled opaque policy entry, special-casing some simple/common types.
 func (cch *cache) cacheEntry(key string, ptr interface{}) error {
-	if cachable, ok := ptr.(Cachable); ok {
-		cch.policyData[key] = cachable.Get()
+	if cacheable, ok := ptr.(Cacheable); ok {
+		cch.policyData[key] = cacheable.Get()
 		return nil
 	}
 
@@ -890,8 +890,8 @@ func (cch *cache) cacheEntry(key string, ptr interface{}) error {
 
 // Serve an unmarshaled opaque policy entry, special-casing some simple/common types.
 func (cch *cache) setEntry(key string, ptr, obj interface{}) error {
-	if cachable, ok := ptr.(Cachable); ok {
-		cachable.Set(obj)
+	if cacheable, ok := ptr.(Cacheable); ok {
+		cacheable.Set(obj)
 		return nil
 	}
 

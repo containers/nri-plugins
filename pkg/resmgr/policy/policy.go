@@ -213,7 +213,7 @@ type policy struct {
 
 // backend is a registered Backend.
 type backend struct {
-	name        string   // unqiue backend name
+	name        string   // unique backend name
 	description string   // verbose backend description
 	create      CreateFn // backend creation function
 }

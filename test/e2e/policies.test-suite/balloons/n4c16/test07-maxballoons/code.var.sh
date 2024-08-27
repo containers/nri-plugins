@@ -44,13 +44,13 @@ POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: dynamictwo" CONTCOUNT=1
 report allowed
 verify 'disjoint_sets(cpus["pod2c0"], cpus["pod3c0"])'
 
-# pod4: prefering new balloon fails, but this fits in the second dynamictwo balloon
+# pod4: preferring new balloon fails, but this fits in the second dynamictwo balloon
 CPUREQ="300m" CPULIM="300m"
 POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: dynamictwo" CONTCOUNT=1 create balloons-busybox
 report allowed
 verify 'cpus["pod4c0"] == cpus["pod3c0"]'
 
-# pod5: prefering new balloon fails, and fitting to existing dynamictwo balloons fails
+# pod5: preferring new balloon fails, and fitting to existing dynamictwo balloons fails
 CPUREQ="300m" CPULIM="300m"
 ( POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: dynamictwo" CONTCOUNT=1 wait_t=5s create balloons-busybox ) && {
     error "creating pod6 succeeded but was expected to fail with balloon allocation error"

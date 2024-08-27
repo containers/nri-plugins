@@ -193,7 +193,7 @@ type BalloonDef struct {
 	// placing containers of a pod to the same balloon(s).
 	PreferSpreadingPods bool `json:"preferSpreadingPods,omitempty"`
 	// PreferPerNamespaceBalloon: if true, containers in different
-	// namespaces are preferrably placed in separate balloons,
+	// namespaces are preferably placed in separate balloons,
 	// even if the balloon type is the same for all of them. On
 	// the other hand, containers in the same namespace will be
 	// placed in the same balloon instances. The default is false:

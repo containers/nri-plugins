@@ -36,7 +36,7 @@ func TestRateLimit(t *testing.T) {
 		limiters[msg] = rl.getMessageLimit(msg)
 	}
 
-	// check looked up vs. stored limters
+	// check looked up vs. stored limiters
 	for msg, limiter := range limiters {
 		if rl.getMessageLimit(msg) != limiter {
 			t.Errorf("unexpected new limiter for message %s", msg)

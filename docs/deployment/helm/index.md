@@ -14,7 +14,7 @@ All the available charts can be found in [artifacthub.io](https://artifacthub.io
         - kubernetes version: 1.28.x
         - containerd version: 1.7
         - node image: Container-Optimized OS from Google (COS), Ubuntu 22.04 
-   -  Azure AKS
+   -  Azure Kubernetes Service
         - kubernetes version: 1.28.x
         - containerd version: 1.7
         - node image: Azure Linux Container Host, Ubuntu 20.04

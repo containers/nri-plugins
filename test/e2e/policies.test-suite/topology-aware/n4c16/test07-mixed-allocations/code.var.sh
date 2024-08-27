@@ -100,7 +100,7 @@ verify `# every container is placed on a single node (no socket, no root)` \
        "len(cpus['pod4c0'] - set.union(*[cpus[c] for c in cpus if c != 'pod4c0'])) == 2"
 
 # Replace pod1 with pod5.
-# pod1 implicitly opted-in to exlusive CPUs due to 1500 mCPU request.
+# pod1 implicitly opted-in to exclusive CPUs due to 1500 mCPU request.
 # Now explicitly opt-out of it by opting-in to shared-cpus.
 vm-command "kubectl delete pods pod1 --now"
 # Make sure that shared pool size increased correctly after mixed pod deletion.
