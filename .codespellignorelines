@@ -1,0 +1,10 @@
+    ( vm-command "kubectl delete pods -n kube-system \$(kubectl get pods -n kube-system | awk '/t[0-9]r[gb][ue]/{print \$1}')" ) || true
+    ( vm-command "kubectl delete pods -n default \$(kubectl get pods -n default | awk '/t[0-9][rgb][ue][0-9]/{print \$1}')" ) || true
+    docker run -v "$(pwd):/mnt/models" "$FMBT_IMAGE" sh -c 'cd /mnt/models; fmbt tmp.fuzz.fmbt.conf 2>/dev/null | fmbt-log -f STEP\$sn\$as\$al' | grep -v AAL | sed -e 's/^, /  /g' -e '/^STEP/! s/\(^.*\)/echo "TESTGEN: \1"/g' -e 's/^STEP\([0-9]*\)i:\(.*\)/echo "TESTGEN: STEP \1"; vm-command "date +%T.%N"; \2; vm-command "date +%T.%N"; kubectl get pods -A/g' | sed "s/\([^a-z0-9]\)\(r\?\)\(gu\|bu\|be\)\([0-9]\)/\1t${testid}\2\3\4/g" > "$OUTFILE"
+			allocs := map[string]cpuset.CPUSet{"--:allo": currentCpus}
+					allocName := fmt.Sprintf("%02d:allo", i+1)
+		preferTightestFit = func(cA, cB *cpuCluster, pkgA, pkgB, dieA, dieB int, csetA, csetB cpuset.CPUSet) (r int) {
+			if dieA >= a.cnt && dieB < a.cnt {
+			if dieA < a.cnt && dieB >= a.cnt {
+			if dieA >= a.cnt && dieB >= a.cnt {
+				if diff := dieA - dieB; diff != 0 {

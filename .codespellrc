@@ -1,0 +1,4 @@
+[codespell]
+skip = .git,*.pdf,*.svg,go.sum,go.mod
+ignore-words = .codespellignorewords
+exclude-file = .codespellignorelines
