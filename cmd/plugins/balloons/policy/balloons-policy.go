@@ -1494,20 +1494,31 @@ func (p *balloons) pinCpuMem(c cache.Container, cpus cpuset.CPUSet, mems idset.I
 			if err != nil {
 				log.Error("failed to parse CpusetMems: %v", err)
 			} else {
-				zone := p.allocMem(c, preserveMems, true)
+				zone := p.allocMem(c, preserveMems, 0, true)
 				log.Debug("  - allocated preserved memory %s", c.PrettyName, zone)
 				c.SetCpusetMems(zone.MemsetString())
 			}
 		} else {
-			log.Debug("  - requested %s to memory %s", c.PrettyName(), mems)
-			zone := p.allocMem(c, mems, false)
+			memTypeMask, err := c.MemoryTypes()
+			if err != nil {
+				log.Error("%v", err)
+			}
+			if memTypeMask != 0 {
+				// memory-type pod/container-specific
+				// annotation overrides balloon's
+				// memory options that are the default
+				// to all containers in the balloon.
+				log.Debug("  - %s memory-type annotation overrides balloon mems %s", c.PrettyName(), mems)
+			}
+			log.Debug("  - requested %s to memory %s (types %s)", c.PrettyName(), mems, memTypeMask)
+			zone := p.allocMem(c, mems, memTypeMask, false)
 			log.Debug("  - allocated %s to memory %s", c.PrettyName(), zone)
 			c.SetCpusetMems(zone.MemsetString())
 		}
 	}
 }
 
-func (p *balloons) allocMem(c cache.Container, mems idset.IDSet, preserve bool) libmem.NodeMask {
+func (p *balloons) allocMem(c cache.Container, mems idset.IDSet, types libmem.TypeMask, preserve bool) libmem.NodeMask {
 	var (
 		amount  = getMemoryLimit(c)
 		nodes   = libmem.NewNodeMask(mems.Members()...)
@@ -1526,17 +1537,19 @@ func (p *balloons) allocMem(c cache.Container, mems idset.IDSet, preserve bool) 
 				nodes,
 			)
 		} else {
-			req = libmem.Container(
+			req = libmem.ContainerWithTypes(
 				c.GetID(),
 				c.PrettyName(),
 				string(c.GetQOSClass()),
 				amount,
 				nodes,
+				types,
 			)
 		}
 		zone, updates, err = p.memAllocator.Allocate(req)
 	} else {
-		zone, updates, err = p.memAllocator.Realloc(c.GetID(), nodes, 0)
+
+		zone, updates, err = p.memAllocator.Realloc(c.GetID(), nodes, types)
 	}
 
 	if err != nil {

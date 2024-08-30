@@ -27,6 +27,7 @@ import (
 	resmgr "github.com/containers/nri-plugins/pkg/apis/resmgr/v1alpha1"
 	"github.com/containers/nri-plugins/pkg/cgroups"
 	"github.com/containers/nri-plugins/pkg/kubernetes"
+	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	"github.com/containers/nri-plugins/pkg/topology"
 
 	nri "github.com/containerd/nri/pkg/api"
@@ -775,6 +776,18 @@ func (c *container) PreserveCpuResources() bool {
 func (c *container) PreserveMemoryResources() bool {
 	value, ok := c.GetEffectiveAnnotation(PreserveMemoryKey)
 	return ok && value == "true"
+}
+
+func (c *container) MemoryTypes() (libmem.TypeMask, error) {
+	value, ok := c.GetEffectiveAnnotation(MemoryTypeKey)
+	if !ok {
+		return libmem.TypeMask(0), nil
+	}
+	mask, err := libmem.ParseTypeMask(value)
+	if err != nil {
+		return libmem.TypeMask(0), cacheError("container %s has invalid effective %q annotation (%q): %v", c.PrettyName(), MemoryTypeKey, value, err)
+	}
+	return mask, nil
 }
 
 var (
