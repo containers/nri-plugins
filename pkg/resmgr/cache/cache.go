@@ -32,6 +32,7 @@ import (
 	resmgr "github.com/containers/nri-plugins/pkg/apis/resmgr/v1alpha1"
 	"github.com/containers/nri-plugins/pkg/kubernetes"
 	logger "github.com/containers/nri-plugins/pkg/log"
+	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	"github.com/containers/nri-plugins/pkg/topology"
 )
 
@@ -65,6 +66,8 @@ const (
 	PreserveCpuKey = "cpu.preserve." + kubernetes.ResmgrKeyNamespace
 	// PreserveMemoryKey means that memory resources should not be touched.
 	PreserveMemoryKey = "memory.preserve." + kubernetes.ResmgrKeyNamespace
+	// MemoryTypeKey defines memory types of containers.
+	MemoryTypeKey = "memory-type." + kubernetes.ResmgrKeyNamespace
 )
 
 // PodState is the pod state in the runtime.
@@ -268,6 +271,8 @@ type Container interface {
 	// PreserveMemoryResources() returns true if memory resources
 	// of the container must not be changed.
 	PreserveMemoryResources() bool
+	// MemoryTypes() returns memory type mask. The default is 0.
+	MemoryTypes() (libmem.TypeMask, error)
 
 	// GetPendingAdjusmentn clears and returns any pending adjustment for the container.
 	GetPendingAdjustment() *nri.ContainerAdjustment
