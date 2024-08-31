@@ -80,6 +80,10 @@ PLUGINS ?= \
 BINARIES ?= \
 	config-manager
 
+OTHER_IMAGE_TARGETS ?= \
+	nri-plugins-operator-image \
+	nri-plugins-operator-bundle-image
+
 ifneq ($(V),1)
   Q := @
 endif
@@ -211,8 +215,7 @@ $(BIN_PATH)/%: .static.%.$(STATIC)
 
 images: $(foreach p,$(PLUGINS),image.$(p)) \
 	$(foreach p,$(BINARIES),image.$(p)) \
-	nri-plugins-operator-image \
-	nri-plugins-operator-bundle-image
+	$(OTHER_IMAGE_TARGETS)
 
 image.nri-resource-policy-% \
 image.nri-% \
