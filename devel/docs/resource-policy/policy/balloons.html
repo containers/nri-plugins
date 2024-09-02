@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.7.0-19-g4bbc01b3 documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.7.0-21-ged7cecc2 documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -266,6 +266,9 @@ CPUs of balloons are configured. Class properties are defined in
 separate <code class="docutils literal notranslate"><span class="pre">cpu.classes</span></code> objects, see below.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">preferCloseToDevices</span></code>: prefer creating new balloons close to
 listed devices. List of strings</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">preferCoreType</span></code>:  specifies preferences of the core type which
+could be either power efficient (<code class="docutils literal notranslate"><span class="pre">efficient</span></code>) or high performance
+(<code class="docutils literal notranslate"><span class="pre">performance</span></code>).</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">preferSpreadingPods</span></code>: if <code class="docutils literal notranslate"><span class="pre">true</span></code>, containers of the same pod
 should be spread to different balloons of this type. The default
 is <code class="docutils literal notranslate"><span class="pre">false</span></code>: prefer placing containers of the same pod to the same
@@ -280,7 +283,7 @@ placing containers to existing balloons. This results in
 preferring exclusive CPUs, as long as there are enough free
 CPUs. The default is <code class="docutils literal notranslate"><span class="pre">false</span></code>: prefer filling and inflating
 existing balloons over creating new ones.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">preferIsolCpus</span></code>: if <code class="docutils literal notranslate"><span class="pre">true</span></code>,prefer system isolated CPUs (refer to
+<li><p><code class="docutils literal notranslate"><span class="pre">preferIsolCpus</span></code>: if <code class="docutils literal notranslate"><span class="pre">true</span></code>, prefer system isolated CPUs (refer to
 kernel command line parameter “isolcpus”) for this balloon. Warning:
 if there are not enough isolated CPUs in the system for balloons that
 prefer them, balloons may include normal CPUs, too. This kind of
