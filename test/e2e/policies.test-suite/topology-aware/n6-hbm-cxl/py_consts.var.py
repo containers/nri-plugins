@@ -1,0 +1,6 @@
+dram0 = "node0"
+dram1 = "node1"
+hbm0  = "node2"
+hbm1  = "node3"
+pmem0 = "node4"
+pmem1 = "node5"
