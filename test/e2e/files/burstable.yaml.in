@@ -7,11 +7,14 @@ metadata:
     $(for lbl in ${!LABEL*}; do [[ "$lbl" == LABEL[0-9]* ]] && echo "
     ${!lbl}
     "; done)
-  $([ -n "${!ANN*}" ] && echo "
+  $( ( [ -n "${!ANN*}" ] || [ -n "$MEMTYPE" ] ) && echo "
   annotations:
     $(for ann in ${!ANN*}; do [[ "$ann" == ANN[0-9]* ]] && echo "
     ${!ann}
     "; done)
+    $( [ -n "$MEMTYPE" ] && echo "
+    memory-type.resource-policy.nri.io: $MEMTYPE
+    ")
   ")
 spec:
   containers:
