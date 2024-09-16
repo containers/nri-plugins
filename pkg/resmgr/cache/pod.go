@@ -93,12 +93,9 @@ func (p *pod) PrettyName() string {
 	}
 
 	namespace := p.GetNamespace()
-	switch namespace {
-	case "default":
-		p.prettyName = ""
-	case "":
+	if namespace == "" {
 		p.prettyName = "<unknown-namespace>/"
-	default:
+	} else {
 		p.prettyName = namespace + "/"
 	}
 

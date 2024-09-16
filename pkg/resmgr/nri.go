@@ -671,7 +671,8 @@ func (p *nriPlugin) dump(dir, event string, args ...interface{}) {
 				return
 			}
 
-			p.Info("%s %s %s/%s:%s", dir, event, pod.GetNamespace(), pod.GetName(), ctr.GetName())
+			p.Info("%s %s %s/%s/%s (%s)", dir, event,
+				pod.GetNamespace(), pod.GetName(), ctr.GetName(), ctr.GetId())
 			p.dumpDetails(dir, event, ctr)
 		} else {
 			if len(args) < 1 {
@@ -723,7 +724,8 @@ func (p *nriPlugin) dump(dir, event string, args ...interface{}) {
 				return
 			}
 
-			p.Info("%s %s %s/%s:%s", dir, event, pod.GetNamespace(), pod.GetName(), ctr.GetName())
+			p.Info("%s %s %s/%s/%s (%s)", dir, event,
+				pod.GetNamespace(), pod.GetName(), ctr.GetName(), ctr.GetId())
 			p.dumpDetails(dir, event, ctr)
 			p.dumpDetails(dir, event, res)
 		} else {
