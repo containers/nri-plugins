@@ -34,6 +34,7 @@ import (
 type nriPlugin struct {
 	stub   stub.Stub
 	resmgr *resmgr
+	byname map[string]cache.Container
 }
 
 var (
@@ -43,6 +44,7 @@ var (
 func newNRIPlugin(resmgr *resmgr) (*nriPlugin, error) {
 	p := &nriPlugin{
 		resmgr: resmgr,
+		byname: make(map[string]cache.Container),
 	}
 
 	nri.Info("creating plugin...")
@@ -112,6 +114,56 @@ func (p *nriPlugin) stop() {
 func (p *nriPlugin) onClose() {
 	nri.Error("connection to NRI/runtime lost, exiting...")
 	os.Exit(1)
+}
+
+func (p *nriPlugin) syncNamesToContainers(containers []cache.Container) []cache.Container {
+	unmapped := make([]cache.Container, 0, len(p.byname))
+
+	for _, ctr := range containers {
+		old := p.mapNameToContainer(ctr)
+		if old != nil && old.GetID() != ctr.GetID() {
+			unmapped = append(unmapped, old)
+		}
+	}
+
+	return unmapped
+}
+
+func (p *nriPlugin) mapNameToContainer(ctr cache.Container) cache.Container {
+	name := ctr.PrettyName()
+	old, ok := p.byname[name]
+
+	p.byname[name] = ctr
+	if ok {
+		nri.Info("%s: remapped container from %s to %s", name, old.GetID(), ctr.GetID())
+		return old
+	}
+
+	nri.Info("%s: mapped container to %s", name, ctr.GetID())
+	return nil
+}
+
+func (p *nriPlugin) unmapName(name string) (cache.Container, bool) {
+	old, ok := p.byname[name]
+	if ok {
+		delete(p.byname, name)
+		nri.Info("%s: unmapped container from %s", name, old.GetID())
+	}
+	return old, ok
+}
+
+func (p *nriPlugin) unmapContainer(ctr cache.Container) {
+	name := ctr.PrettyName()
+	old, ok := p.byname[name]
+	if ok {
+		if old == ctr {
+			delete(p.byname, name)
+			nri.Info("%s: unmapped container (%s)", name, ctr.GetID())
+		} else {
+			nri.Warn("%s: leaving container mapped, ID mismatch (%s != %s)", name,
+				old.GetID(), ctr.GetID())
+		}
+	}
 }
 
 func (p *nriPlugin) Configure(ctx context.Context, cfg, runtime, version string) (stub.EventMask, error) {
@@ -212,7 +264,8 @@ func (p *nriPlugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, con
 		return nil, err
 	}
 
-	if err := m.policy.Sync(allocated, released); err != nil {
+	unmapped := p.syncNamesToContainers(allocated)
+	if err := m.policy.Sync(allocated, append(released, unmapped...)); err != nil {
 		return nil, fmt.Errorf("failed to sync policy %s: %w", m.policy.ActivePolicy(), err)
 	}
 
@@ -345,6 +398,14 @@ func (p *nriPlugin) CreateContainer(ctx context.Context, podSandbox *api.PodSand
 	}
 	c.UpdateState(cache.ContainerStateCreating)
 
+	if old, ok := p.unmapName(c.PrettyName()); ok {
+		nri.Info("%s: releasing stale instance %s", c.PrettyName(), old.GetID())
+		if err := m.policy.ReleaseResources(old); err != nil {
+			nri.Error("%s: failed to release stale instance %s", c.PrettyName(), old.GetID())
+		}
+		old.UpdateState(cache.ContainerStateExited)
+	}
+
 	if err := m.policy.AllocateResources(c); err != nil {
 		c.UpdateState(cache.ContainerStateStale)
 		return nil, nil, fmt.Errorf("failed to allocate resources: %w", err)
@@ -371,6 +432,8 @@ func (p *nriPlugin) CreateContainer(ctx context.Context, podSandbox *api.PodSand
 
 	adjust = p.getPendingAdjustment(container)
 	updates = p.getPendingUpdates(container)
+
+	p.mapNameToContainer(c)
 
 	return adjust, updates, nil
 }
@@ -508,6 +571,8 @@ func (p *nriPlugin) StopContainer(ctx context.Context, pod *api.PodSandbox, cont
 	if !ok {
 		return nil, nil
 	}
+
+	p.unmapContainer(c)
 
 	if err := m.policy.ReleaseResources(c); err != nil {
 		return nil, fmt.Errorf("failed to release resources: %w", err)
