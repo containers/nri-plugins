@@ -431,7 +431,7 @@
         - name: Update CNI bridge plugin configuration
           ansible.builtin.replace:
             path: /etc/cni/net.d/10-bridge.conf
-            regexp: '(#CNI_NETWORK#)'
+            regexp: 'CNI_NETWORK'
             replace: "{{ network }}"
 
     - name: Generate join command
