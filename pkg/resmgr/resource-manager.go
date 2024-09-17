@@ -23,7 +23,6 @@ import (
 	"github.com/containers/nri-plugins/pkg/agent"
 	"github.com/containers/nri-plugins/pkg/healthz"
 	"github.com/containers/nri-plugins/pkg/instrumentation"
-	"github.com/containers/nri-plugins/pkg/log"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/pidfile"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
@@ -54,7 +53,6 @@ type Config = cfgapi.CommonConfig
 
 // resmgr is the implementation of ResourceManager.
 type resmgr struct {
-	logger.Logger
 	sync.RWMutex
 	agent   *agent.Agent
 	cfg     cfgapi.ResmgrConfig
@@ -72,6 +70,10 @@ const (
 	topologyLogger = "topology-hints"
 )
 
+var (
+	log = logger.Get("resource-manager")
+)
+
 // NewResourceManager creates a new ResourceManager instance.
 func NewResourceManager(backend policy.Backend, agt *agent.Agent) (ResourceManager, error) {
 	topology.SetLogger(logger.Get(topologyLogger))
@@ -83,15 +85,14 @@ func NewResourceManager(backend policy.Backend, agt *agent.Agent) (ResourceManag
 	}
 
 	m := &resmgr{
-		Logger: logger.NewLogger("resource-manager"),
-		agent:  agt,
+		agent: agt,
 	}
 
 	if err := m.setupCache(); err != nil {
 		return nil, err
 	}
 
-	m.Info("running as an NRI plugin...")
+	log.Info("running as an NRI plugin...")
 	nrip, err := newNRIPlugin(m)
 	if err != nil {
 		return nil, err
@@ -121,7 +122,7 @@ func NewResourceManager(backend policy.Backend, agt *agent.Agent) (ResourceManag
 
 // Start the resource manager.
 func (m *resmgr) Start() error {
-	m.Infof("starting agent, waiting for initial configuration...")
+	log.Infof("starting agent, waiting for initial configuration...")
 	err := m.agent.Start(m.updateConfig)
 	if err != nil {
 		return err
@@ -137,7 +138,7 @@ func (m *resmgr) updateConfig(newCfg interface{}) error {
 	cfg, ok := newCfg.(cfgapi.ResmgrConfig)
 	if !ok {
 		if !m.running {
-			m.Fatalf("got initial configuration of unexpected type %T", newCfg)
+			log.Fatalf("got initial configuration of unexpected type %T", newCfg)
 		} else {
 			return fmt.Errorf("got configuration of unexpected type %T", newCfg)
 		}
@@ -147,32 +148,32 @@ func (m *resmgr) updateConfig(newCfg interface{}) error {
 	dump, _ := yaml.Marshal(cfg)
 
 	if !m.running {
-		m.Infof("acquired initial configuration %s (generation %d):",
+		log.Infof("acquired initial configuration %s (generation %d):",
 			meta.GetName(), meta.GetGeneration())
-		m.InfoBlock("  <initial config> ", "%s", dump)
+		log.InfoBlock("  <initial config> ", "%s", dump)
 
 		if err := m.start(cfg); err != nil {
-			m.Fatalf("failed to start with initial configuration: %v", err)
+			log.Fatalf("failed to start with initial configuration: %v", err)
 		}
 
 		m.running = true
 		return nil
 	}
 
-	m.Infof("configuration update %s (generation %d):", meta.GetName(), meta.GetGeneration())
-	m.InfoBlock("  <updated config> ", "%s", dump)
+	log.Infof("configuration update %s (generation %d):", meta.GetName(), meta.GetGeneration())
+	log.InfoBlock("  <updated config> ", "%s", dump)
 
 	return m.reconfigure(cfg)
 }
 
 // Start resource management once we acquired initial configuration.
 func (m *resmgr) start(cfg cfgapi.ResmgrConfig) error {
-	m.Info("starting resource manager...")
+	log.Info("starting resource manager...")
 
 	m.cfg = cfg
 
 	mCfg := cfg.CommonConfig()
-	log.Configure(&mCfg.Log)
+	logger.Configure(&mCfg.Log)
 	instrumentation.Reconfigure(&mCfg.Instrumentation)
 
 	if err := m.policy.Start(m.cfg.PolicyConfig()); err != nil {
@@ -198,14 +199,14 @@ func (m *resmgr) start(cfg cfgapi.ResmgrConfig) error {
 		return resmgrError("failed to write PID file: %v", err)
 	}
 
-	m.Info("up and running")
+	log.Info("up and running")
 
 	return nil
 }
 
 // Stop stops the resource manager.
 func (m *resmgr) Stop() {
-	m.Info("shutting down...")
+	log.Info("shutting down...")
 
 	m.Lock()
 	defer m.Unlock()
@@ -272,9 +273,9 @@ func (m *resmgr) startControllers() error {
 // updateTopologyZones updates the 'topology zone' CRDs.
 func (m *resmgr) updateTopologyZones() {
 	if zones := m.policy.GetTopologyZones(); len(zones) != 0 {
-		m.Info("updating topology zones...")
+		log.Info("updating topology zones...")
 		if err := m.agent.UpdateNrtCR(m.policy.ActivePolicy(), zones); err != nil {
-			m.Error("failed to update topology zones: %v", err)
+			log.Error("failed to update topology zones: %v", err)
 		}
 	}
 }
@@ -286,7 +287,7 @@ func (m *resmgr) registerPolicyMetricsCollector() error {
 	if pc.HasPolicySpecificMetrics() {
 		return pc.RegisterPolicyMetricsCollector()
 	}
-	m.Info("%s policy has no policy-specific metrics.", m.policy.ActivePolicy())
+	log.Info("%s policy has no policy-specific metrics.", m.policy.ActivePolicy())
 	return nil
 }
 
@@ -294,7 +295,7 @@ func (m *resmgr) reconfigure(cfg cfgapi.ResmgrConfig) error {
 	apply := func(cfg cfgapi.ResmgrConfig) error {
 		mCfg := cfg.CommonConfig()
 
-		log.Configure(&mCfg.Log)
+		logger.Configure(&mCfg.Log)
 		instrumentation.Reconfigure(&mCfg.Instrumentation)
 		m.control.StartStopControllers(&mCfg.Control)
 
@@ -305,7 +306,7 @@ func (m *resmgr) reconfigure(cfg cfgapi.ResmgrConfig) error {
 
 		err = m.nri.updateContainers()
 		if err != nil {
-			m.Warnf("failed to apply configuration to containers: %v", err)
+			log.Warnf("failed to apply configuration to containers: %v", err)
 		}
 
 		return nil
@@ -314,18 +315,18 @@ func (m *resmgr) reconfigure(cfg cfgapi.ResmgrConfig) error {
 	m.Lock()
 	defer m.Unlock()
 
-	m.Infof("activating new configuration...")
+	log.Infof("activating new configuration...")
 	err := apply(cfg)
 	if err == nil {
 		m.cfg = cfg
 		return nil
 	}
 
-	m.Errorf("failed to apply update: %v", err)
+	log.Errorf("failed to apply update: %v", err)
 
 	revertErr := apply(m.cfg)
 	if revertErr != nil {
-		m.Warnf("failed to revert configuration: %v", revertErr)
+		log.Warnf("failed to revert configuration: %v", revertErr)
 	}
 
 	return err
