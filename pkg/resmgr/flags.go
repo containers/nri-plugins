@@ -18,7 +18,7 @@ import (
 	"flag"
 	"time"
 
-	nri "github.com/containerd/nri/pkg/api"
+	"github.com/containerd/nri/pkg/api"
 	"github.com/containers/nri-plugins/pkg/pidfile"
 )
 
@@ -54,7 +54,7 @@ func init() {
 		"NRI plugin name to register.")
 	flag.StringVar(&opt.NriPluginIdx, "nri-plugin-index", defaultPluginIndex,
 		"NRI plugin index to register.")
-	flag.StringVar(&opt.NriSocket, "nri-socket", nri.DefaultSocketPath,
+	flag.StringVar(&opt.NriSocket, "nri-socket", api.DefaultSocketPath,
 		"NRI unix domain socket path to connect to.")
 
 	flag.StringVar(&opt.PidFile, "pid-file", pidfile.GetPath(),
