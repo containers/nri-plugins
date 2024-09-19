@@ -290,12 +290,21 @@
 
     - name: Configure containerd
       when: is_containerd
-      ansible.builtin.shell: "{{ item }}"
-      with_items:
-        - mkdir -p /etc/containerd
-        - containerd config default > /etc/containerd/config.toml
-        - sed -i 's/^.*disabled_plugins *= *.*$/disabled_plugins = []/' /etc/containerd/config.toml
-        - sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
+      block:
+        - name: Create containerd configuration
+          ansible.builtin.shell: "{{ item }}"
+          with_items:
+            - mkdir -p /etc/containerd
+            - containerd config default > /etc/containerd/config.toml
+            - sed -i 's/^.*disabled_plugins *= *.*$/disabled_plugins = []/' /etc/containerd/config.toml
+            - sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
+
+        - name: Update CNI plugin directory on Fedora
+          when: ansible_facts['distribution'] == "Fedora"
+          ansible.builtin.lineinfile:
+            path: /etc/containerd/config.toml
+            regexp: ' *bin_dir *= *"/opt/cni/bin" *'
+            line: 'bin_dir = "/usr/libexec/cni"'
 
     - name: Setup NRI
       ansible.builtin.file:
