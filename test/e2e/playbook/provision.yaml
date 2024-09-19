@@ -306,6 +306,23 @@
             regexp: ' *bin_dir *= *"/opt/cni/bin" *'
             line: 'bin_dir = "/usr/libexec/cni"'
 
+    - name: Configure bridge CNI plugin
+      when: cni_plugin == "bridge"
+      block:
+        - name: Copy CNI bridge plugin configuration
+          ansible.builtin.copy:
+            src: "{{ nri_resource_policy_src }}/test/e2e/files/10-bridge.conf.in"
+            dest: "/etc/cni/net.d/10-bridge.conf"
+            owner: root
+            group: root
+            mode: '0644'
+
+        - name: Update CNI bridge plugin configuration
+          ansible.builtin.replace:
+            path: /etc/cni/net.d/10-bridge.conf
+            regexp: '(CNI_NETWORK)'
+            replace: "{{ network }}"
+
     - name: Setup NRI
       ansible.builtin.file:
         path: "{{ item }}"
@@ -425,23 +442,6 @@
           with_items:
             - cilium install --wait
             - cilium status --wait
-
-    - name: Configure bridge CNI plugin
-      when: cni_plugin == "bridge"
-      block:
-        - name: Copy CNI bridge plugin configuration
-          ansible.builtin.copy:
-            src: "{{ nri_resource_policy_src }}/test/e2e/files/10-bridge.conf.in"
-            dest: "/etc/cni/net.d/10-bridge.conf"
-            owner: root
-            group: root
-            mode: '0644'
-
-        - name: Update CNI bridge plugin configuration
-          ansible.builtin.replace:
-            path: /etc/cni/net.d/10-bridge.conf
-            regexp: 'CNI_NETWORK'
-            replace: "{{ network }}"
 
     - name: Generate join command
       ansible.builtin.command:
