@@ -130,7 +130,7 @@ allclean: clean clean-cache
 
 test: test-gopkgs
 
-verify: verify-godeps verify-fmt verify-generate
+verify: verify-godeps verify-fmt verify-generate verify-build verify-docs
 
 #
 # build targets
@@ -396,6 +396,10 @@ verify-generate: generate
 	    echo "ERROR: please run 'make generate' and commit these changes."; \
 	    exit "$$ec"; \
 	fi
+
+verify-build: build
+
+verify-docs: docs
 
 #
 # targets for installing dependencies
