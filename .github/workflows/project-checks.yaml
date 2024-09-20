@@ -20,28 +20,38 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+
+      - name: Install golang toolchain
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: make verify
+      - name: Verify dependencies
         run: |
-          make verify
+          make verify-godeps
 
-      - name: Build docs
+      - name: Verify formatting
         run: |
-          make site-build
-          make clean-html
+          make verify-fmt
+
+      - name: Verify generated assets
+        run: |
+          make verify-generate
+
+      - name: Verify binary builds
+        run: |
+          make verify-build
 
       - name: Install gh-pages build dependencies
         run: |
           pip3 install --user -r docs/requirements.txt
           echo "`python3 -m site --user-base`/bin" >> $GITHUB_PATH
 
-      - name: Verify update of gh-pages
+      - name: Verify documentation / update of gh-pages
         run: |
           git config user.name "Github"
           git config user.email "no-reply@github.com"
