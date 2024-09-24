@@ -944,7 +944,13 @@ eval "${yaml_in_defaults}"
 
 # Run test/demo
 TEST_FAILURES=""
+test_start_secs=$(vm-seconds-now)
+
 test-user-code
+
+test_span_secs="$(vm-seconds-since $test_start_secs)"
+since="-$(( test_span_secs + 5 ))s"
+service="${k8scri}" since="$since" vm-pull-journal > "${TEST_OUTPUT_DIR}"/runtime."${k8scri}".log
 
 # If there are any nri-resource-policy logs in the DUT, copy them back to host.
 host-command "$SCP $VM_HOSTNAME:nri-resource-policy.output.txt \"${TEST_OUTPUT_DIR}/\"" ||

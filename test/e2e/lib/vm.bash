@@ -588,3 +588,19 @@ vm-stop-log-collection() {
     local log_file="${log_file:-nri-resource-policy.output.txt}"
     vm-command "fuser --kill $log_file 2>/dev/null || :"
 }
+
+vm-seconds-now() {
+    vm-command-q "date +%s"
+}
+
+vm-seconds-since() {
+    echo $(( $(vm-seconds-now) - $1 + 1 ))
+}
+
+vm-pull-journal() {
+    local _service="${service:+-u} ${service:-} "
+    local _since="${since:+--since }${since:-}"
+
+    vm-command-q "journalctl $_service $_since" || \
+        command-error "failed to pull journal logs (service: ${service:-all}, since: ${since:--}"
+}
