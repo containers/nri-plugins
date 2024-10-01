@@ -30,4 +30,6 @@ type Class struct {
 	UncoreMinFreq uint `json:"uncoreMinFreq,omitempty"`
 	// UncoreMaxFreq is the maximum uncore frequency for this class.
 	UncoreMaxFreq uint `json:"uncoreMaxFreq,omitempty"`
+	// CPUFreq Governor for this class.
+	FreqGovernor string `json:"freqGovernor,omitempty"`
 }
