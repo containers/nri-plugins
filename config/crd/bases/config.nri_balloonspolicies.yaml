@@ -114,7 +114,7 @@ spec:
                       items:
                         description: |-
                           Expression describes some runtime-evaluated condition. An expression
-                          consist of a key, an operator and a set of values. An expressions is
+                          consists of a key, an operator and a set of values. An expression is
                           evaluated against an object which implements the Evaluable interface.
                           Evaluating an expression consists of looking up the value for the key
                           in the object, then using the operator to check it against the values
@@ -403,7 +403,7 @@ spec:
                     items:
                       description: |-
                         Expression describes some runtime-evaluated condition. An expression
-                        consist of a key, an operator and a set of values. An expressions is
+                        consists of a key, an operator and a set of values. An expression is
                         evaluated against an object which implements the Evaluable interface.
                         Evaluating an expression consists of looking up the value for the key
                         in the object, then using the operator to check it against the values
