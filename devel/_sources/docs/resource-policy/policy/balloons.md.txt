@@ -82,6 +82,23 @@ Balloons policy parameters:
   cause kernel to kill containers due to out-of-memory error when
   closest NUMA nodes do not have enough memory. In this situation
   consider switching this option `false`.
+- `preserve` specifies containers whose resource pinning must not be
+  modified by the policy.
+  - `matchExpressions` if a container matches an expression in this
+    list, the policy will preserve container's resource pinning. If
+    there is no resource pinning, the policy will not change that
+    either. Example: preserve containers named "a" and "b". As a
+    result, the policy will not modify CPU or memory pinning of
+    matching containers.
+    ```
+    ignore:
+      matchExpressions:
+        - key: name
+          operator: In
+          values:
+            - a
+            - b
+    ```
 - `idleCPUClass` specifies the CPU class of those CPUs that do not
   belong to any balloon.
 - `reservedPoolNamespaces` is a list of namespaces (wildcards allowed)
@@ -315,8 +332,16 @@ not defined, a built-in `default` balloon type is used.
 ## Disabling CPU or Memory Pinning of a Container
 
 Some containers may need to run on all CPUs or access all memories
-without restrictions. Annotate these pods and containers to prevent
-the resource policy from touching their CPU or memory pinning.
+without restrictions. There are two alternatives to achieve this:
+policy configuration and pod annotations.
+
+The resource policy will not touch allowed resources of containers
+that match `preserve` criteria. See policy configuration options
+above.
+
+Alternatively, pod annotations can opt-out all or selected containers
+in the pod from CPU or memory pinning by preserving whatever existing
+or non-existing pinning configuration:
 
 ```yaml
 cpu.preserve.resource-policy.nri.io/container.CONTAINER_NAME: "true"
