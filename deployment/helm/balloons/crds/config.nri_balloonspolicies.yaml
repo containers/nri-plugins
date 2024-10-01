@@ -114,10 +114,10 @@ spec:
                       items:
                         description: |-
                           Expression describes some runtime-evaluated condition. An expression
-                          consist of a key, an operator and a set of values. An expressions is
+                          consists of a key, an operator and a set of values. An expression is
                           evaluated against an object which implements the Evaluable interface.
                           Evaluating an expression consists of looking up the value for the key
-                          in the object, then using the operator to check it agains the values
+                          in the object, then using the operator to check it against the values
                           of the expression. The result is a single boolean value. An object is
                           said to satisfy the evaluated expression if this value is true. An
                           expression can contain 0, 1 or more values depending on the operator.
@@ -403,10 +403,10 @@ spec:
                     items:
                       description: |-
                         Expression describes some runtime-evaluated condition. An expression
-                        consist of a key, an operator and a set of values. An expressions is
+                        consists of a key, an operator and a set of values. An expression is
                         evaluated against an object which implements the Evaluable interface.
                         Evaluating an expression consists of looking up the value for the key
-                        in the object, then using the operator to check it agains the values
+                        in the object, then using the operator to check it against the values
                         of the expression. The result is a single boolean value. An object is
                         said to satisfy the evaluated expression if this value is true. An
                         expression can contain 0, 1 or more values depending on the operator.
