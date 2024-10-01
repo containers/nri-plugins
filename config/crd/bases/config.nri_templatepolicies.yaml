@@ -55,6 +55,9 @@ spec:
                               description: EnergyPerformancePreference for CPUs in
                                 this class.
                               type: integer
+                            freqGovernor:
+                              description: CPUFreq Governor for this class.
+                              type: string
                             maxFreq:
                               description: MaxFreq is the maximum frequency for this
                                 class.
