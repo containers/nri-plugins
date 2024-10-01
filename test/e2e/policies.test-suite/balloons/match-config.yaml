@@ -5,6 +5,15 @@ config:
   pinMemory: true
   idleCPUClass: normal
   allocatorTopologyBalancing: true
+  preserve:
+    matchExpressions:
+      - key: name
+        operator: In
+        values:
+          - pod1cX
+          - pod2c1
+          - pod2c2
+          - pod3cX
   balloonTypes:
   - name: special
     matchExpressions:

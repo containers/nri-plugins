@@ -21,6 +21,7 @@ import (
 	policy "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
 	resmgr "github.com/containers/nri-plugins/pkg/apis/resmgr/v1alpha1"
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 )
 
 type (
@@ -78,6 +79,9 @@ type Config struct {
 	// Reserved (CPU) resources for kube-system namespace.
 	// +kubebuilder:validation:Required
 	ReservedResources Constraints `json:"reservedResources"`
+	// Preserve specifies containers whose resource pinning must not be
+	// modified by the policy.
+	Preserve *ContainerMatchConfig `json:"preserve,omitempty"`
 }
 
 type CPUTopologyLevel string
@@ -252,8 +256,31 @@ func (p CPUPriority) Value() cpuallocator.CPUPriority {
 	return cpuallocator.PriorityNone
 }
 
+// ContainerMatchConfig contains container matching configurations.
+// +k8s:deepcopy-gen=true
+type ContainerMatchConfig struct {
+	// MatchExpressions specifies one or more expressions.
+	MatchExpressions []resmgr.Expression `json:"matchExpressions,omitempty"`
+}
+
+func (cmc *ContainerMatchConfig) MatchContainer(c cache.Container) (string, error) {
+	for _, expr := range cmc.MatchExpressions {
+		if expr.Evaluate(c) {
+			return expr.String(), nil
+		}
+	}
+	return "", nil
+}
+
 func (c *Config) Validate() error {
 	errs := []error{}
+	if c.Preserve != nil {
+		for _, expr := range c.Preserve.MatchExpressions {
+			if err := expr.Validate(); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
 	for _, blnDef := range c.BalloonDefs {
 		for _, expr := range blnDef.MatchExpressions {
 			if err := expr.Validate(); err != nil {

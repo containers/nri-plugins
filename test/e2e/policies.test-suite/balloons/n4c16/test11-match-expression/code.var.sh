@@ -21,4 +21,13 @@ CONTCOUNT=1 create balloons-busybox
 report allowed
 verify 'len(cpus["pod1c0"]) == 1'
 
+# pod2: run ordinary workload where pod2c1 and pod2c2 match the
+# preserve matchexpression in policy configuration.
+CONTCOUNT=4 create balloons-busybox
+report allowed
+verify 'len(cpus["pod2c0"]) == 1' \
+       'len(cpus["pod2c1"]) == 16' \
+       'len(cpus["pod2c2"]) == 16' \
+       'len(cpus["pod2c3"]) == 1'
+
 cleanup

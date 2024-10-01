@@ -227,6 +227,17 @@ func (p *balloons) AllocateResources(c cache.Container) error {
 		log.Infof("not handling resources of container %s, preserving CPUs %q and memory %q", c.PrettyName(), c.GetCpusetCpus(), c.GetCpusetMems())
 		return nil
 	}
+
+	if p.bpoptions.Preserve != nil {
+		rule, err := p.bpoptions.Preserve.MatchContainer(c)
+		if err != nil {
+			log.Errorf("error in matching container %s to preserve conditions: %s", c, err)
+		} else if rule != "" {
+			log.Debugf("preserve container %s due to matching %s", c, rule)
+			return nil
+		}
+	}
+
 	log.Debug("allocating resources for container %s (request %d mCPU, limit %d mCPU)...",
 		c.PrettyName(),
 		p.containerRequestedMilliCpus(c.GetID()),
