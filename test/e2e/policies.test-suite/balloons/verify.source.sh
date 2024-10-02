@@ -11,7 +11,7 @@ verify-metrics-has-line() {
 
 verify-metrics-has-no-line() {
     local unexpected_line="$1"
-    vm-run-until --timeout 10 "echo 'checking absense of metrics line: $unexpected_line' >&2; ! curl --silent $verify_metrics_url | grep -Eq '$unexpected_line'" || {
+    vm-run-until --timeout 10 "echo 'checking absence of metrics line: $unexpected_line' >&2; ! curl --silent $verify_metrics_url | grep -Eq '$unexpected_line'" || {
         command-error "unexpected line '$1' found from the output"
     }
 }

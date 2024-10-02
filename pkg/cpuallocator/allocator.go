@@ -440,7 +440,7 @@ func (a *allocatorHelper) takeCacheGroups() {
 	//    c. allocate using the smallest number of groups (largest to smallest)
 	//
 	// Notes:
-	//   We might consider letting the requestor control some aspects of allocation,
+	//   We might consider letting the requester control some aspects of allocation,
 	//   for instance:
 	//     - use only full idle groups (ideal maximum isolation)
 	//     - use only full idle groups, and 1 fragmented (maximum isolation)
@@ -805,7 +805,7 @@ func (a *allocatorHelper) takeCacheGroups() {
 		g := groups[0]
 		cset := sorter.cpus[g]
 
-		log.Debug("=> took reamining %d CPUs (%s) of usable cache group %s", cnt, cset, g)
+		log.Debug("=> took remaining %d CPUs (%s) of usable cache group %s", cnt, cset, g)
 
 		result = result.Union(cset)
 		from = from.Difference(cset)

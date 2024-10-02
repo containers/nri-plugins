@@ -126,7 +126,7 @@ func (pca *podContainerAffinity) parseSimple(pod *pod, value string, weight int3
 	//
 	// Notes:
 	//   We turn affinities given in the simple notation into a symmetric set of
-	//   affinities. IOW, if X has affinity on Y with wight W, then Y will have
+	//   affinities. IOW, if X has affinity on Y with weight W, then Y will have
 	//   affinity on X with W as well. In practice this is done by
 	//     1) ensuring there is an affinity Y: X for every affinity X: Y
 	//     2) generating an affinity expression for every container with affinities

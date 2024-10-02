@@ -39,7 +39,7 @@ func (a *Agent) UpdateNrtCR(policy string, zones []*policyapi.TopologyZone) erro
 
 	// To minimize the risk of an NRI request timeout (and the plugin getting
 	// kicked out) we do the update asynchronously. We can rework this to use
-	// a single goroutine that reads update requests from a channel to mimick
+	// a single goroutine that reads update requests from a channel to mimic
 	// the rest if necessary.
 	// XXX TODO(klihub): We can't/don't propagate update errors now back
 	//     to the caller. We could do that (using a channel) if necessary...

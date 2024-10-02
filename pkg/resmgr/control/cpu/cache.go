@@ -40,7 +40,7 @@ func getClassAssignments(c cache.Cache) *cpuClassAssignments {
 
 // Save the state of CPU class assignments in cache
 func setClassAssignments(c cache.Cache, a *cpuClassAssignments) {
-	c.SetPolicyEntry(cacheKeyCPUAssignments, cache.Cachable(a))
+	c.SetPolicyEntry(cacheKeyCPUAssignments, cache.Cacheable(a))
 }
 
 // Set the value of cached cpuClassAssignments

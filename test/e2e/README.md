@@ -36,7 +36,7 @@ Before running E2E tests ensure that you have all the required components locall
 
     The default test output directory name is generated from the used topology
     and runtime name and the directory is created under test/e2e.
-    The test output directory can be given as a 2nd paramter to the script.
+    The test output directory can be given as a 2nd parameter to the script.
 
     ```shell
     ./run_tests.sh policies.test-suite ~/output-directory
@@ -51,7 +51,7 @@ Before running E2E tests ensure that you have all the required components locall
     ```
 
     The e2e test runs can be can be configured by setting various options as
-    environment variables when starting the run_tests.sh script. These environent
+    environment variables when starting the run_tests.sh script. These environment
     variables are passed to test VM so that it can establish connection to
     net to download packages etc.
 

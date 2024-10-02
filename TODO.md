@@ -22,7 +22,7 @@ The estimated complexity and priority of a feature/task is defined like this:
   - [ ] eliminate need for saving cache to disk, C2
 - config
   - [ ] switch to using CRDs (from ConfigMaps), C2
-  - [ ] consider usig 1 CRD per policy as opposed to a single 'union' CRD, C2
+  - [ ] consider using 1 CRD per policy as opposed to a single 'union' CRD, C2
   - [ ] create helm chart support for the resource policies, C1
 - policies
   - [ ] remove support for multiple policies in a single binary, C1

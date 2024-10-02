@@ -401,6 +401,9 @@ verify-build: build
 
 verify-docs: site-build clean-html
 
+verify-codespell codespell:
+	$(Q) codespell
+
 #
 # targets for installing dependencies
 #

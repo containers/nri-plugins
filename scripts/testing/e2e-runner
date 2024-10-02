@@ -55,7 +55,7 @@ usage() {
     echo "  --source-proxies <file>   source proxy environment variables from file"
     echo "  --remote|r <repo>         remote repository to clone/fetch from"
     echo "  --branch|-b <branch>      name of the remote branch to test"
-    echo "  --local|-l <dir>          local directory to clone remote respository into"
+    echo "  --local|-l <dir>          local directory to clone remote repository into"
     echo "  --results|--out|-o <dir>  top-level directory for publishing results"
     echo "  --name|-n <name>          subdirectory for results of this run"
     echo "  --skip-worktree           skip worktree preparation, assume already done"
@@ -112,7 +112,7 @@ source_proxies() {
 
     for var in http_proxy https_proxy no_proxy HTTP_PROXY HTTPS_PROXY NO_PROXY; do
         if [ -n "${!var}" ]; then
-            info "exporting proxy envrionment variable $var (with value ${!var})..."
+            info "exporting proxy environment variable $var (with value ${!var})..."
             export $var
         fi
     done

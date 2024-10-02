@@ -1032,7 +1032,7 @@ func (p *nriPlugin) runPostStartHooks(method string, c cache.Container) error {
 	return nil
 }
 
-// runPostReleaseHooks runs the necessary hooks after releaseing resources of some containers
+// runPostReleaseHooks runs the necessary hooks after releasing resources of some containers
 func (p *nriPlugin) runPostReleaseHooks(method string, released ...cache.Container) error {
 	m := p.resmgr
 	for _, c := range released {
@@ -1058,7 +1058,7 @@ func (p *nriPlugin) runPostReleaseHooks(method string, released ...cache.Contain
 	return nil
 }
 
-// runPostUpdateHooks runs the necessary hooks after reconcilation.
+// runPostUpdateHooks runs the necessary hooks after reconciliation.
 func (p *nriPlugin) runPostUpdateHooks(method string) error {
 	m := p.resmgr
 	for _, c := range m.cache.GetPendingContainers() {

@@ -29,7 +29,7 @@ const (
 )
 
 func (p *policy) saveAllocations() {
-	p.cache.SetPolicyEntry(keyAllocations, cache.Cachable(&p.allocations))
+	p.cache.SetPolicyEntry(keyAllocations, cache.Cacheable(&p.allocations))
 	p.cache.Save()
 }
 

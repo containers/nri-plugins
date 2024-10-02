@@ -778,7 +778,7 @@ func (c *container) PreserveMemoryResources() bool {
 }
 
 var (
-	// More complext rules, for Kubelet secrets and config maps
+	// More complex rules, for Kubelet secrets and config maps
 	ignoredTopologyPathRegexps = []*regexp.Regexp{
 		// Kubelet directory can be different, but we can detect it by structure inside of it.
 		// For now, we can safely ignore exposed config maps and secrets for topology hints.

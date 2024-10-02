@@ -595,7 +595,7 @@ func (sys *system) SocketCount() int {
 	return len(sys.packages)
 }
 
-// CPUCount resturns the number of discovered CPUs/cores.
+// CPUCount returns the number of discovered CPUs/cores.
 func (sys *system) CPUCount() int {
 	return len(sys.cpus)
 }

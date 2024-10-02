@@ -90,7 +90,7 @@ get_runner_token() {
     debug "GH access token URL : '${access_token_url}'"
     debug "GH access token response : '${access_token_response}'"
     debug "GH access token : '${access_token}'"
-    debug "GH reponse payload : $payload"
+    debug "GH response payload : $payload"
 
     echo $(echo $payload | jq .token --raw-output)
 }
