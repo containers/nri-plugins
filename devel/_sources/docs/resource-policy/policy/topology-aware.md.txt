@@ -131,7 +131,7 @@ behavior. These options can be supplied as part of the effective
   - whether shared allocation is preferred by default for workloads that
     would be otherwise eligible for exclusive CPU allocation
 - `reservedPoolNamespaces`
-  - list of extra namespaces (or glob patters) that will be allocated to
+  - list of extra namespaces (or glob patterns) that will be allocated to
     reserved CPUs
 - `colocatePods`
   - whether try to allocate containers in a pod to the same or close by
@@ -496,7 +496,7 @@ However as a general rule of thumb containers running
 These hints are expressed by `container affinity annotations` on the Pod.
 There are two types of affinities:
 
-- `affinity` (or `positive affinty`): cause affected containers to *pull* each
+- `affinity` (or `positive affinity`): cause affected containers to *pull* each
   other closer
 - `anti-affinity` (or `negative affinity`): cause affected containers to *push*
   each other further away
@@ -516,7 +516,7 @@ annotation. They are specified in the `metadata` section of the `Pod YAML`, unde
 
 ```yaml
 metadata:
-  anotations:
+  annotations:
     resource-policy.nri.io/affinity: |
       container1:
         - scope:
@@ -541,7 +541,7 @@ as the annotation key.
 
 ```yaml
 metadata:
-  anotations:
+  annotations:
     resource-policy.nri.io/anti-affinity: |
       container1:
         - scope:
@@ -585,7 +585,7 @@ is. This is useful in situations where the policy needs to make some
 compromises because an optimal placement is not possible. The weight then also
 acts as a way to specify preferences of priorities between the various
 compromises: the heavier the weight the stronger the pull or push and the
-larger the propbability that it will be honored, if this is possible at all.
+larger the probability that it will be honored, if this is possible at all.
 
 The scope can be omitted from an affinity in which case it implies *Pod scope*,
 in other words the scope of all containers that belong to the same Pod as the

@@ -158,7 +158,7 @@ of activating and dispatching calls through to the configured active policy.
 The generic resource controller layer defines the abstract interface the rest
 of NRI-RP uses to interact with resource controller implementations and takes
 care of the details of dispatching calls to the controller implementations
-for post-policy enforcment of decisions.
+for post-policy enforcement of decisions.
 
 ### [Metrics Collector](tree:/pkg/metrics/)
 

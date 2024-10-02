@@ -185,7 +185,7 @@ Balloons policy parameters:
     balloon(s).
   - `preferPerNamespaceBalloon`: if `true`, containers in the same
     namespace will be placed in the same balloon(s). On the other
-    hand, containers in different namespaces are preferrably placed in
+    hand, containers in different namespaces are preferably placed in
     different balloons. The default is `false`: namespace has no
     effect on choosing the balloon of this type.
   - `preferNewBalloons`: if `true`, prefer creating new balloons over

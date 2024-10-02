@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.7.1-7-g4752b6c8 documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.7.1-12-g71439348 documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -280,7 +280,7 @@ would be otherwise eligible for exclusive CPU allocation</p></li>
 </li>
 <li><p><code class="docutils literal notranslate"><span class="pre">reservedPoolNamespaces</span></code></p>
 <ul>
-<li><p>list of extra namespaces (or glob patters) that will be allocated to
+<li><p>list of extra namespaces (or glob patterns) that will be allocated to
 reserved CPUs</p></li>
 </ul>
 </li>
@@ -665,7 +665,7 @@ However as a general rule of thumb containers running</p>
 <p>These hints are expressed by <code class="docutils literal notranslate"><span class="pre">container</span> <span class="pre">affinity</span> <span class="pre">annotations</span></code> on the Pod.
 There are two types of affinities:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">affinity</span></code> (or <code class="docutils literal notranslate"><span class="pre">positive</span> <span class="pre">affinty</span></code>): cause affected containers to <em>pull</em> each
+<li><p><code class="docutils literal notranslate"><span class="pre">affinity</span></code> (or <code class="docutils literal notranslate"><span class="pre">positive</span> <span class="pre">affinity</span></code>): cause affected containers to <em>pull</em> each
 other closer</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">anti-affinity</span></code> (or <code class="docutils literal notranslate"><span class="pre">negative</span> <span class="pre">affinity</span></code>): cause affected containers to <em>push</em>
 each other further away</p></li>
@@ -684,7 +684,7 @@ annotation. They are specified in the <code class="docutils literal notranslate"
 <code class="docutils literal notranslate"><span class="pre">annotations</span></code> as a dictionary, with each dictionary key being the name of the
 <em>container</em> within the Pod to which the annotation belongs to.</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">anotations</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">resource-policy.nri.io/affinity</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
 <span class="w">      </span><span class="no">container1:</span>
 <span class="w">        </span><span class="no">- scope:</span>
@@ -707,7 +707,7 @@ annotation. They are specified in the <code class="docutils literal notranslate"
 <p>An anti-affinity is defined similarly but using <code class="docutils literal notranslate"><span class="pre">resource-policy.nri.io/anti-affinity</span></code>
 as the annotation key.</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">anotations</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">resource-policy.nri.io/anti-affinity</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
 <span class="w">      </span><span class="no">container1:</span>
 <span class="w">        </span><span class="no">- scope:</span>
@@ -751,7 +751,7 @@ is. This is useful in situations where the policy needs to make some
 compromises because an optimal placement is not possible. The weight then also
 acts as a way to specify preferences of priorities between the various
 compromises: the heavier the weight the stronger the pull or push and the
-larger the propbability that it will be honored, if this is possible at all.</p>
+larger the probability that it will be honored, if this is possible at all.</p>
 <p>The scope can be omitted from an affinity in which case it implies <em>Pod scope</em>,
 in other words the scope of all containers that belong to the same Pod as the
 container for which which the affinity is defined.</p>
