@@ -1,6 +1,7 @@
 #!/bin/bash
 
 TESTS_DIR="$1"
+SKIP_LONG_TESTS="${skip_long_tests:-yes}"
 RUN_SH="${0%/*}/run.sh"
 
 DEFAULT_DISTRO=${DEFAULT_DISTRO:-"generic/fedora37"}
@@ -12,11 +13,12 @@ proxy=${proxy:=$HTTPS_PROXY}
 export proxy
 
 usage() {
-    echo "Usage: run_tests.sh TESTS_DIR"
+    echo "Usage: [skip_long_tests=no] run_tests.sh TESTS_DIR"
     echo "TESTS_DIR is expected to be structured as POLICY/TOPOLOGY/TEST with files:"
     echo "POLICY/nri-resource_policy.cfg: configuration of nri-resource_policy"
     echo "POLICY/TOPOLOGY/topology.var.json: contents of the topology variable for run.sh"
     echo "POLICY/TOPOLOGY/TEST/code.var.sh: contents of the code var (that is, test script)"
+    echo "skip_long_tests=no enables long-running tests (including fuzzing and stress tests)."
 }
 
 error() {
@@ -116,10 +118,16 @@ export-and-source-dir() {
     source-source-files "$dir"
 }
 
-if [ -z "$TESTS_DIR" ] || [ "$TESTS_DIR" == "help" ] || [ "$TESTS_DIR" == "--help" ]; then
-    usage
-    error "missing TESTS_DIR"
-fi
+case "$TESTS_DIR" in
+    "")
+        usage
+        error "missing TESTS_DIR"
+        ;;
+    "help"|"--help"|"-h")
+        usage
+        exit 0
+        ;;
+esac
 
 if ! [ -d "$TESTS_DIR" ]; then
     error "bad TESTS_DIR: \"$TESTS_DIR\""
@@ -152,6 +160,7 @@ echo "    TESTS_ROOT_DIR=$TESTS_ROOT_DIR"
 echo "    TESTS_POLICY_FILTER=$TESTS_POLICY_FILTER"
 echo "    TESTS_TOPOLOGY_FILTER=$TESTS_TOPOLOGY_FILTER"
 echo "    TESTS_TEST_FILTER=$TESTS_TEST_FILTER"
+echo "    skip long tests: $SKIP_LONG_TESTS"
 
 source "$TESTS_ROOT_DIR"/../lib/vm.bash
 
@@ -221,6 +230,24 @@ for POLICY_DIR in "$TESTS_ROOT_DIR"/*; do
                     if [ "$(basename "$TEST_DIR")" == "vm-files" ]; then
                         continue
                     fi
+
+                    if [ "$SKIP_LONG_TESTS" = "yes" ]; then
+                        case $TEST_DIR in
+                            *fuzz*)
+                                echo "SKIP long test $TEST_DIR (skip_long_tests=$SKIP_LONG_TESTS)"
+                                continue
+                                ;;
+                            *long*)
+                                echo "SKIP long test $TEST_DIR (skip_long_tests=$SKIP_LONG_TESTS)"
+                                continue
+                                ;;
+                            *stress*)
+                                echo "SKIP long test $TEST_DIR (skip_long_tests=$SKIP_LONG_TESTS)"
+                                continue
+                                ;;
+                        esac
+                    fi
+
                     (
                         export-and-source-dir "$TEST_DIR"
                         export code="${source_libs}""
