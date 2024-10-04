@@ -481,26 +481,31 @@ get-config-generation() {
     vm-command-q "kubectl get -n kube-system $resource -ojsonpath={.metadata.generation}"
 }
 
+get-hostname-for-vm() {
+    local node="${node:-$VM_HOSTNAME}"
+    echo ${node%.*}
+}
+
 get-config-node-status-generation() {
-    local resource="$1" node="${node:-$VM_HOSTNAME}"
+    local resource="$1" node="$(get-hostname-for-vm)"
     vm-command-q "kubectl get -n kube-system $resource \
                       -ojsonpath=\"{.status.nodes['$node'].generation}\""
 }
 
 get-config-node-status-result() {
-    local resource="$1" node="${node:-$VM_HOSTNAME}"
+    local resource="$1" node="$(get-hostname-for-vm)"
     vm-command-q "kubectl get -n kube-system $resource \
                      -ojsonpath=\"{.status.nodes['$node'].status}\""
 }
 
 get-config-node-status-error() {
-    local resource="$1" node="${node:-$VM_HOSTNAME}"
+    local resource="$1" node="$(get-hostname-for-vm)"
     vm-command-q "kubectl get -n kube-system $resource \
                       -ojsonpath=\"{.status.nodes['$node'].error}\""
 }
 
 wait-config-node-status() {
-    local resource="$1" node="${node:-$VM_HOSTNAME}"
+    local resource="$1" node="$(get-hostname-for-vm)"
     local timeout="${timeout:-5s}"
     local deadline=$(deadline-for-timeout $timeout)
     local generation jsonpath result errors
