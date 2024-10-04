@@ -139,13 +139,23 @@
       when: ansible_facts['distribution'] == "Ubuntu"
 
     - name: Install rpm packages
-      ansible.builtin.dnf:
-        pkg:
-          - iproute-tc
-          - grubby
-        state: present
-        update_cache: true
       when: ansible_facts['distribution'] == "Fedora"
+      block:
+        - name: Common rpm packages
+          ansible.builtin.dnf:
+            pkg:
+              - iproute-tc
+              - grubby
+            state: present
+            update_cache: true
+        - name: Extra python3 rpm packages for ansible
+          ansible.builtin.dnf:
+            pkg:
+              - python3-libselinux
+              - python3-packaging
+            state:
+              present
+          when: ansible_facts['distribution_major_version'] | int >= 40
 
     - name: Disable SELinux
       ansible.posix.selinux:
