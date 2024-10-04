@@ -166,7 +166,8 @@ vm-setup() {
      make install || error "failed to check/install vagrant plugins"
 
      if [ ! -d .vagrant ]; then
-	 vagrant init --template Vagrantfile $distro || error "failed to vagrant init $distro"
+	 vagrant init ${vagrant_debug:+--debug} --template Vagrantfile $distro || \
+             error "failed to vagrant init $distro"
      fi
 
      # If you want to force provisioning of already provisioned vm,
@@ -175,7 +176,7 @@ vm-setup() {
      # cannot be called second time. But this could be used
      # if the provisioning failed before kubernetes was setup.
      if [ ! -z "$provision" ]; then
-	 vagrant provision || error "failed to provision VM"
+	 vagrant provision ${vagrant_debug:+--debug} || error "failed to provision VM"
      fi
 
      vagrant up --provider qemu || error "failed to bring up VM"
