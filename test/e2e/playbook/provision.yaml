@@ -40,9 +40,8 @@
       when: dns_nameserver != ""
 
     - name: Setup DNS for Ubuntu
-      ansible.builtin.shell: "{{ item }}"
-      with_items:
-        - sed -i 's/addresses\(.\) \[.*\]$/addresses\1 \[{{ dns_nameserver }}\]/' /etc/netplan/01-netcfg.yaml
+      ansible.builtin.shell: |
+        [ -f /etc/netplan/01-netcfg.yaml ] && sed -i 's/addresses\(.\) \[.*\]$/addresses\1 \[{{ dns_nameserver }}\]/' /etc/netplan/01-netcfg.yaml || :
       when: ansible_facts['distribution'] == "Ubuntu"
 
     - name: Disable swap
