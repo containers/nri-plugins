@@ -200,6 +200,9 @@ for POLICY_DIR in "$TESTS_ROOT_DIR"/*; do
                 distro=${distro:=$DEFAULT_DISTRO}
                 export distro
 
+                vagrant_debug=${vagrant_debug:-}
+                export vagrant_debug
+
 		policy_name="$(basename $POLICY_DIR)"
 
 		# Create name for the vm.
