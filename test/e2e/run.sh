@@ -1,7 +1,7 @@
 #!/bin/bash
 
 TITLE="NRI Resource Policy End-to-End Testing"
-DEFAULT_DISTRO=${DEFAULT_DISTRO:-"generic/fedora37"}
+DEFAULT_DISTRO=${DEFAULT_DISTRO:-"fedora/40-cloud-base"}
 
 # Other tested distros
 #    generic/ubuntu2204
