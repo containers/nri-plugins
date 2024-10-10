@@ -61,9 +61,6 @@ func Assign(c cache.Cache, class string, cpus ...int) error {
 		if err := ctl.enforceCpufreq(class, cpus...); err != nil {
 			log.Error("cpufreq enforcement failed: %v", err)
 		}
-		if err := ctl.enforceCpufreqGovernor(class, cpus...); err != nil {
-			log.Error("cpufreq governor enforcement failed: %v", err)
-		}
 		if err := ctl.enforceUncore(assignments, cpus...); err != nil {
 			log.Error("uncore frequency enforcement failed: %v", err)
 		}

@@ -16,7 +16,6 @@ package cpu
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 
@@ -123,30 +122,15 @@ func (ctl *cpuctl) PostStopHook(c cache.Container) error {
 	return nil
 }
 
-// enforceCpufreqGovernor enforces a class-specific cpufreq governor to a cpuset.
-func (ctl *cpuctl) enforceCpufreqGovernor(class string, cpusIds ...int) error {
-	if _, ok := ctl.classes[class]; !ok {
-		return fmt.Errorf("non-existent cpu class %q", class)
-	}
-	governor := ctl.classes[class].FreqGovernor
-	for cpu := range cpusIds {
-		log.Info(strconv.Itoa(cpu), governor)
-	}
-	log.Debug("enforcing cpu frequency governor %q on %v", governor, cpusIds)
-	if err := utils.SetScalingGovernorForCPUs(cpusIds, governor); err != nil {
-		return fmt.Errorf("Cannot set cpufreq governor %d: %w", governor, err)
-	}
-	return nil
-}
-
 // enforceCpufreq enforces a class-specific cpufreq configuration to a cpuset
 func (ctl *cpuctl) enforceCpufreq(class string, cpus ...int) error {
-	if _, ok := ctl.classes[class]; !ok {
+	c, ok := ctl.classes[class]
+	if !ok {
 		return fmt.Errorf("non-existent cpu class %q", class)
 	}
 
-	min := int(ctl.classes[class].MinFreq)
-	max := int(ctl.classes[class].MaxFreq)
+	min := int(c.MinFreq)
+	max := int(c.MaxFreq)
 	log.Debug("enforcing cpu frequency limits {%d, %d} from class %q on %v", min, max, class, cpus)
 
 	if err := utils.SetCPUsScalingMinFreq(cpus, min); err != nil {
@@ -155,6 +139,14 @@ func (ctl *cpuctl) enforceCpufreq(class string, cpus ...int) error {
 
 	if err := utils.SetCPUsScalingMaxFreq(cpus, max); err != nil {
 		return fmt.Errorf("Cannot set max freq %d: %w", max, err)
+	}
+
+	if governor := c.FreqGovernor; governor != "" {
+		log.Debug("enforcing cpu frequency governor %q from class %q on %v", governor, class, cpus)
+
+		if err := utils.SetScalingGovernorForCPUs(cpus, governor); err != nil {
+			return fmt.Errorf("cannot set cpufreq governor %q: %w", governor, err)
+		}
 	}
 
 	return nil
@@ -274,9 +266,6 @@ func (ctl *cpuctl) configure(cfg *cfgapi.Config) error {
 		if _, ok := ctl.classes[class]; ok {
 			// Re-configure cpus (sysfs) according to new class parameters
 			if err := ctl.enforceCpufreq(class, cpus.SortedMembers()...); err != nil {
-				log.Error("cpufreq enforcement on re-configure failed: %v", err)
-			}
-			if err := ctl.enforceCpufreqGovernor(class, cpus.SortedMembers()...); err != nil {
 				log.Error("cpufreq enforcement on re-configure failed: %v", err)
 			}
 		} else {
