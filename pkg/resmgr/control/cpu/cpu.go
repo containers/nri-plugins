@@ -16,7 +16,6 @@ package cpu
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 
@@ -125,16 +124,11 @@ func (ctl *cpuctl) PostStopHook(c cache.Container) error {
 
 // enforceCpufreqGovernor enforces a class-specific cpufreq governor to a cpuset.
 func (ctl *cpuctl) enforceCpufreqGovernor(class string, cpusIds ...int) error {
-	if _, ok := ctl.classes[class]; !ok {
-		return fmt.Errorf("non-existent cpu class %q", class)
-	}
-	governor := ctl.classes[class].FreqGovernor
-	for cpu := range cpusIds {
-		log.Info(strconv.Itoa(cpu), governor)
-	}
-	log.Debug("enforcing cpu frequency governor %q on %v", governor, cpusIds)
-	if err := utils.SetScalingGovernorForCPUs(cpusIds, governor); err != nil {
-		return fmt.Errorf("Cannot set cpufreq governor %d: %w", governor, err)
+	if governor := ctl.classes[class].FreqGovernor; governor != "" {
+		log.Debug("enforcing cpu frequency governor %q from class %q on %v", governor, cpusIds)
+		if err := utils.SetScalingGovernorForCPUs(cpusIds, governor); err != nil {
+			return fmt.Errorf("cannot set cpufreq governor %q: %w", governor, err)
+		}
 	}
 	return nil
 }
@@ -271,20 +265,19 @@ func (ctl *cpuctl) configure(cfg *cfgapi.Config) error {
 
 	// Configure the system
 	for class, cpus := range assignments {
-		if _, ok := ctl.classes[class]; ok {
-			// Re-configure cpus (sysfs) according to new class parameters
-			if err := ctl.enforceCpufreq(class, cpus.SortedMembers()...); err != nil {
-				log.Error("cpufreq enforcement on re-configure failed: %v", err)
-			}
-			if err := ctl.enforceCpufreqGovernor(class, cpus.SortedMembers()...); err != nil {
-				log.Error("cpufreq enforcement on re-configure failed: %v", err)
-			}
-		} else {
+		if _, ok := ctl.classes[class]; !ok {
 			// TODO: what should we really do with classes that do not exist in
 			// the configuration anymore? Now we remember the CPUs assigned to
 			// them. A further config update might re-introduce the class in
 			// which case the CPUs will be reconfigured.
-			log.Warn("class %q with cpus %v missing from the configuration", class, cpus)
+			return fmt.Errorf("non-existent cpu class %q", class)
+		}
+		// Re-configure cpus (sysfs) according to new class parameters
+		if err := ctl.enforceCpufreq(class, cpus.SortedMembers()...); err != nil {
+			log.Error("cpufreq enforcement on re-configure failed: %v", err)
+		}
+		if err := ctl.enforceCpufreqGovernor(class, cpus.SortedMembers()...); err != nil {
+			log.Error("cpufreq governor enforcement on re-configure failed: %v", err)
 		}
 	}
 	if err := ctl.enforceUncore(assignments); err != nil {
@@ -292,7 +285,6 @@ func (ctl *cpuctl) configure(cfg *cfgapi.Config) error {
 	}
 
 	log.Debug("cpu controller configured")
-
 	return nil
 }
 
