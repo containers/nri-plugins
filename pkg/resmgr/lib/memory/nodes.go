@@ -212,7 +212,7 @@ func NewNodeMask(ids ...ID) NodeMask {
 	return NodeMask(0).Set(ids...)
 }
 
-// ParseNodeMaskparses the given string representation of a NodeMask.
+// ParseNodeMask parses the given string representation of a NodeMask.
 func ParseNodeMask(str string) (NodeMask, error) {
 	m := NodeMask(0)
 	for _, s := range strings.Split(str, ",") {
