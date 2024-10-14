@@ -1,7 +1,7 @@
 # Build Stage
 ARG GO_VERSION=1.22
 
-FROM golang:${GO_VERSION}-bullseye as build
+FROM golang:${GO_VERSION}-bullseye AS build
 WORKDIR /go/builder
 
 # Fetch go dependencies in a separate layer for caching
