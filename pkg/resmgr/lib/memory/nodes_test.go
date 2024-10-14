@@ -22,6 +22,62 @@ import (
 	. "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 )
 
+func TestParseNodeMask(t *testing.T) {
+	type testCase struct {
+		name   string
+		mask   string
+		result NodeMask
+		fail   bool
+	}
+	for _, tc := range []*testCase{
+		{
+			name:   "empty mask",
+			mask:   "",
+			result: NodeMask(0),
+		},
+		{
+			name:   "single node mask",
+			mask:   "0",
+			result: NewNodeMask(0),
+		},
+		{
+			name:   "multiple nodes mask, no ranges",
+			mask:   "0,2,4,6,8,11,17",
+			result: NewNodeMask(0, 2, 4, 6, 8, 11, 17),
+		},
+		{
+			name:   "multiple nodes mask, with ranges",
+			mask:   "0-5,11-17",
+			result: NewNodeMask(0, 1, 2, 3, 4, 5, 11, 12, 13, 14, 15, 16, 17),
+		},
+		{
+			name: "invalid mask, missing ID",
+			mask: "0,2,4,6,8,11,17,",
+			fail: true,
+		},
+		{
+			name: "invalid mask, invalid ID",
+			mask: "0,2,xyzzy,11",
+			fail: true,
+		},
+		{
+			name: "invalid mask, too large ID",
+			mask: "0,2,4,6,8,11,17,100",
+			fail: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, err := ParseNodeMask(tc.mask)
+			if tc.fail {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tc.result, m)
+			}
+		})
+	}
+}
+
 func TestMemsetString(t *testing.T) {
 	type testCase struct {
 		name   string
