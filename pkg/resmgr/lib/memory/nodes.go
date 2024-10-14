@@ -240,7 +240,7 @@ func ParseNodeMask(str string) (NodeMask, error) {
 				m |= (1 << id)
 			}
 		case 1:
-			id, err := strconv.ParseInt(minmax[1], 10, 32)
+			id, err := strconv.ParseInt(minmax[0], 10, 32)
 			if err != nil {
 				return 0, fmt.Errorf("%w: failed to parse node mask %q: %w",
 					ErrInvalidNodeMask, str, err)
