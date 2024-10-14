@@ -235,7 +235,7 @@ func ParseNodeMask(str string) (NodeMask, error) {
 				return 0, fmt.Errorf("%w: invalid range (%d - %d) in node mask %q",
 					ErrInvalidNodeMask, beg, end, str)
 			}
-			for id := beg; id < end; id++ {
+			for id := beg; id <= end; id++ {
 				if id > MaxNodeID {
 					return 0, fmt.Errorf("%w: invalid node ID in mask %q (range %d-%d)",
 						ErrInvalidNodeMask, str, beg, end)
