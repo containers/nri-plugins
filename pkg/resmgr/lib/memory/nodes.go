@@ -215,6 +215,9 @@ func NewNodeMask(ids ...ID) NodeMask {
 // ParseNodeMask parses the given string representation of a NodeMask.
 func ParseNodeMask(str string) (NodeMask, error) {
 	m := NodeMask(0)
+	if str == "" {
+		return m, nil
+	}
 	for _, s := range strings.Split(str, ",") {
 		switch minmax := strings.SplitN(s, "-", 2); len(minmax) {
 		case 2:
