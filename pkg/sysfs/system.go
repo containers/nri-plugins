@@ -15,6 +15,7 @@
 package sysfs
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -277,6 +278,8 @@ var (
 		PerformanceCore: "OVERRIDE_SYS_CORE_CPUS",
 		EfficientCore:   "OVERRIDE_SYS_ATOM_CPUS",
 	}
+	cacheEnvOverridesVar  = "OVERRIDE_SYS_CACHES"
+	cacheEnvOverridesJson = os.Getenv(cacheEnvOverridesVar)
 )
 
 // MemInfo contains data read from a NUMA node meminfo file.
@@ -305,6 +308,21 @@ type Cache struct {
 	size  uint64      // cache size
 	cpus  idset.IDSet // CPUs sharing this cache
 }
+
+// cacheOverrides is a list of cache overrides for specific CPU sets.
+// Every CPU set gets cache id that starts from 0 on each override object.
+// Example: two 128 MB L3 Caches shared by CPUs 0-15,32-47 (socket 0)
+// and 16-31,48-63 (socket 1). The cache id is 0 for the first, 1 for the second.
+// [{"cpusets": ["0-15,32-47", "16-31,48-63"], "level": 3, "size": "128M"}]
+type cacheOverrides []cacheOverride
+type cacheOverride struct {
+	Cpusets []string // cpusets to which this override applies
+	Level   int      // cache level
+	Kind    string   // "d" for data, "i" for instruction, "u" for unified
+	Size    string   // cache size, e.g. "4M"
+}
+
+var cacheEnvOverrides map[int][]*Cache
 
 // SetSysRoot sets the sys root directory.
 func SetSysRoot(root string) {
@@ -934,17 +952,24 @@ func (sys *system) discoverCPU(path string) error {
 	}
 
 	if (sys.flags & DiscoverCache) != 0 {
-		entries, _ := filepath.Glob(filepath.Join(path, "cache/index[0-9]*"))
-		slices.SortFunc(entries, func(a, b string) int {
-			a = strings.TrimPrefix(filepath.Base(a), "index")
-			b = strings.TrimPrefix(filepath.Base(b), "index")
-			idxA, _ := strconv.Atoi(a)
-			idxB, _ := strconv.Atoi(b)
-			return idxA - idxB
-		})
-		for _, entry := range entries {
-			if err := sys.discoverCache(cpu, entry); err != nil {
-				return err
+		overridden, err := sys.discoverCacheFromOverrides(cpu)
+		if err != nil {
+			return err
+		}
+		if !overridden {
+			// discover caches for this CPU from sysfs
+			entries, _ := filepath.Glob(filepath.Join(path, "cache/index[0-9]*"))
+			slices.SortFunc(entries, func(a, b string) int {
+				a = strings.TrimPrefix(filepath.Base(a), "index")
+				b = strings.TrimPrefix(filepath.Base(b), "index")
+				idxA, _ := strconv.Atoi(a)
+				idxB, _ := strconv.Atoi(b)
+				return idxA - idxB
+			})
+			for _, entry := range entries {
+				if err := sys.discoverCache(cpu, entry); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -1526,6 +1551,84 @@ func (sys *system) discoverSst() error {
 	return nil
 }
 
+func parseSize(s string) (uint64, error) {
+	var size uint64
+	var unit string
+	if _, err := fmt.Sscanf(s, "%d%s", &size, &unit); err != nil {
+		if _, err := fmt.Sscanf(s, "%d", &size); err != nil {
+			return 0, err
+		}
+	}
+	switch unit {
+	case "k", "K", "KB":
+		size *= 1 << 10
+	case "M", "MB":
+		size *= 1 << 20
+	case "G", "GB":
+		size *= 1 << 30
+	case "T", "TB":
+		size *= 1 << 40
+	case "":
+	default:
+		return 0, fmt.Errorf("unknown unit %q", unit)
+	}
+	return size, nil
+}
+
+// Parse cache overrides from a JSON string.
+func parseCpuCacheOverrides(overrideJson string) (map[int][]*Cache, error) {
+	cpuCacheOverrides := make(map[int][]*Cache)
+	if overrideJson == "" {
+		return cpuCacheOverrides, nil
+	}
+	parseCcoError := func(format string, args ...interface{}) error {
+		return fmt.Errorf("cache override: "+format, args...)
+	}
+	overrides := cacheOverrides{}
+	if err := json.Unmarshal([]byte(overrideJson), &overrides); err != nil {
+		return nil, parseCcoError("unmarshaling %q failed: %v", overrideJson, err)
+	}
+	for _, override := range overrides {
+		nextId := 0
+		for _, cpusetStr := range override.Cpusets {
+			cpusCpuset, err := cpuset.Parse(cpusetStr)
+			if err != nil {
+				return nil, parseCcoError("parsing cpuset %q failed: %v\n", cpusetStr, err)
+			}
+			cpus := idset.NewIDSet(cpusCpuset.UnsortedList()...)
+			c := &Cache{
+				id: idset.ID(nextId),
+			}
+			nextId++
+			switch strings.ToLower(override.Kind) {
+			case "d", "data":
+				c.kind = DataCache
+			case "i", "instruction":
+				c.kind = InstructionCache
+			case "u", "unified", "":
+				c.kind = UnifiedCache
+			default:
+				return nil, parseCcoError("unknown cache kind %q\n", override.Kind)
+			}
+			if override.Level > 0 {
+				c.level = override.Level
+			} else {
+				c.level = 1
+			}
+			c.size, err = parseSize(override.Size)
+			if err != nil {
+				return nil, parseCcoError("parsing size %q failed: %v\n", override.Size, err)
+			}
+			c.cpus = cpus
+			for _, cpu := range cpus.Members() {
+				cpuCacheOverrides[cpu] = append(cpuCacheOverrides[cpu], c)
+			}
+			log.Debugf("override cache: %+v", *c)
+		}
+	}
+	return cpuCacheOverrides, nil
+}
+
 // ID returns the id of this package.
 func (p *cpuPackage) ID() idset.ID {
 	return p.id
@@ -1608,6 +1711,31 @@ func (p *cpuPackage) LogicalDieClusterCPUSet(die idset.ID, cluster idset.ID) cpu
 
 func (p *cpuPackage) SstInfo() *sst.SstPackageInfo {
 	return p.sstInfo
+}
+
+// Discover cache from overrides returns true if caches for a cpu were discovered.
+func (sys *system) discoverCacheFromOverrides(cpu *cpu) (bool, error) {
+	if cacheEnvOverridesJson == "" {
+		return false, nil
+	}
+	if cacheEnvOverrides == nil {
+		sys.Debug("parsing cache overrides from %s=%q", cacheEnvOverridesVar, cacheEnvOverridesJson)
+		ceo, err := parseCpuCacheOverrides(cacheEnvOverridesJson)
+		if err != nil {
+			sys.Error("failed to parse cache overrides: %v", err)
+			return false, err
+		}
+		cacheEnvOverrides = ceo
+	}
+	if caches, ok := cacheEnvOverrides[cpu.id]; ok {
+		cpu.caches = make([]*Cache, len(caches))
+		for i, c := range caches {
+			sys.Debug("cpu %d cache override %+v", cpu.id, *c)
+			cpu.caches[i] = sys.saveCache(c)
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 // Discover cache associated with the given CPU.
