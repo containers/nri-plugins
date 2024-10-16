@@ -1678,8 +1678,12 @@ func (sys *system) saveCache(c *Cache) *Cache {
 		caches := sys.caches
 		sys.caches = make([][NumCacheTypes]map[idset.ID]*Cache, c.level)
 		copy(sys.caches, caches)
-		for ct := 0; ct < NumCacheTypes; ct++ {
-			sys.caches[c.level-1][ct] = make(map[idset.ID]*Cache)
+		for levelIdx := 0; levelIdx < c.level; levelIdx++ {
+			for ct := 0; ct < NumCacheTypes; ct++ {
+				if sys.caches[levelIdx][ct] == nil {
+					sys.caches[levelIdx][ct] = make(map[idset.ID]*Cache)
+				}
+			}
 		}
 	}
 
