@@ -22,6 +22,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/containers/nri-plugins/pkg/kubernetes/client"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -32,7 +33,6 @@ import (
 	nrtapi "github.com/containers/nri-plugins/pkg/agent/nrtapi"
 	"github.com/containers/nri-plugins/pkg/agent/watch"
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1"
-	k8sclient "k8s.io/client-go/kubernetes"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
 )
@@ -126,11 +126,10 @@ type Agent struct {
 	kubeConfig string // kubeconfig path
 	configFile string // configuration file to use instead of custom resource
 
-	cfgIf   ConfigInterface      // custom resource access interface
-	httpCli *http.Client         // shared HTTP client
-	k8sCli  *k8sclient.Clientset // kubernetes client
-	nrtCli  *nrtapi.Client       // NRT custom resources client
-	nrtLock sync.Mutex           // serialize NRT custom resource updates
+	cfgIf   ConfigInterface // custom resource access interface
+	k8sCli  *client.Client
+	nrtCli  *nrtapi.Client // NRT custom resources client
+	nrtLock sync.Mutex     // serialize NRT custom resource updates
 
 	notifyFn      NotifyFn        // config resource change notification callback
 	nodeWatch     watch.Interface // kubernetes node watch
@@ -267,36 +266,26 @@ func (a *Agent) hasLocalConfig() bool {
 }
 
 func (a *Agent) setupClients() error {
+	var err error
+
 	if a.hasLocalConfig() {
 		return nil
 	}
 
-	cfg, err := a.getRESTConfig()
+	a.k8sCli, err = client.New(client.WithKubeOrInClusterConfig(a.kubeConfig))
 	if err != nil {
 		return err
 	}
 
-	a.httpCli, err = rest.HTTPClientFor(cfg)
-	if err != nil {
-		return fmt.Errorf("failed to setup kubernetes HTTP client: %w", err)
-	}
-
-	a.k8sCli, err = k8sclient.NewForConfigAndClient(cfg, a.httpCli)
-	if err != nil {
-		a.cleanupClients()
-		return fmt.Errorf("failed to setup kubernetes client: %w", err)
-	}
-
-	restCfg := *cfg
-	a.nrtCli, err = nrtapi.NewForConfigAndClient(&restCfg, a.httpCli)
+	a.nrtCli, err = nrtapi.NewForConfigAndClient(a.k8sCli.RestConfig(), a.k8sCli.HttpClient())
 	if err != nil {
 		a.cleanupClients()
 		return fmt.Errorf("failed to setup NRT client: %w", err)
 	}
 
-	restCfg = *cfg
-	err = a.cfgIf.SetKubeClient(a.httpCli, &restCfg)
+	err = a.cfgIf.SetKubeClient(a.k8sCli.HttpClient(), a.k8sCli.RestConfig())
 	if err != nil {
+		a.cleanupClients()
 		return fmt.Errorf("failed to setup kubernetes config resource client: %w", err)
 	}
 
@@ -304,10 +293,9 @@ func (a *Agent) setupClients() error {
 }
 
 func (a *Agent) cleanupClients() {
-	if a.httpCli != nil {
-		a.httpCli.CloseIdleConnections()
+	if a.k8sCli != nil {
+		a.k8sCli.Close()
 	}
-	a.httpCli = nil
 	a.k8sCli = nil
 	a.nrtCli = nil
 }
