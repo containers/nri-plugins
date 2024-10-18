@@ -92,6 +92,7 @@ const (
 	CPUTopologyLevelPackage   = "package"
 	CPUTopologyLevelDie       = "die"
 	CPUTopologyLevelNuma      = "numa"
+	CPUTopologyLevelL2Cache   = "l2cache"
 	CPUTopologyLevelCore      = "core"
 	CPUTopologyLevelThread    = "thread"
 )
@@ -103,8 +104,9 @@ var (
 		CPUTopologyLevelPackage:   2,
 		CPUTopologyLevelDie:       3,
 		CPUTopologyLevelNuma:      4,
-		CPUTopologyLevelCore:      5,
-		CPUTopologyLevelThread:    6,
+		CPUTopologyLevelL2Cache:   5,
+		CPUTopologyLevelCore:      6,
+		CPUTopologyLevelThread:    7,
 	}
 
 	CPUTopologyLevelCount = len(cpuTopologyLevelValues)

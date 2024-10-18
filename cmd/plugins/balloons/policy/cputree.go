@@ -248,7 +248,7 @@ func (t *cpuTreeNode) CpuLocations(cpus cpuset.CPUSet) [][]string {
 // NewCpuTreeFromSystem returns the root node of the topology tree
 // constructed from the underlying system.
 func NewCpuTreeFromSystem() (*cpuTreeNode, error) {
-	sys, err := system.DiscoverSystem(system.DiscoverCPUTopology)
+	sys, err := system.DiscoverSystem(system.DiscoverCPUTopology | system.DiscoverCache)
 	if err != nil {
 		return nil, err
 	}
@@ -262,30 +262,44 @@ func NewCpuTreeFromSystem() (*cpuTreeNode, error) {
 		cpuPackage := sys.Package(packageID)
 		sysTree.AddChild(packageTree)
 		for _, dieID := range cpuPackage.DieIDs() {
-			dieTree := NewCpuTree(fmt.Sprintf("p%dd%d", packageID, dieID))
+			dieTree := NewCpuTree(fmt.Sprintf("%sd%d", packageTree.name, dieID))
 			dieTree.level = CPUTopologyLevelDie
 			packageTree.AddChild(dieTree)
 			for _, nodeID := range cpuPackage.DieNodeIDs(dieID) {
-				nodeTree := NewCpuTree(fmt.Sprintf("p%dd%dn%d", packageID, dieID, nodeID))
+				nodeTree := NewCpuTree(fmt.Sprintf("%sn%d", dieTree.name, nodeID))
 				nodeTree.level = CPUTopologyLevelNuma
 				dieTree.AddChild(nodeTree)
 				node := sys.Node(nodeID)
-				threadsSeen := map[int]struct{}{}
-				for _, cpuID := range node.CPUSet().List() {
-					if _, alreadySeen := threadsSeen[cpuID]; alreadySeen {
-						continue
-					}
-					cpuTree := NewCpuTree(fmt.Sprintf("p%dd%dn%dcpu%d", packageID, dieID, nodeID, cpuID))
 
-					cpuTree.level = CPUTopologyLevelCore
-					nodeTree.AddChild(cpuTree)
-					cpu := sys.CPU(cpuID)
-					for _, threadID := range cpu.ThreadCPUSet().List() {
-						threadsSeen[threadID] = struct{}{}
-						threadTree := NewCpuTree(fmt.Sprintf("p%dd%dn%dcpu%dt%d", packageID, dieID, nodeID, cpuID, threadID))
-						threadTree.level = CPUTopologyLevelThread
-						cpuTree.AddChild(threadTree)
-						threadTree.AddCpus(cpuset.New(threadID))
+				// Find all level 2 caches (l2c) shared by CPUs of this node.
+				l2cs := map[*system.Cache]struct{}{}
+				for _, cpuID := range node.CPUSet().List() {
+					for _, cache := range sys.CPU(cpuID).GetCachesByLevel(2) {
+						l2cs[cache] = struct{}{}
+					}
+				}
+
+				for cache := range l2cs {
+					l2cTree := NewCpuTree(fmt.Sprintf("%s$%d", nodeTree.name, cache.ID()))
+					l2cTree.level = CPUTopologyLevelL2Cache
+					nodeTree.AddChild(l2cTree)
+
+					threadsSeen := map[int]struct{}{}
+					for _, cpuID := range cache.SharedCPUSet().List() {
+						if _, alreadySeen := threadsSeen[cpuID]; alreadySeen {
+							continue
+						}
+						cpu := sys.CPU(cpuID)
+						coreTree := NewCpuTree(fmt.Sprintf("%scpu%d", nodeTree.name, cpuID))
+						coreTree.level = CPUTopologyLevelCore
+						l2cTree.AddChild(coreTree)
+						for _, threadID := range cpu.ThreadCPUSet().List() {
+							threadsSeen[threadID] = struct{}{}
+							threadTree := NewCpuTree(fmt.Sprintf("%st%d", coreTree.name, threadID))
+							threadTree.level = CPUTopologyLevelThread
+							coreTree.AddChild(threadTree)
+							threadTree.AddCpus(cpuset.New(threadID))
+						}
 					}
 				}
 			}
