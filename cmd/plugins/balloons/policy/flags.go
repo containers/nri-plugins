@@ -38,6 +38,7 @@ const (
 	CPUTopologyLevelPackage   = cfgapi.CPUTopologyLevelPackage
 	CPUTopologyLevelDie       = cfgapi.CPUTopologyLevelDie
 	CPUTopologyLevelNuma      = cfgapi.CPUTopologyLevelNuma
+	CPUTopologyLevelL2Cache   = cfgapi.CPUTopologyLevelL2Cache
 	CPUTopologyLevelCore      = cfgapi.CPUTopologyLevelCore
 	CPUTopologyLevelThread    = cfgapi.CPUTopologyLevelThread
 )
