@@ -217,7 +217,7 @@ type BalloonDef struct {
 	// <topology-level> as any CPU in the balloon, then allow
 	// workloads to run on those (shared) CPUs in addition to the
 	// (dedicated) CPUs of the balloon.
-	// +kubebuilder:validation:Enum="";system;package;die;numa;core;thread
+	// +kubebuilder:validation:Enum="";system;package;die;numa;l2cache;core;thread
 	// +kubebuilder:validation:Format:string
 	ShareIdleCpusInSame CPUTopologyLevel `json:"shareIdleCPUsInSame,omitempty"`
 	// PreferCloseToDevices: prefer creating new balloons of this
