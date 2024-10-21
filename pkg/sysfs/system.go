@@ -1727,6 +1727,14 @@ func (sys *system) discoverCacheFromOverrides(cpu *cpu) (bool, error) {
 			sys.Error("failed to parse cache overrides: %v", err)
 			return false, err
 		}
+		// cpu.caches must be ordered by cache level, the lowest first.
+		// Sort caches in each CPU by level, then by kind.
+		for _, caches := range ceo {
+			sort.Slice(caches, func(i, j int) bool {
+				return (caches[i].level < caches[j].level ||
+					(caches[i].level == caches[j].level && caches[i].kind < caches[j].kind))
+			})
+		}
 		cacheEnvOverrides = ceo
 	}
 	if caches, ok := cacheEnvOverrides[cpu.id]; ok {
