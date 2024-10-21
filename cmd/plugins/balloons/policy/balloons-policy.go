@@ -337,62 +337,57 @@ func (p *balloons) balloonByContainer(c cache.Container) *Balloon {
 	return nil
 }
 
-// balloonsByGroup returns balloons that contain containers on which
-// balloon's GroupBy expression evaluates given group.
-func (p *balloons) balloonsByGroup(group string) []*Balloon {
+// balloonsByFunc returns balloons for which the callback function
+// returns true.
+func balloonsByFunc(balloons []*Balloon, f func(*Balloon) bool) []*Balloon {
 	blns := []*Balloon{}
-	for _, bln := range p.balloons {
-		if bln.Groups[group] > 0 {
+	for _, bln := range balloons {
+		if f(bln) {
 			blns = append(blns, bln)
 		}
 	}
 	return blns
+}
+
+// balloonsByGroup returns balloons that contain containers on which
+// balloon's GroupBy expression evaluates given group.
+func (p *balloons) balloonsByGroup(group string) []*Balloon {
+	return balloonsByFunc(p.balloons, func(bln *Balloon) bool {
+		return bln.Groups[group] > 0
+	})
 }
 
 // balloonsByNamespace returns balloons that contain containers in a
 // namespace.
 func (p *balloons) balloonsByNamespace(namespace string) []*Balloon {
-	blns := []*Balloon{}
-	for _, bln := range p.balloons {
+	return balloonsByFunc(p.balloons, func(bln *Balloon) bool {
 		for podID, ctrIDs := range bln.PodIDs {
 			if len(ctrIDs) == 0 {
 				continue
 			}
-			pod, ok := p.cch.LookupPod(podID)
-			if !ok {
-				continue
-			}
-			if pod.GetNamespace() == namespace {
-				blns = append(blns, bln)
-				break
+			if pod, ok := p.cch.LookupPod(podID); ok && pod.GetNamespace() == namespace {
+				return true
 			}
 		}
-	}
-	return blns
+		return false
+	})
 }
 
 // balloonsByPod returns balloons that contain any container of a pod.
 func (p *balloons) balloonsByPod(pod cache.Pod) []*Balloon {
 	podID := pod.GetID()
-	blns := []*Balloon{}
-	for _, bln := range p.balloons {
-		if _, ok := bln.PodIDs[podID]; ok {
-			blns = append(blns, bln)
-		}
-	}
-	return blns
+	return balloonsByFunc(p.balloons, func(bln *Balloon) bool {
+		_, ok := bln.PodIDs[podID]
+		return ok
+	})
 }
 
 // balloonsByDef returns list of balloons instantiated from a balloon
 // definition.
 func (p *balloons) balloonsByDef(blnDef *BalloonDef) []*Balloon {
-	balloons := []*Balloon{}
-	for _, balloon := range p.balloons {
-		if balloon.Def == blnDef {
-			balloons = append(balloons, balloon)
-		}
-	}
-	return balloons
+	return balloonsByFunc(p.balloons, func(bln *Balloon) bool {
+		return bln.Def == blnDef
+	})
 }
 
 // balloonDefByName returns a balloon definition with a name.
