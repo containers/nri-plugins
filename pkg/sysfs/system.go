@@ -1588,18 +1588,15 @@ func parseCpuCacheOverrides(overrideJson string) (map[int][]*Cache, error) {
 	if err := json.Unmarshal([]byte(overrideJson), &overrides); err != nil {
 		return nil, parseCcoError("unmarshaling %q failed: %v", overrideJson, err)
 	}
+	levelKindId := map[int]map[int]int{}
 	for _, override := range overrides {
-		nextId := 0
 		for _, cpusetStr := range override.Cpusets {
 			cpusCpuset, err := cpuset.Parse(cpusetStr)
 			if err != nil {
 				return nil, parseCcoError("parsing cpuset %q failed: %v\n", cpusetStr, err)
 			}
 			cpus := idset.NewIDSet(cpusCpuset.UnsortedList()...)
-			c := &Cache{
-				id: idset.ID(nextId),
-			}
-			nextId++
+			c := &Cache{}
 			switch strings.ToLower(override.Kind) {
 			case "d", "data":
 				c.kind = DataCache
@@ -1615,6 +1612,11 @@ func parseCpuCacheOverrides(overrideJson string) (map[int][]*Cache, error) {
 			} else {
 				c.level = 1
 			}
+			if _, ok := levelKindId[c.level]; !ok {
+				levelKindId[c.level] = map[int]int{}
+			}
+			c.id = idset.ID(levelKindId[c.level][int(c.kind)])
+			levelKindId[c.level][int(c.kind)]++
 			c.size, err = parseSize(override.Size)
 			if err != nil {
 				return nil, parseCcoError("parsing size %q failed: %v\n", override.Size, err)
