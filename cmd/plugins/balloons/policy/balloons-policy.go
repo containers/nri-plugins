@@ -16,6 +16,7 @@ package balloons
 
 import (
 	"fmt"
+	"math"
 	"path/filepath"
 	"strconv"
 
@@ -477,20 +478,28 @@ func (p *balloons) maxFreeMilliCpus(bln *Balloon) int {
 	return bln.MaxAvailMilliCpus(p.freeCpus) - p.requestedMilliCpus(bln)
 }
 
-// largest helps finding the largest element and value in a slice.
-// Input the length of a slice and a function that returns the
+// largest helps finding largest elements and the largest value in a
+// slice. Input the length of a slice and a function that returns the
 // magnitude of given element in the slice as int.
-func largest(sliceLen int, valueOf func(i int) int) (int, int) {
-	largestIndex := -1
-	largestValue := 0
+func largest(sliceLen int, valueOf func(i int) int) ([]int, int) {
+	largestIndices := []int{}
+	// the largest value found so far is the smallest number that
+	// can be presented with int:
+	largestValue := math.MinInt
 	for index := 0; index < sliceLen; index++ {
 		value := valueOf(index)
-		if largestIndex == -1 || value > largestValue {
-			largestIndex = index
+		switch {
+		case len(largestIndices) == 0:
+			largestIndices = append(largestIndices, index)
+			largestValue = value
+		case value == largestValue:
+			largestIndices = append(largestIndices, index)
+		case value > largestValue:
+			largestIndices = []int{index}
 			largestValue = value
 		}
 	}
-	return largestIndex, largestValue
+	return largestIndices, largestValue
 }
 
 // resetCpuClass resets CPU configurations globally. All balloons can
@@ -646,7 +655,7 @@ func (p *balloons) freeBalloon(bln *Balloon) {
 	}
 }
 
-func (p *balloons) chooseBalloonInstance(blnDef *BalloonDef, fm FillMethod, c cache.Container) (*Balloon, error) {
+func (p *balloons) fillableBalloonInstances(blnDef *BalloonDef, fm FillMethod, c cache.Container) ([]*Balloon, error) {
 	reqMilliCpus := p.containerRequestedMilliCpus(c.GetID())
 	switch fm {
 	case FillNewBalloon, FillNewBalloonMust:
@@ -654,7 +663,7 @@ func (p *balloons) chooseBalloonInstance(blnDef *BalloonDef, fm FillMethod, c ca
 		// preferred over instantiating a new balloon.
 		for _, bln := range p.balloonsByDef(blnDef) {
 			if len(bln.PodIDs) == 0 {
-				return bln, nil
+				return []*Balloon{bln}, nil
 			}
 		}
 		newBln, err := p.newBalloon(blnDef, false)
@@ -712,34 +721,30 @@ func (p *balloons) chooseBalloonInstance(blnDef *BalloonDef, fm FillMethod, c ca
 			// more idle.
 			p.updatePinning(p.shareIdleCpus(p.freeCpus, newBln.Cpus)...)
 		}
-		return newBln, nil
+		return []*Balloon{newBln}, nil
 	case FillSameGroup:
 		group, err := c.Expand(blnDef.GroupBy, true)
 		if err != nil {
 			log.Errorf("error choosing balloon for container %q based on groupBy: %s", c.PrettyName(), err)
 			return nil, nil
 		}
-		for _, bln := range p.balloonsByGroup(group) {
-			if bln.Def == blnDef && p.maxFreeMilliCpus(bln) >= reqMilliCpus {
-				return bln, nil
-			}
-		}
-		return nil, nil
+		return balloonsByFunc(p.balloons,
+			func(bln *Balloon) bool {
+				return bln.Groups[group] > 0 &&
+					bln.Def == blnDef &&
+					p.maxFreeMilliCpus(bln) >= reqMilliCpus
+			}), nil
 	case FillSameNamespace:
-		for _, bln := range p.balloonsByNamespace(c.GetNamespace()) {
-			if bln.Def == blnDef && p.maxFreeMilliCpus(bln) >= reqMilliCpus {
-				return bln, nil
-			}
-		}
-		return nil, nil
+		return balloonsByFunc(p.balloonsByNamespace(c.GetNamespace()),
+			func(bln *Balloon) bool {
+				return bln.Def == blnDef && p.maxFreeMilliCpus(bln) >= reqMilliCpus
+			}), nil
 	case FillSamePod:
 		if pod, ok := c.GetPod(); ok {
-			for _, bln := range p.balloonsByPod(pod) {
-				if p.maxFreeMilliCpus(bln) >= reqMilliCpus {
-					return bln, nil
-				}
-			}
-			return nil, nil
+			return balloonsByFunc(p.balloonsByPod(pod),
+				func(bln *Balloon) bool {
+					return bln.Def == blnDef && p.maxFreeMilliCpus(bln) >= reqMilliCpus
+				}), nil
 		} else {
 			return nil, balloonsError("fill method %s failed: cannot find pod for container %s", fm, c.PrettyName())
 		}
@@ -754,21 +759,15 @@ func (p *balloons) chooseBalloonInstance(blnDef *BalloonDef, fm FillMethod, c ca
 	case FillBalanced:
 		// Are there balloons where the container would fit
 		// without inflating the balloon?
-		blnIdx, freeMilliCpus := largest(len(balloons), func(i int) int {
-			return p.freeMilliCpus(balloons[i])
-		})
-		if freeMilliCpus >= reqMilliCpus {
-			return balloons[blnIdx], nil
-		}
+		return balloonsByFunc(balloons, func(bln *Balloon) bool {
+			return p.freeMilliCpus(bln) >= reqMilliCpus
+		}), nil
 	case FillBalancedInflate:
 		// Are there balloons where the container would fit
 		// after inflating the balloon?
-		blnIdx, maxFreeMilliCpus := largest(len(balloons), func(i int) int {
-			return p.maxFreeMilliCpus(balloons[i])
-		})
-		if maxFreeMilliCpus >= reqMilliCpus {
-			return balloons[blnIdx], nil
-		}
+		return balloonsByFunc(balloons, func(bln *Balloon) bool {
+			return p.maxFreeMilliCpus(bln) >= reqMilliCpus
+		}), nil
 	default:
 		return nil, balloonsError("balloon type fill method not implemented: %s", fm)
 	}
@@ -825,17 +824,38 @@ func (p *balloons) allocateBalloonOfDef(blnDef *BalloonDef, c cache.Container) (
 		fillChain = append(fillChain, FillBalanced, FillBalancedInflate, FillNewBalloon)
 	}
 	for _, fillMethod := range fillChain {
-		bln, err := p.chooseBalloonInstance(blnDef, fillMethod, c)
+		blns, err := p.fillableBalloonInstances(blnDef, fillMethod, c)
 		if err != nil {
 			log.Debugf("fill method %q prevents allocation: %w", fillMethod, err)
 			return nil, err
 		}
-		if bln == nil {
+		if len(blns) == 0 {
 			log.Debugf("fill method %q not applicable", fillMethod)
 			continue
 		}
-		log.Debugf("fill method %q suggests balloon instance %v", fillMethod, bln)
-		return bln, nil
+		log.Debugf("fill method %q suggests any of balloon instances %v", fillMethod, blns)
+
+		// TODO: Consider: in case of a best effort container,
+		// choose the balloon with the least number of
+		// containers assigned to it. This avoids piling up
+		// all best efforts to a balloon that has least CPU
+		// reservations on it.
+
+		// Choose the balloon with the most free CPUs. If
+		// there are equally good candidates, choose the one
+		// with the lowest number of containers assigned.
+		largestBy := p.freeMilliCpus
+		if fillMethod == FillBalancedInflate {
+			largestBy = p.maxFreeMilliCpus
+		}
+		mostRoom, _ := largest(len(blns), func(i int) int {
+			return largestBy(blns[i])
+		})
+		leastContainers, _ := largest(len(mostRoom), func(i int) int {
+			return -blns[mostRoom[i]].ContainerCount()
+		})
+		bestBln := blns[mostRoom[leastContainers[0]]]
+		return bestBln, nil
 	}
 	return nil, nil
 }
