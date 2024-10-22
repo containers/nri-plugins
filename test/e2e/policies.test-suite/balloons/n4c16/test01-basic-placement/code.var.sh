@@ -70,6 +70,37 @@ verify 'disjoint_sets(cpus["pod5c0"], cpus["pod5c1"], cpus["pod5c2"])' \
        'len(cpus["pod5c1"]) == 2' \
        'len(cpus["pod5c2"]) == 2'
 
+# pod6: ensure that new balloons are created to best effort containers
+# when the balloon type prefers new balloons. First, each container
+# gets its own balloon, even if there is only one best effort
+# container running in an existing balloon.
+CPUREQ="" MEMREQ="" CPULIM="" MEMLIM=""
+POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: five-cpu" CONTCOUNT=4 create balloons-busybox
+report allowed
+
+verify 'set([len(cpus[ctr]) for ctr in cpus if ctr.startswith("pod6c")]) == {1}' \
+       'disjoint_sets(*[cpus[ctr] for ctr in cpus if ctr.startswith("pod6c")])' \
+       'disjoint_sets(
+          set.union(*[cpus[ctr] for ctr in cpus if ctr.startswith("pod6c")]),
+          set.union(*[cpus[ctr] for ctr in cpus if ctr.startswith("pod5c")]))'
+
+# pod7: ...continuing the previous: when it's not possible to create
+# anymore new balloons to new best effort containers. Start filling
+# existing balloons. Balloons of pod5c* containers have only 750 mCPU
+# free, so they should not be used. Balloons of pod6c* containers have
+# 1000 mCPU free, so pod7c* containers should be spread evenly into
+# them.
+CPUREQ="" MEMREQ="" CPULIM="" MEMLIM=""
+POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: five-cpu" CONTCOUNT=4 create balloons-busybox
+report allowed
+
+verify 'set([len(cpus[ctr]) for ctr in cpus if ctr.startswith("pod7c")]) == {1}' \
+       'disjoint_sets(cpus["pod7c0"], cpus["pod7c1"], cpus["pod7c2"], cpus["pod7c3"])' \
+       'max([len(cpuset) for pod, cpuset in cpus.items()]) == 2' \
+       'disjoint_sets(
+          set.union(*[cpus[ctr] for ctr in cpus if ctr.startswith("pod7c")]),
+          set.union(*[cpus[ctr] for ctr in cpus if ctr.startswith("pod5c")]))'
+
 cleanup
 
 helm-terminate
