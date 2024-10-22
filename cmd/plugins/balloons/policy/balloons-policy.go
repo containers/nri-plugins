@@ -666,6 +666,16 @@ func (p *balloons) fillableBalloonInstances(blnDef *BalloonDef, fm FillMethod, c
 				return []*Balloon{bln}, nil
 			}
 		}
+		// Creating a new balloon and placing a container
+		// (even a best effort one) to it always requires at
+		// least one CPU. Make sure this is doable.
+		if p.freeCpus.Size() == 0 || p.freeCpus.Size() < blnDef.MinCpus {
+			if fm == FillNewBalloonMust {
+				return nil, balloonsError("not enough CPUs to create new balloon for container %s requesting %s mCPU. free CPUs: %s",
+					c.PrettyName(), reqMilliCpus, p.freeCpus.Size())
+			}
+			return nil, nil
+		}
 		newBln, err := p.newBalloon(blnDef, false)
 		if err != nil {
 			if fm == FillNewBalloonMust {
