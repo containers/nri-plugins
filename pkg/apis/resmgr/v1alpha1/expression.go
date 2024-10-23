@@ -292,8 +292,10 @@ func ResolveRef(subject Evaluable, spec string) (string, bool, error) {
 
 	s, ok := obj.(string)
 	if !ok {
-		return "", false, exprError("%s: failed to resolve %q: non-string type %T",
+		err := exprError("%s: failed to resolve %q: non-string type %T",
 			subject, spec, obj)
+		log.Error("internal error: %s", err)
+		return "", false, err
 	}
 
 	log.Debug("resolved %q in %s => %s", spec, subject, s)
