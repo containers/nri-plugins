@@ -1027,7 +1027,7 @@ func (c *container) EvalKey(key string) interface{} {
 	case resmgr.KeyNamespace:
 		return c.GetNamespace()
 	case resmgr.KeyQOSClass:
-		return c.GetQOSClass()
+		return string(c.GetQOSClass())
 	case resmgr.KeyLabels:
 		return c.Ctr.GetLabels()
 	case resmgr.KeyTags:
