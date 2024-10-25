@@ -99,6 +99,7 @@ vm-setup() {
     local vagrantdir="$output_dir"
     local files="$nri_resource_policy_src/test/e2e/files"
     local distro_name=$(printf '%s\n' "$distro" | sed -e 's/[\/&]/\\&/g')
+    local qemu_dir="${qemu_dir:-/usr/share/qemu}"
 
     mkdir -p "$inventory"
     if [ ! -f "$inventory/vagrant.ini" ]; then
@@ -132,6 +133,7 @@ vm-setup() {
 	    -e "s/QEMU_MEM/$MEM/" \
 	    -e "s/QEMU_SMP/$CPU/" \
 	    -e "s/QEMU_EXTRA_ARGS/$EXTRA_ARGS/" \
+            -e "s:QEMU_DIR:$qemu_dir:" \
 	    "$files/Vagrantfile.in" > "$vagrantdir/Vagrantfile.erb"
     fi
 
