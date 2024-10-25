@@ -3,6 +3,7 @@
 
 ENV['VAGRANT_DEFAULT_PROVIDER'] = 'qemu'
 
+require 'dotenv'
 Dotenv.load("env")
 
 # Distro image to use
