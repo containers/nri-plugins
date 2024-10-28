@@ -3,6 +3,7 @@
 
 ENV['VAGRANT_DEFAULT_PROVIDER'] = 'qemu'
 
+require 'dotenv'
 Dotenv.load("env")
 
 # Distro image to use
@@ -75,7 +76,7 @@ Vagrant.configure("2") do |config|
     qemu.net_device = "virtio-net-pci"
     qemu.extra_netdev_args = "net=192.168.76.0/24,dhcpstart=192.168.76.9"
     qemu.ssh_port = SSH_PORT
-    qemu.qemu_dir = "/usr/share/OVMF"
+    qemu.qemu_dir = "QEMU_DIR"
     qemu.smp = "QEMU_SMP"
     qemu.extra_qemu_args = ["-enable-kvm",QEMU_EXTRA_ARGS]
   end

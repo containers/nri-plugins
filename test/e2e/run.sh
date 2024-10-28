@@ -10,6 +10,7 @@ DEFAULT_DISTRO=${DEFAULT_DISTRO:-"fedora/40-cloud-base"}
 SCRIPT_DIR="$(dirname "${BASH_SOURCE[0]}")"
 SRC_DIR=$(realpath "$SCRIPT_DIR/../..")
 LIB_DIR=$(realpath "$SCRIPT_DIR/lib")
+qemu_dir="${qemu_dir:-/usr/share/qemu}"
 
 export OUTPUT_DIR=${outdir:-"$SCRIPT_DIR"/output}
 
