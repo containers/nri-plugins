@@ -29,7 +29,7 @@ command-start() {
     COMMAND_COUNTER=$(( COMMAND_COUNTER + 1 ))
     local command_start_time=$(epochrealtime)
     local time_since_start=$(echo "$command_start_time - $command_init_time" | bc)
-    COMMAND_OUT_FILE="$COMMAND_OUTPUT_DIR/$(printf %04g $COMMAND_COUNTER)-$COMMAND_TARGET"
+    COMMAND_OUT_FILE="$COMMAND_OUTPUT_DIR/$(printf %04d $COMMAND_COUNTER)-$COMMAND_TARGET"
     echo "# start time: $time_since_start" > "$COMMAND_OUT_FILE" || {
         echo "cannot write command output to file \"$COMMAND_OUT_FILE\""
         exit 1
