@@ -10,23 +10,36 @@ image:
 
 config:
   reservedResources:
-    cpu: 750m
-  idleCPUClass: normal
+    cpu: 1000m
+
   allocatorTopologyBalancing: true
+
   balloonTypes:
-  - name: default
-    namespaces:
-      - default
-    minCPUs: 1
-    minBalloons: 0
-    allocatorPriority: normal
-    shareIdleCPUsInSame: system
+  - name: dedicated-cpus
+    matchExpressions:
+    - key: qosclass
+      operator: In
+      values:
+      - Guaranteed
+    preferNewBalloons: true
+    preferSpreadingPods: true
+
+  - name: shared-local-cpus
+    matchExpressions:
+    - key: qosclass
+      operator: In
+      values:
+      - BestEffort
+      - Burstable
+    shareIdleCPUsInSame: package
+    preferNewBalloons: true
+    maxBalloons: 2
+    preferSpreadingPods: false
+
   reservedPoolNamespaces:
     - kube-system
   log:
     source: true
-    klog:
-      skip_headers: true
   instrumentation:
     reportPeriod: 60s
     samplingRatePerMillion: 0
