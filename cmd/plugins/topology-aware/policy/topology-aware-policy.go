@@ -21,8 +21,6 @@ import (
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	"github.com/prometheus/client_golang/prometheus"
-
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
@@ -302,21 +300,6 @@ func (p *policy) HandleEvent(e *events.Policy) (bool, error) {
 		return p.finishColdStart(c)
 	}
 	return false, nil
-}
-
-// DescribeMetrics generates policy-specific prometheus metrics data descriptors.
-func (p *policy) DescribeMetrics() []*prometheus.Desc {
-	return nil
-}
-
-// PollMetrics provides policy metrics for monitoring.
-func (p *policy) PollMetrics() policyapi.Metrics {
-	return nil
-}
-
-// CollectMetrics generates prometheus metrics from cached/polled policy-specific metrics data.
-func (p *policy) CollectMetrics(policyapi.Metrics) ([]prometheus.Metric, error) {
-	return nil, nil
 }
 
 // GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
