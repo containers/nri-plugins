@@ -106,6 +106,7 @@ customize with their own values, along with the default values.
 | `nri.runtime.config.pluginRequestTimeout`      | ""                                                                                                      | set NRI plugin request timeout in NRI config of containerd or CRI-O |
 | `nri.runtime.patchConfig` | false                                                                                                                        | patch NRI configuration in containerd or CRI-O       |
 | `nri.plugin.index`        | 90                                                                                                                           | NRI plugin index to register with            
+| `nri.plugin.annotations`  | {}                                                                                                                           | extra annotations for the plugin's pod               |
 | `initImage.name`         | [ghcr.io/containers/nri-plugins/config-manager](https://ghcr.io/containers/nri-plugins/config-manager)                                | init container image name                            |
 | `initImage.tag`          | unstable                                                                                                                      | init container image tag                             |
 | `initImage.pullPolicy`   | Always                                                                                                                        | init container image pull policy                     |

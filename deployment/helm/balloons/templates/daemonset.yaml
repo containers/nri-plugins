@@ -13,6 +13,14 @@ spec:
     metadata:
       labels:
       {{- include "nri-plugin.labels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+      {{- if (ne .Values.config.instrumentation.httpEndpoint "") }}
+        prometheus.io/port: "{{ regexReplaceAll "[^:]*:([0-9][0-9]*)" .Values.config.instrumentation.httpEndpoint "${1}" }}"
+      {{- end }}
+      {{- range $name, $value := .Values.nri.plugin.annotations }}
+        {{ $name }}: "{{ $value }}"
+      {{- end }}
     spec:
     {{- with .Values.tolerations }}
       tolerations:
