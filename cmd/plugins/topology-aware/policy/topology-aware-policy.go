@@ -111,7 +111,9 @@ func (p *policy) Setup(opts *policyapi.BackendOptions) error {
 		return policyError("failed to initialize %s policy: %w", PolicyName, err)
 	}
 
-	p.registerImplicitAffinities()
+	if err := p.registerImplicitAffinities(); err != nil {
+		return policyError("failed to initialize %s policy: %w", PolicyName, err)
+	}
 
 	log.Info("***** default CPU priority is %s", defaultPrio)
 
@@ -481,6 +483,10 @@ func (p *policy) Reconfigure(newCfg interface{}) error {
 
 	if err := p.initialize(); err != nil {
 		*p = savedPolicy
+		return policyError("failed to reconfigure: %v", err)
+	}
+
+	if err := p.registerImplicitAffinities(); err != nil {
 		return policyError("failed to reconfigure: %v", err)
 	}
 
