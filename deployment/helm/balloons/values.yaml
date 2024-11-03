@@ -56,8 +56,6 @@ config:
 plugin-test:
   enableAPIs: false
 
-hostPort: 8891
-
 resources:
   cpu: 500m
   memory: 512Mi
@@ -117,3 +115,13 @@ nodeSelector: []
 # autoscaling enough new nodes are brought up to leave room for the
 # plugin on each new node.
 podPriorityClassNodeCritical: true
+
+# extra ports to expose, and optionally to the host too
+#ports: []
+#
+# Example
+#
+# ports:
+#   - name: lunch
+#     container: 61453
+#     #host: 61453 # if you want to expose this as a host-port, too
