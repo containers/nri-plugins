@@ -75,11 +75,16 @@ spec:
             - --config-group-label
             - {{ .Values.configGroupLabel }}
             {{- end }}
+        {{- if (ne .Values.ports nil) }}
           ports:
-            - containerPort: 8891
-              protocol: TCP
-              hostPort: {{ .Values.hostPort }}
-              name: metrics
+          {{- range $port := .Values.ports }}
+            - name: {{ $port.name }}
+              containerPort: {{ $port.container }}
+              {{- if (ne $port.host nil) }}
+              hostPort: {{ $port.host }}
+              {{- end }}
+          {{- end }}
+        {{- end }}
           env:
           - name: NODE_NAME
             valueFrom:

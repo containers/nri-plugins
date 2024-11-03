@@ -66,8 +66,6 @@ spec:
                       type: string
                     description: Define which Nodes the Pods are scheduled on.
                     type: object
-                  hostPort:
-                    type: integer
                   nri:
                     type: object
                     properties:

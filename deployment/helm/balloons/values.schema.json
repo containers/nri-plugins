@@ -2,7 +2,6 @@
     "$schema": "http://json-schema.org/schema#",
     "required": [
         "image",
-        "hostPort",
         "resources"
     ],
     "properties": {
@@ -114,11 +113,33 @@
                 }
             }
         },
-        "hostPort": {
-            "type": "integer"
-        },
         "podPriorityClassNodeCritical": {
             "type": "boolean"
+        },
+        "ports": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "name",
+                    "container"
+                ],
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "container": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 65535
+                    },
+                    "host": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 65535
+                    }
+                }
+            }
         }
     }
  }
