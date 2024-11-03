@@ -41,6 +41,8 @@ config:
   log:
     source: true
   instrumentation:
+    httpEndpoint: ":8891"
+    prometheusExport: false
     reportPeriod: 60s
     samplingRatePerMillion: 0
 
@@ -63,6 +65,9 @@ resources:
 nri:
   plugin:
     index: 90
+    annotations:
+#      key1: value1
+#      key2: value2
   runtime:
     patchConfig: false
 #   config:
