@@ -45,6 +45,11 @@ func (a *Allocator) ZoneFree(zone NodeMask) int64 {
 	return a.zoneFree(zone & a.masks.nodes.hasMemory)
 }
 
+// ZoneAvailable returns the amount of available memory in the zone.
+func (a *Allocator) ZoneAvailable(zone NodeMask) int64 {
+	return a.zoneAvailable(zone & a.masks.nodes.hasMemory)
+}
+
 // ZoneNumUsers returns the number of requests assigned to the zone.
 func (a *Allocator) ZoneNumUsers(zone NodeMask) int {
 	if z, ok := a.zones[zone]; ok {
@@ -152,6 +157,28 @@ func (a *Allocator) zoneUsage(zone NodeMask) int64 {
 
 func (a *Allocator) zoneFree(zone NodeMask) int64 {
 	return a.zoneCapacity(zone) - a.zoneUsage(zone)
+}
+
+func (a *Allocator) zoneAvailable(zone NodeMask) int64 {
+	available := a.zoneFree(zone)
+	if available <= 0 {
+		return 0
+	}
+
+	// Cap available amount to the smallest available free in any of our ancestors.
+	for _, z := range a.zones {
+		if z.nodes != zone && (z.nodes&zone) == zone {
+			if free := a.zoneFree(z.nodes); free < available {
+				available = free
+			}
+		}
+		if available <= 0 {
+			available = 0
+			break
+		}
+	}
+
+	return available
 }
 
 func (a *Allocator) zoneAssign(zone NodeMask, req *Request) {
