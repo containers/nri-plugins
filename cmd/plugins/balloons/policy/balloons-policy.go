@@ -1423,7 +1423,7 @@ func (p *balloons) updatePinning(blns ...*Balloon) {
 				} else {
 					allowedCpus = pinnableCpus
 				}
-				p.pinCpuMem(c, allowedCpus, bln.Mems)
+				p.pinCpuMem(c, allowedCpus, bln.Mems, bln.memTypeMask)
 			}
 		}
 	}
@@ -1527,7 +1527,7 @@ func (p *balloons) dismissContainer(c cache.Container, bln *Balloon) {
 }
 
 // pinCpuMem pins container to CPUs and memory nodes if flagged
-func (p *balloons) pinCpuMem(c cache.Container, cpus cpuset.CPUSet, mems idset.IDSet) {
+func (p *balloons) pinCpuMem(c cache.Container, cpus cpuset.CPUSet, mems idset.IDSet, memTypeMask libmem.TypeMask) {
 	if p.bpoptions.PinCPU == nil || *p.bpoptions.PinCPU {
 		log.Debug("  - pinning %s to cpuset: %s", c.PrettyName(), cpus)
 		c.SetCpusetCpus(cpus.String())
@@ -1548,19 +1548,21 @@ func (p *balloons) pinCpuMem(c cache.Container, cpus cpuset.CPUSet, mems idset.I
 				c.SetCpusetMems(zone.MemsetString())
 			}
 		} else {
-			memTypeMask, err := c.MemoryTypes()
+			effMemTypeMask, err := c.MemoryTypes()
 			if err != nil {
 				log.Error("%v", err)
 			}
-			if memTypeMask != 0 {
+			if effMemTypeMask != 0 {
 				// memory-type pod/container-specific
 				// annotation overrides balloon's
 				// memory options that are the default
 				// to all containers in the balloon.
-				log.Debug("  - %s memory-type annotation overrides balloon mems %s", c.PrettyName(), mems)
+				log.Debug("  - %s memory-type annotation mask %s overrides balloon mems %s and mask %s", c.PrettyName(), effMemTypeMask, mems, memTypeMask)
+			} else {
+				effMemTypeMask = memTypeMask
 			}
-			log.Debug("  - requested %s to memory %s (types %s)", c.PrettyName(), mems, memTypeMask)
-			zone := p.allocMem(c, mems, memTypeMask, false)
+			log.Debug("  - requested %s to memory %s (types %s)", c.PrettyName(), mems, effMemTypeMask)
+			zone := p.allocMem(c, mems, effMemTypeMask, false)
 			log.Debug("  - allocated %s to memory %s", c.PrettyName(), zone)
 			c.SetCpusetMems(zone.MemsetString())
 		}
