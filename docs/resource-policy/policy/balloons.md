@@ -174,6 +174,10 @@ Balloons policy parameters:
   - `cpuClass` specifies the name of the CPU class according to which
     CPUs of balloons are configured. Class properties are defined in
     separate `cpu.classes` objects, see below.
+  - `memoryTypes` is a list of allowed memory types for containers in
+    a balloon. Supported types are "HBM", "DRAM" and "PMEM". This
+    setting can be overridden by a pod/container specific
+    `memory-type` annotation.
   - `preferCloseToDevices`: prefer creating new balloons close to
     listed devices. List of strings
   - `preferCoreType`:  specifies preferences of the core type which
@@ -329,7 +333,9 @@ assigned to the `default` balloon type. Parameters for this balloon
 type can be defined explicitly among other balloon types. If they are
 not defined, a built-in `default` balloon type is used.
 
-## Disabling CPU or Memory Pinning of a Container
+## Pod and Container Overrides to CPU and Memory Pinning
+
+### Disabling CPU or Memory Pinning of a Container
 
 Some containers may need to run on all CPUs or access all memories
 without restrictions. There are two alternatives to achieve this:
@@ -374,6 +380,28 @@ metadata:
 The `hide-hyperthreads` pod annotation overrides the
 `hideHyperthreads` balloon type parameter value for selected
 containers in the pod.
+
+### Memory Type
+
+If a container must be pinned to specific memory types that may differ
+from its balloon's `memoryTypes`, container-specific types can be
+given in the `memory-type` pod annotations:
+
+```yaml
+memory-type.resource-policy.nri.io/container.CONTAINER_NAME: <COMMA-SEPARATED-TYPES>
+memory-type.resource-policy.nri.io/pod: <COMMA-SEPARATED-TYPES>
+memory-type.resource-policy.nri.io: <COMMA-SEPARATED-TYPES>
+```
+
+The first sets the memory type for a single container in the pod, the
+latter two for other containers in the pod. Supported types are "HBM",
+"DRAM" and "PMEM". Example:
+
+```yaml
+metadata:
+  annotations:
+    memory-type.resource-policy.nri.io/container.LLM: HBM,DRAM
+```
 
 ## Metrics and Debugging
 
