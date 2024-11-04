@@ -109,6 +109,7 @@ type Balloon struct {
 	// of evaluated GroupBy expressions on containers in the balloon.
 	Groups       map[string]int
 	cpuTreeAlloc *cpuTreeAllocator
+	memTypeMask  libmem.TypeMask
 }
 
 var log logger.Logger = logger.NewLogger("policy")
@@ -616,6 +617,7 @@ func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, erro
 		return nil, balloonsError("could not allocate minCpus (%d) for balloon %s[%d]: %w", blnDef.MinCpus, blnDef.Name, freeInstance, err)
 	}
 	p.freeCpus = p.freeCpus.Difference(cpus)
+	memTypeMask, _ := memTypeMaskFromStringList(blnDef.MemoryTypes)
 	bln := &Balloon{
 		Def:            blnDef,
 		Instance:       freeInstance,
@@ -625,6 +627,7 @@ func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, erro
 		SharedIdleCpus: cpuset.New(),
 		Mems:           p.closestMems(cpus),
 		cpuTreeAlloc:   cpuTreeAlloc,
+		memTypeMask:    memTypeMask,
 	}
 	if confCpus {
 		if err = p.useCpuClass(bln); err != nil {
@@ -1043,6 +1046,9 @@ func (p *balloons) validateConfig(bpoptions *BalloonsOptions) error {
 			return balloonsError("MinBalloons (%d) > MaxBalloons (%d) in balloon type %q",
 				blnDef.MinCpus, blnDef.MaxCpus, blnDef.Name)
 		}
+		if _, err := memTypeMaskFromStringList(blnDef.MemoryTypes); err != nil {
+			return balloonsError("invalid memoryTypes: %w", err)
+		}
 		if blnDef.Name == reservedBalloonDefName {
 			if blnDef.MinBalloons < 0 || blnDef.MinBalloons > 1 {
 				return balloonsError("invalid configuration: exactly one %q balloon expected but MinBalloons=%d",
@@ -1300,6 +1306,20 @@ func (p *balloons) fillFarFromDevices(blnDefs []*BalloonDef) {
 			}
 		}
 	}
+}
+
+// memTypeMaskFromStringList returns memory type mask corresponding a
+// list of strings.
+func memTypeMaskFromStringList(memTypes []string) (libmem.TypeMask, error) {
+	mask := libmem.TypeMask(0)
+	for _, typeString := range memTypes {
+		memType, err := libmem.ParseType(typeString)
+		if err != nil {
+			return 0, err
+		}
+		mask |= memType.Mask()
+	}
+	return mask, nil
 }
 
 // closestMems returns memory node IDs good for pinning containers
