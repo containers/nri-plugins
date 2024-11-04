@@ -163,6 +163,19 @@ spec:
                         usable by containers in a balloon. Balloon size will not be
                         inflated larger than MaxCpus.
                       type: integer
+                    memoryTypes:
+                      description: |-
+                        MemoryTypes lists memory types allowed to containers in a
+                        balloon. Supported types are: DRAM, HBM, PMEM. By default
+                        all memory types in the system are allowed.
+                      items:
+                        type: string
+                        x-kubernetes-validations:
+                        - messageExpression: '"invalid memory type: " + self + ",
+                            expected DRAM, HBM, or PMEM"'
+                          rule: self == 'DRAM' || self == 'HBM' || self == 'PMEM'
+                      type: array
+                      x-kubernetes-list-type: set
                     minBalloons:
                       description: |-
                         MinBalloons is the number of balloon instances that always
