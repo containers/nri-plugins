@@ -149,6 +149,12 @@ type BalloonDef struct {
 	// this will be the number of CPUs reserved for it even if a container
 	// would request less.
 	MinCpus int `json:"minCPUs,omitempty"`
+	// MemoryTypes lists memory types allowed to containers in a
+	// balloon. Supported types are: DRAM, HBM, PMEM. By default
+	// all memory types in the system are allowed.
+	// +listType=set
+	// +kubebuilder:validation:items:XValidation:rule="self == 'DRAM' || self == 'HBM' || self == 'PMEM'",messageExpression="\"invalid memory type: \" + self + \", expected DRAM, HBM, or PMEM\""
+	MemoryTypes []string `json:"memoryTypes,omitempty"`
 	// AllocatorPriority (High, Normal, Low, None)
 	// This parameter is passed to CPU allocator when creating or
 	// resizing a balloon. At init, balloons with highest priority
