@@ -221,12 +221,12 @@ type BalloonDef struct {
 	// for the time being we prevent its usage through CRDs.
 	PreferFarFromDevices []string `json:"-"`
 	// preferIsolCpus: prefer kernel isolated cpus
-	// +kubebuilder:default:=false
+	// +kubebuilder:default=false
 	PreferIsolCpus bool `json:"preferIsolCpus,omitempty"`
 	// preferCoreType: prefer performance or efficient (P/E) CPU cores on
 	// hybrid architectures.
 	// +optional
-	// +kubebuilder:validation:Enum:=efficient;performance
+	// +kubebuilder:validation:Enum=efficient;performance
 	PreferCoreType string `json:"preferCoreType,omitempty"`
 }
 
