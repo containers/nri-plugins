@@ -475,7 +475,7 @@ CLIENT_GEN ?= $(LOCALBIN)/client-gen
 GIT_CLONE    := git clone
 
 # External generation tool versions
-CONTROLLER_TOOLS_VERSION ?= v0.14.0
+CONTROLLER_TOOLS_VERSION ?= v0.16.5
 CLIENT_GEN_VERSION ?= v0.28.1
 CODE_GENERATOR_REPO ?= https://github.com/kubernetes/code-generator
 CODE_GENERATOR_VERSION ?= v0.28.1
