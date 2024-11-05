@@ -22,6 +22,7 @@ import (
 	resmgr "github.com/containers/nri-plugins/pkg/apis/resmgr/v1alpha1"
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
+	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	"github.com/containers/nri-plugins/pkg/sysfs"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/topology"
@@ -184,6 +185,9 @@ func (c *mockCPU) GetCachesByLevel(int) []*sysfs.Cache {
 	panic("unimplemented")
 }
 func (c *mockCPU) GetCacheByIndex(int) *sysfs.Cache {
+	panic("unimplemented")
+}
+func (c *mockCPU) GetNthLevelCacheCPUSet(n int) cpuset.CPUSet {
 	panic("unimplemented")
 }
 func (c *mockCPU) GetLastLevelCaches() []*sysfs.Cache {
@@ -531,6 +535,9 @@ func (m *mockContainer) PreserveCpuResources() bool {
 func (m *mockContainer) PreserveMemoryResources() bool {
 	return false
 }
+func (m *mockContainer) MemoryTypes() (libmem.TypeMask, error) {
+	return libmem.TypeMaskDRAM, nil
+}
 
 type mockPod struct {
 	name                               string
@@ -668,6 +675,8 @@ func (m *mockCache) EvaluateAffinity(*cache.Affinity) map[string]int32 {
 }
 func (m *mockCache) AddImplicitAffinities(map[string]cache.ImplicitAffinity) error {
 	return nil
+}
+func (m *mockCache) DeleteImplicitAffinities(...string) {
 }
 func (m *mockCache) GetActivePolicy() string {
 	panic("unimplemented")
