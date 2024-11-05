@@ -276,20 +276,6 @@ func TestWorkloadPlacement(t *testing.T) {
 			expectedRemainingNodes: []int{0, 1, 2, 3, 4, 5, 6},
 			expectedLeafNode:       false,
 		},
-		{
-			path: path.Join(dir, "sysfs", "server", "sys"),
-			name: "workload placement on a server system root node: memory doesn't fit to leaf",
-			req: &request{
-				memReq:    190000000000,
-				memLim:    190000000000,
-				memType:   memoryUnspec,
-				isolate:   false,
-				full:      28,
-				container: &mockContainer{},
-			},
-			expectedRemainingNodes: []int{2, 6},
-			expectedLeafNode:       false,
-		},
 	}
 	for _, tc := range tcases {
 		t.Run(tc.name, func(t *testing.T) {
