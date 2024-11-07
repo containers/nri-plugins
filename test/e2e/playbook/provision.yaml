@@ -312,7 +312,7 @@
           when: ansible_facts['distribution'] == "Fedora"
           ansible.builtin.lineinfile:
             path: /etc/containerd/config.toml
-            regexp: ' *bin_dir *= *"/opt/cni/bin" *'
+            regexp: ' *bin_dir *= *./opt/cni/bin. *'
             line: 'bin_dir = "/usr/libexec/cni"'
 
     - name: Configure bridge CNI plugin
