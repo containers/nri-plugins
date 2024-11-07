@@ -402,19 +402,21 @@ func (p *balloons) balloonDefByName(defName string) *BalloonDef {
 }
 
 func (p *balloons) chooseBalloonDef(c cache.Container) (*BalloonDef, error) {
+	log.Debugf("choosing balloon type for container %s...", c.PrettyName())
 	// Case 1: BalloonDef is defined by annotation.
 	if blnDefName, ok := c.GetEffectiveAnnotation(balloonKey); ok {
 		blnDef := p.balloonDefByName(blnDefName)
 		if blnDef == nil {
 			return nil, balloonsError("no balloon for annotation %q", blnDefName)
 		}
+		log.Debugf("- annotation %q found, using balloon type %q", balloonKey, blnDefName)
 		return blnDef, nil
 	}
 
 	for _, blnDef := range p.bpoptions.BalloonDefs {
 		// Case 2: BalloonDef is defined by a match expression.
 		for _, expr := range blnDef.MatchExpressions {
-			log.Debugf("- checking expression %s of balloon %q against container %s...",
+			log.Debugf("- checking expression %s of balloon type %q against container %s...",
 				expr.String(), blnDef.Name, c.PrettyName())
 			if expr.Evaluate(c) {
 				log.Debugf("  => matches")
@@ -424,10 +426,12 @@ func (p *balloons) chooseBalloonDef(c cache.Container) (*BalloonDef, error) {
 
 		// Case 3: BalloonDef is defined by the namespace.
 		if namespaceMatches(c.GetNamespace(), blnDef.Namespaces) {
+			log.Debugf("- namespace %q matches namespaces of balloon type %q", c.GetNamespace(), blnDef.Name)
 			return blnDef, nil
 		}
 	}
 
+	log.Debugf("- no match found, using default balloon type %q", defaultBalloonDefName)
 	// Case 4: Fallback to the default balloon.
 	return p.defaultBalloonDef, nil
 }
