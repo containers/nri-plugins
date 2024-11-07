@@ -119,16 +119,25 @@ func (p *policy) registerImplicitAffinities() error {
 		},
 	}
 
-	enabled := map[string]cache.ImplicitAffinity{}
+	var (
+		add = map[string]cache.ImplicitAffinity{}
+		del = []string{}
+	)
+
 	for _, a := range affinities {
-		if a.disabled {
+		name := PolicyName + ":" + a.name
+		del = append(del, name)
+
+		if !a.disabled {
+			log.Info("implicit affinity %s is enabled", a.name)
+			add[name] = a.affinity
+		} else {
 			log.Info("implicit affinity %s is disabled", a.name)
-			continue
 		}
-		enabled[PolicyName+":"+a.name] = a.affinity
 	}
 
-	if err := p.cache.AddImplicitAffinities(enabled); err != nil {
+	p.cache.DeleteImplicitAffinities(del...)
+	if err := p.cache.AddImplicitAffinities(add); err != nil {
 		return policyError("failed to register implicit affinities: %v", err)
 	}
 

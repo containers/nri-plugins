@@ -390,6 +390,8 @@ type Cache interface {
 	EvaluateAffinity(*Affinity) map[string]int32
 	// AddImplicitAffinities adds a set of implicit affinities (added to all containers).
 	AddImplicitAffinities(map[string]ImplicitAffinity) error
+	// DeleteImplicitAffinities deletes a set of implicit affinities by name.
+	DeleteImplicitAffinities(names ...string)
 
 	// GetActivePolicy returns the name of the active policy stored in the cache.
 	GetActivePolicy() string

@@ -250,7 +250,7 @@ func (cch *cache) AddImplicitAffinities(implicit map[string]ImplicitAffinity) er
 }
 
 // DeleteImplicitAffinities removes a previously registered set of implicit affinities.
-func (cch *cache) DeleteImplicitAffinities(names []string) {
+func (cch *cache) DeleteImplicitAffinities(names ...string) {
 	for _, name := range names {
 		delete(cch.implicit, name)
 	}
