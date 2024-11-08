@@ -21,7 +21,7 @@ metadata:
   # Then label the nodes and remove any node-specific configuration:
   #   for node in node-{A,B,C}; do
   #     kubectl label node $node config.nri/group=group-0
-  #     kubectl delete -n $NAMESPACE balloonspolicies.config.nri/$node || :
+  #     kubectl delete -n $NAMESPACE templatepolicies.config.nri/node.$node || :
   #   done
   #
   name: default
