@@ -129,6 +129,7 @@ type BalloonDef struct {
 	// Namespaces control which namespaces are assigned into
 	// balloon instances from this definition. This is used by
 	// namespace assign methods.
+	// +listType=set
 	Namespaces []string `json:"namespaces,omitempty"`
 	// GroupBy groups containers into same balloon instances if
 	// their GroupBy expressions evaluate to the same group.
@@ -220,11 +221,13 @@ type BalloonDef struct {
 	ShareIdleCpusInSame CPUTopologyLevel `json:"shareIdleCPUsInSame,omitempty"`
 	// PreferCloseToDevices: prefer creating new balloons of this
 	// type close to listed devices.
+	// +listType=set
 	PreferCloseToDevices []string `json:"preferCloseToDevices,omitempty"`
 	// PreferFarFromDevices: prefer creating new balloons of this
 	// type far from listed devices.
 	// TODO: PreferFarFromDevices is considered too untested for usage. Hence,
 	// for the time being we prevent its usage through CRDs.
+	// +listType=set
 	PreferFarFromDevices []string `json:"-"`
 	// preferIsolCpus: prefer kernel isolated cpus
 	// +kubebuilder:default=false

@@ -91,6 +91,7 @@ type Config struct {
 	// ReservedPoolNamespaces lists extra namespaces which are treated like
 	// 'kube-system' (resources allocate from the reserved pool).
 	// +optional
+	// +listType=set
 	ReservedPoolNamespaces []string `json:"reservedPoolNamespaces,omitempty"`
 	// AvailableResources defines the bounding set for the policy to allocate
 	// resources from.

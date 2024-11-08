@@ -217,6 +217,7 @@ spec:
                 items:
                   type: string
                 type: array
+                x-kubernetes-list-type: set
               reservedResources:
                 additionalProperties:
                   type: string

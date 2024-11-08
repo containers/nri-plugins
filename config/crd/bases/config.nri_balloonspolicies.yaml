@@ -201,6 +201,7 @@ spec:
                       items:
                         type: string
                       type: array
+                      x-kubernetes-list-type: set
                     preferCloseToDevices:
                       description: |-
                         PreferCloseToDevices: prefer creating new balloons of this
@@ -208,6 +209,7 @@ spec:
                       items:
                         type: string
                       type: array
+                      x-kubernetes-list-type: set
                     preferCoreType:
                       description: |-
                         preferCoreType: prefer performance or efficient (P/E) CPU cores on
