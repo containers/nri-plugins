@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.7.1-73-g6ec261f8 documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.7.1-78-ga6de9ed5 documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -61,7 +61,7 @@
 <li class="toctree-l4"><a class="reference internal" href="#deployment">Deployment</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#configuration">Configuration</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#assigning-a-container-to-a-balloon">Assigning a Container to a Balloon</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#disabling-cpu-or-memory-pinning-of-a-container">Disabling CPU or Memory Pinning of a Container</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#pod-and-container-overrides-to-cpu-and-memory-pinning">Pod and Container Overrides to CPU and Memory Pinning</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#metrics-and-debugging">Metrics and Debugging</a></li>
 </ul>
 </li>
@@ -285,6 +285,10 @@ request less.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">cpuClass</span></code> specifies the name of the CPU class according to which
 CPUs of balloons are configured. Class properties are defined in
 separate <code class="docutils literal notranslate"><span class="pre">cpu.classes</span></code> objects, see below.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">memoryTypes</span></code> is a list of allowed memory types for containers in
+a balloon. Supported types are “HBM”, “DRAM” and “PMEM”. This
+setting can be overridden by a pod/container specific
+<code class="docutils literal notranslate"><span class="pre">memory-type</span></code> annotation.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">preferCloseToDevices</span></code>: prefer creating new balloons close to
 listed devices. List of strings</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">preferCoreType</span></code>:  specifies preferences of the core type which
@@ -450,8 +454,10 @@ assigned to the <code class="docutils literal notranslate"><span class="pre">def
 type can be defined explicitly among other balloon types. If they are
 not defined, a built-in <code class="docutils literal notranslate"><span class="pre">default</span></code> balloon type is used.</p>
 </section>
+<section id="pod-and-container-overrides-to-cpu-and-memory-pinning">
+<h2>Pod and Container Overrides to CPU and Memory Pinning<a class="headerlink" href="#pod-and-container-overrides-to-cpu-and-memory-pinning" title="Permalink to this heading"></a></h2>
 <section id="disabling-cpu-or-memory-pinning-of-a-container">
-<h2>Disabling CPU or Memory Pinning of a Container<a class="headerlink" href="#disabling-cpu-or-memory-pinning-of-a-container" title="Permalink to this heading"></a></h2>
+<h3>Disabling CPU or Memory Pinning of a Container<a class="headerlink" href="#disabling-cpu-or-memory-pinning-of-a-container" title="Permalink to this heading"></a></h3>
 <p>Some containers may need to run on all CPUs or access all memories
 without restrictions. There are two alternatives to achieve this:
 policy configuration and pod annotations.</p>
@@ -470,6 +476,7 @@ or non-existing pinning configuration:</p>
 <span class="nt">memory.preserve.resource-policy.nri.io</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
 </pre></div>
 </div>
+</section>
 <section id="selectively-disabling-hyperthreading">
 <h3>Selectively Disabling Hyperthreading<a class="headerlink" href="#selectively-disabling-hyperthreading" title="Permalink to this heading"></a></h3>
 <p>If a container opts to hide hyperthreads, it is allowed to use only
@@ -489,6 +496,25 @@ hidden hyperthreads either.</p>
 <p>The <code class="docutils literal notranslate"><span class="pre">hide-hyperthreads</span></code> pod annotation overrides the
 <code class="docutils literal notranslate"><span class="pre">hideHyperthreads</span></code> balloon type parameter value for selected
 containers in the pod.</p>
+</section>
+<section id="memory-type">
+<h3>Memory Type<a class="headerlink" href="#memory-type" title="Permalink to this heading"></a></h3>
+<p>If a container must be pinned to specific memory types that may differ
+from its balloon’s <code class="docutils literal notranslate"><span class="pre">memoryTypes</span></code>, container-specific types can be
+given in the <code class="docutils literal notranslate"><span class="pre">memory-type</span></code> pod annotations:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">memory-type.resource-policy.nri.io/container.CONTAINER_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;COMMA-SEPARATED-TYPES&gt;</span>
+<span class="nt">memory-type.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;COMMA-SEPARATED-TYPES&gt;</span>
+<span class="nt">memory-type.resource-policy.nri.io</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;COMMA-SEPARATED-TYPES&gt;</span>
+</pre></div>
+</div>
+<p>The first sets the memory type for a single container in the pod, the
+latter two for other containers in the pod. Supported types are “HBM”,
+“DRAM” and “PMEM”. Example:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">memory-type.resource-policy.nri.io/container.LLM</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HBM,DRAM</span>
+</pre></div>
+</div>
 </section>
 </section>
 <section id="metrics-and-debugging">
