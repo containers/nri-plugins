@@ -216,6 +216,8 @@ Balloons policy parameters:
     (sockets) as the balloon.
     - `die`: ...in the same die(s) as the balloon.
     - `numa`: ...in the same numa node(s) as the balloon.
+    - `l2cache`: ...allowed to use idle CPUs that share the same level
+      2 cache as the balloon.
     - `core`: ...allowed to use idle CPU threads in the same cores with
       the balloon.
   - `hideHyperthreads`: "soft" disable hyperthreads. If `true`, only
