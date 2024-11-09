@@ -18,8 +18,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/prometheus/client_golang/prometheus"
-
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/instrumentation"
 	"github.com/containers/nri-plugins/pkg/http"
 	"github.com/containers/nri-plugins/pkg/instrumentation/metrics"
@@ -51,11 +49,6 @@ var (
 	// Attribute aliases tracing.Attribute(), for SetIdentity().
 	Attribute = tracing.Attribute
 )
-
-// RegisterGatherer registers a prometheus metrics gatherer.
-func RegisterGatherer(g prometheus.Gatherer) {
-	metrics.RegisterGatherer(g)
-}
 
 // HTTPServer returns our HTTP server.
 func HTTPServer() *http.Server {
@@ -94,7 +87,7 @@ func Restart() error {
 
 	err := start()
 	if err != nil {
-		log.Error("failed to start tracing: %v", err)
+		log.Error("failed to start instrumentation: %v", err)
 	}
 
 	return err
@@ -122,9 +115,11 @@ func start() error {
 
 	if err := metrics.Start(
 		srv.GetMux(),
+		metrics.WithNamespace("nri"),
 		metrics.WithExporterDisabled(!cfg.PrometheusExport),
-		metrics.WithServiceName(ServiceName),
-		metrics.WithPeriod(cfg.ReportPeriod.Duration),
+		metrics.WithReportPeriod(cfg.ReportPeriod.Duration),
+		// TODO(klihub): make this configurable via apis/config/.../instrumentation.Config
+		metrics.WithMetrics([]string{"misc/buildinfo"}, []string{"policy"}),
 	); err != nil {
 		return fmt.Errorf("failed to start metrics: %v", err)
 	}
