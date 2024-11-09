@@ -313,6 +313,10 @@ func (p *nriPlugin) StopPodSandbox(ctx context.Context, podSandbox *api.PodSandb
 
 	m := p.resmgr
 
+	// TODO(klihub): shouldn't we m.Lock()/defer m.Unlock() here?
+	metrics.Block()
+	defer metrics.Unblock()
+
 	released := []cache.Container{}
 	pod, _ := m.cache.LookupPod(podSandbox.GetId())
 
@@ -391,6 +395,8 @@ func (p *nriPlugin) CreateContainer(ctx context.Context, podSandbox *api.PodSand
 	m := p.resmgr
 	m.Lock()
 	defer m.Unlock()
+	metrics.Block()
+	defer metrics.Unblock()
 
 	c, err := m.cache.InsertContainer(container)
 	if err != nil {
@@ -611,6 +617,9 @@ func (p *nriPlugin) RemoveContainer(ctx context.Context, pod *api.PodSandbox, co
 
 func (p *nriPlugin) updateContainers() (retErr error) {
 	// Notes: must be called with p.resmgr lock held.
+
+	metrics.Block()
+	defer metrics.Unblock()
 
 	updates := p.getPendingUpdates(nil)
 

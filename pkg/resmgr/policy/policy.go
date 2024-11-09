@@ -147,12 +147,6 @@ type Policy interface {
 	HandleEvent(*events.Policy) (bool, error)
 	// ExportResourceData exports/updates resource data for the container.
 	ExportResourceData(cache.Container)
-	// DescribeMetrics generates policy-specific prometheus metrics data descriptors.
-	DescribeMetrics() []*prometheus.Desc
-	// PollMetrics provides policy metrics for monitoring.
-	PollMetrics() Metrics
-	// CollectMetrics generates prometheus metrics from cached/polled policy-specific metrics data.
-	CollectMetrics(Metrics) ([]prometheus.Metric, error)
 	// GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
 	GetTopologyZones() []*TopologyZone
 }
@@ -204,11 +198,12 @@ type ZoneAttribute struct {
 
 // Policy instance/state.
 type policy struct {
-	options   Options       // policy options
-	cache     cache.Cache   // system state cache
-	active    Backend       // our active backend
-	system    system.System // system/HW/topology info
-	sendEvent SendEventFn   // function to send event up to the resource manager
+	options   Options          // policy options
+	cache     cache.Cache      // system state cache
+	active    Backend          // our active backend
+	system    system.System    // system/HW/topology info
+	sendEvent SendEventFn      // function to send event up to the resource manager
+	pcollect  *PolicyCollector // policy metrics collector
 }
 
 // backend is a registered Backend.
@@ -225,11 +220,25 @@ var log logger.Logger = logger.NewLogger("policy")
 func NewPolicy(backend Backend, cache cache.Cache, o *Options) (Policy, error) {
 	log.Info("creating '%s' policy...", backend.Name())
 
-	return &policy{
+	p := &policy{
 		cache:   cache,
 		options: *o,
 		active:  backend,
-	}, nil
+	}
+
+	sys, err := system.DiscoverSystem()
+	if err != nil {
+		return nil, policyError("failed to discover system topology: %v", err)
+	}
+	p.system = sys
+
+	pcollect := p.newPolicyCollector()
+	if err := pcollect.register(); err != nil {
+		return nil, policyError("failed to register policy collector: %v", err)
+	}
+	p.pcollect = pcollect
+
+	return p, nil
 }
 
 func (p *policy) ActivePolicy() string {
@@ -241,12 +250,6 @@ func (p *policy) ActivePolicy() string {
 
 // Start starts up policy, preparing it for serving requests.
 func (p *policy) Start(cfg interface{}) error {
-	sys, err := system.DiscoverSystem()
-	if err != nil {
-		return policyError("failed to discover system topology: %v", err)
-	}
-	p.system = sys
-
 	log.Info("activating '%s' policy...", p.active.Name())
 
 	if err := p.active.Setup(&BackendOptions{
@@ -313,21 +316,6 @@ func (p *policy) ExportResourceData(c cache.Container) {
 	}
 
 	p.cache.WriteFile(c.GetID(), ExportedResources, 0644, buf.Bytes())
-}
-
-// PollMetrics provides policy metrics for monitoring.
-func (p *policy) PollMetrics() Metrics {
-	return p.active.PollMetrics()
-}
-
-// DescribeMetrics generates policy-specific prometheus metrics data descriptors.
-func (p *policy) DescribeMetrics() []*prometheus.Desc {
-	return p.active.DescribeMetrics()
-}
-
-// CollectMetrics generates prometheus metrics from cached/polled policy-specific metrics data.
-func (p *policy) CollectMetrics(m Metrics) ([]prometheus.Metric, error) {
-	return p.active.CollectMetrics(m)
 }
 
 // GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
