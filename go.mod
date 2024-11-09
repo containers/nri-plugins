@@ -3,7 +3,6 @@ module github.com/containers/nri-plugins
 go 1.22
 
 require (
-	contrib.go.opencensus.io/exporter/prometheus v0.4.2
 	github.com/containerd/nri v0.6.0
 	github.com/containerd/otelttrpc v0.0.0-20240305015340-ea5083fda723
 	github.com/containerd/ttrpc v1.2.3-0.20231030150553-baadfd8e7956
@@ -17,10 +16,8 @@ require (
 	github.com/pelletier/go-toml/v2 v2.1.0
 	github.com/prometheus/client_golang v1.17.0
 	github.com/prometheus/client_model v0.5.0
-	github.com/prometheus/common v0.44.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.8.4
-	go.opencensus.io v0.24.0
 	go.opentelemetry.io/otel v1.19.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.19.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.19.0
@@ -44,8 +41,6 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/emicklei/go-restful/v3 v3.9.0 // indirect
 	github.com/evanphx/json-patch v5.6.0+incompatible // indirect
-	github.com/go-kit/log v0.2.1 // indirect
-	github.com/go-logfmt/logfmt v0.6.0 // indirect
 	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/jsonpointer v0.19.6 // indirect
@@ -54,7 +49,6 @@ require (
 	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
 	github.com/godbus/dbus/v5 v5.0.4 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/google/gnostic-models v0.6.8 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
@@ -73,8 +67,8 @@ require (
 	github.com/opencontainers/runtime-spec v1.1.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/prometheus/common v0.44.0 // indirect
 	github.com/prometheus/procfs v0.12.0 // indirect
-	github.com/prometheus/statsd_exporter v0.24.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.19.0 // indirect
 	go.opentelemetry.io/otel/metric v1.19.0 // indirect

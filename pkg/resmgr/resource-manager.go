@@ -171,7 +171,9 @@ func (m *resmgr) start(cfg cfgapi.ResmgrConfig) error {
 		return err
 	}
 
-	instrumentation.Reconfigure(&mCfg.Instrumentation)
+	if err := instrumentation.Reconfigure(&mCfg.Instrumentation); err != nil {
+		return err
+	}
 
 	if err := m.nri.start(); err != nil {
 		return err
@@ -278,7 +280,9 @@ func (m *resmgr) reconfigure(cfg cfgapi.ResmgrConfig) error {
 		mCfg := cfg.CommonConfig()
 
 		logger.Configure(&mCfg.Log)
-		instrumentation.Reconfigure(&mCfg.Instrumentation)
+		if err := instrumentation.Reconfigure(&mCfg.Instrumentation); err != nil {
+			return err
+		}
 		m.control.StartStopControllers(&mCfg.Control)
 
 		err := m.policy.Reconfigure(cfg.PolicyConfig())

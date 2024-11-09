@@ -77,6 +77,9 @@ type Logger interface {
 	// Fatal formats and emits an error message and os.Exit()'s with status 1.
 	Fatal(format string, args ...interface{})
 
+	// Println to mimic minimal stdlin log.Logger interface.
+	Println(v ...any)
+
 	// DebugBlock formats and emits a multiline debug message.
 	DebugBlock(prefix string, format string, args ...interface{})
 	// InfoBlock formats and emits a multiline information message.
@@ -408,6 +411,10 @@ func (l logger) Panic(format string, args ...interface{}) {
 		klog.ErrorDepth(1, msg)
 	}
 	panic(msg)
+}
+
+func (l logger) Println(a ...any) {
+	l.Info("%s", fmt.Sprintln(a...))
 }
 
 func (l logger) DebugBlock(prefix string, format string, args ...interface{}) {
