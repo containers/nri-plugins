@@ -17,7 +17,6 @@ package resmgr
 import (
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
-	"github.com/containers/nri-plugins/pkg/resmgr/metrics"
 )
 
 // Our logger instance for events.
@@ -25,34 +24,14 @@ var evtlog = logger.NewLogger("events")
 
 // setupEventProcessing sets up event and metrics processing.
 func (m *resmgr) setupEventProcessing() error {
-	var err error
-
 	m.events = make(chan interface{}, 8)
 	m.stop = make(chan interface{})
-	options := metrics.Options{
-		PollInterval: opt.MetricsTimer,
-	}
-	if m.metrics, err = metrics.NewMetrics(options); err != nil {
-		return resmgrError("failed to create metrics (pre)processor: %v", err)
-	}
-
-	return nil
-}
-
-func (m *resmgr) startMetricsProcessing() error {
-	if err := m.metrics.Start(); err != nil {
-		return resmgrError("failed to start metrics (pre)processor: %v", err)
-	}
 
 	return nil
 }
 
 // startEventProcessing starts event and metrics processing.
 func (m *resmgr) startEventProcessing() error {
-	if err := m.startMetricsProcessing(); err != nil {
-		return resmgrError("failed to start metrics (pre)processor: %v", err)
-	}
-
 	stop := m.stop
 	go func() {
 		for {
@@ -73,7 +52,6 @@ func (m *resmgr) startEventProcessing() error {
 func (m *resmgr) stopEventProcessing() {
 	if m.stop != nil {
 		close(m.stop)
-		m.metrics.Stop()
 		m.stop = nil
 	}
 }

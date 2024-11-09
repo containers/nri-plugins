@@ -27,7 +27,6 @@ import (
 	"github.com/containers/nri-plugins/pkg/pidfile"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/control"
-	"github.com/containers/nri-plugins/pkg/resmgr/metrics"
 	"github.com/containers/nri-plugins/pkg/resmgr/policy"
 	"github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/topology"
@@ -35,8 +34,6 @@ import (
 	"sigs.k8s.io/yaml"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1"
-
-	policyCollector "github.com/containers/nri-plugins/pkg/resmgr/policycollector"
 )
 
 // ResourceManager is the interface we expose for controlling the CRI resource manager.
@@ -59,7 +56,6 @@ type resmgr struct {
 	cache   cache.Cache      // cached state
 	policy  policy.Policy    // resource manager policy
 	control control.Control  // policy controllers/enforcement
-	metrics *metrics.Metrics // metrics collector/pre-processor
 	events  chan interface{} // channel for delivering events
 	stop    chan interface{} // channel for signalling shutdown to goroutines
 	nri     *nriPlugin       // NRI plugins, if we're running as such
@@ -100,10 +96,6 @@ func NewResourceManager(backend policy.Backend, agt *agent.Agent) (ResourceManag
 	m.nri = nrip
 
 	if err := m.setupPolicy(backend); err != nil {
-		return nil, err
-	}
-
-	if err := m.registerPolicyMetricsCollector(); err != nil {
 		return nil, err
 	}
 
@@ -174,11 +166,12 @@ func (m *resmgr) start(cfg cfgapi.ResmgrConfig) error {
 
 	mCfg := cfg.CommonConfig()
 	logger.Configure(&mCfg.Log)
-	instrumentation.Reconfigure(&mCfg.Instrumentation)
 
 	if err := m.policy.Start(m.cfg.PolicyConfig()); err != nil {
 		return err
 	}
+
+	instrumentation.Reconfigure(&mCfg.Instrumentation)
 
 	if err := m.nri.start(); err != nil {
 		return err
@@ -278,17 +271,6 @@ func (m *resmgr) updateTopologyZones() {
 			log.Error("failed to update topology zones: %v", err)
 		}
 	}
-}
-
-// registerPolicyMetricsCollector registers policy metrics collector·
-func (m *resmgr) registerPolicyMetricsCollector() error {
-	pc := &policyCollector.PolicyCollector{}
-	pc.SetPolicy(m.policy)
-	if pc.HasPolicySpecificMetrics() {
-		return pc.RegisterPolicyMetricsCollector()
-	}
-	log.Info("%s policy has no policy-specific metrics.", m.policy.ActivePolicy())
-	return nil
 }
 
 func (m *resmgr) reconfigure(cfg cfgapi.ResmgrConfig) error {
