@@ -162,11 +162,11 @@ for post-policy enforcement of decisions.
 
 ### [Metrics Collector](tree:/pkg/metrics/)
 
-The metrics collector gathers a set of runtime metrics about the containers
-running on the node. NRI-RP can be configured to periodically evaluate this
-collected data to determine how optimal the current assignment of container
-resources is and to attempt a rebalancing/reallocation if it is deemed
-both possible and necessary.
+The metrics collector gathers a set of runtime metrics about system resources,
+containers running on the node, and policy-specific resource assignments and
+expose these as Prometheus metrics. This data can be externally evaluated and
+used to trigger rebalancing of resources if the NRI-RP implementation provides
+a (policy-specific) external interface for this.
 
 ### [Policy Implementations](tree:/cmd/plugins)
 
