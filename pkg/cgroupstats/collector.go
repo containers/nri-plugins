@@ -25,7 +25,6 @@ import (
 
 	"github.com/containers/nri-plugins/pkg/cgroups"
 	logger "github.com/containers/nri-plugins/pkg/log"
-	"github.com/containers/nri-plugins/pkg/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -42,7 +41,7 @@ const (
 
 var descriptors = [numDescriptors]*prometheus.Desc{
 	numaStatsDesc: prometheus.NewDesc(
-		"cgroup_numa_stats",
+		"numa_stats",
 		"NUMA statistics for a given container and pod.",
 		[]string{
 			// cgroup path
@@ -54,7 +53,7 @@ var descriptors = [numDescriptors]*prometheus.Desc{
 		}, nil,
 	),
 	memoryUsageDesc: prometheus.NewDesc(
-		"cgroup_memory_usage",
+		"memory_usage",
 		"Memory usage statistics for a given container and pod.",
 		[]string{
 			"container_id",
@@ -62,14 +61,14 @@ var descriptors = [numDescriptors]*prometheus.Desc{
 		}, nil,
 	),
 	memoryMigrateDesc: prometheus.NewDesc(
-		"cgroup_memory_migrate",
+		"memory_migrate",
 		"Memory migrate status for a given container and pod.",
 		[]string{
 			"container_id",
 		}, nil,
 	),
 	cpuAcctUsageDesc: prometheus.NewDesc(
-		"cgroup_cpu_acct",
+		"cpu_acct",
 		"CPU accounting for a given container and pod.",
 		[]string{
 			"container_id",
@@ -79,7 +78,7 @@ var descriptors = [numDescriptors]*prometheus.Desc{
 		}, nil,
 	),
 	hugeTlbUsageDesc: prometheus.NewDesc(
-		"cgroup_hugetlb_usage",
+		"hugetlb_usage",
 		"Hugepages usage for a given container and pod.",
 		[]string{
 			"container_id",
@@ -88,7 +87,7 @@ var descriptors = [numDescriptors]*prometheus.Desc{
 		}, nil,
 	),
 	blkioDeviceUsageDesc: prometheus.NewDesc(
-		"cgroup_blkio_device_usage",
+		"blkio_device_usage",
 		"Blkio Device bytes usage for a given container and pod.",
 		[]string{
 			"container_id",
@@ -114,8 +113,8 @@ type collector struct {
 }
 
 // NewCollector creates new Prometheus collector
-func NewCollector() (prometheus.Collector, error) {
-	return &collector{}, nil
+func NewCollector() prometheus.Collector {
+	return &collector{}
 }
 
 // Describe implements prometheus.Collector interface
@@ -405,9 +404,4 @@ func (c collector) Collect(ch chan<- prometheus.Metric) {
 func init() {
 	flag.StringVar(&cgroupRoot, "cgroup-path", cgroupRoot,
 		"Path to cgroup filesystem mountpoint")
-
-	err := metrics.RegisterCollector("cgroupstats", NewCollector)
-	if err != nil {
-		log.Error("failed register cgroupstats collector: %v", err)
-	}
 }
