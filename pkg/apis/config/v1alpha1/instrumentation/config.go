@@ -15,10 +15,12 @@
 package instrumentation
 
 import (
+	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/metrics"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // Config provides runtime configuration for instrumentation.
+// +k8s:deepcopy-gen=true
 type Config struct {
 	// SamplingRatePerMillion is the number of samples to collect per million spans.
 	// +optional
@@ -33,9 +35,10 @@ type Config struct {
 	// +optional
 	// +kubebuilder:example="otlp-http://localhost:4318"
 	TracingCollector string `json:"tracingCollector,omitempty"`
-	// ReportPeriod is the interval between reporting aggregated metrics.
+	// ReportPeriod is the interval between collecting polled metrics.
 	// +optional
 	// +kubebuilder:validation:Format="duration"
+	// +kubebuilder:default="30s"
 	ReportPeriod metav1.Duration `json:"reportPeriod,omitempty"`
 	// HTTPEndpoint is the address our HTTP server listens on. This endpoint is used
 	// to expose Prometheus metrics among other things.
@@ -45,4 +48,7 @@ type Config struct {
 	// PrometheusExport enables exporting /metrics for Prometheus.
 	// +optional
 	PrometheusExport bool `json:"prometheusExport,omitempty"`
+	// Metrics defines which metrics to collect.
+	// +kubebuilder:default={"enabled": {"policy"}}
+	Metrics *metrics.Config `json:"metrics,omitempty"`
 }
