@@ -118,8 +118,7 @@ func start() error {
 		metrics.WithNamespace("nri"),
 		metrics.WithExporterDisabled(!cfg.PrometheusExport),
 		metrics.WithReportPeriod(cfg.ReportPeriod.Duration),
-		// TODO(klihub): make this configurable via apis/config/.../instrumentation.Config
-		metrics.WithMetrics([]string{"misc/buildinfo"}, []string{"policy"}),
+		metrics.WithMetrics(cfg.Metrics),
 	); err != nil {
 		return fmt.Errorf("failed to start metrics: %v", err)
 	}

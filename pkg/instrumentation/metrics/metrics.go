@@ -24,6 +24,8 @@ import (
 	"github.com/containers/nri-plugins/pkg/http"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/metrics"
+
+	config "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/metrics"
 )
 
 type (
@@ -62,10 +64,15 @@ func WithReportPeriod(v time.Duration) Option {
 	}
 }
 
-func WithMetrics(enable []string, poll []string) Option {
+func WithMetrics(cfg *config.Config) Option {
 	return func() error {
-		enabled = slices.Clone(enable)
-		polled = slices.Clone(poll)
+		if cfg != nil {
+			enabled = slices.Clone(cfg.Enabled)
+			polled = slices.Clone(cfg.Polled)
+		} else {
+			enabled = nil
+			polled = nil
+		}
 		return nil
 	}
 }
