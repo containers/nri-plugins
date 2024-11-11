@@ -49,6 +49,6 @@ type Config struct {
 	// +optional
 	PrometheusExport bool `json:"prometheusExport,omitempty"`
 	// Metrics defines which metrics to collect.
-	// +kubebuilder:default={"enabled": {"policy"}}
+	// +kubebuilder:default={"enabled": {"policy", "buildinfo"}}
 	Metrics *metrics.Config `json:"metrics,omitempty"`
 }

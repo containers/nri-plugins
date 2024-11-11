@@ -123,6 +123,7 @@ spec:
                     default:
                       enabled:
                       - policy
+                      - buildinfo
                     description: Metrics defines which metrics to collect.
                     properties:
                       enabled:
