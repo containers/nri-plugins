@@ -204,6 +204,7 @@ type policy struct {
 	system    system.System    // system/HW/topology info
 	sendEvent SendEventFn      // function to send event up to the resource manager
 	pcollect  *PolicyCollector // policy metrics collector
+	scollect  *SystemCollector // system metrics collector
 }
 
 // backend is a registered Backend.
@@ -237,6 +238,12 @@ func NewPolicy(backend Backend, cache cache.Cache, o *Options) (Policy, error) {
 		return nil, policyError("failed to register policy collector: %v", err)
 	}
 	p.pcollect = pcollect
+
+	scollect := p.newSystemCollector()
+	if err = scollect.register(); err != nil {
+		return nil, policyError("failed to register system collector: %v", err)
+	}
+	p.scollect = scollect
 
 	return p, nil
 }
