@@ -19,9 +19,8 @@ import (
 	"fmt"
 
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
-	"k8s.io/apimachinery/pkg/api/resource"
-
 	"github.com/prometheus/client_golang/prometheus"
+	"k8s.io/apimachinery/pkg/api/resource"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
@@ -68,6 +67,7 @@ type policy struct {
 	cpuAllocator cpuallocator.CPUAllocator // CPU allocator used by the policy
 	memAllocator *libmem.Allocator
 	coldstartOff bool // coldstart forced off (have movable PMEM zones)
+	metrics      *TopologyAwareMetrics
 }
 
 var opt = &cfgapi.Config{}
@@ -114,6 +114,8 @@ func (p *policy) Setup(opts *policyapi.BackendOptions) error {
 	if err := p.registerImplicitAffinities(); err != nil {
 		return policyError("failed to initialize %s policy: %w", PolicyName, err)
 	}
+
+	p.metrics = p.NewTopologyAwareMetrics()
 
 	log.Info("***** default CPU priority is %s", defaultPrio)
 
@@ -306,21 +308,6 @@ func (p *policy) HandleEvent(e *events.Policy) (bool, error) {
 	return false, nil
 }
 
-// DescribeMetrics generates policy-specific prometheus metrics data descriptors.
-func (p *policy) DescribeMetrics() []*prometheus.Desc {
-	return nil
-}
-
-// PollMetrics provides policy metrics for monitoring.
-func (p *policy) PollMetrics() policyapi.Metrics {
-	return nil
-}
-
-// CollectMetrics generates prometheus metrics from cached/polled policy-specific metrics data.
-func (p *policy) CollectMetrics(policyapi.Metrics) ([]prometheus.Metric, error) {
-	return nil, nil
-}
-
 // GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
 func (p *policy) GetTopologyZones() []*policyapi.TopologyZone {
 	zones := []*policyapi.TopologyZone{}
@@ -433,6 +420,24 @@ func (p *policy) ExportResourceData(c cache.Container) map[string]string {
 	}
 
 	return data
+}
+
+func (p *policy) GetMetrics() policyapi.Metrics {
+	return p.metrics
+}
+
+func (p *policy) NewTopologyAwareMetrics() *TopologyAwareMetrics {
+	return &TopologyAwareMetrics{}
+}
+
+type TopologyAwareMetrics struct{}
+
+func (*TopologyAwareMetrics) Describe(ch chan<- *prometheus.Desc) {
+	return
+}
+
+func (*TopologyAwareMetrics) Collect(ch chan<- prometheus.Metric) {
+	return
 }
 
 // reallocateResources reallocates the given containers using the given pool hints

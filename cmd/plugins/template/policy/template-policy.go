@@ -116,19 +116,9 @@ func (p *policy) HandleEvent(e *events.Policy) (bool, error) {
 	return true, nil
 }
 
-// DescribeMetrics generates policy-specific prometheus metrics data descriptors.
-func (p *policy) DescribeMetrics() []*prometheus.Desc {
-	return nil
-}
-
-// PollMetrics provides policy metrics for monitoring.
-func (p *policy) PollMetrics() policyapi.Metrics {
-	return nil
-}
-
-// CollectMetrics generates prometheus metrics from cached/polled policy-specific metrics data.
-func (p *policy) CollectMetrics(policyapi.Metrics) ([]prometheus.Metric, error) {
-	return nil, nil
+// GetMetrics returns the policy-specific metrics collector.
+func (p *policy) GetMetrics() policyapi.Metrics {
+	return &NoMetrics{}
 }
 
 // GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
@@ -144,4 +134,14 @@ func (p *policy) ExportResourceData(c cache.Container) map[string]string {
 // Initialize or reinitialize the policy.
 func (p *policy) initialize() error {
 	return nil
+}
+
+type NoMetrics struct{}
+
+func (*NoMetrics) Describe(chan<- *prometheus.Desc) {
+	return
+}
+
+func (*NoMetrics) Collect(chan<- prometheus.Metric) {
+	return
 }
