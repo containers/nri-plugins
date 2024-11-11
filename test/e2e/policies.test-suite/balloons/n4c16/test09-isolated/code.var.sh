@@ -1,5 +1,5 @@
 helm-terminate
-helm_config=${TEST_DIR}/balloons-isolated.cfg nri_resource_policy_extra_args="-metrics-interval 4s" helm-launch balloons
+helm_config=${TEST_DIR}/balloons-isolated.cfg helm-launch balloons
 
 verify-metrics-has-line 'balloon="isolated-pods\[0\]"'
 verify-metrics-has-line 'balloon="isolated-pods\[1\]"'
