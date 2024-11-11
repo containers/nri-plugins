@@ -115,12 +115,8 @@ type Backend interface {
 	HandleEvent(*events.Policy) (bool, error)
 	// ExportResourceData provides resource data to export for the container.
 	ExportResourceData(cache.Container) map[string]string
-	// DescribeMetrics generates policy-specific prometheus metrics data descriptors.
-	DescribeMetrics() []*prometheus.Desc
-	// PollMetrics provides policy metrics for monitoring.
-	PollMetrics() Metrics
-	// CollectMetrics generates prometheus metrics from cached/polled policy-specific metrics data.
-	CollectMetrics(Metrics) ([]prometheus.Metric, error)
+	// GetMetrics returns the policy-specific metrics collector.
+	GetMetrics() Metrics
 	// GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
 	GetTopologyZones() []*TopologyZone
 }
@@ -151,7 +147,11 @@ type Policy interface {
 	GetTopologyZones() []*TopologyZone
 }
 
-type Metrics interface{}
+// Metrics is the interface we expect policy-specific metrics to implement.
+type Metrics interface {
+	Describe(chan<- *prometheus.Desc)
+	Collect(chan<- prometheus.Metric)
+}
 
 // Node resource topology resource and attribute names.
 // XXX TODO(klihub): We'll probably need to add similar unified consts

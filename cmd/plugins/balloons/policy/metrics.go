@@ -91,14 +91,7 @@ type BalloonMetrics struct {
 	ContainerReqMilliCpus int
 }
 
-// DescribeMetrics generates policy-specific prometheus metrics data
-// descriptors.
-func (p *balloons) DescribeMetrics() []*prometheus.Desc {
-	return descriptors
-}
-
-// PollMetrics provides policy metrics for monitoring.
-func (p *balloons) PollMetrics() policy.Metrics {
+func (p *balloons) GetMetrics() policy.Metrics {
 	policyMetrics := &Metrics{}
 	policyMetrics.Balloons = make([]*BalloonMetrics, len(p.balloons))
 	for index, bln := range p.balloons {
@@ -150,16 +143,19 @@ func (p *balloons) PollMetrics() policy.Metrics {
 	return policyMetrics
 }
 
-// CollectMetrics generates prometheus metrics from cached/polled
-// policy-specific metrics data.
-func (p *balloons) CollectMetrics(m policy.Metrics) ([]prometheus.Metric, error) {
-	metrics, ok := m.(*Metrics)
-	if !ok {
-		return nil, balloonsError("type mismatch in balloons metrics")
+func (m *Metrics) Describe(ch chan<- *prometheus.Desc) {
+	for _, d := range descriptors {
+		ch <- d
 	}
-	promMetrics := make([]prometheus.Metric, len(metrics.Balloons))
-	for index, bm := range metrics.Balloons {
-		promMetrics[index] = prometheus.MustNewConstMetric(
+}
+
+func (m *Metrics) Collect(ch chan<- prometheus.Metric) {
+	if m == nil {
+		return
+	}
+
+	for _, bm := range m.Balloons {
+		ch <- prometheus.MustNewConstMetric(
 			descriptors[balloonsDesc],
 			prometheus.GaugeValue,
 			float64(bm.Cpus.Size()),
@@ -185,5 +181,4 @@ func (p *balloons) CollectMetrics(m policy.Metrics) ([]prometheus.Metric, error)
 			bm.ContainerNames,
 			strconv.Itoa(bm.ContainerReqMilliCpus))
 	}
-	return promMetrics, nil
 }

@@ -35,21 +35,9 @@ func (c *PolicyCollector) register() error {
 }
 
 func (c *PolicyCollector) Describe(ch chan<- *prometheus.Desc) {
-	for _, d := range c.policy.active.DescribeMetrics() {
-		ch <- d
-	}
+	c.policy.active.GetMetrics().Describe(ch)
 }
 
 func (c *PolicyCollector) Collect(ch chan<- prometheus.Metric) {
-	polled := c.policy.active.PollMetrics()
-
-	collected, err := c.policy.active.CollectMetrics(polled)
-	if err != nil {
-		log.Error("failed to collect metrics: %v", err)
-		return
-	}
-
-	for _, m := range collected {
-		ch <- m
-	}
+	c.policy.active.GetMetrics().Collect(ch)
 }
