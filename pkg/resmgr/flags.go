@@ -29,18 +29,13 @@ const (
 
 // Options captures our command line parameters.
 type options struct {
-	HostRoot          string
-	StateDir          string
-	PidFile           string
-	ResctrlPath       string
-	FallbackConfig    string
-	ForceConfig       string
-	ForceConfigSignal string
-	MetricsTimer      time.Duration
-	RebalanceTimer    time.Duration
-	NriPluginName     string
-	NriPluginIdx      string
-	NriSocket         string
+	HostRoot      string
+	StateDir      string
+	PidFile       string
+	MetricsTimer  time.Duration
+	NriPluginName string
+	NriPluginIdx  string
+	NriSocket     string
 }
 
 // ResourceManager command line options.
@@ -60,7 +55,8 @@ func init() {
 	flag.StringVar(&opt.PidFile, "pid-file", pidfile.GetPath(),
 		"PID file to write daemon PID to")
 	flag.DurationVar(&opt.MetricsTimer, "metrics-interval", 0,
-		"Interval for polling/gathering runtime metrics data. Use 'disable' for disabling.")
+		"Obsolete way to set interval for polling/gathering runtime metrics data.\n"+
+			"Use the instrumentation section of the CR-based configuration interface instead.")
 	flag.StringVar(&opt.StateDir, "state-dir", "/var/lib/nri-resource-policy",
 		"Permanent storage directory path for the resource manager to store its state in.")
 }
