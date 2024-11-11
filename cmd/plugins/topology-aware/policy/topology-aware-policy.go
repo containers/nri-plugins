@@ -19,7 +19,6 @@ import (
 	"fmt"
 
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
-	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
@@ -420,24 +419,6 @@ func (p *policy) ExportResourceData(c cache.Container) map[string]string {
 	}
 
 	return data
-}
-
-func (p *policy) GetMetrics() policyapi.Metrics {
-	return p.metrics
-}
-
-func (p *policy) NewTopologyAwareMetrics() *TopologyAwareMetrics {
-	return &TopologyAwareMetrics{}
-}
-
-type TopologyAwareMetrics struct{}
-
-func (*TopologyAwareMetrics) Describe(ch chan<- *prometheus.Desc) {
-	return
-}
-
-func (*TopologyAwareMetrics) Collect(ch chan<- prometheus.Metric) {
-	return
 }
 
 // reallocateResources reallocates the given containers using the given pool hints
