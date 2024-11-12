@@ -27,9 +27,10 @@ export IMAGE_PATH
 # Determine binary version and buildid.
 BUILD_VERSION ?= $(shell scripts/build/get-buildid --version --shell=no)
 BUILD_BUILDID ?= $(shell scripts/build/get-buildid --buildid --shell=no)
+BUILD_FLAGS   ?=
 
 GO_CMD     := go
-GO_BUILD   := $(GO_CMD) build
+GO_BUILD    = $(GO_CMD) build $(BUILD_FLAGS)
 GO_INSTALL := $(GO_CMD) install
 GO_TEST    := $(GO_CMD) test
 GO_LINT    := golint -set_exit_status
@@ -105,6 +106,9 @@ LDFLAGS    = \
 ifeq ($(DEBUG),1)
     GCFLAGS ?= -gcflags "all=-N -l"
     DOCKER_BUILD_DEBUG := --build-arg DEBUG=1
+  ifneq ($(NORACE),1)
+    BUILD_FLAGS += -race
+  endif
 endif
 
 # Documentation-related variables
