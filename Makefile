@@ -108,6 +108,8 @@ ifeq ($(DEBUG),1)
     DOCKER_BUILD_DEBUG := --build-arg DEBUG=1
   ifneq ($(NORACE),1)
     BUILD_FLAGS += -race
+  else
+    DOCKER_BUILD_DEBUG += --build-arg NORACE=1
   endif
 endif
 
@@ -148,12 +150,12 @@ verify: verify-godeps verify-fmt verify-generate verify-build verify-docs
 build-plugins: $(foreach bin,$(PLUGINS),$(BIN_PATH)/$(bin))
 
 build-plugins-static:
-	$(MAKE) STATIC=1 DEBUG=$(DEBUG) build-plugins
+	$(MAKE) STATIC=1 DEBUG=$(DEBUG) NORACE=$(NORACE) build-plugins
 
 build-binaries: $(foreach bin,$(BINARIES),$(BIN_PATH)/$(bin))
 
 build-binaries-static:
-	$(MAKE) STATIC=1 DEBUG=$(DEBUG) build-binaries
+	$(MAKE) STATIC=1 DEBUG=$(DEBUG) NORACE=$(NORACE) build-binaries
 
 build-images: images
 
