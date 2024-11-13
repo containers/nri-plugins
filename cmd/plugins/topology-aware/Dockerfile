@@ -6,6 +6,7 @@ ARG IMAGE_VERSION
 ARG BUILD_VERSION
 ARG BUILD_BUILDID
 ARG DEBUG=0
+ARG NORACE=0
 
 WORKDIR /go/builder
 
@@ -24,7 +25,7 @@ RUN go mod download
 COPY . .
 
 RUN make clean
-RUN make IMAGE_VERSION=${IMAGE_VERSION} BUILD_VERSION=${BUILD_VERSION} BUILD_BUILDID=${BUILD_BUILDID} PLUGINS=nri-resource-policy-topology-aware DEBUG=$DEBUG V=$DEBUG build-plugins-static
+RUN make IMAGE_VERSION=${IMAGE_VERSION} BUILD_VERSION=${BUILD_VERSION} BUILD_BUILDID=${BUILD_BUILDID} PLUGINS=nri-resource-policy-topology-aware DEBUG=$DEBUG NORACE=$NORACE V=$DEBUG build-plugins-static
 
 RUN cpgodir() { \
         mkdir -p $2; \
