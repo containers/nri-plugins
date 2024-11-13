@@ -58,6 +58,6 @@ helm_resource(
     deps=DEPS,
     image_deps=[IMAGE],
     image_keys=[('image.registry', 'image.repository', 'image.tag')],
-    flags=['--set=ports[0].name=metrics','--set=ports[0].container=8891','--set=image.name=' + IMAGE],
+    flags=['--set=config.instrumentation.prometheusExport=true','--set=ports[0].name=metrics','--set=ports[0].container=8891','--set=image.name=' + IMAGE],
     resource_deps=['binary-build-logs']
 )
