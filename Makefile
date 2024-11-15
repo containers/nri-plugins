@@ -474,62 +474,36 @@ LOCALBIN ?= $(BUILD_AUX)/bin
 $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
 
-## External generation tool binaries
+# External generation tool versions
+CLIENT_GEN_VERSION := v0.31.2
+CONTROLLER_GEN_VERSION := v0.16.5
+
+# External generation tool binaries
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 CLIENT_GEN ?= $(LOCALBIN)/client-gen
 
-GIT_CLONE    := git clone
-
-# External generation tool versions
-CONTROLLER_TOOLS_VERSION ?= v0.16.5
-CLIENT_GEN_VERSION ?= v0.28.1
-CODE_GENERATOR_REPO ?= https://github.com/kubernetes/code-generator
-CODE_GENERATOR_VERSION ?= v0.28.1
-GENERATE_GROUPS ?= $(BUILD_AUX)/code-generator/generate-groups.sh
-
-# controller-gen local installation rules
+# Client generation rules
 .PHONY: controller-gen
-controller-gen: $(CONTROLLER_GEN)
-$(CONTROLLER_GEN): $(LOCALBIN)
-	test -s $@ && $@ --version | grep -q $(CONTROLLER_TOOLS_VERSION) || \
-	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
+controller-gen:
+	@GOBIN=$(LOCALBIN) $(GO_CMD) install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_GEN_VERSION)
 
-# client-gen local installation rules
-.PHONY: client-gen
-client-gen: $(CLIENT_GEN)
-$(CLIENT_GEN): $(LOCALBIN)
-	test -s $@ && $@ --version | grep -q $(CLIENT_GEN_VERSION) || \
-	GOBIN=$(LOCALBIN) go install k8s.io/code-generator/cmd/client-gen@$(CLIENT_GEN_VERSION)
+.PHONY: code-generator
+code-generator:
+	@GOBIN=$(LOCALBIN) $(GO_CMD) install k8s.io/code-generator/cmd/client-gen@$(CLIENT_GEN_VERSION)
 
-# code-generator local installation rules
-.PHONY: $(GENERATE_GROUPS)
-$(GENERATE_GROUPS):
-	test -s $@ || \
-	$(GIT_CLONE) $(CODE_GENERATOR_REPO) -b $(CODE_GENERATOR_VERSION) $(dir $@) && \
-	cd $(dir $@) && \
-	for d in ./cmd/*; do go build $$d; done
+# Generate RBAC and CRD objects.
+.PHONY: manifests
+manifests: controller-gen
+	$(CONTROLLER_GEN) \
+		crd:generateEmbeddedObjectMeta=true output:crd:artifacts:config=$(CRD_BASE_DIR)\
+		paths="./pkg/apis/..."
+	$(CONTROLLER_GEN) \
+		rbac:roleName=manager-role crd paths="./pkg/apis/..." output:crd:artifacts:config=$(CRD_BASE_DIR)
 
-# CRD generation rules
-.PHONY: generate-manifests
-generate-manifests: controller-gen
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd paths="./pkg/apis/..." output:crd:artifacts:config=$(CRD_BASE_DIR)
-
-# code generation rules for CRD types (DeepCopy, DeepCopyInto, etc.)
-.PHONY: generate-types
-generate-types: controller-gen
-	$(CONTROLLER_GEN) object:headerFile="./docs/license-header.go.txt" paths="./pkg/apis/..."
-
-# client generation rules
 .PHONY: generate-clients
-generate-clients: $(GENERATE_GROUPS)
-	$(GENERATE_GROUPS) client \
-	    github.com/containers/nri-plugins/pkg/generated \
-	    github.com/containers/nri-plugins/pkg/apis \
-	    "config:v1alpha1" --output-base=. \
-	    --go-header-file=./docs/license-header.go.txt && \
-	rm -fr pkg/generated && \
-	mv github.com/containers/nri-plugins/pkg/generated pkg && \
-	rm -fr github.com
+generate-clients: controller-gen code-generator manifests
+	$(CONTROLLER_GEN) object:headerFile="scripts/hack/boilerplate.go.txt" paths="./pkg/apis/..."
+	./scripts/hack/update_codegen.sh $(GO_CMD) $(BUILD_AUX)
 
 # golang code generation rules
 generate-go:
@@ -550,4 +524,4 @@ update-helm-crds:
 	done
 
 # top level rule to (re)generate everything we need
-generate: generate-go generate-types generate-manifests generate-clients update-helm-crds
+generate: generate-go generate-clients update-helm-crds
