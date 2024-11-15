@@ -39,22 +39,24 @@ var topologyawarepoliciesKind = v1alpha1.SchemeGroupVersion.WithKind("TopologyAw
 
 // Get takes name of the topologyAwarePolicy, and returns the corresponding topologyAwarePolicy object, and an error if there is any.
 func (c *FakeTopologyAwarePolicies) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.TopologyAwarePolicy, err error) {
+	emptyResult := &v1alpha1.TopologyAwarePolicy{}
 	obj, err := c.Fake.
-		Invokes(testing.NewGetAction(topologyawarepoliciesResource, c.ns, name), &v1alpha1.TopologyAwarePolicy{})
+		Invokes(testing.NewGetActionWithOptions(topologyawarepoliciesResource, c.ns, name, options), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1alpha1.TopologyAwarePolicy), err
 }
 
 // List takes label and field selectors, and returns the list of TopologyAwarePolicies that match those selectors.
 func (c *FakeTopologyAwarePolicies) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.TopologyAwarePolicyList, err error) {
+	emptyResult := &v1alpha1.TopologyAwarePolicyList{}
 	obj, err := c.Fake.
-		Invokes(testing.NewListAction(topologyawarepoliciesResource, topologyawarepoliciesKind, c.ns, opts), &v1alpha1.TopologyAwarePolicyList{})
+		Invokes(testing.NewListActionWithOptions(topologyawarepoliciesResource, topologyawarepoliciesKind, c.ns, opts), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 
 	label, _, _ := testing.ExtractFromListOptions(opts)
@@ -73,40 +75,43 @@ func (c *FakeTopologyAwarePolicies) List(ctx context.Context, opts v1.ListOption
 // Watch returns a watch.Interface that watches the requested topologyAwarePolicies.
 func (c *FakeTopologyAwarePolicies) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewWatchAction(topologyawarepoliciesResource, c.ns, opts))
+		InvokesWatch(testing.NewWatchActionWithOptions(topologyawarepoliciesResource, c.ns, opts))
 
 }
 
 // Create takes the representation of a topologyAwarePolicy and creates it.  Returns the server's representation of the topologyAwarePolicy, and an error, if there is any.
 func (c *FakeTopologyAwarePolicies) Create(ctx context.Context, topologyAwarePolicy *v1alpha1.TopologyAwarePolicy, opts v1.CreateOptions) (result *v1alpha1.TopologyAwarePolicy, err error) {
+	emptyResult := &v1alpha1.TopologyAwarePolicy{}
 	obj, err := c.Fake.
-		Invokes(testing.NewCreateAction(topologyawarepoliciesResource, c.ns, topologyAwarePolicy), &v1alpha1.TopologyAwarePolicy{})
+		Invokes(testing.NewCreateActionWithOptions(topologyawarepoliciesResource, c.ns, topologyAwarePolicy, opts), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1alpha1.TopologyAwarePolicy), err
 }
 
 // Update takes the representation of a topologyAwarePolicy and updates it. Returns the server's representation of the topologyAwarePolicy, and an error, if there is any.
 func (c *FakeTopologyAwarePolicies) Update(ctx context.Context, topologyAwarePolicy *v1alpha1.TopologyAwarePolicy, opts v1.UpdateOptions) (result *v1alpha1.TopologyAwarePolicy, err error) {
+	emptyResult := &v1alpha1.TopologyAwarePolicy{}
 	obj, err := c.Fake.
-		Invokes(testing.NewUpdateAction(topologyawarepoliciesResource, c.ns, topologyAwarePolicy), &v1alpha1.TopologyAwarePolicy{})
+		Invokes(testing.NewUpdateActionWithOptions(topologyawarepoliciesResource, c.ns, topologyAwarePolicy, opts), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1alpha1.TopologyAwarePolicy), err
 }
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeTopologyAwarePolicies) UpdateStatus(ctx context.Context, topologyAwarePolicy *v1alpha1.TopologyAwarePolicy, opts v1.UpdateOptions) (*v1alpha1.TopologyAwarePolicy, error) {
+func (c *FakeTopologyAwarePolicies) UpdateStatus(ctx context.Context, topologyAwarePolicy *v1alpha1.TopologyAwarePolicy, opts v1.UpdateOptions) (result *v1alpha1.TopologyAwarePolicy, err error) {
+	emptyResult := &v1alpha1.TopologyAwarePolicy{}
 	obj, err := c.Fake.
-		Invokes(testing.NewUpdateSubresourceAction(topologyawarepoliciesResource, "status", c.ns, topologyAwarePolicy), &v1alpha1.TopologyAwarePolicy{})
+		Invokes(testing.NewUpdateSubresourceActionWithOptions(topologyawarepoliciesResource, "status", c.ns, topologyAwarePolicy, opts), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1alpha1.TopologyAwarePolicy), err
 }
@@ -121,7 +126,7 @@ func (c *FakeTopologyAwarePolicies) Delete(ctx context.Context, name string, opt
 
 // DeleteCollection deletes a collection of objects.
 func (c *FakeTopologyAwarePolicies) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	action := testing.NewDeleteCollectionAction(topologyawarepoliciesResource, c.ns, listOpts)
+	action := testing.NewDeleteCollectionActionWithOptions(topologyawarepoliciesResource, c.ns, opts, listOpts)
 
 	_, err := c.Fake.Invokes(action, &v1alpha1.TopologyAwarePolicyList{})
 	return err
@@ -129,11 +134,12 @@ func (c *FakeTopologyAwarePolicies) DeleteCollection(ctx context.Context, opts v
 
 // Patch applies the patch and returns the patched topologyAwarePolicy.
 func (c *FakeTopologyAwarePolicies) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.TopologyAwarePolicy, err error) {
+	emptyResult := &v1alpha1.TopologyAwarePolicy{}
 	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(topologyawarepoliciesResource, c.ns, name, pt, data, subresources...), &v1alpha1.TopologyAwarePolicy{})
+		Invokes(testing.NewPatchSubresourceActionWithOptions(topologyawarepoliciesResource, c.ns, name, pt, data, opts, subresources...), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1alpha1.TopologyAwarePolicy), err
 }
