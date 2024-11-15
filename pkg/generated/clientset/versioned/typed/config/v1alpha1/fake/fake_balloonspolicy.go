@@ -39,22 +39,24 @@ var balloonspoliciesKind = v1alpha1.SchemeGroupVersion.WithKind("BalloonsPolicy"
 
 // Get takes name of the balloonsPolicy, and returns the corresponding balloonsPolicy object, and an error if there is any.
 func (c *FakeBalloonsPolicies) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.BalloonsPolicy, err error) {
+	emptyResult := &v1alpha1.BalloonsPolicy{}
 	obj, err := c.Fake.
-		Invokes(testing.NewGetAction(balloonspoliciesResource, c.ns, name), &v1alpha1.BalloonsPolicy{})
+		Invokes(testing.NewGetActionWithOptions(balloonspoliciesResource, c.ns, name, options), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1alpha1.BalloonsPolicy), err
 }
 
 // List takes label and field selectors, and returns the list of BalloonsPolicies that match those selectors.
 func (c *FakeBalloonsPolicies) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.BalloonsPolicyList, err error) {
+	emptyResult := &v1alpha1.BalloonsPolicyList{}
 	obj, err := c.Fake.
-		Invokes(testing.NewListAction(balloonspoliciesResource, balloonspoliciesKind, c.ns, opts), &v1alpha1.BalloonsPolicyList{})
+		Invokes(testing.NewListActionWithOptions(balloonspoliciesResource, balloonspoliciesKind, c.ns, opts), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 
 	label, _, _ := testing.ExtractFromListOptions(opts)
@@ -73,40 +75,43 @@ func (c *FakeBalloonsPolicies) List(ctx context.Context, opts v1.ListOptions) (r
 // Watch returns a watch.Interface that watches the requested balloonsPolicies.
 func (c *FakeBalloonsPolicies) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewWatchAction(balloonspoliciesResource, c.ns, opts))
+		InvokesWatch(testing.NewWatchActionWithOptions(balloonspoliciesResource, c.ns, opts))
 
 }
 
 // Create takes the representation of a balloonsPolicy and creates it.  Returns the server's representation of the balloonsPolicy, and an error, if there is any.
 func (c *FakeBalloonsPolicies) Create(ctx context.Context, balloonsPolicy *v1alpha1.BalloonsPolicy, opts v1.CreateOptions) (result *v1alpha1.BalloonsPolicy, err error) {
+	emptyResult := &v1alpha1.BalloonsPolicy{}
 	obj, err := c.Fake.
-		Invokes(testing.NewCreateAction(balloonspoliciesResource, c.ns, balloonsPolicy), &v1alpha1.BalloonsPolicy{})
+		Invokes(testing.NewCreateActionWithOptions(balloonspoliciesResource, c.ns, balloonsPolicy, opts), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1alpha1.BalloonsPolicy), err
 }
 
 // Update takes the representation of a balloonsPolicy and updates it. Returns the server's representation of the balloonsPolicy, and an error, if there is any.
 func (c *FakeBalloonsPolicies) Update(ctx context.Context, balloonsPolicy *v1alpha1.BalloonsPolicy, opts v1.UpdateOptions) (result *v1alpha1.BalloonsPolicy, err error) {
+	emptyResult := &v1alpha1.BalloonsPolicy{}
 	obj, err := c.Fake.
-		Invokes(testing.NewUpdateAction(balloonspoliciesResource, c.ns, balloonsPolicy), &v1alpha1.BalloonsPolicy{})
+		Invokes(testing.NewUpdateActionWithOptions(balloonspoliciesResource, c.ns, balloonsPolicy, opts), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1alpha1.BalloonsPolicy), err
 }
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeBalloonsPolicies) UpdateStatus(ctx context.Context, balloonsPolicy *v1alpha1.BalloonsPolicy, opts v1.UpdateOptions) (*v1alpha1.BalloonsPolicy, error) {
+func (c *FakeBalloonsPolicies) UpdateStatus(ctx context.Context, balloonsPolicy *v1alpha1.BalloonsPolicy, opts v1.UpdateOptions) (result *v1alpha1.BalloonsPolicy, err error) {
+	emptyResult := &v1alpha1.BalloonsPolicy{}
 	obj, err := c.Fake.
-		Invokes(testing.NewUpdateSubresourceAction(balloonspoliciesResource, "status", c.ns, balloonsPolicy), &v1alpha1.BalloonsPolicy{})
+		Invokes(testing.NewUpdateSubresourceActionWithOptions(balloonspoliciesResource, "status", c.ns, balloonsPolicy, opts), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1alpha1.BalloonsPolicy), err
 }
@@ -121,7 +126,7 @@ func (c *FakeBalloonsPolicies) Delete(ctx context.Context, name string, opts v1.
 
 // DeleteCollection deletes a collection of objects.
 func (c *FakeBalloonsPolicies) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	action := testing.NewDeleteCollectionAction(balloonspoliciesResource, c.ns, listOpts)
+	action := testing.NewDeleteCollectionActionWithOptions(balloonspoliciesResource, c.ns, opts, listOpts)
 
 	_, err := c.Fake.Invokes(action, &v1alpha1.BalloonsPolicyList{})
 	return err
@@ -129,11 +134,12 @@ func (c *FakeBalloonsPolicies) DeleteCollection(ctx context.Context, opts v1.Del
 
 // Patch applies the patch and returns the patched balloonsPolicy.
 func (c *FakeBalloonsPolicies) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.BalloonsPolicy, err error) {
+	emptyResult := &v1alpha1.BalloonsPolicy{}
 	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(balloonspoliciesResource, c.ns, name, pt, data, subresources...), &v1alpha1.BalloonsPolicy{})
+		Invokes(testing.NewPatchSubresourceActionWithOptions(balloonspoliciesResource, c.ns, name, pt, data, opts, subresources...), emptyResult)
 
 	if obj == nil {
-		return nil, err
+		return emptyResult, err
 	}
 	return obj.(*v1alpha1.BalloonsPolicy), err
 }
