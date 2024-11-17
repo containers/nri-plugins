@@ -123,6 +123,7 @@ func (p *policy) reinstateGrants(grants map[string]Grant) error {
 }
 
 type cachedGrant struct {
+	PrettyName string
 	Exclusive  string
 	Part       int
 	CPUType    cpuClass
@@ -136,6 +137,7 @@ type cachedGrant struct {
 
 func newCachedGrant(cg Grant) *cachedGrant {
 	ccg := &cachedGrant{}
+	ccg.PrettyName = cg.GetContainer().PrettyName()
 	ccg.Exclusive = cg.ExclusiveCPUs().String()
 	ccg.Part = cg.CPUPortion()
 	ccg.CPUType = cg.CPUType()
