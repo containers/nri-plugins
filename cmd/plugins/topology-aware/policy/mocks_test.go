@@ -713,11 +713,11 @@ func (m *mockCache) WriteFile(string, string, os.FileMode, []byte) error {
 
 type mockCPUAllocator struct{}
 
-func (m *mockCPUAllocator) AllocateCpus(from *cpuset.CPUSet, cnt int, prefer cpuallocator.CPUPriority) (cpuset.CPUSet, error) {
+func (m *mockCPUAllocator) AllocateCpus(from *cpuset.CPUSet, cnt int, options ...cpuallocator.Option) (cpuset.CPUSet, error) {
 	return cpuset.New(0), nil
 }
 
-func (m *mockCPUAllocator) ReleaseCpus(from *cpuset.CPUSet, cnt int, prefer cpuallocator.CPUPriority) (cpuset.CPUSet, error) {
+func (m *mockCPUAllocator) ReleaseCpus(from *cpuset.CPUSet, cnt int, options ...cpuallocator.Option) (cpuset.CPUSet, error) {
 	return cpuset.New(0), nil
 }
 
