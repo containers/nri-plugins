@@ -993,6 +993,8 @@ func (cg *grant) Clone() Grant {
 		cpuType:    cg.CPUType(),
 		cpuPortion: cg.SharedPortion(),
 		memType:    cg.MemoryType(),
+		memZone:    cg.GetMemoryZone(),
+		memSize:    cg.GetMemorySize(),
 		coldStart:  cg.ColdStart(),
 	}
 }
