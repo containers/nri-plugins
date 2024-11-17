@@ -612,7 +612,7 @@ func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, erro
 	if err != nil {
 		return nil, balloonsError("failed to choose a cpuset for allocating MinCpus: %d from free cpus %q", blnDef.MinCpus, p.freeCpus)
 	}
-	cpus, err = p.cpuAllocator.AllocateCpus(&addFromCpus, blnDef.MinCpus, blnDef.AllocatorPriority.Value())
+	cpus, err = p.cpuAllocator.AllocateCpus(&addFromCpus, blnDef.MinCpus, blnDef.AllocatorPriority.Value().Option())
 	if err != nil {
 		return nil, balloonsError("could not allocate minCpus (%d) for balloon %s[%d]: %w", blnDef.MinCpus, blnDef.Name, freeInstance, err)
 	}
@@ -650,7 +650,7 @@ func (p *balloons) deleteBalloon(bln *Balloon) {
 	p.balloons = remainingBalloons
 	p.forgetCpuClass(bln)
 	p.freeCpus = p.freeCpus.Union(bln.Cpus)
-	p.cpuAllocator.ReleaseCpus(&bln.Cpus, bln.Cpus.Size(), bln.Def.AllocatorPriority.Value())
+	p.cpuAllocator.ReleaseCpus(&bln.Cpus, bln.Cpus.Size(), bln.Def.AllocatorPriority.Value().Option())
 }
 
 // freeBalloon clears a balloon and deletes it if allowed.
@@ -1374,7 +1374,7 @@ func (p *balloons) resizeBalloon(bln *Balloon, newMilliCpus int) error {
 			return balloonsError("resize/inflate: failed to choose a cpuset for allocating additional %d CPUs: %w", cpuCountDelta, err)
 		}
 		log.Debugf("- allocating %d CPUs from %q", cpuCountDelta, addFromCpus)
-		newCpus, err := p.cpuAllocator.AllocateCpus(&addFromCpus, newCpuCount-oldCpuCount, bln.Def.AllocatorPriority.Value())
+		newCpus, err := p.cpuAllocator.AllocateCpus(&addFromCpus, newCpuCount-oldCpuCount, bln.Def.AllocatorPriority.Value().Option())
 		if err != nil {
 			return balloonsError("resize/inflate: allocating %d CPUs for %s failed: %w", cpuCountDelta, bln, err)
 		}
@@ -1391,7 +1391,7 @@ func (p *balloons) resizeBalloon(bln *Balloon, newMilliCpus int) error {
 			return balloonsError("resize/deflate: failed to choose a cpuset for releasing %d CPUs: %w", -cpuCountDelta, err)
 		}
 		log.Debugf("- releasing %d CPUs from cpuset %q", -cpuCountDelta, removeFromCpus)
-		_, err = p.cpuAllocator.ReleaseCpus(&removeFromCpus, -cpuCountDelta, bln.Def.AllocatorPriority.Value())
+		_, err = p.cpuAllocator.ReleaseCpus(&removeFromCpus, -cpuCountDelta, bln.Def.AllocatorPriority.Value().Option())
 		if err != nil {
 			return balloonsError("resize/deflate: releasing %d CPUs from %s failed: %w", -cpuCountDelta, bln, err)
 		}
