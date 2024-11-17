@@ -510,7 +510,7 @@ func (cs *supply) Reserve(g Grant, o *libmem.Offer) (map[string]libmem.NodeMask,
 
 // takeCPUs takes up to cnt CPUs from a given CPU set to another.
 func (cs *supply) takeCPUs(from, to *cpuset.CPUSet, cnt int, prio cpuPrio) (cpuset.CPUSet, error) {
-	cset, err := cs.node.Policy().cpuAllocator.AllocateCpus(from, cnt, prio)
+	cset, err := cs.node.Policy().cpuAllocator.AllocateCpus(from, cnt, prio.Option())
 	if err != nil {
 		return cset, err
 	}

@@ -66,8 +66,8 @@ type allocatorHelper struct {
 
 // CPUAllocator is an interface for a generic CPU allocator
 type CPUAllocator interface {
-	AllocateCpus(from *cpuset.CPUSet, cnt int, prefer CPUPriority) (cpuset.CPUSet, error)
-	ReleaseCpus(from *cpuset.CPUSet, cnt int, prefer CPUPriority) (cpuset.CPUSet, error)
+	AllocateCpus(from *cpuset.CPUSet, cnt int, options ...Option) (cpuset.CPUSet, error)
+	ReleaseCpus(from *cpuset.CPUSet, cnt int, options ...Option) (cpuset.CPUSet, error)
 	GetCPUPriorities() map[CPUPriority]cpuset.CPUSet
 }
 
@@ -80,6 +80,21 @@ const (
 	NumCPUPriorities
 	PriorityNone = NumCPUPriorities
 )
+
+// Option is an option for a CPU allocation or release.
+type Option func(*allocatorHelper) error
+
+func (p CPUPriority) Option() Option {
+	return WithPriority(p)
+}
+
+// WithPriority sets the preferred CPU priority for the allocation.
+func WithPriority(p CPUPriority) Option {
+	return func(a *allocatorHelper) error {
+		a.prefer = p
+		return nil
+	}
+}
 
 type cpuAllocator struct {
 	logger.Logger
@@ -1333,7 +1348,7 @@ func (s *cacheGroupSorter) sortCacheGroups(a *allocatorHelper) {
 	}
 }
 
-func (ca *cpuAllocator) allocateCpus(from *cpuset.CPUSet, cnt int, prefer CPUPriority) (cpuset.CPUSet, error) {
+func (ca *cpuAllocator) allocateCpus(from *cpuset.CPUSet, cnt int, options ...Option) (cpuset.CPUSet, error) {
 	var result cpuset.CPUSet
 	var err error
 
@@ -1344,9 +1359,13 @@ func (ca *cpuAllocator) allocateCpus(from *cpuset.CPUSet, cnt int, prefer CPUPri
 		result, err, *from = from.Clone(), nil, cpuset.New()
 	default:
 		a := newAllocatorHelper(ca.sys, ca.topologyCache)
+		for _, o := range options {
+			if err := o(a); err != nil {
+				return cpuset.New(), err
+			}
+		}
 		a.from = from.Clone()
 		a.cnt = cnt
-		a.prefer = prefer
 
 		result, err, *from = a.allocate(), nil, a.from.Clone()
 
@@ -1357,16 +1376,16 @@ func (ca *cpuAllocator) allocateCpus(from *cpuset.CPUSet, cnt int, prefer CPUPri
 }
 
 // AllocateCpus allocates a number of CPUs from the given set.
-func (ca *cpuAllocator) AllocateCpus(from *cpuset.CPUSet, cnt int, prefer CPUPriority) (cpuset.CPUSet, error) {
-	result, err := ca.allocateCpus(from, cnt, prefer)
+func (ca *cpuAllocator) AllocateCpus(from *cpuset.CPUSet, cnt int, options ...Option) (cpuset.CPUSet, error) {
+	result, err := ca.allocateCpus(from, cnt, options...)
 	return result, err
 }
 
 // ReleaseCpus releases a number of CPUs from the given set.
-func (ca *cpuAllocator) ReleaseCpus(from *cpuset.CPUSet, cnt int, prefer CPUPriority) (cpuset.CPUSet, error) {
+func (ca *cpuAllocator) ReleaseCpus(from *cpuset.CPUSet, cnt int, options ...Option) (cpuset.CPUSet, error) {
 	oset := from.Clone()
 
-	result, err := ca.allocateCpus(from, from.Size()-cnt, prefer)
+	result, err := ca.allocateCpus(from, from.Size()-cnt, options...)
 
 	ca.Debug("ReleaseCpus(#%s, %d) => kept: #%s, released: #%s", oset, cnt, from, result)
 
