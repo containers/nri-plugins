@@ -94,6 +94,14 @@ func WithPriority(p CPUPriority) Option {
 	}
 }
 
+// WithAllocFlags sets the allocation flags for the allocation.
+func WithAllocFlags(flags AllocFlag) Option {
+	return func(a *allocatorHelper) error {
+		a.flags = flags
+		return nil
+	}
+}
+
 type cpuAllocator struct {
 	logger.Logger
 	sys           sysfs.System  // wrapped sysfs.System instance
