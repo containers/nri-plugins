@@ -34,8 +34,6 @@ type AllocFlag uint
 const (
 	// AllocIdlePackages requests allocation of full idle packages.
 	AllocIdlePackages AllocFlag = 1 << iota
-	// AllocIdleNodes requests allocation of full idle NUMA nodes.
-	AllocIdleNodes
 	// AllocIdleClusters requests allocation of full idle CPU clusters.
 	AllocIdleClusters
 	// AllocCacheGroups requests allocation and splitting of idle and used cache groups
