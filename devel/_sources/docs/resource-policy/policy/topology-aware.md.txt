@@ -146,6 +146,16 @@ behavior. These options can be supplied as part of the effective
     CPU allocations. For a more detailed discussion of CPU prioritization see
     the [cpu allocator](../developers-guide/cpu-allocator.md) documentation.
 
+Additionally, the following sub-configuration is available for instrumentation:
+
+- `instrumentation`: configures runtime instrumentation.
+  - `httpEndpoint`: the address the HTTP server listens on. Example:
+    `:8891`.
+  - `prometheusExport`: if set to True, metrics about system and topology zone
+     resource assignment are readable through `/metrics` from the configured
+     `httpEndpoint`.
+  - `reportPeriod`: `/metrics` aggregation interval for polled metrics.
+
 ## Policy CPU Allocation Preferences
 
 There are a number of workload properties this policy actively checks to decide
@@ -760,3 +770,23 @@ metadata:
 
 <!-- Links -->
 [configuration]: ../configuration.md
+
+## Metrics and Debugging
+
+In order to enable more verbose logging and metrics exporting from the
+topology-aware policy, enable instrumentation and policy debugging from
+the nri-resource-policy global config:
+
+```yaml
+instrumentation:
+  # The topology-aware policy can exports various system and topology
+  # zone utilisation metrics. Accessible in command line with
+  # curl --silent http://$localhost_or_pod_IP:8891/metrics
+  HTTPEndpoint: :8891
+  PrometheusExport: true
+  metrics:
+    enabled: # use '*' instead for all available metrics
+    - policy
+logger:
+  Debug: policy
+```

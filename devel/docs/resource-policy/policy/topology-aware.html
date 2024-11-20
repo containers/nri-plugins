@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.7.1-103-g91dc7b51 documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.7.1-105-g389d012f documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -68,6 +68,7 @@
 <li class="toctree-l4"><a class="reference internal" href="#reserved-cpu-annotations">Reserved CPU annotations</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#allowing-or-denying-mount-device-paths-via-annotations">Allowing or denying mount/device paths via annotations</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#container-affinity-and-anti-affinity">Container Affinity and Anti-Affinity</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#metrics-and-debugging">Metrics and Debugging</a></li>
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="balloons.html">Balloons Policy</a></li>
@@ -303,6 +304,19 @@ annotated with any other CPU preferences. The possible values are: <code class="
 <code class="docutils literal notranslate"><span class="pre">normal</span></code>, <code class="docutils literal notranslate"><span class="pre">low</span></code>, and <code class="docutils literal notranslate"><span class="pre">none</span></code>. Currently this option only affects exclusive
 CPU allocations. For a more detailed discussion of CPU prioritization see
 the <a class="reference internal" href="../developers-guide/cpu-allocator.html"><span class="std std-doc">cpu allocator</span></a> documentation.</p></li>
+</ul>
+</li>
+</ul>
+<p>Additionally, the following sub-configuration is available for instrumentation:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">instrumentation</span></code>: configures runtime instrumentation.</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">httpEndpoint</span></code>: the address the HTTP server listens on. Example:
+<code class="docutils literal notranslate"><span class="pre">:8891</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">prometheusExport</span></code>: if set to True, metrics about system and topology zone
+resource assignment are readable through <code class="docutils literal notranslate"><span class="pre">/metrics</span></code> from the configured
+<code class="docutils literal notranslate"><span class="pre">httpEndpoint</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">reportPeriod</span></code>: <code class="docutils literal notranslate"><span class="pre">/metrics</span></code> aggregation interval for polled metrics.</p></li>
 </ul>
 </li>
 </ul>
@@ -924,6 +938,25 @@ one needs to give just the names of the containers, like in the example below.</
 </div>
 <!-- Links -->
 </section>
+</section>
+<section id="metrics-and-debugging">
+<h2>Metrics and Debugging<a class="headerlink" href="#metrics-and-debugging" title="Permalink to this heading"></a></h2>
+<p>In order to enable more verbose logging and metrics exporting from the
+topology-aware policy, enable instrumentation and policy debugging from
+the nri-resource-policy global config:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">instrumentation</span><span class="p">:</span>
+<span class="w">  </span><span class="c1"># The topology-aware policy can exports various system and topology</span>
+<span class="w">  </span><span class="c1"># zone utilisation metrics. Accessible in command line with</span>
+<span class="w">  </span><span class="c1"># curl --silent http://$localhost_or_pod_IP:8891/metrics</span>
+<span class="w">  </span><span class="nt">HTTPEndpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">:8891</span>
+<span class="w">  </span><span class="nt">PrometheusExport</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">metrics</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="c1"># use &#39;*&#39; instead for all available metrics</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">policy</span>
+<span class="nt">logger</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">Debug</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">policy</span>
+</pre></div>
+</div>
 </section>
 </section>
 
