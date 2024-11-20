@@ -264,13 +264,13 @@ Balloons policy parameters:
   - `prometheusExport`: if set to True, balloons with their CPUs
      and assigned containers are readable through `/metrics` from the
      httpEndpoint.
-  - `reportPeriod`: `/metrics` aggregation interval.
+  - `reportPeriod`: `/metrics` aggregation interval for polled metrics.
 
 ### Example
 
 Example configuration that runs all pods in balloons of 1-4
 CPUs. Instrumentation enables reading CPUs and containers in balloons
-from `http://localhost:8891/metrics`.
+from `http://$localhost_or_pod_IP:8891/metrics`.
 
 ```yaml
 apiVersion: config.nri/v1alpha1
@@ -413,9 +413,12 @@ nri-resource-policy global config:
 instrumentation:
   # The balloons policy exports containers running in each balloon,
   # and cpusets of balloons. Accessible in command line:
-  # curl --silent http://localhost:8891/metrics
+  # curl --silent http://$localhost_or_pod_IP:8891/metrics
   HTTPEndpoint: :8891
   PrometheusExport: true
+  metrics:
+    enabled: # use '*' instead for all available metrics
+    - policy
 logger:
   Debug: policy
 ```

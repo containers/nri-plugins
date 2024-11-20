@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.7.1-94-g866fc8a1 documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.7.1-100-g4a222877 documentation</title>
       <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -385,7 +385,7 @@ class (kHz).</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">prometheusExport</span></code>: if set to True, balloons with their CPUs
 and assigned containers are readable through <code class="docutils literal notranslate"><span class="pre">/metrics</span></code> from the
 httpEndpoint.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">reportPeriod</span></code>: <code class="docutils literal notranslate"><span class="pre">/metrics</span></code> aggregation interval.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">reportPeriod</span></code>: <code class="docutils literal notranslate"><span class="pre">/metrics</span></code> aggregation interval for polled metrics.</p></li>
 </ul>
 </li>
 </ul>
@@ -394,7 +394,7 @@ httpEndpoint.</p></li>
 <h3>Example<a class="headerlink" href="#example" title="Permalink to this heading"></a></h3>
 <p>Example configuration that runs all pods in balloons of 1-4
 CPUs. Instrumentation enables reading CPUs and containers in balloons
-from <code class="docutils literal notranslate"><span class="pre">http://localhost:8891/metrics</span></code>.</p>
+from <code class="docutils literal notranslate"><span class="pre">http://$localhost_or_pod_IP:8891/metrics</span></code>.</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">config.nri/v1alpha1</span>
 <span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">BalloonsPolicy</span>
 <span class="nt">metadata</span><span class="p">:</span>
@@ -525,9 +525,12 @@ nri-resource-policy global config:</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">instrumentation</span><span class="p">:</span>
 <span class="w">  </span><span class="c1"># The balloons policy exports containers running in each balloon,</span>
 <span class="w">  </span><span class="c1"># and cpusets of balloons. Accessible in command line:</span>
-<span class="w">  </span><span class="c1"># curl --silent http://localhost:8891/metrics</span>
+<span class="w">  </span><span class="c1"># curl --silent http://$localhost_or_pod_IP:8891/metrics</span>
 <span class="w">  </span><span class="nt">HTTPEndpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">:8891</span>
 <span class="w">  </span><span class="nt">PrometheusExport</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">metrics</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="c1"># use &#39;*&#39; instead for all available metrics</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">policy</span>
 <span class="nt">logger</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">Debug</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">policy</span>
 </pre></div>
