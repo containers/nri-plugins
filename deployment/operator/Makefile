@@ -241,6 +241,8 @@ cleanup-crds: ## Clean up temporarily copied CRDs and CRs.
 	rm -f $(SAMPLE_DEST_DIR)/template-config.yaml
 	rm -f $(SAMPLE_DEST_DIR)/topologyaware-config.yaml
 	rm -f $(SAMPLE_DEST_DIR)/noderesourcetopology.yaml
+	rm -rf $(OPERATOR_SDK)
+	rm config/manager/kustomization.yaml
 
 .PHONY: kustomizations
 kustomizations: config/manager/kustomization.yaml config/manifests/bases/nri-plugins-operator.clusterserviceversion.yaml
