@@ -502,7 +502,7 @@ get-config-node-status-result() {
 get-config-node-status-error() {
     local resource="$1" node="$(get-hostname-for-vm)"
     vm-command-q "kubectl get -n kube-system $resource \
-                      -ojsonpath=\"{.status.nodes['$node'].error}\""
+                      -ojsonpath=\"{.status.nodes['$node'].errors}\""
 }
 
 wait-config-node-status() {
