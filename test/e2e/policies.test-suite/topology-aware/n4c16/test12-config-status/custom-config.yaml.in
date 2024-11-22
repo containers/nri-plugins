@@ -1,7 +1,7 @@
 apiVersion: config.nri/v1alpha1
 kind: TopologyAwarePolicy
 metadata:
-  name: default
+  name: ${CONFIG_NAME:-default}
   namespace: kube-system
 spec:
   pinCPU: true
