@@ -353,6 +353,7 @@ helm-launch() { # script API
     #         default: 20s
     #     cfgresource: config custom resource to wait for node status to change in
     #         default: balloonspolicies/default or topologyawarepolicies/default
+    #     expect_error: don't exit, expect availability error
     #
     # Example:
     #     helm_config=$(instantiate helm-config.yaml) helm-launch balloons
@@ -361,6 +362,7 @@ helm-launch() { # script API
     local helm_config="${helm_config:-$TEST_DIR/helm-config.yaml}"
     local ds_name="${daemonset_name:-}" ctr_name="${container_name:-nri-resource-policy-$1}"
     local helm_name="${helm_name:-test}" timeout="${launch_timeout:-20s}"
+    local expect_error="${expect_error:-0}"
     local plugin="$1" cfgresource=${cfgresource:-} cfgstatus
     local deadline
     shift
@@ -403,8 +405,15 @@ helm-launch() { # script API
 
     deadline=$(deadline-for-timeout $timeout)
     vm-command "kubectl wait -n kube-system ds/${ds_name} --timeout=$timeout \
-                    --for=jsonpath='{.status.numberAvailable}'=1" || \
-        error "Timeout while waiting daemonset/${ds_name} to be available"
+                    --for=jsonpath='{.status.numberAvailable}'=1"
+
+    if [ "$COMMAND_STATUS" != "0" ]; then
+        if [ "$expect_error" != "1" ]; then
+            error "Timeout while waiting daemonset/${ds_name} to be available"
+        else
+            return 1
+        fi
+    fi
 
     timeout=$(timeout-for-deadline $deadline)
     timeout=$timeout wait-config-node-status $cfgresource
@@ -413,7 +422,6 @@ helm-launch() { # script API
     if [ "$result" != "Success" ]; then
         reason=$(get-config-node-status-error $cfgresource)
         error "Plugin $plugin configuration failed: $reason"
-        return 1
     fi
 
     vm-start-log-collection -n kube-system ds/$ds_name -c $ctr_name
