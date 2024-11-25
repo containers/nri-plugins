@@ -128,17 +128,17 @@ func (m *resmgr) Start() error {
 	return nil
 }
 
-func (m *resmgr) updateConfig(newCfg interface{}) error {
+func (m *resmgr) updateConfig(newCfg interface{}) (bool, error) {
 	if newCfg == nil {
-		return fmt.Errorf("can't run without effective configuration...")
+		return false, fmt.Errorf("can't run without effective configuration...")
 	}
 
 	cfg, ok := newCfg.(cfgapi.ResmgrConfig)
 	if !ok {
 		if !m.running {
-			log.Fatalf("got initial configuration of unexpected type %T", newCfg)
+			return true, fmt.Errorf("got initial configuration of unexpected type %T", newCfg)
 		} else {
-			return fmt.Errorf("got configuration of unexpected type %T", newCfg)
+			return false, fmt.Errorf("got configuration of unexpected type %T", newCfg)
 		}
 	}
 
@@ -151,17 +151,17 @@ func (m *resmgr) updateConfig(newCfg interface{}) error {
 		log.InfoBlock("  <initial config> ", "%s", dump)
 
 		if err := m.start(cfg); err != nil {
-			log.Fatalf("failed to start with initial configuration: %v", err)
+			return true, fmt.Errorf("failed to start with initial configuration: %v", err)
 		}
 
 		m.running = true
-		return nil
+		return false, nil
 	}
 
 	log.Infof("configuration update %s (generation %d):", meta.GetName(), meta.GetGeneration())
 	log.InfoBlock("  <updated config> ", "%s", dump)
 
-	return m.reconfigure(cfg)
+	return false, m.reconfigure(cfg)
 }
 
 // Start resource management once we acquired initial configuration.

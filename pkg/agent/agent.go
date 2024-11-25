@@ -103,7 +103,7 @@ func TemplateConfigInterface() ConfigInterface {
 }
 
 // NotifyFn is a function to call when the effective configuration changes.
-type NotifyFn func(cfg interface{}) error
+type NotifyFn func(cfg interface{}) (bool, error)
 
 var (
 	// Our logger instance for the agent.
@@ -544,12 +544,17 @@ func (a *Agent) updateConfig(cfg metav1.Object) {
 		}
 	}
 
-	err := a.notifyFn(cfg)
+	fatal, err := a.notifyFn(cfg)
+	a.patchConfigStatus(a.currentCfg, cfg, err)
+
 	if err != nil {
-		log.Errorf("failed to apply configuration: %v", err)
+		if fatal {
+			log.Fatalf("failed to apply configuration: %v", err)
+		} else {
+			log.Errorf("failed to apply configuration: %v", err)
+		}
 	}
 
-	a.patchConfigStatus(a.currentCfg, cfg, err)
 	a.currentCfg = cfg
 }
 
