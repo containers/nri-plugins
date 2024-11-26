@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/containers/nri-plugins/pkg/agent/podresapi"
 	resmgr "github.com/containers/nri-plugins/pkg/apis/resmgr/v1alpha1"
 	"github.com/containers/nri-plugins/pkg/cgroups"
 	"github.com/containers/nri-plugins/pkg/kubernetes"
@@ -89,18 +90,25 @@ func (c *container) getDenyPathList() (*PathList, bool, error) {
 // Create and initialize a cached container.
 func (cch *cache) createContainer(nriCtr *nri.Container) (*container, error) {
 	podID := nriCtr.GetPodSandboxId()
-	_, ok := cch.Pods[podID]
+	pod, ok := cch.Pods[podID]
 	if !ok {
 		return nil, cacheError("can't find cached pod %s for container %s (%s)",
 			podID, nriCtr.GetId(), nriCtr.GetName())
 	}
 
 	c := &container{
-		cache: cch,
-		Ctr:   nriCtr,
-		State: nriCtr.GetState(),
-		Tags:  make(map[string]string),
-		ctime: time.Now(),
+		cache:        cch,
+		Ctr:          nriCtr,
+		State:        nriCtr.GetState(),
+		Tags:         make(map[string]string),
+		ctime:        time.Now(),
+		PodResources: pod.GetPodResources().GetContainer(nriCtr.GetName()),
+	}
+
+	if c.PodResources == nil {
+		log.Info("no pod resources for container %s", c.PrettyName())
+	} else {
+		log.Info("got pod resources %+v", c.PodResources)
 	}
 
 	c.generateTopologyHints()
@@ -233,9 +241,19 @@ func (c *container) generateTopologyHints() {
 				}
 			}
 		}
+
+		checkDenied := func(path string) bool {
+			return checkAllowedAndDeniedPaths(path, allowPathList, denyPathList)
+		}
+
+		if podRes := c.GetPodResources(); podRes != nil {
+			hints := podRes.GetDeviceTopologyHints(checkDenied)
+			c.TopologyHints = topology.MergeTopologyHints(c.TopologyHints, hints)
+		}
 	} else {
 		log.Info("automatic topology hint generation disabled for devices")
 	}
+
 }
 
 func isReadOnlyMount(m *nri.Mount) bool {
@@ -450,6 +468,14 @@ func (c *container) GetEffectiveAnnotation(key string) (string, bool) {
 
 func (c *container) GetResourceRequirements() v1.ResourceRequirements {
 	return c.Requirements
+}
+
+func (c *container) GetPodResources() *podresapi.ContainerResources {
+	pod, ok := c.GetPod()
+	if !ok {
+		return nil
+	}
+	return pod.GetPodResources().GetContainer(c.GetName())
 }
 
 func (c *container) SetResourceUpdates(r *nri.LinuxResources) bool {

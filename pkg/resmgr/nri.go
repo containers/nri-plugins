@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/containers/nri-plugins/pkg/instrumentation/metrics"
 	"github.com/containers/nri-plugins/pkg/instrumentation/tracing"
@@ -40,6 +41,11 @@ type nriPlugin struct {
 
 var (
 	nri = logger.NewLogger("nri-plugin")
+)
+
+const (
+	podResListTimeout = 2 * time.Second
+	podResGetTimeout  = 1 * time.Second
 )
 
 func newNRIPlugin(resmgr *resmgr) (*nriPlugin, error) {
@@ -198,7 +204,7 @@ func (p *nriPlugin) syncWithNRI(pods []*api.PodSandbox, containers []*api.Contai
 
 	nri.Info("synchronizing cache state with NRI runtime...")
 
-	_, _, deleted := m.cache.RefreshPods(pods)
+	_, _, deleted := m.cache.RefreshPods(pods, m.agent.GoListPodResources(podResListTimeout))
 	for _, c := range deleted {
 		nri.Info("discovered stale container %s (%s)...", c.PrettyName(), c.GetID())
 		released = append(released, c)
@@ -290,18 +296,21 @@ func (p *nriPlugin) RunPodSandbox(ctx context.Context, pod *api.PodSandbox) (ret
 		span.End(tracing.WithStatus(retErr))
 	}()
 
+	m := p.resmgr
+	podResCh := m.agent.GoGetPodResources(pod.GetNamespace(), pod.GetName(), podResGetTimeout)
+
 	p.dump(in, event, pod)
 	defer func() {
 		p.dump(out, event, retErr)
 	}()
 
-	m := p.resmgr
 	m.Lock()
 	defer m.Unlock()
 	b := metrics.Block()
 	defer b.Done()
 
-	m.cache.InsertPod(pod)
+	m.cache.InsertPod(pod, podResCh)
+
 	return nil
 }
 
@@ -383,19 +392,19 @@ func (p *nriPlugin) RemovePodSandbox(ctx context.Context, podSandbox *api.PodSan
 	return nil
 }
 
-func (p *nriPlugin) CreateContainer(ctx context.Context, podSandbox *api.PodSandbox, container *api.Container) (adjust *api.ContainerAdjustment, updates []*api.ContainerUpdate, retErr error) {
+func (p *nriPlugin) CreateContainer(ctx context.Context, pod *api.PodSandbox, container *api.Container) (adjust *api.ContainerAdjustment, updates []*api.ContainerUpdate, retErr error) {
 	event := CreateContainer
 
 	_, span := tracing.StartSpan(
 		ctx,
 		event,
-		tracing.WithAttributes(containerSpanTags(podSandbox, container)...),
+		tracing.WithAttributes(containerSpanTags(pod, container)...),
 	)
 	defer func() {
 		span.End(tracing.WithStatus(retErr))
 	}()
 
-	p.dump(in, event, podSandbox, container)
+	p.dump(in, event, pod, container)
 	defer func() {
 		p.dump(out, event, adjust, updates, retErr)
 	}()
