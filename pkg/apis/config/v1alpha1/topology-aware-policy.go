@@ -18,6 +18,16 @@ var (
 	_ ResmgrConfig = &TopologyAwarePolicy{}
 )
 
+func (c *TopologyAwarePolicy) AgentConfig() *AgentConfig {
+	if c == nil {
+		return nil
+	}
+
+	a := c.Spec.Agent
+
+	return &a
+}
+
 func (c *TopologyAwarePolicy) CommonConfig() *CommonConfig {
 	if c == nil {
 		return nil
