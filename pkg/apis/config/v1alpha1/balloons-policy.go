@@ -18,6 +18,16 @@ var (
 	_ ResmgrConfig = &BalloonsPolicy{}
 )
 
+func (c *BalloonsPolicy) AgentConfig() *AgentConfig {
+	if c == nil {
+		return nil
+	}
+
+	a := c.Spec.Agent
+
+	return &a
+}
+
 func (c *BalloonsPolicy) CommonConfig() *CommonConfig {
 	if c == nil {
 		return nil

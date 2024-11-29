@@ -14,34 +14,18 @@
 
 package v1alpha1
 
-var (
-	_ ResmgrConfig = &TopologyAwarePolicy{}
-)
-
-func (c *TopologyAwarePolicy) AgentConfig() *AgentConfig {
-	if c == nil {
-		return nil
-	}
-
-	a := c.Spec.Agent
-
-	return &a
+// AgentConfig provides access to configuration data for the agent.
+type AgentConfig struct {
+	// NodeResourceTopology enables support for exporting resource usage using
+	// NodeResourceTopology Custom Resources.
+	// +optional
+	NodeResourceTopology bool `json:"nodeResourceTopology,omitempty"`
 }
 
-func (c *TopologyAwarePolicy) CommonConfig() *CommonConfig {
-	if c == nil {
-		return nil
+// GetAgentConfig returns the agent-specific configuration if we have one.
+func GetAgentConfig(cfg interface{}) *AgentConfig {
+	if ac, ok := cfg.(interface{ AgentConfig() *AgentConfig }); ok {
+		return ac.AgentConfig()
 	}
-	return &CommonConfig{
-		Control:         c.Spec.Control,
-		Log:             c.Spec.Log,
-		Instrumentation: c.Spec.Instrumentation,
-	}
-}
-
-func (c *TopologyAwarePolicy) PolicyConfig() interface{} {
-	if c == nil {
-		return nil
-	}
-	return &c.Spec.Config
+	return nil
 }

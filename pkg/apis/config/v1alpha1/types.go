@@ -46,6 +46,9 @@ type TopologyAwarePolicySpec struct {
 	Log log.Config `json:"log,omitempty"`
 	// +optional
 	Instrumentation instrumentation.Config `json:"instrumentation,omitempty"`
+	// +optional
+	// +kubebuilder:default={"nodeResourceTopology": true }
+	Agent AgentConfig `json:"agent,omitempty"`
 }
 
 // TopologyAwarePolicyList represents a list of TopologyAwarePolicies.
@@ -78,6 +81,9 @@ type BalloonsPolicySpec struct {
 	Log log.Config `json:"log,omitempty"`
 	// +optional
 	Instrumentation instrumentation.Config `json:"instrumentation,omitempty"`
+	// +optional
+	// +kubebuilder:default={"nodeResourceTopology": true }
+	Agent AgentConfig `json:"agent,omitempty"`
 }
 
 // BalloonsPolicyList represents a list of BalloonsPolicies.
@@ -110,6 +116,9 @@ type TemplatePolicySpec struct {
 	Log log.Config `json:"log,omitempty"`
 	// +optional
 	Instrumentation instrumentation.Config `json:"instrumentation,omitempty"`
+	// +optional
+	// +kubebuilder:default={"nodeResourceTopology": true }
+	Agent AgentConfig `json:"agent,omitempty"`
 }
 
 // TemplatePolicyList represents a list of TemplatePolicies.
