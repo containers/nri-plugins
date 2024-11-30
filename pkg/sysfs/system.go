@@ -123,6 +123,8 @@ type System interface {
 
 	Offlined() cpuset.CPUSet
 	Isolated() cpuset.CPUSet
+
+	NodeHintToCPUs(string) string
 }
 
 // System devices
@@ -740,6 +742,24 @@ func (sys *system) Offlined() cpuset.CPUSet {
 // Isolated gets the set of isolated CPUs."
 func (sys *system) Isolated() cpuset.CPUSet {
 	return sys.IsolatedCPUs()
+}
+
+// Resolve given node topology hints to CPUs.
+func (sys *system) NodeHintToCPUs(nodes string) string {
+	mset, err := cpuset.Parse(nodes)
+	if err != nil {
+		log.Error("failed to resolve nodes %q to CPUs: %v", nodes, err)
+		return ""
+	}
+
+	cset := cpuset.New()
+	for _, id := range mset.List() {
+		if n, ok := sys.nodes[id]; ok {
+			cset = cset.Union(n.CPUSet())
+		}
+	}
+
+	return cset.Intersection(sys.OnlineCPUs()).String()
 }
 
 // Discover Cpus present in the system.
