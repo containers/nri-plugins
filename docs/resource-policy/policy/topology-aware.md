@@ -443,7 +443,7 @@ metadata:
     prefer-reserved-cpus.resource-policy.nri.io/container.special: "false"
 ```
 
-## Allowing or denying mount/device paths via annotations
+## Controlling Topology Hints Via Annotations
 
 User is able mark certain pods and containers to have allowed or denied
 paths for mounts or devices. What this means is that when the system
@@ -485,6 +485,16 @@ metadata:
         - /foo/bar/blacklisted-path5
         - /xy-zy/another-blacklisted-path5
 ```
+
+## Using Pod Resource API for Extra Topology Hints
+
+If access to the `kubelet`'s `Pod Resource API` is enabled in the
+[Node Agent's](../developers-guide/architecture.md#node-agent) configuration,
+it is automatically used to generate per-container topology hints when a
+device with locality to a NUMA node is advertised by the API. Annotated allow
+and deny lists can be used to selectively disable or enable per-resource hints,
+using `podresapi:$RESOURCE_NAME` as the path.
+
 
 ## Container Affinity and Anti-Affinity
 
