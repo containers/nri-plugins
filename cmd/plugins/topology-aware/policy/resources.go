@@ -831,6 +831,7 @@ func (cs *supply) GetScore(req Request) Score {
 
 	// calculate real hint scores
 	hints := cr.container.GetTopologyHints()
+	hints.ResolvePartialHints(cs.GetNode().System().NodeHintToCPUs)
 	score.hints = make(map[string]float64, len(hints))
 
 	for provider, hint := range cr.container.GetTopologyHints() {
