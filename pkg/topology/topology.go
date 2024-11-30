@@ -227,6 +227,17 @@ func MergeTopologyHints(org, hints Hints) (res Hints) {
 	return
 }
 
+// ResolvePartialHints resolves NUMA-only hints to CPU hints using the given function.
+func (hints Hints) ResolvePartialHints(resolve func(NUMAs string) string) {
+	for k, h := range hints {
+		if h.CPUs == "" && h.NUMAs != "" {
+			h.CPUs = resolve(h.NUMAs)
+			log.Debugf("partial NUMA hint %q resolved to CPUs %q", h.NUMAs, h.CPUs)
+			hints[k] = h
+		}
+	}
+}
+
 // String returns the hints as a string.
 func (h *Hint) String() string {
 	cpus, nodes, sockets, sep := "", "", "", ""
