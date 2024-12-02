@@ -110,6 +110,9 @@ spec:
             mountPath: /var/run/nri-resource-policy
           - name: nrisockets
             mountPath: /var/run/nri
+          - name: pod-resources-socket
+            mountPath: /var/lib/kubelet/pod-resources
+            readOnly: true
       {{- if .Values.podPriorityClassNodeCritical }}
       priorityClassName: system-node-critical
       {{- end }}
@@ -128,6 +131,10 @@ spec:
       - name: nrisockets
         hostPath:
           path: /var/run/nri
+          type: DirectoryOrCreate
+      - name: pod-resources-socket
+        hostPath:
+          path: /var/lib/kubelet/pod-resources
           type: DirectoryOrCreate
       {{- if .Values.nri.runtime.patchConfig }}
       - name: containerd-config
