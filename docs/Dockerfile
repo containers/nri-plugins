@@ -1,4 +1,4 @@
-FROM sphinxdoc/sphinx:5.3.0
+FROM sphinxdoc/sphinx:7.4.7
 
 ARG GO_VERSION=1.23.3
 
