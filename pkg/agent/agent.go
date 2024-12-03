@@ -30,6 +30,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	nrtapi "github.com/containers/nri-plugins/pkg/agent/nrtapi"
+	"github.com/containers/nri-plugins/pkg/agent/podresapi"
 	"github.com/containers/nri-plugins/pkg/agent/watch"
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1"
 	k8sclient "k8s.io/client-go/kubernetes"
@@ -126,11 +127,12 @@ type Agent struct {
 	kubeConfig string // kubeconfig path
 	configFile string // configuration file to use instead of custom resource
 
-	cfgIf   ConfigInterface      // custom resource access interface
-	httpCli *http.Client         // shared HTTP client
-	k8sCli  *k8sclient.Clientset // kubernetes client
-	nrtCli  *nrtapi.Client       // NRT custom resources client
-	nrtLock sync.Mutex           // serialize NRT custom resource updates
+	cfgIf     ConfigInterface      // custom resource access interface
+	httpCli   *http.Client         // shared HTTP client
+	k8sCli    *k8sclient.Clientset // kubernetes client
+	nrtCli    *nrtapi.Client       // NRT custom resources client
+	nrtLock   sync.Mutex           // serialize NRT custom resource updates
+	podResCli *podresapi.Client    // pod resources API client
 
 	notifyFn      NotifyFn        // config resource change notification callback
 	nodeWatch     watch.Interface // kubernetes node watch
@@ -262,6 +264,68 @@ func (a *Agent) Stop() {
 	}
 }
 
+var (
+	defaultConfig = &cfgapi.AgentConfig{
+		NodeResourceTopology: true,
+	}
+)
+
+func getAgentConfig(newConfig metav1.Object) *cfgapi.AgentConfig {
+	cfg := cfgapi.GetAgentConfig(newConfig)
+	if cfg == nil {
+		return defaultConfig
+	}
+	return cfg
+}
+
+func (a *Agent) configure(newConfig metav1.Object) {
+	if a.hasLocalConfig() {
+		log.Warn("running with local configuration, skipping client setup...")
+		return
+	}
+
+	cfg := getAgentConfig(newConfig)
+
+	// Failure to create a client is not a fatal error.
+	switch {
+	case cfg.NodeResourceTopology && a.nrtCli == nil:
+		log.Info("enabling NRT client")
+		cfg, err := a.getRESTConfig()
+		if err != nil {
+			log.Error("failed to setup NRT client: %w", err)
+			break
+		}
+		cli, err := nrtapi.NewForConfigAndClient(cfg, a.httpCli)
+		if err != nil {
+			log.Error("failed to setup NRT client: %w", err)
+			break
+		}
+		a.nrtCli = cli
+
+	case !cfg.NodeResourceTopology && a.nrtCli != nil:
+		log.Info("disabling NRT client")
+		a.nrtCli = nil
+	}
+
+	// Reconfigure pod resource client, both on initial startup and reconfiguration.
+	// Failure to create a client is not a fatal error.
+	switch {
+	case cfg.PodResourceAPI && a.podResCli == nil:
+		log.Info("enabling PodResourceAPI client")
+		cli, err := podresapi.NewClient()
+		if err != nil {
+			log.Error("failed to setup PodResourceAPI client: %v", err)
+			break
+		}
+		a.podResCli = cli
+
+	case !cfg.PodResourceAPI && a.podResCli != nil:
+		log.Info("disabling PodResourceAPI client")
+		a.podResCli.Close()
+		a.podResCli = nil
+	}
+}
+
 func (a *Agent) hasLocalConfig() bool {
 	return a.configFile != ""
 }
@@ -312,51 +376,6 @@ func (a *Agent) cleanupClients() {
 	a.httpCli = nil
 	a.k8sCli = nil
 	a.nrtCli = nil
-}
-
-var (
-	defaultConfig = &cfgapi.AgentConfig{
-		NodeResourceTopology: true,
-	}
-)
-
-func getAgentConfig(newConfig metav1.Object) *cfgapi.AgentConfig {
-	cfg := cfgapi.GetAgentConfig(newConfig)
-	if cfg == nil {
-		return defaultConfig
-	}
-	return cfg
-}
-
-func (a *Agent) configure(newConfig metav1.Object) {
-	if a.hasLocalConfig() {
-		log.Warn("running with local configuration, skipping client setup...")
-		return
-	}
-
-	cfg := getAgentConfig(newConfig)
-
-	// Reconfigure NRT client, both on initial startup and reconfiguration.
-	// Failure to create a client is not a fatal error.
-	switch {
-	case cfg.NodeResourceTopology && a.nrtCli == nil:
-		log.Info("enabling NRT client")
-		cfg, err := a.getRESTConfig()
-		if err != nil {
-			log.Error("failed to setup NRT client: %w", err)
-			break
-		}
-		cli, err := nrtapi.NewForConfigAndClient(cfg, a.httpCli)
-		if err != nil {
-			log.Error("failed to setup NRT client: %w", err)
-			break
-		}
-		a.nrtCli = cli
-
-	case !cfg.NodeResourceTopology && a.nrtCli != nil:
-		log.Info("disabling NRT client")
-		a.nrtCli = nil
-	}
 }
 
 func (a *Agent) getRESTConfig() (*rest.Config, error) {
