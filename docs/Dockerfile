@@ -1,10 +1,12 @@
-FROM sphinxdoc/sphinx:5.3.0
+FROM sphinxdoc/sphinx:7.4.7
+
+ARG GO_VERSION=1.23.3
 
 RUN apt-get update && apt-get install -y wget git
 
 # Note: Any golang version that can 'go list -m -f {{.Variable}}' is fine...
-RUN wget https://go.dev/dl/go1.20.4.linux-amd64.tar.gz && \
-    tar -C /usr/local -xzf go1.20.4.linux-amd64.tar.gz
+RUN wget https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz && \
+    tar -C /usr/local -xzf go${GO_VERSION}.linux-amd64.tar.gz
 
 ENV PATH=$PATH:/usr/local/go/bin
 
