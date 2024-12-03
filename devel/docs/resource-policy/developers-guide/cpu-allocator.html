@@ -1,22 +1,23 @@
 <!DOCTYPE html>
-<html class="writer-html5" lang="en" >
+<html class="writer-html5" lang="en" data-content_root="../../../">
 <head>
-  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CPU Allocator &mdash; NRI Plugins v0.7.1-120-gef4c84f3 documentation</title>
-      <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
-      <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <title>CPU Allocator &mdash; NRI Plugins v0.7.1-124-g3b691204 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+
+  
   <!--[if lt IE 9]>
     <script src="../../../_static/js/html5shiv.min.js"></script>
   <![endif]-->
   
-        <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
-        <script src="../../../_static/jquery.js"></script>
-        <script src="../../../_static/underscore.js"></script>
-        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
-        <script src="../../../_static/doctools.js"></script>
-        <script src="../../../_static/sphinx_highlight.js"></script>
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=3081dbff"></script>
+        <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../../../genindex.html" />
     <link rel="search" title="Search" href="../../../search.html" />
@@ -99,19 +100,19 @@
            <div itemprop="articleBody">
              
   <section id="cpu-allocator">
-<h1>CPU Allocator<a class="headerlink" href="#cpu-allocator" title="Permalink to this heading"></a></h1>
+<h1>CPU Allocator<a class="headerlink" href="#cpu-allocator" title="Link to this heading"></a></h1>
 <p>NRI Resource Policy has a separate CPU allocator component that helps policies
 make educated allocation of CPU cores for workloads.  Currently all policies
 utilize the built-in CPU allocator. See policy specific documentation for more
 details.</p>
 <section id="topology-based-allocation">
-<h2>Topology Based Allocation<a class="headerlink" href="#topology-based-allocation" title="Permalink to this heading"></a></h2>
+<h2>Topology Based Allocation<a class="headerlink" href="#topology-based-allocation" title="Link to this heading"></a></h2>
 <p>The CPU allocator tries to optimize the allocation of CPUs in terms of the
 hardware topology. More specifically, it aims at packing all CPUs of one
 request “near” each other in order to minimize memory latencies between CPUs.</p>
 </section>
 <section id="cpu-prioritization">
-<h2>CPU Prioritization<a class="headerlink" href="#cpu-prioritization" title="Permalink to this heading"></a></h2>
+<h2>CPU Prioritization<a class="headerlink" href="#cpu-prioritization" title="Link to this heading"></a></h2>
 <p>The CPU allocator also does automatic CPU prioritization by detecting CPU
 features and their configuration parameters. Currently, NRI Resource Policy
 supports CPU priority detection based on the <code class="docutils literal notranslate"><span class="pre">intel_pstate</span></code> scaling
@@ -123,7 +124,7 @@ Policies utilizing the CPU allocator may choose to prefer certain priority
 class for certain types of workloads. For example, prefer (and preserve) high
 priority CPUs for high priority workloads.</p>
 <section id="intel-speed-select-technology-sst">
-<h3>Intel Speed Select Technology (SST)<a class="headerlink" href="#intel-speed-select-technology-sst" title="Permalink to this heading"></a></h3>
+<h3>Intel Speed Select Technology (SST)<a class="headerlink" href="#intel-speed-select-technology-sst" title="Link to this heading"></a></h3>
 <p>NRI Resource Policy supports detection of all Intel Speed Select Technology
 (SST) features, i.e. Speed Select Technology Performance Profile (SST-PP), Base
 Frequency (SST-BF), Turbo Frequency (SST-TF) and Core Power (SST-CP).</p>
@@ -143,7 +144,7 @@ as high priority.</p></li>
 </ol>
 </section>
 <section id="linux-cpufreq">
-<h3>Linux CPUFreq<a class="headerlink" href="#linux-cpufreq" title="Permalink to this heading"></a></h3>
+<h3>Linux CPUFreq<a class="headerlink" href="#linux-cpufreq" title="Link to this heading"></a></h3>
 <p>CPUFreq based prioritization only takes effect if Intel Speed Select Technology
 (SST) is disabled (or not supported). NRI-RM divides CPU cores into priority
 classes based on two parameters:</p>
@@ -158,7 +159,7 @@ correspondingly.</p>
 will be marked as high priority cores.</p>
 </section>
 <section id="hybrid-cpu-architecture">
-<h3>Hybrid CPU Architecture<a class="headerlink" href="#hybrid-cpu-architecture" title="Permalink to this heading"></a></h3>
+<h3>Hybrid CPU Architecture<a class="headerlink" href="#hybrid-cpu-architecture" title="Link to this heading"></a></h3>
 <p>On systems with a hybrid CPU architecture, where some cores are optimized for
 performance and others for power consumption, performance optimized cores are
 classified as high priority CPUs while energy efficient cores as low priority

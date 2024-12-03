@@ -1,22 +1,23 @@
 <!DOCTYPE html>
-<html class="writer-html5" lang="en" >
+<html class="writer-html5" lang="en" data-content_root="../../../">
 <head>
-  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Helm &mdash; NRI Plugins v0.7.1-120-gef4c84f3 documentation</title>
-      <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
-      <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <title>Helm &mdash; NRI Plugins v0.7.1-124-g3b691204 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+
+  
   <!--[if lt IE 9]>
     <script src="../../../_static/js/html5shiv.min.js"></script>
   <![endif]-->
   
-        <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
-        <script src="../../../_static/jquery.js"></script>
-        <script src="../../../_static/underscore.js"></script>
-        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
-        <script src="../../../_static/doctools.js"></script>
-        <script src="../../../_static/sphinx_highlight.js"></script>
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=3081dbff"></script>
+        <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../../../genindex.html" />
     <link rel="search" title="Search" href="../../../search.html" />
@@ -94,9 +95,9 @@
            <div itemprop="articleBody">
              
   <section id="helm">
-<h1>Helm<a class="headerlink" href="#helm" title="Permalink to this heading"></a></h1>
+<h1>Helm<a class="headerlink" href="#helm" title="Link to this heading"></a></h1>
 <section id="stable-helm-charts">
-<h2>Stable Helm Charts<a class="headerlink" href="#stable-helm-charts" title="Permalink to this heading"></a></h2>
+<h2>Stable Helm Charts<a class="headerlink" href="#stable-helm-charts" title="Link to this heading"></a></h2>
 <p>All the available charts can be found in <a class="reference external" href="https://artifacthub.io/packages/search?ts_query_web=nri&amp;amp;verified_publisher=true&amp;amp;official=true&amp;amp;sort=relevance&amp;amp;page=1">artifacthub.io</a>.</p>
 <p><strong>NOTE:</strong> NRI-plugins Helm installation has been successfully verified in both local clusters and major Cloud Providers’ managed clusters, including:</p>
 <ul class="simple">
@@ -125,19 +126,19 @@
 <p>While Ubuntu 20.04/22.04 was used across all three CSP environments, it’s worth noting that node images are not limited to Ubuntu 20.04/22.04 only. The majority of widely recognized Linux distributions should be suitable for use.</p>
 </section>
 <section id="unstable-helm-charts">
-<h2>Unstable Helm Charts<a class="headerlink" href="#unstable-helm-charts" title="Permalink to this heading"></a></h2>
+<h2>Unstable Helm Charts<a class="headerlink" href="#unstable-helm-charts" title="Link to this heading"></a></h2>
 <p>Helm charts are also published from the main/development branch after each merge.
 These charts reference the latest development images tagged as <code class="docutils literal notranslate"><span class="pre">unstable</span></code> and are
 are stored alongside plugin images in the OCI image registry.</p>
 <section id="discovering-unstable-helm-charts">
-<h3>Discovering Unstable Helm Charts<a class="headerlink" href="#discovering-unstable-helm-charts" title="Permalink to this heading"></a></h3>
+<h3>Discovering Unstable Helm Charts<a class="headerlink" href="#discovering-unstable-helm-charts" title="Link to this heading"></a></h3>
 <p>Unstable charts can be discovered using <a class="reference external" href="https://github.com/containers/skopeo">skopeo</a>.
 For instance, one can list the available charts for the balloons plugin using this
 skopeo command:
 <code class="docutils literal notranslate"><span class="pre">skopeo</span> <span class="pre">list-tags</span> <span class="pre">docker://ghcr.io/containers/nri-plugins/helm-charts/nri-resource-policy-balloons</span></code></p>
 </section>
 <section id="using-unstable-helm-charts">
-<h3>Using Unstable Helm Charts<a class="headerlink" href="#using-unstable-helm-charts" title="Permalink to this heading"></a></h3>
+<h3>Using Unstable Helm Charts<a class="headerlink" href="#using-unstable-helm-charts" title="Link to this heading"></a></h3>
 <p>Once discovered, unstable Helm charts can be used like any other. For instance, to use
 the <code class="docutils literal notranslate"><span class="pre">v$X.$Y-unstable</span></code> version of the chart to install the development version of the
 balloons plugin one can use this command:

@@ -1,22 +1,23 @@
 <!DOCTYPE html>
-<html class="writer-html5" lang="en" >
+<html class="writer-html5" lang="en" data-content_root="../../">
 <head>
-  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Memory QoS NRI plugin &mdash; NRI Plugins v0.7.1-120-gef4c84f3 documentation</title>
-      <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
-      <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+  <title>Memory QoS NRI plugin &mdash; NRI Plugins v0.7.1-124-g3b691204 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=19f00094" />
+
+  
   <!--[if lt IE 9]>
     <script src="../../_static/js/html5shiv.min.js"></script>
   <![endif]-->
   
-        <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
-        <script src="../../_static/jquery.js"></script>
-        <script src="../../_static/underscore.js"></script>
-        <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
-        <script src="../../_static/doctools.js"></script>
-        <script src="../../_static/sphinx_highlight.js"></script>
+        <script src="../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../_static/documentation_options.js?v=3081dbff"></script>
+        <script src="../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../../genindex.html" />
     <link rel="search" title="Search" href="../../search.html" />
@@ -105,11 +106,11 @@
            <div itemprop="articleBody">
              
   <section id="memory-qos-nri-plugin">
-<h1>Memory QoS NRI plugin<a class="headerlink" href="#memory-qos-nri-plugin" title="Permalink to this heading"></a></h1>
+<h1>Memory QoS NRI plugin<a class="headerlink" href="#memory-qos-nri-plugin" title="Link to this heading"></a></h1>
 <p>This NRI plugin adds two methods for controlling cgroups v2 <code class="docutils literal notranslate"><span class="pre">memory.*</span></code>
 parameters: memory QoS classes and direct memory annotations.</p>
 <section id="workload-configuration">
-<h2>Workload configuration<a class="headerlink" href="#workload-configuration" title="Permalink to this heading"></a></h2>
+<h2>Workload configuration<a class="headerlink" href="#workload-configuration" title="Link to this heading"></a></h2>
 <p>There are two configuration methods:</p>
 <ol class="arabic simple">
 <li><p>Memory QoS classes: memory parameters are calculated in the same
@@ -144,9 +145,9 @@ example affects <code class="docutils literal notranslate"><span class="pre">mem
 </div>
 </section>
 <section id="plugin-configuration">
-<h2>Plugin configuration<a class="headerlink" href="#plugin-configuration" title="Permalink to this heading"></a></h2>
+<h2>Plugin configuration<a class="headerlink" href="#plugin-configuration" title="Link to this heading"></a></h2>
 <section id="classes">
-<h3>Classes<a class="headerlink" href="#classes" title="Permalink to this heading"></a></h3>
+<h3>Classes<a class="headerlink" href="#classes" title="Link to this heading"></a></h3>
 <p>Plugin configuration lists memory QoS classes and their parameters
 that affect calculating actual memory parameters.</p>
 <p><code class="docutils literal notranslate"><span class="pre">classes:</span></code> is followed by list of maps with following keys and values:</p>
@@ -160,14 +161,14 @@ consumption reaches the limit. Adjusts <code class="docutils literal notranslate
 </ul>
 </section>
 <section id="unified-annotations">
-<h3>Unified annotations<a class="headerlink" href="#unified-annotations" title="Permalink to this heading"></a></h3>
+<h3>Unified annotations<a class="headerlink" href="#unified-annotations" title="Link to this heading"></a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">unifiedannotations:</span></code> (list of strings): OCI Linux unified fields
 (cgroups v2 file names) whose values are allowed to be set using
 direct annotations. If annotations define these values, they override
 values implied by container’s memory QoS class.</p>
 </section>
 <section id="example">
-<h3>Example<a class="headerlink" href="#example" title="Permalink to this heading"></a></h3>
+<h3>Example<a class="headerlink" href="#example" title="Link to this heading"></a></h3>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">classes</span><span class="p">:</span>
 <span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bronze</span>
 <span class="w">  </span><span class="nt">swaplimitratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
@@ -194,39 +195,39 @@ data in RAM when reaching memory limit.</p></li>
 </section>
 </section>
 <section id="developer-s-guide">
-<h2>Developer’s guide<a class="headerlink" href="#developer-s-guide" title="Permalink to this heading"></a></h2>
+<h2>Developer’s guide<a class="headerlink" href="#developer-s-guide" title="Link to this heading"></a></h2>
 <section id="prerequisites">
-<h3>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading"></a></h3>
+<h3>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading"></a></h3>
 <ul>
 <li><p>Containerd v1.7+</p></li>
 <li><p>Enable NRI in /etc/containerd/config.toml:</p>
-<div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="k">[plugins.&quot;io.containerd.nri.v1.nri&quot;]</span>
+<div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="k">[plugins.</span><span class="s2">&quot;io.containerd.nri.v1.nri&quot;</span><span class="k">]</span>
 <span class="w">  </span><span class="n">disable</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span>
 <span class="w">  </span><span class="n">disable_connections</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span>
-<span class="w">  </span><span class="n">plugin_config_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;/etc/nri/conf.d&quot;</span>
-<span class="w">  </span><span class="n">plugin_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;/opt/nri/plugins&quot;</span>
-<span class="w">  </span><span class="n">plugin_registration_timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;5s&quot;</span>
-<span class="w">  </span><span class="n">plugin_request_timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;2s&quot;</span>
-<span class="w">  </span><span class="n">socket_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;/var/run/nri/nri.sock&quot;</span>
+<span class="w">  </span><span class="n">plugin_config_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/etc/nri/conf.d&quot;</span>
+<span class="w">  </span><span class="n">plugin_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/opt/nri/plugins&quot;</span>
+<span class="w">  </span><span class="n">plugin_registration_timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;5s&quot;</span>
+<span class="w">  </span><span class="n">plugin_request_timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;2s&quot;</span>
+<span class="w">  </span><span class="n">socket_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/var/run/nri/nri.sock&quot;</span>
 </pre></div>
 </div>
 </li>
 </ul>
 </section>
 <section id="build">
-<h3>Build<a class="headerlink" href="#build" title="Permalink to this heading"></a></h3>
+<h3>Build<a class="headerlink" href="#build" title="Link to this heading"></a></h3>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>cmd/plugins/memory-qos<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>.
 </pre></div>
 </div>
 </section>
 <section id="run">
-<h3>Run<a class="headerlink" href="#run" title="Permalink to this heading"></a></h3>
+<h3>Run<a class="headerlink" href="#run" title="Link to this heading"></a></h3>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>cmd/plugins/memory-qos/memory-qos<span class="w"> </span>-config<span class="w"> </span>sample-configs/nri-memory-qos.yaml<span class="w"> </span>-idx<span class="w"> </span><span class="m">40</span><span class="w"> </span>-vv
 </pre></div>
 </div>
 </section>
 <section id="manual-test">
-<h3>Manual test<a class="headerlink" href="#manual-test" title="Permalink to this heading"></a></h3>
+<h3>Manual test<a class="headerlink" href="#manual-test" title="Link to this heading"></a></h3>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl<span class="w"> </span>create<span class="w"> </span>-f<span class="w"> </span>test/e2e/files/nri-memory-qos-test-pod.yaml
 </pre></div>
 </div>
@@ -239,7 +240,7 @@ memory:</p>
 </div>
 </section>
 <section id="debug">
-<h3>Debug<a class="headerlink" href="#debug" title="Permalink to this heading"></a></h3>
+<h3>Debug<a class="headerlink" href="#debug" title="Link to this heading"></a></h3>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>go<span class="w"> </span>install<span class="w"> </span>github.com/go-delve/delve/cmd/dlv@latest
 dlv<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>cmd/plugins/memory-qos/memory-qos<span class="w"> </span>--<span class="w"> </span>-config<span class="w"> </span>sample-configs/nri-memory-qos.yaml<span class="w"> </span>-idx<span class="w"> </span><span class="m">40</span>
 <span class="o">(</span>dlv<span class="o">)</span><span class="w"> </span><span class="k">break</span><span class="w"> </span>plugin.CreateContainer
@@ -248,7 +249,7 @@ dlv<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>c
 </div>
 </section>
 <section id="deploy">
-<h3>Deploy<a class="headerlink" href="#deploy" title="Permalink to this heading"></a></h3>
+<h3>Deploy<a class="headerlink" href="#deploy" title="Link to this heading"></a></h3>
 <p>Build an image, import it on the node, and deploy the plugin by
 running the following in <code class="docutils literal notranslate"><span class="pre">nri-plugins</span></code>:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>rm<span class="w"> </span>-rf<span class="w"> </span>build

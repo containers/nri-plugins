@@ -1,22 +1,23 @@
 <!DOCTYPE html>
-<html class="writer-html5" lang="en" >
+<html class="writer-html5" lang="en" data-content_root="../../../">
 <head>
-  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>End-to-End tests &mdash; NRI Plugins v0.7.1-120-gef4c84f3 documentation</title>
-      <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
-      <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <title>End-to-End tests &mdash; NRI Plugins v0.7.1-124-g3b691204 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+
+  
   <!--[if lt IE 9]>
     <script src="../../../_static/js/html5shiv.min.js"></script>
   <![endif]-->
   
-        <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
-        <script src="../../../_static/jquery.js"></script>
-        <script src="../../../_static/underscore.js"></script>
-        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
-        <script src="../../../_static/doctools.js"></script>
-        <script src="../../../_static/sphinx_highlight.js"></script>
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=3081dbff"></script>
+        <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../../../genindex.html" />
     <link rel="search" title="Search" href="../../../search.html" />
@@ -100,9 +101,9 @@
            <div itemprop="articleBody">
              
   <section id="end-to-end-tests">
-<h1>End-to-End tests<a class="headerlink" href="#end-to-end-tests" title="Permalink to this heading"></a></h1>
+<h1>End-to-End tests<a class="headerlink" href="#end-to-end-tests" title="Link to this heading"></a></h1>
 <section id="prerequisites">
-<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading"></a></h2>
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading"></a></h2>
 <p>Install:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">docker</span></code></p></li>
@@ -110,7 +111,7 @@
 </ul>
 </section>
 <section id="usage">
-<h2>Usage<a class="headerlink" href="#usage" title="Permalink to this heading"></a></h2>
+<h2>Usage<a class="headerlink" href="#usage" title="Link to this heading"></a></h2>
 <p>Run policy tests:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>test/e2e
 <span class="o">[</span><span class="nv">VAR</span><span class="o">=</span>VALUE...<span class="o">]</span><span class="w"> </span>./run_tests.sh<span class="w"> </span>policies.test-suite
@@ -126,7 +127,7 @@
 Therefore the same <code class="docutils literal notranslate"><span class="pre">VAR=VALUE</span></code> definitions apply both scripts.</p>
 </section>
 <section id="test-phases">
-<h2>Test phases<a class="headerlink" href="#test-phases" title="Permalink to this heading"></a></h2>
+<h2>Test phases<a class="headerlink" href="#test-phases" title="Link to this heading"></a></h2>
 <p>In the <em>setup phase</em> <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> creates a virtual machine unless it
 already exists. When it is running, tests create a single-node cluster
 and deploy <code class="docutils literal notranslate"><span class="pre">nri-resource-policy</span></code> DaemonSet on it.</p>
@@ -137,7 +138,7 @@ observing the status of the virtual machine and software running on it.</p>
 and finally stops or deletes the virtual machine, if that is wanted.</p>
 </section>
 <section id="test-modes">
-<h2>Test modes<a class="headerlink" href="#test-modes" title="Permalink to this heading"></a></h2>
+<h2>Test modes<a class="headerlink" href="#test-modes" title="Link to this heading"></a></h2>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">test</span></code> mode runs fast and reports <code class="docutils literal notranslate"><span class="pre">Test</span> <span class="pre">verdict:</span> <span class="pre">PASS</span></code> or
 <code class="docutils literal notranslate"><span class="pre">FAIL</span></code>. The exit status is zero if and only if a test passed.</p></li>
@@ -145,7 +146,7 @@ and finally stops or deletes the virtual machine, if that is wanted.</p>
 <p>Currently only the normal test mode is supported.</p>
 </section>
 <section id="running-from-scratch-and-quick-rerun-in-existing-virtual-machine">
-<h2>Running from scratch and quick rerun in existing virtual machine<a class="headerlink" href="#running-from-scratch-and-quick-rerun-in-existing-virtual-machine" title="Permalink to this heading"></a></h2>
+<h2>Running from scratch and quick rerun in existing virtual machine<a class="headerlink" href="#running-from-scratch-and-quick-rerun-in-existing-virtual-machine" title="Link to this heading"></a></h2>
 <p>The test will use <code class="docutils literal notranslate"><span class="pre">vagrant</span></code>-managed virtual machine named in the
 <code class="docutils literal notranslate"><span class="pre">vm_name</span></code> environment variable. The default name is constructed
 from used topology, Linux distribution and runtime name.
@@ -155,7 +156,7 @@ You can delete a virtual machine by going to the VM directory and
 giving the command <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">destroy</span></code>.</p>
 </section>
 <section id="custom-topologies">
-<h2>Custom topologies<a class="headerlink" href="#custom-topologies" title="Permalink to this heading"></a></h2>
+<h2>Custom topologies<a class="headerlink" href="#custom-topologies" title="Link to this heading"></a></h2>
 <p>If you change NUMA node topology of an existing virtual machine, you
 must delete the virtual machine first. Otherwise the <code class="docutils literal notranslate"><span class="pre">topology</span></code> variable
 is ignored and the test will run in the existing NUMA
@@ -194,7 +195,7 @@ two threads. And with a NUMA node with 16G of non-volatile memory
 </div>
 </section>
 <section id="test-output">
-<h2>Test output<a class="headerlink" href="#test-output" title="Permalink to this heading"></a></h2>
+<h2>Test output<a class="headerlink" href="#test-output" title="Link to this heading"></a></h2>
 <p>All test output is saved under the directory in the environment
 variable <code class="docutils literal notranslate"><span class="pre">outdir</span></code> if the <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> script is executed as is. The default
 output directory in this case is <code class="docutils literal notranslate"><span class="pre">./output</span></code>.</p>

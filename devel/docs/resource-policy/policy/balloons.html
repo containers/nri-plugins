@@ -1,22 +1,23 @@
 <!DOCTYPE html>
-<html class="writer-html5" lang="en" >
+<html class="writer-html5" lang="en" data-content_root="../../../">
 <head>
-  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.7.1-120-gef4c84f3 documentation</title>
-      <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
-      <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <title>Balloons Policy &mdash; NRI Plugins v0.7.1-124-g3b691204 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+
+  
   <!--[if lt IE 9]>
     <script src="../../../_static/js/html5shiv.min.js"></script>
   <![endif]-->
   
-        <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
-        <script src="../../../_static/jquery.js"></script>
-        <script src="../../../_static/underscore.js"></script>
-        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
-        <script src="../../../_static/doctools.js"></script>
-        <script src="../../../_static/sphinx_highlight.js"></script>
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=3081dbff"></script>
+        <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../../../genindex.html" />
     <link rel="search" title="Search" href="../../../search.html" />
@@ -104,9 +105,9 @@
            <div itemprop="articleBody">
              
   <section id="balloons-policy">
-<h1>Balloons Policy<a class="headerlink" href="#balloons-policy" title="Permalink to this heading"></a></h1>
+<h1>Balloons Policy<a class="headerlink" href="#balloons-policy" title="Link to this heading"></a></h1>
 <section id="overview">
-<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this heading"></a></h2>
+<h2>Overview<a class="headerlink" href="#overview" title="Link to this heading"></a></h2>
 <p>The balloons policy implements workload placement into “balloons” that
 are disjoint CPU pools. Size of a balloon can be fixed, or the balloon
 can be dynamically inflated and deflated, that is CPUs added and
@@ -116,7 +117,7 @@ destroyed. CPUs in balloons can be configured, for example, by setting
 min and max frequencies on CPU cores and uncore.</p>
 </section>
 <section id="how-it-works">
-<h2>How It Works<a class="headerlink" href="#how-it-works" title="Permalink to this heading"></a></h2>
+<h2>How It Works<a class="headerlink" href="#how-it-works" title="Link to this heading"></a></h2>
 <ol class="arabic simple">
 <li><p>User configures balloon types from which the policy creates
 balloons.</p></li>
@@ -151,17 +152,17 @@ class attributes.</p></li>
 </ol>
 </section>
 <section id="deployment">
-<h2>Deployment<a class="headerlink" href="#deployment" title="Permalink to this heading"></a></h2>
+<h2>Deployment<a class="headerlink" href="#deployment" title="Link to this heading"></a></h2>
 <p>Deploy nri-resource-policy-balloons on each node as you would for any
 other policy. See <a class="reference internal" href="../../deployment/index.html"><span class="std std-doc">deployment</span></a> for more details.</p>
 </section>
 <section id="configuration">
-<h2>Configuration<a class="headerlink" href="#configuration" title="Permalink to this heading"></a></h2>
+<h2>Configuration<a class="headerlink" href="#configuration" title="Link to this heading"></a></h2>
 <p>The balloons policy is configured using BalloonsPolicy Custom Resources.
 See <a class="reference internal" href="../setup.html#setting-up-nri-resource-policy"><span class="std std-ref">setup and usage</span></a> for
 more details on managing the configuration.</p>
 <section id="parameters">
-<h3>Parameters<a class="headerlink" href="#parameters" title="Permalink to this heading"></a></h3>
+<h3>Parameters<a class="headerlink" href="#parameters" title="Link to this heading"></a></h3>
 <p>Balloons policy parameters:</p>
 <ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">availableResources</span></code>:</p>
@@ -393,7 +394,7 @@ httpEndpoint.</p></li>
 </ul>
 </section>
 <section id="example">
-<h3>Example<a class="headerlink" href="#example" title="Permalink to this heading"></a></h3>
+<h3>Example<a class="headerlink" href="#example" title="Link to this heading"></a></h3>
 <p>Example configuration that runs all pods in balloons of 1-4
 CPUs. Instrumentation enables reading CPUs and containers in balloons
 from <code class="docutils literal notranslate"><span class="pre">http://$localhost_or_pod_IP:8891/metrics</span></code>.</p>
@@ -437,7 +438,7 @@ from <code class="docutils literal notranslate"><span class="pre">http://$localh
 </section>
 </section>
 <section id="assigning-a-container-to-a-balloon">
-<h2>Assigning a Container to a Balloon<a class="headerlink" href="#assigning-a-container-to-a-balloon" title="Permalink to this heading"></a></h2>
+<h2>Assigning a Container to a Balloon<a class="headerlink" href="#assigning-a-container-to-a-balloon" title="Link to this heading"></a></h2>
 <p>The balloon type of a container can be defined in pod annotations. In
 the example below, the first annotation sets the balloon type (<code class="docutils literal notranslate"><span class="pre">BT</span></code>)
 of a single container (<code class="docutils literal notranslate"><span class="pre">CONTAINER_NAME</span></code>). The last two annotations set
@@ -457,9 +458,9 @@ type can be defined explicitly among other balloon types. If they are
 not defined, a built-in <code class="docutils literal notranslate"><span class="pre">default</span></code> balloon type is used.</p>
 </section>
 <section id="pod-and-container-overrides-to-cpu-and-memory-pinning">
-<h2>Pod and Container Overrides to CPU and Memory Pinning<a class="headerlink" href="#pod-and-container-overrides-to-cpu-and-memory-pinning" title="Permalink to this heading"></a></h2>
+<h2>Pod and Container Overrides to CPU and Memory Pinning<a class="headerlink" href="#pod-and-container-overrides-to-cpu-and-memory-pinning" title="Link to this heading"></a></h2>
 <section id="disabling-cpu-or-memory-pinning-of-a-container">
-<h3>Disabling CPU or Memory Pinning of a Container<a class="headerlink" href="#disabling-cpu-or-memory-pinning-of-a-container" title="Permalink to this heading"></a></h3>
+<h3>Disabling CPU or Memory Pinning of a Container<a class="headerlink" href="#disabling-cpu-or-memory-pinning-of-a-container" title="Link to this heading"></a></h3>
 <p>Some containers may need to run on all CPUs or access all memories
 without restrictions. There are two alternatives to achieve this:
 policy configuration and pod annotations.</p>
@@ -480,7 +481,7 @@ or non-existing pinning configuration:</p>
 </div>
 </section>
 <section id="selectively-disabling-hyperthreading">
-<h3>Selectively Disabling Hyperthreading<a class="headerlink" href="#selectively-disabling-hyperthreading" title="Permalink to this heading"></a></h3>
+<h3>Selectively Disabling Hyperthreading<a class="headerlink" href="#selectively-disabling-hyperthreading" title="Link to this heading"></a></h3>
 <p>If a container opts to hide hyperthreads, it is allowed to use only
 one hyperthread from every physical CPU core allocated to it. Note
 that as a result the container may be allowed to run on only half of
@@ -500,7 +501,7 @@ hidden hyperthreads either.</p>
 containers in the pod.</p>
 </section>
 <section id="memory-type">
-<h3>Memory Type<a class="headerlink" href="#memory-type" title="Permalink to this heading"></a></h3>
+<h3>Memory Type<a class="headerlink" href="#memory-type" title="Link to this heading"></a></h3>
 <p>If a container must be pinned to specific memory types that may differ
 from its balloon’s <code class="docutils literal notranslate"><span class="pre">memoryTypes</span></code>, container-specific types can be
 given in the <code class="docutils literal notranslate"><span class="pre">memory-type</span></code> pod annotations:</p>
@@ -520,7 +521,7 @@ latter two for other containers in the pod. Supported types are “HBM”,
 </section>
 </section>
 <section id="metrics-and-debugging">
-<h2>Metrics and Debugging<a class="headerlink" href="#metrics-and-debugging" title="Permalink to this heading"></a></h2>
+<h2>Metrics and Debugging<a class="headerlink" href="#metrics-and-debugging" title="Link to this heading"></a></h2>
 <p>In order to enable more verbose logging and metrics exporting from the
 balloons policy, enable instrumentation and policy debugging from the
 nri-resource-policy global config:</p>

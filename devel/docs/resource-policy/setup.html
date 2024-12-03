@@ -1,22 +1,23 @@
 <!DOCTYPE html>
-<html class="writer-html5" lang="en" >
+<html class="writer-html5" lang="en" data-content_root="../../">
 <head>
-  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Setup and Usage &mdash; NRI Plugins v0.7.1-120-gef4c84f3 documentation</title>
-      <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
-      <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+  <title>Setup and Usage &mdash; NRI Plugins v0.7.1-124-g3b691204 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=19f00094" />
+
+  
   <!--[if lt IE 9]>
     <script src="../../_static/js/html5shiv.min.js"></script>
   <![endif]-->
   
-        <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
-        <script src="../../_static/jquery.js"></script>
-        <script src="../../_static/underscore.js"></script>
-        <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
-        <script src="../../_static/doctools.js"></script>
-        <script src="../../_static/sphinx_highlight.js"></script>
+        <script src="../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../_static/documentation_options.js?v=3081dbff"></script>
+        <script src="../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../../genindex.html" />
     <link rel="search" title="Search" href="../../search.html" />
@@ -96,7 +97,7 @@
            <div itemprop="articleBody">
              
   <section id="setup-and-usage">
-<h1>Setup and Usage<a class="headerlink" href="#setup-and-usage" title="Permalink to this heading"></a></h1>
+<h1>Setup and Usage<a class="headerlink" href="#setup-and-usage" title="Link to this heading"></a></h1>
 <p>When you want to try NRI Resource Policy, here is the list of things
 you need to do, assuming you already have a Kubernetes* cluster up and
 running, using either <code class="docutils literal notranslate"><span class="pre">containerd</span></code> or <code class="docutils literal notranslate"><span class="pre">cri-o</span></code> as the runtime.</p>
@@ -109,9 +110,9 @@ resources. The Helm charts for each policy contain a default configuration.
 This configuration can be overridden using extra helm options.</p>
 <p><strong>NOTE</strong>: Currently, the available policies are a work in progress.</p>
 <section id="setting-up-nri-resource-policy">
-<h2>Setting up NRI Resource Policy<a class="headerlink" href="#setting-up-nri-resource-policy" title="Permalink to this heading"></a></h2>
+<h2>Setting up NRI Resource Policy<a class="headerlink" href="#setting-up-nri-resource-policy" title="Link to this heading"></a></h2>
 <section id="dynamic-configuration-with-custom-resources">
-<h3>Dynamic Configuration with Custom Resources<a class="headerlink" href="#dynamic-configuration-with-custom-resources" title="Permalink to this heading"></a></h3>
+<h3>Dynamic Configuration with Custom Resources<a class="headerlink" href="#dynamic-configuration-with-custom-resources" title="Link to this heading"></a></h3>
 <p>The resource policies plugins support<a class="reference internal" href="configuration.html"><span class="std std-doc">dynamic configuration</span></a>
 using custom resources. Plugins watch changes in their configuration and
 reconfigure themselves on any update.</p>
@@ -120,7 +121,7 @@ file is supplied using the <code class="docutils literal notranslate"><span clas
 </section>
 </section>
 <section id="logging-and-debugging">
-<h2>Logging and debugging<a class="headerlink" href="#logging-and-debugging" title="Permalink to this heading"></a></h2>
+<h2>Logging and debugging<a class="headerlink" href="#logging-and-debugging" title="Link to this heading"></a></h2>
 <p>You can control logging with the klog options in the configuration or by
 setting corresponding environment variables. You can get the name of the
 environment variable for a klog option by prepending the <code class="docutils literal notranslate"><span class="pre">LOGGER_</span></code> prefix

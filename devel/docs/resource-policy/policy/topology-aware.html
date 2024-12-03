@@ -1,22 +1,23 @@
 <!DOCTYPE html>
-<html class="writer-html5" lang="en" >
+<html class="writer-html5" lang="en" data-content_root="../../../">
 <head>
-  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.7.1-120-gef4c84f3 documentation</title>
-      <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
-      <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.7.1-124-g3b691204 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+
+  
   <!--[if lt IE 9]>
     <script src="../../../_static/js/html5shiv.min.js"></script>
   <![endif]-->
   
-        <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
-        <script src="../../../_static/jquery.js"></script>
-        <script src="../../../_static/underscore.js"></script>
-        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
-        <script src="../../../_static/doctools.js"></script>
-        <script src="../../../_static/sphinx_highlight.js"></script>
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=3081dbff"></script>
+        <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../../../genindex.html" />
     <link rel="search" title="Search" href="../../../search.html" />
@@ -111,9 +112,9 @@
            <div itemprop="articleBody">
              
   <section id="topology-aware-policy">
-<h1>Topology-Aware Policy<a class="headerlink" href="#topology-aware-policy" title="Permalink to this heading"></a></h1>
+<h1>Topology-Aware Policy<a class="headerlink" href="#topology-aware-policy" title="Link to this heading"></a></h1>
 <section id="background">
-<h2>Background<a class="headerlink" href="#background" title="Permalink to this heading"></a></h2>
+<h2>Background<a class="headerlink" href="#background" title="Link to this heading"></a></h2>
 <p>On server-grade hardware the CPU cores, I/O devices and other peripherals
 form a rather complex network together with the memory controllers, the
 I/O bus hierarchy and the CPU interconnect. When a combination of these
@@ -137,7 +138,7 @@ understanding the multiple dimensions of access latency locality present
 in hardware or, in other words, hardware topology awareness.</p>
 </section>
 <section id="overview">
-<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this heading"></a></h2>
+<h2>Overview<a class="headerlink" href="#overview" title="Link to this heading"></a></h2>
 <p>The <code class="docutils literal notranslate"><span class="pre">topology-aware</span></code> policy automatically builds a tree of pools based on the
 detected hardware topology. Each pool has a set of CPUs and memory zones
 assigned as their resources. Resource allocation for workloads happens by
@@ -190,7 +191,7 @@ fewer workloads</p></li>
 </ul>
 </section>
 <section id="features">
-<h2>Features<a class="headerlink" href="#features" title="Permalink to this heading"></a></h2>
+<h2>Features<a class="headerlink" href="#features" title="Link to this heading"></a></h2>
 <p>The <code class="docutils literal notranslate"><span class="pre">topology-aware</span></code> policy has the following features:</p>
 <ul class="simple">
 <li><p>topologically aligned allocation of CPU and memory</p>
@@ -252,7 +253,7 @@ speed memory, typically found on some special-purpose computing systems</p></li>
 </ul>
 </section>
 <section id="configuring-the-policy">
-<h2>Configuring the Policy<a class="headerlink" href="#configuring-the-policy" title="Permalink to this heading"></a></h2>
+<h2>Configuring the Policy<a class="headerlink" href="#configuring-the-policy" title="Link to this heading"></a></h2>
 <p>The policy has a number of configuration options which affect its default
 behavior. These options can be supplied as part of the effective
 <a class="reference internal" href="../configuration.html"><span class="std std-doc">dynamic configuration</span></a> custom resource.</p>
@@ -322,7 +323,7 @@ resource assignment are readable through <code class="docutils literal notransla
 </ul>
 </section>
 <section id="policy-cpu-allocation-preferences">
-<h2>Policy CPU Allocation Preferences<a class="headerlink" href="#policy-cpu-allocation-preferences" title="Permalink to this heading"></a></h2>
+<h2>Policy CPU Allocation Preferences<a class="headerlink" href="#policy-cpu-allocation-preferences" title="Link to this heading"></a></h2>
 <p>There are a number of workload properties this policy actively checks to decide
 if the workload could potentially benefit from extra resource allocation
 optimizations. Unless configured differently, containers fulfilling certain
@@ -433,13 +434,13 @@ container’s assigned pool. This shared subset can and usually does change
 dynamically as exclusive CPU cores are allocated and released in the pool.</p>
 </section>
 <section id="container-cpu-allocation-preference-annotations">
-<h2>Container CPU Allocation Preference Annotations<a class="headerlink" href="#container-cpu-allocation-preference-annotations" title="Permalink to this heading"></a></h2>
+<h2>Container CPU Allocation Preference Annotations<a class="headerlink" href="#container-cpu-allocation-preference-annotations" title="Link to this heading"></a></h2>
 <p>Containers can be annotated to diverge from the default CPU allocation
 preferences the policy would otherwise apply to them. These Pod annotations
 can be given both with per pod and per container resolution. If for any
 container both of these exist, the container-specific one takes precedence.</p>
 <section id="shared-exclusive-and-isolated-cpu-preference-cpu-priorities">
-<h3>Shared, Exclusive, and Isolated CPU Preference, CPU Priorities<a class="headerlink" href="#shared-exclusive-and-isolated-cpu-preference-cpu-priorities" title="Permalink to this heading"></a></h3>
+<h3>Shared, Exclusive, and Isolated CPU Preference, CPU Priorities<a class="headerlink" href="#shared-exclusive-and-isolated-cpu-preference-cpu-priorities" title="Link to this heading"></a></h3>
 <p>A container can opt in to or opt out from shared CPU allocation using the
 following Pod annotation.</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
@@ -474,7 +475,7 @@ allocation using the following Pod annotation.</p>
 exclusive allocation.</p>
 </section>
 <section id="selectively-disabling-hyperthreading">
-<h3>Selectively Disabling Hyperthreading<a class="headerlink" href="#selectively-disabling-hyperthreading" title="Permalink to this heading"></a></h3>
+<h3>Selectively Disabling Hyperthreading<a class="headerlink" href="#selectively-disabling-hyperthreading" title="Link to this heading"></a></h3>
 <p>If a container opts to hide hyperthreads, it is allowed to use only
 one hyperthread from every physical CPU core allocated to it. Note
 that as a result the container may be allowed to run on only half of
@@ -491,7 +492,7 @@ hidden hyperthreads either.</p>
 </div>
 </section>
 <section id="implicit-hardware-topology-hints">
-<h3>Implicit Hardware Topology Hints<a class="headerlink" href="#implicit-hardware-topology-hints" title="Permalink to this heading"></a></h3>
+<h3>Implicit Hardware Topology Hints<a class="headerlink" href="#implicit-hardware-topology-hints" title="Link to this heading"></a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">NRI</span> <span class="pre">Resource</span> <span class="pre">Policy</span></code> automatically generates HW <code class="docutils literal notranslate"><span class="pre">Topology</span> <span class="pre">Hints</span></code> for devices
 assigned to a container, prior to handing the container off to the active policy
 for resource allocation. The <code class="docutils literal notranslate"><span class="pre">topology-aware</span></code> policy is hint-aware and normally
@@ -518,7 +519,7 @@ Pod annotation as opt in only has an effect when the whole pod is annotated to
 opt out from hint-aware pool selection.</p>
 </section>
 <section id="implicit-topological-co-location-for-pods-and-namespaces">
-<h3>Implicit Topological Co-location for Pods and Namespaces<a class="headerlink" href="#implicit-topological-co-location-for-pods-and-namespaces" title="Permalink to this heading"></a></h3>
+<h3>Implicit Topological Co-location for Pods and Namespaces<a class="headerlink" href="#implicit-topological-co-location-for-pods-and-namespaces" title="Link to this heading"></a></h3>
 <p>The <code class="docutils literal notranslate"><span class="pre">colocatePods</span></code> or <code class="docutils literal notranslate"><span class="pre">colocateNamespaces</span></code> configuration options control whether
 the policy will try to co-locate, that is allocate topologically close, containers
 within the same Pod or K8s namespace.</p>
@@ -534,7 +535,7 @@ altogether.</p>
 </section>
 </section>
 <section id="disabling-cpu-or-memory-pinning-of-a-container">
-<h2>Disabling CPU or Memory Pinning of a Container<a class="headerlink" href="#disabling-cpu-or-memory-pinning-of-a-container" title="Permalink to this heading"></a></h2>
+<h2>Disabling CPU or Memory Pinning of a Container<a class="headerlink" href="#disabling-cpu-or-memory-pinning-of-a-container" title="Link to this heading"></a></h2>
 <p>Some containers may need to run on all CPUs or access all memories
 without restrictions. Annotate these pods and containers to prevent
 the resource policy from touching their CPU or memory pinning.</p>
@@ -549,7 +550,7 @@ the resource policy from touching their CPU or memory pinning.</p>
 </div>
 </section>
 <section id="cold-start">
-<h2>Cold Start<a class="headerlink" href="#cold-start" title="Permalink to this heading"></a></h2>
+<h2>Cold Start<a class="headerlink" href="#cold-start" title="Link to this heading"></a></h2>
 <p>The <code class="docutils literal notranslate"><span class="pre">topology-aware</span></code> policy supports “cold start” functionality. When cold start
 is enabled and the workload is allocated to a topology node with both DRAM and
 PMEM memory, the initial memory controller is only the PMEM controller. DRAM
@@ -581,7 +582,7 @@ memory controller, but after 60 seconds the DRAM controller would be
 added to the container memset.</p>
 </section>
 <section id="container-memory-requests-and-limits">
-<h2>Container memory requests and limits<a class="headerlink" href="#container-memory-requests-and-limits" title="Permalink to this heading"></a></h2>
+<h2>Container memory requests and limits<a class="headerlink" href="#container-memory-requests-and-limits" title="Link to this heading"></a></h2>
 <p>Due to inaccuracies in how <code class="docutils literal notranslate"><span class="pre">nri-resource-policy</span></code> calculates memory requests for
 pods in QoS class <code class="docutils literal notranslate"><span class="pre">Burstable</span></code>, you should either use <code class="docutils literal notranslate"><span class="pre">Limit</span></code> for setting
 the amount of memory for containers in <code class="docutils literal notranslate"><span class="pre">Burstable</span></code> pods to provide <code class="docutils literal notranslate"><span class="pre">cri-resmgr</span></code>
@@ -589,7 +590,7 @@ with an exact copy of the resource requirements from the Pod Spec as an extra
 Pod annotation.</p>
 </section>
 <section id="reserved-pool-namespaces">
-<h2>Reserved pool namespaces<a class="headerlink" href="#reserved-pool-namespaces" title="Permalink to this heading"></a></h2>
+<h2>Reserved pool namespaces<a class="headerlink" href="#reserved-pool-namespaces" title="Link to this heading"></a></h2>
 <p>User is able to mark certain namespaces to have a reserved CPU allocation.
 Containers belonging to such namespaces will only run on CPUs set aside
 according to the global CPU reservation, as configured by the ReservedResources
@@ -606,7 +607,7 @@ The workloads in <code class="docutils literal notranslate"><span class="pre">ku
 class so no need to mention <code class="docutils literal notranslate"><span class="pre">kube-system</span></code> in this list.</p>
 </section>
 <section id="reserved-cpu-annotations">
-<h2>Reserved CPU annotations<a class="headerlink" href="#reserved-cpu-annotations" title="Permalink to this heading"></a></h2>
+<h2>Reserved CPU annotations<a class="headerlink" href="#reserved-cpu-annotations" title="Link to this heading"></a></h2>
 <p>User is able to mark certain pods and containers to have a reserved CPU
 allocation by using annotations. Containers having a such annotation will only
 run on CPUs set aside according to the global CPU reservation, as configured by
@@ -620,7 +621,7 @@ the ReservedResources configuration option in the policy section.</p>
 </div>
 </section>
 <section id="allowing-or-denying-mount-device-paths-via-annotations">
-<h2>Allowing or denying mount/device paths via annotations<a class="headerlink" href="#allowing-or-denying-mount-device-paths-via-annotations" title="Permalink to this heading"></a></h2>
+<h2>Allowing or denying mount/device paths via annotations<a class="headerlink" href="#allowing-or-denying-mount-device-paths-via-annotations" title="Link to this heading"></a></h2>
 <p>User is able mark certain pods and containers to have allowed or denied
 paths for mounts or devices. What this means is that when the system
 is generating topology hints, it will consult this allowed / denied path
@@ -661,9 +662,9 @@ put wildcards to the matched paths.</p>
 </div>
 </section>
 <section id="container-affinity-and-anti-affinity">
-<h2>Container Affinity and Anti-Affinity<a class="headerlink" href="#container-affinity-and-anti-affinity" title="Permalink to this heading"></a></h2>
+<h2>Container Affinity and Anti-Affinity<a class="headerlink" href="#container-affinity-and-anti-affinity" title="Link to this heading"></a></h2>
 <section id="introduction">
-<h3>Introduction<a class="headerlink" href="#introduction" title="Permalink to this heading"></a></h3>
+<h3>Introduction<a class="headerlink" href="#introduction" title="Link to this heading"></a></h3>
 <p>The topology-aware resource policy allow the user to give hints about how
 particular containers should be <em>co-located</em> within a node. In particular these
 hints express whether containers should be located <em>‘close’</em> to each other or
@@ -691,7 +692,7 @@ each other further away</p></li>
 </ul>
 </section>
 <section id="affinity-annotation-syntax">
-<h3>Affinity Annotation Syntax<a class="headerlink" href="#affinity-annotation-syntax" title="Permalink to this heading"></a></h3>
+<h3>Affinity Annotation Syntax<a class="headerlink" href="#affinity-annotation-syntax" title="Link to this heading"></a></h3>
 <p><em>Affinities</em> are defined as the <code class="docutils literal notranslate"><span class="pre">resource-policy.nri.io/affinity</span></code> annotation.
 <em>Anti-affinities</em> are defined as the <code class="docutils literal notranslate"><span class="pre">resource-policy.nri.io/anti-affinity</span></code>
 annotation. They are specified in the <code class="docutils literal notranslate"><span class="pre">metadata</span></code> section of the <code class="docutils literal notranslate"><span class="pre">Pod</span> <span class="pre">YAML</span></code>, under
@@ -743,7 +744,7 @@ as the annotation key.</p>
 </div>
 </section>
 <section id="affinity-semantics">
-<h3>Affinity Semantics<a class="headerlink" href="#affinity-semantics" title="Permalink to this heading"></a></h3>
+<h3>Affinity Semantics<a class="headerlink" href="#affinity-semantics" title="Link to this heading"></a></h3>
 <p>An affinity consists of three parts:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">scope</span> <span class="pre">expression</span></code>: defines which containers this affinity is evaluated against</p></li>
@@ -861,7 +862,7 @@ instance the joint key</p>
 subkeys exists.</p>
 </section>
 <section id="examples">
-<h3>Examples<a class="headerlink" href="#examples" title="Permalink to this heading"></a></h3>
+<h3>Examples<a class="headerlink" href="#examples" title="Link to this heading"></a></h3>
 <p>Put the container <code class="docutils literal notranslate"><span class="pre">peter</span></code> close to the container <code class="docutils literal notranslate"><span class="pre">sheep</span></code> but far away from the
 container <code class="docutils literal notranslate"><span class="pre">wolf</span></code>.</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="w">    </span><span class="nt">resource-policy.nri.io/affinity</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
@@ -884,7 +885,7 @@ container <code class="docutils literal notranslate"><span class="pre">wolf</spa
 </div>
 </section>
 <section id="shorthand-notation">
-<h3>Shorthand Notation<a class="headerlink" href="#shorthand-notation" title="Permalink to this heading"></a></h3>
+<h3>Shorthand Notation<a class="headerlink" href="#shorthand-notation" title="Link to this heading"></a></h3>
 <p>There is an alternative shorthand syntax for what is considered to be the most common
 case: defining affinities between containers within the same pod. With this notation
 one needs to give just the names of the containers, like in the example below.</p>
@@ -940,7 +941,7 @@ one needs to give just the names of the containers, like in the example below.</
 </section>
 </section>
 <section id="metrics-and-debugging">
-<h2>Metrics and Debugging<a class="headerlink" href="#metrics-and-debugging" title="Permalink to this heading"></a></h2>
+<h2>Metrics and Debugging<a class="headerlink" href="#metrics-and-debugging" title="Link to this heading"></a></h2>
 <p>In order to enable more verbose logging and metrics exporting from the
 topology-aware policy, enable instrumentation and policy debugging from
 the nri-resource-policy global config:</p>

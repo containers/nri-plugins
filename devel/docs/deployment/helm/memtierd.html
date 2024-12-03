@@ -1,22 +1,23 @@
 <!DOCTYPE html>
-<html class="writer-html5" lang="en" >
+<html class="writer-html5" lang="en" data-content_root="../../../">
 <head>
-  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Memtierd Plugin &mdash; NRI Plugins v0.7.1-120-gef4c84f3 documentation</title>
-      <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
-      <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+  <title>Memtierd Plugin &mdash; NRI Plugins v0.7.1-124-g3b691204 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+
+  
   <!--[if lt IE 9]>
     <script src="../../../_static/js/html5shiv.min.js"></script>
   <![endif]-->
   
-        <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
-        <script src="../../../_static/jquery.js"></script>
-        <script src="../../../_static/underscore.js"></script>
-        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
-        <script src="../../../_static/doctools.js"></script>
-        <script src="../../../_static/sphinx_highlight.js"></script>
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=3081dbff"></script>
+        <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../../../genindex.html" />
     <link rel="search" title="Search" href="../../../search.html" />
@@ -95,11 +96,11 @@
            <div itemprop="articleBody">
              
   <section id="memtierd-plugin">
-<h1>Memtierd Plugin<a class="headerlink" href="#memtierd-plugin" title="Permalink to this heading"></a></h1>
+<h1>Memtierd Plugin<a class="headerlink" href="#memtierd-plugin" title="Link to this heading"></a></h1>
 <p>This chart deploys memtierd Node Resource Interface (NRI) plugin. The memtierd
 NRI plugin enables managing workloads with Memtierd in Kubernetes.</p>
 <section id="prerequisites">
-<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading"></a></h2>
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading"></a></h2>
 <ul>
 <li><p>Kubernetes 1.24+</p></li>
 <li><p>Helm 3.0.0+</p></li>
@@ -143,7 +144,7 @@ the Helm chart during the chart installation simply by setting the
 </ul>
 </section>
 <section id="installing-the-chart">
-<h2>Installing the Chart<a class="headerlink" href="#installing-the-chart" title="Permalink to this heading"></a></h2>
+<h2>Installing the Chart<a class="headerlink" href="#installing-the-chart" title="Link to this heading"></a></h2>
 <p>Path to the chart: <code class="docutils literal notranslate"><span class="pre">nri-memtierd</span></code>.</p>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>repo<span class="w"> </span>add<span class="w"> </span>nri-plugins<span class="w"> </span>https://containers.github.io/nri-plugins
 helm<span class="w"> </span>install<span class="w"> </span>my-memtierd<span class="w"> </span>nri-plugins/nri-memtierd<span class="w"> </span>--namespace<span class="w"> </span>kube-system
@@ -177,14 +178,14 @@ helm<span class="w"> </span>install<span class="w"> </span>my-memtierd<span clas
 </div>
 </section>
 <section id="uninstalling-the-chart">
-<h2>Uninstalling the Chart<a class="headerlink" href="#uninstalling-the-chart" title="Permalink to this heading"></a></h2>
+<h2>Uninstalling the Chart<a class="headerlink" href="#uninstalling-the-chart" title="Link to this heading"></a></h2>
 <p>To uninstall the memtierd plugin run the following command:</p>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>delete<span class="w"> </span>my-memtierd<span class="w"> </span>--namespace<span class="w"> </span>kube-system
 </pre></div>
 </div>
 </section>
 <section id="configuration-options">
-<h2>Configuration options<a class="headerlink" href="#configuration-options" title="Permalink to this heading"></a></h2>
+<h2>Configuration options<a class="headerlink" href="#configuration-options" title="Link to this heading"></a></h2>
 <p>The tables below present an overview of the parameters available for users to
 customize with their own values, along with the default values.</p>
 <table class="docutils align-default">
