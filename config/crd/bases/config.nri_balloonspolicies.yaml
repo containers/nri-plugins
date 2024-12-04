@@ -51,6 +51,10 @@ spec:
                       NodeResourceTopology enables support for exporting resource usage using
                       NodeResourceTopology Custom Resources.
                     type: boolean
+                  podResourceAPI:
+                    description: PodResourceAPI enables support for querying kubelet
+                      Pod Resource API.
+                    type: boolean
                 type: object
               allocatorTopologyBalancing:
                 description: |-

@@ -21,18 +21,21 @@ import (
 	nri "github.com/containerd/nri/pkg/api"
 	v1 "k8s.io/api/core/v1"
 
+	"github.com/containers/nri-plugins/pkg/agent/podresapi"
 	resmgr "github.com/containers/nri-plugins/pkg/apis/resmgr/v1alpha1"
 	"github.com/containers/nri-plugins/pkg/cgroups"
 	"github.com/containers/nri-plugins/pkg/kubernetes"
 )
 
 // Create and initialize a cached pod.
-func (cch *cache) createPod(nriPod *nri.PodSandbox) *pod {
+func (cch *cache) createPod(nriPod *nri.PodSandbox, ch <-chan *podresapi.PodResources) *pod {
 	p := &pod{
 		cache: cch,
 		Pod:   nriPod,
 		ctime: time.Now(),
 	}
+
+	p.goFetchPodResources(ch)
 
 	if err := p.parseCgroupForQOSClass(); err != nil {
 		log.Error("pod %s: %v", p.PrettyName(), err)
@@ -131,6 +134,32 @@ func (p *pod) GetEffectiveAnnotation(key, container string) (string, bool) {
 
 func (p *pod) GetQOSClass() v1.PodQOSClass {
 	return p.QOSClass
+}
+
+func (p *pod) goFetchPodResources(ch <-chan *podresapi.PodResources) {
+	go func() {
+		p.podResCh = ch
+		p.waitResCh = make(chan struct{})
+		defer close(p.waitResCh)
+
+		if p.podResCh != nil {
+			p.PodResources = <-p.podResCh
+			log.Debug("fetched pod resources %+v for %s", p.PodResources, p.GetName())
+		}
+	}()
+}
+
+func (p *pod) setPodResources(podRes *podresapi.PodResources) {
+	p.PodResources = podRes
+	log.Debug("set pod resources %+v for %s", p.PodResources, p.GetName())
+}
+
+func (p *pod) GetPodResources() *podresapi.PodResources {
+	if p.waitResCh != nil {
+		log.Debug("waiting for pod resources fetch to complete...")
+		_ = <-p.waitResCh
+	}
+	return p.PodResources
 }
 
 func (p *pod) GetContainerAffinity(name string) ([]*Affinity, error) {

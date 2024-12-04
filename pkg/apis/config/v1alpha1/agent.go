@@ -20,6 +20,9 @@ type AgentConfig struct {
 	// NodeResourceTopology Custom Resources.
 	// +optional
 	NodeResourceTopology bool `json:"nodeResourceTopology,omitempty"`
+	// PodResourceAPI enables support for querying kubelet Pod Resource API.
+	// +optional
+	PodResourceAPI bool `json:"podResourceAPI,omitempty"`
 }
 
 // GetAgentConfig returns the agent-specific configuration if we have one.

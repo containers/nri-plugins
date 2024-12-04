@@ -27,6 +27,7 @@ import (
 	nri "github.com/containerd/nri/pkg/api"
 	v1 "k8s.io/api/core/v1"
 
+	"github.com/containers/nri-plugins/pkg/agent/podresapi"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 
 	resmgr "github.com/containers/nri-plugins/pkg/apis/resmgr/v1alpha1"
@@ -114,6 +115,10 @@ type Pod interface {
 	// and return the value of the first key found.
 	GetEffectiveAnnotation(key, container string) (string, bool)
 
+	// GetPodResources returns the pod resources for this pod, waiting for any
+	// pending fetch to complete or a timeout.
+	GetPodResources() *podresapi.PodResources
+
 	// GetContainerAffinity returns the affinity expressions for the named container.
 	GetContainerAffinity(string) ([]*Affinity, error)
 	// ScopeExpression returns an affinity expression for defining this pod as the scope.
@@ -138,12 +143,16 @@ type Pod interface {
 
 // A cached pod.
 type pod struct {
-	cache      *cache                // our cache of object
-	Pod        *nri.PodSandbox       // pod data from NRI
-	QOSClass   v1.PodQOSClass        // pod QOS class
-	Affinity   *podContainerAffinity // annotated container affinity
-	prettyName string                // cached PrettyName()
-	ctime      time.Time             // time of pod creation
+	cache        *cache                         // our cache of object
+	Pod          *nri.PodSandbox                // pod data from NRI
+	QOSClass     v1.PodQOSClass                 // pod QOS class
+	Affinity     *podContainerAffinity          // annotated container affinity
+	PodResources *podresapi.PodResources        // pod resources acquired from podresourceapi
+	podResCh     <-chan *podresapi.PodResources // channel for pod resource fetch
+	waitResCh    chan struct{}                  // channel for waiting for pod resource fetch
+	prettyName   string                         // cached PrettyName()
+	ctime        time.Time                      // time of pod creation
+
 }
 
 // ContainerState is the container state in the runtime.
@@ -221,6 +230,9 @@ type Container interface {
 	// GetResourceRequirements returns the resource requirements for this container.
 	// The requirements are calculated from the containers cgroup parameters.
 	GetResourceRequirements() v1.ResourceRequirements
+
+	// GetPodResources gets container-specific resources acquired from podresourceapi.
+	GetPodResources() *podresapi.ContainerResources
 
 	// SetResourceUpdates sets updated resources for a container. Returns true if the
 	// resources were really updated.
@@ -322,6 +334,7 @@ type container struct {
 	State ContainerState // current state of the container
 
 	Requirements    v1.ResourceRequirements
+	PodResources    *podresapi.ContainerResources
 	ResourceUpdates *v1.ResourceRequirements
 	request         interface{}
 
@@ -359,7 +372,7 @@ type Cacheable interface {
 // itself upon startup.
 type Cache interface {
 	// InsertPod inserts a pod into the cache, using a runtime request or reply.
-	InsertPod(pod *nri.PodSandbox) (Pod, error)
+	InsertPod(pod *nri.PodSandbox, ch <-chan *podresapi.PodResources) Pod
 	// DeletePod deletes a pod from the cache.
 	DeletePod(id string) Pod
 	// LookupPod looks up a pod in the cache.
@@ -410,7 +423,7 @@ type Cache interface {
 	Save() error
 
 	// RefreshPods purges/inserts stale/new pods/containers using a pod sandbox list response.
-	RefreshPods([]*nri.PodSandbox) ([]Pod, []Pod, []Container)
+	RefreshPods([]*nri.PodSandbox, <-chan podresapi.PodResourcesList) ([]Pod, []Pod, []Container)
 	// RefreshContainers purges/inserts stale/new containers using a container list response.
 	RefreshContainers([]*nri.Container) ([]Container, []Container)
 
@@ -523,12 +536,12 @@ func (cch *cache) ResetActivePolicy() error {
 }
 
 // Insert a pod into the cache.
-func (cch *cache) InsertPod(nriPod *nri.PodSandbox) (Pod, error) {
-	p := cch.createPod(nriPod)
+func (cch *cache) InsertPod(nriPod *nri.PodSandbox, ch <-chan *podresapi.PodResources) Pod {
+	p := cch.createPod(nriPod, ch)
 	cch.Pods[nriPod.GetId()] = p
 	cch.Save()
 
-	return p, nil
+	return p
 }
 
 // Delete a pod from the cache.
@@ -620,7 +633,7 @@ func (cch *cache) LookupContainerByCgroup(path string) (Container, bool) {
 }
 
 // RefreshPods purges/inserts stale/new pods/containers into the cache.
-func (cch *cache) RefreshPods(pods []*nri.PodSandbox) ([]Pod, []Pod, []Container) {
+func (cch *cache) RefreshPods(pods []*nri.PodSandbox, resCh <-chan podresapi.PodResourcesList) ([]Pod, []Pod, []Container) {
 	valid := make(map[string]struct{})
 
 	add := []Pod{}
@@ -631,13 +644,8 @@ func (cch *cache) RefreshPods(pods []*nri.PodSandbox) ([]Pod, []Pod, []Container
 		valid[item.Id] = struct{}{}
 		if _, ok := cch.Pods[item.Id]; !ok {
 			log.Debug("inserting discovered pod %s...", item.Id)
-			pod, err := cch.InsertPod(item)
-			if err != nil {
-				log.Error("failed to insert discovered pod %s to cache: %v",
-					item.Id, err)
-			} else {
-				add = append(add, pod)
-			}
+			pod := cch.InsertPod(item, nil)
+			add = append(add, pod)
 		}
 	}
 	for _, pod := range cch.Pods {
@@ -652,6 +660,16 @@ func (cch *cache) RefreshPods(pods []*nri.PodSandbox) ([]Pod, []Pod, []Container
 			cch.DeleteContainer(c.GetID())
 			c.State = ContainerStateStale
 			containers = append(containers, c)
+		}
+	}
+
+	if resCh != nil {
+		podResList := <-resCh
+		if len(podResList) > 0 {
+			podResMap := podResList.Map()
+			for _, pod := range cch.Pods {
+				pod.setPodResources(podResMap.GetPod(pod.GetNamespace(), pod.GetName()))
+			}
 		}
 	}
 
@@ -685,6 +703,11 @@ func (cch *cache) RefreshContainers(containers []*nri.Container) ([]Container, [
 			cch.DeleteContainer(c.GetID())
 			c.State = ContainerStateStale
 			del = append(del, c)
+		}
+
+		pod, ok := cch.Pods[c.GetPodID()]
+		if ok {
+			c.PodResources = pod.GetPodResources().GetContainer(c.GetName())
 		}
 	}
 
