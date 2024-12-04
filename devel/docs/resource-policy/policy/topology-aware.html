@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.7.1-130-gb412a058 documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.7.1-134-g331b1ecb documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=23a049ed"></script>
+        <script src="../../../_static/documentation_options.js?v=64c2410b"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -67,7 +67,8 @@
 <li class="toctree-l4"><a class="reference internal" href="#container-memory-requests-and-limits">Container memory requests and limits</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#reserved-pool-namespaces">Reserved pool namespaces</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#reserved-cpu-annotations">Reserved CPU annotations</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#allowing-or-denying-mount-device-paths-via-annotations">Allowing or denying mount/device paths via annotations</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#controlling-topology-hints-via-annotations">Controlling Topology Hints Via Annotations</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#using-pod-resource-api-for-extra-topology-hints">Using Pod Resource API for Extra Topology Hints</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#container-affinity-and-anti-affinity">Container Affinity and Anti-Affinity</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#metrics-and-debugging">Metrics and Debugging</a></li>
 </ul>
@@ -620,8 +621,8 @@ the ReservedResources configuration option in the policy section.</p>
 </pre></div>
 </div>
 </section>
-<section id="allowing-or-denying-mount-device-paths-via-annotations">
-<h2>Allowing or denying mount/device paths via annotations<a class="headerlink" href="#allowing-or-denying-mount-device-paths-via-annotations" title="Link to this heading"></a></h2>
+<section id="controlling-topology-hints-via-annotations">
+<h2>Controlling Topology Hints Via Annotations<a class="headerlink" href="#controlling-topology-hints-via-annotations" title="Link to this heading"></a></h2>
 <p>User is able mark certain pods and containers to have allowed or denied
 paths for mounts or devices. What this means is that when the system
 is generating topology hints, it will consult this allowed / denied path
@@ -660,6 +661,15 @@ put wildcards to the matched paths.</p>
 <span class="w">        </span><span class="no">- /xy-zy/another-blacklisted-path5</span>
 </pre></div>
 </div>
+</section>
+<section id="using-pod-resource-api-for-extra-topology-hints">
+<h2>Using Pod Resource API for Extra Topology Hints<a class="headerlink" href="#using-pod-resource-api-for-extra-topology-hints" title="Link to this heading"></a></h2>
+<p>If access to the <code class="docutils literal notranslate"><span class="pre">kubelet</span></code>’s <code class="docutils literal notranslate"><span class="pre">Pod</span> <span class="pre">Resource</span> <span class="pre">API</span></code> is enabled in the
+<a class="reference internal" href="../developers-guide/architecture.html#node-agent"><span class="std std-ref">Node Agent’s</span></a> configuration,
+it is automatically used to generate per-container topology hints when a
+device with locality to a NUMA node is advertised by the API. Annotated allow
+and deny lists can be used to selectively disable or enable per-resource hints,
+using <code class="docutils literal notranslate"><span class="pre">podresapi:$RESOURCE_NAME</span></code> as the path.</p>
 </section>
 <section id="container-affinity-and-anti-affinity">
 <h2>Container Affinity and Anti-Affinity<a class="headerlink" href="#container-affinity-and-anti-affinity" title="Link to this heading"></a></h2>
