@@ -423,7 +423,7 @@ type Cache interface {
 	Save() error
 
 	// RefreshPods purges/inserts stale/new pods/containers using a pod sandbox list response.
-	RefreshPods([]*nri.PodSandbox, <-chan podresapi.PodResourcesList) ([]Pod, []Pod, []Container)
+	RefreshPods([]*nri.PodSandbox, <-chan *podresapi.PodResourcesList) ([]Pod, []Pod, []Container)
 	// RefreshContainers purges/inserts stale/new containers using a container list response.
 	RefreshContainers([]*nri.Container) ([]Container, []Container)
 
@@ -633,7 +633,7 @@ func (cch *cache) LookupContainerByCgroup(path string) (Container, bool) {
 }
 
 // RefreshPods purges/inserts stale/new pods/containers into the cache.
-func (cch *cache) RefreshPods(pods []*nri.PodSandbox, resCh <-chan podresapi.PodResourcesList) ([]Pod, []Pod, []Container) {
+func (cch *cache) RefreshPods(pods []*nri.PodSandbox, resCh <-chan *podresapi.PodResourcesList) ([]Pod, []Pod, []Container) {
 	valid := make(map[string]struct{})
 
 	add := []Pod{}
@@ -665,10 +665,9 @@ func (cch *cache) RefreshPods(pods []*nri.PodSandbox, resCh <-chan podresapi.Pod
 
 	if resCh != nil {
 		podResList := <-resCh
-		if len(podResList) > 0 {
-			podResMap := podResList.Map()
+		if podResList.Len() > 0 {
 			for _, pod := range cch.Pods {
-				pod.setPodResources(podResMap.GetPod(pod.GetNamespace(), pod.GetName()))
+				pod.setPodResources(podResList.GetPodResources(pod.GetNamespace(), pod.GetName()))
 			}
 		}
 	}

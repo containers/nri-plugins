@@ -37,6 +37,7 @@ type Client struct {
 	conn       *grpc.ClientConn
 	cli        api.PodResourcesListerClient
 	noGet      bool
+	cached     *PodResourcesList
 }
 
 const (
@@ -119,7 +120,7 @@ func (c *Client) HasClient() bool {
 }
 
 // List lists all pods' resources.
-func (c *Client) List(ctx context.Context) (PodResourcesList, error) {
+func (c *Client) List(ctx context.Context) (*PodResourcesList, error) {
 	if !c.HasClient() {
 		return nil, nil
 	}
@@ -129,7 +130,9 @@ func (c *Client) List(ctx context.Context) (PodResourcesList, error) {
 		return nil, fmt.Errorf("failed to get pod resources by list: %w", err)
 	}
 
-	return PodResourcesList(reply.GetPodResources()), nil
+	c.cached = NewPodResourcesList(reply.GetPodResources())
+
+	return c.cached, nil
 }
 
 // Get queries the given pod's resources.
@@ -156,6 +159,10 @@ func (c *Client) Get(ctx context.Context, namespace, pod string) (*PodResources,
 		log.Warnf("  --feature-gates=KubeletPodResourcesGet=true")
 
 		c.noGet = true
+	}
+
+	if r := c.cached.GetPodResources(namespace, pod); r != nil {
+		return r, nil
 	}
 
 	l, err := c.List(ctx)
