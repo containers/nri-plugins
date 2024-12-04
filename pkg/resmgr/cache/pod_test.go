@@ -223,7 +223,7 @@ var _ = Describe("Pod", func() {
 
 		_, pods, _ = makePopulatedCache(nriPods, nil)
 
-		Expect(pods[0].PrettyName()).To(Equal(pods[0].GetName()))
+		Expect(pods[0].PrettyName()).To(Equal(pods[0].GetNamespace() + "/" + pods[0].GetName()))
 		Expect(pods[1].PrettyName()).To(Equal(pods[1].GetNamespace() + "/" + pods[1].GetName()))
 	})
 })
