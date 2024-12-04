@@ -32,11 +32,11 @@ type ContainerResources struct {
 	*api.ContainerResources
 }
 
-// PodResourcesList is a list of PodResources.
-type PodResourcesList []*api.PodResources
-
-// PodResourceMap is a map representation of PodResourcesList.
-type PodResourcesMap map[string]map[string]*PodResources
+// PodResourcesList containers the result of a pod resources list query.
+type PodResourcesList struct {
+	l []*api.PodResources
+	m map[string]map[string]*PodResources
+}
 
 // GetContainer returns resources for the given container.
 func (p *PodResources) GetContainer(ctr string) *ContainerResources {
@@ -53,41 +53,65 @@ func (p *PodResources) GetContainer(ctr string) *ContainerResources {
 	return nil
 }
 
+func NewPodResourcesList(l []*api.PodResources) *PodResourcesList {
+	return &PodResourcesList{
+		l: l,
+		m: make(map[string]map[string]*PodResources),
+	}
+}
+
+func (l *PodResourcesList) Len() int {
+	if l == nil {
+		return 0
+	}
+
+	cnt := len(l.l)
+	for _, m := range l.m {
+		cnt += len(m)
+	}
+
+	return cnt
+}
+
 // GetPodResources returns resources for the given pod.
-func (l PodResourcesList) GetPodResources(ns, pod string) *PodResources {
-	for _, p := range l {
-		if p.GetNamespace() == ns && p.GetName() == pod {
-			return &PodResources{p}
+func (l *PodResourcesList) GetPodResources(ns, pod string) *PodResources {
+	if l == nil {
+		return nil
+	}
+
+	if p, ok := l.m[ns][pod]; ok {
+		return p
+	}
+
+	for i, p := range l.l {
+		var (
+			podNs   = p.GetNamespace()
+			podName = p.GetName()
+		)
+
+		podMap, ok := l.m[podNs]
+		if !ok {
+			podMap = make(map[string]*PodResources)
+			l.m[podNs] = podMap
+		}
+
+		r := &PodResources{p}
+		podMap[podName] = r
+
+		if podNs == ns && podName == pod {
+			l.l = l.l[i+1:]
+			return r
 		}
 	}
+
+	l.l = nil
 
 	return nil
 }
 
-// Map returns a PodResourcesMap for the pod resources list.
-func (l PodResourcesList) Map() PodResourcesMap {
-	m := make(PodResourcesMap)
-
-	for _, p := range l {
-		podMap, ok := m[p.GetNamespace()]
-		if !ok {
-			podMap = make(map[string]*PodResources)
-			m[p.GetNamespace()] = podMap
-		}
-		podMap[p.GetName()] = &PodResources{p}
-	}
-
-	return m
-}
-
-// GetPod returns resources for the given pod.
-func (m PodResourcesMap) GetPod(ns, pod string) *PodResources {
-	return m[ns][pod]
-}
-
 // GetContainer returns resources for the given container.
-func (m PodResourcesMap) GetContainer(ns, pod, ctr string) *ContainerResources {
-	return m.GetPod(ns, pod).GetContainer(ctr)
+func (l *PodResourcesList) GetContainer(ns, pod, ctr string) *ContainerResources {
+	return l.GetPodResources(ns, pod).GetContainer(ctr)
 }
 
 // GetDeviceTopologyHints returns topology hints for the given container. checkDenied
