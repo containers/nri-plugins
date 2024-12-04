@@ -42,9 +42,8 @@ var _ = Describe("Cache", func() {
 		c, _, _ = makePopulatedCache(nriPods, nil)
 
 		for _, nriPod := range nriPods {
-			pod, err := c.InsertPod(nriPod)
+			pod := c.InsertPod(nriPod, nil)
 			Expect(pod).ToNot(BeNil())
-			Expect(err).To(BeNil())
 		}
 	})
 
@@ -61,9 +60,8 @@ var _ = Describe("Cache", func() {
 		c, _, _ = makePopulatedCache(nriPods, nil)
 
 		for _, nriPod := range nriPods {
-			pod, err := c.InsertPod(nriPod)
+			pod := c.InsertPod(nriPod, nil)
 			Expect(pod).ToNot(BeNil())
-			Expect(err).To(BeNil())
 
 			chk, ok := c.LookupPod(pod.GetID())
 			Expect(chk).ToNot(BeNil())
@@ -107,9 +105,8 @@ func makePopulatedCache(nriPods []*nri.PodSandbox, nriCtrs []*nri.Container) (ca
 	)
 
 	for _, nriPod := range nriPods {
-		pod, err := c.InsertPod(nriPod)
+		pod := c.InsertPod(nriPod, nil)
 		Expect(pod).ToNot(BeNil())
-		Expect(err).To(BeNil())
 		pods = append(pods, pod)
 	}
 	for _, nriCtr := range nriCtrs {
