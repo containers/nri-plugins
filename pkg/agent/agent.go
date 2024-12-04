@@ -268,37 +268,39 @@ func (a *Agent) hasLocalConfig() bool {
 
 func (a *Agent) setupClients() error {
 	if a.hasLocalConfig() {
+		log.Warn("running with local configuration, skipping cluster access client setup...")
 		return nil
 	}
 
-	cfg, err := a.getRESTConfig()
-	if err != nil {
-		return err
+	// Create HTTP/REST client and K8s client on initial startup. Any failure
+	// to create these is a failure start up.
+	if a.httpCli == nil {
+		log.Info("setting up HTTP/REST client...")
+		restCfg, err := a.getRESTConfig()
+		if err != nil {
+			return err
+		}
+
+		a.httpCli, err = rest.HTTPClientFor(restCfg)
+		if err != nil {
+			return fmt.Errorf("failed to setup kubernetes HTTP client: %w", err)
+		}
+
+		log.Info("setting up K8s client...")
+		a.k8sCli, err = k8sclient.NewForConfigAndClient(restCfg, a.httpCli)
+		if err != nil {
+			a.cleanupClients()
+			return fmt.Errorf("failed to setup kubernetes client: %w", err)
+		}
+
+		kubeCfg := *restCfg
+		err = a.cfgIf.SetKubeClient(a.httpCli, &kubeCfg)
+		if err != nil {
+			return fmt.Errorf("failed to setup kubernetes config resource client: %w", err)
+		}
 	}
 
-	a.httpCli, err = rest.HTTPClientFor(cfg)
-	if err != nil {
-		return fmt.Errorf("failed to setup kubernetes HTTP client: %w", err)
-	}
-
-	a.k8sCli, err = k8sclient.NewForConfigAndClient(cfg, a.httpCli)
-	if err != nil {
-		a.cleanupClients()
-		return fmt.Errorf("failed to setup kubernetes client: %w", err)
-	}
-
-	restCfg := *cfg
-	a.nrtCli, err = nrtapi.NewForConfigAndClient(&restCfg, a.httpCli)
-	if err != nil {
-		a.cleanupClients()
-		return fmt.Errorf("failed to setup NRT client: %w", err)
-	}
-
-	restCfg = *cfg
-	err = a.cfgIf.SetKubeClient(a.httpCli, &restCfg)
-	if err != nil {
-		return fmt.Errorf("failed to setup kubernetes config resource client: %w", err)
-	}
+	a.configure(a.currentCfg)
 
 	return nil
 }
@@ -310,6 +312,51 @@ func (a *Agent) cleanupClients() {
 	a.httpCli = nil
 	a.k8sCli = nil
 	a.nrtCli = nil
+}
+
+var (
+	defaultConfig = &cfgapi.AgentConfig{
+		NodeResourceTopology: true,
+	}
+)
+
+func getAgentConfig(newConfig metav1.Object) *cfgapi.AgentConfig {
+	cfg := cfgapi.GetAgentConfig(newConfig)
+	if cfg == nil {
+		return defaultConfig
+	}
+	return cfg
+}
+
+func (a *Agent) configure(newConfig metav1.Object) {
+	if a.hasLocalConfig() {
+		log.Warn("running with local configuration, skipping client setup...")
+		return
+	}
+
+	cfg := getAgentConfig(newConfig)
+
+	// Reconfigure NRT client, both on initial startup and reconfiguration.
+	// Failure to create a client is not a fatal error.
+	switch {
+	case cfg.NodeResourceTopology && a.nrtCli == nil:
+		log.Info("enabling NRT client")
+		cfg, err := a.getRESTConfig()
+		if err != nil {
+			log.Error("failed to setup NRT client: %w", err)
+			break
+		}
+		cli, err := nrtapi.NewForConfigAndClient(cfg, a.httpCli)
+		if err != nil {
+			log.Error("failed to setup NRT client: %w", err)
+			break
+		}
+		a.nrtCli = cli
+
+	case !cfg.NodeResourceTopology && a.nrtCli != nil:
+		log.Info("disabling NRT client")
+		a.nrtCli = nil
+	}
 }
 
 func (a *Agent) getRESTConfig() (*rest.Config, error) {
@@ -556,6 +603,7 @@ func (a *Agent) updateConfig(cfg metav1.Object) {
 	}
 
 	a.currentCfg = cfg
+	a.configure(cfg)
 }
 
 func (a *Agent) patchConfigStatus(prev, curr metav1.Object, errors error) {

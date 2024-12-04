@@ -18,6 +18,16 @@ var (
 	_ ResmgrConfig = &TemplatePolicy{}
 )
 
+func (c *TemplatePolicy) AgentConfig() *AgentConfig {
+	if c == nil {
+		return nil
+	}
+
+	a := c.Spec.Agent
+
+	return &a
+}
+
 func (c *TemplatePolicy) CommonConfig() *CommonConfig {
 	if c == nil {
 		return nil

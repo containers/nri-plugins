@@ -29,6 +29,7 @@ import (
 // +kubebuilder:object:generate=false
 type ResmgrConfig interface {
 	metav1.ObjectMetaAccessor
+	AgentConfig() *AgentConfig
 	CommonConfig() *CommonConfig
 	PolicyConfig() interface{}
 }

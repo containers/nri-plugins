@@ -40,6 +40,18 @@ spec:
           spec:
             description: TemplatePolicySpec describes a template policy.
             properties:
+              agent:
+                default:
+                  nodeResourceTopology: true
+                description: AgentConfig provides access to configuration data for
+                  the agent.
+                properties:
+                  nodeResourceTopology:
+                    description: |-
+                      NodeResourceTopology enables support for exporting resource usage using
+                      NodeResourceTopology Custom Resources.
+                    type: boolean
+                type: object
               availableResources:
                 additionalProperties:
                   type: string
