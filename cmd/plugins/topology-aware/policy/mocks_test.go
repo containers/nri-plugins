@@ -19,6 +19,7 @@ import (
 	"time"
 
 	nri "github.com/containerd/nri/pkg/api"
+	"github.com/containers/nri-plugins/pkg/agent/podresapi"
 	resmgr "github.com/containers/nri-plugins/pkg/apis/resmgr/v1alpha1"
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
@@ -324,6 +325,9 @@ func (fake *mockSystem) SetCpusOnline(online bool, cpus idset.IDSet) (idset.IDSe
 func (fake *mockSystem) NodeDistance(idset.ID, idset.ID) int {
 	return 10
 }
+func (fake *mockSystem) NodeHintToCPUs(string) string {
+	return ""
+}
 
 type mockContainer struct {
 	name                                  string
@@ -538,6 +542,9 @@ func (m *mockContainer) PreserveMemoryResources() bool {
 func (m *mockContainer) MemoryTypes() (libmem.TypeMask, error) {
 	return libmem.TypeMaskDRAM, nil
 }
+func (m *mockContainer) GetPodResources() *podresapi.ContainerResources {
+	return nil
+}
 
 type mockPod struct {
 	name                               string
@@ -625,6 +632,9 @@ func (m *mockPod) GetTasks(bool) ([]string, error) {
 func (m *mockPod) GetCtime() time.Time {
 	panic("unimplemented")
 }
+func (m *mockPod) GetPodResources() *podresapi.PodResources {
+	return nil
+}
 
 type mockCache struct {
 	returnValueForGetPolicyEntry   bool
@@ -632,7 +642,7 @@ type mockCache struct {
 	returnValue2ForLookupContainer bool
 }
 
-func (m *mockCache) InsertPod(*nri.PodSandbox) (cache.Pod, error) {
+func (m *mockCache) InsertPod(*nri.PodSandbox, <-chan *podresapi.PodResources) cache.Pod {
 	panic("unimplemented")
 }
 func (m *mockCache) DeletePod(string) cache.Pod {
@@ -695,7 +705,7 @@ func (m *mockCache) GetPolicyEntry(string, interface{}) bool {
 func (m *mockCache) Save() error {
 	return nil
 }
-func (m *mockCache) RefreshPods([]*nri.PodSandbox) ([]cache.Pod, []cache.Pod, []cache.Container) {
+func (m *mockCache) RefreshPods([]*nri.PodSandbox, <-chan podresapi.PodResourcesList) ([]cache.Pod, []cache.Pod, []cache.Container) {
 	panic("unimplemented")
 }
 func (m *mockCache) RefreshContainers([]*nri.Container) ([]cache.Container, []cache.Container) {
