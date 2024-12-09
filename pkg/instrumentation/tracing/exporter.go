@@ -59,7 +59,9 @@ func (e *spanExporter) Shutdown(ctx context.Context) error {
 }
 
 func (e *spanExporter) setEndpoint(endpoint string) error {
-	e.shutdown()
+	if err := e.shutdown(); err != nil {
+		log.Warnf("failed to shutdown tracing exporter: %v", err)
+	}
 
 	if endpoint == "" {
 		return nil
