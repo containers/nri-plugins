@@ -15,7 +15,6 @@
 package cpuallocator
 
 import (
-	"io/ioutil"
 	"os"
 	"path"
 	"testing"
@@ -30,7 +29,7 @@ import (
 
 func TestAllocatorHelper(t *testing.T) {
 	// Create tmpdir and decompress testdata there
-	tmpdir, err := ioutil.TempDir("", "nri-resource-policy-test-")
+	tmpdir, err := os.MkdirTemp("", "nri-resource-policy-test-")
 	if err != nil {
 		t.Fatalf("failed to create tmpdir: %v", err)
 	}
@@ -108,7 +107,7 @@ func TestClusteredAllocation(t *testing.T) {
 	}
 
 	// Create tmpdir and decompress testdata there
-	tmpdir, err := ioutil.TempDir("", "nri-resource-policy-test-")
+	tmpdir, err := os.MkdirTemp("", "nri-resource-policy-test-")
 	if err != nil {
 		t.Fatalf("failed to create tmpdir: %v", err)
 	}
@@ -324,7 +323,7 @@ func TestClusteredCoreKindAllocation(t *testing.T) {
 	}
 
 	// Create tmpdir and decompress testdata there
-	tmpdir, err := ioutil.TempDir("", "nri-resource-policy-test-")
+	tmpdir, err := os.MkdirTemp("", "nri-resource-policy-test-")
 	if err != nil {
 		t.Fatalf("failed to create tmpdir: %v", err)
 	}
