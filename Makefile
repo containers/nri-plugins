@@ -375,7 +375,7 @@ vet:
 	$(Q)$(GO_VET) ./...
 
 golangci-lint:
-	$(Q)$(GOLANG_CILINT) run
+	$(Q)$(GOLANG_CILINT) run $(GOLANGCI_LINT_TARGET)
 
 verify-godeps:
 	$(Q) $(GO_CMD) mod tidy && git diff --quiet; ec="$$?"; \
