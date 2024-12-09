@@ -131,17 +131,10 @@ func (p *policy) ExportResourceData(c cache.Container) map[string]string {
 	return nil
 }
 
-// Initialize or reinitialize the policy.
-func (p *policy) initialize() error {
-	return nil
-}
-
 type NoMetrics struct{}
 
 func (*NoMetrics) Describe(chan<- *prometheus.Desc) {
-	return
 }
 
 func (*NoMetrics) Collect(chan<- prometheus.Metric) {
-	return
 }
