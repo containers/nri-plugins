@@ -212,10 +212,10 @@ func (a *Agent) Start(notifyFn NotifyFn) error {
 				break
 			}
 			if e.Type == watch.Added || e.Type == watch.Modified {
-				group, _ := e.Object.(*corev1.Node).Labels[a.groupLabel]
+				group := e.Object.(*corev1.Node).Labels[a.groupLabel]
 				if group == "" {
 					for _, l := range deprecatedGroupLabels {
-						group, _ = e.Object.(*corev1.Node).Labels[l]
+						group = e.Object.(*corev1.Node).Labels[l]
 						if group != "" {
 							log.Warnf("Using DEPRECATED config group label %q", l)
 							log.Warnf("Please switch to using label %q instead", a.groupLabel)
@@ -259,7 +259,7 @@ func (a *Agent) Stop() {
 
 	if a.stopC != nil {
 		close(a.stopC)
-		_ = <-a.doneC
+		<-a.doneC
 		a.stopC = nil
 	}
 }
