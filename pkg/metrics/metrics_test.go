@@ -17,6 +17,7 @@ package metrics_test
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -350,7 +351,6 @@ func (c collected) GetValue(name string) string {
 
 type testServer struct {
 	srv *http.Server
-	mux *http.ServeMux
 	r   *metrics.Registry
 	g   *metrics.Gatherer
 }
@@ -389,7 +389,10 @@ func newTestServer(t *testing.T, r *metrics.Registry, enabled, polled []string, 
 
 func (srv *testServer) stop() {
 	if srv.srv != nil {
-		srv.srv.Shutdown(context.Background())
+		err := srv.srv.Shutdown(context.Background())
+		if err != nil && err != http.ErrServerClosed {
+			fmt.Printf("test server shutdown failed: %v\n", err)
+		}
 	}
 	if srv.g != nil {
 		srv.g.Stop()
@@ -421,8 +424,4 @@ func (srv *testServer) collect(t *testing.T) (described, collected) {
 	}
 
 	return described(types), collected(metrics)
-}
-
-func (srv *testServer) poll() {
-	srv.r.Poll()
 }
