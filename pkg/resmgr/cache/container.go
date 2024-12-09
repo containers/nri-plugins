@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -272,11 +273,11 @@ func isReadOnlyDevice(rules []*nri.LinuxDeviceCgroup, d *nri.LinuxDevice) bool {
 		rType, rMajor, rMinor := r.Type, r.GetMajor().GetValue(), r.GetMinor().GetValue()
 		switch {
 		case rType == "" && rMajor == 0 && rMinor == 0:
-			if strings.IndexAny(r.Access, "w") > -1 {
+			if strings.Contains(r.Access, "w") {
 				readOnly = false
 			}
 		case d.Type == rType && d.Major == rMajor && d.Minor == rMinor:
-			if strings.IndexAny(r.Access, "w") > -1 {
+			if strings.Contains(r.Access, "w") {
 				readOnly = false
 			}
 			return readOnly
@@ -416,15 +417,11 @@ func (c *container) GetMounts() []*Mount {
 	var mounts []*Mount
 
 	for _, m := range c.Ctr.GetMounts() {
-		var options []string
-		for _, o := range m.Options {
-			options = append(options, o)
-		}
 		mounts = append(mounts, &Mount{
 			Destination: m.Destination,
 			Source:      m.Source,
 			Type:        m.Type,
-			Options:     options,
+			Options:     slices.Clone(m.Options),
 		})
 	}
 
@@ -888,17 +885,6 @@ func getTopologyHintsForDevice(devType string, major, minor int64, allowPathList
 	}
 
 	return topology.Hints{}
-}
-
-func getKubeletHint(cpus, mems string) (ret topology.Hints) {
-	if cpus != "" || mems != "" {
-		ret = topology.Hints{
-			topology.ProviderKubelet: topology.Hint{
-				Provider: topology.ProviderKubelet,
-				CPUs:     cpus,
-				NUMAs:    mems}}
-	}
-	return
 }
 
 func (c *container) GetAffinity() ([]*Affinity, error) {

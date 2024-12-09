@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"syscall"
 
 	"github.com/containers/nri-plugins/pkg/log"
@@ -799,24 +800,24 @@ func checkAllowedHints(annotations map[string]string, expectedHints int) bool {
 		ann := "allow" + "." + cache.TopologyHintsKey
 		allow, ok := ctr.GetEffectiveAnnotation(ann)
 		if !ok {
-			fmt.Errorf("unable to get annotation %s (%s)", ann, allow)
+			log.Get("cache").Errorf("unable to get annotation %s (%s)", ann, allow)
 			return false
 		}
 
 		if err := yaml.Unmarshal([]byte(allow), &pathList); err != nil {
-			fmt.Errorf("Error (%v) when trying to parse \"%s\"", err, allow)
+			log.Get("cache").Errorf("Error (%v) when trying to parse \"%s\"", err, allow)
 			return false
 		}
 
 		ann = "deny" + "." + cache.TopologyHintsKey
 		deny, ok := ctr.GetEffectiveAnnotation(ann)
 		if !ok {
-			fmt.Errorf("unable to get annotation %s (%s)", ann, deny)
+			log.Get("cache").Errorf("unable to get annotation %s (%s)", ann, deny)
 			return false
 		}
 
 		if err := yaml.Unmarshal([]byte(deny), &pathList); err != nil {
-			fmt.Errorf("Error (%v) when trying to parse \"%s\"", err, deny)
+			log.Get("cache").Errorf("Error (%v) when trying to parse \"%s\"", err, deny)
 			return false
 		}
 
@@ -840,6 +841,9 @@ func createSysFsDevice(devType string, major, minor int64) error {
 	}
 
 	realDevPath, err := filepath.EvalSymlinks(devPath)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(testdataDir+"/"+realDevPath, 0770); err != nil {
 		return err
 	}
@@ -852,7 +856,9 @@ func createSysFsDevice(devType string, major, minor int64) error {
 		return err
 	}
 
-	f.Write([]byte(cpulist))
+	if _, err := f.Write([]byte(cpulist)); err != nil {
+		log.Get("cache").Errorf("unable to write to %s: %v", realDevPath+"/local_cpulist", err)
+	}
 	f.Close()
 
 	f, err = os.Create(realDevPath + "/numa_node")
@@ -860,7 +866,9 @@ func createSysFsDevice(devType string, major, minor int64) error {
 		return err
 	}
 
-	f.Write([]byte(numanode))
+	if _, err := f.Write([]byte(numanode)); err != nil {
+		log.Get("cache").Errorf("unable to write to %s: %v", realDevPath+"/numa_node", err)
+	}
 	f.Close()
 
 	return nil
@@ -927,10 +935,7 @@ func WithCtrArgs(args []string) CtrOption {
 			nriCtr.Args = nil
 			return nil
 		}
-		nriCtr.Args = make([]string, len(args), len(args))
-		for i, a := range args {
-			nriCtr.Args[i] = a
-		}
+		nriCtr.Args = slices.Clone(args)
 		return nil
 	}
 }
@@ -941,10 +946,7 @@ func WithCtrEnv(env []string) CtrOption {
 			nriCtr.Env = nil
 			return nil
 		}
-		nriCtr.Env = make([]string, len(env), len(env))
-		for i, e := range env {
-			nriCtr.Env[i] = e
-		}
+		nriCtr.Env = slices.Clone(env)
 		return nil
 	}
 }
@@ -955,17 +957,13 @@ func WithCtrMounts(mounts []*nri.Mount) CtrOption {
 			nriCtr.Mounts = nil
 			return nil
 		}
-		nriCtr.Mounts = make([]*nri.Mount, len(mounts), len(mounts))
+		nriCtr.Mounts = make([]*nri.Mount, len(mounts))
 		for i, m := range mounts {
-			var options []string
-			for _, o := range m.Options {
-				options = append(options, o)
-			}
 			nriCtr.Mounts[i] = &nri.Mount{
 				Destination: m.Destination,
 				Source:      m.Source,
 				Type:        m.Type,
-				Options:     options,
+				Options:     slices.Clone(m.Options),
 			}
 		}
 		return nil
@@ -983,7 +981,7 @@ func WithCtrDevices(devices []*nri.LinuxDevice) CtrOption {
 		if nriCtr.Linux == nil {
 			nriCtr.Linux = &nri.LinuxContainer{}
 		}
-		nriCtr.Linux.Devices = make([]*nri.LinuxDevice, len(devices), len(devices))
+		nriCtr.Linux.Devices = make([]*nri.LinuxDevice, len(devices))
 		for i, d := range devices {
 			nriCtr.Linux.Devices[i] = &nri.LinuxDevice{
 				Path:     d.Path,
