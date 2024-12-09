@@ -32,7 +32,6 @@ import (
 
 type plugin struct {
 	stub   stub.Stub
-	mask   stub.EventMask
 	config *pluginConfig
 }
 
@@ -216,7 +215,7 @@ func (p *plugin) CreateContainer(ctx context.Context, pod *api.PodSandbox, ctr *
 				return nil, nil, errWithContext
 			}
 			class = value
-		case sliceContains(p.config.UnifiedAnnotations, annPrefix) == true:
+		case sliceContains(p.config.UnifiedAnnotations, annPrefix):
 			unified[annPrefix] = value
 			log.Tracef("applying unified annotation %q resulted in unified=%v", annPrefix, unified)
 		default:
