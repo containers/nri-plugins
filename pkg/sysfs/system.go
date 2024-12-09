@@ -243,9 +243,8 @@ type cpu struct {
 
 // CPUFreq is a CPU frequency scaling range
 type CPUFreq struct {
-	min uint64   // minimum frequency (kHz)
-	max uint64   // maximum frequency (kHz)
-	all []uint64 // discrete set of frequencies if applicable/known
+	min uint64 // minimum frequency (kHz)
+	max uint64 // maximum frequency (kHz)
 }
 
 // EPP represents the value of a CPU energy performance profile
@@ -926,8 +925,12 @@ func (sys *system) discoverCPU(path string) error {
 		if _, err := readSysfsEntry(path, "topology/physical_package_id", &cpu.pkg); err != nil {
 			return err
 		}
-		readSysfsEntry(path, "topology/die_id", &cpu.die)
-		readSysfsEntry(path, "topology/cluster_id", &cpu.cluster)
+		if _, err := readSysfsEntry(path, "topology/die_id", &cpu.die); err != nil {
+			log.Warnf("failed to read die ID for CPU %d: %v", cpu.id, err)
+		}
+		if _, err := readSysfsEntry(path, "topology/cluster_id", &cpu.cluster); err != nil {
+			log.Warnf("failed to read cluster ID for CPU %d: %v", cpu.id, err)
+		}
 		if _, err := readSysfsEntry(path, "topology/core_id", &cpu.core); err != nil {
 			return err
 		}

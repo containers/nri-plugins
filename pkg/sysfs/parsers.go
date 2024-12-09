@@ -15,7 +15,7 @@
 package sysfs
 
 import (
-	"io/ioutil"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -70,43 +70,43 @@ func parseNumeric(path, value string, ptr interface{}) error {
 		return err
 	}
 
-	switch ptr.(type) {
+	switch ptr := ptr.(type) {
 	case *int:
 		num, err = strconv.ParseInt(numstr, 0, strconv.IntSize)
-		*ptr.(*int) = int(num * unit)
+		*ptr = int(num * unit)
 	case *int8:
 		num, err = strconv.ParseInt(numstr, 0, 8)
-		*ptr.(*int8) = int8(num * unit)
+		*ptr = int8(num * unit)
 	case *int16:
 		num, err = strconv.ParseInt(numstr, 0, 16)
-		*ptr.(*int16) = int16(num * unit)
+		*ptr = int16(num * unit)
 	case *int32:
 		num, err = strconv.ParseInt(numstr, 0, 32)
-		*ptr.(*int32) = int32(num * unit)
+		*ptr = int32(num * unit)
 	case *int64:
 		num, err = strconv.ParseInt(numstr, 0, 64)
-		*ptr.(*int64) = int64(num * unit)
+		*ptr = int64(num * unit)
 	case *uint:
 		num, err = strconv.ParseInt(numstr, 0, strconv.IntSize)
-		*ptr.(*uint) = uint(num * unit)
+		*ptr = uint(num * unit)
 	case *uint8:
 		num, err = strconv.ParseInt(numstr, 0, 8)
-		*ptr.(*uint8) = uint8(num * unit)
+		*ptr = uint8(num * unit)
 	case *uint16:
 		num, err = strconv.ParseInt(numstr, 0, 16)
-		*ptr.(*uint16) = uint16(num * unit)
+		*ptr = uint16(num * unit)
 	case *uint32:
 		num, err = strconv.ParseInt(numstr, 0, 32)
-		*ptr.(*uint32) = uint32(num * unit)
+		*ptr = uint32(num * unit)
 	case *uint64:
 		num, err = strconv.ParseInt(numstr, 0, 64)
-		*ptr.(*uint64) = uint64(num * unit)
+		*ptr = uint64(num * unit)
 	case *float32:
 		f, err = strconv.ParseFloat(numstr, 32)
-		*ptr.(*float32) = float32(f) * float32(unit)
+		*ptr = float32(f) * float32(unit)
 	case *float64:
 		f, err = strconv.ParseFloat(numstr, 64)
-		*ptr.(*float64) = f * float64(unit)
+		*ptr = f * float64(unit)
 
 	default:
 		err = sysfsError(path, "can't parse numeric value '%s' into type %T", value, ptr)
@@ -119,9 +119,9 @@ func parseNumeric(path, value string, ptr interface{}) error {
 func ParseFileEntries(path string, values map[string]interface{}, pickFn PickEntryFn) error {
 	var err error
 
-	data, err := ioutil.ReadFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
-		sysfsError(path, "failed to read file: %v", err)
+		return sysfsError(path, "failed to read file: %v", err)
 	}
 
 	left := len(values)
@@ -136,7 +136,7 @@ func ParseFileEntries(path string, values map[string]interface{}, pickFn PickEnt
 			continue
 		}
 
-		switch ptr.(type) {
+		switch ptr := ptr.(type) {
 		case *int, *int8, *int32, *int16, *int64, *uint, *uint8, *uint16, *uint32, *uint64:
 			if err = parseNumeric(path, value, ptr); err != nil {
 				return err
@@ -146,9 +146,9 @@ func ParseFileEntries(path string, values map[string]interface{}, pickFn PickEnt
 				return err
 			}
 		case *string:
-			*ptr.(*string) = value
+			*ptr = value
 		case *bool:
-			*ptr.(*bool), err = strconv.ParseBool(value)
+			*ptr, err = strconv.ParseBool(value)
 			if err != nil {
 				return sysfsError(path, "failed to parse line %s, value '%s' for boolean key '%s'",
 					line, value, key)
