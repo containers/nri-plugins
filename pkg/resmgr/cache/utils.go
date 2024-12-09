@@ -15,7 +15,6 @@
 package cache
 
 import (
-	"io/ioutil"
 	"os"
 	"path"
 	"strconv"
@@ -97,7 +96,7 @@ func getMemoryCapacity() int64 {
 		return memoryCapacity
 	}
 
-	if data, err = ioutil.ReadFile("/proc/meminfo"); err != nil {
+	if data, err = os.ReadFile("/proc/meminfo"); err != nil {
 		return -1
 	}
 
@@ -122,27 +121,6 @@ func getMemoryCapacity() int64 {
 	}
 
 	return memoryCapacity
-}
-
-// cgroupParentToQOS tries to map Pod cgroup parent to QOS class.
-func cgroupParentToQOS(dir string) corev1.PodQOSClass {
-	var qos corev1.PodQOSClass
-
-	// The parent directory naming scheme depends on the cgroup driver in use.
-	// Thus, rely on substring matching
-	split := strings.Split(strings.TrimPrefix(dir, "/"), "/")
-	switch {
-	case len(split) < 2:
-		qos = corev1.PodQOSClass("")
-	case strings.Index(split[1], strings.ToLower(string(corev1.PodQOSBurstable))) != -1:
-		qos = corev1.PodQOSBurstable
-	case strings.Index(split[1], strings.ToLower(string(corev1.PodQOSBestEffort))) != -1:
-		qos = corev1.PodQOSBestEffort
-	default:
-		qos = corev1.PodQOSGuaranteed
-	}
-
-	return qos
 }
 
 // findContainerDir brute-force searches for a container cgroup dir.
@@ -176,10 +154,6 @@ func findContainerDir(podCgroupDir, podID, ID string) string {
 	}
 
 	return ""
-}
-
-func isSupportedQoSComputeResource(name corev1.ResourceName) bool {
-	return name == corev1.ResourceCPU || name == corev1.ResourceMemory
 }
 
 func init() {
