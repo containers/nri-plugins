@@ -15,11 +15,13 @@
 package instrumentation
 
 import (
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestPrometheusConfiguration(t *testing.T) {
@@ -29,7 +31,7 @@ func TestPrometheusConfiguration(t *testing.T) {
 		cfg.HTTPEndpoint = ":0"
 	}
 
-	Start()
+	require.NoError(t, Start(), "start test server")
 
 	address := srv.GetAddress()
 	if strings.HasSuffix(cfg.HTTPEndpoint, ":0") {
@@ -40,17 +42,17 @@ func TestPrometheusConfiguration(t *testing.T) {
 
 	newCfg := *cfg
 	newCfg.PrometheusExport = !newCfg.PrometheusExport
-	Reconfigure(&newCfg)
+	require.NoError(t, Reconfigure(&newCfg), "reconfigure test server")
 	checkPrometheus(t, address, !newCfg.PrometheusExport)
 
 	newCfg = *cfg
 	newCfg.PrometheusExport = !newCfg.PrometheusExport
-	Reconfigure(&newCfg)
+	require.NoError(t, Reconfigure(&newCfg), "reconfigure test server")
 	checkPrometheus(t, address, !newCfg.PrometheusExport)
 
 	newCfg = *cfg
 	newCfg.PrometheusExport = !newCfg.PrometheusExport
-	Reconfigure(&newCfg)
+	require.NoError(t, Reconfigure(&newCfg), "reconfigure test server")
 	checkPrometheus(t, address, !newCfg.PrometheusExport)
 
 	srv.Shutdown(true)
@@ -73,7 +75,7 @@ func checkPrometheus(t *testing.T, server string, shouldFail bool) {
 			return
 		}
 
-		_, err = ioutil.ReadAll(rpl.Body)
+		_, err = io.ReadAll(rpl.Body)
 		rpl.Body.Close()
 		if err != nil {
 			t.Errorf("failed to read Prometheus response: %v", err)
