@@ -16,7 +16,6 @@ package pidfile
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -46,7 +45,7 @@ func TestDefaults(t *testing.T) {
 			err error
 		)
 
-		Remove()
+		require.NoError(t, Remove())
 
 		err = Write()
 		require.Nil(t, err)
@@ -66,7 +65,7 @@ func TestDefaults(t *testing.T) {
 		err = Write()
 		require.NotNil(t, err)
 
-		Remove()
+		require.NoError(t, Remove())
 		err = Write()
 		require.Nil(t, err)
 
@@ -242,7 +241,7 @@ func TestOwnerPid(t *testing.T) {
 }
 
 func mkTestDir(t *testing.T) (string, error) {
-	tmp, err := ioutil.TempDir("", ".pidfile-test*")
+	tmp, err := os.MkdirTemp("", ".pidfile-test*")
 	if err != nil {
 		return "", fmt.Errorf("failed to create test directory: %w", err)
 	}
