@@ -31,8 +31,6 @@ const (
 	debugEnvVar = "LOGGER_DEBUG"
 	// logSourceEnvVar is the environment variable used to seed source logging.
 	logSourceEnvVar = "LOGGER_LOG_SOURCE"
-	// configModule is our module name in the runtime configuration.
-	configModule = "logger"
 )
 
 // srcmap tracks debugging settings for sources.
