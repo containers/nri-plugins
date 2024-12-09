@@ -161,7 +161,12 @@ func (s *Server) Start(addr string) error {
 		s.server.Addr = ln.Addr().String()
 	}
 
-	go s.server.Serve(ln)
+	go func() {
+		err := s.server.Serve(ln)
+		if err != nil && err != http.ErrServerClosed {
+			log.Warn("HTTP server exited with error: %v", err)
+		}
+	}()
 
 	return nil
 }
@@ -200,8 +205,10 @@ func (s *Server) Shutdown(wait bool) {
 			close(sync)
 		})
 	}
-	s.server.Shutdown(context.Background())
-	_ = <-sync
+	if err := s.server.Shutdown(context.Background()); err != nil && err != http.ErrServerClosed {
+		log.Warnf("failed to shutdown server: %v", err)
+	}
+	<-sync
 
 	s.server = nil
 }
