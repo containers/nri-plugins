@@ -16,7 +16,6 @@ package libmem_test
 
 import (
 	"fmt"
-	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -1155,7 +1154,7 @@ func TestRealloc(t *testing.T) {
 				require.Equal(t, tc.updates, updates, "updated nodes")
 			}
 
-			nodes, updates, err = a.Realloc(tc.id, tc.newNodes, tc.newTypes)
+			nodes, _, err = a.Realloc(tc.id, tc.newNodes, tc.newTypes)
 
 			if !tc.fail {
 				require.Nil(t, err, "unexpected realloc failure")
@@ -1450,14 +1449,4 @@ func (s *testSetup) nodes(t *testing.T) []*Node {
 	}
 
 	return nodes
-}
-
-var (
-	nextID = 1
-)
-
-func newID() string {
-	id := strconv.Itoa(nextID)
-	nextID++
-	return id
 }
