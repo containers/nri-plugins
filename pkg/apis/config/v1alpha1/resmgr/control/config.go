@@ -21,5 +21,5 @@ import (
 // +k8s:deepcopy-gen=true
 type Config struct {
 	// +optional
-	CPU *cpu.Config `json:"cpu",omitempty"`
+	CPU *cpu.Config `json:"cpu,omitempty"`
 }
