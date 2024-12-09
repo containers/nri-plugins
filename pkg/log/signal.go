@@ -35,12 +35,7 @@ func SetupDebugToggleSignal(sig os.Signal) {
 	go func(sig <-chan os.Signal) {
 		state := map[bool]string{false: "off", true: "on"}
 		for {
-			select {
-			case _, ok := <-sig:
-				if !ok {
-					return
-				}
-			}
+			<-sig
 			log.forced = !log.forced
 			deflog.Warn("forced full debugging is now %s...", state[log.forced])
 		}
