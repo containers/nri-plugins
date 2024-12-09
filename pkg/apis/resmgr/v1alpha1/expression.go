@@ -46,7 +46,7 @@ func (e *Expression) Validate() error {
 			return exprError("invalid expression, '%s' requires a single value", e.Op)
 		}
 	case Exists, NotExist:
-		if e.Values != nil && len(e.Values) != 0 {
+		if len(e.Values) != 0 {
 			return exprError("invalid expression, '%s' does not take any values", e.Op)
 		}
 
@@ -54,7 +54,7 @@ func (e *Expression) Validate() error {
 	case MatchesAny, MatchesNone:
 
 	case AlwaysTrue:
-		if e.Values != nil && len(e.Values) != 0 {
+		if len(e.Values) != 0 {
 			return exprError("invalid expression, '%s' does not take any values", e.Op)
 		}
 
