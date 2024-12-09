@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/containers/nri-plugins/pkg/instrumentation/metrics"
@@ -332,12 +333,8 @@ func (p *nriPlugin) StopPodSandbox(ctx context.Context, podSandbox *api.PodSandb
 	b := metrics.Block()
 	defer b.Done()
 
-	released := []cache.Container{}
 	pod, _ := m.cache.LookupPod(podSandbox.GetId())
-
-	for _, c := range pod.GetContainers() {
-		released = append(released, c)
-	}
+	released := slices.Clone(pod.GetContainers())
 
 	if err := p.runPostReleaseHooks(event, released...); err != nil {
 		nri.Error("%s: failed to run post-release hooks for pod %s: %v",
@@ -371,12 +368,8 @@ func (p *nriPlugin) RemovePodSandbox(ctx context.Context, podSandbox *api.PodSan
 
 	m := p.resmgr
 
-	released := []cache.Container{}
 	pod, _ := m.cache.LookupPod(podSandbox.GetId())
-
-	for _, c := range pod.GetContainers() {
-		released = append(released, c)
-	}
+	released := slices.Clone(pod.GetContainers())
 
 	if err := p.runPostReleaseHooks(event, released...); err != nil {
 		nri.Error("%s: failed to run post-release hooks for pod %s: %v",
@@ -446,7 +439,11 @@ func (p *nriPlugin) CreateContainer(ctx context.Context, pod *api.PodSandbox, co
 	if err := p.runPostAllocateHooks(event, c); err != nil {
 		nri.Error("%s: failed to run post-allocate hooks for %s: %v",
 			event, container.GetName(), err)
-		p.runPostReleaseHooks(event, c)
+		relErr := p.runPostReleaseHooks(event, c)
+		if relErr != nil {
+			nri.Warnf("%s: failed to run post-release hooks on error for %s: %v",
+				event, container.GetName(), relErr)
+		}
 		return nil, nil, fmt.Errorf("failed to allocate container resources: %w", err)
 	}
 
@@ -1087,23 +1084,6 @@ func (p *nriPlugin) runPostReleaseHooks(method string, released ...cache.Contain
 		default:
 			nri.Warn("%s: skipping pending container %s (in state %v)",
 				method, c.PrettyName(), c.GetState())
-		}
-	}
-	return nil
-}
-
-// runPostUpdateHooks runs the necessary hooks after reconciliation.
-func (p *nriPlugin) runPostUpdateHooks(method string) error {
-	m := p.resmgr
-	for _, c := range m.cache.GetPendingContainers() {
-		switch c.GetState() {
-		case cache.ContainerStateRunning, cache.ContainerStateCreated:
-			if err := m.control.RunPostUpdateHooks(c); err != nil {
-				return err
-			}
-		default:
-			nri.Warn("%s: skipping container %s (in state %v)", method,
-				c.PrettyName(), c.GetState())
 		}
 	}
 	return nil
