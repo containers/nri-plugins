@@ -36,7 +36,6 @@ import (
 
 type plugin struct {
 	stub           stub.Stub
-	mask           stub.EventMask
 	config         *pluginConfig
 	cgroupsDir     string
 	ctrMemtierdEnv map[string]*memtierdEnv
@@ -73,7 +72,6 @@ type qosClass struct {
 }
 
 type memtierdEnv struct {
-	pid        int
 	ctrDir     string
 	configFile string
 	outputFile string
@@ -314,7 +312,11 @@ func (p *plugin) StopContainer(ctx context.Context, pod *api.PodSandbox, ctr *ap
 			log.Debugf("StopContainer: killing memtierd of %s (pid: %d) failed: %s", ppName, pid, err)
 		}
 		// Close files, read exit status (leave no zombie processes behind)
-		go mtdEnv.cmd.Wait()
+		go func() {
+			if err := mtdEnv.cmd.Wait(); err != nil {
+				log.Errorf("StopContainer: waiting for memtierd of %s (pid: %d) failed: %s", ppName, pid, err)
+			}
+		}()
 	}
 
 	log.Tracef("StopContainer: removing memtierd run directory %s", mtdEnv.ctrDir)
@@ -438,9 +440,11 @@ func (me *memtierdEnv) startMemtierd() error {
 		return fmt.Errorf("failed to start command %s: %q", cmd, err)
 	}
 	if cmd.Process != nil {
-		os.WriteFile(me.pidFile,
+		if err := os.WriteFile(me.pidFile,
 			[]byte(fmt.Sprintf("%d\n", cmd.Process.Pid)),
-			0400)
+			0400); err != nil {
+			log.Warnf("failed to write PID file %q: %s", me.pidFile, err)
+		}
 	}
 	me.cmd = cmd
 	return nil

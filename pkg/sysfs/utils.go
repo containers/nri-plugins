@@ -16,7 +16,6 @@ package sysfs
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -54,7 +53,7 @@ func readSysfsEntry(base, entry string, ptr interface{}, args ...interface{}) (s
 
 	path := filepath.Join(base, entry)
 
-	blob, err := ioutil.ReadFile(path)
+	blob, err := os.ReadFile(path)
 	if err != nil {
 		return "", sysfsError(path, "failed to read sysfs entry: %w", err)
 	}
@@ -64,7 +63,7 @@ func readSysfsEntry(base, entry string, ptr interface{}, args ...interface{}) (s
 		return buf, nil
 	}
 
-	switch ptr.(type) {
+	switch ptr := ptr.(type) {
 	case *string, *int, *uint, *int8, *uint8, *int16, *uint16, *int32, *uint32, *int64, *uint64:
 		err := parseValue(buf, ptr)
 		if err != nil {
@@ -83,7 +82,7 @@ func readSysfsEntry(base, entry string, ptr interface{}, args ...interface{}) (s
 		}
 		return buf, nil
 	case *EPP:
-		*ptr.(*EPP) = EPPFromString(buf)
+		*ptr = EPPFromString(buf)
 		return buf, nil
 	}
 
@@ -151,9 +150,9 @@ func getSeparator(defaultVal string, args []interface{}) (string, error) {
 
 // Parse a value from a string.
 func parseValue(str string, value interface{}) error {
-	switch value.(type) {
+	switch value := value.(type) {
 	case *string:
-		*value.(*string) = str
+		*value = str
 
 	case *int, *int8, *int16, *int32, *int64:
 		v, err := strconv.ParseInt(str, 0, 0)
@@ -161,17 +160,17 @@ func parseValue(str string, value interface{}) error {
 			return fmt.Errorf("invalid entry '%s': %w", str, err)
 		}
 
-		switch value.(type) {
+		switch value := value.(type) {
 		case *int:
-			*value.(*int) = int(v)
+			*value = int(v)
 		case *int8:
-			*value.(*int8) = int8(v)
+			*value = int8(v)
 		case *int16:
-			*value.(*int16) = int16(v)
+			*value = int16(v)
 		case *int32:
-			*value.(*int32) = int32(v)
-		case int64:
-			*value.(*int64) = v
+			*value = int32(v)
+		case *int64:
+			*value = v
 		}
 
 	case *uint, *uint8, *uint16, *uint32, *uint64:
@@ -180,17 +179,17 @@ func parseValue(str string, value interface{}) error {
 			return fmt.Errorf("invalid entry: '%s': %w", str, err)
 		}
 
-		switch value.(type) {
+		switch value := value.(type) {
 		case *uint:
-			*value.(*uint) = uint(v)
+			*value = uint(v)
 		case *uint8:
-			*value.(*uint8) = uint8(v)
+			*value = uint8(v)
 		case *uint16:
-			*value.(*uint16) = uint16(v)
+			*value = uint16(v)
 		case *uint32:
-			*value.(*uint32) = uint32(v)
+			*value = uint32(v)
 		case *uint64:
-			*value.(*uint64) = v
+			*value = v
 		}
 	}
 
@@ -232,14 +231,14 @@ func parseValueList(str, sep string, valuep interface{}) error {
 		if s == "" {
 			break
 		}
-		switch value.(type) {
+		switch value := value.(type) {
 		case idset.IDSet:
 			if rng := strings.Split(s, "-"); len(rng) == 1 {
 				id, err := strconv.Atoi(s)
 				if err != nil {
 					return fmt.Errorf("invalid entry '%s': %w", s, err)
 				}
-				value.(idset.IDSet).Add(idset.ID(id))
+				value.Add(idset.ID(id))
 			} else {
 				beg, err := strconv.Atoi(rng[0])
 				if err != nil {
@@ -250,7 +249,7 @@ func parseValueList(str, sep string, valuep interface{}) error {
 					return fmt.Errorf("invalid entry '%s': %w", s, err)
 				}
 				for id := beg; id <= end; id++ {
-					value.(idset.IDSet).Add(idset.ID(id))
+					value.Add(idset.ID(id))
 				}
 			}
 
@@ -259,17 +258,17 @@ func parseValueList(str, sep string, valuep interface{}) error {
 			if err != nil {
 				return fmt.Errorf("invalid entry '%s': %w", s, err)
 			}
-			switch value.(type) {
+			switch vslice := value.(type) {
 			case []int:
-				value = append(value.([]int), int(v))
+				value = append(vslice, int(v))
 			case []int8:
-				value = append(value.([]int8), int8(v))
+				value = append(vslice, int8(v))
 			case []int16:
-				value = append(value.([]int16), int16(v))
+				value = append(vslice, int16(v))
 			case []int32:
-				value = append(value.([]int32), int32(v))
+				value = append(vslice, int32(v))
 			case []int64:
-				value = append(value.([]int64), v)
+				value = append(vslice, v)
 			}
 
 		case []uint, []uint8, []uint16, []uint32, []uint64:
@@ -277,17 +276,17 @@ func parseValueList(str, sep string, valuep interface{}) error {
 			if err != nil {
 				return fmt.Errorf("invalid entry '%s': %w", s, err)
 			}
-			switch value.(type) {
+			switch vslice := value.(type) {
 			case []uint:
-				value = append(value.([]uint), uint(v))
+				value = append(vslice, uint(v))
 			case []uint8:
-				value = append(value.([]uint8), uint8(v))
+				value = append(vslice, uint8(v))
 			case []uint16:
-				value = append(value.([]uint16), uint16(v))
+				value = append(vslice, uint16(v))
 			case []uint32:
-				value = append(value.([]uint32), uint32(v))
+				value = append(vslice, uint32(v))
 			case []uint64:
-				value = append(value.([]uint64), v)
+				value = append(vslice, v)
 			}
 		}
 	}
@@ -322,9 +321,9 @@ func parseValueList(str, sep string, valuep interface{}) error {
 
 // Format a value into a string.
 func formatValue(value interface{}) (string, error) {
-	switch value.(type) {
+	switch value := value.(type) {
 	case string:
-		return value.(string), nil
+		return value, nil
 	case int, uint, int8, uint8, int16, uint16, int32, uint32, int64, uint64:
 		return fmt.Sprintf("%d", value), nil
 	default:
@@ -336,9 +335,9 @@ func formatValue(value interface{}) (string, error) {
 func formatValueList(sep string, value interface{}) (string, error) {
 	var v []interface{}
 
-	switch value.(type) {
+	switch value := value.(type) {
 	case idset.IDSet:
-		return value.(idset.IDSet).StringWithSeparator(sep), nil
+		return value.StringWithSeparator(sep), nil
 	case []int, []uint, []int8, []uint8, []int16, []uint16, []int32, []uint32, []int64, []uint64:
 		v = value.([]interface{})
 	default:

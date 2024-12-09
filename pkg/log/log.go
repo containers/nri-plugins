@@ -161,7 +161,10 @@ func DebugEnabled(source string) bool {
 func SetLevel(level Level) {
 	log.Lock()
 	defer log.Unlock()
-	log.setLevel(level)
+	err := log.setLevel(level)
+	if err != nil {
+		Default().Warn("failed to set log level to %v: %v", level, err)
+	}
 }
 
 // Flush flushes any pending log messages.

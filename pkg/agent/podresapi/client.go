@@ -17,9 +17,7 @@ package podresapi
 import (
 	"context"
 	"fmt"
-	"net"
 	"strings"
-	"time"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"google.golang.org/grpc"
@@ -43,7 +41,6 @@ const (
 	// these constants were obtained from NFD sources, cross-checked against
 	//   https://github.com/kubernetes/kubernetes/blob/release-1.31/test/e2e_node/util.go#L83
 	defaultSocketPath = "/var/lib/kubelet/pod-resources/kubelet.sock"
-	timeout           = 10 * time.Second
 	maxSize           = 1024 * 1024 * 16
 )
 
@@ -77,20 +74,9 @@ func NewClient(options ...ClientOption) (*Client, error) {
 	}
 
 	if c.conn == nil {
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		defer cancel()
-
-		dialer := func(ctx context.Context, addr string) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, "unix", addr)
-		}
-
-		conn, err := grpc.DialContext(
-			ctx,
-			c.socketPath,
+		conn, err := grpc.NewClient("unix://"+c.socketPath,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithContextDialer(dialer),
 			grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxSize)),
-			grpc.WithBlock(),
 		)
 
 		if err != nil {

@@ -16,7 +16,7 @@ package http
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"testing"
 )
@@ -48,12 +48,6 @@ func TestStartStop(t *testing.T) {
 	srv.Stop()
 }
 
-type urlTest struct {
-	pattern  string
-	response string
-	fallback string
-}
-
 func checkURL(t *testing.T, srv *Server, path, response string, status int) {
 	url := "http://" + srv.GetAddress() + path
 
@@ -66,7 +60,7 @@ func checkURL(t *testing.T, srv *Server, path, response string, status int) {
 		t.Errorf("http.Get(%s) status %d, expected %d", url, res.StatusCode, status)
 	}
 
-	txt, err := ioutil.ReadAll(res.Body)
+	txt, err := io.ReadAll(res.Body)
 	if err != nil {
 		t.Errorf("http.Get(%s) failed to read response: %v", url, err)
 	}

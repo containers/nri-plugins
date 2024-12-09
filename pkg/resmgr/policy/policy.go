@@ -198,20 +198,12 @@ type ZoneAttribute struct {
 
 // Policy instance/state.
 type policy struct {
-	options   Options          // policy options
-	cache     cache.Cache      // system state cache
-	active    Backend          // our active backend
-	system    system.System    // system/HW/topology info
-	sendEvent SendEventFn      // function to send event up to the resource manager
-	pcollect  *PolicyCollector // policy metrics collector
-	scollect  *SystemCollector // system metrics collector
-}
-
-// backend is a registered Backend.
-type backend struct {
-	name        string   // unique backend name
-	description string   // verbose backend description
-	create      CreateFn // backend creation function
+	options  Options          // policy options
+	cache    cache.Cache      // system state cache
+	active   Backend          // our active backend
+	system   system.System    // system/HW/topology info
+	pcollect *PolicyCollector // policy metrics collector
+	scollect *SystemCollector // system metrics collector
 }
 
 // Out logger instance.
@@ -322,7 +314,10 @@ func (p *policy) ExportResourceData(c cache.Container) {
 		}
 	}
 
-	p.cache.WriteFile(c.GetID(), ExportedResources, 0644, buf.Bytes())
+	err := p.cache.WriteFile(c.GetID(), ExportedResources, 0644, buf.Bytes())
+	if err != nil {
+		log.Warnf("container %s: failed to export resource data: %v", c.PrettyName(), err)
+	}
 }
 
 // GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.

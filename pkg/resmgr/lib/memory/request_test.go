@@ -95,7 +95,6 @@ func TestHumanReadableSize(t *testing.T) {
 func TestRequestString(t *testing.T) {
 	type testCase struct {
 		name   string
-		aff    NodeMask
 		req    *Request
 		result string
 	}

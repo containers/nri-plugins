@@ -17,7 +17,6 @@ package control
 import (
 	"errors"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 
@@ -25,15 +24,6 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/control"
-)
-
-const (
-	// EnvVarEnableTestAPIs controls if test APIS are enabled (currently e2e test controller).
-	EnvVarEnableTestAPIs = "ENABLE_TEST_APIS"
-)
-
-var (
-	enableTestAPIs = (os.Getenv(EnvVarEnableTestAPIs) != "")
 )
 
 // Control is the interface for triggering controller-/domain-specific post-decision actions.

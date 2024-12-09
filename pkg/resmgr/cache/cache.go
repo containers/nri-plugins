@@ -539,7 +539,9 @@ func (cch *cache) ResetActivePolicy() error {
 func (cch *cache) InsertPod(nriPod *nri.PodSandbox, ch <-chan *podresapi.PodResources) Pod {
 	p := cch.createPod(nriPod, ch)
 	cch.Pods[nriPod.GetId()] = p
-	cch.Save()
+	if err := cch.Save(); err != nil {
+		log.Warnf("failed to save cache: %v", err)
+	}
 
 	return p
 }
@@ -554,7 +556,9 @@ func (cch *cache) DeletePod(id string) Pod {
 	log.Debug("removing pod %s (%s)", p.PrettyName(), p.GetID())
 	delete(cch.Pods, id)
 
-	cch.Save()
+	if err := cch.Save(); err != nil {
+		log.Warnf("failed to save cache: %v", err)
+	}
 
 	return p
 }
@@ -569,18 +573,18 @@ func (cch *cache) LookupPod(id string) (Pod, bool) {
 func (cch *cache) InsertContainer(ctr *nri.Container) (Container, error) {
 	var err error
 
-	c := &container{
-		cache: cch,
-	}
-
-	c, err = cch.createContainer(ctr)
+	c, err := cch.createContainer(ctr)
 	if err != nil {
 		return nil, cacheError("failed to insert container %s: %v", c.GetID(), err)
 	}
 
 	cch.Containers[c.GetID()] = c
-	cch.createContainerDirectory(c.GetID())
-	cch.Save()
+	if err := cch.createContainerDirectory(c.GetID()); err != nil {
+		log.Warnf("failed to create container directory for %s: %v", c.GetID(), err)
+	}
+	if err := cch.Save(); err != nil {
+		log.Warnf("failed to save cache: %v", err)
+	}
 
 	return c, nil
 }
@@ -593,10 +597,14 @@ func (cch *cache) DeleteContainer(id string) Container {
 	}
 
 	log.Debug("removing container %s", c.PrettyName())
-	cch.removeContainerDirectory(c.GetID())
+	if err := cch.removeContainerDirectory(c.GetID()); err != nil {
+		log.Warnf("failed to remove container directory for %s: %v", c.GetID(), err)
+	}
 	delete(cch.Containers, c.GetID())
 
-	cch.Save()
+	if err := cch.Save(); err != nil {
+		log.Warnf("failed to save cache: %v", err)
+	}
 
 	return c
 }
@@ -624,7 +632,7 @@ func (cch *cache) LookupContainerByCgroup(path string) (Container, bool) {
 			continue
 		}
 
-		if strings.Index(path, c.GetID()) != -1 {
+		if strings.Contains(path, c.GetID()) {
 			return c, true
 		}
 	}
@@ -827,12 +835,12 @@ func (cch *cache) GetPolicyEntry(key string, ptr interface{}) bool {
 
 // Marshal an opaque policy entry, special-casing cpusets and maps of cpusets.
 func marshalEntry(obj interface{}) ([]byte, error) {
-	switch obj.(type) {
+	switch obj := obj.(type) {
 	case cpuset.CPUSet:
-		return []byte("\"" + obj.(cpuset.CPUSet).String() + "\""), nil
+		return []byte("\"" + obj.String() + "\""), nil
 	case map[string]cpuset.CPUSet:
 		dst := make(map[string]string)
-		for key, cset := range obj.(map[string]cpuset.CPUSet) {
+		for key, cset := range obj {
 			dst[key] = cset.String()
 		}
 		return json.Marshal(dst)
@@ -844,13 +852,13 @@ func marshalEntry(obj interface{}) ([]byte, error) {
 
 // Unmarshal an opaque policy entry, special-casing cpusets and maps of cpusets.
 func unmarshalEntry(data []byte, ptr interface{}) error {
-	switch ptr.(type) {
+	switch ptr := ptr.(type) {
 	case *cpuset.CPUSet:
 		cset, err := cpuset.Parse(string(data[1 : len(data)-1]))
 		if err != nil {
 			return err
 		}
-		*ptr.(*cpuset.CPUSet) = cset
+		*ptr = cset
 		return nil
 
 	case *map[string]cpuset.CPUSet:
@@ -868,7 +876,7 @@ func unmarshalEntry(data []byte, ptr interface{}) error {
 			dst[key] = cset
 		}
 
-		*ptr.(*map[string]cpuset.CPUSet) = dst
+		*ptr = dst
 		return nil
 
 	default:
@@ -884,32 +892,32 @@ func (cch *cache) cacheEntry(key string, ptr interface{}) error {
 		return nil
 	}
 
-	switch ptr.(type) {
+	switch ptr := ptr.(type) {
 	case *cpuset.CPUSet:
-		cch.policyData[key] = *ptr.(*cpuset.CPUSet)
+		cch.policyData[key] = *ptr
 	case *map[string]cpuset.CPUSet:
-		cch.policyData[key] = *ptr.(*map[string]cpuset.CPUSet)
+		cch.policyData[key] = *ptr
 	case *map[string]string:
-		cch.policyData[key] = *ptr.(*map[string]string)
+		cch.policyData[key] = *ptr
 
 	case *string:
-		cch.policyData[key] = *ptr.(*string)
+		cch.policyData[key] = *ptr
 	case *bool:
-		cch.policyData[key] = *ptr.(*bool)
+		cch.policyData[key] = *ptr
 
 	case *int32:
-		cch.policyData[key] = *ptr.(*int32)
+		cch.policyData[key] = *ptr
 	case *uint32:
-		cch.policyData[key] = *ptr.(*uint32)
+		cch.policyData[key] = *ptr
 	case *int64:
-		cch.policyData[key] = *ptr.(*int64)
+		cch.policyData[key] = *ptr
 	case *uint64:
-		cch.policyData[key] = *ptr.(*uint64)
+		cch.policyData[key] = *ptr
 
 	case *int:
-		cch.policyData[key] = *ptr.(*int)
+		cch.policyData[key] = *ptr
 	case *uint:
-		cch.policyData[key] = *ptr.(*uint)
+		cch.policyData[key] = *ptr
 
 	default:
 		return cacheError("can't handle policy data of type %T", ptr)

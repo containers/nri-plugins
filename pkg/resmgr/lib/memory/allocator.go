@@ -305,7 +305,10 @@ func (a *Allocator) allocate(req *Request) (retErr error) {
 
 	defer func() {
 		if retErr != nil {
-			a.revertJournal(req)
+			_, err := a.revertJournal(req)
+			if err != nil {
+				log.Warn("failed to revert journal on error: %v", err)
+			}
 		}
 	}()
 
@@ -337,7 +340,10 @@ func (a *Allocator) realloc(req *Request, nodes NodeMask, types TypeMask) (zone 
 
 	defer func() {
 		if retErr != nil {
-			a.revertJournal(nil)
+			_, err := a.revertJournal(nil)
+			if err != nil {
+				log.Warn("failed to revert journal on error: %v", err)
+			}
 		}
 	}()
 

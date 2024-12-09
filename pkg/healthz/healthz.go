@@ -54,14 +54,20 @@ func serve(w http.ResponseWriter, req *http.Request) {
 	status, details := check()
 	if status == Healthy {
 		w.WriteHeader(200)
-		w.Write([]byte("ok"))
+		_, err := w.Write([]byte("ok"))
+		if err != nil {
+			log.Errorf("failed to write response: %v", err)
+		}
 	} else {
 		errors := ""
 		for _, err := range details {
 			errors += fmt.Sprintf("%v\n", err)
 		}
 		w.WriteHeader(500)
-		w.Write([]byte(errors))
+		_, err := w.Write([]byte(errors))
+		if err != nil {
+			log.Errorf("failed to write response: %v", err)
+		}
 	}
 }
 
