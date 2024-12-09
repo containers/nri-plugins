@@ -282,7 +282,7 @@ func walkCgroups() []string {
 	containerDirs := []string{}
 
 	cpuset := filepath.Join(cgroupRoot, "cpuset")
-	filepath.Walk(filepath.Join(cpuset, kubepodsDir),
+	err := filepath.Walk(filepath.Join(cpuset, kubepodsDir),
 		func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				if os.IsNotExist(err) {
@@ -315,6 +315,9 @@ func walkCgroups() []string {
 
 			return nil
 		})
+	if err != nil {
+		log.Warnf("cgroupfs walk failed: %v", err)
+	}
 
 	return containerDirs
 }
