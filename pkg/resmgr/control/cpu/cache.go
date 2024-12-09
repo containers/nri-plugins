@@ -45,12 +45,11 @@ func setClassAssignments(c cache.Cache, a *cpuClassAssignments) {
 
 // Set the value of cached cpuClassAssignments
 func (c *cpuClassAssignments) Set(value interface{}) {
-	switch value.(type) {
+	switch v := value.(type) {
 	case cpuClassAssignments:
-		*c = value.(cpuClassAssignments)
+		*c = v
 	case *cpuClassAssignments:
-		cp := value.(*cpuClassAssignments)
-		*c = *cp
+		*c = *v
 	}
 }
 

@@ -154,5 +154,8 @@ func (ctl *testctl) registerHandler() {
 
 // Register us as a controller.
 func init() {
-	control.Register(ControllerName, "Test controller", getE2ETestController())
+	err := control.Register(ControllerName, "Test controller", getE2ETestController())
+	if err != nil {
+		log.Warnf("failed to register controller: %v", err)
+	}
 }
