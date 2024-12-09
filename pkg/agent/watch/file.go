@@ -87,7 +87,7 @@ func (w *FileWatch) Stop() {
 
 	if w.stopC != nil {
 		close(w.stopC)
-		_ = <-w.doneC
+		<-w.doneC
 		w.stopC = nil
 	}
 }
