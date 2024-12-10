@@ -128,11 +128,9 @@ func (p *mockCPUPackage) SstInfo() *sst.SstPackageInfo {
 }
 
 type mockCPU struct {
-	isolated cpuset.CPUSet
-	online   cpuset.CPUSet
-	id       idset.ID
-	node     mockSystemNode
-	pkg      mockCPUPackage
+	id   idset.ID
+	node mockSystemNode
+	pkg  mockCPUPackage
 }
 
 func (c *mockCPU) BaseFrequency() uint64 {
@@ -334,8 +332,6 @@ type mockContainer struct {
 	namespace                             string
 	returnValueForGetResourceRequirements v1.ResourceRequirements
 	returnValueForGetID                   string
-	memoryLimit                           int64
-	cpuset                                cpuset.CPUSet
 	returnValueForQOSClass                v1.PodQOSClass
 	pod                                   cache.Pod
 }

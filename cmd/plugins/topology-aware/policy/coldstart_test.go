@@ -38,7 +38,9 @@ func sendEvent(param interface{}) error {
 
 	fmt.Printf("Event received: %v", param)
 	event := param.(*events.Policy)
-	globalPolicy.HandleEvent(event)
+	if _, err := globalPolicy.HandleEvent(event); err != nil {
+		log.Warnf("failed to handle test event: %v", err)
+	}
 	return nil
 }
 
@@ -126,18 +128,20 @@ func TestColdStart(t *testing.T) {
 				t.Errorf("Expected one memory controller %v, got: %v", tc.expectedPMEMSystemNodeID, mems)
 			}
 
-			if grant.MemoryType()&memoryDRAM != 0 {
-				// FIXME: should we report only the limited memory types or the granted types
-				// while the cold start is going on?
-				// t.Errorf("No DRAM was expected before coldstart timer: %v", grant.MemoryType())
-			}
+			// FIXME: should we report only the limited memory types or the granted types
+			// while the cold start is going on?
+			//if grant.MemoryType()&memoryDRAM != 0 {
+			//    t.Errorf("No DRAM was expected before coldstart timer: %v", grant.MemoryType())
+			//}
 
 			globalPolicy = policy
 
-			policy.options.SendEvent(&events.Policy{
+			if err := policy.options.SendEvent(&events.Policy{
 				Type: events.ContainerStarted,
 				Data: tc.container,
-			})
+			}); err != nil {
+				log.Warnf("failed to send test event: %v", err)
+			}
 
 			time.Sleep(tc.expectedColdStartTimeout * 2)
 

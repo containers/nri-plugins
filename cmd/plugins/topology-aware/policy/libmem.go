@@ -18,9 +18,9 @@ import libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 
 func (p *policy) getMemOffer(pool Node, req Request) (*libmem.Offer, error) {
 	var (
+		zone libmem.NodeMask
+		mtyp libmem.TypeMask
 		ctr  = req.GetContainer()
-		zone = libmem.NodeMask(0)
-		mtyp = libmem.TypeMask(0)
 	)
 
 	if memType := req.MemoryType(); memType == memoryPreserve {
@@ -80,16 +80,8 @@ func (p *policy) releaseMem(id string) error {
 	return p.memAllocator.Release(id)
 }
 
-func (p *policy) poolZoneType(pool Node, memType memoryType) libmem.TypeMask {
-	return p.memAllocator.ZoneType(libmem.NewNodeMask(pool.GetMemset(memType).Members()...))
-}
-
 func (p *policy) memZoneType(zone libmem.NodeMask) libmem.TypeMask {
 	return p.memAllocator.ZoneType(zone)
-}
-
-func (p *policy) poolZone(pool Node, memType memoryType) libmem.NodeMask {
-	return libmem.NewNodeMask(pool.GetMemset(memType).Members()...)
 }
 
 func (p *policy) poolZoneCapacity(pool Node, memType memoryType) int64 {

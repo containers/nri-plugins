@@ -105,9 +105,9 @@ type Node interface {
 	// AssignNUMANodes assigns the given set of NUMA nodes to this one.
 	AssignNUMANodes(ids []idset.ID)
 	// DepthFirst traverse the tree@node calling the function at each node.
-	DepthFirst(func(Node) error) error
+	DepthFirst(func(Node))
 	// BreadthFirst traverse the tree@node calling the function at each node.
-	BreadthFirst(func(Node) error) error
+	BreadthFirst(func(Node))
 	// Dump state of the node.
 	Dump(string, ...int)
 	// Dump type-specific state of the node.
@@ -329,29 +329,19 @@ func (n *node) dump(prefix string, level ...int) {
 }
 
 // Do a depth-first traversal starting at node calling the given function at each node.
-func (n *node) DepthFirst(fn func(Node) error) error {
+func (n *node) DepthFirst(fn func(Node)) {
 	for _, c := range n.children {
-		if err := c.DepthFirst(fn); err != nil {
-			return err
-		}
+		c.DepthFirst(fn)
 	}
-
-	return fn(n)
+	fn(n)
 }
 
 // Do a breadth-first traversal starting at node calling the given function at each node.
-func (n *node) BreadthFirst(fn func(Node) error) error {
-	if err := fn(n); err != nil {
-		return err
-	}
-
+func (n *node) BreadthFirst(fn func(Node)) {
+	fn(n)
 	for _, c := range n.children {
-		if err := c.BreadthFirst(fn); err != nil {
-			return err
-		}
+		c.BreadthFirst(fn)
 	}
-
-	return nil
 }
 
 // System returns the policy System instance.
@@ -791,7 +781,7 @@ func (n *socketnode) HintScore(hint topology.Hint) float64 {
 func (p *policy) NewVirtualNode(name string, parent Node) Node {
 	n := &virtualnode{}
 	n.self.node = n
-	n.node.init(p, fmt.Sprintf("%s", name), VirtualNode, parent)
+	n.node.init(p, name, VirtualNode, parent)
 
 	return n
 }
