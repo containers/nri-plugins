@@ -492,7 +492,7 @@ func cpuAllocationPreferences(pod cache.Pod, container cache.Container) (int, in
 	switch {
 	case container.PreserveCpuResources():
 		return 0, fraction, false, cpuPreserve, prio
-	case preferReserved == true:
+	case preferReserved:
 		return 0, fraction, false, cpuReserved, prio
 	case checkReservedPoolNamespaces(namespace) && !explicitReservation:
 		return 0, fraction, false, cpuReserved, prio

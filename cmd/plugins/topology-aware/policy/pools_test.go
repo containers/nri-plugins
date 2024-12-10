@@ -16,7 +16,6 @@ package topologyaware
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 	"testing"
@@ -28,15 +27,6 @@ import (
 	"github.com/containers/nri-plugins/pkg/utils"
 )
 
-func findNodeWithID(id int, nodes []Node) Node {
-	for _, node := range nodes {
-		if node.NodeID() == id {
-			return node
-		}
-	}
-	panic("No node found with id " + fmt.Sprintf("%d", id))
-}
-
 func findNodeWithName(name string, nodes []Node) Node {
 	for _, node := range nodes {
 		if node.Name() == name {
@@ -46,35 +36,12 @@ func findNodeWithName(name string, nodes []Node) Node {
 	panic("No node found with name " + name)
 }
 
-func setLinks(nodes []Node, tree map[int][]int) {
-	hasParent := map[int]struct{}{}
-	for parent, children := range tree {
-		parentNode := findNodeWithID(parent, nodes)
-		for _, child := range children {
-			childNode := findNodeWithID(child, nodes)
-			childNode.LinkParent(parentNode)
-			hasParent[child] = struct{}{}
-		}
-	}
-	orphans := []int{}
-	for id := range tree {
-		if _, ok := hasParent[id]; !ok {
-			node := findNodeWithID(id, nodes)
-			node.LinkParent(nilnode)
-			orphans = append(orphans, id)
-		}
-	}
-	if len(orphans) != 1 {
-		panic(fmt.Sprintf("expected one root node, got %d with IDs %v", len(orphans), orphans))
-	}
-}
-
 func TestPoolCreation(t *testing.T) {
 
 	// Test pool creation with "real" sysfs data.
 
 	// Create a temporary directory for the test data.
-	dir, err := ioutil.TempDir("", "nri-resource-policy-test-sysfs-")
+	dir, err := os.MkdirTemp("", "nri-resource-policy-test-sysfs-")
 	if err != nil {
 		panic(err)
 	}
@@ -173,7 +140,9 @@ func TestPoolCreation(t *testing.T) {
 
 			log.EnableDebug(true)
 			policy := New().(*policy)
-			policy.Setup(policyOptions)
+			if err := policy.Setup(policyOptions); err != nil {
+				log.Warnf("failed to setup test policy: %v", err)
+			}
 			log.EnableDebug(false)
 
 			if policy.root.GetSupply().SharableCPUs().Size()+policy.root.GetSupply().IsolatedCPUs().Size()+policy.root.GetSupply().ReservedCPUs().Size() != tc.expectedRootNodeCPUs {
@@ -227,7 +196,7 @@ func TestWorkloadPlacement(t *testing.T) {
 	// server system.
 
 	// Create a temporary directory for the test data.
-	dir, err := ioutil.TempDir("", "nri-resource-policy-test-sysfs-")
+	dir, err := os.MkdirTemp("", "nri-resource-policy-test-sysfs-")
 	if err != nil {
 		panic(err)
 	}
@@ -296,7 +265,9 @@ func TestWorkloadPlacement(t *testing.T) {
 
 			log.EnableDebug(true)
 			policy := New().(*policy)
-			policy.Setup(policyOptions)
+			if err := policy.Setup(policyOptions); err != nil {
+				log.Warnf("failed to setup test policy: %v", err)
+			}
 			log.EnableDebug(false)
 
 			scores, filteredPools := policy.sortPoolsByScore(tc.req, tc.affinities)
@@ -331,7 +302,7 @@ func TestAffinities(t *testing.T) {
 	//
 
 	// Create a temporary directory for the test data.
-	dir, err := ioutil.TempDir("", "nri-resource-policy-test-sysfs-")
+	dir, err := os.MkdirTemp("", "nri-resource-policy-test-sysfs-")
 	if err != nil {
 		panic(err)
 	}
@@ -554,7 +525,9 @@ func TestAffinities(t *testing.T) {
 
 			log.EnableDebug(true)
 			policy := New().(*policy)
-			policy.Setup(policyOptions)
+			if err := policy.Setup(policyOptions); err != nil {
+				log.Warnf("failed to setup test policy: %v", err)
+			}
 			log.EnableDebug(false)
 
 			affinities := map[int]int32{}

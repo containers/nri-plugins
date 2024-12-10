@@ -584,7 +584,7 @@ func (cs *supply) DumpAllocatable() string {
 		cpu += sep + fmt.Sprintf("sharable:%s (", kubernetes.ShortCPUSet(cs.sharable))
 		sep = ""
 		if local_grantedShared > 0 || total_grantedShared > 0 {
-			cpu += fmt.Sprintf("grantedShared:")
+			cpu += "grantedShared:"
 			kind := ""
 			if local_grantedShared > 0 {
 				cpu += fmt.Sprintf("%dm", local_grantedShared)
@@ -1108,9 +1108,8 @@ func (cg *grant) String() string {
 }
 
 func (cg *grant) AccountAllocateCPU() {
-	cg.node.DepthFirst(func(n Node) error {
+	cg.node.DepthFirst(func(n Node) {
 		n.FreeSupply().AccountAllocateCPU(cg)
-		return nil
 	})
 	for node := cg.node.Parent(); !node.IsNil(); node = node.Parent() {
 		node.FreeSupply().AccountAllocateCPU(cg)
@@ -1154,9 +1153,8 @@ func (cg *grant) ReallocMemory(types libmem.TypeMask) error {
 }
 
 func (cg *grant) AccountReleaseCPU() {
-	cg.node.DepthFirst(func(n Node) error {
+	cg.node.DepthFirst(func(n Node) {
 		n.FreeSupply().AccountReleaseCPU(cg)
-		return nil
 	})
 	for node := cg.node.Parent(); !node.IsNil(); node = node.Parent() {
 		node.FreeSupply().AccountReleaseCPU(cg)

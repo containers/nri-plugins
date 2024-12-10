@@ -31,7 +31,9 @@ const (
 
 func (p *policy) saveAllocations() {
 	p.cache.SetPolicyEntry(keyAllocations, cache.Cacheable(&p.allocations))
-	p.cache.Save()
+	if err := p.cache.Save(); err != nil {
+		log.Warnf("failed to save allocations to cache: %v", err)
+	}
 }
 
 func (p *policy) restoreAllocations(allocations *allocations) error {
@@ -231,12 +233,11 @@ func (a *allocations) Get() interface{} {
 func (a *allocations) Set(value interface{}) {
 	var from *allocations
 
-	switch value.(type) {
+	switch val := value.(type) {
 	case allocations:
-		v := value.(allocations)
-		from = &v
+		from = &val
 	case *allocations:
-		from = value.(*allocations)
+		from = val
 	}
 
 	a.grants = make(map[string]Grant, 32)

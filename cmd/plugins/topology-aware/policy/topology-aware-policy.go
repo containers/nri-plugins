@@ -65,7 +65,6 @@ type policy struct {
 	allocations  allocations               // container pool assignments
 	cpuAllocator cpuallocator.CPUAllocator // CPU allocator used by the policy
 	memAllocator *libmem.Allocator
-	coldstartOff bool // coldstart forced off (have movable PMEM zones)
 	metrics      *TopologyAwareMetrics
 }
 
@@ -153,10 +152,14 @@ func (p *policy) Start() error {
 func (p *policy) Sync(add []cache.Container, del []cache.Container) error {
 	log.Debug("synchronizing state...")
 	for _, c := range del {
-		p.ReleaseResources(c)
+		if err := p.ReleaseResources(c); err != nil {
+			log.Warnf("failed to release resources for %s: %v", c.PrettyName(), err)
+		}
 	}
 	for _, c := range add {
-		p.AllocateResources(c)
+		if err := p.AllocateResources(c); err != nil {
+			log.Warnf("failed to allocate resources for %s: %v", c.PrettyName(), err)
+		}
 	}
 
 	p.checkAllocations("  <post-sync>")
