@@ -87,13 +87,15 @@ func (t *cpuTreeNode) String() string {
 func (t *cpuTreeNode) PrettyPrint() string {
 	origDepth := t.Depth()
 	lines := []string{}
-	t.DepthFirstWalk(func(tn *cpuTreeNode) error {
+	if err := t.DepthFirstWalk(func(tn *cpuTreeNode) error {
 		lines = append(lines,
 			fmt.Sprintf("%s%s: %q cpus: %s",
 				strings.Repeat(" ", (tn.Depth()-origDepth)*4),
 				tn.level, tn.name, tn.cpus))
 		return nil
-	})
+	}); err != nil && err != WalkSkipChildren && err != WalkStop {
+		log.Warnf("failed to walk CPU tree: %v", err)
+	}
 	return strings.Join(lines, "\n")
 }
 
@@ -183,7 +185,7 @@ func (t *cpuTreeNode) SiblingIndex() int {
 
 func (t *cpuTreeNode) FindLeafWithCpu(cpu int) *cpuTreeNode {
 	var found *cpuTreeNode
-	t.DepthFirstWalk(func(tn *cpuTreeNode) error {
+	if err := t.DepthFirstWalk(func(tn *cpuTreeNode) error {
 		if len(tn.children) > 0 {
 			return nil
 		}
@@ -194,7 +196,9 @@ func (t *cpuTreeNode) FindLeafWithCpu(cpu int) *cpuTreeNode {
 			}
 		}
 		return nil // not found here, no more children to search
-	})
+	}); err != nil && err != WalkSkipChildren && err != WalkStop {
+		log.Warnf("failed to walk CPU tree: %v", err)
+	}
 	return found
 }
 
@@ -234,14 +238,16 @@ func (t *cpuTreeNode) DepthFirstWalk(handler func(*cpuTreeNode) error) error {
 // systemNode.CpuLocations(cpuset:0,99) = [["system"],["p0", "p1"], ["p0d0", "p1d0"], ...]
 func (t *cpuTreeNode) CpuLocations(cpus cpuset.CPUSet) [][]string {
 	names := make([][]string, int(CPUTopologyLevelCount)-t.level.Value())
-	t.DepthFirstWalk(func(tn *cpuTreeNode) error {
+	if err := t.DepthFirstWalk(func(tn *cpuTreeNode) error {
 		if tn.cpus.Intersection(cpus).Size() == 0 {
 			return WalkSkipChildren
 		}
 		levelIndex := tn.level.Value() - t.level.Value()
 		names[levelIndex] = append(names[levelIndex], tn.name)
 		return nil
-	})
+	}); err != nil && err != WalkSkipChildren && err != WalkStop {
+		log.Warnf("failed to walk CPU tree: %v", err)
+	}
 	return names
 }
 
@@ -334,12 +340,12 @@ func (t *cpuTreeNode) toAttributedSlice(
 	currentCpusHere := t.cpus.Intersection(currentCpus)
 	freeCpusHere := t.cpus.Intersection(freeCpus)
 	currentCpuCountHere := currentCpusHere.Size()
-	currentCpuCountsHere := make([]int, len(currentCpuCounts)+1, len(currentCpuCounts)+1)
+	currentCpuCountsHere := make([]int, len(currentCpuCounts)+1)
 	copy(currentCpuCountsHere, currentCpuCounts)
 	currentCpuCountsHere[depth] = currentCpuCountHere
 
 	freeCpuCountHere := freeCpusHere.Size()
-	freeCpuCountsHere := make([]int, len(freeCpuCounts)+1, len(freeCpuCounts)+1)
+	freeCpuCountsHere := make([]int, len(freeCpuCounts)+1)
 	copy(freeCpuCountsHere, freeCpuCounts)
 	freeCpuCountsHere[depth] = freeCpuCountHere
 
@@ -369,7 +375,7 @@ func (t *cpuTreeNode) toAttributedSlice(
 // branches of a topology level have been split into new classes.
 func (t *cpuTreeNode) SplitLevel(splitLevel CPUTopologyLevel, cpuClassifier func(int) int) *cpuTreeNode {
 	newRoot := t.CopyTree()
-	newRoot.DepthFirstWalk(func(tn *cpuTreeNode) error {
+	if err := newRoot.DepthFirstWalk(func(tn *cpuTreeNode) error {
 		// Dive into the level that will be split.
 		if tn.level != splitLevel {
 			return nil
@@ -395,7 +401,7 @@ func (t *cpuTreeNode) SplitLevel(splitLevel CPUTopologyLevel, cpuClassifier func
 			newNode.parent = tn
 			for _, child := range origChildren {
 				newChild := child.CopyTree()
-				newChild.DepthFirstWalk(func(cn *cpuTreeNode) error {
+				if err := newChild.DepthFirstWalk(func(cn *cpuTreeNode) error {
 					cn.cpus = cn.cpus.Intersection(cpuMask)
 					if cn.cpus.Size() == 0 && cn.parent != nil {
 						// all cpus masked
@@ -411,12 +417,16 @@ func (t *cpuTreeNode) SplitLevel(splitLevel CPUTopologyLevel, cpuClassifier func
 						return WalkSkipChildren
 					}
 					return nil
-				})
+				}); err != nil && err != WalkSkipChildren && err != WalkStop {
+					log.Warnf("failed to walk CPU tree: %v", err)
+				}
 				newNode.AddChild(newChild)
 			}
 		}
 		return WalkSkipChildren
-	})
+	}); err != nil && err != WalkSkipChildren && err != WalkStop {
+		log.Warnf("failed to walk CPU tree: %v", err)
+	}
 	return newRoot
 }
 
