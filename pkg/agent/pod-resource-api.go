@@ -51,7 +51,7 @@ func (a *Agent) GoGetPodResources(ns, pod string, timeout time.Duration) <-chan 
 }
 
 // ListPodResources lists all pods' resources.
-func (a *Agent) ListPodResources(timeout time.Duration) (podresapi.PodResourcesList, error) {
+func (a *Agent) ListPodResources(timeout time.Duration) (*podresapi.PodResourcesList, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -59,12 +59,12 @@ func (a *Agent) ListPodResources(timeout time.Duration) (podresapi.PodResourcesL
 }
 
 // GoListPodResources lists all pods' resources asynchronously.
-func (a *Agent) GoListPodResources(timeout time.Duration) <-chan podresapi.PodResourcesList {
+func (a *Agent) GoListPodResources(timeout time.Duration) <-chan *podresapi.PodResourcesList {
 	if !a.podResCli.HasClient() {
 		return nil
 	}
 
-	ch := make(chan podresapi.PodResourcesList, 1)
+	ch := make(chan *podresapi.PodResourcesList, 1)
 
 	go func() {
 		defer close(ch)
