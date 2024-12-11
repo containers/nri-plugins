@@ -63,7 +63,9 @@ func (m *Main) Run() error {
 	log.Infof("starting '%s' policy version %s/build %s...", m.policy.Name(),
 		version.Version, version.Build)
 
-	m.startTracing()
+	if err := m.startTracing(); err != nil {
+		log.Warnf("failed to start tracing: %v", err)
+	}
 	defer m.stopTracing()
 
 	err := m.mgr.Start()

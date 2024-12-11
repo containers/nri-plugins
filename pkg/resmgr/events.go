@@ -16,7 +16,6 @@ package resmgr
 
 import (
 	logger "github.com/containers/nri-plugins/pkg/log"
-	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 )
 
 // Our logger instance for events.
@@ -36,7 +35,7 @@ func (m *resmgr) startEventProcessing() error {
 	go func() {
 		for {
 			select {
-			case _ = <-stop:
+			case <-stop:
 				return
 			case event := <-m.events:
 				m.processEvent(event)
@@ -46,14 +45,6 @@ func (m *resmgr) startEventProcessing() error {
 	}()
 
 	return nil
-}
-
-// stopEventProcessing stops event and metrics processing.
-func (m *resmgr) stopEventProcessing() {
-	if m.stop != nil {
-		close(m.stop)
-		m.stop = nil
-	}
 }
 
 // SendEvent injects the given event to the resource manager's event processing loop.
@@ -81,9 +72,4 @@ func (m *resmgr) processEvent(e interface{}) {
 	default:
 		evtlog.Warn("event of unexpected type %T...", e)
 	}
-}
-
-// resolveCgroupPath resolves a cgroup path to a container.
-func (m *resmgr) resolveCgroupPath(path string) (cache.Container, bool) {
-	return m.cache.LookupContainerByCgroup(path)
 }

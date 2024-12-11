@@ -171,7 +171,9 @@ func (m *resmgr) start(cfg cfgapi.ResmgrConfig) error {
 	m.cfg = cfg
 
 	mCfg := cfg.CommonConfig()
-	logger.Configure(&mCfg.Log)
+	if err := logger.Configure(&mCfg.Log); err != nil {
+		log.Warnf("failed to configure logger: %v", err)
+	}
 
 	if err := m.policy.Start(m.cfg.PolicyConfig()); err != nil {
 		return err
@@ -232,8 +234,13 @@ func (m *resmgr) setupCache() error {
 func (m *resmgr) setupPolicy(backend policy.Backend) error {
 	var err error
 
-	m.cache.ResetActivePolicy()
-	m.cache.SetActivePolicy(backend.Name())
+	if err := m.cache.ResetActivePolicy(); err != nil {
+		log.Warnf("failed to reset active policy: %v", err)
+	}
+
+	if err := m.cache.SetActivePolicy(backend.Name()); err != nil {
+		log.Warnf("failed to set active policy: %v", err)
+	}
 
 	p, err := policy.NewPolicy(backend, m.cache, &policy.Options{SendEvent: m.SendEvent})
 	if err != nil {
@@ -285,11 +292,15 @@ func (m *resmgr) reconfigure(cfg cfgapi.ResmgrConfig) error {
 	apply := func(cfg cfgapi.ResmgrConfig) error {
 		mCfg := cfg.CommonConfig()
 
-		logger.Configure(&mCfg.Log)
+		if err := logger.Configure(&mCfg.Log); err != nil {
+			log.Warnf("failed to configure logger: %v", err)
+		}
 		if err := instrumentation.Reconfigure(&mCfg.Instrumentation); err != nil {
 			return err
 		}
-		m.control.StartStopControllers(&mCfg.Control)
+		if err := m.control.StartStopControllers(&mCfg.Control); err != nil {
+			log.Warnf("failed to restart controllers: %v", err)
+		}
 
 		err := m.policy.Reconfigure(cfg.PolicyConfig())
 		if err != nil {
