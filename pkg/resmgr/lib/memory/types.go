@@ -153,10 +153,6 @@ const (
 	TypeMaskAll  TypeMask = (TypeMaskHBM << 1) - 1 // all types of memory
 )
 
-var (
-	typeMaskToString map[TypeMask]string
-)
-
 // NewTypeMask returns a TypeMask containing the given memory types.
 func NewTypeMask(types ...Type) TypeMask {
 	m := TypeMask(0)

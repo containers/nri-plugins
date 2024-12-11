@@ -163,11 +163,17 @@ func (c *Collector) Matches(glob string) bool {
 	}
 
 	ok, err := path.Match(glob, c.group)
+	if err != nil {
+		log.Warnf("invalid glob pattern %q (group %s): %v", glob, c.group, err)
+	}
 	if ok {
 		return true
 	}
 
 	ok, err = path.Match(glob, c.name)
+	if err != nil {
+		log.Warnf("invalid glob pattern %q (name %s): %v", glob, c.name, err)
+	}
 	if ok {
 		return true
 	}
@@ -652,7 +658,7 @@ func (g *Gatherer) poller() {
 			g.ticker = nil
 			close(doneCh)
 			return
-		case _ = <-g.ticker.C:
+		case <-g.ticker.C:
 			g.Poll()
 		}
 	}
@@ -668,7 +674,7 @@ func (g *Gatherer) Stop() {
 
 	doneCh := make(chan struct{})
 	g.stopCh <- doneCh
-	_ = <-doneCh
+	<-doneCh
 
 	g.stopCh = nil
 }

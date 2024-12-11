@@ -34,7 +34,7 @@ type (
 
 var (
 	disabled     bool
-	namespace    string
+	namespace    = "nri"
 	enabled      []string
 	polled       []string
 	reportPeriod time.Duration
@@ -99,7 +99,7 @@ func Start(m *http.ServeMux, options ...Option) error {
 	log.Info("starting metrics exporter...")
 
 	g, err := metrics.NewGatherer(
-		metrics.WithNamespace("nri"),
+		metrics.WithNamespace(namespace),
 		metrics.WithPollInterval(reportPeriod),
 		metrics.WithMetrics(enabled, polled),
 	)

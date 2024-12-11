@@ -57,9 +57,6 @@ type allocatorHelper struct {
 	prefer        CPUPriority   // CPU priority to prefer
 	cnt           int           // number of CPUs to allocate
 	result        cpuset.CPUSet // set of CPUs allocated
-
-	pkgs []sysfs.CPUPackage // physical CPU packages, sorted by preference
-	cpus []sysfs.CPU        // CPU cores, sorted by preference
 }
 
 // CPUAllocator is an interface for a generic CPU allocator
@@ -942,7 +939,6 @@ func (a *allocatorHelper) takeCacheGroups() {
 	a.result = result
 	a.from = from
 	a.cnt = 0
-	return
 }
 
 // Allocate full idle CPU cores.

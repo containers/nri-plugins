@@ -201,7 +201,7 @@ cleanup_test_vms() {
 
     info "cleaning up test VMs..."
     must-cd "$WORKTREE"
-    for src in test/e2e/n[0-9]*c[0-9]*-c*; do
+    for src in test/e2e/n[0-9]*-c*; do
         (cd "$src" && vagrant destroy --force)
     done
 }
