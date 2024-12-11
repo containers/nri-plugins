@@ -295,5 +295,8 @@ func (ctl *cpuctl) getClasses() map[string]Class {
 
 // Register us as a controller.
 func init() {
-	control.Register(CPUController, "CPU controller", getCPUController())
+	err := control.Register(CPUController, "CPU controller", getCPUController())
+	if err != nil {
+		log.Warnf("failed to register CPU controller: %v", err)
+	}
 }

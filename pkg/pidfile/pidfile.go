@@ -21,6 +21,8 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	logger "github.com/containers/nri-plugins/pkg/log"
 )
 
 var (
@@ -93,7 +95,9 @@ func Read() (int, error) {
 // close closes the PID file and truncates it to zero length.
 func close() {
 	if pidFile != nil {
-		pidFile.Truncate(0)
+		if err := pidFile.Truncate(0); err != nil {
+			logger.Default().Warnf("failed to truncate PID file: %v\n", err)
+		}
 		pidFile.Close()
 		pidFile = nil
 	}

@@ -157,7 +157,7 @@ func (p *pod) setPodResources(podRes *podresapi.PodResources) {
 func (p *pod) GetPodResources() *podresapi.PodResources {
 	if p.waitResCh != nil {
 		log.Debug("waiting for pod resources fetch to complete...")
-		_ = <-p.waitResCh
+		<-p.waitResCh
 	}
 	return p.PodResources
 }
