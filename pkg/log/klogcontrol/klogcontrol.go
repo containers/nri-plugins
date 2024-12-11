@@ -18,7 +18,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"strings"
 
@@ -69,7 +69,7 @@ func klogError(format string, args ...interface{}) error {
 
 // init discovers klog flags and sets up dynamic control for them.
 func init() {
-	ctl.SetOutput(ioutil.Discard)
+	ctl.SetOutput(io.Discard)
 	klog.InitFlags(ctl.FlagSet)
 	ctl.VisitAll(func(f *flag.Flag) {
 		if name, value, ok := getEnvForFlag(f.Name); ok {
@@ -84,7 +84,10 @@ func init() {
 			if f.Name == "skip_headers" {
 				if value, _ := os.LookupEnv("JOURNAL_STREAM"); value != "" {
 					klog.Infof("Logging to journald, forcing headers off...")
-					ctl.Set(f.Name, "true")
+					err := ctl.Set(f.Name, "true")
+					if err != nil {
+						klog.Warningf("failed to set klog flag %s to true: %v", f.Name, err)
+					}
 				}
 			}
 		}

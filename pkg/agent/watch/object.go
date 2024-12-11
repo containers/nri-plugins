@@ -38,7 +38,6 @@ type ObjectWatch struct {
 	name      string
 	resultC   chan Event
 	wif       watch.Interface
-	pending   *Event
 	reopenC   <-chan time.Time
 	failing   bool
 
@@ -73,7 +72,7 @@ func (w *ObjectWatch) Stop() {
 
 	if w.stopC != nil {
 		close(w.stopC)
-		_ = <-w.doneC
+		<-w.doneC
 		w.stopC = nil
 	}
 }

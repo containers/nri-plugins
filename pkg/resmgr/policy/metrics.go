@@ -16,7 +16,6 @@ package policy
 
 import (
 	"strconv"
-	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 	v1 "k8s.io/api/core/v1"
@@ -29,7 +28,6 @@ import (
 
 type PolicyCollector struct {
 	policy *policy
-	block  sync.Mutex
 }
 
 func (p *policy) newPolicyCollector() *PolicyCollector {
@@ -89,7 +87,7 @@ func (p *policy) newSystemCollector() *SystemCollector {
 		system:  p.system,
 		Nodes:   map[int]*NodeMetric{},
 		Cpus:    map[int]*CpuMetric{},
-		Metrics: make([]*prometheus.GaugeVec, metricsCount, metricsCount),
+		Metrics: make([]*prometheus.GaugeVec, metricsCount),
 	}
 
 	s.Metrics[nodeCapacity] = prometheus.NewGaugeVec(
