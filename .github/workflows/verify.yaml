@@ -1,0 +1,94 @@
+name: Verify
+
+on:
+  push:
+    branches:
+      - main
+      - "release-*"
+      - "test/**"
+  pull_request:
+    branches:
+      - main
+      - "release-*"
+
+env:
+  GO_VERSION: "1.22.1"
+
+jobs:
+  verify-deps:
+    name: Dependencies
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - run: |
+          make verify-godeps
+
+  verify-formatting:
+    name: Formatting
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - run: |
+          if ! git diff-index --check origin/${{ github.base_ref }} --; then
+              echo "This PR would introduce the errors shown above."
+              echo "Please fix them and update the PR."
+              exit 1
+          fi
+        if: ${{ github.event_name == 'pull_request' }}
+      - run: |
+          make verify-fmt
+
+  verify-generated:
+    name: Generated Assets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - run: |
+          make verify-generate
+
+  verify-build:
+    name: Builds
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - run: |
+          make verify-build
+
+  verify-docs:
+    name: Documentation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - run: |
+          pip3 install --user -r docs/requirements.txt
+          echo "`python3 -m site --user-base`/bin" >> $GITHUB_PATH
+      - run: |
+          git config user.name "Github"
+          git config user.email "no-reply@github.com"
+          ./scripts/build/update-gh-pages.sh
