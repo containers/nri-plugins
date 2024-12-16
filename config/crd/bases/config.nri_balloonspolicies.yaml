@@ -217,6 +217,11 @@ spec:
                       items:
                         type: string
                       type: array
+                    pinMemory:
+                      description: |-
+                        PinMemory controls pinning containers to memory nodes.
+                        Overrides the policy level PinMemory setting in this balloon type.
+                      type: boolean
                     preferCloseToDevices:
                       description: |-
                         PreferCloseToDevices: prefer creating new balloons of this
