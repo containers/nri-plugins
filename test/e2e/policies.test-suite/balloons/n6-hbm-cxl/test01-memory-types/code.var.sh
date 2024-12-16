@@ -23,7 +23,8 @@ POD_ANNOTATION[5]="memory-type.resource-policy.nri.io/container.pod0c5: hbm,dram
 POD_ANNOTATION[10]="balloon.balloons.resource-policy.nri.io/container.pod0c0: mem-types"
 POD_ANNOTATION[16]="balloon.balloons.resource-policy.nri.io/container.pod0c6: mem-types"
 POD_ANNOTATION[17]="balloon.balloons.resource-policy.nri.io/container.pod0c7: no-mem-types"
-CPUREQ="200m" MEMREQ="300M" CPULIM="" MEMLIM="300M" CONTCOUNT=8 create balloons-busybox
+POD_ANNOTATION[18]="balloon.balloons.resource-policy.nri.io/container.pod0c8: no-pin-mem"
+CPUREQ="200m" MEMREQ="300M" CPULIM="" MEMLIM="300M" CONTCOUNT=9 create balloons-busybox
 report allowed
 verify 'mems["pod0c0"] == {hbm0}             if packages["pod0c0"] == {"package0"} else mems["pod0c0"] == {hbm1}' \
        'mems["pod0c1"] == {dram0}            if packages["pod0c1"] == {"package0"} else mems["pod0c1"] == {dram1}' \
@@ -32,7 +33,8 @@ verify 'mems["pod0c0"] == {hbm0}             if packages["pod0c0"] == {"package0
        'mems["pod0c4"] == {dram0,pmem0}      if packages["pod0c4"] == {"package0"} else mems["pod0c4"] == {dram1,pmem1}' \
        'mems["pod0c5"] == {hbm0,dram0,pmem0} if packages["pod0c5"] == {"package0"} else mems["pod0c5"] == {hbm1,dram1,pmem1}' \
        'mems["pod0c6"] == {hbm0,pmem0}       if packages["pod0c6"] == {"package0"} else mems["pod0c6"] == {hbm1,pmem1}' \
-       'mems["pod0c7"] == {dram0}            if packages["pod0c7"] == {"package0"} else mems["pod0c7"] == {dram1}'
+       'mems["pod0c7"] == {dram0}            if packages["pod0c7"] == {"package0"} else mems["pod0c7"] == {dram1}' \
+       'mems["pod0c8"] == {dram0,dram1,hbm0,hbm1,pmem0,pmem1}'
 
 cleanup
 
