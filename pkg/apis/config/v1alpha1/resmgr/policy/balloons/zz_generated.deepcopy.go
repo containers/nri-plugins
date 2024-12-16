@@ -43,6 +43,11 @@ func (in *BalloonDef) DeepCopyInto(out *BalloonDef) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.PinMemory != nil {
+		in, out := &in.PinMemory, &out.PinMemory
+		*out = new(bool)
+		**out = **in
+	}
 	if in.PreferSpreadOnPhysicalCores != nil {
 		in, out := &in.PreferSpreadOnPhysicalCores, &out.PreferSpreadOnPhysicalCores
 		*out = new(bool)

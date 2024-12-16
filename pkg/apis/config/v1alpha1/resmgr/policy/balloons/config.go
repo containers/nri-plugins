@@ -157,6 +157,9 @@ type BalloonDef struct {
 	// +listType=set
 	// +kubebuilder:validation:items:XValidation:rule="self == 'DRAM' || self == 'HBM' || self == 'PMEM'",messageExpression="\"invalid memory type: \" + self + \", expected DRAM, HBM, or PMEM\""
 	MemoryTypes []string `json:"memoryTypes,omitempty"`
+	// PinMemory controls pinning containers to memory nodes.
+	// Overrides the policy level PinMemory setting in this balloon type.
+	PinMemory *bool `json:"pinMemory,omitempty"`
 	// AllocatorPriority (High, Normal, Low, None)
 	// This parameter is passed to CPU allocator when creating or
 	// resizing a balloon. At init, balloons with highest priority
