@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Memtierd NRI plugin &mdash; NRI Plugins v0.8.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../_static/documentation_options.js?v=b3dab91b"></script>
+        <script src="../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="SGX EPC Limit Plugin" href="sgx-epc.html" />
+    <link rel="prev" title="Memory QoS NRI plugin" href="memory-qos.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            NRI Plugins
+          </a>
+              <div class="version">
+                v0.8.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../introduction.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../resource-policy/index.html">Resource Policy Plugins</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">Memory plugins</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="memory-qos.html">Memory QoS NRI plugin</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Memtierd NRI plugin</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#workload-configuration">Workload configuration</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#plugin-configuration">Plugin configuration</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#classes">Classes</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#example">Example</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#developer-s-guide">Developer’s guide</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#build">Build</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#run">Run</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#manual-test">Manual test</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#debug">Debug</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#deploy">Deploy</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#security">Security</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="sgx-epc.html">SGX EPC Limit Plugin</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../deployment/index.html">Deployment</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/containers/nri-plugins">Project GitHub repository</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NRI Plugins</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">Memory plugins</a></li>
+      <li class="breadcrumb-item active">Memtierd NRI plugin</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/docs/memory/memtierd.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="memtierd-nri-plugin">
+<h1>Memtierd NRI plugin<a class="headerlink" href="#memtierd-nri-plugin" title="Link to this heading"></a></h1>
+<p>This plugins enables managing workloads with
+<a class="reference external" href="https://github.com/intel/memtierd">Memtierd</a> in Kubernetes.</p>
+<p>Plugin’s configuration defines a set of workload classes and their
+attributes. If a class is attributed with memtierd configuration,
+then this plugin will launch memtierd with that configuration to track
+and manage memory of each workload that belongs to the class.</p>
+<p>The class of a workload is specified in pod annotations.</p>
+<section id="workload-configuration">
+<h2>Workload configuration<a class="headerlink" href="#workload-configuration" title="Link to this heading"></a></h2>
+<p>The class of a pod or a container is defined using pod annotations:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="c1"># Set the default class for all containers in this pod.</span>
+<span class="w">    </span><span class="nt">class.memtierd.nri.io</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">swap-idle-data</span>
+<span class="w">    </span><span class="c1"># Override the default class for the c0 container.</span>
+<span class="w">    </span><span class="nt">class.memtierd.nri.io/c0</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">track-working-set-size</span>
+<span class="w">    </span><span class="c1"># Do not associate any class on the c1 container.</span>
+<span class="w">    </span><span class="nt">class.memtierd.nri.io/c1</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span>
+</pre></div>
+</div>
+</section>
+<section id="plugin-configuration">
+<h2>Plugin configuration<a class="headerlink" href="#plugin-configuration" title="Link to this heading"></a></h2>
+<section id="classes">
+<h3>Classes<a class="headerlink" href="#classes" title="Link to this heading"></a></h3>
+<p>Plugin configuration lists workload classes and their attributes.</p>
+<p><code class="docutils literal notranslate"><span class="pre">classes:</span></code> is followed by list of maps with following keys and values:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">name</span></code> (string): name of the class, matches
+<code class="docutils literal notranslate"><span class="pre">class.memtierd.nri.io</span></code> annotations.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">allowswap</span></code> (<code class="docutils literal notranslate"><span class="pre">true</span></code> or <code class="docutils literal notranslate"><span class="pre">false</span></code>): if <code class="docutils literal notranslate"><span class="pre">true</span></code>, allow OS to swap the
+workload. If <code class="docutils literal notranslate"><span class="pre">false</span></code> disallow swapping. If not set, the plugin will
+not affect what will be written to <code class="docutils literal notranslate"><span class="pre">memory.swap.max</span></code> in cgroups v2.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">memtierdconfig</span></code> (string): configuration template with which
+memtierd will be launched to manage workloads in this
+class. Variables that will be replaced with container-specific
+values in this template:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">$CGROUP2_ABS_PATH</span></code> absolute path to cgroups v2 directory into
+which container’s processes will belong to.</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="example">
+<h3>Example<a class="headerlink" href="#example" title="Link to this heading"></a></h3>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">classes</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">swap-idle-data</span>
+<span class="w">    </span><span class="nt">allowswap</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">memtierdconfig</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">policy:</span>
+<span class="w">        </span><span class="no">name: age</span>
+<span class="w">        </span><span class="no">config: |</span>
+<span class="w">          </span><span class="no">intervalms: 10000</span>
+<span class="w">          </span><span class="no">pidwatcher:</span>
+<span class="w">            </span><span class="no">name: cgroups</span>
+<span class="w">            </span><span class="no">config: |</span>
+<span class="w">              </span><span class="no">cgroups:</span>
+<span class="w">                </span><span class="no">- $CGROUP2_ABS_PATH</span>
+<span class="w">          </span><span class="no">swapoutms: 10000</span>
+<span class="w">          </span><span class="no">tracker:</span>
+<span class="w">            </span><span class="no">name: idlepage</span>
+<span class="w">            </span><span class="no">config: |</span>
+<span class="w">              </span><span class="no">pagesinregion: 512</span>
+<span class="w">              </span><span class="no">maxcountperregion: 1</span>
+<span class="w">              </span><span class="no">scanintervalms: 10000</span>
+<span class="w">          </span><span class="no">mover:</span>
+<span class="w">            </span><span class="no">intervalms: 20</span>
+<span class="w">            </span><span class="no">bandwidth: 50</span>
+</pre></div>
+</div>
+<p>The configuration defines the <code class="docutils literal notranslate"><span class="pre">swap-idle-data</span></code> workload class.</p>
+<p><code class="docutils literal notranslate"><span class="pre">allowswap:</span> <span class="pre">true</span></code> makes sure that OS will allow swapping when memtierd
+decides that data should be swapped out from memory.</p>
+<p><code class="docutils literal notranslate"><span class="pre">memtierdconfig:</span> <span class="pre">...</span></code> means that a memtierd will manage the memory of
+a workload in this class. The <code class="docutils literal notranslate"><span class="pre">age</span></code> policy uses the <code class="docutils literal notranslate"><span class="pre">idlepage</span></code> tracker
+to find data that has not been accessed in 10 seconds, and swaps out
+that data <code class="docutils literal notranslate"><span class="pre">swapoutms:</span> <span class="pre">10000</span></code>. The swapping will be done in 20 ms
+interval (<code class="docutils literal notranslate"><span class="pre">mover.intervalms</span></code>), and no more than 50 MB/s
+(<code class="docutils literal notranslate"><span class="pre">mover.bandwidth</span></code>). Refer to <a class="reference external" href="https://github.com/intel/memtierd/tree/main/cmd/memtierd">memtierd
+documentation</a>
+for more configuration options.</p>
+</section>
+</section>
+<section id="developer-s-guide">
+<h2>Developer’s guide<a class="headerlink" href="#developer-s-guide" title="Link to this heading"></a></h2>
+<section id="prerequisites">
+<h3>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading"></a></h3>
+<ul>
+<li><p>Containerd v1.7+</p></li>
+<li><p>Enable NRI in /etc/containerd/config.toml:</p>
+<div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="k">[plugins.</span><span class="s2">&quot;io.containerd.nri.v1.nri&quot;</span><span class="k">]</span>
+<span class="w">  </span><span class="n">disable</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span>
+<span class="w">  </span><span class="n">disable_connections</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span>
+<span class="w">  </span><span class="n">plugin_config_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/etc/nri/conf.d&quot;</span>
+<span class="w">  </span><span class="n">plugin_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/opt/nri/plugins&quot;</span>
+<span class="w">  </span><span class="n">plugin_registration_timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;5s&quot;</span>
+<span class="w">  </span><span class="n">plugin_request_timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;2s&quot;</span>
+<span class="w">  </span><span class="n">socket_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/var/run/nri/nri.sock&quot;</span>
+</pre></div>
+</div>
+</li>
+<li><p>To run the nri-memtierd plugin on a host, install memtierd on the host.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nv">GOBIN</span><span class="o">=</span>/usr/local/bin<span class="w"> </span>go<span class="w"> </span>install<span class="w"> </span>github.com/intel/memtierd/cmd/memtierd@latest
+</pre></div>
+</div>
+</li>
+</ul>
+</section>
+<section id="build">
+<h3>Build<a class="headerlink" href="#build" title="Link to this heading"></a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>cmd/plugins/memtierd<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>go<span class="w"> </span>build<span class="w"> </span>.
+</pre></div>
+</div>
+</section>
+<section id="run">
+<h3>Run<a class="headerlink" href="#run" title="Link to this heading"></a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>cmd/plugins/memtierd/memtierd<span class="w"> </span>-config<span class="w"> </span>sample-configs/nri-memtierd.yaml<span class="w"> </span>-idx<span class="w"> </span><span class="m">40</span><span class="w"> </span>-vv
+</pre></div>
+</div>
+</section>
+<section id="manual-test">
+<h3>Manual test<a class="headerlink" href="#manual-test" title="Link to this heading"></a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl<span class="w"> </span>create<span class="w"> </span>-f<span class="w"> </span>test/e2e/files/nri-memtierd-test-pod.yaml
+</pre></div>
+</div>
+<p>See swap status of dd processes, each allocating the same amount of
+memory:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="k">for</span><span class="w"> </span>pid<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="k">$(</span>pidof<span class="w"> </span>dd<span class="k">)</span><span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<span class="w">    </span>grep<span class="w"> </span>VmSwap<span class="w"> </span>/proc/<span class="nv">$pid</span>/status
+<span class="k">done</span>
+</pre></div>
+</div>
+</section>
+<section id="debug">
+<h3>Debug<a class="headerlink" href="#debug" title="Link to this heading"></a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">-v</span></code> enables debug output from the plugin. <code class="docutils literal notranslate"><span class="pre">-vv</span></code> makes it even more verbose.</p>
+<p>The plugin stores <code class="docutils literal notranslate"><span class="pre">memtierd</span></code> config and output under <code class="docutils literal notranslate"><span class="pre">/tmp/memtierd/NAMESPACE/POD/CONTAINER/</span></code>.</p>
+<p>Debugging the plugin with dlv:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>go<span class="w"> </span>install<span class="w"> </span>github.com/go-delve/delve/cmd/dlv@latest
+dlv<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>./memtierd<span class="w"> </span>--<span class="w"> </span>-config<span class="w"> </span>memtierd.conf<span class="w"> </span>-idx<span class="w"> </span><span class="m">40</span>
+<span class="o">(</span>dlv<span class="o">)</span><span class="w"> </span><span class="k">break</span><span class="w"> </span>plugin.CreateContainer
+<span class="o">(</span>dlv<span class="o">)</span><span class="w"> </span><span class="k">continue</span>
+</pre></div>
+</div>
+</section>
+<section id="deploy">
+<h3>Deploy<a class="headerlink" href="#deploy" title="Link to this heading"></a></h3>
+<p>Build an image, import it on the node, and deploy the plugin by
+running the following in <code class="docutils literal notranslate"><span class="pre">nri-plugins</span></code>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>rm<span class="w"> </span>-rf<span class="w"> </span>build
+make<span class="w"> </span><span class="nv">PLUGINS</span><span class="o">=</span>nri-memtierd<span class="w"> </span><span class="nv">IMAGE_VERSION</span><span class="o">=</span>devel<span class="w"> </span>images
+ctr<span class="w"> </span>-n<span class="w"> </span>k8s.io<span class="w"> </span>images<span class="w"> </span>import<span class="w"> </span>build/images/nri-memtierd-image-*.tar
+kubectl<span class="w"> </span>create<span class="w"> </span>-f<span class="w"> </span>build/images/nri-memtierd-deployment-e2e.yaml
+</pre></div>
+</div>
+<p>The e2e deployment variant gives more debug output from both
+<code class="docutils literal notranslate"><span class="pre">nri-memtierd</span></code> plugin (see <code class="docutils literal notranslate"><span class="pre">kubectl</span> <span class="pre">logs</span> <span class="pre">-n</span> <span class="pre">kube-system</span> <span class="pre">nri-memtierd-*</span></code>) and <code class="docutils literal notranslate"><span class="pre">memtierd</span></code> to the output (see
+<code class="docutils literal notranslate"><span class="pre">/tmp/memtierd/**/*.output</span></code>).</p>
+</section>
+</section>
+<section id="security">
+<h2>Security<a class="headerlink" href="#security" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">memtierd</span></code> needs privileged access in order to find pids in other
+containers, track memory activity, move pages and swap workload data
+out and in. Therefore only privileged users must be allowed to create
+and modify memtierd configuration files and ConfigMaps. Commands in
+memtierd configurations will be executed by memtierd in privileged
+mode.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="memory-qos.html" class="btn btn-neutral float-left" title="Memory QoS NRI plugin" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="sgx-epc.html" class="btn btn-neutral float-right" title="SGX EPC Limit Plugin" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, various.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+  
+    <div class="rst-versions" data-toggle="rst-versions" role="note" aria-label="versions">
+      <span class="rst-current-version" data-toggle="rst-current-version">
+        <span class="fa fa-book"> GitHub Pages</span>
+        v0.8
+        <span class="fa fa-caret-down"></span>
+      </span>
+      <div class="rst-other-versions">
+        <dl id="versions">
+          <dt>Versions</dt>
+        </dl>
+        <dl>
+          <dt>
+          <a href="/nri-plugins/releases">all releases</a>
+          </dt>
+        </dl>
+      </div>
+    </div>
+  
+  <script src="../../../versions.js"></script>
+  <script>
+      var list = document.getElementById('versions')
+      var menuItems = getVersionsMenuItems();
+      for (var i=0; i < menuItems.length; i++) {
+        var item = document.createElement('dd');
+        var anchor = item.appendChild(document.createElement('a'));
+        anchor.appendChild(document.createTextNode(menuItems[i].name));
+        anchor.href = menuItems[i].url;
+        list.appendChild(item);
+      }
+  </script>
+
+
+</body>
+</html>

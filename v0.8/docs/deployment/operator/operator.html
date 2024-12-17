@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NRI-Plugins-Operator &mdash; NRI Plugins v0.8.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=b3dab91b"></script>
+        <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link rel="next" title="Contributing" href="../../contributing.html" />
+    <link rel="prev" title="Operator" href="index.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            NRI Plugins
+          </a>
+              <div class="version">
+                v0.8.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../resource-policy/index.html">Resource Policy Plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../memory/index.html">Memory plugins</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../index.html">Deployment</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../helm/index.html">Helm</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="index.html">Operator</a><ul class="current">
+<li class="toctree-l3 current"><a class="current reference internal" href="#">NRI-Plugins-Operator</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#introduction">Introduction</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#installation">Installation</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#operator-crd">Operator CRD</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/containers/nri-plugins">Project GitHub repository</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">NRI Plugins</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Deployment</a></li>
+          <li class="breadcrumb-item"><a href="index.html">Operator</a></li>
+      <li class="breadcrumb-item active">NRI-Plugins-Operator</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../../_sources/docs/deployment/operator/operator.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="nri-plugins-operator">
+<h1>NRI-Plugins-Operator<a class="headerlink" href="#nri-plugins-operator" title="Link to this heading"></a></h1>
+<section id="introduction">
+<h2>Introduction<a class="headerlink" href="#introduction" title="Link to this heading"></a></h2>
+<p>The nri-plugins-operator is an Ansible-based operator created with operator-sdk to manage the life cycle of the
+nri-plugins. The operator deploys community maintained <a class="reference external" href="https://github.com/containers/nri-plugins">nri-plugins</a> in
+Kubernetes cluster. When operator is installed, it doesn’t do anything apart from watching for custom resources called
+NriPluginDeployment. When NriPluginDeployment object is created, reconciliation loops kicks off and installs the
+nri-plugin specified in the NriPluginDeployment.</p>
+</section>
+<section id="installation">
+<h2>Installation<a class="headerlink" href="#installation" title="Link to this heading"></a></h2>
+<p>Build the operator image and push it to some registry</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>make<span class="w"> </span>-C<span class="w"> </span>deployment/operator<span class="w"> </span>docker-build<span class="w"> </span>docker-push<span class="w"> </span><span class="nv">IMAGE</span><span class="o">=</span><span class="s2">&quot;my-registry.com/nri-plugins-operator:unstable&quot;</span>
+</pre></div>
+</div>
+<p>Deploy the operator in your cluster</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>make<span class="w"> </span>-C<span class="w"> </span>deployment/operator<span class="w"> </span>deploy
+</pre></div>
+</div>
+<p>Uninstall the operator</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>make<span class="w"> </span>-C<span class="w"> </span>deployment/operator<span class="w"> </span>undeploy
+</pre></div>
+</div>
+</section>
+<section id="operator-crd">
+<h2>Operator CRD<a class="headerlink" href="#operator-crd" title="Link to this heading"></a></h2>
+<div class="highlight-YAML notranslate"><div class="highlight"><pre><span></span><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">config.nri/v1alpha1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NriPluginDeployment</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nriplugindeployment-sample</span>
+<span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-system</span>
+<span class="nt">spec</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">pluginName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">topology-aware</span>
+<span class="w">  </span><span class="nt">pluginVersion</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;v0.2.3&quot;</span>
+<span class="w">  </span><span class="nt">state</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">present</span>
+<span class="w">  </span><span class="nt">values</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">nri</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">plugin</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">index</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">90</span><span class="w">                       </span><span class="c1"># optional</span>
+<span class="w">      </span><span class="nt">runtime</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">patchConfig</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">               </span><span class="c1"># optional</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span><span class="w">                         </span><span class="c1"># optional</span>
+<span class="w">          </span><span class="nt">pluginRegistrationTimeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5s</span>
+<span class="w">          </span><span class="nt">pluginRequestTimeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2s</span>
+<span class="w">    </span><span class="nt">tolerations</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;node-role.kubernetes.io/control-plane&quot;</span>
+<span class="w">        </span><span class="nt">operator</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Exists&quot;</span>
+<span class="w">        </span><span class="nt">effect</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;NoSchedule&quot;</span>
+<span class="w">    </span><span class="nt">affinity</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">nodeAffinity</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">requiredDuringSchedulingIgnoredDuringExecution</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">nodeSelectorTerms</span><span class="p">:</span>
+<span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">matchExpressions</span><span class="p">:</span>
+<span class="w">                </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">topology.kubernetes.io/disk</span>
+<span class="w">                  </span><span class="nt">operator</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">In</span>
+<span class="w">                  </span><span class="nt">values</span><span class="p">:</span>
+<span class="w">                    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ssd</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">metadata.namespace</span></code>: the same namespace is used to install the nri-plugin Helm chart.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">spec.pluginName</span></code>: This field specifies the desired plugin to be installed, with currently accepted values including
+topology-aware, balloons, memtierd, memory-qos, or sgx-epc.  The list of allowed nri-plugins is expected to grow as
+new plugins are introduced. The field is immutable and to deploy a different plugin you need to re-create the object
+or create a new one with different name and namespace.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">spec.pluginVersion</span></code>: specifies the version of the plugin. If not indicated, it defaults to the latest version. The
+plugin version is mutable, and updating it will uninstall the current version before installing the updated one.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">spec.state</span></code>: Determines whether to install (<code class="docutils literal notranslate"><span class="pre">present</span></code>) or uninstall (<code class="docutils literal notranslate"><span class="pre">absent</span></code>) the plugin.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">spec.values</span></code>: Allows users to provide custom values for manipulating Helm chart values. This field is immutable,
+requiring users to recreate the object to pass new values.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">spec.values.nri.plugin.index</span></code>: A plugin index to register to NRI. The plugin index is used by NRI to determine in
+which order the plugin is hooked into pod and container lifecycle event processing with respect to any other.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">spec.values.nri.runtime.patchConfig</span></code>: Enable/Disable NRI on the current runtime.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">spec.values.nri.runtime.config.pluginRegistrationTimeout</span></code>: Timeout for a plugin to register itself with NRI. Ensure
+that both timeouts are either left unspecified or specified together, and <code class="docutils literal notranslate"><span class="pre">patchConfig</span></code> must be set to true to update
+the timeouts. Timeouts will have no effect if <code class="docutils literal notranslate"><span class="pre">patchConfig</span></code> is set to false.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">spec.values.nri.runtime.config.pluginRequestTimeout</span></code>: Timeout for a plugin to handle an event/request. Timeout for
+a plugin to register itself with NRI. Ensure that both timeouts are either left unspecified or specified together, and <code class="docutils literal notranslate"><span class="pre">patchConfig</span></code> must be set to true to update
+the timeouts. Timeouts will have no effect if <code class="docutils literal notranslate"><span class="pre">patchConfig</span></code> is set to false.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">spec.status</span></code>: Tracks the basic state of the resource and includes basic messages in case the operator encounters
+issues while reconciling the object.</p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="index.html" class="btn btn-neutral float-left" title="Operator" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../../contributing.html" class="btn btn-neutral float-right" title="Contributing" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, various.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+  
+    <div class="rst-versions" data-toggle="rst-versions" role="note" aria-label="versions">
+      <span class="rst-current-version" data-toggle="rst-current-version">
+        <span class="fa fa-book"> GitHub Pages</span>
+        v0.8
+        <span class="fa fa-caret-down"></span>
+      </span>
+      <div class="rst-other-versions">
+        <dl id="versions">
+          <dt>Versions</dt>
+        </dl>
+        <dl>
+          <dt>
+          <a href="/nri-plugins/releases">all releases</a>
+          </dt>
+        </dl>
+      </div>
+    </div>
+  
+  <script src="../../../../versions.js"></script>
+  <script>
+      var list = document.getElementById('versions')
+      var menuItems = getVersionsMenuItems();
+      for (var i=0; i < menuItems.length; i++) {
+        var item = document.createElement('dd');
+        var anchor = item.appendChild(document.createElement('a'));
+        anchor.appendChild(document.createTextNode(menuItems[i].name));
+        anchor.href = menuItems[i].url;
+        list.appendChild(item);
+      }
+  </script>
+
+
+</body>
+</html>
