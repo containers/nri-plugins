@@ -701,7 +701,7 @@ func (m *mockCache) GetPolicyEntry(string, interface{}) bool {
 func (m *mockCache) Save() error {
 	return nil
 }
-func (m *mockCache) RefreshPods([]*nri.PodSandbox, <-chan podresapi.PodResourcesList) ([]cache.Pod, []cache.Pod, []cache.Container) {
+func (m *mockCache) RefreshPods([]*nri.PodSandbox, <-chan *podresapi.PodResourcesList) ([]cache.Pod, []cache.Pod, []cache.Container) {
 	panic("unimplemented")
 }
 func (m *mockCache) RefreshContainers([]*nri.Container) ([]cache.Container, []cache.Container) {
