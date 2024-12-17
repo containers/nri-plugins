@@ -8,9 +8,6 @@ on:
     tags:
         - v[0-9]+.[0-9]+.[0-9]+
 
-env:
-  GO_VERSION: "1.22.1"
-
 concurrency:
   group: gh-pages
 
@@ -21,15 +18,9 @@ jobs:
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0
-
-    - name: Install exact golang version from release tarball if needed
-      run: |
-        go_version=$(go version | sed 's/^go version //;s/ .*$//')
-        if [ "$go_version" != "${{ env.GO_VERSION }} " ]; then
-            wget https://go.dev/dl/go${{ env.GO_VERSION }}.linux-amd64.tar.gz
-            sudo tar -C /usr/local -xzf go${{ env.GO_VERSION }}.linux-amd64.tar.gz
-            echo "/usr/local/go/bin" >> $GITHUB_PATH
-        fi
+    - uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
     - name: Install build dependencies
       run: |
         pip3 install --user -r docs/requirements.txt
