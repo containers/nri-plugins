@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.7.1-164-g85025a85 documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.7.1-168-g109d59c0 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=0dfdadfc"></script>
+        <script src="../../../_static/documentation_options.js?v=0bd0c60a"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -188,10 +188,11 @@ and more later (up to <code class="docutils literal notranslate"><span class="pr
 default is <code class="docutils literal notranslate"><span class="pre">true</span></code>: the container cannot use other CPUs.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">pinMemory</span></code> controls pinning a container to the memories that are
 closest to the CPUs of its balloon. The default is <code class="docutils literal notranslate"><span class="pre">true</span></code>: allow
-using memory only from the closest NUMA nodes. Warning: this may
-cause kernel to kill containers due to out-of-memory error when
-closest NUMA nodes do not have enough memory. In this situation
-consider switching this option <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p></li>
+using memory only from the closest NUMA nodes. Can be overridden by
+pinMemory in balloon types. Warning: pinning memory may cause kernel
+to kill containers due to out-of-memory error when allowed NUMA
+nodes do not have enough memory. In this situation consider
+switching this option <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">preserve</span></code> specifies containers whose resource pinning must not be
 modified by the policy.</p>
 <ul>
@@ -286,10 +287,13 @@ request less.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">cpuClass</span></code> specifies the name of the CPU class according to which
 CPUs of balloons are configured. Class properties are defined in
 separate <code class="docutils literal notranslate"><span class="pre">cpu.classes</span></code> objects, see below.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pinMemory</span></code> overrides policy-level <code class="docutils literal notranslate"><span class="pre">pinMemory</span></code> in balloons of this
+type.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">memoryTypes</span></code> is a list of allowed memory types for containers in
 a balloon. Supported types are “HBM”, “DRAM” and “PMEM”. This
 setting can be overridden by a pod/container specific
-<code class="docutils literal notranslate"><span class="pre">memory-type</span></code> annotation.</p></li>
+<code class="docutils literal notranslate"><span class="pre">memory-type</span></code> annotation. Memory types have no when not pinning
+memory (see <code class="docutils literal notranslate"><span class="pre">pinMemory</span></code>).</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">preferCloseToDevices</span></code>: prefer creating new balloons close to
 listed devices. List of strings</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">preferCoreType</span></code>:  specifies preferences of the core type which

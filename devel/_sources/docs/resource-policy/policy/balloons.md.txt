@@ -78,10 +78,11 @@ Balloons policy parameters:
   default is `true`: the container cannot use other CPUs.
 - `pinMemory` controls pinning a container to the memories that are
   closest to the CPUs of its balloon. The default is `true`: allow
-  using memory only from the closest NUMA nodes. Warning: this may
-  cause kernel to kill containers due to out-of-memory error when
-  closest NUMA nodes do not have enough memory. In this situation
-  consider switching this option `false`.
+  using memory only from the closest NUMA nodes. Can be overridden by
+  pinMemory in balloon types. Warning: pinning memory may cause kernel
+  to kill containers due to out-of-memory error when allowed NUMA
+  nodes do not have enough memory. In this situation consider
+  switching this option `false`.
 - `preserve` specifies containers whose resource pinning must not be
   modified by the policy.
   - `matchExpressions` if a container matches an expression in this
@@ -174,10 +175,13 @@ Balloons policy parameters:
   - `cpuClass` specifies the name of the CPU class according to which
     CPUs of balloons are configured. Class properties are defined in
     separate `cpu.classes` objects, see below.
+  - `pinMemory` overrides policy-level `pinMemory` in balloons of this
+    type.
   - `memoryTypes` is a list of allowed memory types for containers in
     a balloon. Supported types are "HBM", "DRAM" and "PMEM". This
     setting can be overridden by a pod/container specific
-    `memory-type` annotation.
+    `memory-type` annotation. Memory types have no when not pinning
+    memory (see `pinMemory`).
   - `preferCloseToDevices`: prefer creating new balloons close to
     listed devices. List of strings
   - `preferCoreType`:  specifies preferences of the core type which
