@@ -129,21 +129,22 @@ func (ctl *cpuctl) enforceCpufreq(class string, cpus ...int) error {
 		return fmt.Errorf("non-existent cpu class %q", class)
 	}
 
-	min := int(c.MinFreq)
-	max := int(c.MaxFreq)
-	log.Debug("enforcing cpu frequency limits {%d, %d} from class %q on %v", min, max, class, cpus)
-
-	if err := utils.SetCPUsScalingMinFreq(cpus, min); err != nil {
-		return fmt.Errorf("Cannot set min freq %d: %w", min, err)
+	if min := int(c.MinFreq); min > 0 {
+		log.Debug("enforcing cpu frequency min %d from class %q on %v", min, class, cpus)
+		if err := utils.SetCPUsScalingMinFreq(cpus, min); err != nil {
+			return fmt.Errorf("Cannot set min freq %d: %w", min, err)
+		}
 	}
 
-	if err := utils.SetCPUsScalingMaxFreq(cpus, max); err != nil {
-		return fmt.Errorf("Cannot set max freq %d: %w", max, err)
+	if max := int(c.MaxFreq); max > 0 {
+		log.Debug("enforcing cpu frequency max %d from class %q on %v", max, class, cpus)
+		if err := utils.SetCPUsScalingMaxFreq(cpus, max); err != nil {
+			return fmt.Errorf("Cannot set max freq %d: %w", max, err)
+		}
 	}
 
 	if governor := c.FreqGovernor; governor != "" {
 		log.Debug("enforcing cpu frequency governor %q from class %q on %v", governor, class, cpus)
-
 		if err := utils.SetScalingGovernorForCPUs(cpus, governor); err != nil {
 			return fmt.Errorf("cannot set cpufreq governor %q: %w", governor, err)
 		}
