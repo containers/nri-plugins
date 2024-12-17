@@ -1411,7 +1411,7 @@ func (p *balloons) updatePinning(blns ...*Balloon) {
 				} else {
 					allowedCpus = pinnableCpus
 				}
-				p.pinCpuMem(c, allowedCpus, bln.Mems, bln.memTypeMask)
+				p.pinCpuMem(c, allowedCpus, bln.Mems, bln.memTypeMask, bln.Def.PinMemory)
 			}
 		}
 	}
@@ -1517,7 +1517,7 @@ func (p *balloons) dismissContainer(c cache.Container, bln *Balloon) {
 }
 
 // pinCpuMem pins container to CPUs and memory nodes if flagged
-func (p *balloons) pinCpuMem(c cache.Container, cpus cpuset.CPUSet, mems idset.IDSet, memTypeMask libmem.TypeMask) {
+func (p *balloons) pinCpuMem(c cache.Container, cpus cpuset.CPUSet, mems idset.IDSet, memTypeMask libmem.TypeMask, blnDefPinMemory *bool) {
 	if p.bpoptions.PinCPU == nil || *p.bpoptions.PinCPU {
 		log.Debug("  - pinning %s to cpuset: %s", c.PrettyName(), cpus)
 		c.SetCpusetCpus(cpus.String())
@@ -1526,7 +1526,13 @@ func (p *balloons) pinCpuMem(c cache.Container, cpus cpuset.CPUSet, mems idset.I
 			c.SetCPUShares(int64(cache.MilliCPUToShares(int64(mCpu))))
 		}
 	}
-	if p.bpoptions.PinMemory == nil || *p.bpoptions.PinMemory {
+	// Start from policy-level PinMemory...
+	pinMemory := p.bpoptions.PinMemory == nil || *p.bpoptions.PinMemory
+	// ...and allow override in balloon-type-level PinMemory
+	if blnDefPinMemory != nil {
+		pinMemory = *blnDefPinMemory
+	}
+	if pinMemory {
 		if c.PreserveMemoryResources() {
 			log.Debug("  - preserving %s pinning to memory %q", c.PrettyName, c.GetCpusetMems())
 			preserveMems, err := parseIDSet(c.GetCpusetMems())
