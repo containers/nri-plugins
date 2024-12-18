@@ -1,6 +1,6 @@
 module github.com/containers/nri-plugins
 
-go 1.22.10
+go 1.23.4
 
 require (
 	github.com/containerd/nri v0.6.0
