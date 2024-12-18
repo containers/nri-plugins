@@ -1,4 +1,6 @@
-FROM golang:1.22-bullseye AS builder
+ARG GO_VERSION=1.22
+
+FROM golang:${GO_VERSION}-bullseye AS builder
 
 ARG IMAGE_VERSION
 ARG BUILD_VERSION
