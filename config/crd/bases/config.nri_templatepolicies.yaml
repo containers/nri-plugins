@@ -90,9 +90,6 @@ spec:
                               description: UncoreMinFreq is the minimum uncore frequency
                                 for this class.
                               type: integer
-                          required:
-                          - maxFreq
-                          - minFreq
                           type: object
                         type: object
                     required:

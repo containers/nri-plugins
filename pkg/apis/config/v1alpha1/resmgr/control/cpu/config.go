@@ -21,9 +21,9 @@ type Config struct {
 
 type Class struct {
 	// MinFreq is the minimum frequency for this class.
-	MinFreq uint `json:"minFreq"`
+	MinFreq uint `json:"minFreq,omitempty"`
 	// MaxFreq is the maximum frequency for this class.
-	MaxFreq uint `json:"maxFreq"`
+	MaxFreq uint `json:"maxFreq,omitempty"`
 	// EnergyPerformancePreference for CPUs in this class.
 	EnergyPerformancePreference uint `json:"energyPerformancePreference,omitempty"`
 	// UncoreMinFreq is the minimum uncore frequency for this class.
