@@ -21,6 +21,11 @@ jobs:
       fork: ${{ steps.check.outputs.fork }}
       tag: ${{ steps.check.outputs.tag }}
       skip: ${{ steps.check.outputs.skip }}
+    env:
+      BOT_PAT: ${{ secrets.BOT_PAT }}
+      BOT_GPG_PRIVATE_KEY: ${{ secrets.BOT_GPG_PRIVATE_KEY }}
+      BOT_GPG_PASSPHRASE: ${{ secrets.BOT_GPG_PASSPHRASE }}
+
     steps:
       - name: Debug dump workflow
         uses: raven-actions/debug@v1
@@ -49,6 +54,36 @@ jobs:
 
           # Otherwise skip.
           echo "skip=true" >> $GITHUB_OUTPUT
+
+      - name: Fail if BOT_PAT is unset
+        if: ${{ steps.check.outputs.skip != 'true' && env.BOT_PAT == '' }}
+        run: |
+          echo "Bot personal access token (BOT_PAT) not set."
+          exit 1
+
+      - name: Fail if BOT_GPG_PRIVATE_KEY is unset
+        if: ${{ steps.check.outputs.skip != 'true' && env.BOT_GPG_PRIVATE_KEY == '' }}
+        run: |
+          echo "Bot personal access token (BOT_GPG_PRIVATE_KEY) not set."
+          exit 1
+
+      - name: Fail is BOT_GPG_PASSPHRASE is unset
+        if: ${{ steps.check.outputs.skip != 'true' && env.BOT_GPG_PASSPHRASE == '' }}
+        run: |
+          echo "Bot personal access token (BOT_GPG_PASSPHRASE) not set."
+          exit 1
+
+      - name: Check PR target repository exists
+        if: ${{ steps.check.outputs.skip != 'true' }}
+        run: |
+         # Check that the PR target repository exists
+         repo="${{ steps.check.outputs.repo }}"
+         repo_status=$(curl -s -o /dev/null -I -w "%{http_code}" "https://github.com/$repo")
+         echo "repo: $repo, repo HTTP access status: $repo_status"
+         if [ "$repo_status" != "200" ]; then
+             echo "Target repo ($repo) does not exist (HTTP status $repo_status)."
+             exit 1
+         fi
 
   createPullRequest:
     name: Publish new OperatorHub release
