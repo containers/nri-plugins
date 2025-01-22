@@ -4,38 +4,118 @@ on:
   release:
     types:
       - published
-# Remove this trigger event once workflow behavior is validated
   issues:
     types:
       - opened
+      - reopened
+
+env:
+  HUB_REPO: k8s-operatorhub/community-operators
+  BOT_REPO: nri-plugins-bot/community-operators
 
 jobs:
+  trigger:
+    runs-on: ubuntu-22.04
+    outputs:
+      repo: ${{ steps.check.outputs.repo }}
+      fork: ${{ steps.check.outputs.fork }}
+      tag: ${{ steps.check.outputs.tag }}
+      skip: ${{ steps.check.outputs.skip }}
+    env:
+      BOT_PAT: ${{ secrets.BOT_PAT }}
+      BOT_GPG_PRIVATE_KEY: ${{ secrets.BOT_GPG_PRIVATE_KEY }}
+      BOT_GPG_PASSPHRASE: ${{ secrets.BOT_GPG_PASSPHRASE }}
+
+    steps:
+      - name: Debug dump workflow
+        uses: raven-actions/debug@v1
+
+      - name: Determine target tepository and tag
+        id: check
+        run: |
+          # If trigger was a published release, file PR against operator hub repo.
+          if [ "${{ github.event_name }}_${{ github.event.action }}" = "release_published" ]; then
+            echo "repo=$HUB_REPO" >> $GITHUB_OUTPUT
+            echo "fork=$BOT_REPO" >> $GITHUB_OUTPUT
+            echo "tag=${{github.event.release.tag_name}}" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # If trigger was a matching issue, file PR against the filer's fork which we
+          # implicitly assume to exist.
+          title="${{ github.event.issue.title }}"
+          if [[ "$title" =~ ^'OLM test submit v' ]]; then
+            USER_REPO="${{ github.event.issue.user.login }}/community-operators"
+            echo "repo=$USER_REPO" >> $GITHUB_OUTPUT
+            echo "fork=$BOT_REPO" >> $GITHUB_OUTPUT
+            echo "tag=${title#OLM test submit }" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Otherwise skip.
+          echo "skip=true" >> $GITHUB_OUTPUT
+
+      - name: Fail if BOT_PAT is unset
+        if: ${{ steps.check.outputs.skip != 'true' && env.BOT_PAT == '' }}
+        run: |
+          echo "Bot personal access token (BOT_PAT) not set."
+          exit 1
+
+      - name: Fail if BOT_GPG_PRIVATE_KEY is unset
+        if: ${{ steps.check.outputs.skip != 'true' && env.BOT_GPG_PRIVATE_KEY == '' }}
+        run: |
+          echo "Bot personal access token (BOT_GPG_PRIVATE_KEY) not set."
+          exit 1
+
+      - name: Fail is BOT_GPG_PASSPHRASE is unset
+        if: ${{ steps.check.outputs.skip != 'true' && env.BOT_GPG_PASSPHRASE == '' }}
+        run: |
+          echo "Bot personal access token (BOT_GPG_PASSPHRASE) not set."
+          exit 1
+
+      - name: Check PR target repository exists
+        if: ${{ steps.check.outputs.skip != 'true' }}
+        run: |
+         # Check that the PR target repository exists
+         repo="${{ steps.check.outputs.repo }}"
+         repo_status=$(curl -s -o /dev/null -I -w "%{http_code}" "https://github.com/$repo")
+         echo "repo: $repo, repo HTTP access status: $repo_status"
+         if [ "$repo_status" != "200" ]; then
+             echo "Target repo ($repo) does not exist (HTTP status $repo_status)."
+             exit 1
+         fi
+
   createPullRequest:
     name: Publish new OperatorHub release
     runs-on: ubuntu-22.04
+    needs: trigger
+    if: ${{ needs.trigger.outputs.skip != 'true' }}
+    env:
+      REPO: ${{ needs.trigger.outputs.repo }}
+      FORK: ${{ needs.trigger.outputs.fork }}
+      TAG: ${{ needs.trigger.outputs.tag }}
     steps:
+      - name: Show REPO, FORK, and TAG being used
+        run: |
+          echo "REPO: ${{ env.REPO }}"
+          echo "FORK: ${{ env.FORK }}"
+          echo "TAG: ${{ env.TAG }}"
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Determine Repository Variable
-      # Remove this conditional logic once the workflow behavior
-      # is validated
-        run: |
-          if [[ "${{ github.event_name }}" == "issues" && "${{ github.event.action }}" == "opened" ]]; then
-            echo "repository=fmuyassarov/community-operators" >> $GITHUB_ENV
-          else
-            echo "repository=k8s-operatorhub/community-operators" >> $GITHUB_ENV
-          fi
-
       - name: Build the bundle
-        run: pushd deployment/operator && VERSION=0.8.1 make bundle && popd
+        run: |
+          version="${{ env.TAG }}"
+          version="${version#v}"
+          pushd deployment/operator && VERSION=${version} make bundle && popd
 
       - name: Checkout upstream community-operators repo
         uses: actions/checkout@v4
         with:
-          repository: ${{ env.repository }}
+          repository: ${{ env.REPO }}
           path: community-operators
           ref: main
           token: ${{ secrets.BOT_PAT }}
@@ -52,10 +132,8 @@ jobs:
 
       - name: Copy the bundle to the community-operators repo
         run: |
-          mkdir -p community-operators/operators/nri-plugins-operator/v0.8.1
-          cp -r deployment/operator/bundle/ community-operators/operators/nri-plugins-operator/v0.8.1
-# mkdir -p community-operators/operators/nri-plugins-operator/${{ github.ref_name }}
-# cp -r deployment/operator/bundle/ community-operators/operators/nri-plugins-operator/${{ github.ref_name }}
+          mkdir -p community-operators/operators/nri-plugins-operator/${{ env.TAG }}
+          cp -r deployment/operator/bundle/ community-operators/operators/nri-plugins-operator/${{ env.TAG }}
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v6
@@ -66,15 +144,19 @@ jobs:
           add-paths: |
             operators/nri-plugins-operator/**
           path: community-operators
-          push-to-fork: nri-plugins-bot/community-operators
-          branch: olm-v0.8.1
-          # branch: olm-${{ github.ref_name }}
+          push-to-fork: ${{ env.FORK }}
+          branch: olm-${{ env.TAG }}
           token: ${{ secrets.BOT_PAT }}
           delete-branch: false
-          title: 'nri-plugins-operator v0.8.1'
-          # title: 'nri-plugins-operator ${{ github.ref_name }}'
-          commit-message: 'Submit operator nri-plugins-operator v0.8.1'
-          # commit-message: 'Submit operator nri-plugins-operator ${{ github.ref_name }}'
+          title: 'nri-plugins-operator ${{ env.TAG }}'
+          commit-message: 'Submit operator nri-plugins-operator ${{ env.TAG }}'
           body: |
-            Added OLM bundle for [nri-plugins operator ${{ github.ref_name }}](https://github.com/containers/nri-plugins/releases/tag/${{ github.ref_name }})
+            Added OLM bundle for [nri-plugins operator ${{ env.TAG }}](https://github.com/containers/nri-plugins/releases/tag/${{ env.TAG }})
             > Auto-generated by `Github Actions Bot`
+
+      - name: Close triggering issue on success
+        if: ${{ github.event_name == 'issues' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue close --comment "Test PR filed successfully." ${{ github.event.issue.number }}
