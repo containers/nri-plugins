@@ -25,6 +25,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+     -  name: Import GPG key
+        uses: crazy-max/ghaction-import-gpg@v6
+        id: import-gpg
+        with:
+          gpg_private_key: ${{ secrets.BOT_GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.BOT_PASSPHRASE }}
+
+      - name: Export GPG private key
+        run: |
+          gpg --batch \
+              --yes \
+              --pinentry-mode loopback \
+              --passphrase ${{ secrets.BOT_PASSPHRASE }} \
+              --export-secret-keys ${{ secrets.BOT_GPG_ID }} \
+              > ~/.gnupg/secring.gpg
+
+      - name: Verify GPG secret key file
+        run: |
+          if [ ! -f ~/.gnupg/secring.gpg ]; then
+            echo "Error: GPG secret key file '~/.gnupg/secring.gpg' not found!" >&2
+            exit 1
+          fi
+
       - name: Install Helm
         uses: azure/setup-helm@v4.0.0
 
@@ -32,7 +55,14 @@ jobs:
         run: |
           find "$CHARTS_DIR" -name values.yaml | xargs -I '{}' \
               sed -e s"/pullPolicy:.*/pullPolicy: IfNotPresent/" -i '{}'
-          helm package --version "$GITHUB_REF_NAME" --app-version "$GITHUB_REF_NAME" "$CHARTS_DIR"/*
+          echo ${{ secrets.BOT_PASSPHRASE }} | helm package \
+            --sign \
+            --key ${{ steps.import-gpg.outputs.email }} \
+            --keyring ~/.gnupg/secring.gpg \
+            --version "$GITHUB_REF_NAME" \
+            --app-version "$GITHUB_REF_NAME" \
+            "$CHARTS_DIR"/* \
+            --passphrase-file "-"
           find . -name '*.tgz' -print | while read SRC_FILE; do
             DEST_FILE=$(echo $SRC_FILE | sed 's/v/helm-chart-v/g')
             mv $SRC_FILE $DEST_FILE
@@ -44,7 +74,9 @@ jobs:
           name: ${{ github.ref_name }}
           draft: true
           append_body: true
-          files: nri-*helm-chart*.tgz
+          files: |
+            nri-*helm-chart*.tgz
+            nri-*helm-chart*.tgz.prov
 
   unstable:
     if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
