@@ -82,6 +82,18 @@ type Config struct {
 	// Preserve specifies containers whose resource pinning must not be
 	// modified by the policy.
 	Preserve *ContainerMatchConfig `json:"preserve,omitempty"`
+	// ShowContainersInNrt controls whether containers in balloons
+	// are exposed as part of NodeResourceTopology. If true,
+	// noderesourcetopologies.topology.node.k8s.io custom
+	// resources provide visibility to CPU and memory affinity of
+	// containers assigned into balloons on any node. The default
+	// is false. Use balloon-type option with the same name to
+	// override the policy-level default. Exposing affinities of
+	// all containers on all nodes may generate a lot of traffic
+	// and large CR object updates to Kubernetes API server. This
+	// options has no effect unless agent:NodeResourceTopology
+	// enables basic topology exposure.
+	ShowContainersInNrt *bool `json:"showContainersInNrt,omitempty"`
 }
 
 type CPUTopologyLevel string
@@ -239,6 +251,14 @@ type BalloonDef struct {
 	// +optional
 	// +kubebuilder:validation:Enum=efficient;performance
 	PreferCoreType string `json:"preferCoreType,omitempty"`
+	// ShowContainersInNrt controls showing containers and their
+	// resource affinities as part of
+	// NodeResourceTopology. Overrides the policy level
+	// ShowContainersInNrt setting for containers in this balloon
+	// type. Requires agent:NodeResourceTopology. Note that this
+	// may generate a lot of traffic and large CR object updates
+	// to Kubernetes API server.
+	ShowContainersInNrt *bool `json:"showContainersInNrt,omitempty"`
 }
 
 // String stringifies a BalloonDef
