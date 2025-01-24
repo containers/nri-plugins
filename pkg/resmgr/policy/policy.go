@@ -165,12 +165,22 @@ const (
 	CPUResource = "cpu"
 	// MemsetAttribute is the attribute name for assignable memory set
 	MemsetAttribute = "memory set"
+	// CPUsAttribute is the attribute name for the assignable CPU set
+	CPUsAttribute = "cpuset"
 	// SharedCPUsAttribute is the attribute name for the assignable shared CPU set
 	SharedCPUsAttribute = "shared cpuset"
 	// ReservedCPUsAttribute is the attribute name for assignable the reserved CPU set
 	ReservedCPUsAttribute = "reserved cpuset"
 	// IsolatedCPUsAttribute is the attribute name for the assignable isolated CPU set
 	IsolatedCPUsAttribute = "isolated cpuset"
+	// ExcessCPUsAttribute is the attribute name for CPUs that
+	// have been allocated yet not requested. For instance,
+	// containers in a balloon request 1300 mCPU in total, so at
+	// least 2 CPUs must be allocated to the balloon. This results
+	// in excess 700 mCPUs available for bursting, for instance.
+	ExcessCPUsAttribute = "excess cpus"
+	// Exporting containers as topology subzones
+	ContainerAllocationZoneType = "allocation for container"
 )
 
 // TopologyZone provides policy-/pool-specific data for 'node resource topology' CRs.

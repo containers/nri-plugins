@@ -29,10 +29,12 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	policy "github.com/containers/nri-plugins/pkg/resmgr/policy"
+	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 	"github.com/containers/nri-plugins/pkg/utils"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -73,6 +75,7 @@ type balloons struct {
 	allowed   cpuset.CPUSet          // bounding set of CPUs we're allowed to use
 	reserved  cpuset.CPUSet          // system-/kube-reserved CPUs
 	freeCpus  cpuset.CPUSet          // CPUs to be included in growing or new ballons
+	ifreeCpus cpuset.CPUSet          // initially free CPUs before assigning any containers
 	cpuTree   *cpuTreeNode           // system CPU topology
 
 	reservedBalloonDef *BalloonDef // reserved balloon definition, pointer to bpoptions.BalloonDefs[x]
@@ -326,8 +329,182 @@ func (p *balloons) ExportResourceData(c cache.Container) map[string]string {
 }
 
 // GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
-func (b *balloons) GetTopologyZones() []*policy.TopologyZone {
-	return nil
+func (p *balloons) GetTopologyZones() []*policy.TopologyZone {
+	showContainers := false
+	if p.bpoptions.ShowContainersInNrt != nil {
+		showContainers = *p.bpoptions.ShowContainersInNrt
+	}
+
+	zones := []*policyapi.TopologyZone{}
+	sysmCpu := 1000 * p.cpuTree.cpus.Size()
+	for _, bln := range p.balloons {
+		// Expose every balloon as a separate zone.
+		zone := &policyapi.TopologyZone{
+			Name: bln.PrettyName(),
+			Type: "balloon",
+		}
+
+		cpu := &policyapi.ZoneResource{
+			Name: policyapi.CPUResource,
+		}
+
+		// "Capacity" is the total number of CPUs available in
+		// the system, including CPUs not allowed to be used
+		// by the policy.
+		cpu.Capacity = *resource.NewMilliQuantity(
+			int64(sysmCpu),
+			resource.DecimalSI)
+
+		// "Allocatable" is the largest CPU request of a
+		// container that can be fit into the balloon, given
+		// that this or other balloons do not include any
+		// containers.
+		maxBlnSize := p.ifreeCpus.Size()
+		if bln.Def.MinBalloons > 0 {
+			// If this is a pre-created balloon, then
+			// ifreeCpus is missing CPUs pre-allocated for
+			// it.
+			maxBlnSize += bln.Def.MinCpus
+		}
+		if bln.Def.MaxCpus == NoLimit || bln.Def.MaxCpus > maxBlnSize {
+			cpu.Allocatable = *resource.NewMilliQuantity(
+				1000*int64(maxBlnSize),
+				resource.DecimalSI)
+		} else {
+			cpu.Allocatable = *resource.NewMilliQuantity(
+				1000*int64(bln.Def.MaxCpus),
+				resource.DecimalSI)
+		}
+
+		// "Available" is the largest CPU request of a
+		// container that currently fits into the
+		// balloon. This takes into account containers already
+		// in the balloon, balloon's CPU limit (maxCPUs),
+		// policy's allowed CPUs and already allocated CPUs to
+		// other balloons (freeCpus) as the balloon may be
+		// inflated to fit the container.
+		blnReqmCpu := p.requestedMilliCpus(bln)
+		cpu.Available = *resource.NewMilliQuantity(
+			int64(bln.MaxAvailMilliCpus(p.freeCpus)-blnReqmCpu),
+			resource.DecimalSI)
+
+		zone.Resources = append(zone.Resources, cpu)
+
+		attributes := []*policyapi.ZoneAttribute{
+			{
+				// "cpuset" are CPUs allowed only to
+				// containers in this balloon.
+				Name:  policyapi.CPUsAttribute,
+				Value: bln.Cpus.String(),
+			},
+			{
+				// "shared cpuset" are CPUs allowed to
+				// containers in this and other
+				// balloons that shareIdleCPUsInSame
+				// scope.
+				Name:  policyapi.SharedCPUsAttribute,
+				Value: bln.SharedIdleCpus.String(),
+			},
+			{
+				// "excess cpus" is the largest CPU
+				// request of a container that fits
+				// into this balloon without inflating
+				// it.
+				Name:  policyapi.ExcessCPUsAttribute,
+				Value: fmt.Sprintf("%dm", bln.AvailMilliCpus()-blnReqmCpu),
+			},
+		}
+		zone.Attributes = append(zone.Attributes, attributes...)
+		zones = append(zones, zone)
+
+		// Add more zones only if showing containers as part
+		// of node resource topologies is enabled.
+		showContainersOfThisBalloon := showContainers
+		if bln.Def.ShowContainersInNrt != nil {
+			showContainersOfThisBalloon = *bln.Def.ShowContainersInNrt
+		}
+		if !showContainersOfThisBalloon {
+			continue
+		}
+
+		// A container assigned into a balloon is exposed as a
+		// "allocation for container" subzone whose parent is
+		// the balloon zone. The subzone has following
+		// resources:
+		//
+		// "Capacity": container's resource usage limit. CPU
+		// usage of the container is limited by
+		// resources.limits.cpu and the number of allowed CPUs
+		// (balloon cpuset + shared). "Capacity" reflects the
+		// the tighter of these two limits.
+		//
+		// "Allocatable": container resource request. This
+		// reflects how container affects the balloon
+		// size. When the balloon has no "excess cpus", the
+		// sum of "Allocatable" CPUs of its containers equals
+		// to the size of balloon's cpuset.
+		//
+		// "Available": always 0. This prevents any kube
+		// scheduler extension from allocating resources from
+		// this subzone.
+		//
+		// Attributes of the subzone include cpuset and memory
+		// nodes allowed for the container. The cpuset consist
+		// of balloon's own and shared CPUs. Memory nodes
+		// depend on balloon-type parameters and pod
+		// annotations that specify if memory should be pinned
+		// at all, and which memory types should be used. Set
+		// of allowed memory nodes may be expanded from the
+		// lowest latency nodes due to memory requests that do
+		// not fit on the limited number of node set.
+		for _, ctrIDs := range bln.PodIDs {
+			for _, ctrID := range ctrIDs {
+				c, ok := p.cch.LookupContainer(ctrID)
+				if !ok {
+					continue
+				}
+				czone := &policyapi.TopologyZone{
+					Name: c.PrettyName(),
+					Type: policyapi.ContainerAllocationZoneType,
+				}
+				ctrLimitmCpu := p.containerLimitedMilliCpus(ctrID)
+				ctrReqmCpu := p.containerRequestedMilliCpus(ctrID)
+				ctrCapacitymCpu := ctrLimitmCpu
+				ctrCpusetCpus := c.GetCpusetCpus()
+				ctrAllowedmCpu := sysmCpu
+				if ctrCpusetCpus != "" {
+					ctrAllowedmCpu = 1000 * cpuset.MustParse(ctrCpusetCpus).Size()
+				}
+				if ctrLimitmCpu == 0 || ctrLimitmCpu > ctrAllowedmCpu {
+					ctrCapacitymCpu = ctrAllowedmCpu
+				}
+				czone.Resources = []*policyapi.ZoneResource{
+					{
+						Name: policyapi.CPUResource,
+						Capacity: *resource.NewMilliQuantity(
+							int64(ctrCapacitymCpu),
+							resource.DecimalSI),
+						Allocatable: *resource.NewMilliQuantity(
+							int64(ctrReqmCpu),
+							resource.DecimalSI),
+					},
+				}
+				czone.Parent = zone.Name
+				czone.Attributes = []*policyapi.ZoneAttribute{
+					{
+						Name:  policyapi.CPUsAttribute,
+						Value: ctrCpusetCpus,
+					},
+					{
+						Name:  policyapi.MemsetAttribute,
+						Value: c.GetCpusetMems(),
+					},
+				}
+				zones = append(zones, czone)
+			}
+		}
+	}
+	return zones
 }
 
 // balloonByContainer returns a balloon that contains a container.
@@ -1121,6 +1298,7 @@ func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
 			}
 		}
 	}
+	p.ifreeCpus = p.freeCpus.Clone()
 
 	// Finish balloon instance initialization.
 	log.Info("%s policy balloons:", PolicyName)
