@@ -285,6 +285,16 @@ spec:
                       - core
                       - thread
                       type: string
+                    showContainersInNrt:
+                      description: |-
+                        ShowContainersInNrt controls showing containers and their
+                        resource affinities as part of
+                        NodeResourceTopology. Overrides the policy level
+                        ShowContainersInNrt setting for containers in this balloon
+                        type. Requires agent:NodeResourceTopology. Note that this
+                        may generate a lot of traffic and large CR object updates
+                        to Kubernetes API server.
+                      type: boolean
                   required:
                   - name
                   type: object
@@ -513,6 +523,20 @@ spec:
                   type: string
                 description: Reserved (CPU) resources for kube-system namespace.
                 type: object
+              showContainersInNrt:
+                description: |-
+                  ShowContainersInNrt controls whether containers in balloons
+                  are exposed as part of NodeResourceTopology. If true,
+                  noderesourcetopologies.topology.node.k8s.io custom
+                  resources provide visibility to CPU and memory affinity of
+                  containers assigned into balloons on any node. The default
+                  is false. Use balloon-type option with the same name to
+                  override the policy-level default. Exposing affinities of
+                  all containers on all nodes may generate a lot of traffic
+                  and large CR object updates to Kubernetes API server. This
+                  options has no effect unless agent:NodeResourceTopology
+                  enables basic topology exposure.
+                type: boolean
             required:
             - reservedResources
             type: object
