@@ -8,7 +8,10 @@ can be dynamically inflated and deflated, that is CPUs added and
 removed, based on the CPU resource requests of containers running in
 the balloon. Balloons can be static or dynamically created and
 destroyed. CPUs in balloons can be configured, for example, by setting
-min and max frequencies on CPU cores and uncore.
+min and max frequencies on CPU cores and uncore. Balloons in
+Kubernetes cluster, including CPU and memory affinities of their
+containers, can be exposed and observed through noderesourcetopologies
+custom resources.
 
 ## How It Works
 
@@ -124,6 +127,16 @@ Balloons policy parameters:
   value set here is the default for all balloon types, but it can be
   overridden with the balloon type specific setting with the same
   name.
+- `showContainersInNrt` controls whether containers in balloons are
+  exposed as part of NodeResourceTopology. If `true`,
+  noderesourcetopologies.topology.node.k8s.io custom resources provide
+  visibility to CPU and memory affinity of all containers assigned
+  into balloons. The default is `false`. Use balloon-type option with
+  the same name to override the policy-level default. Exposing
+  affinities of all containers on all nodes may generate a lot of
+  traffic and large CR object updates to Kubernetes API server. This
+  option has no effect unless `agent:NodeResourceTopology` enables
+  node resource topology exposure in general.
 - `balloonTypes` is a list of balloon type definitions. The order of
   the types is significant in two cases.
 
@@ -271,6 +284,13 @@ Balloons policy parameters:
      and assigned containers are readable through `/metrics` from the
      httpEndpoint.
   - `reportPeriod`: `/metrics` aggregation interval for polled metrics.
+- `agent`: controls communicating with the Kubernetes node agent and
+  the API server.
+  - `nodeResourceTopology`: if `true`, expose balloons as node
+    resource topology zones in noderesourcetopologies custom
+    resources. Moreover, showing containers assigned to balloons and
+    their CPU/memory affinities can be enabled with
+    `showContainersInNrt`. The default is `false`.
 
 ### Example
 
@@ -285,6 +305,11 @@ metadata:
   name: default
   namespace: kube-system
 spec:
+  # Expose balloons as node resource topology zones in
+  # noderesourcestopologies custom resources.
+  agent:
+    nodeResourceTopology: true
+
   reservedResources:
     cpu: 1000m
   pinCPU: true
@@ -297,6 +322,7 @@ spec:
       cpuClass: dynamic
       namespaces:
         - "*"
+      showContainersInNrt: true
   control:
     cpu:
       classes:
