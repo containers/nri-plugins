@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.8.0-17-g0a6f3ebc documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.8.0-21-g9f7ba0d3 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=d04ce606"></script>
+        <script src="../../../_static/documentation_options.js?v=e4553dc9"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -114,7 +114,10 @@ can be dynamically inflated and deflated, that is CPUs added and
 removed, based on the CPU resource requests of containers running in
 the balloon. Balloons can be static or dynamically created and
 destroyed. CPUs in balloons can be configured, for example, by setting
-min and max frequencies on CPU cores and uncore.</p>
+min and max frequencies on CPU cores and uncore. Balloons in
+Kubernetes cluster, including CPU and memory affinities of their
+containers, can be exposed and observed through noderesourcetopologies
+custom resources.</p>
 </section>
 <section id="how-it-works">
 <h2>How It Works<a class="headerlink" href="#how-it-works" title="Link to this heading"></a></h2>
@@ -238,6 +241,16 @@ are packed tightly to a minimum number of physical CPU cores. The
 value set here is the default for all balloon types, but it can be
 overridden with the balloon type specific setting with the same
 name.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">showContainersInNrt</span></code> controls whether containers in balloons are
+exposed as part of NodeResourceTopology. If <code class="docutils literal notranslate"><span class="pre">true</span></code>,
+noderesourcetopologies.topology.node.k8s.io custom resources provide
+visibility to CPU and memory affinity of all containers assigned
+into balloons. The default is <code class="docutils literal notranslate"><span class="pre">false</span></code>. Use balloon-type option with
+the same name to override the policy-level default. Exposing
+affinities of all containers on all nodes may generate a lot of
+traffic and large CR object updates to Kubernetes API server. This
+option has no effect unless <code class="docutils literal notranslate"><span class="pre">agent:NodeResourceTopology</span></code> enables
+node resource topology exposure in general.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">balloonTypes</span></code> is a list of balloon type definitions. The order of
 the types is significant in two cases.</p>
 <p>In the first case the policy pre-creates balloons and allocates
@@ -395,6 +408,16 @@ httpEndpoint.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">reportPeriod</span></code>: <code class="docutils literal notranslate"><span class="pre">/metrics</span></code> aggregation interval for polled metrics.</p></li>
 </ul>
 </li>
+<li><p><code class="docutils literal notranslate"><span class="pre">agent</span></code>: controls communicating with the Kubernetes node agent and
+the API server.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">nodeResourceTopology</span></code>: if <code class="docutils literal notranslate"><span class="pre">true</span></code>, expose balloons as node
+resource topology zones in noderesourcetopologies custom
+resources. Moreover, showing containers assigned to balloons and
+their CPU/memory affinities can be enabled with
+<code class="docutils literal notranslate"><span class="pre">showContainersInNrt</span></code>. The default is <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p></li>
+</ul>
+</li>
 </ul>
 </section>
 <section id="example">
@@ -408,6 +431,11 @@ from <code class="docutils literal notranslate"><span class="pre">http://$localh
 <span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">default</span>
 <span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-system</span>
 <span class="nt">spec</span><span class="p">:</span>
+<span class="w">  </span><span class="c1"># Expose balloons as node resource topology zones in</span>
+<span class="w">  </span><span class="c1"># noderesourcestopologies custom resources.</span>
+<span class="w">  </span><span class="nt">agent</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">nodeResourceTopology</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+
 <span class="w">  </span><span class="nt">reservedResources</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1000m</span>
 <span class="w">  </span><span class="nt">pinCPU</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
@@ -420,6 +448,7 @@ from <code class="docutils literal notranslate"><span class="pre">http://$localh
 <span class="w">      </span><span class="nt">cpuClass</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dynamic</span>
 <span class="w">      </span><span class="nt">namespaces</span><span class="p">:</span>
 <span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;*&quot;</span>
+<span class="w">      </span><span class="nt">showContainersInNrt</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 <span class="w">  </span><span class="nt">control</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">cpu</span><span class="p">:</span>
 <span class="w">      </span><span class="nt">classes</span><span class="p">:</span>
