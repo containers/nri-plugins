@@ -11,6 +11,11 @@ on:
       - main
       - "release-*"
 
+permissions:
+  contents: read
+  # allow checks write access to let the action annotate code in PRs
+  checks: write
+
 jobs:
   golangci-lint:
     name: golangci-lint
