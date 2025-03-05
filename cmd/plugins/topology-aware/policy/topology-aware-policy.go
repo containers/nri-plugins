@@ -577,11 +577,11 @@ func (p *policy) checkConstraints() error {
 		}
 
 		p.reserveCnt = (int(qty.MilliValue()) + 999) / 1000
-		// Use CpuAllocator to pick reserved CPUs among
-		// allowed ones. Because using those CPUs is allowed,
-		// they remain (they are put back) in the allowed set.
-		cset, err := p.cpuAllocator.AllocateCpus(&p.allowed, p.reserveCnt, normalPrio.Option())
-		p.allowed = p.allowed.Union(cset)
+		// Use CpuAllocator to pick reserved CPUs from the allowed ones but
+		// avoiding isolated CPUs. The picked CPUs are not removed from the
+		// allowed set.
+		from := p.allowed.Difference(p.isolated)
+		cset, err := p.cpuAllocator.AllocateCpus(&from, p.reserveCnt, normalPrio.Option())
 		if err != nil {
 			log.Fatal("cannot reserve %dm CPUs for ReservedResources from AvailableResources: %s", qty.MilliValue(), err)
 		}
@@ -591,6 +591,8 @@ func (p *policy) checkConstraints() error {
 	if p.reserved.IsEmpty() {
 		return policyError("cannot start without CPU reservation")
 	}
+
+	log.Infof("using reserved cpuset %s", p.reserved)
 
 	return nil
 }
