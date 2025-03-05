@@ -86,7 +86,7 @@ DEFAULT_DIST_SAME_PACKAGE = 21
 DEFAULT_DIST_SAME_DIE = 11
 DEFAULT_DIST_SAME_NODE = 10
 
-separated_output_vars = (os.environ['SEPARATED_OUTPUT_VARS'] == '1')
+separated_output_vars = (os.getenv('SEPARATED_OUTPUT_VARS', 0) == '1')
 
 def error(msg, exitstatus=1):
     sys.stderr.write("topology2qemuopts: %s\n" % (msg,))
