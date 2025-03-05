@@ -115,7 +115,7 @@ vm-setup() {
     CPU=$(echo $VM_QEMU_CPUMEM | sed 's/MACHINE:.*CPU:-smp \([^|]*\).*/\1/g')
     MEM=$(echo $VM_QEMU_CPUMEM | sed 's/MACHINE:.*CPU:.*MEM:-m \([^|]*\).*/\1/g')
     EXTRA_ARGS=$(echo $VM_QEMU_CPUMEM | sed 's/MACHINE:.*CPU:.*MEM:.*EXTRA:\([^|]*\).*/\1/g')
-    EXTRA_ARGS+=", \"-monitor\", \"unix:monitor.sock,server,nowait\""
+    EXTRA_ARGS+="${EXTRA_ARGS:+,} \"-monitor\", \"unix:monitor.sock,server,nowait\""
 
     VM_MONITOR="(cd \"$output_dir\" && socat STDIO unix-connect:monitor.sock)"
 
