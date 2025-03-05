@@ -557,10 +557,17 @@ func (p *policy) checkConstraints() error {
 				"part of the online allowed cpuset (%s)", p.reserved,
 				p.reserved.Difference(p.allowed), p.allowed)
 		}
-		// check that none of the reserved CPUs are isolated
-		if !p.reserved.Intersection(p.isolated).IsEmpty() {
-			return policyError("invalid reserved cpuset %s, some CPUs (%s) are also isolated",
-				p.reserved.Intersection(p.isolated))
+		// check that if any reserved CPUs are isolated, it is the sole reserved CPU
+		if isolated := p.reserved.Intersection(p.isolated); !isolated.IsEmpty() {
+			if !p.reserved.Equals(isolated) {
+				return policyError("invalid reserved cpuset %s, mixes isolated (%s) and normal (%s)",
+					p.reserved, isolated, p.reserved.Difference(isolated))
+			}
+			if isolated.Size() > 1 {
+				return policyError("invalid reserved cpuset %s, multiple isolated CPUs (%s)",
+					p.reserved, isolated)
+			}
+			log.Warnf("reserved CPU %s is isolated", p.reserved)
 		}
 
 	case cfgapi.AmountQuantity:
