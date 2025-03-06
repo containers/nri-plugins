@@ -19,10 +19,7 @@ import (
 
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/topology"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
-
-	"github.com/containers/nri-plugins/pkg/kubernetes"
 )
 
 //
@@ -90,8 +87,6 @@ type Node interface {
 	System() system.System
 	// Policy returns the policy back pointer.
 	Policy() *policy
-	// DiscoverSupply
-	DiscoverSupply(assignedNUMANodes []idset.ID) Supply
 	// GetSupply returns the full CPU at this node.
 	GetSupply() Supply
 	// FreeSupply returns the available CPU supply of this node.
@@ -102,8 +97,6 @@ type Node interface {
 	GrantedSharedCPU() int
 	// GetMemset
 	GetMemset(mtype memoryType) idset.IDSet
-	// AssignNUMANodes assigns the given set of NUMA nodes to this one.
-	AssignNUMANodes(ids []idset.ID)
 	// DepthFirst traverse the tree@node calling the function at each node.
 	DepthFirst(func(Node))
 	// BreadthFirst traverse the tree@node calling the function at each node.
@@ -359,96 +352,6 @@ func (n *node) GetSupply() Supply {
 	return n.self.node.GetSupply()
 }
 
-// Discover CPU available at this node.
-func (n *node) DiscoverSupply(assignedNUMANodes []idset.ID) Supply {
-	return n.self.node.DiscoverSupply(assignedNUMANodes)
-}
-
-// discoverSupply discovers the resource supply assigned to this pool node.
-func (n *node) discoverSupply(assignedNUMANodes []idset.ID) Supply {
-	if n.noderes != nil {
-		return n.noderes.Clone()
-	}
-
-	if !n.IsLeafNode() {
-		log.Debug("%s: cumulating child resources...", n.Name())
-
-		if len(assignedNUMANodes) > 0 {
-			log.Fatal("invalid pool setup: trying to attach NUMA nodes to non-leaf node %s",
-				n.Name())
-		}
-
-		n.noderes = newSupply(n, cpuset.New(), cpuset.New(), cpuset.New(), 0, 0)
-		for _, c := range n.children {
-			supply := c.GetSupply()
-			n.noderes.Cumulate(supply)
-			n.mem.Add(c.GetMemset(memoryDRAM).Members()...)
-			n.hbm.Add(c.GetMemset(memoryHBM).Members()...)
-			n.pMem.Add(c.GetMemset(memoryPMEM).Members()...)
-			log.Debug("  + %s", supply.DumpCapacity())
-		}
-		log.Debug("  = %s", n.noderes.DumpCapacity())
-	} else {
-		log.Debug("%s: discovering attached/assigned resources...", n.Name())
-
-		cpus := cpuset.New()
-
-		for _, nodeID := range assignedNUMANodes {
-			node := n.System().Node(nodeID)
-			nodeCPUs := node.CPUSet()
-
-			meminfo, err := node.MemoryInfo()
-			if err != nil {
-				log.Fatal("%s: failed to get memory info for NUMA node #%d", n.Name(), nodeID)
-			}
-
-			switch node.GetMemoryType() {
-			case system.MemoryTypeDRAM:
-				n.mem.Add(nodeID)
-				shortCPUs := kubernetes.ShortCPUSet(nodeCPUs)
-				log.Debug("  + assigned DRAM NUMA node #%d (cpuset: %s, DRAM %.2fM)",
-					nodeID, shortCPUs, float64(meminfo.MemTotal)/float64(1024*1024))
-			case system.MemoryTypePMEM:
-				n.pMem.Add(nodeID)
-				log.Debug("  + assigned PMEM NUMA node #%d (DRAM %.2fM)", nodeID,
-					float64(meminfo.MemTotal)/float64(1024*1024))
-			case system.MemoryTypeHBM:
-				n.hbm.Add(nodeID)
-				log.Debug("  + assigned HBMEM NUMA node #%d (DRAM %.2fM)",
-					nodeID, float64(meminfo.MemTotal)/float64(1024*1024))
-			default:
-				log.Fatal("NUMA node #%d with unknown memory type %v", node.GetMemoryType())
-			}
-
-			allowed := nodeCPUs.Intersection(n.policy.allowed)
-			isolated := allowed.Intersection(n.policy.isolated)
-			reserved := allowed.Intersection(n.policy.reserved).Difference(isolated)
-			sharable := allowed.Difference(isolated).Difference(reserved)
-
-			if !reserved.IsEmpty() {
-				log.Debug("    allowed reserved CPUs: %s", kubernetes.ShortCPUSet(reserved))
-			}
-			if !sharable.IsEmpty() {
-				log.Debug("    allowed sharable CPUs: %s", kubernetes.ShortCPUSet(sharable))
-			}
-			if !isolated.IsEmpty() {
-				log.Debug("    allowed isolated CPUs: %s", kubernetes.ShortCPUSet(isolated))
-			}
-
-			cpus = cpus.Union(allowed)
-		}
-
-		isolated := cpus.Intersection(n.policy.isolated)
-		reserved := cpus.Intersection(n.policy.reserved).Difference(isolated)
-		sharable := cpus.Difference(isolated).Difference(reserved)
-		n.noderes = newSupply(n, isolated, reserved, sharable, 0, 0)
-		log.Debug("  = %s", n.noderes.DumpCapacity())
-	}
-
-	n.freeres = n.noderes.Clone()
-	return n.noderes.Clone()
-}
-
 // FreeSupply returns the available CPU supply of this node.
 func (n *node) FreeSupply() Supply {
 	return n.freeres
@@ -460,40 +363,6 @@ func (n *node) GetMemset(mtype memoryType) idset.IDSet {
 		return idset.NewIDSet()
 	}
 	return n.self.node.GetMemset(mtype)
-}
-
-// AssignNUMANodes assigns the given set of NUMA nodes to this one.
-func (n *node) AssignNUMANodes(ids []idset.ID) {
-	n.self.node.AssignNUMANodes(ids)
-}
-
-// assignNUMANodes assigns the given set of NUMA nodes to this one.
-func (n *node) assignNUMANodes(ids []idset.ID) {
-	for _, numaNodeID := range ids {
-		if n.mem.Has(numaNodeID) || n.pMem.Has(numaNodeID) || n.hbm.Has(numaNodeID) {
-			log.Warn("*** NUMA node #%d already discovered by or assigned to %s",
-				numaNodeID, n.Name())
-			continue
-		}
-		numaNode := n.policy.sys.Node(numaNodeID)
-		switch numaNode.GetMemoryType() {
-		case system.MemoryTypeDRAM:
-			n.mem.Add(numaNodeID)
-			log.Info("*** DRAM NUMA node #%d assigned to pool node %q",
-				numaNodeID, n.Name())
-		case system.MemoryTypePMEM:
-			n.pMem.Add(numaNodeID)
-			log.Info("*** PMEM NUMA node #%d assigned to pool node %q",
-				numaNodeID, n.Name())
-		case system.MemoryTypeHBM:
-			n.hbm.Add(numaNodeID)
-			log.Info("*** HBM NUMA node #%d assigned to pool node %q",
-				numaNodeID, n.Name())
-		default:
-			log.Fatal("can't assign NUMA node #%d of type %v to pool node %q",
-				numaNodeID, numaNode.GetMemoryType())
-		}
-	}
 }
 
 // Discover the set of memory attached to this node.
@@ -550,7 +419,7 @@ func (n *node) HasMemoryType(reqType memoryType) bool {
 }
 
 // NewNumaNode create a node for a CPU socket.
-func (p *policy) NewNumaNode(id idset.ID, parent Node) Node {
+func (p *policy) NewNumaNode(id idset.ID, parent Node) *numanode {
 	n := &numanode{}
 	n.self.node = n
 	n.node.init(p, fmt.Sprintf("NUMA node #%v", id), NumaNode, parent)
@@ -574,11 +443,6 @@ func (n *numanode) GetPhysicalNodeIDs() []idset.ID {
 	return []idset.ID{n.id}
 }
 
-// DiscoverSupply discovers the CPU supply available at this node.
-func (n *numanode) DiscoverSupply(assignedNUMANodes []idset.ID) Supply {
-	return n.node.discoverSupply(assignedNUMANodes)
-}
-
 // GetMemset returns the set of memory attached to this node.
 func (n *numanode) GetMemset(mtype memoryType) idset.IDSet {
 	mset := idset.NewIDSet()
@@ -594,11 +458,6 @@ func (n *numanode) GetMemset(mtype memoryType) idset.IDSet {
 	}
 
 	return mset
-}
-
-// AssignNUMANodes assigns the given NUMA nodes to this one.
-func (n *numanode) AssignNUMANodes(ids []idset.ID) {
-	n.node.assignNUMANodes(ids)
 }
 
 // HintScore calculates the (CPU) score of the node for the given topology hint.
@@ -624,7 +483,7 @@ func (n *numanode) HintScore(hint topology.Hint) float64 {
 }
 
 // NewDieNode create a node for a CPU die.
-func (p *policy) NewDieNode(id idset.ID, parent Node) Node {
+func (p *policy) NewDieNode(id idset.ID, parent Node) *dienode {
 	pkg := parent.(*socketnode)
 	n := &dienode{}
 	n.self.node = n
@@ -655,11 +514,6 @@ func (n *dienode) GetPhysicalNodeIDs() []idset.ID {
 	return ids
 }
 
-// DiscoverSupply discovers the CPU supply available at this die.
-func (n *dienode) DiscoverSupply(assignedNUMANodes []idset.ID) Supply {
-	return n.node.discoverSupply(assignedNUMANodes)
-}
-
 // GetMemset returns the set of memory attached to this die.
 func (n *dienode) GetMemset(mtype memoryType) idset.IDSet {
 	mset := idset.NewIDSet()
@@ -675,11 +529,6 @@ func (n *dienode) GetMemset(mtype memoryType) idset.IDSet {
 	}
 
 	return mset
-}
-
-// AssignNUMANodes assigns the given NUMA nodes to this one.
-func (n *dienode) AssignNUMANodes(ids []idset.ID) {
-	n.node.assignNUMANodes(ids)
 }
 
 // HintScore calculates the (CPU) score of the node for the given topology hint.
@@ -704,7 +553,7 @@ func (n *dienode) HintScore(hint topology.Hint) float64 {
 }
 
 // NewSocketNode create a node for a CPU socket.
-func (p *policy) NewSocketNode(id idset.ID, parent Node) Node {
+func (p *policy) NewSocketNode(id idset.ID, parent Node) *socketnode {
 	n := &socketnode{}
 	n.self.node = n
 	n.node.init(p, fmt.Sprintf("socket #%v", id), SocketNode, parent)
@@ -734,11 +583,6 @@ func (n *socketnode) GetPhysicalNodeIDs() []idset.ID {
 	return ids
 }
 
-// DiscoverSupply discovers the CPU supply available at this socket.
-func (n *socketnode) DiscoverSupply(assignedNUMANodes []idset.ID) Supply {
-	return n.node.discoverSupply(assignedNUMANodes)
-}
-
 // GetMemset returns the set of memory attached to this socket.
 func (n *socketnode) GetMemset(mtype memoryType) idset.IDSet {
 	mset := idset.NewIDSet()
@@ -754,11 +598,6 @@ func (n *socketnode) GetMemset(mtype memoryType) idset.IDSet {
 	}
 
 	return mset
-}
-
-// AssignNUMANodes assigns the given NUMA nodes to this one.
-func (n *socketnode) AssignNUMANodes(ids []idset.ID) {
-	n.node.assignNUMANodes(ids)
 }
 
 // HintScore calculates the (CPU) score of the node for the given topology hint.
@@ -778,7 +617,7 @@ func (n *socketnode) HintScore(hint topology.Hint) float64 {
 }
 
 // NewVirtualNode creates a new virtual node.
-func (p *policy) NewVirtualNode(name string, parent Node) Node {
+func (p *policy) NewVirtualNode(name string, parent Node) *virtualnode {
 	n := &virtualnode{}
 	n.self.node = n
 	n.node.init(p, name, VirtualNode, parent)
@@ -796,11 +635,6 @@ func (n *virtualnode) GetSupply() Supply {
 	return n.noderes.Clone()
 }
 
-// DiscoverSupply discovers the CPU supply available at this node.
-func (n *virtualnode) DiscoverSupply(assignedNUMANodes []idset.ID) Supply {
-	return n.node.discoverSupply(assignedNUMANodes)
-}
-
 // GetMemset returns the set of memory attached to this socket.
 func (n *virtualnode) GetMemset(mtype memoryType) idset.IDSet {
 	mset := idset.NewIDSet()
@@ -816,12 +650,6 @@ func (n *virtualnode) GetMemset(mtype memoryType) idset.IDSet {
 	}
 
 	return mset
-}
-
-// AssignNUMANodes assigns the given NUMA nodes to this one.
-func (n *virtualnode) AssignNUMANodes(ids []idset.ID) {
-	log.Panic("cannot assign NUMA nodes #%s to %s",
-		idset.NewIDSet(ids...).String(), n.Name())
 }
 
 // HintScore calculates the (CPU) score of the node for the given topology hint.
