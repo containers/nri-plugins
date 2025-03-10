@@ -684,6 +684,9 @@ func (p *nriPlugin) getPendingUpdates(skip *api.Container) []*api.ContainerUpdat
 				u.SetLinuxBlockIOClass(bioc)
 			}
 			if rdtc := c.GetRDTClass(); rdtc != "" {
+				if rdtc == cache.RDTClassPodQoS {
+					rdtc = string(c.GetQOSClass())
+				}
 				u.SetLinuxRDTClass(rdtc)
 			}
 			updates = append(updates, u)
