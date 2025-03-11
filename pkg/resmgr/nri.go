@@ -665,6 +665,17 @@ func (p *nriPlugin) getPendingAdjustment(container *api.Container) *api.Containe
 		for _, ctrl := range c.GetPending() {
 			c.ClearPending(ctrl)
 		}
+		if adjust != nil {
+			if bioc := c.GetBlockIOClass(); bioc != "" {
+				adjust.SetLinuxBlockIOClass(bioc)
+			}
+			if rdtc := c.GetRDTClass(); rdtc != "" {
+				if rdtc == cache.RDTClassPodQoS {
+					rdtc = string(c.GetQOSClass())
+				}
+				adjust.SetLinuxRDTClass(rdtc)
+			}
+		}
 		return adjust
 	}
 
