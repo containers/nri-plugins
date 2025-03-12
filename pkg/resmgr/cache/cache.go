@@ -331,7 +331,6 @@ type Container interface {
 type container struct {
 	cache *cache         // our cache of objects
 	Ctr   *nri.Container // container data from NRI
-	State ContainerState // current state of the container
 
 	Requirements    v1.ResourceRequirements
 	PodResources    *podresapi.ContainerResources
@@ -364,6 +363,9 @@ type Cacheable interface {
 	Get() interface{}
 }
 
+// InsertContainerOption is an option to apply to an inserted container.
+type InsertContainerOption func(c *container)
+
 // Cache is the primary interface exposed for tracking pods and containers.
 //
 // Cache tracks pods and containers in the runtime, mostly by processing CRI
@@ -378,7 +380,7 @@ type Cache interface {
 	// LookupPod looks up a pod in the cache.
 	LookupPod(id string) (Pod, bool)
 	// InsertContainer inserts a container into the cache, using a runtime request or reply.
-	InsertContainer(*nri.Container) (Container, error)
+	InsertContainer(*nri.Container, ...InsertContainerOption) (Container, error)
 	// DeleteContainer deletes a container from the cache.
 	DeleteContainer(id string) Container
 	// LookupContainer looks up a container in the cache.
@@ -569,11 +571,21 @@ func (cch *cache) LookupPod(id string) (Pod, bool) {
 	return p, ok
 }
 
+// WithContainerState overrides the state of the inserted container.
+func WithContainerState(state ContainerState) InsertContainerOption {
+	return func(c *container) {
+		if c.Ctr.State != state {
+			log.Info("overriding inserted container state to %v (reported %v)", state, c.Ctr.State)
+			c.Ctr.State = state
+		}
+	}
+}
+
 // Insert a container into the cache.
-func (cch *cache) InsertContainer(ctr *nri.Container) (Container, error) {
+func (cch *cache) InsertContainer(ctr *nri.Container, opts ...InsertContainerOption) (Container, error) {
 	var err error
 
-	c, err := cch.createContainer(ctr)
+	c, err := cch.createContainer(ctr, opts...)
 	if err != nil {
 		return nil, cacheError("failed to insert container %s: %v", c.GetID(), err)
 	}
@@ -666,7 +678,7 @@ func (cch *cache) RefreshPods(pods []*nri.PodSandbox, resCh <-chan *podresapi.Po
 		if _, ok := valid[c.GetPodID()]; !ok {
 			log.Debug("purging container %s of stale pod %s...", c.GetID(), c.GetPodID())
 			cch.DeleteContainer(c.GetID())
-			c.State = ContainerStateStale
+			c.UpdateState(ContainerStateStale)
 			containers = append(containers, c)
 		}
 	}
@@ -708,7 +720,7 @@ func (cch *cache) RefreshContainers(containers []*nri.Container) ([]Container, [
 		if _, ok := valid[c.GetID()]; !ok {
 			log.Debug("purging stale container %s (state: %v)...", c.GetID(), c.GetState())
 			cch.DeleteContainer(c.GetID())
-			c.State = ContainerStateStale
+			c.UpdateState(ContainerStateStale)
 			del = append(del, c)
 		}
 

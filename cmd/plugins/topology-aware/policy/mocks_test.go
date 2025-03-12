@@ -647,7 +647,7 @@ func (m *mockCache) DeletePod(string) cache.Pod {
 func (m *mockCache) LookupPod(string) (cache.Pod, bool) {
 	panic("unimplemented")
 }
-func (m *mockCache) InsertContainer(*nri.Container) (cache.Container, error) {
+func (m *mockCache) InsertContainer(*nri.Container, ...cache.InsertContainerOption) (cache.Container, error) {
 	panic("unimplemented")
 }
 func (m *mockCache) DeleteContainer(string) cache.Container {

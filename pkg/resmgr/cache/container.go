@@ -89,7 +89,7 @@ func (c *container) getDenyPathList() (*PathList, bool, error) {
 }
 
 // Create and initialize a cached container.
-func (cch *cache) createContainer(nriCtr *nri.Container) (*container, error) {
+func (cch *cache) createContainer(nriCtr *nri.Container, opts ...InsertContainerOption) (*container, error) {
 	podID := nriCtr.GetPodSandboxId()
 	pod, ok := cch.Pods[podID]
 	if !ok {
@@ -100,7 +100,6 @@ func (cch *cache) createContainer(nriCtr *nri.Container) (*container, error) {
 	c := &container{
 		cache:        cch,
 		Ctr:          nriCtr,
-		State:        nriCtr.GetState(),
 		Tags:         make(map[string]string),
 		ctime:        time.Now(),
 		PodResources: pod.GetPodResources().GetContainer(nriCtr.GetName()),
@@ -110,6 +109,10 @@ func (cch *cache) createContainer(nriCtr *nri.Container) (*container, error) {
 		log.Info("no pod resources for container %s", c.PrettyName())
 	} else {
 		log.Info("got pod resources %+v", c.PodResources)
+	}
+
+	for _, opt := range opts {
+		opt(c)
 	}
 
 	c.generateTopologyHints()
@@ -356,11 +359,11 @@ func (c *container) GetCtime() time.Time {
 }
 
 func (c *container) UpdateState(state ContainerState) {
-	c.State = state
+	c.Ctr.State = state
 }
 
 func (c *container) GetState() ContainerState {
-	return c.State
+	return c.Ctr.State
 }
 
 func (c *container) GetQOSClass() v1.PodQOSClass {
