@@ -175,6 +175,9 @@ func (m *resmgr) start(cfg cfgapi.ResmgrConfig) error {
 		log.Warnf("failed to configure logger: %v", err)
 	}
 
+	m.cache.EnableRDTControl(mCfg.RdtClasses.Enable)
+	m.cache.EnableBlockIOControl(mCfg.BlockIOClasses.Enable)
+
 	if err := m.policy.Start(m.cfg.PolicyConfig()); err != nil {
 		return err
 	}
@@ -301,6 +304,9 @@ func (m *resmgr) reconfigure(cfg cfgapi.ResmgrConfig) error {
 		if err := m.control.StartStopControllers(&mCfg.Control); err != nil {
 			log.Warnf("failed to restart controllers: %v", err)
 		}
+
+		m.cache.EnableRDTControl(mCfg.RdtClasses.Enable)
+		m.cache.EnableBlockIOControl(mCfg.BlockIOClasses.Enable)
 
 		err := m.policy.Reconfigure(cfg.PolicyConfig())
 		if err != nil {
