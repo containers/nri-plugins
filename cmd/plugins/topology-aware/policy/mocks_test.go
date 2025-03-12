@@ -684,6 +684,11 @@ func (m *mockCache) AddImplicitAffinities(map[string]cache.ImplicitAffinity) err
 }
 func (m *mockCache) DeleteImplicitAffinities(...string) {
 }
+
+func (m *mockCache) ConfigureRDTControl(bool) {
+}
+func (m *mockCache) ConfigureBlockIOControl(bool) {
+}
 func (m *mockCache) GetActivePolicy() string {
 	panic("unimplemented")
 }
