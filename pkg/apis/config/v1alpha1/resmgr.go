@@ -35,10 +35,7 @@ type ResmgrConfig interface {
 }
 
 type CommonConfig struct {
-	// +optional
-	Control control.Config `json:"control,omitempty"`
-	// +optional
-	Log log.Config `json:"log,omitempty"`
-	// +optional
-	Instrumentation instrumentation.Config `json:"instrumentation,omitempty"`
+	Control         control.Config
+	Log             log.Config
+	Instrumentation instrumentation.Config
 }

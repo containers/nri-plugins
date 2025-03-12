@@ -62,6 +62,23 @@ spec:
                 type: object
               control:
                 properties:
+                  blockio:
+                    description: |-
+                      Config provides runtime configuration for class based block I/O
+                      prioritization and throttling.
+                    properties:
+                      enable:
+                        description: |-
+                          Enable class based block I/O prioritization and throttling. When
+                          enabled, policy implementations can adjust block I/O priority by
+                          by assigning containers to block I/O priority classes.
+                        type: boolean
+                      usePodQoSAsDefaultClass:
+                        description: |-
+                          usePodQoSAsDefaultClass controls whether a container's Pod QoS
+                          class is used as its block I/O class, if this is otherwise unset.
+                        type: boolean
+                    type: object
                   cpu:
                     properties:
                       classes:
@@ -94,6 +111,23 @@ spec:
                         type: object
                     required:
                     - classes
+                    type: object
+                  rdt:
+                    description: |-
+                      Config provides runtime configuration for class based cache allocation
+                      and memory bandwidth control.
+                    properties:
+                      enable:
+                        description: |-
+                          Enable class based cache allocation and memory bandwidth control.
+                          When enabled, policy implementations can adjust cache allocation
+                          and memory bandwidth by assigning containers to RDT classes.
+                        type: boolean
+                      usePodQoSAsDefaultClass:
+                        description: |-
+                          usePodQoSAsDefaultClass controls whether a container's Pod QoS
+                          class is used as its RDT class, if this is otherwise unset.
+                        type: boolean
                     type: object
                 type: object
               instrumentation:
