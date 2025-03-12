@@ -42,8 +42,6 @@ const (
 	CPU = "cpu"
 	// NRI marks changes that can be applied by NRI.
 	NRI = "nri"
-	// BlockIO marks changes that can be applied by the BlockIO controller.
-	BlockIO = "blockio"
 
 	// RDTClassKey is the pod annotation key for specifying a container RDT class.
 	RDTClassKey = "rdtclass" + "." + kubernetes.ResmgrKeyNamespace
@@ -341,7 +339,6 @@ type container struct {
 	Tags          map[string]string // container tags (local dynamic labels)
 
 	CgroupDir    string // cgroup directory relative to a(ny) controller.
-	BlockIOClass string // Block I/O class this container is assigned to.
 	ToptierLimit int64  // Top tier memory limit.
 
 	pending map[string]struct{} // controllers with pending changes for this container
