@@ -299,6 +299,22 @@ spec:
                   - name
                   type: object
                 type: array
+              blockIOClasses:
+                description: Config provides runtime configuration for class-based
+                  block I/O prioritization.
+                properties:
+                  enable:
+                    description: |-
+                      Enable class based block I/O prioritization and throttling. When
+                      enabled, policy implementations can adjust block I/O priority by
+                      by assigning containers to block I/O priority classes.
+                    type: boolean
+                  usePodQoSAsDefault:
+                    description: |-
+                      usePodQoSAsDefault controls whether a container's Pod QoS class
+                      is to be used as its block I/O class, if this is otherwise unset.
+                    type: boolean
+                type: object
               control:
                 properties:
                   cpu:
@@ -510,6 +526,22 @@ spec:
                       - operator
                       type: object
                     type: array
+                type: object
+              rdtClasses:
+                description: Config provides runtime configuration for class-based
+                  LLC cache control.
+                properties:
+                  enable:
+                    description: |-
+                      Enable class based last level cache control. When enabled, policy
+                      implementations can adjust LLC allocation by assigning containers
+                      to RDT classes.
+                    type: boolean
+                  usePodQoSAsDefault:
+                    description: |-
+                      usePodQoSAsDefault controls whether a container's Pod QoS class
+                      is to be used as its RDT class, if this is otherwise unset.
+                    type: boolean
                 type: object
               reservedPoolNamespaces:
                 description: |-
