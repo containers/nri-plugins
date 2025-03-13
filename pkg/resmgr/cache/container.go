@@ -943,12 +943,25 @@ func (c *container) GetRDTClass() string {
 }
 
 func (c *container) SetBlockIOClass(class string) {
-	c.BlockIOClass = class
-	c.markPending(BlockIO)
+	switch req := c.getPendingRequest().(type) {
+	case *nri.ContainerAdjustment:
+		req.SetLinuxBlockIOClass(class)
+	case *nri.ContainerUpdate:
+		req.SetLinuxBlockIOClass(class)
+	default:
+		log.Error("%s: can't set block I/O class (%s): incorrect pending request type %T",
+			c.PrettyName(), class, req)
+		return
+	}
+
+	c.ensureLinuxResources()
+	c.Ctr.Linux.Resources.BlockioClass = nri.String(class)
+
+	c.markPending(NRI)
 }
 
 func (c *container) GetBlockIOClass() string {
-	return c.BlockIOClass
+	return c.Ctr.GetLinux().GetResources().GetBlockioClass().GetValue()
 }
 
 func (c *container) GetProcesses() ([]string, error) {
