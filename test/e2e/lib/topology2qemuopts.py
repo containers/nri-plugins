@@ -360,34 +360,26 @@ def qemuopts(numalist):
         raise ValueError("no initial memory in any NUMA node - cannot boot with hotpluggable memory")
 
     if separated_output_vars == True:
-        extras = "EXTRA:"
-        if nodecount > 1:
-            extras = (extras + ", ".join(map(lambda x: "\"" + x + "\"", numaparams)) +
-                      " " +
-                      ", ".join(map(lambda x: "\"" + x + "\"", deviceparams)) +
-                      "," +
-                      ", ".join(map(lambda x: "\"" + x + "\"", objectparams)) + "|"
-                      )
-
         return ("MACHINE:" + machineparam + "|" +
                 "CPU:" + cpuparam + "|" +
                 "MEM:" + memparam + "|" +
-                extras
+                "EXTRA:" +
+                ", ".join(map(lambda x: "\"" + x + "\"", numaparams)) +
+                " " +
+                ", ".join(map(lambda x: "\"" + x + "\"", deviceparams)) +
+                "," +
+                ", ".join(map(lambda x: "\"" + x + "\"", objectparams)) + "|"
                 )
     else:
-        extras = ""
-        if nodecount > 1:
-            extras = (" " + memparam + " " +
+        return (machineparam + " " +
+            cpuparam + " " +
+            memparam + " " +
             " ".join(numaparams) +
             " " +
             " ".join(deviceparams) +
             " " +
             " ".join(objectparams)
             )
-        return (machineparam + " " +
-                cpuparam +
-                extras
-                )
 
 def main(input_file):
     try:
