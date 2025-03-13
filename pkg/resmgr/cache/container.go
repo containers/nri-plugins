@@ -921,12 +921,25 @@ func (c *container) GetCgroupDir() string {
 }
 
 func (c *container) SetRDTClass(class string) {
-	c.RDTClass = class
-	c.markPending(RDT)
+	switch req := c.getPendingRequest().(type) {
+	case *nri.ContainerAdjustment:
+		req.SetLinuxRDTClass(class)
+	case *nri.ContainerUpdate:
+		req.SetLinuxRDTClass(class)
+	default:
+		log.Error("%s: can't set RDT class (%s): incorrect pending request type %T",
+			c.PrettyName(), class, c.request)
+		return
+	}
+
+	c.ensureLinuxResources()
+	c.Ctr.Linux.Resources.RdtClass = nri.String(class)
+
+	c.markPending(NRI)
 }
 
 func (c *container) GetRDTClass() string {
-	return c.RDTClass
+	return c.Ctr.GetLinux().GetResources().GetRdtClass().GetValue()
 }
 
 func (c *container) SetBlockIOClass(class string) {

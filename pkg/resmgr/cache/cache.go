@@ -42,8 +42,6 @@ const (
 	CPU = "cpu"
 	// NRI marks changes that can be applied by NRI.
 	NRI = "nri"
-	// RDT marks changes that can be applied by the RDT controller.
-	RDT = "rdt"
 	// BlockIO marks changes that can be applied by the BlockIO controller.
 	BlockIO = "blockio"
 
@@ -343,7 +341,6 @@ type container struct {
 	Tags          map[string]string // container tags (local dynamic labels)
 
 	CgroupDir    string // cgroup directory relative to a(ny) controller.
-	RDTClass     string // RDT class this container is assigned to.
 	BlockIOClass string // Block I/O class this container is assigned to.
 	ToptierLimit int64  // Top tier memory limit.
 
