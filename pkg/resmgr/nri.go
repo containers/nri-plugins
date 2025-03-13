@@ -408,11 +408,10 @@ func (p *nriPlugin) CreateContainer(ctx context.Context, pod *api.PodSandbox, co
 	b := metrics.Block()
 	defer b.Done()
 
-	c, err := m.cache.InsertContainer(container)
+	c, err := m.cache.InsertContainer(container, cache.WithContainerState(cache.ContainerStateCreating))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to cache container: %w", err)
 	}
-	c.UpdateState(cache.ContainerStateCreating)
 
 	if old, ok := p.unmapName(c.PrettyName()); ok {
 		nri.Info("%s: releasing stale instance %s", c.PrettyName(), old.GetID())
