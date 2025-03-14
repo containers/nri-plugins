@@ -49,14 +49,17 @@ TEST_SETUP    := test-setup.sh
 TEST_CLEANUP  := test-cleanup.sh
 TEST_PKGS     := .
 
-E2E_TESTS     ?= policies.test-suite
-RUN_E2E_TESTS := cd test/e2e; ./run_tests.sh
-
-BUILD_PATH    := $(shell pwd)/build
+TOP_DIR       := $(dir $(realpath $(word 1,$(MAKEFILE_LIST))))
+BUILD_PATH    := $(TOP_DIR)/build
 BIN_PATH      := $(BUILD_PATH)/bin
 COVERAGE_PATH := $(BUILD_PATH)/coverage
 IMAGE_PATH    := $(BUILD_PATH)/images
 LICENSE_PATH  := $(BUILD_PATH)/licenses
+
+E2E_DIR       := $(TOP_DIR)/test/e2e
+E2E_RUN       := $(E2E_DIR)/run_tests.sh
+E2E_TESTS     ?= $(E2E_DIR)/policies.test-suite
+E2E_WORKDIR   ?= $(TOP_DIR)/e2e-results
 
 DOCKER       := docker
 DOCKER_BUILD := $(DOCKER) build
@@ -352,7 +355,9 @@ ginkgo-subpkgs-tests: # TODO(klihub): coverage
 	done
 
 e2e-tests: build images
-	$(Q)$(RUN_E2E_TESTS) $(E2E_TESTS)
+	mkdir -p $(shell realpath $(E2E_WORKDIR)) && \
+	cd $(shell realpath $(E2E_WORKDIR)) && \
+	    $(E2E_RUN) $(realpath $(E2E_TESTS))
 
 codecov: SHELL := $(shell which bash)
 codecov:
