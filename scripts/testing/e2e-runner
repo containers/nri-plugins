@@ -201,7 +201,7 @@ cleanup_test_vms() {
 
     info "cleaning up test VMs..."
     must-cd "$WORKTREE"
-    for src in test/e2e/n[0-9]*-c*; do
+    for src in e2e-results/*; do
         (cd "$src" && vagrant destroy --force)
     done
 }
@@ -221,8 +221,8 @@ collect_results() {
 
     info "collecting test results..."
     must-cd "$WORKTREE"
-    for src in test/e2e/n[0-9]*c[0-9]*-c*; do
-        dst=$RESULT_DIR/${src#test/e2e/}
+    for src in e2e-results/*; do
+        dst=$RESULT_DIR/${src#e2e-results/}
         must-mkdir "$dst" "result"
         must-mv "$src/$TEST_SUITE_DIR" "$dst"
     done
