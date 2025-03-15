@@ -19,7 +19,9 @@ import (
 
 	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/instrumentation"
 	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/log"
+	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/blockio"
 	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/control"
+	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/rdt"
 )
 
 // ResmgrConfig provides access to policy-specific and common
@@ -41,4 +43,8 @@ type CommonConfig struct {
 	Log log.Config `json:"log,omitempty"`
 	// +optional
 	Instrumentation instrumentation.Config `json:"instrumentation,omitempty"`
+	// +optional
+	RdtClasses rdt.Config `json:"rdt,omitempty"`
+	// +optional
+	BlockIOClasses blockio.Config `json:"blockIO,omitempty"`
 }

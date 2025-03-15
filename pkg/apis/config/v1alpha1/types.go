@@ -19,10 +19,12 @@ import (
 
 	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/instrumentation"
 	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/log"
+	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/blockio"
 	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/control"
 	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/balloons"
 	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/template"
 	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
+	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/rdt"
 )
 
 // TopologyAwarePolicy represents the configuration for the topology-aware policy.
@@ -46,6 +48,10 @@ type TopologyAwarePolicySpec struct {
 	Log log.Config `json:"log,omitempty"`
 	// +optional
 	Instrumentation instrumentation.Config `json:"instrumentation,omitempty"`
+	// +optional
+	RdtClasses rdt.Config `json:"rdtClasses,omitempty"`
+	// +optional
+	BlockIOClasses blockio.Config `json:"blockIOClasses,omitempty"`
 	// +optional
 	// +kubebuilder:default={"nodeResourceTopology": true }
 	Agent AgentConfig `json:"agent,omitempty"`
@@ -81,6 +87,10 @@ type BalloonsPolicySpec struct {
 	Log log.Config `json:"log,omitempty"`
 	// +optional
 	Instrumentation instrumentation.Config `json:"instrumentation,omitempty"`
+	// +optional
+	RdtClasses rdt.Config `json:"rdtClasses,omitempty"`
+	// +optional
+	BlockIOClasses blockio.Config `json:"blockIOClasses,omitempty"`
 	// +optional
 	// +kubebuilder:default={"nodeResourceTopology": true }
 	Agent AgentConfig `json:"agent,omitempty"`

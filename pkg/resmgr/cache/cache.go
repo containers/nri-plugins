@@ -367,6 +367,11 @@ type InsertContainerOption func(c *container)
 // Cache also saves its state upon changes to secondary storage and restores
 // itself upon startup.
 type Cache interface {
+	// EnableRDTControl is used to enable RDT class control.
+	EnableRDTControl(bool)
+	// EnableBlockIOControl is used to enable Block I/O class control.
+	EnableBlockIOControl(bool)
+
 	// InsertPod inserts a pod into the cache, using a runtime request or reply.
 	InsertPod(pod *nri.PodSandbox, ch <-chan *podresapi.PodResources) Pod
 	// DeletePod deletes a pod from the cache.
@@ -457,6 +462,9 @@ type cache struct {
 	filePath   string     // where to store to/load from
 	dataDir    string     // container data directory
 
+	rdtControl     bool // whether RDT class control is enabled
+	blockIOControl bool // whether BlockIO class control is enabled
+
 	Pods       map[string]*pod       // known/cached pods
 	Containers map[string]*container // known/cache containers
 	NextID     uint64                // next container cache id to use
@@ -506,6 +514,16 @@ func NewCache(options Options) (Cache, error) {
 	}
 
 	return cch, nil
+}
+
+// EnableRDTControl is used to enable RDT class control.
+func (cch *cache) EnableRDTControl(enabled bool) {
+	cch.rdtControl = enabled
+}
+
+// EnableBlockIOControl is used to enable Block I/O class control.
+func (cch *cache) EnableBlockIOControl(enabled bool) {
+	cch.blockIOControl = enabled
 }
 
 // GetActivePolicy returns the name of the active policy stored in the cache.

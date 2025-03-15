@@ -118,9 +118,7 @@ func (cch *cache) createContainer(nriCtr *nri.Container, opts ...InsertContainer
 	c.generateTopologyHints()
 	c.estimateResourceRequirements()
 
-	if err := c.setDefaults(); err != nil {
-		return nil, err
-	}
+	c.setDefaultClasses()
 
 	return c, nil
 }
@@ -297,20 +295,14 @@ func (c *container) estimateResourceRequirements() {
 	c.Requirements = estimateResourceRequirements(r, qosClass)
 }
 
-func (c *container) setDefaults() error {
-	class, ok := c.GetEffectiveAnnotation(RDTClassKey)
-	if !ok {
-		class = RDTClassPodQoS
+func (c *container) setDefaultClasses() {
+	if class, ok := c.GetEffectiveAnnotation(RDTClassKey); ok {
+		c.SetRDTClass(class)
 	}
-	c.SetRDTClass(class)
 
-	class, ok = c.GetEffectiveAnnotation(BlockIOClassKey)
-	if !ok {
-		class = string(c.GetQOSClass())
+	if class, ok := c.GetEffectiveAnnotation(BlockIOClassKey); ok {
+		c.SetBlockIOClass(class)
 	}
-	c.SetBlockIOClass(class)
-
-	return nil
 }
 
 func (c *container) PrettyName() string {
@@ -923,9 +915,19 @@ func (c *container) GetCgroupDir() string {
 func (c *container) SetRDTClass(class string) {
 	switch req := c.getPendingRequest().(type) {
 	case *nri.ContainerAdjustment:
-		req.SetLinuxRDTClass(class)
+		if c.cache.rdtControl {
+			req.SetLinuxRDTClass(class)
+		} else {
+			log.Warnf("%s: RDT class control disabled, omitting class %s",
+				c.PrettyName(), class)
+		}
 	case *nri.ContainerUpdate:
-		req.SetLinuxRDTClass(class)
+		if c.cache.rdtControl {
+			req.SetLinuxRDTClass(class)
+		} else {
+			log.Warnf("%s: RDT class control disabled, omitting class %s",
+				c.PrettyName(), class)
+		}
 	default:
 		log.Error("%s: can't set RDT class (%s): incorrect pending request type %T",
 			c.PrettyName(), class, c.request)
@@ -945,9 +947,19 @@ func (c *container) GetRDTClass() string {
 func (c *container) SetBlockIOClass(class string) {
 	switch req := c.getPendingRequest().(type) {
 	case *nri.ContainerAdjustment:
-		req.SetLinuxBlockIOClass(class)
+		if c.cache.blockIOControl {
+			req.SetLinuxBlockIOClass(class)
+		} else {
+			log.Warnf("%s: block I/O class control disabled, omitting class %s",
+				c.PrettyName(), class)
+		}
 	case *nri.ContainerUpdate:
-		req.SetLinuxBlockIOClass(class)
+		if c.cache.blockIOControl {
+			req.SetLinuxBlockIOClass(class)
+		} else {
+			log.Warnf("%s: block I/O class control disabled, omitting class %s",
+				c.PrettyName(), class)
+		}
 	default:
 		log.Error("%s: can't set block I/O class (%s): incorrect pending request type %T",
 			c.PrettyName(), class, req)

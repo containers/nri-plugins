@@ -12,38 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package v1alpha1
+package rdt
 
-var (
-	_ ResmgrConfig = &TopologyAwarePolicy{}
-)
-
-func (c *TopologyAwarePolicy) AgentConfig() *AgentConfig {
-	if c == nil {
-		return nil
-	}
-
-	a := c.Spec.Agent
-
-	return &a
-}
-
-func (c *TopologyAwarePolicy) CommonConfig() *CommonConfig {
-	if c == nil {
-		return nil
-	}
-	return &CommonConfig{
-		Control:         c.Spec.Control,
-		Log:             c.Spec.Log,
-		Instrumentation: c.Spec.Instrumentation,
-		RdtClasses:      c.Spec.RdtClasses,
-		BlockIOClasses:  c.Spec.BlockIOClasses,
-	}
-}
-
-func (c *TopologyAwarePolicy) PolicyConfig() interface{} {
-	if c == nil {
-		return nil
-	}
-	return &c.Spec.Config
+// Config provides runtime configuration for class-based LLC cache control.
+// +k8s:deepcopy-gen=true
+type Config struct {
+	// Enable class based last level cache control. When enabled, policy
+	// implementations can adjust LLC allocation by assigning containers
+	// to RDT classes.
+	// +optional
+	Enable bool `json:"enable,omitempty"`
+	// usePodQoSAsDefault controls whether a container's Pod QoS class
+	// is to be used as its RDT class, if this is otherwise unset.
+	// +optional
+	UsePodQoSAsDefault bool `json:"usePodQoSAsDefault,omitempty"`
 }

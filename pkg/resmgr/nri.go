@@ -661,6 +661,8 @@ func (p *nriPlugin) updateContainers() (retErr error) {
 func (p *nriPlugin) getPendingAdjustment(container *api.Container) *api.ContainerAdjustment {
 	if c, ok := p.resmgr.cache.LookupContainer(container.GetId()); ok {
 		adjust := c.GetPendingAdjustment()
+		p.setDefaultClasses(c, adjust)
+
 		for _, ctrl := range c.GetPending() {
 			c.ClearPending(ctrl)
 		}
@@ -679,12 +681,7 @@ func (p *nriPlugin) getPendingUpdates(skip *api.Container) []*api.ContainerUpdat
 		}
 
 		if u := c.GetPendingUpdate(); u != nil {
-			if bioc := c.GetBlockIOClass(); bioc != "" {
-				u.SetLinuxBlockIOClass(bioc)
-			}
-			if rdtc := c.GetRDTClass(); rdtc != "" {
-				u.SetLinuxRDTClass(rdtc)
-			}
+			p.setDefaultClasses(c, u)
 			updates = append(updates, u)
 
 			for _, ctrl := range c.GetPending() {
@@ -694,6 +691,46 @@ func (p *nriPlugin) getPendingUpdates(skip *api.Container) []*api.ContainerUpdat
 	}
 
 	return updates
+}
+
+func (p *nriPlugin) setDefaultClasses(c cache.Container, request interface{}) {
+	var (
+		rdtClass     string
+		blockIOClass string
+	)
+
+	if p.resmgr.cfg.CommonConfig().RdtClasses.Enable {
+		if p.resmgr.cfg.CommonConfig().RdtClasses.UsePodQoSAsDefault {
+			if class := c.GetRDTClass(); class == "" {
+				rdtClass = string(c.GetQOSClass())
+			}
+		}
+	}
+
+	if p.resmgr.cfg.CommonConfig().BlockIOClasses.Enable {
+		if p.resmgr.cfg.CommonConfig().BlockIOClasses.UsePodQoSAsDefault {
+			if class := c.GetBlockIOClass(); class == "" {
+				blockIOClass = string(c.GetQOSClass())
+			}
+		}
+	}
+
+	switch req := request.(type) {
+	case *api.ContainerAdjustment:
+		if rdtClass != "" {
+			req.SetLinuxRDTClass(rdtClass)
+		}
+		if blockIOClass != "" {
+			req.SetLinuxBlockIOClass(blockIOClass)
+		}
+	case *api.ContainerUpdate:
+		if rdtClass != "" {
+			req.SetLinuxRDTClass(rdtClass)
+		}
+		if blockIOClass != "" {
+			req.SetLinuxBlockIOClass(blockIOClass)
+		}
+	}
 }
 
 const (
