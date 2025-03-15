@@ -247,7 +247,7 @@ generate_summary() {
         return
     fi
 
-    for vm in $RESULT_DIR/n[0-9]*c[0-9]*-c*; do
+    for vm in $RESULT_DIR/n[0-9]*-c*; do
         echo "${vm##*/}:" >> "$summary"
         for dir in $(find $vm/$TEST_SUITE_DIR -name 'test[0-9]*-*' -type d); do
             for f in  $dir/*.output; do
