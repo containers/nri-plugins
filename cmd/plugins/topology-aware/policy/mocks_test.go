@@ -263,6 +263,9 @@ func (fake *mockSystem) AllThreadsForCPUs(cpuset.CPUSet) cpuset.CPUSet {
 func (fake *mockSystem) SingleThreadForCPUs(cpuset.CPUSet) cpuset.CPUSet {
 	return cpuset.New()
 }
+func (fake *mockSystem) AllCPUsSharingNthLevelCacheWithCPUs(int, cpuset.CPUSet) cpuset.CPUSet {
+	return cpuset.New()
+}
 func (fake *mockSystem) Offlined() cpuset.CPUSet {
 	return cpuset.New()
 }
