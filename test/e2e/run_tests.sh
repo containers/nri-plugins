@@ -263,11 +263,6 @@ ${code}"
                         mkdir -p "$test_outdir"
                         echo "Run $TEST_NAME"
 
-                        if [ ! -z "$GITHUB_WORKSPACE" ]; then
-			    # This is done when executing from self hosted runner
-                            echo "outdir=$outdir vm_name=node policy=$TESTS_POLICY_FILTER test_outdir=$test_outdir TEST_DIR=$TEST_DIR TOPOLOGY_DIR=$TOPOLOGY_DIR POLICY_DIR=$POLICY_DIR" > $TEST_PARAMS
-			fi
-
 			test_start_time=$(epochrealtime)
 
                         policy="$policy_name" test_outdir="$test_outdir" TEST_DIR=$TEST_DIR TOPOLOGY_DIR=$TOPOLOGY_DIR POLICY_DIR=$POLICY_DIR \
@@ -297,11 +292,5 @@ echo ""
 echo "Tests summary:"
 cat "$summary_file"
 if grep -q ERROR "$summary_file" || grep -q FAIL "$summary_file"; then
-    # Print runtime error logs if running from Github Actions
-    if [ ! -z "$GITHUB_WORKSPACE" ]; then
-	env $(< $TEST_PARAMS) "$RUN_SH" runtime-logs 2>&1
-	rm -f $TEST_PARAMS
-    fi
-
     exit 1
 fi

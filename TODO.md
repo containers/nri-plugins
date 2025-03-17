@@ -15,7 +15,6 @@ The estimated complexity and priority of a feature/task is defined like this:
 ## Reference Plugins (this repository)
 
 - admin/repo
-  - [ ] get proper permissions so that self-hosted runner scripts can create/destroy runner C1
 - cache
   - [ ] rework/split up, make the core functionality be usable for other types of plugins, C4
   - [ ] get rid of CRI-specific representation/interfaces, NRI/CRI pod, container conversion, C4
@@ -48,7 +47,6 @@ The estimated complexity and priority of a feature/task is defined like this:
 - testing
   - [ ] more unit tests, C4
   - [ ] unit tests in GH actions, C4
-  - [ ] e2e-tests on merge by CI/self-hosted runners, C4
   - [ ] migrate shell based e2e-tests into Ansible, C4
   - [ ] make topology-aware e2e test07-mixed-allocations more reliable, C1
   - [ ] allow e2e tests to use the upstream containerd or cri-o instead of using
