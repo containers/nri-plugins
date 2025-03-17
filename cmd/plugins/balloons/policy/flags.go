@@ -22,6 +22,7 @@ import (
 type (
 	BalloonsOptions  = cfgapi.Config
 	BalloonDef       = cfgapi.BalloonDef
+	LoadClass        = cfgapi.LoadClass
 	CPUTopologyLevel = cfgapi.CPUTopologyLevel
 )
 
