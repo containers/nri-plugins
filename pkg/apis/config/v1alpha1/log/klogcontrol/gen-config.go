@@ -98,7 +98,7 @@ import (
     "fmt"
 )
 
-// +k8s:deepcopy-gen=true
+// +kubebuilder:object:generate=true
 type {{ .Struct }} struct {
 {{- range .Options }}
     // +optional

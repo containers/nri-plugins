@@ -15,7 +15,7 @@
 package metrics
 
 // Config provides runtime configuration for metrics collection.
-// +k8s:deepcopy-gen=true
+// +kubebuilder:object:generate=true
 type Config struct {
 	// Enabled enables collection for metrics matched by glob patterns.
 	// +optional

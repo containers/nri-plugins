@@ -18,7 +18,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/control/cpu"
 )
 
-// +k8s:deepcopy-gen=true
+// +kubebuilder:object:generate=true
 type Config struct {
 	// +optional
 	CPU *cpu.Config `json:"cpu,omitempty"`

@@ -57,7 +57,7 @@ func (p CPUPriority) Value() cpuallocator.CPUPriority {
 	return cpuallocator.PriorityNone
 }
 
-// +k8s:deepcopy-gen=true
+// +kubebuilder:object:generate=true
 // +optional
 type Config struct {
 	// PinCPU controls whether the policy pins containers to allocated CPUs.

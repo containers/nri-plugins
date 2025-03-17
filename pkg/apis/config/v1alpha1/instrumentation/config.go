@@ -20,7 +20,7 @@ import (
 )
 
 // Config provides runtime configuration for instrumentation.
-// +k8s:deepcopy-gen=true
+// +kubebuilder:object:generate=true
 type Config struct {
 	// SamplingRatePerMillion is the number of samples to collect per million spans.
 	// +optional
