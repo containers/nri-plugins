@@ -14,7 +14,7 @@
 
 package cpu
 
-// +k8s:deepcopy-gen=true
+// +kubebuilder:object:generate=true
 type Config struct {
 	Classes map[string]Class `json:"classes"`
 }

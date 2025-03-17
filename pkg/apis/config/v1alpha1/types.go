@@ -28,7 +28,6 @@ import (
 // TopologyAwarePolicy represents the configuration for the topology-aware policy.
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +genclient
 type TopologyAwarePolicy struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -63,7 +62,6 @@ type TopologyAwarePolicyList struct {
 // BalloonsPolicy represents the configuration for the balloons policy.
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +genclient
 type BalloonsPolicy struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -98,7 +96,6 @@ type BalloonsPolicyList struct {
 // TemplatePolicy represents the configuration for the template policy.
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +genclient
 type TemplatePolicy struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

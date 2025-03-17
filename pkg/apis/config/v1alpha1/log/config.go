@@ -18,7 +18,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/log/klogcontrol"
 )
 
-// +k8s:deepcopy-gen=true
+// +kubebuilder:object:generate=true
 type Config struct {
 	// Debub turns on debug messages matching listed logger sources.
 	// +optional

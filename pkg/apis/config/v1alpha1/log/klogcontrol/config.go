@@ -7,7 +7,7 @@ import (
     "fmt"
 )
 
-// +k8s:deepcopy-gen=true
+// +kubebuilder:object:generate=true
 type Config struct {
     // +optional
     Add_dir_header *bool `json:"add_dir_header,omitempty"`

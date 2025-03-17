@@ -22,7 +22,7 @@ package resmgr
 // of the expression. The result is a single boolean value. An object is
 // said to satisfy the evaluated expression if this value is true. An
 // expression can contain 0, 1 or more values depending on the operator.
-// +k8s:deepcopy-gen=true
+// +kubebuilder:object:generate=true
 type Expression struct {
 	// Key is the expression key.
 	Key string `json:"key"`
