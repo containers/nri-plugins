@@ -120,6 +120,7 @@ type System interface {
 	CoreKinds() []CoreKind
 	AllThreadsForCPUs(cpuset.CPUSet) cpuset.CPUSet
 	SingleThreadForCPUs(cpuset.CPUSet) cpuset.CPUSet
+	AllCPUsSharingNthLevelCacheWithCPUs(int, cpuset.CPUSet) cpuset.CPUSet
 
 	Offlined() cpuset.CPUSet
 	Isolated() cpuset.CPUSet
@@ -709,6 +710,19 @@ func (sys *system) AllThreadsForCPUs(cpus cpuset.CPUSet) cpuset.CPUSet {
 	for _, id := range cpus.UnsortedList() {
 		if cpu, ok := sys.cpus[id]; ok {
 			all = all.Union(cpu.ThreadCPUSet())
+		}
+	}
+	return all
+}
+
+func (sys *system) AllCPUsSharingNthLevelCacheWithCPUs(n int, cpus cpuset.CPUSet) cpuset.CPUSet {
+	all := cpuset.New()
+	for _, id := range cpus.UnsortedList() {
+		if all.Contains(id) {
+			continue
+		}
+		if cpu, ok := sys.cpus[id]; ok {
+			all = all.Union(cpu.GetNthLevelCacheCPUSet(n))
 		}
 	}
 	return all
