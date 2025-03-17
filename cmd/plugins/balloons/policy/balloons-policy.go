@@ -82,8 +82,9 @@ type balloons struct {
 	defaultBalloonDef  *BalloonDef // default balloon definition, pointer to bpoptions.BalloonDefs[y]
 	balloons           []*Balloon  // balloon instances: reserved, default and user-defined
 
-	cpuAllocator cpuallocator.CPUAllocator // CPU allocator used by the policy
-	memAllocator *libmem.Allocator         // memory allocator used by the policy
+	cpuAllocator cpuallocator.CPUAllocator    // CPU allocator used by the policy
+	memAllocator *libmem.Allocator            // memory allocator used by the policy
+	loadVirtDev  map[string]*loadClassVirtDev // map LoadClasses to virtual devices
 }
 
 // Balloon contains attributes of a balloon instance
@@ -109,9 +110,24 @@ type Balloon struct {
 	PodIDs map[string][]string
 	// Groups is a multiset (group-by-value -> appearance-count)
 	// of evaluated GroupBy expressions on containers in the balloon.
-	Groups       map[string]int
-	cpuTreeAlloc *cpuTreeAllocator
-	memTypeMask  libmem.TypeMask
+	Groups map[string]int
+	// LoadedVirtDevs is a set of virtual devices under load due
+	// to this balloon.
+	LoadedVirtDevs map[string]struct{}
+	cpuTreeAlloc   *cpuTreeAllocator
+	memTypeMask    libmem.TypeMask
+}
+
+// loadClassVirtDev is a virtual device under load due to a load class.
+type loadClassVirtDev struct {
+	// name is the name of the virtual device.
+	name string
+	// level specifies CPUs affected by load on the virtual device.
+	level CPUTopologyLevel
+	// updateOnEveryCpuAllocation specifies if affected CPUs must be
+	// updated whenever a new CPU is allocated to a balloon with this
+	// virtual device.
+	updateOnEveryCpuAllocation bool
 }
 
 var log logger.Logger = logger.NewLogger("policy")
@@ -744,6 +760,67 @@ func (p *balloons) forgetCpuClass(bln *Balloon) {
 	}
 }
 
+// updateLoadedVirtDevsInAllocatorOptions updates CPU allocator
+// options with virtual devices under load due to the given load
+// classes. Returns a set of virtual device names under load.
+func (p *balloons) updateLoadedVirtDevsInAllocatorOptions(allocatorOptions *cpuTreeAllocatorOptions, loadClassNames []string) map[string]struct{} {
+	loadedVirtDevs := make(map[string]struct{})
+	for _, lc := range loadClassNames {
+		vdName := p.loadVirtDev[lc].name
+		if _, ok := loadedVirtDevs[vdName]; ok {
+			// Already handled this virtual device in some
+			// other load class.
+			continue
+		}
+		// Go through all balloons that share the same loaded
+		// virtual device and collect their CPUs into vdCpus
+		// (virtual device CPUs)
+		vdCpus := cpuset.New()
+		for _, bln := range p.balloons {
+			if _, ok := bln.LoadedVirtDevs[vdName]; !ok {
+				continue
+			}
+			vdCpus = vdCpus.Union(bln.Cpus)
+		}
+		loadedVirtDevs[vdName] = struct{}{}
+		p.updateLoadedVirtDev(allocatorOptions, p.loadVirtDev[lc], vdCpus, true)
+	}
+	return loadedVirtDevs
+}
+
+func (p *balloons) updateLoadedVirtDev(allocatorOptions *cpuTreeAllocatorOptions, virtDev *loadClassVirtDev, vdCpus cpuset.CPUSet, overwrite bool) {
+	prevCpus := cpuset.New()
+	virtDevName := virtDev.name
+	if !overwrite && len(allocatorOptions.virtDevCpusets[virtDevName]) > 0 {
+		prevCpus = allocatorOptions.virtDevCpusets[virtDevName][0]
+	}
+	// Calculate all CPUs affected by load on vdCpus.
+	switch virtDev.level {
+	case CPUTopologyLevelCore:
+		// add all CPUs from same cores of virtual device CPUs
+		allocatorOptions.virtDevCpusets[virtDevName] = []cpuset.CPUSet{prevCpus.Union(p.cpuTree.system().AllThreadsForCPUs(vdCpus))}
+	case CPUTopologyLevelL2Cache:
+		// add all CPUs from the same L2 cache of virtual
+		// device CPUs
+		allocatorOptions.virtDevCpusets[virtDevName] = []cpuset.CPUSet{prevCpus.Union(p.cpuTree.system().AllCPUsSharingNthLevelCacheWithCPUs(2, vdCpus))}
+	default:
+		log.Error("internal error: not implemented load level %q used in virtual device %q", virtDev.level, virtDevName)
+	}
+	log.Debugf("    loaded virtual device %q on CPUs %q affects CPUs %q", virtDev.name, vdCpus, allocatorOptions.virtDevCpusets[virtDevName])
+}
+
+// virtDevsChangeDuringCpuAllocation returns true if any of the
+// virtual devices under load due to the given load classes change
+// during CPU allocation.
+func (p *balloons) virtDevsChangeDuringCpuAllocation(loadClassNames []string) bool {
+	for _, lc := range loadClassNames {
+		if virtDev, ok := p.loadVirtDev[lc]; ok && virtDev.updateOnEveryCpuAllocation {
+			return true
+		}
+	}
+	return false
+}
+
 func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, error) {
 	var cpus cpuset.CPUSet
 	var err error
@@ -788,30 +865,34 @@ func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, erro
 	if blnDef.PreferSpreadOnPhysicalCores != nil {
 		allocatorOptions.preferSpreadOnPhysicalCores = *blnDef.PreferSpreadOnPhysicalCores
 	}
+	loadedVirtDevs := p.updateLoadedVirtDevsInAllocatorOptions(&allocatorOptions, blnDef.Loads)
+	if len(loadedVirtDevs) > 0 {
+		log.Debugf("balloon %s[%d] loaded virtual devices: %+v", blnDef.Name, freeInstance, allocatorOptions.virtDevCpusets)
+	}
 	cpuTreeAlloc := p.cpuTree.NewAllocator(allocatorOptions)
-
-	// Allocate CPUs
-	addFromCpus, _, err := cpuTreeAlloc.ResizeCpus(cpuset.New(), p.freeCpus, blnDef.MinCpus)
-	if err != nil {
-		return nil, balloonsError("failed to choose a cpuset for allocating MinCpus: %d from free cpus %q", blnDef.MinCpus, p.freeCpus)
-	}
-	cpus, err = p.cpuAllocator.AllocateCpus(&addFromCpus, blnDef.MinCpus, blnDef.AllocatorPriority.Value().Option())
-	if err != nil {
-		return nil, balloonsError("could not allocate minCpus (%d) for balloon %s[%d]: %w", blnDef.MinCpus, blnDef.Name, freeInstance, err)
-	}
-	p.freeCpus = p.freeCpus.Difference(cpus)
 	memTypeMask, _ := memTypeMaskFromStringList(blnDef.MemoryTypes)
 	bln := &Balloon{
 		Def:            blnDef,
 		Instance:       freeInstance,
 		Groups:         make(map[string]int),
 		PodIDs:         make(map[string][]string),
-		Cpus:           cpus,
+		Cpus:           cpuset.New(),
 		SharedIdleCpus: cpuset.New(),
-		Mems:           p.closestMems(cpus),
+		LoadedVirtDevs: loadedVirtDevs,
 		cpuTreeAlloc:   cpuTreeAlloc,
 		memTypeMask:    memTypeMask,
 	}
+	if p.virtDevsChangeDuringCpuAllocation(blnDef.Loads) {
+		bln.cpuTreeAlloc.options.deviceUpdateOnEveryCpu = func(currentCpus cpuset.CPUSet) {
+			for _, load := range blnDef.Loads {
+				p.updateLoadedVirtDev(&cpuTreeAlloc.options, p.loadVirtDev[load], currentCpus, false)
+			}
+		}
+	}
+	if err := p.resizeBalloon(bln, blnDef.MinCpus*1000); err != nil {
+		return nil, err
+	}
+	bln.Mems = p.closestMems(bln.Cpus)
 	if confCpus {
 		if err = p.useCpuClass(bln); err != nil {
 			log.Errorf("failed to apply CPU configuration to new balloon %s[%d] (cpus: %s): %w", blnDef.Name, freeInstance, cpus, err)
@@ -1207,6 +1288,7 @@ func (p *balloons) applyBalloonDef(balloons *[]*Balloon, blnDef *BalloonDef, fre
 
 func (p *balloons) validateConfig(bpoptions *BalloonsOptions) error {
 	seenNames := map[string]struct{}{}
+	undefinedLoadClasses := map[string]struct{}{}
 	for _, blnDef := range bpoptions.BalloonDefs {
 		if blnDef.Name == "" {
 			return balloonsError("missing or empty name in a balloon type")
@@ -1239,6 +1321,21 @@ func (p *balloons) validateConfig(bpoptions *BalloonsOptions) error {
 		if blnDef.PreferIsolCpus && blnDef.ShareIdleCpusInSame != "" {
 			log.Warn("WARNING: using PreferIsolCpus with ShareIdleCpusInSame is highly discouraged")
 		}
+		for _, load := range blnDef.Loads {
+			undefinedLoadClasses[load] = struct{}{}
+		}
+	}
+	for lcIndex, loadClass := range bpoptions.LoadClasses {
+		delete(undefinedLoadClasses, loadClass.Name)
+		if loadClass.Name == "" {
+			return balloonsError("missing or empty name in a load classes list, index %d", lcIndex)
+		}
+		if loadClass.Level == CPUTopologyLevelUndefined {
+			return balloonsError("missing or invalid level in load class %q", loadClass.Name)
+		}
+	}
+	if len(undefinedLoadClasses) > 0 {
+		return balloonsError("loads defined in balloonTypes but missing from loadClasses: %v", undefinedLoadClasses)
 	}
 	return nil
 }
@@ -1275,6 +1372,7 @@ func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
 	if err = p.validateConfig(bpoptions); err != nil {
 		return balloonsError("invalid configuration: %w", err)
 	}
+	p.fillLoadVirtDevices(bpoptions.LoadClasses)
 	p.fillCloseToDevices(bpoptions.BalloonDefs)
 	p.fillFarFromDevices(bpoptions.BalloonDefs)
 
@@ -1488,6 +1586,33 @@ func (p *balloons) fillFarFromDevices(blnDefs []*BalloonDef) {
 			}
 		}
 	}
+	// Add virtual devices related to load classes to be avoided.
+	for _, blnDef := range blnDefs {
+		addedVirtDevs := map[string]struct{}{}
+		for _, load := range blnDef.Loads {
+			vdName := p.loadVirtDev[load].name
+			if _, ok := addedVirtDevs[vdName]; ok {
+				continue
+			}
+			blnDef.PreferFarFromDevices = append(blnDef.PreferFarFromDevices, vdName)
+		}
+	}
+}
+
+func (p *balloons) fillLoadVirtDevices(loadClasses []LoadClass) {
+	// Convert *what* is loaded and *what* should be avoided,
+	// described by the user in loadClasses, into *how* to model
+	// the load internally (by virtual devices) and *how* to
+	// communicate it to the CPU allocator.
+	p.loadVirtDev = map[string]*loadClassVirtDev{}
+	for _, lc := range loadClasses {
+		virtDev := &loadClassVirtDev{
+			name:                       "loaded-" + lc.Level.String(),
+			level:                      lc.Level,
+			updateOnEveryCpuAllocation: lc.OverloadsLevelInBalloon,
+		}
+		p.loadVirtDev[lc.Name] = virtDev
+	}
 }
 
 // memTypeMaskFromStringList returns memory type mask corresponding a
@@ -1533,6 +1658,7 @@ func (p *balloons) resizeBalloon(bln *Balloon, newMilliCpus int) error {
 			log.Warnf("failed to apply CPU class to balloon %s: %v", bln.PrettyName(), err)
 		}
 	}()
+	p.updateLoadedVirtDevsInAllocatorOptions(&bln.cpuTreeAlloc.options, bln.Def.Loads)
 	if cpuCountDelta > 0 {
 		// Inflate the balloon.
 		addFromCpus, _, err := bln.cpuTreeAlloc.ResizeCpus(bln.Cpus, p.freeCpus, cpuCountDelta)
