@@ -17,7 +17,6 @@ package cache
 import (
 	"os"
 	"path"
-	"strconv"
 	"strings"
 
 	nri "github.com/containerd/nri/pkg/api"
@@ -29,16 +28,15 @@ import (
 )
 
 var (
-	memoryCapacity int64
-
 	SharesToMilliCPU = kubernetes.SharesToMilliCPU
 	QuotaToMilliCPU  = kubernetes.QuotaToMilliCPU
 	MilliCPUToShares = kubernetes.MilliCPUToShares
 	MilliCPUToQuota  = kubernetes.MilliCPUToQuota
+	OomAdjToMemReq   = kubernetes.OomAdjToMemReq
 )
 
 // Try to estimate CRI resource requirements from NRI resources.
-func estimateResourceRequirements(r *nri.LinuxResources, qosClass corev1.PodQOSClass) corev1.ResourceRequirements {
+func estimateResourceRequirements(r *nri.LinuxResources, qosClass corev1.PodQOSClass, oomAdj int64) corev1.ResourceRequirements {
 	resources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{},
 		Limits:   corev1.ResourceList{},
@@ -54,8 +52,9 @@ func estimateResourceRequirements(r *nri.LinuxResources, qosClass corev1.PodQOSC
 	}
 
 	// get memory limit
-	if value := r.GetMemory().GetLimit().GetValue(); value > 0 {
-		qty := resapi.NewQuantity(value, resapi.DecimalSI)
+	memLimit := int64(0)
+	if memLimit = r.GetMemory().GetLimit().GetValue(); memLimit > 0 {
+		qty := resapi.NewQuantity(memLimit, resapi.DecimalSI)
 		resources.Limits[corev1.ResourceMemory] = *qty
 	}
 
@@ -64,9 +63,14 @@ func estimateResourceRequirements(r *nri.LinuxResources, qosClass corev1.PodQOSC
 	case corev1.PodQOSGuaranteed:
 		resources.Limits[corev1.ResourceCPU] = resources.Requests[corev1.ResourceCPU]
 		resources.Requests[corev1.ResourceMemory] = resources.Limits[corev1.ResourceMemory]
-	default:
+	case corev1.PodQOSBurstable:
+		if req := OomAdjToMemReq(oomAdj, memLimit); req != nil && *req != 0 {
+			log.Info("estimated memory request: %d (%.2fM)", *req, float64(*req)/(1024*1024))
+			qty := resapi.NewQuantity(*req, resapi.DecimalSI)
+			resources.Requests[corev1.ResourceMemory] = *qty
+		}
 		fallthrough
-	case corev1.PodQOSBestEffort, corev1.PodQOSBurstable:
+	case corev1.PodQOSBestEffort:
 		quota := cpu.GetQuota().GetValue()
 		period := int64(cpu.GetPeriod().GetValue())
 		if value := QuotaToMilliCPU(quota, period); value > 0 {
@@ -85,42 +89,6 @@ func IsPodQOSClassName(class string) bool {
 		return true
 	}
 	return false
-}
-
-// getMemoryCapacity parses memory capacity from /proc/meminfo (mimicking cAdvisor).
-func getMemoryCapacity() int64 {
-	var data []byte
-	var err error
-
-	if memoryCapacity > 0 {
-		return memoryCapacity
-	}
-
-	if data, err = os.ReadFile("/proc/meminfo"); err != nil {
-		return -1
-	}
-
-	for _, line := range strings.Split(string(data), "\n") {
-		keyval := strings.Split(line, ":")
-		if len(keyval) != 2 || keyval[0] != "MemTotal" {
-			continue
-		}
-
-		valunit := strings.Split(strings.TrimSpace(keyval[1]), " ")
-		if len(valunit) != 2 || valunit[1] != "kB" {
-			return -1
-		}
-
-		memoryCapacity, err = strconv.ParseInt(valunit[0], 10, 64)
-		if err != nil {
-			return -1
-		}
-
-		memoryCapacity *= 1024
-		break
-	}
-
-	return memoryCapacity
 }
 
 // findContainerDir brute-force searches for a container cgroup dir.
@@ -154,9 +122,4 @@ func findContainerDir(podCgroupDir, podID, ID string) string {
 	}
 
 	return ""
-}
-
-func init() {
-	// TODO: get rid of this eventually, use pkg/sysfs instead...
-	getMemoryCapacity()
 }

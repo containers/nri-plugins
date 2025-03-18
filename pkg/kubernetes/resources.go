@@ -14,6 +14,12 @@
 
 package kubernetes
 
+import (
+	"fmt"
+
+	"github.com/containers/nri-plugins/pkg/sysfs"
+)
+
 const (
 	// Constants for converting back and forth between CPU requirements in
 	// terms of milli-CPUs and kernel cgroup/scheduling parameters.
@@ -30,6 +36,20 @@ const (
 	QuotaPeriod = 100000
 	// MinQuotaPeriod is 1000 microseconds, or 1ms
 	MinQuotaPeriod = 1000
+
+	GuaranteedOOMScoreAdj = -997
+	BestEffortOOMScoreAdj = 1000
+
+	MinBurstableOOMScoreAdj = 1000 + GuaranteedOOMScoreAdj // 1000 - 997 = 3
+	MaxBurstableOOMScoreAdj = BestEffortOOMScoreAdj - 1    // 1000 - 1 = 999
+
+)
+
+var (
+	// memCapacity is the total memory capacity of the node.
+	memCapacity int64
+	// oomAdjToMemReqEstimates is a table of memory request estimates for OOM score adjustments.
+	oomAdjToMemReqEstimates map[int64]int64
 )
 
 // MilliCPUToQuota converts milliCPU to CFS quota and period values.
@@ -81,4 +101,97 @@ func QuotaToMilliCPU(quota, period int64) int64 {
 		return 0
 	}
 	return int64(float64(quota*MilliCPUToCPU)/float64(period) + 0.5)
+}
+
+// MemReqToOomAdj estimates OOM score adjustment based on memory request.
+func MemReqToOomAdj(memRequest int64) int64 {
+	return 1000 - (1000*memRequest)/memCapacity
+}
+
+// OomAdjToMemReq estimates memory request based on OOM score adjustment.
+func OomAdjToMemReq(oomAdj int64, memLimit int64) *int64 {
+	if oomAdj < MinBurstableOOMScoreAdj || oomAdj > MaxBurstableOOMScoreAdj {
+		return nil
+	}
+
+	if req := oomAdjToMemReqEstimates[oomAdj]; req < memLimit || memLimit == 0 {
+		return &req
+	}
+
+	return nil
+}
+
+// CalculateOomAdjToMemReqEstimates calculates a table of memory request estimates
+// for OOM score adjustments in the range [0, 1000].
+func CalculateOomAdjToMemReqEstimates() map[int64]int64 {
+	var (
+		milliMem = float64(memCapacity) / 1000.0
+		adjToReq = map[int64]int64{
+			1000: 0,
+			0:    memCapacity,
+		}
+		iToReq = map[int]int64{
+			0:    0,
+			1000: memCapacity,
+		}
+	)
+
+	for i := 1; i < 1000; i++ {
+		var (
+			prevReq = iToReq[i-1]
+			prevAdj = MemReqToOomAdj(prevReq)
+			currReq = int64(float64(prevReq) + milliMem + 0.5)
+			currAdj = MemReqToOomAdj(currReq)
+		)
+
+		switch {
+		case currAdj < prevAdj:
+			// find smallest request which gives one adjustment smaller than the previous
+			for j := 0; currAdj < prevAdj && j < int(milliMem); j++ {
+				if currAdj == prevAdj-1 {
+					adjToReq[currAdj] = currReq
+					iToReq[i] = currReq
+				}
+				currReq--
+				currAdj = MemReqToOomAdj(currReq)
+			}
+		case currAdj == prevAdj:
+			// find first request which gives one adjustment smaller than the previous
+			for j := 0; currAdj == prevAdj && j < int(milliMem); j++ {
+				currReq++
+				currAdj = MemReqToOomAdj(currReq)
+			}
+			if currAdj == prevAdj-1 {
+				adjToReq[currAdj] = currReq
+				iToReq[i] = currReq
+				break
+			}
+
+			fallthrough
+		default:
+			panic(
+				fmt.Sprintf("capacity %d: failed to calculate request estimate #%d",
+					memCapacity, i),
+			)
+		}
+	}
+
+	return adjToReq
+}
+
+func SetMemoryCapacity(capacity int64) {
+	if capacity == 0 {
+		panic(fmt.Errorf("failed to set memory capacity, invalid capacity 0"))
+	}
+
+	memCapacity = capacity
+	oomAdjToMemReqEstimates = CalculateOomAdjToMemReqEstimates()
+}
+
+func GetMemoryCapacity() int64 {
+	return memCapacity
+}
+
+func init() {
+	SetMemoryCapacity(sysfs.GetMemoryCapacity())
 }
