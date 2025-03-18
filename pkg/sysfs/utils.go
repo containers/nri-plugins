@@ -364,3 +364,38 @@ func IDSetFromCPUSet(cset cpuset.CPUSet) idset.IDSet {
 func CPUSetFromIDSet(s idset.IDSet) cpuset.CPUSet {
 	return cpuset.New(s.Members()...)
 }
+
+// GetMemoryCapacity parses memory capacity from /proc/meminfo (mimicking cAdvisor).
+func GetMemoryCapacity() int64 {
+	var (
+		data []byte
+		err  error
+		capa int64
+	)
+
+	if data, err = os.ReadFile("/proc/meminfo"); err != nil {
+		return -1
+	}
+
+	for _, line := range strings.Split(string(data), "\n") {
+		keyval := strings.Split(line, ":")
+		if len(keyval) != 2 || keyval[0] != "MemTotal" {
+			continue
+		}
+
+		valunit := strings.Split(strings.TrimSpace(keyval[1]), " ")
+		if len(valunit) != 2 || valunit[1] != "kB" {
+			return -1
+		}
+
+		capa, err = strconv.ParseInt(valunit[0], 10, 64)
+		if err != nil {
+			return -1
+		}
+
+		capa *= 1024
+		break
+	}
+
+	return capa
+}
