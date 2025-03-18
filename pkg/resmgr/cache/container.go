@@ -292,7 +292,8 @@ func isReadOnlyDevice(rules []*nri.LinuxDeviceCgroup, d *nri.LinuxDevice) bool {
 func (c *container) estimateResourceRequirements() {
 	r := c.Ctr.GetLinux().GetResources()
 	qosClass := c.GetQOSClass()
-	c.Requirements = estimateResourceRequirements(r, qosClass)
+	oomAdj := c.Ctr.GetLinux().GetOomScoreAdj().GetValue()
+	c.Requirements = estimateResourceRequirements(r, qosClass, oomAdj)
 }
 
 func (c *container) setDefaultClasses() {
@@ -472,8 +473,9 @@ func (c *container) GetPodResources() *podresapi.ContainerResources {
 
 func (c *container) SetResourceUpdates(r *nri.LinuxResources) bool {
 	r = mergeNRIResources(r, c.Ctr.GetLinux().GetResources())
-
-	updated := estimateResourceRequirements(r, c.GetQOSClass())
+	qosClass := c.GetQOSClass()
+	oomAdj := c.Ctr.GetLinux().GetOomScoreAdj().GetValue()
+	updated := estimateResourceRequirements(r, qosClass, oomAdj)
 
 	same := true
 	orig := c.Requirements
