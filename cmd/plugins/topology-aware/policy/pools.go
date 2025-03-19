@@ -747,6 +747,19 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 		}
 		log.Debug("  - offer memory types are a tie (%s vs %s)", t1, t2)
 
+		if req, lim := request.MemAmountToAllocate(), request.MemoryLimit(); req != lim {
+			capa1, capa2 := p.poolZoneCapacity(node1, memType), p.poolZoneCapacity(node2, memType)
+			if (lim != 0 && capa1 >= lim && capa2 < lim) || (lim == 0 && capa1 > capa2) {
+				log.Debug("   - %s loses on memory offer burstability", node2.Name())
+				return true
+			}
+			if (lim != 0 && capa1 < lim && capa2 >= lim) || (lim == 0 && capa2 > capa1) {
+				log.Debug("   - %s loses on memory offer burstability", node1.Name())
+				return false
+			}
+			log.Debug("  - memory offers burstability are a TIE")
+		}
+
 		if m1.Size() < m2.Size() {
 			log.Debug("   - %s loses on memory offer (%s less tight than %s)",
 				node2.Name(), m2, m1)

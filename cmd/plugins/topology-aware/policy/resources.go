@@ -111,6 +111,8 @@ type Request interface {
 	MemoryType() memoryType
 	// MemAmountToAllocate retuns how much memory we need to reserve for a request.
 	MemAmountToAllocate() int64
+	// MemoryLimit returns the memory limit for the request.
+	MemoryLimit() int64
 	// ColdStart returns the cold start timeout.
 	ColdStart() time.Duration
 }
@@ -750,9 +752,13 @@ func (cr *request) Isolate() bool {
 
 // MemAmountToAllocate retuns how much memory we need to reserve for a request.
 func (cr *request) MemAmountToAllocate() int64 {
-	if cr.memLim == 0 && cr.memReq != 0 {
+	if cr.memReq != 0 {
 		return cr.memReq
 	}
+	return cr.memLim
+}
+
+func (cr *request) MemoryLimit() int64 {
 	return cr.memLim
 }
 
