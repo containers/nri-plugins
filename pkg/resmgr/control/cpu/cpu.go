@@ -62,7 +62,7 @@ func getCPUController() *cpuctl {
 
 // Check if our configuration is effectively empty.
 func isEmptyConfig(cfg *cfgapi.Config) bool {
-	return cfg == nil || cfg.CPU == nil || len(cfg.CPU.Classes) == 0
+	return cfg == nil || len(cfg.CPU.Classes) == 0
 }
 
 // Start initializes the controller for enforcing decisions.
@@ -240,7 +240,7 @@ func (ctl *cpuctl) configure(cfg *cfgapi.Config) error {
 	ctl.classes = nil
 	ctl.uncoreEnabled = false
 
-	if cfg != nil && cfg.CPU != nil {
+	if cfg != nil && len(cfg.CPU.Classes) != 0 {
 		ctl.classes = cfg.CPU.Classes
 	}
 
