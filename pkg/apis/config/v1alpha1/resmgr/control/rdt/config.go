@@ -12,20 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package control
+package rdt
 
-import (
-	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/control/blockio"
-	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/control/cpu"
-	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/control/rdt"
-)
-
+// Config provides runtime configuration for class based cache allocation
+// and memory bandwidth control.
 // +kubebuilder:object:generate=true
 type Config struct {
+	// Enable class based cache allocation and memory bandwidth control.
+	// When enabled, policy implementations can adjust cache allocation
+	// and memory bandwidth by assigning containers to RDT classes.
 	// +optional
-	CPU cpu.Config `json:"cpu,omitempty"`
+	Enable bool `json:"enable,omitempty"`
+	// usePodQoSAsDefaultClass controls whether a container's Pod QoS
+	// class is used as its RDT class, if this is otherwise unset.
 	// +optional
-	RDT rdt.Config `json:"rdt,omitempty"`
-	// +optional
-	BlockIO blockio.Config `json:"blockio,omitempty"`
+	UsePodQoSAsDefaultClass bool `json:"usePodQoSAsDefaultClass,omitempty"`
 }
