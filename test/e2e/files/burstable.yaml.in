@@ -32,6 +32,8 @@ spec:
         memory: ${MEMREQ}
       limits:
         cpu: ${CPULIM}
+        $( ( [ -n "$MEMLIM" ] && [ "$MEMLIM" != "0" ] ) && echo "
         memory: ${MEMLIM}
+        ")
   "; done )
   terminationGracePeriodSeconds: 1
