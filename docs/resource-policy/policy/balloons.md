@@ -188,6 +188,10 @@ Balloons policy parameters:
   - `cpuClass` specifies the name of the CPU class according to which
     CPUs of balloons are configured. Class properties are defined in
     separate `cpu.classes` objects, see below.
+  - `rdtClass` specifies the name of the RDT class. Corresponding
+    class of service (COS) must exist in the resctrl file
+    system. Containers in the balloon are assigned to the class. Refer
+    to resctrl file system for configuring classes.
   - `pinMemory` overrides policy-level `pinMemory` in balloons of this
     type.
   - `memoryTypes` is a list of allowed memory types for containers in

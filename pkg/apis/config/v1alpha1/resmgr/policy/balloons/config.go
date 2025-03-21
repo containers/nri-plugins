@@ -202,6 +202,11 @@ type BalloonDef struct {
 	// CpuClass controls how CPUs of a balloon are (re)configured
 	// whenever a balloon is created, inflated or deflated.
 	CpuClass string `json:"cpuClass,omitempty"`
+	// RdtClass controls RDT class of processes in the containers
+	// of a balloon. The default is empty: no RDT class is set. If
+	// defined, processes will be added to the directory
+	// corresponding the class in the resctrl file system.
+	RdtClass string `json:"rdtClass,omitempty"`
 	// MinBalloons is the number of balloon instances that always
 	// exist even if they would become empty. At init this number
 	// of instances will be created before assigning any

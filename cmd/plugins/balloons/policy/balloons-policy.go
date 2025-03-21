@@ -1679,6 +1679,9 @@ func (p *balloons) assignContainer(c cache.Container, bln *Balloon) {
 	bln.PodIDs[podID] = append(bln.PodIDs[podID], c.GetID())
 	bln.updateGroups(c, 1)
 	p.updatePinning(bln)
+	if bln.Def.RdtClass != "" {
+		c.SetRDTClass(bln.Def.RdtClass)
+	}
 }
 
 // dismissContainer removes a container from a balloon
