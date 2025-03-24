@@ -267,6 +267,32 @@ Balloons policy parameters:
     balloons. If there are balloon types with pre-created balloons
     (`minBalloons` > 0), balloons of the type with the highest
     `allocatorPriority` are created first.
+- `loadClasses`: lists properties of loads that containers in balloons
+  generate to some parts of the system. When the policy allocates CPUs
+  for load generating balloon instances, it selects CPUs so that it
+  avoids overloading any of these parts. Properties of load classes
+  are:
+  - `name` is the name of the load class. Balloon types that cause
+    this type of load include the class name in their `loads` list.
+    See [load example](#selecting-one-hyperthread-per-core-for-heavy-compute).
+  - `level` specifies the CPU topology level affected by this
+    load. Supported level values and their consequences are:
+    - `core`: if one CPU hyperthread from a physical CPU core belongs
+      to a balloon that loads `core`, then the policy avoids selecting
+      the other CPU hyperthread to any other balloon that loads
+      `core`.
+    - `l2cache`: if one CPU from CPUs that share the same L2 cache is
+      selected to a balloon that loads `l2cache`, then the policy
+      avoids selecting other CPUs from the same L2 cache block to any
+      other balloon that loads `l2cache`.
+  - `overloadsLevelInBalloon`: if `true`, avoiding the load on the
+    same `level` is taken into account, not only when selecting CPUs
+    to other balloons, but also when selecting CPUs in the balloon
+    that causes the load at hand. This enables, for instance,
+    allocating CPUs so that every CPU is chosen from different
+    physical `core` or different `l2cache` block. The default is
+    `false`, that is, locality of balloon's CPUs is seen more
+    important than avoiding balloon's own load.
 - `control.cpu.classes`: defines CPU classes and their
     properties. Class names are keys followed by properties:
     - `minFreq` minimum frequency for CPUs in this class (kHz).
@@ -412,6 +438,59 @@ metadata:
 The `hide-hyperthreads` pod annotation overrides the
 `hideHyperthreads` balloon type parameter value for selected
 containers in the pod.
+
+### Selecting One Hyperthread per Core for Heavy Compute
+
+An alternative to completely hiding one hyperthread on each heavily
+loaded physical CPU core (see previous Section), is marking the CPU
+cores loaded, and prefer selecting CPUs from unloaded cores for
+compute-intensive workloads. Unlike in hiding, unused hyperhtreads on
+loaded cores are still available for containers that do not load them
+that heavily.
+
+Example:
+
+```yaml
+apiVersion: config.nri/v1alpha1
+kind: BalloonsPolicy
+metadata:
+  name: default
+  namespace: kube-system
+spec:
+  allocatorTopologyBalancing: false
+  reservedResources:
+    cpu: 1000m
+  pinCPU: true
+  pinMemory: false
+  balloonTypes:
+  - name: ai-inference
+    minCPUs: 16
+    minBalloons: 2
+    preferNewBalloons: true
+    loads:
+    - avx
+  - name: video-encoding
+    maxCPUs: 8
+    loads:
+    - avx
+  - name: default
+    maxCPUs: 16
+    namespaces:
+    - "*"
+  loadClasses:
+  - name: avx
+    level: core
+    overloadsLevelInBalloon: true
+```
+
+Containers in both "ai-inference" and "video-encoding" balloons are
+expected to cause heavy load on physical CPU core resources due to
+high throughput of AVX optimized code. Therefore all CPUs to these
+balloons are picked from different physical cores, as long as they are
+available. Because `AllocatorTopologyBalancing` is set to `false`, the
+policy will select CPUs in "pack tightly" rather than "spread evenly"
+manner. This leads into preferring the left-over threads over threads
+from unused CPU cores when allocating CPUs for default balloons.
 
 ### Memory Type
 
