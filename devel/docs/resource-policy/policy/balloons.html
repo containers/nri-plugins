@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.8.0-52-g19b91cce documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.8.0-56-g0b11ccdf documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=7779f815"></script>
+        <script src="../../../_static/documentation_options.js?v=1bf4ce59"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -385,6 +385,38 @@ balloons. If there are balloon types with pre-created balloons
 <code class="docutils literal notranslate"><span class="pre">allocatorPriority</span></code> are created first.</p></li>
 </ul>
 </li>
+<li><p><code class="docutils literal notranslate"><span class="pre">loadClasses</span></code>: lists properties of loads that containers in balloons
+generate to some parts of the system. When the policy allocates CPUs
+for load generating balloon instances, it selects CPUs so that it
+avoids overloading any of these parts. Properties of load classes
+are:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">name</span></code> is the name of the load class. Balloon types that cause
+this type of load include the class name in their <code class="docutils literal notranslate"><span class="pre">loads</span></code> list.
+See <a class="reference internal" href="#selecting-one-hyperthread-per-core-for-heavy-compute">load example</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">level</span></code> specifies the CPU topology level affected by this
+load. Supported level values and their consequences are:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">core</span></code>: if one CPU hyperthread from a physical CPU core belongs
+to a balloon that loads <code class="docutils literal notranslate"><span class="pre">core</span></code>, then the policy avoids selecting
+the other CPU hyperthread to any other balloon that loads
+<code class="docutils literal notranslate"><span class="pre">core</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">l2cache</span></code>: if one CPU from CPUs that share the same L2 cache is
+selected to a balloon that loads <code class="docutils literal notranslate"><span class="pre">l2cache</span></code>, then the policy
+avoids selecting other CPUs from the same L2 cache block to any
+other balloon that loads <code class="docutils literal notranslate"><span class="pre">l2cache</span></code>.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">overloadsLevelInBalloon</span></code>: if <code class="docutils literal notranslate"><span class="pre">true</span></code>, avoiding the load on the
+same <code class="docutils literal notranslate"><span class="pre">level</span></code> is taken into account, not only when selecting CPUs
+to other balloons, but also when selecting CPUs in the balloon
+that causes the load at hand. This enables, for instance,
+allocating CPUs so that every CPU is chosen from different
+physical <code class="docutils literal notranslate"><span class="pre">core</span></code> or different <code class="docutils literal notranslate"><span class="pre">l2cache</span></code> block. The default is
+<code class="docutils literal notranslate"><span class="pre">false</span></code>, that is, locality of balloon’s CPUs is seen more
+important than avoiding balloon’s own load.</p></li>
+</ul>
+</li>
 <li><p><code class="docutils literal notranslate"><span class="pre">control.cpu.classes</span></code>: defines CPU classes and their
 properties. Class names are keys followed by properties:</p>
 <ul class="simple">
@@ -532,6 +564,56 @@ hidden hyperthreads either.</p>
 <p>The <code class="docutils literal notranslate"><span class="pre">hide-hyperthreads</span></code> pod annotation overrides the
 <code class="docutils literal notranslate"><span class="pre">hideHyperthreads</span></code> balloon type parameter value for selected
 containers in the pod.</p>
+</section>
+<section id="selecting-one-hyperthread-per-core-for-heavy-compute">
+<h3>Selecting One Hyperthread per Core for Heavy Compute<a class="headerlink" href="#selecting-one-hyperthread-per-core-for-heavy-compute" title="Link to this heading"></a></h3>
+<p>An alternative to completely hiding one hyperthread on each heavily
+loaded physical CPU core (see previous Section), is marking the CPU
+cores loaded, and prefer selecting CPUs from unloaded cores for
+compute-intensive workloads. Unlike in hiding, unused hyperhtreads on
+loaded cores are still available for containers that do not load them
+that heavily.</p>
+<p>Example:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">config.nri/v1alpha1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">BalloonsPolicy</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">default</span>
+<span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-system</span>
+<span class="nt">spec</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">allocatorTopologyBalancing</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">  </span><span class="nt">reservedResources</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1000m</span>
+<span class="w">  </span><span class="nt">pinCPU</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">pinMemory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">  </span><span class="nt">balloonTypes</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ai-inference</span>
+<span class="w">    </span><span class="nt">minCPUs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16</span>
+<span class="w">    </span><span class="nt">minBalloons</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+<span class="w">    </span><span class="nt">preferNewBalloons</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">loads</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">avx</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">video-encoding</span>
+<span class="w">    </span><span class="nt">maxCPUs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8</span>
+<span class="w">    </span><span class="nt">loads</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">avx</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">default</span>
+<span class="w">    </span><span class="nt">maxCPUs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16</span>
+<span class="w">    </span><span class="nt">namespaces</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;*&quot;</span>
+<span class="w">  </span><span class="nt">loadClasses</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">avx</span>
+<span class="w">    </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">core</span>
+<span class="w">    </span><span class="nt">overloadsLevelInBalloon</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</pre></div>
+</div>
+<p>Containers in both “ai-inference” and “video-encoding” balloons are
+expected to cause heavy load on physical CPU core resources due to
+high throughput of AVX optimized code. Therefore all CPUs to these
+balloons are picked from different physical cores, as long as they are
+available. Because <code class="docutils literal notranslate"><span class="pre">AllocatorTopologyBalancing</span></code> is set to <code class="docutils literal notranslate"><span class="pre">false</span></code>, the
+policy will select CPUs in “pack tightly” rather than “spread evenly”
+manner. This leads into preferring the left-over threads over threads
+from unused CPU cores when allocating CPUs for default balloons.</p>
 </section>
 <section id="memory-type">
 <h3>Memory Type<a class="headerlink" href="#memory-type" title="Link to this heading"></a></h3>
