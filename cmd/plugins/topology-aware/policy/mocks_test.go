@@ -80,6 +80,10 @@ func (fake *mockSystemNode) DistanceFrom(id idset.ID) int {
 	return 0
 }
 
+func (fake *mockSystemNode) ClosestNodes() ([]idset.IDSet, []int) {
+	return []idset.IDSet{}, []int{}
+}
+
 type mockCPUPackage struct {
 }
 
