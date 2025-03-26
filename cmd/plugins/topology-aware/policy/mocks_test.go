@@ -321,6 +321,19 @@ func (fake *mockSystem) NodeIDs() []idset.ID {
 	}
 	return ids
 }
+
+func (fake *mockSystem) FilterNodes(ids []idset.ID, filters ...sysfs.NodeFilter) idset.IDSet {
+	return idset.NewIDSet()
+}
+
+func (fake *mockSystem) FilterNode(id idset.ID, filters ...sysfs.NodeFilter) bool {
+	return true
+}
+
+func (fake *mockSystem) ClosestNodes(id idset.ID, filters ...sysfs.NodeFilter) ([]idset.IDSet, []int) {
+	return []idset.IDSet{}, []int{}
+}
+
 func (fake *mockSystem) SetCPUFrequencyLimits(min, max uint64, cpus idset.IDSet) error {
 	return nil
 }

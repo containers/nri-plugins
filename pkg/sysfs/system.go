@@ -92,6 +92,10 @@ func (t MemoryType) String() string {
 	return fmt.Sprintf("%%(BAD-MemoryType:%d)", t)
 }
 
+// NodeFilter is a function for filtering nodes. A node passes a filter
+// if the filter returns true for the node.
+type NodeFilter func(n Node) bool
+
 // System devices
 type System interface {
 	Discover(flags DiscoveryFlag) error
@@ -99,6 +103,9 @@ type System interface {
 	SetCPUFrequencyLimits(min, max uint64, cpus idset.IDSet) error
 	PackageIDs() []idset.ID
 	NodeIDs() []idset.ID
+	FilterNodes(ids []idset.ID, filters ...NodeFilter) idset.IDSet
+	FilterNode(id idset.ID, filters ...NodeFilter) bool
+	ClosestNodes(id idset.ID, filters ...NodeFilter) ([]idset.IDSet, []int)
 	CPUIDs() []idset.ID
 	PackageCount() int
 	SocketCount() int
@@ -588,6 +595,78 @@ func (sys *system) NodeIDs() []idset.ID {
 	})
 
 	return ids
+}
+
+// FilterNodes filters the given node IDs. It returns a set containing only
+// those IDs which pass all the given filters.
+func (sys *system) FilterNodes(nodeIDs []idset.ID, filters ...NodeFilter) idset.IDSet {
+	ids := idset.NewIDSet()
+
+	for _, node := range nodeIDs {
+		if sys.FilterNode(node, filters...) {
+			ids.Add(node)
+		}
+	}
+
+	return ids
+}
+
+// FilterNode filters the given node ID. It returns true if the node passes
+// all given filters.
+func (sys *system) FilterNode(id idset.ID, filters ...NodeFilter) bool {
+	node, ok := sys.nodes[id]
+	if !ok {
+		return false
+	}
+	for _, filter := range filters {
+		if !filter(node) {
+			return false
+		}
+	}
+	return true
+}
+
+// ClosestNodes returns the set of nodes by decreasing distance from this node,
+// filtered by the given filters. Any node which does not pass all the filters
+// is omitted.
+func (sys *system) ClosestNodes(nodeID idset.ID, filters ...NodeFilter) (nodes []idset.IDSet, distances []int) {
+	n, ok := sys.nodes[nodeID]
+	if !ok {
+		return nil, nil
+	}
+
+	byDist := map[int]idset.IDSet{}
+	for id, dist := range n.distance {
+		if id == n.id {
+			continue
+		}
+		if !sys.FilterNode(id, filters...) {
+			continue
+		}
+
+		if ids, ok := byDist[dist]; !ok {
+			byDist[dist] = idset.NewIDSet(id)
+		} else {
+			ids.Add(id)
+		}
+	}
+
+	if len(byDist) == 0 {
+		return nil, nil
+	}
+
+	distances = make([]int, 0, len(byDist))
+	for dist := range byDist {
+		distances = append(distances, dist)
+	}
+	sort.Ints(distances)
+
+	nodes = make([]idset.IDSet, len(distances))
+	for i, dist := range distances {
+		nodes[i] = byDist[dist]
+	}
+
+	return nodes, distances
 }
 
 // CPUIDs gets the ids of all CPUs present in the system.
@@ -1505,6 +1584,75 @@ func (n *node) GetMemoryType() MemoryType {
 // HasNormalMemory returns true if the node has memory that belongs to a normal zone.
 func (n *node) HasNormalMemory() bool {
 	return n.normalMem
+}
+
+//
+// Predefined node filters.
+//
+
+// NodeOfType filters nodes with the given memory type.
+func NodeOfType(t MemoryType) NodeFilter {
+	return func(n Node) bool {
+		return n.GetMemoryType() == t
+	}
+}
+
+var (
+	// NodeOfDRAMType filters nodes with DRAM memory.
+	NodeOfDRAMType = NodeOfType(MemoryTypeDRAM)
+	// NodeOfPMEMType filters nodes with PMEM memory.
+	NodeOfPMEMType = NodeOfType(MemoryTypePMEM)
+	// NodeOfHBMType filters nodes with HBM memory.
+	NodeOfHBMType = NodeOfType(MemoryTypeHBM)
+	// NodeHasMemory filters nodes with some attached memory.
+	NodeHasMemory = func(n Node) bool {
+		mi, _ := n.MemoryInfo()
+		return mi == nil || mi.MemTotal > 0
+	}
+	// NodeHasNoMemory filters nodes with no any attached memory.
+	NodeHasNoMemory = func(n Node) bool {
+		mi, _ := n.MemoryInfo()
+		return mi != nil && mi.MemTotal == 0
+	}
+	// NodeHasLocalCPUs filters nodes which has close CPUs.
+	NodeHasLocalCPUs = func(n Node) bool {
+		return !n.CPUSet().IsEmpty()
+	}
+	// NodeHasNoLocalCpus filters nodes which don't have close CPUs.
+	NodeHasNoLocalCPUs = func(n Node) bool {
+		return n.CPUSet().IsEmpty()
+	}
+)
+
+// NodeFilterAnd returns a filter that is the logical AND of the given filters.
+func NodeFilterAnd(filters ...NodeFilter) NodeFilter {
+	return func(n Node) bool {
+		for _, f := range filters {
+			if !f(n) {
+				return false
+			}
+		}
+		return true
+	}
+}
+
+// NodeFilterOr returns a filter that is the logical OR of the given filters.
+func NodeFilterOr(filters ...NodeFilter) NodeFilter {
+	return func(n Node) bool {
+		for _, f := range filters {
+			if f(n) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// NodeFilterNot returns a filter that is the logical NOT of the given filter.
+func NodeFilterNot(f NodeFilter) NodeFilter {
+	return func(n Node) bool {
+		return !f(n)
+	}
 }
 
 // Discover physical packages (CPU sockets) present in the system.

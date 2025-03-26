@@ -286,3 +286,91 @@ var _ = DescribeTable("neighbor nodes by distance",
 		[]int{17, 28},
 	),
 )
+
+var nodeWithEvenID = func(n sysfs.Node) bool { return (n.ID() & 0x1) == 0 }
+
+var _ = DescribeTable("filter nodes",
+	func(filters []sysfs.NodeFilter, result idset.IDSet) {
+		sys := sampleSysfs["sample2"]
+		Expect(sys).ToNot(BeNil())
+		nodes := sys.FilterNodes(sys.NodeIDs(), filters...)
+		Expect(result).To(Equal(nodes))
+	},
+
+	Entry("nodes with even IDs",
+		[]sysfs.NodeFilter{nodeWithEvenID},
+		idset.NewIDSet(0, 2, 4, 6),
+	),
+	Entry("nodes with odd IDs",
+		[]sysfs.NodeFilter{sysfs.NodeFilterNot(nodeWithEvenID)},
+		idset.NewIDSet(1, 3, 5, 7),
+	),
+	Entry("nodes with CPU locality",
+		[]sysfs.NodeFilter{sysfs.NodeHasLocalCPUs},
+		idset.NewIDSet(0, 1, 2, 3),
+	),
+	Entry("nodes without CPU locality",
+		[]sysfs.NodeFilter{sysfs.NodeFilterNot(sysfs.NodeHasLocalCPUs)},
+		idset.NewIDSet(4, 5, 6, 7),
+	),
+	Entry("DRAM nodes",
+		[]sysfs.NodeFilter{sysfs.NodeOfDRAMType},
+		idset.NewIDSet(0, 1, 2, 3),
+	),
+	Entry("PMEM nodes",
+		[]sysfs.NodeFilter{sysfs.NodeOfPMEMType},
+		idset.NewIDSet(4, 5, 6, 7),
+	),
+	Entry("PMEM or odd ID nodes",
+		[]sysfs.NodeFilter{
+			sysfs.NodeFilterOr(sysfs.NodeOfPMEMType, sysfs.NodeFilterNot(nodeWithEvenID)),
+		},
+		idset.NewIDSet(1, 3, 4, 5, 6, 7),
+	),
+)
+
+var _ = DescribeTable("filtered neighbor nodes by distance",
+	func(node ID, filters []sysfs.NodeFilter, closest []idset.IDSet, distances []int) {
+		sys := sampleSysfs["sample2"]
+		Expect(sys).ToNot(BeNil())
+		nodes, dists := sys.ClosestNodes(node, filters...)
+		Expect(nodes).To(Equal(closest))
+		Expect(dists).To(Equal(distances))
+	},
+
+	Entry("even ID nodes close to node #0", 0,
+		[]sysfs.NodeFilter{nodeWithEvenID},
+		[]idset.IDSet{
+			idset.NewIDSet(2),
+			idset.NewIDSet(4),
+			idset.NewIDSet(6),
+		},
+		[]int{11, 17, 28},
+	),
+
+	Entry("odd ID nodes close to node #0", 0,
+		[]sysfs.NodeFilter{sysfs.NodeFilterNot(nodeWithEvenID)},
+		[]idset.IDSet{
+			idset.NewIDSet(1, 3),
+			idset.NewIDSet(5, 7),
+		},
+		[]int{21, 28},
+	),
+
+	Entry("even ID PMEM nodes close to node #0", 0,
+		[]sysfs.NodeFilter{nodeWithEvenID, sysfs.NodeOfPMEMType},
+		[]idset.IDSet{
+			idset.NewIDSet(4),
+			idset.NewIDSet(6),
+		},
+		[]int{17, 28},
+	),
+
+	Entry("odd ID DRAM nodes close to node #1", 1,
+		[]sysfs.NodeFilter{sysfs.NodeFilterNot(nodeWithEvenID), sysfs.NodeOfDRAMType},
+		[]idset.IDSet{
+			idset.NewIDSet(3),
+		},
+		[]int{11},
+	),
+)
