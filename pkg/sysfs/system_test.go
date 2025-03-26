@@ -211,3 +211,78 @@ var _ = DescribeTable("P-/E-Core CPU detection",
 	Entry("P-Cores", "sample1", PerformanceCore, "0-7"),
 	Entry("E-Cores", "sample1", EfficientCore, "8-15"),
 )
+
+var _ = DescribeTable("neighbor nodes by distance",
+	func(node ID, closest []idset.IDSet, distances []int) {
+		sys := sampleSysfs["sample2"]
+		Expect(sys).ToNot(BeNil())
+		nodes, dists := sys.Node(node).ClosestNodes()
+		Expect(nodes).To(Equal(closest))
+		Expect(dists).To(Equal(distances))
+	},
+
+	Entry("node #0", 0,
+		[]idset.IDSet{
+			idset.NewIDSet(2),
+			idset.NewIDSet(4),
+			idset.NewIDSet(1, 3),
+			idset.NewIDSet(5, 6, 7),
+		},
+		[]int{11, 17, 21, 28},
+	),
+	Entry("node #1", 1,
+		[]idset.IDSet{
+			idset.NewIDSet(3),
+			idset.NewIDSet(6),
+			idset.NewIDSet(0, 2),
+			idset.NewIDSet(4, 5, 7),
+		},
+		[]int{11, 17, 21, 28},
+	),
+	Entry("node #2", 2,
+		[]idset.IDSet{
+			idset.NewIDSet(0),
+			idset.NewIDSet(5),
+			idset.NewIDSet(1, 3),
+			idset.NewIDSet(4, 6, 7),
+		},
+		[]int{11, 17, 21, 28},
+	),
+	Entry("node #3", 3,
+		[]idset.IDSet{
+			idset.NewIDSet(1),
+			idset.NewIDSet(7),
+			idset.NewIDSet(0, 2),
+			idset.NewIDSet(4, 5, 6),
+		},
+		[]int{11, 17, 21, 28},
+	),
+	Entry("node #4", 4,
+		[]idset.IDSet{
+			idset.NewIDSet(0),
+			idset.NewIDSet(1, 2, 3, 5, 6, 7),
+		},
+		[]int{17, 28},
+	),
+	Entry("node #5", 5,
+		[]idset.IDSet{
+			idset.NewIDSet(2),
+			idset.NewIDSet(0, 1, 3, 4, 6, 7),
+		},
+		[]int{17, 28},
+	),
+	Entry("node #6", 6,
+		[]idset.IDSet{
+			idset.NewIDSet(1),
+			idset.NewIDSet(0, 2, 3, 4, 5, 7),
+		},
+		[]int{17, 28},
+	),
+	Entry("node #7", 7,
+		[]idset.IDSet{
+			idset.NewIDSet(3),
+			idset.NewIDSet(0, 1, 2, 4, 5, 6),
+		},
+		[]int{17, 28},
+	),
+)

@@ -181,6 +181,7 @@ type Node interface {
 	CPUSet() cpuset.CPUSet
 	Distance() []int
 	DistanceFrom(id idset.ID) int
+	ClosestNodes() ([]idset.IDSet, []int)
 	MemoryInfo() (*MemInfo, error)
 	GetMemoryType() MemoryType
 	HasNormalMemory() bool
@@ -1419,6 +1420,35 @@ func (n *node) DistanceFrom(id idset.ID) int {
 	}
 
 	return -1
+}
+
+// ClosestNodes returns the set of nodes by decreasing distance from this node.
+// The node itself is omitted from the result.
+func (n *node) ClosestNodes() (nodes []idset.IDSet, distances []int) {
+	byDist := map[int]idset.IDSet{}
+	for id, dist := range n.distance {
+		if id == n.id {
+			continue
+		}
+		if ids, ok := byDist[dist]; !ok {
+			byDist[dist] = idset.NewIDSet(id)
+		} else {
+			ids.Add(id)
+		}
+	}
+
+	distances = make([]int, 0, len(byDist))
+	for dist := range byDist {
+		distances = append(distances, dist)
+	}
+	sort.Ints(distances)
+
+	nodes = make([]idset.IDSet, len(distances))
+	for i, dist := range distances {
+		nodes[i] = byDist[dist]
+	}
+
+	return nodes, distances
 }
 
 // MemoryInfo memory info for the node (partial content from the meminfo sysfs entry).
