@@ -1486,6 +1486,10 @@ func (sys *system) discoverPackages() error {
 	sys.packages = make(map[idset.ID]*cpuPackage)
 
 	for _, cpu := range sys.cpus {
+		if !cpu.Online() {
+			continue
+		}
+
 		pkg, found := sys.packages[cpu.pkg]
 		if !found {
 			pkg = &cpuPackage{
