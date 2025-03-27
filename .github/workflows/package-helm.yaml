@@ -25,7 +25,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-     -  name: Import GPG key
+      - name: Import GPG key
         uses: crazy-max/ghaction-import-gpg@v6
         id: import-gpg
         with:
