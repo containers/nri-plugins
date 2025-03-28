@@ -607,3 +607,61 @@ vm-pull-journal() {
     vm-command-q "journalctl $_service $_since" || \
         command-error "failed to pull journal logs (service: ${service:-all}, since: ${since:--}"
 }
+
+fedora-set-kernel-cmdline() {
+    local e2e_defaults="$*"
+    vm-command "mkdir -p /etc/default; touch /etc/default/grub; sed -i '/e2e:fedora-set-kernel-cmdline/d' /etc/default/grub"
+    vm-command "echo 'GRUB_CMDLINE_LINUX_DEFAULT=\"\${GRUB_CMDLINE_LINUX_DEFAULT} ${e2e_defaults}\" # by e2e:fedora-set-kernel-cmdline' >> /etc/default/grub" || {
+        command-error "writing new command line parameters failed"
+    }
+    vm-command "grub2-mkconfig -o /boot/grub2/grub.cfg" || {
+        command-error "updating grub failed"
+    }
+}
+
+ubuntu-set-kernel-cmdline() {
+    local e2e_defaults="$*"
+    vm-command "echo 'GRUB_CMDLINE_LINUX_DEFAULT=\"\${GRUB_CMDLINE_LINUX_DEFAULT} ${e2e_defaults}\"' > /etc/default/grub.d/60-e2e-defaults.cfg" || {
+        command-error "writing new command line parameters failed"
+    }
+    vm-command "update-grub" || {
+        command-error "updating grub failed"
+    }
+}
+
+vm-set-kernel-cmdline() {
+    if [[ "$distro" == *fedora* ]]; then
+        fedora-set-kernel-cmdline "$*"
+    else
+        ubuntu-set-kernel-cmdline "$*"
+    fi
+}
+
+fedora-set-kernel-cmdline() {
+    local e2e_defaults="$*"
+    vm-command "mkdir -p /etc/default; touch /etc/default/grub; sed -i '/e2e:fedora-set-kernel-cmdline/d' /etc/default/grub"
+    vm-command "echo 'GRUB_CMDLINE_LINUX_DEFAULT=\"\${GRUB_CMDLINE_LINUX_DEFAULT} ${e2e_defaults}\" # by e2e:fedora-set-kernel-cmdline' >> /etc/default/grub" || {
+        command-error "writing new command line parameters failed"
+    }
+    vm-command "grub2-mkconfig -o /boot/grub2/grub.cfg" || {
+        command-error "updating grub failed"
+    }
+}
+
+ubuntu-set-kernel-cmdline() {
+    local e2e_defaults="$*"
+    vm-command "echo 'GRUB_CMDLINE_LINUX_DEFAULT=\"\${GRUB_CMDLINE_LINUX_DEFAULT} ${e2e_defaults}\"' > /etc/default/grub.d/60-e2e-defaults.cfg" || {
+        command-error "writing new command line parameters failed"
+    }
+    vm-command "update-grub" || {
+        command-error "updating grub failed"
+    }
+}
+
+vm-set-kernel-cmdline() {
+    if [[ "$distro" == *fedora* ]]; then
+        fedora-set-kernel-cmdline "$*"
+    else
+        ubuntu-set-kernel-cmdline "$*"
+    fi
+}

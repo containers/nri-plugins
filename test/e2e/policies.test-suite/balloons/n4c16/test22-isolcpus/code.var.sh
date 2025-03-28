@@ -16,11 +16,7 @@ cleanup-pods() {
 
 cleanup() {
     cleanup-pods
-    if [[ "$distro" == *fedora* ]]; then
-        fedora-set-kernel-cmdline ""
-    else
-        ubuntu-set-kernel-cmdline ""
-    fi
+    vm-set-kernel-cmdline ""
     reboot-node
     vm-command "grep -v isolcpus /proc/cmdline"
     if [ $? -ne 0 ]; then
@@ -34,11 +30,7 @@ ns=isolcpus
 cleanup-pods
 
 vm-command "grep isolcpus=0,1 /proc/cmdline" || {
-    if [[ "$distro" == *fedora* ]]; then
-        fedora-set-kernel-cmdline "isolcpus=0,1"
-    else
-        ubuntu-set-kernel-cmdline "isolcpus=0,1"
-    fi
+    vm-set-kernel-cmdline "isolcpus=0,1"
     reboot-node
     vm-command "grep isolcpus=0,1 /proc/cmdline" || {
         error "failed to set isolcpus kernel commandline parameter"

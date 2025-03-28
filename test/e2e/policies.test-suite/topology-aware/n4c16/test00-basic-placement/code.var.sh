@@ -9,8 +9,8 @@ vm-command "kubectl delete pods pod0 pod1 pod2 pod3 pod4 pod5 --ignore-not-found
 # This can happen if test08-isolcpus failed and we are re-running
 # the tests from the start.
 vm-command "grep isolcpus /proc/cmdline" && {
-    vm-del-kernel-cmdline-arg "isolcpus=8,9"
-    vm-force-restart
+    vm-set-kernel-cmdline ""
+    timeout=120 vm-reboot
     vm-command "grep isolcpus /proc/cmdline" && {
 	error "failed to clean up isolcpus kernel commandline parameter"
     }
