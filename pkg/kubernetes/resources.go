@@ -179,6 +179,9 @@ func CalculateOomAdjToMemReqEstimates() map[int64]int64 {
 	return adjToReq
 }
 
+// Set memory capacity for OOM adjustment to memory request estimation.
+// Exported to allow testing the estimator code with different memory
+// capacities.
 func SetMemoryCapacity(capacity int64) {
 	if capacity == 0 {
 		panic(fmt.Errorf("failed to set memory capacity, invalid capacity 0"))
