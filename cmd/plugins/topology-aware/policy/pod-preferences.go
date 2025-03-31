@@ -33,14 +33,6 @@ import (
 )
 
 const (
-	// annotation key for opting in to multiple isolated exclusive CPUs per container.
-	keyIsolationPreference = "prefer-isolated-cpus"
-	// annotation key for opting out of exclusive allocation and relaxed topology fitting.
-	keySharedCPUPreference = "prefer-shared-cpus"
-	// annotation key for type of memory to allocate
-	keyMemoryTypePreference = "memory-type"
-	// annotation key for type "cold start" of workloads
-	keyColdStartPreference = "cold-start"
 	// annotation key for reserved pools
 	keyReservedCPUsPreference = "prefer-reserved-cpus"
 	// annotation key for CPU Priority preference
@@ -49,13 +41,13 @@ const (
 	keyHideHyperthreads = "hide-hyperthreads"
 
 	// effective annotation key for isolated CPU preference
-	preferIsolatedCPUsKey = keyIsolationPreference + "." + kubernetes.ResmgrKeyNamespace
+	preferIsolatedCPUsKey = "prefer-isolated-cpus" + "." + kubernetes.ResmgrKeyNamespace
 	// effective annotation key for shared CPU preference
-	preferSharedCPUsKey = keySharedCPUPreference + "." + kubernetes.ResmgrKeyNamespace
+	preferSharedCPUsKey = "prefer-shared-cpus" + "." + kubernetes.ResmgrKeyNamespace
 	// effective annotation key for memory type preference
-	preferMemoryTypeKey = keyMemoryTypePreference + "." + kubernetes.ResmgrKeyNamespace
+	preferMemoryTypeKey = "memory-type" + "." + kubernetes.ResmgrKeyNamespace
 	// effective annotation key for "cold start" preference
-	preferColdStartKey = keyColdStartPreference + "." + kubernetes.ResmgrKeyNamespace
+	preferColdStartKey = "cold-start" + "." + kubernetes.ResmgrKeyNamespace
 	// annotation key for reserved pools
 	preferReservedCPUsKey = keyReservedCPUsPreference + "." + kubernetes.ResmgrKeyNamespace
 	// effective annotation key for CPU priority preference
@@ -104,17 +96,14 @@ const (
 	defaultMemoryType = memoryAll
 )
 
-// isolatedCPUsPreference returns whether isolated CPUs should be preferred for
-// containers that allocate multiple CPUs, and if the container was explicitly
-// annotated with this setting.
-//
-// If the effective annotations are not found, this function falls back to
-// looking for the deprecated syntax by calling podIsolationPreference.
+// isolatedCPUsPreference returns whether isolated CPU allocation is preferred
+// for the given container. If an effective annotation is not found, it uses
+// the global configuration for isolated CPU preference.
 func isolatedCPUsPreference(pod cache.Pod, container cache.Container) (bool, bool) {
 	key := preferIsolatedCPUsKey
 	value, ok := pod.GetEffectiveAnnotation(key, container.GetName())
 	if !ok {
-		return podIsolationPreference(pod, container)
+		return opt.PreferIsolated, false
 	}
 
 	preference, err := strconv.ParseBool(value)
@@ -129,17 +118,14 @@ func isolatedCPUsPreference(pod cache.Pod, container cache.Container) (bool, boo
 	return preference, true
 }
 
-// sharedCPUsPreference returns whether shared CPUs should be preferred for
-// containers otherwise eligible for exclusive allocation, and whether the
-// container was explicitly annotated with this setting.
-//
-// If the effective annotations are not found, this function falls back to
-// looking for the deprecated syntax by calling podSharedCPUPreference.
+// sharedCPUsPreference returns whether shared CPU allocation is preferred for
+// the given container. If an effective annotation is not found, it uses the
+// global configuration for shared CPU preference.
 func sharedCPUsPreference(pod cache.Pod, container cache.Container) (bool, bool) {
 	key := preferSharedCPUsKey
 	value, ok := pod.GetEffectiveAnnotation(key, container.GetName())
 	if !ok {
-		return podSharedCPUPreference(pod, container)
+		return opt.PreferShared, false
 	}
 
 	preference, err := strconv.ParseBool(value)
@@ -198,10 +184,8 @@ func hideHyperthreadsPreference(pod cache.Pod, container cache.Container) bool {
 	return hide
 }
 
-// memoryTypePreference returns what type of memory should be allocated for the container.
-//
-// If the effective annotations are not found, this function falls back to
-// looking for the deprecated syntax by calling podMemoryTypePreference.
+// memoryTypePreference returns what type of memory should be allocated for
+// the container.
 func memoryTypePreference(pod cache.Pod, container cache.Container) memoryType {
 	if container.PreserveMemoryResources() {
 		return memoryPreserve
@@ -209,7 +193,8 @@ func memoryTypePreference(pod cache.Pod, container cache.Container) memoryType {
 	key := preferMemoryTypeKey
 	value, ok := pod.GetEffectiveAnnotation(key, container.GetName())
 	if !ok {
-		return podMemoryTypePreference(pod, container)
+		log.Debug("pod %s has no memory preference annotations", pod.GetName())
+		return memoryUnspec
 	}
 
 	mtype, err := parseMemoryType(value)
@@ -226,20 +211,17 @@ func memoryTypePreference(pod cache.Pod, container cache.Container) memoryType {
 // coldStartPreference figures out 'cold start' preferences for the container, IOW
 // if the container memory should be allocated for an initial 'cold start' period
 // from PMEM, and how long this initial period should be.
-//
-// If the effective annotations are not found, this function falls back to
-// looking for the deprecated syntax by calling podColdStartPreference.
 func coldStartPreference(pod cache.Pod, container cache.Container) (ColdStartPreference, error) {
 	key := preferColdStartKey
 	value, ok := pod.GetEffectiveAnnotation(key, container.GetName())
 	if !ok {
-		return podColdStartPreference(pod, container)
+		return ColdStartPreference{}, nil
 	}
 
 	preference := ColdStartPreference{}
 	if err := yaml.Unmarshal([]byte(value), &preference); err != nil {
 		log.Error("failed to parse cold start preference (%q, %q): %v",
-			keyColdStartPreference, value, err)
+			key, value, err)
 		return ColdStartPreference{}, policyError("invalid cold start preference %q: %v",
 			value, err)
 	}
@@ -255,123 +237,12 @@ func coldStartPreference(pod cache.Pod, container cache.Container) (ColdStartPre
 	return preference, nil
 }
 
-// podIsolationPreference checks if containers explicitly prefers to run on multiple isolated CPUs.
-// The first return value indicates whether the container is isolated or not.
-// The second return value indicates whether that decision was explicit (true) or implicit (false).
-func podIsolationPreference(pod cache.Pod, container cache.Container) (bool, bool) {
-	key := keyIsolationPreference
-	value, ok := pod.GetResmgrAnnotation(key)
-	if !ok {
-		return opt.PreferIsolated, false
-	}
-
-	log.Warn("WARNING: using deprecated annotation %q", key)
-	log.Warn("WARNING: consider using instead")
-	log.Warn("WARNING:     %q, or", preferIsolatedCPUsKey+"/container."+container.GetName())
-	log.Warn("WARNING:     %q", preferIsolatedCPUsKey+"/pod")
-
-	if value == "false" || value == "true" {
-		return (value[0] == 't'), true
-	}
-
-	preferences := map[string]bool{}
-	if err := yaml.Unmarshal([]byte(value), &preferences); err != nil {
-		log.Error("failed to parse isolation preference %s = '%s': %v",
-			keyIsolationPreference, value, err)
-		return opt.PreferIsolated, false
-	}
-
-	name := container.GetName()
-	if pref, ok := preferences[name]; ok {
-		log.Debug("%s per-container isolation preference '%v'", name, pref)
-		return pref, true
-	}
-
-	log.Debug("%s defaults to isolation preference '%v'", name, opt.PreferIsolated)
-	return opt.PreferIsolated, false
-}
-
-// podSharedCPUPreference checks if a container wants to opt-out from exclusive allocation.
-// The first return value indicates if the container prefers to opt-out from
-// exclusive (sliced-off or isolated) CPU allocation even if it was otherwise
-// eligible for it.
-func podSharedCPUPreference(pod cache.Pod, container cache.Container) (bool, bool) {
-	key := keySharedCPUPreference
-	value, ok := pod.GetResmgrAnnotation(key)
-	if !ok {
-		return opt.PreferShared, false
-	}
-
-	log.Warn("WARNING: using deprecated annotation %q", key)
-	log.Warn("WARNING: consider using instead")
-	log.Warn("WARNING:     %q, or", preferSharedCPUsKey+"/container."+container.GetName())
-	log.Warn("WARNING:     %q", preferSharedCPUsKey+"/pod")
-
-	if value == "false" || value == "true" {
-		return value[0] == 't', true
-	}
-
-	preferences := map[string]string{}
-	if err := yaml.Unmarshal([]byte(value), &preferences); err != nil {
-		log.Error("failed to parse shared CPU preference %s = '%s': %v",
-			keySharedCPUPreference, value, err)
-		return opt.PreferShared, false
-	}
-
-	name := container.GetName()
-	pref, ok := preferences[name]
-	if !ok {
-		return opt.PreferShared, false
-	}
-	if pref == "false" || pref == "true" {
-		return pref[0] == 't', true
-	}
-
-	log.Error("invalid shared CPU boolean preference for container %s: %s", name, pref)
-	return opt.PreferShared, false
-}
-
 // ColdStartPreference lists the various ways the container can be configured to trigger
 // cold start. Currently, only timer is supported. If the "duration" is set to a duration
 // greater than 0, cold start is enabled and the DRAM controller is added to the container
 // after the duration has passed.
 type ColdStartPreference struct {
 	Duration metav1.Duration // `json:"duration,omitempty"`
-}
-
-// podColdStartPreference figures out if the container memory should be first allocated from PMEM.
-// It returns the time (in milliseconds) after which DRAM controller should be added to the mix.
-func podColdStartPreference(pod cache.Pod, container cache.Container) (ColdStartPreference, error) {
-	key := keyColdStartPreference
-	value, ok := pod.GetResmgrAnnotation(key)
-	if !ok {
-		return ColdStartPreference{}, nil
-	}
-
-	log.Warn("WARNING: using deprecated annotation %q", key)
-	log.Warn("WARNING: consider using instead")
-	log.Warn("WARNING:     %q, or", preferColdStartKey+"/container."+container.GetName())
-	log.Warn("WARNING:     %q", preferColdStartKey+"/pod")
-
-	preferences := map[string]ColdStartPreference{}
-	if err := yaml.Unmarshal([]byte(value), &preferences); err != nil {
-		log.Error("failed to parse cold start preference %s = '%s': %v",
-			key, value, err)
-		return ColdStartPreference{}, err
-	}
-	name := container.GetName()
-	preference, ok := preferences[name]
-	if !ok {
-		log.Debug("container %s has no entry among cold start preferences", container.PrettyName())
-		return ColdStartPreference{}, nil
-	}
-
-	if preference.Duration.Duration < 0 || time.Duration(preference.Duration.Duration) > time.Hour {
-		// Duration can't be negative. We also reject durations which are longer than one hour.
-		return ColdStartPreference{}, fmt.Errorf("failed to validate cold start timeout %s: value out of scope", preference.Duration.Duration.String())
-	}
-
-	return preference, nil
 }
 
 func checkReservedPoolNamespaces(namespace string) bool {
@@ -542,45 +413,6 @@ func cpuAllocationPreferences(pod cache.Pod, container cache.Container) (int, in
 		}
 		return cores, fraction, preferIsolated && explicitIsolated, cpuNormal, prio
 	}
-}
-
-// podMemoryTypePreference returns what type of memory should be allocated for the container.
-func podMemoryTypePreference(pod cache.Pod, c cache.Container) memoryType {
-	key := keyMemoryTypePreference
-	value, ok := pod.GetResmgrAnnotation(key)
-	if !ok {
-		log.Debug("pod %s has no memory preference annotations", pod.GetName())
-		return memoryUnspec
-	}
-
-	log.Warn("WARNING: using deprecated annotation %q", key)
-	log.Warn("WARNING: consider using instead")
-	log.Warn("WARNING:     %q, or", keyMemoryTypePreference+"/container."+c.GetName())
-	log.Warn("WARNING:     %q", keyMemoryTypePreference+"/pod")
-
-	// Try to parse as per-container preference. Assume common for all containers if fails.
-	pref := ""
-	preferences := map[string]string{}
-	if err := yaml.Unmarshal([]byte(value), &preferences); err == nil {
-		name := c.GetName()
-		p, ok := preferences[name]
-		if !ok {
-			log.Debug("container %s has no entry among memory preferences", c.PrettyName())
-			return memoryUnspec
-		}
-		pref = p
-	} else {
-		pref = value
-	}
-
-	mtype, err := parseMemoryType(pref)
-	if err != nil {
-		log.Error("invalid memory type preference ('%s') in annotation %s: %v",
-			pref, keyMemoryTypePreference, err)
-		return memoryUnspec
-	}
-	log.Debug("container %s has effective memory preference: %s", c.PrettyName(), mtype)
-	return mtype
 }
 
 // memoryAllocationPreference returns the amount and kind of memory to allocate.
