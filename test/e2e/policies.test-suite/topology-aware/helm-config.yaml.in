@@ -12,6 +12,8 @@ config:
   reservedPoolNamespaces:$(for ns in ${RESERVED_POOL_NAMESPACES}; do echo "
     - $ns"; done)
   ")
+  preferSharedCPUs: ${PREFER_SHARED_CPUS:-false}
+  preferIsolatedCPUs: ${PREFER_ISOLATED_CPUS:-false}
 
   instrumentation:
     httpEndpoint: ":8891"
