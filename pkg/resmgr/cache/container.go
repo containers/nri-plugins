@@ -42,6 +42,12 @@ type MatchType int
 const (
 	PrefixMatch MatchType = iota
 	GlobMatch
+
+	MountHints       = "mounts"
+	DeviceHints      = "devices"
+	PodResourceHints = "pod-resources"
+	AllHints         = "all"
+	NoHints          = "none"
 )
 
 type PathList struct {
@@ -62,29 +68,34 @@ func (t *MatchType) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (c *container) getAllowDenyPathList(typeStr string) (*PathList, bool, error) {
-	var hints string
-	var v PathList
-	var ok bool
+func (c *container) getAllowDenyPathList(typeStr string) *PathList {
+	var (
+		key   = typeStr + "." + TopologyHintsKey
+		value string
+		list  PathList
+		ok    bool
+	)
 
-	if hints, ok = c.GetEffectiveAnnotation(typeStr + "." + TopologyHintsKey); !ok {
-		log.Debug("Cannot get %s hints for %s", typeStr, c.GetName())
-		return nil, false, nil
+	if value, ok = c.GetEffectiveAnnotation(key); !ok {
+		log.Info("no hint %s-list annotation (%s) for %s", typeStr, key, c.PrettyName())
+		return nil
 	}
 
-	if err := yaml.Unmarshal([]byte(hints), &v); err != nil {
-		log.Debug("Error (%v) when trying to parse \"%s\"", err, hints)
-		return nil, false, err
+	if err := yaml.Unmarshal([]byte(value), &list); err != nil {
+		log.Error("failed to parse hint %s-list (%s) for %s: %v", typeStr, key, c.PrettyName(), err)
+		return nil
 	}
 
-	return &v, true, nil
+	log.Debug("got hint %s-list for %s: %v", typeStr, c.PrettyName(), list)
+
+	return &list
 }
 
-func (c *container) getAllowPathList() (*PathList, bool, error) {
+func (c *container) getAllowPathList() *PathList {
 	return c.getAllowDenyPathList("allow")
 }
 
-func (c *container) getDenyPathList() (*PathList, bool, error) {
+func (c *container) getDenyPathList() *PathList {
 	return c.getAllowDenyPathList("deny")
 }
 
@@ -181,48 +192,52 @@ func checkAllowedAndDeniedPaths(hostPath string, allowPathList, denyPathList *Pa
 
 func (c *container) generateTopologyHints() {
 	var (
-		mountHints  = true
-		deviceHints = true
+		mountHints       = true
+		deviceHints      = true
+		podResourceHints = true
 	)
 
 	if preference, ok := c.GetEffectiveAnnotation(TopologyHintsKey); ok {
 		if genHints, err := strconv.ParseBool(preference); err == nil {
 			if !genHints {
-				log.Info("automatic topology hint generation disabled for %q", c.PrettyName)
+				log.Info("%s: automatic topology hint generation disabled", c.PrettyName())
 				return
 			}
 		} else {
+			prefList := strings.Split(preference, ",")
+			if len(prefList) < 2 {
+				prefList = []string{preference}
+			}
+
 			mountHints = false
 			deviceHints = false
-			switch preference {
-			case "devices", "devs":
-				deviceHints = true
-			case "mounts":
-				mountHints = true
-			case "enabled", "true", "all":
-				mountHints = true
-				deviceHints = true
-			case "disabled", "false", "none":
-			default:
-				log.Error("ignoring invalid annotation '%s=%s': %v", TopologyHintsKey, preference, err)
+			podResourceHints = false
+
+			for _, pref := range prefList {
+				switch pref {
+				case DeviceHints:
+					deviceHints = true
+				case MountHints:
+					mountHints = true
+				case PodResourceHints:
+					podResourceHints = true
+				case AllHints:
+					mountHints = true
+					deviceHints = true
+					podResourceHints = true
+				case NoHints:
+					log.Info("%s: automatic topology hint generation disabled", c.PrettyName())
+					return
+				default:
+					log.Error("%s: invalid preference %s (annotation '%s=%s'): ignoring it",
+						c.PrettyName(), pref, TopologyHintsKey, preference)
+				}
 			}
 		}
 	}
 
-	allowPathList, ok, err := c.getAllowPathList()
-	if ok {
-		// Ignore any errors as that indicates that there were no hints specified
-		if err == nil {
-			log.Debug("Allow hints %v", allowPathList)
-		}
-	}
-
-	denyPathList, ok, err := c.getDenyPathList()
-	if ok {
-		if err == nil {
-			log.Debug("Deny hints %v", denyPathList)
-		}
-	}
+	allowPathList := c.getAllowPathList()
+	denyPathList := c.getDenyPathList()
 
 	if mountHints {
 		for _, m := range c.Ctr.GetMounts() {
@@ -243,7 +258,11 @@ func (c *container) generateTopologyHints() {
 				}
 			}
 		}
+	} else {
+		log.Info("automatic topology hint generation disabled for devices")
+	}
 
+	if podResourceHints {
 		checkDenied := func(path string) bool {
 			return checkAllowedAndDeniedPaths(path, allowPathList, denyPathList)
 		}
@@ -253,9 +272,8 @@ func (c *container) generateTopologyHints() {
 			c.TopologyHints = topology.MergeTopologyHints(c.TopologyHints, hints)
 		}
 	} else {
-		log.Info("automatic topology hint generation disabled for devices")
+		log.Info("automatic topology hint generation disabled for pod resources")
 	}
-
 }
 
 func isReadOnlyMount(m *nri.Mount) bool {
