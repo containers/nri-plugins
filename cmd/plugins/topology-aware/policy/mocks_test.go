@@ -606,7 +606,7 @@ func (m *mockPod) GetResmgrLabel(string) (string, bool) {
 	panic("unimplemented")
 }
 func (m *mockPod) GetResmgrAnnotation(key string) (string, bool) {
-	if key == keyColdStartPreference && len(m.coldStartContainerName) > 0 {
+	if key == preferColdStartKey && len(m.coldStartContainerName) > 0 {
 		return m.coldStartContainerName + ": { duration: " + m.coldStartTimeout.String() + " }", true
 	}
 	return m.returnValue1FotGetResmgrAnnotation, m.returnValue2FotGetResmgrAnnotation
