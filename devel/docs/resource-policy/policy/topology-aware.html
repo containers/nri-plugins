@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.8.0-76-g8de4ff12 documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.8.0-78-g2a300cb4 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=6b6f6c39"></script>
+        <script src="../../../_static/documentation_options.js?v=1c1fd761"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -68,7 +68,6 @@
 <li class="toctree-l4"><a class="reference internal" href="#reserved-pool-namespaces">Reserved pool namespaces</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#reserved-cpu-annotations">Reserved CPU annotations</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#controlling-topology-hints-via-annotations">Controlling Topology Hints Via Annotations</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#using-pod-resource-api-for-extra-topology-hints">Using Pod Resource API for Extra Topology Hints</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#container-affinity-and-anti-affinity">Container Affinity and Anti-Affinity</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#metrics-and-debugging">Metrics and Debugging</a></li>
 </ul>
@@ -623,53 +622,93 @@ the ReservedResources configuration option in the policy section.</p>
 </section>
 <section id="controlling-topology-hints-via-annotations">
 <h2>Controlling Topology Hints Via Annotations<a class="headerlink" href="#controlling-topology-hints-via-annotations" title="Link to this heading"></a></h2>
-<p>User is able mark certain pods and containers to have allowed or denied
-paths for mounts or devices. What this means is that when the system
-is generating topology hints, it will consult this allowed / denied path
-list to determine what hints are created. The deny path list is checked
-first and then the allowed path list. This means that you can deny all
-the mount/device paths and then allow only the needed ones for example.
-User can either set the path with “prefix” (this is the default) or with
-“glob” type. The “prefix” type means that the prefix of the mount/device
-path is checked for matches. The “glob” type means that user is able to
-put wildcards to the matched paths.</p>
+<p>It is possible to control whether and what kind of topology hints are
+generated using extra pod annotations. By default hints are generated
+from mounts and devices injected into the container. If pod resource API
+queries are enabled, query replies are also used for hint generation.</p>
+<section id="enabling-or-disabling-selected-types-of-topology-hints">
+<h3>Enabling Or Disabling Selected Types of Topology Hints<a class="headerlink" href="#enabling-or-disabling-selected-types-of-topology-hints" title="Link to this heading"></a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">topologyhints.resource-policy.nri.io</span></code> annotation key can be used
+to enable or disable topology hint generation for one or more containers
+altogether, or selectively for mounts, devices, and pod resources types.
+More than one type can be specified as a comma-separated list. Additionally,
+the <code class="docutils literal notranslate"><span class="pre">all</span></code> and <code class="docutils literal notranslate"><span class="pre">none</span></code> types are recognized to mean all or none of these
+types. If no hint type annotations are present, all types of hints are
+enabled.</p>
 <p>For example:</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">allow.topologyhints.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|+</span>
-<span class="w">      </span><span class="no">type: prefix</span>
-<span class="w">      </span><span class="no">paths:</span>
-<span class="w">        </span><span class="no">- /foo/bar/whitelisted-path1</span>
-<span class="w">        </span><span class="no">- /xy-zy/another-whitelisted-path1</span>
-<span class="w">    </span><span class="nt">allow.topologyhints.resource-policy.nri.io/container.pod0c0</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|+</span>
-<span class="w">      </span><span class="no">type: glob</span>
-<span class="w">      </span><span class="no">paths:</span>
-<span class="w">        </span><span class="no">- /whitelisted-path*2</span>
-<span class="w">        </span><span class="no">- /xy-zy/another-whitelisted-path2</span>
-<span class="w">    </span><span class="nt">deny.topologyhints.resource-policy.nri.io</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|+</span>
-<span class="w">      </span><span class="no">type: prefix</span>
-<span class="w">      </span><span class="no">paths:</span>
-<span class="w">        </span><span class="no">- /foo/bar/blacklisted-path3</span>
+<span class="w">    </span><span class="c1"># disable topology hint generation for all containers by default</span>
+<span class="w">    </span><span class="nt">topologyhints.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">none</span>
+<span class="w">    </span><span class="c1"># enable mount-based hints for the &#39;diskwriter&#39; container</span>
+<span class="w">    </span><span class="nt">topologyhints.resource-policy.nri.io/container.diskwriter</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mounts</span>
+<span class="w">    </span><span class="c1"># enable device-based hints for the &#39;videoencoder&#39; container</span>
+<span class="w">    </span><span class="nt">topologyhints.resource-policy.nri.io/container.diskwriter</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">devices</span>
+<span class="w">    </span><span class="c1"># enable pod resource-based hints for the &#39;dpdk&#39; container</span>
+<span class="w">    </span><span class="nt">topologyhints.resource-policy.nri.io/container.dpdk</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pod-resources</span>
+<span class="w">    </span><span class="c1"># enable device and pod resource-based hints for &#39;networkpump&#39; container</span>
+<span class="w">    </span><span class="nt">topologyhints.resource-policy.nri.io/container.networkpump</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">devices,pod-resources</span>
+</pre></div>
+</div>
+<p>Note that for pod resource based hints, you also need to enable pod
+resource API queries using the corresponding configuration option, like
+this:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">config.nri/v1alpha1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">TopologyAwarePolicy</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">default</span>
+<span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">...</span>
+<span class="nt">spec</span><span class="p">:</span>
+<span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">...</span>
+<span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">agent</span><span class="p p-Indicator">:</span>
+<span class="w">    </span><span class="nt">podResourceAPI</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</pre></div>
+</div>
+</section>
+<section id="controlling-topology-hints-by-path">
+<h3>Controlling Topology Hints by Path<a class="headerlink" href="#controlling-topology-hints-by-path" title="Link to this heading"></a></h3>
+<p>It is also possible to enable and disable topology hint generation based
+on mount or device path, using <code class="docutils literal notranslate"><span class="pre">allow</span></code> and <code class="docutils literal notranslate"><span class="pre">deny</span></code> lists. When the policy
+is generating topology hints, it consults these lists to decide whether
+hints for a particular mount or device are enabled. The <code class="docutils literal notranslate"><span class="pre">deny</span></code> list is
+consulted first, followed by the <code class="docutils literal notranslate"><span class="pre">allow</span></code> list. A common usage pattern is
+to deny all paths, then allow only selected ones.</p>
+<p>Two types of <code class="docutils literal notranslate"><span class="pre">allow</span></code> and <code class="docutils literal notranslate"><span class="pre">deny</span></code> lists are supported: <code class="docutils literal notranslate"><span class="pre">glob</span></code> and <code class="docutils literal notranslate"><span class="pre">prefix</span></code>.
+A path matches a prefix list if it starts with any entry in the list. A
+path matches a glob list, where entries include shell-style path globbing
+with wildcards, it the full path matches any glob pattern in the list.</p>
+<p>For example:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="c1"># Deny all hints by default.</span>
 <span class="w">    </span><span class="nt">deny.topologyhints.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|+</span>
-<span class="w">      </span><span class="no">type: glob</span>
-<span class="w">      </span><span class="no">paths:</span>
-<span class="w">        </span><span class="no">- /blacklisted-path*4</span>
-<span class="w">    </span><span class="nt">deny.topologyhints.resource-policy.nri.io/container.pod0c1</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|+</span>
 <span class="w">      </span><span class="no">type: prefix</span>
 <span class="w">      </span><span class="no">paths:</span>
-<span class="w">        </span><span class="no">- /foo/bar/blacklisted-path5</span>
-<span class="w">        </span><span class="no">- /xy-zy/another-blacklisted-path5</span>
+<span class="w">        </span><span class="no">- /</span>
+<span class="w">    </span><span class="c1"># Allow hints from /sys/devices/pci*/*d7:00.0/*:d8:00.1 for container ctr1</span>
+<span class="w">    </span><span class="nt">allow.topologyhints.resource-policy.nri.io/container.ctr1</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|+</span>
+<span class="w">      </span><span class="no">type: glob</span>
+<span class="w">      </span><span class="no">paths:</span>
+<span class="w">        </span><span class="no">- /sys/devices/pci*/*d7:00.0/*:d8:00.*</span>
+<span class="w">    </span><span class="c1"># Allow hints from a special path (which usually should resolve to a block</span>
+<span class="w">    </span><span class="c1"># I/O backing device for meaningful hint generation) for ctr2</span>
+<span class="w">    </span><span class="nt">allow.topologyhints.resource-policy.nri.io/container.ctr2</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|+</span>
+<span class="w">      </span><span class="no">type: prefix</span>
+<span class="w">      </span><span class="no">paths:</span>
+<span class="w">        </span><span class="no">- /storage/dedicated-local-volume</span>
 </pre></div>
 </div>
 </section>
 <section id="using-pod-resource-api-for-extra-topology-hints">
-<h2>Using Pod Resource API for Extra Topology Hints<a class="headerlink" href="#using-pod-resource-api-for-extra-topology-hints" title="Link to this heading"></a></h2>
+<h3>Using Pod Resource API for Extra Topology Hints<a class="headerlink" href="#using-pod-resource-api-for-extra-topology-hints" title="Link to this heading"></a></h3>
 <p>If access to the <code class="docutils literal notranslate"><span class="pre">kubelet</span></code>’s <code class="docutils literal notranslate"><span class="pre">Pod</span> <span class="pre">Resource</span> <span class="pre">API</span></code> is enabled in the
 <a class="reference internal" href="../developers-guide/architecture.html#node-agent"><span class="std std-ref">Node Agent’s</span></a> configuration,
-it is automatically used to generate per-container topology hints when a
-device with locality to a NUMA node is advertised by the API. Annotated allow
-and deny lists can be used to selectively disable or enable per-resource hints,
-using <code class="docutils literal notranslate"><span class="pre">podresapi:$RESOURCE_NAME</span></code> as the path.</p>
+and pod resource-based hints are not explicitly disabled by annotation, per-
+container topology hints are automatically generated whenever a device with
+locality to a NUMA node is advertised by the API. Annotated allow and deny
+lists can be used to selectively disable or enable per-resource hints, using
+<code class="docutils literal notranslate"><span class="pre">podresapi:$RESOURCE_NAME</span></code> as the path for the resource.</p>
+</section>
 </section>
 <section id="container-affinity-and-anti-affinity">
 <h2>Container Affinity and Anti-Affinity<a class="headerlink" href="#container-affinity-and-anti-affinity" title="Link to this heading"></a></h2>
