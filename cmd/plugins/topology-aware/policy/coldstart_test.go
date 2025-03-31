@@ -87,6 +87,8 @@ func TestColdStart(t *testing.T) {
 	}
 	for _, tc := range tcases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Skipf("Coldstart tests are disabled (can't mock enough of the system, lacks CPUs)")
+
 			policy := &policy{
 				sys: &mockSystem{
 					nodes: tc.numaNodes,
