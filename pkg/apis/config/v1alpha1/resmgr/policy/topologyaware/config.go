@@ -72,13 +72,13 @@ type Config struct {
 	// Guaranteed QoS-class containers that request 1 full CPU.
 	// +kubebuilder:default=true
 	//+optional
-	PreferIsolated bool `json:"preferIsolatedCPUs,omitempty"`
+	PreferIsolated *bool `json:"preferIsolatedCPUs,omitempty"`
 	// PreferShared controls whether exclusive CPU allocation is considered for
 	// all eligible containers. If set to trues, exclusive CPU allocation is only
 	// considered for eligible containers which are explicitly annotated to opt
 	// out from shared allocation.
 	// +optional
-	PreferShared bool `json:"preferSharedCPUs,omitempty"`
+	PreferShared *bool `json:"preferSharedCPUs,omitempty"`
 	// ColocatePods controls whether an attempt is made to allocate containers
 	// within the same pod close to each other (to the same topology zone).
 	// +optional
