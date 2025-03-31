@@ -445,56 +445,100 @@ metadata:
 
 ## Controlling Topology Hints Via Annotations
 
-User is able mark certain pods and containers to have allowed or denied
-paths for mounts or devices. What this means is that when the system
-is generating topology hints, it will consult this allowed / denied path
-list to determine what hints are created. The deny path list is checked
-first and then the allowed path list. This means that you can deny all
-the mount/device paths and then allow only the needed ones for example.
-User can either set the path with "prefix" (this is the default) or with
-"glob" type. The "prefix" type means that the prefix of the mount/device
-path is checked for matches. The "glob" type means that user is able to
-put wildcards to the matched paths.
+It is possible to control whether and what kind of topology hints are
+generated using extra pod annotations. By default hints are generated
+from mounts and devices injected into the container. If pod resource API
+queries are enabled, query replies are also used for hint generation.
+
+### Enabling Or Disabling Selected Types of Topology Hints
+
+The `topologyhints.resource-policy.nri.io` annotation key can be used
+to enable or disable topology hint generation for one or more containers
+altogether, or selectively for mounts, devices, and pod resources types.
+More than one type can be specified as a comma-separated list. Additionally,
+the `all` and `none` types are recognized to mean all or none of these
+types. If no hint type annotations are present, all types of hints are
+enabled.
 
 For example:
 
 ```yaml
 metadata:
   annotations:
-    allow.topologyhints.resource-policy.nri.io/pod: |+
-      type: prefix
-      paths:
-        - /foo/bar/whitelisted-path1
-        - /xy-zy/another-whitelisted-path1
-    allow.topologyhints.resource-policy.nri.io/container.pod0c0: |+
-      type: glob
-      paths:
-        - /whitelisted-path*2
-        - /xy-zy/another-whitelisted-path2
-    deny.topologyhints.resource-policy.nri.io: |+
-      type: prefix
-      paths:
-        - /foo/bar/blacklisted-path3
-    deny.topologyhints.resource-policy.nri.io/pod: |+
-      type: glob
-      paths:
-        - /blacklisted-path*4
-    deny.topologyhints.resource-policy.nri.io/container.pod0c1: |+
-      type: prefix
-      paths:
-        - /foo/bar/blacklisted-path5
-        - /xy-zy/another-blacklisted-path5
+    # disable topology hint generation for all containers by default
+    topologyhints.resource-policy.nri.io/pod: none
+    # enable mount-based hints for the 'diskwriter' container
+    topologyhints.resource-policy.nri.io/container.diskwriter: mounts
+    # enable device-based hints for the 'videoencoder' container
+    topologyhints.resource-policy.nri.io/container.diskwriter: devices
+    # enable pod resource-based hints for the 'dpdk' container
+    topologyhints.resource-policy.nri.io/container.dpdk: pod-resources
+    # enable device and pod resource-based hints for 'networkpump' container
+    topologyhints.resource-policy.nri.io/container.networkpump: devices,pod-resources
 ```
 
-## Using Pod Resource API for Extra Topology Hints
+Note that for pod resource based hints, you also need to enable pod
+resource API queries using the corresponding configuration option, like
+this:
+
+```yaml
+apiVersion: config.nri/v1alpha1
+kind: TopologyAwarePolicy
+metadata:
+  name: default
+  ...
+spec:
+  ...
+  agent:
+    podResourceAPI: true
+```
+
+### Controlling Topology Hints by Path
+
+It is also possible to enable and disable topology hint generation based
+on mount or device path, using `allow` and `deny` lists. When the policy
+is generating topology hints, it consults these lists to decide whether
+hints for a particular mount or device are enabled. The `deny` list is
+consulted first, followed by the `allow` list. A common usage pattern is
+to deny all paths, then allow only selected ones.
+
+Two types of `allow` and `deny` lists are supported: `glob` and `prefix`.
+A path matches a prefix list if it starts with any entry in the list. A
+path matches a glob list, where entries include shell-style path globbing
+with wildcards, it the full path matches any glob pattern in the list.
+
+For example:
+
+```yaml
+metadata:
+  annotations:
+    # Deny all hints by default.
+    deny.topologyhints.resource-policy.nri.io/pod: |+
+      type: prefix
+      paths:
+        - /
+    # Allow hints from /sys/devices/pci*/*d7:00.0/*:d8:00.1 for container ctr1
+    allow.topologyhints.resource-policy.nri.io/container.ctr1: |+
+      type: glob
+      paths:
+        - /sys/devices/pci*/*d7:00.0/*:d8:00.*
+    # Allow hints from a special path (which usually should resolve to a block
+    # I/O backing device for meaningful hint generation) for ctr2
+    allow.topologyhints.resource-policy.nri.io/container.ctr2: |+
+      type: prefix
+      paths:
+        - /storage/dedicated-local-volume
+```
+
+### Using Pod Resource API for Extra Topology Hints
 
 If access to the `kubelet`'s `Pod Resource API` is enabled in the
 [Node Agent's](../developers-guide/architecture.md#node-agent) configuration,
-it is automatically used to generate per-container topology hints when a
-device with locality to a NUMA node is advertised by the API. Annotated allow
-and deny lists can be used to selectively disable or enable per-resource hints,
-using `podresapi:$RESOURCE_NAME` as the path.
-
+and pod resource-based hints are not explicitly disabled by annotation, per-
+container topology hints are automatically generated whenever a device with
+locality to a NUMA node is advertised by the API. Annotated allow and deny
+lists can be used to selectively disable or enable per-resource hints, using
+`podresapi:$RESOURCE_NAME` as the path for the resource.
 
 ## Container Affinity and Anti-Affinity
 
