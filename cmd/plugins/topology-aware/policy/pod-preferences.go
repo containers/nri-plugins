@@ -56,6 +56,17 @@ const (
 	hideHyperthreadsKey = keyHideHyperthreads + "." + kubernetes.ResmgrKeyNamespace
 )
 
+type prefKind int
+
+const (
+	// prefImplicit denotes an implicit default preference
+	prefImplicit prefKind = iota
+	// prefConfig denotes a preference from the global configuration
+	prefConfig
+	// prefAnnotated denotes an explicitly annotated preference
+	prefAnnotated
+)
+
 // cpuClass is a type of CPU to allocate
 type cpuClass int
 
@@ -96,48 +107,57 @@ const (
 	defaultMemoryType = memoryAll
 )
 
+// boolConfigPreference returns the configured boolean preference and
+// its preference kind (configured or implicit).
+func boolConfigPreference(ptr *bool) (bool, prefKind) {
+	if ptr != nil {
+		return *ptr, prefConfig
+	}
+	return false, prefImplicit
+}
+
 // isolatedCPUsPreference returns whether isolated CPU allocation is preferred
 // for the given container. If an effective annotation is not found, it uses
 // the global configuration for isolated CPU preference.
-func isolatedCPUsPreference(pod cache.Pod, container cache.Container) (bool, bool) {
+func isolatedCPUsPreference(pod cache.Pod, container cache.Container) (bool, prefKind) {
 	key := preferIsolatedCPUsKey
 	value, ok := pod.GetEffectiveAnnotation(key, container.GetName())
 	if !ok {
-		return opt.PreferIsolated, false
+		return boolConfigPreference(opt.PreferIsolated)
 	}
 
 	preference, err := strconv.ParseBool(value)
 	if err != nil {
 		log.Error("invalid CPU isolation preference annotation (%q, %q): %v",
 			key, value, err)
-		return opt.PreferIsolated, false
+		return boolConfigPreference(opt.PreferIsolated)
 	}
 
 	log.Debug("%s: effective CPU isolation preference %v", container.PrettyName(), preference)
 
-	return preference, true
+	return preference, prefAnnotated
 }
 
 // sharedCPUsPreference returns whether shared CPU allocation is preferred for
 // the given container. If an effective annotation is not found, it uses the
 // global configuration for shared CPU preference.
-func sharedCPUsPreference(pod cache.Pod, container cache.Container) (bool, bool) {
+func sharedCPUsPreference(pod cache.Pod, container cache.Container) (bool, prefKind) {
 	key := preferSharedCPUsKey
 	value, ok := pod.GetEffectiveAnnotation(key, container.GetName())
 	if !ok {
-		return opt.PreferShared, false
+		return boolConfigPreference(opt.PreferShared)
 	}
 
 	preference, err := strconv.ParseBool(value)
 	if err != nil {
 		log.Error("invalid shared CPU preference annotation (%q, %q): %v",
 			key, value, err)
-		return opt.PreferShared, false
+		return boolConfigPreference(opt.PreferShared)
 	}
 
 	log.Debug("%s: effective shared CPU preference %v", container.PrettyName(), preference)
 
-	return preference, true
+	return preference, prefAnnotated
 }
 
 // cpuPrioPreference returns the CPU priority preference for the given container
@@ -376,42 +396,33 @@ func cpuAllocationPreferences(pod cache.Pod, container cache.Container) (int, in
 	// complex case: Guaranteed QoS class containers
 	cores := fraction / 1000
 	fraction = fraction % 1000
-	preferIsolated, explicitIsolated := isolatedCPUsPreference(pod, container)
-	preferShared, explicitShared := sharedCPUsPreference(pod, container)
+	preferIsolated, isolPrefKind := isolatedCPUsPreference(pod, container)
+	preferShared, sharedPrefKind := sharedCPUsPreference(pod, container)
 	prio = cpuPrioPreference(pod, container, defaultPrio) // ignored for fractional allocations
 
 	switch {
-	// sub-core CPU request
-	case cores == 0:
+	case cores == 0: // sub-core CPU request
 		return 0, fraction, false, cpuNormal, prio
-		// 1 <= CPU request < 2
-	case cores < 2:
-		// fractional allocation, potentially mixed
-		if fraction > 0 {
-			if preferShared {
-				return 0, 1000*cores + fraction, false, cpuNormal, prio
-			}
-			return cores, fraction, preferIsolated, cpuNormal, prio
-		}
-		// non-fractional allocation
-		if preferShared && explicitShared {
+	case cores < 2: // 1 <= CPU request < 2
+		if preferShared {
 			return 0, 1000*cores + fraction, false, cpuNormal, prio
 		}
+		// potentially mixed allocation (1 core + some fraction)
 		return cores, fraction, preferIsolated, cpuNormal, prio
-		// CPU request >= 2
-	default:
+	default: // CPU request >= 2
 		// fractional allocation, only mixed if explicitly annotated as unshared
 		if fraction > 0 {
-			if !preferShared && explicitShared {
-				return cores, fraction, preferIsolated && explicitIsolated, cpuNormal, prio
+			if !preferShared && sharedPrefKind == prefAnnotated {
+				return cores, fraction, preferIsolated, cpuNormal, prio
 			}
 			return 0, 1000*cores + fraction, false, cpuNormal, prio
 		}
 		// non-fractional allocation
-		if preferShared && explicitShared {
+		if preferShared {
 			return 0, 1000 * cores, false, cpuNormal, prio
 		}
-		return cores, fraction, preferIsolated && explicitIsolated, cpuNormal, prio
+		// for multiple cores, isolated preference must be explicitly annotated
+		return cores, 0, preferIsolated && isolPrefKind == prefAnnotated, cpuNormal, prio
 	}
 }
 
