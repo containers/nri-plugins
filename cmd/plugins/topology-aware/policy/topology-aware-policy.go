@@ -583,7 +583,7 @@ func (p *policy) checkConstraints() error {
 		from := p.allowed.Difference(p.isolated)
 		cset, err := p.cpuAllocator.AllocateCpus(&from, p.reserveCnt, normalPrio.Option())
 		if err != nil {
-			log.Fatal("cannot reserve %dm CPUs for ReservedResources from AvailableResources: %s", qty.MilliValue(), err)
+			return policyError("cannot reserve %dm CPUs for ReservedResources from AvailableResources: %s", qty.MilliValue(), err)
 		}
 		p.reserved = cset
 	}
