@@ -517,17 +517,17 @@ metadata:
       type: prefix
       paths:
         - /
-    # Allow hints from /sys/devices/pci*/*d7:00.0/*:d8:00.1 for container ctr1
+    # Allow hints from /sys/devices/pci*/*d7:00.0/*:d8:00.1 for container ctr1.
     allow.topologyhints.resource-policy.nri.io/container.ctr1: |+
       type: glob
       paths:
         - /sys/devices/pci*/*d7:00.0/*:d8:00.*
-    # Allow hints from a special path (which usually should resolve to a block
+    # Allow hints for local NVME block devices.
     # I/O backing device for meaningful hint generation) for ctr2
     allow.topologyhints.resource-policy.nri.io/container.ctr2: |+
       type: prefix
       paths:
-        - /storage/dedicated-local-volume
+        - /dev/nvme
 ```
 
 ### Using Pod Resource API for Extra Topology Hints
