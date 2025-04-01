@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.8.0-81-g8a14e164 documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.8.0-82-ge402422f documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=f7b09fe2"></script>
+        <script src="../../../_static/documentation_options.js?v=3003dac9"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -685,17 +685,17 @@ with wildcards, it the full path matches any glob pattern in the list.</p>
 <span class="w">      </span><span class="no">type: prefix</span>
 <span class="w">      </span><span class="no">paths:</span>
 <span class="w">        </span><span class="no">- /</span>
-<span class="w">    </span><span class="c1"># Allow hints from /sys/devices/pci*/*d7:00.0/*:d8:00.1 for container ctr1</span>
+<span class="w">    </span><span class="c1"># Allow hints from /sys/devices/pci*/*d7:00.0/*:d8:00.1 for container ctr1.</span>
 <span class="w">    </span><span class="nt">allow.topologyhints.resource-policy.nri.io/container.ctr1</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|+</span>
 <span class="w">      </span><span class="no">type: glob</span>
 <span class="w">      </span><span class="no">paths:</span>
 <span class="w">        </span><span class="no">- /sys/devices/pci*/*d7:00.0/*:d8:00.*</span>
-<span class="w">    </span><span class="c1"># Allow hints from a special path (which usually should resolve to a block</span>
+<span class="w">    </span><span class="c1"># Allow hints for local NVME block devices.</span>
 <span class="w">    </span><span class="c1"># I/O backing device for meaningful hint generation) for ctr2</span>
 <span class="w">    </span><span class="nt">allow.topologyhints.resource-policy.nri.io/container.ctr2</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|+</span>
 <span class="w">      </span><span class="no">type: prefix</span>
 <span class="w">      </span><span class="no">paths:</span>
-<span class="w">        </span><span class="no">- /storage/dedicated-local-volume</span>
+<span class="w">        </span><span class="no">- /dev/nvme</span>
 </pre></div>
 </div>
 </section>
