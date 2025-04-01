@@ -53,7 +53,7 @@ jobs:
 
       - name: Package Stable Helm Charts
         run: |
-          find "$CHARTS_DIR" -name values.yaml | xargs -I '{}' \do
+          find "$CHARTS_DIR" -name values.yaml | xargs -I '{}' \
               sed -e s"/pullPolicy:.*/pullPolicy: IfNotPresent/" -i '{}'
           for chart in "$CHARTS_DIR"/*; do
               echo ${{ secrets.BOT_PASSPHRASE }} | \
