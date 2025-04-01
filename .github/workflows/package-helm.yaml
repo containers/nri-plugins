@@ -53,16 +53,19 @@ jobs:
 
       - name: Package Stable Helm Charts
         run: |
-          find "$CHARTS_DIR" -name values.yaml | xargs -I '{}' \
+          find "$CHARTS_DIR" -name values.yaml | xargs -I '{}' \do
               sed -e s"/pullPolicy:.*/pullPolicy: IfNotPresent/" -i '{}'
-          echo ${{ secrets.BOT_PASSPHRASE }} | helm package \
-            --sign \
-            --key ${{ steps.import-gpg.outputs.email }} \
-            --keyring ~/.gnupg/secring.gpg \
-            --version "$GITHUB_REF_NAME" \
-            --app-version "$GITHUB_REF_NAME" \
-            "$CHARTS_DIR"/* \
-            --passphrase-file "-"
+          for chart in "$CHARTS_DIR"/*; do
+              echo ${{ secrets.BOT_PASSPHRASE }} | \
+                helm package \
+                  --sign \
+                  --key ${{ steps.import-gpg.outputs.email }} \
+                  --keyring ~/.gnupg/secring.gpg \
+                  --version "$GITHUB_REF_NAME" \
+                  --app-version "$GITHUB_REF_NAME" \
+                  --passphrase-file "-" \
+                  $chart;
+          done
           find . -name '*.tgz' -print | while read SRC_FILE; do
             DEST_FILE=$(echo $SRC_FILE | sed 's/v/helm-chart-v/g')
             mv $SRC_FILE $DEST_FILE
