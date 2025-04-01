@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Helm &mdash; NRI Plugins v0.8.0-82-ge402422f documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=3003dac9"></script>
+        <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link rel="next" title="Balloons Policy Plugin" href="balloons.html" />
+    <link rel="prev" title="Deployment" href="../index.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            NRI Plugins
+          </a>
+              <div class="version">
+                v0.8.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../resource-policy/index.html">Resource Policy Plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../memory/index.html">Memory plugins</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../index.html">Deployment</a><ul class="current">
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Helm</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#stable-helm-charts">Stable Helm Charts</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#unstable-helm-charts">Unstable Helm Charts</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#discovering-unstable-helm-charts">Discovering Unstable Helm Charts</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#using-unstable-helm-charts">Using Unstable Helm Charts</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../operator/index.html">Operator</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/containers/nri-plugins">Project GitHub repository</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">NRI Plugins</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Deployment</a></li>
+      <li class="breadcrumb-item active">Helm</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../../_sources/docs/deployment/helm/index.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="helm">
+<h1>Helm<a class="headerlink" href="#helm" title="Link to this heading"></a></h1>
+<section id="stable-helm-charts">
+<h2>Stable Helm Charts<a class="headerlink" href="#stable-helm-charts" title="Link to this heading"></a></h2>
+<p>All the available charts can be found in <a class="reference external" href="https://artifacthub.io/packages/search?ts_query_web=nri&amp;amp;verified_publisher=true&amp;amp;official=true&amp;amp;sort=relevance&amp;amp;page=1">artifacthub.io</a>.</p>
+<p><strong>NOTE:</strong> NRI-plugins Helm installation has been successfully verified in both local clusters and major Cloud Providers’ managed clusters, including:</p>
+<ul class="simple">
+<li><p>AWS EKS</p>
+<ul>
+<li><p>kubernetes version: 1.28.x</p></li>
+<li><p>containerd version: 1.7</p></li>
+<li><p>node image: Amazon Linux 2, Ubuntu 20.04,</p></li>
+</ul>
+</li>
+<li><p>Google GKE</p>
+<ul>
+<li><p>kubernetes version: 1.28.x</p></li>
+<li><p>containerd version: 1.7</p></li>
+<li><p>node image: Container-Optimized OS from Google (COS), Ubuntu 22.04</p></li>
+</ul>
+</li>
+<li><p>Azure Kubernetes Service</p>
+<ul>
+<li><p>kubernetes version: 1.28.x</p></li>
+<li><p>containerd version: 1.7</p></li>
+<li><p>node image: Azure Linux Container Host, Ubuntu 20.04</p></li>
+</ul>
+</li>
+</ul>
+<p>While Ubuntu 20.04/22.04 was used across all three CSP environments, it’s worth noting that node images are not limited to Ubuntu 20.04/22.04 only. The majority of widely recognized Linux distributions should be suitable for use.</p>
+</section>
+<section id="unstable-helm-charts">
+<h2>Unstable Helm Charts<a class="headerlink" href="#unstable-helm-charts" title="Link to this heading"></a></h2>
+<p>Helm charts are also published from the main/development branch after each merge.
+These charts reference the latest development images tagged as <code class="docutils literal notranslate"><span class="pre">unstable</span></code> and are
+are stored alongside plugin images in the OCI image registry.</p>
+<section id="discovering-unstable-helm-charts">
+<h3>Discovering Unstable Helm Charts<a class="headerlink" href="#discovering-unstable-helm-charts" title="Link to this heading"></a></h3>
+<p>Unstable charts can be discovered using <a class="reference external" href="https://github.com/containers/skopeo">skopeo</a>.
+For instance, one can list the available charts for the balloons plugin using this
+skopeo command:
+<code class="docutils literal notranslate"><span class="pre">skopeo</span> <span class="pre">list-tags</span> <span class="pre">docker://ghcr.io/containers/nri-plugins/helm-charts/nri-resource-policy-balloons</span></code></p>
+</section>
+<section id="using-unstable-helm-charts">
+<h3>Using Unstable Helm Charts<a class="headerlink" href="#using-unstable-helm-charts" title="Link to this heading"></a></h3>
+<p>Once discovered, unstable Helm charts can be used like any other. For instance, to use
+the <code class="docutils literal notranslate"><span class="pre">v$X.$Y-unstable</span></code> version of the chart to install the development version of the
+balloons plugin one can use this command:
+<code class="docutils literal notranslate"><span class="pre">helm</span> <span class="pre">install</span> <span class="pre">--devel</span> <span class="pre">-n</span> <span class="pre">kube-system</span> <span class="pre">test</span> <span class="pre">oci://ghcr.io/containers/nri-plugins/helm-charts/nri-resource-policy-balloons</span> <span class="pre">--version</span> <span class="pre">v$X.$Y-unstable</span> <span class="pre">--set</span> <span class="pre">image.tag=unstable</span> <span class="pre">--set</span> <span class="pre">image.pullPolicy=Always</span></code></p>
+<div class="toctree-wrapper compound">
+<p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="balloons.html">Balloons Policy Plugin</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="balloons.html#prerequisites">Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="balloons.html#installing-the-chart">Installing the Chart</a></li>
+<li class="toctree-l2"><a class="reference internal" href="balloons.html#uninstalling-the-chart">Uninstalling the Chart</a></li>
+<li class="toctree-l2"><a class="reference internal" href="balloons.html#configuration-options">Configuration options</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="topology-aware.html">Topology-Aware Policy Plugin</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="topology-aware.html#prerequisites">Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="topology-aware.html#installing-the-chart">Installing the Chart</a></li>
+<li class="toctree-l2"><a class="reference internal" href="topology-aware.html#uninstalling-the-chart">Uninstalling the Chart</a></li>
+<li class="toctree-l2"><a class="reference internal" href="topology-aware.html#configuration-options">Configuration options</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="template.html">Template Policy Plugin</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="template.html#prerequisites">Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="template.html#installing-the-chart">Installing the Chart</a></li>
+<li class="toctree-l2"><a class="reference internal" href="template.html#uninstalling-the-chart">Uninstalling the Chart</a></li>
+<li class="toctree-l2"><a class="reference internal" href="template.html#configuration-options">Configuration options</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="memory-qos.html">Memory-QoS Plugin</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="memory-qos.html#prerequisites">Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="memory-qos.html#installing-the-chart">Installing the Chart</a></li>
+<li class="toctree-l2"><a class="reference internal" href="memory-qos.html#uninstalling-the-chart">Uninstalling the Chart</a></li>
+<li class="toctree-l2"><a class="reference internal" href="memory-qos.html#configuration-options">Configuration options</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="memtierd.html">Memtierd Plugin</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="memtierd.html#prerequisites">Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="memtierd.html#installing-the-chart">Installing the Chart</a></li>
+<li class="toctree-l2"><a class="reference internal" href="memtierd.html#uninstalling-the-chart">Uninstalling the Chart</a></li>
+<li class="toctree-l2"><a class="reference internal" href="memtierd.html#configuration-options">Configuration options</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="sgx-epc.html">SGX EPC Limit Plugin</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="sgx-epc.html#prerequisites">Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sgx-epc.html#installing-the-chart">Installing the Chart</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sgx-epc.html#uninstalling-the-chart">Uninstalling the Chart</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sgx-epc.html#configuration-options">Configuration options</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../index.html" class="btn btn-neutral float-left" title="Deployment" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="balloons.html" class="btn btn-neutral float-right" title="Balloons Policy Plugin" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, various.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+  
+    <div class="rst-versions" data-toggle="rst-versions" role="note" aria-label="versions">
+      <span class="rst-current-version" data-toggle="rst-current-version">
+        <span class="fa fa-book"> GitHub Pages</span>
+        v0.9
+        <span class="fa fa-caret-down"></span>
+      </span>
+      <div class="rst-other-versions">
+        <dl id="versions">
+          <dt>Versions</dt>
+        </dl>
+        <dl>
+          <dt>
+          <a href="/nri-plugins/releases">all releases</a>
+          </dt>
+        </dl>
+      </div>
+    </div>
+  
+  <script src="../../../../versions.js"></script>
+  <script>
+      var list = document.getElementById('versions')
+      var menuItems = getVersionsMenuItems();
+      for (var i=0; i < menuItems.length; i++) {
+        var item = document.createElement('dd');
+        var anchor = item.appendChild(document.createElement('a'));
+        anchor.appendChild(document.createTextNode(menuItems[i].name));
+        anchor.href = menuItems[i].url;
+        list.appendChild(item);
+      }
+  </script>
+
+
+</body>
+</html>
