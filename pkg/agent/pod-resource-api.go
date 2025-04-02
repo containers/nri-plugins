@@ -79,7 +79,7 @@ func (a *Agent) GoListPodResources(timeout time.Duration) <-chan *podresapi.PodR
 	return ch
 }
 
-// PurgePodResources()
+// PurgePodResources removes any cached resources for the given pod.
 func (a *Agent) PurgePodResources(ns, pod string) {
 	if !a.podResCli.HasClient() {
 		return
