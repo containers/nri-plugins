@@ -133,7 +133,7 @@ jobs:
       - name: Copy the bundle to the community-operators repo
         run: |
           mkdir -p community-operators/operators/nri-plugins-operator/${{ env.TAG }}
-          cp -r deployment/operator/bundle/ community-operators/operators/nri-plugins-operator/${{ env.TAG }}
+          cp -r deployment/operator/bundle/* community-operators/operators/nri-plugins-operator/${{ env.TAG }}
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v6
