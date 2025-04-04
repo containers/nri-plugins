@@ -114,6 +114,16 @@ func (l *PodResourcesList) GetContainer(ns, pod, ctr string) *ContainerResources
 	return l.GetPodResources(ns, pod).GetContainer(ctr)
 }
 
+func (l *PodResourcesList) PurgePodResources(ns, pod string) {
+	if l == nil {
+		return
+	}
+
+	if podMap, ok := l.m[ns]; ok {
+		delete(podMap, pod)
+	}
+}
+
 // GetDeviceTopologyHints returns topology hints for the given container. checkDenied
 // is used to filter out hints that are disallowed.
 func (r *ContainerResources) GetDeviceTopologyHints(checkDenied func(string) bool) topology.Hints {

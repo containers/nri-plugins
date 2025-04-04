@@ -158,3 +158,10 @@ func (c *Client) Get(ctx context.Context, namespace, pod string) (*PodResources,
 
 	return l.GetPodResources(namespace, pod), nil
 }
+
+// PurgePodResources removes any cached resources for the given pod.
+func (c *Client) PurgePodResources(namespace, pod string) {
+	if c.cached != nil {
+		c.cached.PurgePodResources(namespace, pod)
+	}
+}

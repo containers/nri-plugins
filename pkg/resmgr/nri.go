@@ -335,6 +335,7 @@ func (p *nriPlugin) StopPodSandbox(ctx context.Context, podSandbox *api.PodSandb
 
 	pod, _ := m.cache.LookupPod(podSandbox.GetId())
 	released := slices.Clone(pod.GetContainers())
+	m.agent.PurgePodResources(pod.GetNamespace(), pod.GetName())
 
 	if err := p.runPostReleaseHooks(event, released...); err != nil {
 		nri.Error("%s: failed to run post-release hooks for pod %s: %v",
@@ -370,6 +371,7 @@ func (p *nriPlugin) RemovePodSandbox(ctx context.Context, podSandbox *api.PodSan
 
 	pod, _ := m.cache.LookupPod(podSandbox.GetId())
 	released := slices.Clone(pod.GetContainers())
+	m.agent.PurgePodResources(pod.GetNamespace(), pod.GetName())
 
 	if err := p.runPostReleaseHooks(event, released...); err != nil {
 		nri.Error("%s: failed to run post-release hooks for pod %s: %v",
