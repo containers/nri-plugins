@@ -308,10 +308,10 @@
 
         - name: Update CNI plugin directory on Fedora
           when: ansible_facts['distribution'] == "Fedora"
-          ansible.builtin.lineinfile:
+          ansible.builtin.replace:
             path: /etc/containerd/config.toml
-            regexp: ' *bin_dir *= *./opt/cni/bin. *'
-            line: 'bin_dir = "/usr/libexec/cni"'
+            regexp: '/opt/cni/bin'
+            replace: '/usr/libexec/cni'
 
     - name: Configure bridge CNI plugin
       when: cni_plugin == "bridge"
