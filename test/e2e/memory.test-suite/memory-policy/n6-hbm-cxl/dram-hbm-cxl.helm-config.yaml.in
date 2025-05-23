@@ -1,0 +1,26 @@
+config:
+  injectMpolset: $( ( [[ "$MPOLSET" == "1" ]] && echo true ) || echo false )
+  classes:
+  - name: prefer-one-cxl
+    policy:
+      mode: MPOL_PREFERRED
+      nodes: 4
+      flags:
+      - MPOL_F_RELATIVE_NODES
+
+  - name: prefer-all-cxls
+    policy:
+      mode: MPOL_PREFERRED_MANY
+      nodes: 4,5
+
+  - name: interleave-max-bandwidth
+    policy:
+      mode: MPOL_INTERLEAVE
+      nodes: max-dist:19
+      flags:
+      - MPOL_F_STATIC_NODES
+
+  - name: bind-hbm
+    policy:
+      mode: MPOL_BIND
+      nodes: 2,3
