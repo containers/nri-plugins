@@ -1,0 +1,11 @@
+apiVersion: v2
+appVersion: unstable
+description: |
+  The memory-policy NRI plugin configures default Linux memory policy
+  for containers at creation time.
+name: nri-memory-policy
+sources:
+ - https://github.com/containers/nri-plugins
+home: https://github.com/containers/nri-plugins
+type: application
+version: v0.0.0
