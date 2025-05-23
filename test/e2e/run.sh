@@ -396,6 +396,10 @@ helm-launch() { # script API
                 ds_name=nri-resource-policy-balloons
                 [ -z "$cfgresource" ] && cfgresource=balloonspolicies/default
                 ;;
+            *memory-policy*)
+                ds_name=nri-memory-policy
+                ctr_name=nri-memory-policy
+                ;;
             *)
                 error "Can't wait for plugin $plugin to start, daemonset_name not set"
                 return 0
@@ -415,13 +419,15 @@ helm-launch() { # script API
         fi
     fi
 
-    timeout=$(timeout-for-deadline $deadline)
-    timeout=$timeout wait-config-node-status $cfgresource
+    if [[ -n "$cfgresource" ]]; then
+        timeout=$(timeout-for-deadline $deadline)
+        timeout=$timeout wait-config-node-status $cfgresource
 
-    result=$(get-config-node-status-result $cfgresource)
-    if [ "$result" != "Success" ]; then
-        reason=$(get-config-node-status-error $cfgresource)
-        error "Plugin $plugin configuration failed: $reason"
+        result=$(get-config-node-status-result $cfgresource)
+        if [ "$result" != "Success" ]; then
+            reason=$(get-config-node-status-error $cfgresource)
+            error "Plugin $plugin configuration failed: $reason"
+        fi
     fi
 
     vm-start-log-collection -n kube-system ds/$ds_name -c $ctr_name
