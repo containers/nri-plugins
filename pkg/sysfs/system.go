@@ -125,6 +125,7 @@ type System interface {
 	OfflineCPUs() cpuset.CPUSet
 	CoreKindCPUs(CoreKind) cpuset.CPUSet
 	CoreKinds() []CoreKind
+	IDSetForCPUs(cpuset.CPUSet, func(CPU) idset.ID) idset.IDSet
 	AllThreadsForCPUs(cpuset.CPUSet) cpuset.CPUSet
 	SingleThreadForCPUs(cpuset.CPUSet) cpuset.CPUSet
 	AllCPUsSharingNthLevelCacheWithCPUs(int, cpuset.CPUSet) cpuset.CPUSet
@@ -783,6 +784,17 @@ func (sys *system) CoreKinds() []CoreKind {
 		kinds = append(kinds, kind)
 	}
 	return kinds
+}
+
+// IDSetForCPUs returns a set of IDs for the given CPUs.
+func (sys *system) IDSetForCPUs(cpus cpuset.CPUSet, idForCPU func(cpu CPU) idset.ID) idset.IDSet {
+	ids := idset.NewIDSet()
+	for _, id := range cpus.UnsortedList() {
+		if cpu, ok := sys.cpus[id]; ok {
+			ids.Add(idForCPU(cpu))
+		}
+	}
+	return ids
 }
 
 func (sys *system) AllThreadsForCPUs(cpus cpuset.CPUSet) cpuset.CPUSet {
