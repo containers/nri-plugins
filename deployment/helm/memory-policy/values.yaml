@@ -1,0 +1,89 @@
+# Default values for memory-policy.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+---
+image:
+  name: ghcr.io/containers/nri-plugins/nri-memory-policy
+  # tag, if defined will use the given image tag, otherwise Chart.AppVersion will be used
+  #tag: unstable
+  pullPolicy: Always
+
+config:
+    injectMpolset: true
+    classes:
+    - name: interleave-all
+      policy:
+        mode: MPOL_INTERLEAVE
+        nodes: allowed-mems
+    - name: interleave-cpu-packages
+      policy:
+        mode: MPOL_INTERLEAVE
+        nodes: cpu-packages
+    - name: interleave-cpu-nodes
+      policy:
+        mode: MPOL_INTERLEAVE
+        nodes: cpu-nodes
+    - name: interleave-within-socket
+      policy:
+        mode: MPOL_INTERLEAVE
+        nodes: max-dist:19
+
+resources:
+  cpu: 10m
+  memory: 100Mi
+
+nri:
+  plugin:
+    # Plugin index should be large enough to let resource policy plugins run first.
+    # CPU and memory affinity set by resource policy affects nodes that the memory
+    # policy can or should use.
+    index: 95
+  runtime:
+    patchConfig: false
+#   config:
+#     pluginRegistrationTimeout: 5s
+#     pluginRequestTimeout: 2s
+
+initContainerImage:
+  name: ghcr.io/containers/nri-plugins/nri-config-manager
+  # If not defined Chart.AppVersion will be used
+  #tag: unstable
+  pullPolicy: Always
+
+tolerations: []
+#
+# Example:
+#
+# tolerations:
+# - key: "node-role.kubernetes.io/control-plane"
+#   operator: "Exists"
+#   effect: "NoSchedule"
+
+affinity: []
+#
+# Example:
+#
+# affinity:
+#   nodeAffinity:
+#     requiredDuringSchedulingIgnoredDuringExecution:
+#       nodeSelectorTerms:
+#       - matchExpressions:
+#         - key: topology.kubernetes.io/disk
+#           operator: In
+#           values:
+#           - ssd
+
+nodeSelector: []
+#
+# Example:
+#
+# nodeSelector:
+#  kubernetes.io/disk: "ssd"
+
+# NRI plugins should be considered as part of the container runtime.
+# By default we make them part of the system-node-critical priority
+# class. This should mitigate the potential risk of a plugin getting
+# evicted under heavy system load. It should also ensure that during
+# autoscaling enough new nodes are brought up to leave room for the
+# plugin on each new node.
+podPriorityClassNodeCritical: true
