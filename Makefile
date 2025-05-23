@@ -77,6 +77,7 @@ PLUGINS ?= \
 	nri-resource-policy-topology-aware \
 	nri-resource-policy-balloons \
 	nri-resource-policy-template \
+	nri-memory-policy \
 	nri-memory-qos \
 	nri-memtierd \
         nri-sgx-epc
