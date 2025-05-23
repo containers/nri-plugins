@@ -82,7 +82,8 @@ PLUGINS ?= \
         nri-sgx-epc
 
 BINARIES ?= \
-	config-manager
+	config-manager \
+	mpolset
 
 OTHER_IMAGE_TARGETS ?= \
 	nri-plugins-operator-image \
