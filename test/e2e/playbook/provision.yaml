@@ -200,8 +200,6 @@
       with_items:
         - "{{ containerd_src }}/bin/ctr"
         - "{{ containerd_src }}/bin/containerd"
-        - "{{ containerd_src }}/bin/containerd-shim"
-        - "{{ containerd_src }}/bin/containerd-shim-runc-v1"
         - "{{ containerd_src }}/bin/containerd-shim-runc-v2"
       when: is_containerd and containerd_src != ""
 
