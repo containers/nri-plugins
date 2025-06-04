@@ -263,6 +263,18 @@ func (a *Agent) Stop() {
 	}
 }
 
+func (a *Agent) NodeName() string {
+	return a.nodeName
+}
+
+func (a *Agent) KubeClient() *client.Client {
+	return a.k8sCli
+}
+
+func (a *Agent) KubeConfig() string {
+	return a.kubeConfig
+}
+
 var (
 	defaultConfig = &cfgapi.AgentConfig{
 		NodeResourceTopology: true,
