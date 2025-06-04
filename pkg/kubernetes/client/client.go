@@ -15,7 +15,9 @@
 package client
 
 import (
+	"errors"
 	"net/http"
+	"strings"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -76,7 +78,7 @@ func WithKubeOrInClusterConfig(file string) Option {
 // WithRestConfig returns a Client Option for using the given REST configuration.
 func WithRestConfig(cfg *rest.Config) Option {
 	return func(c *Client) error {
-		c.cfg = cfg
+		c.cfg = rest.CopyConfig(cfg)
 		return nil
 	}
 }
@@ -89,18 +91,61 @@ func WithHttpClient(hc *http.Client) Option {
 	}
 }
 
+// WithAcceptContentTypes returns a Client Option for setting the accepted content types.
+func WithAcceptContentTypes(contentTypes ...string) Option {
+	return func(c *Client) error {
+		if c.cfg == nil {
+			return errRetryWhenConfigSet
+		}
+		c.cfg.AcceptContentTypes = strings.Join(contentTypes, ",")
+		return nil
+	}
+}
+
+// WithContentType returns a Client Option for setting the wire format content type.
+func WithContentType(contentType string) Option {
+	return func(c *Client) error {
+		if c.cfg == nil {
+			return errRetryWhenConfigSet
+		}
+		c.cfg.ContentType = contentType
+		return nil
+	}
+}
+
+const (
+	ContentTypeJSON     = "application/json"
+	ContentTypeProtobuf = "application/vnd.kubernetes.protobuf"
+)
+
+var (
+	// returned by options if applied too early, before a configuration is set
+	errRetryWhenConfigSet = errors.New("retry when client config is set")
+)
+
 // New creates a new Client with the given options.
 func New(options ...Option) (*Client, error) {
 	c := &Client{}
 
+	var retry []Option
 	for _, o := range options {
 		if err := o(c); err != nil {
-			return nil, err
+			if err == errRetryWhenConfigSet {
+				retry = append(retry, o)
+			} else {
+				return nil, err
+			}
 		}
 	}
 
 	if c.cfg == nil {
 		if err := WithInClusterConfig()(c); err != nil {
+			return nil, err
+		}
+	}
+
+	for _, o := range retry {
+		if err := o(c); err != nil {
 			return nil, err
 		}
 	}
