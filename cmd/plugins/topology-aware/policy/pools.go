@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	corev1 "k8s.io/api/core/v1"
@@ -25,6 +27,7 @@ import (
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
+	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	idset "github.com/intel/goresctrl/pkg/utils"
 )
@@ -349,7 +352,14 @@ func (p *policy) allocatePool(container cache.Container, poolHint string) (Grant
 		offer *libmem.Offer
 	)
 
-	request := newRequest(container, p.memAllocator.Masks().AvailableTypes())
+	claimed, unclaimed, err := p.getClaimedCPUs(container)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Info("**** claimed CPU(s): %s, unclaimed CPU: %d", claimed, unclaimed)
+
+	request := newRequest(container, claimed, p.memAllocator.Masks().AvailableTypes())
 
 	if p.root.FreeSupply().ReservedCPUs().IsEmpty() && request.CPUType() == cpuReserved {
 		// Fallback to allocating reserved CPUs from the shared pool
@@ -440,6 +450,151 @@ func (p *policy) allocatePool(container cache.Container, poolHint string) (Grant
 	return grant, nil
 }
 
+func (p *policy) allocateClaim(claim policyapi.Claim) error {
+	hints := map[string]string{}
+
+	// collect grants we need to free dues to conflciting exclusive allocation
+	realloc := []Grant{}
+	cpus := cpuset.New(claim.GetDevices()...)
+	for _, g := range p.allocations.grants {
+		if !cpus.Intersection(g.ExclusiveCPUs().Union(g.IsolatedCPUs())).IsEmpty() {
+			log.Info("***** releasing conflicting grant %s", g)
+			hints[g.GetContainer().GetID()] = g.GetCPUNode().Name()
+			realloc = append(realloc, g)
+			p.releasePool(g.GetContainer())
+			p.updateSharedAllocations(&g)
+		}
+	}
+
+	pool := p.getPoolForCPUs(cpus)
+	if pool == nil {
+		return fmt.Errorf("failed to find pool for claimed CPUs %s", cpus.String())
+	}
+
+	log.Info("*** target pool is %s", pool.Name())
+
+	// free more grants if we need to, for slicing off claimed CPUs
+	s := pool.FreeSupply()
+	needShared := s.SharableCPUs().Intersection(cpus).Size()
+	if available, needed := s.AllocatableSharedCPU(), 1000*needShared; available < needed {
+		log.Info("***** need to free %d mCPU shared capacity", needed-available)
+		grants := p.getLargestSharedUsers(pool)
+		log.Info("grants: %v", grants)
+		for _, g := range grants {
+			hints[g.GetContainer().GetID()] = g.GetCPUNode().Name()
+			realloc = append(realloc, g)
+			p.releasePool(g.GetContainer())
+			p.updateSharedAllocations(&g)
+			if available, needed = s.AllocatableSharedCPU(), 1000*needShared; available >= needed {
+				break
+			}
+		}
+	}
+	s.ClaimCPUs(cpus)
+
+	// TODO: sort old grants by QoS class or size and pool distance from root...
+	for _, oldg := range realloc {
+		c := oldg.GetContainer()
+		log.Info("***** reallocating %s with pool hint %s", c.PrettyName(), hints[c.GetID()])
+		err := p.allocateResources(c, hints[c.GetID()])
+		if err != nil {
+			log.Error("failed to reallocate container %s (%s), retrying with no pool hint", c.PrettyName(), c.GetID())
+		}
+		err = p.allocateResources(c, "")
+		if err != nil {
+			log.Error("failed to reallocate container %s without pool hints", c.PrettyName(), c.GetID())
+		}
+	}
+
+	return nil
+}
+
+// Find (tightest fitting) target pool for a set of cpus
+func (p *policy) getPoolForCPUs(cpus cpuset.CPUSet) Node {
+	var pool Node
+	for _, n := range p.pools {
+		s := n.GetSupply()
+		poolCPUs := s.SharableCPUs().Union(s.IsolatedCPUs()).Union(s.ReservedCPUs())
+		if poolCPUs.Intersection(cpus).Equals(cpus) {
+			if pool == nil {
+				pool = n
+			} else {
+				if n.RootDistance() > pool.RootDistance() {
+					pool = n
+				}
+			}
+		}
+	}
+	return pool
+}
+
+// Get the largest shared CPU users in a pool and its parents.
+func (p *policy) getLargestSharedUsers(pool Node) []Grant {
+	pools := map[string]struct{}{}
+	grants := []Grant{}
+	for n := pool; !n.IsNil(); n = n.Parent() {
+		pools[n.Name()] = struct{}{}
+	}
+
+	for _, g := range p.allocations.grants {
+		if g.SharedPortion() > 0 {
+			grants = append(grants, g)
+		}
+	}
+
+	sort.Slice(grants, func(i, j int) bool {
+		gi, gj := grants[i], grants[j]
+		di, dj := gi.GetCPUNode().RootDistance(), gj.GetCPUNode().RootDistance()
+		si, sj := gi.SharedPortion(), gj.SharedPortion()
+		if di < dj {
+			return true
+		}
+		return si <= sj
+	})
+
+	return grants
+}
+
+func (p *policy) releaseClaim(claim policyapi.Claim) error {
+	cpus := cpuset.New(claim.GetDevices()...)
+	p.root.FreeSupply().UnclaimCPUs(cpus)
+	p.updateSharedAllocations(nil)
+
+	return nil
+}
+
+// Get the claimed CPUs injected into the environment of a container.
+func (p *policy) getClaimedCPUs(c cache.Container) (cpuset.CPUSet, int, error) {
+	var ids []int
+	for _, env := range c.GetEnvList() {
+		if !strings.HasPrefix(env, "DRA_CPU") {
+			continue
+		}
+		val := strings.TrimSuffix(strings.TrimPrefix(env, "DRA_CPU"), "=1")
+		i, err := strconv.ParseInt(val, 10, 32)
+		if err != nil {
+			return cpuset.New(), 0, fmt.Errorf("invalid DRA CPU env. var %q: %v", env, err)
+		}
+		ids = append(ids, int(i))
+	}
+
+	claimed := cpuset.New(ids...)
+	reqs, ok := c.GetResourceUpdates()
+	if !ok {
+		reqs = c.GetResourceRequirements()
+	}
+	request := reqs.Requests[corev1.ResourceCPU]
+	unclaimed := int(request.MilliValue()) - 1000*claimed.Size()
+
+	if unclaimed < 0 {
+		return claimed, unclaimed,
+			fmt.Errorf("invalid claimed (%s CPU(s)) vs. requested/native CPU (%dm)",
+				claimed, request.MilliValue())
+	}
+
+	return claimed, unclaimed, nil
+}
+
 // setPreferredCpusetCpus pins container's CPUs according to what has been
 // allocated for it, taking into account if the container should run
 // with hyperthreads hidden.
@@ -465,6 +620,7 @@ func (p *policy) applyGrant(grant Grant) {
 
 	container := grant.GetContainer()
 	cpuType := grant.CPUType()
+	claimed := grant.ClaimedCPUs()
 	exclusive := grant.ExclusiveCPUs()
 	reserved := grant.ReservedCPUs()
 	shared := grant.SharedCPUs()
@@ -474,16 +630,25 @@ func (p *policy) applyGrant(grant Grant) {
 	kind := ""
 	switch cpuType {
 	case cpuNormal:
-		if exclusive.IsEmpty() {
+		if exclusive.IsEmpty() && claimed.IsEmpty() {
 			cpus = shared
 			kind = "shared"
 		} else {
-			kind = "exclusive"
+			if !exclusive.IsEmpty() {
+				kind = "exclusive"
+			}
+			if !claimed.IsEmpty() {
+				if kind == "" {
+					kind = "claimed"
+				} else {
+					kind += "+claimed"
+				}
+			}
 			if cpuPortion > 0 {
 				kind += "+shared"
-				cpus = exclusive.Union(shared)
+				cpus = exclusive.Union(claimed).Union(shared)
 			} else {
-				cpus = exclusive
+				cpus = exclusive.Union(claimed)
 			}
 		}
 	case cpuReserved:
@@ -618,9 +783,14 @@ func (p *policy) updateSharedAllocations(grant *Grant) {
 			continue
 		}
 
+		if other.SharedPortion() == 0 && !other.ClaimedCPUs().IsEmpty() {
+			log.Info("  => %s not affected (only claimed CPUs)...", other)
+			continue
+		}
+
 		if opt.PinCPU {
 			shared := other.GetCPUNode().FreeSupply().SharableCPUs()
-			exclusive := other.ExclusiveCPUs()
+			exclusive := other.ExclusiveCPUs().Union(other.ClaimedCPUs())
 			if exclusive.IsEmpty() {
 				p.setPreferredCpusetCpus(other.GetContainer(), shared,
 					fmt.Sprintf("  => updating %s with shared CPUs of %s: %s...",
@@ -756,6 +926,8 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 	depth1, depth2 := node1.RootDistance(), node2.RootDistance()
 	id1, id2 := node1.NodeID(), node2.NodeID()
 	score1, score2 := scores[id1], scores[id2]
+	claim1, claim2 := node1.FreeSupply().ClaimedCPUs(), node2.FreeSupply().ClaimedCPUs()
+	claim := request.ClaimedCPUs()
 	cpuType := request.CPUType()
 	isolated1, reserved1, shared1 := score1.IsolatedCapacity(), score1.ReservedCapacity(), score1.SharedCapacity()
 	isolated2, reserved2, shared2 := score2.IsolatedCapacity(), score2.ReservedCapacity(), score2.SharedCapacity()
@@ -772,7 +944,7 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 	//
 	// Our scoring/score sorting algorithm is:
 	//
-	//   - insufficient isolated, reserved or shared capacity loses
+	//   - insufficient claimed, isolated, reserved or shared capacity loses
 	//   - if we have affinity, the higher affinity score wins
 	//   - if we have topology hints
 	//       * better hint score wins
@@ -799,8 +971,12 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 	// Before this comparison is reached, nodes with insufficient uncompressible resources
 	// (memory) have been filtered out.
 
-	// a node with insufficient isolated or shared capacity loses
+	// a node with insufficient claimed, isolated or shared capacity loses
 	switch {
+	case claim.Difference(claim1).Size() == 0 && claim.Difference(claim2).Size() > 0:
+		return true
+	case claim.Difference(claim1).Size() > 0 && claim.Difference(claim2).Size() == 0:
+		return false
 	case cpuType == cpuNormal && ((isolated2 < 0 && isolated1 >= 0) || (shared2 < 0 && shared1 >= 0)):
 		log.Debug("  => %s loses, insufficent isolated or shared", node2.Name())
 		return true
