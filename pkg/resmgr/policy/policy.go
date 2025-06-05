@@ -125,6 +125,8 @@ type Backend interface {
 type Policy interface {
 	// ActivePolicy returns the name of the policy backend in use.
 	ActivePolicy() string
+	// System returns the sysfs instance used by the policy.
+	System() system.System
 	// Start starts up policy, prepare for serving resource management requests.
 	Start(interface{}) error
 	// Reconfigure the policy.
@@ -255,6 +257,10 @@ func (p *policy) ActivePolicy() string {
 		return p.active.Name()
 	}
 	return ""
+}
+
+func (p *policy) System() system.System {
+	return p.system
 }
 
 // Start starts up policy, preparing it for serving requests.
