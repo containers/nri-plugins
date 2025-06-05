@@ -145,6 +145,10 @@ func (p *policy) Start() error {
 	p.root.Dump("<post-start>")
 	p.checkAllocations("  <post-start>")
 
+	if err := p.options.PublishCPUs(p.allowed.Difference(p.reserved).List()); err != nil {
+		log.Errorf("failed to publish CPU DRA resources: %v", err)
+	}
+
 	return nil
 }
 
@@ -497,6 +501,10 @@ func (p *policy) Reconfigure(newCfg interface{}) error {
 
 	p.root.Dump("<post-config>")
 	p.checkAllocations("  <post-config>")
+
+	if err := p.options.PublishCPUs(p.allowed.Difference(p.reserved).List()); err != nil {
+		log.Errorf("failed to publish CPU DRA resources: %v", err)
+	}
 
 	return nil
 }
