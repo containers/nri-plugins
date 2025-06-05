@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
+	resapi "k8s.io/api/resource/v1beta2"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/utils"
@@ -134,6 +135,8 @@ type System interface {
 	Isolated() cpuset.CPUSet
 
 	NodeHintToCPUs(string) string
+
+	CPUsAsDRADevices(ids []idset.ID) []resapi.Device
 }
 
 // System devices
@@ -230,6 +233,7 @@ type CPU interface {
 	GetLastLevelCaches() []*Cache
 	GetLastLevelCacheCPUSet() cpuset.CPUSet
 	CoreKind() CoreKind
+	DRA(extras ...map[QualifiedName]Attribute) *resapi.Device
 }
 
 type cpu struct {
@@ -495,6 +499,7 @@ func (sys *system) Discover(flags DiscoveryFlag) error {
 			sys.Debug("  base freq: %d", cpu.freq.Base)
 			sys.Debug("       freq: %d - %d", cpu.freq.Min, cpu.freq.Max)
 			sys.Debug("        epp: %d", cpu.epp)
+			sys.DebugBlock("    <as a DRA device> ", "%s", logger.AsYaml(cpu.DRA()))
 
 			for idx, c := range cpu.caches {
 				sys.Debug("    cache #%d (enumerated as #%d):", idx, c.enumID)
@@ -505,6 +510,9 @@ func (sys *system) Discover(flags DiscoveryFlag) error {
 				sys.Debug("         cpus: %s", c.SharedCPUSet().String())
 			}
 		}
+
+		sys.DebugBlock("<CPUs as DRA devices> ", "%s",
+			logger.AsYaml(sys.CPUsAsDRADevices(sys.CPUIDs())))
 	}
 
 	return nil
