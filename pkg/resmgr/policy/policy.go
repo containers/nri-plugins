@@ -56,6 +56,8 @@ type ConstraintSet map[Domain]Constraint
 type Options struct {
 	// SendEvent is the function for delivering events back to the resource manager.
 	SendEvent SendEventFn
+	// PublishCPUs is the function for publishing CPUs as DRA devices.
+	PublishCPUs PublishCPUFn
 }
 
 // BackendOptions describes the options for a policy backend instance
@@ -66,6 +68,8 @@ type BackendOptions struct {
 	Cache cache.Cache
 	// SendEvent is the function for delivering events up to the resource manager.
 	SendEvent SendEventFn
+	// PublishCPUs publishes CPUs as DRA devices.
+	PublishCPUs PublishCPUFn
 	// Config is the policy-specific configuration.
 	Config interface{}
 }
@@ -75,6 +79,9 @@ type CreateFn func(*BackendOptions) Backend
 
 // SendEventFn is the type for a function to send events back to the resource manager.
 type SendEventFn func(interface{}) error
+
+// PublishCPUFn is the type for a function to publish CPUs as DRA devices.
+type PublishCPUFn func([]system.ID) error
 
 const (
 	// ExportedResources is the basename of the file container resources are exported to.
@@ -270,10 +277,11 @@ func (p *policy) Start(cfg interface{}) error {
 	log.Info("activating '%s' policy...", p.active.Name())
 
 	if err := p.active.Setup(&BackendOptions{
-		Cache:     p.cache,
-		System:    p.system,
-		SendEvent: p.options.SendEvent,
-		Config:    cfg,
+		Cache:       p.cache,
+		System:      p.system,
+		SendEvent:   p.options.SendEvent,
+		PublishCPUs: p.options.PublishCPUs,
+		Config:      cfg,
 	}); err != nil {
 		return err
 	}
