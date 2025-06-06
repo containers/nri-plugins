@@ -20,6 +20,7 @@ import (
 	"sort"
 
 	"k8s.io/apimachinery/pkg/api/resource"
+	apitypes "k8s.io/apimachinery/pkg/types"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
@@ -81,7 +82,20 @@ type CreateFn func(*BackendOptions) Backend
 type SendEventFn func(interface{}) error
 
 // PublishCPUFn is the type for a function to publish CPUs as DRA devices.
-type PublishCPUFn func([]system.ID) error
+type PublishCPUFn func([]ID) error
+
+// Claim represents a DRA Resource Claim, for CPUs.
+type Claim interface {
+	GetUID() UID
+	GetPods() []UID
+	GetDevices() []ID
+	String() string
+}
+
+type (
+	UID = apitypes.UID
+	ID  = system.ID
+)
 
 const (
 	// ExportedResources is the basename of the file container resources are exported to.
@@ -92,6 +106,8 @@ const (
 	ExportIsolatedCPUs = "ISOLATED_CPUS"
 	// ExportExclusiveCPUs is the shell variable used to export exclusive container CPUs.
 	ExportExclusiveCPUs = "EXCLUSIVE_CPUS"
+	// ExportClaimedCPUs is the shell variable used to export DRA-claimed container CPUs.
+	ExportClaimedCPUs = "CLAIMED_CPUS"
 )
 
 // Backend is the policy (decision making logic) interface exposed by implementations.
@@ -117,6 +133,10 @@ type Backend interface {
 	ReleaseResources(cache.Container) error
 	// UpdateResources updates resource allocations of a container.
 	UpdateResources(cache.Container) error
+	// AllocateClaim allocates CPUs for the claim.
+	AllocateClaim(Claim) error
+	// ReleaseClaim releases CPUs of the claim.
+	ReleaseClaim(Claim) error
 	// HandleEvent processes the given event. The returned boolean indicates whether
 	// changes have been made to any of the containers while handling the event.
 	HandleEvent(*events.Policy) (bool, error)
@@ -146,6 +166,10 @@ type Policy interface {
 	ReleaseResources(cache.Container) error
 	// UpdateResources updates resource allocations of a container.
 	UpdateResources(cache.Container) error
+	// AllocateClaim allocates CPUs for the claim.
+	AllocateClaim(Claim) error
+	// ReleaseClaim releases CPUs of the claim.
+	ReleaseClaim(Claim) error
 	// HandleEvent passes on the given event to the active policy. The returned boolean
 	// indicates whether changes have been made to any of the containers while handling
 	// the event.
@@ -312,6 +336,16 @@ func (p *policy) ReleaseResources(c cache.Container) error {
 // UpdateResources updates resource allocations of a container.
 func (p *policy) UpdateResources(c cache.Container) error {
 	return p.active.UpdateResources(c)
+}
+
+// AllocateClaim alloctes CPUs for the claim.
+func (p *policy) AllocateClaim(claim Claim) error {
+	return p.active.AllocateClaim(claim)
+}
+
+// ReleaseClaim releases CPUs of the claim.
+func (p *policy) ReleaseClaim(claim Claim) error {
+	return p.active.ReleaseClaim(claim)
 }
 
 // HandleEvent passes on the given event to the active policy.
