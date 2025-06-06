@@ -734,6 +734,12 @@ func (m *mockCache) SetPolicyEntry(string, interface{}) {
 func (m *mockCache) GetPolicyEntry(string, interface{}) bool {
 	return m.returnValueForGetPolicyEntry
 }
+func (m *mockCache) SetEntry(string, interface{}) {
+	panic("unimplemented")
+}
+func (m *mockCache) GetEntry(string, interface{}) (interface{}, error) {
+	panic("unimplemented")
+}
 func (m *mockCache) Save() error {
 	return nil
 }
