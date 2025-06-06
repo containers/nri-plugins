@@ -408,6 +408,9 @@ func (m *mockContainer) GetAnnotation(string, interface{}) (string, bool) {
 func (m *mockContainer) GetEnv(string) (string, bool) {
 	panic("unimplemented")
 }
+func (m *mockContainer) GetEnvList() []string {
+	panic("unimplemented")
+}
 func (m *mockContainer) GetAnnotations() map[string]string {
 	panic("unimplemented")
 }
@@ -751,6 +754,12 @@ func (m *mockCache) SetPolicyEntry(string, interface{}) {
 }
 func (m *mockCache) GetPolicyEntry(string, interface{}) bool {
 	return m.returnValueForGetPolicyEntry
+}
+func (m *mockCache) SetEntry(string, interface{}) {
+	panic("unimplemented")
+}
+func (m *mockCache) GetEntry(string, interface{}) (interface{}, error) {
+	panic("unimplemented")
 }
 func (m *mockCache) Save() error {
 	return nil
