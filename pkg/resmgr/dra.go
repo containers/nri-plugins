@@ -16,14 +16,17 @@ package resmgr
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/containers/nri-plugins/pkg/kubernetes/client"
 	logger "github.com/containers/nri-plugins/pkg/log"
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"google.golang.org/grpc"
 	resapi "k8s.io/api/resource/v1beta2"
@@ -39,7 +42,10 @@ type draPlugin struct {
 	cancel     context.CancelFunc
 	plugin     *kubeletplugin.Helper
 	publishCh  chan<- *resourceslice.DriverResources
+	claims     savedClaims
 }
+
+type UID = types.UID
 
 var (
 	dra = logger.NewLogger("dra-driver")
@@ -64,11 +70,16 @@ func newDRAPlugin(resmgr *resmgr) (*draPlugin, error) {
 		return nil, fmt.Errorf("failed to create driver directory %s: %w", driverPath, err)
 	}
 
-	return &draPlugin{
+	p := &draPlugin{
 		driverName: driverName,
 		nodeName:   resmgr.agent.NodeName(),
 		resmgr:     resmgr,
-	}, nil
+		claims:     make(map[UID]*draClaim),
+	}
+
+	p.restoreClaims()
+
+	return p, nil
 }
 
 func (p *draPlugin) start() error {
@@ -219,10 +230,29 @@ func (p *draPlugin) PublishResources(ctx context.Context, devices []resapi.Devic
 	return fmt.Errorf("failed to publish resources, failed to send on channel")
 }
 
-func (p *draPlugin) PrepareResourceClaims(ctx context.Context, claims []*resapi.ResourceClaim) (map[types.UID]kubeletplugin.PrepareResult, error) {
+func (p *draPlugin) PrepareResourceClaims(ctx context.Context, claims []*resapi.ResourceClaim) (map[UID]kubeletplugin.PrepareResult, error) {
 	log.Infof("should prepare %d claims:", len(claims))
 
-	result := make(map[types.UID]kubeletplugin.PrepareResult)
+	undoAndErrOut := func(err error, release []*resapi.ResourceClaim) error {
+		for _, c := range release {
+			if relc := p.claims.del(c.UID); relc != nil {
+				if undoErr := p.resmgr.policy.ReleaseClaim(relc); undoErr != nil {
+					log.Error("rollback error, failed to release claim %s: %v", c.UID, undoErr)
+				}
+			}
+		}
+		return err
+	}
+
+	defer func() {
+		if err := p.saveClaims(); err != nil {
+			log.Error("failed to save claims: %v", err)
+		}
+	}()
+	p.resmgr.Lock()
+	defer p.resmgr.Unlock()
+
+	result := make(map[UID]kubeletplugin.PrepareResult)
 
 	for i, c := range claims {
 		if c == nil {
@@ -232,32 +262,51 @@ func (p *draPlugin) PrepareResourceClaims(ctx context.Context, claims []*resapi.
 		dra.Debug("  - claim #%d:", i)
 		specHdr := fmt.Sprintf("    <claim #%d spec> ", i)
 		statusHdr := fmt.Sprintf("    <claim #%d status> ", i)
-
 		dra.DebugBlock(specHdr, "%s", logger.AsYaml(c.Spec))
 		dra.DebugBlock(statusHdr, "%s", logger.AsYaml(c.Status))
 
-		r := kubeletplugin.PrepareResult{}
-		for _, a := range c.Status.Allocation.Devices.Results {
-			r.Devices = append(r.Devices,
-				kubeletplugin.Device{
-					Requests:     []string{a.Request},
-					DeviceName:   a.Device,
-					CDIDeviceIDs: []string{"dra.cpu/core=" + a.Device},
-				})
+		if old, ok := p.claims.get(c.UID); ok {
+			log.Infof("claim %q already prepared, reusing it", c.UID)
+			result[c.UID] = *(old.GetResult())
+			continue
 		}
-		result[c.UID] = r
+
+		claim := &draClaim{ResourceClaim: c}
+
+		if err := p.resmgr.policy.AllocateClaim(claim); err != nil {
+			log.Error("failed to prepare claim %q: %v", c.UID, err)
+			return nil, undoAndErrOut(err, claims[:i])
+		}
+
+		result[claim.GetUID()] = *(claim.GetResult())
+		p.claims.add(claim)
 	}
 
 	return result, nil
 }
 
-func (p *draPlugin) UnprepareResourceClaims(ctx context.Context, claims []kubeletplugin.NamespacedObject) (map[types.UID]error, error) {
+func (p *draPlugin) UnprepareResourceClaims(ctx context.Context, claims []kubeletplugin.NamespacedObject) (map[UID]error, error) {
+
 	log.Infof("should un-prepare %d claims:", len(claims))
 
-	result := make(map[types.UID]error)
+	defer func() {
+		if err := p.saveClaims(); err != nil {
+			log.Error("failed to save claims: %v", err)
+		}
+	}()
+	p.resmgr.Lock()
+	defer p.resmgr.Unlock()
+
+	result := make(map[UID]error)
 
 	for _, c := range claims {
 		log.Infof("  - un-claim %+v", c)
+
+		if claim := p.claims.del(c.UID); claim != nil {
+			if err := p.resmgr.policy.ReleaseClaim(claim); err != nil {
+				log.Errorf("failed to release claim %s: %v", claim, err)
+			}
+		}
 
 		result[c.UID] = nil
 	}
@@ -267,4 +316,127 @@ func (p *draPlugin) UnprepareResourceClaims(ctx context.Context, claims []kubele
 
 func (p *draPlugin) ErrorHandler(ctx context.Context, err error, msg string) {
 	log.Errorf("resource slice publishing error: %v (%s)", err, msg)
+}
+
+func (p *draPlugin) saveClaims() error {
+	p.resmgr.cache.SetEntry("claims", p.claims)
+	return p.resmgr.cache.Save()
+}
+
+func (p *draPlugin) restoreClaims() {
+	claims := make(savedClaims)
+	restored, err := p.resmgr.cache.GetEntry("claims", &claims)
+
+	if err != nil {
+		if err != cache.ErrNoEntry {
+			log.Error("failed to restore claims: %v", err)
+		}
+		p.claims = make(savedClaims)
+	} else {
+		if restored == nil {
+			p.claims = make(savedClaims)
+		} else {
+			p.claims = *restored.(*savedClaims)
+		}
+	}
+}
+
+type draClaim struct {
+	*resapi.ResourceClaim
+	pods []UID
+	devs []system.ID
+}
+
+func (c *draClaim) GetUID() UID {
+	if c == nil || c.ResourceClaim == nil {
+		return ""
+	}
+	return c.UID
+}
+
+func (c *draClaim) GetPods() []UID {
+	if c == nil || c.ResourceClaim == nil {
+		return nil
+	}
+	if c.pods != nil {
+		return c.pods
+	}
+
+	var pods []UID
+	for _, r := range c.Status.ReservedFor {
+		if r.Resource == "pods" {
+			pods = append(pods, r.UID)
+		}
+	}
+	c.pods = pods
+
+	return c.pods
+}
+
+func (c *draClaim) GetDevices() []system.ID {
+	if c == nil || c.ResourceClaim == nil {
+		return nil
+	}
+
+	if c.devs != nil {
+		return c.devs
+	}
+
+	var ids []system.ID
+	for _, r := range c.Status.Allocation.Devices.Results {
+		num := strings.TrimPrefix(r.Device, "cpu")
+		i, err := strconv.ParseInt(num, 10, 32)
+		if err != nil {
+			log.Errorf("failed to parse CPU ID %q: %v", num, err)
+			continue
+		}
+		ids = append(ids, system.ID(i))
+	}
+	c.devs = ids
+
+	return c.devs
+}
+
+func (c *draClaim) GetResult() *kubeletplugin.PrepareResult {
+	result := &kubeletplugin.PrepareResult{}
+	for _, alloc := range c.Status.Allocation.Devices.Results {
+		result.Devices = append(result.Devices,
+			kubeletplugin.Device{
+				Requests:     []string{alloc.Request},
+				DeviceName:   alloc.Device,
+				CDIDeviceIDs: []string{"dra.cpu/core=" + alloc.Device},
+			})
+	}
+	return result
+}
+
+func (c *draClaim) String() string {
+	return fmt.Sprintf("<CPU claim %s (CPUs %v for pods %v)>",
+		c.GetUID(), c.GetDevices(), c.GetPods())
+}
+
+func (c *draClaim) MarshalJSON() ([]byte, error) {
+	return json.Marshal(c.ResourceClaim)
+}
+
+func (c *draClaim) UnmarshalJSON(b []byte) error {
+	c.ResourceClaim = &resapi.ResourceClaim{}
+	return json.Unmarshal(b, c.ResourceClaim)
+}
+
+type savedClaims map[UID]*draClaim
+
+func (s *savedClaims) add(c *draClaim) {
+	(*s)[c.UID] = c
+}
+
+func (s *savedClaims) del(uid UID) *draClaim {
+	c := (*s)[uid]
+	delete(*s, uid)
+	return c
+}
+
+func (s *savedClaims) get(uid UID) (*draClaim, bool) {
+	c, ok := (*s)[uid]
+	return c, ok
 }
