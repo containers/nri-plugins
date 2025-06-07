@@ -15,6 +15,7 @@
 package resmgr
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -51,20 +52,33 @@ var (
 	dra = logger.NewLogger("dra-driver")
 )
 
+const (
+	driverName = "native.cpu"
+	driverKind = driverName + "/device"
+	cdiVersion = "0.7.0"
+	cdiEnvVar  = "DRA_CPU"
+)
+
 func (resmgr *resmgr) publishCPUs(cpuIDs []system.ID) error {
 	if resmgr.dra == nil {
 		return fmt.Errorf("can't publish CPUs as DRA devices, no DRA plugin")
 	}
 
-	err := resmgr.dra.PublishResources(context.Background(), resmgr.system.CPUsAsDRADevices(cpuIDs))
-	if err != nil {
-		log.Errorf("failed to publish DRA resources: %v", err)
+	if err := resmgr.dra.writeCDISpecFile(opt.HostRoot, cpuIDs); err != nil {
+		log.Errorf("failed to write CDI Spec file: %v", err)
+		return err
 	}
-	return err
+
+	cpuDevices := resmgr.system.CPUsAsDRADevices(cpuIDs)
+	if err := resmgr.dra.PublishResources(context.Background(), cpuDevices); err != nil {
+		log.Errorf("failed to publish DRA resources: %v", err)
+		return err
+	}
+
+	return nil
 }
 
 func newDRAPlugin(resmgr *resmgr) (*draPlugin, error) {
-	driverName := "dra.cpu"
 	driverPath := filepath.Join(kubeletplugin.KubeletPluginsDir, driverName)
 	if err := os.MkdirAll(driverPath, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create driver directory %s: %w", driverPath, err)
@@ -228,6 +242,28 @@ func (p *draPlugin) PublishResources(ctx context.Context, devices []resapi.Devic
 	}
 
 	return fmt.Errorf("failed to publish resources, failed to send on channel")
+}
+
+func (p *draPlugin) writeCDISpecFile(hostRoot string, cpuIDs []system.ID) error {
+	spec := bytes.NewBuffer(nil)
+	fmt.Fprintf(spec, "cdiVersion: %s\nkind: %s\ndevices:\n", cdiVersion, driverKind)
+	for _, id := range cpuIDs {
+		fmt.Fprintf(spec, "  - name: cpu%d\n", id)
+		fmt.Fprintf(spec, "    containerEdits:\n")
+		fmt.Fprintf(spec, "      env:\n")
+		fmt.Fprintf(spec, "        - %s%d=1\n", cdiEnvVar, id)
+	}
+
+	dir := filepath.Join(hostRoot, "/var/run/cdi")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create CDI Spec directory: %w", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, driverName+".yaml"), spec.Bytes(), 0644); err != nil {
+		return fmt.Errorf("failed to write CDI Spec file: %w", err)
+	}
+
+	return nil
 }
 
 func (p *draPlugin) PrepareResourceClaims(ctx context.Context, claims []*resapi.ResourceClaim) (map[UID]kubeletplugin.PrepareResult, error) {
@@ -404,7 +440,7 @@ func (c *draClaim) GetResult() *kubeletplugin.PrepareResult {
 			kubeletplugin.Device{
 				Requests:     []string{alloc.Request},
 				DeviceName:   alloc.Device,
-				CDIDeviceIDs: []string{"dra.cpu/core=" + alloc.Device},
+				CDIDeviceIDs: []string{driverKind + "=" + alloc.Device},
 			})
 	}
 	return result
