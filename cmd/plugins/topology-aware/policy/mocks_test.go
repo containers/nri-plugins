@@ -417,6 +417,9 @@ func (m *mockContainer) GetAnnotation(string, interface{}) (string, bool) {
 func (m *mockContainer) GetEnv(string) (string, bool) {
 	panic("unimplemented")
 }
+func (m *mockContainer) GetEnvList() []string {
+	panic("unimplemented")
+}
 func (m *mockContainer) GetAnnotations() map[string]string {
 	panic("unimplemented")
 }
