@@ -179,6 +179,8 @@ const (
 	// least 2 CPUs must be allocated to the balloon. This results
 	// in excess 700 mCPUs available for bursting, for instance.
 	ExcessCPUsAttribute = "excess cpus"
+	// ComponentCPUsAttribute lists CPUs of components of a composite balloon
+	ComponentCPUsAttribute = "component cpusets"
 	// Exporting containers as topology subzones
 	ContainerAllocationZoneType = "allocation for container"
 )
