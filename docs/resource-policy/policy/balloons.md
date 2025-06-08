@@ -275,6 +275,13 @@ Balloons policy parameters:
     should get their CPUs from separate cache blocks for best
     performance. Every listed class must be specified in
     `loadClasses`.
+  - `components` is a list of components of a balloon. If a balloon
+    consists of components, its CPUs are allocated by allocating CPUs
+    for each component balloon separately, and then adding them up.
+    See [combining balloons](#combining-balloons) for more details and
+    an example. Properties of components in the list are:
+    - `balloonType` specifies the name of the balloon type according
+      to which CPUs are allocated to this component.
 - `loadClasses`: lists properties of loads that containers in balloons
   generate to some parts of the system. When the policy allocates CPUs
   for load generating balloon instances, it selects CPUs so that it
@@ -520,6 +527,74 @@ latter two for other containers in the pod. Supported types are "HBM",
 metadata:
   annotations:
     memory-type.resource-policy.nri.io/container.LLM: HBM,DRAM
+```
+
+
+## Combining Balloons
+
+Sometimes a container needs a set of CPUs where some CPUs have
+different properties or they are selected based on different criteria
+than other CPUs.
+
+This kind of a container needs to be assigned into a composite
+balloon. A composite balloon consists of component balloons.
+Specifying `components` in a balloon type makes it a composite balloon
+type. Composite balloons get their CPUs by combining CPUs of their
+components.
+
+Each component specifies its balloon type, that must be defined in the
+`balloonTypes` list. CPUs are allocated to the component based on its
+own balloon type configuration only. As CPUs are not allocated
+directly to composite balloons, CPU allocation parameters are not
+allowed in composite balloon types.
+
+When the policy creates new composite balloon, it creates hidden
+instances of balloons's components, too. Resizing the composite
+balloon due to changes in its containers causes resizing these hidden
+instances.
+
+Example: allocate CPUs for distributed AI inference containers so
+that, depending on a balloon type, a container will get:
+- equal number of CPUs from all 4 NUMA nodes in the system
+- equal number of CPUs from both NUMA nodes on CPU package 0
+- equal number of CPUs from both NUMA nodes on CPU package 1.
+
+Following balloon type configuration implements this. Containers can
+be assigned into balloons `balance-all-nodes`, `balance-pkg0-nodes`,
+and `balance-pkg1-nodes`, respectively.
+
+```yaml
+  balloonTypes:
+  - name: balance-all-nodes
+    components:
+    - balloonType: balance-pkg0-nodes
+    - balloonType: balance-pkg1-nodes
+
+  - name: balance-pkg0-nodes
+    components:
+    - balloonType: node0
+    - balloonType: node1
+
+  - name: balance-pkg1-nodes
+    components:
+    - balloonType: node2
+    - balloonType: node3
+
+  - name: node0
+    preferCloseToDevices:
+    - /sys/devices/system/node/node0
+
+  - name: node1
+    preferCloseToDevices:
+    - /sys/devices/system/node/node1
+
+  - name: node2
+    preferCloseToDevices:
+    - /sys/devices/system/node/node2
+
+  - name: node3
+    preferCloseToDevices:
+    - /sys/devices/system/node/node3
 ```
 
 ## Metrics and Debugging
