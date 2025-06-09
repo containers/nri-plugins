@@ -95,7 +95,7 @@ Balloons policy parameters:
     result, the policy will not modify CPU or memory pinning of
     matching containers.
     ```
-    ignore:
+    preserve:
       matchExpressions:
         - key: name
           operator: In
