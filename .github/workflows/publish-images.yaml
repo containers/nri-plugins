@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - release-*
+      - test/build/*
     tags:
       - v[0-9]+.[0-9]+.[0-9]+
 
@@ -47,6 +48,7 @@ jobs:
               echo "  - image:  $img"
               echo "  - digest: $sha"
               echo "  - digging out tag from git ref $GITREF..."
+              variant=""
               case $GITREF in
                   refs/tags/v*)
                       tag="${GITREF#refs/tags/}"
@@ -56,6 +58,12 @@ jobs:
                       ;;
                   refs/heads/release-*)
                       tag="v${GITREF#refs/heads/release-}-unstable"
+                      ;;
+                  refs/heads/test/build/*)
+                      variant="${GITREF#refs/heads/test/build/}"
+                      variant="${variant//\//-}"
+                      majmin="$(git describe --tags | sed -E 's/(v[0-9]*\.[0-9]*).*$/\1/')"
+                      tag="${majmin}-${variant}-unstable"
                       ;;
                   *)
                       echo "error: can't determine tag."
