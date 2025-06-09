@@ -30,6 +30,7 @@ import (
 	"github.com/intel/goresctrl/pkg/sst"
 	idset "github.com/intel/goresctrl/pkg/utils"
 	v1 "k8s.io/api/core/v1"
+	resapi "k8s.io/api/resource/v1"
 )
 
 type mockSystemNode struct {
@@ -207,6 +208,10 @@ func (c *mockCPU) CoreKind() sysfs.CoreKind {
 	return sysfs.PerformanceCore
 }
 
+func (c *mockCPU) DRA(extras ...map[sysfs.QualifiedName]sysfs.Attribute) *resapi.Device {
+	panic("unimplmented")
+}
+
 type mockSystem struct {
 	isolatedCPU  int
 	nodes        []sysfs.Node
@@ -347,6 +352,9 @@ func (fake *mockSystem) NodeDistance(idset.ID, idset.ID) int {
 }
 func (fake *mockSystem) NodeHintToCPUs(string) string {
 	return ""
+}
+func (fake *mockSystem) CPUsAsDRADevices(ids []idset.ID) []resapi.Device {
+	panic("unimplemented")
 }
 
 type mockContainer struct {
