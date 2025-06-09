@@ -114,7 +114,11 @@ jobs:
           # Package charts
           find "$CHARTS_DIR" -name values.yaml | xargs -I '{}' \
               sed -e s"/pullPolicy:.*/pullPolicy: Always/" -i '{}'
-          helm package --version "$CHART_VERSION" --app-version $APP_VERSION "$CHARTS_DIR"/*
+          orig="ghcr.io/containers/nri-plugins"
+          repo="${{ env.REGISTRY }}/${{ env.REGISTRY_PATH }}"
+          find "$CHARTS_DIR" -name values.yaml | xargs -I '{}' \
+              sed -e s"|  name: $orig/|  name: $repo/|g" -i '{}'
+          helm package --version "$CHART_VERSION" --app-version "$APP_VERSION" "$CHARTS_DIR"/*
           find "$CHARTS_DIR" -name values.yaml | xargs -I '{}' \
               git checkout '{}'
           mkdir ../$UNSTABLE_CHARTS
