@@ -1210,7 +1210,7 @@ func (c *cpu) CacheCount() int {
 
 // GetCaches returns the caches for this CPU.
 func (c *cpu) GetCaches() []*Cache {
-	caches := make([]*Cache, 0, len(c.caches))
+	caches := make([]*Cache, len(c.caches))
 	copy(caches, c.caches)
 	return caches
 }
