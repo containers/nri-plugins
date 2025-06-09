@@ -241,7 +241,6 @@ type cpu struct {
 	node     idset.ID    // node id
 	core     idset.ID    // core id
 	threads  idset.IDSet // sibling/hyper-threads
-	baseFreq uint64      // CPU base frequency
 	freq     CPUFreq     // CPU frequencies
 	epp      EPP         // Energy Performance Preference from cpufreq governor
 	online   bool        // whether this CPU is online
@@ -253,8 +252,9 @@ type cpu struct {
 
 // CPUFreq is a CPU frequency scaling range
 type CPUFreq struct {
-	min uint64 // minimum frequency (kHz)
-	max uint64 // maximum frequency (kHz)
+	Base uint64 // base frequency
+	Min  uint64 // minimum frequency (kHz)
+	Max  uint64 // maximum frequency (kHz)
 }
 
 // EPP represents the value of a CPU energy performance profile
@@ -486,8 +486,8 @@ func (sys *system) Discover(flags DiscoveryFlag) error {
 			sys.Debug("       node: %d", cpu.node)
 			sys.Debug("       core: %d (%s)", cpu.core, cpu.coreKind)
 			sys.Debug("    threads: %s", cpu.threads)
-			sys.Debug("  base freq: %d", cpu.baseFreq)
-			sys.Debug("       freq: %d - %d", cpu.freq.min, cpu.freq.max)
+			sys.Debug("  base freq: %d", cpu.freq.Base)
+			sys.Debug("       freq: %d - %d", cpu.freq.Min, cpu.freq.Max)
 			sys.Debug("        epp: %d", cpu.epp)
 
 			for idx, c := range cpu.caches {
@@ -1051,14 +1051,14 @@ func (sys *system) discoverCPU(path string) error {
 		}
 	}
 
-	if _, err := readSysfsEntry(path, "cpufreq/base_frequency", &cpu.baseFreq); err != nil {
-		cpu.baseFreq = 0
+	if _, err := readSysfsEntry(path, "cpufreq/base_frequency", &cpu.freq.Base); err != nil {
+		cpu.freq.Base = 0
 	}
-	if _, err := readSysfsEntry(path, "cpufreq/cpuinfo_min_freq", &cpu.freq.min); err != nil {
-		cpu.freq.min = 0
+	if _, err := readSysfsEntry(path, "cpufreq/cpuinfo_min_freq", &cpu.freq.Min); err != nil {
+		cpu.freq.Min = 0
 	}
-	if _, err := readSysfsEntry(path, "cpufreq/cpuinfo_max_freq", &cpu.freq.max); err != nil {
-		cpu.freq.max = 0
+	if _, err := readSysfsEntry(path, "cpufreq/cpuinfo_max_freq", &cpu.freq.Max); err != nil {
+		cpu.freq.Max = 0
 	}
 	if _, err := readSysfsEntry(path, "cpufreq/energy_performance_preference", &cpu.epp); err != nil {
 		cpu.epp = EPPUnknown
@@ -1143,7 +1143,7 @@ func (c *cpu) ThreadCPUSet() cpuset.CPUSet {
 
 // BaseFrequency returns the base frequency setting for this CPU.
 func (c *cpu) BaseFrequency() uint64 {
-	return c.baseFreq
+	return c.freq.Base
 }
 
 // FrequencyRange returns the frequency range for this CPU.
@@ -1174,23 +1174,23 @@ func (c *cpu) SstClos() int {
 
 // SetFrequencyLimits sets the frequency scaling limits for this CPU.
 func (c *cpu) SetFrequencyLimits(min, max uint64) error {
-	if c.freq.min == 0 {
+	if c.freq.Min == 0 {
 		return nil
 	}
 
 	min /= 1000
 	max /= 1000
-	if min < c.freq.min && min != 0 {
-		min = c.freq.min
+	if min < c.freq.Min && min != 0 {
+		min = c.freq.Min
 	}
-	if min > c.freq.max {
-		min = c.freq.max
+	if min > c.freq.Max {
+		min = c.freq.Max
 	}
-	if max < c.freq.min && max != 0 {
-		max = c.freq.min
+	if max < c.freq.Min && max != 0 {
+		max = c.freq.Min
 	}
-	if max > c.freq.max {
-		max = c.freq.max
+	if max > c.freq.Max {
+		max = c.freq.Max
 	}
 
 	if _, err := writeSysfsEntry(c.path, "cpufreq/scaling_min_freq", min, nil); err != nil {
