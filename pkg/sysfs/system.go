@@ -313,11 +313,12 @@ const (
 
 // Cache has details about a CPU cache.
 type Cache struct {
-	id    idset.ID    // cache id
-	level int         // cache type
-	kind  CacheType   // cache type
-	size  uint64      // cache size
-	cpus  idset.IDSet // CPUs sharing this cache
+	enumID int         // enumerated cache id
+	id     idset.ID    // cache id
+	level  int         // cache type
+	kind   CacheType   // cache type
+	size   uint64      // cache size
+	cpus   idset.IDSet // CPUs sharing this cache
 }
 
 // cacheOverrides is a list of cache overrides for specific CPU sets.
@@ -391,6 +392,11 @@ func (sys *system) Discover(flags DiscoveryFlag) error {
 	if (sys.flags & (DiscoverCPUTopology | DiscoverCache | DiscoverSst)) != 0 {
 		if err := sys.discoverCPUs(); err != nil {
 			return err
+		}
+		if (flags & DiscoverCache) != 0 {
+			if err := sys.enumerateCaches(); err != nil {
+				return fmt.Errorf("failed to enumerate caches: %v", err)
+			}
 		}
 		if err := sys.discoverNodes(); err != nil {
 			return err
@@ -491,7 +497,7 @@ func (sys *system) Discover(flags DiscoveryFlag) error {
 			sys.Debug("        epp: %d", cpu.epp)
 
 			for idx, c := range cpu.caches {
-				sys.Debug("    cache #%d:", idx)
+				sys.Debug("    cache #%d (enumerated as #%d):", idx, c.enumID)
 				sys.Debug("           id: %d", c.id)
 				sys.Debug("        level: %d", c.level)
 				sys.Debug("         kind: %s", c.kind)
@@ -1308,6 +1314,13 @@ func (c *cpu) CoreKind() CoreKind {
 	return c.coreKind
 }
 
+func (c *Cache) EnumID() int {
+	if c == nil {
+		return 0
+	}
+	return c.enumID
+}
+
 func (c *Cache) ID() int {
 	if c == nil {
 		return 0
@@ -2062,6 +2075,55 @@ func (sys *system) saveCache(c *Cache) *Cache {
 
 	sys.caches[c.level-1][int(c.kind)][c.id] = c
 	return c
+}
+
+func (sys *system) enumerateCaches() error {
+	log.Debug("enumerating CPU caches...")
+	cMap := map[int]map[CacheType]map[idset.ID]*Cache{}
+	enumerated := []*Cache{}
+	for _, caches := range sys.caches {
+		for _, cacheMap := range caches {
+			for _, c := range cacheMap {
+				l, ok := cMap[c.level]
+				if !ok {
+					l = map[CacheType]map[idset.ID]*Cache{}
+					cMap[c.level] = l
+				}
+				k, ok := l[c.kind]
+				if !ok {
+					k = map[idset.ID]*Cache{}
+					l[c.kind] = k
+				}
+				_, ok = k[c.id]
+				if !ok {
+					k[c.id] = c
+					enumerated = append(enumerated, c)
+				}
+			}
+		}
+	}
+
+	slices.SortFunc(enumerated, func(ci, cj *Cache) int {
+		if ci.level != cj.level {
+			return ci.level - cj.level
+		}
+		if ci.kind != cj.kind {
+			return int(ci.kind) - int(cj.kind)
+		}
+		return ci.id - cj.id
+	})
+
+	for id, c := range enumerated {
+		c.enumID = id
+		sys.Debug("  enumerated cache #%d:", c.enumID)
+		sys.Debug("         id: %d", c.id)
+		sys.Debug("      level: %d", c.level)
+		sys.Debug("       kind: %s", c.kind)
+		sys.Debug("       size: %dK", c.size/1024)
+		sys.Debug("       cpus: %s", c.SharedCPUSet().String())
+	}
+
+	return nil
 }
 
 // eppStrings initialized this way to better catch changes in the enum
