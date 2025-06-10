@@ -325,6 +325,11 @@ Balloons policy parameters:
     resources. Moreover, showing containers assigned to balloons and
     their CPU/memory affinities can be enabled with
     `showContainersInNrt`. The default is `false`.
+- `log`: contains the logging configuration for the policy.
+  - `debug`: an array of components to enable debug logging for.
+    Example: `["policy"]`.
+  - `source`: set to `true` to prefix messages with the name of the logger
+    source.
 
 ### Example
 
