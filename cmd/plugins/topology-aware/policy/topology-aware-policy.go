@@ -410,15 +410,15 @@ func (p *policy) ExportResourceData(c cache.Container) map[string]string {
 	dram := mems.And(p.memAllocator.Masks().NodesByTypes(libmem.TypeMaskDRAM))
 	pmem := mems.And(p.memAllocator.Masks().NodesByTypes(libmem.TypeMaskPMEM))
 	hbm := mems.And(p.memAllocator.Masks().NodesByTypes(libmem.TypeMaskHBM))
-	data["ALL_MEMS"] = mems.String()
+	data["ALL_MEMS"] = mems.MemsetString()
 	if dram.Size() > 0 {
-		data["DRAM_MEMS"] = dram.String()
+		data["DRAM_MEMS"] = dram.MemsetString()
 	}
 	if pmem.Size() > 0 {
-		data["PMEM_MEMS"] = pmem.String()
+		data["PMEM_MEMS"] = pmem.MemsetString()
 	}
 	if hbm.Size() > 0 {
-		data["HBM_MEMS"] = hbm.String()
+		data["HBM_MEMS"] = hbm.MemsetString()
 	}
 
 	return data
