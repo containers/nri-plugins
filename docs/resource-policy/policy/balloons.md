@@ -318,6 +318,13 @@ Balloons policy parameters:
      and assigned containers are readable through `/metrics` from the
      httpEndpoint.
   - `reportPeriod`: `/metrics` aggregation interval for polled metrics.
+  - `metrics`: defines which metrics to collect.
+    - `enabled`: a list of glob patterns that match metrics to collect.
+      Example: `["policy"]`
+  - `samplingRatePerMillion`: the number of samples to collect per million spans.
+    Example: `100000`
+  - `tracingCollector`: defines the external endpoint for tracing data collection.
+    Example: `otlp-http://localhost:4318`.
 - `agent`: controls communicating with the Kubernetes node agent and
   the API server.
   - `nodeResourceTopology`: if `true`, expose balloons as node
