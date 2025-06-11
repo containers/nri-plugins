@@ -7,6 +7,7 @@ on:
     branches:
       - main
       - release-*
+      - test/build/*
 
 env:
   CHARTS_DIR: deployment/helm/
@@ -106,15 +107,32 @@ jobs:
           #   - image version: 'unstable'.
           majmin="$(git describe --tags | sed -E 's/(v[0-9]*\.[0-9]*).*$/\1/')"
           CHART_VERSION="${majmin}-unstable"
-          if [  $GITHUB_REF_NAME = "main" ]; then
-              APP_VERSION=unstable
-          else
-              APP_VERSION="${majmin}-unstable"
-          fi
+          variant=""
+          case $GITHUB_REF_NAME in
+              main)
+                  APP_VERSION=unstable
+                  ;;
+              release-*)
+                  APP_VERSION="${majmin}-unstable"
+                  ;;
+              test/build/*)
+                  variant="${GITHUB_REF_NAME#test/build/}"
+                  variant="${variant//\//-}"
+                  tag="${majmin}-${variant}-unstable"
+                  APP_VERSION="${majmin}-${variant}-unstable"
+                  CHART_VERSION="${majmin}-${variant}-unstable"
+                  ;;
+          esac
+          echo "- Using APP_VERSION=$APP_VERSION"
+          echo "        CHART_VERSION=$CHART_VERSION"
           # Package charts
           find "$CHARTS_DIR" -name values.yaml | xargs -I '{}' \
               sed -e s"/pullPolicy:.*/pullPolicy: Always/" -i '{}'
-          helm package --version "$CHART_VERSION" --app-version $APP_VERSION "$CHARTS_DIR"/*
+          orig="ghcr.io/containers/nri-plugins"
+          repo="${{ env.REGISTRY }}/${{ env.REGISTRY_PATH }}"
+          find "$CHARTS_DIR" -name values.yaml | xargs -I '{}' \
+              sed -e s"|  name: $orig/|  name: $repo/|g" -i '{}'
+          helm package --version "$CHART_VERSION" --app-version "$APP_VERSION" "$CHARTS_DIR"/*
           find "$CHARTS_DIR" -name values.yaml | xargs -I '{}' \
               git checkout '{}'
           mkdir ../$UNSTABLE_CHARTS
