@@ -19,6 +19,7 @@ import (
 	"math"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/balloons"
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
@@ -116,6 +117,7 @@ type Balloon struct {
 	LoadedVirtDevs map[string]struct{}
 	cpuTreeAlloc   *cpuTreeAllocator
 	memTypeMask    libmem.TypeMask
+	components     []*Balloon
 }
 
 // loadClassVirtDev is a virtual device under load due to a load class.
@@ -166,8 +168,24 @@ func (bln Balloon) AvailMilliCpus() int {
 }
 
 func (bln Balloon) MaxAvailMilliCpus(freeCpus cpuset.CPUSet) int {
-	if bln.Def.MaxCpus == NoLimit {
-		return (bln.Cpus.Size() + freeCpus.Size()) * 1000
+	availableFreeCpus := freeCpus.Size()
+	if len(bln.components) > 0 {
+		// MaxCpus of component balloons can limit the size of
+		// the composite balloon.
+		compMinAvailmCPUs := -1
+		for _, comp := range bln.components {
+			mcpus := comp.MaxAvailMilliCpus(freeCpus)
+			if mcpus < compMinAvailmCPUs || compMinAvailmCPUs == -1 {
+				compMinAvailmCPUs = mcpus
+			}
+		}
+		// Assume this composite balloon allocates equal
+		// number of CPUs for every component balloon.
+		sumMinAvailCPUs := (compMinAvailmCPUs * len(bln.components)) / 1000
+		availableFreeCpus = min(sumMinAvailCPUs, availableFreeCpus)
+	}
+	if bln.Def.MaxCpus == NoLimit || bln.Def.MaxCpus > availableFreeCpus {
+		return (bln.Cpus.Size() + availableFreeCpus) * 1000
 	}
 	return bln.Def.MaxCpus * 1000
 }
@@ -429,6 +447,23 @@ func (p *balloons) GetTopologyZones() []*policy.TopologyZone {
 				Name:  policyapi.ExcessCPUsAttribute,
 				Value: fmt.Sprintf("%dm", bln.AvailMilliCpus()-blnReqmCpu),
 			},
+		}
+		if len(bln.components) > 0 {
+			var compCpusString func(*Balloon) string
+			compCpusString = func(b *Balloon) string {
+				if len(b.components) == 0 {
+					return fmt.Sprintf("{%s}", b.Cpus)
+				}
+				res := []string{}
+				for _, comp := range b.components {
+					res = append(res, compCpusString(comp))
+				}
+				return fmt.Sprintf("{%s}", strings.Join(res, ", "))
+			}
+			attributes = append(attributes, &policyapi.ZoneAttribute{
+				Name:  policyapi.ComponentCPUsAttribute,
+				Value: compCpusString(bln),
+			})
 		}
 		zone.Attributes = append(zone.Attributes, attributes...)
 		zones = append(zones, zone)
@@ -741,10 +776,24 @@ func (p *balloons) useCpuClass(bln *Balloon) error {
 	// - User-defined CPU AllocatorPriority: bln.Def.AllocatorPriority.
 	// - All existing balloon instances: p.balloons.
 	// - CPU configurations by user: bln.Def.CpuClass (for bln in p.balloons)
+	if len(bln.components) > 0 {
+		// If this is a composite balloon, CPU class is
+		// defined in the component balloons.
+		log.Debugf("apply CPU class %q on CPUs %s of composite balloon %q",
+			bln.Def.CpuClass, bln.Cpus, bln.PrettyName())
+		for _, compBln := range bln.components {
+			if err := p.useCpuClass(compBln); err != nil {
+				log.Warnf("failed to apply CPU class %q on CPUs %s of %q in composite balloon %q: %v",
+					compBln.Def.CpuClass, compBln.Cpus, compBln.PrettyName(), bln.PrettyName(), err)
+			}
+
+		}
+		return nil
+	}
 	if err := cpucontrol.Assign(p.cch, bln.Def.CpuClass, bln.Cpus.UnsortedList()...); err != nil {
 		log.Warnf("failed to apply class %q on CPUs %q: %v", bln.Def.CpuClass, bln.Cpus, err)
 	} else {
-		log.Debugf("apply class %q on CPUs %q", bln.Def.CpuClass, bln.Cpus)
+		log.Debugf("apply CPU class %q on CPUs %q of %q", bln.Def.CpuClass, bln.Cpus, bln.PrettyName())
 	}
 	return nil
 }
@@ -756,7 +805,11 @@ func (p *balloons) forgetCpuClass(bln *Balloon) {
 	if err := cpucontrol.Assign(p.cch, p.bpoptions.IdleCpuClass, bln.Cpus.UnsortedList()...); err != nil {
 		log.Warnf("failed to forget class %q of cpus %q: %v", bln.Def.CpuClass, bln.Cpus, err)
 	} else {
-		log.Debugf("forget class %q of cpus %q", bln.Def.CpuClass, bln.Cpus)
+		if len(bln.components) > 0 {
+			log.Debugf("forget classes of composite balloon %q cpus %q", bln.Def.Name, bln.Cpus)
+		} else {
+			log.Debugf("forget class %q of cpus %q", bln.Def.CpuClass, bln.Cpus)
+		}
 	}
 }
 
@@ -821,6 +874,63 @@ func (p *balloons) virtDevsChangeDuringCpuAllocation(loadClassNames []string) bo
 	return false
 }
 
+func (p *balloons) newCompositeBalloon(blnDef *BalloonDef, confCpus bool, freeInstance int) (*Balloon, error) {
+	componentBlns := make([]*Balloon, 0, len(blnDef.Components))
+	deleteComponentBlns := func() {
+		for _, compBln := range componentBlns {
+			log.Debugf("removing component balloon %s of composite balloon %s",
+				compBln.PrettyName(), blnDef.Name)
+			p.deleteBalloon(compBln)
+		}
+	}
+	for _, comp := range blnDef.Components {
+		// Create a balloon for each component.
+		compDef := p.balloonDefByName(comp.DefName)
+		if compDef == nil {
+			deleteComponentBlns()
+			return nil, balloonsError("unknown balloon definition %q in composite balloon %q",
+				comp.DefName, blnDef.Name)
+		}
+		compBln, err := p.newBalloon(compDef, confCpus)
+		if err != nil || compBln == nil {
+			deleteComponentBlns()
+			return nil, balloonsError("failed to create component balloon %q for composite balloon %q: %v",
+				comp.DefName, blnDef.Name, err)
+		}
+		componentBlns = append(componentBlns, compBln)
+		log.Debugf("created component balloon %s of composite balloon %s",
+			compBln.PrettyName(), blnDef.Name)
+	}
+	memTypeMask, _ := memTypeMaskFromStringList(blnDef.MemoryTypes)
+	bln := &Balloon{
+		Def:            blnDef,
+		Instance:       freeInstance,
+		Groups:         make(map[string]int),
+		PodIDs:         make(map[string][]string),
+		Cpus:           cpuset.New(),
+		SharedIdleCpus: cpuset.New(),
+		LoadedVirtDevs: make(map[string]struct{}),
+		cpuTreeAlloc:   nil, // Allocator is not used for composite balloons.
+		memTypeMask:    memTypeMask,
+		components:     componentBlns,
+	}
+	log.Debugf("created composite balloon %s with %d components. Now resize it to %d mCPU",
+		bln.PrettyName(), len(bln.components), blnDef.MinCpus*1000)
+	if err := p.resizeBalloon(bln, blnDef.MinCpus*1000); err != nil {
+		deleteComponentBlns()
+		return nil, err
+	}
+	if confCpus {
+		if err := p.useCpuClass(bln); err != nil {
+			deleteComponentBlns()
+			log.Errorf("failed to apply CPU configuration to new composite balloon %s[%d] (cpus: %s): %w",
+				blnDef.Name, bln.Instance, bln.Cpus, err)
+			return nil, err
+		}
+	}
+	return bln, nil
+}
+
 func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, error) {
 	var cpus cpuset.CPUSet
 	var err error
@@ -842,6 +952,9 @@ func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, erro
 		if isFree {
 			break
 		}
+	}
+	if len(blnDef.Components) > 0 {
+		return p.newCompositeBalloon(blnDef, confCpus, freeInstance)
 	}
 	// Configure cpuTreeAllocator for this balloon. The reserved
 	// balloon always prefers to be close to the virtual device
@@ -1289,6 +1402,7 @@ func (p *balloons) applyBalloonDef(balloons *[]*Balloon, blnDef *BalloonDef, fre
 func (p *balloons) validateConfig(bpoptions *BalloonsOptions) error {
 	seenNames := map[string]struct{}{}
 	undefinedLoadClasses := map[string]struct{}{}
+	compositeBlnDefs := map[string]*BalloonDef{}
 	for _, blnDef := range bpoptions.BalloonDefs {
 		if blnDef.Name == "" {
 			return balloonsError("missing or empty name in a balloon type")
@@ -1321,6 +1435,32 @@ func (p *balloons) validateConfig(bpoptions *BalloonsOptions) error {
 		if blnDef.PreferIsolCpus && blnDef.ShareIdleCpusInSame != "" {
 			log.Warn("WARNING: using PreferIsolCpus with ShareIdleCpusInSame is highly discouraged")
 		}
+		if len(blnDef.Components) > 0 {
+			compositeBlnDefs[blnDef.Name] = blnDef
+			if blnDef.CpuClass != "" {
+				return balloonsError("composite balloon %q cannot have CpuClasses", blnDef.Name)
+			}
+			forbiddenCpuAllocationOptions := []string{}
+			if blnDef.PreferSpreadOnPhysicalCores != nil {
+				forbiddenCpuAllocationOptions = append(forbiddenCpuAllocationOptions, "PreferSpreadOnPhysicalCores")
+			}
+			if blnDef.AllocatorTopologyBalancing != nil {
+				forbiddenCpuAllocationOptions = append(forbiddenCpuAllocationOptions, "AllocatorTopologyBalancing")
+			}
+			if len(blnDef.PreferCloseToDevices) > 0 {
+				forbiddenCpuAllocationOptions = append(forbiddenCpuAllocationOptions, "PreferCloseToDevices")
+			}
+			if blnDef.PreferIsolCpus {
+				forbiddenCpuAllocationOptions = append(forbiddenCpuAllocationOptions, "PreferIsolCpus")
+			}
+			if blnDef.PreferCoreType != "" {
+				forbiddenCpuAllocationOptions = append(forbiddenCpuAllocationOptions, "PreferCoreType")
+			}
+			if len(forbiddenCpuAllocationOptions) > 0 {
+				return balloonsError("CPU allocation options not allowed in composite balloons, but %q has: %s",
+					blnDef.Name, strings.Join(forbiddenCpuAllocationOptions, ", "))
+			}
+		}
 		for _, load := range blnDef.Loads {
 			undefinedLoadClasses[load] = struct{}{}
 		}
@@ -1336,6 +1476,41 @@ func (p *balloons) validateConfig(bpoptions *BalloonsOptions) error {
 	}
 	if len(undefinedLoadClasses) > 0 {
 		return balloonsError("loads defined in balloonTypes but missing from loadClasses: %v", undefinedLoadClasses)
+	}
+	var circularCheck func(name string, seen map[string]int) error
+	circularCheck = func(name string, seen map[string]int) error {
+		if seen[name] > 0 {
+			return balloonsError("circular composition detected in composite balloon %q", name)
+		}
+		seen[name] += 1
+		if compBlnDef, ok := compositeBlnDefs[name]; ok {
+			for _, comp := range compBlnDef.Components {
+				if err := circularCheck(comp.DefName, seen); err != nil {
+					return err
+				}
+			}
+		}
+		seen[name] -= 1
+		return nil
+	}
+	for compBlnName, compBlnDef := range compositeBlnDefs {
+		for compIdx, comp := range compBlnDef.Components {
+			if comp.DefName == "" {
+				return balloonsError("missing or empty component balloonType name in composite balloon %q component %d",
+					compBlnName, compIdx+1)
+			}
+			// Make sure every component balloon type is
+			// defined in BalloonDefs.
+			if _, ok := seenNames[comp.DefName]; !ok {
+				return balloonsError("balloon type %q in composite balloon %q is not defined in balloonTypes",
+					comp.DefName, compBlnName)
+			}
+		}
+		// Check for circular compositions.
+		seen := map[string]int{}
+		if err := circularCheck(compBlnName, seen); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -1635,8 +1810,38 @@ func (p *balloons) closestMems(cpus cpuset.CPUSet) idset.IDSet {
 	return idset.NewIDSet(p.memAllocator.CPUSetAffinity(cpus).Slice()...)
 }
 
+// resizeCompositeBalloon changes the CPUs allocated for all sub-components
+func (p *balloons) resizeCompositeBalloon(bln *Balloon, newMilliCpus int) error {
+	origFreeCpus := p.freeCpus.Clone()
+	origCompBlnsCpus := []cpuset.CPUSet{}
+	newMilliCpusPerComponent := newMilliCpus / len(bln.components)
+	blnCpus := cpuset.New()
+	for _, compBln := range bln.components {
+		origCompBlnsCpus = append(origCompBlnsCpus, compBln.Cpus.Clone())
+		if err := p.resizeBalloon(compBln, newMilliCpusPerComponent); err != nil {
+			p.freeCpus = origFreeCpus
+			for i, origCompBlnCpus := range origCompBlnsCpus {
+				bln.components[i].Cpus = origCompBlnCpus
+			}
+			return balloonsError("resize composite balloon %s: %w", bln.PrettyName(), err)
+		}
+		blnCpus = blnCpus.Union(compBln.Cpus)
+	}
+	p.forgetCpuClass(bln) // reset CPU classes in balloon's old CPUs
+	bln.Cpus = blnCpus
+	log.Debugf("- resize composite ballooon successful: %s, freecpus: %#s", bln, p.freeCpus)
+	p.updatePinning(bln)
+	if err := p.useCpuClass(bln); err != nil { // set CPU classes in balloon's new CPUs
+		log.Warnf("failed to apply CPU class to balloon %s: %v", bln.PrettyName(), err)
+	}
+	return nil
+}
+
 // resizeBalloon changes the CPUs allocated for a balloon, if allowed.
 func (p *balloons) resizeBalloon(bln *Balloon, newMilliCpus int) error {
+	if len(bln.components) > 0 {
+		return p.resizeCompositeBalloon(bln, newMilliCpus)
+	}
 	oldCpuCount := bln.Cpus.Size()
 	newCpuCount := (newMilliCpus + 999) / 1000
 	if bln.Def.MaxCpus > NoLimit && newCpuCount > bln.Def.MaxCpus {
