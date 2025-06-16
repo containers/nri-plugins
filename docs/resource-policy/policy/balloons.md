@@ -564,6 +564,31 @@ spec:
         ...
 ```
 
+## Reset CPU and memory pinning
+
+CPU and memory pinning of all containers can be forcibly reset with
+the following policy. The policy assigns containers from all
+namespaces to the same "reserved" balloon instance, and allows them to
+use all other CPUs in the system, too.
+
+```
+apiVersion: config.nri/v1alpha1
+kind: BalloonsPolicy
+metadata:
+  name: default
+  namespace: kube-system
+spec:
+  balloonTypes:
+  - name: reserved
+    namespaces:
+    - "*"
+    shareIdleCPUsInSame: system
+  reservedResources:
+    cpu: 1
+  pinCPU: true
+  pinMemory: true
+```
+
 ## Metrics and Debugging
 
 In order to enable more verbose logging and metrics exporting from the
