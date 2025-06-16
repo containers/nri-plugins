@@ -1,6 +1,6 @@
 FROM sphinxdoc/sphinx:7.4.7
 
-ARG GO_VERSION=1.24
+ARG GO_VERSION=1.24.3
 
 RUN apt-get update && apt-get install -y wget git
 
