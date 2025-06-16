@@ -534,6 +534,36 @@ metadata:
     memory-type.resource-policy.nri.io/container.LLM: HBM,DRAM
 ```
 
+## Prevent Creating a Container
+
+Sometimes unwanted or unknown containers must not be created on a
+node, not even in the case that such a pod is scheduled on the node
+accidentally. This can be prevented by a policy that has a balloon type
+that is not able to run a container that matches to the type. One way
+to define such a balloon type is by specifying that instances of the
+type will never have enough CPUs to run any containers. That is, set
+`maxCPUs` and `minCPUs` to -1.
+
+```yaml
+apiVersion: config.nri/v1alpha1
+kind: BalloonsPolicy
+metadata:
+  name: default
+  namespace: kube-system
+spec:
+  balloonTypes:
+  - name: unknown-containers
+    maxCPUs: -1
+    minCPUs: -1
+    matchExpressions:
+    - key: name
+      operator: NotIn
+      values:
+      - containerA
+      - containerB
+        ...
+```
+
 ## Metrics and Debugging
 
 In order to enable more verbose logging and metrics exporting from the
