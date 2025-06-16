@@ -24,7 +24,7 @@ import ()
 func (in *Config) DeepCopyInto(out *Config) {
 	*out = *in
 	in.CPU.DeepCopyInto(&out.CPU)
-	out.RDT = in.RDT
+	in.RDT.DeepCopyInto(&out.RDT)
 	out.BlockIO = in.BlockIO
 }
 

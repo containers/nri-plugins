@@ -39,3 +39,15 @@ type CommonConfig struct {
 	Log             log.Config
 	Instrumentation instrumentation.Config
 }
+
+func (c *CommonConfig) Validate() error {
+	if c == nil {
+		return nil
+	}
+
+	if err := c.Control.RDT.Validate(); err != nil {
+		return err
+	}
+
+	return nil
+}

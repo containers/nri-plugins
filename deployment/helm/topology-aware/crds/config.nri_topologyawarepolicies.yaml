@@ -137,6 +137,308 @@ spec:
                           When enabled, policy implementations can adjust cache allocation
                           and memory bandwidth by assigning containers to RDT classes.
                         type: boolean
+                      force:
+                        description: Force indicates if the configuration should be
+                          forced to goresctrl.
+                        type: boolean
+                      options:
+                        description: Options container common goresctrl/rdt settings.
+                        properties:
+                          l2:
+                            description: CatOptions contains the common settings for
+                              cache allocation.
+                            properties:
+                              optional:
+                                type: boolean
+                            required:
+                            - optional
+                            type: object
+                          l3:
+                            description: CatOptions contains the common settings for
+                              cache allocation.
+                            properties:
+                              optional:
+                                type: boolean
+                            required:
+                            - optional
+                            type: object
+                          mb:
+                            description: MbOptions contains the common settings for
+                              memory bandwidth allocation.
+                            properties:
+                              optional:
+                                type: boolean
+                            required:
+                            - optional
+                            type: object
+                        type: object
+                      partitions:
+                        additionalProperties:
+                          description: PartitionConfig provides configuration for
+                            a single cache partition.
+                          properties:
+                            classes:
+                              additionalProperties:
+                                description: ClassConfig provides configuration for
+                                  a single named cache CLOS/class.
+                                properties:
+                                  l2Allocation:
+                                    additionalProperties:
+                                      description: "CacheIdCatConfig is the cache
+                                        allocation configuration for one cache id.\nCode
+                                        and Data represent an optional configuration
+                                        for separate code and data\npaths and only
+                                        have effect when RDT CDP (Code and Data Prioritization)
+                                        is\nenabled in the system. Code and Data go
+                                        in tandem so that both or neither\nmust be
+                                        specified - only specifying the other is considered
+                                        a configuration\nerror.\n\n\tTODO(klihub):
+                                        Ideally we'd have a validation rule ensuring
+                                        that either\n\tunified or code+data are set
+                                        here. I tried that using a CEL-expression\n\tbut
+                                        couldn't avoid hitting the complexity estimation
+                                        limit (even with\n\textra MaxProperties limits
+                                        thrown in). Maybe we'll be able to do that\n\teventually
+                                        with https://github.com/kubernetes-sigs/controller-tools/pull/1212"
+                                      properties:
+                                        code:
+                                          description: |-
+                                            CacheProportion specifies a share of the available cache lines.
+                                            Supported formats:
+
+                                            - percentage, e.g. `50%`
+                                            - percentage range, e.g. `50-60%`
+                                            - bit numbers, e.g. `0-5`, `2,3`, must contain one contiguous block of bits set
+                                            - hex bitmask, e.g. `0xff0`, must contain one contiguous block of bits set
+                                          type: string
+                                        data:
+                                          description: |-
+                                            CacheProportion specifies a share of the available cache lines.
+                                            Supported formats:
+
+                                            - percentage, e.g. `50%`
+                                            - percentage range, e.g. `50-60%`
+                                            - bit numbers, e.g. `0-5`, `2,3`, must contain one contiguous block of bits set
+                                            - hex bitmask, e.g. `0xff0`, must contain one contiguous block of bits set
+                                          type: string
+                                        unified:
+                                          description: |-
+                                            CacheProportion specifies a share of the available cache lines.
+                                            Supported formats:
+
+                                            - percentage, e.g. `50%`
+                                            - percentage range, e.g. `50-60%`
+                                            - bit numbers, e.g. `0-5`, `2,3`, must contain one contiguous block of bits set
+                                            - hex bitmask, e.g. `0xff0`, must contain one contiguous block of bits set
+                                          type: string
+                                      type: object
+                                    description: CatConfig contains the L2 or L3 cache
+                                      allocation configuration for one partition or
+                                      class.
+                                    type: object
+                                  l3Allocation:
+                                    additionalProperties:
+                                      description: "CacheIdCatConfig is the cache
+                                        allocation configuration for one cache id.\nCode
+                                        and Data represent an optional configuration
+                                        for separate code and data\npaths and only
+                                        have effect when RDT CDP (Code and Data Prioritization)
+                                        is\nenabled in the system. Code and Data go
+                                        in tandem so that both or neither\nmust be
+                                        specified - only specifying the other is considered
+                                        a configuration\nerror.\n\n\tTODO(klihub):
+                                        Ideally we'd have a validation rule ensuring
+                                        that either\n\tunified or code+data are set
+                                        here. I tried that using a CEL-expression\n\tbut
+                                        couldn't avoid hitting the complexity estimation
+                                        limit (even with\n\textra MaxProperties limits
+                                        thrown in). Maybe we'll be able to do that\n\teventually
+                                        with https://github.com/kubernetes-sigs/controller-tools/pull/1212"
+                                      properties:
+                                        code:
+                                          description: |-
+                                            CacheProportion specifies a share of the available cache lines.
+                                            Supported formats:
+
+                                            - percentage, e.g. `50%`
+                                            - percentage range, e.g. `50-60%`
+                                            - bit numbers, e.g. `0-5`, `2,3`, must contain one contiguous block of bits set
+                                            - hex bitmask, e.g. `0xff0`, must contain one contiguous block of bits set
+                                          type: string
+                                        data:
+                                          description: |-
+                                            CacheProportion specifies a share of the available cache lines.
+                                            Supported formats:
+
+                                            - percentage, e.g. `50%`
+                                            - percentage range, e.g. `50-60%`
+                                            - bit numbers, e.g. `0-5`, `2,3`, must contain one contiguous block of bits set
+                                            - hex bitmask, e.g. `0xff0`, must contain one contiguous block of bits set
+                                          type: string
+                                        unified:
+                                          description: |-
+                                            CacheProportion specifies a share of the available cache lines.
+                                            Supported formats:
+
+                                            - percentage, e.g. `50%`
+                                            - percentage range, e.g. `50-60%`
+                                            - bit numbers, e.g. `0-5`, `2,3`, must contain one contiguous block of bits set
+                                            - hex bitmask, e.g. `0xff0`, must contain one contiguous block of bits set
+                                          type: string
+                                      type: object
+                                    description: CatConfig contains the L2 or L3 cache
+                                      allocation configuration for one partition or
+                                      class.
+                                    type: object
+                                  mbAllocation:
+                                    additionalProperties:
+                                      description: |-
+                                        CacheIdMbaConfig is the memory bandwidth configuration for one cache id.
+                                        It's an array of at most two values, specifying separate values to be used
+                                        for percentage based and MBps based memory bandwidth allocation. For
+                                        example, `{"80%", "1000MBps"}` would allocate 80% if percentage based
+                                        allocation is used by the Linux kernel, or 1000 MBps in case MBps based
+                                        allocation is in use.
+                                      items:
+                                        description: |-
+                                          MbProportion specifies a share of available memory bandwidth. It's an
+                                          integer value followed by a unit. Two units are supported:
+
+                                          - percentage, e.g. `80%`
+                                          - MBps, e.g. `1000MBps`
+                                        type: string
+                                      type: array
+                                    description: MbaConfig contains the memory bandwidth
+                                      configuration for one partition or class.
+                                    type: object
+                                type: object
+                              type: object
+                            l2Allocation:
+                              additionalProperties:
+                                description: "CacheIdCatConfig is the cache allocation
+                                  configuration for one cache id.\nCode and Data represent
+                                  an optional configuration for separate code and
+                                  data\npaths and only have effect when RDT CDP (Code
+                                  and Data Prioritization) is\nenabled in the system.
+                                  Code and Data go in tandem so that both or neither\nmust
+                                  be specified - only specifying the other is considered
+                                  a configuration\nerror.\n\n\tTODO(klihub): Ideally
+                                  we'd have a validation rule ensuring that either\n\tunified
+                                  or code+data are set here. I tried that using a
+                                  CEL-expression\n\tbut couldn't avoid hitting the
+                                  complexity estimation limit (even with\n\textra
+                                  MaxProperties limits thrown in). Maybe we'll be
+                                  able to do that\n\teventually with https://github.com/kubernetes-sigs/controller-tools/pull/1212"
+                                properties:
+                                  code:
+                                    description: |-
+                                      CacheProportion specifies a share of the available cache lines.
+                                      Supported formats:
+
+                                      - percentage, e.g. `50%`
+                                      - percentage range, e.g. `50-60%`
+                                      - bit numbers, e.g. `0-5`, `2,3`, must contain one contiguous block of bits set
+                                      - hex bitmask, e.g. `0xff0`, must contain one contiguous block of bits set
+                                    type: string
+                                  data:
+                                    description: |-
+                                      CacheProportion specifies a share of the available cache lines.
+                                      Supported formats:
+
+                                      - percentage, e.g. `50%`
+                                      - percentage range, e.g. `50-60%`
+                                      - bit numbers, e.g. `0-5`, `2,3`, must contain one contiguous block of bits set
+                                      - hex bitmask, e.g. `0xff0`, must contain one contiguous block of bits set
+                                    type: string
+                                  unified:
+                                    description: |-
+                                      CacheProportion specifies a share of the available cache lines.
+                                      Supported formats:
+
+                                      - percentage, e.g. `50%`
+                                      - percentage range, e.g. `50-60%`
+                                      - bit numbers, e.g. `0-5`, `2,3`, must contain one contiguous block of bits set
+                                      - hex bitmask, e.g. `0xff0`, must contain one contiguous block of bits set
+                                    type: string
+                                type: object
+                              description: CatConfig contains the L2 or L3 cache allocation
+                                configuration for one partition or class.
+                              type: object
+                            l3Allocation:
+                              additionalProperties:
+                                description: "CacheIdCatConfig is the cache allocation
+                                  configuration for one cache id.\nCode and Data represent
+                                  an optional configuration for separate code and
+                                  data\npaths and only have effect when RDT CDP (Code
+                                  and Data Prioritization) is\nenabled in the system.
+                                  Code and Data go in tandem so that both or neither\nmust
+                                  be specified - only specifying the other is considered
+                                  a configuration\nerror.\n\n\tTODO(klihub): Ideally
+                                  we'd have a validation rule ensuring that either\n\tunified
+                                  or code+data are set here. I tried that using a
+                                  CEL-expression\n\tbut couldn't avoid hitting the
+                                  complexity estimation limit (even with\n\textra
+                                  MaxProperties limits thrown in). Maybe we'll be
+                                  able to do that\n\teventually with https://github.com/kubernetes-sigs/controller-tools/pull/1212"
+                                properties:
+                                  code:
+                                    description: |-
+                                      CacheProportion specifies a share of the available cache lines.
+                                      Supported formats:
+
+                                      - percentage, e.g. `50%`
+                                      - percentage range, e.g. `50-60%`
+                                      - bit numbers, e.g. `0-5`, `2,3`, must contain one contiguous block of bits set
+                                      - hex bitmask, e.g. `0xff0`, must contain one contiguous block of bits set
+                                    type: string
+                                  data:
+                                    description: |-
+                                      CacheProportion specifies a share of the available cache lines.
+                                      Supported formats:
+
+                                      - percentage, e.g. `50%`
+                                      - percentage range, e.g. `50-60%`
+                                      - bit numbers, e.g. `0-5`, `2,3`, must contain one contiguous block of bits set
+                                      - hex bitmask, e.g. `0xff0`, must contain one contiguous block of bits set
+                                    type: string
+                                  unified:
+                                    description: |-
+                                      CacheProportion specifies a share of the available cache lines.
+                                      Supported formats:
+
+                                      - percentage, e.g. `50%`
+                                      - percentage range, e.g. `50-60%`
+                                      - bit numbers, e.g. `0-5`, `2,3`, must contain one contiguous block of bits set
+                                      - hex bitmask, e.g. `0xff0`, must contain one contiguous block of bits set
+                                    type: string
+                                type: object
+                              description: CatConfig contains the L2 or L3 cache allocation
+                                configuration for one partition or class.
+                              type: object
+                            mbAllocation:
+                              additionalProperties:
+                                description: |-
+                                  CacheIdMbaConfig is the memory bandwidth configuration for one cache id.
+                                  It's an array of at most two values, specifying separate values to be used
+                                  for percentage based and MBps based memory bandwidth allocation. For
+                                  example, `{"80%", "1000MBps"}` would allocate 80% if percentage based
+                                  allocation is used by the Linux kernel, or 1000 MBps in case MBps based
+                                  allocation is in use.
+                                items:
+                                  description: |-
+                                    MbProportion specifies a share of available memory bandwidth. It's an
+                                    integer value followed by a unit. Two units are supported:
+
+                                    - percentage, e.g. `80%`
+                                    - MBps, e.g. `1000MBps`
+                                  type: string
+                                type: array
+                              description: MbaConfig contains the memory bandwidth
+                                configuration for one partition or class.
+                              type: object
+                          type: object
+                        description: Partitions configure cache partitions.
+                        type: object
                       usePodQoSAsDefaultClass:
                         description: |-
                           usePodQoSAsDefaultClass controls whether a container's Pod QoS

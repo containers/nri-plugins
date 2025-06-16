@@ -45,3 +45,15 @@ func (c *TopologyAwarePolicy) PolicyConfig() interface{} {
 	}
 	return &c.Spec.Config
 }
+
+func (c *TopologyAwarePolicy) Validate() error {
+	if c == nil {
+		return nil
+	}
+
+	if err := c.CommonConfig().Validate(); err != nil {
+		return err
+	}
+
+	return nil
+}
