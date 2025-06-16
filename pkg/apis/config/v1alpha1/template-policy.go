@@ -14,6 +14,8 @@
 
 package v1alpha1
 
+import "github.com/intel/goresctrl/pkg/rdt"
+
 var (
 	_ ResmgrConfig = &TemplatePolicy{}
 )
@@ -44,4 +46,8 @@ func (c *TemplatePolicy) PolicyConfig() interface{} {
 		return nil
 	}
 	return &c.Spec.Config
+}
+
+func (c *TemplatePolicy) RdtConfig() (*rdt.Config, bool, error) {
+	return nil, false, nil
 }
