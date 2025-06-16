@@ -30,7 +30,6 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/policy"
 	"github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/topology"
-	goresctrlpath "github.com/intel/goresctrl/pkg/path"
 	"sigs.k8s.io/yaml"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1"
@@ -59,6 +58,8 @@ type resmgr struct {
 	events  chan interface{} // channel for delivering events
 	stop    chan interface{} // channel for signalling shutdown to goroutines
 	nri     *nriPlugin       // NRI plugins, if we're running as such
+	rdt     *rdtControl      // control for RDT allocation and monitoring
+	blkio   *blkioControl    // control for block I/O prioritization and throttling
 	running bool
 }
 
@@ -77,7 +78,6 @@ func NewResourceManager(backend policy.Backend, agt *agent.Agent) (ResourceManag
 	if opt.HostRoot != "" {
 		sysfs.SetSysRoot(opt.HostRoot)
 		topology.SetSysRoot(opt.HostRoot)
-		goresctrlpath.SetPrefix(opt.HostRoot)
 	}
 
 	if opt.MetricsTimer != 0 {
@@ -108,6 +108,9 @@ func NewResourceManager(backend policy.Backend, agt *agent.Agent) (ResourceManag
 	if err := m.setupEventProcessing(); err != nil {
 		return nil, err
 	}
+
+	m.rdt = newRdtControl(m, opt.HostRoot)
+	m.blkio = newBlockioControl(m, opt.HostRoot)
 
 	if err := m.setupControllers(); err != nil {
 		return nil, err
@@ -175,8 +178,15 @@ func (m *resmgr) start(cfg cfgapi.ResmgrConfig) error {
 		log.Warnf("failed to configure logger: %v", err)
 	}
 
-	m.cache.ConfigureRDTControl(mCfg.Control.RDT.Enable)
-	m.cache.ConfigureBlockIOControl(mCfg.Control.BlockIO.Enable)
+	//	m.cache.ConfigureBlockIOControl(mCfg.Control.BlockIO.Enable)
+
+	if err := m.blkio.configure(&mCfg.Control.BlockIO); err != nil {
+		return err
+	}
+
+	if err := m.rdt.configure(&mCfg.Control.RDT); err != nil {
+		return err
+	}
 
 	if err := m.policy.Start(m.cfg.PolicyConfig()); err != nil {
 		return err
@@ -305,8 +315,15 @@ func (m *resmgr) reconfigure(cfg cfgapi.ResmgrConfig) error {
 			log.Warnf("failed to restart controllers: %v", err)
 		}
 
-		m.cache.ConfigureRDTControl(mCfg.Control.RDT.Enable)
-		m.cache.ConfigureBlockIOControl(mCfg.Control.BlockIO.Enable)
+		//  m.cache.ConfigureBlockIOControl(mCfg.Control.BlockIO.Enable)
+
+		if err := m.blkio.configure(&mCfg.Control.BlockIO); err != nil {
+			return err
+		}
+
+		if err := m.rdt.configure(&mCfg.Control.RDT); err != nil {
+			return err
+		}
 
 		err := m.policy.Reconfigure(cfg.PolicyConfig())
 		if err != nil {
