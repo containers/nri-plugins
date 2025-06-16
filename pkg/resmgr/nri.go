@@ -689,6 +689,7 @@ func (p *nriPlugin) getPendingUpdates(skip *api.Container) []*api.ContainerUpdat
 			for _, ctrl := range c.GetPending() {
 				c.ClearPending(ctrl)
 			}
+			m.policy.ExportResourceData(c)
 		}
 	}
 
