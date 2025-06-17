@@ -96,7 +96,13 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
-              drop: ["ALL"]
+              drop:
+                - ALL
+          {{- if .Values.config.control.rdt.enable }}
+              add:
+                - SYS_ADMIN
+                - DAC_OVERRIDE
+          {{- end }}
           resources:
             requests:
               cpu: {{ .Values.resources.cpu }}
