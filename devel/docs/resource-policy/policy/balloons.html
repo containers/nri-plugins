@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.9.4-34-g4e519039 documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.9.4-35-g70b0e498 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=6011ca20"></script>
+        <script src="../../../_static/documentation_options.js?v=2b1fb7cf"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -64,6 +64,7 @@
 <li class="toctree-l4"><a class="reference internal" href="#assigning-a-container-to-a-balloon">Assigning a Container to a Balloon</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#pod-and-container-overrides-to-cpu-and-memory-pinning">Pod and Container Overrides to CPU and Memory Pinning</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#prevent-creating-a-container">Prevent Creating a Container</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#reset-cpu-and-memory-pinning">Reset CPU and memory pinning</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#metrics-and-debugging">Metrics and Debugging</a></li>
 </ul>
 </li>
@@ -688,6 +689,30 @@ type will never have enough CPUs to run any containers. That is, set
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">containerA</span>
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">containerB</span>
 <span class="w">        </span><span class="l l-Scalar l-Scalar-Plain">...</span>
+</pre></div>
+</div>
+</section>
+<section id="reset-cpu-and-memory-pinning">
+<h2>Reset CPU and memory pinning<a class="headerlink" href="#reset-cpu-and-memory-pinning" title="Link to this heading"></a></h2>
+<p>CPU and memory pinning of all containers can be forcibly reset with
+the following policy. The policy assigns containers from all
+namespaces to the same “reserved” balloon instance, and allows them to
+use all other CPUs in the system, too.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">apiVersion</span><span class="p">:</span> <span class="n">config</span><span class="o">.</span><span class="n">nri</span><span class="o">/</span><span class="n">v1alpha1</span>
+<span class="n">kind</span><span class="p">:</span> <span class="n">BalloonsPolicy</span>
+<span class="n">metadata</span><span class="p">:</span>
+  <span class="n">name</span><span class="p">:</span> <span class="n">default</span>
+  <span class="n">namespace</span><span class="p">:</span> <span class="n">kube</span><span class="o">-</span><span class="n">system</span>
+<span class="n">spec</span><span class="p">:</span>
+  <span class="n">balloonTypes</span><span class="p">:</span>
+  <span class="o">-</span> <span class="n">name</span><span class="p">:</span> <span class="n">reserved</span>
+    <span class="n">namespaces</span><span class="p">:</span>
+    <span class="o">-</span> <span class="s2">&quot;*&quot;</span>
+    <span class="n">shareIdleCPUsInSame</span><span class="p">:</span> <span class="n">system</span>
+  <span class="n">reservedResources</span><span class="p">:</span>
+    <span class="n">cpu</span><span class="p">:</span> <span class="mi">1</span>
+  <span class="n">pinCPU</span><span class="p">:</span> <span class="n">true</span>
+  <span class="n">pinMemory</span><span class="p">:</span> <span class="n">true</span>
 </pre></div>
 </div>
 </section>
