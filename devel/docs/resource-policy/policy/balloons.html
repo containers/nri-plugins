@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.9.4-35-g70b0e498 documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.9.4-39-g0880f510 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=2b1fb7cf"></script>
+        <script src="../../../_static/documentation_options.js?v=ad54ce9a"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -63,6 +63,7 @@
 <li class="toctree-l4"><a class="reference internal" href="#configuration">Configuration</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#assigning-a-container-to-a-balloon">Assigning a Container to a Balloon</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#pod-and-container-overrides-to-cpu-and-memory-pinning">Pod and Container Overrides to CPU and Memory Pinning</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#combining-balloons">Combining Balloons</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#prevent-creating-a-container">Prevent Creating a Container</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#reset-cpu-and-memory-pinning">Reset CPU and memory pinning</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#metrics-and-debugging">Metrics and Debugging</a></li>
@@ -393,6 +394,16 @@ instance, two balloons that generate heavy load on level 2 cache
 should get their CPUs from separate cache blocks for best
 performance. Every listed class must be specified in
 <code class="docutils literal notranslate"><span class="pre">loadClasses</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">components</span></code> is a list of components of a balloon. If a balloon
+consists of components, its CPUs are allocated by allocating CPUs
+for each component balloon separately, and then adding them up.
+See <a class="reference internal" href="#combining-balloons">combining balloons</a> for more details and
+an example. Properties of components in the list are:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">balloonType</span></code> specifies the name of the balloon type according
+to which CPUs are allocated to this component.</p></li>
+</ul>
+</li>
 </ul>
 </li>
 <li><p><code class="docutils literal notranslate"><span class="pre">loadClasses</span></code>: lists properties of loads that containers in balloons
@@ -662,6 +673,69 @@ latter two for other containers in the pod. Supported types are “HBM”,
 </pre></div>
 </div>
 </section>
+</section>
+<section id="combining-balloons">
+<h2>Combining Balloons<a class="headerlink" href="#combining-balloons" title="Link to this heading"></a></h2>
+<p>Sometimes a container needs a set of CPUs where some CPUs have
+different properties or they are selected based on different criteria
+than other CPUs.</p>
+<p>This kind of a container needs to be assigned into a composite
+balloon. A composite balloon consists of component balloons.
+Specifying <code class="docutils literal notranslate"><span class="pre">components</span></code> in a balloon type makes it a composite balloon
+type. Composite balloons get their CPUs by combining CPUs of their
+components.</p>
+<p>Each component specifies its balloon type, that must be defined in the
+<code class="docutils literal notranslate"><span class="pre">balloonTypes</span></code> list. CPUs are allocated to the component based on its
+own balloon type configuration only. As CPUs are not allocated
+directly to composite balloons, CPU allocation parameters are not
+allowed in composite balloon types.</p>
+<p>When the policy creates new composite balloon, it creates hidden
+instances of balloons’s components, too. Resizing the composite
+balloon due to changes in its containers causes resizing these hidden
+instances.</p>
+<p>Example: allocate CPUs for distributed AI inference containers so
+that, depending on a balloon type, a container will get:</p>
+<ul class="simple">
+<li><p>equal number of CPUs from all 4 NUMA nodes in the system</p></li>
+<li><p>equal number of CPUs from both NUMA nodes on CPU package 0</p></li>
+<li><p>equal number of CPUs from both NUMA nodes on CPU package 1.</p></li>
+</ul>
+<p>Following balloon type configuration implements this. Containers can
+be assigned into balloons <code class="docutils literal notranslate"><span class="pre">balance-all-nodes</span></code>, <code class="docutils literal notranslate"><span class="pre">balance-pkg0-nodes</span></code>,
+and <code class="docutils literal notranslate"><span class="pre">balance-pkg1-nodes</span></code>, respectively.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="w">  </span><span class="nt">balloonTypes</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">balance-all-nodes</span>
+<span class="w">    </span><span class="nt">components</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">balloonType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">balance-pkg0-nodes</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">balloonType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">balance-pkg1-nodes</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">balance-pkg0-nodes</span>
+<span class="w">    </span><span class="nt">components</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">balloonType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">node0</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">balloonType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">node1</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">balance-pkg1-nodes</span>
+<span class="w">    </span><span class="nt">components</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">balloonType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">node2</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">balloonType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">node3</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">node0</span>
+<span class="w">    </span><span class="nt">preferCloseToDevices</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/sys/devices/system/node/node0</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">node1</span>
+<span class="w">    </span><span class="nt">preferCloseToDevices</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/sys/devices/system/node/node1</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">node2</span>
+<span class="w">    </span><span class="nt">preferCloseToDevices</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/sys/devices/system/node/node2</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">node3</span>
+<span class="w">    </span><span class="nt">preferCloseToDevices</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/sys/devices/system/node/node3</span>
+</pre></div>
+</div>
 </section>
 <section id="prevent-creating-a-container">
 <h2>Prevent Creating a Container<a class="headerlink" href="#prevent-creating-a-container" title="Link to this heading"></a></h2>
