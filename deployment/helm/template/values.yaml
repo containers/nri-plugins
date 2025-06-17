@@ -11,6 +11,47 @@ image:
 config:
   reservedResources:
     cpu: 750m
+  control:
+    rdt:
+      enable: false
+      usePodQoSAsDefaultClass: true
+      options:
+        l2:
+          optional: true
+        l3:
+          optional: true
+        mb:
+          optional: true
+      partitions:
+        fullCache:
+          l2Allocation:
+            all:
+              unified: 100%
+          l3Allocation:
+            all:
+              unified: 100%
+          classes:
+            BestEffort:
+              l2Allocation:
+                all:
+                  unified: 33%
+              l3Allocation:
+                all:
+                  unified: 33%
+            Burstable:
+              l2Allocation:
+                all:
+                  unified: 66%
+              l3Allocation:
+                all:
+                  unified: 66%
+            Guaranteed:
+              l2Allocation:
+                all:
+                  unified: 100%
+              l3Allocation:
+                all:
+                  unified: 100%
   log:
     source: true
     klog:
