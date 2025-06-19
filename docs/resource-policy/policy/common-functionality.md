@@ -13,10 +13,10 @@ allocated to containers' processes. In practice, containers are assigned to clas
 Classes have a corresponding cache allocation configuration. This configuration is
 applied to all containers and subsequently to all processes started in a container.
 
-To enable cache control use the `control.rdt.enable` option which default to `false`.
+To enable cache control use the `control.rdt.enable` option which defaults to `false`.
 
 Plugins can be configured to assign containers by default to a cache class named after
-the Pod QoS class of a container: one of `BestEffort`, `Burstable`, and `Guaranteed`.
+the Pod QoS class of the container: one of `BestEffort`, `Burstable`, and `Guaranteed`.
 The configuration setting controlling this behavior is `control.rdt.usagePodQoSAsDefaultClass`
 and it defaults to `false`.
 
@@ -36,7 +36,8 @@ metadata:
 
 This will assign the container named `special-container` within the pod to
 the `specialclass` RDT class and any other container within the pod to the
-`poddefaultclass` RDT class.
+`poddefaultclass` RDT class. Effectively these containers' processes will
+be assigned to the RDT CLOSes corresponding to those classes.
 
 ### Cache Class/Partitioning Configuration
 
@@ -91,8 +92,8 @@ config:
 ```
 
 The actual library used to implement cache control is [goresctrl](https://github.com/intel/goresctrl).
-Please refer to the its [documentation](https://github.com/intel/goresctrl/blob/main/doc/rdt.md) for
-a more detailed description of configuration details and semantics.
+Please refer to its [documentation](https://github.com/intel/goresctrl/blob/main/doc/rdt.md) for
+a more detailed description of configuration semantics.
 
 #### A Warning About Configuration Syntax Differences
 
@@ -127,7 +128,7 @@ to actually mean
 ...
 ```
 
-This is not possible with the NRI Reference plugins configuration CR. Here you
+This is not possible with the NRI Reference Plugins configuration CR. Here you
 must use the latter full syntax.
 
 ### Cache Allocation Prerequisites
