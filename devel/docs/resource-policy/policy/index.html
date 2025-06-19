@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Policies &mdash; NRI Plugins v0.9.4-39-g0880f510 documentation</title>
+  <title>Policies &mdash; NRI Plugins v0.9.4-43-gce84ee1f documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=ad54ce9a"></script>
+        <script src="../../../_static/documentation_options.js?v=f386d21f"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -58,6 +58,7 @@
 <li class="toctree-l3"><a class="reference internal" href="topology-aware.html">Topology-Aware Policy</a></li>
 <li class="toctree-l3"><a class="reference internal" href="balloons.html">Balloons Policy</a></li>
 <li class="toctree-l3"><a class="reference internal" href="template.html">Template Policy</a></li>
+<li class="toctree-l3"><a class="reference internal" href="common-functionality.html">Common Functionality</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="../developers-guide/index.html">Developer’s Guide</a></li>
@@ -96,17 +97,24 @@
              
   <section id="policies">
 <h1>Policies<a class="headerlink" href="#policies" title="Link to this heading"></a></h1>
-<p>Currently there are two resource policies:</p>
+<p>Currently there are two real resource policies implemented:</p>
 <p>The Topology Aware resource policy provides a nearly zero configuration
 resource policy that allocates resources evenly in order to avoid the “noisy
 neighbor” problem.</p>
 <p>The Balloons resource policy allows user to allocate workloads to resources in
 a more user controlled way.</p>
+<p>Additionally there is a wire-frame Template resource policy implementation
+without any real resource assignment logic. It can be used as a template to
+implement new policies from scratch.</p>
+<p>Also, there is some common functionality offered by the shared generic resource
+management code used in these policies. This functionality is available in all
+policies.</p>
 <div class="toctree-wrapper compound">
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="topology-aware.html">Topology-Aware Policy</a></li>
 <li class="toctree-l1"><a class="reference internal" href="balloons.html">Balloons Policy</a></li>
 <li class="toctree-l1"><a class="reference internal" href="template.html">Template Policy</a></li>
+<li class="toctree-l1"><a class="reference internal" href="common-functionality.html">Common Functionality</a></li>
 </ul>
 </div>
 </section>
