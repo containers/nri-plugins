@@ -35,6 +35,9 @@ var (
 	Initialize func(string) error            = rdt.Initialize
 	SetLogger  func(*slog.Logger)            = rdt.SetLogger
 	SetConfig  func(*rdt.Config, bool) error = rdt.SetConfig
+
+	// And some that we need for other plumbing.
+	NewCollector = rdt.NewCollector
 )
 
 // Config provides runtime configuration for class based cache allocation
