@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Common Functionality &mdash; NRI Plugins v0.9.4-43-gce84ee1f documentation</title>
+  <title>Common Functionality &mdash; NRI Plugins v0.9.4-45-gbe6d152e documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=f386d21f"></script>
+        <script src="../../../_static/documentation_options.js?v=a9a7f02d"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -117,9 +117,9 @@ is available in all policies, unless stated otherwise in the policy-specific doc
 allocated to containers’ processes. In practice, containers are assigned to classes.
 Classes have a corresponding cache allocation configuration. This configuration is
 applied to all containers and subsequently to all processes started in a container.</p>
-<p>To enable cache control use the <code class="docutils literal notranslate"><span class="pre">control.rdt.enable</span></code> option which default to <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p>
+<p>To enable cache control use the <code class="docutils literal notranslate"><span class="pre">control.rdt.enable</span></code> option which defaults to <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p>
 <p>Plugins can be configured to assign containers by default to a cache class named after
-the Pod QoS class of a container: one of <code class="docutils literal notranslate"><span class="pre">BestEffort</span></code>, <code class="docutils literal notranslate"><span class="pre">Burstable</span></code>, and <code class="docutils literal notranslate"><span class="pre">Guaranteed</span></code>.
+the Pod QoS class of the container: one of <code class="docutils literal notranslate"><span class="pre">BestEffort</span></code>, <code class="docutils literal notranslate"><span class="pre">Burstable</span></code>, and <code class="docutils literal notranslate"><span class="pre">Guaranteed</span></code>.
 The configuration setting controlling this behavior is <code class="docutils literal notranslate"><span class="pre">control.rdt.usagePodQoSAsDefaultClass</span></code>
 and it defaults to <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p>
 <p>Additionally, containers can be explicitly annotated to be assigned to a class.
@@ -136,7 +136,8 @@ Use the <code class="docutils literal notranslate"><span class="pre">rdtclass.re
 </div>
 <p>This will assign the container named <code class="docutils literal notranslate"><span class="pre">special-container</span></code> within the pod to
 the <code class="docutils literal notranslate"><span class="pre">specialclass</span></code> RDT class and any other container within the pod to the
-<code class="docutils literal notranslate"><span class="pre">poddefaultclass</span></code> RDT class.</p>
+<code class="docutils literal notranslate"><span class="pre">poddefaultclass</span></code> RDT class. Effectively these containers’ processes will
+be assigned to the RDT CLOSes corresponding to those classes.</p>
 <section id="cache-class-partitioning-configuration">
 <h3>Cache Class/Partitioning Configuration<a class="headerlink" href="#cache-class-partitioning-configuration" title="Link to this heading"></a></h3>
 <p>RDT configuration is supplied as part of the<code class="docutils literal notranslate"><span class="pre">control.rdt</span></code> configuration block.
@@ -188,8 +189,8 @@ containers correspondingly:</p>
 </pre></div>
 </div>
 <p>The actual library used to implement cache control is <a class="reference external" href="https://github.com/intel/goresctrl">goresctrl</a>.
-Please refer to the its <a class="reference external" href="https://github.com/intel/goresctrl/blob/main/doc/rdt.md">documentation</a> for
-a more detailed description of configuration details and semantics.</p>
+Please refer to its <a class="reference external" href="https://github.com/intel/goresctrl/blob/main/doc/rdt.md">documentation</a> for
+a more detailed description of configuration semantics.</p>
 <section id="a-warning-about-configuration-syntax-differences">
 <h4>A Warning About Configuration Syntax Differences<a class="headerlink" href="#a-warning-about-configuration-syntax-differences" title="Link to this heading"></a></h4>
 <p>Note that the configuration syntax used for cache partitioning and classes is slightly
@@ -219,7 +220,7 @@ like this</p>
 <span class="nn">...</span>
 </pre></div>
 </div>
-<p>This is not possible with the NRI Reference plugins configuration CR. Here you
+<p>This is not possible with the NRI Reference Plugins configuration CR. Here you
 must use the latter full syntax.</p>
 </section>
 </section>
