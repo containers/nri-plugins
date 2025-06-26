@@ -17,8 +17,8 @@ package rdt
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
-	grclog "github.com/intel/goresctrl/pkg/log"
 	grcpath "github.com/intel/goresctrl/pkg/path"
 	"github.com/intel/goresctrl/pkg/rdt"
 )
@@ -33,7 +33,7 @@ var (
 	// Expose goresctrl/rdt functions for configuration via this package.
 	SetPrefix  func(string)                  = grcpath.SetPrefix
 	Initialize func(string) error            = rdt.Initialize
-	SetLogger  func(grclog.Logger)           = rdt.SetLogger
+	SetLogger  func(*slog.Logger)            = rdt.SetLogger
 	SetConfig  func(*rdt.Config, bool) error = rdt.SetConfig
 )
 
