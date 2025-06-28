@@ -16,6 +16,7 @@ package log
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -96,6 +97,9 @@ type Logger interface {
 
 	// Source returns the source name of this Logger.
 	Source() string
+
+	// SlogHandler returns an slog.Handler for this logger.
+	SlogHandler() slog.Handler
 }
 
 // logger implements Logger.
