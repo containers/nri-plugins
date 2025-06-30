@@ -907,7 +907,12 @@ func (cs *supply) GetScore(req Request) Score {
 		node = cs.node.Policy().root
 	}
 
-	o, err := node.Policy().getMemOffer(node, cr)
+	o, err := node.Policy().getMemOfferByHints(node, cr)
+	if err != nil {
+		log.Errorf("failed to get offer by hints: %v", err)
+		o, err = node.Policy().getMemOffer(node, cr)
+	}
+
 	if err != nil {
 		log.Error("failed to get offer for request %s: %v", req, err)
 	} else {
