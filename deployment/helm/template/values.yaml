@@ -11,6 +11,9 @@ image:
 config:
   reservedResources:
     cpu: 750m
+  agent:
+    nodeResourceTopology: true
+    podResourceAPI: false
   control:
     rdt:
       enable: false
