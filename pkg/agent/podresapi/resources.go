@@ -22,6 +22,10 @@ import (
 	api "k8s.io/kubelet/pkg/apis/podresources/v1"
 )
 
+const (
+	HintProvider = "podresourceapi:"
+)
+
 // PodResources contains resources for a pod.
 type PodResources struct {
 	*api.PodResources
@@ -134,7 +138,7 @@ func (r *ContainerResources) GetDeviceTopologyHints(checkDenied func(string) boo
 	hints := make(topology.Hints)
 
 	for _, dev := range r.GetDevices() {
-		name := "podresourceapi:" + dev.GetResourceName()
+		name := HintProvider + dev.GetResourceName()
 
 		if checkDenied(name) {
 			log.Info("filtering hints for disallowed device %s", name)
@@ -165,4 +169,8 @@ func (r *ContainerResources) GetDeviceTopologyHints(checkDenied func(string) boo
 	}
 
 	return hints
+}
+
+func IsPodResourceHint(provider string) bool {
+	return strings.HasPrefix(provider, HintProvider)
 }
