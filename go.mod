@@ -10,7 +10,7 @@ require (
 	github.com/containers/nri-plugins/pkg/topology v0.0.0
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/fsnotify/fsnotify v1.6.0
-	github.com/intel/goresctrl v0.8.1-0.20250628124214-579664119777
+	github.com/intel/goresctrl v0.9.0
 	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.2
 	github.com/onsi/ginkgo/v2 v2.21.0
 	github.com/onsi/gomega v1.35.1
