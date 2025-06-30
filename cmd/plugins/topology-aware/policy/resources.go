@@ -19,7 +19,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/containers/nri-plugins/pkg/agent/podresapi"
 	"github.com/containers/nri-plugins/pkg/sysfs"
+	"github.com/containers/nri-plugins/pkg/topology"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
@@ -379,8 +381,11 @@ func (cs *supply) Allocate(r Request, o *libmem.Offer) (Grant, map[string]libmem
 
 // AllocateCPU allocates CPU for a grant from the supply.
 func (cs *supply) AllocateCPU(r Request) (Grant, error) {
-	var exclusive cpuset.CPUSet
-	var err error
+	var (
+		exclusive cpuset.CPUSet
+		err       error
+		ok        bool
+	)
 
 	cr := r.(*request)
 
@@ -407,19 +412,25 @@ func (cs *supply) AllocateCPU(r Request) (Grant, error) {
 	// allocate isolated exclusive CPUs or slice them off the sharable set
 	switch {
 	case full > 0 && cs.isolated.Size() >= full && cr.isolate:
-		exclusive, err = cs.takeCPUs(&cs.isolated, nil, full, cr.CPUPrio())
-		if err != nil {
-			return nil, policyError("internal error: "+
-				"%s: can't take %d exclusive isolated CPUs from %s: %v",
-				cs.node.Name(), full, cs.isolated, err)
+		exclusive, ok = cs.takeCPUsByHints(&cs.isolated, cr)
+		if !ok {
+			exclusive, err = cs.takeCPUs(&cs.isolated, nil, full, cr.CPUPrio())
+			if err != nil {
+				return nil, policyError("internal error: "+
+					"%s: can't take %d exclusive isolated CPUs from %s: %v",
+					cs.node.Name(), full, cs.isolated, err)
+			}
 		}
 
 	case full > 0 && cs.AllocatableSharedCPU() > 1000*full:
-		exclusive, err = cs.takeCPUs(&cs.sharable, nil, full, cr.CPUPrio())
-		if err != nil {
-			return nil, policyError("internal error: "+
-				"%s: can't take %d exclusive CPUs from %s: %v",
-				cs.node.Name(), full, cs.sharable, err)
+		exclusive, ok = cs.takeCPUsByHints(&cs.sharable, cr)
+		if !ok {
+			exclusive, err = cs.takeCPUs(&cs.sharable, nil, full, cr.CPUPrio())
+			if err != nil {
+				return nil, policyError("internal error: "+
+					"%s: can't take %d exclusive CPUs from %s: %v",
+					cs.node.Name(), full, cs.sharable, err)
+			}
 		}
 
 	case full > 0:
@@ -522,6 +533,52 @@ func (cs *supply) takeCPUs(from, to *cpuset.CPUSet, cnt int, prio cpuPrio) (cpus
 	}
 
 	return cset, err
+}
+
+// takeCPUsByHints tries to allocate isolated or exclusive CPUs by topology hints.
+func (cs *supply) takeCPUsByHints(from *cpuset.CPUSet, cr *request) (cpuset.CPUSet, bool) {
+	hints := []*topology.Hint{}
+	for provider, hint := range cr.GetContainer().GetTopologyHints() {
+		if podresapi.IsPodResourceHint(provider) {
+			hints = append(hints, &hint)
+		}
+	}
+	if len(hints) == 0 || len(hints) > cr.full {
+		return cpuset.New(), false
+	}
+
+	total := cr.full
+	perHint := 1
+	if len(hints) < total && total%len(hints) == 0 {
+		perHint = total / len(hints)
+	}
+
+	free := (*from).Clone()
+	cpus := cpuset.New()
+	for _, h := range hints {
+		cset := free.Intersection(cpuset.MustParse(h.CPUs))
+		cs, err := cs.takeCPUs(&cset, nil, perHint, cr.CPUPrio())
+		if err != nil {
+			log.Errorf("failed to allocate CPUs by topology hints: %v", err)
+			return cpuset.New(), false
+		}
+		cpus = cpus.Union(cs)
+		free = free.Difference(cs)
+		total -= perHint
+	}
+
+	if total > 0 {
+		cs, err := cs.takeCPUs(&free, nil, total, cr.CPUPrio())
+		if err != nil {
+			log.Errorf("failed to allocate CPUs by topology hints: %v", err)
+			return cpuset.New(), false
+		}
+		cpus = cpus.Union(cs)
+		free = free.Difference(cs)
+	}
+
+	*from = free
+	return cpus, true
 }
 
 // DumpCapacity returns a printable representation of the supply's resource capacity.
