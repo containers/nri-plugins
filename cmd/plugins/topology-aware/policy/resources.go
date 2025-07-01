@@ -115,6 +115,8 @@ type Request interface {
 	MemAmountToAllocate() int64
 	// MemoryLimit returns the memory limit for the request.
 	MemoryLimit() int64
+	// PickByHints returns if picking resources by hints is preferred for this request.
+	PickByHints() bool
 	// ColdStart returns the cold start timeout.
 	ColdStart() time.Duration
 }
@@ -218,15 +220,16 @@ var _ Supply = &supply{}
 
 // request implements our Request interface.
 type request struct {
-	container cache.Container // container for this request
-	full      int             // number of full CPUs requested
-	fraction  int             // amount of fractional CPU requested
-	isolate   bool            // prefer isolated exclusive CPUs
-	cpuType   cpuClass        // preferred CPU type (normal, reserved)
-	prio      cpuPrio         // CPU priority preference, ignored for fraction requests
-	memReq    int64
-	memLim    int64
-	memType   memoryType // requested types of memory
+	container   cache.Container // container for this request
+	full        int             // number of full CPUs requested
+	fraction    int             // amount of fractional CPU requested
+	isolate     bool            // prefer isolated exclusive CPUs
+	cpuType     cpuClass        // preferred CPU type (normal, reserved)
+	prio        cpuPrio         // CPU priority preference, ignored for fraction requests
+	memReq      int64           // memory request
+	memLim      int64           // memory limit
+	memType     memoryType      // requested types of memory
+	pickByHints bool            // preference to pick resources by hints
 
 	// coldStart tells the timeout (in milliseconds) how long to wait until
 	// a DRAM memory controller should be added to a container asking for a
@@ -412,25 +415,33 @@ func (cs *supply) AllocateCPU(r Request) (Grant, error) {
 	// allocate isolated exclusive CPUs or slice them off the sharable set
 	switch {
 	case full > 0 && cs.isolated.Size() >= full && cr.isolate:
-		exclusive, ok = cs.takeCPUsByHints(&cs.isolated, cr)
-		if !ok {
-			exclusive, err = cs.takeCPUs(&cs.isolated, nil, full, cr.CPUPrio())
-			if err != nil {
-				return nil, policyError("internal error: "+
-					"%s: can't take %d exclusive isolated CPUs from %s: %v",
-					cs.node.Name(), full, cs.isolated, err)
+		if cr.PickByHints() {
+			exclusive, ok = cs.takeCPUsByHints(&cs.isolated, cr)
+			if !ok {
+				exclusive, err = cs.takeCPUs(&cs.isolated, nil, full, cr.CPUPrio())
 			}
+		} else {
+			exclusive, err = cs.takeCPUs(&cs.isolated, nil, full, cr.CPUPrio())
+		}
+		if err != nil {
+			return nil, policyError("internal error: "+
+				"%s: can't take %d exclusive isolated CPUs from %s: %v",
+				cs.node.Name(), full, cs.isolated, err)
 		}
 
 	case full > 0 && cs.AllocatableSharedCPU() > 1000*full:
-		exclusive, ok = cs.takeCPUsByHints(&cs.sharable, cr)
-		if !ok {
-			exclusive, err = cs.takeCPUs(&cs.sharable, nil, full, cr.CPUPrio())
-			if err != nil {
-				return nil, policyError("internal error: "+
-					"%s: can't take %d exclusive CPUs from %s: %v",
-					cs.node.Name(), full, cs.sharable, err)
+		if cr.PickByHints() {
+			exclusive, ok = cs.takeCPUsByHints(&cs.sharable, cr)
+			if !ok {
+				exclusive, err = cs.takeCPUs(&cs.sharable, nil, full, cr.CPUPrio())
 			}
+		} else {
+			exclusive, err = cs.takeCPUs(&cs.sharable, nil, full, cr.CPUPrio())
+		}
+		if err != nil {
+			return nil, policyError("internal error: "+
+				"%s: can't take %d exclusive CPUs from %s: %v",
+				cs.node.Name(), full, cs.sharable, err)
 		}
 
 	case full > 0:
@@ -737,16 +748,17 @@ func newRequest(container cache.Container, types libmem.TypeMask) Request {
 	}
 
 	return &request{
-		container: container,
-		full:      full,
-		fraction:  fraction,
-		isolate:   isolate,
-		cpuType:   cpuType,
-		memReq:    req,
-		memLim:    lim,
-		memType:   mtype,
-		coldStart: coldStart,
-		prio:      prio,
+		container:   container,
+		full:        full,
+		fraction:    fraction,
+		isolate:     isolate,
+		cpuType:     cpuType,
+		memReq:      req,
+		memLim:      lim,
+		memType:     mtype,
+		coldStart:   coldStart,
+		prio:        prio,
+		pickByHints: pickByHintsPreference(pod, container),
 	}
 }
 
@@ -822,6 +834,10 @@ func (cr *request) MemoryLimit() int64 {
 // MemoryType returns the requested type of memory for the grant.
 func (cr *request) MemoryType() memoryType {
 	return cr.memType
+}
+
+func (cr *request) PickByHints() bool {
+	return cr.pickByHints
 }
 
 // ColdStart returns the cold start timeout (in milliseconds).
@@ -907,9 +923,18 @@ func (cs *supply) GetScore(req Request) Score {
 		node = cs.node.Policy().root
 	}
 
-	o, err := node.Policy().getMemOfferByHints(node, cr)
-	if err != nil {
-		log.Errorf("failed to get offer by hints: %v", err)
+	var (
+		o   *libmem.Offer
+		err error
+	)
+
+	if cr.PickByHints() {
+		o, err = node.Policy().getMemOfferByHints(node, cr)
+		if err != nil {
+			log.Errorf("failed to get offer by hints: %v", err)
+			o, err = node.Policy().getMemOffer(node, cr)
+		}
+	} else {
 		o, err = node.Policy().getMemOffer(node, cr)
 	}
 

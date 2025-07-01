@@ -39,6 +39,8 @@ const (
 	keyCpuPriorityPreference = "prefer-cpu-priority"
 	// annotation key for hiding hyperthreads from allocated CPU sets
 	keyHideHyperthreads = "hide-hyperthreads"
+	// annotation key for picking individual resources by topology hints
+	keyPickResourcesByHints = "pick-resources-by-hints"
 
 	// effective annotation key for isolated CPU preference
 	preferIsolatedCPUsKey = "prefer-isolated-cpus" + "." + kubernetes.ResmgrKeyNamespace
@@ -54,6 +56,8 @@ const (
 	preferCpuPriorityKey = keyCpuPriorityPreference + "." + kubernetes.ResmgrKeyNamespace
 	// effective annotation key for hiding hyperthreads
 	hideHyperthreadsKey = keyHideHyperthreads + "." + kubernetes.ResmgrKeyNamespace
+	// effective annotation key for picking resources by topology hints
+	pickResourcesByHints = keyPickResourcesByHints + "." + kubernetes.ResmgrKeyNamespace
 )
 
 type prefKind int
@@ -447,6 +451,25 @@ func memoryAllocationPreference(pod cache.Pod, c cache.Container) (int64, int64,
 	}
 
 	return req, lim, mtype
+}
+
+func pickByHintsPreference(pod cache.Pod, container cache.Container) bool {
+	value, ok := pod.GetEffectiveAnnotation(pickResourcesByHints, container.GetName())
+	if !ok {
+		return false
+	}
+
+	pick, err := strconv.ParseBool(value)
+	if err != nil {
+		log.Error("failed to parse pick resources by hints preference %s = '%s': %v",
+			pickResourcesByHints, value, err)
+		return false
+	}
+
+	log.Debug("%s: effective pick resources by hints preference %v",
+		container.PrettyName(), pick)
+
+	return pick
 }
 
 // String stringifies a cpuClass.
