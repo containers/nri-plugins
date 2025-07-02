@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.9.4-52-gffbbf5c9 documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.9.4-60-g70946857 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=b693797b"></script>
+        <script src="../../../_static/documentation_options.js?v=788f040c"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -709,6 +709,62 @@ container topology hints are automatically generated whenever a device with
 locality to a NUMA node is advertised by the API. Annotated allow and deny
 lists can be used to selectively disable or enable per-resource hints, using
 <code class="docutils literal notranslate"><span class="pre">podresapi:$RESOURCE_NAME</span></code> as the path for the resource.</p>
+</section>
+<section id="picking-cpu-and-memory-by-topology-hints">
+<h3>Picking CPU And Memory By Topology Hints<a class="headerlink" href="#picking-cpu-and-memory-by-topology-hints" title="Link to this heading"></a></h3>
+<p>Normally topology hints are only used to pick the assigned pool for a workload.
+Once a pool is selected the available resources within the pool are considered
+equally good for satisfying the topology hints. When the policy is allocating
+exclusive CPUs and picking pinned memory for the workload, only other potential
+criteria and attributes are considered for picking the individual resources.</p>
+<p>When multiple devices are allocated to a single container, it is possible that
+this default assumption of all resources within the pool being topologically
+equal is not true. If a container is allocated misaligned devices, IOW devices
+with different memory or CPU locality, it is possible that only some of the CPU
+and memory in the selected pool satisfy the device hints and therefore have the
+desired locality.</p>
+<p>For instance when in a two-socket system with socket #0 having NUMA nodes #0,#1
+and socket #1 having NUMA nodes #2,#3, if a container is allocated two devices,
+one with locality to node #0 and another with locality to node #3, the only pool
+fulfilling topology hints for both devices is the root node. However, half of the
+resources in the pool are optimal for one of the devices and the other half are
+not optimal for either.</p>
+<p>A container can be annotated to prefer hint based selection and pinning of CPU
+and memory resources using the <code class="docutils literal notranslate"><span class="pre">pick-resources-by-hints.resource-policy.nri.io</span></code>
+annotation. For example,</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Pod</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">data-pump</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">k8s.v1.cni.cncf.io/networks</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sriov-net1</span>
+<span class="w">    </span><span class="nt">prefer-isolated-cpus.resource-policy.nri.io/container.ctr0</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+<span class="w">    </span><span class="nt">pick-resources-by-hints.resource-policy.nri.io/container.ctr0</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+<span class="nt">spec</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">containers</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ctr0</span>
+<span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dpdk-pump</span>
+<span class="w">    </span><span class="nt">imagePullPolicy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Always</span>
+<span class="w">    </span><span class="nt">resources</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">requests</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+<span class="w">        </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100M</span>
+<span class="w">        </span><span class="nt">vendor.com/sriov_netdevice_A</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;1&#39;</span>
+<span class="w">        </span><span class="nt">vendor.com/sriov_netdevice_B</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;1&#39;</span>
+<span class="w">      </span><span class="nt">limits</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">vendor.com/sriov_netdevice_A</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;1&#39;</span>
+<span class="w">        </span><span class="nt">vendor.com/sriov_netdevice_B</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;1&#39;</span>
+<span class="w">        </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+<span class="w">        </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100M</span>
+</pre></div>
+</div>
+<p>When annotated like that, the policy will try to pick one exclusive isolated
+CPU with locality to one device and another with locality to the other. It will
+also try to pick and pin to memory aligned with these devices. If this succeeds
+for all devices, the effective resources for the container will be the union of
+the individually picked resources. If picking resources by hints fails for any
+of the devices, the policy falls back to picking resource from the pool without
+considering device hints.</p>
 </section>
 </section>
 <section id="container-affinity-and-anti-affinity">

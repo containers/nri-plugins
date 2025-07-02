@@ -540,6 +540,68 @@ locality to a NUMA node is advertised by the API. Annotated allow and deny
 lists can be used to selectively disable or enable per-resource hints, using
 `podresapi:$RESOURCE_NAME` as the path for the resource.
 
+### Picking CPU And Memory By Topology Hints
+
+Normally topology hints are only used to pick the assigned pool for a workload.
+Once a pool is selected the available resources within the pool are considered
+equally good for satisfying the topology hints. When the policy is allocating
+exclusive CPUs and picking pinned memory for the workload, only other potential
+criteria and attributes are considered for picking the individual resources.
+
+When multiple devices are allocated to a single container, it is possible that
+this default assumption of all resources within the pool being topologically
+equal is not true. If a container is allocated misaligned devices, IOW devices
+with different memory or CPU locality, it is possible that only some of the CPU
+and memory in the selected pool satisfy the device hints and therefore have the
+desired locality.
+
+For instance when in a two-socket system with socket #0 having NUMA nodes #0,#1
+and socket #1 having NUMA nodes #2,#3, if a container is allocated two devices,
+one with locality to node #0 and another with locality to node #3, the only pool
+fulfilling topology hints for both devices is the root node. However, half of the
+resources in the pool are optimal for one of the devices and the other half are
+not optimal for either.
+
+A container can be annotated to prefer hint based selection and pinning of CPU
+and memory resources using the `pick-resources-by-hints.resource-policy.nri.io`
+annotation. For example,
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: data-pump
+  annotations:
+    k8s.v1.cni.cncf.io/networks: sriov-net1
+    prefer-isolated-cpus.resource-policy.nri.io/container.ctr0: "true"
+    pick-resources-by-hints.resource-policy.nri.io/container.ctr0: "true"
+spec:
+  containers:
+  - name: ctr0
+    image: dpdk-pump
+    imagePullPolicy: Always
+    resources:
+      requests:
+        cpu: 2
+        memory: 100M
+        vendor.com/sriov_netdevice_A: '1'
+        vendor.com/sriov_netdevice_B: '1'
+      limits:
+        vendor.com/sriov_netdevice_A: '1'
+        vendor.com/sriov_netdevice_B: '1'
+        cpu: 2
+        memory: 100M
+```
+
+When annotated like that, the policy will try to pick one exclusive isolated
+CPU with locality to one device and another with locality to the other. It will
+also try to pick and pin to memory aligned with these devices. If this succeeds
+for all devices, the effective resources for the container will be the union of
+the individually picked resources. If picking resources by hints fails for any
+of the devices, the policy falls back to picking resource from the pool without
+considering device hints.
+
+
 ## Container Affinity and Anti-Affinity
 
 ### Introduction
