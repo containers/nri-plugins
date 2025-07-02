@@ -14,7 +14,12 @@
 
 package topologyaware
 
-import libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
+import (
+	"fmt"
+
+	"github.com/containers/nri-plugins/pkg/agent/podresapi"
+	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
+)
 
 func (p *policy) getMemOffer(pool Node, req Request) (*libmem.Offer, error) {
 	var (
@@ -43,6 +48,61 @@ func (p *policy) getMemOffer(pool Node, req Request) (*libmem.Offer, error) {
 	)
 
 	return o, err
+}
+
+func (p *policy) getMemOfferByHints(pool Node, req Request) (*libmem.Offer, error) {
+	ctr := req.GetContainer()
+
+	memType := req.MemoryType()
+	if memType == memoryPreserve {
+		return nil, fmt.Errorf("%s by hints: memoryPreserve requested", pool.Name())
+	}
+
+	zone := libmem.NodeMask(0)
+	from := libmem.NewNodeMask(pool.GetMemset(memType).Members()...)
+	mtyp := libmem.TypeMask(memType)
+
+	for provider, hint := range ctr.GetTopologyHints() {
+		if !podresapi.IsPodResourceHint(provider) {
+			continue
+		}
+
+		m, err := libmem.ParseNodeMask(hint.NUMAs)
+		if err != nil {
+			return nil, err
+		}
+
+		if !from.And(m).Contains(m.Slice()...) {
+			return nil, fmt.Errorf("%s by hints: %s of wrong type (%s)", pool.Name(), m, mtyp)
+		}
+
+		zone = zone.Set(m.Slice()...)
+	}
+
+	if zone == libmem.NodeMask(0) {
+		return nil, fmt.Errorf("%s by hints: no pod resource API hints", pool.Name())
+	}
+
+	if zoneType := p.memAllocator.ZoneType(zone); zoneType != mtyp {
+		return nil, fmt.Errorf("%s by hints: no type %s", pool.Name(), mtyp.Clear(zoneType.Slice()...))
+	}
+
+	o, err := p.memAllocator.GetOffer(
+		libmem.ContainerWithTypes(
+			ctr.GetID(),
+			ctr.PrettyName(),
+			string(ctr.GetQOSClass()),
+			req.MemAmountToAllocate(),
+			zone,
+			mtyp,
+		),
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return o, nil
 }
 
 func (p *policy) restoreMemOffer(g Grant) (*libmem.Offer, error) {

@@ -12,6 +12,10 @@ config:
   reservedResources:
     cpu: 1000m
 
+  agent:
+    nodeResourceTopology: true
+    podResourceAPI: false
+
   allocatorTopologyBalancing: true
 
   balloonTypes:
