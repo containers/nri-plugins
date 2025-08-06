@@ -442,25 +442,23 @@ func (policy *LinuxMemoryPolicy) ToMemoryPolicyAdjustment() (*api.ContainerAdjus
 	if policy == nil {
 		return nil, nil
 	}
-	return nil, fmt.Errorf("memory policy adjustment is not implemented yet")
 
-	// // Uncomment this to use memory policy in NRI API
-	// ca := &api.ContainerAdjustment{}
-	// mode, ok := api.MpolMode_value[policy.Mode]
-	// if !ok {
-	// 	return nil, fmt.Errorf("invalid memory policy mode %q", policy.Mode)
-	// }
-	//
-	// flags := []api.MpolFlag{}
-	// for _, flag := range policy.Flags {
-	// 	if flagValue, ok := api.MpolFlag_value[flag]; ok {
-	// 		flags = append(flags, api.MpolFlag(flagValue))
-	// 	} else {
-	// 		return nil, fmt.Errorf("invalid memory policy flag %q", flag)
-	// 	}
-	// }
-	// ca.SetLinuxMemoryPolicy(api.MpolMode(mode), policy.Nodes, flags...)
-	// return ca, nil
+	ca := &api.ContainerAdjustment{}
+	mode, ok := api.MpolMode_value[policy.Mode]
+	if !ok {
+		return nil, fmt.Errorf("invalid memory policy mode %q", policy.Mode)
+	}
+
+	flags := []api.MpolFlag{}
+	for _, flag := range policy.Flags {
+		if flagValue, ok := api.MpolFlag_value[flag]; ok {
+			flags = append(flags, api.MpolFlag(flagValue))
+		} else {
+			return nil, fmt.Errorf("invalid memory policy flag %q", flag)
+		}
+	}
+	ca.SetLinuxMemoryPolicy(api.MpolMode(mode), policy.Nodes, flags...)
+	return ca, nil
 }
 
 // ToCommandInjectionAdjustment() converts the memory policy into a
