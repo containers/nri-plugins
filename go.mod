@@ -1,6 +1,8 @@
 module github.com/containers/nri-plugins
 
-go 1.24.0
+go 1.24.3
+
+toolchain go1.24.4
 
 require (
 	github.com/askervin/gofmbt v0.0.0-20250119175120-506d925f666f
@@ -62,12 +64,12 @@ require (
 	github.com/imdario/mergo v0.3.6 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/knqyf263/go-plugin v0.8.1-0.20240827022226-114c6257e441 // indirect
+	github.com/knqyf263/go-plugin v0.9.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/opencontainers/runtime-spec v1.1.0 // indirect
+	github.com/opencontainers/runtime-spec v1.2.2-0.20250804081626-bfdffd548aa6 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/common v0.55.0 // indirect
@@ -100,8 +102,9 @@ require (
 )
 
 replace (
+	github.com/containerd/nri => github.com/askervin/nri v0.1.1-0.20250805132206-a9827f7d8b9a
 	github.com/containers/nri-plugins/pkg/topology v0.0.0 => ./pkg/topology
-	github.com/opencontainers/runtime-tools => github.com/opencontainers/runtime-tools v0.0.0-20221026201742-946c877fa809
+	github.com/opencontainers/runtime-tools => github.com/askervin/runtime-tools v0.0.0-20250805113549-904c7269e2a7
 )
 
 tool k8s.io/code-generator
