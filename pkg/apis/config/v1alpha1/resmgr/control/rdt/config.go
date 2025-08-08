@@ -54,7 +54,7 @@ type Config struct {
 	// +optional
 	UsePodQoSAsDefaultClass bool `json:"usePodQoSAsDefaultClass,omitempty"`
 	// Options container common goresctrl/rdt settings.
-	Options Options `json:"options,omitempty"`
+	Options *Options `json:"options,omitempty"`
 	// Partitions configure cache partitions.
 	Partitions map[string]PartitionConfig `json:"partitions,omitempty"`
 	// Force indicates if the configuration should be forced to goresctrl.
@@ -149,7 +149,7 @@ type MbOptions struct {
 
 type GoresctrlConfig struct {
 	// Options contain common settings.
-	Options Options `json:"options,omitempty"`
+	Options *Options `json:"options,omitempty"`
 	// Partitions configure cache partitions.
 	Partitions map[string]PartitionConfig `json:"partitions,omitempty"`
 }
@@ -157,6 +157,10 @@ type GoresctrlConfig struct {
 // ToGoresctrl returns the configuration in native goresctrl format.
 func (c *Config) ToGoresctrl() (*rdt.Config, bool, error) {
 	if c == nil || !c.Enable {
+		return nil, false, nil
+	}
+
+	if c.Options == nil && c.Partitions == nil {
 		return nil, false, nil
 	}
 

@@ -74,6 +74,8 @@ func (c *rdtControl) configure(cfg *rdt.Config) error {
 				return fmt.Errorf("failed to configure goresctrl/rdt: %w", err)
 			}
 			log.Info("goresctrl/rdt configuration updated")
+		} else {
+			log.Info("goresctrl/rdt running in discovery mode")
 		}
 	}
 
