@@ -19,3 +19,6 @@ Currently following plugins are available:
 [5]: https://containers.github.io/nri-plugins/stable/docs/memory/sgx-epc.html
 
 See the [NRI plugins documentation](https://containers.github.io/nri-plugins/) for more information.
+
+See the [DRA CPU driver prototype notes](README-DRA-driver-proto.md) for more information
+about using the Topology Aware policy as a DRA CPU driver.
