@@ -679,6 +679,21 @@ instrumentation:
   metrics:
     enabled: # use '*' instead for all available metrics
     - policy
-logger:
-  Debug: policy
+log:
+  debug:
+  - policy     # to follow policy's internal logic
+  - nri-plugin # to see what the policy saw and to hear what it said (there is a lot of it)
+  source: true
+```
+
+Read metrics (assuming you can access podIPs directly from your network, otherwise use `kubectl port-forward`):
+```
+for podip in $(kubectl get pod -n kube-system -l "app.kubernetes.io/instance=nri-resource-policy-balloons" -o=jsonpath='{.items[*].status.podIP}'); do
+  curl -s http://$podip:8891/metrics
+done
+```
+
+Read logs:
+```
+kubectl logs -n kube-system -l "app.kubernetes.io/instance=nri-resource-policy-balloons" --tail=-1
 ```
