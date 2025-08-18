@@ -1460,6 +1460,26 @@ func (sys *system) discoverNodes() error {
 		}
 	}
 
+	// Patch any asymmetric NUMA matrix using the average distance.
+	// Notes:
+	//   Instead of hiding asymmetricity completely, we might want to keep
+	//   the pristine distances and instead update System.NodeDistance to
+	//   return an average for asymmetric distance pairs.
+	for id1, n1 := range sys.nodes {
+		for id2, n2 := range sys.nodes {
+			if id1 == id2 {
+				continue
+			}
+			if n1.distance[id2] != n2.distance[id1] {
+				avg := (n1.distance[id2] + n2.distance[id1]) / 2
+				log.Warnf("asymmetric NUMA distance [%d, %d]: %d != %d, patching up with %d",
+					id1, id2, n1.distance[id2], n2.distance[id1], avg)
+				n1.distance[id2] = avg
+				n2.distance[id1] = avg
+			}
+		}
+	}
+
 	return nil
 }
 
