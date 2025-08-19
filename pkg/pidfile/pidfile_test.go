@@ -247,7 +247,9 @@ func mkTestDir(t *testing.T) (string, error) {
 	}
 
 	t.Cleanup(func() {
-		os.RemoveAll(tmp)
+		if err := os.RemoveAll(tmp); err != nil {
+			t.Errorf("failed to remove test directory %s: %v", tmp, err)
+		}
 	})
 
 	return tmp, nil

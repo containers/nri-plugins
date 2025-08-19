@@ -133,7 +133,7 @@ func (m *resmgr) Start() error {
 
 func (m *resmgr) updateConfig(newCfg interface{}) (bool, error) {
 	if newCfg == nil {
-		return false, fmt.Errorf("can't run without effective configuration...")
+		return false, fmt.Errorf("can't run without effective configuration")
 	}
 
 	cfg, ok := newCfg.(cfgapi.ResmgrConfig)

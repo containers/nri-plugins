@@ -127,7 +127,11 @@ func writeSysfsEntry(base, entry string, val, oldp interface{}, args ...interfac
 	if err != nil {
 		return "", sysfsError(path, "cannot open: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = sysfsError(path, "failed to close: %w", cerr)
+		}
+	}()
 
 	if _, err = f.Write([]byte(buf + "\n")); err != nil {
 		return "", sysfsError(path, "cannot write: %w", err)

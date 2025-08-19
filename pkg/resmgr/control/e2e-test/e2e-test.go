@@ -140,7 +140,7 @@ func (ctl *testctl) dumpE2ETestControllerState(w http.ResponseWriter, req *http.
 		return
 	}
 
-	fmt.Fprintf(w, "%s\r\n", data)
+	fmt.Fprintf(w, "%s\r\n", data) // nolint:errcheck
 }
 
 func (ctl *testctl) registerHandler() {

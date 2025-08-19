@@ -206,12 +206,12 @@ func (t *cpuTreeNode) FindLeafWithCpu(cpu int) *cpuTreeNode {
 // WalkSkipChildren error returned from a DepthFirstWalk handler
 // prevents walking deeper in the tree. The caller of the
 // DepthFirstWalk will get no error.
-var WalkSkipChildren error = errors.New("skip children")
+var WalkSkipChildren error = errors.New("skip children") // nolint:staticcheck
 
 // WalkStop error returned from a DepthFirstWalk handler stops the
 // walk altogether. The caller of the DepthFirstWalk will get the
 // WalkStop error.
-var WalkStop error = errors.New("stop")
+var WalkStop error = errors.New("stop") // nolint:staticcheck
 
 // DepthFirstWalk walks through nodes in a CPU tree. Every node is
 // passed to the handler callback that controls next step by

@@ -30,7 +30,6 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	policy "github.com/containers/nri-plugins/pkg/resmgr/policy"
-	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 	"github.com/containers/nri-plugins/pkg/utils"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
@@ -369,17 +368,17 @@ func (p *balloons) GetTopologyZones() []*policy.TopologyZone {
 		showContainers = *p.bpoptions.ShowContainersInNrt
 	}
 
-	zones := []*policyapi.TopologyZone{}
+	zones := []*policy.TopologyZone{}
 	sysmCpu := 1000 * p.cpuTree.cpus.Size()
 	for _, bln := range p.balloons {
 		// Expose every balloon as a separate zone.
-		zone := &policyapi.TopologyZone{
+		zone := &policy.TopologyZone{
 			Name: bln.PrettyName(),
 			Type: "balloon",
 		}
 
-		cpu := &policyapi.ZoneResource{
-			Name: policyapi.CPUResource,
+		cpu := &policy.ZoneResource{
+			Name: policy.CPUResource,
 		}
 
 		// "Capacity" is the total number of CPUs available in
@@ -424,11 +423,11 @@ func (p *balloons) GetTopologyZones() []*policy.TopologyZone {
 
 		zone.Resources = append(zone.Resources, cpu)
 
-		attributes := []*policyapi.ZoneAttribute{
+		attributes := []*policy.ZoneAttribute{
 			{
 				// "cpuset" are CPUs allowed only to
 				// containers in this balloon.
-				Name:  policyapi.CPUsAttribute,
+				Name:  policy.CPUsAttribute,
 				Value: bln.Cpus.String(),
 			},
 			{
@@ -436,7 +435,7 @@ func (p *balloons) GetTopologyZones() []*policy.TopologyZone {
 				// containers in this and other
 				// balloons that shareIdleCPUsInSame
 				// scope.
-				Name:  policyapi.SharedCPUsAttribute,
+				Name:  policy.SharedCPUsAttribute,
 				Value: bln.SharedIdleCpus.String(),
 			},
 			{
@@ -444,7 +443,7 @@ func (p *balloons) GetTopologyZones() []*policy.TopologyZone {
 				// request of a container that fits
 				// into this balloon without inflating
 				// it.
-				Name:  policyapi.ExcessCPUsAttribute,
+				Name:  policy.ExcessCPUsAttribute,
 				Value: fmt.Sprintf("%dm", bln.AvailMilliCpus()-blnReqmCpu),
 			},
 		}
@@ -460,8 +459,8 @@ func (p *balloons) GetTopologyZones() []*policy.TopologyZone {
 				}
 				return fmt.Sprintf("{%s}", strings.Join(res, ", "))
 			}
-			attributes = append(attributes, &policyapi.ZoneAttribute{
-				Name:  policyapi.ComponentCPUsAttribute,
+			attributes = append(attributes, &policy.ZoneAttribute{
+				Name:  policy.ComponentCPUsAttribute,
 				Value: compCpusString(bln),
 			})
 		}
@@ -514,9 +513,9 @@ func (p *balloons) GetTopologyZones() []*policy.TopologyZone {
 				if !ok {
 					continue
 				}
-				czone := &policyapi.TopologyZone{
+				czone := &policy.TopologyZone{
 					Name: c.PrettyName(),
-					Type: policyapi.ContainerAllocationZoneType,
+					Type: policy.ContainerAllocationZoneType,
 				}
 				ctrLimitmCpu := p.containerLimitedMilliCpus(ctrID)
 				ctrReqmCpu := p.containerRequestedMilliCpus(ctrID)
@@ -529,9 +528,9 @@ func (p *balloons) GetTopologyZones() []*policy.TopologyZone {
 				if ctrLimitmCpu == 0 || ctrLimitmCpu > ctrAllowedmCpu {
 					ctrCapacitymCpu = ctrAllowedmCpu
 				}
-				czone.Resources = []*policyapi.ZoneResource{
+				czone.Resources = []*policy.ZoneResource{
 					{
-						Name: policyapi.CPUResource,
+						Name: policy.CPUResource,
 						Capacity: *resource.NewMilliQuantity(
 							int64(ctrCapacitymCpu),
 							resource.DecimalSI),
@@ -541,13 +540,13 @@ func (p *balloons) GetTopologyZones() []*policy.TopologyZone {
 					},
 				}
 				czone.Parent = zone.Name
-				czone.Attributes = []*policyapi.ZoneAttribute{
+				czone.Attributes = []*policy.ZoneAttribute{
 					{
-						Name:  policyapi.CPUsAttribute,
+						Name:  policy.CPUsAttribute,
 						Value: ctrCpusetCpus,
 					},
 					{
-						Name:  policyapi.MemsetAttribute,
+						Name:  policy.MemsetAttribute,
 						Value: c.GetCpusetMems(),
 					},
 				}

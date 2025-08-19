@@ -59,7 +59,7 @@ func Write() error {
 		return fmt.Errorf("failed to create PID file: %w", err)
 	}
 
-	_, err = pidFile.Write([]byte(fmt.Sprintf("%d\n", os.Getpid())))
+	_, err = fmt.Fprintf(pidFile, "%d\n", os.Getpid())
 	if err != nil {
 		close()
 		return fmt.Errorf("failed to write PID file: %w", err)
@@ -98,7 +98,9 @@ func close() {
 		if err := pidFile.Truncate(0); err != nil {
 			logger.Default().Warnf("failed to truncate PID file: %v\n", err)
 		}
-		pidFile.Close()
+		if err := pidFile.Close(); err != nil {
+			logger.Default().Warnf("failed to close PID file: %v\n", err)
+		}
 		pidFile = nil
 	}
 }

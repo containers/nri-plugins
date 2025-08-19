@@ -159,7 +159,11 @@ func (g Group) Write(entry, format string, args ...interface{}) error {
 	if err != nil {
 		return g.errorf("%q: failed to open: %v", entry, err)
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	data := fmt.Sprintf(format, args...)
 	if _, err := f.Write([]byte(data)); err != nil {
@@ -179,7 +183,7 @@ func (g Group) readPids(entry string) ([]string, error) {
 	if err != nil {
 		return nil, g.errorf("failed to open %q: %v", entry, err)
 	}
-	defer f.Close()
+	defer f.Close() // nolint:errcheck
 
 	s := bufio.NewScanner(f)
 	for s.Scan() {
@@ -200,7 +204,11 @@ func (g Group) writePids(entry string, pids ...string) error {
 	if err != nil {
 		return g.errorf("failed to write pids to %q: %v", pidFile, err)
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	for _, pid := range pids {
 		if _, err := f.Write([]byte(pid)); err != nil {

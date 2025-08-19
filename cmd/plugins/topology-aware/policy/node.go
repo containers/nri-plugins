@@ -422,7 +422,7 @@ func (n *node) HasMemoryType(reqType memoryType) bool {
 func (p *policy) NewNumaNode(id idset.ID, parent Node) *numanode {
 	n := &numanode{}
 	n.self.node = n
-	n.node.init(p, fmt.Sprintf("NUMA node #%v", id), NumaNode, parent)
+	n.init(p, fmt.Sprintf("NUMA node #%v", id), NumaNode, parent)
 	n.id = id
 	n.sysnode = p.sys.Node(id)
 
@@ -487,7 +487,7 @@ func (p *policy) NewDieNode(id idset.ID, parent Node) *dienode {
 	pkg := parent.(*socketnode)
 	n := &dienode{}
 	n.self.node = n
-	n.node.init(p, fmt.Sprintf("die #%v/%v", pkg.id, id), DieNode, parent)
+	n.init(p, fmt.Sprintf("die #%v/%v", pkg.id, id), DieNode, parent)
 	n.id = id
 	n.syspkg = p.sys.Package(pkg.id)
 
@@ -556,7 +556,7 @@ func (n *dienode) HintScore(hint topology.Hint) float64 {
 func (p *policy) NewSocketNode(id idset.ID, parent Node) *socketnode {
 	n := &socketnode{}
 	n.self.node = n
-	n.node.init(p, fmt.Sprintf("socket #%v", id), SocketNode, parent)
+	n.init(p, fmt.Sprintf("socket #%v", id), SocketNode, parent)
 	n.id = id
 	n.syspkg = p.sys.Package(id)
 
@@ -620,7 +620,7 @@ func (n *socketnode) HintScore(hint topology.Hint) float64 {
 func (p *policy) NewVirtualNode(name string, parent Node) *virtualnode {
 	n := &virtualnode{}
 	n.self.node = n
-	n.node.init(p, name, VirtualNode, parent)
+	n.init(p, name, VirtualNode, parent)
 
 	return n
 }

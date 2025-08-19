@@ -27,7 +27,7 @@ func UncompressTbz2(archive string, dir string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer file.Close() // nolint:errcheck
 
 	data := bzip2.NewReader(file)
 	tr := tar.NewReader(data)
@@ -39,24 +39,26 @@ func UncompressTbz2(archive string, dir string) error {
 			}
 			return err
 		}
-		if header.Typeflag == tar.TypeDir {
+		switch header.Typeflag {
+		case tar.TypeDir:
 			// Create a directory.
 			err = os.MkdirAll(path.Join(dir, header.Name), 0755)
 			if err != nil {
 				return err
 			}
-		} else if header.Typeflag == tar.TypeReg {
+		case tar.TypeReg:
 			// Create a regular file.
 			targetFile, err := os.Create(path.Join(dir, header.Name))
 			if err != nil {
 				return err
 			}
-			_, err = io.Copy(targetFile, tr)
-			targetFile.Close()
-			if err != nil {
+			if _, err := io.Copy(targetFile, tr); err != nil {
 				return err
 			}
-		} else if header.Typeflag == tar.TypeSymlink {
+			if err := targetFile.Close(); err != nil {
+				return err
+			}
+		case tar.TypeSymlink:
 			// Create a symlink and all the directories it needs.
 			err = os.MkdirAll(path.Dir(path.Join(dir, header.Name)), 0755)
 			if err != nil {

@@ -19,7 +19,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	resapi "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -316,8 +315,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		{
 			name: "cpuAllocationPreferences() should handle nil pod arg gracefully",
 			container: &mockContainer{
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("1"),
 					},
 				},
@@ -327,8 +326,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		{
 			name: "return defaults",
 			container: &mockContainer{
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("1"),
 					},
 				},
@@ -343,8 +342,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 			name: "return request's value for system container",
 			container: &mockContainer{
 				namespace: metav1.NamespaceSystem,
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("2"),
 					},
 				},
@@ -358,8 +357,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		{
 			name: "return request's value for burstable QoS",
 			container: &mockContainer{
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("2"),
 					},
 				},
@@ -372,8 +371,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		{
 			name: "guaranteed QoS with sub-core request",
 			container: &mockContainer{
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("750m"),
 					},
 				},
@@ -388,8 +387,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		{
 			name: "guaranteed QoS with sub-core request, prefer isolated",
 			container: &mockContainer{
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("750m"),
 					},
 				},
@@ -405,8 +404,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		{
 			name: "guaranteed QoS with sub-core request, prefer shared",
 			container: &mockContainer{
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("750m"),
 					},
 				},
@@ -422,8 +421,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		{
 			name: "guaranteed QoS with sub-core request, prefer isolated & shared",
 			container: &mockContainer{
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("750m"),
 					},
 				},
@@ -441,8 +440,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		{
 			name: "guaranteed QoS with single full core request, prefer isolated",
 			container: &mockContainer{
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("1"),
 					},
 				},
@@ -457,8 +456,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		{
 			name: "guaranteed QoS with single full core request, prefer no isolated",
 			container: &mockContainer{
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("1"),
 					},
 				},
@@ -473,8 +472,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		{
 			name: "guaranteed QoS with single full core request, prefer shared",
 			container: &mockContainer{
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("1"),
 					},
 				},
@@ -490,8 +489,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		{
 			name: "guaranteed QoS with single full core request, prefer isolated & shared",
 			container: &mockContainer{
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("1"),
 					},
 				},
@@ -509,8 +508,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 			name: "guaranteed QoS with single full core request, annotated shared",
 			container: &mockContainer{
 				name: "testcontainer",
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("1"),
 					},
 				},
@@ -531,8 +530,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 			name: "guaranteed QoS with single full core request, annotated no isolated",
 			container: &mockContainer{
 				name: "testcontainer",
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("1"),
 					},
 				},
@@ -552,8 +551,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		{
 			name: "guaranteed QoS with potential mixed request",
 			container: &mockContainer{
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("1500m"),
 					},
 				},
@@ -568,8 +567,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		{
 			name: "guaranteed QoS with potential mixed request, prefer isolated",
 			container: &mockContainer{
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("1500m"),
 					},
 				},
@@ -585,8 +584,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		{
 			name: "guaranteed QoS with potential mixed request, prefer shared",
 			container: &mockContainer{
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("1500m"),
 					},
 				},
@@ -602,8 +601,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		{
 			name: "guaranteed QoS with potential mixed request, prefer isolated & shared",
 			container: &mockContainer{
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("1500m"),
 					},
 				},
@@ -620,8 +619,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		{
 			name: "guaranteed QoS with multi-core full request",
 			container: &mockContainer{
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("2"),
 					},
 				},
@@ -635,8 +634,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		{
 			name: "guaranteed QoS with multi-core full request, prefer isolated",
 			container: &mockContainer{
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("2"),
 					},
 				},
@@ -651,8 +650,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		{
 			name: "guaranteed QoS with multi-core full request, prefer shared",
 			container: &mockContainer{
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("2"),
 					},
 				},
@@ -668,8 +667,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		{
 			name: "guaranteed QoS with multi-core full request, prefer isolated & shared",
 			container: &mockContainer{
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("2"),
 					},
 				},
@@ -687,8 +686,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 			name: "guaranteed QoS with multi-core full request, annotate isolated",
 			container: &mockContainer{
 				name: "testcontainer",
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("2"),
 					},
 				},
@@ -706,8 +705,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 			name: "guaranteed QoS with multi-core full request, annotate shared",
 			container: &mockContainer{
 				name: "testcontainer",
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("2"),
 					},
 				},
@@ -726,8 +725,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 			name: "guaranteed QoS with multi-core full request, annotate isolated & shared",
 			container: &mockContainer{
 				name: "testcontainer",
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("2"),
 					},
 				},
@@ -746,8 +745,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		{
 			name: "guaranteed QoS with multi-core mixed request",
 			container: &mockContainer{
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("2500m"),
 					},
 				},
@@ -762,8 +761,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		{
 			name: "guaranteed QoS with multi-core mixed request, prefer isolated",
 			container: &mockContainer{
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("2500m"),
 					},
 				},
@@ -778,8 +777,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		{
 			name: "guaranteed QoS with multi-core mixed request, prefer shared",
 			container: &mockContainer{
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("2500m"),
 					},
 				},
@@ -794,8 +793,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		{
 			name: "guaranteed QoS with multi-core mixed request, prefer isolated & shared",
 			container: &mockContainer{
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("2500m"),
 					},
 				},
@@ -811,8 +810,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 			name: "guaranteed QoS with multi-core mixed request, annotate isolated",
 			container: &mockContainer{
 				name: "testcontainer",
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("2500m"),
 					},
 				},
@@ -831,8 +830,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 			name: "guaranteed QoS with multi-core mixed request, annotate shared",
 			container: &mockContainer{
 				name: "testcontainer",
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("2500m"),
 					},
 				},
@@ -851,8 +850,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 			name: "guaranteed QoS with multi-core mixed request, annotate isolated & shared",
 			container: &mockContainer{
 				name: "testcontainer",
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("2500m"),
 					},
 				},
@@ -872,8 +871,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 			name: "guaranteed QoS with multi-core mixed request, annotate no shared",
 			container: &mockContainer{
 				name: "testcontainer",
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("2500m"),
 					},
 				},
@@ -892,8 +891,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 			name: "guaranteed QoS with multi-core mixed request, annotate isolated, no shared",
 			container: &mockContainer{
 				name: "testcontainer",
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("2500m"),
 					},
 				},
@@ -913,8 +912,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 			name: "return request's value for reserved pool namespace container",
 			container: &mockContainer{
 				namespace: "foobar",
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("2"),
 					},
 				},
@@ -930,8 +929,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 			name: "return request's value for reserved pool namespace container using a glob 1",
 			container: &mockContainer{
 				namespace: "foobar2",
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("2"),
 					},
 				},
@@ -947,8 +946,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 			name: "return request's value for reserved pool namespace container using a glob 2",
 			container: &mockContainer{
 				namespace: "foobar-testing",
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("2"),
 					},
 				},
@@ -964,8 +963,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 			name: "return request's value for reserved pool namespace container using a glob 3",
 			container: &mockContainer{
 				namespace: "testing",
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("2"),
 					},
 				},
@@ -981,8 +980,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 			name: "return request's value for reserved pool namespace container using a glob 4",
 			container: &mockContainer{
 				namespace: "1foobar2",
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("2"),
 					},
 				},
@@ -998,8 +997,8 @@ func TestCpuAllocationPreferences(t *testing.T) {
 			name: "return request's value for reserved pool namespace container using a glob 5",
 			container: &mockContainer{
 				namespace: "foobar12",
-				returnValueForGetResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
+				returnValueForGetResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
 						corev1.ResourceCPU: resapi.MustParse("2"),
 					},
 				},

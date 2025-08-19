@@ -859,7 +859,9 @@ func createSysFsDevice(devType string, major, minor int64) error {
 	if _, err := f.Write([]byte(cpulist)); err != nil {
 		log.Get("cache").Errorf("unable to write to %s: %v", realDevPath+"/local_cpulist", err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		return err
+	}
 
 	f, err = os.Create(realDevPath + "/numa_node")
 	if err != nil {
@@ -869,7 +871,9 @@ func createSysFsDevice(devType string, major, minor int64) error {
 	if _, err := f.Write([]byte(numanode)); err != nil {
 		log.Get("cache").Errorf("unable to write to %s: %v", realDevPath+"/numa_node", err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		return err
+	}
 
 	return nil
 }

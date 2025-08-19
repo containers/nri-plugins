@@ -132,14 +132,14 @@ func (ctl *cpuctl) enforceCpufreq(class string, cpus ...int) error {
 	if min := int(c.MinFreq); min > 0 {
 		log.Debug("enforcing cpu frequency min %d from class %q on %v", min, class, cpus)
 		if err := utils.SetCPUsScalingMinFreq(cpus, min); err != nil {
-			return fmt.Errorf("Cannot set min freq %d: %w", min, err)
+			return fmt.Errorf("cannot set min freq %d: %w", min, err)
 		}
 	}
 
 	if max := int(c.MaxFreq); max > 0 {
 		log.Debug("enforcing cpu frequency max %d from class %q on %v", max, class, cpus)
 		if err := utils.SetCPUsScalingMaxFreq(cpus, max); err != nil {
-			return fmt.Errorf("Cannot set max freq %d: %w", max, err)
+			return fmt.Errorf("cannot set max freq %d: %w", max, err)
 		}
 	}
 

@@ -25,7 +25,6 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	"github.com/containers/nri-plugins/pkg/sysfs"
-	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/topology"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	"github.com/intel/goresctrl/pkg/sst"
@@ -37,12 +36,12 @@ type mockSystemNode struct {
 	id       idset.ID // node id
 	memFree  uint64
 	memTotal uint64
-	memType  system.MemoryType
+	memType  sysfs.MemoryType
 	distance []int
 }
 
-func (fake *mockSystemNode) MemoryInfo() (*system.MemInfo, error) {
-	return &system.MemInfo{MemFree: fake.memFree, MemTotal: fake.memTotal}, nil
+func (fake *mockSystemNode) MemoryInfo() (*sysfs.MemInfo, error) {
+	return &sysfs.MemInfo{MemFree: fake.memFree, MemTotal: fake.memTotal}, nil
 }
 
 func (fake *mockSystemNode) PackageID() idset.ID {
@@ -57,7 +56,7 @@ func (fake *mockSystemNode) ID() idset.ID {
 	return fake.id
 }
 
-func (fake *mockSystemNode) GetMemoryType() system.MemoryType {
+func (fake *mockSystemNode) GetMemoryType() sysfs.MemoryType {
 	return fake.memType
 }
 
@@ -140,8 +139,8 @@ type mockCPU struct {
 func (c *mockCPU) BaseFrequency() uint64 {
 	return 0
 }
-func (c *mockCPU) EPP() system.EPP {
-	return system.EPPUnknown
+func (c *mockCPU) EPP() sysfs.EPP {
+	return sysfs.EPPUnknown
 }
 func (c *mockCPU) ID() idset.ID {
 	return idset.ID(0)
@@ -161,8 +160,8 @@ func (c *mockCPU) CoreID() idset.ID {
 func (c *mockCPU) ThreadCPUSet() cpuset.CPUSet {
 	return cpuset.New()
 }
-func (c *mockCPU) FrequencyRange() system.CPUFreq {
-	return system.CPUFreq{}
+func (c *mockCPU) FrequencyRange() sysfs.CPUFreq {
+	return sysfs.CPUFreq{}
 }
 func (c *mockCPU) Online() bool {
 	return true
@@ -210,13 +209,13 @@ func (c *mockCPU) CoreKind() sysfs.CoreKind {
 
 type mockSystem struct {
 	isolatedCPU  int
-	nodes        []system.Node
+	nodes        []sysfs.Node
 	cpuCount     int
 	packageCount int
 	socketCount  int
 }
 
-func (fake *mockSystem) Node(id idset.ID) system.Node {
+func (fake *mockSystem) Node(id idset.ID) sysfs.Node {
 	for _, node := range fake.nodes {
 		if node.ID() == id {
 			return node
@@ -225,7 +224,7 @@ func (fake *mockSystem) Node(id idset.ID) system.Node {
 	return &mockSystemNode{}
 }
 
-func (fake *mockSystem) CPU(idset.ID) system.CPU {
+func (fake *mockSystem) CPU(idset.ID) sysfs.CPU {
 	return &mockCPU{}
 }
 func (fake *mockSystem) CPUCount() int {
@@ -234,10 +233,10 @@ func (fake *mockSystem) CPUCount() int {
 	}
 	return fake.cpuCount
 }
-func (fake *mockSystem) Discover(flags system.DiscoveryFlag) error {
+func (fake *mockSystem) Discover(flags sysfs.DiscoveryFlag) error {
 	return nil
 }
-func (fake *mockSystem) Package(idset.ID) system.CPUPackage {
+func (fake *mockSystem) Package(idset.ID) sysfs.CPUPackage {
 	return &mockCPUPackage{}
 }
 func (fake *mockSystem) PossibleCPUs() cpuset.CPUSet {
@@ -261,7 +260,7 @@ func (fake *mockSystem) CoreKindCPUs(sysfs.CoreKind) cpuset.CPUSet {
 func (fake *mockSystem) CoreKinds() []sysfs.CoreKind {
 	return nil
 }
-func (fake *mockSystem) IDSetForCPUs(cpus cpuset.CPUSet, f func(cpu system.CPU) idset.ID) idset.IDSet {
+func (fake *mockSystem) IDSetForCPUs(cpus cpuset.CPUSet, f func(cpu sysfs.CPU) idset.ID) idset.IDSet {
 	panic("unimplemented")
 }
 func (fake *mockSystem) AllThreadsForCPUs(cpuset.CPUSet) cpuset.CPUSet {

@@ -33,7 +33,7 @@ func TestAllocatorHelper(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create tmpdir: %v", err)
 	}
-	defer os.RemoveAll(tmpdir)
+	defer removeAll(t, tmpdir)
 
 	if err := utils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), tmpdir); err != nil {
 		t.Fatalf("failed to decompress testdata: %v", err)
@@ -111,7 +111,7 @@ func TestClusteredAllocation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create tmpdir: %v", err)
 	}
-	defer os.RemoveAll(tmpdir)
+	defer removeAll(t, tmpdir)
 
 	if err := utils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), tmpdir); err != nil {
 		t.Fatalf("failed to decompress testdata: %v", err)
@@ -327,7 +327,7 @@ func TestClusteredCoreKindAllocation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create tmpdir: %v", err)
 	}
-	defer os.RemoveAll(tmpdir)
+	defer removeAll(t, tmpdir)
 
 	if err := utils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), tmpdir); err != nil {
 		t.Fatalf("failed to decompress testdata: %v", err)
@@ -744,5 +744,11 @@ func TestClusteredCoreKindAllocation(t *testing.T) {
 				t.Errorf("expected %q, result was %q", tc.expected, result)
 			}
 		})
+	}
+}
+
+func removeAll(t *testing.T, path string) {
+	if err := os.RemoveAll(path); err != nil {
+		t.Fatalf("failed to remove %q: %v", path, err)
 	}
 }

@@ -403,7 +403,7 @@ func (srv *testServer) collect(t *testing.T) (described, collected) {
 	resp, err := http.Get("http://localhost" + srv.srv.Addr + "/metrics")
 	require.NoError(t, err)
 
-	defer resp.Body.Close()
+	defer resp.Body.Close() // nolint:errcheck
 
 	var (
 		types   []string

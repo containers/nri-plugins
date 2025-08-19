@@ -55,7 +55,7 @@ func (c *BalloonsPolicy) Validate() error {
 		return err
 	}
 
-	if err := c.Spec.Config.Validate(); err != nil {
+	if err := c.Spec.Validate(); err != nil {
 		return err
 	}
 
