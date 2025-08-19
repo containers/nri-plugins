@@ -80,7 +80,7 @@ func (p *policy) enumeratePools() {
 
 func (p *policy) buildRootPool() {
 	var (
-		root  Node = nilnode
+		root  = nilnode
 		vroot *virtualnode
 	)
 
@@ -94,8 +94,8 @@ func (p *policy) buildRootPool() {
 		log.Info("+ created pool %s", vroot.Name())
 
 		cpus := p.sys.CPUSet()
-		vroot.node.noderes, vroot.node.freeres = p.getCpuSupply(vroot, cpus)
-		vroot.node.mem, vroot.node.pMem, vroot.node.hbm = p.getMemSupply(vroot, cpus)
+		vroot.noderes, vroot.freeres = p.getCpuSupply(vroot, cpus)
+		vroot.mem, vroot.pMem, vroot.hbm = p.getMemSupply(vroot, cpus)
 	} else {
 		log.Info("- omitted virtual root pool (single socket HW)")
 	}
@@ -117,8 +117,8 @@ func (p *policy) buildSocketPool(socketID idset.ID, root Node) {
 	log.Info("+ created pool %s", socket.Name())
 
 	cpus := p.sys.Package(socketID).CPUSet()
-	socket.node.noderes, socket.node.freeres = p.getCpuSupply(socket, cpus)
-	socket.node.mem, socket.node.pMem, socket.node.hbm = p.getMemSupply(socket, cpus)
+	socket.noderes, socket.freeres = p.getCpuSupply(socket, cpus)
+	socket.mem, socket.pMem, socket.hbm = p.getMemSupply(socket, cpus)
 
 	if dieIDs := p.sys.Package(socketID).DieIDs(); len(dieIDs) > 1 {
 		for _, dieID := range dieIDs {
@@ -141,8 +141,8 @@ func (p *policy) buildDiePool(socketID, dieID idset.ID, socket Node) {
 	log.Info("+ created pool %s", die.Name())
 
 	cpus := p.sys.Package(socketID).DieCPUSet(dieID)
-	die.node.noderes, die.node.freeres = p.getCpuSupply(die, cpus)
-	die.node.mem, die.node.pMem, die.node.hbm = p.getMemSupply(die, cpus)
+	die.noderes, die.freeres = p.getCpuSupply(die, cpus)
+	die.mem, die.pMem, die.hbm = p.getMemSupply(die, cpus)
 
 	if nodeIDs := p.sys.Package(socketID).DieNodeIDs(dieID); len(nodeIDs) > 1 {
 		for _, nodeID := range nodeIDs {
@@ -171,8 +171,8 @@ func (p *policy) buildNumaNodePool(socketID, nodeID idset.ID, parent Node) {
 	log.Info("+ created pool %s", node.Name())
 
 	cpus := p.sys.Node(nodeID).CPUSet()
-	node.node.noderes, node.node.freeres = p.getCpuSupply(node, cpus)
-	node.node.mem, node.node.pMem, node.node.hbm = p.getMemSupply(node, cpus)
+	node.noderes, node.freeres = p.getCpuSupply(node, cpus)
+	node.mem, node.pMem, node.hbm = p.getMemSupply(node, cpus)
 }
 
 func (p *policy) getCpuSupply(node Node, cpus cpuset.CPUSet) (Supply, Supply) {

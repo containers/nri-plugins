@@ -1397,9 +1397,9 @@ func (sys *system) discoverNodes() error {
 	}
 	cpuNodes := cpuset.New(cpuNodesSlice...)
 
-	sys.Logger.Info("NUMA nodes with CPUs: %s", cpuNodes.String())
-	sys.Logger.Info("NUMA nodes with (any) memory: %s", memoryNodes.String())
-	sys.Logger.Info("NUMA nodes with normal memory: %s", normalMemNodes.String())
+	sys.Info("NUMA nodes with CPUs: %s", cpuNodes.String())
+	sys.Info("NUMA nodes with (any) memory: %s", memoryNodes.String())
+	sys.Info("NUMA nodes with normal memory: %s", normalMemNodes.String())
 
 	noMemNodes := onlineNodes.Difference(memoryNodes)
 	dramNodes := cpuNodes.Clone()
@@ -1446,17 +1446,17 @@ func (sys *system) discoverNodes() error {
 				return fmt.Errorf("not able to determine system special memory types")
 			}
 			if mem.MemTotal < dramAvg {
-				sys.Logger.Info("node %d has HBM memory", node.id)
+				sys.Info("node %d has HBM memory", node.id)
 				node.memoryType = MemoryTypeHBM
 			} else {
-				sys.Logger.Info("node %d has PMEM memory", node.id)
+				sys.Info("node %d has PMEM memory", node.id)
 				node.memoryType = MemoryTypePMEM
 			}
 		} else if _, ok := dramNodeIds[node.id]; ok {
-			sys.Logger.Info("node %d has DRAM memory", node.id)
+			sys.Info("node %d has DRAM memory", node.id)
 			node.memoryType = MemoryTypeDRAM
 		} else {
-			return fmt.Errorf("Unknown memory type for node %v (pmem nodes: %s, dram nodes: %s)", node, pmemOrHbmNodes, dramNodes)
+			return fmt.Errorf("unknown memory type for node %v (pmem nodes: %s, dram nodes: %s)", node, pmemOrHbmNodes, dramNodes)
 		}
 	}
 

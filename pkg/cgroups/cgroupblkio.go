@@ -350,7 +350,12 @@ func (dpm defaultPlatform) writeToFile(filename string, content string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		cerr := f.Close()
+		if cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 	_, err = fmt.Fprintf(f, "%s", content)
 	return err
 }

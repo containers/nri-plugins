@@ -454,7 +454,8 @@ func (cs *supply) AllocateCPU(r Request) (Grant, error) {
 	grant.AccountAllocateCPU()
 
 	if fraction > 0 {
-		if cpuType == cpuNormal {
+		switch cpuType {
+		case cpuNormal:
 			// allocate requested portion of shared CPUs
 			if cs.AllocatableSharedCPU() < fraction {
 				cs.ReleaseCPU(grant)
@@ -463,7 +464,7 @@ func (cs *supply) AllocateCPU(r Request) (Grant, error) {
 					cs.node.Name(), fraction, cs.sharable, cs.AllocatableSharedCPU())
 			}
 			cs.grantedShared += fraction
-		} else if cpuType == cpuReserved {
+		case cpuReserved:
 			// allocate requested portion of reserved CPUs
 			if cs.AllocatableReservedCPU() < fraction {
 				cs.ReleaseCPU(grant)
@@ -967,7 +968,7 @@ func (cs *supply) AllocatableReservedCPU() int {
 
 // AllocatableSharedCPU calculates the allocatable amount of shared CPU of this supply.
 func (cs *supply) AllocatableSharedCPU(quiet ...bool) int {
-	verbose := !(len(quiet) > 0 && quiet[0])
+	verbose := len(quiet) == 0 || !quiet[0]
 
 	// Notes:
 	//   Take into account the supplies/grants in all ancestors, making sure

@@ -94,7 +94,7 @@ func NewClient(options ...ClientOption) (*Client, error) {
 // Close closes the client.
 func (c *Client) Close() {
 	if c != nil && c.conn != nil {
-		c.conn.Close()
+		c.conn.Close() // nolint:errcheck
 		c.conn = nil
 	}
 	c.cli = nil

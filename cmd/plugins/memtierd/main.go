@@ -340,7 +340,7 @@ func (p *plugin) detectCgroupsDir() error {
 	if err != nil {
 		return fmt.Errorf("failed to open /proc/mounts: %v", err)
 	}
-	defer file.Close()
+	defer file.Close() // nolint:errcheck
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -404,7 +404,7 @@ func newMemtierdEnv(fullCgroupPath string, namespace string, podName string, con
 	}
 	memtierdConfigOut := string(memtierdConfigIn)
 	for key, value := range replace {
-		memtierdConfigOut = strings.Replace(memtierdConfigOut, key, value, -1)
+		memtierdConfigOut = strings.ReplaceAll(memtierdConfigOut, key, value)
 	}
 
 	configFilePath := fmt.Sprintf("%s/memtierd.config.yaml", ctrDir)

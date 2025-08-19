@@ -71,7 +71,7 @@ func NewReader() (*Reader, error) {
 	}
 
 	if err := syscall.Bind(fd, &addr); err != nil {
-		syscall.Close(fd)
+		syscall.Close(fd) // nolint:errcheck
 		return nil, fmt.Errorf("failed to bind udev reader: %w", err)
 	}
 

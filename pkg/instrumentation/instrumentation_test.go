@@ -76,7 +76,7 @@ func checkPrometheus(t *testing.T, server string, shouldFail bool) {
 		}
 
 		_, err = io.ReadAll(rpl.Body)
-		rpl.Body.Close()
+		rpl.Body.Close() // nolint:errcheck
 		if err != nil {
 			t.Errorf("failed to read Prometheus response: %v", err)
 		}

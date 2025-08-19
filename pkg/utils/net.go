@@ -25,7 +25,7 @@ import (
 func IsListeningSocket(socket string) (bool, error) {
 	conn, err := net.Dial("unix", socket)
 	if err == nil {
-		conn.Close()
+		conn.Close() // nolint:errcheck
 		return true, nil
 	}
 

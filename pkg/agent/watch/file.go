@@ -109,7 +109,7 @@ func (w *FileWatch) run() error {
 		for {
 			select {
 			case <-w.stopC:
-				w.fsw.Close()
+				w.fsw.Close() // nolint:errcheck
 				close(w.resultC)
 				close(w.doneC)
 				return

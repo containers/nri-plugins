@@ -278,9 +278,10 @@ func GetCPUSetMemoryMigrate(cgroupPath string) (bool, error) {
 		return false, err
 	}
 
-	if number == 0 {
+	switch number {
+	case 0:
 		return false, nil
-	} else if number == 1 {
+	case 1:
 		return true, nil
 	}
 

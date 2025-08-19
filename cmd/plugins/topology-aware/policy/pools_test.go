@@ -36,6 +36,11 @@ func findNodeWithName(name string, nodes []Node) Node {
 	panic("No node found with name " + name)
 }
 
+func removeAll(t *testing.T, path string) {
+	if err := os.RemoveAll(path); err != nil {
+		t.Fatalf("failed to remove %q: %v", path, err)
+	}
+}
 func TestPoolCreation(t *testing.T) {
 
 	// Test pool creation with "real" sysfs data.
@@ -45,7 +50,7 @@ func TestPoolCreation(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer os.RemoveAll(dir)
+	defer removeAll(t, dir)
 
 	// Uncompress the test data to the directory.
 	err = utils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), dir)
@@ -200,7 +205,7 @@ func TestWorkloadPlacement(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer os.RemoveAll(dir)
+	defer removeAll(t, dir)
 
 	// Uncompress the test data to the directory.
 	err = utils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), dir)
@@ -306,7 +311,7 @@ func TestAffinities(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer os.RemoveAll(dir)
+	defer removeAll(t, dir)
 
 	// Uncompress the test data to the directory.
 	err = utils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), dir)

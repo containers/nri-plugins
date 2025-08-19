@@ -125,7 +125,11 @@ func configureNriForCrio(cfg *nriConfig) error {
 	if err != nil {
 		return fmt.Errorf("error creating a drop-in file for CRI-O: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	_, err = f.WriteString("[crio.nri]\nenable_nri = true\n")
 	if err != nil {
@@ -152,7 +156,11 @@ func writeToContainerdConfig(file string, config map[string]interface{}) error {
 	if err != nil {
 		return fmt.Errorf("error truncating file: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	w := bufio.NewWriter(f)
 	_, err = w.WriteString(buf.String())

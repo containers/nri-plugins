@@ -88,7 +88,7 @@ func (m *Monitor) reader(events chan<- *Event) {
 		evt, err := m.r.Read()
 		if err != nil {
 			log.Errorf("failed to read udev event: %v", err)
-			m.r.Close()
+			m.r.Close() // nolint:errcheck
 			close(events)
 			return
 		}

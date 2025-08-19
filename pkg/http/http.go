@@ -182,7 +182,7 @@ func (s *Server) Stop() {
 		return
 	}
 
-	s.server.Close()
+	s.server.Close() // nolint:errcheck
 	s.server = nil
 }
 
