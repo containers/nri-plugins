@@ -147,7 +147,7 @@ pushd "$build_dir"
 # Add "const" files we need in root dir
 touch .nojekyll
 
-_stable=`(ls -d1 v*/ || :) | sort -n | tail -n1`
+_stable=`(ls -d1 v*/ || :) | sort -V | tail -n1`
 if [ -n "$_stable" ]; then
     ln -sfT "$_stable" stable
     redirect_to="stable"
