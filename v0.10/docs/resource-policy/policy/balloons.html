@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.10.0-1-g55d8ff8d documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.10.0-7-g75d3dd11 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=974cc6ed"></script>
+        <script src="../../../_static/documentation_options.js?v=372af723"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -805,8 +805,21 @@ nri-resource-policy global config:</p>
 <span class="w">  </span><span class="nt">metrics</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="c1"># use &#39;*&#39; instead for all available metrics</span>
 <span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">policy</span>
-<span class="nt">logger</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">Debug</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">policy</span>
+<span class="nt">log</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">debug</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">policy</span><span class="w">     </span><span class="c1"># to follow policy&#39;s internal logic</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nri-plugin</span><span class="w"> </span><span class="c1"># to see what the policy saw and to hear what it said (there is a lot of it)</span>
+<span class="w">  </span><span class="nt">source</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</pre></div>
+</div>
+<p>Read metrics (assuming you can access podIPs directly from your network, otherwise use <code class="docutils literal notranslate"><span class="pre">kubectl</span> <span class="pre">port-forward</span></code>):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>for podip in $(kubectl get pod -n kube-system -l &quot;app.kubernetes.io/instance=nri-resource-policy-balloons&quot; -o=jsonpath=&#39;{.items[*].status.podIP}&#39;); do
+  curl -s http://$podip:8891/metrics
+done
+</pre></div>
+</div>
+<p>Read logs:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">kubectl</span> <span class="n">logs</span> <span class="o">-</span><span class="n">n</span> <span class="n">kube</span><span class="o">-</span><span class="n">system</span> <span class="o">-</span><span class="n">l</span> <span class="s2">&quot;app.kubernetes.io/instance=nri-resource-policy-balloons&quot;</span> <span class="o">--</span><span class="n">tail</span><span class="o">=-</span><span class="mi">1</span>
 </pre></div>
 </div>
 </section>

@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Architecture &mdash; NRI Plugins v0.10.0-1-g55d8ff8d documentation</title>
+  <title>Architecture &mdash; NRI Plugins v0.10.0-7-g75d3dd11 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=974cc6ed"></script>
+        <script src="../../../_static/documentation_options.js?v=372af723"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -131,7 +131,7 @@ Kubernetes custom resources.</p>
 <section id="components">
 <h2>Components<a class="headerlink" href="#components" title="Link to this heading"></a></h2>
 <section id="node-agent">
-<h3><a class="reference external" href="https://github.com/containers/nri-plugins/tree/55d8ff8da98808ac64dbe6dcdf565e0993df7ba9/pkg/resmgr/agent">Node Agent</a><a class="headerlink" href="#node-agent" title="Link to this heading"></a></h3>
+<h3><a class="reference external" href="https://github.com/containers/nri-plugins/tree/75d3dd1174692058b463d1849ee1bbece71b637b/pkg/resmgr/agent">Node Agent</a><a class="headerlink" href="#node-agent" title="Link to this heading"></a></h3>
 <p>The node agent is a component internal to NRI-RP itself. All interactions
 by NRI-RP with the Kubernetes Control Plane go through the node agent with
 the node agent performing any direct interactions on behalf of NRI-RP.</p>
@@ -146,7 +146,7 @@ the node agent performing any direct interactions on behalf of NRI-RP.</p>
 <p>The config interface is defined and has its gRPC server running in
 NRI-RP. The agent acts as a gRPC client for this interface. The low-level
 cluster interface is defined and has its gRPC server running in the agent,
-with the <a class="reference external" href="https://github.com/containers/nri-plugins/tree/55d8ff8da98808ac64dbe6dcdf565e0993df7ba9/pkg/resmgr/agent">convenience layer</a> defined in NRI-RP.
+with the <a class="reference external" href="https://github.com/containers/nri-plugins/tree/75d3dd1174692058b463d1849ee1bbece71b637b/pkg/resmgr/agent">convenience layer</a> defined in NRI-RP.
 NRI-RP acts as a gRPC client for the low-level plumbing interface.</p>
 <p>Additionally, the stock node agent that comes with NRI-RP implements schemes
 for:</p>
@@ -156,7 +156,7 @@ for:</p>
 </ul>
 </section>
 <section id="resource-manager">
-<h3><a class="reference external" href="https://github.com/containers/nri-plugins/tree/55d8ff8da98808ac64dbe6dcdf565e0993df7ba9/pkg/resmgr/">Resource Manager</a><a class="headerlink" href="#resource-manager" title="Link to this heading"></a></h3>
+<h3><a class="reference external" href="https://github.com/containers/nri-plugins/tree/75d3dd1174692058b463d1849ee1bbece71b637b/pkg/resmgr/">Resource Manager</a><a class="headerlink" href="#resource-manager" title="Link to this heading"></a></h3>
 <p>NRI-RP implements an event processing pipeline. In addition to NRI events,
 it processes a set of other events that are not directly related to or the
 result of NRI requests. These events are typically internally generated within
@@ -222,7 +222,7 @@ requests).</p></li>
 </ul>
 </section>
 <section id="cache">
-<h3><a class="reference external" href="https://github.com/containers/nri-plugins/tree/55d8ff8da98808ac64dbe6dcdf565e0993df7ba9/pkg/resmgr/cache/">Cache</a><a class="headerlink" href="#cache" title="Link to this heading"></a></h3>
+<h3><a class="reference external" href="https://github.com/containers/nri-plugins/tree/75d3dd1174692058b463d1849ee1bbece71b637b/pkg/resmgr/cache/">Cache</a><a class="headerlink" href="#cache" title="Link to this heading"></a></h3>
 <p>The cache is a shared internal storage location within NRI-RP. It tracks the
 runtime state of pods and containers known to NRI-RP, as well as the state
 of NRI-RP itself, including the active configuration and the state of the
@@ -251,20 +251,20 @@ the policy’s event handler with the injected event as an argument and with
 the cache properly locked.</p>
 </section>
 <section id="generic-policy-layer">
-<h3><a class="reference external" href="https://github.com/containers/nri-plugins/blob/55d8ff8da98808ac64dbe6dcdf565e0993df7ba9/pkg/resmgr/policy/policy.go">Generic Policy Layer</a><a class="headerlink" href="#generic-policy-layer" title="Link to this heading"></a></h3>
+<h3><a class="reference external" href="https://github.com/containers/nri-plugins/blob/75d3dd1174692058b463d1849ee1bbece71b637b/pkg/resmgr/policy/policy.go">Generic Policy Layer</a><a class="headerlink" href="#generic-policy-layer" title="Link to this heading"></a></h3>
 <p>The generic policy layer defines the abstract interface the rest of NRI-RP
 uses to interact with policy implementations and takes care of the details
 of activating and dispatching calls through to the configured active policy.</p>
 </section>
 <section id="generic-resource-controller-layer">
-<h3><a class="reference external" href="https://github.com/containers/nri-plugins/blob/55d8ff8da98808ac64dbe6dcdf565e0993df7ba9/pkg/resmgr/control/control.go">Generic Resource Controller Layer</a><a class="headerlink" href="#generic-resource-controller-layer" title="Link to this heading"></a></h3>
+<h3><a class="reference external" href="https://github.com/containers/nri-plugins/blob/75d3dd1174692058b463d1849ee1bbece71b637b/pkg/resmgr/control/control.go">Generic Resource Controller Layer</a><a class="headerlink" href="#generic-resource-controller-layer" title="Link to this heading"></a></h3>
 <p>The generic resource controller layer defines the abstract interface the rest
 of NRI-RP uses to interact with resource controller implementations and takes
 care of the details of dispatching calls to the controller implementations
 for post-policy enforcement of decisions.</p>
 </section>
 <section id="metrics-collector">
-<h3><a class="reference external" href="https://github.com/containers/nri-plugins/tree/55d8ff8da98808ac64dbe6dcdf565e0993df7ba9/pkg/metrics/">Metrics Collector</a><a class="headerlink" href="#metrics-collector" title="Link to this heading"></a></h3>
+<h3><a class="reference external" href="https://github.com/containers/nri-plugins/tree/75d3dd1174692058b463d1849ee1bbece71b637b/pkg/metrics/">Metrics Collector</a><a class="headerlink" href="#metrics-collector" title="Link to this heading"></a></h3>
 <p>The metrics collector gathers a set of runtime metrics about system resources,
 containers running on the node, and policy-specific resource assignments and
 expose these as Prometheus metrics. This data can be externally evaluated and
@@ -272,19 +272,19 @@ used to trigger rebalancing of resources if the NRI-RP implementation provides
 a (policy-specific) external interface for this.</p>
 </section>
 <section id="policy-implementations">
-<h3><a class="reference external" href="https://github.com/containers/nri-plugins/tree/55d8ff8da98808ac64dbe6dcdf565e0993df7ba9/cmd/plugins">Policy Implementations</a><a class="headerlink" href="#policy-implementations" title="Link to this heading"></a></h3>
+<h3><a class="reference external" href="https://github.com/containers/nri-plugins/tree/75d3dd1174692058b463d1849ee1bbece71b637b/cmd/plugins">Policy Implementations</a><a class="headerlink" href="#policy-implementations" title="Link to this heading"></a></h3>
 <section id="topology-aware">
-<h4><a class="reference external" href="https://github.com/containers/nri-plugins/tree/55d8ff8da98808ac64dbe6dcdf565e0993df7ba9/cmd/plugins/topology-aware/">Topology Aware</a><a class="headerlink" href="#topology-aware" title="Link to this heading"></a></h4>
+<h4><a class="reference external" href="https://github.com/containers/nri-plugins/tree/75d3dd1174692058b463d1849ee1bbece71b637b/cmd/plugins/topology-aware/">Topology Aware</a><a class="headerlink" href="#topology-aware" title="Link to this heading"></a></h4>
 <p>A topology-aware policy capable of handling multiple tiers/types of memory,
 typically a DRAM/PMEM combination configured in 2-layer memory mode.</p>
 </section>
 <section id="balloons">
-<h4><a class="reference external" href="https://github.com/containers/nri-plugins/tree/55d8ff8da98808ac64dbe6dcdf565e0993df7ba9/cmd/plugins/balloons/">Balloons</a><a class="headerlink" href="#balloons" title="Link to this heading"></a></h4>
+<h4><a class="reference external" href="https://github.com/containers/nri-plugins/tree/75d3dd1174692058b463d1849ee1bbece71b637b/cmd/plugins/balloons/">Balloons</a><a class="headerlink" href="#balloons" title="Link to this heading"></a></h4>
 <p>A balloons policy allows user to define fine grained control how the
 computer resources are distributed to workloads.</p>
 </section>
 <section id="template">
-<h4><a class="reference external" href="https://github.com/containers/nri-plugins/tree/55d8ff8da98808ac64dbe6dcdf565e0993df7ba9/cmd/plugins/template/">Template</a><a class="headerlink" href="#template" title="Link to this heading"></a></h4>
+<h4><a class="reference external" href="https://github.com/containers/nri-plugins/tree/75d3dd1174692058b463d1849ee1bbece71b637b/cmd/plugins/template/">Template</a><a class="headerlink" href="#template" title="Link to this heading"></a></h4>
 <p>The template policy can be used as a base for developing new policies.
 It provides hooks that the policy developer can fill to define fine grained
 control how the computer resources are distributed to workloads.
