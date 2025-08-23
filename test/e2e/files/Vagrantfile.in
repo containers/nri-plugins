@@ -57,7 +57,6 @@ Vagrant.configure("2") do |config|
   config.vm.define HOSTNAME
   config.vm.hostname = HOSTNAME
   config.vm.box = IMAGE_NAME
-  config.vm.disk :disk, size: "#{ENV['VM_DISK_SIZE']}", primary: true
   config.vm.box_check_update = false
   config.nfs.functional = false
   config.vm.network "forwarded_port", id: "ssh", host: SSH_PORT, guest: 22
@@ -79,6 +78,7 @@ Vagrant.configure("2") do |config|
     qemu.qemu_dir = "QEMU_DIR"
     qemu.smp = "QEMU_SMP"
     qemu.extra_qemu_args = ["-enable-kvm",QEMU_EXTRA_ARGS]
+    qemu.disk_resize = "#{ENV['VM_DISK_SIZE']}"
   end
 
   config.vm.provision :ansible do |ansible|
