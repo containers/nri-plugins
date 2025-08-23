@@ -145,6 +145,8 @@
             pkg:
               - iproute-tc
               - grubby
+              - cloud-utils-growpart
+              - btrfs-progs
             state: present
             update_cache: true
         - name: Extra python3 rpm packages for ansible
@@ -155,6 +157,18 @@
             state:
               present
           when: ansible_facts['distribution_major_version'] | int >= 40
+
+    - name: Resize root filesystem to the maximum possible
+      when: ansible_facts['distribution'] == "Fedora"
+      ansible.builtin.shell: |
+        fstype="$(stat -f -c %T /)"
+        if [ "$fstype" == "btrfs" ]; then
+            growpart /dev/vda 4 && btrfs filesystem resize max /
+        else
+            echo "***** WARNING: Root filesystem type ($fstype) is not btrfs."
+            echo "***** WARNING: resize of / to max possible size..."
+            sleep 3
+        fi
 
     - name: Disable SELinux
       ansible.posix.selinux:
