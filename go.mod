@@ -1,6 +1,6 @@
 module github.com/containers/nri-plugins
 
-go 1.24.6
+go 1.25.0
 
 require (
 	github.com/askervin/gofmbt v0.0.0-20250119175120-506d925f666f

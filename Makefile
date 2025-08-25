@@ -37,7 +37,7 @@ GO_LINT    := golint -set_exit_status
 GO_FMT     := gofmt
 GO_VET     := $(GO_CMD) vet
 GO_DEPS    := $(GO_CMD) list -f '{{ join .Deps "\n" }}'
-GO_VERSION ?= 1.24.6
+GO_VERSION ?= 1.25.0
 
 GO_MODULES := $(shell $(GO_CMD) list ./...)
 GO_SUBPKGS := $(shell find ./pkg -name go.mod | sed 's:/go.mod::g' | grep -v testdata | \
@@ -482,8 +482,8 @@ $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
 
 # External generation tool versions
-CLIENT_GEN_VERSION := v0.31.2
-CONTROLLER_GEN_VERSION := v0.16.5
+CLIENT_GEN_VERSION := v0.33.4
+CONTROLLER_GEN_VERSION := v0.18.0
 
 # External generation tool binaries
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
