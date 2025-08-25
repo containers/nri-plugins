@@ -19,7 +19,6 @@
 package balloons
 
 import (
-	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
 	v1alpha1 "github.com/containers/nri-plugins/pkg/apis/resmgr/v1alpha1"
 )
 
@@ -146,14 +145,14 @@ func (in *Config) DeepCopyInto(out *Config) {
 	}
 	if in.AvailableResources != nil {
 		in, out := &in.AvailableResources, &out.AvailableResources
-		*out = make(policy.Constraints, len(*in))
+		*out = make(Constraints, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val
 		}
 	}
 	if in.ReservedResources != nil {
 		in, out := &in.ReservedResources, &out.ReservedResources
-		*out = make(policy.Constraints, len(*in))
+		*out = make(Constraints, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val
 		}
