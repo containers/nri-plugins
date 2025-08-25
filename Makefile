@@ -482,8 +482,8 @@ $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
 
 # External generation tool versions
-CLIENT_GEN_VERSION := v0.31.2
-CONTROLLER_GEN_VERSION := v0.16.5
+CLIENT_GEN_VERSION := v0.33.4
+CONTROLLER_GEN_VERSION := v0.18.0
 
 # External generation tool binaries
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
