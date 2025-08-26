@@ -32,6 +32,8 @@ import (
 
 	"github.com/containerd/nri/pkg/api"
 	"github.com/containerd/nri/pkg/stub"
+
+	_ "github.com/containers/nri-plugins/cmd/plugins/memtierd/licensechack"
 )
 
 type plugin struct {

@@ -11,6 +11,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/fsnotify/fsnotify v1.6.0
 	github.com/intel/goresctrl v0.9.0
+	github.com/intel/memtierd v0.1.1
 	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.2
 	github.com/onsi/ginkgo/v2 v2.21.0
 	github.com/onsi/gomega v1.35.1
