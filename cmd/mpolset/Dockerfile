@@ -18,10 +18,12 @@ RUN go mod download
 # Build mpolset
 COPY . .
 
-RUN make BINARIES=mpolset IMAGE_VERSION=${IMAGE_VERSION} BUILD_VERSION=${BUILD_VERSION} BUILD_BUILDID=${BUILD_BUILDID} build-binaries-static
+RUN make clean install-go-licenses
+RUN make BINARIES=mpolset IMAGE_VERSION=${IMAGE_VERSION} BUILD_VERSION=${BUILD_VERSION} BUILD_BUILDID=${BUILD_BUILDID} build-binaries-static licenses
 
 FROM gcr.io/distroless/static
 
 COPY --from=builder /go/builder/build/bin/mpolset /bin/mpolset
+COPY --from=builder /go/builder/build/licenses/mpolset/ /licenses/mpolset/
 
 ENTRYPOINT ["/bin/mpolset"]
