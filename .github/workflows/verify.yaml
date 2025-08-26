@@ -89,3 +89,17 @@ jobs:
           git config user.name "Github"
           git config user.email "no-reply@github.com"
           ./scripts/build/update-gh-pages.sh
+
+  verify-licenses:
+    name: Verify Licenses
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: |
+          make install-go-licenses verify-licenses
