@@ -17,13 +17,14 @@ RUN go mod download
 # Build nri-memtierd
 COPY . .
 
-RUN make clean
-RUN make IMAGE_VERSION=${IMAGE_VERSION} BUILD_VERSION=${BUILD_VERSION} BUILD_BUILDID=${BUILD_BUILDID} PLUGINS=nri-memtierd build-plugins-static
+RUN make clean install-go-licenses
+RUN make IMAGE_VERSION=${IMAGE_VERSION} BUILD_VERSION=${BUILD_VERSION} BUILD_BUILDID=${BUILD_BUILDID} PLUGINS=nri-memtierd build-plugins-static licenses
 
 FROM gcr.io/distroless/static
 ENV PATH=/bin
 
 COPY --from=builder /go/builder/build/bin/nri-memtierd /bin/nri-memtierd
+COPY --from=builder /go/builder/build/licenses/nri-memtierd/ /licenses/nri-memtierd/
 COPY --from=builder /bin/memtierd /bin/memtierd
 
 ENTRYPOINT ["/bin/nri-memtierd", "--idx", "45"]
