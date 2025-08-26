@@ -56,6 +56,8 @@ COVERAGE_PATH := $(BUILD_PATH)/coverage
 IMAGE_PATH    := $(BUILD_PATH)/images
 LICENSE_PATH  := $(BUILD_PATH)/licenses
 
+GO_LICENSES_VERSION := v1.6.0
+
 E2E_DIR       := $(TOP_DIR)/test/e2e
 E2E_RUN       := $(E2E_DIR)/run_tests.sh
 E2E_TESTS     ?= $(E2E_DIR)/policies.test-suite
@@ -187,6 +189,10 @@ clean-images:
 	$(Q)echo "Cleaning exported images and deployment files."; \
 	rm -f $(IMAGE_PATH)/*
 
+clean-licenses:
+	$(Q)echo "Cleaning up extracted license information."; \
+	rm -fr $(LICENSE_PATH)
+
 clean-cache:
 	$(Q)$(GO_CMD) clean -cache -testcache
 
@@ -262,6 +268,28 @@ image.%:
 	NRI_IMAGE_REPOTAG=`awk '{print $$2}' <<< "$${NRI_IMAGE_INFO}"`; \
 	NRI_IMAGE_TAR=`realpath "$(IMAGE_PATH)/$${tag}-image-$${NRI_IMAGE_ID}.tar"`; \
 	$(DOCKER) image save "$${NRI_IMAGE_REPOTAG}" > "$${NRI_IMAGE_TAR}";
+
+.PHONY: licenses
+licenses: $(foreach p,$(PLUGINS),licenses.$(p)) $(foreach p,$(BINARIES),licenses.$(p))
+
+licenses.nri-resource-policy-% \
+licenses.nri-% \
+licenses.%:
+	$(Q)mkdir -p $(LICENSE_PATH); \
+	case $@ in \
+	    *.nri-resource-policy-*) \
+		dir=$(patsubst licenses.nri-resource-policy-%,./cmd/plugins/%,$@); \
+	        ;; \
+	    *.nri-*) \
+		dir=$(patsubst licenses.nri-%,./cmd/plugins/%,$@); \
+	        ;; \
+	    *.*) \
+		dir=$(patsubst licenses.%,./cmd/%,$@); \
+	        ;; \
+	esac; \
+	bin="$(patsubst licenses.%,%,$@)"; \
+	out="$(LICENSE_PATH)/$$bin"; \
+	./scripts/build/extract-licenses.sh $$dir $$out
 
 nri-plugins-operator-image:
 	$(Q)mkdir -p $(IMAGE_PATH); \
@@ -430,13 +458,8 @@ verify-codespell codespell:
 install-ginkgo:
 	$(Q)$(GO_INSTALL) -mod=mod github.com/onsi/ginkgo/v2/ginkgo
 
-report-licenses:
-	$(Q)mkdir -p $(LICENSE_PATH) && \
-	LICENSE_PKGS=`find ./cmd -name Dockerfile | xargs -l dirname`; \
-	go-licenses report $$LICENSE_PKGS \
-	        --ignore github.com/containers/nri-plugins \
-	        > $(LICENSE_PATH)/licenses.csv && \
-	echo See $(LICENSE_PATH)/licenses.csv for license information
+install-go-licenses:
+	$(Q)$(GO_INSTALL) github.com/google/go-licenses@$(GO_LICENSES_VERSION)
 
 #
 # Rules for documentation
