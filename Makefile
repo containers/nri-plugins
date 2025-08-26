@@ -451,6 +451,9 @@ verify-docs: site-build clean-html
 verify-codespell codespell:
 	$(Q) codespell
 
+verify-licenses: licenses
+	$(Q)./scripts/build/verify-licenses.sh -v $(LICENSE_PATH)
+
 #
 # targets for installing dependencies
 #
