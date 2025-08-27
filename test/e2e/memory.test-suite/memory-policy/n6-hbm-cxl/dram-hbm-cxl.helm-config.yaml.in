@@ -24,3 +24,7 @@ config:
     policy:
       mode: MPOL_BIND
       nodes: 2,3
+
+  - name: local
+    policy:
+      mode: MPOL_LOCAL

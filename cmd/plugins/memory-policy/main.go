@@ -401,6 +401,11 @@ func (policySpec *MemoryPolicySpec) ToLinuxMemoryPolicy(ctr *api.Container) (*Li
 		}
 		log.Tracef("- nodes %q (max-dist %d from CPU nodes %q)", nodeMask.MemsetString(), maxDistInt, fromNodes)
 
+	// "" (empty) includes no nodes into the mask.
+	case policySpec.Nodes == "":
+		nodeMask = libmem.NewNodeMask()
+		log.Tracef("- nodes %q (empty)", nodeMask.MemsetString())
+
 	// <int>[-<int>][, ...] includes the set of nodes.
 	case policySpec.Nodes[0] >= '0' && policySpec.Nodes[0] <= '9':
 		nodeMask, err = libmem.ParseNodeMask(policySpec.Nodes)
@@ -414,7 +419,7 @@ func (policySpec *MemoryPolicySpec) ToLinuxMemoryPolicy(ctr *api.Container) (*Li
 	}
 
 	nodes := nodeMask.MemsetString()
-	if (nodeMask & allowedMemsMask) != nodeMask {
+	if nodeMask.Size() != 0 && (nodeMask&allowedMemsMask) != nodeMask {
 		log.Debugf("some memory policy nodes (%s) are not allowed (%s)", nodes, allowedMemsMask.MemsetString())
 	}
 
