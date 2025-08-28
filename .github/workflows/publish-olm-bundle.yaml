@@ -84,7 +84,7 @@ jobs:
           echo "TAG: ${{ env.TAG }}"
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -98,7 +98,7 @@ jobs:
         run: pushd deployment/operator && VERSION=${version} make bundle && popd
 
       - name: Checkout upstream community-operators repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: ${{ env.REPO }}
           path: community-operators
