@@ -57,6 +57,7 @@ IMAGE_PATH    := $(BUILD_PATH)/images
 LICENSE_PATH  := $(BUILD_PATH)/licenses
 
 GO_LICENSES_VERSION := v1.6.0
+SKIP_LICENSES       ?= 0
 
 E2E_DIR       := $(TOP_DIR)/test/e2e
 E2E_RUN       := $(E2E_DIR)/run_tests.sh
@@ -262,6 +263,7 @@ image.%:
 	    --build-arg IMAGE_VERSION=$(IMAGE_VERSION) \
 	    --build-arg BUILD_VERSION=$(BUILD_VERSION) \
 	    --build-arg BUILD_BUILDID=$(BUILD_BUILDID) \
+	    --build-arg SKIP_LICENSES=$(SKIP_LICENSES) \
 	    -t $(IMAGE_REPO)$$tag:$(IMAGE_VERSION) || exit $$?; \
 	NRI_IMAGE_INFO=`$(DOCKER) images --filter=reference=$${tag} --format '{{.ID}} {{.Repository}}:{{.Tag}} (created {{.CreatedSince}}, {{.CreatedAt}})' | head -n 1`; \
 	NRI_IMAGE_ID=`awk '{print $$1}' <<< "$${NRI_IMAGE_INFO}"`; \
@@ -289,6 +291,10 @@ licenses.%:
 	esac; \
 	bin="$(patsubst licenses.%,%,$@)"; \
 	out="$(LICENSE_PATH)/$$bin"; \
+	if [ "$(SKIP_LICENSES)" = "1" ]; then \
+	    mkdir -p "$$out"; \
+	    exit 0; \
+	fi; \
 	./scripts/build/extract-licenses.sh $$dir $$out
 
 nri-plugins-operator-image:
@@ -452,7 +458,11 @@ verify-codespell codespell:
 	$(Q) codespell
 
 verify-licenses: licenses
-	$(Q)./scripts/build/verify-licenses.sh -v $(LICENSE_PATH)
+	$(Q)if [ "$(SKIP_LICENSES)" = "1" ]; then \
+	    echo "Skipping license verification as requested."; \
+	    exit 0; \
+	fi; \
+	./scripts/build/verify-licenses.sh -v $(LICENSE_PATH)
 
 #
 # targets for installing dependencies
@@ -462,7 +472,11 @@ install-ginkgo:
 	$(Q)$(GO_INSTALL) -mod=mod github.com/onsi/ginkgo/v2/ginkgo
 
 install-go-licenses:
-	$(Q)$(GO_INSTALL) github.com/google/go-licenses@$(GO_LICENSES_VERSION)
+	$(Q)if [ "$(SKIP_LICENSES)" = "1" ]; then \
+	    echo "Skipping go-licenses installation as requested."; \
+	    exit 0; \
+	fi; \
+	$(GO_INSTALL) github.com/google/go-licenses@$(GO_LICENSES_VERSION)
 
 #
 # Rules for documentation
