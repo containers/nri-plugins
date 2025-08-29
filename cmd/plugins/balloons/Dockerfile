@@ -10,22 +10,35 @@ ARG NORACE=0
 
 WORKDIR /go/builder
 
-RUN mkdir -p /debug-extras; \
+RUN --mount=type=cache,target=/go/pkg/mod/ \
+    --mount=type=cache,target="/root/.cache/go-build" \
+    mkdir -p /debug-extras; \
     if [ "$DEBUG" = 1 ]; then \
         mkdir -p /debug-extras/bin; \
           GOBIN=/debug-extras/bin go install -tags osusergo,netgo -ldflags "-extldflags=-static" github.com/go-delve/delve/cmd/dlv@latest; \
     fi
 
 # Fetch go dependencies in a separate layer for caching
-COPY go.mod go.sum ./
+COPY go.mod go.sum .
 COPY pkg/topology/ pkg/topology/
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod/ go mod download
 
 # Build nri-resource-policy
 COPY . .
 
-RUN make clean install-go-licenses
-RUN make IMAGE_VERSION=${IMAGE_VERSION} BUILD_VERSION=${BUILD_VERSION} BUILD_BUILDID=${BUILD_BUILDID} PLUGINS=nri-resource-policy-balloons DEBUG=$DEBUG NORACE=$NORACE V=$DEBUG build-plugins-static licenses
+RUN --mount=type=cache,target=/go/pkg/mod/ \
+    --mount=type=cache,target="/root/.cache/go-build" \
+    make IMAGE_VERSION=${IMAGE_VERSION} \
+         BUILD_VERSION=${BUILD_VERSION} \
+         BUILD_BUILDID=${BUILD_BUILDID} \
+         PLUGINS=nri-resource-policy-balloons \
+         V=$DEBUG \
+         DEBUG=$DEBUG \
+         NORACE=$NORACE \
+         BINARIES="" \
+         OTHER_IMAGE_TARGETS="" \
+         PLUGINS=nri-resource-policy-balloons \
+         clean install-go-licenses build-plugins-static licenses
 
 RUN cpgodir() { \
         mkdir -p $2; \
