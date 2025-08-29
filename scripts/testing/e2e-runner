@@ -190,9 +190,9 @@ run_e2e_tests() {
     info "running e2e tests ${E2E_TESTS:-with the default test set}..."
     must-cd "$WORKTREE"
     if [ -n "$E2E_TESTS" ]; then
-        make E2E_TESTS="$E2E_TESTS" e2e-tests
+        make SKIP_LICENSES=1 E2E_TESTS="$E2E_TESTS" e2e-tests
     else
-        make e2e-tests
+        make SKIP_LICENSES=1 e2e-tests
     fi
 }
 
