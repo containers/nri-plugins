@@ -57,6 +57,7 @@ Vagrant.configure("2") do |config|
   config.vm.define HOSTNAME
   config.vm.hostname = HOSTNAME
   config.vm.box = IMAGE_NAME
+# config.vm.box_url =
   config.vm.box_check_update = false
   config.nfs.functional = false
   config.vm.network "forwarded_port", id: "ssh", host: SSH_PORT, guest: 22

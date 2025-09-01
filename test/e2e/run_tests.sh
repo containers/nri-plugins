@@ -4,7 +4,7 @@ TESTS_DIR="$1"
 SKIP_LONG_TESTS="${skip_long_tests:-yes}"
 RUN_SH="${0%/*}/run.sh"
 
-DEFAULT_DISTRO=${DEFAULT_DISTRO:-"fedora/40-cloud-base"}
+DEFAULT_DISTRO=${DEFAULT_DISTRO:-"fedora-42/cloud-base"}
 
 k8scri=${k8scri:="containerd"}
 

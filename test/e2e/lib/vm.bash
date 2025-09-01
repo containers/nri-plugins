@@ -124,6 +124,13 @@ vm-setup() {
 	echo "CPU: $CPU"
 	echo "MEM: $MEM"
 	echo "EXTRA: $EXTRA_ARGS"
+        echo "image: ${distro_img:-vagrant default}"
+    fi
+
+    if [ -n "$distro_img" ]; then
+        CUSTOM_IMAGE="config.vm.box_url = \"$distro_img\""
+    else
+        CUSTOM_IMAGE="# config.vm.box_url = vagrant default image"
     fi
 
     if [ ! -f "$vagrantdir/Vagrantfile" ]; then
@@ -134,6 +141,7 @@ vm-setup() {
 	    -e "s/QEMU_SMP/$CPU/" \
 	    -e "s/QEMU_EXTRA_ARGS/$EXTRA_ARGS/" \
             -e "s:QEMU_DIR:$qemu_dir:" \
+            -e "s|^.*config.vm.box_url.*$|$CUSTOM_IMAGE|g" \
 	    "$files/Vagrantfile.in" > "$vagrantdir/Vagrantfile.erb"
     fi
 

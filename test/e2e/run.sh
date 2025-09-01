@@ -1,11 +1,19 @@
 #!/bin/bash
 
 TITLE="NRI Resource Policy End-to-End Testing"
-DEFAULT_DISTRO=${DEFAULT_DISTRO:-"fedora/40-cloud-base"}
+DEFAULT_DISTRO=${DEFAULT_DISTRO:-"fedora-42/cloud-base"}
 
 # Other tested distros
 #    generic/ubuntu2204
-#    fedora/37-cloud-base
+#    fedora-40/cloud-base
+#    fedora-41/cloud-base
+
+declare -A distro_images=(
+        ["generic/ubuntu2204"]=""
+        ["fedora-40/cloud-base"]=""
+        ["fedora-41/cloud-base"]="https://mirror.karneval.cz/pub/linux/fedora/linux/releases/41/Cloud/x86_64/images/Fedora-Cloud-Base-Vagrant-libvirt-41-1.4.x86_64.vagrant.libvirt.box"
+        ["fedora-42/cloud-base"]="https://download.fedoraproject.org/pub/fedora/linux/releases/42/Cloud/x86_64/images/Fedora-Cloud-Base-Vagrant-libvirt-42-1.1.x86_64.vagrant.libvirt.box"
+)
 
 SCRIPT_DIR="$(dirname "${BASH_SOURCE[0]}")"
 SRC_DIR=$(realpath "$SCRIPT_DIR/../..")
@@ -19,6 +27,11 @@ export TEST_OUTPUT_DIR=${test_outdir:-"$OUTPUT_DIR"}
 export COMMAND_OUTPUT_DIR="$TEST_OUTPUT_DIR"/commands
 
 distro=${distro:-$DEFAULT_DISTRO}
+image_url=${distro_images[$distro]}
+if [ -n "$image_url" ]; then
+    export distro_img="$image_url"
+fi
+
 export k8scri=${k8scri:-"containerd"}
 export cni_plugin=${cni_plugin:-bridge}
 export cni_release=${cni_release:-latest}
@@ -194,6 +207,7 @@ fi
 echo
 echo "    VM              = $vm_name"
 echo "    Distro          = $distro"
+echo "    Distro image    = ${distro_img:-vagrant default}"
 echo "    Kubernetes"
 echo "      - release     = $k8s_release"
 echo "      - version     = $k8s_version"
