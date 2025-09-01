@@ -27,10 +27,6 @@ export TEST_OUTPUT_DIR=${test_outdir:-"$OUTPUT_DIR"}
 export COMMAND_OUTPUT_DIR="$TEST_OUTPUT_DIR"/commands
 
 distro=${distro:-$DEFAULT_DISTRO}
-image_url=${distro_images[$distro]}
-if [ -n "$image_url" ]; then
-    export distro_img="$image_url"
-fi
 
 export k8scri=${k8scri:-"containerd"}
 export cni_plugin=${cni_plugin:-bridge}
@@ -42,6 +38,36 @@ export k8s_release=${k8s_release:-"latest"}
 export k8s_version=""
 
 source "$LIB_DIR"/vm.bash
+
+fetch-or-use-cached-url() {
+    local url="$1" cached="$2"
+    local dir=$(dirname $cached)
+
+    if [ -f "$cached" ]; then
+        echo "Using local cached $cached for $url..."
+        return 0
+    fi
+
+    echo "Downloading and caching $url as $cached..."
+    mkdir -p "$dir"
+    if ! wget --show-progress -O"$cached" "$url"; then
+        rm -f "$cached"
+        error "failed to download $url"
+    fi
+}
+
+pre-cache-vagrant-image() {
+    local image_url=${distro_images[$distro]}
+    local image_dir="$HOME/.cache/nri-plugins/e2e"
+
+    if [ -z "$image_url" ]; then
+        return 0
+    fi
+
+    image_file="$image_dir/$(basename $image_url)"
+    fetch-or-use-cached-url "$image_url" "$image_file"
+    export distro_img="file://$image_file"
+}
 
 list-github-releases () {
     local repo="$1" max="${max_releases:-20}" page=1 tags="" more="" sep=""
@@ -72,6 +98,8 @@ latest-github-release () {
     list-github-releases "$1" | head -1
     return $?
 }
+
+pre-cache-vagrant-image
 
 if [ "$k8s_release" = "latest" ]; then
     if latest_k8s_release=$(vm-load-cached-var "$OUTPUT_DIR" latest_k8s_release); then
