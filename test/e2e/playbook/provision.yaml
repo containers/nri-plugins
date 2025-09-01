@@ -163,7 +163,13 @@
       ansible.builtin.shell: |
         fstype="$(stat -f -c %T /)"
         if [ "$fstype" == "btrfs" ]; then
-            growpart /dev/vda 4 && btrfs filesystem resize max /
+            growpart /dev/vda 4
+            status=$?
+            case $status in
+                 0) btrfs filesystem resize max /;;
+                 1) ;; # already at max size
+                 *) echo "***** WARNING: failed to grow partition";;
+            esac
         else
             echo "***** WARNING: Root filesystem type ($fstype) is not btrfs."
             echo "***** WARNING: resize of / to max possible size..."
