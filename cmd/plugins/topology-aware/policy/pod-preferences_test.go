@@ -1052,7 +1052,7 @@ func TestCpuAllocationPreferences(t *testing.T) {
 			}
 			opt.PreferIsolated, opt.PreferShared = &tc.preferIsolated, &tc.preferShared
 			opt.ReservedPoolNamespaces = tc.reservedPoolNamespaces
-			full, fraction, isolate, cpuType, _ := cpuAllocationPreferences(tc.pod, tc.container)
+			full, fraction, _, isolate, cpuType, _ := cpuAllocationPreferences(tc.pod, tc.container)
 			require.Equal(t, tc.expectedFull, full, "full CPU cores")
 			require.Equal(t, tc.expectedFraction, fraction, "CPU core fraction")
 			require.Equal(t, tc.expectedIsolate, isolate, "isolation preference")
