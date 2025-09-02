@@ -24,4 +24,51 @@ verify \
     'len(nodes["pod2c0"]) == 2' \
     'len(nodes["pod3c0"]) == 4'
 
+vm-command "kubectl delete pods --all --now"
+
+helm-terminate
+helm_config=$(COLOCATE_PODS=false instantiate helm-config.yaml) helm-launch topology-aware
+
+# Limited burstable containers get assigned to the lowest pool where
+# there is enough free capacity for their limit. In this case, a socket.
+CONTCOUNT=2 CPUREQ=2 CPULIM=5 MEMREQ=100M create burstable
+report allowed
+verify \
+    'nodes["pod4c0"] == { "node2" ,"node3" }' \
+    'nodes["pod4c1"] == { "node0", "node1" }'
+
+# By default unlimited burstable containers get allocated to a socket
+# unless (some other) affinity dictates otherwise.
+CONTCOUNT=2 CPUREQ=2 CPULIM=0 MEMREQ=100M create burstable
+report allowed
+verify \
+    'nodes["pod5c0"] == { "node0", "node1" } or nodes["pod5c0"] == { "node2", "node3" }' \
+    'nodes["pod5c1"] == { "node0", "node1" } or nodes["pod5c1"] == { "node2", "node3" }'
+
+vm-command "kubectl delete pods --all --now"
+
+# Containers can be annotated to have a different preference
+# for unlimited burstability than the default socket.
+ANN0='unlimited-burstable.resource-policy.nri.io/container.pod6c0: numa'
+ANN1='unlimited-burstable.resource-policy.nri.io/container.pod6c1: system'
+CONTCOUNT=2 CPUREQ=2 CPULIM=0 MEMREQ=100M create burstable
+report allowed
+verify \
+    'len(nodes["pod6c0"]) == 1' \
+    'len(nodes["pod6c1"]) == 4'
+
+vm-command "kubectl delete pods --all --now"
+
+# Containers annotated to a nonexistent topology level, will be assigned to
+# the next available level.
+ANN0='unlimited-burstable.resource-policy.nri.io/container.pod7c0: numa'
+ANN1='unlimited-burstable.resource-policy.nri.io/container.pod7c1: die'
+CONTCOUNT=2 CPUREQ=2 CPULIM=0 MEMREQ=100M create burstable
+report allowed
+verify \
+    'len(nodes["pod7c0"]) == 1' \
+    'len(nodes["pod7c1"]) == 2'
+
+vm-command "kubectl delete pods --all --now"
+
 helm-terminate
