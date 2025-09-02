@@ -20,6 +20,7 @@ import (
 	"sort"
 
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
+	corev1 "k8s.io/api/core/v1"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
@@ -673,7 +674,9 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 	//   - if we have topology hints
 	//       * better hint score wins
 	//       * for a tie, prefer the lower node then the smaller id
-	//   - if we have a better matching or tighter fitting memory offer, it wins
+	//   - if we have a better matching memory offer, it wins
+	//   - if we have a burstable container, sufficient capacity for the limit wins
+	//   - if we have or tighter fitting memory offer, it wins
 	//   - if only one node matches the memory type request, it wins
 	//   - for low-prio and high-prio CPU preference, if only one node has such CPUs, it wins
 	//   - if a node is lower in the tree it wins
@@ -772,7 +775,7 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 		}
 	}
 
-	// better matching or tighter memory offer wins
+	// better matching offer wins
 	switch {
 	case o1 != nil && o2 == nil:
 		log.Debug("  => %s loses on memory offer (failed offer)", node2.Name())
@@ -809,20 +812,97 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 			}
 			log.Debug("  - memory offers burstability are a TIE")
 		}
+	}
 
-		if m1.Size() < m2.Size() {
-			log.Debug("   - %s loses on memory offer (%s less tight than %s)",
-				node2.Name(), m2, m1)
-			return true
+	if ctr := request.GetContainer(); ctr.GetQOSClass() == corev1.PodQOSBurstable {
+		var (
+			limit = request.CPULimit()
+			b1    = score1.Supply().AllocatableSharedCPU()
+			b2    = score2.Supply().AllocatableSharedCPU()
+			r1    = b1 - limit
+			r2    = b2 - limit
+		)
+
+		log.Debug("  - CPU burstability %s=%d, %s=%d, limit=%d",
+			node1.Name(), b1, node2.Name(), b2, limit)
+
+		if limit != unlimitedCPU {
+			// prefer pool with enough burstable capacity
+			switch {
+			case r1 >= 0 && r2 < 0:
+				log.Debug("  - %s loses on insufficient CPU burstability (%d vs. %d for limit %d)",
+					node2.Name(), b1, b2, limit)
+				return true
+			case r2 >= 0 && r1 < 0:
+				log.Debug("  - %s loses on insufficient CPU burstability", node1.Name())
+				return false
+			default:
+				log.Debug("  - CPU burstability is a TIE")
+			}
+		} else {
+			// prefer a pool at configured topology level with more burstable capacity
+			var (
+				level1 = node1.Kind().TopologyLevel()
+				level2 = node2.Kind().TopologyLevel()
+				target = node1.Policy().unlimitedBurstablePreference(ctr)
+			)
+
+			log.Debug("  - unlimited CPU burstable topology level: %s", target)
+			log.Debug("  - %s topology level: %s", node1.Name(), level1)
+			log.Debug("  - %s topology level: %s", node2.Name(), level2)
+
+			switch {
+			case level1 == target && level2 != target:
+				log.Debug("  - %s WINS on burstability topology level (%s)",
+					node1.Name(), target)
+				return true
+			case level2 == target && level1 != target:
+				log.Debug("  - %s WINS on burstability topology level (%s)",
+					node2.Name(), target)
+				return false
+			case level1 == target && level2 == target:
+				log.Debug("  - burstability topology level (%s) is a TIE", target)
+				if b1 > b2 {
+					log.Debug("  - %s WINS on more CPU burstability", node1.Name())
+					return true
+				}
+				if b2 > b1 {
+					log.Debug("  - %s WINS on more CPU burstability", node2.Name())
+					return false
+				}
+				log.Debug("  - CPU burstability is a TIE")
+				return id1 < id2
+			default:
+				if level1.Value() > target.Value() && level2.Value() < target.Value() {
+					log.Debug("  - %s WINS on CPU burstability limit (%s, limit %s)",
+						node1.Name(), level1, target)
+					return true
+				}
+				if level2.Value() > target.Value() && level1.Value() < target.Value() {
+					log.Debug("  - %s WINS on CPU burstability limit (%s, limit %s)",
+						node2.Name(), level2, target)
+					return true
+				}
+				log.Debug("  - CPU burstability limit is a TIE")
+				return id1 < id2
+			}
 		}
-		if m2.Size() < m1.Size() {
-			log.Debug("   - %s loses on memory offer (%s less tight than %s)",
-				node1.Name(), m1, m2)
-			return false
-		}
-		if m2.Size() == m1.Size() {
-			log.Debug("  - memory offers are a TIE (%s vs. %s)", m1, m2)
-		}
+	}
+
+	// tighter memory offer wins
+	m1, m2 := o1.NodeMask(), o2.NodeMask()
+	if m1.Size() < m2.Size() {
+		log.Debug("   - %s loses on memory offer (%s less tight than %s)",
+			node2.Name(), m2, m1)
+		return true
+	}
+	if m2.Size() < m1.Size() {
+		log.Debug("   - %s loses on memory offer (%s less tight than %s)",
+			node1.Name(), m1, m2)
+		return false
+	}
+	if m2.Size() == m1.Size() {
+		log.Debug("  - memory offers are a TIE (%s vs. %s)", m1, m2)
 	}
 
 	// matching memory type wins

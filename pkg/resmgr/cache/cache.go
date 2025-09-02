@@ -65,6 +65,9 @@ const (
 	PreserveMemoryKey = "memory.preserve." + kubernetes.ResmgrKeyNamespace
 	// MemoryTypeKey defines memory types of containers.
 	MemoryTypeKey = "memory-type." + kubernetes.ResmgrKeyNamespace
+	// UnlimitedBurstabileKey defines the preferred topology level for containers
+	// with unlimited burstability.
+	UnlimitedBurstableKey = "unlimited-burstable." + kubernetes.ResmgrKeyNamespace
 )
 
 // PodState is the pod state in the runtime.

@@ -518,6 +518,8 @@ func (p *policy) initialize() error {
 		return err
 	}
 
+	opt.UnlimitedBurstable = p.findExistingTopologyLevel(opt.UnlimitedBurstable)
+
 	return nil
 }
 
@@ -595,6 +597,22 @@ func (p *policy) checkConstraints() error {
 	log.Infof("using reserved cpuset %s", p.reserved)
 
 	return nil
+}
+
+func (p *policy) findExistingTopologyLevel(level cfgapi.CPUTopologyLevel) cfgapi.CPUTopologyLevel {
+	for _, pool := range p.pools {
+		l := pool.Kind().TopologyLevel()
+		if l.Value() == level.Value() {
+			return l
+		}
+		if l.Value() < level.Value() {
+			log.Warn("no pool of kind %q (%q), using %q instead",
+				level, NodeKindForTopologyLevel(level), l)
+			return l
+		}
+	}
+
+	return cfgapi.CPUTopologyLevelPackage
 }
 
 func (p *policy) restoreCache() error {
