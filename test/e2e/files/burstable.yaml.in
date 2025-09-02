@@ -31,7 +31,9 @@ spec:
         cpu: ${CPUREQ}
         memory: ${MEMREQ}
       limits:
+        $( ( [ -n "$CPULIM" ] && [ "$CPULIM" != "0" ] ) && echo "
         cpu: ${CPULIM}
+        ")
         $( ( [ -n "$MEMLIM" ] && [ "$MEMLIM" != "0" ] ) && echo "
         memory: ${MEMLIM}
         ")
