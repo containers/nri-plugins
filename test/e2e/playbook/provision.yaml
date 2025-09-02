@@ -113,6 +113,12 @@
         path: /tmp/get_helm.sh
         state: absent
 
+    - name: Install ansible.builtin.dnf dependencies
+      ansible.builtin.shell: |
+        dnf install -y python3-libdnf5
+      when: (ansible_facts['distribution'] == "Fedora") and
+            (ansible_facts['distribution_major_version'] | int == 41)
+
     - name: Install common packages
       ansible.builtin.package:
         name:
