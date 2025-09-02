@@ -17,6 +17,7 @@ package topologyaware
 import (
 	"fmt"
 
+	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/topology"
 	idset "github.com/intel/goresctrl/pkg/utils"
@@ -49,6 +50,35 @@ const (
 	// VirtualNode represents a virtual node, currently the root multi-socket setups.
 	VirtualNode NodeKind = "virtual node"
 )
+
+// TopologyLevel returns the topology level for this node.
+func (k NodeKind) TopologyLevel() cfgapi.CPUTopologyLevel {
+	switch k {
+	case VirtualNode:
+		return cfgapi.CPUTopologyLevelSystem
+	case SocketNode:
+		return cfgapi.CPUTopologyLevelPackage
+	case DieNode:
+		return cfgapi.CPUTopologyLevelDie
+	case NumaNode:
+		return cfgapi.CPUTopologyLevelNuma
+	}
+	return cfgapi.CPUTopologyLevelUndefined
+}
+
+func NodeKindForTopologyLevel(level cfgapi.CPUTopologyLevel) NodeKind {
+	switch level {
+	case cfgapi.CPUTopologyLevelSystem:
+		return VirtualNode
+	case cfgapi.CPUTopologyLevelPackage:
+		return SocketNode
+	case cfgapi.CPUTopologyLevelDie:
+		return DieNode
+	case cfgapi.CPUTopologyLevelNuma:
+		return NumaNode
+	}
+	return UnknownNode
+}
 
 const (
 	// OverfitPenalty is the per layer penalty for overfitting in the node tree.

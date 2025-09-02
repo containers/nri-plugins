@@ -107,6 +107,8 @@ type Request interface {
 	FullCPUs() int
 	// CPUFraction returns the amount of fractional milli-CPU requested.
 	CPUFraction() int
+	// CPULimit returns the amount of fractional CPU limit.
+	CPULimit() int
 	// Isolate returns whether isolated CPUs are preferred for this request.
 	Isolate() bool
 	// MemoryType returns the type(s) of requested memory.
@@ -223,6 +225,7 @@ type request struct {
 	container   cache.Container // container for this request
 	full        int             // number of full CPUs requested
 	fraction    int             // amount of fractional CPU requested
+	limit       int             // CPU limit, MaxInt for no limit
 	isolate     bool            // prefer isolated exclusive CPUs
 	cpuType     cpuClass        // preferred CPU type (normal, reserved)
 	prio        cpuPrio         // CPU priority preference, ignored for fraction requests
@@ -715,7 +718,7 @@ func prettyMem(value int64) string {
 // newRequest creates a new request for the given container.
 func newRequest(container cache.Container, types libmem.TypeMask) Request {
 	pod, _ := container.GetPod()
-	full, fraction, isolate, cpuType, prio := cpuAllocationPreferences(pod, container)
+	full, fraction, cpuLimit, isolate, cpuType, prio := cpuAllocationPreferences(pod, container)
 	req, lim, mtype := memoryAllocationPreference(pod, container)
 	coldStart := time.Duration(0)
 
@@ -752,6 +755,7 @@ func newRequest(container cache.Container, types libmem.TypeMask) Request {
 		container:   container,
 		full:        full,
 		fraction:    fraction,
+		limit:       cpuLimit,
 		isolate:     isolate,
 		cpuType:     cpuType,
 		memReq:      req,
@@ -813,6 +817,11 @@ func (cr *request) FullCPUs() int {
 // CPUFraction returns the amount of fractional milli-CPU requested.
 func (cr *request) CPUFraction() int {
 	return cr.fraction
+}
+
+// CPULimit returns the amount of fractional milli-CPU limit.
+func (cr *request) CPULimit() int {
+	return cr.limit
 }
 
 // Isolate returns whether isolated CPUs are preferred for this request.
