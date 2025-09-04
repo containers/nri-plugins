@@ -657,8 +657,9 @@ spec:
     namespaces:
     - "*"
     shareIdleCPUsInSame: system
+    # preferIsolCpus: true # uncomment to use kernel isolcpus, too
   reservedResources:
-    cpu: 1
+    cpu: 1000m
   pinCPU: true
   pinMemory: true
 ```
