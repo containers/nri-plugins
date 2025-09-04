@@ -119,7 +119,7 @@ func (p *plugin) Configure(ctx context.Context, config, runtime, version string)
 	}
 	// If we are to use mpolset injection, prepare /mnt/nri-memory-policy-mpolset
 	// to contain mpolset so that it can be injected into containers
-	if p.config != nil && p.config.InjectMpolset {
+	if p.config.InjectMpolset {
 		if err := prepareMpolset(); err != nil {
 			log.Errorf("failed to prepare mpolset: %v", err)
 			return 0, fmt.Errorf("configuration option injectMpolset preparation failed: %v", err)
@@ -556,7 +556,9 @@ func main() {
 		log.SetLevel(logrus.TraceLevel)
 	}
 
-	p := &plugin{}
+	p := &plugin{
+		config: &Config{},
+	}
 
 	if configFile != "" {
 		log.Debugf("read configuration from %q", configFile)
