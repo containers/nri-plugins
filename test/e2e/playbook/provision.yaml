@@ -76,6 +76,21 @@
         state: absent
       when: ansible_facts['distribution'] == "Ubuntu"
 
+    - name: Disable ssh daemon per source penalties
+      block:
+        - name: Disable ssh daemon per source penalties
+          ansible.builtin.copy:
+            dest: /etc/ssh/sshd_config.d/90-disable-persource-penalties.conf
+            content: |
+              PerSourcePenalties no
+            mode: '0644'
+        - name: Restart ssh daemon
+          ansible.builtin.systemd:
+            name: sshd
+            state: restarted
+      when: (ansible_facts['distribution'] == "Fedora") and
+            (ansible_facts['distribution_major_version'] | int >= 41)
+
     - name: Update APT package index
       ansible.builtin.apt:
         update_cache: yes
@@ -112,6 +127,12 @@
       ansible.builtin.file:
         path: /tmp/get_helm.sh
         state: absent
+
+    - name: Install ansible.builtin.dnf dependencies
+      ansible.builtin.shell: |
+        dnf install -y python3-libdnf5
+      when: (ansible_facts['distribution'] == "Fedora") and
+            (ansible_facts['distribution_major_version'] | int == 41)
 
     - name: Install common packages
       ansible.builtin.package:

@@ -1,19 +1,29 @@
 #!/bin/bash
 
 TITLE="NRI Resource Policy End-to-End Testing"
-DEFAULT_DISTRO=${DEFAULT_DISTRO:-"fedora-42/cloud-base"}
+DEFAULT_DISTRO=${DEFAULT_DISTRO:-"fedora/42"}
 
 # Other tested distros
 #    generic/ubuntu2204
-#    fedora-40/cloud-base
-#    fedora-41/cloud-base
+#    fedora/40
+#    fedora/41
 
-declare -A distro_images=(
+if [ -z "${!distro_images[*]}" ]; then
+    echo "Using stock distro images"
+    declare -A distro_images=(
         ["generic/ubuntu2204"]=""
-        ["fedora-40/cloud-base"]=""
-        ["fedora-41/cloud-base"]="https://mirror.karneval.cz/pub/linux/fedora/linux/releases/41/Cloud/x86_64/images/Fedora-Cloud-Base-Vagrant-libvirt-41-1.4.x86_64.vagrant.libvirt.box"
-        ["fedora-42/cloud-base"]="https://download.fedoraproject.org/pub/fedora/linux/releases/42/Cloud/x86_64/images/Fedora-Cloud-Base-Vagrant-libvirt-42-1.1.x86_64.vagrant.libvirt.box"
-)
+        ["fedora/40"]="https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/40/Cloud/x86_64/images/Fedora-Cloud-Base-Vagrant-libvirt.x86_64-40-1.14.vagrant.libvirt.box"
+        ["fedora/41"]="https://dl.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/x86_64/images/Fedora-Cloud-Base-Vagrant-libvirt-41-1.4.x86_64.vagrant.libvirt.box"
+        ["fedora/42"]="https://dl.fedoraproject.org/pub/fedora/linux/releases/42/Cloud/x86_64/images/Fedora-Cloud-Base-Vagrant-libvirt-42-1.1.x86_64.vagrant.libvirt.box"
+    )
+else
+    echo "WARNING: using overridden distro images"
+fi
+
+for d in ${distro_images[*]}; do
+    img=${distro_images[$d]}
+    echo "  - $d: ${img:-vagrant resolved default}"
+done
 
 SCRIPT_DIR="$(dirname "${BASH_SOURCE[0]}")"
 SRC_DIR=$(realpath "$SCRIPT_DIR/../..")
