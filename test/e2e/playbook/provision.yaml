@@ -339,13 +339,34 @@
     - name: Configure containerd
       when: is_containerd
       block:
-        - name: Create containerd configuration
-          ansible.builtin.shell: "{{ item }}"
-          with_items:
-            - mkdir -p /etc/containerd
-            - containerd config default > /etc/containerd/config.toml
-            - sed -i 's/^.*disabled_plugins *= *.*$/disabled_plugins = []/' /etc/containerd/config.toml
-            - sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
+        - name: Create drop-in directory (/etc/containerd/conf.d)
+          ansible.builtin.file:
+            path: /etc/containerd/conf.d
+            state: directory
+
+        - name: Generate default configuration (/etc/containerd/config.toml)
+          ansible.builtin.shell: containerd config default > /etc/containerd/config.toml
+
+        - name: Enable drop-in directory in configuration
+          ansible.builtin.lineinfile:
+            path: /etc/containerd/config.toml
+            regexp: '^imports *=.*'
+            line: 'imports = [ "/etc/containerd/conf.d/*.toml" ]'
+            state: present
+
+        - name: Enable all plugins
+          ansible.builtin.lineinfile:
+            path: /etc/containerd/config.toml
+            regexp: '^disabled_plugins *=.*'
+            line: 'disabled_plugins = []'
+            state: present
+
+        - name: Enable systemd cgroup driver
+          ansible.builtin.copy:
+            dest: /etc/containerd/conf.d/systemd-cgroup.toml
+            content: |
+              [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc.options]
+              SystemdCgroup = true
 
         - name: Update CNI plugin directory on Fedora
           when: ansible_facts['distribution'] == "Fedora"
