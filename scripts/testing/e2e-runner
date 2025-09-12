@@ -185,14 +185,26 @@ prepare_result_dir() {
 }
 
 run_e2e_tests() {
-    local tests
+    local k8scri=containerd
+
+    # test every other day with cri-o
+    if [ $(( $(date +%j) % 2 )) != 0 ]; then
+        k8scri=crio
+    fi
+
+    # once per week build all binaries and images, otherwise just the bare minimal set
+    if [ $(( $(date +%j) % 7 )) != 0 ]; then
+       export PLUGINS="nri-resource-policy-balloons nri-resource-policy-topology-aware"
+       export BINARIES=""
+       export OTHER_IMAGE_TARGETS=""
+    fi
 
     info "running e2e tests ${E2E_TESTS:-with the default test set}..."
     must-cd "$WORKTREE"
     if [ -n "$E2E_TESTS" ]; then
-        make SKIP_LICENSES=1 E2E_TESTS="$E2E_TESTS" e2e-tests
+        make SKIP_LICENSES=1 k8scri=$k8scri $minimal E2E_TESTS="$E2E_TESTS" e2e-tests
     else
-        make SKIP_LICENSES=1 e2e-tests
+        make SKIP_LICENSES=1 k8scri=$k8scri $minimal e2e-tests
     fi
 }
 
