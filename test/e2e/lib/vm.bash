@@ -186,12 +186,16 @@ vm-setup() {
      # cannot be called second time. But this could be used
      # if the provisioning failed before kubernetes was setup.
      if [ ! -z "$provision" ]; then
-         (export ANSIBLE_SSH_ARGS="$SSH_PERSIST_OPTS"
-	  vagrant provision ${vagrant_debug:+--debug} || error "failed to provision VM")
+         if ! (export ANSIBLE_SSH_ARGS="$SSH_PERSIST_OPTS"
+	  vagrant provision ${vagrant_debug:+--debug} || error "failed to provision VM"); then
+             exit 1
+         fi
      fi
 
-     (export ANSIBLE_SSH_ARGS="$SSH_PERSIST_OPTS"
-      vagrant up --provider qemu || error "failed to bring up VM")
+     if ! (export ANSIBLE_SSH_ARGS="$SSH_PERSIST_OPTS"
+           vagrant up --provider qemu || error "failed to bring up VM"); then
+         exit 1
+     fi
      vagrant ssh-config > .ssh-config
 
      # Add hostname alias to the ssh config so that we can ssh
