@@ -60,7 +60,7 @@ GO_LICENSES_VERSION := v1.6.0
 SKIP_LICENSES       ?= 0
 
 E2E_DIR       := $(TOP_DIR)/test/e2e
-E2E_RUN       := $(E2E_DIR)/run_tests.sh
+E2E_RUN       := k8scri=$${k8scri:-containerd} $(E2E_DIR)/run_tests.sh
 E2E_TESTS     ?= $(E2E_DIR)/policies.test-suite
 E2E_WORKDIR   ?= $(TOP_DIR)/e2e-results
 
