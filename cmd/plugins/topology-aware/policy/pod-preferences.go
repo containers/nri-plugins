@@ -17,6 +17,7 @@ package topologyaware
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -58,6 +59,8 @@ const (
 	hideHyperthreadsKey = keyHideHyperthreads + "." + kubernetes.ResmgrKeyNamespace
 	// effective annotation key for picking resources by topology hints
 	pickResourcesByHints = keyPickResourcesByHints + "." + kubernetes.ResmgrKeyNamespace
+
+	unlimitedCPU = math.MaxInt // 'unlimited' burstable CPU limit
 )
 
 type prefKind int
@@ -308,10 +311,11 @@ func checkReservedCPUsAnnotations(c cache.Container) (bool, bool) {
 // Returned values:
 // 1. full: number of full CPUs
 // 2. fraction: amount of fractional CPU in milli-CPU
-// 3. isolate: (bool) whether to prefer isolated full CPUs
-// 4. cpuType: (cpuClass) class of CPU to allocate (reserved vs. normal)
-// 5. cpuPrio: preferred CPU allocator priority for CPU allocation.
-func cpuAllocationPreferences(pod cache.Pod, container cache.Container) (int, int, bool, cpuClass, cpuPrio) {
+// 3. limit: CPU limit for this container
+// 4. isolate: (bool) whether to prefer isolated full CPUs
+// 5. cpuType: (cpuClass) class of CPU to allocate (reserved vs. normal)
+// 6. cpuPrio: preferred CPU allocator priority for CPU allocation.
+func cpuAllocationPreferences(pod cache.Pod, container cache.Container) (int, int, int, bool, cpuClass, cpuPrio) {
 	//
 	// CPU allocation preferences for a container consist of
 	//
@@ -381,52 +385,68 @@ func cpuAllocationPreferences(pod cache.Pod, container cache.Container) (int, in
 	qosClass := pod.GetQOSClass()
 	fraction := int(request.MilliValue())
 	prio := defaultPrio // ignored for fractional allocations
+	limit := 0
+
+	switch qosClass {
+	case corev1.PodQOSBestEffort:
+	case corev1.PodQOSBurstable:
+		if lim, ok := reqs.Limits[corev1.ResourceCPU]; ok {
+			limit = int(lim.MilliValue())
+		} else {
+			limit = unlimitedCPU
+		}
+	case corev1.PodQOSGuaranteed:
+		if lim, ok := reqs.Limits[corev1.ResourceCPU]; ok {
+			limit = int(lim.MilliValue())
+		}
+	}
 
 	// easy cases: kube-system namespace, Burstable or BestEffort QoS class containers
 	preferReserved, explicitReservation := checkReservedCPUsAnnotations(container)
 	switch {
 	case container.PreserveCpuResources():
-		return 0, fraction, false, cpuPreserve, prio
+		return 0, fraction, limit, false, cpuPreserve, prio
 	case preferReserved:
-		return 0, fraction, false, cpuReserved, prio
+		return 0, fraction, limit, false, cpuReserved, prio
 	case checkReservedPoolNamespaces(namespace) && !explicitReservation:
-		return 0, fraction, false, cpuReserved, prio
+		return 0, fraction, limit, false, cpuReserved, prio
 	case qosClass == corev1.PodQOSBurstable:
-		return 0, fraction, false, cpuNormal, prio
+		return 0, fraction, limit, false, cpuNormal, prio
 	case qosClass == corev1.PodQOSBestEffort:
-		return 0, 0, false, cpuNormal, prio
+		return 0, 0, 0, false, cpuNormal, prio
 	}
 
 	// complex case: Guaranteed QoS class containers
 	cores := fraction / 1000
 	fraction = fraction % 1000
+	limit = 1000*cores + fraction
 	preferIsolated, isolPrefKind := isolatedCPUsPreference(pod, container)
 	preferShared, sharedPrefKind := sharedCPUsPreference(pod, container)
 	prio = cpuPrioPreference(pod, container, defaultPrio) // ignored for fractional allocations
 
 	switch {
 	case cores == 0: // sub-core CPU request
-		return 0, fraction, false, cpuNormal, prio
+		return 0, fraction, limit, false, cpuNormal, prio
 	case cores < 2: // 1 <= CPU request < 2
 		if preferShared {
-			return 0, 1000*cores + fraction, false, cpuNormal, prio
+			return 0, 1000*cores + fraction, limit, false, cpuNormal, prio
 		}
 		// potentially mixed allocation (1 core + some fraction)
-		return cores, fraction, preferIsolated, cpuNormal, prio
+		return cores, fraction, limit, preferIsolated, cpuNormal, prio
 	default: // CPU request >= 2
 		// fractional allocation, only mixed if explicitly annotated as unshared
 		if fraction > 0 {
 			if !preferShared && sharedPrefKind == prefAnnotated {
-				return cores, fraction, preferIsolated, cpuNormal, prio
+				return cores, fraction, limit, preferIsolated, cpuNormal, prio
 			}
-			return 0, 1000*cores + fraction, false, cpuNormal, prio
+			return 0, 1000*cores + fraction, limit, false, cpuNormal, prio
 		}
 		// non-fractional allocation
 		if preferShared {
-			return 0, 1000 * cores, false, cpuNormal, prio
+			return 0, 1000 * cores, limit, false, cpuNormal, prio
 		}
 		// for multiple cores, isolated preference must be explicitly annotated
-		return cores, 0, preferIsolated && isolPrefKind == prefAnnotated, cpuNormal, prio
+		return cores, 0, limit, preferIsolated && isolPrefKind == prefAnnotated, cpuNormal, prio
 	}
 }
 
