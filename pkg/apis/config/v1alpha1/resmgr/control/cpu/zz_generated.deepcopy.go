@@ -27,7 +27,7 @@ func (in *Config) DeepCopyInto(out *Config) {
 		in, out := &in.Classes, &out.Classes
 		*out = make(map[string]Class, len(*in))
 		for key, val := range *in {
-			(*out)[key] = val
+			(*out)[key] = *val.DeepCopy()
 		}
 	}
 }
