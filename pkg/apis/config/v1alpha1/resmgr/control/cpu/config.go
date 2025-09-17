@@ -32,4 +32,19 @@ type Class struct {
 	UncoreMaxFreq uint `json:"uncoreMaxFreq,omitempty"`
 	// CPUFreq Governor for this class.
 	FreqGovernor string `json:"freqGovernor,omitempty"`
+	// DisabledCstates lists C-states disabled for this class.
+	DisabledCstates []string `json:"disabledCstates,omitempty"`
+}
+
+// DeepCopy makes a deep copy of the Class.
+func (c *Class) DeepCopy() *Class {
+	if c == nil {
+		return nil
+	}
+	cc := *c
+	if c.DisabledCstates != nil {
+		cc.DisabledCstates = make([]string, len(c.DisabledCstates))
+		copy(cc.DisabledCstates, c.DisabledCstates)
+	}
+	return &cc
 }
