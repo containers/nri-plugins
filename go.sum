@@ -610,6 +610,8 @@ github.com/apache/arrow/go/v11 v11.0.0/go.mod h1:Eg5OsL5H+e299f7u5ssuXsuHQVEGC4x
 github.com/apache/thrift v0.16.0/go.mod h1:PHK3hniurgQaNMZYaCLEqXKsYK8upmhPbmdP2FXSqgU=
 github.com/askervin/gofmbt v0.0.0-20250119175120-506d925f666f h1:AKRIaPPDqBRhpWnvxhvtdbVtkV/3XrboabuFaLyp1kw=
 github.com/askervin/gofmbt v0.0.0-20250119175120-506d925f666f/go.mod h1:1rWH2fCHPoGz1ApWyGyEV9YhZ2ZHeeCPaHcicW3b6uk=
+github.com/askervin/goresctrl v0.0.0-20250917152138-0b2fbc956322 h1:3PNNMiCNmZUlSglA/sj9yP9shj/R3Aa5b7bf02KzyBA=
+github.com/askervin/goresctrl v0.0.0-20250917152138-0b2fbc956322/go.mod h1:1S8GDqL46GuKb525bxNhIEEkhf4rhVcbSf9DuKhp7mw=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/boombuler/barcode v1.0.0/go.mod h1:paBWMcWSl3LHKBqUq+rly7CNSldXjb2rDl3JlRe0mD8=
@@ -838,8 +840,6 @@ github.com/ianlancetaylor/demangle v0.0.0-20181102032728-5e5cf60278f6/go.mod h1:
 github.com/ianlancetaylor/demangle v0.0.0-20200824232613-28f6c0f3b639/go.mod h1:aSSvb/t6k1mPoxDqO4vJh6VOCGPwU4O0C2/Eqndh1Sc=
 github.com/imdario/mergo v0.3.6 h1:xTNEAn+kxVO7dTZGu0CegyqKZmoWFI0rF8UxjlB2d28=
 github.com/imdario/mergo v0.3.6/go.mod h1:2EnlNZ0deacrJVfApfmtdGgDfMuh/nq6Ok1EcJh5FfA=
-github.com/intel/goresctrl v0.9.0 h1:IKI4ZrPTazLyFgdnWEkR9LS+DDATapOgoBtGxVMHePs=
-github.com/intel/goresctrl v0.9.0/go.mod h1:1S8GDqL46GuKb525bxNhIEEkhf4rhVcbSf9DuKhp7mw=
 github.com/intel/memtierd v0.1.1 h1:hGSN0+dzjaUkwgkJrk6B9SU4dntggXLpXgs9Dm+jfz4=
 github.com/intel/memtierd v0.1.1/go.mod h1:NFDBvjoDS42gBK/c9q/CYCJ2pt/+g7UQwOOBvQli4z0=
 github.com/josharian/intern v1.0.0 h1:vlS4z54oSdjm0bgjRigI+G1HpF+tI+9rE5LLzOg8HmY=
