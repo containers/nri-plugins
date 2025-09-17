@@ -25,6 +25,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/control"
 	"github.com/containers/nri-plugins/pkg/sysfs"
+	"github.com/intel/goresctrl/pkg/cstates"
 	"github.com/intel/goresctrl/pkg/utils"
 )
 
@@ -41,6 +42,7 @@ type cpuctl struct {
 	cache         cache.Cache      // resource manager cache
 	system        sysfs.System     // system topology
 	classes       map[string]Class // configured CPU classes
+	cstates       *cstates.Cstates // C-states handler
 	uncoreEnabled bool             // whether we need to care about uncore
 	started       bool
 }
@@ -153,6 +155,43 @@ func (ctl *cpuctl) enforceCpufreq(class string, cpus ...int) error {
 	return nil
 }
 
+// enforceCstates enforces a class-specific C-state configuration to a cpuset
+func (ctl *cpuctl) enforceCstates(class string, cpus ...int) error {
+	c, ok := ctl.classes[class]
+	if !ok {
+		return fmt.Errorf("non-existent cpu class %q", class)
+	}
+	if ctl.cstates == nil || len(cpus) == 0 {
+		return nil
+	}
+	enabledCstates := []string{}
+	for _, name := range ctl.cstates.Names() {
+		enabled := true
+		for _, dname := range c.DisabledCstates {
+			if name == dname {
+				enabled = false
+				break
+			}
+		}
+		if enabled {
+			enabledCstates = append(enabledCstates, name)
+		}
+	}
+	cpuCstates := ctl.cstates.Copy(cstates.NewBasicFilter().SetCPUs(cpus...))
+	enCpuCstates := cpuCstates.Copy(cstates.NewBasicFilter().SetCstateNames(enabledCstates...))
+	disCpuCstates := cpuCstates.Copy(cstates.NewBasicFilter().SetCstateNames(c.DisabledCstates...))
+	enCpuCstates.SetAttrs(cstates.AttrDisable, "0")
+	disCpuCstates.SetAttrs(cstates.AttrDisable, "1")
+	log.Debug("enforcing cstates: enable: %v disable: %v from class %q on cpus %v", enabledCstates, c.DisabledCstates, class, cpus)
+	if err := enCpuCstates.Apply(); err != nil {
+		return fmt.Errorf("cannot enable cstates %v on cpus %v: %w", enabledCstates, cpus, err)
+	}
+	if err := disCpuCstates.Apply(); err != nil {
+		return fmt.Errorf("cannot disable cstates %v on cpus %v: %w", c.DisabledCstates, cpus, err)
+	}
+	return nil
+}
+
 // enforceUncore enforces uncore frequency limits
 func (ctl *cpuctl) enforceUncore(assignments cpuClassAssignments, affectedCPUs ...int) error {
 	if !ctl.uncoreEnabled {
@@ -251,6 +290,7 @@ func (ctl *cpuctl) configure(cfg *cfgapi.Config) error {
 	log.Debug("applying cpu controller configuration:\n%s", utils.DumpJSON(ctl.classes))
 
 	// Sanity check
+	cstatesNeeded := map[string]bool{}
 	uncoreAvailable := utils.UncoreFreqAvailable()
 	for name, conf := range ctl.classes {
 		if conf.UncoreMinFreq != 0 || conf.UncoreMaxFreq != 0 {
@@ -260,6 +300,25 @@ func (ctl *cpuctl) configure(cfg *cfgapi.Config) error {
 			ctl.uncoreEnabled = true
 			break
 		}
+		for _, cstate := range conf.DisabledCstates {
+			cstatesNeeded[cstate] = true
+		}
+	}
+	if len(cstatesNeeded) != 0 {
+		var err error
+		filter := cstates.NewBasicFilter().SetAttributes(cstates.AttrDisable)
+		if cstatesEnvOverridesJson != "" {
+			// Only for e2e tests: do not access C-states
+			// in sysfs. Instead, load C-states
+			// configuration from the JSON, simulate sysfs
+			// and log all accesses to it.
+			ctl.cstates, err = NewCstatesFromOverride(filter)
+		} else {
+			ctl.cstates, err = cstates.NewCstatesFromSysfs(filter)
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read C-states: %w", err)
+		}
 	}
 
 	// Configure the system
@@ -267,6 +326,9 @@ func (ctl *cpuctl) configure(cfg *cfgapi.Config) error {
 		if _, ok := ctl.classes[class]; ok {
 			// Re-configure cpus (sysfs) according to new class parameters
 			if err := ctl.enforceCpufreq(class, cpus.SortedMembers()...); err != nil {
+				log.Error("cpufreq enforcement on re-configure failed: %v", err)
+			}
+			if err := ctl.enforceCstates(class, cpus.SortedMembers()...); err != nil {
 				log.Error("cpufreq enforcement on re-configure failed: %v", err)
 			}
 		} else {
