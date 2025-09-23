@@ -102,6 +102,7 @@ require (
 
 replace (
 	github.com/containers/nri-plugins/pkg/topology v0.0.0 => ./pkg/topology
+	github.com/intel/goresctrl => github.com/askervin/goresctrl v0.0.0-20250917152138-0b2fbc956322
 	github.com/opencontainers/runtime-tools => github.com/opencontainers/runtime-tools v0.0.0-20221026201742-946c877fa809
 )
 
