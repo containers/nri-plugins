@@ -37,6 +37,7 @@ export TEST_OUTPUT_DIR=${test_outdir:-"$OUTPUT_DIR"}
 export COMMAND_OUTPUT_DIR="$TEST_OUTPUT_DIR"/commands
 
 distro=${distro:-$DEFAULT_DISTRO}
+efi=${efi:-}
 
 export k8scri=${k8scri:-"containerd"}
 export cni_plugin=${cni_plugin:-bridge}
@@ -244,6 +245,7 @@ fi
 
 echo
 echo "    VM              = $vm_name"
+echo "    EFI boot        = ${efi:-no}"
 echo "    Distro          = $distro"
 echo "    Distro image    = ${distro_img:-vagrant default}"
 echo "    Kubernetes"

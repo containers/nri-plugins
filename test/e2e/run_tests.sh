@@ -7,6 +7,7 @@ RUN_SH="${0%/*}/run.sh"
 DEFAULT_DISTRO=${DEFAULT_DISTRO:-"fedora/42"}
 
 k8scri=${k8scri:="containerd"}
+efi=${efi:-}
 
 proxy=${proxy:=$https_proxy}
 proxy=${proxy:=$HTTPS_PROXY}
