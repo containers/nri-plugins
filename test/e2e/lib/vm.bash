@@ -100,6 +100,7 @@ vm-setup() {
     local files="$nri_resource_policy_src/test/e2e/files"
     local distro_name=$(printf '%s\n' "$distro" | sed -e 's/[\/&]/\\&/g')
     local qemu_dir="${qemu_dir:-/usr/share/qemu}"
+    local efi_code efi_vars kind
 
     mkdir -p "$inventory"
     if [ ! -f "$inventory/vagrant.ini" ]; then
@@ -117,9 +118,39 @@ vm-setup() {
     EXTRA_ARGS=$(echo $VM_QEMU_CPUMEM | sed 's/MACHINE:.*CPU:.*MEM:.*EXTRA:\([^|]*\).*/\1/g')
     EXTRA_ARGS+="${EXTRA_ARGS:+,} \"-monitor\", \"unix:monitor.sock,server,nowait\""
 
+    case $efi in
+        "") ;;
+        1) efi=/usr/share/OVMF;;
+        /*) ;;
+        *) error "invalid efi value: $efi, should be 1 or absolute path to OVMF";;
+    esac
+
+    if [ -n "$efi" ]; then
+        if [ ! -f "$vagrantdir/OVMF_CODE.fd" -o ! -f "$vagrantdir/OVMF_VARS.fd" ]; then
+            for kind in "" _4M; do
+                if [ -e "$efi/OVMF_CODE${kind}.fd" -a -e "$efi/OVMF_VARS${kind}.fd" ]; then
+                    efi_code="OVMF_CODE${kind}.fd"
+                    efi_vars="OVMF_VARS${kind}.fd"
+                    break
+                fi
+            done
+            if [ -z "$efi_code" -o -z "$efi_vars" ]; then
+                error "EFI requested but OVMF files not found in $efi"
+            fi
+            echo "copying OVMF files to $vagrantdir..."
+            rm -f "$vagrantdir/OVMF_*.fd"
+            cp "$efi/$efi_code" "$vagrantdir/OVMF_CODE.fd" || \
+                error "cannot copy $efi/$efi_code"
+            cp "$efi/$efi_vars" "$vagrantdir/OVMF_VARS.fd" || \
+                error "cannot copy $efi/$efi_vars"
+        fi
+
+        EXTRA_ARGS+="${EXTRA_ARGS:+,} \"-drive\", \"file=$vagrantdir/OVMF_CODE.fd,format=raw,if=pflash\", \"-drive\", \"file=$vagrantdir/OVMF_VARS.fd,format=raw,if=pflash\""
+    fi
+
     VM_MONITOR="(cd \"$output_dir\" && socat STDIO unix-connect:monitor.sock)"
 
-    if [ 0 == 1 ]; then
+    if [ "$vagrant_debug" == "1" ]; then
 	echo "MACHINE: $MACHINE"
 	echo "CPU: $CPU"
 	echo "MEM: $MEM"
@@ -139,7 +170,7 @@ vm-setup() {
 	    -e "s/QEMU_MACHINE/$MACHINE/" \
 	    -e "s/QEMU_MEM/$MEM/" \
 	    -e "s/QEMU_SMP/$CPU/" \
-	    -e "s/QEMU_EXTRA_ARGS/$EXTRA_ARGS/" \
+	    -e "s|QEMU_EXTRA_ARGS|$EXTRA_ARGS|" \
             -e "s:QEMU_DIR:$qemu_dir:" \
             -e "s|^.*config.vm.box_url.*$|$CUSTOM_IMAGE|g" \
 	    "$files/Vagrantfile.in" > "$vagrantdir/Vagrantfile.erb"
