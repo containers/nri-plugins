@@ -68,7 +68,7 @@ fetch-or-use-cached-url() {
 
 pre-cache-vagrant-image() {
     local image_url=${distro_images[$distro]}
-    local image_dir="$HOME/.cache/nri-plugins/e2e"
+    local image_dir="$CACHE_DIR"
 
     if [ -z "$image_url" ]; then
         return 0
@@ -119,7 +119,7 @@ if [ "$k8s_release" = "latest" ]; then
         if ! k8s_release=$(latest-github-release $GH_K8S_REPO); then
             error "$k8s_release"
         fi
-        vm-save-cached-var "$OUTPUT_DIR" latest_k8s_release $k8s_release
+        cache=global vm-save-cached-var "$OUTPUT_DIR" latest_k8s_release $k8s_release
     fi
     k8s_release="${k8s_release#v}"
     echo "Latest Kubernetes release: $k8s_release"
@@ -169,7 +169,7 @@ if [ "$k8scri" = "containerd" -a "$containerd_release" = "latest" ]; then
         if ! containerd_release=$(latest-github-release $GH_CONTAINERD_REPO); then
             error "$containerd_release"
         fi
-        vm-save-cached-var "$OUTPUT_DIR" latest_containerd_release $containerd_release
+        cache=global vm-save-cached-var "$OUTPUT_DIR" latest_containerd_release $containerd_release
     fi
     containerd_release="${containerd_release#v}"
     echo "Latest containerd release: $containerd_release"
@@ -195,7 +195,7 @@ if [ "$k8scri" = "crio" -a "$crio_release" = "latest" ]; then
         if ! crio_release=$(latest-github-release $GH_CRIO_REPO); then
             error "$crio_release"
         fi
-        vm-save-cached-var "$OUTPUT_DIR" latest_crio_release $crio_release
+        cache=global vm-save-cached-var "$OUTPUT_DIR" latest_crio_release $crio_release
     fi
     crio_release="${crio_release#v}"
     echo "Latest CRI-O release: $crio_release"

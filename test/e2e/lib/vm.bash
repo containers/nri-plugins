@@ -1,6 +1,8 @@
 source "$(dirname "${BASH_SOURCE[0]}")/command.bash"
 
 VM_PROMPT=${VM_PROMPT-"\e[38;5;11mroot@vm>\e[0m "}
+CACHE_DIR="${CACHE_DIR:-$HOME/.cache/nri-plugins/e2e}"
+CACHE_DECAY="${CACHE_DECAY:-$((3 * 24 * 3600))}" # global cached variables valid for 3 days
 
 error() {
     (echo ""; echo "error: $1" ) >&2
@@ -42,6 +44,10 @@ vm-save-cached-var() {
     local val="${3:-}"
     local cache_dir="$output_dir/cache"
 
+    if [ "$cache" = "global" ]; then
+        cache_dir="$CACHE_DIR"
+    fi
+
     if [ $# = 3 ]; then
         val="$3"
     else
@@ -73,8 +79,16 @@ vm-load-cached-var() {
     local cache_dir="$output_dir/cache"
     local val
 
-    if [ ! -d "$cache_dir" -o ! -f "$cache_dir/$var" ]; then
-        return 1
+    if [ ! -f "$cache_dir/$var" ]; then
+        if [ "$cache" != "local" -a -f "$CACHE_DIR/$var" ]; then
+            if [ $(( $(stat -c %Y "$CACHE_DIR/$var") + $CACHE_DECAY )) -gt $(date +%s) ]; then
+                cache_dir="$CACHE_DIR"
+            else
+                return 1
+            fi
+        else
+            return 1
+        fi
     fi
 
     val="$(cat $cache_dir/$var)"
