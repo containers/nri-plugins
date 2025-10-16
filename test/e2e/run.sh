@@ -47,6 +47,9 @@ GH_K8S_REPO="kubernetes/kubernetes"
 export k8s_release=${k8s_release:-"latest"}
 export k8s_version=""
 
+GH_HELM_REPO="helm/helm"
+export helm_release=${helm_release:-"latest"}
+
 source "$LIB_DIR"/vm.bash
 
 fetch-or-use-cached-url() {
@@ -129,6 +132,21 @@ export k8s_version=$(echo $k8s_release | sed -E 's/([0-9]*\.[0-9]*)(\.[0-9]*)/\1
 if [ -z "$k8s_version" ]; then
     error "failed to determine latest Kubernetes version from \"$k8s_release"\"
 fi
+
+if [ "$helm_release" = "latest" ]; then
+    if latest_helm_release=$(vm-load-cached-var "$OUTPUT_DIR" latest_helm_release); then
+        echo "Loaded cached latest_helm_release=$latest_helm_release..."
+        helm_release="$latest_helm_release"
+    else
+        if ! helm_release=$(latest-github-release $GH_HELM_REPO); then
+            error "$helm_release"
+        fi
+        cache=global vm-save-cached-var "$OUTPUT_DIR" latest_helm_release $helm_release
+    fi
+    helm_release="${helm_release#v}"
+    echo "Latest Helm release: $helm_release"
+fi
+
 
 export vm_name=${vm_name:=$(vm-create-name "$k8scri" "$(basename "$TOPOLOGY_DIR")" ${distro})}
 ESCAPED_VM=$(printf '%s\n' "$vm_name" | sed -e 's/[\/]/-/g')
@@ -249,6 +267,7 @@ echo "    Distro image    = ${distro_img:-vagrant default}"
 echo "    Kubernetes"
 echo "      - release     = $k8s_release"
 echo "      - version     = $k8s_version"
+echo "      - Helm        = $helm_release"
 echo "    Runtime         = $k8scri"
 echo "    Output dir      = $OUTPUT_DIR"
 echo "    Test output dir = $TEST_OUTPUT_DIR"

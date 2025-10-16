@@ -17,6 +17,7 @@ N = 1
 
 K8S_RELEASE = "#{ENV['k8s_release']}"
 K8S_VERSION = "#{ENV['k8s_version']}"
+HELM_RELEASE = "#{ENV['helm_release']}"
 CRI_RUNTIME = "#{ENV['k8scri']}"
 CRIO_RELEASE = "1.28.1"
 CRIO_SRC = ""
@@ -95,6 +96,7 @@ Vagrant.configure("2") do |config|
       no_proxy: "#{ENV['NO_PROXY']}",
       k8s_release: K8S_RELEASE,
       k8s_version: K8S_VERSION,
+      helm_release: HELM_RELEASE,
       cri_runtime: CRI_RUNTIME,
       containerd_release: CONTAINERD_RELEASE,
       containerd_src: CONTAINERD_SRC,
