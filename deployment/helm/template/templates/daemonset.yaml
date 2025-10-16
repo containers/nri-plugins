@@ -60,8 +60,6 @@ spec:
             - {{ .Release.Namespace }}
             - --pid-file
             - /tmp/nri-resource-policy.pid
-            - -metrics-interval
-            - 5s
             - --nri-plugin-index
             - "{{ .Values.nri.plugin.index | int | printf "%02d"  }}"
             {{- if .Values.configGroupLabel }}

@@ -16,7 +16,6 @@ package resmgr
 
 import (
 	"flag"
-	"time"
 
 	"github.com/containerd/nri/pkg/api"
 	"github.com/containers/nri-plugins/pkg/pidfile"
@@ -32,7 +31,6 @@ type options struct {
 	HostRoot      string
 	StateDir      string
 	PidFile       string
-	MetricsTimer  time.Duration
 	NriPluginName string
 	NriPluginIdx  string
 	NriSocket     string
@@ -54,9 +52,6 @@ func init() {
 
 	flag.StringVar(&opt.PidFile, "pid-file", pidfile.GetPath(),
 		"PID file to write daemon PID to")
-	flag.DurationVar(&opt.MetricsTimer, "metrics-interval", 0,
-		"Obsolete way to set interval for polling/gathering runtime metrics data.\n"+
-			"Use the instrumentation section of the CR-based configuration interface instead.")
 	flag.StringVar(&opt.StateDir, "state-dir", "/var/lib/nri-resource-policy",
 		"Permanent storage directory path for the resource manager to store its state in.")
 }

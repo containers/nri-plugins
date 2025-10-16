@@ -80,12 +80,6 @@ func NewResourceManager(backend policy.Backend, agt *agent.Agent) (ResourceManag
 		topology.SetSysRoot(opt.HostRoot)
 	}
 
-	if opt.MetricsTimer != 0 {
-		log.Warn("WARNING: obsolete metrics-interval flag given, ignoring...")
-		log.Warn("WARNING: use the CR-based configuration interface instead")
-		log.Warn("WARNING: this flag will be removed in a future release")
-	}
-
 	m := &resmgr{
 		agent: agt,
 	}
