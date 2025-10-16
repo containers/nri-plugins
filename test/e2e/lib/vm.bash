@@ -175,11 +175,13 @@ vm-setup() {
 		-e "s/DNS_NAMESERVER=\"\"/DNS_NAMESERVER=\"$dns_nameserver\"/g" \
 		-e "s/DNS_SEARCH_DOMAIN=\"\"/DNS_SEARCH_DOMAIN=\"$dns_search_domain\"/g" \
 		-e "s/SSH_PORT=/SSH_PORT=$SSH_PORT/g" \
+                -e "s:CACHE_DIR=:CACHE_DIR=\"$CACHE_DIR\":g" \
 		"$files/env.in" > "$vagrantdir/env"
 	else
 	    sed -e "s/DNS_NAMESERVER=\"\"/DNS_NAMESERVER=\"$dns_nameserver\"/g" \
 		-e "s/DNS_SEARCH_DOMAIN=\"\"/DNS_SEARCH_DOMAIN=\"$dns_search_domain\"/g" \
 		-e "s/SSH_PORT=/SSH_PORT=$SSH_PORT/g" \
+                -e "s:CACHE_DIR=:CACHE_DIR=\"$CACHE_DIR\":g" \
 		"$files/env.in" > "$vagrantdir/env"
 	fi
     fi
@@ -232,7 +234,7 @@ vm-play() {
 	  -i "${vm}," -u vagrant \
 	  --private-key=".vagrant/machines/${vm}/libvirt/private_key" \
 	  --ssh-common-args "-F .ssh-config" \
-	  --extra-vars "cri_runtime=${k8scri} nri_resource_policy_src=${nri_resource_policy_src}"
+	  --extra-vars "cri_runtime=${k8scri} nri_resource_policy_src=${nri_resource_policy_src} cache_dir=$CACHE_DIR"
     )
 }
 

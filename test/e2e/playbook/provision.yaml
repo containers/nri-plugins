@@ -18,15 +18,22 @@
     cni_plugin: "{{ cni_plugin }}"
     cni_release: "{{ cni_release }}"
     cilium_tarball: ""
+    cache_dir: "{{ cache_dir }}"
+    cached_runtime_tarball: ""
+    remote_runtime_tarball: ""
 
   tasks:
     - name: Check if runtime is containerd
       ansible.builtin.set_fact:
         is_containerd: true
+        cached_runtime_tarball: "{{ cache_dir }}/{{ containerd_tarball | basename }}"
+        remote_runtime_tarball: "{{ containerd_tarball }}"
       when: cri_runtime == "containerd"
     - name: Check if runtime is CRI-O
       ansible.builtin.set_fact:
         is_crio: true
+        cached_runtime_tarball: "{{ cache_dir }}/{{ crio_tarball | basename }}"
+        remote_runtime_tarball: "{{ crio_tarball }}"
       when: cri_runtime == "crio"
 
     - name: Setup DNS
@@ -224,13 +231,37 @@
           - tomli_w
         state: present
 
-    # Install containerd from a release tarball to /usr/local.
-    - name: Install containerd binaries from release tarball
-      ansible.builtin.unarchive:
-        src: "{{ containerd_tarball }}"
-        dest: /usr/local
-        remote_src: true
-      when: is_containerd and containerd_src == ""
+    # Install containerd or CRI-O from a release tarball to /usr/local.
+    - name: Install runtime binaries from release tarball
+      block:
+        - name: Check for cached runtime release tarball
+          ansible.builtin.stat:
+            path: "{{ cached_runtime_tarball }}"
+          register: cached_runtime
+          delegate_to: localhost
+          become: false
+
+        - name: Download and cache runtime release tarball
+          ansible.builtin.get_url:
+            url: "{{ remote_runtime_tarball }}"
+            dest: "{{ cached_runtime_tarball }}"
+            mode: '0644'
+          when: not cached_runtime.stat.exists
+          delegate_to: localhost
+          become: false
+
+        - name: Install runtime release tarball under /usr/local
+          ansible.builtin.unarchive:
+            src: "{{ cached_runtime_tarball }}"
+            dest: /usr/local
+            copy: true
+
+        - name: Install CRI-O binaries from release tarball
+          ansible.builtin.shell:
+            cmd: ./install
+            chdir: /usr/local/cri-o
+          when: is_crio
+      when: (is_containerd and containerd_src == "") or (is_crio and crio_src == "")
 
     # Install containerd binaries from compiled sources.
     - name: Install containerd binaries from compiled sources
@@ -243,21 +274,6 @@
         - "{{ containerd_src }}/bin/containerd"
         - "{{ containerd_src }}/bin/containerd-shim-runc-v2"
       when: is_containerd and containerd_src != ""
-
-    # Install CRI-O from a release tarball to /usr/local.
-    - name: Install CRI-O from release tarball
-      when: is_crio and crio_src == ""
-      block:
-        - name: Fetch and extract CRI-O release tarball
-          ansible.builtin.unarchive:
-            src: "{{ crio_tarball }}"
-            dest: /usr/local
-            remote_src: true
-
-        - name: Install CRI-O binaries from release tarball
-          ansible.builtin.shell:
-            cmd: ./install
-            chdir: /usr/local/cri-o
 
     # Install CRI-O binaries from compiled sources.
     - name: Install CRI-O binaries from compiled sources
