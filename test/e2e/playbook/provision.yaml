@@ -14,19 +14,29 @@
     containerd_service_file: "https://raw.githubusercontent.com/containerd/containerd/main/containerd.service"
     crio_release: "{{ crio_release }}"
     crio_tarball: "https://storage.googleapis.com/cri-o/artifacts/cri-o.amd64.v{{ crio_release }}.tar.gz"
+    helm_release: "{{ helm_release }}"
+    helm_tarball: "https://get.helm.sh/helm-v{{ helm_release }}-linux-amd64.tar.gz"
     dns_nameserver: "{{ dns_nameserver }}"
     cni_plugin: "{{ cni_plugin }}"
     cni_release: "{{ cni_release }}"
     cilium_tarball: ""
+    cache_dir: "{{ cache_dir }}"
+    cached_runtime_tarball: ""
+    remote_runtime_tarball: ""
+    cached_helm_tarball: "{{ cache_dir }}/{{ helm_tarball | basename }}"
 
   tasks:
     - name: Check if runtime is containerd
       ansible.builtin.set_fact:
         is_containerd: true
+        cached_runtime_tarball: "{{ cache_dir }}/{{ containerd_tarball | basename }}"
+        remote_runtime_tarball: "{{ containerd_tarball }}"
       when: cri_runtime == "containerd"
     - name: Check if runtime is CRI-O
       ansible.builtin.set_fact:
         is_crio: true
+        cached_runtime_tarball: "{{ cache_dir }}/{{ crio_tarball | basename }}"
+        remote_runtime_tarball: "{{ crio_tarball }}"
       when: cri_runtime == "crio"
 
     - name: Setup DNS
@@ -105,28 +115,36 @@
         name: kubernetes
       when: ansible_facts['distribution'] == "Fedora"
 
-    - name: Download the Helm install script
-      ansible.builtin.get_url:
-        url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
-        dest: /tmp/get_helm.sh
-        mode: '0644'
+    # Install Helm from a release tarball to /usr/local.
+    - name: Install Helm binaries from release tarball
+      block:
+        - name: Check for cached Helm release tarball
+          ansible.builtin.stat:
+            path: "{{ cached_helm_tarball }}"
+          register: cached_helm
+          delegate_to: localhost
+          become: false
 
-    - name: Change permissions to make the script executable
-      ansible.builtin.file:
-        path: /tmp/get_helm.sh
-        mode: '0700'
-        state: file
+        - name: Download and cache Helm release tarball
+          ansible.builtin.get_url:
+            url: "{{ helm_tarball }}"
+            dest: "{{ cached_helm_tarball }}"
+            mode: '0644'
+          when: not cached_helm.stat.exists
+          delegate_to: localhost
+          become: false
 
-    - name: Execute the Helm install script
-      ansible.builtin.command:
-        cmd: /tmp/get_helm.sh
-      environment:
-        VERIFY_CHECKSUM: "false"
+        - name: Install Helm runtime release tarball under /usr/local
+          ansible.builtin.unarchive:
+            src: "{{ cached_helm_tarball }}"
+            dest: /usr/local
+            copy: true
 
-    - name: Clean up the Helm install script
-      ansible.builtin.file:
-        path: /tmp/get_helm.sh
-        state: absent
+        - name: Move Helm binaries to /usr/local/bin from extracted release tarball
+          ansible.builtin.shell: "{{ item }}"
+          with_items:
+            - mv /usr/local/linux-amd64/helm /usr/local/bin
+            - rm -fr /usr/local/linux-amd64
 
     - name: Install ansible.builtin.dnf dependencies
       ansible.builtin.shell: |
@@ -224,13 +242,37 @@
           - tomli_w
         state: present
 
-    # Install containerd from a release tarball to /usr/local.
-    - name: Install containerd binaries from release tarball
-      ansible.builtin.unarchive:
-        src: "{{ containerd_tarball }}"
-        dest: /usr/local
-        remote_src: true
-      when: is_containerd and containerd_src == ""
+    # Install containerd or CRI-O from a release tarball to /usr/local.
+    - name: Install runtime binaries from release tarball
+      block:
+        - name: Check for cached runtime release tarball
+          ansible.builtin.stat:
+            path: "{{ cached_runtime_tarball }}"
+          register: cached_runtime
+          delegate_to: localhost
+          become: false
+
+        - name: Download and cache runtime release tarball
+          ansible.builtin.get_url:
+            url: "{{ remote_runtime_tarball }}"
+            dest: "{{ cached_runtime_tarball }}"
+            mode: '0644'
+          when: not cached_runtime.stat.exists
+          delegate_to: localhost
+          become: false
+
+        - name: Install runtime release tarball under /usr/local
+          ansible.builtin.unarchive:
+            src: "{{ cached_runtime_tarball }}"
+            dest: /usr/local
+            copy: true
+
+        - name: Install CRI-O binaries from release tarball
+          ansible.builtin.shell:
+            cmd: ./install
+            chdir: /usr/local/cri-o
+          when: is_crio
+      when: (is_containerd and containerd_src == "") or (is_crio and crio_src == "")
 
     # Install containerd binaries from compiled sources.
     - name: Install containerd binaries from compiled sources
@@ -243,21 +285,6 @@
         - "{{ containerd_src }}/bin/containerd"
         - "{{ containerd_src }}/bin/containerd-shim-runc-v2"
       when: is_containerd and containerd_src != ""
-
-    # Install CRI-O from a release tarball to /usr/local.
-    - name: Install CRI-O from release tarball
-      when: is_crio and crio_src == ""
-      block:
-        - name: Fetch and extract CRI-O release tarball
-          ansible.builtin.unarchive:
-            src: "{{ crio_tarball }}"
-            dest: /usr/local
-            remote_src: true
-
-        - name: Install CRI-O binaries from release tarball
-          ansible.builtin.shell:
-            cmd: ./install
-            chdir: /usr/local/cri-o
 
     # Install CRI-O binaries from compiled sources.
     - name: Install CRI-O binaries from compiled sources
