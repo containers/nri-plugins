@@ -17,11 +17,13 @@ N = 1
 
 K8S_RELEASE = "#{ENV['k8s_release']}"
 K8S_VERSION = "#{ENV['k8s_version']}"
+HELM_RELEASE = "#{ENV['helm_release']}"
 CRI_RUNTIME = "#{ENV['k8scri']}"
 CRIO_RELEASE = "1.28.1"
 CRIO_SRC = ""
 CONTAINERD_RELEASE = ""
 CONTAINERD_SRC = ""
+CACHE_DIR="#{ENV['CACHE_DIR']}"
 
 if CRI_RUNTIME == "containerd"
   CONTAINERD_RELEASE = "#{ENV['containerd_release']}"
@@ -94,11 +96,13 @@ Vagrant.configure("2") do |config|
       no_proxy: "#{ENV['NO_PROXY']}",
       k8s_release: K8S_RELEASE,
       k8s_version: K8S_VERSION,
+      helm_release: HELM_RELEASE,
       cri_runtime: CRI_RUNTIME,
       containerd_release: CONTAINERD_RELEASE,
       containerd_src: CONTAINERD_SRC,
       crio_release: CRIO_RELEASE,
       crio_src: CRIO_SRC,
+      cache_dir: CACHE_DIR,
       cni_plugin: CNI_PLUGIN,
       cni_release: CNI_RELEASE,
       nri_resource_policy_src: NRI_RESOURCE_POLICY_SRC,
