@@ -427,6 +427,10 @@ func (c *container) GetEnv(key string) (string, bool) {
 	return "", false
 }
 
+func (c *container) GetEnvList() []string {
+	return slices.Clone(c.Ctr.GetEnv())
+}
+
 func (c *container) GetMounts() []*Mount {
 	var mounts []*Mount
 

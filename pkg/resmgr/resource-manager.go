@@ -53,6 +53,7 @@ type resmgr struct {
 	agent   *agent.Agent
 	cfg     cfgapi.ResmgrConfig
 	cache   cache.Cache      // cached state
+	system  sysfs.System     // sysfs in use
 	policy  policy.Policy    // resource manager policy
 	control control.Control  // policy controllers/enforcement
 	events  chan interface{} // channel for delivering events
@@ -60,6 +61,7 @@ type resmgr struct {
 	nri     *nriPlugin       // NRI plugins, if we're running as such
 	rdt     *rdtControl      // control for RDT allocation and monitoring
 	blkio   *blkioControl    // control for block I/O prioritization and throttling
+	dra     *draPlugin       // DRA plugin, if we have one
 	running bool
 }
 
@@ -88,7 +90,7 @@ func NewResourceManager(backend policy.Backend, agt *agent.Agent) (ResourceManag
 		return nil, err
 	}
 
-	log.Info("running as an NRI plugin...")
+	log.Info("creating NRI plugin...")
 	nrip, err := newNRIPlugin(m)
 	if err != nil {
 		return nil, err
@@ -98,6 +100,13 @@ func NewResourceManager(backend policy.Backend, agt *agent.Agent) (ResourceManag
 	if err := m.setupPolicy(backend); err != nil {
 		return nil, err
 	}
+
+	log.Info("creating DRA plugin...")
+	drap, err := newDRAPlugin(m)
+	if err != nil {
+		return nil, err
+	}
+	m.dra = drap
 
 	if err := m.setupEventProcessing(); err != nil {
 		return nil, err
@@ -182,6 +191,10 @@ func (m *resmgr) start(cfg cfgapi.ResmgrConfig) error {
 		return err
 	}
 
+	if err := m.dra.start(); err != nil {
+		return err
+	}
+
 	if err := m.policy.Start(m.cfg.PolicyConfig()); err != nil {
 		return err
 	}
@@ -222,6 +235,7 @@ func (m *resmgr) Stop() {
 	defer m.Unlock()
 
 	m.nri.stop()
+	m.dra.stop()
 }
 
 // setupCache creates a cache and reloads its last saved state if found.
@@ -249,10 +263,17 @@ func (m *resmgr) setupPolicy(backend policy.Backend) error {
 		log.Warnf("failed to set active policy: %v", err)
 	}
 
-	p, err := policy.NewPolicy(backend, m.cache, &policy.Options{SendEvent: m.SendEvent})
+	p, err := policy.NewPolicy(backend, m.cache,
+		&policy.Options{
+			SendEvent:   m.SendEvent,
+			PublishCPUs: m.publishCPUs,
+		},
+	)
 	if err != nil {
 		return resmgrError("failed to create policy %s: %v", backend.Name(), err)
 	}
+
+	m.system = p.System()
 	m.policy = p
 
 	return nil
