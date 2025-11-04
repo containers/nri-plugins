@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.10.1-48-g6845a2c7 documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.10.1-53-g16b613b9 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=d1af7392"></script>
+        <script src="../../../_static/documentation_options.js?v=70f0a5cf"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -303,7 +303,7 @@ have at least this many CPUs, even if containers in the balloon
 request less.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">cpuClass</span></code> specifies the name of the CPU class according to which
 CPUs of balloons are configured. Class properties are defined in
-separate <code class="docutils literal notranslate"><span class="pre">cpu.classes</span></code> objects, see below.</p></li>
+separate <code class="docutils literal notranslate"><span class="pre">control.cpu.classes</span></code> objects, see below.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">pinMemory</span></code> overrides policy-level <code class="docutils literal notranslate"><span class="pre">pinMemory</span></code> in balloons of this
 type.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">memoryTypes</span></code> is a list of allowed memory types for containers in
@@ -442,6 +442,14 @@ important than avoiding balloon’s own load.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">control.cpu.classes</span></code>: defines CPU classes and their
 properties. Class names are keys followed by properties:</p>
 <ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">disabledCstates</span></code> is a list of c-state names that are disabled
+for CPUs in this class. Disabling deepest c-states lowers
+latencies by preventing CPUs from entering deepest powersaving
+states while processes are idle or wait for data. C-states
+available in a system can be listed with <code class="docutils literal notranslate"><span class="pre">grep</span> <span class="pre">.</span> <span class="pre">/sys/devices/system/cpu/cpu0/cpuidle/state*/name</span></code>. C-states
+not listed in <code class="docutils literal notranslate"><span class="pre">disabledCstates</span></code> will be enabled. Disabling
+non-existent c-states is silently ignored. Disabling c-states
+does not affect min/max frequencies or vice versa.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">minFreq</span></code> minimum frequency for CPUs in this class (kHz).</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">maxFreq</span></code> maximum frequency for CPUs in this class (kHz).</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">uncoreMinFreq</span></code> minimum uncore frequency for CPUs in this
@@ -535,6 +543,7 @@ from <code class="docutils literal notranslate"><span class="pre">http://$localh
 <span class="w">          </span><span class="nt">maxFreq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3600000</span>
 <span class="w">          </span><span class="nt">uncoreMinFreq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2000000</span>
 <span class="w">          </span><span class="nt">uncoreMaxFreq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2400000</span>
+<span class="w">          </span><span class="nt">disabledCstates</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">C6</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">C8</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">C10</span><span class="p p-Indicator">]</span>
 <span class="w">  </span><span class="nt">instrumentation</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">httpEndpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">:8891</span>
 <span class="w">    </span><span class="nt">prometheusExport</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
