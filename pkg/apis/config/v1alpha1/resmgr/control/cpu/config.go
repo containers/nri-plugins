@@ -19,6 +19,7 @@ type Config struct {
 	Classes map[string]Class `json:"classes"`
 }
 
+// +k8s:deepcopy-gen=true
 type Class struct {
 	// MinFreq is the minimum frequency for this class.
 	MinFreq uint `json:"minFreq,omitempty"`
@@ -32,4 +33,6 @@ type Class struct {
 	UncoreMaxFreq uint `json:"uncoreMaxFreq,omitempty"`
 	// CPUFreq Governor for this class.
 	FreqGovernor string `json:"freqGovernor,omitempty"`
+	// DisabledCstates lists C-states disabled for this class.
+	DisabledCstates []string `json:"disabledCstates,omitempty"`
 }

@@ -355,6 +355,12 @@ spec:
                       classes:
                         additionalProperties:
                           properties:
+                            disabledCstates:
+                              description: DisabledCstates lists C-states disabled
+                                for this class.
+                              items:
+                                type: string
+                              type: array
                             energyPerformancePreference:
                               description: EnergyPerformancePreference for CPUs in
                                 this class.

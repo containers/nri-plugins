@@ -187,7 +187,7 @@ Balloons policy parameters:
     request less.
   - `cpuClass` specifies the name of the CPU class according to which
     CPUs of balloons are configured. Class properties are defined in
-    separate `cpu.classes` objects, see below.
+    separate `control.cpu.classes` objects, see below.
   - `pinMemory` overrides policy-level `pinMemory` in balloons of this
     type.
   - `memoryTypes` is a list of allowed memory types for containers in
@@ -310,6 +310,15 @@ Balloons policy parameters:
     important than avoiding balloon's own load.
 - `control.cpu.classes`: defines CPU classes and their
     properties. Class names are keys followed by properties:
+    - `disabledCstates` is a list of c-state names that are disabled
+      for CPUs in this class. Disabling deepest c-states lowers
+      latencies by preventing CPUs from entering deepest powersaving
+      states while processes are idle or wait for data. C-states
+      available in a system can be listed with `grep
+      . /sys/devices/system/cpu/cpu0/cpuidle/state*/name`. C-states
+      not listed in `disabledCstates` will be enabled. Disabling
+      non-existent c-states is silently ignored. Disabling c-states
+      does not affect min/max frequencies or vice versa.
     - `minFreq` minimum frequency for CPUs in this class (kHz).
     - `maxFreq` maximum frequency for CPUs in this class (kHz).
     - `uncoreMinFreq` minimum uncore frequency for CPUs in this
@@ -390,6 +399,7 @@ spec:
           maxFreq: 3600000
           uncoreMinFreq: 2000000
           uncoreMaxFreq: 2400000
+          disabledCstates: [C6, C8, C10]
   instrumentation:
     httpEndpoint: :8891
     prometheusExport: true
