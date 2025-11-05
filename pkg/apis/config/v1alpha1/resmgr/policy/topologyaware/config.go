@@ -22,10 +22,11 @@ import (
 )
 
 type (
-	Constraints = policy.Constraints
-	Domain      = policy.Domain
-	Amount      = policy.Amount
-	AmountKind  = policy.AmountKind
+	Constraints      = policy.Constraints
+	Domain           = policy.Domain
+	Amount           = policy.Amount
+	AmountKind       = policy.AmountKind
+	CPUTopologyLevel = policy.CPUTopologyLevel
 )
 
 const (
@@ -34,6 +35,19 @@ const (
 	AmountAbsent   = policy.AmountAbsent
 	AmountQuantity = policy.AmountQuantity
 	AmountCPUSet   = policy.AmountCPUSet
+
+	CPUTopologyLevelUndefined = policy.CPUTopologyLevelUndefined
+	CPUTopologyLevelSystem    = policy.CPUTopologyLevelSystem
+	CPUTopologyLevelPackage   = policy.CPUTopologyLevelPackage
+	CPUTopologyLevelDie       = policy.CPUTopologyLevelDie
+	CPUTopologyLevelNuma      = policy.CPUTopologyLevelNuma
+	CPUTopologyLevelL2Cache   = policy.CPUTopologyLevelL2Cache
+	CPUTopologyLevelCore      = policy.CPUTopologyLevelCore
+	CPUTopologyLevelThread    = policy.CPUTopologyLevelThread
+)
+
+var (
+	CPUTopologyLevelCount = policy.CPUTopologyLevelCount
 )
 
 type CPUPriority string
@@ -109,4 +123,10 @@ type Config struct {
 	// +kubebuilder:default=none
 	// +kubebuilder:validation:Format:string
 	DefaultCPUPriority CPUPriority `json:"defaultCPUPriority,omitempty"`
+	// UnlimitedBurstable defines the preferred topology level for containers
+	// with unlimited burstability.
+	// +kubebuilder:validation:Enum=system;package;die;numa
+	// +kubebuilder:default=package
+	// +kubebuilder:validation:Format:string
+	UnlimitedBurstable CPUTopologyLevel `json:"unlimitedBurstable,omitempty"`
 }

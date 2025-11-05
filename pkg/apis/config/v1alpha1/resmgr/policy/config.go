@@ -22,10 +22,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
-type Constraints map[Domain]Amount
-type Domain string
-type Amount string
-type AmountKind int
+type (
+	Constraints      map[Domain]Amount
+	Domain           string
+	Amount           string
+	AmountKind       int
+	CPUTopologyLevel string
+)
 
 const (
 	CPU    Domain = "cpu"
@@ -36,6 +39,15 @@ const (
 	AmountCPUSet
 
 	PrefixCPUSet = "cpuset:"
+
+	CPUTopologyLevelUndefined CPUTopologyLevel = ""
+	CPUTopologyLevelSystem    CPUTopologyLevel = "system"
+	CPUTopologyLevelPackage   CPUTopologyLevel = "package"
+	CPUTopologyLevelDie       CPUTopologyLevel = "die"
+	CPUTopologyLevelNuma      CPUTopologyLevel = "numa"
+	CPUTopologyLevelL2Cache   CPUTopologyLevel = "l2cache"
+	CPUTopologyLevelCore      CPUTopologyLevel = "core"
+	CPUTopologyLevelThread    CPUTopologyLevel = "thread"
 )
 
 var (
@@ -71,4 +83,30 @@ func (amount Amount) ParseQuantity() (resource.Quantity, error) {
 		return noQ, fmt.Errorf("failed to parse amount '%s' as resource quantity: %w", amount, err)
 	}
 	return q, nil
+}
+
+var (
+	cpuTopologyLevelValues = map[CPUTopologyLevel]int{
+		CPUTopologyLevelUndefined: 0,
+		CPUTopologyLevelSystem:    1,
+		CPUTopologyLevelPackage:   2,
+		CPUTopologyLevelDie:       3,
+		CPUTopologyLevelNuma:      4,
+		CPUTopologyLevelL2Cache:   5,
+		CPUTopologyLevelCore:      6,
+		CPUTopologyLevelThread:    7,
+	}
+
+	CPUTopologyLevelCount = len(cpuTopologyLevelValues)
+)
+
+func (l CPUTopologyLevel) String() string {
+	return string(l)
+}
+
+func (l CPUTopologyLevel) Value() int {
+	if i, ok := cpuTopologyLevelValues[l]; ok {
+		return i
+	}
+	return cpuTopologyLevelValues[CPUTopologyLevelUndefined]
 }
