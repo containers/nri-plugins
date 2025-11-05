@@ -25,10 +25,11 @@ import (
 )
 
 type (
-	Constraints = policy.Constraints
-	Domain      = policy.Domain
-	Amount      = policy.Amount
-	AmountKind  = policy.AmountKind
+	Constraints      = policy.Constraints
+	Domain           = policy.Domain
+	Amount           = policy.Amount
+	AmountKind       = policy.AmountKind
+	CPUTopologyLevel = policy.CPUTopologyLevel
 )
 
 const (
@@ -37,6 +38,19 @@ const (
 	AmountAbsent   = policy.AmountAbsent
 	AmountQuantity = policy.AmountQuantity
 	AmountCPUSet   = policy.AmountCPUSet
+
+	CPUTopologyLevelUndefined = policy.CPUTopologyLevelUndefined
+	CPUTopologyLevelSystem    = policy.CPUTopologyLevelSystem
+	CPUTopologyLevelPackage   = policy.CPUTopologyLevelPackage
+	CPUTopologyLevelDie       = policy.CPUTopologyLevelDie
+	CPUTopologyLevelNuma      = policy.CPUTopologyLevelNuma
+	CPUTopologyLevelL2Cache   = policy.CPUTopologyLevelL2Cache
+	CPUTopologyLevelCore      = policy.CPUTopologyLevelCore
+	CPUTopologyLevelThread    = policy.CPUTopologyLevelThread
+)
+
+var (
+	CPUTopologyLevelCount = policy.CPUTopologyLevelCount
 )
 
 // +kubebuilder:object:generate=true
@@ -96,45 +110,6 @@ type Config struct {
 	ShowContainersInNrt *bool `json:"showContainersInNrt,omitempty"`
 	// LoadClasses specify available loads in balloon types.
 	LoadClasses []LoadClass `json:"loadClasses,omitempty"`
-}
-
-type CPUTopologyLevel string
-
-const (
-	CPUTopologyLevelUndefined = ""
-	CPUTopologyLevelSystem    = "system"
-	CPUTopologyLevelPackage   = "package"
-	CPUTopologyLevelDie       = "die"
-	CPUTopologyLevelNuma      = "numa"
-	CPUTopologyLevelL2Cache   = "l2cache"
-	CPUTopologyLevelCore      = "core"
-	CPUTopologyLevelThread    = "thread"
-)
-
-var (
-	cpuTopologyLevelValues = map[CPUTopologyLevel]int{
-		CPUTopologyLevelUndefined: 0,
-		CPUTopologyLevelSystem:    1,
-		CPUTopologyLevelPackage:   2,
-		CPUTopologyLevelDie:       3,
-		CPUTopologyLevelNuma:      4,
-		CPUTopologyLevelL2Cache:   5,
-		CPUTopologyLevelCore:      6,
-		CPUTopologyLevelThread:    7,
-	}
-
-	CPUTopologyLevelCount = len(cpuTopologyLevelValues)
-)
-
-func (l CPUTopologyLevel) String() string {
-	return string(l)
-}
-
-func (l CPUTopologyLevel) Value() int {
-	if i, ok := cpuTopologyLevelValues[l]; ok {
-		return i
-	}
-	return cpuTopologyLevelValues[CPUTopologyLevelUndefined]
 }
 
 // BalloonDef contains a balloon definition.
@@ -288,6 +263,7 @@ type BalloonDefComponent struct {
 
 // LoadClass specifies how a load affects the system and load
 // generating containers themselves.
+// +k8s:deepcopy-gen=true
 type LoadClass struct {
 	// Name of the load class.
 	// +kube:validation:Required

@@ -651,7 +651,7 @@ func TestWalk(t *testing.T) {
 		foundLevel := CPUTopologyLevelUndefined
 		rv := tree.DepthFirstWalk(func(tn *cpuTreeNode) error {
 			foundName = tn.name
-			foundLevel = string(tn.level)
+			foundLevel = tn.level
 			return nil
 		})
 		if rv != nil {

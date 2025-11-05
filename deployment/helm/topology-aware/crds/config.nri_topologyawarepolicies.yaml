@@ -605,6 +605,17 @@ spec:
                   to. If AvailableResources is defined, ReservedResources must be a subset
                   of it.
                 type: object
+              unlimitedBurstable:
+                default: package
+                description: |-
+                  UnlimitedBurstable defines the preferred topology level for containers
+                  with unlimited burstability.
+                enum:
+                - system
+                - package
+                - die
+                - numa
+                type: string
             required:
             - reservedResources
             type: object
