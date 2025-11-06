@@ -150,6 +150,15 @@ func (t *cpuTreeNode) Depth() int {
 	return t.parent.Depth() + 1
 }
 
+// LeafDepth returns the distance from the leaf nodes.
+func (t *cpuTreeNode) LeafDepth() int {
+	if len(t.children) == 0 {
+		return 0
+	}
+	// Assume all leaf nodes are from the same depth.
+	return t.children[0].LeafDepth() + 1
+}
+
 // AddChild adds new child node to a CPU tree node.
 func (t *cpuTreeNode) AddChild(child *cpuTreeNode) {
 	child.parent = t
@@ -238,12 +247,13 @@ func (t *cpuTreeNode) DepthFirstWalk(handler func(*cpuTreeNode) error) error {
 // topology elements over which a set of CPUs spans. Example:
 // systemNode.CpuLocations(cpuset:0,99) = [["system"],["p0", "p1"], ["p0d0", "p1d0"], ...]
 func (t *cpuTreeNode) CpuLocations(cpus cpuset.CPUSet) [][]string {
-	names := make([][]string, int(CPUTopologyLevelCount)-t.level.Value())
+	tLeafDepth := t.LeafDepth()
+	names := make([][]string, tLeafDepth+1)
 	if err := t.DepthFirstWalk(func(tn *cpuTreeNode) error {
 		if tn.cpus.Intersection(cpus).Size() == 0 {
 			return WalkSkipChildren
 		}
-		levelIndex := tn.level.Value() - t.level.Value()
+		levelIndex := tLeafDepth - tn.LeafDepth()
 		names[levelIndex] = append(names[levelIndex], tn.name)
 		return nil
 	}); err != nil && err != WalkSkipChildren && err != WalkStop {
