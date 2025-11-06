@@ -714,8 +714,21 @@ func TestCpuLocations(t *testing.T) {
 	cpus := cpuset.New(0, 1, 3, 4, 16)
 	systemlocations := tree.CpuLocations(cpus)
 	package1locations := tree.children[1].CpuLocations(cpus)
+	p0d1locations := tree.children[0].children[1].CpuLocations(cpus)
 	if len(package1locations) != 5 {
 		t.Errorf("expected package1locations length 5, got %d", len(package1locations))
+		return
+	}
+	if len(package1locations[0]) != 0 {
+		t.Errorf("expected no package1locations even in top level, got %v", package1locations[0])
+		return
+	}
+	if len(p0d1locations) != 4 {
+		t.Errorf("expected p0d1locations length 4, got %d", len(p0d1locations))
+		return
+	}
+	if len(p0d1locations[3]) != 1 || p0d1locations[3][0] != "p0d1n0c00t0" {
+		t.Errorf("expected exactly [p0d1n0c00t0] in p0d1locations[3], got %v", p0d1locations[3])
 		return
 	}
 	if len(systemlocations) != 6 {
