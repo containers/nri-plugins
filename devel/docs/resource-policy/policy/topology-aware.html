@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.10.1-54-g0a5b1af9 documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.10.1-58-gd745e296 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=e82f30c8"></script>
+        <script src="../../../_static/documentation_options.js?v=dfa3cc37"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -308,6 +308,14 @@ CPU allocations. For a more detailed discussion of CPU prioritization see
 the <a class="reference internal" href="../developers-guide/cpu-allocator.html"><span class="std std-doc">cpu allocator</span></a> documentation.</p></li>
 </ul>
 </li>
+<li><p><code class="docutils literal notranslate"><span class="pre">unlimitedBurstable</span></code></p>
+<ul>
+<li><p>is the default topology level preference for containers with unlimited
+burstability. The policy will try to allocate Burstable containers with
+no CPU limit to a pool at this topology level. The possible values are:
+<code class="docutils literal notranslate"><span class="pre">system</span></code>, <code class="docutils literal notranslate"><span class="pre">package</span></code>, <code class="docutils literal notranslate"><span class="pre">die</span></code>, <code class="docutils literal notranslate"><span class="pre">numa</span></code>.</p></li>
+</ul>
+</li>
 </ul>
 <p>Additionally, the following sub-configuration is available for instrumentation:</p>
 <ul class="simple">
@@ -474,6 +482,27 @@ allocation using the following Pod annotation.</p>
 </div>
 <p>These Pod annotations have no effect on containers which are not eligible for
 exclusive allocation.</p>
+</section>
+<section id="preferred-topology-level-for-burstable-containers-without-cpu-limit">
+<h3>Preferred Topology Level for Burstable Containers Without CPU Limit<a class="headerlink" href="#preferred-topology-level-for-burstable-containers-without-cpu-limit" title="Link to this heading"></a></h3>
+<p>CPU-unlimited burstable containers are by default preferred to allocate to a
+pool at the topology level specified by the <code class="docutils literal notranslate"><span class="pre">unlimitedBurstable</span></code> configuration
+option. This global default can be overridden by pod or container using the
+<code class="docutils literal notranslate"><span class="pre">unlimited-burstable.resource-policy.nri.io</span></code> annotation. This annotation can
+have the same values as the <code class="docutils literal notranslate"><span class="pre">unlimitedBurstable</span></code> configuration option.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="c1"># prefer to allocate container within the pod by default to a die</span>
+<span class="w">    </span><span class="nt">unlimited-burstable.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;die&quot;</span>
+<span class="w">    </span><span class="c1"># prefer to allocate C1 to a single NUMA node</span>
+<span class="w">    </span><span class="nt">unlimited-burstable.resource-policy.nri.io/container.C1</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;numa&quot;</span>
+<span class="w">    </span><span class="c1"># prefer to allocate C2 to a single socket</span>
+<span class="w">    </span><span class="nt">unlimited-burstable.resource-policy.nri.io/container.C2</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;package&quot;</span>
+<span class="w">    </span><span class="c1"># prefer to allocate C3 to all sockets in the system</span>
+<span class="w">    </span><span class="nt">unlimited-burstable.resource-policy.nri.io/container.C3</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;system&quot;</span>
+<span class="w">    </span><span class="c1"># any other containers in the pod will prefer allocation to a single die</span>
+</pre></div>
+</div>
 </section>
 <section id="selectively-disabling-hyperthreading">
 <h3>Selectively Disabling Hyperthreading<a class="headerlink" href="#selectively-disabling-hyperthreading" title="Link to this heading"></a></h3>

@@ -145,6 +145,11 @@ behavior. These options can be supplied as part of the effective
     `normal`, `low`, and `none`. Currently this option only affects exclusive
     CPU allocations. For a more detailed discussion of CPU prioritization see
     the [cpu allocator](../developers-guide/cpu-allocator.md) documentation.
+- `unlimitedBurstable`
+  - is the default topology level preference for containers with unlimited
+    burstability. The policy will try to allocate Burstable containers with
+    no CPU limit to a pool at this topology level. The possible values are:
+    `system`, `package`, `die`, `numa`.
 
 Additionally, the following sub-configuration is available for instrumentation:
 
@@ -280,6 +285,29 @@ metadata:
 
 These Pod annotations have no effect on containers which are not eligible for
 exclusive allocation.
+
+### Preferred Topology Level for Burstable Containers Without CPU Limit
+
+CPU-unlimited burstable containers are by default preferred to allocate to a
+pool at the topology level specified by the `unlimitedBurstable` configuration
+option. This global default can be overridden by pod or container using the
+`unlimited-burstable.resource-policy.nri.io` annotation. This annotation can
+have the same values as the `unlimitedBurstable` configuration option.
+
+```yaml
+metadata:
+  annotations:
+    # prefer to allocate container within the pod by default to a die
+    unlimited-burstable.resource-policy.nri.io/pod: "die"
+    # prefer to allocate C1 to a single NUMA node
+    unlimited-burstable.resource-policy.nri.io/container.C1: "numa"
+    # prefer to allocate C2 to a single socket
+    unlimited-burstable.resource-policy.nri.io/container.C2: "package"
+    # prefer to allocate C3 to all sockets in the system
+    unlimited-burstable.resource-policy.nri.io/container.C3: "system"
+    # any other containers in the pod will prefer allocation to a single die
+```
+
 
 ### Selectively Disabling Hyperthreading
 
