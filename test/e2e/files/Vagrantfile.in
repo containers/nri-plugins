@@ -88,7 +88,7 @@ Vagrant.configure("2") do |config|
     qemu.memory = "QEMU_MEM"
     qemu.arch = "x86_64"
     qemu.machine = "QEMU_MACHINE"
-    qemu.cpu = "host"
+    qemu.cpu = "QEMU_CPU"
     qemu.net_device = "virtio-net-pci"
     qemu.extra_netdev_args = "net=192.168.76.0/24,dhcpstart=192.168.76.9"
     qemu.ssh_port = SSH_PORT
