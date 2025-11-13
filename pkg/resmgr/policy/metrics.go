@@ -149,6 +149,7 @@ func (p *policy) newSystemCollector() *SystemCollector {
 			}
 		)
 		s.Nodes[id] = node
+		s.Metrics[nodeCapacity].WithLabelValues(node.IdLabel).Set(float64(node.Capacity))
 	}
 
 	for _, id := range s.system.CPUIDs() {
@@ -186,12 +187,7 @@ func (s *SystemCollector) register() error {
 func (s *SystemCollector) Update() {
 	for _, n := range s.Nodes {
 		sys := s.system.Node(n.Id)
-		capa, used := s.getMemInfo(sys)
-
-		if n.Capacity == 0 {
-			n.Capacity = capa
-			s.Metrics[nodeCapacity].WithLabelValues(n.IdLabel).Set(float64(n.Capacity))
-		}
+		_, used := s.getMemInfo(sys)
 
 		n.Usage = used
 		n.ContainerCount = 0
