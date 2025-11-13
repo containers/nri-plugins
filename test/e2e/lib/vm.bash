@@ -403,6 +403,42 @@ vm-reboot() { # script API
     deadline=$_deadline host-wait-vm-ssh-server $_vagrantdir
 }
 
+vm-cpu-hotplug() { # script API
+    # Usage: vm-cpu-hotplug SOCKETID COREID THREADID
+    #
+    # Hotplug currently unplugged CPU to VM.
+    #
+    # Examples:
+    #   vm-cpu-hotplug 0 255 0
+    local socketid=$1
+    local coreid=$2
+    local threadid=$3
+    local deviceid="cpu-s$socketid-c$coreid-t$threadid"
+    if [[ -z "$threadid" ]]; then
+        error "missing one or more IDs: socket core thread"
+        return 1
+    fi
+    vm-monitor "device_add driver=host-x86_64-cpu,id=${deviceid},socket-id=${socketid},core-id=${coreid},thread-id=${threadid}"
+}
+
+vm-cpu-hotremove() { # script API
+    # Usage: vm-cpu-hotremove SOCKETID COREID THREADID
+    #
+    # Hotremove currently plugged CPU from VM.
+    #
+    # Examples:
+    #   vm-cpu-hotremove 0 255 0
+    local socketid=$1
+    local coreid=$2
+    local threadid=$3
+    local deviceid="cpu-s$socketid-c$coreid-t$threadid"
+    if [[ -z "$threadid" ]]; then
+        error "missing one or more IDs: socket core thread"
+        return 1
+    fi
+    vm-monitor "device_del ${deviceid}"
+}
+
 vm-mem-hotplug() { # script API
     # Usage: vm-mem-hotplug MEMORY
     #
