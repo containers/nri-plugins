@@ -24,6 +24,8 @@ NUMA node group definitions:
                       The default is 1.
 "packages"            number of packages.
                       The default is 1.
+"cpus-present"        number of logical CPUs present in the system.
+                      The default value 0 means "all".
 
 NUMA node distances are defined with following keys:
 "dist-all": [[from0to0, from0to1, ...], [from1to0, from1to1, ...], ...]
@@ -108,13 +110,15 @@ def validate(numalist):
         raise ValueError('expected list containing dicts, got %s' % (type(numalist,).__name__))
     valid_keys = set(("mem", "nvmem", "dimm",
                       "cores", "threads", "nodes", "dies", "packages",
+                      "cpus-present",
                       "node-dist", "dist-all",
                       "dist-other-package", "dist-same-package", "dist-same-die"))
     int_range_keys = {'cores': ('>= 0', lambda v: v >= 0),
                       'threads': ('> 0', lambda v: v > 0),
                       'nodes': ('> 0', lambda v: v > 0),
                       'dies': ('> 0', lambda v: v > 0),
-                      'packages': ('> 0', lambda v: v > 0)}
+                      'packages': ('> 0', lambda v: v > 0),
+                      'cpus-present': ('>= 0', lambda v: v >=0)}
     for numalistindex, numaspec in enumerate(numalist):
         for key in numaspec:
             if not key in valid_keys:
@@ -210,12 +214,14 @@ def dists(numalist):
     return dist_dict
 
 def qemuopts(numalist):
-    machineparam = "-machine pc"
+    machineparam = "-machine q35,kernel-irqchip=split"
+    cpuparam = "-cpu host,x2apic=on"
     numaparams = []
     objectparams = []
     deviceparams = []
     lastnode = -1
     lastcpu = -1
+    lastcpupresent = -1
     lastdie = -1
     lastsocket = -1
     lastmem = -1
@@ -249,6 +255,7 @@ def qemuopts(numalist):
         cpucount = int(numaspec.get("cores", 0)) * threadcount # logical cpus per numa node (cores * threads)
         diecount = int(numaspec.get("dies", 1))
         packagecount = int(numaspec.get("packages", 1))
+        cpuspresentcount = int(numaspec.get("cpus-present", 0))
         memsize = numaspec.get("mem", "0")
         memdimm = numaspec.get("dimm", "")
         if memsize != "0":
@@ -333,6 +340,10 @@ def qemuopts(numalist):
                             currentnumaparams.append("node,nodeid=%s" % (lastnode,))
                         currentnumaparams[-1] = currentnumaparams[-1] + (",cpus=%s-%s" % (lastcpu + 1, lastcpu + cpucount))
                         lastcpu += cpucount
+                        if cpuspresentcount > 0:
+                            lastcpupresent = cpuspresentcount - 1
+                        else:
+                            lastcpupresent += cpucount
                     numaparams.extend(currentnumaparams)
     node_node_dist = dists(numalist)
     for sourcenode in sorted(node_node_dist.keys()):
@@ -350,7 +361,7 @@ def qemuopts(numalist):
         # Don't give dies parameter unless it is absolutely necessary
         # because it requires Qemu >= 5.0.
         diesparam = ""
-    cpuparam = "-smp cpus=%s,threads=%s%s,sockets=%s" % (lastcpu + 1, threadcount, diesparam, lastsocket + 1)
+    smpparam = "-smp cpus=%s,threads=%s%s,sockets=%s,maxcpus=%s" % (lastcpupresent + 1, threadcount, diesparam, lastsocket + 1, lastcpu + 1)
     maxmem = siadd(totalmem, totalnvmem)
     startmem = sisub(sisub(maxmem, unpluggedmem), pluggedmem)
     memparam = "-m size=%s,slots=%s,maxmem=%s" % (startmem, memslots, maxmem)
@@ -362,6 +373,7 @@ def qemuopts(numalist):
     if separated_output_vars == True:
         return ("MACHINE:" + machineparam + "|" +
                 "CPU:" + cpuparam + "|" +
+                "SMP:" + smpparam + "|" +
                 "MEM:" + memparam + "|" +
                 "EXTRA:" +
                 ", ".join(map(lambda x: "\"" + x + "\"", numaparams)) +
@@ -373,6 +385,7 @@ def qemuopts(numalist):
     else:
         return (machineparam + " " +
             cpuparam + " " +
+            smpparam + " " +
             memparam + " " +
             " ".join(numaparams) +
             " " +
