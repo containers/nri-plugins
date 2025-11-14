@@ -443,7 +443,7 @@ helm-launch() { # script API
     host-command "$SCP \"$helm_config\" $VM_HOSTNAME:" ||
         command-error "copying \"$helm_config\" to VM failed"
 
-    vm-command "helm install --atomic -n kube-system $helm_name ./helm/$plugin \
+    vm-command "helm install --rollback-on-failure -n kube-system $helm_name ./helm/$plugin \
              --values=`basename ${helm_config}` \
              --set image.name=localhost/$plugin \
              --set image.tag=testing \
