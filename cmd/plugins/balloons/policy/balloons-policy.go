@@ -1532,10 +1532,11 @@ func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
 	case cfgapi.AmountQuantity:
 		return balloonsError("can't handle CPU resources given as resource.Quantity (%v)", amount)
 	case cfgapi.AmountAbsent:
-		// Available CPUs not specified, default to all on-line CPUs.
-		availableCpus = p.options.System.CPUSet().Difference(p.options.System.Offlined())
+		// Available CPUs not specified, default to system CPUs.
+		availableCpus = p.options.System.CPUSet()
 	}
-	p.allowed = availableCpus
+	// Allocation of only online CPUs is allowed.
+	p.allowed = availableCpus.Intersection(p.options.System.OnlineCPUs())
 
 	setOmittedDefaults(bpoptions)
 

@@ -536,9 +536,11 @@ func (p *policy) checkConstraints() error {
 	case cfgapi.AmountQuantity:
 		return fmt.Errorf("can't handle CPU resources given as resource.Quantity (%v)", amount)
 	case cfgapi.AmountAbsent:
-		// default to all online cpus
-		p.allowed = p.sys.CPUSet().Difference(p.sys.Offlined())
+		// Available CPUs not specified, default to system CPUs.
+		p.allowed = p.sys.CPUSet()
 	}
+	// Allocation of only online CPUs is allowed.
+	p.allowed = p.allowed.Intersection(p.sys.OnlineCPUs())
 
 	p.isolated = p.sys.Isolated().Intersection(p.allowed)
 
