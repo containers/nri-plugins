@@ -698,10 +698,10 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 
 	// a node with insufficient isolated or shared capacity loses
 	switch {
-	case cpuType == cpuNormal && ((isolated2 < 0 && isolated1 >= 0) || (shared2 <= 0 && shared1 > 0)):
+	case cpuType == cpuNormal && ((isolated2 < 0 && isolated1 >= 0) || (shared2 < 0 && shared1 >= 0)):
 		log.Debug("  => %s loses, insufficent isolated or shared", node2.Name())
 		return true
-	case cpuType == cpuNormal && ((isolated1 < 0 && isolated2 >= 0) || (shared1 <= 0 && shared2 > 0)):
+	case cpuType == cpuNormal && ((isolated1 < 0 && isolated2 >= 0) || (shared1 < 0 && shared2 >= 0)):
 		log.Debug("  => %s loses, insufficent isolated or shared", node1.Name())
 		return false
 	case cpuType == cpuReserved && reserved2 < 0 && reserved1 >= 0:
