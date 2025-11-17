@@ -1,0 +1,3 @@
+[
+    {"mem": "2G", "threads": 1, "cores": 512, "packages": 8, "cpus-present":3}
+]
