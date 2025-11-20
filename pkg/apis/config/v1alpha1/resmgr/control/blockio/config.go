@@ -20,7 +20,9 @@ package blockio
 type Config struct {
 	// Enable class based block I/O prioritization and throttling. When
 	// enabled, policy implementations can adjust block I/O priority by
-	// by assigning containers to block I/O priority classes.
+	// assigning containers to block I/O priority classes. Additionally
+	// you need to set up your cluster nodes' runtimes with the desired
+	// block I/O class configuration.
 	// +optional
 	Enable bool `json:"enable,omitempty"`
 	// usePodQoSAsDefaultClass controls whether a container's Pod QoS
