@@ -15,7 +15,6 @@
 package metrics
 
 import (
-	"fmt"
 	"path"
 	"strings"
 	"sync"
@@ -27,7 +26,6 @@ import (
 )
 
 var (
-	log  = logger.Get("metrics")
 	clog = logger.Get("collector")
 )
 
@@ -468,7 +466,8 @@ func (r *Registry) Configure(enabled []string, polled []string) (State, error) {
 	}
 
 	if len(unmatched) > 0 {
-		return r.state, fmt.Errorf("no collectors match globs %s", strings.Join(unmatched, ", "))
+		//return r.state, fmt.Errorf("no collectors match globs %s", strings.Join(unmatched, ", "))
+		log.Errorf("no collectors match globs %s", strings.Join(unmatched, ", "))
 	}
 
 	return r.state, nil
