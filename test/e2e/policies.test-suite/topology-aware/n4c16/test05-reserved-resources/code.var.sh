@@ -19,7 +19,7 @@ cleanup-kube-system
 helm-terminate
 RESERVED_CPU="cpuset:3,7,11,15"
 helm_config=$(instantiate helm-config.yaml)
-( launch_timeout=5s helm-launch topology-aware ) && error "unexpected success" || {
+( expect_error=1 launch_timeout=5s helm-launch topology-aware ) && error "unexpected success" || {
     echo "Launch failed as expected"
     get-config-node-status-error topologyawarepolicies/default || :
 }
@@ -28,7 +28,7 @@ helm_config=$(instantiate helm-config.yaml)
 helm-terminate
 RESERVED_CPU='"11"'
 helm_config=$(instantiate helm-config.yaml)
-( launch_timeout=5s helm-launch topology-aware ) && error "unexpected success" || {
+( expect_error=1 launch_timeout=5s helm-launch topology-aware ) && error "unexpected success" || {
     echo "Launch failed as expected"
     get-config-node-status-error topologyawarepolicies/default || :
 }

@@ -437,13 +437,19 @@ helm-launch() { # script API
     local helm_name="${helm_name:-test}" timeout="${launch_timeout:-20s}"
     local expect_error="${expect_error:-0}"
     local plugin="$1" cfgresource=${cfgresource:-} cfgstatus
-    local deadline
+    local deadline rollback
     shift
+
+    if [ "$expect_error" == 0 ]; then
+        rollback=--rollback-on-failure
+    else
+        rollback=""
+    fi
 
     host-command "$SCP \"$helm_config\" $VM_HOSTNAME:" ||
         command-error "copying \"$helm_config\" to VM failed"
 
-    vm-command "helm install --rollback-on-failure -n kube-system $helm_name ./helm/$plugin \
+    vm-command "helm install $rollback -n kube-system $helm_name ./helm/$plugin \
              --values=`basename ${helm_config}` \
              --set image.name=localhost/$plugin \
              --set image.tag=testing \
@@ -483,23 +489,31 @@ helm-launch() { # script API
     deadline=$(deadline-for-timeout $timeout)
     vm-command "kubectl wait -n kube-system ds/${ds_name} --timeout=$timeout \
                     --for=jsonpath='{.status.numberAvailable}'=1"
-
-    if [ "$COMMAND_STATUS" != "0" ]; then
-        if [ "$expect_error" != "1" ]; then
+    # When expect_error=1, numberAvailable may happen to be 0 or 1,
+    # depending on crash timing, and COMMAND_STATUS zero or non-zero.
+    # Skip exit and cfgresource status checks to avoid failing the
+    # test on expected errors.
+    if [ "$expect_error" == 0 ]; then
+        if [ "$COMMAND_STATUS" != "0" ]; then
             error "Timeout while waiting daemonset/${ds_name} to be available"
-        else
-            return 1
         fi
-    fi
+        # Read cfgresource status only when errors are not expected.
+        # Otherwise test may fail due to issues that were expected.
+        if [ -n "$cfgresource" ]; then
+            timeout=$(timeout-for-deadline $deadline)
+            timeout=$timeout wait-config-node-status $cfgresource
 
-    if [ -n "$cfgresource" ]; then
-        timeout=$(timeout-for-deadline $deadline)
-        timeout=$timeout wait-config-node-status $cfgresource
-
-        result=$(get-config-node-status-result $cfgresource)
-        if [ "$result" != "Success" ]; then
-            reason=$(get-config-node-status-error $cfgresource)
-            error "Plugin $plugin configuration failed: $reason"
+            result=$(get-config-node-status-result $cfgresource)
+            if [ "$result" != "Success" ]; then
+                reason=$(get-config-node-status-error $cfgresource)
+                error "Plugin $plugin configuration failed: $reason"
+            fi
+        fi
+    else
+        if vm-command "kubectl wait -n kube-system ds/${ds_name} --timeout=5s \
+                      --for=jsonpath='{.status.numberReady}'=0"; then
+            # Failures can be seen as expected.
+            return 1
         fi
     fi
 

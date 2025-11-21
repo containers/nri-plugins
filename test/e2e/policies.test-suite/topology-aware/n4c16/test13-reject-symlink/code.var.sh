@@ -26,7 +26,7 @@ symlink_cache
 # Try to re-launch nri-resource-policy, check whether and how it fails.
 (
   trap 'restore_cache' 0
-  if (launch_timeout=5s helm-launch topology-aware); then
+  if (expect_error=1 launch_timeout=5s helm-launch topology-aware); then
       exit 1
   else
       vm-command "kubectl -n kube-system logs ds/nri-resource-policy-topology-aware"
