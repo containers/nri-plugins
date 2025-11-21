@@ -30,7 +30,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
-	"github.com/containers/nri-plugins/pkg/version"
 )
 
 // Option represents an option which can be applied to tracing.
@@ -98,8 +97,8 @@ func WithIdentity(attributes ...KeyValue) Option {
 }
 
 // Start tracing.
-func Start(options ...Option) error {
-	return trc.start(options...)
+func Start(resource *resource.Resource, options ...Option) error {
+	return trc.start(resource, options...)
 }
 
 // Stop tracing.
@@ -115,7 +114,7 @@ func Stop() {
 	trc.flush()
 }
 
-func (t *tracing) start(options ...Option) error {
+func (t *tracing) start(resource *resource.Resource, options ...Option) error {
 	log.Info("starting tracing exporter...")
 
 	for _, opt := range options {
@@ -140,21 +139,6 @@ func (t *tracing) start(options ...Option) error {
 	if t.provider != nil {
 		return nil
 	}
-
-	hostname, _ := os.Hostname()
-	resource := resource.NewWithAttributes(
-		semconv.SchemaURL,
-		append(
-			[]attribute.KeyValue{
-				semconv.ServiceName(t.service),
-				semconv.HostNameKey.String(hostname),
-				semconv.ProcessPIDKey.Int64(int64(os.Getpid())),
-				attribute.String("Version", version.Version),
-				attribute.String("Build", version.Build),
-			},
-			t.identity...,
-		)...,
-	)
 
 	t.provider = sdktrace.NewTracerProvider(
 		sdktrace.WithResource(resource),

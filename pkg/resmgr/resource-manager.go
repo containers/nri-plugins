@@ -182,11 +182,11 @@ func (m *resmgr) start(cfg cfgapi.ResmgrConfig) error {
 		return err
 	}
 
-	if err := m.policy.Start(m.cfg.PolicyConfig()); err != nil {
+	if err := instrumentation.Reconfigure(&mCfg.Instrumentation); err != nil {
 		return err
 	}
 
-	if err := instrumentation.Reconfigure(&mCfg.Instrumentation); err != nil {
+	if err := m.policy.Start(m.cfg.PolicyConfig()); err != nil {
 		return err
 	}
 
