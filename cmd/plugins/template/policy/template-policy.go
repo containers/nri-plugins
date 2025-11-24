@@ -17,8 +17,6 @@ package template
 import (
 	"fmt"
 
-	"github.com/prometheus/client_golang/prometheus"
-
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/template"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
@@ -116,11 +114,6 @@ func (p *policy) HandleEvent(e *events.Policy) (bool, error) {
 	return true, nil
 }
 
-// GetMetrics returns the policy-specific metrics collector.
-func (p *policy) GetMetrics() policyapi.Metrics {
-	return &NoMetrics{}
-}
-
 // GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
 func (p *policy) GetTopologyZones() []*policyapi.TopologyZone {
 	return nil
@@ -129,12 +122,4 @@ func (p *policy) GetTopologyZones() []*policyapi.TopologyZone {
 // ExportResourceData provides resource data to export for the container.
 func (p *policy) ExportResourceData(c cache.Container) map[string]string {
 	return nil
-}
-
-type NoMetrics struct{}
-
-func (*NoMetrics) Describe(chan<- *prometheus.Desc) {
-}
-
-func (*NoMetrics) Collect(chan<- prometheus.Metric) {
 }
