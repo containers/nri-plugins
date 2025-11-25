@@ -21,7 +21,6 @@ import (
 	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/control/rdt"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/metrics"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 var (
@@ -29,9 +28,8 @@ var (
 )
 
 type rdtControl struct {
-	hostRoot  string
-	resmgr    *resmgr
-	collector *rdtCollector
+	hostRoot string
+	resmgr   *resmgr
 }
 
 func newRdtControl(resmgr *resmgr, hostRoot string) *rdtControl {
@@ -41,15 +39,9 @@ func newRdtControl(resmgr *resmgr, hostRoot string) *rdtControl {
 		rdt.SetPrefix(opt.HostRoot)
 	}
 
-	collector, err := registerRdtCollector()
-	if err != nil {
-		log.Error("failed to register RDT metrics collector: %v", err)
-	}
-
 	return &rdtControl{
-		resmgr:    resmgr,
-		hostRoot:  hostRoot,
-		collector: collector,
+		resmgr:   resmgr,
+		hostRoot: hostRoot,
 	}
 }
 
@@ -77,46 +69,14 @@ func (c *rdtControl) configure(cfg *rdt.Config) error {
 		} else {
 			log.Info("goresctrl/rdt running in discovery mode")
 		}
+
+		meter := metrics.Provider("policy").Meter("rdt", metrics.WithOmitSubsystem())
+		if err := rdt.RegisterOpenTelemetryInstruments(meter); err != nil {
+			return fmt.Errorf("failed to register OpenTelemetry instruments: %w", err)
+		}
 	}
 
 	c.resmgr.cache.ConfigureRDTControl(cfg.Enable)
-	c.collector.enable(cfg.Enable)
 
 	return nil
-}
-
-type rdtCollector struct {
-	prometheus.Collector
-	enabled bool
-}
-
-func registerRdtCollector() (*rdtCollector, error) {
-	options := []metrics.RegisterOption{
-		metrics.WithGroup("policy"),
-		metrics.WithCollectorOptions(
-			metrics.WithoutSubsystem(),
-		),
-	}
-
-	c := &rdtCollector{Collector: rdt.NewCollector()}
-
-	if err := metrics.Register("rdt", c, options...); err != nil {
-		return nil, err
-	}
-
-	return c, nil
-}
-
-func (c *rdtCollector) enable(enabled bool) {
-	c.enabled = enabled
-}
-
-func (c *rdtCollector) Describe(ch chan<- *prometheus.Desc) {
-	rdtlog.Debug("describing RDT metrics")
-	c.Collector.Describe(ch)
-}
-
-func (c *rdtCollector) Collect(ch chan<- prometheus.Metric) {
-	rdtlog.Debug("collecting RDT metrics")
-	c.Collector.Collect(ch)
 }

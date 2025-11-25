@@ -840,8 +840,8 @@ github.com/ianlancetaylor/demangle v0.0.0-20181102032728-5e5cf60278f6/go.mod h1:
 github.com/ianlancetaylor/demangle v0.0.0-20200824232613-28f6c0f3b639/go.mod h1:aSSvb/t6k1mPoxDqO4vJh6VOCGPwU4O0C2/Eqndh1Sc=
 github.com/imdario/mergo v0.3.6 h1:xTNEAn+kxVO7dTZGu0CegyqKZmoWFI0rF8UxjlB2d28=
 github.com/imdario/mergo v0.3.6/go.mod h1:2EnlNZ0deacrJVfApfmtdGgDfMuh/nq6Ok1EcJh5FfA=
-github.com/intel/goresctrl v0.10.0 h1:Q94PBhLtQM/aVxVTKzB1j/ooMuV+9XleTN1fq2OGsSo=
-github.com/intel/goresctrl v0.10.0/go.mod h1:1S8GDqL46GuKb525bxNhIEEkhf4rhVcbSf9DuKhp7mw=
+github.com/intel/goresctrl v0.11.0 h1:FnlyrQxgjp9nm2hccwvBDc7qmf9uLxKf0DC6CKobnMA=
+github.com/intel/goresctrl v0.11.0/go.mod h1:F6jINn5WKuXXHAjmE7eTBjeHPmqT2kiWStrggYIm+UM=
 github.com/intel/memtierd v0.1.1 h1:hGSN0+dzjaUkwgkJrk6B9SU4dntggXLpXgs9Dm+jfz4=
 github.com/intel/memtierd v0.1.1/go.mod h1:NFDBvjoDS42gBK/c9q/CYCJ2pt/+g7UQwOOBvQli4z0=
 github.com/josharian/intern v1.0.0 h1:vlS4z54oSdjm0bgjRigI+G1HpF+tI+9rE5LLzOg8HmY=
