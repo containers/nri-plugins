@@ -432,7 +432,7 @@ func (cs *supply) AllocateCPU(r Request) (Grant, error) {
 				cs.node.Name(), full, cs.isolated, err)
 		}
 
-	case full > 0 && cs.AllocatableSharedCPU() > 1000*full:
+	case full > 0 && cs.AllocatableSharedCPU() >= 1000*full:
 		if cr.PickByHints() {
 			exclusive, ok = cs.takeCPUsByHints(&cs.sharable, cr)
 			if !ok {
