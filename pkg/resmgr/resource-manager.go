@@ -174,15 +174,15 @@ func (m *resmgr) start(cfg cfgapi.ResmgrConfig) error {
 
 	//	m.cache.ConfigureBlockIOControl(mCfg.Control.BlockIO.Enable)
 
+	if err := instrumentation.Reconfigure(&mCfg.Instrumentation); err != nil {
+		return err
+	}
+
 	if err := m.blkio.configure(&mCfg.Control.BlockIO); err != nil {
 		return err
 	}
 
 	if err := m.rdt.configure(&mCfg.Control.RDT); err != nil {
-		return err
-	}
-
-	if err := instrumentation.Reconfigure(&mCfg.Instrumentation); err != nil {
 		return err
 	}
 
