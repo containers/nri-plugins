@@ -244,6 +244,11 @@ vm-setup() {
          exit 1
      fi
      vagrant ssh-config > .ssh-config
+     cat >> .ssh-config <<EOF
+  ControlMaster auto
+  ControlPersist 60
+  ControlPath /tmp/ssh-%C
+EOF
 
      # Add hostname alias to the ssh config so that we can ssh
      # with shorter hostname "node"
@@ -261,10 +266,14 @@ vm-play() {
 
     (cd "$vagrantdir";
      export ANSIBLE_PIPELINING=True;
-     ansible-playbook "$playbook" \
+     # private_key may be under qemu/ or libvirt/ directory
+     private_key=$(echo .vagrant/machines/${vm}/*/private_key)
+     # ansible synchronize does not respect --ssh-common-args,
+     # therefore pass the same in the environment variable, too
+     ANSIBLE_SSH_ARGS="-F $vagrantdir/.ssh-config" ansible-playbook "$playbook" \
 	  -i "${vm}," -u vagrant \
-	  --private-key=".vagrant/machines/${vm}/libvirt/private_key" \
-	  --ssh-common-args "-F .ssh-config" \
+	  --private-key="$private_key" \
+	  --ssh-common-args "-F $vagrantdir/.ssh-config" \
 	  --extra-vars "cri_runtime=${k8scri} nri_resource_policy_src=${nri_resource_policy_src} cache_dir=$CACHE_DIR"
     )
 }

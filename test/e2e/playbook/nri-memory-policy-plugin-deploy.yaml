@@ -20,10 +20,10 @@
       when: cri_runtime == "crio"
 
     - name: copy helm charts
-      become: yes
-      copy:
+      synchronize:
         src: "{{ nri_resource_policy_src }}/deployment/helm/{{ plugin_name }}"
         dest: "./helm"
+        use_ssh_args: true
 
     - name: get latest nri-memory-policy deployment image name
       delegate_to: localhost
@@ -38,7 +38,10 @@
       delegate_to: localhost
 
     - name: copy latest nri-memory-policy deployment image
-      copy: src="{{ nri_plugin_images.stdout_lines[0] }}" dest="."
+      synchronize:
+        src: "{{ nri_plugin_images.stdout_lines[0] }}"
+        dest: "."
+        use_ssh_args: true
 
     - name: import nri plugin image when using containerd
       become: yes

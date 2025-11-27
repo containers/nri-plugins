@@ -69,6 +69,20 @@ Vagrant.configure("2") do |config|
     config.proxy.https    = "#{ENV['HTTPS_PROXY']}"
     config.proxy.no_proxy = "#{ENV['NO_PROXY']}"
   end
+  # Cache previously configured proxy to Vagrantfile.proxy.cache.
+  # If HTTP_PROXY is the same as file contents, skip proxy configuration.
+  if File.exist?("Vagrantfile.proxy.cache")
+    cached_proxy = File.read("Vagrantfile.proxy.cache").chomp
+    if cached_proxy == ENV['HTTP_PROXY'].to_s
+      config.proxy.enabled = false
+    else
+      File.write("Vagrantfile.proxy.cache", ENV['HTTP_PROXY'].to_s)
+      config.proxy.enabled = true
+    end
+  else
+    File.write("Vagrantfile.proxy.cache", ENV['HTTP_PROXY'].to_s)
+    config.proxy.enabled = !ENV['HTTP_PROXY'].to_s.empty?
+  end
 
   config.vm.provider "qemu" do |qemu|
     qemu.memory = "QEMU_MEM"
