@@ -35,6 +35,15 @@ type Config struct {
 	// +optional
 	// +kubebuilder:example="otlp-http://localhost:4318"
 	TracingCollector string `json:"tracingCollector,omitempty"`
+	// MetricsExporter defines which exporter is used to export metrics.
+	// The supported exporters are:
+	//   - prometheus: use OpenTelemetry prometheus exporter
+	//   - otlp-http: use OpenTelemetry HTTP metrics exporter
+	//   - otlp-grpc: use OpenTelemetry gRPC metrics exporter
+	// +optional
+	// +kubebuilder:validation:Enum=prometheus;otlp-http;otlp-grpc
+	// +kubebuilder:example="prometheus"
+	MetricsExporter string `json:"metricsExporter,omitempty"`
 	// ReportPeriod is the interval between collecting polled metrics.
 	// +optional
 	// +kubebuilder:validation:Format="duration"
@@ -45,7 +54,8 @@ type Config struct {
 	// +optional
 	// +kubebuilder:example=":8891"
 	HTTPEndpoint string `json:"httpEndpoint,omitempty"`
-	// PrometheusExport enables exporting /metrics for Prometheus.
+	// PrometheusExport enables exporting /metrics for Prometheus. This is
+	// equivalent to setting MetricsExporter to "prometheus".
 	// +optional
 	PrometheusExport bool `json:"prometheusExport,omitempty"`
 	// Metrics defines which metrics to collect.
