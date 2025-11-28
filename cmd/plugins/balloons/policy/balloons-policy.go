@@ -81,6 +81,7 @@ type balloons struct {
 	reservedBalloonDef *BalloonDef // reserved balloon definition, pointer to bpoptions.BalloonDefs[x]
 	defaultBalloonDef  *BalloonDef // default balloon definition, pointer to bpoptions.BalloonDefs[y]
 	balloons           []*Balloon  // balloon instances: reserved, default and user-defined
+	meters             *Meters     // balloon metrics
 
 	cpuAllocator cpuallocator.CPUAllocator    // CPU allocator used by the policy
 	memAllocator *libmem.Allocator            // memory allocator used by the policy
@@ -263,6 +264,7 @@ func (p *balloons) Sync(add []cache.Container, del []cache.Container) error {
 			log.Warnf("allocating resources for Sync produced an error: %v", err)
 		}
 	}
+
 	return nil
 }
 
@@ -312,6 +314,7 @@ func (p *balloons) AllocateResources(c cache.Container) error {
 	if log.DebugEnabled() {
 		log.Debug(p.dumpBalloon(bln))
 	}
+
 	return nil
 }
 
@@ -341,6 +344,7 @@ func (p *balloons) ReleaseResources(c cache.Container) error {
 	} else {
 		log.Debug("ReleaseResources: balloon-less container %s, nothing to release", c.PrettyName())
 	}
+
 	return nil
 }
 
@@ -1588,6 +1592,9 @@ func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
 			log.Warnf("failed to apply CPU class to balloon %s: %v", bln.PrettyName(), err)
 		}
 	}
+
+	p.NewMeters()
+
 	return nil
 }
 

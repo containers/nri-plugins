@@ -104,19 +104,32 @@ func start() error {
 		return fmt.Errorf("failed to start HTTP server: %v", err)
 	}
 
+	resource, err := GetResource()
+	if err != nil {
+		return err
+	}
+
 	if err := tracing.Start(
-		tracing.WithServiceName(ServiceName),
-		tracing.WithIdentity(identity...),
+		resource,
 		tracing.WithCollectorEndpoint(cfg.TracingCollector),
 		tracing.WithSamplingRatio(float64(cfg.SamplingRatePerMillion)/float64(1000000)),
 	); err != nil {
 		return fmt.Errorf("failed to start tracing: %v", err)
 	}
 
+	if cfg.PrometheusExport {
+		if cfg.MetricsExporter != "" && cfg.MetricsExporter != "prometheus" {
+			return fmt.Errorf("conflicting metric exporters: %s and %q",
+				"(implicit) prometheus", cfg.MetricsExporter)
+		}
+		cfg.MetricsExporter = "prometheus"
+	}
+
 	if err := metrics.Start(
 		srv.GetMux(),
+		resource,
 		metrics.WithNamespace("nri"),
-		metrics.WithExporterDisabled(!cfg.PrometheusExport),
+		metrics.WithExporter(cfg.MetricsExporter),
 		metrics.WithReportPeriod(cfg.ReportPeriod.Duration),
 		metrics.WithMetrics(cfg.Metrics),
 	); err != nil {

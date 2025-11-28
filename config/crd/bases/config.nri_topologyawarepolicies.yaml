@@ -500,8 +500,25 @@ spec:
                           type: string
                         type: array
                     type: object
+                  metricsExporter:
+                    description: |-
+                      MetricsExporter defines which exporter is used to export metrics.
+                      The supported exporters are:
+                        - prometheus: use OpenTelemetry prometheus exporter
+                        - otel-http, http: use OpenTelemetry HTTP metrics exporter
+                        - otel-grpc, grpc: use OpenTelemetry gRPC metrics exporter
+                    enum:
+                    - prometheus
+                    - otel-http
+                    - http
+                    - otel-grpc
+                    - grpc
+                    example: prometheus
+                    type: string
                   prometheusExport:
-                    description: PrometheusExport enables exporting /metrics for Prometheus.
+                    description: |-
+                      PrometheusExport enables exporting /metrics for Prometheus. This is
+                      equivalent to setting MetricsExporter to "prometheus".
                     type: boolean
                   reportPeriod:
                     default: 30s
