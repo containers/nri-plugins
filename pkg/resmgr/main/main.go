@@ -23,7 +23,6 @@ import (
 
 	"github.com/containers/nri-plugins/pkg/agent"
 	"github.com/containers/nri-plugins/pkg/instrumentation"
-	_ "github.com/containers/nri-plugins/pkg/metrics/collectors"
 	"github.com/containers/nri-plugins/pkg/resmgr"
 	"github.com/containers/nri-plugins/pkg/resmgr/policy"
 
