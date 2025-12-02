@@ -126,11 +126,12 @@ vm-setup() {
         error "error in topology"
     fi
 
-    MACHINE=$(echo $VM_QEMU_CPUMEM | sed 's/MACHINE:-machine \([^|]*\).*/\1/g')
-    CPU=$(echo $VM_QEMU_CPUMEM | sed 's/MACHINE:.*CPU:-smp \([^|]*\).*/\1/g')
-    MEM=$(echo $VM_QEMU_CPUMEM | sed 's/MACHINE:.*CPU:.*MEM:-m \([^|]*\).*/\1/g')
-    EXTRA_ARGS=$(echo $VM_QEMU_CPUMEM | sed 's/MACHINE:.*CPU:.*MEM:.*EXTRA:\([^|]*\).*/\1/g')
-    EXTRA_ARGS+="${EXTRA_ARGS:+,} \"-monitor\", \"unix:monitor.sock,server,nowait\""
+    local MACHINE=$(echo $VM_QEMU_CPUMEM | sed 's/MACHINE:-machine \([^|]*\).*/\1/g')
+    local CPU=$(echo $VM_QEMU_CPUMEM | sed 's/MACHINE:.*CPU:-cpu \([^|]*\).*/\1/g')
+    local SMP=$(echo $VM_QEMU_CPUMEM | sed 's/MACHINE:.*CPU:.*SMP:-smp \([^|]*\).*/\1/g')
+    local MEM=$(echo $VM_QEMU_CPUMEM | sed 's/MACHINE:.*CPU:.*SMP:.*MEM:-m \([^|]*\).*/\1/g')
+    local EXTRA_ARGS=$(echo $VM_QEMU_CPUMEM | sed 's/MACHINE:.*CPU:.*SMP:.*MEM:.*EXTRA:\([^|]*\).*/\1/g')
+    local EXTRA_ARGS+="${EXTRA_ARGS:+,} \"-monitor\", \"unix:monitor.sock,server,nowait\""
 
     case $efi in
         "") ;;
@@ -167,6 +168,7 @@ vm-setup() {
     if [ "$vagrant_debug" == "1" ]; then
 	echo "MACHINE: $MACHINE"
 	echo "CPU: $CPU"
+	echo "SMP: $SMP"
 	echo "MEM: $MEM"
 	echo "EXTRA: $EXTRA_ARGS"
         echo "image: ${distro_img:-vagrant default}"
@@ -182,8 +184,9 @@ vm-setup() {
 	sed -e "s/SERVER_NAME/$vmname/g" \
 	    -e "s/DISTRO/$distro_name/g" \
 	    -e "s/QEMU_MACHINE/$MACHINE/" \
+	    -e "s/QEMU_CPU/$CPU/" \
+	    -e "s/QEMU_SMP/$SMP/" \
 	    -e "s/QEMU_MEM/$MEM/" \
-	    -e "s/QEMU_SMP/$CPU/" \
 	    -e "s|QEMU_EXTRA_ARGS|$EXTRA_ARGS|" \
             -e "s:QEMU_DIR:$qemu_dir:" \
             -e "s|^.*config.vm.box_url.*$|$CUSTOM_IMAGE|g" \
@@ -349,6 +352,42 @@ vm-reboot() { # script API
         done
     )
     deadline=$_deadline host-wait-vm-ssh-server $_vagrantdir
+}
+
+vm-cpu-hotplug() { # script API
+    # Usage: vm-cpu-hotplug SOCKETID COREID THREADID
+    #
+    # Hotplug currently unplugged CPU to VM.
+    #
+    # Examples:
+    #   vm-cpu-hotplug 0 255 0
+    local socketid=$1
+    local coreid=$2
+    local threadid=$3
+    local deviceid="cpu-s$socketid-c$coreid-t$threadid"
+    if [[ -z "$threadid" ]]; then
+        error "missing one or more IDs: socket core thread"
+        return 1
+    fi
+    vm-monitor "device_add driver=host-x86_64-cpu,id=${deviceid},socket-id=${socketid},core-id=${coreid},thread-id=${threadid}"
+}
+
+vm-cpu-hotremove() { # script API
+    # Usage: vm-cpu-hotremove SOCKETID COREID THREADID
+    #
+    # Hotremove currently plugged CPU from VM.
+    #
+    # Examples:
+    #   vm-cpu-hotremove 0 255 0
+    local socketid=$1
+    local coreid=$2
+    local threadid=$3
+    local deviceid="cpu-s$socketid-c$coreid-t$threadid"
+    if [[ -z "$threadid" ]]; then
+        error "missing one or more IDs: socket core thread"
+        return 1
+    fi
+    vm-monitor "device_del ${deviceid}"
 }
 
 vm-mem-hotplug() { # script API
