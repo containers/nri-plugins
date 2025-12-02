@@ -27,6 +27,67 @@ NUMA node group definitions:
 "cpus-present"        number of logical CPUs present in the system.
                       The default value 0 means "all".
 
+CXL structures. Simple: single (volatile) memory device
+{"cxl": [[{"mem": "128M"}]]}
+# list of cxl host bridges
+"cxl": [
+    # list of root ports of host bridge 0
+    [
+        # device in root port 0
+        {"mem": "128M"}  # volatile memory device
+    ]
+]
+
+# generates a backend devices
+-object memory-backend-ram,id=mbr-cxl-mem0,share=on,size=128M
+# generates cxl-host-bridge
+-device pxb-cxl,bus_nr=12,bus=pcie.0,id=cxl.1
+# generates a root port
+-device cxl-rp,port=0,bus=cxl.1,id=root_port13,chassis=0,slot=2
+# generates a volatile memory device that use the backend device
+-device cxl-type3,bus=root_port13,volatile-memdev=vmem0,id=cxl-vmem0
+# generates firmware with size > sum of sizes of memory devices
+-M cxl-fmw.0.targets.0=cxl.1,cxl-fmw.0.size=4G
+
+
+# {"cxl": [ [{"switch": [{"mem": "256M"}, {"mem": "256M"}]},
+#            {"switch": [{"mem": "256M"}, {"mem": "256M"}]}] ]
+
+# cxl host bridges
+"cxl": [
+    # root ports of host bridge 0
+    [
+        # device in root port 0 is a switch that has memory devices in its downstream ports
+        {"switch": [ {"mem": "256M"}, {"mem": "256M"} ]},
+
+        # device in root port 1 is a switch that has memory devices in its downstream ports
+        {"switch": [ {"mem": "256M"}, {"mem": "256M"} ]}
+    ]
+]
+
+-object memory-backend-ram,id=cxl-mem0,share=on,size=256M
+-object memory-backend-ram,id=cxl-mem1,share=on,size=256M
+-object memory-backend-ram,id=cxl-mem2,share=on,size=256M
+-object memory-backend-ram,id=cxl-mem3,share=on,size=256M
+-device pxb-cxl,bus_nr=12,bus=pcie.0,id=cxl.1
+
+-device cxl-rp,port=0,bus=cxl.1,id=root_port0,chassis=0,slot=0     # root port 0
+-device cxl-upstream,bus=root_port0,id=us0                         # switch0 upstream to root port 0
+-device cxl-downstream,port=2,bus=us0,id=swport2,chassis=0,slot=7  # switch0 downstream0
+-device cxl-downstream,port=3,bus=us0,id=swport3,chassis=0,slot=6  # switch0 downstream1
+-device cxl-type3,bus=swport2,volatile-memdev=cxl-mem2,id=cxl-mem2 # mem256 on switch0 downstream0
+-device cxl-type3,bus=swport3,volatile-memdev=cxl-mem3,id=cxl-mem3 # mem256 on switch0 downstream1
+
+-device cxl-rp,port=1,bus=cxl.1,id=root_port1,chassis=0,slot=1     # root port 1
+-device cxl-upstream,bus=root_port1,id=us1                         # switch1 upstream to root port 1
+-device cxl-downstream,port=0,bus=us1,id=swport0,chassis=0,slot=4  # switch1 downstream0 ...
+-device cxl-downstream,port=1,bus=us1,id=swport1,chassis=0,slot=5
+-device cxl-type3,bus=swport0,volatile-memdev=cxl-mem0,id=cxl-mem0
+-device cxl-type3,bus=swport1,volatile-memdev=cxl-mem1,id=cxl-mem1
+-M cxl-fmw.0.targets.0=cxl.1,cxl-fmw.0.size=32G
+
+
+
 NUMA node distances are defined with following keys:
 "dist-all": [[from0to0, from0to1, ...], [from1to0, from1to1, ...], ...]
                       distances from every node to all nodes.
@@ -112,7 +173,8 @@ def validate(numalist):
                       "cores", "threads", "nodes", "dies", "packages",
                       "cpus-present",
                       "node-dist", "dist-all",
-                      "dist-other-package", "dist-same-package", "dist-same-die"))
+                      "dist-other-package", "dist-same-package", "dist-same-die",
+                      "cxl"))
     int_range_keys = {'cores': ('>= 0', lambda v: v >= 0),
                       'threads': ('> 0', lambda v: v > 0),
                       'nodes': ('> 0', lambda v: v > 0),
@@ -213,6 +275,76 @@ def dists(numalist):
                         dist_dict[sourcenode][destnode] = dist_other_package
     return dist_dict
 
+def qemucxlopts(cxl_host_bridges):
+    def mem_devices(mem_count, mem_type, mem_size, bus_id):
+        """Create CXL memory device objects and device params that connect it to bus_id."""
+        cxl_mem_objectparams, cxl_mem_deviceparams = [], []
+        if mem_size.endswith("G"):
+            sizeM = int(mem_size[:-1]) * 1024
+        elif mem_size.endswith("M"):
+            sizeM = int(mem_size[:-1])
+        else:
+            raise ValueError('CXL memory size must be in M or G, got %r' % (mem_size,))
+        if mem_type == "volatile":
+            cxl_mem_objectparams.extend(["-object", f"memory-backend-ram,id=cxl-vmembe{mem_count},share=on,size={mem_size}"])
+            cxl_mem_deviceparams.extend(["-device", f"cxl-type3,bus={bus_id},volatile-memdev=cxl-vmembe{mem_count},id=cxl-mem-dev{mem_count},sn=0xC813DB26"])
+        else:
+            raise ValueError('unsupported CXL memory type %r' % (mem_type,))
+        return cxl_mem_objectparams, cxl_mem_deviceparams, sizeM
+    cxl_objectparams = []
+    cxl_deviceparams = []
+    bus_nr = 12 # folk lore
+    chassis = 0
+    slot = 0
+    mem_count = 0
+    root_port_count = 0
+    downstream_port_count = 0
+    total_mem_sizeM = 0
+    firmware_targets = []
+    for host_bridge, root_ports in enumerate(cxl_host_bridges):
+        host_bridge_id = f"cxl.{host_bridge}"
+        cxl_deviceparams.extend(["-device", f"pxb-cxl,bus_nr={bus_nr},bus=pcie.0,id={host_bridge_id}"])
+        firmware_targets.append(host_bridge_id)
+        bus_nr += 1
+        for root_port, device in enumerate(root_ports):
+            root_port_id = f"root_port{host_bridge}_{root_port}"
+            cxl_deviceparams.extend(["-device", f"cxl-rp,port={root_port_count},bus={host_bridge_id},id={root_port_id},chassis={chassis},slot={slot}"])
+            root_port_count += 1
+            slot += 1
+            if "mem" in device: # volatile memory directly connected to root port
+                cxl_mem_objectparams, cxl_mem_deviceparams, mem_sizeM = mem_devices(mem_count, "volatile", device["mem"], root_port_id)
+                cxl_objectparams.extend(cxl_mem_objectparams)
+                cxl_deviceparams.extend(cxl_mem_deviceparams)
+                total_mem_sizeM += mem_sizeM
+                mem_count += 1
+            elif "switch" in device:
+                upstream_id = f"us{host_bridge}_{root_port}"
+                cxl_deviceparams.extend(["-device", f"cxl-upstream,bus={root_port_id},id={upstream_id}"])
+                for downstream_idx, downstream_device in enumerate(device["switch"]):
+                    downstream_id = f"sw{host_bridge}_{root_port}_{downstream_idx}"
+                    cxl_deviceparams.extend(["-device", f"cxl-downstream,port={downstream_port_count},bus={upstream_id},id={downstream_id},chassis={chassis},slot={slot}"])
+                    slot += 1
+                    if "mem" in downstream_device:
+                            cxl_mem_objectparams, cxl_mem_deviceparams, mem_sizeM = mem_devices(mem_count, "volatile", downstream_device["mem"], downstream_id)
+                            cxl_objectparams.extend(cxl_mem_objectparams)
+                            cxl_deviceparams.extend(cxl_mem_deviceparams)
+                            total_mem_sizeM += mem_sizeM
+                            mem_count += 1
+                    else:
+                        raise ValueError('unsupported CXL device in switch %r' % (downstream_device,))
+
+    # Firmware size must be larger than total memory size.
+    # Round up to nearest 4GB.
+    addr_sizeG = ((total_mem_sizeM + 4095) // 4096) * 4
+    # Round actual total memory size up to nearest GB for Qemu param.
+    total_mem_sizeG = (total_mem_sizeM + 1023) // 1024
+    cxl_Mparams = ["-M",
+                   ",".join("cxl-fmw.0.targets.%d=%s" % (idx, tgt) for idx, tgt in enumerate(firmware_targets)) +
+                   f",cxl-fmw.0.size={addr_sizeG}G"]
+    #for p in cxl_objectparams + cxl_deviceparams + cxl_Mparams:
+    #    print(f"DEBUG: CXL param: {p}", file=sys.stderr)
+    return cxl_objectparams, cxl_deviceparams, cxl_Mparams, f"{total_mem_sizeG}G"
+
 def qemuopts(numalist):
     machineparam = "-machine q35,kernel-irqchip=split"
     cpuparam = "-cpu host,x2apic=on"
@@ -228,6 +360,7 @@ def qemuopts(numalist):
     lastnvmem = -1
     totalmem = "0G"
     totalnvmem = "0G"
+    totalcxlmem = "0G"
     unpluggedmem = "0G"
     pluggedmem = "0G"
     memslots = 0
@@ -236,7 +369,22 @@ def qemuopts(numalist):
 
     # Read cpu counts, and "mem" and "nvmem" sizes for all nodes.
     threadcount = -1
+    numalist_with_dist = []
     for numalistindex, numaspec in enumerate(numalist):
+        cxl_spec = numaspec.get("cxl", None)
+        if cxl_spec:
+            # cxl is a special group that defines only CXL devices, no numa nodes, dists or anything.
+            if set(numaspec.keys()) - {"cxl"}:
+                raise ValueError("when 'cxl' is defined, no other keys are supported in the same group, got %r" % (numaspec.keys(),))
+            cxl_objectparams, cxl_deviceparams, cxl_Mparams, totalcxlmem = qemucxlopts(cxl_spec)
+            if cxl_deviceparams:
+                objectparams.extend(cxl_objectparams)
+                deviceparams.extend(cxl_deviceparams)
+                deviceparams.extend(cxl_Mparams)
+                if ",cxl=on" not in machineparam:
+                    machineparam += ",cxl=on"
+            continue
+        numalist_with_dist.append(numaspec)
         nodecount = int(numaspec.get("nodes", 1))
         groupnodes[numalistindex] = tuple(range(lastnode + 1, lastnode + 1 + nodecount))
         corecount = int(numaspec.get("cores", 0))
@@ -345,7 +493,7 @@ def qemuopts(numalist):
                         else:
                             lastcpupresent += cpucount
                     numaparams.extend(currentnumaparams)
-    node_node_dist = dists(numalist)
+    node_node_dist = dists(numalist_with_dist)
     for sourcenode in sorted(node_node_dist.keys()):
         for destnode in sorted(node_node_dist[sourcenode].keys()):
             if sourcenode == destnode:
@@ -362,8 +510,8 @@ def qemuopts(numalist):
         # because it requires Qemu >= 5.0.
         diesparam = ""
     smpparam = "-smp cpus=%s,threads=%s%s,sockets=%s,maxcpus=%s" % (lastcpupresent + 1, threadcount, diesparam, lastsocket + 1, lastcpu + 1)
-    maxmem = siadd(totalmem, totalnvmem)
-    startmem = sisub(sisub(maxmem, unpluggedmem), pluggedmem)
+    maxmem = siadd(siadd(totalmem, totalnvmem), totalcxlmem)
+    startmem = sisub(sisub(sisub(maxmem, unpluggedmem), pluggedmem), totalcxlmem)
     memparam = "-m size=%s,slots=%s,maxmem=%s" % (startmem, memslots, maxmem)
     if startmem.startswith("0"):
         if pluggedmem.startswith("0"):
@@ -377,7 +525,7 @@ def qemuopts(numalist):
                 "MEM:" + memparam + "|" +
                 "EXTRA:" +
                 ", ".join(map(lambda x: "\"" + x + "\"", numaparams)) +
-                " " +
+                ", " +
                 ", ".join(map(lambda x: "\"" + x + "\"", deviceparams)) +
                 "," +
                 ", ".join(map(lambda x: "\"" + x + "\"", objectparams)) + "|"
