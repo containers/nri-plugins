@@ -1,4 +1,5 @@
 source "$(dirname "${BASH_SOURCE[0]}")/command.bash"
+source "$(dirname "${BASH_SOURCE[0]}")/distro.bash"
 
 VM_PROMPT=${VM_PROMPT-"\e[38;5;11mroot@vm>\e[0m "}
 CACHE_DIR="${CACHE_DIR:-$HOME/.cache/nri-plugins/e2e}"
@@ -717,60 +718,40 @@ vm-pull-journal() {
         command-error "failed to pull journal logs (service: ${service:-all}, since: ${since:--}"
 }
 
-fedora-set-kernel-cmdline() {
-    local e2e_defaults="$*"
-    vm-command "mkdir -p /etc/default; touch /etc/default/grub; sed -i '/e2e:fedora-set-kernel-cmdline/d' /etc/default/grub"
-    vm-command "echo 'GRUB_CMDLINE_LINUX_DEFAULT=\"\${GRUB_CMDLINE_LINUX_DEFAULT} ${e2e_defaults}\" # by e2e:fedora-set-kernel-cmdline' >> /etc/default/grub" || {
-        command-error "writing new command line parameters failed"
-    }
-    vm-command "grub2-mkconfig -o /boot/grub2/grub.cfg" || {
-        command-error "updating grub failed"
-    }
-}
-
-ubuntu-set-kernel-cmdline() {
-    local e2e_defaults="$*"
-    vm-command "echo 'GRUB_CMDLINE_LINUX_DEFAULT=\"\${GRUB_CMDLINE_LINUX_DEFAULT} ${e2e_defaults}\"' > /etc/default/grub.d/60-e2e-defaults.cfg" || {
-        command-error "writing new command line parameters failed"
-    }
-    vm-command "update-grub" || {
-        command-error "updating grub failed"
-    }
-}
-
 vm-set-kernel-cmdline() {
-    if [[ "$distro" == *fedora* ]]; then
-        fedora-set-kernel-cmdline "$*"
-    else
-        ubuntu-set-kernel-cmdline "$*"
-    fi
+    distro-set-kernel-cmdline "$*"
 }
 
-fedora-set-kernel-cmdline() {
-    local e2e_defaults="$*"
-    vm-command "mkdir -p /etc/default; touch /etc/default/grub; sed -i '/e2e:fedora-set-kernel-cmdline/d' /etc/default/grub"
-    vm-command "echo 'GRUB_CMDLINE_LINUX_DEFAULT=\"\${GRUB_CMDLINE_LINUX_DEFAULT} ${e2e_defaults}\" # by e2e:fedora-set-kernel-cmdline' >> /etc/default/grub" || {
-        command-error "writing new command line parameters failed"
-    }
-    vm-command "grub2-mkconfig -o /boot/grub2/grub.cfg" || {
-        command-error "updating grub failed"
-    }
-}
+vm-kernel-install-devel-env() { # script API
+    # Usage: vm-kernel-install-devel-env
+    #
+    # Install kernel build dependencies and fetch sources if "linux" directory
+    # does not already exist.
+    #
+    # Environment variables:
+    #   getkernel  command that results in kernel sources in "linux" directory.
+    #              If "": skip fetching kernel sources.
+    #              If "distro", fetch distro kernel sources.
+    #              If "vanilla", fetch vanilla kernel sources, same as
+    #              getkernel="[ -d linux ] || git clone --depth=1 git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git
+    #
+    #              Otherwise, execute the command as is. The command is
+    #              executed in the VM and should result in kernel sources
+    #              being available in "linux" directory.
+    #
+    distro-kernel-install-builddep
 
-ubuntu-set-kernel-cmdline() {
-    local e2e_defaults="$*"
-    vm-command "echo 'GRUB_CMDLINE_LINUX_DEFAULT=\"\${GRUB_CMDLINE_LINUX_DEFAULT} ${e2e_defaults}\"' > /etc/default/grub.d/60-e2e-defaults.cfg" || {
-        command-error "writing new command line parameters failed"
-    }
-    vm-command "update-grub" || {
-        command-error "updating grub failed"
-    }
-}
-
-vm-set-kernel-cmdline() {
-    if [[ "$distro" == *fedora* ]]; then
-        fedora-set-kernel-cmdline "$*"
-    else
-        ubuntu-set-kernel-cmdline "$*"
-    fi
+     case "$getkernel" in
+        "")
+            ;;
+        "distro")
+            distro-kernel-fetch-sources
+            ;;
+        "vanilla")
+            vm-command "[ -d linux ] || git clone --depth=1 git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git"
+            ;;
+        *)
+            vm-command "$getkernel"
+            ;;
+    esac
 }
