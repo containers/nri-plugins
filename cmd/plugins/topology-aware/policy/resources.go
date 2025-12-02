@@ -15,6 +15,7 @@
 package topologyaware
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -78,6 +79,8 @@ type Supply interface {
 	GetScore(Request) Score
 	// AllocatableSharedCPU calculates the allocatable amount of shared CPU of this supply.
 	AllocatableSharedCPU(...bool) int
+	// SliceableCPUs calculates the shared cpuset we can slice exclusive CPUs off of.
+	SliceableCPUs() (cpuset.CPUSet, error)
 	// Allocate allocates a grant from the supply.
 	Allocate(Request, *libmem.Offer) (Grant, map[string]libmem.NodeMask, error)
 	// ReleaseCPU releases a previously allocated CPU grant from this supply.
@@ -433,19 +436,28 @@ func (cs *supply) AllocateCPU(r Request) (Grant, error) {
 		}
 
 	case full > 0 && cs.AllocatableSharedCPU() > 1000*full:
+		sliceable, err := cs.SliceableCPUs()
+		if err != nil {
+			return nil, policyError("internal error: "+
+				"%s: can't take %d exclusive CPUs from shared %s: %v",
+				cs.node.Name(), full, cs.SharableCPUs(), err)
+		}
+
+		log.Debug("%s: sliceable cpuset is %s", cs.node.Name(), sliceable)
 		if cr.PickByHints() {
-			exclusive, ok = cs.takeCPUsByHints(&cs.sharable, cr)
+			exclusive, ok = cs.takeCPUsByHints(&sliceable, cr)
 			if !ok {
-				exclusive, err = cs.takeCPUs(&cs.sharable, nil, full, cr.CPUPrio())
+				exclusive, err = cs.takeCPUs(&sliceable, nil, full, cr.CPUPrio())
 			}
 		} else {
-			exclusive, err = cs.takeCPUs(&cs.sharable, nil, full, cr.CPUPrio())
+			exclusive, err = cs.takeCPUs(&sliceable, nil, full, cr.CPUPrio())
 		}
 		if err != nil {
 			return nil, policyError("internal error: "+
 				"%s: can't take %d exclusive CPUs from %s: %v",
-				cs.node.Name(), full, cs.sharable, err)
+				cs.node.Name(), full, sliceable, err)
 		}
+		cs.sharable = cs.sharable.Difference(exclusive)
 
 	case full > 0:
 		return nil, policyError("internal error: "+
@@ -673,6 +685,10 @@ func (cs *supply) DumpAllocatable() string {
 			sep = ", "
 		}
 		cpu += sep + fmt.Sprintf("allocatable:%dm)", cs.AllocatableSharedCPU(true))
+
+		sliceable, _ := cs.SliceableCPUs()
+		cpu += fmt.Sprintf("/sliceable:%s (%dm)", kubernetes.ShortCPUSet(sliceable),
+			1000*sliceable.Size())
 	}
 
 	allocatable := "<" + cs.node.Name() + " allocatable: "
@@ -997,10 +1013,79 @@ func (cs *supply) AllocatableSharedCPU(quiet ...bool) int {
 			shared = pShared
 		}
 	}
+
 	if verbose {
 		log.Debug("%s: ancestor-adjusted free shared CPU: %dm", cs.node.Name(), shared)
 	}
+
+	// If there are BestEffort or 0 CPU request Burstable containers in the node
+	// or any of its children we need to account for them an extra milliCPU worth
+	// of shared capacity.
+	//
+	// TODO(klihub): We might need to try speeding this up if it gets too slow.
+	// Obvious optimizations would be to 1) allow {Breadth,Depth}First to stop
+	// early if possible, and 2) store grants per assigned node.
+	hasZeroCpuReqs := false
+	cs.node.BreadthFirst(func(n Node) {
+		if cs.node.Policy().hasZeroCpuReqContainer(n) {
+			hasZeroCpuReqs = true
+		}
+	})
+	if hasZeroCpuReqs {
+		shared--
+		if verbose {
+			log.Debug("%s: 0 CPU req-adjusted free shared CPU: %dm",
+				cs.node.Name(), shared)
+		}
+	}
+
 	return shared
+}
+
+// SliceableCPUs calculates the shared cpuset we can slice exclusive CPUs off of.
+func (cs *supply) SliceableCPUs() (cpuset.CPUSet, error) {
+	var (
+		sliceable = cpuset.New()
+		errs      []error
+	)
+
+	// We need to avoid slicing any shared pool in child nodes below its
+	// current allocation. To do so we go through the subtree collecting
+	// CPUs from shared pools for allocation but leaving off enough full
+	// CPUs in each for their current BestEffort and Burstable QoS class
+	// shared allocations.
+
+	cs.node.DepthFirst(func(n Node) {
+		if n.IsSameNode(cs.node) && !n.IsLeafNode() {
+			return
+		}
+
+		ns := n.FreeSupply()
+		if ns == nil {
+			return
+		}
+
+		cpus := ns.SharableCPUs()
+		free := ns.AllocatableSharedCPU(true) / 1000
+
+		// TODO(klihub): We should ideally take also into account the CPU
+		// priority preference of any ongoing allocation, trying to slice
+		// CPUs with a matching preference. We don't do that ATM.
+
+		cset, err := cs.takeCPUs(&cpus, nil, free, nonePrio)
+		if err != nil {
+			errs = append(errs, err)
+			return
+		}
+
+		sliceable = sliceable.Union(cset)
+	})
+
+	if len(errs) > 0 {
+		return cpuset.New(), errors.Join(errs...)
+	}
+
+	return sliceable, nil
 }
 
 // Eval...
@@ -1199,7 +1284,7 @@ func (cg *grant) String() string {
 		reserved = fmt.Sprintf(", reserved: %s (%dm)",
 			cg.node.FreeSupply().ReservedCPUs(), cg.ReservedPortion())
 	}
-	if cg.SharedPortion() > 0 {
+	if cg.SharedPortion() > 0 || (isol.IsEmpty() && cg.exclusive.IsEmpty()) {
 		shared = fmt.Sprintf(", shared: %s (%dm)",
 			cg.node.FreeSupply().SharableCPUs(), cg.SharedPortion())
 	}

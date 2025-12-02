@@ -625,6 +625,42 @@ func (p *policy) updateSharedAllocations(grant *Grant) {
 	}
 }
 
+func (p *policy) foreachContainer(pool Node, fn func(ctr cache.Container) bool) {
+	for _, g := range p.allocations.grants {
+		if !pool.IsSameNode(g.GetCPUNode()) {
+			continue
+		}
+		if done := fn(g.GetContainer()); done {
+			return
+		}
+	}
+}
+
+func (p *policy) hasZeroCpuReqContainer(pool Node) bool {
+	found := false
+
+	p.foreachContainer(pool, func(ctr cache.Container) bool {
+		switch ctr.GetQOSClass() {
+		case corev1.PodQOSBestEffort:
+			found = true
+			return true
+		case corev1.PodQOSBurstable:
+			resources, ok := ctr.GetResourceUpdates()
+			if !ok {
+				resources = ctr.GetResourceRequirements()
+			}
+			request := resources.Requests[corev1.ResourceCPU]
+			if request.MilliValue() == 0 {
+				found = true
+				return true
+			}
+		}
+		return false
+	})
+
+	return found
+}
+
 // Score pools against the request and sort them by score.
 func (p *policy) sortPoolsByScore(req Request, aff map[int]int32) (map[int]Score, []Node) {
 	scores := make(map[int]Score, p.nodeCnt)
