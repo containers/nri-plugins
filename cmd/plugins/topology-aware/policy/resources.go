@@ -435,7 +435,7 @@ func (cs *supply) AllocateCPU(r Request) (Grant, error) {
 				cs.node.Name(), full, cs.isolated, err)
 		}
 
-	case full > 0 && cs.AllocatableSharedCPU() > 1000*full:
+	case full > 0 && cs.AllocatableSharedCPU() >= 1000*full:
 		sliceable, err := cs.SliceableCPUs()
 		if err != nil {
 			return nil, policyError("internal error: "+
