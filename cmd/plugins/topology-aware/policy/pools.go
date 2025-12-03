@@ -625,6 +625,42 @@ func (p *policy) updateSharedAllocations(grant *Grant) {
 	}
 }
 
+func (p *policy) foreachContainer(pool Node, fn func(ctr cache.Container) bool) {
+	for _, g := range p.allocations.grants {
+		if !pool.IsSameNode(g.GetCPUNode()) {
+			continue
+		}
+		if done := fn(g.GetContainer()); done {
+			return
+		}
+	}
+}
+
+func (p *policy) hasZeroCpuReqContainer(pool Node) bool {
+	found := false
+
+	p.foreachContainer(pool, func(ctr cache.Container) bool {
+		switch ctr.GetQOSClass() {
+		case corev1.PodQOSBestEffort:
+			found = true
+			return true
+		case corev1.PodQOSBurstable:
+			resources, ok := ctr.GetResourceUpdates()
+			if !ok {
+				resources = ctr.GetResourceRequirements()
+			}
+			request := resources.Requests[corev1.ResourceCPU]
+			if request.MilliValue() == 0 {
+				found = true
+				return true
+			}
+		}
+		return false
+	})
+
+	return found
+}
+
 // Score pools against the request and sort them by score.
 func (p *policy) sortPoolsByScore(req Request, aff map[int]int32) (map[int]Score, []Node) {
 	scores := make(map[int]Score, p.nodeCnt)
@@ -686,7 +722,7 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 	//       * more isolated capacity wins
 	//       * for a tie, prefer the smaller id
 	//   - for (non-reserved) exclusive allocations
-	//       * more slicable (shared) capacity wins
+	//       * more sliceable (shared) capacity wins
 	//       * for a tie, prefer the smaller id
 	//   - for (non-reserved) shared-only allocations
 	//       * fewer colocated containers win
@@ -1007,18 +1043,18 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 			}
 		}
 
-		// more slicable shared capacity wins
+		// more sliceable shared capacity wins
 		if request.FullCPUs() > 0 && (shared1 > 0 || shared2 > 0) {
 			if shared1 > shared2 {
-				log.Debug("  => %s WINS on more slicable capacity", node1.Name())
+				log.Debug("  => %s WINS on more sliceable capacity", node1.Name())
 				return true
 			}
 			if shared2 > shared1 {
-				log.Debug("  => %s WINS on more slicable capacity", node2.Name())
+				log.Debug("  => %s WINS on more sliceable capacity", node2.Name())
 				return false
 			}
 
-			log.Debug("  => %s WINS based on equal slicable capacity, lower id",
+			log.Debug("  => %s WINS based on equal sliceable capacity, lower id",
 				map[bool]string{true: node1.Name(), false: node2.Name()}[id1 < id2])
 
 			return id1 < id2
