@@ -897,7 +897,7 @@ func (cs *supply) GetScore(req Request) Score {
 			score.isolated = cs.isolated.Size() - full
 		}
 
-		// if we don't want isolated or there is not enough, calculate slicable capacity
+		// if we don't want isolated or there is not enough, calculate sliceable capacity
 		if !cr.isolate || score.isolated < 0 {
 			score.shared -= 1000 * full
 		}
