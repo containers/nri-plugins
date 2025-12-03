@@ -722,7 +722,7 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 	//       * more isolated capacity wins
 	//       * for a tie, prefer the smaller id
 	//   - for (non-reserved) exclusive allocations
-	//       * more slicable (shared) capacity wins
+	//       * more sliceable (shared) capacity wins
 	//       * for a tie, prefer the smaller id
 	//   - for (non-reserved) shared-only allocations
 	//       * fewer colocated containers win
@@ -1043,18 +1043,18 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 			}
 		}
 
-		// more slicable shared capacity wins
+		// more sliceable shared capacity wins
 		if request.FullCPUs() > 0 && (shared1 > 0 || shared2 > 0) {
 			if shared1 > shared2 {
-				log.Debug("  => %s WINS on more slicable capacity", node1.Name())
+				log.Debug("  => %s WINS on more sliceable capacity", node1.Name())
 				return true
 			}
 			if shared2 > shared1 {
-				log.Debug("  => %s WINS on more slicable capacity", node2.Name())
+				log.Debug("  => %s WINS on more sliceable capacity", node2.Name())
 				return false
 			}
 
-			log.Debug("  => %s WINS based on equal slicable capacity, lower id",
+			log.Debug("  => %s WINS based on equal sliceable capacity, lower id",
 				map[bool]string{true: node1.Name(), false: node2.Name()}[id1 < id2])
 
 			return id1 < id2
