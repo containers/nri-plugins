@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/balloons"
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
@@ -81,6 +82,9 @@ type balloons struct {
 	reservedBalloonDef *BalloonDef // reserved balloon definition, pointer to bpoptions.BalloonDefs[x]
 	defaultBalloonDef  *BalloonDef // default balloon definition, pointer to bpoptions.BalloonDefs[y]
 	balloons           []*Balloon  // balloon instances: reserved, default and user-defined
+
+	meters    *Meters      // balloon metrics
+	meterLock sync.RWMutex // protects metrics collection against allocation
 
 	cpuAllocator cpuallocator.CPUAllocator    // CPU allocator used by the policy
 	memAllocator *libmem.Allocator            // memory allocator used by the policy
@@ -249,6 +253,9 @@ func (p *balloons) Start() error {
 
 // Sync synchronizes the active policy state.
 func (p *balloons) Sync(add []cache.Container, del []cache.Container) error {
+	p.BlockMeters()
+	defer p.UnblockMeters()
+
 	log.Debug("synchronizing state...")
 	for _, c := range del {
 		if err := p.ReleaseResources(c); err != nil {
@@ -263,11 +270,15 @@ func (p *balloons) Sync(add []cache.Container, del []cache.Container) error {
 			log.Warnf("allocating resources for Sync produced an error: %v", err)
 		}
 	}
+
 	return nil
 }
 
 // AllocateResources is a resource allocation request for this policy.
 func (p *balloons) AllocateResources(c cache.Container) error {
+	p.BlockMeters()
+	defer p.UnblockMeters()
+
 	if c.PreserveCpuResources() {
 		log.Infof("not handling resources of container %s, preserving CPUs %q and memory %q", c.PrettyName(), c.GetCpusetCpus(), c.GetCpusetMems())
 		return nil
@@ -312,11 +323,15 @@ func (p *balloons) AllocateResources(c cache.Container) error {
 	if log.DebugEnabled() {
 		log.Debug(p.dumpBalloon(bln))
 	}
+
 	return nil
 }
 
 // ReleaseResources is a resource release request for this policy.
 func (p *balloons) ReleaseResources(c cache.Container) error {
+	p.BlockMeters()
+	defer p.UnblockMeters()
+
 	log.Debug("releasing container %s...", c.PrettyName())
 	if bln := p.balloonByContainer(c); bln != nil {
 		p.dismissContainer(c, bln)
@@ -341,11 +356,15 @@ func (p *balloons) ReleaseResources(c cache.Container) error {
 	} else {
 		log.Debug("ReleaseResources: balloon-less container %s, nothing to release", c.PrettyName())
 	}
+
 	return nil
 }
 
 // UpdateResources is a resource allocation update request for this policy.
 func (p *balloons) UpdateResources(c cache.Container) error {
+	p.BlockMeters()
+	defer p.UnblockMeters()
+
 	log.Debug("(not) updating container %s...", c.PrettyName())
 	return nil
 }
@@ -1335,6 +1354,9 @@ func changesCpuClasses(opts0, opts1 *BalloonsOptions) bool {
 }
 
 func (p *balloons) Reconfigure(newCfg interface{}) error {
+	p.BlockMeters()
+	defer p.UnblockMeters()
+
 	balloonsOptions, ok := newCfg.(*BalloonsOptions)
 	if !ok {
 		return balloonsError("config data of unexpected type %T", newCfg)
@@ -1588,6 +1610,9 @@ func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
 			log.Warnf("failed to apply CPU class to balloon %s: %v", bln.PrettyName(), err)
 		}
 	}
+
+	p.NewMeters()
+
 	return nil
 }
 

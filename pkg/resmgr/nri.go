@@ -21,7 +21,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/containers/nri-plugins/pkg/instrumentation/metrics"
 	"github.com/containers/nri-plugins/pkg/instrumentation/tracing"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
@@ -264,9 +263,6 @@ func (p *nriPlugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, con
 		p.dump(out, event, updates, retErr)
 	}()
 
-	b := metrics.Block()
-	defer b.Done()
-
 	m := p.resmgr
 
 	allocated, released, err := p.syncWithNRI(pods, containers)
@@ -307,8 +303,6 @@ func (p *nriPlugin) RunPodSandbox(ctx context.Context, pod *api.PodSandbox) (ret
 
 	m.Lock()
 	defer m.Unlock()
-	b := metrics.Block()
-	defer b.Done()
 
 	m.cache.InsertPod(pod, podResCh)
 
@@ -330,8 +324,6 @@ func (p *nriPlugin) StopPodSandbox(ctx context.Context, podSandbox *api.PodSandb
 	m := p.resmgr
 
 	// TODO(klihub): shouldn't we m.Lock()/defer m.Unlock() here?
-	b := metrics.Block()
-	defer b.Done()
 
 	pod, _ := m.cache.LookupPod(podSandbox.GetId())
 	released := slices.Clone(pod.GetContainers())
@@ -380,8 +372,6 @@ func (p *nriPlugin) RemovePodSandbox(ctx context.Context, podSandbox *api.PodSan
 
 	m.Lock()
 	defer m.Unlock()
-	b := metrics.Block()
-	defer b.Done()
 
 	m.cache.DeletePod(podSandbox.GetId())
 	return nil
@@ -407,8 +397,6 @@ func (p *nriPlugin) CreateContainer(ctx context.Context, pod *api.PodSandbox, co
 	m := p.resmgr
 	m.Lock()
 	defer m.Unlock()
-	b := metrics.Block()
-	defer b.Done()
 
 	c, err := m.cache.InsertContainer(container, cache.WithContainerState(cache.ContainerStateCreating))
 	if err != nil {
@@ -479,8 +467,6 @@ func (p *nriPlugin) StartContainer(ctx context.Context, pod *api.PodSandbox, con
 	m := p.resmgr
 	m.Lock()
 	defer m.Unlock()
-	b := metrics.Block()
-	defer b.Done()
 
 	c, ok := m.cache.LookupContainer(container.Id)
 	if !ok {
@@ -527,8 +513,6 @@ func (p *nriPlugin) UpdateContainer(ctx context.Context, pod *api.PodSandbox, co
 	m := p.resmgr
 	m.Lock()
 	defer m.Unlock()
-	b := metrics.Block()
-	defer b.Done()
 
 	c, ok := m.cache.LookupContainer(container.Id)
 	if !ok {
@@ -591,8 +575,6 @@ func (p *nriPlugin) StopContainer(ctx context.Context, pod *api.PodSandbox, cont
 	m := p.resmgr
 	m.Lock()
 	defer m.Unlock()
-	b := metrics.Block()
-	defer b.Done()
 
 	c, ok := m.cache.LookupContainer(container.Id)
 	if !ok {
@@ -631,8 +613,6 @@ func (p *nriPlugin) RemoveContainer(ctx context.Context, pod *api.PodSandbox, co
 	m := p.resmgr
 	m.Lock()
 	defer m.Unlock()
-	b := metrics.Block()
-	defer b.Done()
 
 	m.cache.DeleteContainer(container.Id)
 	return nil
@@ -640,9 +620,6 @@ func (p *nriPlugin) RemoveContainer(ctx context.Context, pod *api.PodSandbox, co
 
 func (p *nriPlugin) updateContainers() (retErr error) {
 	// Notes: must be called with p.resmgr lock held.
-
-	b := metrics.Block()
-	defer b.Done()
 
 	updates := p.getPendingUpdates(nil)
 
