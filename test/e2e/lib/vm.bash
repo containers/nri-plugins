@@ -278,7 +278,7 @@ vm-play() {
 	  -i "${vm}," -u vagrant \
 	  --private-key="$private_key" \
 	  --ssh-common-args "-F $vagrantdir/.ssh-config" \
-	  --extra-vars "cri_runtime=${k8scri} nri_resource_policy_src=${nri_resource_policy_src} cache_dir=$CACHE_DIR"
+	  --extra-vars "cri_runtime=${k8scri} nri_resource_policy_src=${nri_resource_policy_src} cache_dir=$CACHE_DIR kernel_getsource=$kernel_getsource kernel_config=$kernel_config"
     )
 }
 
@@ -722,36 +722,46 @@ vm-set-kernel-cmdline() {
     distro-set-kernel-cmdline "$*"
 }
 
-vm-kernel-install-devel-env() { # script API
-    # Usage: vm-kernel-install-devel-env
+vm-kernel-pkgs-tar-install() { # script API # TODO: reboot after install, verify it worked, store installed packages, too, for uninstall
+    # Usage: vm-kernel-pkgs-tar-install
     #
-    # Install kernel build dependencies and fetch sources if "linux" directory
-    # does not already exist.
+    # Install custom kernel packages from a tar.
     #
     # Environment variables:
-    #   getkernel  command that results in kernel sources in "linux" directory.
-    #              If "": skip fetching kernel sources.
-    #              If "distro", fetch distro kernel sources.
-    #              If "vanilla", fetch vanilla kernel sources, same as
-    #              getkernel="[ -d linux ] || git clone --depth=1 git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git
+    #   file       contains the name of the tarball.
+    #              The default is ~/linux-pkgs.tar on vm.
     #
-    #              Otherwise, execute the command as is. The command is
-    #              executed in the VM and should result in kernel sources
-    #              being available in "linux" directory.
-    #
-    distro-kernel-install-builddep
+    # Saves previous default to ~/.vm-kernel-pkgs-tar.default-kernel.
+    # That kernel can be restored with vm-kernel-pkgs-tar-uninstall.
+    local file="${file:-}"
+    local feat="vm-kernel-pkgs-tar"
+    vm-command "grubby --default-kernel > ~/.$feat.default-kernel" || \
+        command-error "cannot save current default kernel"
+    if [ -z "$file" ]; then
+        file="linux-pkgs.tar"
+    fi
+    vm-command "mkdir /tmp/$feat; tar -xvf $file -C /tmp/$feat && \
+                ls /tmp/$feat/*.rpm && \
+                rpm -Uvh /tmp/$feat/*.rpm && \
+                rm -rf /tmp/$feat" || \
+        command-error "cannot install kernel packages from $file"
+}
 
-     case "$getkernel" in
-        "")
-            ;;
-        "distro")
-            distro-kernel-fetch-sources
-            ;;
-        "vanilla")
-            vm-command "[ -d linux ] || git clone --depth=1 git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git"
-            ;;
-        *)
-            vm-command "$getkernel"
-            ;;
-    esac
+vm-kernel-pkgs-tar-uninstall() { # script API
+    # Usage: vm-kernel-pkgs-tar-uninstall
+    #
+    # Uninstall custom kernel packages installed with
+    # vm-kernel-pkgs-tar-install and restore previous default kernel.
+    #
+    # Restores previous default from ~/.vm-kernel-pkgs-tar.default-kernel.
+    local feat="vm-kernel-pkgs-tar"
+    local default_kernel
+    default_kernel="$(vm-command-q "cat ~/.$feat.default-kernel")"
+    if [ -z "$default_kernel" ]; then
+        command-error "cannot restore previous default kernel, file ~/.$feat.default-kernel is missing or empty"
+    fi
+    vm-command "grubby --set-default=\"$default_kernel\"" || \
+        command-error "cannot restore previous default kernel to $default_kernel"
+    vm-reboot
+    TODO: then uninstall .$feat.packages
 }

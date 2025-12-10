@@ -1,21 +1,23 @@
 vm-command "uname -a"
 
-vm-command "[ -d linux ]" || {
-    # git clone fedora42: 74 seconds
-    # git clone fedora42 with virtio-pci-blk-drive: 86 seconds
-    getkernel="git clone --depth 1 -b next git://git.kernel.org/pub/scm/linux/kernel/git/cxl/cxl.git linux" vm-kernel-install-devel-env
+# vm-command "[ -d linux ]" || {
+#     # git clone fedora42: 74 seconds
+#     # git clone fedora42 with virtio-pci-blk-drive: 86 seconds
+#     getkernel="git clone --depth 1 -b next git://git.kernel.org/pub/scm/linux/kernel/git/cxl/cxl.git linux" vm-kernel-install-devel-env
 
-    vm-put-file $TEST_DIR/kernel.config linux/.config
+#     vm-put-file $TEST_DIR/kernel.config linux/.config
 
-    # ubuntu2204: 156 seconds
-    # fedora 42: 195 seconds
-    # fedora 42 with virtio-pci-blk-drive: 167 seconds
-    vm-command 'cd linux; make -j$(nproc) && make modules -j$(nproc) && make modules_install && make install' ||
-        error "building and installing CXL kernel failed"
+#     # ubuntu2204: 156 seconds
+#     # fedora 42: 195 seconds
+#     # fedora 42 with virtio-pci-blk-drive: 167 seconds
+#     vm-command 'cd linux; make -j$(nproc) && make modules -j$(nproc) && make modules_install && make install' ||
+#         error "building and installing CXL kernel failed"
 
-    # fedora 42 with virtio-pci-blk-drive: rougly a minute
-    vm-reboot
-}
+#     # fedora 42 with virtio-pci-blk-drive: rougly a minute
+#     vm-reboot
+# }
+
+
 
 vm-command "uname -a"
 

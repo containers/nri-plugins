@@ -1,4 +1,7 @@
 ---
+- name: check need and availability of a custom kernel
+  ansible.builtin.import_playbook: custom-kernel.yaml
+
 - hosts: all
   become: no
   become_user: root
@@ -10,8 +13,11 @@
     image_ref: "unset"
     test_image: "localhost/{{ plugin_name }}:testing"
 
-
   tasks:
+    - name: SAFETY FAIL no further than this please
+      fail:
+        msg: reached exit point
+
     - set_fact:
         is_containerd: true
       when: cri_runtime == "containerd"
