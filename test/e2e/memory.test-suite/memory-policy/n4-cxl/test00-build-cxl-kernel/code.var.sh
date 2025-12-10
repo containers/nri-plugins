@@ -1,7 +1,4 @@
-echo ""
-echo "--- CODE ---"
-env
-
+( vm-kernel-pkgs-uninstall || : )
 
 vm-kernel-pkgs-install
 

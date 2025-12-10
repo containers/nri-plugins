@@ -339,17 +339,35 @@ vm-reboot() { # script API
         _deadline=$(( $(date +%s) + ${timeout:-120} ))
     fi
 
+    local shutdown=0
+    vm-command "sync; echo 3 > /proc/sys/vm/drop_caches; sleep 1; shutdown -h 0"
     (
         cd $_vagrantdir
         while (( $(date +%s) < $_deadline )); do
+            vagrant status 2>/dev/null | grep running || {
+                echo "qemu exited with shutdown"
+                shutdown=1
+                break
+            }
+            sleep 1
+        done
+
+        if [ $shutdown = 0 ]; then
             vagrant halt
             sleep 5
             vagrant halt --force
             sleep 3
+        fi
+
+        while (( $(date +%s) < $_deadline )); do
             vagrant up --no-provision
             if [ $? = 0 ]; then
                 break
             fi
+            vagrant halt
+            sleep 5
+            vagrant halt --force
+            sleep 3
         done
     )
     deadline=$_deadline host-wait-vm-ssh-server $_vagrantdir
@@ -808,7 +826,7 @@ vm-kernel-pkgs-uninstall() { # script API
 
     # Uninstall previously installed custom kernel packages.
     if grep -q rpm <<< "$installed_packages"; then
-        vm-command "xargs -a .$feat.installed_packages rpm -e" || \
+        vm-command "sed 's/.rpm//g' < .$feat.installed_packages | xargs rpm -e --nodeps" || \
             command-error "failed to uninstall packages: $installed_packages"
     elif grep -q deb <<< "$installed_packages"; then
         vm-command "xargs -a .$feat.installed_packages dpkg -r" || \
