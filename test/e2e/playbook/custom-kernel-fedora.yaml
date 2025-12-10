@@ -1,5 +1,5 @@
 ---
-- name: Install kernel get and build dependencies
+- name: Install kernel build dependencies
   become: yes
   ansible.builtin.package:
     pkg:
@@ -23,7 +23,7 @@
     update_cache: true
 
 - name: Build kernel RPMs
-  shell: "ls linux/rpmbuild/RPMS/x86_64/kernel-*.rpm || ( cd linux && make -j$(nproc) binrpm-pkg )"
+  shell: "cd linux && make -j$(nproc) binrpm-pkg"
 
-- name: Create vm:~/linux-pkgs.tar containing kernel RPMs
-  shell: "cd linux/rpmbuild/RPMS/x86_64; tar cf ~/linux-pkgs.tar kernel-*.rpm"
+- name: Create vm:~/kernel-pkgs.tar containing kernel RPMs
+  shell: "cd linux/rpmbuild/RPMS/x86_64; tar cf ~/kernel-pkgs.tar kernel-*.rpm"

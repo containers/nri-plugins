@@ -336,7 +336,7 @@ vm-reboot() { # script API
     local _vagrantdir=${1:-$OUTPUT_DIR}
 
     if [ -z "$deadline" ]; then
-        _deadline=$(( $(date +%s) + ${timeout:-60} ))
+        _deadline=$(( $(date +%s) + ${timeout:-120} ))
     fi
 
     (
@@ -722,46 +722,102 @@ vm-set-kernel-cmdline() {
     distro-set-kernel-cmdline "$*"
 }
 
-vm-kernel-pkgs-tar-install() { # script API # TODO: reboot after install, verify it worked, store installed packages, too, for uninstall
-    # Usage: vm-kernel-pkgs-tar-install
+vm-kernel-pkgs-install() { # script API
+    # Usage: vm-kernel-pkgs-install
     #
-    # Install custom kernel packages from a tar.
+    # Install custom kernel packages from a tar file.
+    # Does nothing if requested packages are already installed.
     #
     # Environment variables:
-    #   file       contains the name of the tarball.
-    #              The default is ~/linux-pkgs.tar on vm.
+    #   file       contains the name of the tarball on vm.
+    #              The default is ~/kernel-pkgs.tar.
     #
-    # Saves previous default to ~/.vm-kernel-pkgs-tar.default-kernel.
-    # That kernel can be restored with vm-kernel-pkgs-tar-uninstall.
-    local file="${file:-}"
-    local feat="vm-kernel-pkgs-tar"
-    vm-command "grubby --default-kernel > ~/.$feat.default-kernel" || \
-        command-error "cannot save current default kernel"
-    if [ -z "$file" ]; then
-        file="linux-pkgs.tar"
+    # Saves previous default to ~/.vm-kernel-pkgs.default-kernel.
+    # That kernel can be restored with vm-kernel-pkgs-uninstall.
+    local file="${file:-kernel-pkgs.tar}"
+    local feat="vm-kernel-pkgs"
+
+    vm-command "tar tf $file" || \
+        command-error "cannot list contents of kernel packages file $file"
+    local to_be_installed="$COMMAND_OUTPUT"
+
+    vm-command "cat .$feat.installed_packages 2>/dev/null || echo ''" || \
+        command-error "cannot read previously installed kernel packages list"
+    local already_installed="$COMMAND_OUTPUT"
+
+    if [ "$to_be_installed" == "$already_installed" ]; then
+        echo "vm-kernel-pkgs-install: kernel packages from $file already installed, skipping installation"
+        return 0
     fi
-    vm-command "mkdir /tmp/$feat; tar -xvf $file -C /tmp/$feat && \
-                ls /tmp/$feat/*.rpm && \
-                rpm -Uvh /tmp/$feat/*.rpm && \
-                rm -rf /tmp/$feat" || \
-        command-error "cannot install kernel packages from $file"
+
+    # TODO: is grubby available on Ubuntu?
+    vm-command "grubby --default-kernel | tee .$feat.default-kernel" || \
+        command-error "cannot save current default kernel"
+
+    vm-command "[ -d $feat ] && rm -rf $feat; mkdir $feat; tar xvf $file -C $feat | tee .$feat.extracted_packages" ||
+        command-error "cannot extract kernel packages from $file"
+
+    if grep -q .rpm <<< "$to_be_installed"; then
+        vm-command "rpm -Uvh $feat/*.rpm" || \
+            command-error "cannot install kernel rpm packages from $file"
+    elif grep -q .deb <<< "$to_be_installed"; then
+        vm-command "dpkg -i $feat/*.deb" || \
+            command-error "cannot install kernel deb packages from $file"
+    else
+        command-error "no kernel packages found in $file"
+    fi
+    vm-command "cat .$feat.extracted_packages >> .$feat.installed_packages && rm .$feat.extracted_packages" || \
+        command-error "cannot save installed kernel packages list"
+
+    echo "Booting to new kernel..."
+    vm-reboot || \
+        error "vm-kernel-pkgs-install: reboot failed after installing new kernel packages"
+
+    vm-command "uname -a"
 }
 
-vm-kernel-pkgs-tar-uninstall() { # script API
-    # Usage: vm-kernel-pkgs-tar-uninstall
+vm-kernel-pkgs-uninstall() { # script API
+    # Usage: vm-kernel-pkgs-uninstall
     #
-    # Uninstall custom kernel packages installed with
-    # vm-kernel-pkgs-tar-install and restore previous default kernel.
-    #
-    # Restores previous default from ~/.vm-kernel-pkgs-tar.default-kernel.
-    local feat="vm-kernel-pkgs-tar"
+    # Boot to previous kernel before vm-kernel-pkgs-install(s) and
+    # uninstall the custom kernel packages installed with
+    # vm-kernel-pkgs-install.
+    local feat="vm-kernel-pkgs"
     local default_kernel
-    default_kernel="$(vm-command-q "cat ~/.$feat.default-kernel")"
+    local installed_packages
+    vm-command "cat .$feat.default-kernel" || \
+        command-error "cannot find previous default kernel file ~/.$feat.default-kernel"
+    default_kernel="$COMMAND_OUTPUT"
     if [ -z "$default_kernel" ]; then
         command-error "cannot restore previous default kernel, file ~/.$feat.default-kernel is missing or empty"
     fi
+
+    vm-command "cat .$feat.installed_packages" || \
+        command-error "cannot find installed kernel packages list file ~/.$feat.installed_packages"
+    installed_packages="$COMMAND_OUTPUT"
+    if [ -z "$installed_packages" ]; then
+        command-error "cannot uninstall kernel packages, file ~/.$feat.installed_packages is missing or empty"
+    fi
+
+    # Reboot to previous kernel, otherwise uninstalling might fail.
     vm-command "grubby --set-default=\"$default_kernel\"" || \
         command-error "cannot restore previous default kernel to $default_kernel"
+
+    echo "Booting to previous kernel: $default_kernel."
     vm-reboot
-    TODO: then uninstall .$feat.packages
+
+    # Uninstall previously installed custom kernel packages.
+    if grep -q rpm <<< "$installed_packages"; then
+        vm-command "xargs -a .$feat.installed_packages rpm -e" || \
+            command-error "failed to uninstall packages: $installed_packages"
+    elif grep -q deb <<< "$installed_packages"; then
+        vm-command "xargs -a .$feat.installed_packages dpkg -r" || \
+            command-error "failed to uninstall packages: $installed_packages"
+    else
+        command-error "no kernel packages found in ~/.$feat.installed_packages"
+    fi
+    vm-command "rm -f .$feat.installed_packages .$feat.default-kernel" || \
+        command-error "cannot remove ~/.$feat.installed_packages and ~/.$feat.default-kernel files"
+
+    vm-command "uname -a"
 }

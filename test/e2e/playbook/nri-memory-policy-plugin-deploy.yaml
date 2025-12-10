@@ -14,10 +14,6 @@
     test_image: "localhost/{{ plugin_name }}:testing"
 
   tasks:
-    - name: SAFETY FAIL no further than this please
-      fail:
-        msg: reached exit point
-
     - set_fact:
         is_containerd: true
       when: cri_runtime == "containerd"

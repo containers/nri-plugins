@@ -1,25 +1,9 @@
-vm-command "uname -a"
-
-# vm-command "[ -d linux ]" || {
-#     # git clone fedora42: 74 seconds
-#     # git clone fedora42 with virtio-pci-blk-drive: 86 seconds
-#     getkernel="git clone --depth 1 -b next git://git.kernel.org/pub/scm/linux/kernel/git/cxl/cxl.git linux" vm-kernel-install-devel-env
-
-#     vm-put-file $TEST_DIR/kernel.config linux/.config
-
-#     # ubuntu2204: 156 seconds
-#     # fedora 42: 195 seconds
-#     # fedora 42 with virtio-pci-blk-drive: 167 seconds
-#     vm-command 'cd linux; make -j$(nproc) && make modules -j$(nproc) && make modules_install && make install' ||
-#         error "building and installing CXL kernel failed"
-
-#     # fedora 42 with virtio-pci-blk-drive: rougly a minute
-#     vm-reboot
-# }
+echo ""
+echo "--- CODE ---"
+env
 
 
-
-vm-command "uname -a"
+vm-kernel-pkgs-install
 
 # Install utilities
 vm-command "command -v cxl || dnf install -y /usr/bin/cxl numactl golang"
@@ -48,5 +32,5 @@ vm-command "(udev-monitor 2>&1 | tee udev-monitor.output) &
            sh -c 'for f in /sys/devices/system/memory/memory*/online; do echo 1 > \$f; done'
            sleep 1
            sh -c 'grep 0 /sys/devices/system/memory/memory*/online'
-           kill %1
+           pkill udev-monitor
            "
