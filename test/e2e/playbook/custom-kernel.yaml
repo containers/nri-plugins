@@ -11,6 +11,10 @@
     - name: Check if we have already built kernel in cache
       when: kernel_getsource != '' and kernel_config != ''
       block:
+        - name: Make sure kernel uses serial console for debugging
+          become: yes
+          shell: "grep -sr console=ttyS /etc/default/grub* || echo 'GRUB_CMDLINE_LINUX=\"$GRUB_CMDLINE_LINUX console=ttyS0,115200n8 \"' > /etc/default/grub.d/e2e-cmdline-serialconsole.cfg"
+
         - name: Expand kernel_getsource shorthands
           ansible.builtin.set_fact:
             kernel_getsource_cmd: "{{ shorthands[kernel_getsource] | default(kernel_getsource) }}"
