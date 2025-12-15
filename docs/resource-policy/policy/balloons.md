@@ -340,7 +340,7 @@ Balloons policy parameters:
   - `samplingRatePerMillion`: the number of samples to collect per million spans.
     Example: `100000`
   - `tracingCollector`: defines the external endpoint for tracing data collection.
-    Example: `otlp-http://localhost:4318`.
+    Example: `otlp-http`.
 - `agent`: controls communicating with the Kubernetes node agent and
   the API server.
   - `nodeResourceTopology`: if `true`, expose balloons as node

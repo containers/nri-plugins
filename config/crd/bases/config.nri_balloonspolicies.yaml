@@ -784,9 +784,12 @@ spec:
                       Endpoints are specified as full URLs, or as plain URL schemes which then
                       imply scheme-specific defaults. The supported schemes and their default
                       URLs are:
-                        - otlp-http, http: localhost:4318
-                        - otlp-grpc, grpc: localhost:4317
-                    example: otlp-http://localhost:4318
+                        - otlp-http: use OpenTelemetry HTTP[S] tracing exporter/collector
+                        - otlp-grpc: use OpenTelemetry gRPC tracing exported/collector
+                    enum:
+                    - otlp-http
+                    - otlp-grpc
+                    example: otlp-http
                     type: string
                 type: object
               loadClasses:
