@@ -17,12 +17,16 @@ package tracing
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"sync"
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+)
+
+const (
+	httpExporter = "otlp-http"
+	grpcExporter = "otlp-grpc"
 )
 
 var (
@@ -71,44 +75,17 @@ func (e *spanExporter) setEndpoint(endpoint string) error {
 	defer e.Unlock()
 
 	var (
-		u   *url.URL
 		exp sdktrace.SpanExporter
 		err error
 	)
 
-	// Notes:
-	//   We allow collector endpoint URLs to be given as a plain scheme-prefix,
-	//   IOW, without a host, port, and path. If only a prefix is given, the
-	//   exporters use defaults defined by the OTLP library. These are:
-	//     - otlp-http, http: localhost:4318
-	//     - otlp-grpc, grpc: localhost:4317
-	//
-
 	switch endpoint {
-	case "otlp-http", "http", "otlp-grpc", "grpc":
-		u = &url.URL{Scheme: endpoint}
-	default:
-		u, err = url.Parse(endpoint)
-		if err != nil {
-			return fmt.Errorf("invalid tracing endpoint %q: %w", endpoint, err)
-		}
-	}
-
-	switch u.Scheme {
-	case "otlp-http", "http":
-		opts := []otlptracehttp.Option{otlptracehttp.WithInsecure()}
-		if u.Host != "" {
-			opts = append(opts, otlptracehttp.WithEndpoint(u.Host))
-		}
-		exp, err = otlptracehttp.New(context.Background(), opts...)
+	case httpExporter:
+		exp, err = otlptracehttp.New(context.Background())
 		e.exporter = exp
 		return err
-	case "otlp-grpc", "grpc":
-		opts := []otlptracegrpc.Option{otlptracegrpc.WithInsecure()}
-		if u.Host != "" {
-			opts = append(opts, otlptracegrpc.WithEndpoint(u.Host))
-		}
-		exp, err = otlptracegrpc.New(context.Background(), opts...)
+	case grpcExporter:
+		exp, err = otlptracegrpc.New(context.Background())
 		e.exporter = exp
 		return err
 	}

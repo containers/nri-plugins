@@ -30,10 +30,11 @@ type Config struct {
 	// Endpoints are specified as full URLs, or as plain URL schemes which then
 	// imply scheme-specific defaults. The supported schemes and their default
 	// URLs are:
-	//   - otlp-http, http: localhost:4318
-	//   - otlp-grpc, grpc: localhost:4317
+	//   - otlp-http: use OpenTelemetry HTTP[S] tracing exporter/collector
+	//   - otlp-grpc: use OpenTelemetry gRPC tracing exported/collector
 	// +optional
-	// +kubebuilder:example="otlp-http://localhost:4318"
+	// +kubebuilder:validation:Enum=otlp-http;otlp-grpc
+	// +kubebuilder:example="otlp-http"
 	TracingCollector string `json:"tracingCollector,omitempty"`
 	// MetricsExporter defines which exporter is used to export metrics.
 	// The supported exporters are:
