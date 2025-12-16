@@ -1,4 +1,4 @@
 [
     {"mem": "4G", "threads":2, "cores": 2, "nodes": 1, "packages": 2},
-    {"cxl": [[ {"mem": "1G"} ]]}
+    {"cxl": [[ {"switch": [{"mem": "1G", "present": false}, {"mem": "1G", "present": false}]} ]] }
 ]

@@ -409,6 +409,16 @@ vm-cpu-hotremove() { # script API
     vm-monitor "device_del ${deviceid}"
 }
 
+vm-cxl-hotplug() {
+    # Usage: vm-cxl-hotplug
+    #
+    # Example: vm-cxl-hotplug memdev
+
+    # TODO: askervin: find cxl_<memdev> from vm-mem-hw (backend devices)
+    # where id contains information about the bus where to add the device.
+    error "not implemented"
+}
+
 vm-mem-hotplug() { # script API
     # Usage: vm-mem-hotplug MEMORY
     #

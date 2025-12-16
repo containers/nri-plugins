@@ -276,9 +276,11 @@ def dists(numalist):
     return dist_dict
 
 def qemucxlopts(cxl_host_bridges):
-    def mem_devices(mem_count, mem_type, mem_size, bus_id):
+    def mem_devices(mem_count, device, bus_id):
         """Create CXL memory device objects and device params that connect it to bus_id."""
         cxl_mem_objectparams, cxl_mem_deviceparams = [], []
+        mem_size = device["mem"]
+        mem_type = "volatile" # non-volatile to be added, possibly as device["nvmem"]
         if mem_size.endswith("G"):
             sizeM = int(mem_size[:-1]) * 1024
         elif mem_size.endswith("M"):
@@ -286,8 +288,11 @@ def qemucxlopts(cxl_host_bridges):
         else:
             raise ValueError('CXL memory size must be in M or G, got %r' % (mem_size,))
         if mem_type == "volatile":
-            cxl_mem_objectparams.extend(["-object", f"memory-backend-ram,id=cxl-vmembe{mem_count},share=on,size={mem_size}"])
-            cxl_mem_deviceparams.extend(["-device", f"cxl-type3,bus={bus_id},volatile-memdev=cxl-vmembe{mem_count},id=cxl-mem-dev{mem_count},sn=0xC813DB26"])
+            memdev_id = f"cxl_memdev{mem_count}"
+            backend_id = f"be_{memdev_id}"
+            cxl_mem_objectparams.extend(["-object", f"memory-backend-ram,id={backend_id},share=on,size={mem_size}"])
+            if device.get("present", True):
+                cxl_mem_deviceparams.extend(["-device", f"cxl-type3,bus={bus_id},volatile-memdev={backend_id},id={memdev_id},sn=0x{hex(0xC813DB26+mem_count).upper()[2:]}"])
         else:
             raise ValueError('unsupported CXL memory type %r' % (mem_type,))
         return cxl_mem_objectparams, cxl_mem_deviceparams, sizeM
@@ -307,29 +312,34 @@ def qemucxlopts(cxl_host_bridges):
         firmware_targets.append(host_bridge_id)
         bus_nr += 1
         for root_port, device in enumerate(root_ports):
-            root_port_id = f"root_port{host_bridge}_{root_port}"
+            root_port_id = f"rp_cxl_{host_bridge}_{root_port}"
             cxl_deviceparams.extend(["-device", f"cxl-rp,port={root_port_count},bus={host_bridge_id},id={root_port_id},chassis={chassis},slot={slot}"])
             root_port_count += 1
             slot += 1
             if "mem" in device: # volatile memory directly connected to root port
-                cxl_mem_objectparams, cxl_mem_deviceparams, mem_sizeM = mem_devices(mem_count, "volatile", device["mem"], root_port_id)
+                cxl_mem_objectparams, cxl_mem_deviceparams, mem_sizeM = mem_devices(mem_count, device, root_port_id)
                 cxl_objectparams.extend(cxl_mem_objectparams)
                 cxl_deviceparams.extend(cxl_mem_deviceparams)
                 total_mem_sizeM += mem_sizeM
                 mem_count += 1
             elif "switch" in device:
-                upstream_id = f"us{host_bridge}_{root_port}"
+                upstream_id = f"cxl_sw_us{host_bridge}_rp{root_port}"
                 cxl_deviceparams.extend(["-device", f"cxl-upstream,bus={root_port_id},id={upstream_id}"])
                 for downstream_idx, downstream_device in enumerate(device["switch"]):
-                    downstream_id = f"sw{host_bridge}_{root_port}_{downstream_idx}"
+                    downstream_id = f"cxl_sw{host_bridge}_rp{root_port}_ds{downstream_idx}"
                     cxl_deviceparams.extend(["-device", f"cxl-downstream,port={downstream_port_count},bus={upstream_id},id={downstream_id},chassis={chassis},slot={slot}"])
                     slot += 1
                     if "mem" in downstream_device:
-                            cxl_mem_objectparams, cxl_mem_deviceparams, mem_sizeM = mem_devices(mem_count, "volatile", downstream_device["mem"], downstream_id)
+                            cxl_mem_objectparams, cxl_mem_deviceparams, mem_sizeM = mem_devices(mem_count, downstream_device, downstream_id)
                             cxl_objectparams.extend(cxl_mem_objectparams)
                             cxl_deviceparams.extend(cxl_mem_deviceparams)
                             total_mem_sizeM += mem_sizeM
                             mem_count += 1
+                    elif downstream_device == {}:
+                        # Unplugged device without idea of backend device size.
+                        # Increase total_mem_sizeM to allow plugging in Qemu memory backend device
+                        # and the CXL memory device later. This size is needed by cxl-fmw.
+                        total_mem_sizeM += 8192 # do not plug in larger than 8G CXL modules without specifying size
                     else:
                         raise ValueError('unsupported CXL device in switch %r' % (downstream_device,))
 
@@ -381,6 +391,7 @@ def qemuopts(numalist):
                 objectparams.extend(cxl_objectparams)
                 deviceparams.extend(cxl_deviceparams)
                 deviceparams.extend(cxl_Mparams)
+                memslots += len(objectparams)
                 if ",cxl=on" not in machineparam:
                     machineparam += ",cxl=on"
             continue
