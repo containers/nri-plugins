@@ -625,12 +625,12 @@ func (p *policy) updateSharedAllocations(grant *Grant) {
 	}
 }
 
-func (p *policy) foreachContainer(pool Node, fn func(ctr cache.Container) bool) {
+func (p *policy) foreachGrant(pool Node, fn func(g Grant) bool) {
 	for _, g := range p.allocations.grants {
 		if !pool.IsSameNode(g.GetCPUNode()) {
 			continue
 		}
-		if done := fn(g.GetContainer()); done {
+		if done := fn(g); done {
 			return
 		}
 	}
@@ -639,7 +639,12 @@ func (p *policy) foreachContainer(pool Node, fn func(ctr cache.Container) bool) 
 func (p *policy) hasZeroCpuReqContainer(pool Node) bool {
 	found := false
 
-	p.foreachContainer(pool, func(ctr cache.Container) bool {
+	p.foreachGrant(pool, func(g Grant) bool {
+		if g.CPUType() == cpuReserved && !g.ReservedCPUs().IsEmpty() {
+			return false
+		}
+
+		ctr := g.GetContainer()
 		switch ctr.GetQOSClass() {
 		case corev1.PodQOSBestEffort:
 			found = true
