@@ -1280,13 +1280,14 @@ func (cg *grant) String() string {
 	if !cg.exclusive.IsEmpty() {
 		exclusive = fmt.Sprintf(", exclusive: %s", cg.exclusive)
 	}
-	if cg.ReservedPortion() > 0 {
+	if cg.ReservedPortion() > 0 || (cg.cpuType == cpuReserved && cg.SharedPortion() == 0) {
 		reserved = fmt.Sprintf(", reserved: %s (%dm)",
 			cg.node.FreeSupply().ReservedCPUs(), cg.ReservedPortion())
-	}
-	if cg.SharedPortion() > 0 || (isol.IsEmpty() && cg.exclusive.IsEmpty()) {
-		shared = fmt.Sprintf(", shared: %s (%dm)",
-			cg.node.FreeSupply().SharableCPUs(), cg.SharedPortion())
+	} else {
+		if cg.SharedPortion() > 0 || (isol.IsEmpty() && cg.exclusive.IsEmpty()) {
+			shared = fmt.Sprintf(", shared: %s (%dm)",
+				cg.node.FreeSupply().SharableCPUs(), cg.SharedPortion())
+		}
 	}
 
 	mem := fmt.Sprintf(", memory: %s (%s)", cg.memZone, prettyMem(cg.memSize))
