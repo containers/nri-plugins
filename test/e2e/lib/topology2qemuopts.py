@@ -288,11 +288,12 @@ def qemucxlopts(cxl_host_bridges):
         else:
             raise ValueError('CXL memory size must be in M or G, got %r' % (mem_size,))
         if mem_type == "volatile":
+            sn = "0x" + hex(0xC813DB26+mem_count).upper()[2:]
             memdev_id = f"cxl_memdev{mem_count}"
-            backend_id = f"be_{memdev_id}"
+            backend_id = f"beram_{memdev_id}__bus_{bus_id}__sn_{sn}"
             cxl_mem_objectparams.extend(["-object", f"memory-backend-ram,id={backend_id},share=on,size={mem_size}"])
             if device.get("present", True):
-                cxl_mem_deviceparams.extend(["-device", f"cxl-type3,bus={bus_id},volatile-memdev={backend_id},id={memdev_id},sn=0x{hex(0xC813DB26+mem_count).upper()[2:]}"])
+                cxl_mem_deviceparams.extend(["-device", f"cxl-type3,bus={bus_id},volatile-memdev={backend_id},id={memdev_id},sn={sn}"])
         else:
             raise ValueError('unsupported CXL memory type %r' % (mem_type,))
         return cxl_mem_objectparams, cxl_mem_deviceparams, sizeM
@@ -307,14 +308,14 @@ def qemucxlopts(cxl_host_bridges):
     total_mem_sizeM = 0
     firmware_targets = []
     for host_bridge, root_ports in enumerate(cxl_host_bridges):
-        host_bridge_id = f"cxl.{host_bridge}"
+        host_bridge_id = f"cxlhb{host_bridge}"
         cxl_deviceparams.extend(["-device", f"pxb-cxl,bus_nr={bus_nr},bus=pcie.0,id={host_bridge_id}"])
         firmware_targets.append(host_bridge_id)
-        bus_nr += 1
+        bus_nr += 100
         for root_port, device in enumerate(root_ports):
-            root_port_id = f"rp_cxl_{host_bridge}_{root_port}"
+            root_port_id = f"cxlrp{root_port}_{host_bridge}"
             cxl_deviceparams.extend(["-device", f"cxl-rp,port={root_port_count},bus={host_bridge_id},id={root_port_id},chassis={chassis},slot={slot}"])
-            root_port_count += 1
+            root_port_count += 110 # folk lore, bus_nr=12 followed by bus_nr=222
             slot += 1
             if "mem" in device: # volatile memory directly connected to root port
                 cxl_mem_objectparams, cxl_mem_deviceparams, mem_sizeM = mem_devices(mem_count, device, root_port_id)
@@ -323,23 +324,18 @@ def qemucxlopts(cxl_host_bridges):
                 total_mem_sizeM += mem_sizeM
                 mem_count += 1
             elif "switch" in device:
-                upstream_id = f"cxl_sw_us{host_bridge}_rp{root_port}"
+                upstream_id = f"cxlsw_us{root_port_id}"
                 cxl_deviceparams.extend(["-device", f"cxl-upstream,bus={root_port_id},id={upstream_id}"])
                 for downstream_idx, downstream_device in enumerate(device["switch"]):
-                    downstream_id = f"cxl_sw{host_bridge}_rp{root_port}_ds{downstream_idx}"
+                    downstream_id = f"{upstream_id}_ds{downstream_idx}"
                     cxl_deviceparams.extend(["-device", f"cxl-downstream,port={downstream_port_count},bus={upstream_id},id={downstream_id},chassis={chassis},slot={slot}"])
                     slot += 1
                     if "mem" in downstream_device:
-                            cxl_mem_objectparams, cxl_mem_deviceparams, mem_sizeM = mem_devices(mem_count, downstream_device, downstream_id)
-                            cxl_objectparams.extend(cxl_mem_objectparams)
-                            cxl_deviceparams.extend(cxl_mem_deviceparams)
-                            total_mem_sizeM += mem_sizeM
-                            mem_count += 1
-                    elif downstream_device == {}:
-                        # Unplugged device without idea of backend device size.
-                        # Increase total_mem_sizeM to allow plugging in Qemu memory backend device
-                        # and the CXL memory device later. This size is needed by cxl-fmw.
-                        total_mem_sizeM += 8192 # do not plug in larger than 8G CXL modules without specifying size
+                        cxl_mem_objectparams, cxl_mem_deviceparams, mem_sizeM = mem_devices(mem_count, downstream_device, downstream_id)
+                        cxl_objectparams.extend(cxl_mem_objectparams)
+                        cxl_deviceparams.extend(cxl_mem_deviceparams)
+                        total_mem_sizeM += mem_sizeM
+                        mem_count += 1
                     else:
                         raise ValueError('unsupported CXL device in switch %r' % (downstream_device,))
 
@@ -351,8 +347,6 @@ def qemucxlopts(cxl_host_bridges):
     cxl_Mparams = ["-M",
                    ",".join("cxl-fmw.0.targets.%d=%s" % (idx, tgt) for idx, tgt in enumerate(firmware_targets)) +
                    f",cxl-fmw.0.size={addr_sizeG}G"]
-    #for p in cxl_objectparams + cxl_deviceparams + cxl_Mparams:
-    #    print(f"DEBUG: CXL param: {p}", file=sys.stderr)
     return cxl_objectparams, cxl_deviceparams, cxl_Mparams, f"{total_mem_sizeG}G"
 
 def qemuopts(numalist):

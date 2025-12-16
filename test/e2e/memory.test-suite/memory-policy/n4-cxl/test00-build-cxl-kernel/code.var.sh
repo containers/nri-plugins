@@ -1,6 +1,6 @@
-( vm-kernel-pkgs-uninstall || : )
-
 vm-kernel-pkgs-install
+
+vm-cxl-hotplug memdev1
 
 # Install utilities
 vm-command "command -v cxl || dnf install -y /usr/bin/cxl numactl golang"
@@ -29,5 +29,4 @@ vm-command "(udev-monitor 2>&1 | tee udev-monitor.output) &
            sh -c 'for f in /sys/devices/system/memory/memory*/online; do echo 1 > \$f; done'
            sleep 1
            sh -c 'grep 0 /sys/devices/system/memory/memory*/online'
-           pkill udev-monitor
            "

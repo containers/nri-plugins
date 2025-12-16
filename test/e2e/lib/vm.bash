@@ -409,14 +409,59 @@ vm-cpu-hotremove() { # script API
     vm-monitor "device_del ${deviceid}"
 }
 
+vm-cxl-hw() {
+    # Usage: vm-cxl-hw
+    #
+    # List hotpluggable and removable cxl memory devices
+    # See also: vm-cxl-hotplug, vm-cxl-hotremove
+    vm-monitor "info memdev" | awk '/ beram_cxl_memdev/{print $3}' | while read beram_id; do
+        read dev bus sn <<< "$(sed -e 's/^beram_\(cxl_memdev[0-9]\+\)__bus_\(.*\)__sn_\(.*\)$/\1 \2 \3/g' <<< "$beram_id")"
+        echo -n "$dev"
+        [ -z "$show_bus" ] || echo -n " bus=$bus"
+        [ -z "$show_sn" ] || echo -n " sn=$sn"
+        [ -z "$show_be" ] || echo -n " volatile-memdev=$beram_id"
+        echo
+    done
+}
+
 vm-cxl-hotplug() {
     # Usage: vm-cxl-hotplug
     #
-    # Example: vm-cxl-hotplug memdev
+    # Hotplug CXL memory device.
+    #
+    # Example: vm-cxl-hotplug cxl_memdev1
+    local memmatch memline devadd
+    memmatch=$1
+    if [ -z "$memmatch" ]; then
+        error "missing CXL_MEMDEV"
+        return 1
+    fi
+    memline="$(show_bus=1 show_sn=1 show_be=1 vm-cxl-hw | grep "${memmatch}__bus")"
+    if [ -z "$memline" ]; then
+        error "no cxl memory devices matching '$memmatch'"
+        return 1
+    fi
+    echo "$memline" | while read dev bus sn be; do
+        vm-monitor "device_add cxl-type3,$bus,$be,id=$dev,$sn"
+    done
+}
 
-    # TODO: askervin: find cxl_<memdev> from vm-mem-hw (backend devices)
-    # where id contains information about the bus where to add the device.
-    error "not implemented"
+vm-cxl-hotremove() {
+    # Usage: vm-cxl-remove
+    #
+    # Hotremove CXL memory device
+    #
+    # Example: vm-cxl-remove cxl_memdev1
+    local memmatch memline devadd
+    memmatch=$1
+    if [ -z "$memmatch" ]; then
+        error "missing CXL_MEMDEV"
+        return 1
+    fi
+    memline="$(vm-cxl-hw | grep "$memmatch")"
+    echo "$memline" | while read dev; do
+        vm-monitor "device_del $dev"
+    done
 }
 
 vm-mem-hotplug() { # script API
