@@ -330,6 +330,7 @@ vm-reboot() { # script API
 
     local _deadline=${deadline:-}
     local _vagrantdir=${1:-$OUTPUT_DIR}
+    local _pid
 
     if [ -z "$deadline" ]; then
         _deadline=$(( $(date +%s) + ${timeout:-60} ))
@@ -341,6 +342,14 @@ vm-reboot() { # script API
             vagrant halt
             sleep 5
             vagrant halt --force
+            sleep 3
+            for _pid in $(lsof -Fp monitor.sock 2>/dev/null); do
+                kill ${_pid#p} || :
+            done
+            sleep 3
+            for _pid in $(lsof -Fp monitor.sock 2>/dev/null); do
+                kill -9 ${_pid#p} || :
+            done
             sleep 3
             vagrant up --no-provision
             if [ $? = 0 ]; then
