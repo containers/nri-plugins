@@ -1,6 +1,7 @@
+breakpoint
 vm-kernel-pkgs-install
 
-vm-cxl-hotplug memdev0
+vm-cxl-hotplug cxl_memdev0
 
 # Install utilities
 vm-command "command -v cxl || dnf install -y /usr/bin/cxl numactl golang"
@@ -33,6 +34,21 @@ vm-command "set -x
            "
 
 echo "hotplugging more memories"
-vm-cxl-hotplug memdev3
-vm-cxl-hotplug memdev1
-vm-cxl-hotplug memdev2
+vm-cxl-hotplug cxl_memdev3
+vm-cxl-hotplug cxl_memdev1
+vm-cxl-hotplug cxl_memdev2
+sleep 5
+vm-command "cxl list"
+
+echo "hotremoving single memory"
+vm-cxl-hotremove cxl_memdev2
+sleep 5
+vm-command "cxl list"
+
+echo "re-hotplugging hotremoved memory"
+vm-cxl-hotplug cxl_memdev2
+sleep 5
+vm-command "cxl list"
+
+echo "welcome to the end of the show"
+breakpoint
