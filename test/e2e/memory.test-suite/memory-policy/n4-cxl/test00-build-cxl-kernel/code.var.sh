@@ -1,6 +1,6 @@
 vm-kernel-pkgs-install
 
-vm-cxl-hotplug memdev1
+vm-cxl-hotplug memdev0
 
 # Install utilities
 vm-command "command -v cxl || dnf install -y /usr/bin/cxl numactl golang"
@@ -11,9 +11,10 @@ vm-command "mkdir udev-monitor 2>/dev/null" && {
     vm-command "cd udev-monitor && go mod init udev-monitor && go mod tidy && go build . && cp -v udev-monitor /usr/local/bin"
 }
 
-vm-command "(udev-monitor 2>&1 | tee udev-monitor.output) &
-           sleep 1
-           set -x
+echo "launching udev-monitor in the background"
+vm-command-q "udev-monitor 2>&1 | tee udev-monitor.output" &
+
+vm-command "set -x
            sh -c 'grep . /sys/devices/system/node/{online,possible} /sys/devices/system/memory/auto_online_blocks'
            echo online_movable > /sys/devices/system/memory/auto_online_blocks
            sh -c 'grep 0 /sys/devices/system/memory/memory*/online'
@@ -30,3 +31,8 @@ vm-command "(udev-monitor 2>&1 | tee udev-monitor.output) &
            sleep 1
            sh -c 'grep 0 /sys/devices/system/memory/memory*/online'
            "
+
+echo "hotplugging more memories"
+vm-cxl-hotplug memdev3
+vm-cxl-hotplug memdev1
+vm-cxl-hotplug memdev2

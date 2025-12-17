@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 
-"""topology2qemuopts - convert NUMA node list from JSON to Qemu options
+
+"""topology2qemuopts - convert structure lists from JSON to Qemu options
+
+Structures in a structure list are NUMA node group definitions or
+CXL structures
 
 NUMA node group definitions:
 "mem"                 mem (RAM) size on each NUMA node in this group.
@@ -26,67 +30,6 @@ NUMA node group definitions:
                       The default is 1.
 "cpus-present"        number of logical CPUs present in the system.
                       The default value 0 means "all".
-
-CXL structures. Simple: single (volatile) memory device
-{"cxl": [[{"mem": "128M"}]]}
-# list of cxl host bridges
-"cxl": [
-    # list of root ports of host bridge 0
-    [
-        # device in root port 0
-        {"mem": "128M"}  # volatile memory device
-    ]
-]
-
-# generates a backend devices
--object memory-backend-ram,id=mbr-cxl-mem0,share=on,size=128M
-# generates cxl-host-bridge
--device pxb-cxl,bus_nr=12,bus=pcie.0,id=cxl.1
-# generates a root port
--device cxl-rp,port=0,bus=cxl.1,id=root_port13,chassis=0,slot=2
-# generates a volatile memory device that use the backend device
--device cxl-type3,bus=root_port13,volatile-memdev=vmem0,id=cxl-vmem0
-# generates firmware with size > sum of sizes of memory devices
--M cxl-fmw.0.targets.0=cxl.1,cxl-fmw.0.size=4G
-
-
-# {"cxl": [ [{"switch": [{"mem": "256M"}, {"mem": "256M"}]},
-#            {"switch": [{"mem": "256M"}, {"mem": "256M"}]}] ]
-
-# cxl host bridges
-"cxl": [
-    # root ports of host bridge 0
-    [
-        # device in root port 0 is a switch that has memory devices in its downstream ports
-        {"switch": [ {"mem": "256M"}, {"mem": "256M"} ]},
-
-        # device in root port 1 is a switch that has memory devices in its downstream ports
-        {"switch": [ {"mem": "256M"}, {"mem": "256M"} ]}
-    ]
-]
-
--object memory-backend-ram,id=cxl-mem0,share=on,size=256M
--object memory-backend-ram,id=cxl-mem1,share=on,size=256M
--object memory-backend-ram,id=cxl-mem2,share=on,size=256M
--object memory-backend-ram,id=cxl-mem3,share=on,size=256M
--device pxb-cxl,bus_nr=12,bus=pcie.0,id=cxl.1
-
--device cxl-rp,port=0,bus=cxl.1,id=root_port0,chassis=0,slot=0     # root port 0
--device cxl-upstream,bus=root_port0,id=us0                         # switch0 upstream to root port 0
--device cxl-downstream,port=2,bus=us0,id=swport2,chassis=0,slot=7  # switch0 downstream0
--device cxl-downstream,port=3,bus=us0,id=swport3,chassis=0,slot=6  # switch0 downstream1
--device cxl-type3,bus=swport2,volatile-memdev=cxl-mem2,id=cxl-mem2 # mem256 on switch0 downstream0
--device cxl-type3,bus=swport3,volatile-memdev=cxl-mem3,id=cxl-mem3 # mem256 on switch0 downstream1
-
--device cxl-rp,port=1,bus=cxl.1,id=root_port1,chassis=0,slot=1     # root port 1
--device cxl-upstream,bus=root_port1,id=us1                         # switch1 upstream to root port 1
--device cxl-downstream,port=0,bus=us1,id=swport0,chassis=0,slot=4  # switch1 downstream0 ...
--device cxl-downstream,port=1,bus=us1,id=swport1,chassis=0,slot=5
--device cxl-type3,bus=swport0,volatile-memdev=cxl-mem0,id=cxl-mem0
--device cxl-type3,bus=swport1,volatile-memdev=cxl-mem1,id=cxl-mem1
--M cxl-fmw.0.targets.0=cxl.1,cxl-fmw.0.size=32G
-
-
 
 NUMA node distances are defined with following keys:
 "dist-all": [[from0to0, from0to1, ...], [from1to0, from1to1, ...], ...]
@@ -138,6 +81,59 @@ $ ( cat << EOF
 ]
 EOF
 ) | python3 topology2qemuopts.py
+
+CXL structures:
+"cxl"                 List of host bridge connections.
+
+                      New host bridge (pxb-cxl) is created for each list
+                      of host bridge connections.
+                      Each host bridge is attached to the NUMA node
+                      corresponding to bridge's index in the list.
+                      Each host bridge has its own CXL Fixed Memory Window
+                      (cxl-fmw), that is, CXL memories are not interleaved.
+                      That is, regions can be created on memory devices
+                      independently.
+
+                      Each host bridge connection is a list of root
+                      port connections to the host bridge.
+
+                      New root port (cxl-rp) is created for each list of
+                      root port connections.
+                      Each root port connection is a list of CXL
+                      memory devices and CXL switches.
+
+                      CXL memory devices (cxl-type3, volatile-memdev):
+                        "mem"     specifies the size.
+                        "present" (optional) specifies if the device is
+                                  present at vm boot (true, the default)
+                                  or if it can be hotplugged later (false).
+                                  All devices can be hotremoved.
+
+                      CXL switches (cxl-upstream, cxl-downstream):
+                        "switch"  specifies a list of CXL memory devices
+                                  attached to the switch.
+
+  CXL Examples:
+
+  # Single 8G CXL memory device attached to NUMA node 0 in a machine with 4G DRAM.
+  $ python3 topology2qemuopts.py <<< '[ {"cores":2,"mem":"4G"}, {"cxl": [[{"mem":"8G"}]]} ]'
+
+  # One device attached, two placeholders for hotplugging
+  {"cxl": [
+      # list of root ports of host bridge 0, in NUMA node 0
+      [
+          # memory device in root port 0
+          {"mem": "256M"}  # volatile memory device, cxl_memdev0
+      ],
+      # list of root ports of host bridge 1, in NUMA node 1
+      [
+          # CXL switch in root port 1 or host bridge 1
+          {"switch": [
+              {"mem": "1G", "present": false}, # cxl_memdev1, not present at boot
+              {"mem": "1G", "present": false}, # cxl_memdev2, not present at boot
+          ]}
+      ]
+  ]}
 """
 
 import os
@@ -288,7 +284,8 @@ def qemucxlopts(cxl_host_bridges):
         else:
             raise ValueError('CXL memory size must be in M or G, got %r' % (mem_size,))
         if mem_type == "volatile":
-            sn = "0x" + hex(0xC813DB26+mem_count).upper()[2:]
+            # sn = "0x" + hex(0xC813DB26+mem_count).upper()[2:]
+            sn = "0xc100" + hex(0xe2e0 + mem_count)
             memdev_id = f"cxl_memdev{mem_count}"
             backend_id = f"beram_{memdev_id}__bus_{bus_id}__sn_{sn}"
             cxl_mem_objectparams.extend(["-object", f"memory-backend-ram,id={backend_id},share=on,size={mem_size}"])
@@ -300,7 +297,7 @@ def qemucxlopts(cxl_host_bridges):
     cxl_objectparams = []
     cxl_deviceparams = []
     bus_nr = 12 # folk lore
-    chassis = 0
+    chassis = 0xc1 # (slot, chassis) must be unique for each root port
     slot = 0
     mem_count = 0
     root_port_count = 0
@@ -309,13 +306,13 @@ def qemucxlopts(cxl_host_bridges):
     firmware_targets = []
     for host_bridge, root_ports in enumerate(cxl_host_bridges):
         host_bridge_id = f"cxlhb{host_bridge}"
-        cxl_deviceparams.extend(["-device", f"pxb-cxl,bus_nr={bus_nr},bus=pcie.0,id={host_bridge_id}"])
+        cxl_deviceparams.extend(["-device", f"pxb-cxl,bus_nr={bus_nr},bus=pcie.0,id={host_bridge_id},numa_node={host_bridge}"])
         firmware_targets.append(host_bridge_id)
-        bus_nr += 100
+        bus_nr += 110 # folk lore, bus_nr=12 followed by bus_nr=222
         for root_port, device in enumerate(root_ports):
-            root_port_id = f"cxlrp{root_port}_{host_bridge}"
+            root_port_id = f"cxlrp{root_port}{host_bridge_id[3:]}"
             cxl_deviceparams.extend(["-device", f"cxl-rp,port={root_port_count},bus={host_bridge_id},id={root_port_id},chassis={chassis},slot={slot}"])
-            root_port_count += 110 # folk lore, bus_nr=12 followed by bus_nr=222
+            root_port_count += 1
             slot += 1
             if "mem" in device: # volatile memory directly connected to root port
                 cxl_mem_objectparams, cxl_mem_deviceparams, mem_sizeM = mem_devices(mem_count, device, root_port_id)
@@ -324,11 +321,13 @@ def qemucxlopts(cxl_host_bridges):
                 total_mem_sizeM += mem_sizeM
                 mem_count += 1
             elif "switch" in device:
-                upstream_id = f"cxlsw_us{root_port_id}"
+                upstream_id = f"cxlsw_us{root_port_id[3:]}"
                 cxl_deviceparams.extend(["-device", f"cxl-upstream,bus={root_port_id},id={upstream_id}"])
                 for downstream_idx, downstream_device in enumerate(device["switch"]):
-                    downstream_id = f"{upstream_id}_ds{downstream_idx}"
-                    cxl_deviceparams.extend(["-device", f"cxl-downstream,port={downstream_port_count},bus={upstream_id},id={downstream_id},chassis={chassis},slot={slot}"])
+                    downstream_id = f"cxlsw_ds{downstream_idx}_{upstream_id[6:]}"
+                    # cxl_deviceparams.extend(["-device", f"cxl-downstream,port={downstream_port_count},bus={upstream_id},id={downstream_id},chassis={chassis},slot={slot}"])
+                    cxl_deviceparams.extend(["-device", f"cxl-downstream,port={root_port_count},bus={upstream_id},id={downstream_id},chassis={chassis},slot={slot}"])
+                    root_port_count += 1
                     slot += 1
                     if "mem" in downstream_device:
                         cxl_mem_objectparams, cxl_mem_deviceparams, mem_sizeM = mem_devices(mem_count, downstream_device, downstream_id)
@@ -345,8 +344,8 @@ def qemucxlopts(cxl_host_bridges):
     # Round actual total memory size up to nearest GB for Qemu param.
     total_mem_sizeG = (total_mem_sizeM + 1023) // 1024
     cxl_Mparams = ["-M",
-                   ",".join("cxl-fmw.0.targets.%d=%s" % (idx, tgt) for idx, tgt in enumerate(firmware_targets)) +
-                   f",cxl-fmw.0.size={addr_sizeG}G"]
+                   ",".join("cxl-fmw.%d.targets.0=%s,cxl-fmw.%d.size=%dG" % (idx, tgt, idx, addr_sizeG)
+                            for idx, tgt in enumerate(firmware_targets))]
     return cxl_objectparams, cxl_deviceparams, cxl_Mparams, f"{total_mem_sizeG}G"
 
 def qemuopts(numalist):
