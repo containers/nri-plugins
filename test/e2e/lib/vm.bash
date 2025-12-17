@@ -409,17 +409,25 @@ vm-cpu-hotremove() { # script API
     vm-monitor "device_del ${deviceid}"
 }
 
+_vm_cxl_hotplug_count=""
+
 vm-cxl-hw() {
     # Usage: vm-cxl-hw
     #
     # List hotpluggable and removable cxl memory devices
     # See also: vm-cxl-hotplug, vm-cxl-hotremove
+    local plugged plugged_id
+    declare -A plugged
+    for plugged_id in $(vm-monitor "info qtree -b" | awk -F\" '/dev: cxl-type3/{print $2}' | sed 's/\.hp.*//g'); do
+        plugged[$plugged_id]=1
+    done
     vm-monitor "info memdev" | awk '/ beram_cxl_memdev/{print $3}' | while read beram_id; do
         read dev bus sn <<< "$(sed -e 's/^beram_\(cxl_memdev[0-9]\+\)__bus_\(.*\)__sn_\(.*\)$/\1 \2 \3/g' <<< "$beram_id")"
         echo -n "$dev"
-        [ -z "$show_bus" ] || echo -n " bus=$bus"
-        [ -z "$show_sn" ] || echo -n " sn=$sn"
-        [ -z "$show_be" ] || echo -n " volatile-memdev=$beram_id"
+        [ "$show_bus" = 1 ] && echo -n " bus=$bus"
+        [ "$show_sn" = 1 ] && echo -n " sn=$sn"
+        [ "$show_be" = 1 ] && echo -n " volatile-memdev=$beram_id"
+        [ "${plugged[$dev]}" = 1 ] && echo -n " plugged"
         echo
     done
 }
@@ -441,15 +449,20 @@ vm-cxl-hotplug() {
         error "no cxl memory devices matching '$memmatch'"
         return 1
     fi
-    echo "$memline" | while read dev bus sn be; do
+    while read dev bus sn be dontcare; do
+        # Qemu does not allow hotplugging a device with same ID twice,
+        # even if it would be deleted. Workaround by adding a hotplug
+        # counter as device ID suffix
+        _vm_cxl_hotplug_count=$(( _vm_cxl_hotplug_count + 1 ))
+        dev=${dev}.hp${_vm_cxl_hotplug_count}
         vm-monitor "device_add cxl-type3,$bus,$be,id=$dev,$sn"
-    done
+    done <<< "$memline"
 }
 
 vm-cxl-hotremove() {
     # Usage: vm-cxl-remove
     #
-    # Hotremove CXL memory device
+    # Hotremove CXL memory device.
     #
     # Example: vm-cxl-remove cxl_memdev1
     local memmatch memline devadd
@@ -458,8 +471,8 @@ vm-cxl-hotremove() {
         error "missing CXL_MEMDEV"
         return 1
     fi
-    memline="$(vm-cxl-hw | grep "$memmatch")"
-    echo "$memline" | while read dev; do
+    memline="$(vm-monitor "info qtree -b" | awk -F\" '/dev: cxl-type3/{print $2}' | grep "$memmatch")"
+    echo "$memline" | while read dev dontcare; do
         vm-monitor "device_del $dev"
     done
 }
