@@ -272,71 +272,79 @@ def dists(numalist):
     return dist_dict
 
 def qemucxlopts(cxl_host_bridges):
-    def mem_devices(mem_count, device, bus_id):
-        """Create CXL memory device objects and device params that connect it to bus_id."""
-        cxl_mem_objectparams, cxl_mem_deviceparams = [], []
-        mem_size = device["mem"]
-        mem_type = "volatile" # non-volatile to be added, possibly as device["nvmem"]
-        if mem_size.endswith("G"):
-            sizeM = int(mem_size[:-1]) * 1024
-        elif mem_size.endswith("M"):
-            sizeM = int(mem_size[:-1])
-        else:
-            raise ValueError('CXL memory size must be in M or G, got %r' % (mem_size,))
-        if mem_type == "volatile":
-            # sn = "0x" + hex(0xC813DB26+mem_count).upper()[2:]
-            sn = "0xc100" + hex(0xe2e0 + mem_count)
-            memdev_id = f"cxl_memdev{mem_count}"
-            backend_id = f"beram_{memdev_id}__bus_{bus_id}__sn_{sn}"
-            cxl_mem_objectparams.extend(["-object", f"memory-backend-ram,id={backend_id},share=on,size={mem_size}"])
-            if device.get("present", True):
-                cxl_mem_deviceparams.extend(["-device", f"cxl-type3,bus={bus_id},volatile-memdev={backend_id},id={memdev_id},sn={sn}"])
-        else:
-            raise ValueError('unsupported CXL memory type %r' % (mem_type,))
-        return cxl_mem_objectparams, cxl_mem_deviceparams, sizeM
     cxl_objectparams = []
     cxl_deviceparams = []
-    bus_nr = 12 # folk lore
-    chassis = 0xc1 # (slot, chassis) must be unique for each root port
-    slot = 0
-    mem_count = 0
-    root_port_count = 0
-    downstream_port_count = 0
     total_mem_sizeM = 0
+    mem_count = 0
+    slot = 0
+    root_port_count = 0
+    bus_nr = 12 # bus_nr partitions the 0..255 bus number space.
+    chassis = 0xc1 # (slot, chassis) must be unique for each root port
+    downstream_port_count = 0
+
+    def cxlmemopts(device, bus_id):
+        """Create CXL memory device -object and -device that connect it to bus_id."""
+        nonlocal mem_count, total_mem_sizeM
+        mem_size = device["mem"]
+        mem_type = "volatile" # non-volatile to be added, possibly as memory device["nvmem"]
+        try:
+            if mem_size.endswith("G"):
+                sizeM = int(mem_size[:-1]) * 1024
+            elif mem_size.endswith("M"):
+                sizeM = int(mem_size[:-1])
+            else:
+                raise ValueError('CXL memory size must be in M or G, got %r' % (mem_size,))
+        except Exception as e:
+            raise Exception("bad memory size in CXL memory device %s: %s" % (device, e))
+        if mem_type == "volatile":
+            sn = "0xc100%x" % (0xe2e0 + mem_count,)
+            memdev_id = f"cxl_memdev{mem_count}"
+            # Even if a CXL memory device is not present at boot time, we still create
+            # a Qemu memory backend device for it.
+            # The backend device id contains all necessary information for hotplugging
+            # the CXL memory device later on, and on the other hand, hotremoving and
+            # hotplugging the device again, even if it was present at start.
+            backend_id = f"beram_{memdev_id}__bus_{bus_id}__sn_{sn}"
+            cxl_objectparams.extend(["-object", f"memory-backend-ram,id={backend_id},share=on,size={mem_size}"])
+            if device.get("present", True):
+                cxl_deviceparams.extend(["-device", f"cxl-type3,bus={bus_id},volatile-memdev={backend_id},id={memdev_id},sn={sn}"])
+        else:
+            raise ValueError('unsupported CXL memory type %r' % (mem_type,))
+        total_mem_sizeM += sizeM
+        mem_count += 1
+
+    def cxlswitchopts(device, bus_id):
+        """Create CXL switch upstream (to bus_id) and downstream buses"""
+        nonlocal root_port_count, slot
+        upstream_id = f"cxlsw_us{bus_id[3:]}"
+        cxl_deviceparams.extend(["-device", f"cxl-upstream,bus={bus_id},id={upstream_id}"])
+        for downstream_idx, downstream_device in enumerate(device["switch"]):
+            downstream_id = f"cxlsw_ds{downstream_idx}_{upstream_id[6:]}"
+            cxl_deviceparams.extend(["-device", f"cxl-downstream,port={root_port_count},bus={upstream_id},id={downstream_id},chassis={chassis},slot={slot}"])
+            root_port_count += 1
+            slot += 1
+            if "mem" in downstream_device:
+                cxlmemopts(downstream_device, downstream_id)
+            elif "switch" in downstream_device:
+                cxlswitchopts(downstream_device, downstream_id)
+            else:
+                raise ValueError('unsupported CXL device in switch %r' % (downstream_device,))
+
     firmware_targets = []
     for host_bridge, root_ports in enumerate(cxl_host_bridges):
         host_bridge_id = f"cxlhb{host_bridge}"
         cxl_deviceparams.extend(["-device", f"pxb-cxl,bus_nr={bus_nr},bus=pcie.0,id={host_bridge_id},numa_node={host_bridge}"])
         firmware_targets.append(host_bridge_id)
-        bus_nr += 110 # folk lore, bus_nr=12 followed by bus_nr=222
+        bus_nr += 12
         for root_port, device in enumerate(root_ports):
             root_port_id = f"cxlrp{root_port}{host_bridge_id[3:]}"
             cxl_deviceparams.extend(["-device", f"cxl-rp,port={root_port_count},bus={host_bridge_id},id={root_port_id},chassis={chassis},slot={slot}"])
             root_port_count += 1
             slot += 1
             if "mem" in device: # volatile memory directly connected to root port
-                cxl_mem_objectparams, cxl_mem_deviceparams, mem_sizeM = mem_devices(mem_count, device, root_port_id)
-                cxl_objectparams.extend(cxl_mem_objectparams)
-                cxl_deviceparams.extend(cxl_mem_deviceparams)
-                total_mem_sizeM += mem_sizeM
-                mem_count += 1
+                cxlmemopts(device, root_port_id)
             elif "switch" in device:
-                upstream_id = f"cxlsw_us{root_port_id[3:]}"
-                cxl_deviceparams.extend(["-device", f"cxl-upstream,bus={root_port_id},id={upstream_id}"])
-                for downstream_idx, downstream_device in enumerate(device["switch"]):
-                    downstream_id = f"cxlsw_ds{downstream_idx}_{upstream_id[6:]}"
-                    # cxl_deviceparams.extend(["-device", f"cxl-downstream,port={downstream_port_count},bus={upstream_id},id={downstream_id},chassis={chassis},slot={slot}"])
-                    cxl_deviceparams.extend(["-device", f"cxl-downstream,port={root_port_count},bus={upstream_id},id={downstream_id},chassis={chassis},slot={slot}"])
-                    root_port_count += 1
-                    slot += 1
-                    if "mem" in downstream_device:
-                        cxl_mem_objectparams, cxl_mem_deviceparams, mem_sizeM = mem_devices(mem_count, downstream_device, downstream_id)
-                        cxl_objectparams.extend(cxl_mem_objectparams)
-                        cxl_deviceparams.extend(cxl_mem_deviceparams)
-                        total_mem_sizeM += mem_sizeM
-                        mem_count += 1
-                    else:
-                        raise ValueError('unsupported CXL device in switch %r' % (downstream_device,))
+                cxlswitchopts(device, root_port_id)
 
     # Firmware size must be larger than total memory size.
     # Round up to nearest 4GB.
