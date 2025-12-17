@@ -330,23 +330,72 @@ vm-reboot() { # script API
 
     local _deadline=${deadline:-}
     local _vagrantdir=${1:-$OUTPUT_DIR}
+    local _shutdown=0
+    local _pid
 
     if [ -z "$deadline" ]; then
         _deadline=$(( $(date +%s) + ${timeout:-60} ))
     fi
 
+    vm-command "sync; echo 3 > /proc/sys/vm/drop_caches; shutdown -h 0"
     (
-        cd $_vagrantdir
+        cd "$_vagrantdir"
         while (( $(date +%s) < $_deadline )); do
+            vagrant status 2>/dev/null | grep running || {
+                echo "vm-reboot: qemu shutdown gracefully"
+                _shutdown=1
+                break
+            }
+            sleep 1
+        done
+
+        if [ $_shutdown = 0 ]; then
             vagrant halt
             sleep 5
-            vagrant halt --force
+            vagrant status 2>/dev/null | grep running || {
+                echo "vm-reboot: qemu shutdown with vagrant halt"
+                _shutdown=1
+            }
+        fi
+
+        if [ $_shutdown = 0 ]; then
+            vm-monitor "quit"
             sleep 3
-            vagrant up --no-provision
-            if [ $? = 0 ]; then
-                break
-            fi
-        done
+            vagrant status 2>/dev/null | grep running || {
+                echo "vm-reboot: qemu shutdown with vm-monitor quit"
+                _shutdown=1
+            }
+        fi
+
+        if [ $_shutdown = 0 ]; then
+            for _pid in $(lsof -Fp monitor.sock 2>/dev/null); do
+                kill ${_pid#p} || :
+            done
+            sleep 3
+            vagrant status 2>/dev/null | grep running || {
+                echo "vm-reboot: qemu shutdown with SIGTERM"
+                _shutdown=1
+            }
+        fi
+
+        if [ $_shutdown = 0 ]; then
+            for _pid in $(lsof -Fp monitor.sock 2>/dev/null); do
+                kill -9 ${_pid#p} || :
+            done
+            sleep 3
+            vagrant status 2>/dev/null | grep running || {
+                echo "vm-reboot: qemu shutdown with SIGKILL"
+                _shutdown=1
+            }
+        fi
+
+        if [ $_shutdown = 0 ]; then
+            vagrant status 2>/dev/null | grep running && {
+                error "vm-reboot: immortal qemu error, cannot reboot"
+            }
+        fi
+
+        vagrant up --no-provision
     )
     deadline=$_deadline host-wait-vm-ssh-server $_vagrantdir
 }
