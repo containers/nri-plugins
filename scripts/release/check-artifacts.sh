@@ -65,7 +65,7 @@ check-helm-charts() {
     info "Checking Helm charts for version $VERSION..."
     for pkg in $CHECK_CHARTS; do
         info "  $pkg:$VERSION..."
-        if [ $(cat helm-index | yq ".entries.$pkg[] | select(.version == \"$VERSION\") | length > 0") != "true" ]; then
+        if [ "$(cat helm-index | yq ".entries.$pkg[] | select(.version == \"$VERSION\") | length > 0")" != "true" ]; then
             info "  FAIL: Helm chart $pkg:$VERSION NOT FOUND"
             status=1
         else
