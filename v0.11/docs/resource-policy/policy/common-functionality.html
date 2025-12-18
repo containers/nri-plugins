@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Common Functionality &mdash; NRI Plugins v0.10.1-78-g8047bc1e documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../_static/documentation_options.js?v=42576b99"></script>
+        <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link rel="next" title="Developer’s Guide" href="../developers-guide/index.html" />
+    <link rel="prev" title="Template Policy" href="template.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            NRI Plugins
+          </a>
+              <div class="version">
+                v0.10.1
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../index.html">Resource Policy Plugins</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../introduction.html">Introduction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../setup.html">Setup and Usage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../configuration.html">Dynamic Configuration</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="index.html">Policies</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="topology-aware.html">Topology-Aware Policy</a></li>
+<li class="toctree-l3"><a class="reference internal" href="balloons.html">Balloons Policy</a></li>
+<li class="toctree-l3"><a class="reference internal" href="template.html">Template Policy</a></li>
+<li class="toctree-l3 current"><a class="current reference internal" href="#">Common Functionality</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#overview">Overview</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#cache-allocation">Cache Allocation</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#cache-occupancy-monitoring-metrics">Cache Occupancy Monitoring Metrics</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#memory-bandwidth-allocation">Memory Bandwidth Allocation</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#memory-bandwidth-monitoring-metrics">Memory Bandwidth Monitoring Metrics</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#metrics-specific-to-monitoring-groups">Metrics Specific to Monitoring Groups</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#cache-and-memory-bandwidth-allocation-and-monitoring-prerequisites">Cache and Memory Bandwidth Allocation and Monitoring Prerequisites</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../developers-guide/index.html">Developer’s Guide</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../memory/index.html">Memory plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../deployment/index.html">Deployment</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/containers/nri-plugins">Project GitHub repository</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">NRI Plugins</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Resource Policy Plugins</a></li>
+          <li class="breadcrumb-item"><a href="index.html">Policies</a></li>
+      <li class="breadcrumb-item active">Common Functionality</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../../_sources/docs/resource-policy/policy/common-functionality.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="common-functionality">
+<h1>Common Functionality<a class="headerlink" href="#common-functionality" title="Link to this heading"></a></h1>
+<section id="overview">
+<h2>Overview<a class="headerlink" href="#overview" title="Link to this heading"></a></h2>
+<p>There is some common functionality implemented by the generic resource management
+infrastructure shared by all resource policy plugin implementations. This functionality
+is available in all policies, unless stated otherwise in the policy-specific documentation.</p>
+</section>
+<section id="cache-allocation">
+<h2>Cache Allocation<a class="headerlink" href="#cache-allocation" title="Link to this heading"></a></h2>
+<p>Plugins can be configured to exercise class-based control over the L2 and L3 cache
+allocated to containers’ processes. In practice, containers are assigned to classes.
+Classes have a corresponding cache allocation configuration. This configuration is
+applied to all containers and subsequently to all processes started in a container.</p>
+<p>To enable cache control use the <code class="docutils literal notranslate"><span class="pre">control.rdt.enable</span></code> option which defaults to <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p>
+<p>Plugins can be configured to assign containers by default to a cache class named after
+the Pod QoS class of the container: one of <code class="docutils literal notranslate"><span class="pre">BestEffort</span></code>, <code class="docutils literal notranslate"><span class="pre">Burstable</span></code>, and <code class="docutils literal notranslate"><span class="pre">Guaranteed</span></code>.
+The configuration setting controlling this behavior is <code class="docutils literal notranslate"><span class="pre">control.rdt.usagePodQoSAsDefaultClass</span></code>
+and it defaults to <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p>
+<p>Additionally, containers can be explicitly annotated to be assigned to a class.
+Use the <code class="docutils literal notranslate"><span class="pre">rdtclass.resource-policy.nri.io</span></code> annotation key for this. For instance</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Pod</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test-pod</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">rdtclass.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">poddefaultclass</span>
+<span class="w">    </span><span class="nt">rdtclass.resource-policy.nri.io/container.special-container</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">specialclass</span>
+<span class="nn">...</span>
+</pre></div>
+</div>
+<p>This will assign the container named <code class="docutils literal notranslate"><span class="pre">special-container</span></code> within the pod to
+the <code class="docutils literal notranslate"><span class="pre">specialclass</span></code> RDT class and any other container within the pod to the
+<code class="docutils literal notranslate"><span class="pre">poddefaultclass</span></code> RDT class. Effectively these containers’ processes will
+be assigned to the RDT CLOSes corresponding to those classes.</p>
+<section id="cache-class-partitioning-configuration">
+<h3>Cache Class/Partitioning Configuration<a class="headerlink" href="#cache-class-partitioning-configuration" title="Link to this heading"></a></h3>
+<p>RDT configuration is supplied as part of the<code class="docutils literal notranslate"><span class="pre">control.rdt</span></code> configuration block.
+Here is a sample snippet as a Helm chart value which assigns 33%, 66% and 100%
+of cache lines to <code class="docutils literal notranslate"><span class="pre">BestEffort</span></code>, <code class="docutils literal notranslate"><span class="pre">Burstable</span></code> and <code class="docutils literal notranslate"><span class="pre">Guaranteed</span></code> Pod QoS class
+containers correspondingly:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">config</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">control</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">rdt</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">enable</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">      </span><span class="nt">usePodQoSAsDefaultClass</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">options</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">l2</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">optional</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">        </span><span class="nt">l3</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">optional</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">        </span><span class="nt">mb</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">optional</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">partitions</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">fullCache</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">l2Allocation</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">all</span><span class="p">:</span>
+<span class="w">              </span><span class="nt">unified</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100%</span>
+<span class="w">          </span><span class="nt">l3Allocation</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">all</span><span class="p">:</span>
+<span class="w">              </span><span class="nt">unified</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100%</span>
+<span class="w">          </span><span class="nt">classes</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">BestEffort</span><span class="p">:</span>
+<span class="w">              </span><span class="nt">l2Allocation</span><span class="p">:</span>
+<span class="w">                </span><span class="nt">all</span><span class="p">:</span>
+<span class="w">                  </span><span class="nt">unified</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">33%</span>
+<span class="w">              </span><span class="nt">l3Allocation</span><span class="p">:</span>
+<span class="w">                </span><span class="nt">all</span><span class="p">:</span>
+<span class="w">                  </span><span class="nt">unified</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">33%</span>
+<span class="w">            </span><span class="nt">Burstable</span><span class="p">:</span>
+<span class="w">              </span><span class="nt">l2Allocation</span><span class="p">:</span>
+<span class="w">                </span><span class="nt">all</span><span class="p">:</span>
+<span class="w">                  </span><span class="nt">unified</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">66%</span>
+<span class="w">              </span><span class="nt">l3Allocation</span><span class="p">:</span>
+<span class="w">                </span><span class="nt">all</span><span class="p">:</span>
+<span class="w">                  </span><span class="nt">unified</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">66%</span>
+<span class="w">            </span><span class="nt">Guaranteed</span><span class="p">:</span>
+<span class="w">              </span><span class="nt">l2Allocation</span><span class="p">:</span>
+<span class="w">                </span><span class="nt">all</span><span class="p">:</span>
+<span class="w">                  </span><span class="nt">unified</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100%</span>
+<span class="w">              </span><span class="nt">l3Allocation</span><span class="p">:</span>
+<span class="w">                </span><span class="nt">all</span><span class="p">:</span>
+<span class="w">                  </span><span class="nt">unified</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100%</span>
+</pre></div>
+</div>
+<p>The actual library used to implement cache control is <a class="reference external" href="https://github.com/intel/goresctrl">goresctrl</a>.
+Please refer to its <a class="reference external" href="https://github.com/intel/goresctrl/blob/main/doc/rdt.md">documentation</a> for
+a more detailed description of configuration semantics.</p>
+<section id="a-warning-about-configuration-syntax-differences">
+<h4>A Warning About Configuration Syntax Differences<a class="headerlink" href="#a-warning-about-configuration-syntax-differences" title="Link to this heading"></a></h4>
+<p>Note that the configuration syntax used for cache partitioning and classes is slightly
+different for <a class="reference external" href="https://github.com/intel/goresctrl/blob/main/doc/rdt.md">goresctrl</a> and
+NRI Reference Plugins. When directly using goresctrl you can use a shorthand notation
+like this</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nn">...</span>
+<span class="w">      </span><span class="nt">classes</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">fullCache</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">l2Allocation</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">all</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100%</span>
+<span class="w">          </span><span class="nt">l3Allocation</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">all</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100%</span>
+<span class="nn">...</span>
+</pre></div>
+</div>
+<p>to actually mean</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nn">...</span>
+<span class="w">      </span><span class="nt">classes</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">fullCache</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">l2Allocation</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">all</span><span class="p">:</span>
+<span class="w">              </span><span class="nt">unified</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100%</span>
+<span class="w">          </span><span class="nt">l3Allocation</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">all</span><span class="p">:</span>
+<span class="w">              </span><span class="nt">unified</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100%</span>
+<span class="nn">...</span>
+</pre></div>
+</div>
+<p>This is not possible with the NRI Reference Plugins configuration CR. Here you
+must use the latter full syntax.</p>
+</section>
+</section>
+</section>
+<section id="cache-occupancy-monitoring-metrics">
+<h2>Cache Occupancy Monitoring Metrics<a class="headerlink" href="#cache-occupancy-monitoring-metrics" title="Link to this heading"></a></h2>
+<p>Plugins can be configured to export cache usage as Prometheus metrics. The following
+configuration options must be specified:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">control.rdt.enable</span></code> set to <code class="docutils literal notranslate"><span class="pre">true</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">instrumentation.prometheusExport</span></code> set to <code class="docutils literal notranslate"><span class="pre">true</span></code>,</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">instrumentation.httpEndpoint</span></code> set to a valid non-empty value, eg. <code class="docutils literal notranslate"><span class="pre">:8891</span></code>, and</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">instrumentation.metrics.enabled</span></code> set to contain <code class="docutils literal notranslate"><span class="pre">policy/rdt</span></code>, <code class="docutils literal notranslate"><span class="pre">rdt</span></code>, or <code class="docutils literal notranslate"><span class="pre">policy</span></code></p></li>
+</ul>
+<p>When deploying with Helm, the default configuration can be modified like this:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>helm<span class="w"> </span>install<span class="w"> </span><span class="nb">test</span><span class="w"> </span>-n<span class="w"> </span>kube-system<span class="w"> </span>nri-plugins/nri-resource-policy-topology-aware<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--set<span class="w"> </span>config.control.rdt.enable<span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--set<span class="w"> </span>config.instrumentation.prometheusExport<span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--set<span class="w"> </span>config.instrumentation.metrics.enabled<span class="o">=</span><span class="s1">&#39;{buildinfo,rdt}&#39;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--set<span class="w"> </span>config.log.debug<span class="o">=</span><span class="s1">&#39;{goresctrl}&#39;</span>
+</pre></div>
+</div>
+<p>Once enabled, you’ll see RDT metrics similar to the following:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>kubectl<span class="w"> </span>port-forward<span class="w"> </span>-n<span class="w"> </span>kube-system<span class="w"> </span>ds/nri-resource-policy-topology-aware<span class="w"> </span><span class="m">9000</span>:8891<span class="w"> </span><span class="p">&amp;</span>
+$<span class="w"> </span>wget<span class="w"> </span>-q<span class="w"> </span>--no-proxy<span class="w"> </span>http://127.0.0.1:9000/metrics<span class="w"> </span>-O-
+<span class="c1"># HELP go_build_info Build information about the main Go module.</span>
+<span class="c1"># TYPE go_build_info gauge</span>
+go_build_info<span class="o">{</span><span class="nv">checksum</span><span class="o">=</span><span class="s2">&quot;&quot;</span>,path<span class="o">=</span><span class="s2">&quot;github.com/containers/nri-plugins&quot;</span>,version<span class="o">=</span><span class="s2">&quot;v0.10.0&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">1</span>
+<span class="c1"># HELP nri_l3_llc_occupancy L3 (LLC) occupancy</span>
+<span class="c1"># TYPE nri_l3_llc_occupancy counter</span>
+nri_l3_llc_occupancy<span class="o">{</span><span class="nv">cache_id</span><span class="o">=</span><span class="s2">&quot;0&quot;</span>,rdt_class<span class="o">=</span><span class="s2">&quot;BestEffort&quot;</span>,rdt_mon_group<span class="o">=</span><span class="s2">&quot;&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">655360</span>
+nri_l3_llc_occupancy<span class="o">{</span><span class="nv">cache_id</span><span class="o">=</span><span class="s2">&quot;0&quot;</span>,rdt_class<span class="o">=</span><span class="s2">&quot;Burstable&quot;</span>,rdt_mon_group<span class="o">=</span><span class="s2">&quot;&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">409600</span>
+nri_l3_llc_occupancy<span class="o">{</span><span class="nv">cache_id</span><span class="o">=</span><span class="s2">&quot;0&quot;</span>,rdt_class<span class="o">=</span><span class="s2">&quot;Guaranteed&quot;</span>,rdt_mon_group<span class="o">=</span><span class="s2">&quot;&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">0</span>
+nri_l3_llc_occupancy<span class="o">{</span><span class="nv">cache_id</span><span class="o">=</span><span class="s2">&quot;0&quot;</span>,rdt_class<span class="o">=</span><span class="s2">&quot;system/default&quot;</span>,rdt_mon_group<span class="o">=</span><span class="s2">&quot;&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">2</span>.752512e+07
+nri_l3_llc_occupancy<span class="o">{</span><span class="nv">cache_id</span><span class="o">=</span><span class="s2">&quot;1&quot;</span>,rdt_class<span class="o">=</span><span class="s2">&quot;BestEffort&quot;</span>,rdt_mon_group<span class="o">=</span><span class="s2">&quot;&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">0</span>
+nri_l3_llc_occupancy<span class="o">{</span><span class="nv">cache_id</span><span class="o">=</span><span class="s2">&quot;1&quot;</span>,rdt_class<span class="o">=</span><span class="s2">&quot;Burstable&quot;</span>,rdt_mon_group<span class="o">=</span><span class="s2">&quot;&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">0</span>
+nri_l3_llc_occupancy<span class="o">{</span><span class="nv">cache_id</span><span class="o">=</span><span class="s2">&quot;1&quot;</span>,rdt_class<span class="o">=</span><span class="s2">&quot;Guaranteed&quot;</span>,rdt_mon_group<span class="o">=</span><span class="s2">&quot;&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">491520</span>
+nri_l3_llc_occupancy<span class="o">{</span><span class="nv">cache_id</span><span class="o">=</span><span class="s2">&quot;1&quot;</span>,rdt_class<span class="o">=</span><span class="s2">&quot;system/default&quot;</span>,rdt_mon_group<span class="o">=</span><span class="s2">&quot;&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">2</span>.818048e+07
+</pre></div>
+</div>
+<p>The RDT-specific set of metrics collected depends on your hardware and your kernel
+configuration. If supported by your environment, currently you can expect to get the
+following metrics related to cache occupancy:</p>
+<ul class="simple">
+<li><p>l3_llc_occupancy: L3 (LLC) occupancy</p></li>
+</ul>
+<p>These are collected per cache ID for each RDT class/CLOS.</p>
+</section>
+<section id="memory-bandwidth-allocation">
+<h2>Memory Bandwidth Allocation<a class="headerlink" href="#memory-bandwidth-allocation" title="Link to this heading"></a></h2>
+<p>If the hardware supports it, plugins can limit per RDT class, how much memory
+bandwidth processes in containers in a class can use up altogether. You can
+enable this using a slightly modified class configuration which specifies MBA
+limits for each class and the partition.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">config</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">control</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">rdt</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">enable</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">      </span><span class="nt">usePodQoSAsDefaultClass</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">options</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">l2</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">optional</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">        </span><span class="nt">l3</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">optional</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">        </span><span class="nt">mb</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">optional</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">partitions</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">fullCache</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">l2Allocation</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">all</span><span class="p">:</span>
+<span class="w">              </span><span class="nt">unified</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100%</span>
+<span class="w">          </span><span class="nt">l3Allocation</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">all</span><span class="p">:</span>
+<span class="w">              </span><span class="nt">unified</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100%</span>
+<span class="w">          </span><span class="nt">mbAllocation</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">all</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="nv">100%</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1000Mbps</span><span class="w"> </span><span class="p p-Indicator">]</span>
+<span class="w">          </span><span class="nt">classes</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">BestEffort</span><span class="p">:</span>
+<span class="w">              </span><span class="nt">l2Allocation</span><span class="p">:</span>
+<span class="w">                </span><span class="nt">all</span><span class="p">:</span>
+<span class="w">                  </span><span class="nt">unified</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">33%</span>
+<span class="w">              </span><span class="nt">l3Allocation</span><span class="p">:</span>
+<span class="w">                </span><span class="nt">all</span><span class="p">:</span>
+<span class="w">                  </span><span class="nt">unified</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">33%</span>
+<span class="w">              </span><span class="nt">mbAllocation</span><span class="p">:</span>
+<span class="w">                </span><span class="nt">all</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="nv">33%</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">330Mbps</span><span class="w"> </span><span class="p p-Indicator">]</span>
+<span class="w">            </span><span class="nt">Burstable</span><span class="p">:</span>
+<span class="w">              </span><span class="nt">l2Allocation</span><span class="p">:</span>
+<span class="w">                </span><span class="nt">all</span><span class="p">:</span>
+<span class="w">                  </span><span class="nt">unified</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">66%</span>
+<span class="w">              </span><span class="nt">l3Allocation</span><span class="p">:</span>
+<span class="w">                </span><span class="nt">all</span><span class="p">:</span>
+<span class="w">                  </span><span class="nt">unified</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">66%</span>
+<span class="w">              </span><span class="nt">mbAllocation</span><span class="p">:</span>
+<span class="w">                </span><span class="nt">all</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="nv">66%</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">660Mbps</span><span class="w"> </span><span class="p p-Indicator">]</span>
+<span class="w">            </span><span class="nt">Guaranteed</span><span class="p">:</span>
+<span class="w">              </span><span class="nt">l2Allocation</span><span class="p">:</span>
+<span class="w">                </span><span class="nt">all</span><span class="p">:</span>
+<span class="w">                  </span><span class="nt">unified</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100%</span>
+<span class="w">              </span><span class="nt">l3Allocation</span><span class="p">:</span>
+<span class="w">                </span><span class="nt">all</span><span class="p">:</span>
+<span class="w">                  </span><span class="nt">unified</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100%</span>
+<span class="w">              </span><span class="nt">mbAllocation</span><span class="p">:</span>
+<span class="w">                </span><span class="nt">all</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="nv">100%</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1000Mbps</span><span class="w"> </span><span class="p p-Indicator">]</span>
+</pre></div>
+</div>
+</section>
+<section id="memory-bandwidth-monitoring-metrics">
+<h2>Memory Bandwidth Monitoring Metrics<a class="headerlink" href="#memory-bandwidth-monitoring-metrics" title="Link to this heading"></a></h2>
+<p>If you have RDT-specific metrics collection enabled and your platform supports
+memory bandwidth monitoring, you can expect these related metrics to be exposed:</p>
+<ul class="simple">
+<li><p>l3_mbm_local_bytes: bytes transferred to/from local memory through LLC</p></li>
+<li><p>l3_mbm_total_bytes: total bytes transferred to/from memory through LLC</p></li>
+</ul>
+<p>An example:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>kubectl<span class="w"> </span>port-forward<span class="w"> </span>-n<span class="w"> </span>kube-system<span class="w"> </span>ds/nri-resource-policy-topology-aware<span class="w"> </span><span class="m">9000</span>:8891<span class="w"> </span><span class="p">&amp;</span>
+$<span class="w"> </span>wget<span class="w"> </span>-q<span class="w"> </span>--no-proxy<span class="w"> </span>http://127.0.0.1:9000/metrics<span class="w"> </span>-O-
+<span class="c1"># HELP nri_l3_mbm_local_bytes bytes transferred to/from local memory through LLC</span>
+<span class="c1"># TYPE nri_l3_mbm_local_bytes counter</span>
+nri_l3_mbm_local_bytes<span class="o">{</span><span class="nv">cache_id</span><span class="o">=</span><span class="s2">&quot;0&quot;</span>,rdt_class<span class="o">=</span><span class="s2">&quot;BestEffort&quot;</span>,rdt_mon_group<span class="o">=</span><span class="s2">&quot;&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">573440</span>
+nri_l3_mbm_local_bytes<span class="o">{</span><span class="nv">cache_id</span><span class="o">=</span><span class="s2">&quot;0&quot;</span>,rdt_class<span class="o">=</span><span class="s2">&quot;Burstable&quot;</span>,rdt_mon_group<span class="o">=</span><span class="s2">&quot;&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">1</span>.253376e+07
+nri_l3_mbm_local_bytes<span class="o">{</span><span class="nv">cache_id</span><span class="o">=</span><span class="s2">&quot;0&quot;</span>,rdt_class<span class="o">=</span><span class="s2">&quot;Guaranteed&quot;</span>,rdt_mon_group<span class="o">=</span><span class="s2">&quot;&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">0</span>
+nri_l3_mbm_local_bytes<span class="o">{</span><span class="nv">cache_id</span><span class="o">=</span><span class="s2">&quot;0&quot;</span>,rdt_class<span class="o">=</span><span class="s2">&quot;system/default&quot;</span>,rdt_mon_group<span class="o">=</span><span class="s2">&quot;&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">1</span>.98836224e+09
+nri_l3_mbm_local_bytes<span class="o">{</span><span class="nv">cache_id</span><span class="o">=</span><span class="s2">&quot;1&quot;</span>,rdt_class<span class="o">=</span><span class="s2">&quot;BestEffort&quot;</span>,rdt_mon_group<span class="o">=</span><span class="s2">&quot;&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">1</span>.6384e+07
+nri_l3_mbm_local_bytes<span class="o">{</span><span class="nv">cache_id</span><span class="o">=</span><span class="s2">&quot;1&quot;</span>,rdt_class<span class="o">=</span><span class="s2">&quot;Burstable&quot;</span>,rdt_mon_group<span class="o">=</span><span class="s2">&quot;&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">0</span>
+nri_l3_mbm_local_bytes<span class="o">{</span><span class="nv">cache_id</span><span class="o">=</span><span class="s2">&quot;1&quot;</span>,rdt_class<span class="o">=</span><span class="s2">&quot;Guaranteed&quot;</span>,rdt_mon_group<span class="o">=</span><span class="s2">&quot;&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">1</span>.06496e+07
+nri_l3_mbm_local_bytes<span class="o">{</span><span class="nv">cache_id</span><span class="o">=</span><span class="s2">&quot;1&quot;</span>,rdt_class<span class="o">=</span><span class="s2">&quot;system/default&quot;</span>,rdt_mon_group<span class="o">=</span><span class="s2">&quot;&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">1</span>.63692544e+09
+<span class="c1"># HELP nri_l3_mbm_total_bytes total bytes transferred to/from memory through LLC</span>
+<span class="c1"># TYPE nri_l3_mbm_total_bytes counter</span>
+nri_l3_mbm_total_bytes<span class="o">{</span><span class="nv">cache_id</span><span class="o">=</span><span class="s2">&quot;0&quot;</span>,rdt_class<span class="o">=</span><span class="s2">&quot;BestEffort&quot;</span>,rdt_mon_group<span class="o">=</span><span class="s2">&quot;&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">573440</span>
+nri_l3_mbm_total_bytes<span class="o">{</span><span class="nv">cache_id</span><span class="o">=</span><span class="s2">&quot;0&quot;</span>,rdt_class<span class="o">=</span><span class="s2">&quot;Burstable&quot;</span>,rdt_mon_group<span class="o">=</span><span class="s2">&quot;&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">1</span>.59744e+07
+nri_l3_mbm_total_bytes<span class="o">{</span><span class="nv">cache_id</span><span class="o">=</span><span class="s2">&quot;0&quot;</span>,rdt_class<span class="o">=</span><span class="s2">&quot;Guaranteed&quot;</span>,rdt_mon_group<span class="o">=</span><span class="s2">&quot;&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">0</span>
+nri_l3_mbm_total_bytes<span class="o">{</span><span class="nv">cache_id</span><span class="o">=</span><span class="s2">&quot;0&quot;</span>,rdt_class<span class="o">=</span><span class="s2">&quot;system/default&quot;</span>,rdt_mon_group<span class="o">=</span><span class="s2">&quot;&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">3</span>.172352e+09
+nri_l3_mbm_total_bytes<span class="o">{</span><span class="nv">cache_id</span><span class="o">=</span><span class="s2">&quot;1&quot;</span>,rdt_class<span class="o">=</span><span class="s2">&quot;BestEffort&quot;</span>,rdt_mon_group<span class="o">=</span><span class="s2">&quot;&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">2</span>.236416e+07
+nri_l3_mbm_total_bytes<span class="o">{</span><span class="nv">cache_id</span><span class="o">=</span><span class="s2">&quot;1&quot;</span>,rdt_class<span class="o">=</span><span class="s2">&quot;Burstable&quot;</span>,rdt_mon_group<span class="o">=</span><span class="s2">&quot;&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">0</span>
+nri_l3_mbm_total_bytes<span class="o">{</span><span class="nv">cache_id</span><span class="o">=</span><span class="s2">&quot;1&quot;</span>,rdt_class<span class="o">=</span><span class="s2">&quot;Guaranteed&quot;</span>,rdt_mon_group<span class="o">=</span><span class="s2">&quot;&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">1</span>.318912e+07
+nri_l3_mbm_total_bytes<span class="o">{</span><span class="nv">cache_id</span><span class="o">=</span><span class="s2">&quot;1&quot;</span>,rdt_class<span class="o">=</span><span class="s2">&quot;system/default&quot;</span>,rdt_mon_group<span class="o">=</span><span class="s2">&quot;&quot;</span><span class="o">}</span><span class="w"> </span><span class="m">2</span>.64511488e+09
+</pre></div>
+</div>
+</section>
+<section id="metrics-specific-to-monitoring-groups">
+<h2>Metrics Specific to Monitoring Groups<a class="headerlink" href="#metrics-specific-to-monitoring-groups" title="Link to this heading"></a></h2>
+<p>If there are any monitoring groups present in the system, goresctrl produces
+RDT metrics for those as well. You can differentiate between group specific and
+other metrics using the <code class="docutils literal notranslate"><span class="pre">rdt_mon_group</span></code> metrics label. Metrics specific to a
+monitoring group have this label set to the name of the monitoring group the
+metric corresponds to.</p>
+</section>
+<section id="cache-and-memory-bandwidth-allocation-and-monitoring-prerequisites">
+<h2>Cache and Memory Bandwidth Allocation and Monitoring Prerequisites<a class="headerlink" href="#cache-and-memory-bandwidth-allocation-and-monitoring-prerequisites" title="Link to this heading"></a></h2>
+<p>Note that for cache and memory bandwidth allocation and monitoring to work,
+you must have</p>
+<ul class="simple">
+<li><p>a hardware platform which supports these features,</p></li>
+<li><p>resctrlfs pseudofilesystem enabled in your kernel</p></li>
+<li><p>the resctrlfs filesystem mounted (possibly with extra options for your platform)</p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="template.html" class="btn btn-neutral float-left" title="Template Policy" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../developers-guide/index.html" class="btn btn-neutral float-right" title="Developer’s Guide" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, various.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+  
+    <div class="rst-versions" data-toggle="rst-versions" role="note" aria-label="versions">
+      <span class="rst-current-version" data-toggle="rst-current-version">
+        <span class="fa fa-book"> GitHub Pages</span>
+        v0.11
+        <span class="fa fa-caret-down"></span>
+      </span>
+      <div class="rst-other-versions">
+        <dl id="versions">
+          <dt>Versions</dt>
+        </dl>
+        <dl>
+          <dt>
+          <a href="/nri-plugins/releases">all releases</a>
+          </dt>
+        </dl>
+      </div>
+    </div>
+  
+  <script src="../../../../versions.js"></script>
+  <script>
+      var list = document.getElementById('versions')
+      var menuItems = getVersionsMenuItems();
+      for (var i=0; i < menuItems.length; i++) {
+        var item = document.createElement('dd');
+        var anchor = item.appendChild(document.createElement('a'));
+        anchor.appendChild(document.createTextNode(menuItems[i].name));
+        anchor.href = menuItems[i].url;
+        list.appendChild(item);
+      }
+  </script>
+
+
+</body>
+</html>
