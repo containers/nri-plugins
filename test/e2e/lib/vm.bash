@@ -277,7 +277,7 @@ vm-play() {
 	  -i "${vm}," -u vagrant \
 	  --private-key="$private_key" \
 	  --ssh-common-args "-F $vagrantdir/.ssh-config" \
-	  --extra-vars "cri_runtime=${k8scri} nri_resource_policy_src=${nri_resource_policy_src} cache_dir=$CACHE_DIR"
+	  --extra-vars "cri_runtime=${k8scri} nri_resource_policy_src=${nri_resource_policy_src} cache_dir=$CACHE_DIR kernel_getsource=$kernel_getsource kernel_config=$kernel_config"
     )
 }
 
@@ -861,4 +861,130 @@ vm-set-kernel-cmdline() {
     else
         ubuntu-set-kernel-cmdline "$*"
     fi
+}
+
+vm-kernel-pkgs-install() { # script API
+    # Usage: vm-kernel-pkgs-install
+    #
+    # Install custom kernel packages from a tar file.
+    # Does nothing if requested packages are already installed.
+    #
+    # Environment variables:
+    #   file       contains the name of the tarball on vm.
+    #              The default is ~/kernel-pkgs.tar.
+    #
+    # Saves previous default to ~/.vm-kernel-pkgs.default-kernel.
+    # That kernel can be restored with vm-kernel-pkgs-uninstall.
+    local file="${file:-kernel-pkgs.tar}"
+    local feat="vm-kernel-pkgs"
+
+    vm-command "tar tf $file" || \
+        command-error "cannot list contents of kernel packages file $file"
+    local to_be_installed="$COMMAND_OUTPUT"
+
+    vm-command "cat .$feat.installed_packages 2>/dev/null || echo ''" || \
+        command-error "cannot read previously installed kernel packages list"
+    local already_installed="$COMMAND_OUTPUT"
+
+    if [ "$to_be_installed" == "$already_installed" ]; then
+        echo "vm-kernel-pkgs-install: kernel packages from $file already installed, skipping installation"
+        return 0
+    fi
+
+    vm-command "[ -d $feat ] && rm -rf $feat; mkdir $feat; tar xvf $file -C $feat | tee .$feat.extracted_packages" ||
+        command-error "cannot extract kernel packages from $file"
+
+    if grep -q .rpm <<< "$to_be_installed"; then
+        # Store current kernel / Fedora
+        vm-command "grubby --default-kernel | tee .$feat.default-kernel" || \
+            command-error "cannot save current default kernel"
+        # Install new kernel packages / Fedora
+        vm-command "rpm -Uvh $feat/*.rpm" || \
+            command-error "cannot install kernel rpm packages from $file"
+    elif grep -q .deb <<< "$to_be_installed"; then
+        # Store current kernel / Ubuntu
+        vm-command "uname -r | tee .$feat.default-kernel"
+        # Install new kernel packages / Ubuntu
+        vm-command "dpkg -i $feat/*.deb" || \
+            command-error "cannot install kernel deb packages from $file"
+        # In lack of grubby, set GRUB_DEFAULT in both "original" (for current) and "override" (for new kernel) configs.
+        # They both boot the system with current kernel and new kernel, respectively.
+        # When wish to change back from the new to the original kernel, it suffices to remove the "override" config
+        # and update grub.
+        vm-command "
+            oldkernelversion=\$(uname -r)
+            newkernelversion=\$(dpkg --contents $feat/linux-image-*.deb | awk -Fvmlinuz- /vmlinuz-/'{print \$2}')
+            submenu=\$(grep -i submenu.*advanced /boot/grub/grub.cfg | awk -F\' '{print \$2}')
+            oldmenuchoice=\$(grep \"menuentry.*\$oldkernelversion\" /boot/grub/grub.cfg | grep -v recovery | awk -F\' '{print \$2}')
+            newmenuchoice=\$(grep \"menuentry.*\$newkernelversion\" /boot/grub/grub.cfg | grep -v recovery | awk -F\' '{print \$2}')
+            echo 'Save original grub default'
+            echo \"GRUB_DEFAULT='\$submenu>\$oldmenuchoice'\" | tee /etc/default/grub.d/e2e-00-original-default-kernel.cfg
+            echo 'Override original grub default with:'
+            echo \"GRUB_DEFAULT='\$submenu>\$newmenuchoice'\" | tee /etc/default/grub.d/e2e-01-override-default-kernel.cfg
+            update-grub
+            "
+    else
+        command-error "no kernel packages found in $file"
+    fi
+    vm-command "cat .$feat.extracted_packages >> .$feat.installed_packages && rm .$feat.extracted_packages" || \
+        command-error "cannot save installed kernel packages list"
+
+    echo "Booting to new kernel..."
+    vm-reboot || \
+        error "vm-kernel-pkgs-install: reboot failed after installing new kernel packages"
+
+    vm-command "uname -a"
+}
+
+vm-kernel-pkgs-uninstall() { # script API
+    # Usage: vm-kernel-pkgs-uninstall
+    #
+    # Boot to previous kernel before vm-kernel-pkgs-install and
+    # uninstall custom kernel packages installed with vm-kernel-pkgs-install.
+    local feat="vm-kernel-pkgs"
+    local default_kernel
+    local installed_packages
+    vm-command "cat .$feat.default-kernel" || {
+        echo "vm-kernel-pkgs-uninstall: kernel-pkgs not installed"
+        return 0
+    }
+
+    default_kernel="$COMMAND_OUTPUT"
+    if [ -z "$default_kernel" ]; then
+        command-error "cannot restore previous default kernel, file ~/.$feat.default-kernel is missing or empty"
+    fi
+
+    vm-command "cat .$feat.installed_packages" || \
+        command-error "cannot find installed kernel packages list file ~/.$feat.installed_packages"
+    installed_packages="$COMMAND_OUTPUT"
+    if [ -z "$installed_packages" ]; then
+        command-error "cannot uninstall kernel packages, file ~/.$feat.installed_packages is missing or empty"
+    fi
+
+    # Modify grub to select previous kernel on next boot
+    if grep -q rpm <<< "$installed_packages"; then
+        vm-command "grubby --set-default=\"$default_kernel\"" || \
+            command-error "cannot restore previous default kernel to $default_kernel"
+    else
+        vm-command "rm -f /etc/default/grub.d/e2e-01-override-default-kernel.cfg; update-grub"
+    fi
+
+    echo "Booting to previous kernel: $default_kernel."
+    vm-reboot
+
+    # Uninstall previously installed custom kernel packages.
+    if grep -q rpm <<< "$installed_packages"; then
+        vm-command "sed 's/.rpm//g' < .$feat.installed_packages | xargs rpm -e --nodeps" || \
+            command-error "failed to uninstall packages: $installed_packages"
+    elif grep -q deb <<< "$installed_packages"; then
+        vm-command "xargs -a .$feat.installed_packages dpkg -r" || \
+            command-error "failed to uninstall packages: $installed_packages"
+        vm-command "rm -f /etc/default/grub.d/e2e-00-original-default-kernel.cfg; update-grub"
+    else
+        command-error "no kernel packages found in ~/.$feat.installed_packages"
+    fi
+    vm-command "rm -f .$feat.installed_packages .$feat.default-kernel" || \
+        command-error "cannot remove ~/.$feat.installed_packages and ~/.$feat.default-kernel files"
+
+    vm-command "uname -a"
 }

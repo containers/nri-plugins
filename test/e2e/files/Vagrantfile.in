@@ -15,6 +15,8 @@ HOSTNAME = "SERVER_NAME"
 # How many nodes to create
 N = 1
 
+KERNEL_GETSOURCE = "#{ENV['kernel_getsource']}"
+KERNEL_CONFIG = "#{ENV['kernel_config']}"
 K8S_RELEASE = "#{ENV['k8s_release']}"
 K8S_VERSION = "#{ENV['k8s_version']}"
 HELM_RELEASE = "#{ENV['helm_release']}"
@@ -112,6 +114,8 @@ Vagrant.configure("2") do |config|
       https_proxy: "#{ENV['HTTPS_PROXY']}",
       http_proxy: "#{ENV['HTTP_PROXY']}",
       no_proxy: "#{ENV['NO_PROXY']}",
+      kernel_getsource: KERNEL_GETSOURCE,
+      kernel_config: KERNEL_CONFIG,
       k8s_release: K8S_RELEASE,
       k8s_version: K8S_VERSION,
       helm_release: HELM_RELEASE,
