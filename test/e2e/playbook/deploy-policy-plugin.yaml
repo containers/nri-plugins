@@ -1,4 +1,7 @@
 ---
+- name: check need and availability of a custom kernel
+  ansible.builtin.import_playbook: custom-kernel.yaml
+
 - hosts: all
   become: no
   become_user: root

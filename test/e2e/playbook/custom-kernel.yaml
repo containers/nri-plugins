@@ -1,0 +1,92 @@
+---
+- name: Check if a custom kernel is required and available
+  hosts: all
+  vars:
+    cached_kernel_pkgs_tarball: ""
+    kernel_getsource: "{{ kernel_getsource }}"
+    kernel_getsource_cmd: ""
+    kernel_config: "{{ kernel_config }}"
+
+  tasks:
+    - name: Check if we have already built kernel in cache
+      when: kernel_getsource != '' and kernel_config != ''
+      block:
+        - name: Make sure kernel uses serial console for debugging
+          become: yes
+          shell: "grep -sr console=ttyS /etc/default/grub* || echo 'GRUB_CMDLINE_LINUX=\"$GRUB_CMDLINE_LINUX console=ttyS0,115200n8 \"' > /etc/default/grub.d/e2e-cmdline-serialconsole.cfg"
+
+        - name: Expand kernel_getsource shorthands
+          ansible.builtin.set_fact:
+            kernel_getsource_cmd: "{{ shorthands[kernel_getsource] | default(kernel_getsource) }}"
+          vars:
+            shorthands:
+              'vanilla': "git clone --depth 1 https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git linux"
+              'mainline': "git clone --depth 1 https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git linux"
+              'cxl-next': "git clone --depth 1 -b next https://git.kernel.org/pub/scm/linux/kernel/git/cxl/cxl.git linux"
+        - name: Generate kernel Fedora packages tarball name... getsource {{ kernel_getsource }} getsource_cmd {{ kernel_getsource_cmd }}
+          ansible.builtin.set_fact:
+            cached_kernel_pkgs_tarball: "{{ cache_dir }}/kernel.getsource_{{ kernel_getsource | regex_replace('[^a-zA-Z0-9-]+', '_') }}.config_{{ lookup('file', kernel_config) | hash('sha256') }}.rpms.tar"
+          when: ansible_facts['distribution'] == "Fedora"
+
+        - name: Generate kernel Ubuntu packages tarball name
+          ansible.builtin.set_fact:
+            cached_kernel_pkgs_tarball: "{{ cache_dir }}/kernel.getsource_{{ kernel_getsource | regex_replace('[^a-zA-Z0-9-]+', '_') }}.config_{{ lookup('file', kernel_config) | hash('sha256') }}.debs.tar"
+          when: ansible_facts['distribution'] == "Ubuntu"
+
+        - name: "Lookup cached kernel: {{ cached_kernel_pkgs_tarball }}"
+          delegate_to: localhost
+          stat:
+            path: "{{ cached_kernel_pkgs_tarball }}"
+          register: cached_kernel_stat
+
+        - name: If we have a cached kernel, push it to the vm
+          when: cached_kernel_stat.stat.exists
+          synchronize:
+            src: "{{ cached_kernel_pkgs_tarball }}"
+            dest: "/home/vagrant/kernel-pkgs.tar"
+            use_ssh_args: true
+
+        - name: If we do not have a cached kernel, fetch and build the kernel on vm
+          when: not cached_kernel_stat.stat.exists
+          block:
+            - name: Install kernel_getsource dependencies
+              become: yes
+              ansible.builtin.package:
+                pkg:
+                  - git
+                  - wget
+                  - rsync
+                state: present
+                update_cache: true
+
+            - name: Get kernel sources to vm:~/linux
+              vars:
+                source_id_file: "linux/.kernel_getsource.{{ kernel_getsource | regex_replace('[^a-zA-Z0-9-]+', '_') }}"
+              shell: |
+                [ -f {{ source_id_file }} ] || {
+                    rm -rf linux;
+                    {{ kernel_getsource_cmd }}
+
+                    touch {{ source_id_file }}
+                }
+
+            - name: Copy kernel config to the vm
+              synchronize:
+                src: "{{ kernel_config }}"
+                dest: "linux/.config"
+                use_ssh_args: true
+
+            - name: Build kernel pkgs on Fedora to vm:~/kernel-pkgs.tar
+              ansible.builtin.include_tasks: custom-kernel-fedora.yaml
+              when: ansible_facts['distribution'] == "Fedora"
+
+            - name: Build kernel pkgs on Ubuntu to vm:~/kernel-pkgs.tar
+              ansible.builtin.include_tasks: custom-kernel-ubuntu.yaml
+              when: ansible_facts['distribution'] == "Ubuntu"
+
+            - name: Cache built kernel packages on the host
+              synchronize:
+                src: "kernel-pkgs.tar"
+                dest: "{{ cached_kernel_pkgs_tarball }}"
+                use_ssh_args: true
+                mode: pull
