@@ -1,0 +1,7 @@
+[
+    {"mem": "4G", "threads":2, "cores": 2, "nodes": 1, "packages": 2},
+    {"cxl": [
+	      [{"switch": [{"mem": "256M", "present": false}, {"mem": "256M", "present": false}]}],
+	      [{"switch": [{"mem": "256M", "present": false}, {"mem": "256M", "present": false}]}]
+	    ]}
+]
