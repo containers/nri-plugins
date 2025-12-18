@@ -72,3 +72,19 @@ verify \
 vm-command "kubectl delete pods --all --now"
 
 helm-terminate
+
+# Restart with unlimited burstable preference set to a single NUMA node.
+helm_config=$(UNLIMITED_BURSTABLE=numa instantiate helm-config.yaml) helm-launch topology-aware
+
+# Containers with unlimited burstability will be assigned according to the
+# global preference if they are not annotated otherwise.
+ANN1='unlimited-burstable.resource-policy.nri.io/container.pod8c1: die'
+CONTCOUNT=2 CPUREQ=2 CPULIM=0 MEMREQ=100M create burstable
+report allowed
+verify \
+    'len(nodes["pod8c0"]) == 1' \
+    'len(nodes["pod8c1"]) == 2'
+
+vm-command "kubectl delete pods --all --now"
+
+helm-terminate
