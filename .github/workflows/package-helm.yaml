@@ -144,7 +144,7 @@ jobs:
       - name: Log In To Registry
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | \
-              helm registry login ${{ env.REGISTRY }}/${{ env.REGISTRY_PATH }} -u ${{ env.REGISTRY_USER }} --password-stdin
+              helm registry login ${{ env.REGISTRY }} -u ${{ env.REGISTRY_USER }} --password-stdin
 
       - name: Push Unstable Helm Charts To Registry
         shell: bash
