@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
 
-"""topology2qemuopts - convert NUMA node list from JSON to Qemu options
+
+"""topology2qemuopts - convert system structures from JSON to Qemu options
+
+System structures are given in a JSON list of
+- NUMA node group definitions and
+- CXL structures (optional).
+
+topology2qemuopts outputs Qemu command line parameters that emulate a
+system with given structures. Use environment variable
+SEPARATED_OUTPUT_VARS=1 to group parameters in separate categories.
 
 NUMA node group definitions:
 "mem"                 mem (RAM) size on each NUMA node in this group.
@@ -77,6 +86,59 @@ $ ( cat << EOF
 ]
 EOF
 ) | python3 topology2qemuopts.py
+
+CXL structures:
+"cxl"                 List of host bridge connections.
+
+                      New host bridge (pxb-cxl) is created for each list
+                      of host bridge connections.
+                      Each host bridge is attached to the NUMA node
+                      corresponding to bridge's index in the list.
+                      Each host bridge has its own CXL Fixed Memory Window
+                      (cxl-fmw), that is, CXL memories are not interleaved.
+                      That is, regions can be created on memory devices
+                      independently.
+
+                      Each host bridge connection is a list of root
+                      port connections to the host bridge.
+
+                      New root port (cxl-rp) is created for each list of
+                      root port connections.
+                      Each root port connection is a list of CXL
+                      memory devices and CXL switches.
+
+                      CXL memory devices (cxl-type3, volatile-memdev):
+                        "mem"     specifies the size.
+                        "present" (optional) specifies if the device is
+                                  present at vm boot (true, the default)
+                                  or if it can be hotplugged later (false).
+                                  All devices can be hotremoved.
+
+                      CXL switches (cxl-upstream, cxl-downstream):
+                        "switch"  specifies a list of CXL memory devices
+                                  attached to the switch.
+
+  CXL Examples:
+
+  # Single 8G CXL memory device attached to NUMA node 0 in a machine with 4G DRAM.
+  $ python3 topology2qemuopts.py <<< '[ {"cores":2,"mem":"4G"}, {"cxl": [[{"mem":"8G"}]]} ]'
+
+  # One device attached, two placeholders for hotplugging
+  {"cxl": [
+      # list of root ports of host bridge 0, in NUMA node 0
+      [
+          # memory device in root port 0
+          {"mem": "256M"}  # cxl_memdev0, is present at boot
+      ],
+      # list of root ports of host bridge 1, in NUMA node 1
+      [
+          # CXL switch in root port 1 or host bridge 1
+          {"switch": [
+              {"mem": "1G", "present": false}, # cxl_memdev1, not present at boot
+              {"mem": "1G", "present": false}, # cxl_memdev2, not present at boot
+          ]}
+      ]
+  ]}
 """
 
 import os
@@ -112,7 +174,8 @@ def validate(numalist):
                       "cores", "threads", "nodes", "dies", "packages",
                       "cpus-present",
                       "node-dist", "dist-all",
-                      "dist-other-package", "dist-same-package", "dist-same-die"))
+                      "dist-other-package", "dist-same-package", "dist-same-die",
+                      "cxl"))
     int_range_keys = {'cores': ('>= 0', lambda v: v >= 0),
                       'threads': ('> 0', lambda v: v > 0),
                       'nodes': ('> 0', lambda v: v > 0),
@@ -213,6 +276,90 @@ def dists(numalist):
                         dist_dict[sourcenode][destnode] = dist_other_package
     return dist_dict
 
+def qemucxlopts(cxl_host_bridges):
+    cxl_objectparams = []      # qemu -object parameters needed for CXL.
+    cxl_deviceparams = []      # qemu -device parameters needed for CXL.
+    total_mem_sizeM = 0        # total memory in CXL memory devices in megabytes.
+    mem_count = 0              # number of memory backend devices.
+    port_count = 0             # number of ports (root ports or switches).
+    bus_nr = 12                # bus_nr partitions the 0..255 bus number space.
+    slot = 0
+    chassis = 0xc1             # (slot, chassis) must be unique for each root port.
+
+    def cxlmemopts(device, bus_id):
+        """Create CXL memory device -object and -device that connect it to bus_id."""
+        nonlocal mem_count, total_mem_sizeM
+        mem_size = device["mem"]
+        mem_type = "volatile" # non-volatile to be added, possibly as memory device["nvmem"]
+        try:
+            if mem_size.endswith("G"):
+                sizeM = int(mem_size[:-1]) * 1024
+            elif mem_size.endswith("M"):
+                sizeM = int(mem_size[:-1])
+            else:
+                raise ValueError('CXL memory size must be in M or G, got %r' % (mem_size,))
+        except Exception as e:
+            raise Exception("bad memory size in CXL memory device %s: %s" % (device, e))
+        if mem_type == "volatile":
+            sn = "0xc100%x" % (0xe2e0 + mem_count,)
+            memdev_id = f"cxl_memdev{mem_count}"
+            # Even if a CXL memory device is not present at boot time, we still create
+            # a Qemu memory backend device for it.
+            # The backend device id contains all necessary information for hotplugging
+            # the CXL memory device later on, and on the other hand, hotremoving and
+            # hotplugging the device again, even if it was present at start.
+            backend_id = f"beram_{memdev_id}__bus_{bus_id}__sn_{sn}"
+            cxl_objectparams.extend(["-object", f"memory-backend-ram,id={backend_id},share=on,size={mem_size}"])
+            if device.get("present", True):
+                cxl_deviceparams.extend(["-device", f"cxl-type3,bus={bus_id},volatile-memdev={backend_id},id={memdev_id},sn={sn}"])
+        else:
+            raise ValueError('unsupported CXL memory type %r' % (mem_type,))
+        total_mem_sizeM += sizeM
+        mem_count += 1
+
+    def cxlswitchopts(device, bus_id):
+        """Create CXL switch upstream (to bus_id) and downstream buses"""
+        nonlocal port_count, slot
+        upstream_id = f"cxlsw_us{bus_id[3:]}"
+        cxl_deviceparams.extend(["-device", f"cxl-upstream,bus={bus_id},id={upstream_id}"])
+        for downstream_idx, downstream_device in enumerate(device["switch"]):
+            downstream_id = f"cxlsw_ds{downstream_idx}_{upstream_id[6:]}"
+            cxl_deviceparams.extend(["-device", f"cxl-downstream,port={port_count},bus={upstream_id},id={downstream_id},chassis={chassis},slot={slot}"])
+            port_count += 1
+            slot += 1
+            if "mem" in downstream_device:
+                cxlmemopts(downstream_device, downstream_id)
+            elif "switch" in downstream_device:
+                cxlswitchopts(downstream_device, downstream_id)
+            else:
+                raise ValueError('unsupported CXL device in switch %r' % (downstream_device,))
+
+    firmware_targets = []
+    for host_bridge, root_ports in enumerate(cxl_host_bridges):
+        host_bridge_id = f"cxlhb{host_bridge}"
+        cxl_deviceparams.extend(["-device", f"pxb-cxl,bus_nr={bus_nr},bus=pcie.0,id={host_bridge_id},numa_node={host_bridge}"])
+        firmware_targets.append(host_bridge_id)
+        bus_nr += 12
+        for root_port, device in enumerate(root_ports):
+            root_port_id = f"cxlrp{root_port}{host_bridge_id[3:]}"
+            cxl_deviceparams.extend(["-device", f"cxl-rp,port={port_count},bus={host_bridge_id},id={root_port_id},chassis={chassis},slot={slot}"])
+            port_count += 1
+            slot += 1
+            if "mem" in device: # volatile memory directly connected to root port
+                cxlmemopts(device, root_port_id)
+            elif "switch" in device:
+                cxlswitchopts(device, root_port_id)
+
+    # Firmware size must be larger than total memory size.
+    # Round up to nearest 4GB.
+    addr_sizeG = ((total_mem_sizeM + 4095) // 4096) * 4
+    # Round actual total memory size up to nearest GB for Qemu param.
+    total_mem_sizeG = (total_mem_sizeM + 1023) // 1024
+    cxl_Mparams = ["-M",
+                   ",".join("cxl-fmw.%d.targets.0=%s,cxl-fmw.%d.size=%dG" % (idx, tgt, idx, addr_sizeG)
+                            for idx, tgt in enumerate(firmware_targets))]
+    return cxl_objectparams, cxl_deviceparams, cxl_Mparams, f"{total_mem_sizeG}G"
+
 def qemuopts(numalist):
     machineparam = "-machine q35,kernel-irqchip=split"
     cpuparam = "-cpu host,x2apic=on"
@@ -228,15 +375,36 @@ def qemuopts(numalist):
     lastnvmem = -1
     totalmem = "0G"
     totalnvmem = "0G"
+    totalcxlmem = "0G"
     unpluggedmem = "0G"
     pluggedmem = "0G"
     memslots = 0
     groupnodes = {} # groupnodes[NUMALISTINDEX] = (NODEID, ...)
     validate(numalist)
 
-    # Read cpu counts, and "mem" and "nvmem" sizes for all nodes.
+    # Read cpu counts, and "mem" and "nvmem" sizes for all nodes
+    # and process "cxl".
     threadcount = -1
+    numalist_with_dist = []
     for numalistindex, numaspec in enumerate(numalist):
+
+        # CXL structure
+        cxl_spec = numaspec.get("cxl", None)
+        if cxl_spec:
+            if set(numaspec.keys()) - {"cxl"}:
+                raise ValueError("when 'cxl' is defined, no other keys are supported in the same group, got %r" % (numaspec.keys(),))
+            cxl_objectparams, cxl_deviceparams, cxl_Mparams, totalcxlmem = qemucxlopts(cxl_spec)
+            if cxl_deviceparams:
+                objectparams.extend(cxl_objectparams)
+                deviceparams.extend(cxl_deviceparams)
+                deviceparams.extend(cxl_Mparams)
+                memslots += len(objectparams)
+                if ",cxl=on" not in machineparam:
+                    machineparam += ",cxl=on"
+            continue
+
+        # NUMA node group definition
+        numalist_with_dist.append(numaspec)
         nodecount = int(numaspec.get("nodes", 1))
         groupnodes[numalistindex] = tuple(range(lastnode + 1, lastnode + 1 + nodecount))
         corecount = int(numaspec.get("cores", 0))
@@ -345,7 +513,7 @@ def qemuopts(numalist):
                         else:
                             lastcpupresent += cpucount
                     numaparams.extend(currentnumaparams)
-    node_node_dist = dists(numalist)
+    node_node_dist = dists(numalist_with_dist)
     for sourcenode in sorted(node_node_dist.keys()):
         for destnode in sorted(node_node_dist[sourcenode].keys()):
             if sourcenode == destnode:
@@ -362,13 +530,15 @@ def qemuopts(numalist):
         # because it requires Qemu >= 5.0.
         diesparam = ""
     smpparam = "-smp cpus=%s,threads=%s%s,sockets=%s,maxcpus=%s" % (lastcpupresent + 1, threadcount, diesparam, lastsocket + 1, lastcpu + 1)
-    maxmem = siadd(totalmem, totalnvmem)
-    startmem = sisub(sisub(maxmem, unpluggedmem), pluggedmem)
+    maxmem = siadd(siadd(totalmem, totalnvmem), totalcxlmem)
+    startmem = sisub(sisub(sisub(maxmem, unpluggedmem), pluggedmem), totalcxlmem)
     memparam = "-m size=%s,slots=%s,maxmem=%s" % (startmem, memslots, maxmem)
     if startmem.startswith("0"):
         if pluggedmem.startswith("0"):
             raise ValueError('no memory in any NUMA node')
         raise ValueError("no initial memory in any NUMA node - cannot boot with hotpluggable memory")
+
+    machineparam += ",accel=kvm"
 
     if separated_output_vars == True:
         return ("MACHINE:" + machineparam + "|" +
@@ -376,11 +546,7 @@ def qemuopts(numalist):
                 "SMP:" + smpparam + "|" +
                 "MEM:" + memparam + "|" +
                 "EXTRA:" +
-                ", ".join(map(lambda x: "\"" + x + "\"", numaparams)) +
-                " " +
-                ", ".join(map(lambda x: "\"" + x + "\"", deviceparams)) +
-                "," +
-                ", ".join(map(lambda x: "\"" + x + "\"", objectparams)) + "|"
+                ", ".join(map(lambda x: "\"" + x + "\"", numaparams + deviceparams + objectparams))
                 )
     else:
         return (machineparam + " " +
