@@ -6,6 +6,8 @@ RUN_SH="${0%/*}/run.sh"
 
 DEFAULT_DISTRO=${DEFAULT_DISTRO:-"fedora/42"}
 
+allow_var_override=""
+
 k8scri=${k8scri:="containerd"}
 efi=${efi:-}
 
@@ -52,8 +54,12 @@ $(< "$var_filepath")"
             # creating / replace other variables
             if [ -z "${!var_name}" ]; then
                 echo "exporting $var_name - creating from $var_filepath"
-            else
+                allow_var_override+=" $var_name "
+            elif grep -q " $var_name " <<< "$allow_var_override"; then
                 echo "exporting $var_name - overriding from $var_filepath"
+            else
+                echo "not overriding $var_name - variable is not created from *.var.* files"
+                continue
             fi
             if [[ "$var_file_name" == *.var.in.* ]]; then
                 export "$var_name"="$(eval "echo -e \"$(<"${var_filepath}")\"")"
