@@ -233,6 +233,24 @@ $(BIN_PATH)/%: .static.%.$(STATIC)
 .PRECIOUS: $(foreach dir,$(BUILD_DIRS),.static.$(dir).1 .static.$(dir).)
 
 #
+# Eskimo words for snow...
+#
+
+balloons: $(BIN_PATH)/nri-resource-policy-balloons
+balloons-img: image.nri-resource-policy-balloons
+t-a topology-aware: $(BIN_PATH)/nri-resource-policy-topology-aware
+ta-img topolog-aware-img: image.nri-resource-policy-topology-aware
+template: $(BIN_PATH)/nri-resource-policy-template
+template-img: image.nri-resource-policy-template
+memqos memory-qos: $(BIN_PATH)/nri-memory-qos
+memqos-img memory-qos-img: image.nri-memory-qos
+memtierd: $(BIN_PATH)/nri-memtierd
+memtierd-img: image.nri-memtierd
+sgx-epc sgx: $(BIN_PATH)/nri-sgx-epc
+sgx-epc-img: image.nri-sgx-epc
+config-manager: $(BIN_PATH)/config-manager
+
+#
 # Image building test deployment generation targets
 #
 

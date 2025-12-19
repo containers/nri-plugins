@@ -350,6 +350,18 @@ func (p *balloons) UpdateResources(c cache.Container) error {
 	return nil
 }
 
+// AllocateClaim alloctes CPUs for the claim.
+func (p *balloons) AllocateClaim(claim policy.Claim) error {
+	log.Debug("allocating claim %s for pods %v...", claim.String(), claim.GetPods())
+	return nil
+}
+
+// ReleaseClaim releases CPUs of the claim.
+func (p *balloons) ReleaseClaim(claim policy.Claim) error {
+	log.Debug("releasing claim %s for pods %v...", claim.String(), claim.GetPods())
+	return nil
+}
+
 // HandleEvent handles policy-specific events.
 func (p *balloons) HandleEvent(*events.Policy) (bool, error) {
 	log.Debug("(not) handling event...")

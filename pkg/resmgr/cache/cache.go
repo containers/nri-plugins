@@ -200,6 +200,8 @@ type Container interface {
 	GetAnnotation(key string, objPtr interface{}) (string, bool)
 	// GetEnv returns the value of a container environment variable.
 	GetEnv(string) (string, bool)
+	// GetEnvList return the list of environment variables for the container.
+	GetEnvList() []string
 	// GetMounts returns all the mounts of the container.
 	GetMounts() []*Mount
 	// GetDevices returns all the linux devices of the container.
@@ -423,6 +425,11 @@ type Cache interface {
 	// GetPolicyEntry gets the policy entry for a key.
 	GetPolicyEntry(string, interface{}) bool
 
+	// SetEntry sets the entry for a key.
+	SetEntry(string, interface{})
+	// GetEntry gets the entry for a key.
+	GetEntry(string, interface{}) (interface{}, error)
+
 	// Save requests a cache save.
 	Save() error
 
@@ -475,6 +482,8 @@ type cache struct {
 	PolicyName string                 // name of the active policy
 	policyData map[string]interface{} // opaque policy data
 	PolicyJSON map[string]string      // ditto in raw, unmarshaled form
+	entryData  map[string]interface{} // opaque cached data
+	entryJSON  map[string]string      // ditto in raw, unmarshaled form
 
 	pending map[string]struct{} // cache IDs of containers with pending changes
 
@@ -500,6 +509,8 @@ func NewCache(options Options) (Cache, error) {
 		NextID:     1,
 		policyData: make(map[string]interface{}),
 		PolicyJSON: make(map[string]string),
+		entryData:  make(map[string]interface{}),
+		entryJSON:  make(map[string]string),
 		implicit:   make(map[string]ImplicitAffinity),
 	}
 
@@ -804,6 +815,30 @@ func (cch *cache) GetContainers() []Container {
 	return containers
 }
 
+// Set the entry for a key.
+func (cch *cache) SetEntry(key string, obj interface{}) {
+	cch.entryData[key] = obj
+}
+
+var ErrNoEntry = errors.New("no cached entry found")
+
+// Get the entry for a key.
+func (cch *cache) GetEntry(key string, ptr interface{}) (interface{}, error) {
+	if obj, ok := cch.entryData[key]; ok {
+		return obj, nil
+	}
+	if data, ok := cch.entryJSON[key]; ok {
+		err := json.Unmarshal([]byte(data), ptr)
+		if err != nil {
+			return nil, cacheError("failed to unmarshal entry for key '%s': %w", key, err)
+		}
+		cch.entryData[key] = ptr
+		return ptr, nil
+	}
+
+	return nil, ErrNoEntry
+}
+
 // Set the policy entry for a key.
 func (cch *cache) SetPolicyEntry(key string, obj interface{}) {
 	cch.policyData[key] = obj
@@ -1067,6 +1102,7 @@ type snapshot struct {
 	Pods       map[string]*pod
 	Containers map[string]*container
 	NextID     uint64
+	Entries    map[string]string
 	PolicyName string
 	PolicyJSON map[string]string
 }
@@ -1080,6 +1116,7 @@ func (cch *cache) Snapshot() ([]byte, error) {
 		NextID:     cch.NextID,
 		PolicyName: cch.PolicyName,
 		PolicyJSON: cch.PolicyJSON,
+		Entries:    make(map[string]string),
 	}
 
 	for id, p := range cch.Pods {
@@ -1099,6 +1136,14 @@ func (cch *cache) Snapshot() ([]byte, error) {
 		s.PolicyJSON[key] = string(data)
 	}
 
+	for key, obj := range cch.entryData {
+		data, err := json.Marshal(obj)
+		if err != nil {
+			return nil, cacheError("failed to marshal entry '%s': %v", key, err)
+		}
+		s.Entries[key] = string(data)
+	}
+
 	data, err := json.Marshal(s)
 	if err != nil {
 		return nil, cacheError("failed to marshal cache: %v", err)
@@ -1113,6 +1158,7 @@ func (cch *cache) Restore(data []byte) error {
 		Pods:       make(map[string]*pod),
 		Containers: make(map[string]*container),
 		PolicyJSON: make(map[string]string),
+		Entries:    make(map[string]string),
 	}
 
 	if err := json.Unmarshal(data, &s); err != nil {
@@ -1130,6 +1176,8 @@ func (cch *cache) Restore(data []byte) error {
 	cch.PolicyJSON = s.PolicyJSON
 	cch.PolicyName = s.PolicyName
 	cch.policyData = make(map[string]interface{})
+	cch.entryData = make(map[string]interface{})
+	cch.entryJSON = s.Entries
 
 	for _, p := range cch.Pods {
 		p.cache = cch
