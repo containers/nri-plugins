@@ -16,52 +16,40 @@ package metrics
 
 // The metrics package provides a simple framework for collecting and
 // exporting metrics. It is implemented as a set of simple wrappers around
-// prometheus types. These help enforce metrics namespacing, allow metrics
-// grouping, provide dynamic runtime configurability, and allow for periodic
-// collection of computationally expensive metrics which would be too costly
-// to calculate each time they are externally requested.
+// OpenTelemetry types. These allow metrics grouping and provide dynamic
+// runtime configurability.
 //
 // Simple Usage
 //
-//package main
+// package main
 //
-//import (
-//    "log"
-//    "net/http"
-//    "os"
+// import (
+//     "github.com/containers/nri-plugins/pkg/metrics"
+//	   "go.opentelemetry.io/otel/attribute"
+//     "go.opentelemetry.io/otel/metric"
+// )
 //
-//    "github.com/containers/nri-plugins/pkg/metrics"
-//    "github.com/prometheus/client_golang/prometheus/collectors"
-//    "github.com/prometheus/client_golang/prometheus/promhttp"
-//)
+// var (
+//     myCounter metric.Int64Counter
+// )
 //
-//func main() {
-//    metrics.MustRegister(
-//        "build",
-//        collectors.NewBuildInfoCollector(),
-//        metrics.WithGroup("group1"),
-//    )
-//    metrics.MustRegister(
-//       "golang",
-//        collectors.NewGoCollector(),
-//        metrics.WithGroup("group1"),
-//    )
-//    metrics.MustRegister(
-//        "process",
-//        collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-//        metrics.WithGroup("group2"),
-//    )
+// func MyMeteredCodeSetup() error {
+//    meter := metrics.Provider("my-meter-group").Meter("subsys")
 //
-//    enabled = []string{"*"}
-//    if len(os.Args) > 1 {
-//        enabled = os.Args[1:]
-//    }
-//
-//    g, err := metrics.NewGatherer(metrics.WithMetrics(enabled, nil))
+//    myCounter, err = meter.Int64Counter(
+//        "my.counter",
+//        metric.WithDescription("A simple counter metric"),
+//        metric.WithUnit("bytes"),
 //    if err != nil {
-//        log.Fatal(err)
+//        return fmt.Errorf("failed to create MyCounter metric: %w", err)
 //    }
 //
-//    http.Handle("/metrics", promhttp.HandlerFor(g, promhttp.HandlerOpts{}))
-//    log.Fatal(http.ListenAndServe(":8891", nil))
-//}
+//    return nil
+// }
+//
+// func MyMeterUpdate()
+//   ...
+//   myCounter.Add(ctx, 654, attribute.String("label", "value1"))
+//   myCounter.Add(ctx, 456, attribute.String("label", "value2"))
+//   ...
+// }

@@ -749,8 +749,23 @@ spec:
                           type: string
                         type: array
                     type: object
+                  metricsExporter:
+                    description: |-
+                      MetricsExporter defines which exporter is used to export metrics.
+                      The supported exporters are:
+                        - prometheus: use OpenTelemetry prometheus exporter
+                        - otlp-http: use OpenTelemetry HTTP metrics exporter
+                        - otlp-grpc: use OpenTelemetry gRPC metrics exporter
+                    enum:
+                    - prometheus
+                    - otlp-http
+                    - otlp-grpc
+                    example: prometheus
+                    type: string
                   prometheusExport:
-                    description: PrometheusExport enables exporting /metrics for Prometheus.
+                    description: |-
+                      PrometheusExport enables exporting /metrics for Prometheus. This is
+                      equivalent to setting MetricsExporter to "prometheus".
                     type: boolean
                   reportPeriod:
                     default: 30s
@@ -769,9 +784,12 @@ spec:
                       Endpoints are specified as full URLs, or as plain URL schemes which then
                       imply scheme-specific defaults. The supported schemes and their default
                       URLs are:
-                        - otlp-http, http: localhost:4318
-                        - otlp-grpc, grpc: localhost:4317
-                    example: otlp-http://localhost:4318
+                        - otlp-http: use OpenTelemetry HTTP[S] tracing exporter/collector
+                        - otlp-grpc: use OpenTelemetry gRPC tracing exported/collector
+                    enum:
+                    - otlp-http
+                    - otlp-grpc
+                    example: otlp-http
                     type: string
                 type: object
               loadClasses:

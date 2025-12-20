@@ -174,6 +174,10 @@ func (m *resmgr) start(cfg cfgapi.ResmgrConfig) error {
 
 	//	m.cache.ConfigureBlockIOControl(mCfg.Control.BlockIO.Enable)
 
+	if err := instrumentation.Reconfigure(&mCfg.Instrumentation); err != nil {
+		return err
+	}
+
 	if err := m.blkio.configure(&mCfg.Control.BlockIO); err != nil {
 		return err
 	}
@@ -183,10 +187,6 @@ func (m *resmgr) start(cfg cfgapi.ResmgrConfig) error {
 	}
 
 	if err := m.policy.Start(m.cfg.PolicyConfig()); err != nil {
-		return err
-	}
-
-	if err := instrumentation.Reconfigure(&mCfg.Instrumentation); err != nil {
 		return err
 	}
 
