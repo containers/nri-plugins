@@ -113,8 +113,6 @@ func (p *policy) Setup(opts *policyapi.BackendOptions) error {
 		return policyError("failed to initialize %s policy: %w", PolicyName, err)
 	}
 
-	p.metrics = p.NewTopologyAwareMetrics()
-
 	log.Info("***** default CPU priority is %s", defaultPrio)
 
 	return nil
@@ -144,6 +142,13 @@ func (p *policy) Start() error {
 
 	p.root.Dump("<post-start>")
 	p.checkAllocations("  <post-start>")
+
+	m, err := p.NewTopologyAwareMetrics()
+	if err != nil {
+		log.Errorf("****** failed to create topology-aware metrics during Start(): %v", err)
+		return err
+	}
+	p.metrics = m
 
 	return nil
 }
@@ -228,6 +233,8 @@ func (p *policy) AllocateResources(container cache.Container) error {
 	p.root.Dump("<post-alloc>")
 	p.checkAllocations("  <post-alloc %s>", container.PrettyName())
 
+	p.metrics.Update()
+
 	return nil
 }
 
@@ -254,6 +261,8 @@ func (p *policy) ReleaseResources(container cache.Container) error {
 	p.root.Dump("<post-release>")
 	p.checkAllocations("  <post-release %s>", container.PrettyName())
 
+	p.metrics.Update()
+
 	return nil
 }
 
@@ -276,6 +285,8 @@ func (p *policy) UpdateResources(container cache.Container) error {
 
 	p.root.Dump("<post-update>")
 	p.checkAllocations("  <post-update %s>", container.PrettyName())
+
+	p.metrics.Update()
 
 	return nil
 }
@@ -497,6 +508,13 @@ func (p *policy) Reconfigure(newCfg interface{}) error {
 
 	p.root.Dump("<post-config>")
 	p.checkAllocations("  <post-config>")
+
+	m, err := p.NewTopologyAwareMetrics()
+	if err != nil {
+		log.Errorf("****** failed to create topology-aware metrics during reconfigure: %v", err)
+		return err
+	}
+	p.metrics = m
 
 	return nil
 }
