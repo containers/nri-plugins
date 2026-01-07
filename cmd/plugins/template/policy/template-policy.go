@@ -110,6 +110,18 @@ func (p *policy) UpdateResources(c cache.Container) error {
 	return nil
 }
 
+// AllocateClaim alloctes CPUs for the claim.
+func (p *policy) AllocateClaim(claim policyapi.Claim) error {
+	log.Debug("allocating claim %s for pods %v...", claim.String(), claim.GetPods())
+	return nil
+}
+
+// ReleaseClaim releases CPUs of the claim.
+func (p *policy) ReleaseClaim(claim policyapi.Claim) error {
+	log.Debug("releasing claim %s for pods %v...", claim.String(), claim.GetPods())
+	return nil
+}
+
 // HandleEvent handles policy-specific events.
 func (p *policy) HandleEvent(e *events.Policy) (bool, error) {
 	log.Info("received policy event %s.%s with data %v...", e.Source, e.Type, e.Data)

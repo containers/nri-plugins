@@ -124,6 +124,12 @@ spec:
           - name: pod-resources-socket
             mountPath: /var/lib/kubelet/pod-resources
             readOnly: true
+          - name: host-cdi-dir
+            mountPath: /host/var/run/cdi
+          - name: kubelet-plugins
+            mountPath: /var/lib/kubelet/plugins
+          - name: kubelet-plugins-registry
+            mountPath: /var/lib/kubelet/plugins_registry
       {{- if .Values.podPriorityClassNodeCritical }}
       priorityClassName: system-node-critical
       {{- end }}
@@ -146,6 +152,18 @@ spec:
       - name: pod-resources-socket
         hostPath:
           path: /var/lib/kubelet/pod-resources
+          type: DirectoryOrCreate
+      - name: host-cdi-dir
+        hostPath:
+          path: /var/run/cdi
+          type: DirectoryOrCreate
+      - name: kubelet-plugins
+        hostPath:
+          path: /var/lib/kubelet/plugins
+          type: DirectoryOrCreate
+      - name: kubelet-plugins-registry
+        hostPath:
+          path: /var/lib/kubelet/plugins_registry
           type: DirectoryOrCreate
       {{- if .Values.nri.runtime.patchConfig }}
       - name: containerd-config

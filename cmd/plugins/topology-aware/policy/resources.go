@@ -65,6 +65,8 @@ type Supply interface {
 	ReservedCPUs() cpuset.CPUSet
 	// SharableCPUs returns the sharable cpuset in this supply.
 	SharableCPUs() cpuset.CPUSet
+	// ClaimedCPUs returns the claimed CPUs for this supply.
+	ClaimedCPUs() cpuset.CPUSet
 	// GrantedReserved returns the locally granted reserved CPU capacity in this supply.
 	GrantedReserved() int
 	// GrantedShared returns the locally granted shared CPU capacity in this supply.
@@ -92,6 +94,12 @@ type Supply interface {
 	DumpCapacity() string
 	// DumpAllocatable returns a printable representation of the supply's alloctable resources.
 	DumpAllocatable() string
+
+	ClaimCPUs(cpuset.CPUSet)
+	claimCPUs(cpuset.CPUSet)
+
+	UnclaimCPUs(cpuset.CPUSet)
+	unclaimCPUs(cpuset.CPUSet)
 }
 
 // Request represents CPU and memory resources requested by a container.
@@ -106,6 +114,8 @@ type Request interface {
 	CPUPrio() cpuPrio
 	// SetCPUType sets the type of requested CPU.
 	SetCPUType(cpuType cpuClass)
+	// ClaimedCPUs returns the CPUs claimed for this request.
+	ClaimedCPUs() cpuset.CPUSet
 	// FullCPUs return the number of full CPUs requested.
 	FullCPUs() int
 	// CPUFraction returns the amount of fractional milli-CPU requested.
@@ -147,6 +157,8 @@ type Grant interface {
 	// CPUPortion returns granted milli-CPUs of non-full CPUs of CPUType().
 	// CPUPortion() == ReservedPortion() + SharedPortion().
 	CPUPortion() int
+	// ClaimedCPUs returns the claimed granted cpuset.
+	ClaimedCPUs() cpuset.CPUSet
 	// ExclusiveCPUs returns the exclusively granted non-isolated cpuset.
 	ExclusiveCPUs() cpuset.CPUSet
 	// ReservedCPUs returns the reserved granted cpuset.
@@ -217,6 +229,7 @@ type supply struct {
 	isolated        cpuset.CPUSet // isolated CPUs at this node
 	reserved        cpuset.CPUSet // reserved CPUs at this node
 	sharable        cpuset.CPUSet // sharable CPUs at this node
+	claimed         cpuset.CPUSet // CPUs allocated through DRA
 	grantedReserved int           // amount of reserved CPUs allocated
 	grantedShared   int           // amount of shareable CPUs allocated
 }
@@ -226,6 +239,7 @@ var _ Supply = &supply{}
 // request implements our Request interface.
 type request struct {
 	container   cache.Container // container for this request
+	claimed     cpuset.CPUSet   // CPUs DRA-claimed for this container
 	full        int             // number of full CPUs requested
 	fraction    int             // amount of fractional CPU requested
 	limit       int             // CPU limit, MaxInt for no limit
@@ -252,6 +266,7 @@ type grant struct {
 	container      cache.Container // container CPU is granted to
 	node           Node            // node CPU is supplied from
 	exclusive      cpuset.CPUSet   // exclusive CPUs
+	claimed        cpuset.CPUSet   // claimed CPUs
 	cpuType        cpuClass        // type of CPUs (normal, reserved, ...)
 	cpuPortion     int             // milliCPUs granted from CPUs of cpuType
 	memType        memoryType      // requested types of memory
@@ -314,6 +329,11 @@ func (cs *supply) ReservedCPUs() cpuset.CPUSet {
 // SharableCpus returns the sharable CPUSet of this supply.
 func (cs *supply) SharableCPUs() cpuset.CPUSet {
 	return cs.sharable.Clone()
+}
+
+// ClaimedCPUs returns the claimed CPUs in this supply.
+func (cs *supply) ClaimedCPUs() cpuset.CPUSet {
+	return cs.claimed.Clone()
 }
 
 // GrantedReserved returns the locally granted reserved CPU capacity.
@@ -398,6 +418,7 @@ func (cs *supply) AllocateCPU(r Request) (Grant, error) {
 
 	cr := r.(*request)
 
+	claimed := cr.claimed
 	full := cr.full
 	fraction := cr.fraction
 
@@ -465,7 +486,7 @@ func (cs *supply) AllocateCPU(r Request) (Grant, error) {
 			cs.node.Name(), full, cs.sharable, cs.AllocatableSharedCPU())
 	}
 
-	grant := newGrant(cs.node, cr.GetContainer(), cpuType, exclusive, 0, 0, 0)
+	grant := newGrant(cs.node, cr.GetContainer(), cpuType, exclusive, claimed, 0, 0, 0)
 	grant.AccountAllocateCPU()
 
 	if fraction > 0 {
@@ -714,6 +735,44 @@ func (cs *supply) DumpAllocatable() string {
 	return allocatable
 }
 
+func (cs *supply) ClaimCPUs(cpus cpuset.CPUSet) {
+	cs.claimCPUs(cpus)
+
+	cs.GetNode().DepthFirst(func(n Node) {
+		n.FreeSupply().claimCPUs(cpus)
+	})
+	for n := cs.GetNode(); !n.IsNil(); n = n.Parent() {
+		n.FreeSupply().claimCPUs(cpus)
+	}
+}
+
+func (cs *supply) claimCPUs(cpus cpuset.CPUSet) {
+	cs.claimed = cs.claimed.Union(cpus)
+	cs.isolated = cs.isolated.Difference(cpus)
+	cs.sharable = cs.sharable.Difference(cpus)
+	cs.reserved = cs.reserved.Difference(cpus)
+}
+
+func (cs *supply) UnclaimCPUs(cpus cpuset.CPUSet) {
+	cs.unclaimCPUs(cpus)
+
+	cs.GetNode().DepthFirst(func(n Node) {
+		n.FreeSupply().unclaimCPUs(cpus)
+	})
+	for n := cs.GetNode(); !n.IsNil(); n = n.Parent() {
+		n.FreeSupply().unclaimCPUs(cpus)
+	}
+}
+
+func (cs *supply) unclaimCPUs(cpus cpuset.CPUSet) {
+	all := cs.GetNode().GetSupply()
+
+	cs.isolated = cs.isolated.Union(all.IsolatedCPUs().Intersection(cpus))
+	cs.sharable = cs.sharable.Union(all.SharableCPUs().Intersection(cpus))
+	cs.reserved = cs.reserved.Union(all.ReservedCPUs().Intersection(cpus))
+	cs.claimed = cs.claimed.Difference(cpus)
+}
+
 // prettyMem formats the given amount as k, M, G, or T units.
 func prettyMem(value int64) string {
 	units := []string{"k", "M", "G", "T"}
@@ -732,14 +791,22 @@ func prettyMem(value int64) string {
 }
 
 // newRequest creates a new request for the given container.
-func newRequest(container cache.Container, types libmem.TypeMask) Request {
+func newRequest(container cache.Container, claimed cpuset.CPUSet, types libmem.TypeMask) Request {
 	pod, _ := container.GetPod()
 	full, fraction, cpuLimit, isolate, cpuType, prio := cpuAllocationPreferences(pod, container)
 	req, lim, mtype := memoryAllocationPreference(pod, container)
 	coldStart := time.Duration(0)
 
-	log.Debug("%s: CPU preferences: cpuType=%s, full=%v, fraction=%v, isolate=%v, prio=%v",
-		container.PrettyName(), cpuType, full, fraction, isolate, prio)
+	if full >= claimed.Size() {
+		full -= claimed.Size()
+	} else {
+		if fraction >= 1000*claimed.Size() {
+			fraction -= 1000 * claimed.Size()
+		}
+	}
+
+	log.Debug("%s: CPU preferences: cpuType=%s, claim=%s, full=%v, fraction=%v, isolate=%v, prio=%v",
+		container.PrettyName(), cpuType, claimed, full, fraction, isolate, prio)
 
 	if mtype == memoryUnspec {
 		mtype = defaultMemoryType &^ memoryHBM
@@ -769,6 +836,7 @@ func newRequest(container cache.Container, types libmem.TypeMask) Request {
 
 	return &request{
 		container:   container,
+		claimed:     claimed,
 		full:        full,
 		fraction:    fraction,
 		limit:       cpuLimit,
@@ -823,6 +891,11 @@ func (cr *request) CPUPrio() cpuPrio {
 // SetCPUType sets the requested type of CPU for the grant.
 func (cr *request) SetCPUType(cpuType cpuClass) {
 	cr.cpuType = cpuType
+}
+
+// ClaimedPUs return the claimed CPUs for this request.
+func (cr *request) ClaimedCPUs() cpuset.CPUSet {
+	return cr.claimed
 }
 
 // FullCPUs return the number of full CPUs requested.
@@ -1135,12 +1208,13 @@ func (score *score) String() string {
 }
 
 // newGrant creates a CPU grant from the given node for the container.
-func newGrant(n Node, c cache.Container, cpuType cpuClass, exclusive cpuset.CPUSet, cpuPortion int, mt memoryType, coldstart time.Duration) Grant {
+func newGrant(n Node, c cache.Container, cpuType cpuClass, exclusive, claimed cpuset.CPUSet, cpuPortion int, mt memoryType, coldstart time.Duration) Grant {
 	grant := &grant{
 		node:       n,
 		container:  c,
 		cpuType:    cpuType,
 		exclusive:  exclusive,
+		claimed:    claimed,
 		cpuPortion: cpuPortion,
 		memType:    mt,
 		coldStart:  coldstart,
@@ -1179,6 +1253,7 @@ func (cg *grant) Clone() Grant {
 		node:       cg.GetCPUNode(),
 		container:  cg.GetContainer(),
 		exclusive:  cg.ExclusiveCPUs(),
+		claimed:    cg.ClaimedCPUs(),
 		cpuType:    cg.CPUType(),
 		cpuPortion: cg.SharedPortion(),
 		memType:    cg.MemoryType(),
@@ -1231,6 +1306,11 @@ func (cg *grant) CPUPortion() int {
 // ExclusiveCPUs returns the non-isolated exclusive CPUSet in this grant.
 func (cg *grant) ExclusiveCPUs() cpuset.CPUSet {
 	return cg.exclusive
+}
+
+// ClaimedCPUs returns the claimed CPUSet in this grant.
+func (cg *grant) ClaimedCPUs() cpuset.CPUSet {
+	return cg.claimed
 }
 
 // ReservedCPUs returns the reserved CPUSet in the supply of this grant.
