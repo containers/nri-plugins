@@ -1,0 +1,30 @@
+---
+- name: Install kernel build dependencies
+  become: yes
+  ansible.builtin.package:
+    pkg:
+      - git-core
+      - build-essential
+      - debhelper-compat
+      - flex
+      - bison
+      - bc
+      - kmod
+      - cpio
+      - libncurses5-dev
+      - libelf-dev
+      - libssl-dev
+      - libdw-dev
+      - dwarves
+    state: present
+    update_cache: true
+
+- name: Build kernel DEBs
+  shell: "ls linux-*.deb || (cd linux && make -j$(nproc) bindeb-pkg)"
+
+- name: Create vm:~/kernel-pkgs.tar containing kernel RPMs
+  shell: "tar cf ~/kernel-pkgs.tar linux-*.deb"
+
+- name: Make sure kernel uses serial console for debugging
+  become: yes
+  shell: "grep -sr console=ttyS /etc/default/grub* || echo 'GRUB_CMDLINE_LINUX=\"$GRUB_CMDLINE_LINUX console=ttyS0,115200n8 \"' > /etc/default/grub.d/e2e-cmdline-serialconsole.cfg"

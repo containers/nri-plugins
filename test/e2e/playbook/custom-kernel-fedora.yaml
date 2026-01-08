@@ -1,0 +1,29 @@
+---
+- name: Install kernel build dependencies
+  become: yes
+  ansible.builtin.package:
+    pkg:
+      - fedpkg
+      - fedora-packager
+      - rpmdevtools
+      - ncurses-devel
+      - pesign
+      - grubby
+      - make
+      - gcc
+      - flex
+      - bison
+      - elfutils-devel
+      - elfutils-libelf-devel
+      - dwarves
+      - openssl
+      - openssl-devel
+      - perl
+    state: present
+    update_cache: true
+
+- name: Build kernel RPMs
+  shell: "cd linux && make -j$(nproc) binrpm-pkg"
+
+- name: Create vm:~/kernel-pkgs.tar containing kernel RPMs
+  shell: "cd linux/rpmbuild/RPMS/x86_64; tar cf ~/kernel-pkgs.tar kernel-*.rpm"
