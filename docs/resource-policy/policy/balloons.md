@@ -275,13 +275,23 @@ Balloons policy parameters:
     should get their CPUs from separate cache blocks for best
     performance. Every listed class must be specified in
     `loadClasses`.
-  - `components` is a list of components of a balloon. If a balloon
-    consists of components, its CPUs are allocated by allocating CPUs
-    for each component balloon separately, and then adding them up.
-    See [combining balloons](#combining-balloons) for more details and
-    an example. Properties of components in the list are:
+  - `components` list includes component balloon types. If non-empty,
+    the balloon is a composite balloon whose CPUs are not allocated
+    directly to itself but its CPUs are the union of CPUs of its
+    component balloons. See [combining balloons](#combining-balloons)
+    for more details and an example. Properties of components in the
+    list are:
     - `balloonType` specifies the name of the balloon type according
-      to which CPUs are allocated to this component.
+      to which CPUs are allocated to the component.
+  - `componentCreation` is a string that specifies the strategy for
+    creating `components` for a new composite balloon. If unspecified,
+    one instance of each component is created. Valid strategies are:
+    - `all`: create one instance of every component (the default).
+    - `balance-balloons`: create only the first component whose
+      balloon types have the minimal number of balloons alive at the
+      time of creation. This strategy is suitable for balancing
+      containers over multiple balloon types. See [combining
+      balloons](#combining-balloons) for an example.
 - `loadClasses`: lists properties of loads that containers in balloons
   generate to some parts of the system. When the policy allocates CPUs
   for load generating balloon instances, it selects CPUs so that it
@@ -569,20 +579,30 @@ own balloon type configuration only. As CPUs are not allocated
 directly to composite balloons, CPU allocation parameters are not
 allowed in composite balloon types.
 
-When the policy creates new composite balloon, it creates hidden
-instances of balloons's components, too. Resizing the composite
-balloon due to changes in its containers causes resizing these hidden
-instances.
+When the policy creates new composite balloon, it creates "hidden"
+instances of balloons's components, too. The instances are hidden in
+the sense that containers cannot be assigned to component balloons but
+only to the composite balloon. By default, the policy creates one
+instance of every component, but this can be controlled with the
+`componentCreation` option. Resizing the composite balloon due to
+changes in its containers causes resizing the hidden instances so that
+the union of CPUs of contains enough CPUs for the containers in the
+composite balloon.
 
-Example: allocate CPUs for distributed AI inference containers so
+Example: Given a two-socket system with two NUMA nodes on each CPU
+package, allocate CPUs for distributed AI inference containers so
 that, depending on a balloon type, a container will get:
-- equal number of CPUs from all 4 NUMA nodes in the system
-- equal number of CPUs from both NUMA nodes on CPU package 0
-- equal number of CPUs from both NUMA nodes on CPU package 1.
+- an equal number of CPUs from all 4 NUMA nodes in the system
+- an equal number of CPUs from both NUMA nodes on CPU package 0
+- an equal number of CPUs from both NUMA nodes on CPU package 1
+- an equal number of CPUs from both NUMA nodes on either CPU package,
+  whichever has fewer inference containers at the balloon creation
+  time.
 
 Following balloon type configuration implements this. Containers can
 be assigned into balloons `balance-all-nodes`, `balance-pkg0-nodes`,
-and `balance-pkg1-nodes`, respectively.
+`balance-pkg1-nodes`, and `balance-both-nodes-of-alternating-pkg`
+respectively.
 
 ```yaml
   balloonTypes:
@@ -590,16 +610,19 @@ and `balance-pkg1-nodes`, respectively.
     components:
     - balloonType: balance-pkg0-nodes
     - balloonType: balance-pkg1-nodes
+    preferNewBalloons: true
 
   - name: balance-pkg0-nodes
     components:
     - balloonType: node0
     - balloonType: node1
+    preferNewBalloons: true
 
   - name: balance-pkg1-nodes
     components:
     - balloonType: node2
     - balloonType: node3
+    preferNewBalloons: true
 
   - name: node0
     preferCloseToDevices:
@@ -616,6 +639,13 @@ and `balance-pkg1-nodes`, respectively.
   - name: node3
     preferCloseToDevices:
     - /sys/devices/system/node/node3
+
+  - name: balance-both-nodes-of-either-pkg
+    components:
+    - balloonType: balance-pkg0-nodes
+    - balloonType: balance-pkg1-nodes
+    componentCreation: balance-balloons
+    preferNewBalloons: true
 ```
 
 ## Prevent Creating a Container
