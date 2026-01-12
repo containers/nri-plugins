@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -616,6 +617,47 @@ func (p *balloons) balloonsByDef(blnDef *BalloonDef) []*Balloon {
 	})
 }
 
+// balloonsByDefIncludingComponents returns list of all balloons
+// instantiated from given balloon definition or any definition
+// mentioned in its components, recursively. Returned balloons include
+// component balloons in addition to top-level balloons.
+func (p *balloons) balloonsByDefIncludingComponents(blnDef *BalloonDef) []*Balloon {
+	var addBalloonAndComponents func(*Balloon)
+	allBalloons := []*Balloon{}
+
+	// Calculate all related balloon definition names if
+	// blnDef consists of components.
+	countDefNames := map[string]bool{}
+	unhandledDefs := []*BalloonDef{blnDef}
+	for len(unhandledDefs) > 0 {
+		currentDef := unhandledDefs[len(unhandledDefs)-1]
+		unhandledDefs = unhandledDefs[:len(unhandledDefs)-1]
+		countDefNames[currentDef.Name] = true
+		for _, comp := range currentDef.Components {
+			compDef := p.balloonDefByName(comp.DefName)
+			if compDef != nil && !countDefNames[compDef.Name] {
+				unhandledDefs = append(unhandledDefs, compDef)
+			}
+		}
+	}
+
+	// Now find all balloons instantiated as top-level or
+	// component balloons and add them to the result if they match
+	// any of the related balloon definitions.
+	addBalloonAndComponents = func(bln *Balloon) {
+		if countDefNames[bln.Def.Name] {
+			allBalloons = append(allBalloons, bln)
+		}
+		for _, comp := range bln.components {
+			addBalloonAndComponents(comp)
+		}
+	}
+	for _, bln := range p.balloons {
+		addBalloonAndComponents(bln)
+	}
+	return allBalloons
+}
+
 // balloonDefByName returns a balloon definition with a name.
 func (p *balloons) balloonDefByName(defName string) *BalloonDef {
 	for _, blnDef := range p.bpoptions.BalloonDefs {
@@ -882,12 +924,52 @@ func (p *balloons) newCompositeBalloon(blnDef *BalloonDef, confCpus bool, freeIn
 			p.deleteBalloon(compBln)
 		}
 	}
-	for _, comp := range blnDef.Components {
-		// Create a balloon for each component.
+	switch blnDef.ComponentCreation {
+	case "", cfgapi.ComponentCreationAll:
+		for _, comp := range blnDef.Components {
+			// Create a balloon for each component.
+			compDef := p.balloonDefByName(comp.DefName)
+			if compDef == nil {
+				deleteComponentBlns()
+				return nil, balloonsError("unknown balloon definition %q in composite balloon %q",
+					comp.DefName, blnDef.Name)
+			}
+			compBln, err := p.newBalloon(compDef, confCpus)
+			if err != nil || compBln == nil {
+				deleteComponentBlns()
+				return nil, balloonsError("failed to create component balloon %q for composite balloon %q: %v",
+					comp.DefName, blnDef.Name, err)
+			}
+			componentBlns = append(componentBlns, compBln)
+			log.Debugf("created component balloon %s of composite balloon %s",
+				compBln.PrettyName(), blnDef.Name)
+		}
+	case cfgapi.ComponentCreationBalanceBalloons:
+		countComponent := []struct{ count, idx int }{}
+		for compIdx, comp := range blnDef.Components {
+			compDef := p.balloonDefByName(comp.DefName)
+			if compDef == nil {
+				deleteComponentBlns()
+				return nil, balloonsError("unknown balloon definition %q in composite balloon %q",
+					comp.DefName, blnDef.Name)
+			}
+			numInstances := len(p.balloonsByDefIncludingComponents(compDef))
+			countComponent = append(countComponent, struct{ count, idx int }{numInstances, compIdx})
+		}
+		// sort, first by number-of-instances ascending, then by component-index ascending
+		sort.Slice(countComponent, func(i, j int) bool {
+			return countComponent[i].count < countComponent[j].count ||
+				(countComponent[i].count == countComponent[j].count && countComponent[i].idx < countComponent[j].idx)
+		})
+		log.Debugf("instance-components of composite balloon %s: %v",
+			blnDef.Name, countComponent)
+		// create only one component balloon for the component
+		compIdx := countComponent[0].idx
+		comp := blnDef.Components[compIdx]
 		compDef := p.balloonDefByName(comp.DefName)
 		if compDef == nil {
 			deleteComponentBlns()
-			return nil, balloonsError("unknown balloon definition %q in composite balloon %q",
+			return nil, balloonsError("unknown balloon definition %q in balanced composite balloon %q",
 				comp.DefName, blnDef.Name)
 		}
 		compBln, err := p.newBalloon(compDef, confCpus)
@@ -899,6 +981,10 @@ func (p *balloons) newCompositeBalloon(blnDef *BalloonDef, confCpus bool, freeIn
 		componentBlns = append(componentBlns, compBln)
 		log.Debugf("created component balloon %s of composite balloon %s",
 			compBln.PrettyName(), blnDef.Name)
+	default:
+		deleteComponentBlns()
+		return nil, balloonsError("unknown ComponentCreation mode %q in composite balloon %q",
+			blnDef.ComponentCreation, blnDef.Name)
 	}
 	memTypeMask, _ := memTypeMaskFromStringList(blnDef.MemoryTypes)
 	bln := &Balloon{
@@ -1459,6 +1545,16 @@ func (p *balloons) validateConfig(bpoptions *BalloonsOptions) error {
 				return balloonsError("CPU allocation options not allowed in composite balloons, but %q has: %s",
 					blnDef.Name, strings.Join(forbiddenCpuAllocationOptions, ", "))
 			}
+		}
+		if blnDef.ComponentCreation != "" && len(blnDef.Components) == 0 {
+			return balloonsError("ComponentCreation mode %q specified but no components defined in balloon type %q",
+				blnDef.ComponentCreation, blnDef.Name)
+		}
+		if blnDef.ComponentCreation != "" &&
+			blnDef.ComponentCreation != cfgapi.ComponentCreationAll &&
+			blnDef.ComponentCreation != cfgapi.ComponentCreationBalanceBalloons {
+			return balloonsError("unknown ComponentCreation mode %q in balloon type %q",
+				blnDef.ComponentCreation, blnDef.Name)
 		}
 		for _, load := range blnDef.Loads {
 			undefinedLoadClasses[load] = struct{}{}
