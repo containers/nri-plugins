@@ -98,3 +98,59 @@ verify 'len(cpus["pod5c0"]) == 12' \
        'len(set.intersection(cpus["pod5c0"], {"cpu12", "cpu13", "cpu14", "cpu15"})) == 3'
 
 cleanup
+reset counters
+
+# ComponentCreation enforces node-assigment in order 2-3-0-1
+CPUREQ="1" MEMREQ="100M" CPULIM="" MEMLIM=""
+CONTCOUNT=1
+POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: nodes2301"
+create balloons-busybox
+report allowed
+verify 'nodes["pod0c0"] == {"node2"}'
+
+create balloons-busybox
+report allowed
+verify 'nodes["pod1c0"] == {"node3"}'
+
+create balloons-busybox
+report allowed
+verify 'nodes["pod2c0"] == {"node0"}'
+
+create balloons-busybox
+report allowed
+verify 'nodes["pod3c0"] == {"node1"}'
+
+vm-command "kubectl delete pod pod1 --now" # pod1 was running in balloon "node3"
+
+create balloons-busybox
+report allowed
+verify 'nodes["pod4c0"] == {"node3"}'
+
+vm-command "kubectl delete pods --all --now" # make sure all nodes have free CPUs
+
+POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: new-on-node-1"
+create balloons-busybox
+report allowed
+verify 'nodes["pod5c0"] == {"node1"}'
+
+POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: balance-both-nodes-on-either-pkg"
+# "node1" balloon is instantiated (once) indepently for pod5 as
+# new-on-node-1's component balloon. Therefore "balance-balloons"
+# componentCreation strategy of balance-both-nodes-on-either-pkg is
+# expected to use component balance-pkg1-nodes instead of
+# balance-pkg0-nodes: the latter would use "node0" and "node1"
+# component balloons that already have one instance.
+create balloons-busybox
+report allowed
+verify 'nodes["pod6c0"] == {"node2", "node3"}'
+
+create balloons-busybox
+report allowed
+verify 'nodes["pod7c0"] == {"node0", "node1"}'
+
+create balloons-busybox
+report allowed
+verify 'nodes["pod8c0"] == {"node2", "node3"}'
+
+cleanup
+reset counters
