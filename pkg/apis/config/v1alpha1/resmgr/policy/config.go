@@ -23,11 +23,12 @@ import (
 )
 
 type (
-	Constraints      map[Domain]Amount
-	Domain           string
-	Amount           string
-	AmountKind       int
-	CPUTopologyLevel string
+	Constraints               map[Domain]Amount
+	Domain                    string
+	Amount                    string
+	AmountKind                int
+	CPUTopologyLevel          string
+	ComponentCreationStrategy string
 )
 
 const (
@@ -48,6 +49,9 @@ const (
 	CPUTopologyLevelL2Cache   CPUTopologyLevel = "l2cache"
 	CPUTopologyLevelCore      CPUTopologyLevel = "core"
 	CPUTopologyLevelThread    CPUTopologyLevel = "thread"
+
+	ComponentCreationAll             ComponentCreationStrategy = "all"
+	ComponentCreationBalanceBalloons ComponentCreationStrategy = "balance-balloons"
 )
 
 var (
