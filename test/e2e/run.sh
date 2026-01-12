@@ -1,7 +1,7 @@
 #!/bin/bash
 
 TITLE="NRI Resource Policy End-to-End Testing"
-DEFAULT_DISTRO=${DEFAULT_DISTRO:-"fedora/42"}
+DEFAULT_DISTRO=${DEFAULT_DISTRO:-"fedora/43"}
 
 # Other tested distros
 #    generic/ubuntu2204
@@ -15,6 +15,7 @@ if [ -z "${!distro_images[*]}" ]; then
         ["fedora/40"]="https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/40/Cloud/x86_64/images/Fedora-Cloud-Base-Vagrant-libvirt.x86_64-40-1.14.vagrant.libvirt.box"
         ["fedora/41"]="https://dl.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/x86_64/images/Fedora-Cloud-Base-Vagrant-libvirt-41-1.4.x86_64.vagrant.libvirt.box"
         ["fedora/42"]="https://dl.fedoraproject.org/pub/fedora/linux/releases/42/Cloud/x86_64/images/Fedora-Cloud-Base-Vagrant-libvirt-42-1.1.x86_64.vagrant.libvirt.box"
+        ["fedora/43"]="https://dl.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/x86_64/images/Fedora-Cloud-Base-Vagrant-libvirt-43-1.6.x86_64.vagrant.libvirt.box"
     )
 else
     echo "WARNING: using overridden distro images"
