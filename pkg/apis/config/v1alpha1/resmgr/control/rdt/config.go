@@ -37,7 +37,8 @@ var (
 	SetConfig  func(*rdt.Config, bool) error = rdt.SetConfig
 
 	// And some that we need for other plumbing.
-	NewCollector = rdt.NewCollector
+	NewCollector                     = rdt.NewCollector
+	RegisterOpenTelemetryInstruments = rdt.RegisterOpenTelemetryInstruments
 )
 
 // Config provides runtime configuration for class based cache allocation

@@ -15,15 +15,23 @@
 package metrics
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/containers/nri-plugins/pkg/http"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/metrics"
+
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
+	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
+	"go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/resource"
 
 	config "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/metrics"
 )
@@ -32,24 +40,38 @@ type (
 	Option func() error
 )
 
+const (
+	promExporter = "prometheus"
+	httpExporter = "otlp-http"
+	grpcExporter = "otlp-grpc"
+)
+
 var (
-	disabled     bool
 	namespace    = "nri"
+	exporter     string
+	provider     *metric.MeterProvider
 	enabled      []string
-	polled       []string
 	reportPeriod time.Duration
 	mux          *http.ServeMux
-	gatherer     *metrics.Gatherer
 	log          = logger.Get("metrics")
 )
 
-func WithExporterDisabled(v bool) Option {
+// WithExporter sets the type of metrics exporter to use.
+func WithExporter(v string) Option {
 	return func() error {
-		disabled = v
+		if v != "" && exporter != "" && v != exporter {
+			return fmt.Errorf("conflicting metrics exporter: %q and %q requested",
+				exporter, v)
+		}
+
+		if v != "" {
+			exporter = v
+		}
 		return nil
 	}
 }
 
+// WithNamespace sets a common namespace (prefix) for all metrics.
 func WithNamespace(v string) Option {
 	return func() error {
 		namespace = v
@@ -57,6 +79,8 @@ func WithNamespace(v string) Option {
 	}
 }
 
+// WithReportPeriod sets the reporting period for periodic metric
+// exporters (otlp-http and otlp-grpc).
 func WithReportPeriod(v time.Duration) Option {
 	return func() error {
 		reportPeriod = v
@@ -64,93 +88,137 @@ func WithReportPeriod(v time.Duration) Option {
 	}
 }
 
+// WithMetrics sets the enabled and metrics.
 func WithMetrics(cfg *config.Config) Option {
 	return func() error {
 		if cfg != nil {
-			enabled = slices.Clone(cfg.Enabled)
-			polled = slices.Clone(cfg.Polled)
+			// Notes: Polled metrics do not exist any more as such.
+			// They are treated as any other enabled metrics.
+			enabled = append(slices.Clone(cfg.Enabled), cfg.Polled...)
 		} else {
 			enabled = nil
-			polled = nil
 		}
 		return nil
 	}
 }
 
-func Start(m *http.ServeMux, options ...Option) error {
+// Start metrics collection and exporting.
+func Start(m *http.ServeMux, resource *resource.Resource, opts ...Option) error {
 	Stop()
 
-	for _, opt := range options {
+	for _, opt := range opts {
 		if err := opt(); err != nil {
 			return err
 		}
 	}
 
-	if m == nil {
-		log.Info("no mux provided, metrics exporter disabled")
+	metrics.Configure(enabled)
+
+	if exporter == "" {
+		log.Info("no metrics exporter configured, metrics collection disabled")
+		metrics.SetProvider(nil)
+		metrics.Configure(nil)
 		return nil
 	}
 
-	if disabled {
-		log.Info("metrics exporter disabled")
+	if m == nil {
+		log.Info("no mux provided, metrics collection disabled")
+		metrics.SetProvider(nil)
+		metrics.Configure(nil)
 		return nil
+	}
+
+	var (
+		ctx     = context.Background()
+		options = []metric.Option{metric.WithResource(resource)}
+	)
+
+	switch exporter {
+	case promExporter:
+		log.Info("using OpenTelemetry Prometheus exporter")
+
+		// To enable/disable 'standard' OpenTelemetry or runtime-provided
+		// metrics we either use the default prometheus registerer (enabled)
+		// or one-off custom one (disabled).
+		registry := prometheus.DefaultRegisterer
+		if !metrics.IsEnabled("standard", "") {
+			registry = prometheus.NewRegistry()
+		}
+		gatherer := registry.(prometheus.Gatherer)
+
+		exp, err := otelprom.New(
+			otelprom.WithNamespace(namespace),
+			otelprom.WithRegisterer(registry),
+			otelprom.WithoutScopeInfo(),
+			otelprom.WithoutTargetInfo(),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create OpenTelemetry Prometheus exporter: %w", err)
+		}
+
+		options = append(options, metric.WithReader(exp))
+
+		handlerOpts := promhttp.HandlerOpts{
+			ErrorHandling: promhttp.ContinueOnError,
+		}
+		m.Handle("/metrics", promhttp.HandlerFor(gatherer, handlerOpts))
+
+	case httpExporter:
+		log.Info("using OpenTelemetry HTTP exporter")
+
+		exp, err := otlpmetrichttp.New(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to create OpenTelemetry HTTP exporter: %w", err)
+		}
+
+		options = append(options,
+			metric.WithReader(
+				metric.NewPeriodicReader(exp, metric.WithInterval(reportPeriod)),
+			),
+		)
+
+	case grpcExporter:
+		log.Info("using OpenTelemetry gRPC exporter")
+
+		exp, err := otlpmetricgrpc.New(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to create OpenTelemetry gRPC exporter: %w", err)
+		}
+
+		options = append(options,
+			metric.WithReader(
+				metric.NewPeriodicReader(exp, metric.WithInterval(reportPeriod)),
+			),
+		)
 	}
 
 	log.Info("starting metrics exporter...")
 
-	g, err := metrics.NewGatherer(
-		metrics.WithNamespace(namespace),
-		metrics.WithPollInterval(reportPeriod),
-		metrics.WithMetrics(enabled, polled),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create metrics gatherer: %v", err)
-	}
-
-	gatherer = g
-
-	handlerOpts := promhttp.HandlerOpts{
-		ErrorLog:      log,
-		ErrorHandling: promhttp.ContinueOnError,
-	}
-	m.Handle("/metrics", promhttp.HandlerFor(g, handlerOpts))
+	provider = metric.NewMeterProvider(options...)
+	metrics.SetProvider(provider)
 
 	mux = m
 
 	return nil
 }
 
+// Stop metrics collection and exporting.
 func Stop() {
-	if mux == nil {
-		return
+	if mux != nil {
+		mux.Unregister("/metrics")
+		mux = nil
 	}
 
-	mux.Unregister("/metrics")
-	mux = nil
-	gatherer.Stop()
-	gatherer = nil
-}
-
-func Block() *MetricsBlock {
-	return newMetricsBlock(gatherer)
-}
-
-type MetricsBlock struct {
-	g *metrics.Gatherer
-}
-
-func newMetricsBlock(g *metrics.Gatherer) *MetricsBlock {
-	if g == nil {
-		return nil
+	if provider != nil {
+		err := provider.Shutdown(context.Background())
+		if err != nil {
+			log.Error("failed to shut down metrics provider: %v", err)
+		}
+		provider = nil
 	}
-	g.Block()
-	return &MetricsBlock{g: g}
-}
 
-func (b *MetricsBlock) Done() {
-	if b == nil || b.g == nil {
-		return
-	}
-	b.g.Unblock()
-	b.g = nil
+	exporter = ""
+	namespace = "nri"
+	enabled = nil
+	reportPeriod = 0
 }
