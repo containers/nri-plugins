@@ -94,6 +94,20 @@ spec:
                         AllocatorTopologyBalancing is the balloon type specific
                         parameter of the policy level parameter with the same name.
                       type: boolean
+                    componentCreation:
+                      description: |-
+                        ComponentCreation specifies which of the component balloons
+                        are created for CPU allocation of a composite balloon
+                        type. Value "all" means that one balloon of every component
+                        type is created. This is the default behavior. Value
+                        "first-min-balloons" means creating only one component,
+                        that is the first component in the components list whose
+                        balloon type has minimum number of instances.
+                      enum:
+                      - ""
+                      - all
+                      - first-min-balloons
+                      type: string
                     components:
                       description: |-
                         Components is a list of component properties. Every

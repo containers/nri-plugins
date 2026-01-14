@@ -25,11 +25,12 @@ import (
 )
 
 type (
-	Constraints      = policy.Constraints
-	Domain           = policy.Domain
-	Amount           = policy.Amount
-	AmountKind       = policy.AmountKind
-	CPUTopologyLevel = policy.CPUTopologyLevel
+	Constraints               = policy.Constraints
+	Domain                    = policy.Domain
+	Amount                    = policy.Amount
+	AmountKind                = policy.AmountKind
+	CPUTopologyLevel          = policy.CPUTopologyLevel
+	ComponentCreationStrategy = policy.ComponentCreationStrategy
 )
 
 const (
@@ -47,6 +48,9 @@ const (
 	CPUTopologyLevelL2Cache   = policy.CPUTopologyLevelL2Cache
 	CPUTopologyLevelCore      = policy.CPUTopologyLevelCore
 	CPUTopologyLevelThread    = policy.CPUTopologyLevelThread
+
+	ComponentCreationAll              = policy.ComponentCreationAll
+	ComponentCreationFirstMinBalloons = policy.ComponentCreationFirstMinBalloons
 )
 
 var (
@@ -124,6 +128,16 @@ type BalloonDef struct {
 	// instances uses all CPUs of its component instances, and no
 	// other CPUs.
 	Components []BalloonDefComponent `json:"components,omitempty"`
+	// ComponentCreation specifies which of the component balloons
+	// are created for CPU allocation of a composite balloon
+	// type. Value "all" means that one balloon of every component
+	// type is created. This is the default behavior. Value
+	// "first-min-balloons" means creating only one component,
+	// that is the first component in the components list whose
+	// balloon type has minimum number of instances.
+	// +kubebuilder:validation:Enum="";all;first-min-balloons
+	// +kubebuilder:validation:Format:string
+	ComponentCreation ComponentCreationStrategy `json:"componentCreation,omitempty"`
 	// Namespaces control which namespaces are assigned into
 	// balloon instances from this definition. This is used by
 	// namespace assign methods.
