@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.11.0-11-g4eb82887 documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.11.0-15-g8c1dd7d3 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=b022d7aa"></script>
+        <script src="../../../_static/documentation_options.js?v=cd807986"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -395,14 +395,27 @@ instance, two balloons that generate heavy load on level 2 cache
 should get their CPUs from separate cache blocks for best
 performance. Every listed class must be specified in
 <code class="docutils literal notranslate"><span class="pre">loadClasses</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">components</span></code> is a list of components of a balloon. If a balloon
-consists of components, its CPUs are allocated by allocating CPUs
-for each component balloon separately, and then adding them up.
-See <a class="reference internal" href="#combining-balloons">combining balloons</a> for more details and
-an example. Properties of components in the list are:</p>
+<li><p><code class="docutils literal notranslate"><span class="pre">components</span></code> list includes component balloon types. If non-empty,
+the balloon is a composite balloon whose CPUs are not allocated
+directly to itself but its CPUs are the union of CPUs of its
+component balloons. See <a class="reference internal" href="#combining-balloons">combining balloons</a>
+for more details and an example. Properties of components in the
+list are:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">balloonType</span></code> specifies the name of the balloon type according
-to which CPUs are allocated to this component.</p></li>
+to which CPUs are allocated to the component.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">componentCreation</span></code> is a string that specifies the strategy for
+creating <code class="docutils literal notranslate"><span class="pre">components</span></code> for a new composite balloon. If unspecified,
+one instance of each component is created. Valid strategies are:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">all</span></code>: create one instance of every component (the default).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">balance-balloons</span></code>: create only the first component whose
+balloon types have the minimal number of balloons alive at the
+time of creation. This strategy is suitable for balancing
+containers over multiple balloon types. See <a class="reference internal" href="#combining-balloons">combining
+balloons</a> for an example.</p></li>
 </ul>
 </li>
 </ul>
@@ -699,35 +712,48 @@ components.</p>
 own balloon type configuration only. As CPUs are not allocated
 directly to composite balloons, CPU allocation parameters are not
 allowed in composite balloon types.</p>
-<p>When the policy creates new composite balloon, it creates hidden
-instances of balloons’s components, too. Resizing the composite
-balloon due to changes in its containers causes resizing these hidden
-instances.</p>
-<p>Example: allocate CPUs for distributed AI inference containers so
+<p>When the policy creates new composite balloon, it creates “hidden”
+instances of balloons’s components, too. The instances are hidden in
+the sense that containers cannot be assigned to component balloons but
+only to the composite balloon. By default, the policy creates one
+instance of every component, but this can be controlled with the
+<code class="docutils literal notranslate"><span class="pre">componentCreation</span></code> option. Resizing the composite balloon due to
+changes in its containers causes resizing the hidden instances so that
+the union of CPUs of contains enough CPUs for the containers in the
+composite balloon.</p>
+<p>Example: Given a two-socket system with two NUMA nodes on each CPU
+package, allocate CPUs for distributed AI inference containers so
 that, depending on a balloon type, a container will get:</p>
 <ul class="simple">
-<li><p>equal number of CPUs from all 4 NUMA nodes in the system</p></li>
-<li><p>equal number of CPUs from both NUMA nodes on CPU package 0</p></li>
-<li><p>equal number of CPUs from both NUMA nodes on CPU package 1.</p></li>
+<li><p>an equal number of CPUs from all 4 NUMA nodes in the system</p></li>
+<li><p>an equal number of CPUs from both NUMA nodes on CPU package 0</p></li>
+<li><p>an equal number of CPUs from both NUMA nodes on CPU package 1</p></li>
+<li><p>an equal number of CPUs from both NUMA nodes on either CPU package,
+whichever has fewer inference containers at the balloon creation
+time.</p></li>
 </ul>
 <p>Following balloon type configuration implements this. Containers can
 be assigned into balloons <code class="docutils literal notranslate"><span class="pre">balance-all-nodes</span></code>, <code class="docutils literal notranslate"><span class="pre">balance-pkg0-nodes</span></code>,
-and <code class="docutils literal notranslate"><span class="pre">balance-pkg1-nodes</span></code>, respectively.</p>
+<code class="docutils literal notranslate"><span class="pre">balance-pkg1-nodes</span></code>, and <code class="docutils literal notranslate"><span class="pre">balance-both-nodes-of-alternating-pkg</span></code>
+respectively.</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="w">  </span><span class="nt">balloonTypes</span><span class="p">:</span>
 <span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">balance-all-nodes</span>
 <span class="w">    </span><span class="nt">components</span><span class="p">:</span>
 <span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">balloonType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">balance-pkg0-nodes</span>
 <span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">balloonType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">balance-pkg1-nodes</span>
+<span class="w">    </span><span class="nt">preferNewBalloons</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 
 <span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">balance-pkg0-nodes</span>
 <span class="w">    </span><span class="nt">components</span><span class="p">:</span>
 <span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">balloonType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">node0</span>
 <span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">balloonType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">node1</span>
+<span class="w">    </span><span class="nt">preferNewBalloons</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 
 <span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">balance-pkg1-nodes</span>
 <span class="w">    </span><span class="nt">components</span><span class="p">:</span>
 <span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">balloonType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">node2</span>
 <span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">balloonType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">node3</span>
+<span class="w">    </span><span class="nt">preferNewBalloons</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 
 <span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">node0</span>
 <span class="w">    </span><span class="nt">preferCloseToDevices</span><span class="p">:</span>
@@ -744,6 +770,13 @@ and <code class="docutils literal notranslate"><span class="pre">balance-pkg1-no
 <span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">node3</span>
 <span class="w">    </span><span class="nt">preferCloseToDevices</span><span class="p">:</span>
 <span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/sys/devices/system/node/node3</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">balance-both-nodes-of-either-pkg</span>
+<span class="w">    </span><span class="nt">components</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">balloonType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">balance-pkg0-nodes</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">balloonType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">balance-pkg1-nodes</span>
+<span class="w">    </span><span class="nt">componentCreation</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">balance-balloons</span>
+<span class="w">    </span><span class="nt">preferNewBalloons</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </pre></div>
 </div>
 </section>
