@@ -31,6 +31,7 @@ type (
 	AmountKind                = policy.AmountKind
 	CPUTopologyLevel          = policy.CPUTopologyLevel
 	ComponentCreationStrategy = policy.ComponentCreationStrategy
+	SchedulingClass           = policy.SchedulingClass
 )
 
 const (
@@ -51,6 +52,22 @@ const (
 
 	ComponentCreationAll             = policy.ComponentCreationAll
 	ComponentCreationBalanceBalloons = policy.ComponentCreationBalanceBalloons
+
+	SchedulingPolicyUndefined  = policy.SchedulingPolicyUndefined
+	SchedulingPolicyNone       = policy.SchedulingPolicyNone
+	SchedulingPolicyOther      = policy.SchedulingPolicyOther
+	SchedulingPolicyFifo       = policy.SchedulingPolicyFifo
+	SchedulingPolicyRr         = policy.SchedulingPolicyRr
+	SchedulingPolicyBatch      = policy.SchedulingPolicyBatch
+	SchedulingPolicyIdle       = policy.SchedulingPolicyIdle
+	SchedulingPolicyDeadline   = policy.SchedulingPolicyDeadline
+	SchedulingFlagResetOnFork  = policy.SchedulingFlagResetOnFork
+	SchedulingFlagReclaimable  = policy.SchedulingFlagReclaimable
+	SchedulingFlagDlOverrun    = policy.SchedulingFlagDlOverrun
+	SchedulingFlagKeepPolicy   = policy.SchedulingFlagKeepPolicy
+	SchedulingFlagKeepParams   = policy.SchedulingFlagKeepParams
+	SchedulingFlagUtilClampMin = policy.SchedulingFlagUtilClampMin
+	SchedulingFlagUtilClampMax = policy.SchedulingFlagUtilClampMax
 )
 
 var (
@@ -114,6 +131,9 @@ type Config struct {
 	ShowContainersInNrt *bool `json:"showContainersInNrt,omitempty"`
 	// LoadClasses specify available loads in balloon types.
 	LoadClasses []LoadClass `json:"loadClasses,omitempty"`
+	// SchedulingClasses specify scheduling classes available in
+	// balloon types.
+	SchedulingClasses []*SchedulingClass `json:"schedulingClasses,omitempty"`
 }
 
 // BalloonDef contains a balloon definition.
@@ -255,6 +275,12 @@ type BalloonDef struct {
 	// +optional
 	// +kubebuilder:validation:Enum=efficient;performance
 	PreferCoreType string `json:"preferCoreType,omitempty"`
+	// SchedulingClass is the name of the scheduling class from
+	// which default Linux scheduling and IO priority parameters
+	// are applied on new containers created in these
+	// balloons. Parameters for the class are specified in the
+	// schedulingClasses list.
+	SchedulingClass string `json:"schedulingClass,omitempty"`
 	// ShowContainersInNrt controls showing containers and their
 	// resource affinities as part of
 	// NodeResourceTopology. Overrides the policy level
