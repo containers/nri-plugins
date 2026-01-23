@@ -265,6 +265,25 @@ type Container interface {
 	// SetMemorySwap sets the swap limit in bytes for the container.
 	SetMemorySwap(int64)
 
+	// SetSchedulingPolicy sets the scheduling policy for the container.
+	SetSchedulingPolicy(nri.LinuxSchedulerPolicy)
+	// SetSchedulingNice sets the nice value for the container.
+	SetSchedulingNice(int32)
+	// SetSchedulingPriority sets the real-time priority for the container.
+	SetSchedulingPriority(int32)
+	// SetSchedulingFlags sets the scheduling flags for the container.
+	SetSchedulingFlags([]nri.LinuxSchedulerFlag)
+	// SetSchedulingRuntime sets the runtime for the container in microseconds.
+	SetSchedulingRuntime(uint64)
+	// SetSchedulingDeadline sets the deadline for the container in microseconds.
+	SetSchedulingDeadline(uint64)
+	// SetSchedulingPeriod sets the scheduling period for the container in microseconds.
+	SetSchedulingPeriod(uint64)
+	// SetSchedulingIOClass sets the I/O priority class for the container.
+	SetSchedulingIOClass(nri.IOPrioClass)
+	// SetSchedulingIOPriority sets the I/O priority for the container.
+	SetSchedulingIOPriority(int32)
+
 	// GetCPUShares gets the CFS CPU shares of the container.
 	GetCPUShares() int64
 	// GetCPUQuota gets the CFS CPU quota of the container.
@@ -340,7 +359,9 @@ type container struct {
 	ResourceUpdates *v1.ResourceRequirements
 	request         interface{}
 
-	Resources *nri.LinuxResources
+	Resources       *nri.LinuxResources
+	LinuxScheduler  *nri.LinuxScheduler
+	LinuxIOPriority *nri.LinuxIOPriority
 
 	TopologyHints topology.Hints    // Set of topology hints for all containers within Pod
 	Tags          map[string]string // container tags (local dynamic labels)

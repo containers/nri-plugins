@@ -601,6 +601,14 @@ func (c *container) GetLinuxResources() *nri.LinuxResources {
 	return c.Resources
 }
 
+func (c *container) GetLinuxScheduler() *nri.LinuxScheduler {
+	return c.LinuxScheduler
+}
+
+func (c *container) GetLinuxIOPriority() *nri.LinuxIOPriority {
+	return c.LinuxIOPriority
+}
+
 func (c *container) GetTopologyHints() topology.Hints {
 	return c.TopologyHints
 }
@@ -684,6 +692,18 @@ func (c *container) ensureLinuxResourcesMemory() {
 	c.ensureLinuxResources()
 	if c.Ctr.Linux.Resources.Memory == nil {
 		c.Ctr.Linux.Resources.Memory = &nri.LinuxMemory{}
+	}
+}
+
+func (c *container) ensureLinuxScheduler() {
+	if c.LinuxScheduler == nil {
+		c.LinuxScheduler = &nri.LinuxScheduler{}
+	}
+}
+
+func (c *container) ensureLinuxIOPriority() {
+	if c.LinuxIOPriority == nil {
+		c.LinuxIOPriority = &nri.LinuxIOPriority{}
 	}
 }
 
@@ -804,6 +824,93 @@ func (c *container) SetMemorySwap(value int64) {
 
 	c.ensureLinuxResourcesMemory()
 	c.Ctr.Linux.Resources.Memory.Swap = nri.Int64(value)
+}
+
+// Scheduling properties can be set only during container creation.
+// setSchedulingOnAdjustment is a helper to set scheduling parameters
+func (c *container) setSchedulingOnAdjustment(setter func(sch *nri.LinuxScheduler)) {
+	switch req := c.getPendingRequest().(type) {
+	case *nri.ContainerAdjustment:
+		c.ensureLinuxScheduler()
+		sch := c.GetLinuxScheduler()
+		setter(sch)
+		req.SetLinuxScheduler(sch)
+	default:
+		log.Error("%s: can't set scheduling parameter: incorrect pending request type %T",
+			c.PrettyName(), c.request)
+		return
+	}
+	c.markPending(NRI)
+}
+
+func (c *container) SetSchedulingPolicy(value nri.LinuxSchedulerPolicy) {
+	c.setSchedulingOnAdjustment(func(sch *nri.LinuxScheduler) {
+		sch.Policy = value
+	})
+}
+
+func (c *container) SetSchedulingNice(value int32) {
+	c.setSchedulingOnAdjustment(func(sch *nri.LinuxScheduler) {
+		sch.Nice = value
+	})
+}
+
+func (c *container) SetSchedulingPriority(value int32) {
+	c.setSchedulingOnAdjustment(func(sch *nri.LinuxScheduler) {
+		sch.Priority = value
+	})
+}
+
+func (c *container) SetSchedulingFlags(value []nri.LinuxSchedulerFlag) {
+	c.setSchedulingOnAdjustment(func(sch *nri.LinuxScheduler) {
+		sch.Flags = make([]nri.LinuxSchedulerFlag, len(value))
+		copy(sch.Flags, value)
+	})
+}
+
+func (c *container) SetSchedulingRuntime(value uint64) {
+	c.setSchedulingOnAdjustment(func(sch *nri.LinuxScheduler) {
+		sch.Runtime = value
+	})
+}
+
+func (c *container) SetSchedulingDeadline(value uint64) {
+	c.setSchedulingOnAdjustment(func(sch *nri.LinuxScheduler) {
+		sch.Deadline = value
+	})
+}
+
+func (c *container) SetSchedulingPeriod(value uint64) {
+	c.setSchedulingOnAdjustment(func(sch *nri.LinuxScheduler) {
+		sch.Period = value
+	})
+}
+
+func (c *container) setIOPriorityOnAdjustment(setter func(iop *nri.LinuxIOPriority)) {
+	switch req := c.getPendingRequest().(type) {
+	case *nri.ContainerAdjustment:
+		c.ensureLinuxIOPriority()
+		iop := c.GetLinuxIOPriority()
+		setter(iop)
+		req.SetLinuxIOPriority(iop)
+	default:
+		log.Error("%s: can't set IO priority parameter: incorrect pending request type %T",
+			c.PrettyName(), c.request)
+		return
+	}
+	c.markPending(NRI)
+}
+
+func (c *container) SetSchedulingIOClass(value nri.IOPrioClass) {
+	c.setIOPriorityOnAdjustment(func(iop *nri.LinuxIOPriority) {
+		iop.Class = value
+	})
+}
+
+func (c *container) SetSchedulingIOPriority(value int32) {
+	c.setIOPriorityOnAdjustment(func(iop *nri.LinuxIOPriority) {
+		iop.Priority = value
+	})
 }
 
 func (c *container) GetCPUShares() int64 {
