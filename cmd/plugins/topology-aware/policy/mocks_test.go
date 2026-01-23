@@ -479,6 +479,33 @@ func (m *mockContainer) SetMemoryLimit(int64) {
 func (m *mockContainer) SetMemorySwap(int64) {
 	panic("unimplemented")
 }
+func (m *mockContainer) SetSchedulingPolicy(nri.LinuxSchedulerPolicy) {
+	panic("unimplemented")
+}
+func (m *mockContainer) SetSchedulingNice(int32) {
+	panic("unimplemented")
+}
+func (m *mockContainer) SetSchedulingPriority(int32) {
+	panic("unimplemented")
+}
+func (m *mockContainer) SetSchedulingFlags([]nri.LinuxSchedulerFlag) {
+	panic("unimplemented")
+}
+func (m *mockContainer) SetSchedulingRuntime(uint64) {
+	panic("unimplemented")
+}
+func (m *mockContainer) SetSchedulingDeadline(uint64) {
+	panic("unimplemented")
+}
+func (m *mockContainer) SetSchedulingPeriod(uint64) {
+	panic("unimplemented")
+}
+func (m *mockContainer) SetSchedulingIOClass(nri.IOPrioClass) {
+	panic("unimplemented")
+}
+func (m *mockContainer) SetSchedulingIOPriority(int32) {
+	panic("unimplemented")
+}
 func (m *mockContainer) GetPendingAdjustment() *nri.ContainerAdjustment {
 	panic("unimplemented")
 }
