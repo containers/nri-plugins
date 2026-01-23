@@ -35,6 +35,24 @@ verify-cstates() {
     done
 }
 
+verify-sched() {
+    local podXcY=$1
+    vm-command "cat /proc/\$(pgrep -f $podXcY)/sched" || command-error "cannot get /proc/PID/sched for $podXcY"
+
+    if [ "$expected_policy" != "" ]; then
+        echo "verify scheduling policy of $podXcY is $expected_policy"
+        grep -q -E "policy .* $expected_policy" <<< $COMMAND_OUTPUT ||
+            error "expected policy $expected_policy not found"
+
+    fi
+
+    if [ "$expected_prio" != "" ]; then
+        echo "verify scheduling priority of $podXcY is $expected_prio"
+        grep -q -E "prio .* $expected_prio" <<< $COMMAND_OUTPUT ||
+            error "expected priority $expected_prio not found"
+    fi
+}
+
 # verify-cstates-no-writes checks that any c-states of given CPUs have not been written
 verify-cstates-no-writes() {
     local cpu_ids=$1       # e.g. "1 2 4"
@@ -52,7 +70,7 @@ cleanup() {
 }
 
 echo "verify that all c-states of all available CPUs are enabled"
-verify-cstates "2 3 4 5 6 7 11 12 13" "C1E C2 C4 C8" "" 36
+verify-cstates "2 3 4 5 6 7 11 12 13" "C1E C2 C4 C8" "" 40
 
 echo "verify that c-states of CPUs outside AvailableResources have not been written"
 verify-cstates-no-writes "0 1 8 9 14 15"
@@ -63,14 +81,26 @@ report allowed
 verify 'len(cpus["pod0c0"]) == 1'
 echo "verify that CPUs of low-latency pod0 cannot enter C4 or C8"
 verify-cstates "$(cpuids-of pod0c0)" "C1E C2" "C4 C8" 4
+expected_policy=1 expected_prio=$((99 - 42)) verify-sched pod0c0 # expect SCHED_FIFO, prio 56
 
 CPUREQ="3" MEMREQ="100M" CPULIM="" MEMLIM=""
-POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: lowlatency-bln" CONTCOUNT=1 create balloons-busybox
+POD_ANNOTATION=(
+    "balloon.balloons.resource-policy.nri.io: lowlatency-bln"
+    "scheduling-class.resource-policy.nri.io: run-when-free"
+)
+CONTCOUNT=1 create balloons-busybox
 report allowed
 verify 'cpus["pod0c0"] == cpus["pod1c0"]' \
        'len(cpus["pod0c0"]) == 4'
 echo "verify that CPUs of low-latency pods pod0 and pod1 cannot enter C4 or C8"
 verify-cstates "$(cpuids-of pod1c0)" "C1E C2" "C4 C8" 16
+
+expected_policy=5 expected_prio=$((120 + 17)) verify-sched pod1c0 # expect SCHED_IDLE, prio 137
+vm-command "ionice -p \$(pgrep -f pod1c0)" ||
+    command-error "cannot get ionice for pod1c0"
+expected_ionice="best-effort: prio 6"
+[[ "$COMMAND_OUTPUT" == "$expected_ionice" ]] ||
+    command-error "expected ionice output '$expected_ionice'"
 
 # store CPU ids of maximal cpuset before deleting pods
 max_lowlatency_cpus="$(echo $(cpuids-of pod1c0) )"
