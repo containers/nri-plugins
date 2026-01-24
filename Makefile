@@ -87,7 +87,8 @@ PLUGINS ?= \
 
 BINARIES ?= \
 	config-manager \
-	mpolset
+	mpolset \
+	resource-annotator
 
 OTHER_IMAGE_TARGETS ?= \
 	nri-plugins-operator-image \
@@ -351,6 +352,14 @@ $(BIN_PATH)/nri-resource-policy-template: \
     $(shell for f in cmd/plugins/template/*.go; do echo $$f; done; \
                 for dir in $(shell $(GO_DEPS) ./cmd/plugins/template/... | \
                           grep -E '(/nri-plugins/)|(cmd/plugins/template/)' | \
+                          sed 's#github.com/containers/nri-plugins/##g'); do \
+                find $$dir -name \*.go; \
+            done | sort | uniq)
+
+$(BIN_PATH)/resource-annotator: \
+    $(shell for f in cmd/resource-annotator/*.go; do echo $$f; done; \
+            for dir in $(shell $(GO_DEPS) ./cmd/resource-annotator/... | \
+                          grep -E '(/nri-plugins/)|(cmd/resource-annotator/)' | \
                           sed 's#github.com/containers/nri-plugins/##g'); do \
                 find $$dir -name \*.go; \
             done | sort | uniq)

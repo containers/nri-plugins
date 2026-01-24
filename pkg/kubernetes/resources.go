@@ -15,10 +15,32 @@
 package kubernetes
 
 import (
+	"encoding/json"
 	"fmt"
+
+	corev1 "k8s.io/api/core/v1"
 
 	"github.com/containers/nri-plugins/pkg/sysfs"
 )
+
+const (
+	// AnnotatedResourcesKey can be used to annotate container resources on a pod.
+	AnnotatedResourcesKey = "noderesource.dev/resources"
+)
+
+// AnnotatedResources can be used to annotate container resources on a pod.
+type AnnotatedResources struct {
+	InitContainers map[string]corev1.ResourceRequirements `json:"initContainers,omitempty"`
+	Containers     map[string]corev1.ResourceRequirements `json:"containers"`
+}
+
+func (a *AnnotatedResources) Marshal() ([]byte, error) {
+	return json.Marshal(a)
+}
+
+func (a *AnnotatedResources) Unmarshal(bytes []byte) error {
+	return json.Unmarshal(bytes, a)
+}
 
 const (
 	// Constants for converting back and forth between CPU requirements in
@@ -42,7 +64,6 @@ const (
 
 	MinBurstableOOMScoreAdj = 1000 + GuaranteedOOMScoreAdj // 1000 - 997 = 3
 	MaxBurstableOOMScoreAdj = BestEffortOOMScoreAdj - 1    // 1000 - 1 = 999
-
 )
 
 var (
