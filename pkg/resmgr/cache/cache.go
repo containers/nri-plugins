@@ -68,6 +68,10 @@ const (
 	// UnlimitedBurstabileKey defines the preferred topology level for containers
 	// with unlimited burstability.
 	UnlimitedBurstableKey = "unlimited-burstable." + kubernetes.ResmgrKeyNamespace
+
+	// AnnotatedResourcesKey can be used to annotate resource requirements of
+	// containers and init containers on the pod.
+	AnnotatedResourcesKey = kubernetes.AnnotatedResourcesKey
 )
 
 // PodState is the pod state in the runtime.
