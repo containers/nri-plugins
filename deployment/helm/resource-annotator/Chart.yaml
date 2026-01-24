@@ -1,0 +1,11 @@
+apiVersion: v2
+appVersion: unstable
+description: |
+  The resource annotator webhook creates a pod annotation with all the resource requirements
+  present in the pod's containers for CPU and memory compute resources.
+name: nri-resource-annotator
+sources:
+ - https://github.com/containers/nri-plugins
+home: https://github.com/containers/nri-plugins
+type: application
+version: v0.0.0

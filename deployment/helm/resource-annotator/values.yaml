@@ -1,0 +1,25 @@
+# Default values for nri-plugins.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+---
+image:
+  name: ghcr.io/containers/nri-plugins/resource-annotator
+  # image tag, Chart.AppVersion if unset
+  #tag: unstable
+  pullPolicy: Always
+
+service:
+  base64Crt: UHV0IGhlcmUgeW91ciBjZXJ0aWZpY2F0ZSAoUEVNKQo=
+  base64Key: QW5kIGhlcmUgeW91ciBjZXJ0aWZpY2F0ZSBrZXkgKFBFTSkK
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: 1
+    memory: 256Mi
+
+# Extra environment variables to inject.
+extraEnv:
+#  LOGGER_DEBUG: "*"

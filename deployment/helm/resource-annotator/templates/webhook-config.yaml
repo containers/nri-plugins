@@ -1,0 +1,29 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: resource-annotator
+webhooks:
+- name: resource-annotator.noderesource.dev
+  sideEffects: None
+  admissionReviewVersions: ["v1"]
+  rules:
+    - apiGroups:
+        - "*"
+      apiVersions:
+        - "*"
+      operations:
+        - CREATE
+        - UPDATE
+      resources:
+        - pods
+  objectSelector:
+    matchExpressions:
+      - key: helm.sh/chart
+        operator: NotIn
+        values: ["{{ .Chart.Name }}-{{ .Chart.Version }}"]
+  failurePolicy: Fail
+  clientConfig:
+    service:
+      namespace: {{ .Release.Namespace }}
+      name: resource-annotator
+    caBundle: {{ .Values.service.base64Crt }}
