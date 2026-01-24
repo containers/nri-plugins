@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: resource-annotator
+  namespace: {{ .Release.Namespace }}
+  labels:
+  {{- include "resource-annotator.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+    {{- include "resource-annotator.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+      {{- include "resource-annotator.labels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: webhook
+        image: {{ .Values.image.name }}:{{ .Values.image.tag | default .Chart.AppVersion }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        volumeMounts:
+        - name: certs
+          mountPath: /etc/resource-annotator/certs.d/
+          readOnly: true
+        args:
+         - "-cert-file=/etc/resource-annotator/certs.d/svc.crt"
+         - "-key-file=/etc/resource-annotator/certs.d/svc.key"
+         - "-port=8443"
+        {{- if .Values.extraEnv }}
+        env:
+          {{- range $name, $value := .Values.extraEnv }}
+          - name: {{ $name }}
+            value: {{ quote $value }}
+          {{- end }}
+        {{- end }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          readOnlyRootFilesystem: true
+#          runAsNonRoot: true
+        resources:
+        {{- if .Values.resources.requests }}
+          requests:
+          {{- range $name, $value := .Values.resources.requests }}
+            {{ $name }}: "{{ $value }}"
+          {{- end }}
+        {{- end }}
+        {{- if .Values.resources.limits }}
+          limits:
+          {{- range $name, $value := .Values.resources.limits }}
+            {{ $name }}: "{{ $value }}"
+          {{- end }}
+        {{- end }}
+        livenessProbe:
+          httpGet:
+            scheme: HTTPS
+            port: 8443
+            httpHeaders:
+            - name: "Content-Type"
+              value: "application/json"
+          initialDelaySeconds: 5
+          periodSeconds: 30
+
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+        - key: "node-role.kubernetes.io/control-plane"
+          operator: "Equal"
+          value: ""
+          effect: "NoSchedule"
+      priorityClassName: system-node-critical
+      volumes:
+      # The webhook uses k8s secrets to store TLS secrets. For now, you need to
+      # generate a cert/key pair and pass it to Helm, base64 encoded, using the
+      # corresponding Helm values.
+      - name: certs
+        secret:
+          secretName: resource-annotator-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: resource-annotator
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    {{- include "resource-annotator.selectorLabels" . | nindent 6 }}
+  ports:
+  - port: 443
+    targetPort: 8443
+    protocol: TCP
