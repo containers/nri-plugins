@@ -306,8 +306,36 @@ func isReadOnlyDevice(rules []*nri.LinuxDeviceCgroup, d *nri.LinuxDevice) bool {
 	return readOnly
 }
 
+func (c *container) GetAnnotatedResources() (v1.ResourceRequirements, bool) {
+	pod, ok := c.GetPod()
+	if !ok {
+		return v1.ResourceRequirements{}, false
+	}
+
+	data, ok := pod.GetAnnotation(AnnotatedResourcesKey)
+	if !ok {
+		return v1.ResourceRequirements{}, false
+	}
+
+	annotated := &kubernetes.AnnotatedResources{}
+	if err := annotated.Unmarshal([]byte(data)); err != nil {
+		log.Error("failed to unmarshal annotated resources for pod %s: %v",
+			pod.PrettyName(), err)
+		return v1.ResourceRequirements{}, false
+	}
+
+	resources, ok := annotated.Containers[c.GetName()]
+	return resources, ok
+}
+
 // Estimate resource requirements using the containers cgroup parameters and QoS class.
 func (c *container) estimateResourceRequirements() {
+	if annotated, ok := c.GetAnnotatedResources(); ok {
+		log.Info("%s: using annotated resources %+v", c.PrettyName(), annotated)
+		c.Requirements = annotated
+		return
+	}
+
 	r := c.Ctr.GetLinux().GetResources()
 	qosClass := c.GetQOSClass()
 	oomAdj := c.Ctr.GetLinux().GetOomScoreAdj().GetValue()
