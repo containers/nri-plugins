@@ -299,11 +299,33 @@ licenses.%:
 
 nri-plugins-operator-image:
 	$(Q)mkdir -p $(IMAGE_PATH); \
-	$(MAKE) -C deployment/operator image-save
+	if ! $(MAKE) -C deployment/operator image-save; then \
+	    case $(IMAGE_VERSION) in \
+	        *-[0-9]*-g[0-9a-f]*) \
+		   echo "ERROR: build of $@ failed"; \
+	           echo "WARNING: ignoring failure non-release build $(IMAGE_VERSION)"; \
+                   ;; \
+	        *) \
+                   echo "ERROR: $@ build failed"; \
+	           exit 1 \
+                   ;; \
+	    esac; \
+	fi
 
 nri-plugins-operator-bundle-image:
 	$(Q)mkdir -p $(IMAGE_PATH); \
-	$(MAKE) -C deployment/operator bundle-save
+	if ! $(MAKE) -C deployment/operator bundle-save; then \
+	    case $(IMAGE_VERSION) in \
+	        *-[0-9]*-g[0-9a-f]*) \
+		   echo "ERROR: build of $@ failed"; \
+	           echo "WARNING: ignoring failure non-release build $(IMAGE_VERSION)"; \
+                   ;; \
+	        *) \
+                   echo "ERROR: $@ build failed"; \
+	           exit 1 \
+                   ;; \
+	    esac; \
+	fi
 
 #
 # plugin build dependencies
