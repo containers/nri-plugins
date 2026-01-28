@@ -1,9 +1,9 @@
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
-  name: resource-annotator
+  name: nri-resource-annotator
 webhooks:
-- name: resource-annotator.noderesource.dev
+- name: nri-resource-annotator.noderesource.dev
   sideEffects: None
   admissionReviewVersions: ["v1"]
   rules:
@@ -25,5 +25,5 @@ webhooks:
   clientConfig:
     service:
       namespace: {{ .Release.Namespace }}
-      name: resource-annotator
+      name: nri-resource-annotator
     caBundle: {{ .Values.service.base64Crt }}
