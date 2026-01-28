@@ -59,7 +59,7 @@ spec:
             port: 8443
             httpHeaders:
             - name: "Content-Type"
-              value: "application/json"
+              value: "application/liveness-probe"
           initialDelaySeconds: 5
           periodSeconds: 30
 
