@@ -3,7 +3,7 @@
 # Declare variables to be passed into your templates.
 ---
 image:
-  name: ghcr.io/containers/nri-plugins/resource-annotator
+  name: ghcr.io/containers/nri-plugins/nri-resource-annotator
   # image tag, Chart.AppVersion if unset
   #tag: unstable
   pullPolicy: Always
