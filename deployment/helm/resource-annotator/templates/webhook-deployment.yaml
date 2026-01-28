@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: resource-annotator
+  name: nri-resource-annotator
   namespace: {{ .Release.Namespace }}
   labels:
   {{- include "resource-annotator.labels" . | nindent 4 }}
@@ -77,12 +77,12 @@ spec:
       # corresponding Helm values.
       - name: certs
         secret:
-          secretName: resource-annotator-secret
+          secretName: nri-resource-annotator-secret
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: resource-annotator
+  name: nri-resource-annotator
   namespace: {{ .Release.Namespace }}
 spec:
   selector:

@@ -25,7 +25,7 @@ demonstrates how this can be done.
 ```shell
 $ helm repo add nri-plugins https://containers.github.io/nri-plugins
 $ mkdir cert
-$ SVC=resource-annotator NS=kube-system
+$ SVC=nri-resource-annotator; NS=kube-system
 $ openssl req -x509 -newkey rsa:2048 -sha256 -days 365 -nodes \
       -keyout ./cert/server-key.pem \
       -out ./cert/server-crt.pem \
