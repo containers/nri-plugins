@@ -2,6 +2,20 @@ apiVersion: v1
 entries:
   nri-memory-policy:
   - apiVersion: v2
+    appVersion: v0.12.0
+    created: "2026-01-28T12:57:37.814563815Z"
+    description: 'The memory-policy NRI plugin configures default Linux memory policy
+      for containers at creation time. '
+    digest: d6c7b167f4af312b2e805e04eb45cb3b54cdc4af75a9cda497785f6086634392
+    home: https://github.com/containers/nri-plugins
+    name: nri-memory-policy
+    sources:
+    - https://github.com/containers/nri-plugins
+    type: application
+    urls:
+    - https://github.com/containers/nri-plugins/releases/download/v0.12.0/nri-memory-policy-helm-chart-v0.12.0.tgz
+    version: v0.12.0
+  - apiVersion: v2
     appVersion: v0.11.0
     created: "2025-12-19T13:14:07.269871296Z"
     description: 'The memory-policy NRI plugin configures default Linux memory policy
@@ -44,6 +58,20 @@ entries:
     - https://github.com/containers/nri-plugins/releases/download/v0.10.0/nri-memory-policy-helm-chart-v0.10.0.tgz
     version: v0.10.0
   nri-memory-qos:
+  - apiVersion: v2
+    appVersion: v0.12.0
+    created: "2026-01-28T12:57:38.184515729Z"
+    description: 'The memory-qos NRI plugin adds two methods for controlling cgroups
+      v2 memory.* parameters: QoS class and direct memory annotations. '
+    digest: 69b721cf40f7b3d10baeaf34cdc335ca0289ec3b63ecbb86aa3c0cee1bcad3a0
+    home: https://github.com/containers/nri-plugins
+    name: nri-memory-qos
+    sources:
+    - https://github.com/containers/nri-plugins
+    type: application
+    urls:
+    - https://github.com/containers/nri-plugins/releases/download/v0.12.0/nri-memory-qos-helm-chart-v0.12.0.tgz
+    version: v0.12.0
   - apiVersion: v2
     appVersion: v0.11.0
     created: "2025-12-19T13:14:07.748175734Z"
@@ -284,6 +312,20 @@ entries:
     version: v0.2.0
   nri-memtierd:
   - apiVersion: v2
+    appVersion: v0.12.0
+    created: "2026-01-28T12:57:38.542378437Z"
+    description: 'The memtierd NRI plugin enables managing workloads with Memtierd
+      in Kubernetes. '
+    digest: 58c6c188659c8d712d222ae1adbd7aa59123ca3bbe6dc66a5001f3b91d02528a
+    home: https://github.com/containers/nri-plugins
+    name: nri-memtierd
+    sources:
+    - https://github.com/containers/nri-plugins
+    type: application
+    urls:
+    - https://github.com/containers/nri-plugins/releases/download/v0.12.0/nri-memtierd-helm-chart-v0.12.0.tgz
+    version: v0.12.0
+  - apiVersion: v2
     appVersion: v0.11.0
     created: "2025-12-19T13:14:08.243823227Z"
     description: 'The memtierd NRI plugin enables managing workloads with Memtierd
@@ -521,7 +563,37 @@ entries:
     urls:
     - https://github.com/containers/nri-plugins/releases/download/v0.2.0/nri-memtierd-helm-chart-v0.2.0.tgz
     version: v0.2.0
+  nri-resource-annotator:
+  - apiVersion: v2
+    appVersion: v0.12.0
+    created: "2026-01-28T12:57:38.879805025Z"
+    description: 'The resource annotator webhook creates a pod annotation with all
+      the resource requirements present in the pod''s containers for CPU and memory
+      compute resources. '
+    digest: 8c2543a0c951add2888927a2e0361ccfd331a913db46161df00d020ebe38660b
+    home: https://github.com/containers/nri-plugins
+    name: nri-resource-annotator
+    sources:
+    - https://github.com/containers/nri-plugins
+    type: application
+    urls:
+    - https://github.com/containers/nri-plugins/releases/download/v0.12.0/nri-resource-annotator-helm-chart-v0.12.0.tgz
+    version: v0.12.0
   nri-resource-policy-balloons:
+  - apiVersion: v2
+    appVersion: v0.12.0
+    created: "2026-01-28T12:57:39.287743886Z"
+    description: 'The balloons NRI resource policy plugin implements workload placement
+      into “balloons” that are disjoint CPU pools. '
+    digest: 52e5ab43ebc75424bf8a4f3363b1d2edfa507b986ba882ce8e3788e33bc59c8e
+    home: https://github.com/containers/nri-plugins
+    name: nri-resource-policy-balloons
+    sources:
+    - https://github.com/containers/nri-plugins
+    type: application
+    urls:
+    - https://github.com/containers/nri-plugins/releases/download/v0.12.0/nri-resource-policy-balloons-helm-chart-v0.12.0.tgz
+    version: v0.12.0
   - apiVersion: v2
     appVersion: v0.11.0
     created: "2025-12-19T13:14:08.718639475Z"
@@ -762,6 +834,20 @@ entries:
     version: v0.2.0
   nri-resource-policy-template:
   - apiVersion: v2
+    appVersion: v0.12.0
+    created: "2026-01-28T12:57:39.626743089Z"
+    description: 'The template NRI resource policy plugin is a wireframe implementation
+      without any policy logic. It can be used as a template to create new policies. '
+    digest: 1801eded6a45f6f956b4c5d95851f6ea8e91523bbd3d2251f08b518dd242e8f9
+    home: https://github.com/containers/nri-plugins
+    name: nri-resource-policy-template
+    sources:
+    - https://github.com/containers/nri-plugins
+    type: application
+    urls:
+    - https://github.com/containers/nri-plugins/releases/download/v0.12.0/nri-resource-policy-template-helm-chart-v0.12.0.tgz
+    version: v0.12.0
+  - apiVersion: v2
     appVersion: v0.11.0
     created: "2025-12-19T13:14:09.202616763Z"
     description: 'The template NRI resource policy plugin is a wireframe implementation
@@ -944,6 +1030,21 @@ entries:
     - https://github.com/containers/nri-plugins/releases/download/v0.3.0/nri-resource-policy-template-helm-chart-v0.3.0.tgz
     version: v0.3.0
   nri-resource-policy-topology-aware:
+  - apiVersion: v2
+    appVersion: v0.12.0
+    created: "2026-01-28T12:57:40.022903096Z"
+    description: 'Topology-aware NRI resource policy plugin is a NRI plugin that will
+      apply hardware-aware resource allocation policies to the containers running
+      in the system. '
+    digest: f8b7add9ead4955f4c3ef0332ed05d11047725c8d79a01c4260f644156950e5e
+    home: https://github.com/containers/nri-plugins
+    name: nri-resource-policy-topology-aware
+    sources:
+    - https://github.com/containers/nri-plugins
+    type: application
+    urls:
+    - https://github.com/containers/nri-plugins/releases/download/v0.12.0/nri-resource-policy-topology-aware-helm-chart-v0.12.0.tgz
+    version: v0.12.0
   - apiVersion: v2
     appVersion: v0.11.0
     created: "2025-12-19T13:14:09.682901329Z"
@@ -1201,6 +1302,20 @@ entries:
     version: v0.2.0
   nri-sgx-epc:
   - apiVersion: v2
+    appVersion: v0.12.0
+    created: "2026-01-28T12:57:40.388625537Z"
+    description: 'The sgx-epc NRI plugin allows control over SGX encrypted page cache
+      usage using the cgroup v2 misc controller and pod annotations. '
+    digest: 23be6b011b12e284cc426a2318f4b22e079b1b5d32147b667403cb902b498b69
+    home: https://github.com/containers/nri-plugins
+    name: nri-sgx-epc
+    sources:
+    - https://github.com/containers/nri-plugins
+    type: application
+    urls:
+    - https://github.com/containers/nri-plugins/releases/download/v0.12.0/nri-sgx-epc-helm-chart-v0.12.0.tgz
+    version: v0.12.0
+  - apiVersion: v2
     appVersion: v0.11.0
     created: "2025-12-19T13:14:10.13820994Z"
     description: 'The sgx-epc NRI plugin allows control over SGX encrypted page cache
@@ -1382,4 +1497,4 @@ entries:
     urls:
     - https://github.com/containers/nri-plugins/releases/download/v0.3.0/nri-sgx-epc-helm-chart-v0.3.0.tgz
     version: v0.3.0
-generated: "2025-12-19T13:14:10.137708008Z"
+generated: "2026-01-28T12:57:40.388165357Z"
