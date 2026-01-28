@@ -64,3 +64,4 @@ customize with their own values, along with the default values.
 | `resources.requests.memory` | 256Mi                                                 | memory resource request        |
 | `resources.limits.cpu`      | 1                                                     | CPU resource limit             |
 | `resources.limits.memory`   | 256Mi                                                 | memory resource limit          |
+| `extraEnv`                  | {}                                                    | extra environment variables    |
