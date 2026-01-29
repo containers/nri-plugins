@@ -8,9 +8,16 @@ image:
   #tag: unstable
   pullPolicy: Always
 
+# For HTTP access to the webhook, either provide a base64
+# encoded certificate and private key, or refer to a cert-
+# manager certificate issuer.
 service:
+  # Existing certificate and private key.
   base64Crt: UHV0IGhlcmUgeW91ciBjZXJ0aWZpY2F0ZSAoUEVNKQo=
   base64Key: QW5kIGhlcmUgeW91ciBjZXJ0aWZpY2F0ZSBrZXkgKFBFTSkK
+  # Or alternatively name of the issuer to request certificate from.
+  #certificateIssuer:
+  #certificateIssuerKind: # defaults to ClusterIssuer
 
 resources:
   requests:
