@@ -2,736 +2,1084 @@
 
 ## Overview
 
-The balloons policy implements workload placement into "balloons" that
-are disjoint CPU pools. Size of a balloon can be fixed, or the balloon
-can be dynamically inflated and deflated, that is CPUs added and
-removed, based on the CPU resource requests of containers running in
-the balloon. Balloons can be static or dynamically created and
-destroyed. CPUs in balloons can be configured, for example, by setting
-min and max frequencies on CPU cores and uncore. Balloons in
-Kubernetes cluster, including CPU and memory affinities of their
-containers, can be exposed and observed through noderesourcetopologies
-custom resources.
+### What Problems Does the Balloons Policy Solve?
 
-## How It Works
+The balloons policy addresses CPU, device, and container affinity
+requirements by organizing workloads into **isolated CPU pools called
+"balloons."** This approach solves several key challenges:
 
-1. User configures balloon types from which the policy creates
-   balloons.
+- **Flexible node resource partitioning**: Isolates and regroups
+  containers from same or different pods, multi-pod applications and
+  namespaces to share balloons.
 
-2. A balloon has a set of CPUs and a set of containers that run on the
-   CPUs.
+- **Realtime requirements and latency-sensitivity**: Minimizes
+  latencies by isolating critical workloads, tuning cache and physical
+  CPU core sharing, memory and device locality, CPU frequencies and
+  powersaving states, and process scheduling parameters, including
+  realtime scheduling policies and I/O priorities.
 
-3. Every container is assigned to exactly one balloon. A container is
-   allowed to use all CPUs of its balloon and no other CPUs.
+- **Maximal server throughput**: Optimizes resource utilization by
+  spreading memory and memory bandwidth hungry workloads across
+  sockets, NUMA nodes and cache domains. Tunes the balance of memory
+  accesses from lowest latency accesses to the closest memories only
+  towards maximal bandwidth by using more memory channels through
+  balanced cross-NUMA balloons within the same socket, or even more by
+  crossing socket boundaries. Controls allowed memory types (DRAM,
+  HBM, PMEM).
 
-4. Every logical CPU belongs to at most one balloon. There can be CPUs
-   that do not belong to any balloon.
+- **Different workloads, different servers, different rules**:
+  Allocates CPUs for different containers based on different CPU
+  allocation preferences. Preferences per worker node or worker node
+  group. Supports both pre-allocation of CPUs and on-demand
+  allocations as containers are created, and both always static and
+  dynamically growing/shrinking balloons.
 
-5. The number of CPUs in a balloon can change during the lifetime of
-   the balloon. If a balloon inflates, that is CPUs are added to it,
-   all containers in the balloon are allowed to use more CPUs. If a
-   balloon deflates, the opposite is true.
+### Organization of this document
 
-6. When a new container is created on a Kubernetes node, the policy
-   first decides the type of the balloon that will run the
-   container. The decision is based on annotations of the pod, or the
-   namespace if annotations are not given.
+This document is organized so you can either read it top-to-bottom or
+jump directly to the sections below:
 
-7. Next the policy decides which balloon of the decided type will run
-   the container. Options are:
-  - an existing balloon that already has enough CPUs to run its
-    current and new containers
-  - an existing balloon that can be inflated to fit its current and
-    new containers
-  - new balloon.
+- **[Integration with Kubernetes](#integration-with-kubernetes)**
+- **[Installation and Configuration](#installation-and-configuration)**
+- **[Configuration Options](#configuration-options)**
+  - **[Container-to-Balloon Assignment](#container-to-balloon-assignment)**
+  - **[CPUs-to-Balloon Selection](#cpus-to-balloon-selection)**
+  - **[Memories-to-Balloon Selection](#memories-to-balloon-selection)**
+  - **[Container Tuning](#container-tuning)**
+  - **[CPU Tuning](#cpu-tuning)**
+  - **[Built-in Balloon Types](#built-in-balloon-types)**
+  - **[Toggle and Reset Pinning Memory, CPUs, and Containers](#toggle-and-reset-pinning-memory-cpus-and-containers)**
+  - **[Visibility, Scheduling, Metrics, Logging, Debugging](#visibility-scheduling-metrics-logging-debugging)**
+- **[Cookbook](#cookbook)**
+  - **[Latency-Critical Containers](#latency-critical-containers)**
+  - **[Maximum Memory Bandwidth Containers](#maximum-memory-bandwidth-containers)**
+  - **[Workload-Aware Hyperthread Sharing](#workload-aware-hyperthread-sharing)**
+- **[Troubleshooting](#troubleshooting)**
 
-9. When a CPU is added to a balloon or removed from it, the CPU is
-   reconfigured based on balloon's CPU class attributes, or idle CPU
-   class attributes.
+### Integration with Kubernetes
 
-## Deployment
+The balloons policy integrates into the Kubernetes stack as an NRI
+(Node Resource Interface) plugin that works with container runtimes
+(containerd or CRI-O):
 
-Deploy nri-resource-policy-balloons on each node as you would for any
-other policy. See [deployment](../../deployment/index.md) for more details.
+1. **Runtime Integration**: Runs as a DaemonSet on each node,
+   intercepting container lifecycle events through NRI.
 
-## Configuration
+2. **Dynamic Configuration**: Uses Kubernetes Custom Resources (CRs)
+   for configuration, supporting cluster-wide, node-group, and
+   node-specific settings.
 
-The balloons policy is configured using BalloonsPolicy Custom Resources.
-See [setup and usage](../setup.md#setting-up-nri-resource-policy) for
-more details on managing the configuration.
+3. **Pod Annotations**: Allows fine-grained control through pod and
+   container annotations.
 
-### Parameters
+4. **Topology Awareness**: Can expose balloon topology through
+   NodeResourceTopology CRs for scheduler integration and for
+   cluster-wide inspection of containers CPU affinity.
 
-Balloons policy parameters:
+The policy evaluates each container when it starts, assigns it to an
+appropriate balloon based on configuration rules, and sets its CPU and
+memory affinity accordingly.
 
-- `availableResources`:
-  - `cpu` specifies cpuset that is managed by the balloons policy. All
-    balloons created by the policy can utilize only CPUs in this set.
-    Example: `cpu: cpuset:48-95,144-191` allows the policy to manage
-    only 48+48 vCPUs on socket 1 in a two-socket 192-CPU system.
-- `reservedResources`:
-  - `cpu` specifies cpuset or number of CPUs in the special `reserved`
-    balloon. By default all containers in the `kube-system` namespace
-    are assigned to the reserved balloon. Examples: `cpu: cpuset:0,48`
-    uses two logical CPUs: cpu0 and cpu48. `cpu: 2000m` uses any two
-    CPUs. If minCPUs are explicitly defined for the `reserved`
-    balloon, that number of CPUs will be allocated from the `cpuset`
-    and more later (up to `maxCpus`) as needed.
-- `pinCPU` controls pinning a container to CPUs of its balloon. The
-  default is `true`: the container cannot use other CPUs.
-- `pinMemory` controls pinning a container to the memories that are
-  closest to the CPUs of its balloon. The default is `true`: allow
-  using memory only from the closest NUMA nodes. Can be overridden by
-  pinMemory in balloon types. Warning: pinning memory may cause kernel
-  to kill containers due to out-of-memory error when allowed NUMA
-  nodes do not have enough memory. In this situation consider
-  switching this option `false`.
-- `preserve` specifies containers whose resource pinning must not be
-  modified by the policy.
-  - `matchExpressions` if a container matches an expression in this
-    list, the policy will preserve container's resource pinning. If
-    there is no resource pinning, the policy will not change that
-    either. Example: preserve containers named "a" and "b". As a
-    result, the policy will not modify CPU or memory pinning of
-    matching containers.
-    ```
-    preserve:
-      matchExpressions:
-        - key: name
-          operator: In
-          values:
-            - a
-            - b
-    ```
-- `idleCPUClass` specifies the CPU class of those CPUs that do not
-  belong to any balloon.
-- `reservedPoolNamespaces` is a list of namespaces (wildcards allowed)
-  that are assigned to the special reserved balloon, that is, will run
-  on reserved CPUs. This always includes the `kube-system` namespace.
-- `allocatorTopologyBalancing` affects selecting CPUs for new
-  balloons. If `true`, new balloons are created using CPUs on
-  NUMA/die/package with most free CPUs, that is, balloons are spread
-  across the hardware topology. This helps inflating balloons within
-  the same NUMA/die/package and reduces interference between containers
-  in balloons when system is not fully loaded. The default is `false`:
-  pack new balloons tightly into the same NUMAs/dies/packages. This
-  helps keeping large portions of hardware idle and entering into deep
-  power saving states.
-- `preferSpreadOnPhysicalCores` prefers allocating logical CPUs
-  (possibly hyperthreads) for a balloon from separate physical CPU
-  cores. This prevents containers in the balloon from interfering with
-  themselves as they do not compete on the resources of the same CPU
-  cores. On the other hand, it allows more interference between
-  containers in different balloons. The default is `false`: balloons
-  are packed tightly to a minimum number of physical CPU cores. The
-  value set here is the default for all balloon types, but it can be
-  overridden with the balloon type specific setting with the same
-  name.
-- `showContainersInNrt` controls whether containers in balloons are
-  exposed as part of NodeResourceTopology. If `true`,
-  noderesourcetopologies.topology.node.k8s.io custom resources provide
-  visibility to CPU and memory affinity of all containers assigned
-  into balloons. The default is `false`. Use balloon-type option with
-  the same name to override the policy-level default. Exposing
-  affinities of all containers on all nodes may generate a lot of
-  traffic and large CR object updates to Kubernetes API server. This
-  option has no effect unless `agent:NodeResourceTopology` enables
-  node resource topology exposure in general.
-- `balloonTypes` is a list of balloon type definitions. The order of
-  the types is significant in two cases.
+## Installation and Configuration
 
-  In the first case the policy pre-creates balloons and allocates
-  their CPUs when it starts or is reconfigured, see `minBalloons` and
-  `minCPUs` below. Balloon types with the highest `allocatorPriority`
-  will get their CPUs in the listed order. Balloon types with a lower
-  `allocatorPriority` will get theirs in the same order after them.
+### Prerequisites
 
-  In the second case the policy looks for a balloon type for a new
-  container. If annotations do not specify it, the container will be
-  be assignd to the first balloon type in the list with matching
-  criteria, for instance based on `namespaces` below.
+- Kubernetes 1.24+
+- Helm 3.0.0+
+- Container runtime with NRI support:
+  - containerd 1.7.0+ or CRI-O 1.26.0+
+  - NRI feature enabled in the runtime (this is the default in
+    up-to-date runtimes).
 
-  Each balloon type can be configured with following parameters:
-  - `name` of the balloon type. This is used in pod annotations to
-    assign containers to balloons of this type.
-  - `namespaces` is a list of namespaces (wildcards allowed) whose
-    pods should be assigned to this balloon type, unless overridden by
-    pod annotations.
-  - `groupBy` groups containers into same balloon instances if
-    their GroupBy expressions evaluate to the same group.
-    Expressions are strings where key references like
-    `${pod/labels/mylabel}` will be substituted with corresponding
-    values.
-  - `matchExpressions` is a list of container match expressions. These
-    expressions are evaluated for all containers which have not been
-    assigned otherwise to other balloons. If an expression matches,
-    IOW it evaluates to true, the container gets assigned to this
-    balloon type. Container mach expressions have the same syntax and
-    semantics as the scope and match expressions in container affinity
-    annotations for the topology-aware policy.
-    See the [affinity documentation](./topology-aware.md#affinity-semantics)
-    for a detailed description of expressions.
-  - `minBalloons` is the minimum number of balloons of this type that
-    is always present, even if the balloons would not have any
-    containers. The default is 0: if a balloon has no containers, it
-    can be destroyed.
-  - `maxBalloons` is the maximum number of balloons of this type that
-    is allowed to co-exist. The default is 0: creating new balloons is
-    not limited by the number of existing balloons.
-  - `maxCPUs` specifies the maximum number of CPUs in any balloon of
-    this type. Balloons will not be inflated larger than this. 0 means
-    unlimited.
-  - `minCPUs` specifies the minimum number of CPUs in any balloon of
-    this type. When a balloon is created or deflated, it will always
-    have at least this many CPUs, even if containers in the balloon
-    request less.
-  - `cpuClass` specifies the name of the CPU class according to which
-    CPUs of balloons are configured. Class properties are defined in
-    separate `control.cpu.classes` objects, see below.
-  - `pinMemory` overrides policy-level `pinMemory` in balloons of this
-    type.
-  - `memoryTypes` is a list of allowed memory types for containers in
-    a balloon. Supported types are "HBM", "DRAM" and "PMEM". This
-    setting can be overridden by a pod/container specific
-    `memory-type` annotation. Memory types have no when not pinning
-    memory (see `pinMemory`).
-  - `preferCloseToDevices`: prefer creating new balloons close to
-    listed devices. List of strings
-  - `preferCoreType`:  specifies preferences of the core type which
-    could be either power efficient (`efficient`) or high performance
-    (`performance`).
-  - `preferSpreadingPods`: if `true`, containers of the same pod
-    should be spread to different balloons of this type. The default
-    is `false`: prefer placing containers of the same pod to the same
-    balloon(s).
-  - `preferPerNamespaceBalloon`: if `true`, containers in the same
-    namespace will be placed in the same balloon(s). On the other
-    hand, containers in different namespaces are preferably placed in
-    different balloons. The default is `false`: namespace has no
-    effect on choosing the balloon of this type.
-  - `preferNewBalloons`: if `true`, prefer creating new balloons over
-    placing containers to existing balloons. This results in
-    preferring exclusive CPUs, as long as there are enough free
-    CPUs. The default is `false`: prefer filling and inflating
-    existing balloons over creating new ones.
-  - `preferIsolCpus`: if `true`, prefer system isolated CPUs (refer to
-    kernel command line parameter "isolcpus") for this balloon. Warning:
-    if there are not enough isolated CPUs in the system for balloons that
-    prefer them, balloons may include normal CPUs, too. This kind of
-    mixed-CPU balloons require special attention when implementing
-    programs that run on them. Therefore it is recommended to limit the
-    number of balloon CPUs (see maxCPUs) and allocate CPUs upfront (see
-    minBalloons, minCPUs) when using preferIsolCpus. The default is `false`.
-  - `shareIdleCPUsInSame`: Whenever the number of or sizes of balloons
-    change, idle CPUs (that do not belong to any balloon) are reshared
-    as extra CPUs to containers in balloons with this option. The value
-    sets locality of allowed extra CPUs that will be common to these
-    containers.
-    - `system`: containers are allowed to use idle CPUs available
-      anywhere in the system.
-    - `package`: ...allowed to use idle CPUs in the same package(s)
-    (sockets) as the balloon.
-    - `die`: ...in the same die(s) as the balloon.
-    - `numa`: ...in the same numa node(s) as the balloon.
-    - `l2cache`: ...allowed to use idle CPUs that share the same level
-      2 cache as the balloon.
-    - `core`: ...allowed to use idle CPU threads in the same cores with
-      the balloon.
-  - `hideHyperthreads`: "soft" disable hyperthreads. If `true`, only
-    one hyperthread from every physical CPU core in the balloon is
-    allowed to be used by containers in the balloon. Hidden
-    hyperthreads are not available to any container in the system
-    either. If containers in the balloon are allowed to share idle
-    CPUs (see `shareIdleCPUsInSame`), hyperthreads of idle CPUs, too,
-    are hidden from the containers. If containers in another balloon
-    share the same idle CPUs, those containers are allowed to use both
-    hyperthreads of the idle CPUs if `hideHyperthreads` is `false` for
-    the other balloon. The default is `false`: containers are allowed
-    to use all hyperthreads of balloon's CPUs and shared idle CPUs.
-  - `preferSpreadOnPhysicalCores` overrides the policy level option
-    with the same name in the scope of this balloon type.
-  - `preferCloseToDevices` prefers creating new balloons close to
-    listed devices. If all preferences cannot be fulfilled, preference
-    to first devices in the list override preferences to devices after
-    them. Adding this preference to any balloon type automatically
-    adds corresponding anti-affinity to other balloon types that do
-    not prefer to be close to the same device: they prefer being
-    created away from the device. Example:
-    ```
-    preferCloseToDevices:
-      - /sys/class/net/eth0
-      - /sys/class/block/sda
-    ```
-  - `allocatorPriority` (0: High, 1: Normal, 2: Low, 3: None). CPU
-    allocator parameter, used when creating new or resizing existing
-    balloons. If there are balloon types with pre-created balloons
-    (`minBalloons` > 0), balloons of the type with the highest
-    `allocatorPriority` are created first.
-  - `loads`, a list of load class names, describes system load
-    generated by containers in a balloon that may affect other
-    containers in other balloons. The policy prefers selecting CPUs
-    for balloons so that no parts of system are overloaded. For
-    instance, two balloons that generate heavy load on level 2 cache
-    should get their CPUs from separate cache blocks for best
-    performance. Every listed class must be specified in
-    `loadClasses`.
-  - `schedulingClass` specifies the name of the scheduling class
-    according to which containers in balloons are scheduled. Class
-    properties are defined in separate `schedulingClasses` objects,
-    see below.
-  - `components` list includes component balloon types. If non-empty,
-    the balloon is a composite balloon whose CPUs are not allocated
-    directly to itself but its CPUs are the union of CPUs of its
-    component balloons. See [combining balloons](#combining-balloons)
-    for more details and an example. Properties of components in the
-    list are:
-    - `balloonType` specifies the name of the balloon type according
-      to which CPUs are allocated to the component.
-  - `componentCreation` is a string that specifies the strategy for
-    creating `components` for a new composite balloon. If unspecified,
-    one instance of each component is created. Valid strategies are:
-    - `all`: create one instance of every component (the default).
-    - `balance-balloons`: create only the first component whose
-      balloon types have the minimal number of balloons alive at the
-      time of creation. This strategy is suitable for balancing
-      containers over multiple balloon types. See [combining
-      balloons](#combining-balloons) for an example.
-- `loadClasses`: lists properties of loads that containers in balloons
-  generate to some parts of the system. When the policy allocates CPUs
-  for load generating balloon instances, it selects CPUs so that it
-  avoids overloading any of these parts. Properties of load classes
-  are:
-  - `name` is the name of the load class. Balloon types that cause
-    this type of load include the class name in their `loads` list.
-    See [load example](#selecting-one-hyperthread-per-core-for-heavy-compute).
-  - `level` specifies the CPU topology level affected by this
-    load. Supported level values and their consequences are:
-    - `core`: if one CPU hyperthread from a physical CPU core belongs
-      to a balloon that loads `core`, then the policy avoids selecting
-      the other CPU hyperthread to any other balloon that loads
-      `core`.
-    - `l2cache`: if one CPU from CPUs that share the same L2 cache is
-      selected to a balloon that loads `l2cache`, then the policy
-      avoids selecting other CPUs from the same L2 cache block to any
-      other balloon that loads `l2cache`.
-  - `overloadsLevelInBalloon`: if `true`, avoiding the load on the
-    same `level` is taken into account, not only when selecting CPUs
-    to other balloons, but also when selecting CPUs in the balloon
-    that causes the load at hand. This enables, for instance,
-    allocating CPUs so that every CPU is chosen from different
-    physical `core` or different `l2cache` block. The default is
-    `false`, that is, locality of balloon's CPUs is seen more
-    important than avoiding balloon's own load.
-- `schedulingClasses`: is a list of scheduling related parameters
-  organized in classes. These parameters tune containers when they are
-  created but do not affect already running containers. The class of a
-  container is defined with the `schedulingClass: <name>` option in
-  container's balloon type, and can be overridden by
-  `scheduling-class.resource-policy.nri.io` pod annotation. Each class
-  in the list has following properties.
-  - `name` is the name of the scheduling class.
-  - `policy` is the Linux scheduling policy. Supported policies are:
-    `none`, `other`, `fifo`, `rr`, `batch`, `idle`, and `deadline`.
-  - `priority` is the scheduling priority. Refer to
-    sched_setscheduler(2) documentation for valid values depending on
-    the policy.
-  - `flags` is a list of scheduling flags. Supported flags are:
-    `reset-on-fork`, `reclaim`, `dl-overrun`, `keep-policy`,
-    `keep-params`, `util-clamp-min`, `util-clamp-max`.
-  - `nice`: nice value for the container process.
-  - `runtime`: runtime value for `deadline` scheduling policy (in
-    microseconds).
-  - `deadline`: deadline value for `deadline` scheduling policy (in
-    microseconds).
-  - `period`: period value for `deadline` scheduling policy (in
-    microseconds).
-  - `ioClass`: IO class for the container process. Supported classes
-    are: `none`, `rt` for realtime, `be` for best-effort, and `idle`.
-  - `ioPriority`: IO priority for the container process. Refer
-    to ionice(1) documentation for valid values.
-- `control.cpu.classes`: defines CPU classes and their
-    properties. Class names are keys followed by properties:
-    - `disabledCstates` is a list of c-state names that are disabled
-      for CPUs in this class. Disabling deepest c-states lowers
-      latencies by preventing CPUs from entering deepest powersaving
-      states while processes are idle or wait for data. C-states
-      available in a system can be listed with `grep
-      . /sys/devices/system/cpu/cpu0/cpuidle/state*/name`. C-states
-      not listed in `disabledCstates` will be enabled. Disabling
-      non-existent c-states is silently ignored. Disabling c-states
-      does not affect min/max frequencies or vice versa.
-    - `minFreq` minimum frequency for CPUs in this class (kHz).
-    - `maxFreq` maximum frequency for CPUs in this class (kHz).
-    - `uncoreMinFreq` minimum uncore frequency for CPUs in this
-      class (kHz).  If there are differences in `uncoreMinFreq`s in
-      CPUs within the same uncore frequency zone, the maximum value
-      of all `uncoreMinFreq`s is used.
-    - `uncoreMaxFreq` maximum uncore frequency for CPUs in this
-      class (kHz).
-- `instrumentation`: configures interface for runtime instrumentation.
-  - `httpEndpoint`: the address the HTTP server listens on. Example:
-    `:8891`.
-  - `prometheusExport`: if set to True, balloons with their CPUs
-     and assigned containers are readable through `/metrics` from the
-     httpEndpoint.
-  - `reportPeriod`: `/metrics` aggregation interval for polled metrics.
-  - `metrics`: defines which metrics to collect.
-    - `enabled`: a list of glob patterns that match metrics to collect.
-      Example: `["policy"]`
-  - `samplingRatePerMillion`: the number of samples to collect per million spans.
-    Example: `100000`
-  - `tracingCollector`: defines the external endpoint for tracing data collection.
-    Example: `otlp-http`.
-- `agent`: controls communicating with the Kubernetes node agent and
-  the API server.
-  - `nodeResourceTopology`: if `true`, expose balloons as node
-    resource topology zones in noderesourcetopologies custom
-    resources. Moreover, showing containers assigned to balloons and
-    their CPU/memory affinities can be enabled with
-    `showContainersInNrt`. The default is `false`.
-- `log`: contains the logging configuration for the policy.
-  - `debug`: an array of components to enable debug logging for.
-    Example: `["policy"]`.
-  - `source`: set to `true` to prefix messages with the name of the logger
-    source.
+### Installing with Helm
 
-### Example
+Add the NRI plugins Helm repository:
 
-Example configuration that runs all pods in balloons of 1-4
-CPUs. Instrumentation enables reading CPUs and containers in balloons
-from `http://$localhost_or_pod_IP:8891/metrics`.
+```sh
+helm repo add nri-plugins https://containers.github.io/nri-plugins
+helm repo update
+```
 
-```yaml
-apiVersion: config.nri/v1alpha1
-kind: BalloonsPolicy
-metadata:
-  name: default
-  namespace: kube-system
-spec:
-  # Expose balloons as node resource topology zones in
-  # noderesourcestopologies custom resources.
+Install the balloons policy with default configuration:
+
+```sh
+helm install nri-resource-policy-balloons nri-plugins/nri-resource-policy-balloons --namespace kube-system
+```
+
+Install with a custom configuration from a values file:
+
+```sh
+cat > balloons.values.helm.yaml <<EOF
+nri:
+  runtime:
+    patchConfig: true
+  plugin:
+    index: 10
+
+config:
   agent:
     nodeResourceTopology: true
-
-  reservedResources:
-    cpu: 1000m
-  pinCPU: true
-  pinMemory: true
+    podResourceAPI: false
   allocatorTopologyBalancing: true
-  idleCPUClass: lowpower
-  balloonTypes:
-  - name: "quad"
-    maxCPUs: 4
-    cpuClass: dynamic
-    namespaces:
-      - "*"
-    showContainersInNrt: true
-  schedulingClasses:
-  - name: run-when-idle
-    policy: idle
-    ioClass: idle
-  - name: high-priority
-    nice: -10
-    ioClass: rt
-  control:
-    cpu:
-      classes:
-        lowpower:
-          minFreq: 800000
-          maxFreq: 800000
-        dynamic:
-          minFreq: 800000
-          maxFreq: 3600000
-        turbo:
-          minFreq: 3000000
-          maxFreq: 3600000
-          uncoreMinFreq: 2000000
-          uncoreMaxFreq: 2400000
-          disabledCstates: [C6, C8, C10]
-  instrumentation:
-    httpEndpoint: :8891
-    prometheusExport: true
-```
-
-Because all namespaces are assigned to the "quad" balloon type, all
-containers (except for `kube-system`) will be assigned to balloons of
-this type unless overridden by pod annotation. The configuration
-specifies `run-when-idle` and `high-priority` classes in
-`schedulingClasses` to allow higher priority containers to be
-prioritized over lower priority containers should they share the same
-CPUs, and even if they request equally many CPUs.
-
-## Assigning a Container to a Balloon
-
-The balloon type of a container can be defined in pod annotations. In
-the example below, the first annotation sets the balloon type (`BT`)
-of a single container (`CONTAINER_NAME`). The last two annotations set
-the balloon type for all containers in the pod. This will be used
-unless overridden with the container-specific balloon type.
-
-```yaml
-balloon.balloons.resource-policy.nri.io/container.CONTAINER_NAME: BT
-balloon.balloons.resource-policy.nri.io/pod: BT
-balloon.balloons.resource-policy.nri.io: BT
-```
-
-If the pod does not have these annotations, the container is matched
-to `matchExpressions` and `namespaces` of each type in the
-`balloonType`s list. The first matching balloon type is used.
-
-If the container does not match any of the balloon types, it is
-assigned to the `default` balloon type. Parameters for this balloon
-type can be defined explicitly among other balloon types. If they are
-not defined, a built-in `default` balloon type is used.
-
-## Pod and Container Overrides to CPU and Memory Pinning
-
-### Disabling CPU or Memory Pinning of a Container
-
-Some containers may need to run on all CPUs or access all memories
-without restrictions. There are two alternatives to achieve this:
-policy configuration and pod annotations.
-
-The resource policy will not touch allowed resources of containers
-that match `preserve` criteria. See policy configuration options
-above.
-
-Alternatively, pod annotations can opt-out all or selected containers
-in the pod from CPU or memory pinning by preserving whatever existing
-or non-existing pinning configuration:
-
-```yaml
-cpu.preserve.resource-policy.nri.io/container.CONTAINER_NAME: "true"
-cpu.preserve.resource-policy.nri.io/pod: "true"
-cpu.preserve.resource-policy.nri.io: "true"
-
-memory.preserve.resource-policy.nri.io/container.CONTAINER_NAME: "true"
-memory.preserve.resource-policy.nri.io/pod: "true"
-memory.preserve.resource-policy.nri.io: "true"
-```
-
-### Selectively Disabling Hyperthreading
-
-If a container opts to hide hyperthreads, it is allowed to use only
-one hyperthread from every physical CPU core allocated to it. Note
-that as a result the container may be allowed to run on only half of
-the CPUs it has requested. In case of workloads that do not benefit
-from hyperthreading this nevertheless results in better performance
-compared to running on all hyperthreads of the same CPU cores. If
-container's CPU allocation is exclusive, no other container can run on
-hidden hyperthreads either.
-
-```yaml
-metadata:
-  annotations:
-    # allow the "LLM" container to use only single thread per physical CPU core
-    hide-hyperthreads.resource-policy.nri.io/container.LLM: "true"
-```
-
-The `hide-hyperthreads` pod annotation overrides the
-`hideHyperthreads` balloon type parameter value for selected
-containers in the pod.
-
-### Selecting One Hyperthread per Core for Heavy Compute
-
-An alternative to completely hiding one hyperthread on each heavily
-loaded physical CPU core (see previous Section), is marking the CPU
-cores loaded, and prefer selecting CPUs from unloaded cores for
-compute-intensive workloads. Unlike in hiding, unused hyperhtreads on
-loaded cores are still available for containers that do not load them
-that heavily.
-
-Example:
-
-```yaml
-apiVersion: config.nri/v1alpha1
-kind: BalloonsPolicy
-metadata:
-  name: default
-  namespace: kube-system
-spec:
-  allocatorTopologyBalancing: false
-  reservedResources:
-    cpu: 1000m
   pinCPU: true
   pinMemory: false
+  reservedResources:
+    cpu: cpuset:0
   balloonTypes:
-  - name: ai-inference
-    minCPUs: 16
-    minBalloons: 2
-    preferNewBalloons: true
-    loads:
-    - avx
-  - name: video-encoding
+  - name: high-priority
+    minCPUs: 4
     maxCPUs: 8
-    loads:
-    - avx
-  - name: default
-    maxCPUs: 16
     namespaces:
-    - "*"
-  loadClasses:
-  - name: avx
-    level: core
-    overloadsLevelInBalloon: true
+    - production
+    preferNewBalloons: true
+  control:
+    rdt:
+      enable: false
+      partitions:
+      options:
+  log:
+    debug:
+    - policy
+    klog:
+      skip_headers: true
+    source: true
+EOF
+
+helm install nri-resource-policy-balloons nri-plugins/nri-resource-policy-balloons \
+  --namespace kube-system \
+  -f balloons.values.helm.yaml
 ```
 
-Containers in both "ai-inference" and "video-encoding" balloons are
-expected to cause heavy load on physical CPU core resources due to
-high throughput of AVX optimized code. Therefore all CPUs to these
-balloons are picked from different physical cores, as long as they are
-available. Because `AllocatorTopologyBalancing` is set to `false`, the
-policy will select CPUs in "pack tightly" rather than "spread evenly"
-manner. This leads into preferring the left-over threads over threads
-from unused CPU cores when allocating CPUs for default balloons.
+### Uninstalling with Helm
 
-### Memory Type
+Uninstalling will not restore CPU and memory pinning of running
+containers. See [Reset CPU and MemoryPinning](#reset-cpu-and-memory-pinning)
+to allow containers to use any CPU and memory again.
 
-If a container must be pinned to specific memory types that may differ
-from its balloon's `memoryTypes`, container-specific types can be
-given in the `memory-type` pod annotations:
+Uninstalling leaves behind the BalloonsPolicy custom resource
+definition (CRD). Because installation skips installing new
+BalloonsPolicy CRD if it already exists, it is recommended to manually
+remove the CRD after uninstalling.
 
-```yaml
-memory-type.resource-policy.nri.io/container.CONTAINER_NAME: <COMMA-SEPARATED-TYPES>
-memory-type.resource-policy.nri.io/pod: <COMMA-SEPARATED-TYPES>
-memory-type.resource-policy.nri.io: <COMMA-SEPARATED-TYPES>
+```sh
+helm uninstall nri-resource-policy-balloons -n kube-system
+
+kubectl delete crd balloonspolicies.config.nri
 ```
 
-The first sets the memory type for a single container in the pod, the
-latter two for other containers in the pod. Supported types are "HBM",
-"DRAM" and "PMEM". Example:
+### Managing Configuration with kubectl
 
-```yaml
-metadata:
-  annotations:
-    memory-type.resource-policy.nri.io/container.LLM: HBM,DRAM
+View the current balloons policy configuration:
+
+```sh
+# List all balloons policy configurations
+kubectl get balloonspolicies.config.nri -n kube-system
+
+# View the default configuration
+kubectl get balloonspolicies.config.nri/default -n kube-system -o yaml
 ```
 
-## Combining Balloons
+Edit the configuration:
 
-Sometimes a container needs a set of CPUs where some CPUs have
-different properties or they are selected based on different criteria
-than other CPUs.
-
-This kind of a container needs to be assigned into a composite
-balloon. A composite balloon consists of component balloons.
-Specifying `components` in a balloon type makes it a composite balloon
-type. Composite balloons get their CPUs by combining CPUs of their
-components.
-
-Each component specifies its balloon type, that must be defined in the
-`balloonTypes` list. CPUs are allocated to the component based on its
-own balloon type configuration only. As CPUs are not allocated
-directly to composite balloons, CPU allocation parameters are not
-allowed in composite balloon types.
-
-When the policy creates new composite balloon, it creates "hidden"
-instances of balloons's components, too. The instances are hidden in
-the sense that containers cannot be assigned to component balloons but
-only to the composite balloon. By default, the policy creates one
-instance of every component, but this can be controlled with the
-`componentCreation` option. Resizing the composite balloon due to
-changes in its containers causes resizing the hidden instances so that
-the union of CPUs of contains enough CPUs for the containers in the
-composite balloon.
-
-Example: Given a two-socket system with two NUMA nodes on each CPU
-package, allocate CPUs for distributed AI inference containers so
-that, depending on a balloon type, a container will get:
-- an equal number of CPUs from all 4 NUMA nodes in the system
-- an equal number of CPUs from both NUMA nodes on CPU package 0
-- an equal number of CPUs from both NUMA nodes on CPU package 1
-- an equal number of CPUs from both NUMA nodes on either CPU package,
-  whichever has fewer inference containers at the balloon creation
-  time.
-
-Following balloon type configuration implements this. Containers can
-be assigned into balloons `balance-all-nodes`, `balance-pkg0-nodes`,
-`balance-pkg1-nodes`, and `balance-both-nodes-of-alternating-pkg`
-respectively.
-
-```yaml
-  balloonTypes:
-  - name: balance-all-nodes
-    components:
-    - balloonType: balance-pkg0-nodes
-    - balloonType: balance-pkg1-nodes
-    preferNewBalloons: true
-
-  - name: balance-pkg0-nodes
-    components:
-    - balloonType: node0
-    - balloonType: node1
-    preferNewBalloons: true
-
-  - name: balance-pkg1-nodes
-    components:
-    - balloonType: node2
-    - balloonType: node3
-    preferNewBalloons: true
-
-  - name: node0
-    preferCloseToDevices:
-    - /sys/devices/system/node/node0
-
-  - name: node1
-    preferCloseToDevices:
-    - /sys/devices/system/node/node1
-
-  - name: node2
-    preferCloseToDevices:
-    - /sys/devices/system/node/node2
-
-  - name: node3
-    preferCloseToDevices:
-    - /sys/devices/system/node/node3
-
-  - name: balance-both-nodes-of-either-pkg
-    components:
-    - balloonType: balance-pkg0-nodes
-    - balloonType: balance-pkg1-nodes
-    componentCreation: balance-balloons
-    preferNewBalloons: true
+```sh
+kubectl edit balloonspolicies.config.nri/default -n kube-system
 ```
 
-## Prevent Creating a Container
+The policy watches for configuration changes and automatically
+reconfigures itself when the configuration is updated.
 
-Sometimes unwanted or unknown containers must not be created on a
-node, not even in the case that such a pod is scheduled on the node
-accidentally. This can be prevented by a policy that has a balloon type
-that is not able to run a container that matches to the type. One way
-to define such a balloon type is by specifying that instances of the
-type will never have enough CPUs to run any containers. That is, set
-`maxCPUs` and `minCPUs` to -1.
+### Configuration Scopes
 
-```yaml
+The balloons policy supports three levels of configuration precedence:
+
+1. **Default configuration** (lowest precedence): Applies to all nodes
+   without more specific configuration
+   - Resource name: `default`
+
+2. **Group-specific configuration**: Applies to nodes labeled with a
+   configuration group
+   - Resource name: `group.$GROUP_NAME`
+   - Node label: `config.nri/group=$GROUP_NAME`
+
+3. **Node-specific configuration** (highest precedence): Applies to a
+   single named node
+   - Resource name: `node.$NODE_NAME`
+
+**Example**: Create a group-specific configuration for high-memory nodes:
+
+```sh
+# Create the configuration
+kubectl apply -f - <<EOF
 apiVersion: config.nri/v1alpha1
 kind: BalloonsPolicy
 metadata:
-  name: default
+  name: group.high-memory
   namespace: kube-system
 spec:
+  reservedResources:
+    cpu: cpuset:0-1
   balloonTypes:
-  - name: unknown-containers
-    maxCPUs: -1
-    minCPUs: -1
+  - name: memory-intensive
+    shareIdleCPUsInSame: numa
+    maxBalloons: 4
+    preferNewBalloons: true
+    allocatorTopologyBalancing: true
+    namespaces:
+    - analytics
+EOF
+
+# Label nodes to use this configuration
+kubectl label node node-1 config.nri/group=high-memory
+kubectl label node node-2 config.nri/group=high-memory
+```
+
+**Example**: Create a node-specific configuration:
+
+```sh
+kubectl apply -f - <<EOF
+apiVersion: config.nri/v1alpha1
+kind: BalloonsPolicy
+metadata:
+  name: node.special-node
+  namespace: kube-system
+spec:
+  reservedResources:
+    cpu: 4000m
+  balloonTypes:
+  - name: gpu-workloads
+    preferCloseToDevices:
+      - /sys/class/drm/card0
+EOF
+```
+
+## Configuration Options
+
+### Core Concepts
+
+A **balloon** is a set of CPUs shared by a set of containers. Key
+principles:
+
+- Every container is assigned to exactly one balloon.
+
+- Every CPU belongs to at most one balloon.
+
+- A container is allowed to use all CPUs in its balloon.
+
+- Optionally, containers can share "idle CPUs" (CPUs not in any
+  balloon).
+
+- Containers never access CPUs from other balloons.
+
+### Container-to-Balloon Assignment
+
+These options control which containers are assigned to which
+balloons. The policy first chooses a balloon type for a container, and
+then an existing or a new balloon instance of that type.
+
+#### Choosing Balloon Type
+
+**Balloon type selection for a new container:**
+1. Balloon type effective for the container is specified by its pod
+   [annotation](#pod-annotations-for-container-overrides). This skips
+   matching in user-defined and built-in balloon types. (Highest
+   precedence.)
+2. Implicit [built-in reserved balloon](#reserved-balloon) type
+   matches kube-system containers, unless configured otherwise.
+3. The first balloon type in the `balloonTypes` list where a
+   `matchExpression` or a `namespace` matches the container.
+4. Implicit [built-in default balloon](#default-balloon) type matches
+   any container as a fallback, unless configured otherwise.
+5. If no match, creating the container fails.
+
+**`namespaces`** (list of strings)
+- Assigns containers from matching namespaces to this balloon type.
+- Supports wildcards (e.g., `"prod-*"`, `"*"`).
+
+```yaml
+balloonTypes:
+- name: production
+  namespaces:
+  - prod-*
+  - critical
+```
+
+**`matchExpressions`** (list of expressions)
+- Evaluates expressions against container attributes.
+- First balloon type with a matching expression is selected.
+- Supports keys:
+  - `name` (container name)
+  - `namespace`
+  - `qosclass` (Guaranteed, Burstable or BestEffort)
+  - `labels/KEY` (container's label)
+  - `pod/name` (pod's name)
+  - `pod/qosclass`
+  - `pod/labels/KEY`
+  - `pod/id`
+  - `pod/uid`
+- Supports operators:
+  - `Equals`, `NotEqual`: key value is (not) equal to the only value
+  - `In`, `NotIn`: key value is (not) in listed values
+  - `Exists`, `NotExists`: key is [not] present, values ignored
+  - `AlwaysTrue`
+  - `Matches`, `MatchesNot`: key value matches (not) a single globbing pattern
+  - `MatchesAny`, `MatchesNone`: key value matches any/none of a set of globbing patterns
+
+Example: first pick logger and monitor containers into low-priority
+balloons from any pod, including high and critical priority pods. Then
+pick all (remaining) containers from high priority pods into
+latency-critical balloons.
+
+```yaml
+balloonTypes:
+- name: low-priority
+  matchExpressions:
+  - key: name
+    operator: In
+    values:
+    - logger
+    - monitor
+- name: latency-critical
+  matchExpressions:
+  - key: pod/labels/priority
+    operator: In
+    values:
+    - high
+    - critical
+```
+
+**Composite balloons with `componentCreation: balance-balloons`:**
+- When a balloon type has `components` list, `componentCreation`
+  enables controlling which component balloon types are used for
+  allocating its CPUs. The default is all of them.
+- `componentCreation: balance-balloons` creates only one component -
+  the one whose balloon type has the fewest instances.
+- Use this to alternate container assignments across multiple balloon
+  types.
+
+```yaml
+balloonTypes:
+- name: balanced-a-b
+  components:
+  - balloonType: type-a
+  - balloonType: type-b
+  componentCreation: balance-balloons
+- name: type-a
+  ...
+- name: type-b
+  ...
+```
+
+#### Choosing Balloon Instance
+
+Once the policy has chosen a balloon type for a container, following
+options determine which instance of that type receives the container.
+
+If no instance, new or existing, can get enough CPUs to fit the
+container, the container creation fails.
+
+**`groupBy`** (string)
+- Groups containers into the same balloon instance based on expression
+  evaluation.
+- Expression uses substitution: `${pod/labels/mylabel}` replaced with
+  label value. Substitution supports the keys as listed in
+  `matchExpressions` above.
+- Containers with the same expression value go to the same balloon.
+
+```yaml
+balloonTypes:
+- name: app-instances
+  groupBy: "${pod/labels/app}-${pod/labels/instance}"
+```
+
+**Pod spreading options:**
+- `preferSpreadingPods: false` (default): Containers from the same pod
+  prefer the same balloon.
+- `preferSpreadingPods: true`: Containers from the same pod prefer
+  different balloons.
+
+**Namespace grouping:**
+- `preferPerNamespaceBalloon: false` (default): Namespace has no
+  effect on balloon selection.
+- `preferPerNamespaceBalloon: true`: Containers in the same namespace
+  prefer the same balloon and different namespaces prefer different
+  balloons.
+
+Example: assign all containers into per-namespace balloons. Use the
+same balloon type for every container by placing it before built-in
+types in the list.
+
+```yaml
+balloonTypes:
+- name: per-namespace-balloon
+  namespaces:
+  - "*"
+  preferPerNamespaceBalloon: true
+  allocatorTopologyBalancing: true
+- name: reserved
+- name: default
+```
+
+**`preferNewBalloons`** (boolean, default: `false`)
+- `false`: Prefer filling existing balloons, inflate if needed up to
+  maximum size, create new balloon as last resort.
+- `true`: Prefer creating new balloons for exclusive CPU access (if
+  CPUs available).
+
+```yaml
+balloonTypes:
+- name: exlusive-cpus
+  allocatorTopologyBalancing: true
+  preferNewBalloons: true
+```
+
+### CPUs-to-Balloon Selection
+
+These options control which CPUs are selected when creating or
+resizing balloons.
+
+#### Static CPU Preferences
+
+**`preferIsolCpus`** (boolean, default: `false`)
+- `true`: Prefer kernel-isolated CPUs (from `isolcpus` kernel parameter)
+- Tip: use with `minCPUs`, `maxCPUs`, and `minBalloons` to
+  pre-allocate CPUs when using this option.
+- Warning: If insufficient isolated CPUs exist, balloons may include
+  non-isolated CPUs, too. If the application is unaware of this, it is
+  likely to cause unwanted Linux scheduling behavior.
+
+Example: pre-allocate two fixed-size one-CPU-balloons from
+kernel-isolated CPUs.
+
+```yaml
+balloonTypes:
+- name: kernel-isolated-cpu
+  preferIsolCpus: true
+  minCPUs: 1
+  maxCPUs: 1
+  minBalloons: 2
+```
+
+**`preferCoreType`** (string: `"efficient"` or `"performance"`)
+- On hybrid architectures (P/E cores), prefers the specified core type.
+- `"performance"`: Select high-performance cores.
+- `"efficient"`: Select power-efficient cores.
+
+```yaml
+balloonTypes:
+- name: background-tasks
+  preferCoreType: efficient
+```
+
+**`preferCloseToDevices`** (list of strings)
+- Prefers CPUs topologically close to specified devices.
+- Device paths like
+  - `/sys/class/net/eth0`
+  - `/sys/class/drm/card0`
+  - `/sys/devices/system/cpu/cpu14/cache/index2`
+  - `/sys/devices/system/node/node0`
+- First device in list has highest priority.
+- Automatically adds anti-affinity between listed devices and other balloon types.
+
+```yaml
+balloonTypes:
+- name: gpu-workloads
+  preferCloseToDevices:
+  - /sys/class/drm/card0
+- name: network-io
+  preferCloseToDevices:
+  - /sys/class/net/eth0
+```
+
+#### Dynamic CPU Preferences
+
+**`allocatorTopologyBalancing`** (boolean, inherits from policy-level
+setting if not specified)
+- `true`: Spread balloons across hardware topology (NUMA/die/package
+  with most free CPUs).
+  - Reduces interference when system is partially loaded.
+  - Helps with future balloon inflation within same NUMA/die/package.
+- `false` (default): Pack balloons tightly into same hardware topology
+  elements.
+  - Keeps large portions of hardware idle for power saving.
+  - More interference between balloons.
+
+**`preferSpreadOnPhysicalCores`** (boolean, inherits from policy-level
+setting if not specified)
+- `true`: Allocate logical CPUs from separate physical cores
+  - Prevents containers from competing on same physical core resources.
+  - Allows more interference between different balloons.
+- `false` (default): Pack logical CPUs tightly to minimum number of
+  physical cores
+  - Reduces inter-balloon interference.
+  - Containers in the same balloon share physical core resources.
+- Recommendation: use `loads` and `loadClasses` for better control in
+  sharing physical cores and low-level caches, and/or
+  `hideHyperthreads` to prevent any process in any balloon from using
+  the other hyperthread from the same physical core.
+
+**`loads`** (list of strings)
+- Marks logical CPUs and their surroundings (physical core, cache) as
+  loaded by certain balloons.
+- Avoids selecting CPUs from surroundings for other
+  same-load-generating balloons.
+- Every load is defined in `loadClasses` (see below).
+
+```yaml
+balloonTypes:
+- name: compute-heavy
+  loads:
+  - avx-compute
+```
+
+**`loadClasses`** (list, policy-level configuration):
+
+Defines system load characteristics that balloons can generate. The
+CPU allocator uses this information to avoid overloading hardware
+resources.
+
+Each load class defines:
+- `name` (string): Load class identifier (referenced in balloon types'
+  `loads` lists).
+- `level` (string): Hardware topology level affected:
+  - `"core"`: Load affects physical CPU core resources.
+  - `"l2cache"`: Load affects L2 cache block.
+- `overloadsLevelInBalloon` (boolean, default: `false`)
+  - `false`: CPUs within balloon can be from same core/cache (locality
+    prioritized).
+  - `true`: CPUs within balloon should avoid same core/cache (avoid
+    self-interference).
+
+How load classes affect CPU allocation:
+1. Balloon type declares it generates certain loads.
+2. When allocating CPUs for this balloon, allocator marks affected
+   topology levels as loaded.
+3. When allocating CPUs for another balloon with the same load class
+   (same or different balloon type), allocator avoids loaded topology
+   levels.
+4. Result: Balloons generating similar loads get CPUs from separate
+   cores/caches. Balloons generating different loads on same
+   cores/caches are allowed to share the same surroundings.
+
+Example: containers in `compute-heavy-1` and `compute-heavy-2`
+balloons should get only one hyperthread from every physical core, and
+they should not share physical cores. Containers in `light-compute`
+are marked to load cores, too, but only to avoid taking both
+hyperthreads from the same cores. This leaves the other hyperthread
+free for compute heavy workloads. A `heavy-avx` and a `light-avx` load
+can share the same physical core, but two `heavy-avx` or two
+`light-avx` loads should not.
+
+```yaml
+balloonTypes:
+- name: compute-heavy-1
+  loads:
+  - heavy-avx
+- name: compute-heavy-2
+  loads:
+  - heavy-avx
+- name: light-compute
+  loads:
+  - light-avx
+
+loadClasses:
+- name: heavy-avx
+  level: core
+  overloadsLevelInBalloon: true # Each CPU from different physical core
+- name: light-avx
+  level: core
+  overloadsLevelInBalloon: true # Spread on different physical cores
+                                # to leave the other thread free for
+                                # compute-heavy balloons
+```
+
+**`components`** (list of objects):
+
+For balloons with diverse CPU requirements, use composite balloons
+where each component specifies different requirements:
+
+```yaml
+balloonTypes:
+- name: hybrid-workload
+  components:
+  - balloonType: near-gpu
+  - balloonType: near-network
+- name: near-gpu
+  preferCloseToDevices:
+  - /sys/class/drm/card0
+- name: near-network
+  preferCloseToDevices:
+  - /sys/class/net/eth0
+```
+
+#### Balloon Size Control
+
+**`minCPUs`** (integer, default: 0)
+- Minimum number of CPUs in any balloon of this type.
+- When balloon is created or deflated, it always has at least this many CPUs.
+- Useful for
+  - ensuring minimum performance guarantees
+  - allocating exactly wanted number of special CPUs (from isolcpus,
+  reserved CPU set, efficient-cores, CPUs local to a device, ...)
+  - partitioning hardware block-by-block (take all CPUs from a
+  physical core, L2 cache domain, NUMA node, compute die or socket at
+  once.
+
+**`maxCPUs`** (integer, default: 0 = unlimited)
+- Maximum number of CPUs in any balloon of this type.
+- Balloon will not inflate beyond this limit. The policy has to create
+  a new balloon instead.
+- Set to -1 to prevent containers matching this balloon from running
+  on the node (see cookbook).
+
+**Fully dynamic sizing:**
+- Set `minCPUs: 0` and `maxCPUs: 0` or leave them undefined.
+- Balloon size determined entirely by container CPU requests.
+
+**Fixed size:**
+- Set `minCPUs` and `maxCPUs` to the same value.
+
+```yaml
+balloonTypes:
+- name: fixed-quad
+  minCPUs: 4
+  maxCPUs: 4
+- name: dynamic-small
+  minCPUs: 1
+  maxCPUs: 8
+- name: unlimited
+  minCPUs: 2
+  maxCPUs: 0
+```
+
+#### CPU Allocation Priority
+
+**`minBalloons`** (integer, default: 0)
+- Number of balloon instances pre-created when policy starts or
+  reconfigures. `allocatorPriority` and the order in the
+  `balloonTypes` list affect the order of instantiating `minBalloons`
+  of different balloon types (see below).
+- Ensures critical balloons always exist and have CPUs before other
+  balloons.
+- Yet new balloon instances of this type may be dynamically created
+  and destroyed, the number of instances never goes below
+  `minBalloons`.
+
+**`maxBalloons`** (integer, default: 0 = unlimited)
+- Maximum number of balloon instances allowed to co-exist.
+- Prevents creating new balloons beyond this limit.
+
+**`allocatorPriority`** (string: `"high"`, `"normal"` (default), `"low"`, `"none"`)
+- At policy initialization, balloons are pre-created in this order:
+  1. Balloon types with `priority: high` (in list order)
+  2. Balloon types with `priority: normal` (in list order)
+  3. Balloon types with `priority: low` (in list order)
+
+```yaml
+balloonTypes:
+- name: critical-service
+  minBalloons: 2
+  maxBalloons: 2
+  minCPUs: 4
+  maxCPUs: 4
+  allocatorPriority: high
+- name: best-effort
+  allocatorPriority: low
+```
+
+### Memories-to-Balloon Selection
+
+If `pinMemory: true`, the policy allows containers to use memory only
+from NUMA nodes closest to their balloon's CPUs. This node set may be
+larger if there is not enough memory in the closest nodes
+alone. Pinning can be fine-tuned to include only certain memory types
+for certain balloons and containers.
+
+**`memoryTypes`** (list of strings):
+- Restricts memory types available to containers: `"DRAM"`, `"HBM"`, `"PMEM"`.
+- Default: All memory types in system are allowed.
+- Can be overridden per container with `memory-type.resource-policy.nri.io` annotation.
+- Effective only when `pinMemory: true`.
+
+```yaml
+pinMemory: true
+
+balloonTypes:
+- name: hbm-only
+  memoryTypes:
+  - HBM
+- name: flexible
+  memoryTypes:
+  - DRAM
+  - PMEM
+- name: default
+  pinMemory: false
+```
+
+### Container Tuning
+
+These options configure how containers behave within their balloons.
+
+#### Scheduling and Priority
+
+**`schedulingClass`** (string)
+- References a scheduling class defined in the `schedulingClasses`
+  list.
+- Sets Linux scheduling policy, priority, nice value, and I/O class
+  for containers.
+- Can be overridden with `scheduling-class.resource-policy.nri.io` pod
+  annotation.
+
+**`schedulingClasses`** (list, policy-level configuration):
+
+Each scheduling class defines:
+- `name` (string): Class name referenced by `schedulingClass` in
+  balloon types.
+- `policy` (string): Linux scheduling policy: `"none"`, `"other"`,
+  `"fifo"`, `"rr"`, `"batch"`, `"idle"`, `"deadline"`.
+- `priority` (integer): Scheduling priority, depends on `policy`, see
+  `sched_setscheduler(2)`.
+- `flags` (list): Scheduling flags: `"reset-on-fork"`, `"reclaim"`,
+  `"dl-overrun"`, `"keep-policy"`, `"keep-params"`,
+  `"util-clamp-min"`, `"util-clamp-max"`.
+- `nice` (integer): Nice value for container process (-20 to 19).
+- `runtime` (integer): Runtime for deadline policy (microseconds).
+- `deadline` (integer): Deadline for deadline policy (microseconds).
+- `period` (integer): Period for deadline policy (microseconds).
+- `ioClass` (string): I/O class: `"none"`, `"rt"` (realtime), `"be"`
+  (best-effort), `"idle"`.
+- `ioPriority` (integer): I/O priority, see `ionice(1)`.
+
+```yaml
+balloonTypes:
+- name: high-priority
+  schedulingClass: critical
+schedulingClasses:
+- name: critical
+  policy: rr
+  priority: 50
+  ioClass: rt
+  ioPriority: 0
+- name: background
+  policy: idle
+  ioClass: idle
+```
+
+#### Sharing idle CPUs
+
+**`shareIdleCPUsInSame`** (string: `"system"`, `"package"`, `"die"`,
+`"numa"`, `"l2cache"`, `"core"`)
+- Allows containers to use "idle CPUs" (not in any balloon) in
+  addition to balloon's own CPUs.
+- Value sets locality constraint for which idle CPUs can be used, with
+  respect to balloon's own CPUs.
+  - `"system"`: All idle CPUs in the system.
+  - `"package"`: Idle CPUs in same socket(s).
+  - `"die"`: Idle CPUs in same die(s).
+  - `"numa"`: Idle CPUs in same NUMA node(s).
+  - `"l2cache"`: Idle CPUs sharing same L2 caches.
+  - `"core"`: Idle hyperthreads in same physical cores.
+- Containers in all balloon instances of multiple balloon types can be
+  allowed to run on the same idle CPUs.
+- Balloon type's CPU tuning does not affect these extra CPUs.
+
+```yaml
+balloonTypes:
+- name: burstable-in-numa
+  shareIdleCPUsInSame: numa
+- name: one-cpu-with-bonus-thread
+  maxCPUs: 1
+  shareIdleCPUsInSame: core
+```
+
+#### Hyperthread Visibility
+
+**`hideHyperthreads`** (boolean, default: `false`)
+- `true`: Containers can use only one hyperthread from each physical
+  core in the balloon.
+  - Hidden hyperthreads remain completely idle (not available to any
+    container).
+  - Useful for workloads that don't benefit from hyperthreading.
+  - Balloon with 16 logical CPUs from 8 cores allows using only 8 CPUs.
+- `false`: Containers can use all hyperthreads.
+- Can be overridden with `hide-hyperthreads.resource-policy.nri.io`
+  pod annotation that hides hyperthreads only in affected containers
+  rather than of all containers in certain balloon types.
+
+```yaml
+balloonTypes:
+- name: compute-intensive
+  hideHyperthreads: true
+```
+
+#### Pod Annotations for Container Overrides
+
+All pod annotations below are effective to all containers in a pod
+(annotation key ending `.../pod` or missing `/`), or to named
+containers in the pod (key ending `.../container.CONTAINER_NAME`). The
+latter override the former.
+
+**Balloon type selection:**
+```yaml
+balloon.balloons.resource-policy.nri.io: BALLOON_TYPE
+balloon.balloons.resource-policy.nri.io/pod: BALLOON_TYPE
+balloon.balloons.resource-policy.nri.io/container.CONTAINER_NAME: BALLOON_TYPE
+```
+
+**Scheduling class:**
+```yaml
+scheduling-class.resource-policy.nri.io/container.CONTAINER_NAME: CLASS_NAME
+```
+
+**Hyperthread hiding:**
+```yaml
+hide-hyperthreads.resource-policy.nri.io/container.CONTAINER_NAME: "true"
+```
+
+**Preserve existing pinning (opt-out of policy management):**
+```yaml
+cpu.preserve.resource-policy.nri.io/container.CONTAINER_NAME: "true"
+memory.preserve.resource-policy.nri.io/container.CONTAINER_NAME: "true"
+```
+
+**Memory type:**
+```yaml
+memory-type.resource-policy.nri.io/container.CONTAINER_NAME: HBM,DRAM
+```
+
+### CPU Tuning
+
+These options configure CPU behavior and power management.
+
+**`cpuClass`** (string)
+- References a CPU class defined in `control.cpu.classes`
+  (policy-level configuration).
+- Applied when balloon is created, inflated, or deflated.
+- Configures frequency scaling and C-states for CPUs in the balloon.
+
+**`idleCPUClass`** (string, policy-level configuration)
+- CPU class for idle CPUs (not in any balloon).
+- Applied when CPUs are removed from balloons.
+
+**`control.cpu.classes`** (object, policy-level configuration):
+
+Each CPU class (keyed by name) can define:
+
+- `minFreq` (integer): Minimum CPU frequency in kHz.
+- `maxFreq` (integer): Maximum CPU frequency in kHz.
+- `uncoreMinFreq` (integer): Minimum uncore frequency in kHz.
+- `uncoreMaxFreq` (integer): Maximum uncore frequency in kHz.
+- `disabledCstates` (list): C-state names to disable (e.g., `["C6", "C8"]`).
+  - Disabling deep C-states reduces latency by preventing deep sleep.
+  - Disabling intermediate C-states keeps CPU more responsive longer
+    after use, but allows it to enter deeper power saving states if
+    not needed.
+  - List available C-states: `grep
+    . /sys/devices/system/cpu/cpu0/cpuidle/state*/name`.
+
+```yaml
+balloonTypes:
+- name: latency-critical
+  cpuClass: turbo
+- name: best-effort
+  cpuClass: normal
+idleCPUClass: powersave
+
+control:
+  cpu:
+    classes:
+      turbo:
+        minFreq: 3000000
+        maxFreq: 3600000
+        uncoreMinFreq: 2000000
+        uncoreMaxFreq: 2400000
+        disabledCstates: [C6, C8, C10]
+      normal:
+        minFreq: 1200000
+        maxFreq: 3000000
+      powersave:
+        minFreq: 800000
+        maxFreq: 1200000
+```
+
+### Built-in Balloon Types
+
+The policy includes two built-in balloon types that can be customized
+and whose position in the balloon type list can be changed.
+
+#### Reserved Balloon
+
+**Purpose**: Runs system containers (typically from `kube-system` namespace)
+
+**Default behavior** (when not explicitly defined):
+- Automatically placed first in balloon types list.
+- Captures containers from `kube-system` namespace and namespaces
+  matching `reservedPoolNamespaces`.
+- Uses CPUs specified in `reservedResources.cpu`. If a `cpuset` is
+  defined, those CPUs will be preferred when inflating the reserved
+  balloon, and correspondingly avoided by other balloons. Reserved
+  balloon can inflate beyond this cpuset if required by its
+  containers.
+
+**`reservedResources`** (policy-level configuration):
+- `cpu` (string): CPUs for reserved balloon.
+  - Preferred CPUs: `"cpuset:0,48"` prefers using CPU 0 and 48. Uses
+    many enough to satisfy container CPU requests, but no more than
+    that.
+  - Quantity: `"2000m"` or `"2"` uses at least 2 CPUs.
+  - If `minCPUs` is explicitly set for `reserved` balloon type, that
+    overrides the quantity.
+
+**`reservedPoolNamespaces`** (list of strings, policy-level configuration):
+- Additional namespaces (beyond `kube-system`) assigned to reserved balloon.
+- Supports wildcards.
+
+**Customizing reserved balloon:**
+
+```yaml
+# Policy-level settings
+reservedResources:
+  cpu: cpuset:0,48  # preferred specific CPUs
+reservedPoolNamespaces:
+  - kube-system
+  - monitoring
+
+# Explicitly define 'reserved' balloon type for more control.
+# Because "reserved" is moved below "own-cpus", kube-system and
+# monitoring pods with priority=high label will get their own CPUs
+# instead of sharing CPUs with other reserved pods.
+balloonTypes:
+- name: own-cpus
+  preferNewBalloons: true
+  matchExpressions:
+  - key: pod/labels/priority
+    operator: In
+    values:
+    - high
+- name: reserved  # Must be named 'reserved'
+  shareIdleCPUsInSame: numa
+```
+
+#### Default Balloon
+
+**Purpose**: Catches all containers not matched by user-defined balloon types.
+
+**Default behavior** (when not explicitly defined):
+- Automatically placed last in balloon types list.
+- Captures all remaining containers.
+- Uses any remaining CPUs not allocated to other balloons.
+
+**Customizing default balloon:**
+
+```yaml
+balloonTypes:
+- name: production
+  namespaces:
+    - prod-*
+- name: default  # Must be named 'default'
+  minCPUs: 1
+  shareIdleCPUsInSame: package # Allow bursting without crossing socket boundary.
+  minBalloons: 2 # Create one balloon in both sockets in a 2-socket system.
+  maxBallons: 2
+  namespaces:
+  - "*" # Match all containers not matched in above types
+```
+
+### Toggle and Reset Pinning Memory, CPUs, and Containers
+
+#### Memory Pinning
+
+**`pinMemory`** (boolean, policy-level, default: `true`)
+- `true`: Pin containers to NUMA nodes closest to their balloon's CPUs.
+- `false`: Allow containers to use memory from any NUMA node.
+- Can be overridden per balloon type.
+- Warning: Pinning may cause OOM kills if pinned memory nodes have
+  insufficient memory.
+
+#### CPU Pinning
+
+**`pinCPU`** (boolean, policy-level, default: `true`)
+- `true`: Restrict containers to their balloon's CPUs (and optionally
+  shared idle CPUs).
+- `false`: Containers can use any CPUs in the system.
+- Usually left as `true` for proper balloon isolation.
+
+#### Managed CPUs
+
+**`availableResources`** (object, policy-level configuration):
+- `cpu` (string): CPUset managed by the policy.
+- All balloons use only CPUs from this set.
+- Useful for reserving CPUs for non-policy-managed workloads.
+
+```yaml
+availableResources:
+  cpu: cpuset:48-95,144-191  # Use only socket 1 in 2-socket system
+```
+
+#### Managed Containers
+
+The balloons policy can completely ignore selected containers.
+
+**`preserve`** (object, policy-level configuration):
+- `matchExpressions` (list): Container match expressions.
+- Containers matching these expressions are not managed by the policy.
+- Their existing CPU/memory pinning (or lack thereof) is preserved.
+
+Useful for
+- analyzers and other containers that need access to every CPU
+  ```yaml
+  preserve:
     matchExpressions:
     - key: name
+      operator: In
+      values:
+      - analyzer
+      - debugger
+  ```
+
+- special containers managed by external policies, for instance on
+  CPUs not in `availableResources`.
+  ```yaml
+  preserve:
+    matchExpressions:
+    - key: pod/labels/non-balloon-cpus
+      operator: Equals
+      values:
+      - "true"
+  ```
+
+- balloons configures only few special containers while others can run
+  unrestricted on any CPU in the system.
+  ```yaml
+  preserve:
+    matchExpressions:
+    - key: pod/labels/workload-type
       operator: NotIn
       values:
-      - containerA
-      - containerB
-        ...
-```
+      - "idle"
+  balloonTypes:
+  - name: idle-workloads
+    matchExpressions:
+    - key: pod/labels/workload-type
+      operator: In
+      values:
+      - "idle"
+    schedulingClass: idle
+  schedulingClasses:
+  - name: idle
+    policy: idle
+    ioClass: idle
+  pinCPUs: false
+  pinMemory: false
+  ```
 
-## Reset CPU and memory pinning
+#### Reset CPU and Memory Pinning
 
-CPU and memory pinning of all containers can be forcibly reset with
-the following policy. The policy assigns containers from all
-namespaces to the same "reserved" balloon instance, and allows them to
-use all other CPUs in the system, too.
+Running containers can be "reset" to allow accessing all CPUs and
+memories in the system by applying a configuration that pins them
+accordingly.
 
-```
+```sh
+kubectl apply -f - <<EOF
 apiVersion: config.nri/v1alpha1
 kind: BalloonsPolicy
 metadata:
@@ -748,39 +1096,646 @@ spec:
     cpu: 1000m
   pinCPU: true
   pinMemory: true
+EOF
 ```
 
-## Metrics and Debugging
+### Visibility, Scheduling, Metrics, Logging, Debugging
 
-In order to enable more verbose logging and metrics exporting from the
-balloons policy, enable instrumentation and policy debugging from the
-nri-resource-policy global config:
+These options control observability of balloons and their containers,
+including making them visible to Kubernetes scheduler.
+
+#### NodeResourceTopology Integration
+
+**`agent.nodeResourceTopology`** (boolean, policy-level, default:
+`false`)
+- `true`: Expose balloons as topology zones in
+  `noderesourcetopologies.topology.node.k8s.io` CRs.
+- Enables topology-aware scheduling, exposes created balloon instances
+  as zones.
+
+**`showContainersInNrt`** (boolean, can be set at policy-level and
+overridden in balloon types, default: `false`)
+- `true`: Include container names and resource affinities in
+  NodeResourceTopology CRs.
+- Policy-level setting applies to all balloons by default.
+- Balloon-type setting overrides policy-level default.
+- Warning: May generate significant API server traffic with many
+  containers.
+
+```yaml
+# Enable topology exposure at policy level
+agent:
+  nodeResourceTopology: true
+
+# Do not show containers in NodeResourceTopology by default.
+showContainersInNrt: false
+
+# Override for specific balloon type
+balloonTypes:
+- name: devel
+  namespaces:
+  - "devel-*"
+  showContainersInNrt: true # Show development container CPU affinities for debugging
+```
+
+Example: print all balloons in all nodes in a single table
+```sh
+kubectl get noderesourcetopologies.topology.node.k8s.io -o json | jq -r '
+  ["NODE","BALLOON","CPUSET","SHARED_CPUSET"],
+  (
+    .items.[] as $node
+    | $node.zones[]
+    | select(.type == "balloon")
+    | [
+        $node.metadata.name,
+	.name,
+	(.attributes[] | select(.name=="cpuset") | .value),
+	(.attributes[] | select(.name=="shared cpuset") | .value)
+      ]
+  )
+  | @tsv'
+```
+
+Example: print all containers whose balloon type has effective
+`showContainersInNrt: true` in all nodes
+```sh
+kubectl get noderesourcetopologies.topology.node.k8s.io -o json | jq -r '
+  ["NODE","BALLOON","CONTAINER","CPUS","MEMS"],
+  (
+    .items.[] as $node
+    | $node.zones[]
+    | select(.type == "allocation for container")
+    | [
+        $node.metadata.name,
+        .parent,
+        .name,
+        (.attributes[] | select(.name=="cpuset") | .value),
+        (.attributes[] | select(.name=="memory set") | .value)
+      ]
+  )
+  | @tsv'
+```
+
+NodeResourceTopology information can be used in Kubernetes scheduling
+through [Topology-aware scheduler
+plugin](https://github.com/kubernetes-sigs/scheduler-plugins/blob/master/pkg/noderesourcetopology/README.md).
+
+#### Instrumentation and Metrics
+
+**`instrumentation`** (object, policy-level configuration):
+- `httpEndpoint` (string): HTTP server address (e.g., `":8891"`).
+- `prometheusExport` (boolean): Enable Prometheus metrics at
+  `/metrics` endpoint.
+- `reportPeriod` (string): Aggregation interval for polled metrics
+  (e.g., `"10s"`).
+- `metrics.enabled` (list): Glob patterns for metrics to collect
+  (e.g., `["policy"]`).
+- `samplingRatePerMillion` (integer): Tracing sample rate (e.g.,
+  `100000` for 10%).
+- `tracingCollector` (string): External tracing endpoint (e.g.,
+  `"otlp-http"`).
+
+**Available metrics:**
+- Balloon instances and their CPUs.
+- Containers assigned to each balloon.
+- CPU allocation and utilization.
 
 ```yaml
 instrumentation:
-  # The balloons policy exports containers running in each balloon,
-  # and cpusets of balloons. Accessible in command line:
-  # curl --silent http://$localhost_or_pod_IP:8891/metrics
-  HTTPEndpoint: :8891
-  PrometheusExport: true
+  httpEndpoint: :8891
+  prometheusExport: true
+  reportPeriod: 30s
   metrics:
-    enabled: # use '*' instead for all available metrics
-    - policy
-log:
-  debug:
-  - policy     # to follow policy's internal logic
-  - nri-plugin # to see what the policy saw and to hear what it said (there is a lot of it)
-  source: true
+    enabled:
+      - policy
+      - '*'  # All metrics
+  samplingRatePerMillion: 100000
 ```
 
-Read metrics (assuming you can access podIPs directly from your network, otherwise use `kubectl port-forward`):
-```
+**Accessing metrics:**
+
+```sh
+# Direct access (if pod IPs are reachable)
 for podip in $(kubectl get pod -n kube-system -l "app.kubernetes.io/instance=nri-resource-policy-balloons" -o=jsonpath='{.items[*].status.podIP}'); do
   curl -s http://$podip:8891/metrics
 done
+
+# Port forwarding
+kubectl port-forward -n kube-system daemonset/nri-resource-policy-balloons 8891:8891 &
+curl http://localhost:8891/metrics
 ```
 
-Read logs:
+#### Logging and Debugging
+
+**`log`** (object, policy-level configuration):
+- `debug` (list): List of components to enable debug logging for.
+  - `nri-plugin` - NRI communication with the container runtime
+  - `policy` for balloons policy
+  - `expression` for matchExpression and groupBy expressions
+  - `cache` for container and pod cache
+  - `cpu` for low-level CPU tuning controls (frequencies, cstates)
+  - `cpuallocator` for lowest-level CPU allocator below the policy
+  - `sysfs` for hardware discovery
+  - `"*"` for all
+- `source` (boolean): Prefix messages with logger source name.
+- `klog` (object): klog-specific options (see klog documentation).
+
+```yaml
+log:
+  debug:
+    - policy
+    - nri-plugin
+  source: true
+  klog:
+    skip_headers: true
 ```
-kubectl logs -n kube-system -l "app.kubernetes.io/instance=nri-resource-policy-balloons" --tail=-1
+
+**View logs:**
+
+Show policy decision in assigning container CTRNAME in PODNAME in NAMESPACE to a balloon:
+
+```sh
+kubectl logs -n kube-system daemonset/nri-resource-policy-balloons | grep 'assigning container NAMESPACE/PODNAME/CTRNAME'
 ```
+
+**Inspect container information and cgroups:**
+
+Inspect container CTRNAME in PODNAME in NAMESPACE:
+
+```sh
+CTR_ID=$(kubectl get pod -n NAMESPACE PODNAME -o jsonpath='{.status.containerStatuses[?(@.name=="CTRNAME")].containerID}' | sed 's|^[^:]*://||')
+crictl inspect $CTR_ID | jq .info.runtimeSpec
+```
+
+Read effective CPU and memory sets from cgroups on the local node with the `kube-cgroups` script.
+
+```sh
+curl -OL https://raw.githubusercontent.com/containers/nri-plugins/refs/heads/main/scripts/testing/kube-cgroups
+chmod a+rx kube-cgroups
+./kube-cgroups -n NAMESPACE -p PODNAME -c CTRNAME -f 'cpuset.cpus.effective|cpuset.mems.effective'
+```
+
+## Cookbook
+
+### Latency-Critical Containers
+
+**Goal**: Minimize latency by preventing cache sharing and optimizing
+CPU configuration.
+
+**Requirements:**
+- Containers should not share L2 cache to avoid cache contention.
+- CPUs should run at maximum frequency.
+- Disable deep C-states to avoid wakeup latency.
+- Each container gets dedicated CPUs (no sharing between containers).
+
+**Configuration:**
+
+```yaml
+apiVersion: config.nri/v1alpha1
+kind: BalloonsPolicy
+metadata:
+  name: default
+  namespace: kube-system
+spec:
+  reservedResources:
+    cpu: "2"
+  pinCPU: true
+  pinMemory: true
+  allocatorTopologyBalancing: false  # Pack tightly for power efficiency
+  idleCPUClass: powersave # Force to minimal frequencies for external processes
+
+  balloonTypes:
+  - name: ultra-low-latency
+    # Match latency-critical containers
+    matchExpressions:
+    - key: pod/labels/latency
+      operator: In
+      values:
+      - critical
+
+    # Fixed size, pre-created balloons
+    minBalloons: 4
+    minCPUs: 4
+    allocatorPriority: high
+
+    # Each container gets its own balloon
+    preferNewBalloons: true
+
+    # CPU configuration for minimal latency
+    cpuClass: ultra-low-latency
+
+    schedulingClass: realtime
+
+    # Mark CPUs as generating cache load
+    loads:
+    - l2-intensive
+
+  - name: default
+    namespaces:
+    - "*"
+    loads:
+    - l2-intensive # avoid sharing L2 domains with critical containers
+    cpuClass: normal # low to mid GHz to save power budget for critical containers
+
+  # Define L2 cache load to prevent containers in other balloons from sharing cache
+  loadClasses:
+  - name: l2-intensive
+    level: l2cache
+    overloadsLevelInBalloon: false  # Share L2 between CPUs within balloon
+
+  # CPU classes for frequency and C-state control
+  control:
+    cpu:
+      classes:
+        ultra-low-latency:
+          minFreq: 3500000
+          maxFreq: 3900000
+          uncoreMinFreq: 2400000
+          uncoreMaxFreq: 2400000
+          disabledCstates: [C6, C7, C8, C10]
+        normal:
+          minFreq: 800000
+          maxFreq: 2500000
+        powersave:
+          minFreq: 800000
+          maxFreq: 800000
+
+  # Scheduling for high priority
+  schedulingClasses:
+  - name: realtime
+    policy: fifo
+    priority: 80
+    ioClass: rt
+    ioPriority: 0
+```
+
+**Pod annotation example:**
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: latency-critical-app
+  labels:
+    latency: critical
+spec:
+  containers:
+  - name: app
+    image: my-app:latest
+    resources:
+      requests:
+        cpu: "4"
+```
+
+### Maximum Memory Bandwidth Containers
+
+**Goal**: Maximize memory bandwidth by two alternative means:
+1. balancing memory-bandwidth balloons across multiple NUMA nodes,
+   each balloon using only the local (lowest-latency) memory nodes.
+2. balancing each memory-bandwidth balloon to have equal number of
+   CPUs from both NUMA nodes of single socket. These balloons are
+   then balanced between sockets.
+
+**Requirements:**
+- CPUs from multiple NUMA nodes to access multiple memory channels.
+- Balanced distribution across topology for maximum bandwidth.
+- Containers can be large, using many CPUs.
+
+**Configuration 1: Local NUMA accesses only**
+
+For 2-socket 4-NUMA-node system where each where pods labelled
+"memory-intensive" should be restricted to use local NUMA only in both
+CPU and memory. Other pods should share all CPUs of either socket
+except for CPUs reserved for workloads memory-intensive workloads.
+
+```yaml
+apiVersion: config.nri/v1alpha1
+kind: BalloonsPolicy
+metadata:
+  name: default
+  namespace: kube-system
+spec:
+  reservedResources:
+    cpu: cpuset:0
+  pinCPU: true
+  pinMemory: true
+  allocatorTopologyBalancing: true  # Spread across NUMA nodes
+
+  balloonTypes:
+  - name: memory-bandwidth
+    matchExpressions:
+    - key: pod/labels/workload-type
+      operator: In
+      values:
+      - memory-intensive
+    # Each workload gets its own balloon
+    preferNewBalloons: true
+  - name: default
+    # create one default balloon per socket for other workloads
+    minBalloons: 2
+    shareIdleCPUsInSame: package
+```
+
+**Configuration 2: balanced CPUs from both NUMAs of either socket**
+
+For a 2-socket 4-NUMA-node system where each container needs an equal
+number of CPUs from all NUMAs of either package, but needs to avoid
+cross-socket allocation.
+
+```yaml
+  balloonTypes:
+  - name: max-bandwidth-either-package
+    # Composite balloon combining CPUs from all NUMA nodes from either package
+    components:
+    - balloonType: max-bandwidth-package0
+    - balloonType: max-bandwidth-package1
+    componentCreation: balance-balloons
+    preferNewBalloons: true
+    matchExpressions:
+    - key: pod/labels/workload-type
+      operator: In
+      values:
+      - max-bandwidth
+
+  # Component balloon types - one per package
+  - name: max-bandwidth-package0
+    components:
+    - balloonType: numa0
+    - balloonType: numa1
+
+  - name: max-bandwidth-package1
+    components:
+    - balloonType: numa2
+    - balloonType: numa3
+
+  # Component balloon types - one per NUMA
+  - name: numa0
+    preferCloseToDevices:
+    - /sys/devices/system/node/node0
+  - name: numa1
+    preferCloseToDevices:
+    - /sys/devices/system/node/node1
+  - name: numa2
+    preferCloseToDevices:
+    - /sys/devices/system/node/node2
+  - name: numa3
+    preferCloseToDevices:
+    - /sys/devices/system/node/node3
+```
+
+### Workload-Aware Hyperthread Sharing
+
+**Goal**: Optimize physical core utilization by controlling which
+workload types share cores.
+
+**Scenario:**
+- **Type A workloads**: High CPU utilization, always running (e.g.,
+  batch processing), no bursts.
+- **Type B workloads**: Bursty, short-duration spikes (e.g., request
+  handling). Benefit from temporarily using more CPUs than requested.
+- **Type C workloads**: Low priority background tasks. Benefit from
+  from extra CPUs but must not slow down type B workloads.
+
+**Strategy:**
+- Prevent two Type A workloads from sharing physical cores (would
+  compete heavily).
+- Allow Type A + Type B on same physical cores.
+- Allow Type A + Type C on same physical cores.
+- Allow Type B and C use extra available CPUs.
+- Prioritize running Type B over Type C on shared CPUs.
+
+**Configuration:**
+
+```yaml
+apiVersion: config.nri/v1alpha1
+kind: BalloonsPolicy
+metadata:
+  name: default
+  namespace: kube-system
+spec:
+  reservedResources:
+    cpu: "2"
+  pinCPU: true
+  pinMemory: false
+  allocatorTopologyBalancing: true
+
+  balloonTypes:
+  - name: always-running-batch
+    matchExpressions:
+    - key: pod/labels/workload-pattern
+      operator: In
+      values:
+      - always-running
+    # Mark as generating sustained core load
+    loads:
+    - sustained-compute
+
+  - name: bursty-requests
+    matchExpressions:
+    - key: pod/labels/workload-pattern
+      operator: In
+      values:
+      - bursty
+    schedulingClass: high-priority
+    # Allow bursting within NUMA node scope.
+    shareIdleCPUsInSame: numa
+
+  - name: background-tasks
+    matchExpressions:
+    - key: pod/labels/workload-pattern
+      operator: In
+      values:
+      - background
+    # No loads specified - can share cores with anything.
+    schedulingClass: low-priority
+    # Allow bursting within NUMA node scope.
+    shareIdleCPUsInSame: numa
+
+  # Define sustained compute load
+  loadClasses:
+  - name: sustained-compute
+    level: core
+
+  schedulingClasses:
+  - name: high-priority
+    nice: -10
+  - name: low-priority
+    policy: batch
+    nice: 10
+    ioClass: idle
+```
+
+**How it works:**
+
+1. **always-running-batch** balloons declare `sustained-compute` load
+   with `overloadsLevelInBalloon: true`.
+   - CPUs allocated from different physical cores within each balloon.
+   - When multiple such balloons exist, they avoid each other's cores.
+
+2. **bursty-requests** and **background-tasks** balloons don't declare
+   any loads.
+   - Can be allocated to hyperthreads on cores already used by
+     always-running-batch.
+
+3. Containers in **bursty-requests** and **background-tasks** balloons
+   share idle CPUs in the same NUMA nodes.
+   - They get CPU scheduling priority (bursty) or depriority
+     (background) to manage competition.
+
+3. Result: Physical cores are shared between complementary workloads,
+   maximizing utilization without excessive competition.
+
+**Pod annotation examples:**
+
+```yaml
+# Always-running batch job
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: data-processing
+spec:
+  template:
+    metadata:
+      labels:
+        workload-pattern: always-running
+    spec:
+      containers:
+      - name: processor
+        image: batch-processor:latest
+        resources:
+          requests:
+            cpu: "4"
+
+---
+# Bursty request handler
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-server
+spec:
+  template:
+    metadata:
+      labels:
+        workload-pattern: bursty
+    spec:
+      containers:
+      - name: server
+        image: api-server:latest
+        resources:
+          requests:
+            cpu: "2"
+
+---
+# Background task
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: log-aggregator
+spec:
+  schedule: "*/5 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            workload-pattern: background
+        spec:
+          containers:
+          - name: aggregator
+            image: log-aggregator:latest
+            resources:
+              requests:
+                cpu: "1"
+```
+
+**Advanced: Fine-grained control with L2 cache awareness**
+
+For workloads where L2 cache contention is also a concern:
+
+```yaml
+  balloonTypes:
+  - name: cache-sensitive-batch
+    matchExpressions:
+    - key: pod/labels/workload-pattern
+      operator: In
+      values:
+      - cache-sensitive
+    loads:
+    - sustained-compute
+    - l2-cache-intensive
+
+  loadClasses:
+  - name: sustained-compute
+    level: core
+    overloadsLevelInBalloon: true
+  - name: l2-cache-intensive
+    level: l2cache
+    overloadsLevelInBalloon: false  # Allow cache sharing within balloon
+```
+
+This prevents cache-sensitive workloads from sharing L2 caches across
+balloons while still allowing it within a balloon.
+
+---
+
+## Troubleshooting
+
+**Issue**: Containers not being assigned to expected balloons or
+Balloons not getting desired CPUs
+
+**Solution**: Check the balloon type matching order and CPU allocation from logs with
+```yaml
+log:
+  debug:
+  - policy
+```
+
+**Issue**: Out of memory errors with `pinMemory: true`
+
+**Solution**: Either disable memory pinning or ensure sufficient memory on each NUMA node:
+```yaml
+pinMemory: false
+```
+
+**Issue**: Policy not applying configuration changes
+
+**Solution**:
+- Verify that `nri-resource-policy-balloons-...` pod is running.
+  ```sh
+  kubectl get -n kube-system daemonset/nri-resource-policy-balloons
+  kubectl get pod -n kube-system nri-resource-policy-balloons-...
+  ```
+- Verify the configuration object (BalloonsPolicy) exists, is valid, is named
+  correctly (`default`, `group.GROUPNAME` or `node.NODENAME`) and is in the
+  same namespace as the pod.
+  ```sh
+  kubectl get balloonspolicies.config.nri -n kube-system
+  ```
+- Verify node labels. If a node has a `config.nri/group=GROUPNAME`
+  label, it will not use BalloonsPolicy named `default`, only
+  `group.GROUPNAME` or `node.NODENAME`.
+  ```sh
+  kubectl get node NODENAME --show-labels
+  ```
+- If necessary, delete the policy pod, let the DaemonSet re-create it
+  and look for "config" issues in the log.
+```sh
+kubectl delete pod -n kube-system nri-resource-policy-balloons-...
+kubectl logs -n kube-system nri-resource-policy-balloons-...
+```
+
+**Issue**: System unresponsive or performance drop after
+configuration change
+
+**Solution**:
+- Delete all workloads, especially those with large memory footprint,
+  before changing a configuration. Pinning their memory to different
+  nodes may cause large node-to-node memory migrations, causing
+  unresponsiveness even up to minutes.
+- Redeploy performance critical workloads only after configuration
+  updateds. That ensures their processes get started and data aligned
+  in memory as configured.
+- Make sure important containers request CPUs. Check if BestEffort and
+  Burstable containers without CPU requests are still allowed to use
+  enough CPUs (see `shareIdleCPUsInSame`) instead of getting all
+  packed on a single CPU.
