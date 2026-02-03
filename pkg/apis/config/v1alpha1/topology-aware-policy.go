@@ -55,5 +55,9 @@ func (c *TopologyAwarePolicy) Validate() error {
 		return err
 	}
 
+	if err := c.Spec.Validate(); err != nil {
+		return err
+	}
+
 	return nil
 }
