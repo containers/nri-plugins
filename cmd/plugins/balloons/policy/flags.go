@@ -23,6 +23,7 @@ type (
 	BalloonsOptions  = cfgapi.Config
 	BalloonDef       = cfgapi.BalloonDef
 	LoadClass        = cfgapi.LoadClass
+	SchedulingClass  = cfgapi.SchedulingClass
 	CPUTopologyLevel = cfgapi.CPUTopologyLevel
 )
 
