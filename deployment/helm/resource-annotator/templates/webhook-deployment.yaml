@@ -1,3 +1,21 @@
+{{- if (not (or (eq .Values.service.certificateIssuer nil)
+                (eq .Values.service.certificateIssuer ""))) }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: nri-resource-annotator
+  namespace: {{ .Release.Namespace }}
+spec:
+  secretName: nri-resource-annotator-secret
+  dnsNames:
+  - nri-resource-annotator.{{ .Release.Namespace }}.svc
+  - nri-resource-annotator.{{ .Release.Namespace }}
+  - nri-resource-annotator
+  issuerRef:
+    name: {{ .Values.service.certificateIssuer }}
+    kind: {{ .Values.service.certificateIssuerKind | default "ClusterIssuer" }}
+{{- end }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -24,8 +42,8 @@ spec:
           mountPath: /etc/resource-annotator/certs.d/
           readOnly: true
         args:
-         - "-cert-file=/etc/resource-annotator/certs.d/svc.crt"
-         - "-key-file=/etc/resource-annotator/certs.d/svc.key"
+         - "-cert-file=/etc/resource-annotator/certs.d/tls.crt"
+         - "-key-file=/etc/resource-annotator/certs.d/tls.key"
          - "-port=8443"
         {{- if .Values.extraEnv }}
         env:
