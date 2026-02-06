@@ -17,6 +17,15 @@ config:
   $([ -n "${UNLIMITED_BURSTABLE}" ] && echo "
   unlimitedBurstable: $UNLIMITED_BURSTABLE
   ")
+  $([ -n "$SCHEDULING_CLASSES" ] && echo "
+  schedulingClasses: $SCHEDULING_CLASSES
+  ")
+  $([ -n "$NAMESPACE_SCHEDULING_CLASSES" ] && echo "
+  namespaceSchedulingClasses: $NAMESPACE_SCHEDULING_CLASSES
+  ")
+  $([ -n "$PODQOS_SCHEDULING_CLASSES" ] && echo "
+  podQoSSchedulingClasses: $PODQOS_SCHEDULING_CLASSES
+  ")
 
   instrumentation:
     httpEndpoint: ":8891"

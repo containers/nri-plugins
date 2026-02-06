@@ -275,6 +275,10 @@ Balloons policy parameters:
     should get their CPUs from separate cache blocks for best
     performance. Every listed class must be specified in
     `loadClasses`.
+  - `schedulingClass` specifies the name of the scheduling class
+    according to which containers in balloons are scheduled. Class
+    properties are defined in separate `schedulingClasses` objects,
+    see below.
   - `components` list includes component balloon types. If non-empty,
     the balloon is a composite balloon whose CPUs are not allocated
     directly to itself but its CPUs are the union of CPUs of its
@@ -318,6 +322,33 @@ Balloons policy parameters:
     physical `core` or different `l2cache` block. The default is
     `false`, that is, locality of balloon's CPUs is seen more
     important than avoiding balloon's own load.
+- `schedulingClasses`: is a list of scheduling related parameters
+  organized in classes. These parameters tune containers when they are
+  created but do not affect already running containers. The class of a
+  container is defined with the `schedulingClass: <name>` option in
+  container's balloon type, and can be overridden by
+  `scheduling-class.resource-policy.nri.io` pod annotation. Each class
+  in the list has following properties.
+  - `name` is the name of the scheduling class.
+  - `policy` is the Linux scheduling policy. Supported policies are:
+    `none`, `other`, `fifo`, `rr`, `batch`, `idle`, and `deadline`.
+  - `priority` is the scheduling priority. Refer to
+    sched_setscheduler(2) documentation for valid values depending on
+    the policy.
+  - `flags` is a list of scheduling flags. Supported flags are:
+    `reset-on-fork`, `reclaim`, `dl-overrun`, `keep-policy`,
+    `keep-params`, `util-clamp-min`, `util-clamp-max`.
+  - `nice`: nice value for the container process.
+  - `runtime`: runtime value for `deadline` scheduling policy (in
+    microseconds).
+  - `deadline`: deadline value for `deadline` scheduling policy (in
+    microseconds).
+  - `period`: period value for `deadline` scheduling policy (in
+    microseconds).
+  - `ioClass`: IO class for the container process. Supported classes
+    are: `none`, `rt` for realtime, `be` for best-effort, and `idle`.
+  - `ioPriority`: IO priority for the container process. Refer
+    to ionice(1) documentation for valid values.
 - `control.cpu.classes`: defines CPU classes and their
     properties. Class names are keys followed by properties:
     - `disabledCstates` is a list of c-state names that are disabled
@@ -389,12 +420,19 @@ spec:
   allocatorTopologyBalancing: true
   idleCPUClass: lowpower
   balloonTypes:
-    - name: "quad"
-      maxCPUs: 4
-      cpuClass: dynamic
-      namespaces:
-        - "*"
-      showContainersInNrt: true
+  - name: "quad"
+    maxCPUs: 4
+    cpuClass: dynamic
+    namespaces:
+      - "*"
+    showContainersInNrt: true
+  schedulingClasses:
+  - name: run-when-idle
+    policy: idle
+    ioClass: idle
+  - name: high-priority
+    nice: -10
+    ioClass: rt
   control:
     cpu:
       classes:
@@ -414,6 +452,14 @@ spec:
     httpEndpoint: :8891
     prometheusExport: true
 ```
+
+Because all namespaces are assigned to the "quad" balloon type, all
+containers (except for `kube-system`) will be assigned to balloons of
+this type unless overridden by pod annotation. The configuration
+specifies `run-when-idle` and `high-priority` classes in
+`schedulingClasses` to allow higher priority containers to be
+prioritized over lower priority containers should they share the same
+CPUs, and even if they request equally many CPUs.
 
 ## Assigning a Container to a Balloon
 

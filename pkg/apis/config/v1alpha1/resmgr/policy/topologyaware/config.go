@@ -15,10 +15,13 @@
 package topologyaware
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 
 	policy "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
+	v1 "k8s.io/api/core/v1"
 )
 
 type (
@@ -27,6 +30,7 @@ type (
 	Amount           = policy.Amount
 	AmountKind       = policy.AmountKind
 	CPUTopologyLevel = policy.CPUTopologyLevel
+	SchedulingClass  = policy.SchedulingClass
 )
 
 const (
@@ -44,6 +48,22 @@ const (
 	CPUTopologyLevelL2Cache   = policy.CPUTopologyLevelL2Cache
 	CPUTopologyLevelCore      = policy.CPUTopologyLevelCore
 	CPUTopologyLevelThread    = policy.CPUTopologyLevelThread
+
+	SchedulingPolicyUndefined  = policy.SchedulingPolicyUndefined
+	SchedulingPolicyNone       = policy.SchedulingPolicyNone
+	SchedulingPolicyOther      = policy.SchedulingPolicyOther
+	SchedulingPolicyFifo       = policy.SchedulingPolicyFifo
+	SchedulingPolicyRr         = policy.SchedulingPolicyRr
+	SchedulingPolicyBatch      = policy.SchedulingPolicyBatch
+	SchedulingPolicyIdle       = policy.SchedulingPolicyIdle
+	SchedulingPolicyDeadline   = policy.SchedulingPolicyDeadline
+	SchedulingFlagResetOnFork  = policy.SchedulingFlagResetOnFork
+	SchedulingFlagReclaimable  = policy.SchedulingFlagReclaimable
+	SchedulingFlagDlOverrun    = policy.SchedulingFlagDlOverrun
+	SchedulingFlagKeepPolicy   = policy.SchedulingFlagKeepPolicy
+	SchedulingFlagKeepParams   = policy.SchedulingFlagKeepParams
+	SchedulingFlagUtilClampMin = policy.SchedulingFlagUtilClampMin
+	SchedulingFlagUtilClampMax = policy.SchedulingFlagUtilClampMax
 )
 
 var (
@@ -129,4 +149,111 @@ type Config struct {
 	// +kubebuilder:default=package
 	// +kubebuilder:validation:Format:string
 	UnlimitedBurstable CPUTopologyLevel `json:"unlimitedBurstable,omitempty"`
+	// SchedulingClasses define known scheduling classes. Each class is a
+	// combination of Linux scheduling policy and I/O priority parameters.
+	// Containers with exclusive CPU allocation can be annotated to a class.
+	// +optional
+	SchedulingClasses []*SchedulingClass `json:"schedulingClasses,omitempty"`
+	// NamespaceSchedulingClasses assign default scheduling classes to namespaces.
+	// If a namespace has an assigned class, containers in that namespace inherit
+	// it unless they are annotated otherwise. Any default namespace scheduling
+	// class takes precedence over any default Pod QoS scheduling class.
+	// +optional
+	NamespaceSchedulingClasses map[string]string `json:"namespaceSchedulingClasses,omitempty"`
+	// PodQoSSchedulingClasses assign default scheduling classes to Pod QoS
+	// classes. If a QoS class has an assigned scheduling class, containers
+	// in that QoS class inherit it unless they are annotated otherwise.
+	// +optional
+	PodQoSSchedulingClasses map[string]string `json:"podQoSSchedulingClasses,omitempty"`
+}
+
+var (
+	validQoSClasses = map[string]bool{
+		strings.ToLower(string(v1.PodQOSBestEffort)): true,
+		strings.ToLower(string(v1.PodQOSBurstable)):  true,
+		strings.ToLower(string(v1.PodQOSGuaranteed)): true,
+	}
+)
+
+// Validate the configuration.
+func (c *Config) Validate() error {
+	var errs []error
+
+	if len(c.PodQoSSchedulingClasses) > 0 {
+		canonical := map[string]string{}
+		for qos, scheduling := range c.PodQoSSchedulingClasses {
+			lower := strings.ToLower(qos)
+			valid := validQoSClasses[lower]
+			class := c.GetSchedulingClass(scheduling)
+			if !valid {
+				errs = append(errs,
+					fmt.Errorf("invalid QoS class %q (with scheduling %q)", qos, scheduling))
+			}
+			if class == nil {
+				errs = append(errs, fmt.Errorf("unknown scheduling class %q", scheduling))
+			}
+			if valid && class != nil {
+				canonical[lower] = scheduling
+			}
+		}
+		if len(errs) == 0 {
+			c.PodQoSSchedulingClasses = canonical
+		}
+	}
+
+	for ns, scheduling := range c.NamespaceSchedulingClasses {
+		if c.GetSchedulingClass(scheduling) == nil {
+			errs = append(errs,
+				fmt.Errorf("unknown scheduling class %q for namespace %q", scheduling, ns))
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+// GetSchedulingClass returns the named class or nil if it is not defined.
+func (c *Config) GetSchedulingClass(name string) *SchedulingClass {
+	for _, sc := range c.SchedulingClasses {
+		if sc.Name == name {
+			return sc
+		}
+	}
+	return nil
+}
+
+// GetNamespaceSchedulingClass returns the scheduling class for the given namespace.
+func (c *Config) GetNamespaceSchedulingClass(ns string) (*SchedulingClass, error) {
+	if name, ok := c.NamespaceSchedulingClasses[ns]; ok {
+		sc := c.GetSchedulingClass(name)
+		if sc == nil {
+			return nil, fmt.Errorf("unknown scheduling class %q for namespace %q", name, ns)
+		}
+		return sc, nil
+	}
+
+	return nil, nil
+}
+
+// GetPodQoSSchedulingClass returns the scheduling class for the given Pod QoS class.
+func (c *Config) GetPodQoSSchedulingClass(qos v1.PodQOSClass) (*SchedulingClass, error) {
+	if name, ok := c.PodQoSSchedulingClasses[strings.ToLower(string(qos))]; ok {
+		sc := c.GetSchedulingClass(name)
+		if sc == nil {
+			return nil, fmt.Errorf("unknown scheduling class %q for QoS class %v", name, qos)
+		}
+		return sc, nil
+	}
+
+	return nil, nil
+}
+
+// GetDefaultSchedulingClass returns the scheduling class inherited from
+// a namespace or a Pod QoS class.
+func (c *Config) GetDefaultSchedulingClass(ns string, qos v1.PodQOSClass) (*SchedulingClass, error) {
+	sc, err := c.GetNamespaceSchedulingClass(ns)
+	if sc != nil || err != nil {
+		return sc, err
+	}
+
+	return c.GetPodQoSSchedulingClass(qos)
 }
