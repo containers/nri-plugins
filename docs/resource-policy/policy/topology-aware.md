@@ -1075,7 +1075,8 @@ metadata:
 
 ### 4.1. High-Performance Computing Workloads
 
-For HPC workloads requiring maximum performance and minimal latency:
+For HPC workloads requiring maximum performance and minimal latency, you can either
+set pod annotations or configure policy defaults:
 
 ```yaml
 apiVersion: v1
@@ -1098,9 +1099,20 @@ spec:
         memory: "16Gi"
 ```
 
+```yaml
+apiVersion: config.nri/v1alpha1
+kind: TopologyAwarePolicy
+metadata:
+  name: default
+spec:
+  preferSharedCPUs: false
+  preferIsolatedCPUs: true
+```
+
 ### 4.2. Mixed Workloads with Different QoS Requirements
 
-Deploy multiple containers with varying QoS on the same node:
+Deploy multiple containers with varying QoS on the same node, either with pod
+annotations or policy defaults:
 
 ```yaml
 # High-priority realtime container
@@ -1139,9 +1151,25 @@ spec:
         memory: "256Mi"
 ```
 
+```yaml
+apiVersion: config.nri/v1alpha1
+kind: TopologyAwarePolicy
+metadata:
+  name: default
+spec:
+  preferSharedCPUs: false
+  preferIsolatedCPUs: true
+  schedulingClasses:
+  - name: realtime
+    policy: fifo
+    priority: 42
+```
+
 ### 4.3. Multi-Tier Memory Applications
 
-Use PMEM for warm-up and DRAM for active working set:
+Use PMEM for warm-up and DRAM for active working set with pod annotations. If you
+want this as a default, set it via your admission policy or template the pod
+annotations at deployment time.
 
 ```yaml
 apiVersion: v1
@@ -1163,7 +1191,8 @@ spec:
 
 ### 4.4. Co-located Pod Workloads
 
-Prefer co-location of containers within the same pod by enabling the policy-level setting:
+Prefer co-location of containers within the same pod by enabling the policy-level
+setting, or use explicit affinity annotations:
 
 ```yaml
 apiVersion: config.nri/v1alpha1
@@ -1174,7 +1203,34 @@ spec:
   colocatePods: true
 ```
 
-For per-container control, use the affinity annotations described in Section 3.8.
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    resource-policy.nri.io/affinity: |
+      backend:
+      - match:
+          key: name
+          operator: Equals
+          values:
+          - frontend
+        weight: 10
+spec:
+  containers:
+  - name: frontend
+    resources:
+      requests:
+        cpu: "2"
+        memory: "4Gi"
+  - name: backend
+    resources:
+      requests:
+        cpu: "2"
+        memory: "4Gi"
+```
+
+For more affinity options, see Section 3.8.
 
 ## 5. Troubleshooting
 
