@@ -22,6 +22,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	corev1 "k8s.io/api/core/v1"
 
+	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
@@ -552,6 +553,14 @@ func (p *policy) applyGrant(grant Grant) {
 		}
 		container.SetCpusetMems(mems.MemsetString())
 	}
+
+	sc, err := schedulingClassPreference(container)
+	if err != nil {
+		log.Errorf("%s: cannot set scheduling class: %v", container.PrettyName(), err)
+	}
+	if sc != nil {
+		p.applySchedulingClass(container, sc)
+	}
 }
 
 // Release resources allocated by this grant.
@@ -622,6 +631,59 @@ func (p *policy) updateSharedAllocations(grant *Grant) {
 						other, other.GetCPUNode().Name(), exclusive.String(), shared.String()))
 			}
 		}
+	}
+}
+
+// applySchedulingClass applies a scheduling class to a container.
+func (p *policy) applySchedulingClass(c cache.Container, sc *cfgapi.SchedulingClass) {
+	log.Debug("  - applying scheduling class %q to %s", sc.Name, c.PrettyName())
+	if sc.Policy != "" {
+		if pol, err := sc.Policy.ToNRI(); err == nil {
+			c.SetSchedulingPolicy(pol)
+			log.Debug("  - scheduling policy %q (%s)", sc.Policy, pol)
+		} else {
+			log.Debug("  - invalid scheduling policy %q in scheduling class %q: %v", sc.Policy, sc.Name, err)
+		}
+	}
+	if sc.Priority != nil {
+		c.SetSchedulingPriority(int32(*sc.Priority))
+		log.Debug("  - scheduling priority %d", *sc.Priority)
+	}
+	if len(sc.Flags) > 0 {
+		if flags, err := sc.Flags.ToNRI(); err == nil {
+			c.SetSchedulingFlags(flags)
+			log.Debug("  - scheduling flags %q", sc.Flags)
+		} else {
+			log.Debug("  - invalid scheduling flags %q in scheduling class %q: %v", sc.Flags, sc.Name, err)
+		}
+	}
+	if sc.Nice != nil {
+		c.SetSchedulingNice(int32(*sc.Nice))
+		log.Debug("  - nice value %d", *sc.Nice)
+	}
+	if sc.Runtime != nil {
+		c.SetSchedulingRuntime(*sc.Runtime)
+		log.Debug("  - scheduling runtime %d", *sc.Runtime)
+	}
+	if sc.Deadline != nil {
+		c.SetSchedulingDeadline(*sc.Deadline)
+		log.Debug("  - scheduling deadline %d", *sc.Deadline)
+	}
+	if sc.Period != nil {
+		c.SetSchedulingPeriod(*sc.Period)
+		log.Debug("  - scheduling period %d", *sc.Period)
+	}
+	if sc.IOClass != "" {
+		if ioClass, err := sc.IOClass.ToNRI(); err == nil {
+			c.SetSchedulingIOClass(ioClass)
+			log.Debug("  - IO class %q", sc.IOClass)
+		} else {
+			log.Debug("  - invalid IO class %q in scheduling class %q: %v", sc.IOClass, sc.Name, err)
+		}
+	}
+	if sc.IOPriority != nil {
+		c.SetSchedulingIOPriority(int32(*sc.IOPriority))
+		log.Debug("  - IO priority %d", *sc.IOPriority)
 	}
 }
 

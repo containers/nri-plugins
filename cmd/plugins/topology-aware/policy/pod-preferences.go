@@ -43,7 +43,8 @@ const (
 	keyHideHyperthreads = "hide-hyperthreads"
 	// annotation key for picking individual resources by topology hints
 	keyPickResourcesByHints = "pick-resources-by-hints"
-
+	// annotation key for scheduling class
+	keySchedulingClass = "scheduling-class." + kubernetes.ResmgrKeyNamespace
 	// effective annotation key for isolated CPU preference
 	preferIsolatedCPUsKey = "prefer-isolated-cpus" + "." + kubernetes.ResmgrKeyNamespace
 	// effective annotation key for shared CPU preference
@@ -234,6 +235,23 @@ func memoryTypePreference(pod cache.Pod, container cache.Container) memoryType {
 	log.Debug("%s: effective memory type preference %v", container.PrettyName(), mtype)
 
 	return mtype
+}
+
+// schedulingClassPreference returns an explicitly annotated or default scheduling
+// class based on the containers namespace or the Pod QoS class.
+func schedulingClassPreference(ctr cache.Container) (*cfgapi.SchedulingClass, error) {
+	name, ok := ctr.GetEffectiveAnnotation(keySchedulingClass)
+	if ok {
+		log.Debug("%s: annotated scheduling preference %q", ctr.PrettyName(), name)
+		sc := opt.GetSchedulingClass(name)
+		if sc == nil {
+			return nil, fmt.Errorf("unknown scheduling class %q", name)
+		}
+		return sc, nil
+	}
+
+	sc, err := opt.GetDefaultSchedulingClass(ctr.GetNamespace(), ctr.GetQOSClass())
+	return sc, err
 }
 
 // coldStartPreference figures out 'cold start' preferences for the container, IOW
