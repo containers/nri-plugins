@@ -147,7 +147,7 @@ resource allocation behavior.
 ### Installing with Helm
 
 The topology-aware policy can be installed using Helm charts. Refer to the
-[deployment documentation](../../deployment/index.md) for detailed instructions.
+[topology-aware Helm documentation](../../deployment/helm/topology-aware.md) for detailed instructions.
 
 ### Managing Configuration with kubectl
 
@@ -159,11 +159,13 @@ Example configuration commands:
 
 ```bash
 # List all topology-aware policy configurations
-kubectl get topologyawarepolicyconfig
+kubectl get -n kube-system topologyawarepolicies.config.nri
 
 # View the default configuration
-kubectl get topologyawarepolicyconfig default -o yaml
+kubectl get -n kube-system topologyawarepolicies.config.nri default -o yaml
 ```
+
+Replace `kube-system` with the namespace where the plugin is deployed.
 
 ### Configuration Scopes
 
@@ -184,7 +186,7 @@ assigning resources from that pool.
 
 ### 3.1. Policy-Level Settings
 
-The following policy-level configuration options which affect its default
+The following policy-level configuration options affect its default
 behavior. These options can be supplied as part of the effective
 [dynamic configuration][configuration] custom resource.
 
@@ -1080,10 +1082,10 @@ apiVersion: v1
 kind: Pod
 metadata:
   annotations:
-    # Request exclusive CPUs
-    prefer-exclusive-cpus.resource-policy.nri.io: "true"
-    # Pin to specific topology level
-    topology-level.resource-policy.nri.io: "numa"
+    # Prefer exclusive CPUs; opt out from shared allocation
+    prefer-shared-cpus.resource-policy.nri.io/pod: "false"
+    # Prefer isolated CPUs when available
+    prefer-isolated-cpus.resource-policy.nri.io/pod: "true"
 spec:
   containers:
   - name: hpc-workload
@@ -1107,9 +1109,9 @@ apiVersion: v1
 kind: Pod
 metadata:
   annotations:
-    prefer-exclusive-cpus.resource-policy.nri.io: "true"
-    prefer-isolated-cpus.resource-policy.nri.io: "true"
-    scheduling-class.resource-policy.nri.io: "realtime"
+    prefer-shared-cpus.resource-policy.nri.io/pod: "false"
+    prefer-isolated-cpus.resource-policy.nri.io/pod: "true"
+    scheduling-class.resource-policy.nri.io/pod: "realtime"
 spec:
   containers:
   - name: realtime-app
@@ -1146,14 +1148,12 @@ apiVersion: v1
 kind: Pod
 metadata:
   annotations:
-    # Start on PMEM for cold start
-    cold-start-memory-types.resource-policy.nri.io: "pmem"
-    cold-start-duration.resource-policy.nri.io: "60s"
-    # Then move to DRAM
-    memory-type.resource-policy.nri.io: "dram,pmem"
+    memory-type.resource-policy.nri.io/container.app: dram,pmem
+    cold-start.resource-policy.nri.io/container.app: |
+      duration: 60s
 spec:
   containers:
-  - name: memory-intensive-app
+  - name: app
     resources:
       requests:
         memory: "32Gi"
@@ -1163,28 +1163,18 @@ spec:
 
 ### 4.4. Co-located Pod Workloads
 
-Ensure containers in the same pod or namespace are topologically close:
+Prefer co-location of containers within the same pod by enabling the policy-level setting:
 
 ```yaml
-apiVersion: v1
-kind: Pod
+apiVersion: config.nri/v1alpha1
+kind: TopologyAwarePolicy
 metadata:
-  annotations:
-    # Co-locate containers in this pod
-    prefer-colocated-pods.resource-policy.nri.io: "true"
+  name: default
 spec:
-  containers:
-  - name: frontend
-    resources:
-      requests:
-        cpu: "2"
-        memory: "4Gi"
-  - name: backend
-    resources:
-      requests:
-        cpu: "2"
-        memory: "4Gi"
+  colocatePods: true
 ```
+
+For per-container control, use the affinity annotations described in Section 3.8.
 
 ## 5. Troubleshooting
 
