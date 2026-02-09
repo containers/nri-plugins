@@ -347,6 +347,10 @@ func (p *draPlugin) UnprepareResourceClaims(ctx context.Context, claims []kubele
 		result[c.UID] = nil
 	}
 
+	if err := p.resmgr.nri.updateContainers(); err != nil {
+		log.Errorf("failed to update containers after releasing claim: %v", err)
+	}
+
 	return result, nil
 }
 
