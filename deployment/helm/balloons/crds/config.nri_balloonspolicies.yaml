@@ -314,6 +314,14 @@ spec:
                         placed on separate balloons. The default is false: prefer
                         placing containers of a pod to the same balloon(s).
                       type: boolean
+                    schedulingClass:
+                      description: |-
+                        SchedulingClass is the name of the scheduling class from
+                        which default Linux scheduling and IO priority parameters
+                        are applied on new containers created in these
+                        balloons. Parameters for the class are specified in the
+                        schedulingClasses list.
+                      type: string
                     shareIdleCPUsInSame:
                       description: |-
                         ShareIdleCpusInSame <topology-level>: if there are idle
@@ -964,6 +972,92 @@ spec:
                   type: string
                 description: Reserved (CPU) resources for kube-system namespace.
                 type: object
+              schedulingClasses:
+                description: |-
+                  SchedulingClasses specify scheduling classes available in
+                  balloon types.
+                items:
+                  description: |-
+                    SchedulingClass specifies the default Linux scheduling and IO
+                    priority parameters for containers assigned into this class.
+                  properties:
+                    deadline:
+                      description: Deadline is the Linux SCHED_DEADLINE deadline value
+                        to use (in microseconds).
+                      format: int64
+                      type: integer
+                    flags:
+                      description: |-
+                        Flags is a list of Linux scheduling flags to set.
+                        SCHED_FLAG_<ORIG_NAME> translates to <orig-name> etc.
+                      enum:
+                      - reset-on-fork
+                      - reclaim
+                      - dl-overrun
+                      - keep-policy
+                      - keep-params
+                      - util-clamp-min
+                      - util-clamp-max
+                      items:
+                        type: string
+                      type: array
+                    ioClass:
+                      description: |-
+                        IOClass is the IO scheduling class to use.
+                        IOPRIO_CLASS_<NAME> translates to <name>.
+                        Refer to ioprio_set(2) and ionice(1) for details.
+                      enum:
+                      - none
+                      - rt
+                      - be
+                      - idle
+                      type: string
+                    ioPriority:
+                      description: |-
+                        IOPriority is the IO priority within the selected IO class to use.
+                        Valid range depends on the selected class.
+                        Refer to ionice(1) for details.
+                      type: integer
+                    name:
+                      description: Name of the scheduling class.
+                      type: string
+                    nice:
+                      description: Nice is the Linux nice value to use.
+                      type: integer
+                    period:
+                      description: Period is the Linux SCHED_DEADLINE period value
+                        to use (in microseconds).
+                      format: int64
+                      type: integer
+                    policy:
+                      description: |-
+                        Policy is the Linux scheduling policy to use.
+                        SCHED_<NAME> translates to <name> etc.
+                      enum:
+                      - none
+                      - other
+                      - fifo
+                      - rr
+                      - batch
+                      - iso
+                      - idle
+                      - deadline
+                      type: string
+                    priority:
+                      description: |-
+                        Priority is the Linux scheduling priority to use.
+                        Valid range depends on the selected policy.
+                        Refer to sched_setscheduler(2) for details.
+                      type: integer
+                    runtime:
+                      description: Runtime is the Linux SCHED_DEADLINE runtime value
+                        to use (in microseconds).
+                      format: int64
+                      type: integer
+                  required:
+                  - name
+                  type: object
+                type: array
               showContainersInNrt:
                 description: |-
                   ShowContainersInNrt controls whether containers in balloons

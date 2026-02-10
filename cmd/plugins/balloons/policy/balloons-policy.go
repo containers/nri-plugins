@@ -49,6 +49,8 @@ const (
 	balloonKey = "balloon." + PolicyName + "." + kubernetes.ResmgrKeyNamespace
 	// hideHyperthreadsKey is a pod annotation key for pod/container-specific hyperthread allowance.
 	hideHyperthreadsKey = "hide-hyperthreads." + kubernetes.ResmgrKeyNamespace
+	// schedulingClassKey is a pod annotation key for pod/container-specific scheduling class.
+	schedulingClassKey = "scheduling-class." + kubernetes.ResmgrKeyNamespace
 	// reservedBalloonDefName is the name in the reserved balloon definition.
 	reservedBalloonDefName = "reserved"
 	// defaultBalloonDefName is the name in the default balloon definition.
@@ -1509,6 +1511,7 @@ func (p *balloons) applyBalloonDef(balloons *[]*Balloon, blnDef *BalloonDef, fre
 func (p *balloons) validateConfig(bpoptions *BalloonsOptions) error {
 	seenNames := map[string]struct{}{}
 	undefinedLoadClasses := map[string]struct{}{}
+	undefinedSchedulingClasses := map[string]struct{}{}
 	compositeBlnDefs := map[string]*BalloonDef{}
 	for _, blnDef := range bpoptions.BalloonDefs {
 		if blnDef.Name == "" {
@@ -1581,6 +1584,9 @@ func (p *balloons) validateConfig(bpoptions *BalloonsOptions) error {
 		for _, load := range blnDef.Loads {
 			undefinedLoadClasses[load] = struct{}{}
 		}
+		if blnDef.SchedulingClass != "" {
+			undefinedSchedulingClasses[blnDef.SchedulingClass] = struct{}{}
+		}
 	}
 	for lcIndex, loadClass := range bpoptions.LoadClasses {
 		delete(undefinedLoadClasses, loadClass.Name)
@@ -1593,6 +1599,12 @@ func (p *balloons) validateConfig(bpoptions *BalloonsOptions) error {
 	}
 	if len(undefinedLoadClasses) > 0 {
 		return balloonsError("loads defined in balloonTypes but missing from loadClasses: %v", undefinedLoadClasses)
+	}
+	for _, schedClass := range bpoptions.SchedulingClasses {
+		delete(undefinedSchedulingClasses, schedClass.Name)
+	}
+	if len(undefinedSchedulingClasses) > 0 {
+		return balloonsError("schedulingClass(es) defined in balloonTypes but missing from schedulingClasses: %v", undefinedSchedulingClasses)
 	}
 	var circularCheck func(name string, seen map[string]int) error
 	circularCheck = func(name string, seen map[string]int) error {
@@ -2124,6 +2136,81 @@ func (bln *Balloon) updateGroups(c cache.Container, delta int) {
 	}
 }
 
+// applyProcessScheduling configures container's scheduling and IO priorities
+func applyProcessScheduling(c cache.Container, sc *SchedulingClass) {
+	if sc == nil {
+		return
+	}
+	log.Debug("  - applying scheduling class %q to %s", sc.Name, c.PrettyName())
+	if sc.Policy != "" {
+		if pol, err := sc.Policy.ToNRI(); err == nil {
+			c.SetSchedulingPolicy(pol)
+			log.Debug("  - scheduling policy %q (%s)", sc.Policy, pol)
+		} else {
+			log.Debug("  - invalid scheduling policy %q in scheduling class %q: %v", sc.Policy, sc.Name, err)
+		}
+	}
+	if sc.Priority != nil {
+		c.SetSchedulingPriority(int32(*sc.Priority))
+		log.Debug("  - scheduling priority %d", *sc.Priority)
+	}
+	if len(sc.Flags) > 0 {
+		if flags, err := sc.Flags.ToNRI(); err == nil {
+			c.SetSchedulingFlags(flags)
+			log.Debug("  - scheduling flags %q", sc.Flags)
+		} else {
+			log.Debug("  - invalid scheduling flags %q in scheduling class %q: %v", sc.Flags, sc.Name, err)
+		}
+	}
+	if sc.Nice != nil {
+		c.SetSchedulingNice(int32(*sc.Nice))
+		log.Debug("  - nice value %d", *sc.Nice)
+	}
+	if sc.Runtime != nil {
+		c.SetSchedulingRuntime(*sc.Runtime)
+		log.Debug("  - scheduling runtime %d", *sc.Runtime)
+	}
+	if sc.Deadline != nil {
+		c.SetSchedulingDeadline(*sc.Deadline)
+		log.Debug("  - scheduling deadline %d", *sc.Deadline)
+	}
+	if sc.Period != nil {
+		c.SetSchedulingPeriod(*sc.Period)
+		log.Debug("  - scheduling period %d", *sc.Period)
+	}
+	if sc.IOClass != "" {
+		if ioClass, err := sc.IOClass.ToNRI(); err == nil {
+			c.SetSchedulingIOClass(ioClass)
+			log.Debug("  - IO class %q", sc.IOClass)
+		} else {
+			log.Debug("  - invalid IO class %q in scheduling class %q: %v", sc.IOClass, sc.Name, err)
+		}
+	}
+	if sc.IOPriority != nil {
+		c.SetSchedulingIOPriority(int32(*sc.IOPriority))
+		log.Debug("  - IO priority %d", *sc.IOPriority)
+	}
+}
+
+func (p *balloons) applyProcessProperties(c cache.Container, bln *Balloon) {
+	effSc := bln.Def.SchedulingClass
+	if annSc, annExists := c.GetEffectiveAnnotation(schedulingClassKey); annExists {
+		if annSc != effSc {
+			log.Debug("  - container %s overrides balloon scheduling class %q with annotation %q",
+				c.PrettyName(), effSc, annSc)
+		}
+		effSc = annSc
+	}
+	if effSc != "" {
+		for _, sc := range p.bpoptions.SchedulingClasses {
+			if sc.Name == effSc {
+				applyProcessScheduling(c, sc)
+				break
+			}
+		}
+	}
+}
+
 // assignContainer adds a container to a balloon
 func (p *balloons) assignContainer(c cache.Container, bln *Balloon) {
 	log.Info("assigning container %s to balloon %s", c.PrettyName(), bln)
@@ -2131,6 +2218,7 @@ func (p *balloons) assignContainer(c cache.Container, bln *Balloon) {
 	bln.PodIDs[podID] = append(bln.PodIDs[podID], c.GetID())
 	bln.updateGroups(c, 1)
 	p.updatePinning(bln)
+	p.applyProcessProperties(c, bln)
 }
 
 // dismissContainer removes a container from a balloon
