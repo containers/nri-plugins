@@ -150,6 +150,42 @@ behavior. These options can be supplied as part of the effective
     burstability. The policy will try to allocate Burstable containers with
     no CPU limit to a pool at this topology level. The possible values are:
     `system`, `package`, `die`, `numa`.
+- `schedulingClasses`
+  - Define scheduling classes recognized by the policy. A scheduling class
+    has the following set of associated Linux scheduling policy and I/O
+    priority attributes
+    - `name` is the name of the scheduling class.
+    - `policy` is the Linux scheduling policy. Supported policies are:
+    `none`, `other`, `fifo`, `rr`, `batch`, `idle`, and `deadline`.
+    - `priority` is the scheduling priority. Refer to
+      sched_setscheduler(2) documentation for valid values depending on
+      the policy.
+    - `flags` is a list of scheduling flags. Supported flags are:
+      `reset-on-fork`, `reclaim`, `dl-overrun`, `keep-policy`,
+      `keep-params`, `util-clamp-min`, `util-clamp-max`.
+    - `nice`: nice value for the container process.
+    - `runtime`: runtime value for `deadline` scheduling policy (in
+      microseconds).
+    - `deadline`: deadline value for `deadline` scheduling policy (in
+      microseconds).
+    - `period`: period value for `deadline` scheduling policy (in
+      microseconds).
+    - `ioClass`: IO class for the container process. Supported classes
+      are: `none`, `rt` for realtime, `be` for best-effort, and `idle`.
+    - `ioPriority`: IO priority for the container process. Refer
+      to ionice(1) documentation for valid values.
+    These attributes are applied to containers which get assigned to the
+    class. Use the `scheduling-class.resource-policy.nri.io` annotation
+    key to annotate a pod or a container to a class.
+- `namespaceSchedulingClasses`
+  - can assign default scheduling classes to namespaces. If a container
+    is not annotated to use a specific scheduling class but its namespace
+    has a default scheduling class, this will apply to the container.
+- `podQoSSchedulingClasses`
+  - can assign default scheduling classes to Pod QoS classes. If container
+    is neither annotated to use a specific scheduling class nor its namespace
+    has a default scheduling class, but its Pod QoS class has a default
+    scheduling class, this will apply to the container.
 
 Additionally, the following sub-configuration is available for instrumentation:
 
@@ -326,6 +362,48 @@ metadata:
     # allow the "LLM" container to use only single thread per physical CPU core
     hide-hyperthreads.resource-policy.nri.io/container.LLM: "true"
 ```
+
+### Assigning Containers to Scheduling Classes
+
+A container can be assigned to a known 'scheduling class' by name using the
+`scheduling-class.resource-policy.nri.io` effective annotation key. The value
+of the annotation is the name of the class for the container or the pod. The
+class itself needs to be defined in the active policy configuration using the
+`schedulingClasses` configuration option. For instance the following Helm
+configuration fragment defines two classes, `realtime` and `idle` with the
+corresponding scheduling and I/O priority attributes.
+
+```yaml
+config:
+  reservedResources:
+    cpu: 2
+  ...
+  schedulingClasses:
+  - name: realtime
+    policy: fifo # SCHED_FIFO
+    priority: 42
+
+  - name: idle
+    policy: idle # SCHED_IDLE
+    nice: 17
+    ioClass: be
+    ioPriority: 6
+...
+```
+
+The following pod annotation will assign the container c0 to the `realtime` class:
+
+```
+metadata:
+  annotations:
+    scheduling-class.resource-policy.nri.io/container.c0: realtime
+```
+
+### Inherited Default Scheduling Classes
+
+If a container is not assigned to a scheduling class by annotation, it inherits
+the default scheduling class for its namespace or Pod QoS class, in this order
+of precedence, if either or both is set.
 
 ### Implicit Hardware Topology Hints
 

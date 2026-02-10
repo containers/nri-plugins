@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.12.0-14-g7338792a documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.12.0-19-gc69a52fc documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=1913ee29"></script>
+        <script src="../../../_static/documentation_options.js?v=7ca9086b"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -316,6 +316,54 @@ no CPU limit to a pool at this topology level. The possible values are:
 <code class="docutils literal notranslate"><span class="pre">system</span></code>, <code class="docutils literal notranslate"><span class="pre">package</span></code>, <code class="docutils literal notranslate"><span class="pre">die</span></code>, <code class="docutils literal notranslate"><span class="pre">numa</span></code>.</p></li>
 </ul>
 </li>
+<li><p><code class="docutils literal notranslate"><span class="pre">schedulingClasses</span></code></p>
+<ul>
+<li><p>Define scheduling classes recognized by the policy. A scheduling class
+has the following set of associated Linux scheduling policy and I/O
+priority attributes</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">name</span></code> is the name of the scheduling class.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">policy</span></code> is the Linux scheduling policy. Supported policies are:
+<code class="docutils literal notranslate"><span class="pre">none</span></code>, <code class="docutils literal notranslate"><span class="pre">other</span></code>, <code class="docutils literal notranslate"><span class="pre">fifo</span></code>, <code class="docutils literal notranslate"><span class="pre">rr</span></code>, <code class="docutils literal notranslate"><span class="pre">batch</span></code>, <code class="docutils literal notranslate"><span class="pre">idle</span></code>, and <code class="docutils literal notranslate"><span class="pre">deadline</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">priority</span></code> is the scheduling priority. Refer to
+sched_setscheduler(2) documentation for valid values depending on
+the policy.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">flags</span></code> is a list of scheduling flags. Supported flags are:
+<code class="docutils literal notranslate"><span class="pre">reset-on-fork</span></code>, <code class="docutils literal notranslate"><span class="pre">reclaim</span></code>, <code class="docutils literal notranslate"><span class="pre">dl-overrun</span></code>, <code class="docutils literal notranslate"><span class="pre">keep-policy</span></code>,
+<code class="docutils literal notranslate"><span class="pre">keep-params</span></code>, <code class="docutils literal notranslate"><span class="pre">util-clamp-min</span></code>, <code class="docutils literal notranslate"><span class="pre">util-clamp-max</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nice</span></code>: nice value for the container process.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">runtime</span></code>: runtime value for <code class="docutils literal notranslate"><span class="pre">deadline</span></code> scheduling policy (in
+microseconds).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">deadline</span></code>: deadline value for <code class="docutils literal notranslate"><span class="pre">deadline</span></code> scheduling policy (in
+microseconds).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">period</span></code>: period value for <code class="docutils literal notranslate"><span class="pre">deadline</span></code> scheduling policy (in
+microseconds).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ioClass</span></code>: IO class for the container process. Supported classes
+are: <code class="docutils literal notranslate"><span class="pre">none</span></code>, <code class="docutils literal notranslate"><span class="pre">rt</span></code> for realtime, <code class="docutils literal notranslate"><span class="pre">be</span></code> for best-effort, and <code class="docutils literal notranslate"><span class="pre">idle</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ioPriority</span></code>: IO priority for the container process. Refer
+to ionice(1) documentation for valid values.
+These attributes are applied to containers which get assigned to the
+class. Use the <code class="docutils literal notranslate"><span class="pre">scheduling-class.resource-policy.nri.io</span></code> annotation
+key to annotate a pod or a container to a class.</p></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">namespaceSchedulingClasses</span></code></p>
+<ul>
+<li><p>can assign default scheduling classes to namespaces. If a container
+is not annotated to use a specific scheduling class but its namespace
+has a default scheduling class, this will apply to the container.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">podQoSSchedulingClasses</span></code></p>
+<ul>
+<li><p>can assign default scheduling classes to Pod QoS classes. If container
+is neither annotated to use a specific scheduling class nor its namespace
+has a default scheduling class, but its Pod QoS class has a default
+scheduling class, this will apply to the container.</p></li>
+</ul>
+</li>
 </ul>
 <p>Additionally, the following sub-configuration is available for instrumentation:</p>
 <ul class="simple">
@@ -520,6 +568,45 @@ hidden hyperthreads either.</p>
 <span class="w">    </span><span class="nt">hide-hyperthreads.resource-policy.nri.io/container.LLM</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
 </pre></div>
 </div>
+</section>
+<section id="assigning-containers-to-scheduling-classes">
+<h3>Assigning Containers to Scheduling Classes<a class="headerlink" href="#assigning-containers-to-scheduling-classes" title="Link to this heading"></a></h3>
+<p>A container can be assigned to a known ‘scheduling class’ by name using the
+<code class="docutils literal notranslate"><span class="pre">scheduling-class.resource-policy.nri.io</span></code> effective annotation key. The value
+of the annotation is the name of the class for the container or the pod. The
+class itself needs to be defined in the active policy configuration using the
+<code class="docutils literal notranslate"><span class="pre">schedulingClasses</span></code> configuration option. For instance the following Helm
+configuration fragment defines two classes, <code class="docutils literal notranslate"><span class="pre">realtime</span></code> and <code class="docutils literal notranslate"><span class="pre">idle</span></code> with the
+corresponding scheduling and I/O priority attributes.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">config</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">reservedResources</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+<span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">...</span>
+<span class="w">  </span><span class="nt">schedulingClasses</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">realtime</span>
+<span class="w">    </span><span class="nt">policy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fifo</span><span class="w"> </span><span class="c1"># SCHED_FIFO</span>
+<span class="w">    </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">42</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">idle</span>
+<span class="w">    </span><span class="nt">policy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">idle</span><span class="w"> </span><span class="c1"># SCHED_IDLE</span>
+<span class="w">    </span><span class="nt">nice</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">17</span>
+<span class="w">    </span><span class="nt">ioClass</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">be</span>
+<span class="w">    </span><span class="nt">ioPriority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">6</span>
+<span class="nn">...</span>
+</pre></div>
+</div>
+<p>The following pod annotation will assign the container c0 to the <code class="docutils literal notranslate"><span class="pre">realtime</span></code> class:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">metadata</span><span class="p">:</span>
+  <span class="n">annotations</span><span class="p">:</span>
+    <span class="n">scheduling</span><span class="o">-</span><span class="n">class</span><span class="o">.</span><span class="n">resource</span><span class="o">-</span><span class="n">policy</span><span class="o">.</span><span class="n">nri</span><span class="o">.</span><span class="n">io</span><span class="o">/</span><span class="n">container</span><span class="o">.</span><span class="n">c0</span><span class="p">:</span> <span class="n">realtime</span>
+</pre></div>
+</div>
+</section>
+<section id="inherited-default-scheduling-classes">
+<h3>Inherited Default Scheduling Classes<a class="headerlink" href="#inherited-default-scheduling-classes" title="Link to this heading"></a></h3>
+<p>If a container is not assigned to a scheduling class by annotation, it inherits
+the default scheduling class for its namespace or Pod QoS class, in this order
+of precedence, if either or both is set.</p>
 </section>
 <section id="implicit-hardware-topology-hints">
 <h3>Implicit Hardware Topology Hints<a class="headerlink" href="#implicit-hardware-topology-hints" title="Link to this heading"></a></h3>
