@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.12.0-7-g37524ef9 documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.12.0-14-g7338792a documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=0ee3ec67"></script>
+        <script src="../../../_static/documentation_options.js?v=1913ee29"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -395,6 +395,10 @@ instance, two balloons that generate heavy load on level 2 cache
 should get their CPUs from separate cache blocks for best
 performance. Every listed class must be specified in
 <code class="docutils literal notranslate"><span class="pre">loadClasses</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">schedulingClass</span></code> specifies the name of the scheduling class
+according to which containers in balloons are scheduled. Class
+properties are defined in separate <code class="docutils literal notranslate"><span class="pre">schedulingClasses</span></code> objects,
+see below.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">components</span></code> list includes component balloon types. If non-empty,
 the balloon is a composite balloon whose CPUs are not allocated
 directly to itself but its CPUs are the union of CPUs of its
@@ -450,6 +454,36 @@ allocating CPUs so that every CPU is chosen from different
 physical <code class="docutils literal notranslate"><span class="pre">core</span></code> or different <code class="docutils literal notranslate"><span class="pre">l2cache</span></code> block. The default is
 <code class="docutils literal notranslate"><span class="pre">false</span></code>, that is, locality of balloon’s CPUs is seen more
 important than avoiding balloon’s own load.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">schedulingClasses</span></code>: is a list of scheduling related parameters
+organized in classes. These parameters tune containers when they are
+created but do not affect already running containers. The class of a
+container is defined with the <code class="docutils literal notranslate"><span class="pre">schedulingClass:</span> <span class="pre">&lt;name&gt;</span></code> option in
+container’s balloon type, and can be overridden by
+<code class="docutils literal notranslate"><span class="pre">scheduling-class.resource-policy.nri.io</span></code> pod annotation. Each class
+in the list has following properties.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">name</span></code> is the name of the scheduling class.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">policy</span></code> is the Linux scheduling policy. Supported policies are:
+<code class="docutils literal notranslate"><span class="pre">none</span></code>, <code class="docutils literal notranslate"><span class="pre">other</span></code>, <code class="docutils literal notranslate"><span class="pre">fifo</span></code>, <code class="docutils literal notranslate"><span class="pre">rr</span></code>, <code class="docutils literal notranslate"><span class="pre">batch</span></code>, <code class="docutils literal notranslate"><span class="pre">idle</span></code>, and <code class="docutils literal notranslate"><span class="pre">deadline</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">priority</span></code> is the scheduling priority. Refer to
+sched_setscheduler(2) documentation for valid values depending on
+the policy.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">flags</span></code> is a list of scheduling flags. Supported flags are:
+<code class="docutils literal notranslate"><span class="pre">reset-on-fork</span></code>, <code class="docutils literal notranslate"><span class="pre">reclaim</span></code>, <code class="docutils literal notranslate"><span class="pre">dl-overrun</span></code>, <code class="docutils literal notranslate"><span class="pre">keep-policy</span></code>,
+<code class="docutils literal notranslate"><span class="pre">keep-params</span></code>, <code class="docutils literal notranslate"><span class="pre">util-clamp-min</span></code>, <code class="docutils literal notranslate"><span class="pre">util-clamp-max</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nice</span></code>: nice value for the container process.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">runtime</span></code>: runtime value for <code class="docutils literal notranslate"><span class="pre">deadline</span></code> scheduling policy (in
+microseconds).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">deadline</span></code>: deadline value for <code class="docutils literal notranslate"><span class="pre">deadline</span></code> scheduling policy (in
+microseconds).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">period</span></code>: period value for <code class="docutils literal notranslate"><span class="pre">deadline</span></code> scheduling policy (in
+microseconds).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ioClass</span></code>: IO class for the container process. Supported classes
+are: <code class="docutils literal notranslate"><span class="pre">none</span></code>, <code class="docutils literal notranslate"><span class="pre">rt</span></code> for realtime, <code class="docutils literal notranslate"><span class="pre">be</span></code> for best-effort, and <code class="docutils literal notranslate"><span class="pre">idle</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ioPriority</span></code>: IO priority for the container process. Refer
+to ionice(1) documentation for valid values.</p></li>
 </ul>
 </li>
 <li><p><code class="docutils literal notranslate"><span class="pre">control.cpu.classes</span></code>: defines CPU classes and their
@@ -536,12 +570,19 @@ from <code class="docutils literal notranslate"><span class="pre">http://$localh
 <span class="w">  </span><span class="nt">allocatorTopologyBalancing</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 <span class="w">  </span><span class="nt">idleCPUClass</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">lowpower</span>
 <span class="w">  </span><span class="nt">balloonTypes</span><span class="p">:</span>
-<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;quad&quot;</span>
-<span class="w">      </span><span class="nt">maxCPUs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span>
-<span class="w">      </span><span class="nt">cpuClass</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dynamic</span>
-<span class="w">      </span><span class="nt">namespaces</span><span class="p">:</span>
-<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;*&quot;</span>
-<span class="w">      </span><span class="nt">showContainersInNrt</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;quad&quot;</span>
+<span class="w">    </span><span class="nt">maxCPUs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span>
+<span class="w">    </span><span class="nt">cpuClass</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dynamic</span>
+<span class="w">    </span><span class="nt">namespaces</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;*&quot;</span>
+<span class="w">    </span><span class="nt">showContainersInNrt</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">schedulingClasses</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">run-when-idle</span>
+<span class="w">    </span><span class="nt">policy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">idle</span>
+<span class="w">    </span><span class="nt">ioClass</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">idle</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">high-priority</span>
+<span class="w">    </span><span class="nt">nice</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-10</span>
+<span class="w">    </span><span class="nt">ioClass</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rt</span>
 <span class="w">  </span><span class="nt">control</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">cpu</span><span class="p">:</span>
 <span class="w">      </span><span class="nt">classes</span><span class="p">:</span>
@@ -562,6 +603,13 @@ from <code class="docutils literal notranslate"><span class="pre">http://$localh
 <span class="w">    </span><span class="nt">prometheusExport</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </pre></div>
 </div>
+<p>Because all namespaces are assigned to the “quad” balloon type, all
+containers (except for <code class="docutils literal notranslate"><span class="pre">kube-system</span></code>) will be assigned to balloons of
+this type unless overridden by pod annotation. The configuration
+specifies <code class="docutils literal notranslate"><span class="pre">run-when-idle</span></code> and <code class="docutils literal notranslate"><span class="pre">high-priority</span></code> classes in
+<code class="docutils literal notranslate"><span class="pre">schedulingClasses</span></code> to allow higher priority containers to be
+prioritized over lower priority containers should they share the same
+CPUs, and even if they request equally many CPUs.</p>
 </section>
 </section>
 <section id="assigning-a-container-to-a-balloon">
