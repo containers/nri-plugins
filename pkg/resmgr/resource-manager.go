@@ -158,7 +158,9 @@ func (m *resmgr) updateConfig(newCfg interface{}) (bool, error) {
 	log.Infof("configuration update %s (generation %d):", meta.GetName(), meta.GetGeneration())
 	log.InfoBlock("  <updated config> ", "%s", dump)
 
-	return false, m.reconfigure(cfg)
+	reconfErr := m.reconfigure(cfg)
+	m.updateTopologyZones()
+	return false, reconfErr
 }
 
 // Start resource management once we acquired initial configuration.
