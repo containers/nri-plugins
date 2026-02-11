@@ -216,12 +216,6 @@ func (p *balloons) Setup(policyOptions *policy.BackendOptions) error {
 	p.cch = policyOptions.Cache
 	p.cpuAllocator = cpuallocator.NewCPUAllocator(policyOptions.System)
 
-	malloc, err := libmem.NewAllocator(libmem.WithSystemNodes(policyOptions.System))
-	if err != nil {
-		return balloonsError("failed to create memory allocator: %w", err)
-	}
-	p.memAllocator = malloc
-
 	log.Info("setting up %s policy...", PolicyName)
 	if p.cpuTree, err = NewCpuTreeFromSystem(); err != nil {
 		log.Errorf("creating CPU topology tree failed: %s", err)
@@ -1689,6 +1683,14 @@ func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
 	p.balloons = []*Balloon{}
 	p.freeCpus = p.allowed.Clone()
 	p.bpoptions = bpoptions
+
+	// Create new memory allocator to clear any allocations with previous configuration.
+	// Other allocators are stateless in that respect.
+	malloc, err := libmem.NewAllocator(libmem.WithSystemNodes(p.options.System))
+	if err != nil {
+		return balloonsError("failed to create memory allocator: %w", err)
+	}
+	p.memAllocator = malloc
 
 	// Create balloon instances in the order of AllocatorPriority.
 	for allocPrio := cpuallocator.CPUPriority(0); allocPrio <= cpuallocator.NumCPUPriorities; allocPrio++ {
