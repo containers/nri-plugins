@@ -110,7 +110,7 @@ myst_substitutions = {
     'golang_version': mod_versions['golang'],
     'goresctrl_version': mod_versions['github.com/intel/goresctrl']
 }
-myst_heading_anchors = 3
+myst_heading_anchors = 4
 
 myst_url_schemes = {
     "http": None,
