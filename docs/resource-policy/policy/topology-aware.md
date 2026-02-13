@@ -51,8 +51,7 @@ dies, sockets, and finally the whole of the system at the root node. Leaf NUMA
 nodes are assigned the memory behind their controllers / zones and CPU cores
 with the smallest distance / access penalty to this memory. If the machine
 has multiple types of memory separately visible to both the kernel and user
-space, for instance both DRAM and
-[PMEM](https://www.intel.com/content/www/us/en/products/memory-storage/optane-dc-persistent-memory.html),
+ space, for instance both DRAM and PMEM,
 each zone of special type of memory is assigned to the closest NUMA node pool.
 
 Each non-leaf pool node in the tree is assigned the union of the resources of
@@ -117,7 +116,7 @@ The `topology-aware` policy has the following features:
   - Dynamically widen workload memory set to avoid pool/workload OOM
 - **Multi-tier memory allocation**
   - Assign workloads to memory zones of their preferred type
-  - Support for DRAM, PMEM (such as [Intel® Optane™ memory](https://www.intel.com/content/www/us/en/products/memory-storage/optane-dc-persistent-memory.html)), and [HBM](https://en.wikipedia.org/wiki/High_Bandwidth_Memory)
+  - Support for DRAM, PMEM (such as Intel® Optane™ memory), and [HBM](https://en.wikipedia.org/wiki/High_Bandwidth_Memory)
 - **Cold start support**
   - Pin workload exclusively to PMEM for an initial warm-up period
 
@@ -169,11 +168,20 @@ Replace `kube-system` with the namespace where the plugin is deployed.
 
 ### Configuration Scopes
 
-The policy supports different configuration scopes:
+The topology-aware policy supports three levels of configuration precedence:
 
-- **Cluster-wide defaults**: Applied to all nodes unless overridden
-- **Node-specific overrides**: Applied to specific nodes based on labels
-- **Namespace-specific settings**: Applied to containers in specific namespaces
+1. **Default configuration** (lowest precedence): Applies to all nodes
+   without more specific configuration
+   - Resource name: `default`
+
+2. **Group-specific configuration**: Applies to nodes labeled with a
+   configuration group
+   - Resource name: `group.$GROUP_NAME`
+   - Node label: `config.nri/group=$GROUP_NAME`
+
+3. **Node-specific configuration** (highest precedence): Applies to a
+   single named node
+   - Resource name: `node.$NODE_NAME`
 
 ## 3. Configuration Options
 
