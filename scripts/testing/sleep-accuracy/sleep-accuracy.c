@@ -39,6 +39,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/epoll.h>
+#include <sys/wait.h>
 
 #define uint64_t u_int64_t
 
@@ -267,6 +268,13 @@ void busy_wait(uint64_t duration_ns) {
     while (get_time_ns() - start < duration_ns);
 }
 
+// reset_latencies - initialize latencies array with error value (-1)
+void reset_latencies(int64_t *latencies) {
+    for (int i = 0; i < options.iterations; i++) {
+        latencies[i] = -1;
+    }
+}
+
 // measure_nanosleep - perform measurements (all iterations) of nanosleep latency
 void measure_nanosleep(int64_t busy_ns, int64_t sleep_ns, int64_t *out_latencies) {
     int64_t iters = options.iterations;
@@ -292,22 +300,30 @@ void measure_nanosleep(int64_t busy_ns, int64_t sleep_ns, int64_t *out_latencies
 }
 
 // measure_networking - measure networking latency using loopback socket communication
-void measure_networking(int64_t busy_ns, int64_t sleep_ns, int64_t *out_latencies) {
+// Server and client run in separate processes with optional CPU affinity
+void measure_networking(int64_t busy_ns, int64_t sleep_ns, int64_t *out_latencies, int cpu, int cpu_other) {
     int64_t iters = options.iterations;
-    int server_fd, client_fd, conn_fd;
+    int server_fd = -1, client_fd = -1, conn_fd = -1;
     struct sockaddr_in server_addr, client_addr;
     socklen_t addr_len = sizeof(client_addr);
     char buffer[1];
+    int pipe_fd[2] = {-1, -1};
+    pid_t pid = -1;
+    int opt = 1;
+
+    // Create pipe for synchronization
+    if (pipe(pipe_fd) < 0) {
+        perror("pipe creation failed");
+        goto out;
+    }
 
     // Create server socket
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd < 0) {
         perror("socket creation failed");
-        for (int i = 0; i < iters; i++) out_latencies[i] = -1;
-        return;
+        goto out_close_pipe;
     }
 
-    int opt = 1;
     setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt));
 
     memset(&server_addr, 0, sizeof(server_addr));
@@ -317,50 +333,96 @@ void measure_networking(int64_t busy_ns, int64_t sleep_ns, int64_t *out_latencie
 
     if (bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
         perror("bind failed");
-        close(server_fd);
-        for (int i = 0; i < iters; i++) out_latencies[i] = -1;
-        return;
+        goto out_close_server;
     }
 
     if (listen(server_fd, 1) < 0) {
         perror("listen failed");
-        close(server_fd);
-        for (int i = 0; i < iters; i++) out_latencies[i] = -1;
-        return;
+        goto out_close_server;
     }
 
     // Get the assigned port
     addr_len = sizeof(server_addr);
     getsockname(server_fd, (struct sockaddr *)&server_addr, &addr_len);
 
+    // Fork to create server and client processes
+    pid = fork();
+    if (pid < 0) {
+        perror("fork failed");
+        goto out_close_server;
+    }
+
+    if (pid == 0) {
+        // Child process - Server
+        close(pipe_fd[0]);  // Close read end
+        pipe_fd[0] = -1;
+
+        // Set CPU affinity for server (cpuX)
+        if (cpu != -1) {
+            set_cpu_affinity(cpu);
+        }
+
+        // Signal parent that server is ready and listening
+        write(pipe_fd[1], "R", 1);
+
+        // Accept connection
+        conn_fd = accept(server_fd, (struct sockaddr *)&client_addr, &addr_len);
+        if (conn_fd < 0) {
+            perror("accept failed");
+            close(pipe_fd[1]);
+            close(server_fd);
+            exit(1);
+        }
+
+        // Server echo loop
+        for (int i = 0; i < iters; i++) {
+            // Receive from client
+            if (recv(conn_fd, buffer, 1, 0) <= 0) {
+                break;
+            }
+            buffer[0] = 'y';
+            // Echo back
+            if (send(conn_fd, buffer, 1, 0) <= 0) {
+                break;
+            }
+        }
+
+        close(conn_fd);
+        close(server_fd);
+        close(pipe_fd[1]);
+        exit(0);
+    }
+
+    // Parent process - Client
+    close(pipe_fd[1]);  // Close write end
+    pipe_fd[1] = -1;
+
+    // Set CPU affinity for client (cpuY if specified, otherwise cpuX)
+    if (cpu_other != -1) {
+        set_cpu_affinity(cpu_other);
+    } else if (cpu != -1) {
+        set_cpu_affinity(cpu);
+    }
+
+    // Wait for server to be ready
+    char ready_signal;
+    if (read(pipe_fd[0], &ready_signal, 1) <= 0) {
+        perror("Failed to receive ready signal from server");
+        goto out_kill_server;
+    }
+
     // Create client socket
     client_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (client_fd < 0) {
         perror("client socket creation failed");
-        close(server_fd);
-        for (int i = 0; i < iters; i++) out_latencies[i] = -1;
-        return;
+        goto out_kill_server;
     }
-
-    // Set non-blocking for connect to avoid blocking
-    fcntl(client_fd, F_SETFL, O_NONBLOCK);
 
     // Connect to server
-    connect(client_fd, (struct sockaddr *)&server_addr, sizeof(server_addr));
-
-    // Accept connection
-    conn_fd = accept(server_fd, (struct sockaddr *)&client_addr, &addr_len);
-    if (conn_fd < 0) {
-        perror("accept failed");
-        close(client_fd);
-        close(server_fd);
-        for (int i = 0; i < iters; i++) out_latencies[i] = -1;
-        return;
+    if (connect(client_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        perror("connect failed");
+        goto out_close_client;
     }
-
-    // Set sockets back to blocking mode
-    fcntl(client_fd, F_SETFL, fcntl(client_fd, F_GETFL) & ~O_NONBLOCK);
-    fcntl(conn_fd, F_SETFL, fcntl(conn_fd, F_GETFL) & ~O_NONBLOCK);
 
     // Measure round-trip latency
     for (int i = 0; i < iters; i++) {
@@ -368,42 +430,50 @@ void measure_networking(int64_t busy_ns, int64_t sleep_ns, int64_t *out_latencie
             busy_wait(busy_ns);
         }
 
+        if (sleep_ns > 0) {
+            struct timespec req = {0, sleep_ns};
+            nanosleep(&req, NULL);
+        }
+
         int64_t start = get_time_ns();
 
-        // Send one byte
+        // Send one byte.
+        // In case of error, skip writing out_latencies[i] (keep it as -1)
         buffer[0] = 'x';
         if (send(client_fd, buffer, 1, 0) < 0) {
-            out_latencies[i] = -1;
             continue;
         }
 
         // Receive echo back
-        if (recv(conn_fd, buffer, 1, 0) < 0) {
-            out_latencies[i] = -1;
-            continue;
-        }
-
-        // Echo back to client
-        if (send(conn_fd, buffer, 1, 0) < 0) {
-            out_latencies[i] = -1;
-            continue;
-        }
-
-        // Receive at client
         if (recv(client_fd, buffer, 1, 0) < 0) {
-            out_latencies[i] = -1;
             continue;
         }
 
         int64_t end = get_time_ns();
         int64_t latency = (end - start) / 2; // Divide by 2 for one-way latency approximation
-
+        if (buffer[0] != 'y') {
+            continue; // Invalid response, skip recording latency
+        }
         out_latencies[i] = latency;
     }
 
-    close(conn_fd);
-    close(client_fd);
-    close(server_fd);
+out_close_client:
+    if (client_fd >= 0)
+        close(client_fd);
+out_kill_server:
+    if (pid > 0) {
+        kill(pid, SIGTERM);
+        waitpid(pid, NULL, 0);
+    }
+    if (pipe_fd[0] >= 0)
+        close(pipe_fd[0]);
+out_close_server:
+    if (server_fd >= 0)
+        close(server_fd);
+out_close_pipe:
+    if (pipe_fd[1] >= 0)
+        close(pipe_fd[1]);
+out:
 }
 
 const char* benchmark_name(benchmark_type_t type) {
@@ -646,7 +716,8 @@ int main(int argc, char *argv[]) {
                 if (cpu != -1) {
                     set_cpu_affinity(cpu);
                 }
-                if (cpu_other != -1 || toggle_cpu_running) {
+                // Configure CPU toggler only for nanosleep benchmark
+                if (benchmark == BENCHMARK_NANOSLEEP && (cpu_other != -1 || toggle_cpu_running)) {
                     configure_cpu_toggler(cpu, cpu_other, toggle_ns);
                 }
 
@@ -682,7 +753,10 @@ int main(int argc, char *argv[]) {
 
                                 for (int s_idx = 0; s_idx < options.sleep_count; s_idx++) {
 
-                                    if (toggle_cpu_running) {
+                                    // Reset latencies array to -1 before measurement
+                                    reset_latencies(latencies);
+
+                                    if (toggle_cpu_running && benchmark == BENCHMARK_NANOSLEEP) {
                                         delay(toggle_cpu_interval_ns * 2); // give toggler some time to reconfigure CPU affinity
                                     }
                                     if (cpu != -1) {
@@ -697,10 +771,10 @@ int main(int argc, char *argv[]) {
                                             measure_nanosleep(options.busy_times[b_idx], options.sleep_times[s_idx], latencies);
                                             break;
                                         case BENCHMARK_NETWORKING:
-                                            measure_networking(options.busy_times[b_idx], options.sleep_times[s_idx], latencies);
+                                            measure_networking(options.busy_times[b_idx], options.sleep_times[s_idx], latencies, cpu, cpu_other);
                                             break;
                                     }
-                                    
+
                                     // print measurement parameters and results
                                     printf("%s %d %d %d %ld %d %d %d %d %d %d %ld %ld ",
                                            benchmark_name(benchmark),
