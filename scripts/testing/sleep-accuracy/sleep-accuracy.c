@@ -33,6 +33,12 @@
 #include <time.h>
 #include <unistd.h>
 #include <signal.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/epoll.h>
 
 #define uint64_t u_int64_t
 
@@ -44,6 +50,11 @@
 #define MAX_COMB 10
 
 pid_t main_thread_pid = 0;
+
+typedef enum {
+    BENCHMARK_NANOSLEEP,
+    BENCHMARK_NETWORKING,
+} benchmark_type_t;
 
 // options
 typedef struct {
@@ -63,6 +74,8 @@ typedef struct {
     int toggle_count;                // Number of CPU toggling intervals
     int64_t iterations;              // Number of iterations per measurement
     int repeats;                     // Number of repetitions for each measurement
+    benchmark_type_t benchmarks[MAX_COMB]; // Benchmarks to run
+    int benchmark_count;             // Number of benchmarks
 } options_t;
 
 options_t options = {};
@@ -80,21 +93,22 @@ void print_usage() {
         "                     0=OTHER, 1=FIFO, 2=RR, 3=BATCH, 5=IDLE (default: 0/0), see sched_setscheduler(2)\n"
         "  -f <min/max,...>   Comma-separated list of cpufreq min/max [kHz] pairs (default: 0/9999999)\n"
         "  -i <min/max,...>   Comma-separated list of cpuidle min/max state pairs (default: 0/99)\n"
-        "  -b <busy,...>      Comma-separated list of busy durations [ns] (default: 0,1000,1000000)\n"
+        "  -b <benchmarks>    Comma-separated list of benchmarks to run: nanosleep,networking (default: nanosleep)\n"
+        "  -B <busy,...>      Comma-separated list of busy durations [ns] (default: 0,1000,1000000)\n"
         "  -s <sleep,...>     Comma-separated list of sleep durations [ns] (default: 0,1000,1000000)\n"
         "  -r <repeats>       Number of repetitions for each measurement (default: 1)\n"
         "  -I <iterations>    Number of iterations per measurement (default: 1000)\n"
         "  -h                 Show this help message\n"
         "\n"
         "Example:\n"
-        "  sleep-accuracy -c 3/13,3,13 -t 1000000,100000 -p 0/0,1/1 -f 1200000/1200000,0/9999999 -i -1/-1,0/1,0/9 -b 20000 -s 50000 -I 10000 -r 5\n"
+        "  sleep-accuracy -c 3/13,3,13 -t 1000000,100000 -p 0/0,1/1 -f 1200000/1200000,0/9999999 -i -1/-1,0/1,0/9 -B 20000 -s 50000 -I 10000 -r 5\n"
         "    report requested sleep accuracy when...\n"
         "    -c 3/13,3,13: migrating between CPUs 3 and 13 or running only on CPU 3 or 13\n"
         "    -t 1000000,10000: ...migrating every 1 ms or 100 us,\n"
         "    -p 0/0,1/1: ...with SCHED_OTHER prio0 or SCHED_FIFO prio1,\n"
         "    -f 1200000/1200000,0/9999999: ...with CPU(s) fixed at 1.2 GHz or platforms min/max frequencies,\n"
         "    -i -1/-1,0/1,0/9: ...with no states, only states 0 and 1, or all idle states enabled\n"
-        "    -b 20000: ...running busy for 20us before each sleep,\n"
+        "    -B 20000: ...running busy for 20us before each sleep,\n"
         "    -s 50000: ...requesting 50us sleep,\n"
         "    -I 10000: ...repeating each measurement 10k times to get statistically significant results,\n"
         "    -r 5: ...and repeating the whole measurement 5 times to see variation between runs.\n"
@@ -253,9 +267,8 @@ void busy_wait(uint64_t duration_ns) {
     while (get_time_ns() - start < duration_ns);
 }
 
-// measure - perform measurements (all iterations) of sleep latency
-void measure(int64_t busy_ns, int64_t sleep_ns, int64_t *out_latencies) {
-    uint64_t min_latency = ~0ULL;
+// measure_nanosleep - perform measurements (all iterations) of nanosleep latency
+void measure_nanosleep(int64_t busy_ns, int64_t sleep_ns, int64_t *out_latencies) {
     int64_t iters = options.iterations;
 
     for (int i = 0; i < iters; i++) {
@@ -278,10 +291,131 @@ void measure(int64_t busy_ns, int64_t sleep_ns, int64_t *out_latencies) {
     }
 }
 
+// measure_networking - measure networking latency using loopback socket communication
+void measure_networking(int64_t busy_ns, int64_t sleep_ns, int64_t *out_latencies) {
+    int64_t iters = options.iterations;
+    int server_fd, client_fd, conn_fd;
+    struct sockaddr_in server_addr, client_addr;
+    socklen_t addr_len = sizeof(client_addr);
+    char buffer[1];
+
+    // Create server socket
+    server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_fd < 0) {
+        perror("socket creation failed");
+        for (int i = 0; i < iters; i++) out_latencies[i] = -1;
+        return;
+    }
+
+    int opt = 1;
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt));
+
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    server_addr.sin_port = 0; // Let OS assign a port
+
+    if (bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        perror("bind failed");
+        close(server_fd);
+        for (int i = 0; i < iters; i++) out_latencies[i] = -1;
+        return;
+    }
+
+    if (listen(server_fd, 1) < 0) {
+        perror("listen failed");
+        close(server_fd);
+        for (int i = 0; i < iters; i++) out_latencies[i] = -1;
+        return;
+    }
+
+    // Get the assigned port
+    addr_len = sizeof(server_addr);
+    getsockname(server_fd, (struct sockaddr *)&server_addr, &addr_len);
+
+    // Create client socket
+    client_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (client_fd < 0) {
+        perror("client socket creation failed");
+        close(server_fd);
+        for (int i = 0; i < iters; i++) out_latencies[i] = -1;
+        return;
+    }
+
+    // Set non-blocking for connect to avoid blocking
+    fcntl(client_fd, F_SETFL, O_NONBLOCK);
+
+    // Connect to server
+    connect(client_fd, (struct sockaddr *)&server_addr, sizeof(server_addr));
+
+    // Accept connection
+    conn_fd = accept(server_fd, (struct sockaddr *)&client_addr, &addr_len);
+    if (conn_fd < 0) {
+        perror("accept failed");
+        close(client_fd);
+        close(server_fd);
+        for (int i = 0; i < iters; i++) out_latencies[i] = -1;
+        return;
+    }
+
+    // Set sockets back to blocking mode
+    fcntl(client_fd, F_SETFL, fcntl(client_fd, F_GETFL) & ~O_NONBLOCK);
+    fcntl(conn_fd, F_SETFL, fcntl(conn_fd, F_GETFL) & ~O_NONBLOCK);
+
+    // Measure round-trip latency
+    for (int i = 0; i < iters; i++) {
+        if (busy_ns > 0) {
+            busy_wait(busy_ns);
+        }
+
+        int64_t start = get_time_ns();
+
+        // Send one byte
+        buffer[0] = 'x';
+        if (send(client_fd, buffer, 1, 0) < 0) {
+            out_latencies[i] = -1;
+            continue;
+        }
+
+        // Receive echo back
+        if (recv(conn_fd, buffer, 1, 0) < 0) {
+            out_latencies[i] = -1;
+            continue;
+        }
+
+        // Echo back to client
+        if (send(conn_fd, buffer, 1, 0) < 0) {
+            out_latencies[i] = -1;
+            continue;
+        }
+
+        // Receive at client
+        if (recv(client_fd, buffer, 1, 0) < 0) {
+            out_latencies[i] = -1;
+            continue;
+        }
+
+        int64_t end = get_time_ns();
+        int64_t latency = (end - start) / 2; // Divide by 2 for one-way latency approximation
+
+        out_latencies[i] = latency;
+    }
+
+    close(conn_fd);
+    close(client_fd);
+    close(server_fd);
+}
+
+const char* benchmark_name(benchmark_type_t type) {
+    switch (type) {
+        case BENCHMARK_NANOSLEEP: return "nanosleep";
+        case BENCHMARK_NETWORKING: return "networking";
+        default: return "unknown";
+    }
+}
+
 void print_latencies(int64_t *latencies) {
     uint64_t total_latency = 0;
-    uint64_t max_latency = 0;
-    uint64_t sum_squares = 0;
     int64_t iters = options.iterations;
     for (int i = 0; i < iters; i++) {
         total_latency += latencies[i];
@@ -314,6 +448,7 @@ void parse_options(int argc, char *argv[]) {
     options.busy_count = 0;
     options.sleep_count = 0;
     options.toggle_count = 0;
+    options.benchmark_count = 0;
     options.iterations = 1000;
     options.repeats = 1;
 
@@ -325,6 +460,8 @@ void parse_options(int argc, char *argv[]) {
 
     options.cpufreq_minmax[options.cpufreq_count][0] = 0; // Default cpufreq min [kHz]
     options.cpufreq_minmax[options.cpufreq_count++][1] = 9999999; // Default cpufreq max [kHz]
+
+    options.benchmarks[options.benchmark_count++] = BENCHMARK_NANOSLEEP; // Default benchmark
 
     options.busy_times[options.busy_count++] = 0;
     options.busy_times[options.busy_count++] = 1000;
@@ -389,6 +526,20 @@ void parse_options(int argc, char *argv[]) {
                 token = strtok(NULL, ",");
             }
         } else if (strcmp(argv[i], "-b") == 0 && i + 1 < argc) {
+            options.benchmark_count = 0; // Reset defaults
+            char *token = strtok(argv[++i], ",");
+            while (token && options.benchmark_count < MAX_COMB) {
+                if (strcmp(token, "nanosleep") == 0) {
+                    options.benchmarks[options.benchmark_count++] = BENCHMARK_NANOSLEEP;
+                } else if (strcmp(token, "networking") == 0) {
+                    options.benchmarks[options.benchmark_count++] = BENCHMARK_NETWORKING;
+                } else {
+                    fprintf(stderr, "Unknown benchmark: %s\n", token);
+                    exit(EXIT_FAILURE);
+                }
+                token = strtok(NULL, ",");
+            }
+        } else if (strcmp(argv[i], "-B") == 0 && i + 1 < argc) {
             options.busy_count = 0; // Reset defaults
             char *token = strtok(argv[++i], ",");
             while (token && options.busy_count < MAX_COMB) {
@@ -479,9 +630,12 @@ int main(int argc, char *argv[]) {
 
     main_thread_pid = getpid();
 
-    printf("round cpu0 cpu1 cpumigr_ns schedpol schedprio idlemin idlemax freqmin freqmax busy_ns sleep_ns min p5 p50 p80 p90 p95 p99 p999 max avg\n");
+    printf("benchmark round cpu0 cpu1 cpumigr_ns schedpol schedprio idlemin idlemax freqmin freqmax busy_ns sleep_ns min p5 p50 p80 p90 p95 p99 p999 max avg\n");
 
     for (int r = 0; r < options.repeats; r++) {
+
+        for (int bench_idx = 0; bench_idx < options.benchmark_count; bench_idx++) {
+            benchmark_type_t benchmark = options.benchmarks[bench_idx];
 
         for (int toggle_idx = 0; toggle_idx < options.toggle_count; toggle_idx++) {
             int toggle_ns = options.toggle_intervals[toggle_idx];
@@ -537,9 +691,20 @@ int main(int argc, char *argv[]) {
                                         get_cpuidle_minmax(cpu, &cpuidle_min, &cpuidle_max);
                                     }
 
-                                    measure(options.busy_times[b_idx], options.sleep_times[s_idx], latencies);
+                                    // Call the appropriate benchmark function
+                                    switch (benchmark) {
+                                        case BENCHMARK_NANOSLEEP:
+                                            measure_nanosleep(options.busy_times[b_idx], options.sleep_times[s_idx], latencies);
+                                            break;
+                                        case BENCHMARK_NETWORKING:
+                                            measure_networking(options.busy_times[b_idx], options.sleep_times[s_idx], latencies);
+                                            break;
+                                    }
+                                    
                                     // print measurement parameters and results
-                                    printf("%d %d %d %ld %d %d %d %d %d %d %ld %ld ", r + 1,
+                                    printf("%s %d %d %d %ld %d %d %d %d %d %d %ld %ld ",
+                                           benchmark_name(benchmark),
+                                           r + 1,
                                            cpu,
                                            cpu_other,
                                            cpu_other != -1 ? toggle_cpu_interval_ns : -1,
@@ -566,6 +731,7 @@ int main(int argc, char *argv[]) {
                     }
                 }
             }
+        }
         }
     }
 }
