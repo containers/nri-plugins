@@ -40,6 +40,9 @@
 #include <fcntl.h>
 #include <sys/epoll.h>
 #include <sys/wait.h>
+#include <pthread.h>
+#include <linux/futex.h>
+#include <sys/syscall.h>
 
 #define uint64_t u_int64_t
 
@@ -55,6 +58,7 @@ pid_t main_thread_pid = 0;
 typedef enum {
     BENCHMARK_NANOSLEEP,
     BENCHMARK_NETWORKING,
+    BENCHMARK_FUTEX,
 } benchmark_type_t;
 
 // options
@@ -87,14 +91,17 @@ void print_usage() {
         "\n"
         "Usage: sleep-accuracy [options]\n"
         "Options:\n"
-        "  -c <cpu,...>       Comma-separated list of CPUs to pin one at a time (default: no pinning)\n"
-        "  -c <cpu0/cpu1,...> Comma-separated list of CPUs where affinity is toggled one at a time (see -t)\n"
+        "  -b <benchmarks>    Comma-separated list of benchmarks to run: nanosleep,networking,futex (default: nanosleep)\n"
+        "  -c <cpu,...>       Comma-separated list of CPUs to pin benchmark thread(s) (default: no pinning)\n"
+        "  -c <cpu0/cpu1,...> Comma-separated list of multi-CPU affinity.\n"
+        "                     nanosleep: CPU affinity of the only benchmark thread toggles cpu0 and cpu1 in -t intervals\n"
+        "                     networking: client and server pinned to cpu0 and cpu1 respectively, or both pinned to cpu0 if cpu1 is -1\n"
+        "                     futex: thread 1 and thread 2 pinned to cpu0 and cpu1 respectively, or both pinned to cpu0 if cpu1 is -1\n"
         "  -t <interval,...>  Comma-separated list of CPU toggling intervals [ns], if CPU toggling is used with -c cpu0/cpu1 (default: 1000000)\n"
         "  -p <pol/prio,...>  Comma-separated list of Scheduling policy/priority.\n"
         "                     0=OTHER, 1=FIFO, 2=RR, 3=BATCH, 5=IDLE (default: 0/0), see sched_setscheduler(2)\n"
         "  -f <min/max,...>   Comma-separated list of cpufreq min/max [kHz] pairs (default: 0/9999999)\n"
         "  -i <min/max,...>   Comma-separated list of cpuidle min/max state pairs (default: 0/99)\n"
-        "  -b <benchmarks>    Comma-separated list of benchmarks to run: nanosleep,networking (default: nanosleep)\n"
         "  -B <busy,...>      Comma-separated list of busy durations [ns] (default: 0,1000,1000000)\n"
         "  -s <sleep,...>     Comma-separated list of sleep durations [ns] (default: 0,1000,1000000)\n"
         "  -r <repeats>       Number of repetitions for each measurement (default: 1)\n"
@@ -476,10 +483,207 @@ out_close_pipe:
 out:
 }
 
+// futex wrapper
+static long futex(uint32_t *uaddr, int futex_op, uint32_t val,
+                  const struct timespec *timeout, uint32_t *uaddr2, uint32_t val3) {
+    return syscall(SYS_futex, uaddr, futex_op, val, timeout, uaddr2, val3);
+}
+
+// Thread context for futex benchmark
+typedef struct {
+    uint32_t *futex_word1;
+    uint32_t *futex_word2;
+    uint32_t *value1;
+    uint32_t *value2;
+    int64_t *latencies;
+    int64_t busy_ns;
+    int64_t sleep_ns;
+    int cpu;
+    int iterations;
+    int is_thread1;
+} futex_thread_args_t;
+
+// measure_futex - measure futex synchronization latency between two threads
+// Thread 1 and thread 2 use futex for synchronization with optional CPU affinity
+void* futex_thread_func(void *arg) {
+    futex_thread_args_t *args = (futex_thread_args_t *)arg;
+    int iters = args->iterations;
+
+    // Set CPU affinity for this thread
+    if (args->cpu != -1) {
+        set_cpu_affinity(args->cpu);
+    }
+
+    if (args->is_thread1) {
+        // Thread 1: initiates the ping-pong
+        for (int i = 0; i < iters; i++) {
+            if (args->sleep_ns > 0) {
+                struct timespec req = {0, args->sleep_ns};
+                nanosleep(&req, NULL);
+            }
+
+            if (args->busy_ns > 0) {
+                busy_wait(args->busy_ns);
+            }
+
+            int64_t start = get_time_ns();
+
+            // Signal thread 2 by changing value and waking it
+            *args->value1 = i + 1;
+            __atomic_store_n(args->futex_word1, 1, __ATOMIC_SEQ_CST);
+            futex(args->futex_word1, FUTEX_WAKE, 1, NULL, NULL, 0);
+
+            // Wait for thread 2 to respond
+            while (__atomic_load_n(args->futex_word2, __ATOMIC_SEQ_CST) == 0) {
+                futex(args->futex_word2, FUTEX_WAIT, 0, NULL, NULL, 0);
+            }
+            __atomic_store_n(args->futex_word2, 0, __ATOMIC_SEQ_CST);
+
+            int64_t end = get_time_ns();
+
+            // Verify that thread 2 changed the value as expected
+            if (*args->value2 != i + 1) {
+                args->latencies[i] = -1;  // Mark as error
+                continue;
+            }
+
+            int64_t latency = (end - start) / 2;  // Divide by 2 for one-way latency
+            args->latencies[i] = latency;
+        }
+    } else {
+        // Thread 2: responds to thread 1
+        for (int i = 0; i < iters; i++) {
+            // Wait for thread 1 to signal
+            while (__atomic_load_n(args->futex_word1, __ATOMIC_SEQ_CST) == 0) {
+                futex(args->futex_word1, FUTEX_WAIT, 0, NULL, NULL, 0);
+            }
+            __atomic_store_n(args->futex_word1, 0, __ATOMIC_SEQ_CST);
+
+            // Verify that thread 1 changed the value as expected
+            if (*args->value1 != i + 1) {
+                // Error - just continue, thread 1 will mark the error
+                __atomic_store_n(args->futex_word2, 1, __ATOMIC_SEQ_CST);
+                futex(args->futex_word2, FUTEX_WAKE, 1, NULL, NULL, 0);
+                continue;
+            }
+
+            // Respond by changing value and waking thread 1
+            *args->value2 = i + 1;
+            __atomic_store_n(args->futex_word2, 1, __ATOMIC_SEQ_CST);
+            futex(args->futex_word2, FUTEX_WAKE, 1, NULL, NULL, 0);
+        }
+    }
+
+    return NULL;
+}
+
+void measure_futex(int64_t busy_ns, int64_t sleep_ns, int64_t *out_latencies, int cpu, int cpu_other) {
+    pthread_t thread1 = 0, thread2 = 0;
+    uint32_t *futex_word1 = NULL, *futex_word2 = NULL;
+    uint32_t *value1 = NULL, *value2 = NULL;
+    futex_thread_args_t args1, args2;
+    int ret;
+    void *thread_ret;
+
+    // Allocate shared memory for futex words and values
+    futex_word1 = malloc(sizeof(uint32_t));
+    if (!futex_word1) {
+        perror("malloc futex_word1 failed");
+        goto out;
+    }
+
+    futex_word2 = malloc(sizeof(uint32_t));
+    if (!futex_word2) {
+        perror("malloc futex_word2 failed");
+        goto out_free_futex1;
+    }
+
+    value1 = malloc(sizeof(uint32_t));
+    if (!value1) {
+        perror("malloc value1 failed");
+        goto out_free_futex2;
+    }
+
+    value2 = malloc(sizeof(uint32_t));
+    if (!value2) {
+        perror("malloc value2 failed");
+        goto out_free_value1;
+    }
+
+    // Initialize futex words and values
+    *futex_word1 = 0;
+    *futex_word2 = 0;
+    *value1 = 0;
+    *value2 = 0;
+
+    // Setup arguments for thread 1
+    args1.futex_word1 = futex_word1;
+    args1.futex_word2 = futex_word2;
+    args1.value1 = value1;
+    args1.value2 = value2;
+    args1.latencies = out_latencies;
+    args1.busy_ns = busy_ns;
+    args1.sleep_ns = sleep_ns;
+    args1.cpu = cpu;
+    args1.iterations = options.iterations;
+    args1.is_thread1 = 1;
+
+    // Setup arguments for thread 2
+    args2.futex_word1 = futex_word1;
+    args2.futex_word2 = futex_word2;
+    args2.value1 = value1;
+    args2.value2 = value2;
+    args2.latencies = NULL;  // Thread 2 doesn't record latencies
+    args2.busy_ns = 0;       // Only thread 1 does busy-wait
+    args2.sleep_ns = 0;      // Only thread 1 does sleep
+    args2.cpu = (cpu_other != -1) ? cpu_other : cpu;
+    args2.iterations = options.iterations;
+    args2.is_thread1 = 0;
+
+    // Create thread 2 first (responder)
+    ret = pthread_create(&thread2, NULL, futex_thread_func, &args2);
+    if (ret != 0) {
+        perror("pthread_create thread2 failed");
+        thread2 = 0;
+        goto out_free_value2;
+    }
+
+    // Create thread 1 (initiator)
+    ret = pthread_create(&thread1, NULL, futex_thread_func, &args1);
+    if (ret != 0) {
+        perror("pthread_create thread1 failed");
+        thread1 = 0;
+        goto out_join_thread2;
+    }
+
+    // Wait for thread 1 to complete
+    pthread_join(thread1, &thread_ret);
+    thread1 = 0;
+
+out_join_thread2:
+    if (thread2 != 0)
+        pthread_join(thread2, &thread_ret);
+out_free_value2:
+    if (value2)
+        free(value2);
+out_free_value1:
+    if (value1)
+        free(value1);
+out_free_futex2:
+    if (futex_word2)
+        free(futex_word2);
+out_free_futex1:
+    if (futex_word1)
+        free(futex_word1);
+out:
+    return;
+}
+
 const char* benchmark_name(benchmark_type_t type) {
     switch (type) {
         case BENCHMARK_NANOSLEEP: return "nanosleep";
         case BENCHMARK_NETWORKING: return "networking";
+        case BENCHMARK_FUTEX: return "futex";
         default: return "unknown";
     }
 }
@@ -603,6 +807,8 @@ void parse_options(int argc, char *argv[]) {
                     options.benchmarks[options.benchmark_count++] = BENCHMARK_NANOSLEEP;
                 } else if (strcmp(token, "networking") == 0) {
                     options.benchmarks[options.benchmark_count++] = BENCHMARK_NETWORKING;
+                } else if (strcmp(token, "futex") == 0) {
+                    options.benchmarks[options.benchmark_count++] = BENCHMARK_FUTEX;
                 } else {
                     fprintf(stderr, "Unknown benchmark: %s\n", token);
                     exit(EXIT_FAILURE);
@@ -772,6 +978,9 @@ int main(int argc, char *argv[]) {
                                             break;
                                         case BENCHMARK_NETWORKING:
                                             measure_networking(options.busy_times[b_idx], options.sleep_times[s_idx], latencies, cpu, cpu_other);
+                                            break;
+                                        case BENCHMARK_FUTEX:
+                                            measure_futex(options.busy_times[b_idx], options.sleep_times[s_idx], latencies, cpu, cpu_other);
                                             break;
                                     }
 
