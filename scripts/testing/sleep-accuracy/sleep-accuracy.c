@@ -283,9 +283,44 @@ void reset_latencies(int64_t *latencies) {
 }
 
 // measure_nanosleep - perform measurements (all iterations) of nanosleep latency
-void measure_nanosleep(int64_t busy_ns, int64_t sleep_ns, int64_t *out_latencies) {
+void measure_nanosleep(int64_t busy_ns, int64_t sleep_ns, int64_t *out_latencies, int cpu, int cpu_other, int64_t toggle_ns) {
     int64_t iters = options.iterations;
+    pid_t toggler_pid = -1;
 
+    // Set CPU affinity for measurement thread (cpuX)
+    if (cpu != -1) {
+        set_cpu_affinity(cpu);
+    }
+
+    // Launch CPU toggler process if needed (when cpu_other is specified)
+    if (cpu != -1 && cpu_other != -1 && toggle_ns > 0) {
+        toggler_pid = fork();
+        if (toggler_pid < 0) {
+            perror("measure_nanosleep: fork for CPU toggler failed");
+            goto out;
+        }
+
+        if (toggler_pid == 0) {
+            // Child process - CPU toggler
+            // This process toggles the CPU affinity of the parent (measurement) thread.
+            // set_cpu_affinity() uses main_thread_pid, which refers to the parent process.
+            prctl(PR_SET_PDEATHSIG, SIGTERM); // ensure child exits when parent exits
+            if (getppid() == 1) {
+                exit(0); // parent already exited, so do we
+            }
+            while (1) {
+                set_cpu_affinity(cpu);
+                delay(toggle_ns);
+                set_cpu_affinity(cpu_other);
+                delay(toggle_ns);
+            }
+        }
+
+        // Parent process - give toggler some time to start
+        delay(toggle_ns * 2);
+    }
+
+    // Perform measurements
     for (int i = 0; i < iters; i++) {
         if (busy_ns > 0) {
             busy_wait(busy_ns);  // Simulate work before sleep
@@ -303,6 +338,13 @@ void measure_nanosleep(int64_t busy_ns, int64_t sleep_ns, int64_t *out_latencies
         int64_t latency = actual_sleep - sleep_ns;
 
         out_latencies[i] = latency;
+    }
+
+out:
+    // Ensure CPU toggler exits before returning
+    if (toggler_pid > 0) {
+        kill(toggler_pid, SIGTERM);
+        waitpid(toggler_pid, NULL, 0);
     }
 }
 
@@ -850,49 +892,7 @@ void parse_options(int argc, char *argv[]) {
     }
 }
 
-// configure_cpu_toggler - launch and/or reconfigure a thread that toggles CPU affinity between two CPUs at specified intervals
-int toggle_cpu0 = -1;
-int toggle_cpu1 = -1;
-uint64_t toggle_cpu_interval_ns = 1000000; // default 1 ms
-int toggle_cpu_running = 0;
-void configure_cpu_toggler(int cpu0, int cpu1, int interval_ns) {
-    toggle_cpu0 = cpu0;
-    toggle_cpu1 = cpu1;
-    toggle_cpu_interval_ns = interval_ns;
-    if (toggle_cpu_running) return; // toggler already running
-    toggle_cpu_running = 1;
 
-    pid_t pid = fork();
-    if (pid == -1) {
-        perror("configure_cpu_toggler: fork failed");
-        exit(EXIT_FAILURE);
-    }
-    if (pid != 0) {
-        // Parent process - main thread
-        return;
-    }
-    // Child process - toggler thread
-    prctl(PR_SET_PDEATHSIG, SIGTERM); // ensure child exits when parent exits
-    if (getppid() == 1) {
-        exit(0); // main thread already exited, so do we
-    }
-    while (1) {
-        if (toggle_cpu0 != -1) {
-            set_cpu_affinity(toggle_cpu0);
-            delay(toggle_cpu_interval_ns);
-        }
-        if (toggle_cpu1 != -1) {
-            set_cpu_affinity(toggle_cpu1);
-            delay(toggle_cpu_interval_ns);
-        } else {
-            // Wait until there is more than single CPU to toggle again.
-            // This prevents keep setting main thread's CPU affinity to same CPU in a loop.
-            while (toggle_cpu0 != -1) {
-                delay(toggle_cpu_interval_ns);
-            }
-        }
-    }
-}
 
 int main(int argc, char *argv[]) {
     int64_t *latencies;
@@ -919,13 +919,6 @@ int main(int argc, char *argv[]) {
             for (int cpu_idx = 0; cpu_idx < (options.cpu_count ? options.cpu_count : 1); cpu_idx++) {
                 int cpu = options.cpu_count ? options.cpus[cpu_idx][0] : -1;
                 int cpu_other = options.cpu_count ? options.cpus[cpu_idx][1] : -1;
-                if (cpu != -1) {
-                    set_cpu_affinity(cpu);
-                }
-                // Configure CPU toggler only for nanosleep benchmark
-                if (benchmark == BENCHMARK_NANOSLEEP && (cpu_other != -1 || toggle_cpu_running)) {
-                    configure_cpu_toggler(cpu, cpu_other, toggle_ns);
-                }
 
 
                 for (int pp_idx = 0; pp_idx < options.polprio_count; pp_idx++) {
@@ -962,9 +955,6 @@ int main(int argc, char *argv[]) {
                                     // Reset latencies array to -1 before measurement
                                     reset_latencies(latencies);
 
-                                    if (toggle_cpu_running && benchmark == BENCHMARK_NANOSLEEP) {
-                                        delay(toggle_cpu_interval_ns * 2); // give toggler some time to reconfigure CPU affinity
-                                    }
                                     if (cpu != -1) {
                                         delay(10 * MILLISECOND); // give kernel some time for affinity, cpufreq and cpuidle settings to take effect
                                         get_cpufreq_minmax(cpu, &cpufreq_min, &cpufreq_max);
@@ -974,7 +964,7 @@ int main(int argc, char *argv[]) {
                                     // Call the appropriate benchmark function
                                     switch (benchmark) {
                                         case BENCHMARK_NANOSLEEP:
-                                            measure_nanosleep(options.busy_times[b_idx], options.sleep_times[s_idx], latencies);
+                                            measure_nanosleep(options.busy_times[b_idx], options.sleep_times[s_idx], latencies, cpu, cpu_other, toggle_ns);
                                             break;
                                         case BENCHMARK_NETWORKING:
                                             measure_networking(options.busy_times[b_idx], options.sleep_times[s_idx], latencies, cpu, cpu_other);
@@ -990,7 +980,7 @@ int main(int argc, char *argv[]) {
                                            r + 1,
                                            cpu,
                                            cpu_other,
-                                           cpu_other != -1 ? toggle_cpu_interval_ns : -1,
+                                           cpu_other != -1 ? toggle_ns : -1,
                                            options.polprio[pp_idx][0],
                                            options.polprio[pp_idx][1],
                                            cpuidle_min,
