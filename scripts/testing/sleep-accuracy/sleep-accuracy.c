@@ -1,0 +1,1010 @@
+// Copyright The NRI Plugins Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// sleep-accuracy - Measure the accuracy of nanosleep under various conditions.
+
+/*
+  Debug tips:
+
+  CPU affinity and toggling can be observed with:
+
+    SLEEP_PID=$(pgrep sleep-accuracy | sort -n | head -n 1)
+    sudo bpftrace -e "tracepoint:sched:sched_stat_runtime{ if(args->pid == $SLEEP_PID) { @run[cpu]+=args->runtime } } interval:ms:100{ print(@run);  }"
+*/
+
+#define _GNU_SOURCE
+
+#include <sched.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/prctl.h>
+#include <time.h>
+#include <unistd.h>
+#include <signal.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/epoll.h>
+#include <sys/wait.h>
+#include <pthread.h>
+#include <linux/futex.h>
+#include <sys/syscall.h>
+
+#define uint64_t u_int64_t
+
+#define NS_PER_SEC 1000000000ULL
+#define MICROSECOND 1000ULL
+#define MILLISECOND 1000000ULL
+
+// MAX_COMB - maximum number of combinations for cpus, pol/prio, busy, sleep...
+#define MAX_COMB 10
+
+pid_t main_thread_pid = 0;
+
+typedef enum {
+    BENCHMARK_NANOSLEEP,
+    BENCHMARK_NETWORKING,
+    BENCHMARK_FUTEX,
+} benchmark_type_t;
+
+// options
+typedef struct {
+    int cpus[MAX_COMB][2];           // CPUs to pin or toggle
+    int cpu_count;                   // Number of CPU cores
+    int polprio[MAX_COMB][2];        // Scheduling policy and priority pairs
+    int polprio_count;               // Number of policy/priority pairs
+    int cpuidle_minmax[MAX_COMB][2]; // cpuidle min/max state pairs
+    int cpuidle_count;               // Number of cpuidle min/max pairs
+    int cpufreq_minmax[MAX_COMB][2]; // cpufreq min/max [kHz] pairs
+    int cpufreq_count;               // Number of cpufreq min/max pairs
+    int64_t busy_times[MAX_COMB];    // Busy durations in nanoseconds
+    int busy_count;                  // Number of busy durations
+    int64_t sleep_times[MAX_COMB];   // Sleep durations in nanoseconds
+    int sleep_count;                 // Number of sleep durations
+    int64_t toggle_intervals[MAX_COMB]; // CPU toggling intervals [ns]
+    int toggle_count;                // Number of CPU toggling intervals
+    int64_t iterations;              // Number of iterations per measurement
+    int repeats;                     // Number of repetitions for each measurement
+    benchmark_type_t benchmarks[MAX_COMB]; // Benchmarks to run
+    int benchmark_count;             // Number of benchmarks
+} options_t;
+
+options_t options = {};
+
+void print_usage() {
+    printf(
+        "sleep-accuracy - Measure the accuracy of nanosleep under various conditions.\n"
+        "\n"
+        "Usage: sleep-accuracy [options]\n"
+        "Options:\n"
+        "  -b <benchmarks>    Comma-separated list of benchmarks to run: nanosleep,networking,futex (default: nanosleep)\n"
+        "  -c <cpu,...>       Comma-separated list of CPUs to pin benchmark thread(s) (default: no pinning)\n"
+        "  -c <cpu0/cpu1,...> Comma-separated list of multi-CPU affinity.\n"
+        "                     nanosleep: CPU affinity of the only benchmark thread toggles cpu0 and cpu1 in -t intervals\n"
+        "                     networking: client and server pinned to cpu0 and cpu1 respectively, or both pinned to cpu0 if cpu1 is -1\n"
+        "                     futex: thread 1 and thread 2 pinned to cpu0 and cpu1 respectively, or both pinned to cpu0 if cpu1 is -1\n"
+        "  -t <interval,...>  Comma-separated list of CPU toggling intervals [ns], if CPU toggling is used with -c cpu0/cpu1 (default: 1000000)\n"
+        "  -p <pol/prio,...>  Comma-separated list of Scheduling policy/priority.\n"
+        "                     0=OTHER, 1=FIFO, 2=RR, 3=BATCH, 5=IDLE (default: 0/0), see sched_setscheduler(2)\n"
+        "  -f <min/max,...>   Comma-separated list of cpufreq min/max [kHz] pairs (default: 0/9999999)\n"
+        "  -i <min/max,...>   Comma-separated list of cpuidle min/max state pairs (default: 0/99)\n"
+        "  -B <busy,...>      Comma-separated list of busy durations [ns] (default: 0,1000,1000000)\n"
+        "  -s <sleep,...>     Comma-separated list of sleep durations [ns] (default: 0,1000,1000000)\n"
+        "  -r <repeats>       Number of repetitions for each measurement (default: 1)\n"
+        "  -I <iterations>    Number of iterations per measurement (default: 1000)\n"
+        "  -h                 Show this help message\n"
+        "\n"
+        "Example:\n"
+        "  sleep-accuracy -c 3/13,3,13 -t 1000000,100000 -p 0/0,1/1 -f 1200000/1200000,0/9999999 -i -1/-1,0/1,0/9 -B 20000 -s 50000 -I 10000 -r 5\n"
+        "    report requested sleep accuracy when...\n"
+        "    -c 3/13,3,13: migrating between CPUs 3 and 13 or running only on CPU 3 or 13\n"
+        "    -t 1000000,10000: ...migrating every 1 ms or 100 us,\n"
+        "    -p 0/0,1/1: ...with SCHED_OTHER prio0 or SCHED_FIFO prio1,\n"
+        "    -f 1200000/1200000,0/9999999: ...with CPU(s) fixed at 1.2 GHz or platforms min/max frequencies,\n"
+        "    -i -1/-1,0/1,0/9: ...with no states, only states 0 and 1, or all idle states enabled\n"
+        "    -B 20000: ...running busy for 20us before each sleep,\n"
+        "    -s 50000: ...requesting 50us sleep,\n"
+        "    -I 10000: ...repeating each measurement 10k times to get statistically significant results,\n"
+        "    -r 5: ...and repeating the whole measurement 5 times to see variation between runs.\n"
+    );
+}
+
+// delay - sleep for specified nanoseconds
+void delay(uint64_t ns) {
+    struct timespec req, rem;
+    req.tv_sec = ns / NS_PER_SEC;
+    req.tv_nsec = ns % NS_PER_SEC;
+    while (nanosleep(&req, &rem) == -1) {
+        req = rem; // continue sleeping for the remaining time if interrupted
+    }
+}
+
+// set_cpu_affinity - set CPU affinity of the main thread to a specific CPU
+void set_cpu_affinity(int cpu) {
+  cpu_set_t cpuset;
+  CPU_ZERO(&cpuset);
+  CPU_SET(cpu, &cpuset);
+  if (sched_setaffinity(main_thread_pid, sizeof(cpuset), &cpuset) == -1) {
+    perror("sched_setaffinity");
+    exit(EXIT_FAILURE);
+  }
+}
+
+// set_scheduler - set scheduling policy and priority
+void set_scheduler(int policy, int priority) {
+    struct sched_param param;
+    param.sched_priority = priority;
+    if (sched_setscheduler(0, policy, &param) == -1) {
+        perror("sched_setscheduler");
+        exit(EXIT_FAILURE);
+    }
+}
+
+// set_cpuidle_minmax - enable/disable cpuidle/stateX's
+void set_cpuidle_minmax(int cpu, int min, int max) {
+    char disable_filename[1024];
+    int state = 0;
+    FILE *f = NULL;
+    while (1) {
+        sprintf(disable_filename, "/sys/devices/system/cpu/cpu%d/cpuidle/state%d/disable", cpu, state);
+        FILE *f = fopen(disable_filename, "w");
+        if (!f) {
+            if (state == 0 && max != 99) {
+                perror("cannot open for writing: cpuidle/state0/disable");
+            }
+            break; // all cpuidle states processed
+        }
+        fprintf(f, "%d\n", (state < min || state > max) ? 1 : 0);
+        fflush(f);
+        fsync(fileno(f));
+        fclose(f);
+        state++;
+    }
+    if (f) fclose(f);
+}
+
+// get_cpuidle_minmax - read min and max cpuidle states for the CPU from sysfs
+void get_cpuidle_minmax(int cpu, int *min, int *max) {
+    char disable_filename[1024];
+    int state = 0;
+    FILE *f = NULL;
+    *min = -1;
+    *max = -1;
+    while (1) {
+        sprintf(disable_filename, "/sys/devices/system/cpu/cpu%d/cpuidle/state%d/disable", cpu, state);
+        f = fopen(disable_filename, "r");
+        if (!f) {
+            break; // all cpuidle states processed
+        }
+        int disabled = 0;
+        fscanf(f, "%d", &disabled);
+        fclose(f);
+        if (!disabled) {
+            if (*min == -1) *min = state;
+            *max = state;
+        }
+        state++;
+    }
+}
+
+// set_cpufreq_minmax - set min and max cpufreq for the CPU in sysfs
+void set_cpufreq_minmax(int cpu, int min, int max) {
+    char freq_filename[1024];
+    FILE *f = NULL;
+
+    sprintf(freq_filename, "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_max_freq", cpu);
+    f = fopen(freq_filename, "w");
+    if (f) {
+        fprintf(f, "%d\n", max);
+        fflush(f);
+        fsync(fileno(f));
+        fclose(f);
+    } else {
+        perror("cannot open for writing: cpufreq/scaling_max_freq");
+    }
+
+    sprintf(freq_filename, "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_min_freq", cpu);
+    f = fopen(freq_filename, "w");
+    if (f) {
+        fprintf(f, "%d\n", min);
+        fflush(f);
+        fsync(fileno(f));
+        fclose(f);
+    } else {
+        perror("cannot open for writing: cpufreq/scaling_min_freq");
+    }
+}
+
+// get_cpufreq_minmax - read min and max cpufreq for the CPU from sysfs
+void get_cpufreq_minmax(int cpu, int *min, int *max) {
+    char freq_filename[1024];
+    FILE *f = NULL;
+
+    sprintf(freq_filename, "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_max_freq", cpu);
+    f = fopen(freq_filename, "r");
+    if (f) {
+        fscanf(f, "%d", max);
+        fclose(f);
+    } else {
+        perror("cannot open for reading: cpufreq/scaling_max_freq");
+    }
+
+    sprintf(freq_filename, "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_min_freq", cpu);
+    f = fopen(freq_filename, "r");
+    if (f) {
+        fscanf(f, "%d", min);
+        fclose(f);
+    } else {
+        perror("cannot open for reading: cpufreq/scaling_min_freq");
+    }
+}
+
+// get_time_ns - get current time in nanoseconds
+uint64_t get_time_ns() {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (uint64_t)ts.tv_sec * NS_PER_SEC + (uint64_t)ts.tv_nsec;
+}
+
+// compare_uint64 - comparison function for qsort
+int compare_uint64(const void *a, const void *b) {
+  uint64_t val1 = *(const uint64_t *)a;
+  uint64_t val2 = *(const uint64_t *)b;
+  if (val1 < val2) return -1;
+  if (val1 > val2) return 1;
+  return 0;
+}
+
+// busy-wait for a specified duration
+void busy_wait(uint64_t duration_ns) {
+    u_int64_t start = get_time_ns();
+    while (get_time_ns() - start < duration_ns);
+}
+
+// reset_latencies - initialize latencies array with error value (-1)
+void reset_latencies(int64_t *latencies) {
+    for (int i = 0; i < options.iterations; i++) {
+        latencies[i] = -1;
+    }
+}
+
+// measure_nanosleep - perform measurements (all iterations) of nanosleep latency
+void measure_nanosleep(int64_t busy_ns, int64_t sleep_ns, int64_t *out_latencies, int cpu, int cpu_other, int64_t toggle_ns) {
+    int64_t iters = options.iterations;
+    pid_t toggler_pid = -1;
+
+    // Set CPU affinity for measurement thread (cpuX)
+    if (cpu != -1) {
+        set_cpu_affinity(cpu);
+    }
+
+    // Launch CPU toggler process if needed (when cpu_other is specified)
+    if (cpu != -1 && cpu_other != -1 && toggle_ns > 0) {
+        toggler_pid = fork();
+        if (toggler_pid < 0) {
+            perror("measure_nanosleep: fork for CPU toggler failed");
+            goto out;
+        }
+
+        if (toggler_pid == 0) {
+            // Child process - CPU toggler
+            // This process toggles the CPU affinity of the parent (measurement) thread.
+            // set_cpu_affinity() uses main_thread_pid, which refers to the parent process.
+            prctl(PR_SET_PDEATHSIG, SIGTERM); // ensure child exits when parent exits
+            if (getppid() == 1) {
+                exit(0); // parent already exited, so do we
+            }
+            while (1) {
+                set_cpu_affinity(cpu);
+                delay(toggle_ns);
+                set_cpu_affinity(cpu_other);
+                delay(toggle_ns);
+            }
+        }
+
+        // Parent process - give toggler some time to start
+        delay(toggle_ns * 2);
+    }
+
+    // Perform measurements
+    for (int i = 0; i < iters; i++) {
+        if (busy_ns > 0) {
+            busy_wait(busy_ns);  // Simulate work before sleep
+        }
+        int64_t sleep_start = get_time_ns();
+
+        // request a short sleep using nanosleep, even if sleep_ns is 0
+        if (sleep_ns >= 0) {
+            struct timespec req = {0, sleep_ns};
+            nanosleep(&req, NULL);
+        }
+
+        int64_t sleep_end = get_time_ns();
+        int64_t actual_sleep = sleep_end - sleep_start;
+        int64_t latency = actual_sleep - sleep_ns;
+
+        out_latencies[i] = latency;
+    }
+
+out:
+    // Ensure CPU toggler exits before returning
+    if (toggler_pid > 0) {
+        kill(toggler_pid, SIGTERM);
+        waitpid(toggler_pid, NULL, 0);
+    }
+}
+
+// measure_networking - measure networking latency using loopback socket communication
+// Server and client run in separate processes with optional CPU affinity
+void measure_networking(int64_t busy_ns, int64_t sleep_ns, int64_t *out_latencies, int cpu, int cpu_other) {
+    int64_t iters = options.iterations;
+    int server_fd = -1, client_fd = -1, conn_fd = -1;
+    struct sockaddr_in server_addr, client_addr;
+    socklen_t addr_len = sizeof(client_addr);
+    char buffer[1];
+    int pipe_fd[2] = {-1, -1};
+    pid_t pid = -1;
+    int opt = 1;
+
+    // Create pipe for synchronization
+    if (pipe(pipe_fd) < 0) {
+        perror("pipe creation failed");
+        goto out;
+    }
+
+    // Create server socket
+    server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_fd < 0) {
+        perror("socket creation failed");
+        goto out_close_pipe;
+    }
+
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt));
+
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    server_addr.sin_port = 0; // Let OS assign a port
+
+    if (bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        perror("bind failed");
+        goto out_close_server;
+    }
+
+    if (listen(server_fd, 1) < 0) {
+        perror("listen failed");
+        goto out_close_server;
+    }
+
+    // Get the assigned port
+    addr_len = sizeof(server_addr);
+    getsockname(server_fd, (struct sockaddr *)&server_addr, &addr_len);
+
+    // Fork to create server and client processes
+    pid = fork();
+    if (pid < 0) {
+        perror("fork failed");
+        goto out_close_server;
+    }
+
+    if (pid == 0) {
+        // Child process - Server
+        close(pipe_fd[0]);  // Close read end
+        pipe_fd[0] = -1;
+
+        // Set CPU affinity for server (cpuX)
+        if (cpu != -1) {
+            set_cpu_affinity(cpu);
+        }
+
+        // Signal parent that server is ready and listening
+        write(pipe_fd[1], "R", 1);
+
+        // Accept connection
+        conn_fd = accept(server_fd, (struct sockaddr *)&client_addr, &addr_len);
+        if (conn_fd < 0) {
+            perror("accept failed");
+            close(pipe_fd[1]);
+            close(server_fd);
+            exit(1);
+        }
+
+        // Server echo loop
+        for (int i = 0; i < iters; i++) {
+            // Receive from client
+            if (recv(conn_fd, buffer, 1, 0) <= 0) {
+                break;
+            }
+            buffer[0] = 'y';
+            // Echo back
+            if (send(conn_fd, buffer, 1, 0) <= 0) {
+                break;
+            }
+        }
+
+        close(conn_fd);
+        close(server_fd);
+        close(pipe_fd[1]);
+        exit(0);
+    }
+
+    // Parent process - Client
+    close(pipe_fd[1]);  // Close write end
+    pipe_fd[1] = -1;
+
+    // Set CPU affinity for client (cpuY if specified, otherwise cpuX)
+    if (cpu_other != -1) {
+        set_cpu_affinity(cpu_other);
+    } else if (cpu != -1) {
+        set_cpu_affinity(cpu);
+    }
+
+    // Wait for server to be ready
+    char ready_signal;
+    if (read(pipe_fd[0], &ready_signal, 1) <= 0) {
+        perror("Failed to receive ready signal from server");
+        goto out_kill_server;
+    }
+
+    // Create client socket
+    client_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (client_fd < 0) {
+        perror("client socket creation failed");
+        goto out_kill_server;
+    }
+
+    // Connect to server
+    if (connect(client_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        perror("connect failed");
+        goto out_close_client;
+    }
+
+    // Measure round-trip latency
+    for (int i = 0; i < iters; i++) {
+        if (busy_ns > 0) {
+            busy_wait(busy_ns);
+        }
+
+        if (sleep_ns > 0) {
+            struct timespec req = {0, sleep_ns};
+            nanosleep(&req, NULL);
+        }
+
+        int64_t start = get_time_ns();
+
+        // Send one byte.
+        // In case of error, skip writing out_latencies[i] (keep it as -1)
+        buffer[0] = 'x';
+        if (send(client_fd, buffer, 1, 0) < 0) {
+            continue;
+        }
+
+        // Receive echo back
+        if (recv(client_fd, buffer, 1, 0) < 0) {
+            continue;
+        }
+
+        int64_t end = get_time_ns();
+        int64_t latency = (end - start) / 2; // Divide by 2 for one-way latency approximation
+        if (buffer[0] != 'y') {
+            continue; // Invalid response, skip recording latency
+        }
+        out_latencies[i] = latency;
+    }
+
+out_close_client:
+    if (client_fd >= 0)
+        close(client_fd);
+out_kill_server:
+    if (pid > 0) {
+        kill(pid, SIGTERM);
+        waitpid(pid, NULL, 0);
+    }
+    if (pipe_fd[0] >= 0)
+        close(pipe_fd[0]);
+out_close_server:
+    if (server_fd >= 0)
+        close(server_fd);
+out_close_pipe:
+    if (pipe_fd[1] >= 0)
+        close(pipe_fd[1]);
+out:
+}
+
+// futex wrapper
+static long futex(uint32_t *uaddr, int futex_op, uint32_t val,
+                  const struct timespec *timeout, uint32_t *uaddr2, uint32_t val3) {
+    return syscall(SYS_futex, uaddr, futex_op, val, timeout, uaddr2, val3);
+}
+
+// Thread context for futex benchmark
+typedef struct {
+    uint32_t *futex_word1;
+    uint32_t *futex_word2;
+    uint32_t *value1;
+    uint32_t *value2;
+    int64_t *latencies;
+    int64_t busy_ns;
+    int64_t sleep_ns;
+    int cpu;
+    int iterations;
+    int is_thread1;
+} futex_thread_args_t;
+
+// measure_futex - measure futex synchronization latency between two threads
+// Thread 1 and thread 2 use futex for synchronization with optional CPU affinity
+void* futex_thread_func(void *arg) {
+    futex_thread_args_t *args = (futex_thread_args_t *)arg;
+    int iters = args->iterations;
+
+    // Set CPU affinity for this thread
+    if (args->cpu != -1) {
+        set_cpu_affinity(args->cpu);
+    }
+
+    if (args->is_thread1) {
+        // Thread 1: initiates the ping-pong
+        for (int i = 0; i < iters; i++) {
+            if (args->sleep_ns > 0) {
+                struct timespec req = {0, args->sleep_ns};
+                nanosleep(&req, NULL);
+            }
+
+            if (args->busy_ns > 0) {
+                busy_wait(args->busy_ns);
+            }
+
+            int64_t start = get_time_ns();
+
+            // Signal thread 2 by changing value and waking it
+            *args->value1 = i + 1;
+            __atomic_store_n(args->futex_word1, 1, __ATOMIC_SEQ_CST);
+            futex(args->futex_word1, FUTEX_WAKE, 1, NULL, NULL, 0);
+
+            // Wait for thread 2 to respond
+            while (__atomic_load_n(args->futex_word2, __ATOMIC_SEQ_CST) == 0) {
+                futex(args->futex_word2, FUTEX_WAIT, 0, NULL, NULL, 0);
+            }
+            __atomic_store_n(args->futex_word2, 0, __ATOMIC_SEQ_CST);
+
+            int64_t end = get_time_ns();
+
+            // Verify that thread 2 changed the value as expected
+            if (*args->value2 != i + 1) {
+                args->latencies[i] = -1;  // Mark as error
+                continue;
+            }
+
+            int64_t latency = (end - start) / 2;  // Divide by 2 for one-way latency
+            args->latencies[i] = latency;
+        }
+    } else {
+        // Thread 2: responds to thread 1
+        for (int i = 0; i < iters; i++) {
+            // Wait for thread 1 to signal
+            while (__atomic_load_n(args->futex_word1, __ATOMIC_SEQ_CST) == 0) {
+                futex(args->futex_word1, FUTEX_WAIT, 0, NULL, NULL, 0);
+            }
+            __atomic_store_n(args->futex_word1, 0, __ATOMIC_SEQ_CST);
+
+            // Verify that thread 1 changed the value as expected
+            if (*args->value1 != i + 1) {
+                // Error - just continue, thread 1 will mark the error
+                __atomic_store_n(args->futex_word2, 1, __ATOMIC_SEQ_CST);
+                futex(args->futex_word2, FUTEX_WAKE, 1, NULL, NULL, 0);
+                continue;
+            }
+
+            // Respond by changing value and waking thread 1
+            *args->value2 = i + 1;
+            __atomic_store_n(args->futex_word2, 1, __ATOMIC_SEQ_CST);
+            futex(args->futex_word2, FUTEX_WAKE, 1, NULL, NULL, 0);
+        }
+    }
+
+    return NULL;
+}
+
+void measure_futex(int64_t busy_ns, int64_t sleep_ns, int64_t *out_latencies, int cpu, int cpu_other) {
+    pthread_t thread1 = 0, thread2 = 0;
+    uint32_t *futex_word1 = NULL, *futex_word2 = NULL;
+    uint32_t *value1 = NULL, *value2 = NULL;
+    futex_thread_args_t args1, args2;
+    int ret;
+    void *thread_ret;
+
+    // Allocate shared memory for futex words and values
+    futex_word1 = malloc(sizeof(uint32_t));
+    if (!futex_word1) {
+        perror("malloc futex_word1 failed");
+        goto out;
+    }
+
+    futex_word2 = malloc(sizeof(uint32_t));
+    if (!futex_word2) {
+        perror("malloc futex_word2 failed");
+        goto out_free_futex1;
+    }
+
+    value1 = malloc(sizeof(uint32_t));
+    if (!value1) {
+        perror("malloc value1 failed");
+        goto out_free_futex2;
+    }
+
+    value2 = malloc(sizeof(uint32_t));
+    if (!value2) {
+        perror("malloc value2 failed");
+        goto out_free_value1;
+    }
+
+    // Initialize futex words and values
+    *futex_word1 = 0;
+    *futex_word2 = 0;
+    *value1 = 0;
+    *value2 = 0;
+
+    // Setup arguments for thread 1
+    args1.futex_word1 = futex_word1;
+    args1.futex_word2 = futex_word2;
+    args1.value1 = value1;
+    args1.value2 = value2;
+    args1.latencies = out_latencies;
+    args1.busy_ns = busy_ns;
+    args1.sleep_ns = sleep_ns;
+    args1.cpu = cpu;
+    args1.iterations = options.iterations;
+    args1.is_thread1 = 1;
+
+    // Setup arguments for thread 2
+    args2.futex_word1 = futex_word1;
+    args2.futex_word2 = futex_word2;
+    args2.value1 = value1;
+    args2.value2 = value2;
+    args2.latencies = NULL;  // Thread 2 doesn't record latencies
+    args2.busy_ns = 0;       // Only thread 1 does busy-wait
+    args2.sleep_ns = 0;      // Only thread 1 does sleep
+    args2.cpu = (cpu_other != -1) ? cpu_other : cpu;
+    args2.iterations = options.iterations;
+    args2.is_thread1 = 0;
+
+    // Create thread 2 first (responder)
+    ret = pthread_create(&thread2, NULL, futex_thread_func, &args2);
+    if (ret != 0) {
+        perror("pthread_create thread2 failed");
+        thread2 = 0;
+        goto out_free_value2;
+    }
+
+    // Create thread 1 (initiator)
+    ret = pthread_create(&thread1, NULL, futex_thread_func, &args1);
+    if (ret != 0) {
+        perror("pthread_create thread1 failed");
+        thread1 = 0;
+        goto out_join_thread2;
+    }
+
+    // Wait for thread 1 to complete
+    pthread_join(thread1, &thread_ret);
+    thread1 = 0;
+
+out_join_thread2:
+    if (thread2 != 0)
+        pthread_join(thread2, &thread_ret);
+out_free_value2:
+    if (value2)
+        free(value2);
+out_free_value1:
+    if (value1)
+        free(value1);
+out_free_futex2:
+    if (futex_word2)
+        free(futex_word2);
+out_free_futex1:
+    if (futex_word1)
+        free(futex_word1);
+out:
+    return;
+}
+
+const char* benchmark_name(benchmark_type_t type) {
+    switch (type) {
+        case BENCHMARK_NANOSLEEP: return "nanosleep";
+        case BENCHMARK_NETWORKING: return "networking";
+        case BENCHMARK_FUTEX: return "futex";
+        default: return "unknown";
+    }
+}
+
+void print_latencies(int64_t *latencies) {
+    uint64_t total_latency = 0;
+    int64_t iters = options.iterations;
+    for (int i = 0; i < iters; i++) {
+        total_latency += latencies[i];
+    }
+
+    // Sort latencies for percentile calculation
+    qsort(latencies, iters, sizeof(uint64_t), compare_uint64);
+
+    double avg_latency = (double)total_latency / iters;
+
+    // Calculate percentiles
+    int64_t min = latencies[0];
+    int64_t p5 = latencies[(int)(iters * 0.05)];
+    int64_t p50 = latencies[(int)(iters * 0.5)];
+    int64_t p80 = latencies[(int)(iters * 0.8)];
+    int64_t p90 = latencies[(int)(iters * 0.9)];
+    int64_t p95 = latencies[(int)(iters * 0.95)];
+    int64_t p99 = latencies[(int)(iters * 0.99)];
+    int64_t p999 = latencies[(int)(iters * 0.999)];
+    int64_t max = latencies[iters - 1];
+
+    // Print results
+    printf("%ld %ld %ld %ld %ld %ld %ld %ld %ld %.0f", min, p5, p50, p80, p90, p95, p99, p999, max, avg_latency);
+}
+
+void parse_options(int argc, char *argv[]) {
+    // Default values
+    options.cpu_count = 0;
+    options.polprio_count = 0;
+    options.busy_count = 0;
+    options.sleep_count = 0;
+    options.toggle_count = 0;
+    options.benchmark_count = 0;
+    options.iterations = 1000;
+    options.repeats = 1;
+
+    options.polprio[options.polprio_count][0] = 0; // Default policy OTHER
+    options.polprio[options.polprio_count++][1] = 0; // Default priority 0
+
+    options.cpuidle_minmax[options.cpuidle_count][0] = 0; // Default cpuidle min state
+    options.cpuidle_minmax[options.cpuidle_count++][1] = 99; // Default cpuidle max state
+
+    options.cpufreq_minmax[options.cpufreq_count][0] = 0; // Default cpufreq min [kHz]
+    options.cpufreq_minmax[options.cpufreq_count++][1] = 9999999; // Default cpufreq max [kHz]
+
+    options.benchmarks[options.benchmark_count++] = BENCHMARK_NANOSLEEP; // Default benchmark
+
+    options.busy_times[options.busy_count++] = 0;
+    options.busy_times[options.busy_count++] = 1000;
+    options.busy_times[options.busy_count++] = 1000000;
+
+    options.sleep_times[options.sleep_count++] = 0;
+    options.sleep_times[options.sleep_count++] = 1000;
+    options.sleep_times[options.sleep_count++] = 1000000;
+
+    options.toggle_intervals[options.toggle_count++] = 1000000; // Default 1 ms
+
+    // Parse command-line arguments
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-c") == 0 && i + 1 < argc) {
+            char *token = strtok(argv[++i], ",");
+            while (token && options.cpu_count < MAX_COMB) {
+                char *slash = strchr(token, '/');
+                if (slash) {
+                    *slash = '\0';
+                    options.cpus[options.cpu_count][0] = atoi(token);
+                    options.cpus[options.cpu_count++][1] = atoi(slash + 1);
+                } else {
+                    options.cpus[options.cpu_count++][0] = atoi(token);
+                    options.cpus[options.cpu_count - 1][1] = -1; // indicate single CPU pinning
+                }
+                token = strtok(NULL, ",");
+            }
+        } else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
+            options.polprio_count = 0; // Reset defaults
+            char *token = strtok(argv[++i], ",");
+            while (token && options.polprio_count < MAX_COMB) {
+                char *slash = strchr(token, '/');
+                if (slash) {
+                    *slash = '\0';
+                    options.polprio[options.polprio_count][0] = atoi(token);
+                    options.polprio[options.polprio_count++][1] = atoi(slash + 1);
+                }
+                token = strtok(NULL, ",");
+            }
+        } else if (strcmp(argv[i], "-i") == 0 && i + 1 < argc) {
+            options.cpuidle_count = 0; // Reset defaults
+            char *token = strtok(argv[++i], ",");
+            while (token && options.cpuidle_count < MAX_COMB) {
+                char *slash = strchr(token, '/');
+                if (slash) {
+                    *slash = '\0';
+                    options.cpuidle_minmax[options.cpuidle_count][0] = atoi(token);
+                    options.cpuidle_minmax[options.cpuidle_count++][1] = atoi(slash + 1);
+                }
+                token = strtok(NULL, ",");
+            }
+        } else if (strcmp(argv[i], "-f") == 0 && i + 1 < argc) {
+            options.cpufreq_count = 0; // Reset defaults
+            char *token = strtok(argv[++i], ",");
+            while (token && options.cpufreq_count < MAX_COMB) {
+                char *slash = strchr(token, '/');
+                if (slash) {
+                    *slash = '\0';
+                    options.cpufreq_minmax[options.cpufreq_count][0] = atoi(token);
+                    options.cpufreq_minmax[options.cpufreq_count++][1] = atoi(slash + 1);
+                }
+                token = strtok(NULL, ",");
+            }
+        } else if (strcmp(argv[i], "-b") == 0 && i + 1 < argc) {
+            options.benchmark_count = 0; // Reset defaults
+            char *token = strtok(argv[++i], ",");
+            while (token && options.benchmark_count < MAX_COMB) {
+                if (strcmp(token, "nanosleep") == 0) {
+                    options.benchmarks[options.benchmark_count++] = BENCHMARK_NANOSLEEP;
+                } else if (strcmp(token, "networking") == 0) {
+                    options.benchmarks[options.benchmark_count++] = BENCHMARK_NETWORKING;
+                } else if (strcmp(token, "futex") == 0) {
+                    options.benchmarks[options.benchmark_count++] = BENCHMARK_FUTEX;
+                } else {
+                    fprintf(stderr, "Unknown benchmark: %s\n", token);
+                    exit(EXIT_FAILURE);
+                }
+                token = strtok(NULL, ",");
+            }
+        } else if (strcmp(argv[i], "-B") == 0 && i + 1 < argc) {
+            options.busy_count = 0; // Reset defaults
+            char *token = strtok(argv[++i], ",");
+            while (token && options.busy_count < MAX_COMB) {
+                options.busy_times[options.busy_count++] = strtoull(token, NULL, 10);
+                token = strtok(NULL, ",");
+            }
+        } else if (strcmp(argv[i], "-s") == 0 && i + 1 < argc) {
+            options.sleep_count = 0; // Reset defaults
+            char *token = strtok(argv[++i], ",");
+            while (token && options.sleep_count < MAX_COMB) {
+                options.sleep_times[options.sleep_count++] = strtoull(token, NULL, 10);
+                token = strtok(NULL, ",");
+            }
+        } else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
+            options.toggle_count = 0; // Reset defaults
+            char *token = strtok(argv[++i], ",");
+            while (token && options.toggle_count < MAX_COMB) {
+                options.toggle_intervals[options.toggle_count++] = strtoull(token, NULL, 10);
+                token = strtok(NULL, ",");
+            }
+        } else if (strcmp(argv[i], "-I") == 0 && i + 1 < argc) {
+            options.iterations = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "-r") == 0 && i + 1 < argc) {
+            options.repeats = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "-h") == 0) {
+            print_usage();
+            exit(0);
+        } else {
+            fprintf(stderr, "Unknown option: %s\n", argv[i]);
+            exit(EXIT_FAILURE);
+        }
+    }
+}
+
+
+
+int main(int argc, char *argv[]) {
+    int64_t *latencies;
+    parse_options(argc, argv);
+
+    latencies = malloc(sizeof(int64_t) * options.iterations);
+    if(!latencies) {
+        perror("allocating memory for latencies failed");
+        exit(EXIT_FAILURE);
+    }
+
+    main_thread_pid = getpid();
+
+    printf("benchmark round cpu0 cpu1 cpumigr_ns schedpol schedprio idlemin idlemax freqmin freqmax busy_ns sleep_ns min p5 p50 p80 p90 p95 p99 p999 max avg\n");
+
+    for (int r = 0; r < options.repeats; r++) {
+
+        for (int bench_idx = 0; bench_idx < options.benchmark_count; bench_idx++) {
+            benchmark_type_t benchmark = options.benchmarks[bench_idx];
+
+        for (int toggle_idx = 0; toggle_idx < options.toggle_count; toggle_idx++) {
+            int toggle_ns = options.toggle_intervals[toggle_idx];
+
+            for (int cpu_idx = 0; cpu_idx < (options.cpu_count ? options.cpu_count : 1); cpu_idx++) {
+                int cpu = options.cpu_count ? options.cpus[cpu_idx][0] : -1;
+                int cpu_other = options.cpu_count ? options.cpus[cpu_idx][1] : -1;
+
+
+                for (int pp_idx = 0; pp_idx < options.polprio_count; pp_idx++) {
+                    set_scheduler(options.polprio[pp_idx][0], options.polprio[pp_idx][1]);
+
+                    for (int cpuidle_idx = 0; cpuidle_idx < options.cpuidle_count; cpuidle_idx++) {
+                        int cpuidle_min = -1;
+                        int cpuidle_max = -1;
+                        if (cpu != -1) {
+                            cpuidle_min = options.cpuidle_minmax[cpuidle_idx][0];
+                            cpuidle_max = options.cpuidle_minmax[cpuidle_idx][1];
+                            set_cpuidle_minmax(cpu, cpuidle_min, cpuidle_max);
+                            if (cpu_other != -1) {
+                                set_cpuidle_minmax(cpu_other, cpuidle_min, cpuidle_max);
+                            }
+                        }
+
+                        for (int cpufreq_idx = 0; cpufreq_idx < options.cpufreq_count; cpufreq_idx++) {
+                            int cpufreq_min = -1;
+                            int cpufreq_max = -1;
+                            if (cpu != -1) {
+                                cpufreq_min = options.cpufreq_minmax[cpufreq_idx][0];
+                                cpufreq_max = options.cpufreq_minmax[cpufreq_idx][1];
+                                set_cpufreq_minmax(cpu, cpufreq_min, cpufreq_max);
+                                if (cpu_other != -1) {
+                                    set_cpufreq_minmax(cpu_other, cpufreq_min, cpufreq_max);
+                                }
+                            }
+
+                            for (int b_idx = 0; b_idx < options.busy_count; b_idx++) {
+
+                                for (int s_idx = 0; s_idx < options.sleep_count; s_idx++) {
+
+                                    // Reset latencies array to -1 before measurement
+                                    reset_latencies(latencies);
+
+                                    if (cpu != -1) {
+                                        delay(10 * MILLISECOND); // give kernel some time for affinity, cpufreq and cpuidle settings to take effect
+                                        get_cpufreq_minmax(cpu, &cpufreq_min, &cpufreq_max);
+                                        get_cpuidle_minmax(cpu, &cpuidle_min, &cpuidle_max);
+                                    }
+
+                                    // Call the appropriate benchmark function
+                                    switch (benchmark) {
+                                        case BENCHMARK_NANOSLEEP:
+                                            measure_nanosleep(options.busy_times[b_idx], options.sleep_times[s_idx], latencies, cpu, cpu_other, toggle_ns);
+                                            break;
+                                        case BENCHMARK_NETWORKING:
+                                            measure_networking(options.busy_times[b_idx], options.sleep_times[s_idx], latencies, cpu, cpu_other);
+                                            break;
+                                        case BENCHMARK_FUTEX:
+                                            measure_futex(options.busy_times[b_idx], options.sleep_times[s_idx], latencies, cpu, cpu_other);
+                                            break;
+                                    }
+
+                                    // print measurement parameters and results
+                                    printf("%s %d %d %d %ld %d %d %d %d %d %d %ld %ld ",
+                                           benchmark_name(benchmark),
+                                           r + 1,
+                                           cpu,
+                                           cpu_other,
+                                           cpu_other != -1 ? toggle_ns : -1,
+                                           options.polprio[pp_idx][0],
+                                           options.polprio[pp_idx][1],
+                                           cpuidle_min,
+                                           cpuidle_max,
+                                           cpufreq_min,
+                                           cpufreq_max,
+                                           options.busy_times[b_idx],
+                                           options.sleep_times[s_idx]);
+                                    print_latencies(latencies);
+                                    printf("\n");
+                                    fflush(stdout);
+                                }
+                            }
+
+                            if (cpu != -1) set_cpufreq_minmax(cpu, 0, 9999999); // reset cpufreq
+                            if (cpu_other != -1) set_cpufreq_minmax(cpu_other, 0, 9999999); // reset cpufreq
+                        }
+
+                        if (cpu != -1) set_cpuidle_minmax(cpu, 0, 99); // reset cpuidle
+                        if (cpu_other != -1) set_cpuidle_minmax(cpu_other, 0, 99); // reset cpuidle
+                    }
+                }
+            }
+        }
+        }
+    }
+}
