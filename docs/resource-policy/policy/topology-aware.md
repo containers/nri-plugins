@@ -197,6 +197,72 @@ Additionally, the following sub-configuration is available for instrumentation:
      `httpEndpoint`.
   - `reportPeriod`: `/metrics` aggregation interval for polled metrics.
 
+## Setting Reserved and Available Resources
+
+Available and reserved resources are set up using the `availableResources`
+and `reservedResources` configuration options.
+
+Available resources can be used to set aside otherwise available CPU and
+memory resources and prevent the policy from assigning them to any workload.
+If available resources are omitted the policy can and will assign resources
+to workloads from the full available set.
+
+Reserved resources reserve resources for the control plane, which by default
+is all workloads in the `kube-system` namespace. Reserved resources cannot be
+omitted. At least some amount of CPU must be reserved.
+
+Both available and reserved resources can contain CPU and memory. Memory can
+be defined using the same quantity notation as in container resource requests
+and limits. CPU can be defined as quantity, amount of CPU to allocate to be
+available or reserved, or as an explicit CPU set either to be allocated or to
+be excluded from the allocated set.
+
+A common case for the reserved resources is to set aside CPU for the control
+plane by quantity. The following fragment reserves 0.75 CPUs
+
+```yaml
+...
+  reservedResources:
+    cpu: 750m
+...
+```
+
+Alternatively, one can reserve full CPU cores explicitly. For instance this
+configuration fragment reserves CPUs 0-1 for the control plane.
+
+```yaml
+...
+  reservedResources:
+    cpu: cpuset:0-1
+...
+```
+
+A typical use case for available resources is to set aside some CPUs for
+system daemons unrelated to Kubernetes. The following configuration leaves
+CPUs 0-1 unallocated for the available set on a system with 128 CPUs thus
+leaving them for use by other daemons.
+
+```yaml
+...
+  availableResources:
+    cpu: cpuset:2-128
+...
+```
+
+One can also specify available CPUs by explicitly excluding the ones that
+should be set aside for other use:
+
+```yaml
+...
+  availableResources:
+    cpu: exclude-cpuset:0-1
+...
+```
+
+Note that both for the available and reserved resources you should make
+sure that the policy settings match any comparable settings of the node
+agent, the kubelet.
+
 ## Policy CPU Allocation Preferences
 
 There are a number of workload properties this policy actively checks to decide
