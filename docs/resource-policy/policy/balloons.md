@@ -925,6 +925,9 @@ and whose position in the balloon type list can be changed.
   - Preferred CPUs: `"cpuset:0,48"` prefers using CPU 0 and 48. Uses
     many enough to satisfy container CPU requests, but no more than
     that.
+  - Excluded CPUs: `"exclude-cpuset:4-48"` prefers using any other CPUs
+    present in `availableResources.cpu` than CPUs 4-63. E.g. if CPUs
+    0-63 are available, this will result in CPU set 0-3.
   - Quantity: `"2000m"` or `"2"` uses at least 2 CPUs.
   - If `minCPUs` is explicitly set for `reserved` balloon type, that
     overrides the quantity.
@@ -1007,6 +1010,11 @@ balloonTypes:
 
 **`availableResources`** (object, policy-level configuration):
 - `cpu` (string): CPUset managed by the policy.
+  - Explicit CPUs to use: `"cpuset:4-48"` sets the available CPUs to
+    the given set, CPUs 4-48.
+  - CPUs to exclude: `"exclude-cpuset:0-3"` sets the available CPUs to
+    all but the given set. E.g. if the system has CPUs 0-127, this will
+    result in CPUs 4-127.
 - All balloons use only CPUs from this set.
 - Useful for reserving CPUs for non-policy-managed workloads.
 
