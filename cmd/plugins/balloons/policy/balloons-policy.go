@@ -1653,6 +1653,13 @@ func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
 			return balloonsError("failed to parse available CPU cpuset '%s': %w", amount, err)
 		}
 		availableCpus = cset
+	case cfgapi.AmountExcludeCPUSet:
+		cset, err := amount.ParseCPUSet()
+		if err != nil {
+			return balloonsError("failed to parse available CPU cpuset '%s': %w", amount, err)
+		}
+		availableCpus = p.options.System.CPUSet().Difference(cset)
+
 	case cfgapi.AmountQuantity:
 		return balloonsError("can't handle CPU resources given as resource.Quantity (%v)", amount)
 	case cfgapi.AmountAbsent:
@@ -1781,7 +1788,7 @@ func (p *balloons) fillBuiltinBalloonDefs(bpoptions *BalloonsOptions) (*BalloonD
 	// definitions.
 	amount, kind := bpoptions.ReservedResources.Get(cfgapi.CPU)
 	switch kind {
-	case cfgapi.AmountCPUSet:
+	case cfgapi.AmountCPUSet, cfgapi.AmountExcludeCPUSet:
 		// Explicitly specified reserved cpuset. Raise
 		// allocator priority to Normal to catch these CPUs
 		// before other Normal-priority balloon types defined
@@ -1793,6 +1800,10 @@ func (p *balloons) fillBuiltinBalloonDefs(bpoptions *BalloonsOptions) (*BalloonD
 		if err != nil {
 			return nil, nil, balloonsError("failed to parse reserved CPU cpuset '%s': %v", amount, err)
 		}
+		if kind == cfgapi.AmountExcludeCPUSet {
+			cset = p.allowed.Difference(cset)
+		}
+
 		if cset.Difference(p.allowed).Size() > 0 {
 			return nil, nil, balloonsError("ReservedResources cpus %s contains CPUs not in AllowedResources %s, namely %s",
 				cset, p.allowed, cset.Difference(p.allowed))

@@ -35,11 +35,12 @@ type (
 )
 
 const (
-	CPU            = policy.CPU
-	Memory         = policy.Memory
-	AmountAbsent   = policy.AmountAbsent
-	AmountQuantity = policy.AmountQuantity
-	AmountCPUSet   = policy.AmountCPUSet
+	CPU                 = policy.CPU
+	Memory              = policy.Memory
+	AmountAbsent        = policy.AmountAbsent
+	AmountQuantity      = policy.AmountQuantity
+	AmountCPUSet        = policy.AmountCPUSet
+	AmountExcludeCPUSet = policy.AmountExcludeCPUSet
 
 	CPUTopologyLevelUndefined = policy.CPUTopologyLevelUndefined
 	CPUTopologyLevelSystem    = policy.CPUTopologyLevelSystem
