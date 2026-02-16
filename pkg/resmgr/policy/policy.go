@@ -20,6 +20,7 @@ import (
 	"sort"
 
 	"k8s.io/apimachinery/pkg/api/resource"
+	apitypes "k8s.io/apimachinery/pkg/types"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
@@ -56,6 +57,8 @@ type ConstraintSet map[Domain]Constraint
 type Options struct {
 	// SendEvent is the function for delivering events back to the resource manager.
 	SendEvent SendEventFn
+	// PublishCPUs is the function for publishing CPUs as DRA devices.
+	PublishCPUs PublishCPUFn
 }
 
 // BackendOptions describes the options for a policy backend instance
@@ -66,6 +69,8 @@ type BackendOptions struct {
 	Cache cache.Cache
 	// SendEvent is the function for delivering events up to the resource manager.
 	SendEvent SendEventFn
+	// PublishCPUs publishes CPUs as DRA devices.
+	PublishCPUs PublishCPUFn
 	// Config is the policy-specific configuration.
 	Config interface{}
 }
@@ -76,6 +81,22 @@ type CreateFn func(*BackendOptions) Backend
 // SendEventFn is the type for a function to send events back to the resource manager.
 type SendEventFn func(interface{}) error
 
+// PublishCPUFn is the type for a function to publish CPUs as DRA devices.
+type PublishCPUFn func([]ID) error
+
+// Claim represents a DRA Resource Claim, for CPUs.
+type Claim interface {
+	GetUID() UID
+	GetPods() []UID
+	GetDevices() []ID
+	String() string
+}
+
+type (
+	UID = apitypes.UID
+	ID  = system.ID
+)
+
 const (
 	// ExportedResources is the basename of the file container resources are exported to.
 	ExportedResources = "resources.sh"
@@ -85,6 +106,8 @@ const (
 	ExportIsolatedCPUs = "ISOLATED_CPUS"
 	// ExportExclusiveCPUs is the shell variable used to export exclusive container CPUs.
 	ExportExclusiveCPUs = "EXCLUSIVE_CPUS"
+	// ExportClaimedCPUs is the shell variable used to export DRA-claimed container CPUs.
+	ExportClaimedCPUs = "CLAIMED_CPUS"
 )
 
 // Backend is the policy (decision making logic) interface exposed by implementations.
@@ -110,6 +133,10 @@ type Backend interface {
 	ReleaseResources(cache.Container) error
 	// UpdateResources updates resource allocations of a container.
 	UpdateResources(cache.Container) error
+	// AllocateClaim allocates CPUs for the claim.
+	AllocateClaim(Claim) error
+	// ReleaseClaim releases CPUs of the claim.
+	ReleaseClaim(Claim) error
 	// HandleEvent processes the given event. The returned boolean indicates whether
 	// changes have been made to any of the containers while handling the event.
 	HandleEvent(*events.Policy) (bool, error)
@@ -123,6 +150,8 @@ type Backend interface {
 type Policy interface {
 	// ActivePolicy returns the name of the policy backend in use.
 	ActivePolicy() string
+	// System returns the sysfs instance used by the policy.
+	System() system.System
 	// Start starts up policy, prepare for serving resource management requests.
 	Start(interface{}) error
 	// Reconfigure the policy.
@@ -135,6 +164,10 @@ type Policy interface {
 	ReleaseResources(cache.Container) error
 	// UpdateResources updates resource allocations of a container.
 	UpdateResources(cache.Container) error
+	// AllocateClaim allocates CPUs for the claim.
+	AllocateClaim(Claim) error
+	// ReleaseClaim releases CPUs of the claim.
+	ReleaseClaim(Claim) error
 	// HandleEvent passes on the given event to the active policy. The returned boolean
 	// indicates whether changes have been made to any of the containers while handling
 	// the event.
@@ -244,15 +277,20 @@ func (p *policy) ActivePolicy() string {
 	return ""
 }
 
+func (p *policy) System() system.System {
+	return p.system
+}
+
 // Start starts up policy, preparing it for serving requests.
 func (p *policy) Start(cfg interface{}) error {
 	log.Info("activating '%s' policy...", p.active.Name())
 
 	if err := p.active.Setup(&BackendOptions{
-		Cache:     p.cache,
-		System:    p.system,
-		SendEvent: p.options.SendEvent,
-		Config:    cfg,
+		Cache:       p.cache,
+		System:      p.system,
+		SendEvent:   p.options.SendEvent,
+		PublishCPUs: p.options.PublishCPUs,
+		Config:      cfg,
 	}); err != nil {
 		return err
 	}
@@ -298,6 +336,16 @@ func (p *policy) ReleaseResources(c cache.Container) error {
 func (p *policy) UpdateResources(c cache.Container) error {
 	defer p.scollect.Update()
 	return p.active.UpdateResources(c)
+}
+
+// AllocateClaim allocates CPUs for the claim.
+func (p *policy) AllocateClaim(claim Claim) error {
+	return p.active.AllocateClaim(claim)
+}
+
+// ReleaseClaim releases CPUs of the claim.
+func (p *policy) ReleaseClaim(claim Claim) error {
+	return p.active.ReleaseClaim(claim)
 }
 
 // HandleEvent passes on the given event to the active policy.

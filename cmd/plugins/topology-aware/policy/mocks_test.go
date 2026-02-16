@@ -30,6 +30,7 @@ import (
 	"github.com/intel/goresctrl/pkg/sst"
 	idset "github.com/intel/goresctrl/pkg/utils"
 	v1 "k8s.io/api/core/v1"
+	resapi "k8s.io/api/resource/v1"
 )
 
 type mockSystemNode struct {
@@ -207,6 +208,10 @@ func (c *mockCPU) CoreKind() sysfs.CoreKind {
 	return sysfs.PerformanceCore
 }
 
+func (c *mockCPU) DRA(extras ...map[sysfs.QualifiedName]sysfs.Attribute) *resapi.Device {
+	panic("unimplmented")
+}
+
 type mockSystem struct {
 	isolatedCPU  int
 	nodes        []sysfs.Node
@@ -348,6 +353,9 @@ func (fake *mockSystem) NodeDistance(idset.ID, idset.ID) int {
 func (fake *mockSystem) NodeHintToCPUs(string) string {
 	return ""
 }
+func (fake *mockSystem) CPUsAsDRADevices(ids []idset.ID) []resapi.Device {
+	panic("unimplemented")
+}
 
 type mockContainer struct {
 	name                                  string
@@ -406,6 +414,9 @@ func (m *mockContainer) GetAnnotation(string, interface{}) (string, bool) {
 	panic("unimplemented")
 }
 func (m *mockContainer) GetEnv(string) (string, bool) {
+	panic("unimplemented")
+}
+func (m *mockContainer) GetEnvList() []string {
 	panic("unimplemented")
 }
 func (m *mockContainer) GetAnnotations() map[string]string {
@@ -751,6 +762,12 @@ func (m *mockCache) SetPolicyEntry(string, interface{}) {
 }
 func (m *mockCache) GetPolicyEntry(string, interface{}) bool {
 	return m.returnValueForGetPolicyEntry
+}
+func (m *mockCache) SetEntry(string, interface{}) {
+	panic("unimplemented")
+}
+func (m *mockCache) GetEntry(string, interface{}) (interface{}, error) {
+	panic("unimplemented")
 }
 func (m *mockCache) Save() error {
 	return nil

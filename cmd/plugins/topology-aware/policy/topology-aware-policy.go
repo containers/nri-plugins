@@ -150,6 +150,10 @@ func (p *policy) Start() error {
 	}
 	p.metrics = m
 
+	if err := p.options.PublishCPUs(p.allowed.Difference(p.reserved).List()); err != nil {
+		log.Errorf("failed to publish CPU DRA resources: %v", err)
+	}
+
 	return nil
 }
 
@@ -291,6 +295,18 @@ func (p *policy) UpdateResources(container cache.Container) error {
 	return nil
 }
 
+// AllocateClaim allocates CPUs for the claim.
+func (p *policy) AllocateClaim(claim policyapi.Claim) error {
+	log.Info("allocating claim %s for pods %v...", claim.String(), claim.GetPods())
+	return p.allocateClaim(claim)
+}
+
+// ReleaseClaim releases CPUs of the claim.
+func (p *policy) ReleaseClaim(claim policyapi.Claim) error {
+	log.Info("releasing claim %s for pods %v...", claim.String(), claim.GetPods())
+	return p.releaseClaim(claim)
+}
+
 // HandleEvent handles policy-specific events.
 func (p *policy) HandleEvent(e *events.Policy) (bool, error) {
 	log.Debug("received policy event %s.%s with data %v...", e.Source, e.Type, e.Data)
@@ -404,8 +420,9 @@ func (p *policy) ExportResourceData(c cache.Container) map[string]string {
 
 	data := map[string]string{}
 	shared := grant.SharedCPUs().String()
-	isolated := grant.ExclusiveCPUs().Intersection(grant.GetCPUNode().GetSupply().IsolatedCPUs())
+	isolated := grant.ExclusiveCPUs().Union(grant.ClaimedCPUs()).Intersection(grant.GetCPUNode().GetSupply().IsolatedCPUs())
 	exclusive := grant.ExclusiveCPUs().Difference(isolated).String()
+	claimed := grant.ClaimedCPUs().String()
 
 	if grant.SharedPortion() > 0 && shared != "" {
 		data[policyapi.ExportSharedCPUs] = shared
@@ -415,6 +432,9 @@ func (p *policy) ExportResourceData(c cache.Container) map[string]string {
 	}
 	if exclusive != "" {
 		data[policyapi.ExportExclusiveCPUs] = exclusive
+	}
+	if claimed != "" {
+		data[policyapi.ExportClaimedCPUs] = claimed
 	}
 
 	mems := grant.GetMemoryZone()
@@ -515,6 +535,10 @@ func (p *policy) Reconfigure(newCfg interface{}) error {
 		return err
 	}
 	p.metrics = m
+
+	if err := p.options.PublishCPUs(p.allowed.Difference(p.reserved).List()); err != nil {
+		log.Errorf("failed to publish CPU DRA resources: %v", err)
+	}
 
 	return nil
 }
@@ -668,7 +692,11 @@ func (p *policy) newAllocations() allocations {
 
 // clone creates a copy of the allocation.
 func (a *allocations) clone() allocations {
-	o := allocations{policy: a.policy, grants: make(map[string]Grant)}
+	o := allocations{
+		policy: a.policy,
+		grants: make(map[string]Grant),
+		//claims: make(map[string][]policyapi.Claim),
+	}
 	for id, grant := range a.grants {
 		o.grants[id] = grant.Clone()
 	}
