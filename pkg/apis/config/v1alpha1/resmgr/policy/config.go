@@ -44,8 +44,10 @@ const (
 	AmountAbsent AmountKind = iota
 	AmountQuantity
 	AmountCPUSet
+	AmountExcludeCPUSet
 
-	PrefixCPUSet = "cpuset:"
+	PrefixCPUSet        = "cpuset:"
+	PrefixExcludeCPUSet = "exclude-cpuset:"
 
 	CPUTopologyLevelUndefined CPUTopologyLevel = ""
 	CPUTopologyLevelSystem    CPUTopologyLevel = "system"
@@ -100,6 +102,8 @@ func (c Constraints) Get(d Domain) (Amount, AmountKind) {
 	switch {
 	case strings.HasPrefix(a, PrefixCPUSet):
 		return Amount(strings.TrimPrefix(a, PrefixCPUSet)), AmountCPUSet
+	case strings.HasPrefix(a, PrefixExcludeCPUSet):
+		return Amount(strings.TrimPrefix(a, PrefixExcludeCPUSet)), AmountExcludeCPUSet
 	default:
 		return amount, AmountQuantity
 	}
