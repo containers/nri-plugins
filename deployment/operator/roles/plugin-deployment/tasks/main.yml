@@ -8,7 +8,7 @@
   block:
     - name: Set plugin chart reference
       set_fact:
-        chart_ref: "nri-plugins/nri-{{ 'resource-policy-' if pluginName in ['topology-aware', 'balloons'] else '' }}{{ pluginName }}"
+        chart_ref: "nri-plugins/nri-{{ 'resource-policy-' if pluginName in ['template', 'topology-aware', 'balloons'] else '' }}{{ pluginName }}"
 
     - name: Deploy {{ pluginName }} plugin
       kubernetes.core.helm:
@@ -16,17 +16,23 @@
         chart_ref: "{{ chart_ref }}"
         release_namespace: "{{ ansible_operator_meta.namespace }}"
         chart_version: "{{ pluginVersion }}"
-        wait: True
-        create_namespace: True
+        wait: true
+        create_namespace: true
         values: "{{ values | default({}) }}"
-        skip_crds: True
+        skip_crds: true
+      environment:
+        KUBECONFIG: ""
+        K8S_AUTH_KUBECONFIG: ""
   when:
-  - state == "present"
-  - pluginName in ["topology-aware", "balloons", "memory-qos", "memtierd", "sgx-epc"]
+    - state == "present"
+    - pluginName in ["template", "topology-aware", "balloons", "memory-qos", "memtierd", "sgx-epc"]
 
 - name: Uninstall {{ pluginName }} plugin
   kubernetes.core.helm:
     name: "{{ pluginName }}"
-    namespace: "{{ ansible_operator_meta.namespace }}"
+    release_namespace: "{{ ansible_operator_meta.namespace }}"
     state: absent
+  environment:
+    KUBECONFIG: ""
+    K8S_AUTH_KUBECONFIG: ""
   when: state == "absent" or state == "revoked"
