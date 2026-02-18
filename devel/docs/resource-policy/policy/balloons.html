@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.12.0-23-gab2f7320 documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.12.0-25-g69f32f53 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=1bb285c9"></script>
+        <script src="../../../_static/documentation_options.js?v=3f957588"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -1074,6 +1074,9 @@ containers.</p></li>
 <li><p>Preferred CPUs: <code class="docutils literal notranslate"><span class="pre">&quot;cpuset:0,48&quot;</span></code> prefers using CPU 0 and 48. Uses
 many enough to satisfy container CPU requests, but no more than
 that.</p></li>
+<li><p>Excluded CPUs: <code class="docutils literal notranslate"><span class="pre">&quot;exclude-cpuset:4-48&quot;</span></code> prefers using any other CPUs
+present in <code class="docutils literal notranslate"><span class="pre">availableResources.cpu</span></code> than CPUs 4-63. E.g. if CPUs
+0-63 are available, this will result in CPU set 0-3.</p></li>
 <li><p>Quantity: <code class="docutils literal notranslate"><span class="pre">&quot;2000m&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;2&quot;</span></code> uses at least 2 CPUs.</p></li>
 <li><p>If <code class="docutils literal notranslate"><span class="pre">minCPUs</span></code> is explicitly set for <code class="docutils literal notranslate"><span class="pre">reserved</span></code> balloon type, that
 overrides the quantity.</p></li>
@@ -1162,7 +1165,15 @@ shared idle CPUs).</p></li>
 <h4>Managed CPUs<a class="headerlink" href="#managed-cpus" title="Link to this heading"></a></h4>
 <p><strong><code class="docutils literal notranslate"><span class="pre">availableResources</span></code></strong> (object, policy-level configuration):</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">cpu</span></code> (string): CPUset managed by the policy.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cpu</span></code> (string): CPUset managed by the policy.</p>
+<ul>
+<li><p>Explicit CPUs to use: <code class="docutils literal notranslate"><span class="pre">&quot;cpuset:4-48&quot;</span></code> sets the available CPUs to
+the given set, CPUs 4-48.</p></li>
+<li><p>CPUs to exclude: <code class="docutils literal notranslate"><span class="pre">&quot;exclude-cpuset:0-3&quot;</span></code> sets the available CPUs to
+all but the given set. E.g. if the system has CPUs 0-127, this will
+result in CPUs 4-127.</p></li>
+</ul>
+</li>
 <li><p>All balloons use only CPUs from this set.</p></li>
 <li><p>Useful for reserving CPUs for non-policy-managed workloads.</p></li>
 </ul>

@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.12.0-23-gab2f7320 documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.12.0-25-g69f32f53 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=1bb285c9"></script>
+        <script src="../../../_static/documentation_options.js?v=3f957588"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -60,6 +60,7 @@
 <li class="toctree-l4"><a class="reference internal" href="#overview">Overview</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#features">Features</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#configuring-the-policy">Configuring the Policy</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#setting-reserved-and-available-resources">Setting Reserved and Available Resources</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#policy-cpu-allocation-preferences">Policy CPU Allocation Preferences</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#container-cpu-allocation-preference-annotations">Container CPU Allocation Preference Annotations</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#disabling-cpu-or-memory-pinning-of-a-container">Disabling CPU or Memory Pinning of a Container</a></li>
@@ -378,6 +379,60 @@ resource assignment are readable through <code class="docutils literal notransla
 </ul>
 </li>
 </ul>
+</section>
+<section id="setting-reserved-and-available-resources">
+<h2>Setting Reserved and Available Resources<a class="headerlink" href="#setting-reserved-and-available-resources" title="Link to this heading"></a></h2>
+<p>Available and reserved resources are set up using the <code class="docutils literal notranslate"><span class="pre">availableResources</span></code>
+and <code class="docutils literal notranslate"><span class="pre">reservedResources</span></code> configuration options.</p>
+<p>Available resources can be used to set aside otherwise available CPU and
+memory resources and prevent the policy from assigning them to any workload.
+If available resources are omitted the policy can and will assign resources
+to workloads from the full available set.</p>
+<p>Reserved resources reserve resources for the control plane, which by default
+is all workloads in the <code class="docutils literal notranslate"><span class="pre">kube-system</span></code> namespace. Reserved resources cannot be
+omitted. At least some amount of CPU must be reserved.</p>
+<p>Both available and reserved resources can contain CPU and memory. Memory can
+be defined using the same quantity notation as in container resource requests
+and limits. CPU can be defined as quantity, amount of CPU to allocate to be
+available or reserved, or as an explicit CPU set either to be allocated or to
+be excluded from the allocated set.</p>
+<p>A common case for the reserved resources is to set aside CPU for the control
+plane by quantity. The following fragment reserves 0.75 CPUs</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nn">...</span>
+<span class="w">  </span><span class="nt">reservedResources</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">750m</span>
+<span class="nn">...</span>
+</pre></div>
+</div>
+<p>Alternatively, one can reserve full CPU cores explicitly. For instance this
+configuration fragment reserves CPUs 0-1 for the control plane.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nn">...</span>
+<span class="w">  </span><span class="nt">reservedResources</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cpuset:0-1</span>
+<span class="nn">...</span>
+</pre></div>
+</div>
+<p>A typical use case for available resources is to set aside some CPUs for
+system daemons unrelated to Kubernetes. The following configuration leaves
+CPUs 0-1 unallocated for the available set on a system with 128 CPUs thus
+leaving them for use by other daemons.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nn">...</span>
+<span class="w">  </span><span class="nt">availableResources</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cpuset:2-128</span>
+<span class="nn">...</span>
+</pre></div>
+</div>
+<p>One can also specify available CPUs by explicitly excluding the ones that
+should be set aside for other use:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nn">...</span>
+<span class="w">  </span><span class="nt">availableResources</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">exclude-cpuset:0-1</span>
+<span class="nn">...</span>
+</pre></div>
+</div>
+<p>Note that both for the available and reserved resources you should make
+sure that the policy settings match any comparable settings of the node
+agent, the kubelet.</p>
 </section>
 <section id="policy-cpu-allocation-preferences">
 <h2>Policy CPU Allocation Preferences<a class="headerlink" href="#policy-cpu-allocation-preferences" title="Link to this heading"></a></h2>
