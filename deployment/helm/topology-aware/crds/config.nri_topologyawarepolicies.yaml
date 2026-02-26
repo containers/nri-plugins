@@ -739,6 +739,7 @@ spec:
                 - package
                 - die
                 - numa
+                - l3cache
                 type: string
             required:
             - reservedResources

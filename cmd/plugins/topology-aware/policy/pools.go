@@ -131,6 +131,13 @@ func (p *policy) buildSocketPool(socketID idset.ID, root Node) {
 			for _, nodeID := range nodeIDs {
 				p.buildNumaNodePool(socketID, nodeID, socket)
 			}
+		} else {
+			if l3CacheIDs := p.getL3CacheIDsForCPUs(socketID, cpus); len(l3CacheIDs) > 1 {
+				for _, l3CacheID := range l3CacheIDs {
+					l3CacheCPUs := p.sys.Package(socketID).L3CacheCPUSet(l3CacheID)
+					p.buildL3CachePool(l3CacheID, l3CacheCPUs, socket)
+				}
+			}
 		}
 	}
 }
@@ -146,9 +153,17 @@ func (p *policy) buildDiePool(socketID, dieID idset.ID, socket Node) {
 	die.noderes, die.freeres = p.getCpuSupply(die, cpus)
 	die.mem, die.pMem, die.hbm = p.getMemSupply(die, cpus)
 
-	if nodeIDs := p.sys.Package(socketID).DieNodeIDs(dieID); len(nodeIDs) > 1 {
+	nodeIDs := p.sys.Package(socketID).DieNodeIDs(dieID)
+	if len(nodeIDs) > 1 {
 		for _, nodeID := range nodeIDs {
 			p.buildNumaNodePool(socketID, nodeID, die)
+		}
+	} else {
+		if l3CacheIDs := p.getL3CacheIDsForCPUs(socketID, cpus); len(l3CacheIDs) > 1 {
+			for _, l3CacheID := range l3CacheIDs {
+				l3CacheCPUs := p.sys.Package(socketID).L3CacheCPUSet(l3CacheID)
+				p.buildL3CachePool(l3CacheID, l3CacheCPUs, die)
+			}
 		}
 	}
 }
@@ -175,6 +190,39 @@ func (p *policy) buildNumaNodePool(socketID, nodeID idset.ID, parent Node) {
 	cpus := p.sys.Node(nodeID).CPUSet()
 	node.noderes, node.freeres = p.getCpuSupply(node, cpus)
 	node.mem, node.pMem, node.hbm = p.getMemSupply(node, cpus)
+
+	// Check for L3 cache groups within this NUMA node
+	if l3CacheIDs := p.getL3CacheIDsForCPUs(socketID, cpus); len(l3CacheIDs) > 1 {
+		for _, l3CacheID := range l3CacheIDs {
+			l3CacheCPUs := p.sys.Package(socketID).L3CacheCPUSet(l3CacheID)
+			p.buildL3CachePool(l3CacheID, l3CacheCPUs, node)
+		}
+	}
+}
+
+// getL3CacheIDsForCPUs returns L3 cache IDs that are within the given CPU set scope.
+func (p *policy) getL3CacheIDsForCPUs(socketID idset.ID, cpus cpuset.CPUSet) []idset.ID {
+	var l3CacheIDs []idset.ID
+	for _, l3CacheID := range p.sys.Package(socketID).L3CacheIDs() {
+		l3CacheCPUs := p.sys.Package(socketID).L3CacheCPUSet(l3CacheID)
+		// Check if this L3 cache is entirely within the given CPU scope
+		if cpus.Intersection(l3CacheCPUs).Equals(l3CacheCPUs) {
+			l3CacheIDs = append(l3CacheIDs, l3CacheID)
+		}
+	}
+	return l3CacheIDs
+}
+
+// buildL3CachePool creates an L3 cache pool as a child of the given parent.
+func (p *policy) buildL3CachePool(id idset.ID, cpus cpuset.CPUSet, parent Node) {
+	l3CacheNode := p.NewL3CacheNode(id, cpus, parent)
+	p.nodes[l3CacheNode.Name()] = l3CacheNode
+	l3CacheNode.depth = l3CacheNode.RootDistance()
+
+	log.Info("+ created pool %s (cpus: %s)", l3CacheNode.Name(), cpus)
+
+	l3CacheNode.noderes, l3CacheNode.freeres = p.getCpuSupply(l3CacheNode, cpus)
+	l3CacheNode.mem, l3CacheNode.pMem, l3CacheNode.hbm = p.getMemSupply(l3CacheNode, cpus)
 }
 
 func (p *policy) getCpuSupply(node Node, cpus cpuset.CPUSet) (Supply, Supply) {

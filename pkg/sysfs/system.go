@@ -166,6 +166,8 @@ type CPUPackage interface {
 	DieClusterCPUSet(idset.ID, idset.ID) cpuset.CPUSet
 	LogicalDieClusterIDs(idset.ID) []idset.ID
 	LogicalDieClusterCPUSet(idset.ID, idset.ID) cpuset.CPUSet
+	L3CacheIDs() []idset.ID
+	L3CacheCPUSet(idset.ID) cpuset.CPUSet
 	SstInfo() *sst.SstPackageInfo
 }
 
@@ -178,6 +180,7 @@ type cpuPackage struct {
 	dieNodes        map[idset.ID]idset.IDSet              // NUMA nodes per die
 	clusterCPUs     map[idset.ID]map[idset.ID]idset.IDSet // per die per cluster CPUs
 	logicalClusters map[idset.ID]map[idset.ID]idset.IDSet // clusters with combined hyperthreads
+	l3CacheCPUs     map[idset.ID]idset.IDSet              // CPUs per L3 cache
 	sstInfo         *sst.SstPackageInfo                   // Speed Select Technology info
 }
 
@@ -1711,6 +1714,7 @@ func (sys *system) discoverPackages() error {
 				dieNodes:        make(map[idset.ID]idset.IDSet),
 				clusterCPUs:     make(map[idset.ID]map[idset.ID]idset.IDSet),
 				logicalClusters: make(map[idset.ID]map[idset.ID]idset.IDSet),
+				l3CacheCPUs:     make(map[idset.ID]idset.IDSet),
 			}
 			sys.packages[cpu.pkg] = pkg
 		}
@@ -1765,6 +1769,24 @@ func (sys *system) discoverPackages() error {
 		}
 		if len(pkg.logicalClusters) == 0 {
 			pkg.logicalClusters = pkg.clusterCPUs
+		}
+	}
+
+	// Discover L3 cache groups within each package.
+	// L3 caches are identified by their cache ID from sysfs.
+	for _, pkg := range sys.packages {
+		for _, cpuID := range pkg.cpus.SortedMembers() {
+			cpu := sys.cpus[cpuID]
+			for _, cache := range cpu.caches {
+				if cache.level != 3 {
+					continue
+				}
+				l3CacheID := cache.id
+				if _, ok := pkg.l3CacheCPUs[l3CacheID]; !ok {
+					pkg.l3CacheCPUs[l3CacheID] = cache.cpus.Clone()
+				}
+				break // Only need one L3 cache entry per CPU
+			}
 		}
 	}
 
@@ -1958,6 +1980,26 @@ func (p *cpuPackage) LogicalDieClusterCPUSet(die idset.ID, cluster idset.ID) cpu
 		if ids, ok := dieClusters[cluster]; ok {
 			return CPUSetFromIDSet(ids)
 		}
+	}
+	return cpuset.New()
+}
+
+// L3CacheIDs returns the L3 cache IDs in this package.
+func (p *cpuPackage) L3CacheIDs() []idset.ID {
+	ids := make([]idset.ID, 0, len(p.l3CacheCPUs))
+	for id := range p.l3CacheCPUs {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		return ids[i] < ids[j]
+	})
+	return ids
+}
+
+// L3CacheCPUSet returns the CPUs sharing the given L3 cache.
+func (p *cpuPackage) L3CacheCPUSet(l3CacheID idset.ID) cpuset.CPUSet {
+	if cpus, ok := p.l3CacheCPUs[l3CacheID]; ok {
+		return CPUSetFromIDSet(cpus)
 	}
 	return cpuset.New()
 }
