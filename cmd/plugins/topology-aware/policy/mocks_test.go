@@ -126,6 +126,14 @@ func (p *mockCPUPackage) LogicalDieClusterCPUSet(idset.ID, idset.ID) cpuset.CPUS
 	return cpuset.New()
 }
 
+func (p *mockCPUPackage) L3CacheIDs() []idset.ID {
+	return []idset.ID{}
+}
+
+func (p *mockCPUPackage) L3CacheCPUSet(idset.ID) cpuset.CPUSet {
+	return cpuset.New()
+}
+
 func (p *mockCPUPackage) SstInfo() *sst.SstPackageInfo {
 	return &sst.SstPackageInfo{}
 }

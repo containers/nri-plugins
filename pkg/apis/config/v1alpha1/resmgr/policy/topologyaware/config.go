@@ -46,6 +46,7 @@ const (
 	CPUTopologyLevelPackage   = policy.CPUTopologyLevelPackage
 	CPUTopologyLevelDie       = policy.CPUTopologyLevelDie
 	CPUTopologyLevelNuma      = policy.CPUTopologyLevelNuma
+	CPUTopologyLevelL3Cache   = policy.CPUTopologyLevelL3Cache
 	CPUTopologyLevelL2Cache   = policy.CPUTopologyLevelL2Cache
 	CPUTopologyLevelCore      = policy.CPUTopologyLevelCore
 	CPUTopologyLevelThread    = policy.CPUTopologyLevelThread
@@ -146,7 +147,7 @@ type Config struct {
 	DefaultCPUPriority CPUPriority `json:"defaultCPUPriority,omitempty"`
 	// UnlimitedBurstable defines the preferred topology level for containers
 	// with unlimited burstability.
-	// +kubebuilder:validation:Enum=system;package;die;numa
+	// +kubebuilder:validation:Enum=system;package;die;numa;l3cache
 	// +kubebuilder:default=package
 	// +kubebuilder:validation:Format:string
 	UnlimitedBurstable CPUTopologyLevel `json:"unlimitedBurstable,omitempty"`
