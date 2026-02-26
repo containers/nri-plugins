@@ -20,6 +20,7 @@ import (
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/topology"
+	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
 )
 
@@ -47,6 +48,8 @@ const (
 	DieNode NodeKind = "die"
 	// NumaNode represents a NUMA node in the system.
 	NumaNode NodeKind = "numa node"
+	// L3CacheNode represents an L3 cache grouping of CPUs in the system.
+	L3CacheNode NodeKind = "L3 cache"
 	// VirtualNode represents a virtual node, currently the root multi-socket setups.
 	VirtualNode NodeKind = "virtual node"
 )
@@ -62,6 +65,8 @@ func (k NodeKind) TopologyLevel() cfgapi.CPUTopologyLevel {
 		return cfgapi.CPUTopologyLevelDie
 	case NumaNode:
 		return cfgapi.CPUTopologyLevelNuma
+	case L3CacheNode:
+		return cfgapi.CPUTopologyLevelL3Cache
 	}
 	return cfgapi.CPUTopologyLevelUndefined
 }
@@ -76,6 +81,8 @@ func NodeKindForTopologyLevel(level cfgapi.CPUTopologyLevel) NodeKind {
 		return DieNode
 	case cfgapi.CPUTopologyLevelNuma:
 		return NumaNode
+	case cfgapi.CPUTopologyLevelL3Cache:
+		return L3CacheNode
 	}
 	return UnknownNode
 }
@@ -185,6 +192,13 @@ type numanode struct {
 	node                // common node data
 	id      idset.ID    // NUMA node system id
 	sysnode system.Node // corresponding system.Node
+}
+
+// l3cachenode represents an L3 cache grouping of CPUs in the system.
+type l3cachenode struct {
+	node               // common node data
+	id   idset.ID      // L3 cache id from sysfs
+	cpus cpuset.CPUSet // CPUs in this L3 cache group
 }
 
 // virtualnode represents a virtual node (ATM only the root in a multi-socket system).
@@ -507,6 +521,84 @@ func (n *numanode) HintScore(hint topology.Hint) float64 {
 			score /= float64(len(n.System().Package(pkgID).NodeIDs()))
 		}
 		return score
+	}
+
+	return 0.0
+}
+
+// NewL3CacheNode creates a node for an L3 cache group.
+func (p *policy) NewL3CacheNode(id idset.ID, cpus cpuset.CPUSet, parent Node) *l3cachenode {
+	n := &l3cachenode{}
+	n.self.node = n
+	n.init(p, fmt.Sprintf("L3 cache #%v", id), L3CacheNode, parent)
+	n.id = id
+	n.cpus = cpus.Clone()
+
+	return n
+}
+
+// Dump (the L3 cache-specific parts of) this node.
+func (n *l3cachenode) dump(prefix string, level ...int) {
+	log.Debug("%s<L3 cache #%v, cpus: %s>", indent(prefix, level...), n.id, n.cpus)
+}
+
+// GetSupply returns CPU supply available at this node.
+func (n *l3cachenode) GetSupply() Supply {
+	return n.noderes.Clone()
+}
+
+// GetPhysicalNodeIDs returns the NUMA node IDs for this L3 cache node.
+func (n *l3cachenode) GetPhysicalNodeIDs() []idset.ID {
+	// L3 cache nodes inherit their physical node IDs from their parent (NUMA node)
+	ids := make([]idset.ID, 0)
+	for _, c := range n.children {
+		cIds := c.GetPhysicalNodeIDs()
+		ids = append(ids, cIds...)
+	}
+	// If no children, get from parent
+	if len(ids) == 0 && !n.parent.IsNil() {
+		return n.parent.GetPhysicalNodeIDs()
+	}
+	return ids
+}
+
+// GetMemset returns the set of memory attached to this L3 cache node.
+func (n *l3cachenode) GetMemset(mtype memoryType) idset.IDSet {
+	mset := idset.NewIDSet()
+
+	if mtype&memoryDRAM != 0 {
+		mset.Add(n.mem.Members()...)
+	}
+	if mtype&memoryHBM != 0 {
+		mset.Add(n.hbm.Members()...)
+	}
+	if mtype&memoryPMEM != 0 {
+		mset.Add(n.pMem.Members()...)
+	}
+
+	return mset
+}
+
+// HintScore calculates the (CPU) score of the node for the given topology hint.
+func (n *l3cachenode) HintScore(hint topology.Hint) float64 {
+	switch {
+	case hint.CPUs != "":
+		return cpuHintScore(hint, n.cpus)
+
+	case hint.NUMAs != "":
+		// L3 cache nodes penalize NUMA hints since they're below NUMA level
+		ids := n.GetPhysicalNodeIDs()
+		if len(ids) > 0 {
+			return OverfitPenalty * numaHintScore(hint, ids...)
+		}
+		return 0.0
+
+	case hint.Sockets != "":
+		// L3 cache nodes further penalize socket hints
+		if !n.parent.IsNil() {
+			return OverfitPenalty * n.parent.HintScore(hint)
+		}
+		return 0.0
 	}
 
 	return 0.0
