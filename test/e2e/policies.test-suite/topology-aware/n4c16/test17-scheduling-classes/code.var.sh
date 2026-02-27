@@ -5,7 +5,7 @@ cleanup() {
 
 verify-sched() {
     local podXcY=$1
-    vm-command "cat /proc/\$(pgrep -f $podXcY)/sched | grep -E '^((policy)|(prio))'" || command-error "cannot get /proc/PID/sched for $podXcY"
+    vm-command "cat /proc/\$(pgrep -f 'echo $podXcY')/sched | grep -E '^((policy)|(prio))'" || command-error "cannot get /proc/PID/sched for $podXcY"
 
     if [ "$expected_policy" != "" ]; then
         echo "verify scheduling policy of $podXcY is $expected_policy"
