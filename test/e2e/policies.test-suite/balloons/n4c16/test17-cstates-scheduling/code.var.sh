@@ -37,7 +37,7 @@ verify-cstates() {
 
 verify-sched() {
     local podXcY=$1
-    vm-command "cat /proc/\$(pgrep -f $podXcY)/sched" || command-error "cannot get /proc/PID/sched for $podXcY"
+    vm-command "cat /proc/\$(pgrep -f 'echo $podXcY')/sched" || command-error "cannot get /proc/PID/sched for $podXcY"
 
     if [ "$expected_policy" != "" ]; then
         echo "verify scheduling policy of $podXcY is $expected_policy"
@@ -96,7 +96,7 @@ echo "verify that CPUs of low-latency pods pod0 and pod1 cannot enter C4 or C8"
 verify-cstates "$(cpuids-of pod1c0)" "C1E C2" "C4 C8" 16
 
 expected_policy=5 expected_prio=$((120 + 17)) verify-sched pod1c0 # expect SCHED_IDLE, prio 137
-vm-command "ionice -p \$(pgrep -f pod1c0)" ||
+vm-command "ionice -p \$(pgrep -f 'echo pod1c0')" ||
     command-error "cannot get ionice for pod1c0"
 expected_ionice="best-effort: prio 6"
 [[ "$COMMAND_OUTPUT" == "$expected_ionice" ]] ||
