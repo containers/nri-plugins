@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.12.0-28-g7997513c documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.12.0-31-gb39eb8f0 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=65a22975"></script>
+        <script src="../../../_static/documentation_options.js?v=9895d009"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -56,21 +56,11 @@
 <li class="toctree-l2"><a class="reference internal" href="../configuration.html">Dynamic Configuration</a></li>
 <li class="toctree-l2 current"><a class="reference internal" href="index.html">Policies</a><ul class="current">
 <li class="toctree-l3 current"><a class="current reference internal" href="#">Topology-Aware Policy</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="#background">Background</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#overview">Overview</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#features">Features</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#configuring-the-policy">Configuring the Policy</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#setting-reserved-and-available-resources">Setting Reserved and Available Resources</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#policy-cpu-allocation-preferences">Policy CPU Allocation Preferences</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#container-cpu-allocation-preference-annotations">Container CPU Allocation Preference Annotations</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#disabling-cpu-or-memory-pinning-of-a-container">Disabling CPU or Memory Pinning of a Container</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#cold-start">Cold Start</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#container-memory-requests-and-limits">Container memory requests and limits</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#reserved-pool-namespaces">Reserved pool namespaces</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#reserved-cpu-annotations">Reserved CPU annotations</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#controlling-topology-hints-via-annotations">Controlling Topology Hints Via Annotations</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#container-affinity-and-anti-affinity">Container Affinity and Anti-Affinity</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#metrics-and-debugging">Metrics and Debugging</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#installation-and-configuration">Installation and Configuration</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#configuration-options">Configuration Options</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#cookbook">Cookbook</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#troubleshooting">Troubleshooting</a></li>
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="balloons.html">Balloons Policy</a></li>
@@ -115,8 +105,10 @@
              
   <section id="topology-aware-policy">
 <h1>Topology-Aware Policy<a class="headerlink" href="#topology-aware-policy" title="Link to this heading"></a></h1>
-<section id="background">
-<h2>Background<a class="headerlink" href="#background" title="Link to this heading"></a></h2>
+<section id="overview">
+<h2>Overview<a class="headerlink" href="#overview" title="Link to this heading"></a></h2>
+<section id="what-problems-does-the-topology-aware-policy-solve">
+<h3>What Problems Does the Topology-Aware Policy Solve?<a class="headerlink" href="#what-problems-does-the-topology-aware-policy-solve" title="Link to this heading"></a></h3>
 <p>On server-grade hardware the CPU cores, I/O devices and other peripherals
 form a rather complex network together with the memory controllers, the
 I/O bus hierarchy and the CPU interconnect. When a combination of these
@@ -138,9 +130,21 @@ Given the idiosyncrasies of hardware, allocating a properly aligned set
 of resources for optimal workload performance requires identifying and
 understanding the multiple dimensions of access latency locality present
 in hardware or, in other words, hardware topology awareness.</p>
+<p>The topology-aware policy addresses these challenges by:</p>
+<ul class="simple">
+<li><p><strong>Hardware topology awareness</strong>: Automatically builds a tree of pools based on
+detected CPU physical hardware topology (sockets and dies) and logical memory
+hardware topology (NUMA nodes)</p></li>
+<li><p><strong>Aligned resource allocation</strong>: Assigns CPU, memory, and devices with optimal
+topological alignment</p></li>
+<li><p><strong>Multi-tier memory support</strong>: Handles DRAM, PMEM, and HBM memory types</p></li>
+<li><p><strong>Flexible CPU allocation</strong>: Supports shared, exclusive, and mixed CPU core assignments</p></li>
+<li><p><strong>Device locality</strong>: Considers device connection topology to CPU and memory when
+placing workloads</p></li>
+</ul>
 </section>
-<section id="overview">
-<h2>Overview<a class="headerlink" href="#overview" title="Link to this heading"></a></h2>
+<section id="how-the-topology-aware-policy-works">
+<h3>How the Topology-Aware Policy Works<a class="headerlink" href="#how-the-topology-aware-policy-works" title="Link to this heading"></a></h3>
 <p>The <code class="docutils literal notranslate"><span class="pre">topology-aware</span></code> policy automatically builds a tree of pools based on the
 detected hardware topology. Each pool has a set of CPUs and memory zones
 assigned as their resources. Resource allocation for workloads happens by
@@ -151,8 +155,7 @@ dies, sockets, and finally the whole of the system at the root node. Leaf NUMA
 nodes are assigned the memory behind their controllers / zones and CPU cores
 with the smallest distance / access penalty to this memory. If the machine
 has multiple types of memory separately visible to both the kernel and user
-space, for instance both DRAM and
-<a class="reference external" href="https://www.intel.com/content/www/us/en/products/memory-storage/optane-dc-persistent-memory.html">PMEM</a>,
+space, for instance both DRAM and PMEM,
 each zone of special type of memory is assigned to the closest NUMA node pool.</p>
 <p>Each non-leaf pool node in the tree is assigned the union of the resources of
 its children. So in practice, dies nodes end up containing all the CPU cores
@@ -192,71 +195,144 @@ fewer workloads</p></li>
 <li><p>prefer pools with better overall device alignment</p></li>
 </ul>
 </section>
-<section id="features">
-<h2>Features<a class="headerlink" href="#features" title="Link to this heading"></a></h2>
+<section id="key-features">
+<h3>Key Features<a class="headerlink" href="#key-features" title="Link to this heading"></a></h3>
 <p>The <code class="docutils literal notranslate"><span class="pre">topology-aware</span></code> policy has the following features:</p>
 <ul class="simple">
-<li><p>topologically aligned allocation of CPU and memory</p>
+<li><p><strong>Topologically aligned allocation</strong> of CPU and memory</p>
 <ul>
-<li><p>assign CPU and memory to workloads with tightest available alignment</p></li>
+<li><p>Assign CPU and memory to workloads with tightest available alignment</p></li>
 </ul>
 </li>
-<li><p>aligned allocation of devices</p>
+<li><p><strong>Aligned allocation of devices</strong></p>
 <ul>
-<li><p>pick pool for workload based on locality of devices already assigned</p></li>
+<li><p>Pick pool for workload based on locality of devices already assigned</p></li>
 </ul>
 </li>
-<li><p>shared allocation of CPU cores</p>
+<li><p><strong>Shared allocation</strong> of CPU cores</p>
 <ul>
-<li><p>assign workload to shared subset of pool CPUs</p></li>
+<li><p>Assign workload to shared subset of pool CPUs</p></li>
 </ul>
 </li>
-<li><p>exclusive allocation of CPU cores</p>
+<li><p><strong>Exclusive allocation</strong> of CPU cores</p>
 <ul>
-<li><p>dynamically slice off CPU cores from shared subset and assign to workload</p></li>
+<li><p>Dynamically slice off CPU cores from shared subset and assign to workload</p></li>
 </ul>
 </li>
-<li><p>mixed allocation of CPU cores</p>
+<li><p><strong>Mixed allocation</strong> of CPU cores</p>
 <ul>
-<li><p>assign both exclusive and shared CPU cores to workload</p></li>
+<li><p>Assign both exclusive and shared CPU cores to workload</p></li>
 </ul>
 </li>
-<li><p>discovering and using kernel-isolated CPU cores (<a class="reference external" href="https://www.kernel.org/doc/html/latest/admin-guide/kernel-parameters.html#cpu-lists">‘isolcpus’</a>)</p>
+<li><p><strong>Kernel-isolated CPU support</strong> (<a class="reference external" href="https://www.kernel.org/doc/html/latest/admin-guide/kernel-parameters.html#cpu-lists">‘isolcpus’</a>)</p>
 <ul>
-<li><p>use kernel-isolated CPU cores for exclusively assigned CPU cores</p></li>
+<li><p>Use kernel-isolated CPU cores for exclusively assigned CPU cores</p></li>
 </ul>
 </li>
-<li><p>exposing assigned resources to workloads</p></li>
-<li><p>notifying workloads about changes in resource assignment</p></li>
-<li><p>dynamic relaxation of memory alignment to prevent OOM</p>
+<li><p><strong>Resource exposure</strong></p>
 <ul>
-<li><p>dynamically widen workload memory set to avoid pool/workload OOM</p></li>
+<li><p>Expose assigned resources to workloads and notify about changes</p></li>
 </ul>
 </li>
-<li><p>multi-tier memory allocation</p>
+<li><p><strong>Dynamic memory relaxation</strong></p>
 <ul>
-<li><p>assign workloads to memory zones of their preferred type</p></li>
-<li><p>the policy knows about three kinds of memory:</p>
-<ul>
-<li><p>DRAM is regular system main memory</p></li>
-<li><p>PMEM is large-capacity memory, such as
-<a class="reference external" href="https://www.intel.com/content/www/us/en/products/memory-storage/optane-dc-persistent-memory.html">Intel® Optane™ memory</a></p></li>
-<li><p><a class="reference external" href="https://en.wikipedia.org/wiki/High_Bandwidth_Memory">HBM</a> is high
-speed memory, typically found on some special-purpose computing systems</p></li>
+<li><p>Dynamically widen workload memory set to avoid pool/workload OOM</p></li>
 </ul>
 </li>
+<li><p><strong>Multi-tier memory allocation</strong></p>
+<ul>
+<li><p>Assign workloads to memory zones of their preferred type</p></li>
+<li><p>Support for DRAM, PMEM (such as Intel® Optane™ memory), and <a class="reference external" href="https://en.wikipedia.org/wiki/High_Bandwidth_Memory">HBM</a></p></li>
 </ul>
 </li>
-<li><p>cold start</p>
+<li><p><strong>Cold start support</strong></p>
 <ul>
-<li><p>pin workload exclusively to PMEM for an initial warm-up period</p></li>
+<li><p>Pin workload exclusively to PMEM for an initial warm-up period</p></li>
 </ul>
 </li>
 </ul>
 </section>
-<section id="configuring-the-policy">
-<h2>Configuring the Policy<a class="headerlink" href="#configuring-the-policy" title="Link to this heading"></a></h2>
-<p>The policy has a number of configuration options which affect its default
+<section id="organization-of-this-document">
+<h3>Organization of this document<a class="headerlink" href="#organization-of-this-document" title="Link to this heading"></a></h3>
+<p>This document is organized as follows:</p>
+<ul class="simple">
+<li><p><strong>Installation and configuration</strong> describes installation and basic configuration</p></li>
+<li><p><strong>Configuration options</strong> covers detailed configuration options</p></li>
+<li><p><strong>Cookbook</strong> provides recipes for common use cases</p></li>
+<li><p><strong>Troubleshooting</strong> offers troubleshooting guidance</p></li>
+</ul>
+</section>
+<section id="integration-with-kubernetes">
+<h3>Integration with Kubernetes<a class="headerlink" href="#integration-with-kubernetes" title="Link to this heading"></a></h3>
+<p>The topology-aware policy integrates with Kubernetes through the
+<a class="reference external" href="https://github.com/containerd/nri">Node Resource Interface (NRI)</a>. It uses its
+configuration stored as a Kubernetes Custom Resource together with optional
+policy-specific Pod annotations to control resource allocation behavior.</p>
+</section>
+</section>
+<section id="installation-and-configuration">
+<h2>Installation and Configuration<a class="headerlink" href="#installation-and-configuration" title="Link to this heading"></a></h2>
+<section id="prerequisites">
+<h3>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p>Kubernetes cluster with NRI-enabled container runtime</p></li>
+<li><p>NRI plugins support enabled in the container runtime configuration</p></li>
+</ul>
+</section>
+<section id="installing-with-helm">
+<h3>Installing with Helm<a class="headerlink" href="#installing-with-helm" title="Link to this heading"></a></h3>
+<p>The topology-aware policy can be installed using Helm charts. Refer to the
+<a class="reference internal" href="../../deployment/helm/topology-aware.html"><span class="std std-doc">topology-aware Helm documentation</span></a> for detailed instructions.</p>
+</section>
+<section id="managing-configuration-with-kubectl">
+<h3>Managing Configuration with kubectl<a class="headerlink" href="#managing-configuration-with-kubectl" title="Link to this heading"></a></h3>
+<p>The policy configuration can be managed using kubectl and the <code class="docutils literal notranslate"><span class="pre">TopologyAware</span></code>
+<a class="reference internal" href="../configuration.html"><span class="std std-doc">dynamic configuration</span></a> custom resource. Configuration
+changes are applied dynamically without requiring pod restarts.</p>
+<p>Example configuration commands:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># List all topology-aware policy configurations (in the kube-system namespace)</span>
+kubectl<span class="w"> </span>-n<span class="w"> </span>kube-system<span class="w"> </span>get<span class="w"> </span>topologyawarepolicies.config.nri
+
+<span class="c1"># View the default configuration</span>
+kubectl<span class="w"> </span>-n<span class="w"> </span>kube-system<span class="w"> </span>get<span class="w"> </span>topologyawarepolicies.config.nri/default<span class="w"> </span>-o<span class="w"> </span>yaml
+
+<span class="c1"># Edit/update the default configuration</span>
+kubectl<span class="w"> </span>-n<span class="w"> </span>kube-system<span class="w"> </span>edit<span class="w"> </span>topologyawarepolicies.config.nri/default
+</pre></div>
+</div>
+<p>Replace <code class="docutils literal notranslate"><span class="pre">kube-system</span></code> with the namespace where the plugin is deployed.</p>
+</section>
+<section id="configuration-scopes">
+<h3>Configuration Scopes<a class="headerlink" href="#configuration-scopes" title="Link to this heading"></a></h3>
+<p>The topology-aware policy supports three levels of configuration precedence:</p>
+<ol class="arabic simple">
+<li><p><strong>Default configuration</strong> (lowest precedence): Applies to all nodes
+without more specific configuration</p>
+<ul class="simple">
+<li><p>Resource name: <code class="docutils literal notranslate"><span class="pre">default</span></code></p></li>
+</ul>
+</li>
+<li><p><strong>Group-specific configuration</strong>: Applies to nodes labeled with a
+configuration group</p>
+<ul class="simple">
+<li><p>Resource name: <code class="docutils literal notranslate"><span class="pre">group.$GROUP_NAME</span></code></p></li>
+<li><p>Node label: <code class="docutils literal notranslate"><span class="pre">config.nri/group=$GROUP_NAME</span></code></p></li>
+</ul>
+</li>
+<li><p><strong>Node-specific configuration</strong> (highest precedence): Applies to a
+single named node</p>
+<ul class="simple">
+<li><p>Resource name: <code class="docutils literal notranslate"><span class="pre">node.$NODE_NAME</span></code></p></li>
+</ul>
+</li>
+</ol>
+</section>
+</section>
+<section id="configuration-options">
+<h2>Configuration Options<a class="headerlink" href="#configuration-options" title="Link to this heading"></a></h2>
+<section id="policy-level-settings">
+<h3>Policy-Level Settings<a class="headerlink" href="#policy-level-settings" title="Link to this heading"></a></h3>
+<p>The following policy-level configuration options affect its default
 behavior. These options can be supplied as part of the effective
 <a class="reference internal" href="../configuration.html"><span class="std std-doc">dynamic configuration</span></a> custom resource.</p>
 <ul class="simple">
@@ -380,8 +456,8 @@ resource assignment are readable through <code class="docutils literal notransla
 </li>
 </ul>
 </section>
-<section id="setting-reserved-and-available-resources">
-<h2>Setting Reserved and Available Resources<a class="headerlink" href="#setting-reserved-and-available-resources" title="Link to this heading"></a></h2>
+<section id="reserved-and-available-resources">
+<h3>Reserved and Available Resources<a class="headerlink" href="#reserved-and-available-resources" title="Link to this heading"></a></h3>
 <p>Available and reserved resources are set up using the <code class="docutils literal notranslate"><span class="pre">availableResources</span></code>
 and <code class="docutils literal notranslate"><span class="pre">reservedResources</span></code> configuration options.</p>
 <p>Available resources can be used to set aside otherwise available CPU and
@@ -434,8 +510,8 @@ should be set aside for other use:</p>
 sure that the policy settings match any comparable settings of the node
 agent, the kubelet.</p>
 </section>
-<section id="policy-cpu-allocation-preferences">
-<h2>Policy CPU Allocation Preferences<a class="headerlink" href="#policy-cpu-allocation-preferences" title="Link to this heading"></a></h2>
+<section id="cpu-allocation-preferences">
+<h3>CPU Allocation Preferences<a class="headerlink" href="#cpu-allocation-preferences" title="Link to this heading"></a></h3>
 <p>There are a number of workload properties this policy actively checks to decide
 if the workload could potentially benefit from extra resource allocation
 optimizations. Unless configured differently, containers fulfilling certain
@@ -545,14 +621,12 @@ groups, are all pinned to run on the shared subset of CPU cores in the
 container’s assigned pool. This shared subset can and usually does change
 dynamically as exclusive CPU cores are allocated and released in the pool.</p>
 </section>
-<section id="container-cpu-allocation-preference-annotations">
-<h2>Container CPU Allocation Preference Annotations<a class="headerlink" href="#container-cpu-allocation-preference-annotations" title="Link to this heading"></a></h2>
+<section id="shared-exclusive-and-isolated-cpu-preference-cpu-priorities">
+<h3>Shared, Exclusive, and Isolated CPU Preference, CPU Priorities<a class="headerlink" href="#shared-exclusive-and-isolated-cpu-preference-cpu-priorities" title="Link to this heading"></a></h3>
 <p>Containers can be annotated to diverge from the default CPU allocation
 preferences the policy would otherwise apply to them. These Pod annotations
 can be given both with per pod and per container resolution. If for any
 container both of these exist, the container-specific one takes precedence.</p>
-<section id="shared-exclusive-and-isolated-cpu-preference-cpu-priorities">
-<h3>Shared, Exclusive, and Isolated CPU Preference, CPU Priorities<a class="headerlink" href="#shared-exclusive-and-isolated-cpu-preference-cpu-priorities" title="Link to this heading"></a></h3>
 <p>A container can opt in to or opt out from shared CPU allocation using the
 following Pod annotation.</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
@@ -663,33 +737,6 @@ corresponding scheduling and I/O priority attributes.</p>
 the default scheduling class for its namespace or Pod QoS class, in this order
 of precedence, if either or both is set.</p>
 </section>
-<section id="implicit-hardware-topology-hints">
-<h3>Implicit Hardware Topology Hints<a class="headerlink" href="#implicit-hardware-topology-hints" title="Link to this heading"></a></h3>
-<p><code class="docutils literal notranslate"><span class="pre">NRI</span> <span class="pre">Resource</span> <span class="pre">Policy</span></code> automatically generates HW <code class="docutils literal notranslate"><span class="pre">Topology</span> <span class="pre">Hints</span></code> for devices
-assigned to a container, prior to handing the container off to the active policy
-for resource allocation. The <code class="docutils literal notranslate"><span class="pre">topology-aware</span></code> policy is hint-aware and normally
-takes topology hints into account when picking the best pool to allocate resources.
-Hints indicate optimal <code class="docutils literal notranslate"><span class="pre">HW</span> <span class="pre">locality</span></code> for device access and they can alter
-significantly which pool gets picked for a container.</p>
-<p>Since device topology hints are implicitly generated, there are cases where one
-would like the policy to disregard them altogether. For instance, when a local
-volume is used by a container but not in any performance critical manner.</p>
-<p>Containers can be annotated to opt out from and selectively opt in to hint-aware
-pool selection using the following Pod annotations.</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
-<span class="w">    </span><span class="c1"># only disregard hints for container C1</span>
-<span class="w">    </span><span class="nt">topologyhints.resource-policy.nri.io/container.C1</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;false&quot;</span>
-<span class="w">    </span><span class="c1"># disregard hints for all containers by default</span>
-<span class="w">    </span><span class="nt">topologyhints.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;false&quot;</span>
-<span class="w">    </span><span class="c1"># but take hints into account for container C2</span>
-<span class="w">    </span><span class="nt">topologyhints.resource-policy.nri.io/container.C2</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
-</pre></div>
-</div>
-<p>Topology hint generation is globally enabled by default. Therefore, using the
-Pod annotation as opt in only has an effect when the whole pod is annotated to
-opt out from hint-aware pool selection.</p>
-</section>
 <section id="implicit-topological-co-location-for-pods-and-namespaces">
 <h3>Implicit Topological Co-location for Pods and Namespaces<a class="headerlink" href="#implicit-topological-co-location-for-pods-and-namespaces" title="Link to this heading"></a></h3>
 <p>The <code class="docutils literal notranslate"><span class="pre">colocatePods</span></code> or <code class="docutils literal notranslate"><span class="pre">colocateNamespaces</span></code> configuration options control whether
@@ -705,9 +752,8 @@ defined affinities with implicit co-location requires both careful consideration
 and a thorough understanding of affinity evaluation, or it should be avoided
 altogether.</p>
 </section>
-</section>
-<section id="disabling-cpu-or-memory-pinning-of-a-container">
-<h2>Disabling CPU or Memory Pinning of a Container<a class="headerlink" href="#disabling-cpu-or-memory-pinning-of-a-container" title="Link to this heading"></a></h2>
+<section id="cpu-and-memory-pinning-controls">
+<h3>CPU and Memory Pinning Controls<a class="headerlink" href="#cpu-and-memory-pinning-controls" title="Link to this heading"></a></h3>
 <p>Some containers may need to run on all CPUs or access all memories
 without restrictions. Annotate these pods and containers to prevent
 the resource policy from touching their CPU or memory pinning.</p>
@@ -721,8 +767,15 @@ the resource policy from touching their CPU or memory pinning.</p>
 </pre></div>
 </div>
 </section>
+<section id="memory-configuration">
+<h3>Memory Configuration<a class="headerlink" href="#memory-configuration" title="Link to this heading"></a></h3>
+<p>It is not possible for the policy to accurately determine memory requests for
+pods in the <code class="docutils literal notranslate"><span class="pre">Burstable</span></code> QoS class. If high accuracy is critical for such containers
+you can annotate the pod with exact per container resource requirements, or use the
+resource annotator webhook to do this for you. See the related Helm chart
+<a class="reference internal" href="../../deployment/helm/resource-annotator.html"><span class="std std-doc">documentation</span></a> for more details.</p>
 <section id="cold-start">
-<h2>Cold Start<a class="headerlink" href="#cold-start" title="Link to this heading"></a></h2>
+<h4>Cold Start<a class="headerlink" href="#cold-start" title="Link to this heading"></a></h4>
 <p>The <code class="docutils literal notranslate"><span class="pre">topology-aware</span></code> policy supports “cold start” functionality. When cold start
 is enabled and the workload is allocated to a topology node with both DRAM and
 PMEM memory, the initial memory controller is only the PMEM controller. DRAM
@@ -753,16 +806,9 @@ future release:</p>
 memory controller, but after 60 seconds the DRAM controller would be
 added to the container memset.</p>
 </section>
-<section id="container-memory-requests-and-limits">
-<h2>Container memory requests and limits<a class="headerlink" href="#container-memory-requests-and-limits" title="Link to this heading"></a></h2>
-<p>Due to inaccuracies in how <code class="docutils literal notranslate"><span class="pre">nri-resource-policy</span></code> calculates memory requests for
-pods in QoS class <code class="docutils literal notranslate"><span class="pre">Burstable</span></code>, you should either use <code class="docutils literal notranslate"><span class="pre">Limit</span></code> for setting
-the amount of memory for containers in <code class="docutils literal notranslate"><span class="pre">Burstable</span></code> pods to provide <code class="docutils literal notranslate"><span class="pre">cri-resmgr</span></code>
-with an exact copy of the resource requirements from the Pod Spec as an extra
-Pod annotation.</p>
 </section>
-<section id="reserved-pool-namespaces">
-<h2>Reserved pool namespaces<a class="headerlink" href="#reserved-pool-namespaces" title="Link to this heading"></a></h2>
+<section id="reserved-resources">
+<h3>Reserved Resources<a class="headerlink" href="#reserved-resources" title="Link to this heading"></a></h3>
 <p>User is able to mark certain namespaces to have a reserved CPU allocation.
 Containers belonging to such namespaces will only run on CPUs set aside
 according to the global CPU reservation, as configured by the ReservedResources
@@ -777,9 +823,6 @@ allocated to reserved CPU class.</p>
 starting with <code class="docutils literal notranslate"><span class="pre">reserved-</span></code> string are allocated to reserved CPU class.
 The workloads in <code class="docutils literal notranslate"><span class="pre">kube-system</span></code> are automatically assigned to reserved CPU
 class so no need to mention <code class="docutils literal notranslate"><span class="pre">kube-system</span></code> in this list.</p>
-</section>
-<section id="reserved-cpu-annotations">
-<h2>Reserved CPU annotations<a class="headerlink" href="#reserved-cpu-annotations" title="Link to this heading"></a></h2>
 <p>User is able to mark certain pods and containers to have a reserved CPU
 allocation by using annotations. Containers having a such annotation will only
 run on CPUs set aside according to the global CPU reservation, as configured by
@@ -792,14 +835,37 @@ the ReservedResources configuration option in the policy section.</p>
 </pre></div>
 </div>
 </section>
-<section id="controlling-topology-hints-via-annotations">
-<h2>Controlling Topology Hints Via Annotations<a class="headerlink" href="#controlling-topology-hints-via-annotations" title="Link to this heading"></a></h2>
+<section id="topology-hints">
+<h3>Topology Hints<a class="headerlink" href="#topology-hints" title="Link to this heading"></a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">NRI</span> <span class="pre">Resource</span> <span class="pre">Policy</span></code> automatically generates HW <code class="docutils literal notranslate"><span class="pre">Topology</span> <span class="pre">Hints</span></code> for devices
+assigned to a container, prior to handing the container off to the active policy
+for resource allocation. The <code class="docutils literal notranslate"><span class="pre">topology-aware</span></code> policy is hint-aware and normally
+takes topology hints into account when picking the best pool to allocate resources.
+Hints indicate optimal <code class="docutils literal notranslate"><span class="pre">HW</span> <span class="pre">locality</span></code> for device access and they can alter
+significantly which pool gets picked for a container.</p>
+<p>Since device topology hints are implicitly generated, there are cases where one
+would like the policy to disregard them altogether. For instance, when a local
+volume is used by a container but not in any performance critical manner.</p>
+<p>Containers can be annotated to opt out from and selectively opt in to hint-aware
+pool selection using the following Pod annotations.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="c1"># only disregard hints for container C1</span>
+<span class="w">    </span><span class="nt">topologyhints.resource-policy.nri.io/container.C1</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;false&quot;</span>
+<span class="w">    </span><span class="c1"># disregard hints for all containers by default</span>
+<span class="w">    </span><span class="nt">topologyhints.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;false&quot;</span>
+<span class="w">    </span><span class="c1"># but take hints into account for container C2</span>
+<span class="w">    </span><span class="nt">topologyhints.resource-policy.nri.io/container.C2</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+</pre></div>
+</div>
+<p>Topology hint generation is globally enabled by default. Therefore, using the
+Pod annotation as opt in only has an effect when the whole pod is annotated to
+opt out from hint-aware pool selection.</p>
 <p>It is possible to control whether and what kind of topology hints are
 generated using extra pod annotations. By default hints are generated
 from mounts and devices injected into the container. If pod resource API
 queries are enabled, query replies are also used for hint generation.</p>
-<section id="enabling-or-disabling-selected-types-of-topology-hints">
-<h3>Enabling Or Disabling Selected Types of Topology Hints<a class="headerlink" href="#enabling-or-disabling-selected-types-of-topology-hints" title="Link to this heading"></a></h3>
+<p><strong>Enabling Or Disabling Selected Types of Topology Hints</strong></p>
 <p>The <code class="docutils literal notranslate"><span class="pre">topologyhints.resource-policy.nri.io</span></code> annotation key can be used
 to enable or disable topology hint generation for one or more containers
 altogether, or selectively for mounts, devices, and pod resources types.
@@ -836,9 +902,7 @@ this:</p>
 <span class="w">    </span><span class="nt">podResourceAPI</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </pre></div>
 </div>
-</section>
-<section id="controlling-topology-hints-by-path">
-<h3>Controlling Topology Hints by Path<a class="headerlink" href="#controlling-topology-hints-by-path" title="Link to this heading"></a></h3>
+<p><strong>Controlling Topology Hints by Path</strong></p>
 <p>It is also possible to enable and disable topology hint generation based
 on mount or device path, using <code class="docutils literal notranslate"><span class="pre">allow</span></code> and <code class="docutils literal notranslate"><span class="pre">deny</span></code> lists. When the policy
 is generating topology hints, it consults these lists to decide whether
@@ -870,9 +934,7 @@ with wildcards, it the full path matches any glob pattern in the list.</p>
 <span class="w">        </span><span class="no">- /dev/nvme</span>
 </pre></div>
 </div>
-</section>
-<section id="using-pod-resource-api-for-extra-topology-hints">
-<h3>Using Pod Resource API for Extra Topology Hints<a class="headerlink" href="#using-pod-resource-api-for-extra-topology-hints" title="Link to this heading"></a></h3>
+<p><strong>Using Pod Resource API for Extra Topology Hints</strong></p>
 <p>If access to the <code class="docutils literal notranslate"><span class="pre">kubelet</span></code>’s <code class="docutils literal notranslate"><span class="pre">Pod</span> <span class="pre">Resource</span> <span class="pre">API</span></code> is enabled in the
 <a class="reference internal" href="../developers-guide/architecture.html#node-agent"><span class="std std-ref">Node Agent’s</span></a> configuration,
 and pod resource-based hints are not explicitly disabled by annotation, per-
@@ -880,9 +942,7 @@ container topology hints are automatically generated whenever a device with
 locality to a NUMA node is advertised by the API. Annotated allow and deny
 lists can be used to selectively disable or enable per-resource hints, using
 <code class="docutils literal notranslate"><span class="pre">podresapi:$RESOURCE_NAME</span></code> as the path for the resource.</p>
-</section>
-<section id="picking-cpu-and-memory-by-topology-hints">
-<h3>Picking CPU And Memory By Topology Hints<a class="headerlink" href="#picking-cpu-and-memory-by-topology-hints" title="Link to this heading"></a></h3>
+<p><strong>Picking CPU And Memory By Topology Hints</strong></p>
 <p>Normally topology hints are only used to pick the assigned pool for a workload.
 Once a pool is selected the available resources within the pool are considered
 equally good for satisfying the topology hints. When the policy is allocating
@@ -937,11 +997,8 @@ the individually picked resources. If picking resources by hints fails for any
 of the devices, the policy falls back to picking resource from the pool without
 considering device hints.</p>
 </section>
-</section>
 <section id="container-affinity-and-anti-affinity">
-<h2>Container Affinity and Anti-Affinity<a class="headerlink" href="#container-affinity-and-anti-affinity" title="Link to this heading"></a></h2>
-<section id="introduction">
-<h3>Introduction<a class="headerlink" href="#introduction" title="Link to this heading"></a></h3>
+<h3>Container Affinity and Anti-Affinity<a class="headerlink" href="#container-affinity-and-anti-affinity" title="Link to this heading"></a></h3>
 <p>The topology-aware resource policy allow the user to give hints about how
 particular containers should be <em>co-located</em> within a node. In particular these
 hints express whether containers should be located <em>‘close’</em> to each other or
@@ -1217,8 +1274,152 @@ one needs to give just the names of the containers, like in the example below.</
 <!-- Links -->
 </section>
 </section>
-<section id="metrics-and-debugging">
-<h2>Metrics and Debugging<a class="headerlink" href="#metrics-and-debugging" title="Link to this heading"></a></h2>
+<section id="cookbook">
+<h2>Cookbook<a class="headerlink" href="#cookbook" title="Link to this heading"></a></h2>
+<section id="mixed-workloads-with-different-qos-requirements">
+<h3>Mixed Workloads with Different QoS Requirements<a class="headerlink" href="#mixed-workloads-with-different-qos-requirements" title="Link to this heading"></a></h3>
+<p>Deploy multiple containers with varying QoS on the same node, using pod
+annotations and policy configuration:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1"># High-priority realtime container</span>
+<span class="c1">#   - SCHED_FIFO scheduling policy</span>
+<span class="c1">#   - prefer isolated CPUs for the single requested one</span>
+<span class="nn">---</span>
+<span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Pod</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">prefer-isolated-cpus.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+<span class="w">    </span><span class="nt">scheduling-class.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;realtime&quot;</span>
+<span class="nt">spec</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">containers</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">realtime-app</span>
+<span class="w">    </span><span class="nt">resources</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">requests</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;1&quot;</span>
+<span class="w">        </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;8Gi&quot;</span>
+<span class="w">      </span><span class="nt">limits</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;1&quot;</span>
+<span class="w">        </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;8Gi&quot;</span>
+<span class="c1"># Prioritized task with elevated priority</span>
+<span class="c1">#   - SCHED_OTHER scheduling policy with elevated priority</span>
+<span class="c1">#   - burstable container (without resource limits)</span>
+<span class="c1">#   - burstability limited to a NUMA node</span>
+<span class="nn">---</span>
+<span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Pod</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">scheduling-class.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;prioritized&quot;</span>
+<span class="w">    </span><span class="nt">unlimited-burstable.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;numa&quot;</span>
+<span class="nt">spec</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">containers</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prioritized-app</span>
+<span class="w">    </span><span class="nt">resources</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">requests</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;1500m&quot;</span>
+<span class="w">        </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;1Gi&quot;</span>
+
+<span class="c1"># Best-effort background task</span>
+<span class="c1">#   - SCHED_IDLE to run only when nothing else needs CPU in the same pool</span>
+<span class="nn">---</span>
+<span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Pod</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">scheduling-class.resource-policy.nri.io/pod</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;idle&quot;</span>
+<span class="nt">spec</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">containers</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">background-task</span>
+<span class="w">    </span><span class="nt">resources</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">requests</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;100m&quot;</span>
+<span class="w">        </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;256Mi&quot;</span>
+</pre></div>
+</div>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">config.nri/v1alpha1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">TopologyAwarePolicy</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">default</span>
+<span class="nt">spec</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">preferIsolatedCPUs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">  </span><span class="nt">schedulingClasses</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">realtime</span>
+<span class="w">    </span><span class="nt">policy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fifo</span>
+<span class="w">    </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">42</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prioritized</span>
+<span class="w">    </span><span class="nt">policy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">other</span>
+<span class="w">    </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">idle</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">policy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">idle</span>
+</pre></div>
+</div>
+</section>
+<section id="multi-tier-memory-applications">
+<h3>Multi-Tier Memory Applications<a class="headerlink" href="#multi-tier-memory-applications" title="Link to this heading"></a></h3>
+<p>Use PMEM for warm-up and DRAM for active working set with pod annotations. If you
+want this as a default, set it via your admission policy or template the pod
+annotations at deployment time.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Pod</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">memory-type.resource-policy.nri.io/container.app</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dram,pmem</span>
+<span class="w">    </span><span class="nt">cold-start.resource-policy.nri.io/container.app</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">duration: 60s</span>
+<span class="nt">spec</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">containers</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">app</span>
+<span class="w">    </span><span class="nt">resources</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">requests</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;32Gi&quot;</span>
+<span class="w">      </span><span class="nt">limits</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;32Gi&quot;</span>
+</pre></div>
+</div>
+</section>
+<section id="co-located-pod-workloads">
+<h3>Co-located Pod Workloads<a class="headerlink" href="#co-located-pod-workloads" title="Link to this heading"></a></h3>
+<p>Prefer co-location of containers within the same pod by enabling the policy-level
+setting, or use explicit affinity annotations:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">config.nri/v1alpha1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">TopologyAwarePolicy</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">default</span>
+<span class="nt">spec</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">colocatePods</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</pre></div>
+</div>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Pod</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">resource-policy.nri.io/affinity</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">backend:</span>
+<span class="w">      </span><span class="no">- match:</span>
+<span class="w">          </span><span class="no">key: name</span>
+<span class="w">          </span><span class="no">operator: Equals</span>
+<span class="w">          </span><span class="no">values:</span>
+<span class="w">          </span><span class="no">- frontend</span>
+<span class="w">        </span><span class="no">weight: 10</span>
+<span class="nt">spec</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">containers</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">frontend</span>
+<span class="w">    </span><span class="nt">resources</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">requests</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2&quot;</span>
+<span class="w">        </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;4Gi&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backend</span>
+<span class="w">    </span><span class="nt">resources</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">requests</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2&quot;</span>
+<span class="w">        </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;4Gi&quot;</span>
+</pre></div>
+</div>
+<p>For more affinity options, see <a class="reference internal" href="#container-affinity-and-anti-affinity">Container Affinity and Anti-Affinity</a>.</p>
+</section>
+</section>
+<section id="troubleshooting">
+<h2>Troubleshooting<a class="headerlink" href="#troubleshooting" title="Link to this heading"></a></h2>
 <p>In order to enable more verbose logging and metrics exporting from the
 topology-aware policy, enable instrumentation and policy debugging from
 the nri-resource-policy global config:</p>
@@ -1226,13 +1427,14 @@ the nri-resource-policy global config:</p>
 <span class="w">  </span><span class="c1"># The topology-aware policy can exports various system and topology</span>
 <span class="w">  </span><span class="c1"># zone utilisation metrics. Accessible in command line with</span>
 <span class="w">  </span><span class="c1"># curl --silent http://$localhost_or_pod_IP:8891/metrics</span>
-<span class="w">  </span><span class="nt">HTTPEndpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">:8891</span>
-<span class="w">  </span><span class="nt">PrometheusExport</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">httpEndpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">:8891</span>
+<span class="w">  </span><span class="nt">prometheusExport</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 <span class="w">  </span><span class="nt">metrics</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="c1"># use &#39;*&#39; instead for all available metrics</span>
 <span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">policy</span>
 <span class="nt">logger</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">Debug</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">policy</span>
+<span class="w">  </span><span class="nt">debug</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">policy</span>
 </pre></div>
 </div>
 </section>
