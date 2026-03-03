@@ -1,0 +1,32 @@
+config:
+  reservedResources:
+    cpu: 750m
+  pinCPU: true
+  pinMemory: true
+  instrumentation:
+    httpEndpoint: ":8891"
+  log:
+    debug:
+      - resource-manager
+      - policy
+    source: true
+    klog:
+      skip_headers: true
+extraEnv:
+  OVERRIDE_SYS_CACHES: '''[
+  {"cpusets": ["0-7","64-71" ], "level": 3, "size": "16M"},
+  {"cpusets": ["8-15","72-79" ], "level": 3, "size": "16M"},
+  {"cpusets": ["48-55","112-119" ], "level": 3, "size": "16M"},
+  {"cpusets": ["56-63","120-127" ], "level": 3, "size": "16M"},
+  {"cpusets": ["16-23","80-87" ], "level": 3, "size": "16M"},
+  {"cpusets": ["24-31","88-95" ], "level": 3, "size": "16M"},
+  {"cpusets": ["32-39","96-103" ], "level": 3, "size": "16M"},
+  {"cpusets": ["40-47","104-111" ], "level": 3, "size": "16M"},
+  {"cpusets": ["0-63"], "level": 2, "size": "4M"},
+  {"cpusets": ["64-127"], "level": 2, "size": "4M"},
+  {"cpusets": ["0-63"], "level": 1, "size": "1M", "kind": "d"},
+  {"cpusets": ["0-63"], "level": 1, "size": "1M", "kind": "i"},
+  {"cpusets": ["64-127"], "level": 1, "size": "128k", "kind": "d"},
+  {"cpusets": ["64-127"], "level": 1, "size": "128k", "kind": "i"}
+  ]
+'''
