@@ -29,6 +29,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/kubernetes"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
+	topoutil "github.com/containers/nri-plugins/pkg/utils/topology"
 )
 
 type (
@@ -371,6 +372,11 @@ func (cs *supply) Allocate(r Request, o *libmem.Offer) (Grant, map[string]libmem
 
 	grant, err := cs.AllocateCPU(r)
 	if err != nil {
+		return nil, nil, err
+	}
+
+	if err := r.(*request).verifyStrictPreferences(grant); err != nil {
+		cs.ReleaseCPU(grant)
 		return nil, nil, err
 	}
 
@@ -869,6 +875,51 @@ func (cr *request) PickByHints() bool {
 // ColdStart returns the cold start timeout (in milliseconds).
 func (cr *request) ColdStart() time.Duration {
 	return cr.coldStart
+}
+
+func (cr *request) verifyStrictPreferences(g Grant) error {
+	if err := cr.verifyStrictTopologyHints(g); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (cr *request) verifyStrictTopologyHints(g Grant) error {
+	if !cr.GetContainer().StrictTopologyHints() {
+		return nil
+	}
+
+	for _, h := range cr.GetContainer().GetTopologyHints() {
+		hint := topoutil.NewHint(g.GetCPUNode().System(), h)
+
+		if g.SharedPortion() > 0 {
+			if cpus := hint.MisalignedCPUSet(g.SharedCPUs()); cpus.Size() > 0 {
+				return policyError("granted shared CPUs %q fail strict hint %v",
+					cpus.String(), h)
+			}
+		}
+
+		if g.ReservedPortion() > 0 {
+			if cpus := hint.MisalignedCPUSet(g.ReservedCPUs()); cpus.Size() > 0 {
+				return policyError("granted reserved CPUs %q fail strict hint %v",
+					cpus.String(), h)
+			}
+		}
+
+		if excl := g.ExclusiveCPUs(); excl.Size() > 0 {
+			if cpus := hint.MisalignedCPUSet(excl); cpus.Size() > 0 {
+				return policyError("granted exclusive CPUs %q fail strict hint %v",
+					cpus.String(), h)
+			}
+		}
+
+		if mems := hint.MisalignedMems(g.GetMemoryZone()); mems.Size() > 0 {
+			return policyError("granted memory zones %s fail strict hint %v",
+				mems.String(), h)
+		}
+	}
+
+	return nil
 }
 
 // Score collects data for scoring this supply wrt. the given request.
