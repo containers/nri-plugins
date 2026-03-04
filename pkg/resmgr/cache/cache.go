@@ -59,6 +59,14 @@ const (
 	// TopologyHintsKey can be used to opt out from automatic topology hint generation.
 	TopologyHintsKey = "topologyhints" + "." + kubernetes.ResmgrKeyNamespace
 
+	// TestTopologyHintsKey can be used to annotate fake topology hints for testing.
+	TestTopologyHintsKey = "test." + TopologyHintsKey
+
+	// StrictTopologyHintsKey can be used to force strict interpretation of topology
+	// hints. An unsatisfied strict topology hint should prevent the creation of the
+	// container.
+	StrictTopologyHintsKey = "strict." + TopologyHintsKey
+
 	// PreserveCpuKey means that CPU resources should not be touched.
 	PreserveCpuKey = "cpu.preserve." + kubernetes.ResmgrKeyNamespace
 	// PreserveMemoryKey means that memory resources should not be touched.
@@ -249,6 +257,8 @@ type Container interface {
 
 	// Get any attached topology hints.
 	GetTopologyHints() topology.Hints
+	// StrictTopologyHints returns true if hints should be strict.
+	StrictTopologyHints() bool
 
 	// SetCPUShares sets the CFS CPU shares of the container.
 	SetCPUShares(int64)

@@ -31,6 +31,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/kubernetes"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	"github.com/containers/nri-plugins/pkg/topology"
+	"github.com/containers/nri-plugins/pkg/utils"
 
 	nri "github.com/containerd/nri/pkg/api"
 	v1 "k8s.io/api/core/v1"
@@ -195,6 +196,7 @@ func (c *container) generateTopologyHints() {
 		mountHints       = true
 		deviceHints      = true
 		podResourceHints = true
+		testHints        = utils.TestAPIsEnabled()
 	)
 
 	if preference, ok := c.GetEffectiveAnnotation(TopologyHintsKey); ok {
@@ -273,6 +275,23 @@ func (c *container) generateTopologyHints() {
 		}
 	} else {
 		log.Info("automatic topology hint generation disabled for pod resources")
+	}
+
+	if testHints {
+		hints := map[string]topology.Hint{}
+		if value, ok := c.GetEffectiveAnnotation(TestTopologyHintsKey); ok {
+			if err := yaml.Unmarshal([]byte(value), &hints); err != nil {
+				log.Error("failed to parse test topology hints annotation for %s: %v",
+					c.PrettyName(), err)
+			} else {
+				for p, h := range hints {
+					h.Provider = p
+					hints[h.Provider] = h
+					log.Info("%s: injected test topology hint %v", c.PrettyName(), h)
+				}
+				c.TopologyHints = topology.MergeTopologyHints(c.TopologyHints, hints)
+			}
+		}
 	}
 }
 
@@ -611,6 +630,22 @@ func (c *container) GetLinuxIOPriority() *nri.LinuxIOPriority {
 
 func (c *container) GetTopologyHints() topology.Hints {
 	return c.TopologyHints
+}
+
+func (c *container) StrictTopologyHints() bool {
+	value, ok := c.GetEffectiveAnnotation(StrictTopologyHintsKey)
+	if !ok {
+		return false
+	}
+
+	strict, err := strconv.ParseBool(value)
+	if err != nil {
+		log.Error("%s: invalid strict topology hints annotation (%q, %q): %v",
+			c.PrettyName(), StrictTopologyHintsKey, value, err)
+		return false
+	}
+
+	return strict
 }
 
 func (c *container) getPendingRequest() interface{} {
