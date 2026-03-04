@@ -18,10 +18,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"sync"
 
 	"github.com/containers/nri-plugins/pkg/instrumentation"
+	"github.com/containers/nri-plugins/pkg/utils"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
@@ -31,9 +31,6 @@ import (
 )
 
 const (
-	// EnvVarEnableTestAPIs controls if test APIS are enabled (currently e2e test controller).
-	EnvVarEnableTestAPIs = "ENABLE_TEST_APIS"
-
 	// ControllerName is the name of this controller.
 	ControllerName = "e2e-test"
 
@@ -46,7 +43,7 @@ const (
 )
 
 var (
-	enableTestAPIs = (os.Getenv(EnvVarEnableTestAPIs) != "")
+	enableTestAPIs = utils.TestAPIsEnabled()
 )
 
 // testctl encapsulates the runtime state of our test controller.
