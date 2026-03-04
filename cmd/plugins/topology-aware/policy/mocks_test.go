@@ -461,6 +461,9 @@ func (m *mockContainer) InsertMount(*cache.Mount) {
 func (m *mockContainer) GetTopologyHints() topology.Hints {
 	return topology.Hints{}
 }
+func (m *mockContainer) StrictTopologyHints() bool {
+	return false
+}
 func (m *mockContainer) SetCPUShares(int64) {
 }
 func (m *mockContainer) SetCPUPeriod(int64) {
