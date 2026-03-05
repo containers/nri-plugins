@@ -881,6 +881,9 @@ func (cr *request) verifyStrictPreferences(g Grant) error {
 	if err := cr.verifyStrictTopologyHints(g); err != nil {
 		return err
 	}
+	if err := cr.verifyStrictCPUPreferences(g); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -917,6 +920,27 @@ func (cr *request) verifyStrictTopologyHints(g Grant) error {
 			return policyError("granted memory zones %s fail strict hint %v",
 				mems.String(), h)
 		}
+	}
+
+	return nil
+}
+
+func (cr *request) verifyStrictCPUPreferences(g Grant) error {
+	full := cr.FullCPUs()
+
+	if full < 1 || !cr.Isolate() {
+		return nil
+	}
+
+	ctr := cr.GetContainer()
+	pod, _ := ctr.GetPod()
+	if !strictIsolatedCPUsPreference(pod, ctr) {
+		return nil
+	}
+
+	if cpus := g.IsolatedCPUs(); cpus.Size() < full {
+		return policyError("granted isolated CPUs %q less than requested %d",
+			cpus.String(), full)
 	}
 
 	return nil
