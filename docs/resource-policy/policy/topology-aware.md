@@ -48,9 +48,10 @@ assigned as their resources. Resource allocation for workloads happens by
 first picking the pool which is considered to fit the best the resource
 requirements of the workload and then assigning CPU and memory from this pool.
 
-The pool nodes at various depths from bottom to top represent the NUMA nodes,
-dies, sockets, and finally the whole of the system at the root node. Leaf NUMA
-nodes are assigned the memory behind their controllers / zones and CPU cores
+The pool nodes at various depths from bottom to top represent the L3 caches,
+NUMA nodes, dies, sockets, and finally the whole of the system at the root node.
+L3 cache pools group CPUs sharing the same L3 cache. Leaf NUMA nodes are assigned
+the memory behind their controllers / zones and CPU cores
 with the smallest distance / access penalty to this memory. If the machine
 has multiple types of memory separately visible to both the kernel and user
  space, for instance both DRAM and PMEM,
@@ -225,7 +226,7 @@ behavior. These options can be supplied as part of the effective
   - is the default topology level preference for containers with unlimited
     burstability. The policy will try to allocate Burstable containers with
     no CPU limit to a pool at this topology level. The possible values are:
-    `system`, `package`, `die`, `numa`.
+    `system`, `package`, `die`, `numa`, `l3cache`.
 - `schedulingClasses`
   - Define scheduling classes recognized by the policy. A scheduling class
     has the following set of associated Linux scheduling policy and I/O
@@ -481,6 +482,8 @@ metadata:
     unlimited-burstable.resource-policy.nri.io/container.C2: "package"
     # prefer to allocate C3 to all sockets in the system
     unlimited-burstable.resource-policy.nri.io/container.C3: "system"
+    # prefer to allocate C4 to a single L3 cache
+    unlimited-burstable.resource-policy.nri.io/container.C4: "l3cache"
     # any other containers in the pod will prefer allocation to a single die
 ```
 
