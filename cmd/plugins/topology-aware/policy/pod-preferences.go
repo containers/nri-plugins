@@ -47,6 +47,8 @@ const (
 	keySchedulingClass = "scheduling-class." + kubernetes.ResmgrKeyNamespace
 	// effective annotation key for isolated CPU preference
 	preferIsolatedCPUsKey = "prefer-isolated-cpus" + "." + kubernetes.ResmgrKeyNamespace
+	// effective annotation key for strict isolated CPU preference
+	strictPreferIsolatedCPUsKey = "require-isolated-cpus" + "." + kubernetes.ResmgrKeyNamespace
 	// effective annotation key for shared CPU preference
 	preferSharedCPUsKey = "prefer-shared-cpus" + "." + kubernetes.ResmgrKeyNamespace
 	// effective annotation key for memory type preference
@@ -129,10 +131,21 @@ func boolConfigPreference(ptr *bool) (bool, prefKind) {
 // for the given container. If an effective annotation is not found, it uses
 // the global configuration for isolated CPU preference.
 func isolatedCPUsPreference(pod cache.Pod, container cache.Container) (bool, prefKind) {
-	key := preferIsolatedCPUsKey
-	value, ok := pod.GetEffectiveAnnotation(key, container.GetName())
-	if !ok {
+	sKey := strictPreferIsolatedCPUsKey
+	sVal, sScope, sOk := pod.QueryEffectiveAnnotation(sKey, container.GetName())
+
+	pKey := preferIsolatedCPUsKey
+	pVal, pScope, pOk := pod.QueryEffectiveAnnotation(pKey, container.GetName())
+
+	key, value := "", ""
+
+	switch {
+	case !sOk && !pOk:
 		return boolConfigPreference(opt.PreferIsolated)
+	case (sOk && !pOk) || sScope <= pScope:
+		key, value = sKey, sVal
+	default: // case (!sOk && pOk) || pScope < sScope:
+		key, value = pKey, pVal
 	}
 
 	preference, err := strconv.ParseBool(value)
@@ -145,6 +158,14 @@ func isolatedCPUsPreference(pod cache.Pod, container cache.Container) (bool, pre
 	log.Debug("%s: effective CPU isolation preference %v", container.PrettyName(), preference)
 
 	return preference, prefAnnotated
+}
+
+// strictIsolatedCPUsPreference returns true if isolated CPU allocation is required.
+func strictIsolatedCPUsPreference(pod cache.Pod, container cache.Container) bool {
+	_, sScope, sOk := pod.QueryEffectiveAnnotation(strictPreferIsolatedCPUsKey, container.GetName())
+	_, pScope, pOk := pod.QueryEffectiveAnnotation(preferIsolatedCPUsKey, container.GetName())
+
+	return (sOk && !pOk) || (sOk && pOk && sScope <= pScope)
 }
 
 // sharedCPUsPreference returns whether shared CPU allocation is preferred for
