@@ -451,6 +451,11 @@ type Cache interface {
 	// Save requests a cache save.
 	Save() error
 
+	// Block saving the cache (e.g. during a batch of updates).
+	BlockSave()
+	// Remove a previous BlockSave.
+	UnblockSave() error
+
 	// RefreshPods purges/inserts stale/new pods/containers using a pod sandbox list response.
 	RefreshPods([]*nri.PodSandbox, <-chan *podresapi.PodResourcesList) ([]Pod, []Pod, []Container)
 	// RefreshContainers purges/inserts stale/new containers using a container list response.
@@ -504,6 +509,8 @@ type cache struct {
 	pending map[string]struct{} // cache IDs of containers with pending changes
 
 	implicit map[string]ImplicitAffinity // implicit affinities
+
+	saveBlock int // saving to disk blocked if > 0
 }
 
 // Make sure cache implements Cache.
@@ -1167,8 +1174,28 @@ func (cch *cache) Restore(data []byte) error {
 	return nil
 }
 
+func (cch *cache) BlockSave() {
+	cch.saveBlock++
+}
+
+func (cch *cache) UnblockSave() error {
+	cch.saveBlock--
+	switch {
+	case cch.saveBlock == 0:
+		return cch.Save()
+	case cch.saveBlock < 0:
+		log.Error("cache save block counter went negative, resetting to 0")
+		cch.saveBlock = 0
+	}
+	return nil
+}
+
 // Save the state of the cache.
 func (cch *cache) Save() error {
+	if cch.saveBlock > 0 {
+		return nil
+	}
+
 	log.Debug("saving cache to file '%s'...", cch.filePath)
 
 	data, err := cch.Snapshot()
