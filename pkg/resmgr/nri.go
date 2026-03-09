@@ -204,6 +204,13 @@ func (p *nriPlugin) syncWithNRI(pods []*api.PodSandbox, containers []*api.Contai
 
 	nri.Info("synchronizing cache state with NRI runtime...")
 
+	m.cache.BlockSave()
+	defer func() {
+		if err := m.cache.UnblockSave(); err != nil {
+			nri.Error("failed to unblock cache save: %v", err)
+		}
+	}()
+
 	_, _, deleted := m.cache.RefreshPods(pods, m.agent.GoListPodResources(podResListTimeout))
 	for _, c := range deleted {
 		nri.Info("discovered stale container %s (%s)...", c.PrettyName(), c.GetID())
