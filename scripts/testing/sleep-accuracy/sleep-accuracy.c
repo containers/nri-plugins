@@ -975,7 +975,7 @@ int main(int argc, char *argv[]) {
                                     }
 
                                     // print measurement parameters and results
-                                    printf("%s %d %d %d %ld %d %d %d %d %d %d %ld %ld ",
+                                    printf("%s %d %d %d %d %d %d %d %d %d %d %ld %ld ",
                                            benchmark_name(benchmark),
                                            r + 1,
                                            cpu,
