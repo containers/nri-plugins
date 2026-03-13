@@ -1775,19 +1775,24 @@ func (c *topologyCache) discoverCacheGroups(sys sysfs.System) {
 		}
 	}
 
-	// sort groups by package, die, NUMA node, and lowest CPU ID.
-	slices.SortFunc(c.cacheGroups, func(a, b *cacheGroup) int {
+	sortByDie := true
+	cacheGroupCompare := func(a, b *cacheGroup) int {
 		if diff := a.pkg - b.pkg; diff != 0 {
 			return diff
 		}
-		if diff := a.die - b.die; diff != 0 {
-			return diff
+		if sortByDie {
+			if diff := a.die - b.die; diff != 0 {
+				return diff
+			}
 		}
 		if diff := a.node - b.node; diff != 0 {
 			return diff
 		}
 		return a.cpus.List()[0] - b.cpus.List()[0]
-	})
+	}
+
+	// sort groups by package, die, NUMA node, and lowest CPU ID.
+	slices.SortFunc(c.cacheGroups, cacheGroupCompare)
 
 	for idx, g := range c.cacheGroups {
 		g.id = idx
@@ -1795,19 +1800,39 @@ func (c *topologyCache) discoverCacheGroups(sys sysfs.System) {
 		for _, cpuID := range g.cpus.UnsortedList() {
 			cpu := sys.CPU(cpuID)
 			if cpu.PackageID() != g.pkg {
-				log.Panic("CPU #%d in cache group #%d has package #%d != #%d",
+				log.Warn("CPU #%d in cache group #%d has package #%d != #%d",
 					cpuID, g.id, cpu.PackageID(), g.pkg)
+				c.cacheGroups = nil
+				return
 			}
 			if cpu.DieID() != g.die {
-				log.Panic("CPU #%d in cache group #%d has die #%d != #%d",
+				log.Warn("CPU #%d in cache group #%d has die #%d != #%d",
 					cpuID, g.id, cpu.DieID(), g.die)
+				sortByDie = false
+				break
 			}
 			if cpu.NodeID() != g.node {
-				log.Panic("CPU #%d in cache group #%d has node #%d != #%d",
+				log.Warn("CPU #%d in cache group #%d has node #%d != #%d",
 					cpuID, g.id, cpu.NodeID(), g.die)
+				c.cacheGroups = nil
+				return
 			}
 		}
 
+		cpu := sys.CPU(g.cpus.List()[0])
+		log.Debug("cache group #%d: pkg #%d/die #%d/node #%d %s cpus %s",
+			g.id, cpu.PackageID(), cpu.DieID(), cpu.NodeID(), g.kind, g.cpus)
+	}
+
+	if sortByDie {
+		return
+	}
+
+	// resort group, now without dies IDs.
+	slices.SortFunc(c.cacheGroups, cacheGroupCompare)
+
+	for idx, g := range c.cacheGroups {
+		g.id = idx
 		cpu := sys.CPU(g.cpus.List()[0])
 		log.Debug("cache group #%d: pkg #%d/die #%d/node #%d %s cpus %s",
 			g.id, cpu.PackageID(), cpu.DieID(), cpu.NodeID(), g.kind, g.cpus)
