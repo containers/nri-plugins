@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.12.1-5-g5fad383a documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.12.1-9-g70af3690 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=3e881916"></script>
+        <script src="../../../_static/documentation_options.js?v=20849262"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -150,9 +150,10 @@ detected hardware topology. Each pool has a set of CPUs and memory zones
 assigned as their resources. Resource allocation for workloads happens by
 first picking the pool which is considered to fit the best the resource
 requirements of the workload and then assigning CPU and memory from this pool.</p>
-<p>The pool nodes at various depths from bottom to top represent the NUMA nodes,
-dies, sockets, and finally the whole of the system at the root node. Leaf NUMA
-nodes are assigned the memory behind their controllers / zones and CPU cores
+<p>The pool nodes at various depths from bottom to top represent the L3 caches,
+NUMA nodes, dies, sockets, and finally the whole of the system at the root node.
+L3 cache pools group CPUs sharing the same L3 cache. Leaf NUMA nodes are assigned
+the memory behind their controllers / zones and CPU cores
 with the smallest distance / access penalty to this memory. If the machine
 has multiple types of memory separately visible to both the kernel and user
 space, for instance both DRAM and PMEM,
@@ -390,7 +391,7 @@ the <a class="reference internal" href="../developers-guide/cpu-allocator.html">
 <li><p>is the default topology level preference for containers with unlimited
 burstability. The policy will try to allocate Burstable containers with
 no CPU limit to a pool at this topology level. The possible values are:
-<code class="docutils literal notranslate"><span class="pre">system</span></code>, <code class="docutils literal notranslate"><span class="pre">package</span></code>, <code class="docutils literal notranslate"><span class="pre">die</span></code>, <code class="docutils literal notranslate"><span class="pre">numa</span></code>.</p></li>
+<code class="docutils literal notranslate"><span class="pre">system</span></code>, <code class="docutils literal notranslate"><span class="pre">package</span></code>, <code class="docutils literal notranslate"><span class="pre">die</span></code>, <code class="docutils literal notranslate"><span class="pre">numa</span></code>, <code class="docutils literal notranslate"><span class="pre">l3cache</span></code>.</p></li>
 </ul>
 </li>
 <li><p><code class="docutils literal notranslate"><span class="pre">schedulingClasses</span></code></p>
@@ -677,6 +678,8 @@ have the same values as the <code class="docutils literal notranslate"><span cla
 <span class="w">    </span><span class="nt">unlimited-burstable.resource-policy.nri.io/container.C2</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;package&quot;</span>
 <span class="w">    </span><span class="c1"># prefer to allocate C3 to all sockets in the system</span>
 <span class="w">    </span><span class="nt">unlimited-burstable.resource-policy.nri.io/container.C3</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;system&quot;</span>
+<span class="w">    </span><span class="c1"># prefer to allocate C4 to a single L3 cache</span>
+<span class="w">    </span><span class="nt">unlimited-burstable.resource-policy.nri.io/container.C4</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;l3cache&quot;</span>
 <span class="w">    </span><span class="c1"># any other containers in the pod will prefer allocation to a single die</span>
 </pre></div>
 </div>
