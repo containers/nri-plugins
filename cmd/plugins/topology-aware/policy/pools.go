@@ -122,7 +122,26 @@ func (p *policy) buildSocketPool(socketID idset.ID, root Node) {
 	socket.noderes, socket.freeres = p.getCpuSupply(socket, cpus)
 	socket.mem, socket.pMem, socket.hbm = p.getMemSupply(socket, cpus)
 
-	if dieIDs := p.sys.Package(socketID).DieIDs(); len(dieIDs) > 1 {
+	dieIDs := p.sys.Package(socketID).DieIDs()
+	omitDies := len(dieIDs) <= 1
+	if omitDies {
+		log.Info("- omitted die pools (only one die)")
+	}
+
+	dieIsCluster := true
+	for _, dieID := range dieIDs {
+		clusterIDs := p.sys.Package(socketID).DieClusterIDs(dieID)
+		if len(clusterIDs) > 1 {
+			dieIsCluster = false
+			break
+		}
+	}
+	if dieIsCluster {
+		omitDies = true
+		log.Info("- omitted die pools (dies are same as clusters)")
+	}
+
+	if !omitDies {
 		for _, dieID := range dieIDs {
 			p.buildDiePool(socketID, dieID, socket)
 		}
