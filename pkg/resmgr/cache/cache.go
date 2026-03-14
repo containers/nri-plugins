@@ -59,6 +59,14 @@ const (
 	// TopologyHintsKey can be used to opt out from automatic topology hint generation.
 	TopologyHintsKey = "topologyhints" + "." + kubernetes.ResmgrKeyNamespace
 
+	// TestTopologyHintsKey can be used to annotate fake topology hints for testing.
+	TestTopologyHintsKey = "test." + TopologyHintsKey
+
+	// StrictTopologyHintsKey can be used to force strict interpretation of topology
+	// hints. An unsatisfied strict topology hint should prevent the creation of the
+	// container.
+	StrictTopologyHintsKey = "strict." + TopologyHintsKey
+
 	// PreserveCpuKey means that CPU resources should not be touched.
 	PreserveCpuKey = "cpu.preserve." + kubernetes.ResmgrKeyNamespace
 	// PreserveMemoryKey means that memory resources should not be touched.
@@ -72,6 +80,21 @@ const (
 	// AnnotatedResourcesKey can be used to annotate resource requirements of
 	// containers and init containers on the pod.
 	AnnotatedResourcesKey = kubernetes.AnnotatedResourcesKey
+)
+
+// AnnotationScope denotes the scope of a queried effective annotation.
+type AnnotationScope int
+
+const (
+	// ContainerScopedAnnotation indicates a container scoped
+	// annotation using the $key/container.$container key syntax.
+	ContainerScopedAnnotation AnnotationScope = iota
+	// PodScopedAnnotation indicates a pod scoped annotation
+	// using the $key/pod key syntax.
+	PodScopedAnnotation
+	// UnscopedAnnotation indicates a unscoped annotation
+	// using the plain $key key syntax.
+	UnscopedAnnotation
 )
 
 // PodState is the pod state in the runtime.
@@ -117,6 +140,10 @@ type Pod interface {
 	//     $K
 	// and return the value of the first key found.
 	GetEffectiveAnnotation(key, container string) (string, bool)
+
+	// QueryEffectiveAnnotation is like GetEffectiveAnnotation but also returns
+	// the scope of the found annotation.
+	QueryEffectiveAnnotation(key, container string) (string, AnnotationScope, bool)
 
 	// GetPodResources returns the pod resources for this pod, waiting for any
 	// pending fetch to complete or a timeout.
@@ -221,6 +248,10 @@ type Container interface {
 	// GetEffectiveAnnotation returns the effective annotation for the container from the pod.
 	GetEffectiveAnnotation(key string) (string, bool)
 
+	// QueryEffectiveAnnotation is like GetEffectiveAnnotation but also returns
+	// the scope of the found annotation.
+	QueryEffectiveAnnotation(key string) (string, AnnotationScope, bool)
+
 	// Containers can be subject for expression evaluation.
 	resmgr.Evaluable
 
@@ -249,6 +280,8 @@ type Container interface {
 
 	// Get any attached topology hints.
 	GetTopologyHints() topology.Hints
+	// StrictTopologyHints returns true if hints should be strict.
+	StrictTopologyHints() bool
 
 	// SetCPUShares sets the CFS CPU shares of the container.
 	SetCPUShares(int64)
