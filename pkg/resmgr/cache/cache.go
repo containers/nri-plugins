@@ -82,6 +82,21 @@ const (
 	AnnotatedResourcesKey = kubernetes.AnnotatedResourcesKey
 )
 
+// AnnotationScope denotes the scope of a queried effective annotation.
+type AnnotationScope int
+
+const (
+	// ContainerScopedAnnotation indicates a container scoped
+	// annotation using the $key/container.$container key syntax.
+	ContainerScopedAnnotation AnnotationScope = iota
+	// PodScopedAnnotation indicates a pod scoped annotation
+	// using the $key/pod key syntax.
+	PodScopedAnnotation
+	// UnscopedAnnotation indicates a unscoped annotation
+	// using the plain $key key syntax.
+	UnscopedAnnotation
+)
+
 // PodState is the pod state in the runtime.
 type PodState int32
 
@@ -125,6 +140,10 @@ type Pod interface {
 	//     $K
 	// and return the value of the first key found.
 	GetEffectiveAnnotation(key, container string) (string, bool)
+
+	// QueryEffectiveAnnotation is like GetEffectiveAnnotation but also returns
+	// the scope of the found annotation.
+	QueryEffectiveAnnotation(key, container string) (string, AnnotationScope, bool)
 
 	// GetPodResources returns the pod resources for this pod, waiting for any
 	// pending fetch to complete or a timeout.
@@ -228,6 +247,10 @@ type Container interface {
 	GetResmgrAnnotation(key string, objPtr interface{}) (string, bool)
 	// GetEffectiveAnnotation returns the effective annotation for the container from the pod.
 	GetEffectiveAnnotation(key string) (string, bool)
+
+	// QueryEffectiveAnnotation is like GetEffectiveAnnotation but also returns
+	// the scope of the found annotation.
+	QueryEffectiveAnnotation(key string) (string, AnnotationScope, bool)
 
 	// Containers can be subject for expression evaluation.
 	resmgr.Evaluable

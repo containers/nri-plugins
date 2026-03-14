@@ -524,6 +524,14 @@ func (c *container) GetEffectiveAnnotation(key string) (string, bool) {
 	return pod.GetEffectiveAnnotation(key, c.GetName())
 }
 
+func (c *container) QueryEffectiveAnnotation(key string) (string, AnnotationScope, bool) {
+	pod, ok := c.GetPod()
+	if !ok {
+		return "", UnscopedAnnotation, false
+	}
+	return pod.QueryEffectiveAnnotation(key, c.GetName())
+}
+
 func (c *container) GetResourceRequirements() v1.ResourceRequirements {
 	return c.Requirements
 }
