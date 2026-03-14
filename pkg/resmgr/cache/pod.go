@@ -121,15 +121,20 @@ func (p *pod) GetResmgrAnnotation(key string) (string, bool) {
 }
 
 func (p *pod) GetEffectiveAnnotation(key, container string) (string, bool) {
+	value, _, ok := p.QueryEffectiveAnnotation(key, container)
+	return value, ok
+}
+
+func (p *pod) QueryEffectiveAnnotation(key, container string) (string, AnnotationScope, bool) {
 	annotations := p.Pod.GetAnnotations()
 	if v, ok := annotations[key+"/container."+container]; ok {
-		return v, true
+		return v, ContainerScopedAnnotation, true
 	}
 	if v, ok := annotations[key+"/pod"]; ok {
-		return v, true
+		return v, PodScopedAnnotation, true
 	}
 	v, ok := annotations[key]
-	return v, ok
+	return v, UnscopedAnnotation, ok
 }
 
 func (p *pod) GetQOSClass() v1.PodQOSClass {
