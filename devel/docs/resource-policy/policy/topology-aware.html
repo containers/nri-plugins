@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.12.1-11-gaab9dd07 documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.12.1-18-gcd6dfca8 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=de4a237b"></script>
+        <script src="../../../_static/documentation_options.js?v=e748cadd"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -660,6 +660,12 @@ allocation using the following Pod annotation.</p>
 </div>
 <p>These Pod annotations have no effect on containers which are not eligible for
 exclusive allocation.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">require-isolated-cpus.resource-policy.nri.io</span></code> annotation key can be
+used instead of <code class="docutils literal notranslate"><span class="pre">prefer-isolated-cpus</span></code> to require isolated CPUs for eligible
+containers. It is syntactically identical to <code class="docutils literal notranslate"><span class="pre">prefer-isolate-cpus</span></code>, but the
+semantics are strict. If the exclusively allocated CPUs for such a container
+are not isolated, the policy will fail the creation of the container with an
+error.</p>
 </section>
 <section id="preferred-topology-level-for-burstable-containers-without-cpu-limit">
 <h3>Preferred Topology Level for Burstable Containers Without CPU Limit<a class="headerlink" href="#preferred-topology-level-for-burstable-containers-without-cpu-limit" title="Link to this heading"></a></h3>
@@ -999,6 +1005,19 @@ for all devices, the effective resources for the container will be the union of
 the individually picked resources. If picking resources by hints fails for any
 of the devices, the policy falls back to picking resource from the pool without
 considering device hints.</p>
+<p><strong>Strict Topology Hints</strong></p>
+<p>Containers can be annotated for strict topology hints using the
+<code class="docutils literal notranslate"><span class="pre">strict.topologyhints.resource-policy.nri.io</span></code> annotation. For instance the
+following annotation select strict topology hints for container <code class="docutils literal notranslate"><span class="pre">highprio</span></code>:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nn">...</span>
+<span class="w">  </span><span class="nt">metadata</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">strict.topologyhints.resource-policy.nri.io/container.highprio</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;true&quot;</span>
+<span class="nn">...</span>
+</pre></div>
+</div>
+<p>If the allocated CPU and memory leave any topology hint unsatisfied for such
+a container, the policy will fail container creation with an error.</p>
 </section>
 <section id="container-affinity-and-anti-affinity">
 <h3>Container Affinity and Anti-Affinity<a class="headerlink" href="#container-affinity-and-anti-affinity" title="Link to this heading"></a></h3>

@@ -463,6 +463,13 @@ metadata:
 These Pod annotations have no effect on containers which are not eligible for
 exclusive allocation.
 
+The `require-isolated-cpus.resource-policy.nri.io` annotation key can be
+used instead of `prefer-isolated-cpus` to require isolated CPUs for eligible
+containers. It is syntactically identical to `prefer-isolate-cpus`, but the
+semantics are strict. If the exclusively allocated CPUs for such a container
+are not isolated, the policy will fail the creation of the container with an
+error.
+
 ### Preferred Topology Level for Burstable Containers Without CPU Limit
 
 CPU-unlimited burstable containers are by default preferred to allocate to a
@@ -852,7 +859,22 @@ the individually picked resources. If picking resources by hints fails for any
 of the devices, the policy falls back to picking resource from the pool without
 considering device hints.
 
+**Strict Topology Hints**
 
+Containers can be annotated for strict topology hints using the
+`strict.topologyhints.resource-policy.nri.io` annotation. For instance the
+following annotation select strict topology hints for container `highprio`:
+
+```yaml
+...
+  metadata:
+    annotations:
+      strict.topologyhints.resource-policy.nri.io/container.highprio: "true"
+...
+```
+
+If the allocated CPU and memory leave any topology hint unsatisfied for such
+a container, the policy will fail container creation with an error.
 
 ### Container Affinity and Anti-Affinity
 
