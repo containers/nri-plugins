@@ -71,6 +71,9 @@ func klogError(format string, args ...interface{}) error {
 func init() {
 	ctl.SetOutput(io.Discard)
 	klog.InitFlags(ctl.FlagSet)
+	// Opt into fixed stderrthreshold behavior (kubernetes/klog#212).
+	ctl.Set("legacy_stderr_threshold_behavior", "false")
+	ctl.Set("stderrthreshold", "INFO")
 	ctl.VisitAll(func(f *flag.Flag) {
 		if name, value, ok := getEnvForFlag(f.Name); ok {
 			if err := ctl.Set(f.Name, value); err != nil {
