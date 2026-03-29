@@ -129,3 +129,31 @@ customize with their own values, along with the default values.
 | `resources.limits.cpu`      | 1                                                     | CPU resource limit             |
 | `resources.limits.memory`   | 256Mi                                                 | memory resource limit          |
 | `extraEnv`                  | {}                                                    | extra environment variables    |
+
+## Command-line Options
+
+The resource-annotator binary accepts the following command-line flags:
+
+| Flag          | Default                                      | Description                  |
+|---------------|----------------------------------------------|------------------------------|
+| `-port`       | `8443`                                       | HTTPS port to listen on      |
+| `-cert-file`  | `/etc/resource-annotator/certs.d/tls.crt`   | TLS certificate file path    |
+| `-key-file`   | `/etc/resource-annotator/certs.d/tls.key`   | TLS certificate key file path |
+
+Each flag can also be set via an environment variable. Environment variables are
+evaluated before command-line flags, so a flag always takes precedence over the
+corresponding environment variable.
+
+| Environment Variable        | Corresponding Flag | Description                   |
+|-----------------------------|--------------------|-------------------------------|
+| `RESOURCE_ANNOTATOR_PORT`       | `-port`        | HTTPS port to listen on       |
+| `RESOURCE_ANNOTATOR_CERT_FILE`  | `-cert-file`   | TLS certificate file path     |
+| `RESOURCE_ANNOTATOR_KEY_FILE`   | `-key-file`    | TLS certificate key file path |
+
+Use the `extraEnv` Helm value to pass environment variables to the deployment,
+for example:
+
+```shell
+$ helm install -n kube-system nri-webhook nri-plugins/nri-resource-annotator \
+      --set extraEnv.RESOURCE_ANNOTATOR_PORT=9443
+```
