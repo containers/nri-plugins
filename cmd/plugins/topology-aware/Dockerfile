@@ -38,7 +38,7 @@ RUN --mount=type=cache,target=/go/pkg/mod/ \
          BINARIES="" \
          OTHER_IMAGE_TARGETS="" \
          PLUGINS=nri-resource-policy-topology-aware \
-         clean install-go-licenses build-plugins-static licenses
+         install-go-licenses build-plugins-static licenses
 
 RUN cpgodir() { \
         mkdir -p $2; \
