@@ -1059,20 +1059,22 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 		}
 	}
 
-	// tighter memory offer wins
-	m1, m2 := o1.NodeMask(), o2.NodeMask()
-	if m1.Size() < m2.Size() {
-		log.Debug("   - %s loses on memory offer (%s less tight than %s)",
-			node2.Name(), m2, m1)
-		return true
-	}
-	if m2.Size() < m1.Size() {
-		log.Debug("   - %s loses on memory offer (%s less tight than %s)",
-			node1.Name(), m1, m2)
-		return false
-	}
-	if m2.Size() == m1.Size() {
-		log.Debug("  - memory offers are a TIE (%s vs. %s)", m1, m2)
+	// tighter memory offer wins (skip if both offers are nil)
+	if o1 != nil && o2 != nil {
+		m1, m2 := o1.NodeMask(), o2.NodeMask()
+		if m1.Size() < m2.Size() {
+			log.Debug("   - %s loses on memory offer (%s less tight than %s)",
+				node2.Name(), m2, m1)
+			return true
+		}
+		if m2.Size() < m1.Size() {
+			log.Debug("   - %s loses on memory offer (%s less tight than %s)",
+				node1.Name(), m1, m2)
+			return false
+		}
+		if m2.Size() == m1.Size() {
+			log.Debug("  - memory offers are a TIE (%s vs. %s)", m1, m2)
+		}
 	}
 
 	// matching memory type wins
