@@ -2,4 +2,4 @@ sphinx==7.4.7
 sphinx_rtd_theme==2.0.0
 myst-parser==4.0.0
 sphinx-markdown-tables==0.0.17
-Pygments==2.17.0
+Pygments==2.20.0
