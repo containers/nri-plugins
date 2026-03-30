@@ -33,6 +33,16 @@ func (in *Config) DeepCopyInto(out *Config) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.Alsologtostderrthreshold != nil {
+		in, out := &in.Alsologtostderrthreshold, &out.Alsologtostderrthreshold
+		*out = new(string)
+		**out = **in
+	}
+	if in.Legacy_stderr_threshold_behavior != nil {
+		in, out := &in.Legacy_stderr_threshold_behavior, &out.Legacy_stderr_threshold_behavior
+		*out = new(bool)
+		**out = **in
+	}
 	if in.Log_backtrace_at != nil {
 		in, out := &in.Log_backtrace_at, &out.Log_backtrace_at
 		*out = new(string)
