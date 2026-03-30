@@ -862,6 +862,10 @@ spec:
                         type: boolean
                       alsologtostderr:
                         type: boolean
+                      alsologtostderrthreshold:
+                        type: string
+                      legacy_stderr_threshold_behavior:
+                        type: boolean
                       log_backtrace_at:
                         type: string
                       log_dir:
