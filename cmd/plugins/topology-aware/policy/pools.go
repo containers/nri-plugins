@@ -69,7 +69,7 @@ func (p *policy) enumeratePools() {
 	log.Info("enumerating pools...")
 
 	id := 0
-	p.root.DepthFirst(func(n Node) {
+	p.root.DepthFirst(func(n Node) (done bool) {
 		n.(*node).id = id
 		id++
 		log.Info("  #%d: pool %s (depth %d)", n.NodeID(), n.Name(), n.RootDistance())
@@ -77,6 +77,7 @@ func (p *policy) enumeratePools() {
 			p.depth = n.RootDistance()
 		}
 		p.pools = append(p.pools, n)
+		return false
 	})
 }
 
@@ -799,8 +800,9 @@ func (p *policy) hasZeroCpuReqContainer(pool Node) bool {
 func (p *policy) sortPoolsByScore(req Request, aff map[int]int32) (map[int]Score, []Node) {
 	scores := make(map[int]Score, p.nodeCnt)
 
-	p.root.DepthFirst(func(n Node) {
+	p.root.DepthFirst(func(n Node) (done bool) {
 		scores[n.NodeID()] = n.GetScore(req)
+		return false
 	})
 
 	// Filter out pools which don't have enough uncompressible resources
@@ -1247,11 +1249,12 @@ func affinityScore(affinities map[int]int32, node Node) float64 {
 		a := affinities[n.NodeID()]
 		score += q * float64(a)
 	}
-	node.BreadthFirst(func(n Node) {
+	node.BreadthFirst(func(n Node) (done bool) {
 		diff := float64(n.RootDistance() - node.RootDistance())
 		q := math.Pow(Q, diff)
 		a := affinities[n.NodeID()]
 		score += q * float64(a)
+		return false
 	})
 	return score
 }

@@ -1098,13 +1098,13 @@ func (cs *supply) AllocatableSharedCPU(quiet ...bool) int {
 	// of shared capacity.
 	//
 	// TODO(klihub): We might need to try speeding this up if it gets too slow.
-	// Obvious optimizations would be to 1) allow {Breadth,Depth}First to stop
-	// early if possible, and 2) store grants per assigned node.
+	// Obvious optimization would be to 1) store grants per assigned node.
 	hasZeroCpuReqs := false
-	cs.node.BreadthFirst(func(n Node) {
+	cs.node.BreadthFirst(func(n Node) bool {
 		if cs.node.Policy().hasZeroCpuReqContainer(n) {
 			hasZeroCpuReqs = true
 		}
+		return hasZeroCpuReqs
 	})
 	if hasZeroCpuReqs {
 		shared--
@@ -1130,14 +1130,14 @@ func (cs *supply) SliceableCPUs() (cpuset.CPUSet, error) {
 	// CPUs in each for their current BestEffort and Burstable QoS class
 	// shared allocations.
 
-	cs.node.DepthFirst(func(n Node) {
+	cs.node.DepthFirst(func(n Node) (done bool) {
 		if n.IsSameNode(cs.node) && !n.IsLeafNode() {
 			return
 		}
 
 		ns := n.FreeSupply()
 		if ns == nil {
-			return
+			return false
 		}
 
 		cpus := ns.SharableCPUs()
@@ -1150,10 +1150,11 @@ func (cs *supply) SliceableCPUs() (cpuset.CPUSet, error) {
 		cset, err := cs.takeCPUs(&cpus, nil, free, nonePrio)
 		if err != nil {
 			errs = append(errs, err)
-			return
+			return false
 		}
 
 		sliceable = sliceable.Union(cset)
+		return false
 	})
 
 	if len(errs) > 0 {
@@ -1372,8 +1373,9 @@ func (cg *grant) String() string {
 }
 
 func (cg *grant) AccountAllocateCPU() {
-	cg.node.DepthFirst(func(n Node) {
+	cg.node.DepthFirst(func(n Node) (done bool) {
 		n.FreeSupply().AccountAllocateCPU(cg)
+		return false
 	})
 	for node := cg.node.Parent(); !node.IsNil(); node = node.Parent() {
 		node.FreeSupply().AccountAllocateCPU(cg)
@@ -1417,8 +1419,9 @@ func (cg *grant) ReallocMemory(types libmem.TypeMask) error {
 }
 
 func (cg *grant) AccountReleaseCPU() {
-	cg.node.DepthFirst(func(n Node) {
+	cg.node.DepthFirst(func(n Node) (done bool) {
 		n.FreeSupply().AccountReleaseCPU(cg)
+		return false
 	})
 	for node := cg.node.Parent(); !node.IsNil(); node = node.Parent() {
 		node.FreeSupply().AccountReleaseCPU(cg)
