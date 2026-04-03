@@ -135,9 +135,9 @@ type Node interface {
 	// GetMemset
 	GetMemset(mtype memoryType) idset.IDSet
 	// DepthFirst traverse the tree@node calling the function at each node.
-	DepthFirst(func(Node))
+	DepthFirst(func(Node) bool) bool
 	// BreadthFirst traverse the tree@node calling the function at each node.
-	BreadthFirst(func(Node))
+	BreadthFirst(func(Node) bool) bool
 	// Dump state of the node.
 	Dump(string, ...int)
 	// Dump type-specific state of the node.
@@ -366,19 +366,26 @@ func (n *node) dump(prefix string, level ...int) {
 }
 
 // Do a depth-first traversal starting at node calling the given function at each node.
-func (n *node) DepthFirst(fn func(Node)) {
+func (n *node) DepthFirst(fn func(Node) bool) bool {
 	for _, c := range n.children {
-		c.DepthFirst(fn)
+		if c.DepthFirst(fn) {
+			return true
+		}
 	}
-	fn(n)
+	return fn(n)
 }
 
 // Do a breadth-first traversal starting at node calling the given function at each node.
-func (n *node) BreadthFirst(fn func(Node)) {
-	fn(n)
-	for _, c := range n.children {
-		c.BreadthFirst(fn)
+func (n *node) BreadthFirst(fn func(Node) bool) bool {
+	if fn(n) {
+		return true
 	}
+	for _, c := range n.children {
+		if c.BreadthFirst(fn) {
+			return true
+		}
+	}
+	return false
 }
 
 // System returns the policy System instance.
