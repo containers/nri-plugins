@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nri-resctrl-mon-config.default
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nri-plugin.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    resctrlPath: /sys/fs/resctrl
+    namespaces: []
+    labelSelector: {}
