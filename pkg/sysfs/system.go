@@ -1069,7 +1069,10 @@ func (sys *system) discoverCPU(path string) error {
 	if node, _ := filepath.Glob(filepath.Join(path, "node[0-9]*")); len(node) == 1 {
 		cpu.node = getEnumeratedID(node[0])
 	} else {
-		return fmt.Errorf("exactly one node per cpu allowed")
+		// Kernel configuration has NUMA disabled. In this case
+		// we consider all CPUs to belong to a single NUMA
+		// node with id 0.
+		cpu.node = 0
 	}
 
 	sys.cpus[cpu.id] = cpu
@@ -1360,6 +1363,18 @@ func (sys *system) discoverNodes() error {
 			return fmt.Errorf("failed to discover node for entry %s: %v", entry, err)
 		}
 	}
+	if len(entries) == 0 {
+		// Cannot find /sys/devices/system/node/node*. Kernel has CONFIG_NUMA=n.
+		// Create a single node with all CPUs and memory behind it.
+		sys.nodes[0] = &node{
+			id:         0,
+			cpus:       sys.onlineCPUs.Clone(),
+			distance:   []int{10},
+			memoryType: MemoryTypeDRAM,
+			normalMem:  true,
+		}
+		return nil
+	}
 
 	normalMemNodeIDs, err := readSysfsEntry(sysNodesPath, "has_normal_memory", nil)
 	if err != nil {
@@ -1567,14 +1582,15 @@ func (n *node) ClosestNodes() (nodes []idset.IDSet, distances []int) {
 
 // MemoryInfo memory info for the node (partial content from the meminfo sysfs entry).
 func (n *node) MemoryInfo() (*MemInfo, error) {
-	meminfo := filepath.Join(n.path, "meminfo")
-	buf := &MemInfo{}
-	err := ParseFileEntries(meminfo,
-		map[string]interface{}{
-			"MemTotal:": &buf.MemTotal,
-			"MemFree:":  &buf.MemFree,
-		},
-		func(line string) (string, string, error) {
+	var (
+		meminfo string
+		pickFn  PickEntryFn
+	)
+
+	if n.path != "" {
+		// NUMA node meminfo: "Node 0 MemTotal:  32768 kB"
+		meminfo = filepath.Join(n.path, "meminfo")
+		pickFn = func(line string) (string, string, error) {
 			fields := strings.Fields(strings.TrimSpace(line))
 			if len(fields) < 4 {
 				return "", "", sysfsError(meminfo, "failed to parse entry: '%s'", line)
@@ -1585,7 +1601,32 @@ func (n *node) MemoryInfo() (*MemInfo, error) {
 				val += " " + fields[4]
 			}
 			return key, val, nil
+		}
+	} else {
+		// No NUMA node path (CONFIG_NUMA=n). Fall back to /proc/meminfo.
+		// Format: "MemTotal:  32768 kB"
+		meminfo = "/proc/meminfo"
+		pickFn = func(line string) (string, string, error) {
+			fields := strings.Fields(strings.TrimSpace(line))
+			if len(fields) < 2 {
+				return "", "", nil
+			}
+			key := fields[0]
+			val := fields[1]
+			if len(fields) >= 3 {
+				val += " " + fields[2]
+			}
+			return key, val, nil
+		}
+	}
+
+	buf := &MemInfo{}
+	err := ParseFileEntries(meminfo,
+		map[string]interface{}{
+			"MemTotal:": &buf.MemTotal,
+			"MemFree:":  &buf.MemFree,
 		},
+		pickFn,
 	)
 
 	if err != nil {
