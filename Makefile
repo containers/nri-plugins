@@ -396,7 +396,7 @@ ginkgo-tests:
 	    --covermode atomic \
 	    --output-dir $(COVERAGE_PATH) \
 	    --junit-report junit.xml \
-	    --coverprofile $(COVERAGE_PATH)/coverprofile \
+	    --coverprofile coverprofile \
 	    --keep-separate-coverprofiles \
 	    --succinct \
             --skip-package $$(echo $(GO_SUBPKGS) | tr -s '\t ' ',') \
