@@ -35,23 +35,23 @@ func (a *Allocator) DumpNodes(context ...interface{}) {
 		)
 
 		if capa != 0 {
-			log.Info("%s  %s node #%d with %d memory (%s)", prefix,
+			log.Infof("%s  %s node #%d with %d memory (%s)", prefix,
 				n.Type(), n.ID(), capa, prettySize(capa))
 		} else {
-			log.Info("%s  memoryless %s node #%d", prefix,
+			log.Infof("%s  memoryless %s node #%d", prefix,
 				n.Type(), n.ID())
 		}
 
-		log.Info("%s    distance vector %v", prefix, n.Distance().Vector())
+		log.Infof("%s    distance vector %v", prefix, n.Distance().Vector())
 		n.ForeachDistance(func(d int, nodes NodeMask) bool {
-			log.Info("%s      at distance %d: %s %s", prefix, d, a.zoneType(nodes), nodes)
+			log.Infof("%s      at distance %d: %s %s", prefix, d, a.zoneType(nodes), nodes)
 			return true
 		})
 
 		if cpus != "" {
-			log.Info("%s    close CPUs: %s", prefix, cpus)
+			log.Infof("%s    close CPUs: %s", prefix, cpus)
 		} else {
-			log.Info("%s    no close CPUs", prefix)
+			log.Infof("%s    no close CPUs", prefix)
 		}
 
 		return true
@@ -60,7 +60,7 @@ func (a *Allocator) DumpNodes(context ...interface{}) {
 
 func (a *Allocator) DumpConfig(context ...interface{}) {
 	prefix := formatPrefix(context...)
-	log.Info("%smemory allocator configuration", prefix)
+	log.Infof("%smemory allocator configuration", prefix)
 	a.DumpNodes(prefix)
 }
 
@@ -78,13 +78,13 @@ func (a *Allocator) DumpRequests(context ...interface{}) {
 	prefix := formatPrefix(context...)
 
 	if len(a.users) == 0 {
-		details.Debug("%s  no requests", prefix)
+		details.Debugf("%s  no requests", prefix)
 		return
 	}
 
-	details.Debug("%s  requests:", prefix)
+	details.Debugf("%s  requests:", prefix)
 	for _, req := range SortRequests(a.requests, nil, RequestsByAge) {
-		details.Debug("%s    - %s (assigned zone %s)", prefix, req, req.Zone())
+		details.Debugf("%s    - %s (assigned zone %s)", prefix, req, req.Zone())
 	}
 }
 
@@ -96,7 +96,7 @@ func (a *Allocator) DumpZones(prefixFmt ...interface{}) {
 	prefix := formatPrefix(prefixFmt...)
 
 	if len(a.zones) == 0 {
-		details.Debug("%s  no zones in use", prefix)
+		details.Debugf("%s  no zones in use", prefix)
 		return
 	}
 
@@ -111,7 +111,7 @@ func (a *Allocator) DumpZones(prefixFmt ...interface{}) {
 		return int(z1 - z2)
 	})
 
-	details.Debug("%s  zones:", prefix)
+	details.Debugf("%s  zones:", prefix)
 	for _, z := range zones {
 		var (
 			zone = a.zones[z]
@@ -119,13 +119,13 @@ func (a *Allocator) DumpZones(prefixFmt ...interface{}) {
 			capa = prettySize(a.ZoneCapacity(z))
 			used = prettySize(a.ZoneUsage(z))
 		)
-		details.Debug("%s   - zone %s, free %s (capacity %s, used %s)", prefix, z, free, capa, used)
+		details.Debugf("%s   - zone %s, free %s (capacity %s, used %s)", prefix, z, free, capa, used)
 		if len(zone.users) == 0 {
 			continue
 		}
 
 		for _, req := range SortRequests(zone.users, nil, RequestsByAge) {
-			details.Debug("%s      %s", prefix, req)
+			details.Debugf("%s      %s", prefix, req)
 		}
 	}
 }
@@ -135,11 +135,11 @@ func (a *Allocator) dumpOvercommit(where string, oc []NodeMask, spill map[NodeMa
 		return
 	}
 
-	log.Debug("%s", where)
+	log.Debugf("%s", where)
 	for _, z := range oc {
-		log.Debug("  %s: %s", zoneName(z), prettySize(spill[z]))
+		log.Debugf("  %s: %s", zoneName(z), prettySize(spill[z]))
 		for _, r := range a.zones[z].users {
-			log.Debug("    - user %s", r)
+			log.Debugf("    - user %s", r)
 		}
 	}
 }

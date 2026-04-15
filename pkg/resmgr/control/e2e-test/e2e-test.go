@@ -69,7 +69,7 @@ func getE2ETestController() *testctl {
 
 // Start initializes the controller for enforcing decisions.
 func (ctl *testctl) Start(cache cache.Cache, cfg *cfgapi.Config) (bool, error) {
-	log.Debug("Start called (with test APIs %s)",
+	log.Debugf("Start called (with test APIs %s)",
 		map[bool]string{false: "disabled", true: "enabled"})
 
 	if !enableTestAPIs {
@@ -84,53 +84,53 @@ func (ctl *testctl) Start(cache cache.Cache, cfg *cfgapi.Config) (bool, error) {
 
 // Stop shuts down the controller.
 func (ctl *testctl) Stop() {
-	log.Debug("Stop called")
+	log.Debugf("Stop called")
 	ctl.Log[controllerEvent] = append(ctl.Log[controllerEvent], "Stop")
 }
 
 // PreCreateHook handler for the e2e test controller.
 func (ctl *testctl) PreCreateHook(c cache.Container) error {
-	log.Debug("PreCreateHook called for %s", c.GetName())
+	log.Debugf("PreCreateHook called for %s", c.GetName())
 	ctl.Log[preCreate] = append(ctl.Log[preCreate], c.GetName())
 	return nil
 }
 
 // PreStartHook handler for the e2e test controller.
 func (ctl *testctl) PreStartHook(c cache.Container) error {
-	log.Debug("PreStartHook called for %s", c.GetName())
+	log.Debugf("PreStartHook called for %s", c.GetName())
 	ctl.Log[preStart] = append(ctl.Log[preStart], c.GetName())
 	return nil
 }
 
 // PostStartHook handler for the e2e test controller.
 func (ctl *testctl) PostStartHook(c cache.Container) error {
-	log.Debug("PostStartHook called for %s", c.GetName())
+	log.Debugf("PostStartHook called for %s", c.GetName())
 	ctl.Log[postStart] = append(ctl.Log[postStart], c.GetName())
 	return nil
 }
 
 // PostUpdateHook handler for the e2e test controller.
 func (ctl *testctl) PostUpdateHook(c cache.Container) error {
-	log.Debug("PostUpdateHook called for %s", c.GetName())
+	log.Debugf("PostUpdateHook called for %s", c.GetName())
 	ctl.Log[postUpdate] = append(ctl.Log[postUpdate], c.GetName())
 	return nil
 }
 
 // PostStopHook handler for the e2e test controller.
 func (ctl *testctl) PostStopHook(c cache.Container) error {
-	log.Debug("PostStopHook called for %s", c.GetName())
+	log.Debugf("PostStopHook called for %s", c.GetName())
 	ctl.Log[postStop] = append(ctl.Log[postStop], c.GetName())
 	return nil
 }
 
 // dumpE2ETestControllerState prints internal info used by e2e testing script.
 func (ctl *testctl) dumpE2ETestControllerState(w http.ResponseWriter, req *http.Request) {
-	log.Debug("output E2E test controller state...")
+	log.Debugf("output E2E test controller state...")
 
 	ctl.Lock()
 	defer ctl.Unlock()
 
-	log.Debug("snapshot %v", ctl)
+	log.Debugf("snapshot %v", ctl)
 
 	data, err := json.Marshal(ctl)
 	if err != nil {

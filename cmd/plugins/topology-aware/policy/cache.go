@@ -49,7 +49,7 @@ func (p *policy) restoreAllocations(allocations *allocations) error {
 	//
 
 	if err := p.reinstateGrants(allocations.grants); err != nil {
-		log.Error("failed to reinstate grants verbatim: %v", err)
+		log.Errorf("failed to reinstate grants verbatim: %v", err)
 		containers, poolHints := allocations.getContainerPoolHints()
 		if err := p.reallocateResources(containers, poolHints); err != nil {
 			p.allocations = savedAllocations
@@ -77,7 +77,7 @@ func (p *policy) reinstateGrants(grants map[string]Grant) error {
 
 	for id, grant := range grants {
 		if err := p.releaseMem(id); err != nil && !errors.Is(err, libmem.ErrUnknownRequest) {
-			log.Error("failed to release memory for grant %s: %v", grant, err)
+			log.Errorf("failed to release memory for grant %s: %v", grant, err)
 		}
 	}
 
@@ -101,18 +101,18 @@ func (p *policy) reinstateGrants(grants map[string]Grant) error {
 
 		for uID, uZone := range updates {
 			if ug, ok := p.allocations.grants[uID]; !ok {
-				log.Error("failed to update grant %s to memory zone to %s, grant not found",
+				log.Errorf("failed to update grant %s to memory zone to %s, grant not found",
 					uID, uZone)
 			} else {
 				ug.SetMemoryZone(uZone)
 				if opt.PinMemory {
 					ug.GetContainer().SetCpusetMems(uZone.MemsetString())
 				}
-				log.Info("updated grant %s to memory zone %s", uID, uZone)
+				log.Infof("updated grant %s to memory zone %s", uID, uZone)
 			}
 		}
 
-		log.Info("updated pool %q with reinstated CPU grant of %q, memory zone %s",
+		log.Infof("updated pool %q with reinstated CPU grant of %q, memory zone %s",
 			pool.Name(), c.PrettyName(), grant.GetMemoryZone())
 
 		p.allocations.grants[id] = grant
@@ -216,10 +216,10 @@ func (a *allocations) UnmarshalJSON(data []byte) error {
 	for id, ccg := range cgrants {
 		a.grants[id], err = ccg.ToGrant(a.policy)
 		if err != nil {
-			log.Error("removing unresolvable cached grant %v: %v", *ccg, err)
+			log.Errorf("removing unresolvable cached grant %v: %v", *ccg, err)
 			delete(a.grants, id)
 		} else {
-			log.Debug("resolved cache grant: %v", a.grants[id].String())
+			log.Debugf("resolved cache grant: %v", a.grants[id].String())
 		}
 	}
 

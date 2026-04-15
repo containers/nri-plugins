@@ -144,14 +144,14 @@ func (c *MaskCache) Clone() *MaskCache {
 
 // Log debug-dumps the contents of the cache.
 func (c *MaskCache) Dump(prefix, header string) {
-	log.Info("%s%s", header, prefix)
-	log.Info("%s  - available types: %s", prefix, c.types)
-	log.Info("%s  - available nodes: %s", prefix, c.nodes.all)
-	log.Info("%s      has memory: %s", prefix, c.nodes.hasMemory)
+	log.Infof("%s%s", header, prefix)
+	log.Infof("%s  - available types: %s", prefix, c.types)
+	log.Infof("%s  - available nodes: %s", prefix, c.nodes.all)
+	log.Infof("%s      has memory: %s", prefix, c.nodes.hasMemory)
 	for types, nodes := range c.nodes.byTypes {
-		log.Info("%s        %s: %s", prefix, types, nodes)
+		log.Infof("%s        %s: %s", prefix, types, nodes)
 	}
-	log.Info("%s      no memory: %s", prefix, c.nodes.noMemory)
-	log.Info("%s     has close CPUs: %s", prefix, c.nodes.hasCPU)
-	log.Info("%s      no close CPUs: %s", prefix, c.nodes.noCPU)
+	log.Infof("%s      no memory: %s", prefix, c.nodes.noMemory)
+	log.Infof("%s     has close CPUs: %s", prefix, c.nodes.hasCPU)
+	log.Infof("%s      no close CPUs: %s", prefix, c.nodes.noCPU)
 }

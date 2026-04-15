@@ -280,7 +280,7 @@ func getAgentConfig(newConfig metav1.Object) *cfgapi.AgentConfig {
 
 func (a *Agent) configure(newConfig metav1.Object) {
 	if a.hasLocalConfig() {
-		log.Warn("running with local configuration, skipping client setup...")
+		log.Warnf("running with local configuration, skipping client setup...")
 		return
 	}
 
@@ -289,21 +289,21 @@ func (a *Agent) configure(newConfig metav1.Object) {
 	// Failure to create a client is not a fatal error.
 	switch {
 	case cfg.NodeResourceTopology && a.nrtCli == nil:
-		log.Info("enabling NRT client")
+		log.Infof("enabling NRT client")
 		cfg, err := a.getRESTConfig()
 		if err != nil {
-			log.Error("failed to setup NRT client: %w", err)
+			log.Errorf("failed to setup NRT client: %w", err)
 			break
 		}
 		cli, err := nrtapi.NewForConfigAndClient(cfg, a.httpCli)
 		if err != nil {
-			log.Error("failed to setup NRT client: %w", err)
+			log.Errorf("failed to setup NRT client: %w", err)
 			break
 		}
 		a.nrtCli = cli
 
 	case !cfg.NodeResourceTopology && a.nrtCli != nil:
-		log.Info("disabling NRT client")
+		log.Infof("disabling NRT client")
 		a.nrtCli = nil
 	}
 
@@ -311,16 +311,16 @@ func (a *Agent) configure(newConfig metav1.Object) {
 	// Failure to create a client is not a fatal error.
 	switch {
 	case cfg.PodResourceAPI && a.podResCli == nil:
-		log.Info("enabling PodResourceAPI client")
+		log.Infof("enabling PodResourceAPI client")
 		cli, err := podresapi.NewClient()
 		if err != nil {
-			log.Error("failed to setup PodResourceAPI client: %v", err)
+			log.Errorf("failed to setup PodResourceAPI client: %v", err)
 			break
 		}
 		a.podResCli = cli
 
 	case !cfg.PodResourceAPI && a.podResCli != nil:
-		log.Info("disabling PodResourceAPI client")
+		log.Infof("disabling PodResourceAPI client")
 		a.podResCli.Close()
 		a.podResCli = nil
 	}
@@ -332,14 +332,14 @@ func (a *Agent) hasLocalConfig() bool {
 
 func (a *Agent) setupClients() error {
 	if a.hasLocalConfig() {
-		log.Warn("running with local configuration, skipping cluster access client setup...")
+		log.Warnf("running with local configuration, skipping cluster access client setup...")
 		return nil
 	}
 
 	// Create HTTP/REST client and K8s client on initial startup. Any failure
 	// to create these is a failure start up.
 	if a.httpCli == nil {
-		log.Info("setting up HTTP/REST client...")
+		log.Infof("setting up HTTP/REST client...")
 		restCfg, err := a.getRESTConfig()
 		if err != nil {
 			return err
@@ -350,7 +350,7 @@ func (a *Agent) setupClients() error {
 			return fmt.Errorf("failed to setup kubernetes HTTP client: %w", err)
 		}
 
-		log.Info("setting up K8s client...")
+		log.Infof("setting up K8s client...")
 		a.k8sCli, err = k8sclient.NewForConfigAndClient(restCfg, a.httpCli)
 		if err != nil {
 			a.cleanupClients()
@@ -522,21 +522,21 @@ func (a *Agent) updateNodeConfig(obj runtime.Object) {
 	if obj != nil {
 		o, ok := obj.(metav1.Object)
 		if !ok {
-			log.Error("can't handle object %T, not meta/v1.Object, ignoring it", obj)
+			log.Errorf("can't handle object %T, not meta/v1.Object, ignoring it", obj)
 			return
 		}
 		cfg = o
 	}
 
 	if sameConfigVersion(cfg, a.nodeCfg) {
-		log.Debug("ignoring duplicate node-specific config update")
+		log.Debugf("ignoring duplicate node-specific config update")
 		return
 	}
 
 	if cfg == nil {
-		log.Info("node-specific config deleted")
+		log.Infof("node-specific config deleted")
 	} else {
-		log.Info("node-specific config updated")
+		log.Infof("node-specific config updated")
 	}
 
 	a.nodeCfg = cfg
@@ -561,21 +561,21 @@ func (a *Agent) updateGroupConfig(obj runtime.Object) {
 	if obj != nil {
 		o, ok := obj.(metav1.Object)
 		if !ok {
-			log.Error("can't handle object %T, not meta/v1.Object, ignoring it", obj)
+			log.Errorf("can't handle object %T, not meta/v1.Object, ignoring it", obj)
 			return
 		}
 		cfg = o
 	}
 
 	if sameConfigVersion(cfg, a.groupCfg) {
-		log.Debug("ignoring duplicate group-specific config update")
+		log.Debugf("ignoring duplicate group-specific config update")
 		return
 	}
 
 	if cfg == nil {
-		log.Info("group-specific config deleted")
+		log.Infof("group-specific config deleted")
 	} else {
-		log.Info("group-specific config updated")
+		log.Infof("group-specific config updated")
 	}
 
 	//

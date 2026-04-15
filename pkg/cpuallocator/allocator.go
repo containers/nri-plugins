@@ -185,7 +185,7 @@ func newAllocatorHelper(sys sysfs.System, topo topologyCache) *allocatorHelper {
 
 // Allocate full idle CPU packages.
 func (a *allocatorHelper) takeIdlePackages() {
-	a.Debug("* takeIdlePackages()...")
+	a.Debugf("* takeIdlePackages()...")
 
 	offline := a.sys.Offlined()
 
@@ -212,7 +212,7 @@ func (a *allocatorHelper) takeIdlePackages() {
 			return pkgs[i] < pkgs[j]
 		})
 
-	a.Debug(" => idle packages sorted by preference: %v", pkgs)
+	a.Debugf(" => idle packages sorted by preference: %v", pkgs)
 
 	// take as many idle packages as we need/can
 	for _, id := range pkgs {
@@ -220,9 +220,9 @@ func (a *allocatorHelper) takeIdlePackages() {
 		if a.prefer < NumCPUPriorities {
 			cset = cset.Intersection(a.topology.cpuPriorities[a.prefer])
 		}
-		a.Debug(" => considering package %v (#%s)...", id, cset)
+		a.Debugf(" => considering package %v (#%s)...", id, cset)
 		if a.cnt >= cset.Size() {
-			a.Debug(" => taking package %v...", id)
+			a.Debugf(" => taking package %v...", id)
 			a.result = a.result.Union(cset)
 			a.from = a.from.Difference(cset)
 			a.cnt -= cset.Size()
@@ -246,12 +246,12 @@ func (a *allocatorHelper) takeIdleClusters() {
 			if len(a.topology.kind) > 1 {
 				// we only take E-clusters for low-prio requests
 				if a.prefer != PriorityLow && c.kind == sysfs.EfficientCore {
-					a.Debug("  - omit %s, CPU preference is %s", c, a.prefer)
+					a.Debugf("  - omit %s, CPU preference is %s", c, a.prefer)
 					return false, emptyCPUSet
 				}
 				// we only take P-clusters for other than low-prio requests
 				if a.prefer == PriorityLow && c.kind == sysfs.PerformanceCore {
-					a.Debug("  - omit %s, CPU preference is %s", c, a.prefer)
+					a.Debugf("  - omit %s, CPU preference is %s", c, a.prefer)
 					return false, emptyCPUSet
 				}
 			}
@@ -260,25 +260,25 @@ func (a *allocatorHelper) takeIdleClusters() {
 			cset := c.cpus.Difference(offline)
 			free := cset.Intersection(a.from)
 			if free.IsEmpty() || !free.Equals(cset) {
-				a.Debug("  - omit %s, %d usable CPUs (%s)", c, free.Size(), free)
+				a.Debugf("  - omit %s, %d usable CPUs (%s)", c, free.Size(), free)
 				return false, emptyCPUSet
 			}
 
-			a.Debug("  + pick %s, %d usable CPUs (%s)", c, free.Size(), free)
+			a.Debugf("  + pick %s, %d usable CPUs (%s)", c, free.Size(), free)
 			return true, free
 		}
 		preferTightestFit = func(cA, cB *cpuCluster, pkgA, pkgB, dieA, dieB int, csetA, csetB cpuset.CPUSet) (r int) {
 			defer func() {
 				if r < 0 {
-					a.Debug("  + prefer %s", cA)
-					a.Debug("      over %s", cB)
+					a.Debugf("  + prefer %s", cA)
+					a.Debugf("      over %s", cB)
 				}
 				if r > 0 {
-					a.Debug("  + prefer %s", cB)
-					a.Debug("      over %s", cA)
+					a.Debugf("  + prefer %s", cB)
+					a.Debugf("      over %s", cA)
 				}
-				a.Debug("  - misfit %s", cA)
-				a.Debug("       and %s", cB)
+				a.Debugf("  - misfit %s", cA)
+				a.Debugf("       and %s", cB)
 			}()
 
 			// prefer cluster which alone can satisfy the request, preferring tighter
@@ -355,13 +355,13 @@ func (a *allocatorHelper) takeIdleClusters() {
 		}
 	)
 
-	a.Debug("* takeIdleClusters()...")
+	a.Debugf("* takeIdleClusters()...")
 
 	if len(a.topology.clusters) <= 1 {
 		return
 	}
 
-	a.Debug("looking for %d %s CPUs from %s", a.cnt, a.prefer, a.from)
+	a.Debugf("looking for %d %s CPUs from %s", a.cnt, a.prefer, a.from)
 
 	a.sortCPUClusters(sorter)
 
@@ -379,7 +379,7 @@ func (a *allocatorHelper) takeIdleClusters() {
 	c := clusters[0]
 	cset := cpus[c]
 	if cset.Size() == a.cnt {
-		log.Debug("=> picking single %s", c)
+		log.Debugf("=> picking single %s", c)
 		a.result = a.result.Union(cset)
 		a.from = a.from.Difference(cset)
 		a.cnt -= cset.Size()
@@ -388,13 +388,13 @@ func (a *allocatorHelper) takeIdleClusters() {
 
 	// tightest-fit cluster is too big, so allocation can't consume any cluster fully
 	if cset.Size() > a.cnt {
-		log.Debug(" => tightest-fit cluster too big, can't consume a full cluster")
+		log.Debugf(" => tightest-fit cluster too big, can't consume a full cluster")
 		return
 	}
 
 	// bail out if no package can satisfy the allocation
 	if cnt := pkgCPUCnt[c.pkg]; cnt < a.cnt {
-		log.Debug(" => no package can satisfy the allocation, bail out")
+		log.Debugf(" => no package can satisfy the allocation, bail out")
 	}
 
 	// start consuming clusters, until we're done
@@ -402,13 +402,13 @@ func (a *allocatorHelper) takeIdleClusters() {
 		cset := cpus[c]
 
 		if a.cnt < cset.Size() {
-			log.Debug("=> %d more CPUs needed after allocation of %d clusters", a.cnt, i)
+			log.Debugf("=> %d more CPUs needed after allocation of %d clusters", a.cnt, i)
 			// XXX TODO: should restrict a.from to the same package, if that has enough
 			// CPUs to satisfy the request
 			return
 		}
 
-		log.Debug("=> picking %d. %s", i, c)
+		log.Debugf("=> picking %d. %s", i, c)
 
 		if a.cnt >= cset.Size() {
 			a.result = a.result.Union(cset)
@@ -424,7 +424,7 @@ func (a *allocatorHelper) takeIdleClusters() {
 
 // Allocate idle or partial CPU last-level cache groups.
 func (a *allocatorHelper) takeCacheGroups() {
-	log.Debug("* takeCacheGroups()...")
+	log.Debugf("* takeCacheGroups()...")
 
 	if len(a.topology.cacheGroups) <= 1 {
 		return
@@ -472,12 +472,12 @@ func (a *allocatorHelper) takeCacheGroups() {
 			if len(a.topology.kind) > 1 {
 				// only take E-groups for low-prio requests, or if we have none other
 				if a.prefer != PriorityLow && g.kind == sysfs.EfficientCore {
-					log.Debug("  - ignore %s (CPU preference is %s)", g, a.prefer)
+					log.Debugf("  - ignore %s (CPU preference is %s)", g, a.prefer)
 					return pickIgnore, emptyCPUSet
 				}
 				// only take P-groups for other than low-prio requests, or if we have none other
 				if a.prefer == PriorityLow && g.kind == sysfs.PerformanceCore {
-					log.Debug("  - ignore %s (CPU preference is %s)", g, a.prefer)
+					log.Debugf("  - ignore %s (CPU preference is %s)", g, a.prefer)
 					return pickIgnore, emptyCPUSet
 				}
 			}
@@ -487,18 +487,18 @@ func (a *allocatorHelper) takeCacheGroups() {
 
 			// ignore groups without usable CPUs
 			if free.IsEmpty() {
-				log.Debug("  - ignore %s (no usable CPUs)", g)
+				log.Debugf("  - ignore %s (no usable CPUs)", g)
 				return pickIgnore, emptyCPUSet
 			}
 
 			// prefer fully usable idle groups
 			if free.Equals(cset) {
-				log.Debug("  + prefer %s (%d CPUs: %s)", g, free.Size(), free)
+				log.Debugf("  + prefer %s (%d CPUs: %s)", g, free.Size(), free)
 				return pickPrefer, free
 			}
 
 			// take also groups with some usable CPUs left
-			log.Debug("  o usable %s (%d free CPUs: %s)", g, free.Size(), free)
+			log.Debugf("  o usable %s (%d free CPUs: %s)", g, free.Size(), free)
 			return pickUsable, free
 		}
 
@@ -506,14 +506,14 @@ func (a *allocatorHelper) takeCacheGroups() {
 			defer func() {
 				switch {
 				case r < 0:
-					log.Debug("  + prefer %s", gA)
-					log.Debug("      over %s", gB)
+					log.Debugf("  + prefer %s", gA)
+					log.Debugf("      over %s", gB)
 				case r > 0:
-					log.Debug("  + prefer %s", gB)
-					log.Debug("      over %s", gA)
+					log.Debugf("  + prefer %s", gB)
+					log.Debugf("      over %s", gA)
 				default: // currently should not happen
-					log.Debug("  - either %s", gA)
-					log.Debug("        or %s", gB)
+					log.Debugf("  - either %s", gA)
+					log.Debugf("        or %s", gB)
 				}
 			}()
 
@@ -617,14 +617,14 @@ func (a *allocatorHelper) takeCacheGroups() {
 			defer func() {
 				switch {
 				case r < 0:
-					log.Debug("  + prefer %s", gA)
-					log.Debug("      over %s", gB)
+					log.Debugf("  + prefer %s", gA)
+					log.Debugf("      over %s", gB)
 				case r > 0:
-					log.Debug("  + prefer %s", gB)
-					log.Debug("      over %s", gA)
+					log.Debugf("  + prefer %s", gB)
+					log.Debugf("      over %s", gA)
 				default:
-					log.Debug("  - either %s", gA)
-					log.Debug("        or %s", gB)
+					log.Debugf("  - either %s", gA)
+					log.Debugf("        or %s", gB)
 				}
 			}()
 
@@ -709,7 +709,7 @@ func (a *allocatorHelper) takeCacheGroups() {
 		}
 	)
 
-	log.Debug("looking for %d CPUs (prio %s) from %s", a.cnt, a.prefer, a.from)
+	log.Debugf("looking for %d CPUs (prio %s) from %s", a.cnt, a.prefer, a.from)
 
 	sorter.sortCacheGroups(a)
 
@@ -734,7 +734,7 @@ func (a *allocatorHelper) takeCacheGroups() {
 	}
 
 	if preferPkgCPUs+usablePkgCPUs < a.cnt {
-		log.Debug("=> no package can satisfy the allocation")
+		log.Debugf("=> no package can satisfy the allocation")
 		return
 	}
 
@@ -742,7 +742,7 @@ func (a *allocatorHelper) takeCacheGroups() {
 	// take full idle cache groups, splitting up the last one if necessary
 	//
 
-	log.Debug("trying to take idle cache groups...")
+	log.Debugf("trying to take idle cache groups...")
 	for i, g := range sorter.prefer {
 		if cnt <= 0 {
 			break
@@ -751,7 +751,7 @@ func (a *allocatorHelper) takeCacheGroups() {
 		cset := sorter.cpus[g]
 
 		if cnt >= cset.Size() {
-			log.Debug("=> took full idle cache group %d. %s", i, g)
+			log.Debugf("=> took full idle cache group %d. %s", i, g)
 
 			result = result.Union(cset)
 			from = from.Difference(cset)
@@ -767,7 +767,7 @@ func (a *allocatorHelper) takeCacheGroups() {
 		ta.cnt = cnt
 		use := ta.allocate()
 
-		log.Debug("=> took %d CPUs (%s) from idle cache group %d. %s", use.Size(), use, i, g)
+		log.Debugf("=> took %d CPUs (%s) from idle cache group %d. %s", use.Size(), use, i, g)
 
 		result = result.Union(use)
 		from = from.Difference(use)
@@ -790,7 +790,7 @@ func (a *allocatorHelper) takeCacheGroups() {
 	//   3. fulfill request by taking groups in decreasing size order
 	//
 
-	log.Debug("%d more CPUs needed", cnt)
+	log.Debugf("%d more CPUs needed", cnt)
 
 	var (
 		groupsBySize = map[int][]*cacheGroup{}
@@ -813,23 +813,23 @@ func (a *allocatorHelper) takeCacheGroups() {
 	}
 
 	if totalCPUs < cnt {
-		log.Debug("=> internal error: total cache group CPUs %d <= expected %d", totalCPUs, cnt)
+		log.Debugf("=> internal error: total cache group CPUs %d <= expected %d", totalCPUs, cnt)
 	}
 
 	// try to pick a single exact sized group if possible
-	log.Debug("trying to find a single cache group with %d CPUs...", cnt)
+	log.Debugf("trying to find a single cache group with %d CPUs...", cnt)
 
 	if groups, ok := groupsBySize[cnt]; ok {
 		g := groups[0]
 		cset := sorter.cpus[g]
 
-		log.Debug("=> took remaining %d CPUs (%s) of usable cache group %s", cnt, cset, g)
+		log.Debugf("=> took remaining %d CPUs (%s) of usable cache group %s", cnt, cset, g)
 
 		result = result.Union(cset)
 		from = from.Difference(cset)
 
 		if cset.Size() != cnt {
-			log.Error("=> internal error: group size by cnt %d != expected %d", cset.Size(), cnt)
+			log.Errorf("=> internal error: group size by cnt %d != expected %d", cset.Size(), cnt)
 			return
 		}
 
@@ -840,7 +840,7 @@ func (a *allocatorHelper) takeCacheGroups() {
 	}
 
 	// try picking the smallest number of groups of a single size
-	log.Debug("trying to find cache groups of a single size for %d more CPUs...", cnt)
+	log.Debugf("trying to find cache groups of a single size for %d more CPUs...", cnt)
 
 	size := 0
 	take := 0
@@ -857,7 +857,7 @@ func (a *allocatorHelper) takeCacheGroups() {
 		for i, g := range groupsBySize[size] {
 			cset := sorter.cpus[g]
 
-			log.Debug("=> took %d./%d %d remaining CPUs (%s) of usable cache group of size %d %s",
+			log.Debugf("=> took %d./%d %d remaining CPUs (%s) of usable cache group of size %d %s",
 				i+1, take, cset.Size(), cset, size, g)
 
 			result = result.Union(cset)
@@ -866,7 +866,7 @@ func (a *allocatorHelper) takeCacheGroups() {
 		}
 
 		if cnt != 0 {
-			log.Error("internal error: remaining cnt %d, expected 0", cnt)
+			log.Errorf("internal error: remaining cnt %d, expected 0", cnt)
 			return
 		}
 
@@ -876,7 +876,7 @@ func (a *allocatorHelper) takeCacheGroups() {
 	}
 
 	// use up smallest number of groups possible (start with the largest group)
-	log.Debug("=> taking cache groups in decreasing size order for %d more CPUs...", cnt)
+	log.Debugf("=> taking cache groups in decreasing size order for %d more CPUs...", cnt)
 
 	var (
 		grpCnt = 0
@@ -892,7 +892,7 @@ func (a *allocatorHelper) takeCacheGroups() {
 	}
 
 	if cpuCnt < cnt {
-		log.Debug("=> internal error: %d CPUs in usable cache groups < needed %d", cpuCnt, cnt)
+		log.Debugf("=> internal error: %d CPUs in usable cache groups < needed %d", cpuCnt, cnt)
 		return
 	}
 
@@ -904,7 +904,7 @@ func (a *allocatorHelper) takeCacheGroups() {
 			break
 		}
 
-		log.Debug("=> took %d./%d remaining CPUs (%s) of usable cache group %s", i, grpCnt, cset, g)
+		log.Debugf("=> took %d./%d remaining CPUs (%s) of usable cache group %s", i, grpCnt, cset, g)
 
 		result = result.Union(cset)
 		from = from.Difference(cset)
@@ -923,7 +923,7 @@ func (a *allocatorHelper) takeCacheGroups() {
 		ta.cnt = cnt
 		use := ta.allocate()
 
-		log.Debug("=> took %d./%d %d CPUs (%s) from cache group %s",
+		log.Debugf("=> took %d./%d %d CPUs (%s) from cache group %s",
 			grpCnt, grpCnt, use.Size(), use, g)
 
 		result = result.Union(use)
@@ -932,7 +932,7 @@ func (a *allocatorHelper) takeCacheGroups() {
 	}
 
 	if cnt != 0 {
-		log.Error("=> internal error: %d unallocated cache group CPUs remain", cnt)
+		log.Errorf("=> internal error: %d unallocated cache group CPUs remain", cnt)
 		return
 	}
 
@@ -943,7 +943,7 @@ func (a *allocatorHelper) takeCacheGroups() {
 
 // Allocate full idle CPU cores.
 func (a *allocatorHelper) takeIdleCores() {
-	a.Debug("* takeIdleCores()...")
+	a.Debugf("* takeIdleCores()...")
 
 	offline := a.sys.Offlined()
 
@@ -966,14 +966,14 @@ func (a *allocatorHelper) takeIdleCores() {
 			return cores[i] < cores[j]
 		})
 
-	a.Debug(" => idle cores sorted by preference: %v", cores)
+	a.Debugf(" => idle cores sorted by preference: %v", cores)
 
 	// take as many idle cores as we can
 	for _, id := range cores {
 		cset := a.topology.core[id].Difference(offline)
-		a.Debug(" => considering core %v (#%s)...", id, cset)
+		a.Debugf(" => considering core %v (#%s)...", id, cset)
 		if a.cnt >= cset.Size() {
-			a.Debug(" => taking core %v...", id)
+			a.Debugf(" => taking core %v...", id)
 			a.result = a.result.Union(cset)
 			a.from = a.from.Difference(cset)
 			a.cnt -= cset.Size()
@@ -995,7 +995,7 @@ func (a *allocatorHelper) takeIdleThreads() {
 			return a.from.Difference(offline).Contains(int(id))
 		})
 
-	a.Debug(" => idle threads unsorted: %v", cores)
+	a.Debugf(" => idle threads unsorted: %v", cores)
 
 	// sorted for preference by id, mimicking cpus_assignment.go for now:
 	//   IOW, prefer CPUs
@@ -1054,12 +1054,12 @@ func (a *allocatorHelper) takeIdleThreads() {
 			return iCore < jCore
 		})
 
-	a.Debug(" => idle threads sorted: %v", cores)
+	a.Debugf(" => idle threads sorted: %v", cores)
 
 	// take as many idle cores as we can
 	for _, id := range cores {
 		cset := a.topology.core[id].Difference(offline)
-		a.Debug(" => considering thread %v (#%s)...", id, cset)
+		a.Debugf(" => considering thread %v (#%s)...", id, cset)
 		cset = cpuset.New(int(id))
 		a.result = a.result.Union(cset)
 		a.from = a.from.Difference(cset)
@@ -1073,7 +1073,7 @@ func (a *allocatorHelper) takeIdleThreads() {
 
 // takeAny is a dummy allocator not dependent on sysfs topology information
 func (a *allocatorHelper) takeAny() {
-	a.Debug("* takeAnyCores()...")
+	a.Debugf("* takeAnyCores()...")
 
 	cpus := a.from.List()
 
@@ -1140,7 +1140,7 @@ func (a *allocatorHelper) sortCPUClusters(s *clusterSorter) {
 		cpus      = map[*cpuCluster]cpuset.CPUSet{}
 	)
 
-	a.Debug("picking suitable clusters")
+	a.Debugf("picking suitable clusters")
 
 	for _, c := range a.topology.clusters {
 		var cset cpuset.CPUSet
@@ -1170,20 +1170,20 @@ func (a *allocatorHelper) sortCPUClusters(s *clusterSorter) {
 	}
 
 	if a.DebugEnabled() {
-		log.Debug("number of collected usable CPUs:")
+		log.Debugf("number of collected usable CPUs:")
 		for pkg, cnt := range pkgCPUCnt {
-			log.Debug("  - package #%d: %d", pkg, cnt)
+			log.Debugf("  - package #%d: %d", pkg, cnt)
 		}
 		for pkg, dies := range dieCPUCnt {
 			for die, cnt := range dies {
-				log.Debug("  - die #%d/%d %d", pkg, die, cnt)
+				log.Debugf("  - die #%d/%d %d", pkg, die, cnt)
 			}
 		}
 	}
 
 	// sort collected clusters
 	if s.sort != nil {
-		a.Debug("sorting picked clusters")
+		a.Debugf("sorting picked clusters")
 		slices.SortFunc(clusters, func(cA, cB *cpuCluster) int {
 			pkgCPUsA, pkgCPUsB := pkgCPUCnt[cA.pkg], pkgCPUCnt[cB.pkg]
 			dieCPUsA, dieCPUsB := dieCPUCnt[cA.pkg][cA.die], dieCPUCnt[cB.pkg][cB.die]
@@ -1260,7 +1260,7 @@ func (s *cacheGroupSorter) sortCacheGroups(a *allocatorHelper) {
 	s.usableDie = map[idset.ID]map[idset.ID]int{}
 	s.cpus = map[*cacheGroup]cpuset.CPUSet{}
 
-	log.Debug("picking suitable cache groups")
+	log.Debugf("picking suitable cache groups")
 
 	// Notes:
 	//   We blindly assume here that all cache groups of interest are of
@@ -1305,37 +1305,37 @@ func (s *cacheGroupSorter) sortCacheGroups(a *allocatorHelper) {
 
 	if log.DebugEnabled() {
 		if len(s.preferPkg) > 0 {
-			log.Debug("number of preferred cache group CPUs per package/die:")
+			log.Debugf("number of preferred cache group CPUs per package/die:")
 			for pkg, cnt := range s.preferPkg {
-				log.Debug("  - package #%d: %d", pkg, cnt)
+				log.Debugf("  - package #%d: %d", pkg, cnt)
 			}
 			for pkg, dies := range s.preferDie {
 				for die, cnt := range dies {
-					log.Debug("  - die #%d/%d %d", pkg, die, cnt)
+					log.Debugf("  - die #%d/%d %d", pkg, die, cnt)
 				}
 			}
 		} else {
-			log.Debug("no preferred cache groups found")
+			log.Debugf("no preferred cache groups found")
 		}
 
 		if len(s.usablePkg) > 0 {
-			log.Debug("number of non-preferred but usable cache group CPUs per package/die:")
+			log.Debugf("number of non-preferred but usable cache group CPUs per package/die:")
 			for pkg, cnt := range s.usablePkg {
-				log.Debug("  - package #%d: %d", pkg, cnt)
+				log.Debugf("  - package #%d: %d", pkg, cnt)
 			}
 			for pkg, dies := range s.usableDie {
 				for die, cnt := range dies {
-					log.Debug("  - die #%d/%d %d", pkg, die, cnt)
+					log.Debugf("  - die #%d/%d %d", pkg, die, cnt)
 				}
 			}
 		} else {
-			log.Debug("no non-preferred but usable cache groups found")
+			log.Debugf("no non-preferred but usable cache groups found")
 		}
 	}
 
 	// sort preferred groups
 	if len(s.prefer) > 0 {
-		log.Debug("sorting preferred cache groups")
+		log.Debugf("sorting preferred cache groups")
 		slices.SortFunc(s.prefer, func(gA, gB *cacheGroup) int {
 			return s.sortPrefer(gA, gB, s)
 		})
@@ -1343,7 +1343,7 @@ func (s *cacheGroupSorter) sortCacheGroups(a *allocatorHelper) {
 
 	// sort other usable groups
 	if len(s.usable) > 0 {
-		log.Debug("sorting non-preferred but usable cache groups")
+		log.Debugf("sorting non-preferred but usable cache groups")
 		slices.SortFunc(s.usable, func(gA, gB *cacheGroup) int {
 			return s.sortUsable(gA, gB, s)
 		})
@@ -1371,7 +1371,7 @@ func (ca *cpuAllocator) allocateCpus(from *cpuset.CPUSet, cnt int, options ...Op
 
 		result, err, *from = a.allocate(), nil, a.from.Clone()
 
-		a.Debug("%d cpus from #%v (preferring #%v) => #%v", cnt, from.Union(result), a.prefer, result)
+		a.Debugf("%d cpus from #%v (preferring #%v) => #%v", cnt, from.Union(result), a.prefer, result)
 	}
 
 	return result, err
@@ -1389,7 +1389,7 @@ func (ca *cpuAllocator) ReleaseCpus(from *cpuset.CPUSet, cnt int, options ...Opt
 
 	result, err := ca.allocateCpus(from, from.Size()-cnt, options...)
 
-	ca.Debug("ReleaseCpus(#%s, %d) => kept: #%s, released: #%s", oset, cnt, from, result)
+	ca.Debugf("ReleaseCpus(#%s, %d) => kept: #%s, released: #%s", oset, cnt, from, result)
 
 	return result, err
 }
@@ -1454,7 +1454,7 @@ func (c *topologyCache) discoverCPUPriorities(sys sysfs.System) {
 				cset = cset.Difference(ecores)
 			}
 
-			log.Debug("package #%d (%s): %d %s priority cpus (%v)", id, source, len(cpus), CPUPriority(p), cset)
+			log.Debugf("package #%d (%s): %d %s priority cpus (%v)", id, source, len(cpus), CPUPriority(p), cset)
 			prio[p] = prio[p].Union(cset)
 		}
 	}
@@ -1479,7 +1479,7 @@ func (c *topologyCache) discoverSstCPUPriority(sys sysfs.System, pkgID idset.ID)
 	switch {
 	case sst == nil:
 	case sst.TFEnabled:
-		log.Debug("package #%d: using SST-TF based CPU prioritization", pkgID)
+		log.Debugf("package #%d: using SST-TF based CPU prioritization", pkgID)
 		// We only look at the CLOS id as SST-TF (seems to) follows ordered CLOS priority
 		for _, i := range cpuIDs {
 			id := idset.ID(i)
@@ -1493,7 +1493,7 @@ func (c *topologyCache) discoverSstCPUPriority(sys sysfs.System, pkgID idset.ID)
 		active = true
 	case sst.CPEnabled:
 		closPrio := c.sstClosPriority(sys, pkgID)
-		log.Debug("package #%d: using SST-CP based CPU prioritization with CLOS mapping %v", pkgID, closPrio)
+		log.Debugf("package #%d: using SST-CP based CPU prioritization with CLOS mapping %v", pkgID, closPrio)
 
 		active = false
 		for _, i := range cpuIDs {
@@ -1508,7 +1508,7 @@ func (c *topologyCache) discoverSstCPUPriority(sys sysfs.System, pkgID idset.ID)
 	}
 
 	if !active && sst != nil && sst.BFEnabled {
-		log.Debug("package #%d: using SST-BF based CPU prioritization", pkgID)
+		log.Debugf("package #%d: using SST-BF based CPU prioritization", pkgID)
 		for _, i := range cpuIDs {
 			id := idset.ID(i)
 			p := PriorityLow
@@ -1556,7 +1556,7 @@ func (c *topologyCache) sstClosPriority(sys sysfs.System, pkgID idset.ID) map[in
 	if sstinfo.CPPriority == sst.Ordered {
 		// In ordered mode the priority is simply the CLOS id
 		closSorted = sortedKeys(closIds)
-		log.Debug("package #%d, ordered SST-CP priority with CLOS ids %v", pkgID, closSorted)
+		log.Debugf("package #%d, ordered SST-CP priority with CLOS ids %v", pkgID, closSorted)
 	} else {
 		// In proportional mode we sort by the proportional priority parameter
 		closPpSorted := sortedKeys(closPps)
@@ -1564,7 +1564,7 @@ func (c *topologyCache) sstClosPriority(sys sysfs.System, pkgID idset.ID) map[in
 		for _, pp := range closPpSorted {
 			closSorted = append(closSorted, closPps[pp])
 		}
-		log.Debug("package #%d, proportional SST-CP priority with PP-to-CLOS parity %v", pkgID, closPps)
+		log.Debugf("package #%d, proportional SST-CP priority with PP-to-CLOS parity %v", pkgID, closPps)
 	}
 
 	// Map from CLOS id to cpuallocator CPU priority
@@ -1677,9 +1677,9 @@ func (c *topologyCache) discoverCPUClusters(sys sysfs.System) {
 			}
 		}
 		if len(clusters) > 1 {
-			log.Debug("package #%d has %d clusters:", id, len(clusters))
+			log.Debugf("package #%d has %d clusters:", id, len(clusters))
 			for _, cl := range clusters {
-				log.Debug("  die #%d, cluster #%d: %s cpus %s",
+				log.Debugf("  die #%d, cluster #%d: %s cpus %s",
 					cl.die, cl.cluster, cl.kind, cl.cpus)
 			}
 			c.clusters = append(c.clusters, clusters...)
@@ -1729,11 +1729,11 @@ func (c *topologyCache) discoverCacheGroups(sys sysfs.System) {
 
 	n := c.pickCacheLevelForGrouping(sys)
 	if n < 0 {
-		log.Info("no cache level provides useful CPU grouping")
+		log.Infof("no cache level provides useful CPU grouping")
 		return
 	}
 
-	log.Info("picked cache level %d for CPU grouping", n)
+	log.Infof("picked cache level %d for CPU grouping", n)
 
 	online := sys.OnlineCPUs()
 	for _, id := range sys.PackageIDs() {
@@ -1800,19 +1800,19 @@ func (c *topologyCache) discoverCacheGroups(sys sysfs.System) {
 		for _, cpuID := range g.cpus.UnsortedList() {
 			cpu := sys.CPU(cpuID)
 			if cpu.PackageID() != g.pkg {
-				log.Warn("CPU #%d in cache group #%d has package #%d != #%d",
+				log.Warnf("CPU #%d in cache group #%d has package #%d != #%d",
 					cpuID, g.id, cpu.PackageID(), g.pkg)
 				c.cacheGroups = nil
 				return
 			}
 			if cpu.DieID() != g.die {
-				log.Warn("CPU #%d in cache group #%d has die #%d != #%d",
+				log.Warnf("CPU #%d in cache group #%d has die #%d != #%d",
 					cpuID, g.id, cpu.DieID(), g.die)
 				sortByDie = false
 				break
 			}
 			if cpu.NodeID() != g.node {
-				log.Warn("CPU #%d in cache group #%d has node #%d != #%d",
+				log.Warnf("CPU #%d in cache group #%d has node #%d != #%d",
 					cpuID, g.id, cpu.NodeID(), g.die)
 				c.cacheGroups = nil
 				return
@@ -1820,7 +1820,7 @@ func (c *topologyCache) discoverCacheGroups(sys sysfs.System) {
 		}
 
 		cpu := sys.CPU(g.cpus.List()[0])
-		log.Debug("cache group #%d: pkg #%d/die #%d/node #%d %s cpus %s",
+		log.Debugf("cache group #%d: pkg #%d/die #%d/node #%d %s cpus %s",
 			g.id, cpu.PackageID(), cpu.DieID(), cpu.NodeID(), g.kind, g.cpus)
 	}
 
@@ -1834,7 +1834,7 @@ func (c *topologyCache) discoverCacheGroups(sys sysfs.System) {
 	for idx, g := range c.cacheGroups {
 		g.id = idx
 		cpu := sys.CPU(g.cpus.List()[0])
-		log.Debug("cache group #%d: pkg #%d/die #%d/node #%d %s cpus %s",
+		log.Debugf("cache group #%d: pkg #%d/die #%d/node #%d %s cpus %s",
 			g.id, cpu.PackageID(), cpu.DieID(), cpu.NodeID(), g.kind, g.cpus)
 	}
 }

@@ -62,14 +62,14 @@ func (m *resmgr) SendEvent(event interface{}) error {
 
 // processEvent processes the given event.
 func (m *resmgr) processEvent(e interface{}) {
-	evtlog.Debug("received event of type %T...", e)
+	evtlog.Debugf("received event of type %T...", e)
 
 	switch event := e.(type) {
 	case string:
-		evtlog.Debug("'%s'...", event)
+		evtlog.Debugf("'%s'...", event)
 		//case *events.Policy:
 		//m.DeliverPolicyEvent(event)
 	default:
-		evtlog.Warn("event of unexpected type %T...", e)
+		evtlog.Warnf("event of unexpected type %T...", e)
 	}
 }
