@@ -95,7 +95,7 @@ spec:
   - name: NRI
     url: https://github.com/containers/nri
   maintainers:
-  - email: feruzjon.muyassarov@intel.com
+  - email: feruzjon.muyassarov@est.tech
     name: nri-plugins project maintainers
   maturity: alpha
   minKubeVersion: 1.27.0
