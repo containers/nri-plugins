@@ -70,7 +70,7 @@ func isEmptyConfig(cfg *cfgapi.Config) bool {
 // Start initializes the controller for enforcing decisions.
 func (ctl *cpuctl) Start(cache cache.Cache, cfg *cfgapi.Config) (bool, error) {
 	if isEmptyConfig(cfg) {
-		log.Info("empty configuration, disabling controller")
+		log.Infof("empty configuration, disabling controller")
 		return false, nil
 	}
 
@@ -83,11 +83,11 @@ func (ctl *cpuctl) Start(cache cache.Cache, cfg *cfgapi.Config) (bool, error) {
 	ctl.cache = cache
 
 	// DEBUG: dump the class assignments we have stored in the cache
-	log.Debug("retrieved cpu class assignments from cache:\n%s", utils.DumpJSON(getClassAssignments(ctl.cache)))
+	log.Debugf("retrieved cpu class assignments from cache:\n%s", utils.DumpJSON(getClassAssignments(ctl.cache)))
 
 	if err := ctl.configure(cfg); err != nil {
 		// Just print an error. A config update later on may be valid.
-		log.Error("failed apply /cpuinitial configuration: %v", err)
+		log.Errorf("failed apply /cpuinitial configuration: %v", err)
 	}
 
 	ctl.started = true
@@ -132,21 +132,21 @@ func (ctl *cpuctl) enforceCpufreq(class string, cpus ...int) error {
 	}
 
 	if min := int(c.MinFreq); min > 0 {
-		log.Debug("enforcing cpu frequency min %d from class %q on %v", min, class, cpus)
+		log.Debugf("enforcing cpu frequency min %d from class %q on %v", min, class, cpus)
 		if err := utils.SetCPUsScalingMinFreq(cpus, min); err != nil {
 			return fmt.Errorf("cannot set min freq %d: %w", min, err)
 		}
 	}
 
 	if max := int(c.MaxFreq); max > 0 {
-		log.Debug("enforcing cpu frequency max %d from class %q on %v", max, class, cpus)
+		log.Debugf("enforcing cpu frequency max %d from class %q on %v", max, class, cpus)
 		if err := utils.SetCPUsScalingMaxFreq(cpus, max); err != nil {
 			return fmt.Errorf("cannot set max freq %d: %w", max, err)
 		}
 	}
 
 	if governor := c.FreqGovernor; governor != "" {
-		log.Debug("enforcing cpu frequency governor %q from class %q on %v", governor, class, cpus)
+		log.Debugf("enforcing cpu frequency governor %q from class %q on %v", governor, class, cpus)
 		if err := utils.SetScalingGovernorForCPUs(cpus, governor); err != nil {
 			return fmt.Errorf("cannot set cpufreq governor %q: %w", governor, err)
 		}
@@ -182,7 +182,7 @@ func (ctl *cpuctl) enforceCstates(class string, cpus ...int) error {
 	disCpuCstates := cpuCstates.Copy(cstates.NewBasicFilter().SetCstateNames(c.DisabledCstates...))
 	enCpuCstates.SetAttrs(cstates.AttrDisable, "0")
 	disCpuCstates.SetAttrs(cstates.AttrDisable, "1")
-	log.Debug("enforcing cstates: enable: %v disable: %v from class %q on cpus %v", enabledCstates, c.DisabledCstates, class, cpus)
+	log.Debugf("enforcing cstates: enable: %v disable: %v from class %q on cpus %v", enabledCstates, c.DisabledCstates, class, cpus)
 	if err := enCpuCstates.Apply(); err != nil {
 		return fmt.Errorf("cannot enable cstates %v on cpus %v: %w", enabledCstates, cpus, err)
 	}
@@ -210,14 +210,14 @@ func (ctl *cpuctl) enforceUncore(assignments cpuClassAssignments, affectedCPUs .
 				min, max, minCls, maxCls := effectiveUncoreFreqs(utils.NewIDSet(dieCPUs.List()...), ctl.classes, assignments)
 
 				if min == 0 && max == 0 {
-					log.Debug("no uncore frequency limits for cpu package/die %d/%d", cpuPkgID, cpuDieID)
+					log.Debugf("no uncore frequency limits for cpu package/die %d/%d", cpuPkgID, cpuDieID)
 					continue
 				}
 
-				log.Debug("enforcing uncore min freq to %d (class %q), max freq to %d (class %q) on cpu package/die %d/%d", min, minCls, max, maxCls, cpuPkgID, cpuDieID)
+				log.Debugf("enforcing uncore min freq to %d (class %q), max freq to %d (class %q) on cpu package/die %d/%d", min, minCls, max, maxCls, cpuPkgID, cpuDieID)
 				if min > 0 {
 					if max > 0 && min > max {
-						log.Warn("uncore frequency limit min > max (%d > %d) on cpu package/die %d/%d", min, max, cpuPkgID, cpuDieID)
+						log.Warnf("uncore frequency limit min > max (%d > %d) on cpu package/die %d/%d", min, max, cpuPkgID, cpuDieID)
 					}
 
 					if err := utils.SetUncoreMinFreq(cpuPkgID, cpuDieID, int(min)); err != nil {
@@ -287,7 +287,7 @@ func (ctl *cpuctl) configure(cfg *cfgapi.Config) error {
 	assignments := *getClassAssignments(ctl.cache)
 
 	// DEBUG: dump the class assignments we have stored in the cache
-	log.Debug("applying cpu controller configuration:\n%s", utils.DumpJSON(ctl.classes))
+	log.Debugf("applying cpu controller configuration:\n%s", utils.DumpJSON(ctl.classes))
 
 	// Sanity check
 	cstatesNeeded := map[string]bool{}
@@ -326,24 +326,24 @@ func (ctl *cpuctl) configure(cfg *cfgapi.Config) error {
 		if _, ok := ctl.classes[class]; ok {
 			// Re-configure cpus (sysfs) according to new class parameters
 			if err := ctl.enforceCpufreq(class, cpus.SortedMembers()...); err != nil {
-				log.Error("cpufreq enforcement on re-configure failed: %v", err)
+				log.Errorf("cpufreq enforcement on re-configure failed: %v", err)
 			}
 			if err := ctl.enforceCstates(class, cpus.SortedMembers()...); err != nil {
-				log.Error("cpufreq enforcement on re-configure failed: %v", err)
+				log.Errorf("cpufreq enforcement on re-configure failed: %v", err)
 			}
 		} else {
 			// TODO: what should we really do with classes that do not exist in
 			// the configuration anymore? Now we remember the CPUs assigned to
 			// them. A further config update might re-introduce the class in
 			// which case the CPUs will be reconfigured.
-			log.Warn("class %q with cpus %v missing from the configuration", class, cpus)
+			log.Warnf("class %q with cpus %v missing from the configuration", class, cpus)
 		}
 	}
 	if err := ctl.enforceUncore(assignments); err != nil {
-		log.Error("uncore frequency enforcement on re-configure failed: %v", err)
+		log.Errorf("uncore frequency enforcement on re-configure failed: %v", err)
 	}
 
-	log.Debug("cpu controller configured")
+	log.Debugf("cpu controller configured")
 
 	return nil
 }

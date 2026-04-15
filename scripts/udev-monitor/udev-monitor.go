@@ -63,7 +63,7 @@ func parseFilters() []map[string]string {
 			filter[strings.ToUpper(kv[0])] = kv[1]
 		}
 		if len(filter) > 0 {
-			log.Info("using parsed filter: %v", filter)
+			log.Infof("using parsed filter: %v", filter)
 			filters = append(filters, filter)
 		}
 	}

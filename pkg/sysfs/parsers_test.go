@@ -91,7 +91,7 @@ func TestParseFileEntries_MissingFile(t *testing.T) {
 	var count int
 	err := sysfs.ParseFileEntries("/nonexistent/path/file", map[string]interface{}{"count": &count}, colonPickFn)
 	if err == nil {
-		t.Error("expected an error for missing file, got nil")
+		t.Errorf("expected an error for missing file, got nil")
 	}
 }
 
@@ -352,26 +352,26 @@ func TestParseNumericUnits_Negative(t *testing.T) {
 		t.Run("int8", func(t *testing.T) {
 			var v int8
 			if err := parseVal(t, "200", &v); err == nil {
-				t.Error("expected error for int8 base value 200 (> 127), got nil")
+				t.Errorf("expected error for int8 base value 200 (> 127), got nil")
 			}
 		})
 		t.Run("uint8", func(t *testing.T) {
 			var v uint8
 			if err := parseVal(t, "200", &v); err == nil {
-				t.Error("expected error for uint8 base value 200 (> 127 signed), got nil")
+				t.Errorf("expected error for uint8 base value 200 (> 127 signed), got nil")
 			}
 		})
 		// int16 / uint16: ParseInt bitSize=16 accepts only –32768..32767.
 		t.Run("int16", func(t *testing.T) {
 			var v int16
 			if err := parseVal(t, "40000", &v); err == nil {
-				t.Error("expected error for int16 base value 40000 (> 32767), got nil")
+				t.Errorf("expected error for int16 base value 40000 (> 32767), got nil")
 			}
 		})
 		t.Run("uint16", func(t *testing.T) {
 			var v uint16
 			if err := parseVal(t, "40000", &v); err == nil {
-				t.Error("expected error for uint16 base value 40000 (> 32767 signed), got nil")
+				t.Errorf("expected error for uint16 base value 40000 (> 32767 signed), got nil")
 			}
 		})
 	})
@@ -381,21 +381,21 @@ func TestParseNumericUnits_Negative(t *testing.T) {
 		t.Run("non_numeric_base", func(t *testing.T) {
 			var v int64
 			if err := parseVal(t, "abc", &v); err == nil {
-				t.Error("expected error for non-numeric value, got nil")
+				t.Errorf("expected error for non-numeric value, got nil")
 			}
 		})
 		// Non-numeric base with a valid unit.
 		t.Run("non_numeric_base_with_unit", func(t *testing.T) {
 			var v int64
 			if err := parseVal(t, "abc k", &v); err == nil {
-				t.Error("expected error for non-numeric base with unit, got nil")
+				t.Errorf("expected error for non-numeric base with unit, got nil")
 			}
 		})
 		// Three whitespace-separated tokens are rejected by splitNumericAndUnit.
 		t.Run("three_tokens", func(t *testing.T) {
 			var v int64
 			if err := parseVal(t, "1 k extra", &v); err == nil {
-				t.Error("expected error for three-token input, got nil")
+				t.Errorf("expected error for three-token input, got nil")
 			}
 		})
 	})

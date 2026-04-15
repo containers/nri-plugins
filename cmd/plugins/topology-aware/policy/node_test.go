@@ -85,13 +85,13 @@ func TestNodeLinkParent(t *testing.T) {
 	child.LinkParent(parent)
 
 	if child.parent != parent {
-		t.Error("child.parent not updated after LinkParent")
+		t.Errorf("child.parent not updated after LinkParent")
 	}
 	if child.depth != parent.depth+1 {
 		t.Errorf("child.depth = %d, want %d", child.depth, parent.depth+1)
 	}
 	if len(parent.children) != 1 || parent.children[0] != child {
-		t.Error("child not added to parent.children after LinkParent")
+		t.Errorf("child not added to parent.children after LinkParent")
 	}
 }
 
@@ -106,7 +106,7 @@ func TestNodeAddChildren(t *testing.T) {
 		t.Fatalf("expected 2 children, got %d", len(parent.children))
 	}
 	if parent.children[0] != c1 || parent.children[1] != c2 {
-		t.Error("children not appended in order")
+		t.Errorf("children not appended in order")
 	}
 }
 
@@ -115,10 +115,10 @@ func TestNodeIsRootNode(t *testing.T) {
 	child := &node{name: "child", id: 1, kind: SocketNode, parent: root}
 
 	if !root.IsRootNode() {
-		t.Error("root.IsRootNode() = false, want true")
+		t.Errorf("root.IsRootNode() = false, want true")
 	}
 	if child.IsRootNode() {
-		t.Error("child.IsRootNode() = true, want false")
+		t.Errorf("child.IsRootNode() = true, want false")
 	}
 }
 
@@ -127,10 +127,10 @@ func TestNodeIsLeafNode(t *testing.T) {
 	leaf := &node{name: "leaf", id: 99, kind: NumaNode, parent: root}
 
 	if root.IsLeafNode() {
-		t.Error("root.IsLeafNode() = true, want false")
+		t.Errorf("root.IsLeafNode() = true, want false")
 	}
 	if !leaf.IsLeafNode() {
-		t.Error("leaf.IsLeafNode() = false, want true")
+		t.Errorf("leaf.IsLeafNode() = false, want true")
 	}
 }
 
@@ -156,7 +156,7 @@ func TestNodeParent(t *testing.T) {
 	root, child1, _, _ := buildTestTree()
 
 	if root.Parent() != nilnode {
-		t.Error("root.Parent() should be nilnode")
+		t.Errorf("root.Parent() should be nilnode")
 	}
 	if child1.Parent() != root {
 		t.Errorf("child1.Parent() = %v, want root", child1.Parent())
@@ -171,7 +171,7 @@ func TestNodeChildren(t *testing.T) {
 		t.Fatalf("root.Children() len = %d, want 2", len(children))
 	}
 	if children[0] != child1 || children[1] != child2 {
-		t.Error("root.Children() returned unexpected nodes")
+		t.Errorf("root.Children() returned unexpected nodes")
 	}
 }
 
@@ -188,7 +188,7 @@ func TestNodeDepthFirstEarlyExit(t *testing.T) {
 	})
 
 	if !done {
-		t.Error("DepthFirst should return true when the callback requests early exit")
+		t.Errorf("DepthFirst should return true when the callback requests early exit")
 	}
 	expected := []int{grandchild1.id, child1.id}
 	if len(visited) != len(expected) {
@@ -214,7 +214,7 @@ func TestNodeBreadthFirstEarlyExit(t *testing.T) {
 	})
 
 	if !done {
-		t.Error("BreadthFirst should return true when the callback requests early exit")
+		t.Errorf("BreadthFirst should return true when the callback requests early exit")
 	}
 	expected := []int{root.id, child1.id}
 	if len(visited) != len(expected) {
@@ -231,9 +231,9 @@ func TestNodeIsSameNode(t *testing.T) {
 	root, child1, _, _ := buildTestTree()
 
 	if !root.IsSameNode(root) {
-		t.Error("node should be the same as itself")
+		t.Errorf("node should be the same as itself")
 	}
 	if root.IsSameNode(child1) {
-		t.Error("different nodes should not be the same")
+		t.Errorf("different nodes should not be the same")
 	}
 }

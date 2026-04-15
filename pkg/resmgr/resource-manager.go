@@ -88,7 +88,7 @@ func NewResourceManager(backend policy.Backend, agt *agent.Agent) (ResourceManag
 		return nil, err
 	}
 
-	log.Info("running as an NRI plugin...")
+	log.Infof("running as an NRI plugin...")
 	nrip, err := newNRIPlugin(m)
 	if err != nil {
 		return nil, err
@@ -165,7 +165,7 @@ func (m *resmgr) updateConfig(newCfg interface{}) (bool, error) {
 
 // Start resource management once we acquired initial configuration.
 func (m *resmgr) start(cfg cfgapi.ResmgrConfig) error {
-	log.Info("starting resource manager...")
+	log.Infof("starting resource manager...")
 
 	m.cfg = cfg
 
@@ -211,14 +211,14 @@ func (m *resmgr) start(cfg cfgapi.ResmgrConfig) error {
 		return resmgrError("failed to write PID file: %v", err)
 	}
 
-	log.Info("up and running")
+	log.Infof("up and running")
 
 	return nil
 }
 
 // Stop stops the resource manager.
 func (m *resmgr) Stop() {
-	log.Info("shutting down...")
+	log.Infof("shutting down...")
 
 	m.Lock()
 	defer m.Unlock()
@@ -290,9 +290,9 @@ func (m *resmgr) startControllers() error {
 // updateTopologyZones updates the 'topology zone' CRDs.
 func (m *resmgr) updateTopologyZones() {
 	if zones := m.policy.GetTopologyZones(); len(zones) != 0 {
-		log.Info("updating topology zones...")
+		log.Infof("updating topology zones...")
 		if err := m.agent.UpdateNrtCR(m.policy.ActivePolicy(), zones); err != nil {
-			log.Error("failed to update topology zones: %v", err)
+			log.Errorf("failed to update topology zones: %v", err)
 		}
 	}
 }

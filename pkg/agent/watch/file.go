@@ -132,7 +132,7 @@ func (w *FileWatch) run() error {
 					continue
 				}
 
-				log.Debug("got %v event for %s", e.Op, e.Name)
+				log.Debugf("got %v event for %s", e.Op, e.Name)
 
 				switch {
 				case (e.Op & fsnotify.Create) != 0:
@@ -167,7 +167,7 @@ func (w *FileWatch) sendEvent(t EventType, obj runtime.Object) {
 	select {
 	case w.resultC <- Event{Type: t, Object: obj}:
 	default:
-		log.Warn("failed to deliver file watch event (%v)", t)
+		log.Warnf("failed to deliver file watch event (%v)", t)
 	}
 }
 

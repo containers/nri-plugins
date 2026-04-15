@@ -406,7 +406,7 @@ func (sys *system) Discover(flags DiscoveryFlag) error {
 	if (sys.flags & DiscoverSst) != 0 {
 		if err := sys.discoverSst(); err != nil {
 			// Just consider SST unsupported if our detection fails for some reason
-			sys.Warn("%v", err)
+			sys.Warnf("%v", err)
 		}
 	}
 
@@ -438,34 +438,34 @@ func (sys *system) Discover(flags DiscoveryFlag) error {
 	}
 
 	if sys.DebugEnabled() {
-		sys.Debug("CPUs:")
-		sys.Debug("  - possible: %s", sys.PossibleCPUs())
-		sys.Debug("  -  present: %s", sys.PresentCPUs())
-		sys.Debug("  -   online: %s", sys.OnlineCPUs())
-		sys.Debug("  -  offline: %s", sys.OfflineCPUs())
-		sys.Debug("  - isolated: %s", sys.IsolatedCPUs())
+		sys.Debugf("CPUs:")
+		sys.Debugf("  - possible: %s", sys.PossibleCPUs())
+		sys.Debugf("  -  present: %s", sys.PresentCPUs())
+		sys.Debugf("  -   online: %s", sys.OnlineCPUs())
+		sys.Debugf("  -  offline: %s", sys.OfflineCPUs())
+		sys.Debugf("  - isolated: %s", sys.IsolatedCPUs())
 
 		for kind, name := range coreKindNames {
 			if cpus := sys.CoreKindCPUs(kind); !cpus.IsEmpty() {
-				sys.Debug("  - %8s: %s", name, sys.CoreKindCPUs(kind))
+				sys.Debugf("  - %8s: %s", name, sys.CoreKindCPUs(kind))
 			}
 		}
 
 		for _, id := range sys.PackageIDs() {
 			pkg := sys.packages[id]
-			sys.Info("package #%d:", id)
-			sys.Debug("   cpus: %s", pkg.cpus)
-			sys.Debug("  nodes: %s", pkg.nodes)
-			sys.Debug("   dies: %s", pkg.dies)
+			sys.Infof("package #%d:", id)
+			sys.Debugf("   cpus: %s", pkg.cpus)
+			sys.Debugf("  nodes: %s", pkg.nodes)
+			sys.Debugf("   dies: %s", pkg.dies)
 			for _, die := range pkg.DieIDs() {
-				sys.Debug("    die #%v nodes: %v", die, pkg.DieNodeIDs(die))
-				sys.Debug("    die #%v cpus: %s", die, pkg.DieCPUSet(die).String())
+				sys.Debugf("    die #%v nodes: %v", die, pkg.DieNodeIDs(die))
+				sys.Debugf("    die #%v cpus: %s", die, pkg.DieCPUSet(die).String())
 				for _, cluster := range pkg.DieClusterIDs(die) {
-					sys.Debug("    die #%v cluster #%v cpus: %s", die, cluster,
+					sys.Debugf("    die #%v cluster #%v cpus: %s", die, cluster,
 						pkg.DieClusterCPUSet(die, cluster).String())
 				}
 				for _, cluster := range pkg.LogicalDieClusterIDs(die) {
-					sys.Debug("    die #%v logical cluster #%v cpus: %s", die, cluster,
+					sys.Debugf("    die #%v logical cluster #%v cpus: %s", die, cluster,
 						pkg.LogicalDieClusterCPUSet(die, cluster).String())
 				}
 			}
@@ -473,33 +473,33 @@ func (sys *system) Discover(flags DiscoveryFlag) error {
 
 		for _, id := range sys.NodeIDs() {
 			node := sys.nodes[id]
-			sys.Debug("node #%d:", id)
-			sys.Debug("      cpus: %s", node.cpus)
-			sys.Debug("  distance: %v", node.distance)
-			sys.Debug("   package: #%d", node.pkg)
-			sys.Debug("       die: #%d", node.die)
+			sys.Debugf("node #%d:", id)
+			sys.Debugf("      cpus: %s", node.cpus)
+			sys.Debugf("  distance: %v", node.distance)
+			sys.Debugf("   package: #%d", node.pkg)
+			sys.Debugf("       die: #%d", node.die)
 		}
 
 		for _, id := range sys.CPUIDs() {
 			cpu := sys.cpus[id]
-			sys.Debug("CPU #%d:", id)
-			sys.Debug("        pkg: %d", cpu.pkg)
-			sys.Debug("        die: %d", cpu.die)
-			sys.Debug("    cluster: %d", cpu.cluster)
-			sys.Debug("       node: %d", cpu.node)
-			sys.Debug("       core: %d (%s)", cpu.core, cpu.coreKind)
-			sys.Debug("    threads: %s", cpu.threads)
-			sys.Debug("  base freq: %d", cpu.freq.Base)
-			sys.Debug("       freq: %d - %d", cpu.freq.Min, cpu.freq.Max)
-			sys.Debug("        epp: %d", cpu.epp)
+			sys.Debugf("CPU #%d:", id)
+			sys.Debugf("        pkg: %d", cpu.pkg)
+			sys.Debugf("        die: %d", cpu.die)
+			sys.Debugf("    cluster: %d", cpu.cluster)
+			sys.Debugf("       node: %d", cpu.node)
+			sys.Debugf("       core: %d (%s)", cpu.core, cpu.coreKind)
+			sys.Debugf("    threads: %s", cpu.threads)
+			sys.Debugf("  base freq: %d", cpu.freq.Base)
+			sys.Debugf("       freq: %d - %d", cpu.freq.Min, cpu.freq.Max)
+			sys.Debugf("        epp: %d", cpu.epp)
 
 			for idx, c := range cpu.caches {
-				sys.Debug("    cache #%d:", idx)
-				sys.Debug("           id: %d", c.id)
-				sys.Debug("        level: %d", c.level)
-				sys.Debug("         kind: %s", c.kind)
-				sys.Debug("         size: %dK", c.size/1024)
-				sys.Debug("         cpus: %s", c.SharedCPUSet().String())
+				sys.Debugf("    cache #%d:", idx)
+				sys.Debugf("           id: %d", c.id)
+				sys.Debugf("        level: %d", c.level)
+				sys.Debugf("         kind: %s", c.kind)
+				sys.Debugf("         size: %dK", c.size/1024)
+				sys.Debugf("         cpus: %s", c.SharedCPUSet().String())
 			}
 		}
 	}
@@ -856,7 +856,7 @@ func (sys *system) Isolated() cpuset.CPUSet {
 func (sys *system) NodeHintToCPUs(nodes string) string {
 	mset, err := cpuset.Parse(nodes)
 	if err != nil {
-		log.Error("failed to resolve nodes %q to CPUs: %v", nodes, err)
+		log.Errorf("failed to resolve nodes %q to CPUs: %v", nodes, err)
 		return ""
 	}
 
@@ -881,29 +881,29 @@ func (sys *system) discoverCPUs() error {
 	base := filepath.Join(sys.path, sysfsCPUPath)
 	_, err := readSysfsEntry(base, "possible", &sys.possibleCPUs, ",")
 	if err != nil {
-		sys.Error("failed to get set of possible cpus: %v", err)
+		sys.Errorf("failed to get set of possible cpus: %v", err)
 	}
 
 	_, err = readSysfsEntry(base, "present", &sys.presentCPUs, ",")
 	if err != nil {
-		sys.Error("failed to get set of present cpus: %v", err)
+		sys.Errorf("failed to get set of present cpus: %v", err)
 	}
 
 	_, err = readSysfsEntry(base, "online", &sys.onlineCPUs, ",")
 	if err != nil {
-		sys.Error("failed to get set of online cpus: %v", err)
+		sys.Errorf("failed to get set of online cpus: %v", err)
 	}
 
 	_, err = readSysfsEntry(base, "isolated", &sys.isolatedCPUs, ",")
 	if err != nil {
-		sys.Error("failed to get set of isolated cpus: %v", err)
+		sys.Errorf("failed to get set of isolated cpus: %v", err)
 	}
 
 	sys.coreKindCPUs = make(map[CoreKind]idset.IDSet)
 
 	for kind, name := range coreKindEnvOverrides {
 		if override := os.Getenv(name); override != "" {
-			log.Warn("using CPU core kind environment override (%s=%s)...", name, override)
+			log.Warnf("using CPU core kind environment override (%s=%s)...", name, override)
 			cpus, err := cpuset.Parse(override)
 			if err != nil {
 				return fmt.Errorf("failed to parse %s env. override %q: %v", kind, override, err)
@@ -919,7 +919,7 @@ func (sys *system) discoverCPUs() error {
 			cpus := idset.NewIDSet()
 			_, err = readSysfsEntry(sys.path, entry, &cpus, ",")
 			if err != nil {
-				sys.Error("failed to get set of %s cpus: %v", kind, err)
+				sys.Errorf("failed to get set of %s cpus: %v", kind, err)
 				if kind == PerformanceCore {
 					cpus = sys.onlineCPUs.Clone()
 				}
@@ -1415,9 +1415,9 @@ func (sys *system) discoverNodes() error {
 	}
 	cpuNodes := cpuset.New(cpuNodesSlice...)
 
-	sys.Info("NUMA nodes with CPUs: %s", cpuNodes.String())
-	sys.Info("NUMA nodes with (any) memory: %s", memoryNodes.String())
-	sys.Info("NUMA nodes with normal memory: %s", normalMemNodes.String())
+	sys.Infof("NUMA nodes with CPUs: %s", cpuNodes.String())
+	sys.Infof("NUMA nodes with (any) memory: %s", memoryNodes.String())
+	sys.Infof("NUMA nodes with normal memory: %s", normalMemNodes.String())
 
 	noMemNodes := onlineNodes.Difference(memoryNodes)
 	dramNodes := cpuNodes.Clone()
@@ -1464,14 +1464,14 @@ func (sys *system) discoverNodes() error {
 				return fmt.Errorf("not able to determine system special memory types")
 			}
 			if mem.MemTotal < dramAvg {
-				sys.Info("node %d has HBM memory", node.id)
+				sys.Infof("node %d has HBM memory", node.id)
 				node.memoryType = MemoryTypeHBM
 			} else {
-				sys.Info("node %d has PMEM memory", node.id)
+				sys.Infof("node %d has PMEM memory", node.id)
 				node.memoryType = MemoryTypePMEM
 			}
 		} else if _, ok := dramNodeIds[node.id]; ok {
-			sys.Info("node %d has DRAM memory", node.id)
+			sys.Infof("node %d has DRAM memory", node.id)
 			node.memoryType = MemoryTypeDRAM
 		} else {
 			return fmt.Errorf("unknown memory type for node %v (pmem nodes: %s, dram nodes: %s)", node, pmemOrHbmNodes, dramNodes)
@@ -1836,7 +1836,7 @@ func (sys *system) discoverPackages() error {
 
 func (sys *system) discoverSst() error {
 	if !sst.SstSupported() {
-		sys.Info("Speed Select Technology (SST) support not detected")
+		sys.Infof("Speed Select Technology (SST) support not detected")
 		return nil
 	}
 
@@ -2055,10 +2055,10 @@ func (sys *system) discoverCacheFromOverrides(cpu *cpu) (bool, error) {
 		return false, nil
 	}
 	if cacheEnvOverrides == nil {
-		sys.Debug("parsing cache overrides from %s=%q", cacheEnvOverridesVar, cacheEnvOverridesJson)
+		sys.Debugf("parsing cache overrides from %s=%q", cacheEnvOverridesVar, cacheEnvOverridesJson)
 		ceo, err := parseCpuCacheOverrides(cacheEnvOverridesJson)
 		if err != nil {
-			sys.Error("failed to parse cache overrides: %v", err)
+			sys.Errorf("failed to parse cache overrides: %v", err)
 			return false, err
 		}
 		// cpu.caches must be ordered by cache level, the lowest first.
@@ -2074,7 +2074,7 @@ func (sys *system) discoverCacheFromOverrides(cpu *cpu) (bool, error) {
 	if caches, ok := cacheEnvOverrides[cpu.id]; ok {
 		cpu.caches = make([]*Cache, len(caches))
 		for i, c := range caches {
-			sys.Debug("cpu %d cache override %+v", cpu.id, *c)
+			sys.Debugf("cpu %d cache override %+v", cpu.id, *c)
 			cpu.caches[i] = sys.saveCache(c)
 		}
 		return true, nil
