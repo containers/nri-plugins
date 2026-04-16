@@ -21,7 +21,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	otelresource "go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 
 	"github.com/containers/nri-plugins/pkg/version"
 )
