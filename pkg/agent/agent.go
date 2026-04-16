@@ -292,12 +292,12 @@ func (a *Agent) configure(newConfig metav1.Object) {
 		log.Infof("enabling NRT client")
 		cfg, err := a.getRESTConfig()
 		if err != nil {
-			log.Errorf("failed to setup NRT client: %w", err)
+			log.Errorf("failed to setup NRT client: %v", err)
 			break
 		}
 		cli, err := nrtapi.NewForConfigAndClient(cfg, a.httpCli)
 		if err != nil {
-			log.Errorf("failed to setup NRT client: %w", err)
+			log.Errorf("failed to setup NRT client: %v", err)
 			break
 		}
 		a.nrtCli = cli

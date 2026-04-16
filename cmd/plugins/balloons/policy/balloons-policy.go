@@ -318,7 +318,7 @@ func (p *balloons) AllocateResources(c cache.Container) error {
 	}
 	p.assignContainer(c, bln)
 	if log.DebugEnabled() {
-		log.Debugf(p.dumpBalloon(bln))
+		log.Debugf("%s", p.dumpBalloon(bln))
 	}
 
 	return nil
@@ -333,7 +333,7 @@ func (p *balloons) ReleaseResources(c cache.Container) error {
 	if bln := p.balloonByContainer(c); bln != nil {
 		p.dismissContainer(c, bln)
 		if log.DebugEnabled() {
-			log.Debugf(p.dumpBalloon(bln))
+			log.Debugf("%s", p.dumpBalloon(bln))
 		}
 		if bln.ContainerCount() == 0 {
 			// Deflate the balloon completely before
@@ -1023,7 +1023,7 @@ func (p *balloons) newCompositeBalloon(blnDef *BalloonDef, confCpus bool, freeIn
 	if confCpus {
 		if err := p.useCpuClass(bln); err != nil {
 			deleteComponentBlns()
-			log.Errorf("failed to apply CPU configuration to new composite balloon %s[%d] (cpus: %s): %w",
+			log.Errorf("failed to apply CPU configuration to new composite balloon %s[%d] (cpus: %s): %v",
 				blnDef.Name, bln.Instance, bln.Cpus, err)
 			return nil, err
 		}
@@ -1108,7 +1108,7 @@ func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, erro
 	bln.Mems = p.closestMems(bln.Cpus)
 	if confCpus {
 		if err = p.useCpuClass(bln); err != nil {
-			log.Errorf("failed to apply CPU configuration to new balloon %s[%d] (cpus: %s): %w", blnDef.Name, freeInstance, cpus, err)
+			log.Errorf("failed to apply CPU configuration to new balloon %s[%d] (cpus: %s): %v", blnDef.Name, freeInstance, cpus, err)
 			return nil, err
 		}
 	}
@@ -1321,7 +1321,7 @@ func (p *balloons) allocateBalloonOfDef(blnDef *BalloonDef, c cache.Container) (
 	for _, fillMethod := range fillChain {
 		blns, err := p.fillableBalloonInstances(blnDef, fillMethod, c)
 		if err != nil {
-			log.Debugf("fill method %q prevents allocation: %w", fillMethod, err)
+			log.Debugf("fill method %q prevents allocation: %v", fillMethod, err)
 			return nil, err
 		}
 		if len(blns) == 0 {
@@ -1975,7 +1975,7 @@ func (p *balloons) resizeCompositeBalloon(bln *Balloon, newMilliCpus int) error 
 	}
 	p.forgetCpuClass(bln) // reset CPU classes in balloon's old CPUs
 	bln.Cpus = blnCpus
-	log.Debugf("- resize composite ballooon successful: %s, freecpus: %#s", bln, p.freeCpus)
+	log.Debugf("- resize composite ballooon successful: %s, freecpus: %s", bln, p.freeCpus)
 	p.updatePinning(bln)
 	if err := p.useCpuClass(bln); err != nil { // set CPU classes in balloon's new CPUs
 		log.Warnf("failed to apply CPU class to balloon %s: %v", bln.PrettyName(), err)
@@ -2045,7 +2045,7 @@ func (p *balloons) resizeBalloon(bln *Balloon, newMilliCpus int) error {
 		log.Debugf("- released, changed cpus: balloon from %q to %q, free from %q to %q", oldBlnCpus, bln.Cpus, oldFreeCpus, p.freeCpus)
 		p.updatePinning(p.shareIdleCpus(removeFromCpus, cpuset.New())...)
 	}
-	log.Debugf("- resize successful: %s, freecpus: %#s", bln, p.freeCpus)
+	log.Debugf("- resize successful: %s, freecpus: %s", bln, p.freeCpus)
 	p.updatePinning(bln)
 	return nil
 }
@@ -2265,13 +2265,13 @@ func (p *balloons) pinCpuMem(c cache.Container, cpus cpuset.CPUSet, mems idset.I
 	}
 	if pinMemory {
 		if c.PreserveMemoryResources() {
-			log.Debugf("  - preserving %s pinning to memory %q", c.PrettyName, c.GetCpusetMems())
+			log.Debugf("  - preserving %s pinning to memory %q", c.PrettyName(), c.GetCpusetMems())
 			preserveMems, err := parseIDSet(c.GetCpusetMems())
 			if err != nil {
 				log.Errorf("failed to parse CpusetMems: %v", err)
 			} else {
 				zone := p.allocMem(c, preserveMems, 0, true)
-				log.Debugf("  - allocated preserved memory %s", c.PrettyName, zone)
+				log.Debugf("  - allocated %s to preserved memory %s", c.PrettyName(), zone)
 				c.SetCpusetMems(zone.MemsetString())
 			}
 		} else {
