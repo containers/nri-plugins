@@ -476,6 +476,22 @@ spec:
                       to expose Prometheus metrics among other things.
                     example: :8891
                     type: string
+                  logExportPeriod:
+                    description: |-
+                      LogCollectPeriod is the time window between batched log exports. In
+                      other words, it is a log batch size expressed in terms of time.
+                    type: string
+                  logExporter:
+                    description: |-
+                      LogExporter defines which exporter is used to export logs.
+                      The supported exporters are:
+                        - otlp-http, http: use OpenTelemetry HTTP log exporter
+                        - otlp-grpc, grpc: use OpenTelemetry gRPC log exporter
+                    enum:
+                    - otlp-http
+                    - otlp-grpc
+                    example: otel-http
+                    type: string
                   metrics:
                     default:
                       enabled:
