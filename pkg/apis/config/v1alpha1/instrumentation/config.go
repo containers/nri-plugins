@@ -50,6 +50,20 @@ type Config struct {
 	// +kubebuilder:validation:Format="duration"
 	// +kubebuilder:default="30s"
 	ReportPeriod metav1.Duration `json:"reportPeriod,omitempty"`
+
+	// LogExporter defines which exporter is used to export logs.
+	// The supported exporters are:
+	//   - otlp-http, http: use OpenTelemetry HTTP log exporter
+	//   - otlp-grpc, grpc: use OpenTelemetry gRPC log exporter
+	// +optional
+	// +kubebuilder:validation:Enum=otlp-http;otlp-grpc
+	// +kubebuilder:example="otel-http"
+	LogExporter string `json:"logExporter,omitempty"`
+	// LogCollectPeriod is the time window between batched log exports. In
+	// other words, it is a log batch size expressed in terms of time.
+	// +optional
+	LogExportPeriod metav1.Duration `json:"logExportPeriod,omitempty"`
+
 	// HTTPEndpoint is the address our HTTP server listens on. This endpoint is used
 	// to expose Prometheus metrics among other things.
 	// +optional
