@@ -307,7 +307,7 @@ func (p *policy) HandleEvent(e *events.Policy) (bool, error) {
 
 // ExportResourceData exports/updates resource data for the container.
 func (p *policy) ExportResourceData(c cache.Container) {
-	var buf bytes.Buffer
+	buf := &bytes.Buffer{}
 
 	data := p.active.ExportResourceData(c)
 	keys := []string{}
@@ -318,7 +318,7 @@ func (p *policy) ExportResourceData(c cache.Container) {
 
 	for _, key := range keys {
 		value := data[key]
-		if _, err := buf.WriteString(fmt.Sprintf("%s=%q\n", key, value)); err != nil {
+		if _, err := fmt.Fprintf(buf, "%s=%q\n", key, value); err != nil {
 			log.Errorf("container %s: failed to export resource data (%s=%q)",
 				c.PrettyName(), key, value)
 			buf.Reset()

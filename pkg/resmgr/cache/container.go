@@ -146,14 +146,13 @@ func checkAllowedAndDeniedPaths(hostPath string, allowPathList, denyPathList *Pa
 
 			if denyPathList.Type == GlobMatch {
 				matched, err = filepath.Match(path, hostPath)
+				if err != nil {
+					log.Errorf("Malformed pattern \"%s\"", path)
+					return false
+				}
 			} else {
 				// Note that match requires pattern to match all of name, not just a substring.
 				matched = strings.HasPrefix(hostPath, path)
-			}
-
-			if err != nil {
-				log.Errorf("Malformed pattern \"%s\"", matched)
-				return false
 			}
 
 			if matched {
@@ -171,14 +170,13 @@ func checkAllowedAndDeniedPaths(hostPath string, allowPathList, denyPathList *Pa
 
 			if allowPathList.Type == GlobMatch {
 				matched, err = filepath.Match(path, hostPath)
+				if err != nil {
+					log.Errorf("Malformed pattern \"%s\"", path)
+					return denied
+				}
 			} else {
 				// Note that match requires pattern to match all of name, not just a substring.
 				matched = strings.HasPrefix(hostPath, path)
-			}
-
-			if err != nil {
-				log.Errorf("Malformed pattern \"%s\"", matched)
-				return denied
 			}
 
 			if matched {

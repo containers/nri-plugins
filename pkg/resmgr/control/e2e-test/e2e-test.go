@@ -69,8 +69,7 @@ func getE2ETestController() *testctl {
 
 // Start initializes the controller for enforcing decisions.
 func (ctl *testctl) Start(cache cache.Cache, cfg *cfgapi.Config) (bool, error) {
-	log.Debugf("Start called (with test APIs %s)",
-		map[bool]string{false: "disabled", true: "enabled"})
+	log.Debugf("Start called (with test APIs %v)", enableTestAPIs)
 
 	if !enableTestAPIs {
 		return false, nil
