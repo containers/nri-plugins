@@ -1,0 +1,18 @@
+config:
+  reservedResources:
+    cpu: 750m
+  pinCPU: true
+  pinMemory: true
+  instrumentation:
+    httpEndpoint: :8891
+    logExporter: otlp-grpc
+    logExportPeriod: 10ms
+  log:
+    debug:
+      - nri-resource-policy
+      - resource-manager
+      - cache
+      - libmem
+      - policy
+extraEnv:
+  OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://otel-collector:4317
