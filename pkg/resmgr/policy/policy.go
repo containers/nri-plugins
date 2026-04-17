@@ -220,7 +220,7 @@ var log logger.Logger = logger.NewLogger("policy")
 
 // NewPolicy creates a policy instance using the given backend.
 func NewPolicy(backend Backend, cache cache.Cache, o *Options) (Policy, error) {
-	log.Info("creating '%s' policy...", backend.Name())
+	log.Infof("creating '%s' policy...", backend.Name())
 
 	p := &policy{
 		cache:   cache,
@@ -246,7 +246,7 @@ func (p *policy) ActivePolicy() string {
 
 // Start starts up policy, preparing it for serving requests.
 func (p *policy) Start(cfg interface{}) error {
-	log.Info("activating '%s' policy...", p.active.Name())
+	log.Infof("activating '%s' policy...", p.active.Name())
 
 	if err := p.active.Setup(&BackendOptions{
 		Cache:     p.cache,
@@ -307,7 +307,7 @@ func (p *policy) HandleEvent(e *events.Policy) (bool, error) {
 
 // ExportResourceData exports/updates resource data for the container.
 func (p *policy) ExportResourceData(c cache.Container) {
-	var buf bytes.Buffer
+	buf := &bytes.Buffer{}
 
 	data := p.active.ExportResourceData(c)
 	keys := []string{}
@@ -318,8 +318,8 @@ func (p *policy) ExportResourceData(c cache.Container) {
 
 	for _, key := range keys {
 		value := data[key]
-		if _, err := buf.WriteString(fmt.Sprintf("%s=%q\n", key, value)); err != nil {
-			log.Error("container %s: failed to export resource data (%s=%q)",
+		if _, err := fmt.Fprintf(buf, "%s=%q\n", key, value); err != nil {
+			log.Errorf("container %s: failed to export resource data (%s=%q)",
 				c.PrettyName(), key, value)
 			buf.Reset()
 			break

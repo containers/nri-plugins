@@ -113,7 +113,7 @@ func (p *policy) Setup(opts *policyapi.BackendOptions) error {
 		return policyError("failed to initialize %s policy: %w", PolicyName, err)
 	}
 
-	log.Info("***** default CPU priority is %s", defaultPrio)
+	log.Infof("***** default CPU priority is %s", defaultPrio)
 
 	return nil
 }
@@ -155,7 +155,7 @@ func (p *policy) Start() error {
 
 // Sync synchronizes the state of this policy.
 func (p *policy) Sync(add []cache.Container, del []cache.Container) error {
-	log.Debug("synchronizing state...")
+	log.Debugf("synchronizing state...")
 	for _, c := range del {
 		if err := p.ReleaseResources(c); err != nil {
 			log.Warnf("failed to release resources for %s: %v", c.PrettyName(), err)
@@ -183,7 +183,7 @@ func (p *policy) checkAllocations(format string, args ...interface{}) {
 	)
 
 	for _, g := range p.allocations.grants {
-		log.Debug("%s %s (%s)", prefix, g, g.GetContainer().GetID())
+		log.Debugf("%s %s (%s)", prefix, g, g.GetContainer().GetID())
 		full := g.ExclusiveCPUs().Size()
 		part := g.CPUPortion()
 		cpuExcl += full
@@ -193,7 +193,7 @@ func (p *policy) checkAllocations(format string, args ...interface{}) {
 
 		_, ok := p.cache.LookupContainer(g.GetContainer().GetID())
 		if !ok {
-			log.Error("%s   %s STALE container among allocations, not found in cache", prefix, g)
+			log.Errorf("%s   %s STALE container among allocations, not found in cache", prefix, g)
 		}
 
 		key := g.GetContainer().PrettyName()
@@ -210,20 +210,20 @@ func (p *policy) checkAllocations(format string, args ...interface{}) {
 	}
 
 	for key, grants := range dup {
-		log.Error("%s DUPLICATE allocation entries for container %s", prefix, key)
+		log.Errorf("%s DUPLICATE allocation entries for container %s", prefix, key)
 		for _, g := range grants {
-			log.Error("%s   %s (%s)", prefix, g, g.GetContainer().GetID())
+			log.Errorf("%s   %s (%s)", prefix, g, g.GetContainer().GetID())
 		}
 	}
 
-	log.Info("%s total CPU granted: %dm (%d exclusive + %dm shared), total memory granted: %s",
+	log.Infof("%s total CPU granted: %dm (%d exclusive + %dm shared), total memory granted: %s",
 		prefix, 1000*cpuExcl+cpuPart, cpuExcl, cpuPart, prettyMem(mem))
 
 }
 
 // AllocateResources is a resource allocation request for this policy.
 func (p *policy) AllocateResources(container cache.Container) error {
-	log.Debug("allocating resources for %s (%s)...", container.PrettyName(), container.GetID())
+	log.Debugf("allocating resources for %s (%s)...", container.PrettyName(), container.GetID())
 
 	err := p.allocateResources(container, "")
 	if err != nil {
@@ -252,7 +252,7 @@ func (p *policy) allocateResources(container cache.Container, poolHint string) e
 
 // ReleaseResources is a resource release request for this policy.
 func (p *policy) ReleaseResources(container cache.Container) error {
-	log.Debug("releasing resources for %s (%s)...", container.PrettyName(), container.GetID())
+	log.Debugf("releasing resources for %s (%s)...", container.PrettyName(), container.GetID())
 
 	if grant, found := p.releasePool(container); found {
 		p.updateSharedAllocations(&grant)
@@ -268,7 +268,7 @@ func (p *policy) ReleaseResources(container cache.Container) error {
 
 // UpdateResources is a resource allocation update request for this policy.
 func (p *policy) UpdateResources(container cache.Container) error {
-	log.Debug("updating (reallocating) container %s...", container.PrettyName())
+	log.Debugf("updating (reallocating) container %s...", container.PrettyName())
 
 	grant, found := p.releasePool(container)
 	if !found {
@@ -293,7 +293,7 @@ func (p *policy) UpdateResources(container cache.Container) error {
 
 // HandleEvent handles policy-specific events.
 func (p *policy) HandleEvent(e *events.Policy) (bool, error) {
-	log.Debug("received policy event %s.%s with data %v...", e.Source, e.Type, e.Data)
+	log.Debugf("received policy event %s.%s with data %v...", e.Source, e.Type, e.Data)
 
 	switch e.Type {
 	case events.ContainerStarted:
@@ -302,7 +302,7 @@ func (p *policy) HandleEvent(e *events.Policy) (bool, error) {
 			return false, policyError("%s event: expecting cache.Container Data, got %T",
 				e.Type, e.Data)
 		}
-		log.Info("triggering coldstart period (if necessary) for %s", c.PrettyName())
+		log.Infof("triggering coldstart period (if necessary) for %s", c.PrettyName())
 		return false, p.triggerColdStart(c)
 	case ColdStartDone:
 		id, ok := e.Data.(string)
@@ -315,7 +315,7 @@ func (p *policy) HandleEvent(e *events.Policy) (bool, error) {
 			// TODO: This is probably a race condition. Should we return nil error here?
 			return false, policyError("%s event: failed to lookup container %s", id)
 		}
-		log.Info("finishing coldstart period for %s", c.PrettyName())
+		log.Infof("finishing coldstart period for %s", c.PrettyName())
 		return p.finishColdStart(c)
 	}
 	return false, nil
@@ -439,7 +439,7 @@ func (p *policy) ExportResourceData(c cache.Container) map[string]string {
 func (p *policy) reallocateResources(containers []cache.Container, pools map[string]string) error {
 	errs := []error{}
 
-	log.Info("reallocating resources...")
+	log.Infof("reallocating resources...")
 
 	cache.SortContainers(containers)
 
@@ -447,7 +447,7 @@ func (p *policy) reallocateResources(containers []cache.Container, pools map[str
 		p.releasePool(c)
 	}
 	for _, c := range containers {
-		log.Debug("reallocating resources for %s (%s)...", c.PrettyName(), c.GetID())
+		log.Debugf("reallocating resources for %s (%s)...", c.PrettyName(), c.GetID())
 
 		grant, err := p.allocatePool(c, pools[c.GetID()])
 		if err != nil {
@@ -499,7 +499,7 @@ func (p *policy) Reconfigure(newCfg interface{}) error {
 		}
 	}
 
-	log.Warn("updating existing allocations...")
+	log.Warnf("updating existing allocations...")
 	if err := p.restoreAllocations(&allocations); err != nil {
 		*p = savedPolicy
 		opt = p.cfg
@@ -639,7 +639,7 @@ func (p *policy) findExistingTopologyLevel(level cfgapi.CPUTopologyLevel) cfgapi
 			return l
 		}
 		if l.Value() < level.Value() {
-			log.Warn("no pool of kind %q (%q), using %q instead",
+			log.Warnf("no pool of kind %q (%q), using %q instead",
 				level, NodeKindForTopologyLevel(level), l)
 			return l
 		}
@@ -667,7 +667,7 @@ func (p *policy) checkColdstartOff() {
 		if node.GetMemoryType() == system.MemoryTypePMEM {
 			if !node.HasNormalMemory() {
 				coldStartOff = true
-				log.Error("coldstart forced off: NUMA node #%d does not have normal memory", id)
+				log.Errorf("coldstart forced off: NUMA node #%d does not have normal memory", id)
 				return
 			}
 		}

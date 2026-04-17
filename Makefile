@@ -37,7 +37,7 @@ GO_LINT    := golint -set_exit_status
 GO_FMT     := gofmt
 GO_VET     := $(GO_CMD) vet
 GO_DEPS    := $(GO_CMD) list -f '{{ join .Deps "\n" }}'
-GO_VERSION ?= 1.25.0
+GO_VERSION ?= 1.26.0
 
 GO_MODULES := $(shell $(GO_CMD) list ./...)
 GO_SUBPKGS := $(shell find ./pkg -name go.mod | sed 's:/go.mod::g' | grep -v testdata | \
@@ -396,7 +396,7 @@ ginkgo-tests:
 	    --covermode atomic \
 	    --output-dir $(COVERAGE_PATH) \
 	    --junit-report junit.xml \
-	    --coverprofile $(COVERAGE_PATH)/coverprofile \
+	    --coverprofile coverprofile \
 	    --keep-separate-coverprofiles \
 	    --succinct \
             --skip-package $$(echo $(GO_SUBPKGS) | tr -s '\t ' ',') \

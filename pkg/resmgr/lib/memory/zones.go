@@ -198,7 +198,7 @@ func (a *Allocator) zoneAssign(zone NodeMask, req *Request) {
 	req.zone = zone
 	a.journal.assign(zone, req.ID())
 
-	log.Debug("  + %s: assign %s", zoneName(zone), req)
+	log.Debugf("  + %s: assign %s", zoneName(zone), req)
 }
 
 func (a *Allocator) zoneRemove(zone NodeMask, id string) {
@@ -217,13 +217,13 @@ func (a *Allocator) zoneRemove(zone NodeMask, id string) {
 	a.journal.delete(zone, id)
 	req.zone = 0
 
-	log.Debug("  - %s: remove %s", zoneName(zone), req)
+	log.Debugf("  - %s: remove %s", zoneName(zone), req)
 }
 
 func (a *Allocator) zoneMove(zone NodeMask, req *Request) {
 	if from, ok := a.users[req.ID()]; ok {
 		if from == zone {
-			log.Warn("  - %s: useless move of %s (same zone)...", zoneName(zone), req)
+			log.Warnf("  - %s: useless move of %s (same zone)...", zoneName(zone), req)
 			return
 		}
 		a.zoneRemove(from, req.ID())
@@ -256,7 +256,7 @@ func (a *Allocator) zoneShrinkUsage(zone NodeMask, amount int64, limit Priority,
 	nodes, types := a.expand(zone, z.types|extra)
 
 	if nodes == 0 {
-		log.Debug("  - %s: couldn't expand by %s types", zoneName(zone), extra)
+		log.Debugf("  - %s: couldn't expand by %s types", zoneName(zone), extra)
 		return 0
 	}
 
@@ -276,7 +276,7 @@ func (a *Allocator) zoneShrinkUsage(zone NodeMask, amount int64, limit Priority,
 		}
 	}
 
-	log.Debug("  - %s: freed up %s bytes of memory", zoneName(zone), prettySize(moved))
+	log.Debugf("  - %s: freed up %s bytes of memory", zoneName(zone), prettySize(moved))
 
 	return moved
 }

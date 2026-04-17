@@ -176,7 +176,7 @@ func (a *Allocator) ForeachRequest(req *Request, fn func(*Request) bool) {
 // request. Committing any offer invalidates all other offers. Allocating
 // or releasing memory likewise invalidates all offers.
 func (a *Allocator) GetOffer(req *Request) (*Offer, error) {
-	log.Debug("get offer for %s", req)
+	log.Debugf("get offer for %s", req)
 	defer a.validateState("GetOffer")
 
 	err := a.allocate(req)
@@ -198,7 +198,7 @@ func (a *Allocator) GetOffer(req *Request) (*Offer, error) {
 // other existing allocations to fulfill the request. The caller must
 // ensure these updates are properly enforced.
 func (a *Allocator) Allocate(req *Request) (NodeMask, map[string]NodeMask, error) {
-	log.Debug("allocate %s memory for %s", req.types, req)
+	log.Debugf("allocate %s memory for %s", req.types, req)
 	defer a.validateState("Allocate")
 	defer a.cleanupUnusedZones()
 
@@ -223,7 +223,7 @@ func (a *Allocator) Allocate(req *Request) (NodeMask, map[string]NodeMask, error
 // other existing allocations to fulfill the request. The caller must
 // ensure these updates are properly enforced.
 func (a *Allocator) Realloc(id string, affinity NodeMask, types TypeMask) (NodeMask, map[string]NodeMask, error) {
-	log.Debug("reallocate to add %s memory affine to %s for %s", types, affinity, id)
+	log.Debugf("reallocate to add %s memory affine to %s for %s", types, affinity, id)
 
 	req, ok := a.requests[id]
 	if !ok {
@@ -242,7 +242,7 @@ func (a *Allocator) Release(id string) error {
 		return fmt.Errorf("%w: no request with ID %s", ErrUnknownRequest, id)
 	}
 
-	log.Debug("release memory for %s", req)
+	log.Debugf("release memory for %s", req)
 
 	defer a.validateState("Release")
 	defer a.cleanupUnusedZones()
@@ -253,7 +253,7 @@ func (a *Allocator) Release(id string) error {
 // Reset resets the state of the allocator, releasing all allocations
 // and invalidating all offers.
 func (a *Allocator) Reset() {
-	log.Debug("reset allocations")
+	log.Debugf("reset allocations")
 	a.reset()
 }
 
@@ -307,7 +307,7 @@ func (a *Allocator) allocate(req *Request) (retErr error) {
 		if retErr != nil {
 			_, err := a.revertJournal(req)
 			if err != nil {
-				log.Warn("failed to revert journal on error: %v", err)
+				log.Warnf("failed to revert journal on error: %v", err)
 			}
 		}
 	}()
@@ -332,7 +332,7 @@ func (a *Allocator) realloc(req *Request, nodes NodeMask, types TypeMask) (zone 
 		return req.Zone(), nil, nil
 	}
 
-	log.Debug("reallocate to add %s memory affine to %s for %s", types, nodes, req)
+	log.Debugf("reallocate to add %s memory affine to %s for %s", types, nodes, req)
 
 	if err = a.startJournal(); err != nil {
 		return 0, nil, err
@@ -342,7 +342,7 @@ func (a *Allocator) realloc(req *Request, nodes NodeMask, types TypeMask) (zone 
 		if retErr != nil {
 			_, err := a.revertJournal(nil)
 			if err != nil {
-				log.Warn("failed to revert journal on error: %v", err)
+				log.Warnf("failed to revert journal on error: %v", err)
 			}
 		}
 	}()
@@ -458,11 +458,11 @@ func (a *Allocator) validateState(where string) {
 	for _, req := range a.requests {
 		if assigned, ok := a.users[req.ID()]; ok {
 			if assigned != req.Zone() {
-				log.Error("internal error: %s: %s assigned to %s, but has zone set to %s",
+				log.Errorf("internal error: %s: %s assigned to %s, but has zone set to %s",
 					where, req, assigned, req.Zone())
 			}
 		} else {
-			log.Error("internal error: %s: %s not assigned, but has zone set to %s",
+			log.Errorf("internal error: %s: %s not assigned, but has zone set to %s",
 				where, req, req.Zone())
 		}
 	}
@@ -471,12 +471,12 @@ func (a *Allocator) validateState(where string) {
 		for id, zReq := range z.users {
 			req, ok := a.requests[id]
 			if !ok {
-				log.Error("internal error: %s: %s present in zone %s, but has no assignment",
+				log.Errorf("internal error: %s: %s present in zone %s, but has no assignment",
 					where, zReq, zone)
 				continue
 			}
 			if req.Zone() != zone {
-				log.Error("internal error %s: %s assigned to %s, also present in zone %s",
+				log.Errorf("internal error %s: %s assigned to %s, also present in zone %s",
 					where, req, req.Zone(), zone)
 			}
 		}
@@ -502,7 +502,7 @@ func (a *Allocator) findInitialZone(req *Request) error {
 	)
 
 	if miss != 0 {
-		log.Debug("- find initial zone (start at %s, expand with %s)", zone, miss)
+		log.Debugf("- find initial zone (start at %s, expand with %s)", zone, miss)
 
 		nodes, _ := a.expand(zone, miss)
 		zone |= nodes
@@ -564,7 +564,7 @@ func (a *Allocator) ensureNormalMemory(req *Request) error {
 		}
 	}
 
-	log.Debug("- ensure normal memory for %s (with %s types)", zone, types)
+	log.Debugf("- ensure normal memory for %s (with %s types)", zone, types)
 
 	for n, _ := a.expand(zone, types); n != 0; n, _ = a.expand(zone, types) {
 		zone |= n
@@ -600,7 +600,7 @@ func (a *Allocator) expand(zone NodeMask, types TypeMask) (NodeMask, TypeMask) {
 	}
 
 	if nodes != 0 {
-		log.Debug("  + %s expanded by %s %s to %s", zoneName(zone), types, nodes, zone|nodes)
+		log.Debugf("  + %s expanded by %s %s to %s", zoneName(zone), types, nodes, zone|nodes)
 	}
 
 	return nodes, types
@@ -633,7 +633,7 @@ func (a *Allocator) defaultExpand(zone NodeMask, types TypeMask) (NodeMask, Type
 	})
 
 	if newNodes != 0 {
-		details.Debug("expanded nodes %s by types %s to %s %s", zone, types, newTypes, newNodes)
+		details.Debugf("expanded nodes %s by types %s to %s %s", zone, types, newTypes, newNodes)
 	}
 
 	return newNodes, newTypes
@@ -764,7 +764,7 @@ func (a *Allocator) checkOvercommit(nodes NodeMask) ([]NodeMask, map[NodeMask]in
 func (a *Allocator) cleanupUnusedZones() {
 	for z, zone := range a.zones {
 		if len(zone.users) == 0 {
-			log.Debug("removing unused zone %s...", z)
+			log.Debugf("removing unused zone %s...", z)
 			delete(a.zones, z)
 		}
 	}
@@ -800,7 +800,7 @@ func (a *Allocator) revertJournal(req *Request) (map[string]NodeMask, error) {
 		return nil, nil
 	}
 
-	log.Debug("reverting journal...")
+	log.Debugf("reverting journal...")
 
 	j := a.journal
 	a.journal = nil
@@ -882,7 +882,7 @@ func (o *Offer) Commit() (NodeMask, map[string]NodeMask, error) {
 
 	o.a.invalidateOffers()
 
-	log.Debug("committed offer %s to %s", o.req, o.req.Zone())
+	log.Debugf("committed offer %s to %s", o.req, o.req.Zone())
 
 	return o.NodeMask(), o.Updates(), nil
 }

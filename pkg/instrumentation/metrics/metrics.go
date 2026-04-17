@@ -115,14 +115,14 @@ func Start(m *http.ServeMux, resource *resource.Resource, opts ...Option) error 
 	metrics.Configure(enabled)
 
 	if exporter == "" {
-		log.Info("no metrics exporter configured, metrics collection disabled")
+		log.Infof("no metrics exporter configured, metrics collection disabled")
 		metrics.SetProvider(nil)
 		metrics.Configure(nil)
 		return nil
 	}
 
 	if m == nil {
-		log.Info("no mux provided, metrics collection disabled")
+		log.Infof("no mux provided, metrics collection disabled")
 		metrics.SetProvider(nil)
 		metrics.Configure(nil)
 		return nil
@@ -135,7 +135,7 @@ func Start(m *http.ServeMux, resource *resource.Resource, opts ...Option) error 
 
 	switch exporter {
 	case promExporter:
-		log.Info("using OpenTelemetry Prometheus exporter")
+		log.Infof("using OpenTelemetry Prometheus exporter")
 
 		// To enable/disable 'standard' OpenTelemetry or runtime-provided
 		// metrics we either use the default prometheus registerer (enabled)
@@ -164,7 +164,7 @@ func Start(m *http.ServeMux, resource *resource.Resource, opts ...Option) error 
 		m.Handle("/metrics", promhttp.HandlerFor(gatherer, handlerOpts))
 
 	case httpExporter:
-		log.Info("using OpenTelemetry HTTP exporter")
+		log.Infof("using OpenTelemetry HTTP exporter")
 
 		exp, err := otlpmetrichttp.New(ctx)
 		if err != nil {
@@ -178,7 +178,7 @@ func Start(m *http.ServeMux, resource *resource.Resource, opts ...Option) error 
 		)
 
 	case grpcExporter:
-		log.Info("using OpenTelemetry gRPC exporter")
+		log.Infof("using OpenTelemetry gRPC exporter")
 
 		exp, err := otlpmetricgrpc.New(ctx)
 		if err != nil {
@@ -192,7 +192,7 @@ func Start(m *http.ServeMux, resource *resource.Resource, opts ...Option) error 
 		)
 	}
 
-	log.Info("starting metrics exporter...")
+	log.Infof("starting metrics exporter...")
 
 	provider = metric.NewMeterProvider(options...)
 	metrics.SetProvider(provider)
@@ -212,7 +212,7 @@ func Stop() {
 	if provider != nil {
 		err := provider.Shutdown(context.Background())
 		if err != nil {
-			log.Error("failed to shut down metrics provider: %v", err)
+			log.Errorf("failed to shut down metrics provider: %v", err)
 		}
 		provider = nil
 	}

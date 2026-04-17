@@ -26,7 +26,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.19.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.opentelemetry.io/otel/trace"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
@@ -115,7 +115,7 @@ func Stop() {
 }
 
 func (t *tracing) start(resource *resource.Resource, options ...Option) error {
-	log.Info("starting tracing exporter...")
+	log.Infof("starting tracing exporter...")
 
 	for _, opt := range options {
 		if err := opt(t); err != nil {
@@ -129,7 +129,7 @@ func (t *tracing) start(resource *resource.Resource, options ...Option) error {
 	}
 
 	if t.endpoint == "" {
-		log.Info("tracing effectively disabled, no endpoint set")
+		log.Infof("tracing effectively disabled, no endpoint set")
 		t.sampler.setSampler(nil)
 		return nil
 	}

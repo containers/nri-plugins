@@ -141,7 +141,7 @@ func (r *ContainerResources) GetDeviceTopologyHints(checkDenied func(string) boo
 		name := HintProvider + dev.GetResourceName()
 
 		if checkDenied(name) {
-			log.Info("filtering hints for disallowed device %s", name)
+			log.Infof("filtering hints for disallowed device %s", name)
 			continue
 		}
 

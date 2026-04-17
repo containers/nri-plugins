@@ -65,7 +65,7 @@ func estimateResourceRequirements(r *nri.LinuxResources, qosClass corev1.PodQOSC
 		resources.Requests[corev1.ResourceMemory] = resources.Limits[corev1.ResourceMemory]
 	case corev1.PodQOSBurstable:
 		if req := OomAdjToMemReq(oomAdj, memLimit); req != nil && *req != 0 {
-			log.Info("estimated memory request: %d (%.2fM)", *req, float64(*req)/(1024*1024))
+			log.Infof("estimated memory request: %d (%.2fM)", *req, float64(*req)/(1024*1024))
 			qty := resapi.NewQuantity(*req, resapi.DecimalSI)
 			resources.Requests[corev1.ResourceMemory] = *qty
 		}

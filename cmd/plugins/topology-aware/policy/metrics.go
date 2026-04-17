@@ -208,7 +208,7 @@ func (m *TopologyAwareMetrics) Update() {
 
 	p := m.p
 	for _, pool := range p.pools {
-		log.Debug("updating metrics for pool %s...", pool.Name())
+		log.Debugf("updating metrics for pool %s...", pool.Name())
 
 		var (
 			zone       = m.Zones[pool.Name()]
@@ -220,7 +220,7 @@ func (m *TopologyAwareMetrics) Update() {
 		)
 
 		if zone == nil {
-			log.Error("metrics zone not found for pool %s", pool.Name())
+			log.Errorf("metrics zone not found for pool %s", pool.Name())
 			continue
 		}
 

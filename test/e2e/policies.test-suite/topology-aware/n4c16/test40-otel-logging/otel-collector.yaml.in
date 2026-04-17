@@ -1,0 +1,101 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-config
+  namespace: kube-system
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    exporters:
+      file:
+        path: /data/otel-export.out
+      debug:
+        verbosity: normal
+    processors:
+      batch:
+    service:
+      telemetry:
+        metrics:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          exporters: [file]
+          processors: [batch]
+        metrics:
+          receivers: [otlp]
+          exporters: [file]
+          processors: [batch]
+        logs:
+          receivers: [otlp]
+          exporters: [file, debug]
+          processors: [batch]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+    spec:
+      containers:
+      - name: collector
+        image: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector
+        resources:
+          requests:
+            cpu: 750m
+            memory: 250M
+          limits:
+            cpu: 750m
+            memory: 750M
+        ports:
+        - containerPort: 4317
+        - containerPort: 4318
+        volumeMounts:
+        - name: otel-config
+          mountPath: /etc/otelcol
+        - name: otel-data
+          mountPath: /data
+          readOnly: false
+        imagePullPolicy: IfNotPresent
+      terminationGracePeriodSeconds: 1
+      volumes:
+      - name: otel-config
+        configMap:
+          name: otel-config
+      - name: otel-data
+        hostPath:
+          path: /tmp/otel/data
+          type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: kube-system
+  labels:
+    app: otel-collector
+spec:
+  selector:
+    app: otel-collector
+  ports:
+  - name: otel-grpc
+    port: 4317
+    targetPort: 4317
+    protocol: TCP
+  - name: otel-http
+    port: 4318
+    targetPort: 4318
+    protocol: TCP

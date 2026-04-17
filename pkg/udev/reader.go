@@ -93,7 +93,7 @@ func (r *Reader) Read(p []byte) (int, error) {
 
 	// TODO(klihub): make this controllable using an option ?
 	if err == syscall.ENOBUFS {
-		log.Warn("udev ran out of buffer space (was dropping events)")
+		log.Warnf("udev ran out of buffer space (was dropping events)")
 		err = nil
 	}
 
