@@ -333,27 +333,27 @@ func (n *node) Dump(prefix string, level ...int) {
 	idt := indent(prefix, lvl)
 
 	n.self.node.dump(prefix, lvl)
-	log.Debug("%s  - %s", idt, n.noderes.DumpCapacity())
-	log.Debug("%s  - %s", idt, n.freeres.DumpAllocatable())
+	log.Debugf("%s  - %s", idt, n.noderes.DumpCapacity())
+	log.Debugf("%s  - %s", idt, n.freeres.DumpAllocatable())
 	if n.mem.Size() > 0 {
-		log.Debug("%s  - normal memory: %v", idt, n.mem)
+		log.Debugf("%s  - normal memory: %v", idt, n.mem)
 	}
 	if n.hbm.Size() > 0 {
-		log.Debug("%s  - HBM memory: %v", idt, n.hbm)
+		log.Debugf("%s  - HBM memory: %v", idt, n.hbm)
 	}
 	if n.pMem.Size() > 0 {
-		log.Debug("%s  - PMEM memory: %v", idt, n.pMem)
+		log.Debugf("%s  - PMEM memory: %v", idt, n.pMem)
 	}
 	for _, grant := range n.policy.allocations.grants {
 		if grant.GetCPUNode().NodeID() == n.id {
-			log.Debug("%s    + %s", idt, grant)
+			log.Debugf("%s    + %s", idt, grant)
 		}
 	}
 	if !n.Parent().IsNil() {
-		log.Debug("%s  - parent: <%s>", idt, n.Parent().Name())
+		log.Debugf("%s  - parent: <%s>", idt, n.Parent().Name())
 	}
 	if len(n.children) > 0 {
-		log.Debug("%s  - children:", idt)
+		log.Debugf("%s  - children:", idt)
 		for _, c := range n.children {
 			c.Dump(prefix, lvl+1)
 		}
@@ -482,7 +482,7 @@ func (p *policy) NewNumaNode(id idset.ID, parent Node) *numanode {
 
 // Dump (the NUMA-specific parts of) this node.
 func (n *numanode) dump(prefix string, level ...int) {
-	log.Debug("%s<NUMA node #%v>", indent(prefix, level...), n.id)
+	log.Debugf("%s<NUMA node #%v>", indent(prefix, level...), n.id)
 }
 
 // Get CPU supply available at this node.
@@ -546,7 +546,7 @@ func (p *policy) NewL3CacheNode(id idset.ID, cpus cpuset.CPUSet, parent Node) *l
 
 // Dump (the L3 cache-specific parts of) this node.
 func (n *l3cachenode) dump(prefix string, level ...int) {
-	log.Debug("%s<%s, cpus: %s>", indent(prefix, level...), n.name, n.cpus)
+	log.Debugf("%s<%s, cpus: %s>", indent(prefix, level...), n.name, n.cpus)
 }
 
 // GetSupply returns CPU supply available at this node.
@@ -625,7 +625,7 @@ func (p *policy) NewDieNode(id idset.ID, parent Node) *dienode {
 
 // Dump (the die-specific parts of) this node.
 func (n *dienode) dump(prefix string, level ...int) {
-	log.Debug("%s<die #%v/%v>", indent(prefix, level...), n.syspkg.ID(), n.id)
+	log.Debugf("%s<die #%v/%v>", indent(prefix, level...), n.syspkg.ID(), n.id)
 }
 
 // Get CPU supply available at this node.
@@ -694,7 +694,7 @@ func (p *policy) NewSocketNode(id idset.ID, parent Node) *socketnode {
 
 // Dump (the socket-specific parts of) this node.
 func (n *socketnode) dump(prefix string, level ...int) {
-	log.Debug("%s<socket #%v>", indent(prefix, level...), n.id)
+	log.Debugf("%s<socket #%v>", indent(prefix, level...), n.id)
 }
 
 // Get CPU supply available at this node.
@@ -756,7 +756,7 @@ func (p *policy) NewVirtualNode(name string, parent Node) *virtualnode {
 
 // Dump (the virtual-node specific parts of) this node.
 func (n *virtualnode) dump(prefix string, level ...int) {
-	log.Debug("%s<virtual %s>", indent(prefix, level...), n.name)
+	log.Debugf("%s<virtual %s>", indent(prefix, level...), n.name)
 }
 
 // Get CPU supply available at this node.

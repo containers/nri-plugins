@@ -115,7 +115,7 @@ func Stop() {
 }
 
 func (t *tracing) start(resource *resource.Resource, options ...Option) error {
-	log.Info("starting tracing exporter...")
+	log.Infof("starting tracing exporter...")
 
 	for _, opt := range options {
 		if err := opt(t); err != nil {
@@ -129,7 +129,7 @@ func (t *tracing) start(resource *resource.Resource, options ...Option) error {
 	}
 
 	if t.endpoint == "" {
-		log.Info("tracing effectively disabled, no endpoint set")
+		log.Infof("tracing effectively disabled, no endpoint set")
 		t.sampler.setSampler(nil)
 		return nil
 	}

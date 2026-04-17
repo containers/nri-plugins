@@ -54,7 +54,7 @@ func newNRIPlugin(resmgr *resmgr) (*nriPlugin, error) {
 		byname: make(map[string]cache.Container),
 	}
 
-	nri.Info("creating plugin...")
+	nri.Infof("creating plugin...")
 
 	return p, nil
 }
@@ -82,7 +82,7 @@ func (p *nriPlugin) createStub() error {
 		err error
 	)
 
-	nri.Info("creating plugin stub...")
+	nri.Infof("creating plugin stub...")
 
 	if p.stub, err = stub.New(p, opts...); err != nil {
 		return fmt.Errorf("failed to create NRI plugin stub: %w", err)
@@ -96,7 +96,7 @@ func (p *nriPlugin) start() error {
 		return nil
 	}
 
-	nri.Info("starting plugin...")
+	nri.Infof("starting plugin...")
 
 	if err := p.createStub(); err != nil {
 		return err
@@ -114,12 +114,12 @@ func (p *nriPlugin) stop() {
 		return
 	}
 
-	nri.Info("stopping plugin...")
+	nri.Infof("stopping plugin...")
 	p.stub.Stop()
 }
 
 func (p *nriPlugin) onClose() {
-	nri.Error("connection to NRI/runtime lost, exiting...")
+	nri.Errorf("connection to NRI/runtime lost, exiting...")
 	os.Exit(1)
 }
 
@@ -142,11 +142,11 @@ func (p *nriPlugin) mapNameToContainer(ctr cache.Container) cache.Container {
 
 	p.byname[name] = ctr
 	if ok {
-		nri.Info("%s: remapped container from %s to %s", name, old.GetID(), ctr.GetID())
+		nri.Infof("%s: remapped container from %s to %s", name, old.GetID(), ctr.GetID())
 		return old
 	}
 
-	nri.Info("%s: mapped container to %s", name, ctr.GetID())
+	nri.Infof("%s: mapped container to %s", name, ctr.GetID())
 	return nil
 }
 
@@ -154,7 +154,7 @@ func (p *nriPlugin) unmapName(name string) (cache.Container, bool) {
 	old, ok := p.byname[name]
 	if ok {
 		delete(p.byname, name)
-		nri.Info("%s: unmapped container from %s", name, old.GetID())
+		nri.Infof("%s: unmapped container from %s", name, old.GetID())
 	}
 	return old, ok
 }
@@ -165,9 +165,9 @@ func (p *nriPlugin) unmapContainer(ctr cache.Container) {
 	if ok {
 		if old == ctr {
 			delete(p.byname, name)
-			nri.Info("%s: unmapped container (%s)", name, ctr.GetID())
+			nri.Infof("%s: unmapped container (%s)", name, ctr.GetID())
 		} else {
-			nri.Warn("%s: leaving container mapped, ID mismatch (%s != %s)", name,
+			nri.Warnf("%s: leaving container mapped, ID mismatch (%s != %s)", name,
 				old.GetID(), ctr.GetID())
 		}
 	}
@@ -202,24 +202,24 @@ func (p *nriPlugin) syncWithNRI(pods []*api.PodSandbox, containers []*api.Contai
 	allocated := []cache.Container{}
 	released := []cache.Container{}
 
-	nri.Info("synchronizing cache state with NRI runtime...")
+	nri.Infof("synchronizing cache state with NRI runtime...")
 
 	m.cache.BlockSave()
 	defer func() {
 		if err := m.cache.UnblockSave(); err != nil {
-			nri.Error("failed to unblock cache save: %v", err)
+			nri.Errorf("failed to unblock cache save: %v", err)
 		}
 	}()
 
 	_, _, deleted := m.cache.RefreshPods(pods, m.agent.GoListPodResources(podResListTimeout))
 	for _, c := range deleted {
-		nri.Info("discovered stale container %s (%s)...", c.PrettyName(), c.GetID())
+		nri.Infof("discovered stale container %s (%s)...", c.PrettyName(), c.GetID())
 		released = append(released, c)
 	}
 
 	_, deleted = m.cache.RefreshContainers(containers)
 	for _, c := range deleted {
-		nri.Info("discovered stale container %s (%s)...", c.PrettyName(), c.GetID())
+		nri.Infof("discovered stale container %s (%s)...", c.PrettyName(), c.GetID())
 		released = append(released, c)
 	}
 
@@ -230,7 +230,7 @@ func (p *nriPlugin) syncWithNRI(pods []*api.PodSandbox, containers []*api.Contai
 	for _, c := range ctrs {
 		switch c.GetState() {
 		case cache.ContainerStateRunning, cache.ContainerStateCreated:
-			nri.Info("discovered created/running container %s (%s)...",
+			nri.Infof("discovered created/running container %s (%s)...",
 				c.PrettyName(), c.GetID())
 			allocated = append(allocated, c)
 
@@ -241,12 +241,12 @@ func (p *nriPlugin) syncWithNRI(pods []*api.PodSandbox, containers []*api.Contai
 
 		case cache.ContainerStateExited:
 			/* Treat stopped containers as deleted */
-			nri.Info("discovered stopped container %s (%s)...",
+			nri.Infof("discovered stopped container %s (%s)...",
 				c.PrettyName(), c.GetID())
 			released = append(released, c)
 
 		default:
-			nri.Info("discovered container %s (%s), in state %v, ignoring it...",
+			nri.Infof("discovered container %s (%s), in state %v, ignoring it...",
 				c.PrettyName(), c.GetID(), c.GetState())
 		}
 	}
@@ -274,7 +274,7 @@ func (p *nriPlugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, con
 
 	allocated, released, err := p.syncWithNRI(pods, containers)
 	if err != nil {
-		nri.Error("failed to synchronize with NRI: %v", err)
+		nri.Errorf("failed to synchronize with NRI: %v", err)
 		return nil, err
 	}
 
@@ -337,7 +337,7 @@ func (p *nriPlugin) StopPodSandbox(ctx context.Context, podSandbox *api.PodSandb
 	m.agent.PurgePodResources(pod.GetNamespace(), pod.GetName())
 
 	if err := p.runPostReleaseHooks(event, released...); err != nil {
-		nri.Error("%s: failed to run post-release hooks for pod %s: %v",
+		nri.Errorf("%s: failed to run post-release hooks for pod %s: %v",
 			event, pod.GetName(), err)
 	}
 
@@ -373,7 +373,7 @@ func (p *nriPlugin) RemovePodSandbox(ctx context.Context, podSandbox *api.PodSan
 	m.agent.PurgePodResources(pod.GetNamespace(), pod.GetName())
 
 	if err := p.runPostReleaseHooks(event, released...); err != nil {
-		nri.Error("%s: failed to run post-release hooks for pod %s: %v",
+		nri.Errorf("%s: failed to run post-release hooks for pod %s: %v",
 			event, pod.GetName(), err)
 	}
 
@@ -411,9 +411,9 @@ func (p *nriPlugin) CreateContainer(ctx context.Context, pod *api.PodSandbox, co
 	}
 
 	if old, ok := p.unmapName(c.PrettyName()); ok {
-		nri.Info("%s: releasing stale instance %s", c.PrettyName(), old.GetID())
+		nri.Infof("%s: releasing stale instance %s", c.PrettyName(), old.GetID())
 		if err := m.policy.ReleaseResources(old); err != nil {
-			nri.Error("%s: failed to release stale instance %s", c.PrettyName(), old.GetID())
+			nri.Errorf("%s: failed to release stale instance %s", c.PrettyName(), old.GetID())
 		}
 		old.UpdateState(cache.ContainerStateExited)
 	}
@@ -433,7 +433,7 @@ func (p *nriPlugin) CreateContainer(ctx context.Context, pod *api.PodSandbox, co
 	c.UpdateState(cache.ContainerStateCreated)
 
 	if err := p.runPostAllocateHooks(event, c); err != nil {
-		nri.Error("%s: failed to run post-allocate hooks for %s: %v",
+		nri.Errorf("%s: failed to run post-allocate hooks for %s: %v",
 			event, container.GetName(), err)
 		relErr := p.runPostReleaseHooks(event, c)
 		if relErr != nil {
@@ -489,11 +489,11 @@ func (p *nriPlugin) StartContainer(ctx context.Context, pod *api.PodSandbox, con
 	}
 
 	if _, err := m.policy.HandleEvent(e); err != nil {
-		nri.Error("%s: policy failed to handle event %s: %v", event, e.Type, err)
+		nri.Errorf("%s: policy failed to handle event %s: %v", event, e.Type, err)
 	}
 
 	if err := p.runPostStartHooks(event, c); err != nil {
-		nri.Error("%s: failed to run post-start hooks for %s: %v",
+		nri.Errorf("%s: failed to run post-start hooks for %s: %v",
 			event, c.PrettyName(), err)
 	}
 
@@ -527,7 +527,7 @@ func (p *nriPlugin) UpdateContainer(ctx context.Context, pod *api.PodSandbox, co
 	}
 
 	if realUpdates := c.SetResourceUpdates(res); !realUpdates {
-		nri.Warn("UpdateContainer with identical resources, short-circuiting it...")
+		nri.Warnf("UpdateContainer with identical resources, short-circuiting it...")
 		if v := c.GetCPUShares(); v != 0 {
 			c.SetCPUShares(v)
 		}
@@ -552,7 +552,7 @@ func (p *nriPlugin) UpdateContainer(ctx context.Context, pod *api.PodSandbox, co
 	} else {
 		old := c.GetResourceRequirements()
 		upd, _ := c.GetResourceUpdates()
-		nri.Warn("UpdateContainer with real resource changes: %s -> %s",
+		nri.Warnf("UpdateContainer with real resource changes: %s -> %s",
 			old.String(), upd.String())
 		if err := m.policy.UpdateResources(c); err != nil {
 			return nil, fmt.Errorf("failed to update resources: %w", err)
@@ -744,70 +744,70 @@ func (p *nriPlugin) dump(dir, event string, args ...interface{}) {
 	case RunPodSandbox, StopPodSandbox, RemovePodSandbox:
 		if dir == in {
 			if len(args) != 1 {
-				nri.Error("%s %s <dump error, %d args, expected (pod)>", dir, event, len(args))
+				nri.Errorf("%s %s <dump error, %d args, expected (pod)>", dir, event, len(args))
 				return
 			}
 
 			pod, ok := args[0].(*api.PodSandbox)
 			if !ok {
-				nri.Error("%s %s <dump error, arg %T, expected (pod)>", dir, event, args[0])
+				nri.Errorf("%s %s <dump error, arg %T, expected (pod)>", dir, event, args[0])
 				return
 			}
 
-			nri.Info("%s %s %s/%s", dir, event, pod.GetNamespace(), pod.GetName())
+			nri.Infof("%s %s %s/%s", dir, event, pod.GetNamespace(), pod.GetName())
 			p.dumpDetails(dir, event, pod)
 		} else {
 			if len(args) != 1 {
-				nri.Error("%s %s <dump error, %d args, expected (err/nil)>", dir, event, len(args))
+				nri.Errorf("%s %s <dump error, %d args, expected (err/nil)>", dir, event, len(args))
 				return
 			}
 
 			err := args[0]
 			if err != nil {
-				nri.Error("%s %s FAILED: %v", dir, event, err.(error))
+				nri.Errorf("%s %s FAILED: %v", dir, event, err.(error))
 				return
 			}
 
-			nri.Info("%s %s", dir, event)
+			nri.Infof("%s %s", dir, event)
 		}
 
 	case CreateContainer, StartContainer, StopContainer, RemoveContainer:
 		if dir == in {
 			if len(args) != 2 {
-				nri.Error("%s %s <dump error, %d args, expected (pod, container)>",
+				nri.Errorf("%s %s <dump error, %d args, expected (pod, container)>",
 					dir, event, len(args))
 				return
 			}
 
 			pod, ok := args[0].(*api.PodSandbox)
 			if !ok {
-				nri.Error("%s %s <dump error, args %T, %T, expected (pod, container)>",
+				nri.Errorf("%s %s <dump error, args %T, %T, expected (pod, container)>",
 					dir, event, args[0], args[1])
 				return
 			}
 			ctr, ok := args[1].(*api.Container)
 			if !ok {
-				nri.Error("%s %s <dump error, args %T, %T, expected (pod, container)>",
+				nri.Errorf("%s %s <dump error, args %T, %T, expected (pod, container)>",
 					dir, event, args[0], args[1])
 				return
 			}
 
-			nri.Info("%s %s %s/%s/%s (%s)", dir, event,
+			nri.Infof("%s %s %s/%s/%s (%s)", dir, event,
 				pod.GetNamespace(), pod.GetName(), ctr.GetName(), ctr.GetId())
 			p.dumpDetails(dir, event, ctr)
 		} else {
 			if len(args) < 1 {
-				nri.Error("%s %s <dump error, missing args>", dir, event)
+				nri.Errorf("%s %s <dump error, missing args>", dir, event)
 				return
 			}
 
 			err := args[len(args)-1]
 			if err != nil {
-				nri.Error("%s %s FAILED: %v", dir, event, err.(error))
+				nri.Errorf("%s %s FAILED: %v", dir, event, err.(error))
 				return
 			}
 
-			nri.Info("%s %s", dir, event)
+			nri.Infof("%s %s", dir, event)
 
 			switch event {
 			case CreateContainer:
@@ -821,47 +821,47 @@ func (p *nriPlugin) dump(dir, event string, args ...interface{}) {
 	case UpdateContainer:
 		if dir == in {
 			if len(args) != 3 {
-				nri.Error("%s %s <dump error, %d args, expected (pod, container, resources)>",
+				nri.Errorf("%s %s <dump error, %d args, expected (pod, container, resources)>",
 					dir, event, len(args))
 				return
 			}
 
 			pod, ok := args[0].(*api.PodSandbox)
 			if !ok {
-				nri.Error("%s %s <dump error, args %T, %T, %T, expected (pod, container, resources)>",
+				nri.Errorf("%s %s <dump error, args %T, %T, %T, expected (pod, container, resources)>",
 					dir, event, args[0], args[1], args[2])
 				return
 			}
 			ctr, ok := args[1].(*api.Container)
 			if !ok {
-				nri.Error("%s %s <dump error, args %T, %T, %T, expected (pod, container, resources)>",
+				nri.Errorf("%s %s <dump error, args %T, %T, %T, expected (pod, container, resources)>",
 					dir, event, args[0], args[1], args[2])
 				return
 			}
 			res, ok := args[2].(*api.LinuxResources)
 			if !ok {
-				nri.Error("%s %s <dump error, args %T, %T, %T, expected (pod, container, resources)>",
+				nri.Errorf("%s %s <dump error, args %T, %T, %T, expected (pod, container, resources)>",
 					dir, event, args[0], args[1], args[2])
 				return
 			}
 
-			nri.Info("%s %s %s/%s/%s (%s)", dir, event,
+			nri.Infof("%s %s %s/%s/%s (%s)", dir, event,
 				pod.GetNamespace(), pod.GetName(), ctr.GetName(), ctr.GetId())
 			p.dumpDetails(dir, event, ctr)
 			p.dumpDetails(dir, event, res)
 		} else {
 			if len(args) < 1 {
-				nri.Error("%s %s <dump error, missing args>", dir, event)
+				nri.Errorf("%s %s <dump error, missing args>", dir, event)
 				return
 			}
 
 			err := args[len(args)-1]
 			if err != nil {
-				nri.Error("%s %s FAILED: %v", dir, event, err.(error))
+				nri.Errorf("%s %s FAILED: %v", dir, event, err.(error))
 				return
 			}
 
-			nri.Info("%s %s", dir, event)
+			nri.Infof("%s %s", dir, event)
 
 			switch event {
 			case CreateContainer:
@@ -875,82 +875,82 @@ func (p *nriPlugin) dump(dir, event string, args ...interface{}) {
 	case UpdateContainers: // post-config outgoing UpdateContainers
 		if dir == out {
 			if len(args) != 1 {
-				nri.Error("%s %s <dump error, %d args, expected (update)>", dir, event, len(args))
+				nri.Errorf("%s %s <dump error, %d args, expected (update)>", dir, event, len(args))
 				return
 			}
 
-			nri.Info("%s %s", dir, event)
+			nri.Infof("%s %s", dir, event)
 			p.dumpDetails(dir, event, args[0])
 		} else {
 			if len(args) != 1 {
-				nri.Error("%s %s <dump error, %d args, expected (err/nil)>", dir, event, len(args))
+				nri.Errorf("%s %s <dump error, %d args, expected (err/nil)>", dir, event, len(args))
 				return
 			}
 
 			err := args[0]
 			if err == nil {
-				nri.Info("%s %s", dir, event)
+				nri.Infof("%s %s", dir, event)
 				return
 			}
 
-			nri.Error("%s %s FAILED: %v", dir, event, err.(error))
+			nri.Errorf("%s %s FAILED: %v", dir, event, err.(error))
 		}
 
 	case Configure:
 		if dir == in {
 			if len(args) != 2 {
-				nri.Error("%s %s <dump error, %d args, expected (runtime, version)>",
+				nri.Errorf("%s %s <dump error, %d args, expected (runtime, version)>",
 					dir, event, len(args))
 				return
 			}
 
 			runtime, ok := args[0].(string)
 			if !ok {
-				nri.Error("%s %s <dump error, args %T, %T, expected (runtime, version)>",
+				nri.Errorf("%s %s <dump error, args %T, %T, expected (runtime, version)>",
 					dir, event, args[0], args[1])
 				return
 			}
 			version, ok := args[1].(string)
 			if !ok {
-				nri.Error("%s %s <dump error, args %T, %T, expected (runtime, version)>",
+				nri.Errorf("%s %s <dump error, args %T, %T, expected (runtime, version)>",
 					dir, event, args[0], args[1])
 				return
 			}
 
-			nri.Info("%s %s, runtime %s %s", dir, event, runtime, version)
+			nri.Infof("%s %s, runtime %s %s", dir, event, runtime, version)
 		} else {
-			nri.Info("%s %s", dir, event)
+			nri.Infof("%s %s", dir, event)
 		}
 
 	case Synchronize:
 		if dir == in {
 			if len(args) != 2 {
-				nri.Error("%s %s <dump error, %d args, expected (pods, containers)",
+				nri.Errorf("%s %s <dump error, %d args, expected (pods, containers)",
 					dir, event, len(args))
 			}
 
-			nri.Info("%s %s", dir, event)
+			nri.Infof("%s %s", dir, event)
 			p.dumpDetails(dir, event, args[0])
 			p.dumpDetails(dir, event, args[1])
 		} else {
 			if len(args) != 2 {
-				nri.Error("%s %s <dump error, %d args, expected (updates, err/nil)",
+				nri.Errorf("%s %s <dump error, %d args, expected (updates, err/nil)",
 					dir, event, len(args))
 				return
 			}
 
 			err := args[1]
 			if err != nil {
-				nri.Error("%s %s FAILED: %v", dir, event, err.(error))
+				nri.Errorf("%s %s FAILED: %v", dir, event, err.(error))
 				return
 			}
 
-			nri.Info("%s %s", dir, event)
+			nri.Infof("%s %s", dir, event)
 			p.dumpDetails(dir, event, args[0])
 		}
 
 	default:
-		nri.Info("%s %s", dir, event)
+		nri.Infof("%s %s", dir, event)
 	}
 }
 
@@ -1057,7 +1057,7 @@ func (p *nriPlugin) runPostAllocateHooks(method string, created cache.Container)
 	for _, c := range m.cache.GetPendingContainers() {
 		if c == created {
 			if err := m.control.RunPreCreateHooks(c); err != nil {
-				nri.Warn("%s pre-create hook failed for %s: %v",
+				nri.Warnf("%s pre-create hook failed for %s: %v",
 					method, c.PrettyName(), err)
 			}
 			continue
@@ -1066,11 +1066,11 @@ func (p *nriPlugin) runPostAllocateHooks(method string, created cache.Container)
 		switch c.GetState() {
 		case cache.ContainerStateRunning, cache.ContainerStateCreated:
 			if err := m.control.RunPostUpdateHooks(c); err != nil {
-				nri.Warn("%s post-update hook failed for %s: %v",
+				nri.Warnf("%s post-update hook failed for %s: %v",
 					method, c.PrettyName(), err)
 			}
 		default:
-			nri.Warn("%s: skipping container %s (in state %v)", method,
+			nri.Warnf("%s: skipping container %s (in state %v)", method,
 				c.PrettyName(), c.GetState())
 		}
 	}
@@ -1081,7 +1081,7 @@ func (p *nriPlugin) runPostAllocateHooks(method string, created cache.Container)
 func (p *nriPlugin) runPostStartHooks(method string, c cache.Container) error {
 	m := p.resmgr
 	if err := m.control.RunPostStartHooks(c); err != nil {
-		nri.Error("%s: post-start hook failed for %s: %v", method, c.PrettyName(), err)
+		nri.Errorf("%s: post-start hook failed for %s: %v", method, c.PrettyName(), err)
 	}
 	return nil
 }
@@ -1091,21 +1091,21 @@ func (p *nriPlugin) runPostReleaseHooks(method string, released ...cache.Contain
 	m := p.resmgr
 	for _, c := range released {
 		if err := m.control.RunPostStopHooks(c); err != nil {
-			nri.Warn("post-stop hook failed for %s: %v", c.PrettyName(), err)
+			nri.Warnf("post-stop hook failed for %s: %v", c.PrettyName(), err)
 		}
 	}
 	for _, c := range m.cache.GetPendingContainers() {
 		switch state := c.GetState(); state {
 		case cache.ContainerStateStale, cache.ContainerStateExited:
 			if err := m.control.RunPostStopHooks(c); err != nil {
-				nri.Warn("post-stop hook failed for %s: %v", c.PrettyName(), err)
+				nri.Warnf("post-stop hook failed for %s: %v", c.PrettyName(), err)
 			}
 		case cache.ContainerStateRunning, cache.ContainerStateCreated:
 			if err := m.control.RunPostUpdateHooks(c); err != nil {
-				nri.Warn("post-update hook failed for %s: %v", c.PrettyName(), err)
+				nri.Warnf("post-update hook failed for %s: %v", c.PrettyName(), err)
 			}
 		default:
-			nri.Warn("%s: skipping pending container %s (in state %v)",
+			nri.Warnf("%s: skipping pending container %s (in state %v)",
 				method, c.PrettyName(), c.GetState())
 		}
 	}

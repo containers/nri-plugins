@@ -59,15 +59,15 @@ func (c *rdtControl) configure(cfg *rdt.Config) error {
 		if err := rdt.Initialize(""); err != nil {
 			return fmt.Errorf("failed to initialize goresctrl/rdt: %w", err)
 		}
-		log.Info("goresctrl/rdt initialized")
+		log.Infof("goresctrl/rdt initialized")
 
 		if nativeCfg != nil {
 			if err := rdt.SetConfig(nativeCfg, force); err != nil {
 				return fmt.Errorf("failed to configure goresctrl/rdt: %w", err)
 			}
-			log.Info("goresctrl/rdt configuration updated")
+			log.Infof("goresctrl/rdt configuration updated")
 		} else {
-			log.Info("goresctrl/rdt running in discovery mode")
+			log.Infof("goresctrl/rdt running in discovery mode")
 		}
 
 		meter := metrics.Provider("policy").Meter("rdt", metrics.WithOmitSubsystem())

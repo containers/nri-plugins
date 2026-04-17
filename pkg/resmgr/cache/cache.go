@@ -607,7 +607,7 @@ func (cch *cache) SetActivePolicy(policy string) error {
 
 // ResetActivePolicy clears the active policy any any policy-specific data from the cache.
 func (cch *cache) ResetActivePolicy() error {
-	log.Warn("clearing all data for active policy (%q) from cache...",
+	log.Warnf("clearing all data for active policy (%q) from cache...",
 		cch.PolicyName)
 
 	cch.PolicyName = ""
@@ -635,7 +635,7 @@ func (cch *cache) DeletePod(id string) Pod {
 		return nil
 	}
 
-	log.Debug("removing pod %s (%s)", p.PrettyName(), p.GetID())
+	log.Debugf("removing pod %s (%s)", p.PrettyName(), p.GetID())
 	delete(cch.Pods, id)
 
 	if err := cch.Save(); err != nil {
@@ -655,7 +655,7 @@ func (cch *cache) LookupPod(id string) (Pod, bool) {
 func WithContainerState(state ContainerState) InsertContainerOption {
 	return func(c *container) {
 		if c.Ctr.State != state {
-			log.Info("overriding inserted container state to %v (reported %v)", state, c.Ctr.State)
+			log.Infof("overriding inserted container state to %v (reported %v)", state, c.Ctr.State)
 			c.Ctr.State = state
 		}
 	}
@@ -688,7 +688,7 @@ func (cch *cache) DeleteContainer(id string) Container {
 		return nil
 	}
 
-	log.Debug("removing container %s", c.PrettyName())
+	log.Debugf("removing container %s", c.PrettyName())
 	if err := cch.removeContainerDirectory(c.GetID()); err != nil {
 		log.Warnf("failed to remove container directory for %s: %v", c.GetID(), err)
 	}
@@ -709,7 +709,7 @@ func (cch *cache) LookupContainer(id string) (Container, bool) {
 
 // LookupContainerByCgroup looks up the container for the given cgroup path.
 func (cch *cache) LookupContainerByCgroup(path string) (Container, bool) {
-	log.Debug("resolving %s to a container...", path)
+	log.Debugf("resolving %s to a container...", path)
 
 	for _, c := range cch.Containers {
 		parent := ""
@@ -743,20 +743,20 @@ func (cch *cache) RefreshPods(pods []*nri.PodSandbox, resCh <-chan *podresapi.Po
 	for _, item := range pods {
 		valid[item.Id] = struct{}{}
 		if _, ok := cch.Pods[item.Id]; !ok {
-			log.Debug("inserting discovered pod %s...", item.Id)
+			log.Debugf("inserting discovered pod %s...", item.Id)
 			pod := cch.InsertPod(item, nil)
 			add = append(add, pod)
 		}
 	}
 	for _, pod := range cch.Pods {
 		if _, ok := valid[pod.GetID()]; !ok {
-			log.Debug("purging stale pod %s...", pod.GetID())
+			log.Debugf("purging stale pod %s...", pod.GetID())
 			del = append(del, cch.DeletePod(pod.GetID()))
 		}
 	}
 	for _, c := range cch.Containers {
 		if _, ok := valid[c.GetPodID()]; !ok {
-			log.Debug("purging container %s of stale pod %s...", c.GetID(), c.GetPodID())
+			log.Debugf("purging container %s of stale pod %s...", c.GetID(), c.GetPodID())
 			cch.DeleteContainer(c.GetID())
 			c.UpdateState(ContainerStateStale)
 			containers = append(containers, c)
@@ -785,10 +785,10 @@ func (cch *cache) RefreshContainers(containers []*nri.Container) ([]Container, [
 	for _, c := range containers {
 		valid[c.Id] = struct{}{}
 		if _, ok := cch.Containers[c.Id]; !ok {
-			log.Debug("inserting discovered container %s...", c.Id)
+			log.Debugf("inserting discovered container %s...", c.Id)
 			inserted, err := cch.InsertContainer(c)
 			if err != nil {
-				log.Error("failed to insert discovered container %s to cache: %v",
+				log.Errorf("failed to insert discovered container %s to cache: %v",
 					c.Id, err)
 			} else {
 				add = append(add, inserted)
@@ -798,7 +798,7 @@ func (cch *cache) RefreshContainers(containers []*nri.Container) ([]Container, [
 
 	for _, c := range cch.Containers {
 		if _, ok := valid[c.GetID()]; !ok {
-			log.Debug("purging stale container %s (state: %v)...", c.GetID(), c.GetState())
+			log.Debugf("purging stale container %s (state: %v)...", c.GetID(), c.GetState())
 			cch.DeleteContainer(c.GetID())
 			c.UpdateState(ContainerStateStale)
 			del = append(del, c)
@@ -875,9 +875,9 @@ func (cch *cache) SetPolicyEntry(key string, obj interface{}) {
 
 	if log.DebugEnabled() {
 		if data, err := marshalEntry(obj); err != nil {
-			log.Error("marshalling of policy entry '%s' failed: %v", key, err)
+			log.Errorf("marshalling of policy entry '%s' failed: %v", key, err)
 		} else {
-			log.Debug("policy entry '%s' set to '%s'", key, string(data))
+			log.Debugf("policy entry '%s' set to '%s'", key, string(data))
 		}
 	}
 }
@@ -1102,7 +1102,7 @@ func (cch *cache) checkPerm(what, path string, isDir bool, p *permissions) (bool
 
 	// warn if permissions are less strict than the preferred defaults
 	if (existing | expected) != expected {
-		log.Warn("existing %s %q has less strict permissions %v than expected %v",
+		log.Warnf("existing %s %q has less strict permissions %v than expected %v",
 			what, path, existing, expected)
 	}
 
@@ -1217,7 +1217,7 @@ func (cch *cache) UnblockSave() error {
 	case cch.saveBlock == 0:
 		return cch.Save()
 	case cch.saveBlock < 0:
-		log.Error("cache save block counter went negative, resetting to 0")
+		log.Errorf("cache save block counter went negative, resetting to 0")
 		cch.saveBlock = 0
 	}
 	return nil
@@ -1229,7 +1229,7 @@ func (cch *cache) Save() error {
 		return nil
 	}
 
-	log.Debug("saving cache to file '%s'...", cch.filePath)
+	log.Debugf("saving cache to file '%s'...", cch.filePath)
 
 	data, err := cch.Snapshot()
 	if err != nil {
@@ -1250,16 +1250,16 @@ func (cch *cache) Save() error {
 
 // Load loads the last saved state of the cache.
 func (cch *cache) Load() error {
-	log.Debug("loading cache from file '%s'...", cch.filePath)
+	log.Debugf("loading cache from file '%s'...", cch.filePath)
 
 	data, err := os.ReadFile(cch.filePath)
 
 	switch {
 	case os.IsNotExist(err):
-		log.Debug("no cache file '%s', nothing to restore", cch.filePath)
+		log.Debugf("no cache file '%s', nothing to restore", cch.filePath)
 		return nil
 	case len(data) == 0:
-		log.Debug("empty cache file '%s', nothing to restore", cch.filePath)
+		log.Debugf("empty cache file '%s', nothing to restore", cch.filePath)
 		return nil
 	case err != nil:
 		return cacheError("failed to load cache from file '%s': %v", cch.filePath, err)

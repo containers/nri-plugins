@@ -41,7 +41,7 @@ func (a *Agent) GoGetPodResources(ns, pod string, timeout time.Duration) <-chan 
 		defer close(ch)
 		p, err := a.GetPodResources(ns, pod, timeout)
 		if err != nil {
-			log.Error("failed to get pod resources for %s/%s: %v", ns, pod, err)
+			log.Errorf("failed to get pod resources for %s/%s: %v", ns, pod, err)
 			return
 		}
 		ch <- p
@@ -70,7 +70,7 @@ func (a *Agent) GoListPodResources(timeout time.Duration) <-chan *podresapi.PodR
 		defer close(ch)
 		l, err := a.ListPodResources(timeout)
 		if err != nil {
-			log.Error("failed to list pod resources: %v", err)
+			log.Errorf("failed to list pod resources: %v", err)
 			return
 		}
 		ch <- l

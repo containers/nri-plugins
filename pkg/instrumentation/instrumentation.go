@@ -62,7 +62,7 @@ func SetIdentity(attrs ...KeyValue) {
 
 // Start our instrumentation services.
 func Start() error {
-	log.Info("starting instrumentation services...")
+	log.Infof("starting instrumentation services...")
 
 	lock.Lock()
 	defer lock.Unlock()
@@ -87,7 +87,7 @@ func Restart() error {
 
 	err := start()
 	if err != nil {
-		log.Error("failed to start instrumentation: %v", err)
+		log.Errorf("failed to start instrumentation: %v", err)
 	}
 
 	return err

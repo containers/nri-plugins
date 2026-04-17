@@ -118,7 +118,7 @@ func (w *Webhook) processRequest(r *http.Request) (*admv1.AdmissionReview, error
 	switch t := r.Header.Get("Content-Type"); t {
 	case contentTypeJSON:
 	case contentTypeProbe:
-		w.Debug("received liveness probe")
+		w.Debugf("received liveness probe")
 		rpl.Response = probeResponse()
 		return rpl, nil
 	default:

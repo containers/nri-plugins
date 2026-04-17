@@ -32,7 +32,7 @@ func getClassAssignments(c cache.Cache) *cpuClassAssignments {
 	a := &cpuClassAssignments{}
 
 	if !c.GetPolicyEntry(cacheKeyCPUAssignments, a) {
-		log.Error("no cached state of CPU class assignments found")
+		log.Errorf("no cached state of CPU class assignments found")
 	}
 
 	return a

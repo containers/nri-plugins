@@ -24,16 +24,16 @@ import (
 
 // trigger cold start for the container if necessary.
 func (p *policy) triggerColdStart(c cache.Container) error {
-	log.Info("coldstart: triggering coldstart for %s...", c.PrettyName())
+	log.Infof("coldstart: triggering coldstart for %s...", c.PrettyName())
 	g, ok := p.allocations.grants[c.GetID()]
 	if !ok {
-		log.Warn("coldstart: no grant found, nothing to do...")
+		log.Warnf("coldstart: no grant found, nothing to do...")
 		return nil
 	}
 
 	coldStart := g.ColdStart()
 	if coldStart <= 0 {
-		log.Info("coldstart: no coldstart, nothing to do...")
+		log.Infof("coldstart: no coldstart, nothing to do...")
 		return nil
 	}
 
@@ -49,7 +49,7 @@ func (p *policy) triggerColdStart(c cache.Container) error {
 		}
 		if err := p.options.SendEvent(e); err != nil {
 			// we should retry this later, the channel is probably full...
-			log.Error("Ouch... we'should retry this later.")
+			log.Errorf("Ouch... we'should retry this later.")
 		}
 	})
 	g.AddTimer(timer)
@@ -60,16 +60,16 @@ func (p *policy) triggerColdStart(c cache.Container) error {
 func (p *policy) finishColdStart(c cache.Container) (bool, error) {
 	g, ok := p.allocations.grants[c.GetID()]
 	if !ok {
-		log.Warn("coldstart: no grant found, nothing to do...")
+		log.Warnf("coldstart: no grant found, nothing to do...")
 		return false, policyError("coldstart: no grant found for %s", c.PrettyName())
 	}
 
-	log.Info("reallocating %s after coldstart", g)
+	log.Infof("reallocating %s after coldstart", g)
 	err := g.ReallocMemory(p.memZoneType(g.GetMemoryZone()) | libmem.TypeMaskDRAM)
 	if err != nil {
-		log.Error("failed to reallocate %s after coldstart: %v", g, err)
+		log.Errorf("failed to reallocate %s after coldstart: %v", g, err)
 	} else {
-		log.Info("reallocated %s", g)
+		log.Infof("reallocated %s", g)
 	}
 	g.ClearTimer()
 
