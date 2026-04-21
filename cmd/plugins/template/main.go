@@ -32,7 +32,7 @@ func main() {
 
 	agt, err := agent.New(agent.TemplateConfigInterface())
 	if err != nil {
-		log.Fatal("%v", err)
+		log.Fatalf("%v", err)
 	}
 
 	mgr, err := resmgr.New(agt, policy.New())
