@@ -654,7 +654,7 @@ func (p *policy) restoreCache() error {
 		if err := p.restoreAllocations(&allocations); err != nil {
 			return policyError("failed to restore allocations from cache: %v", err)
 		}
-		p.allocations.Dump(log.Info, "restored ")
+		p.allocations.Dump(log.Infof, "restored ")
 	}
 	p.saveAllocations()
 
