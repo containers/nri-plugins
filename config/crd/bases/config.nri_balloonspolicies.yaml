@@ -964,6 +964,15 @@ spec:
                       type: object
                     type: array
                 type: object
+              reservedCPUMode:
+                description: |-
+                  ReservedCPUMode controls how strictly ReservedResources.cpu is interpreted.
+                  Value "preferred" keeps the current behavior where a reserved cpuset is only a preference.
+                  Value "hard-exact" makes the reserved balloon stay within the exact configured cpuset.
+                enum:
+                - preferred
+                - hard-exact
+                type: string
               reservedPoolNamespaces:
                 description: |-
                   ReservedPoolNamespaces is a list of namespace globs that

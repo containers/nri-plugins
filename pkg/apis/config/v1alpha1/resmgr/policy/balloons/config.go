@@ -32,6 +32,7 @@ type (
 	CPUTopologyLevel          = policy.CPUTopologyLevel
 	ComponentCreationStrategy = policy.ComponentCreationStrategy
 	SchedulingClass           = policy.SchedulingClass
+	ReservedCPUMode           string
 )
 
 const (
@@ -41,6 +42,9 @@ const (
 	AmountQuantity      = policy.AmountQuantity
 	AmountCPUSet        = policy.AmountCPUSet
 	AmountExcludeCPUSet = policy.AmountExcludeCPUSet
+
+	ReservedCPUModePreferred ReservedCPUMode = "preferred"
+	ReservedCPUModeHardExact ReservedCPUMode = "hard-exact"
 
 	CPUTopologyLevelUndefined = policy.CPUTopologyLevelUndefined
 	CPUTopologyLevelSystem    = policy.CPUTopologyLevelSystem
@@ -115,6 +119,11 @@ type Config struct {
 	// Reserved (CPU) resources for kube-system namespace.
 	// +kubebuilder:validation:Required
 	ReservedResources Constraints `json:"reservedResources"`
+	// ReservedCPUMode controls how strictly ReservedResources.cpu is interpreted.
+	// Value "preferred" keeps the current behavior where a reserved cpuset is only a preference.
+	// Value "hard-exact" makes the reserved balloon stay within the exact configured cpuset.
+	// +kubebuilder:validation:Enum=preferred;hard-exact
+	ReservedCPUMode ReservedCPUMode `json:"reservedCPUMode,omitempty"`
 	// Preserve specifies containers whose resource pinning must not be
 	// modified by the policy.
 	Preserve *ContainerMatchConfig `json:"preserve,omitempty"`
