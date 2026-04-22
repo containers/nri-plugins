@@ -1,6 +1,6 @@
 ARG GO_VERSION=1.25
 
-FROM golang:${GO_VERSION}-bookworm AS builder
+FROM docker.io/library/golang:${GO_VERSION}-bookworm AS builder
 
 ARG IMAGE_VERSION
 ARG BUILD_VERSION

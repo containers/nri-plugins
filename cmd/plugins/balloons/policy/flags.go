@@ -25,6 +25,7 @@ type (
 	LoadClass        = cfgapi.LoadClass
 	SchedulingClass  = cfgapi.SchedulingClass
 	CPUTopologyLevel = cfgapi.CPUTopologyLevel
+	ReservedCPUMode  = cfgapi.ReservedCPUMode
 )
 
 var (
@@ -35,6 +36,9 @@ var (
 )
 
 const (
+	ReservedCPUModePreferred = cfgapi.ReservedCPUModePreferred
+	ReservedCPUModeHardExact = cfgapi.ReservedCPUModeHardExact
+
 	CPUTopologyLevelUndefined = cfgapi.CPUTopologyLevelUndefined
 	CPUTopologyLevelSystem    = cfgapi.CPUTopologyLevelSystem
 	CPUTopologyLevelPackage   = cfgapi.CPUTopologyLevelPackage

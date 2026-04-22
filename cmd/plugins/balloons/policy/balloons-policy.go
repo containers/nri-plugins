@@ -76,9 +76,10 @@ type balloons struct {
 	options   *policy.BackendOptions // configuration common to all policies
 	bpoptions *BalloonsOptions       // balloons-specific configuration
 	cch       cache.Cache            // nri-resource-policy cache
-	allowed   cpuset.CPUSet          // bounding set of CPUs we're allowed to use
-	reserved  cpuset.CPUSet          // system-/kube-reserved CPUs
-	freeCpus  cpuset.CPUSet          // CPUs to be included in growing or new ballons
+	allowed       cpuset.CPUSet // bounding set of CPUs we're allowed to use
+	reserved      cpuset.CPUSet // system-/kube-reserved CPUs
+	reservedExact bool          // keep built-in reserved balloon on the exact reserved cpuset
+	freeCpus      cpuset.CPUSet // CPUs to be included in growing or new ballons
 	ifreeCpus cpuset.CPUSet          // initially free CPUs before assigning any containers
 	cpuTree   *cpuTreeNode           // system CPU topology
 
@@ -1102,7 +1103,24 @@ func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, erro
 			}
 		}
 	}
-	if err := p.resizeBalloon(bln, blnDef.MinCpus*1000); err != nil {
+	if p.reservedExact && blnDef.Name == reservedBalloonDefName {
+		exact := p.reserved.Clone()
+		if exact.Size() == 0 {
+			return nil, balloonsError("reservedCPUMode=hard-exact requires non-empty reserved cpuset")
+		}
+		if exact.Difference(p.freeCpus).Size() > 0 {
+			return nil, balloonsError("reserved exact cpuset %q is not fully free, missing %q", exact, exact.Difference(p.freeCpus))
+		}
+		newCpus, err := p.cpuAllocator.AllocateCpus(&exact, exact.Size(), blnDef.AllocatorPriority.Value().Option())
+		if err != nil {
+			return nil, balloonsError("failed to allocate exact reserved cpuset %q: %w", exact, err)
+		}
+		if !newCpus.Equals(exact) {
+			return nil, balloonsError("failed to allocate exact reserved cpuset: requested %q, got %q", exact, newCpus)
+		}
+		p.freeCpus = p.freeCpus.Difference(newCpus)
+		bln.Cpus = newCpus
+	} else if err := p.resizeBalloon(bln, blnDef.MinCpus*1000); err != nil {
 		return nil, err
 	}
 	bln.Mems = p.closestMems(bln.Cpus)
@@ -1809,7 +1827,19 @@ func (p *balloons) fillBuiltinBalloonDefs(bpoptions *BalloonsOptions) (*BalloonD
 				cset, p.allowed, cset.Difference(p.allowed))
 		}
 		p.reserved = p.allowed.Intersection(cset)
-		if reservedBalloonDef.MinCpus == 0 {
+		if bpoptions.ReservedCPUMode == cfgapi.ReservedCPUModeHardExact {
+			p.reservedExact = true
+			if reservedBalloonDef.MinCpus != 0 && reservedBalloonDef.MinCpus != p.reserved.Size() {
+				return nil, nil, balloonsError("mismatching reserved balloon minCpus: %d and ReservedResources cpuset size: %d",
+					reservedBalloonDef.MinCpus, p.reserved.Size())
+			}
+			if reservedBalloonDef.MaxCpus != 0 && reservedBalloonDef.MaxCpus != p.reserved.Size() {
+				return nil, nil, balloonsError("mismatching reserved balloon maxCpus: %d and ReservedResources cpuset size: %d",
+					reservedBalloonDef.MaxCpus, p.reserved.Size())
+			}
+			reservedBalloonDef.MinCpus = p.reserved.Size()
+			reservedBalloonDef.MaxCpus = p.reserved.Size()
+		} else if reservedBalloonDef.MinCpus == 0 {
 			if p.reserved.Size() < reservedBalloonDef.MaxCpus {
 				reservedBalloonDef.MinCpus = p.reserved.Size()
 			} else {
@@ -1828,6 +1858,9 @@ func (p *balloons) fillBuiltinBalloonDefs(bpoptions *BalloonsOptions) (*BalloonD
 		// balloon type.
 		reservedBalloonDef.PreferCloseToDevices = append([]string{virtDevReservedCpus}, reservedBalloonDef.PreferCloseToDevices...)
 	case cfgapi.AmountQuantity:
+		if bpoptions.ReservedCPUMode == cfgapi.ReservedCPUModeHardExact {
+			return nil, nil, balloonsError("reservedCPUMode=hard-exact requires ReservedResources cpu in cpuset form")
+		}
 		// ReservedResources.cpus defines number of
 		// CPUs. Treat the value as a minimum size for the
 		// reserved balloon, but the balloon is allowed to
@@ -1996,6 +2029,13 @@ func (p *balloons) resizeBalloon(bln *Balloon, newMilliCpus int) error {
 	if bln.Def.MinCpus > 0 && newCpuCount < bln.Def.MinCpus {
 		newCpuCount = bln.Def.MinCpus
 	}
+	if p.reservedExact && bln.Def.Name == reservedBalloonDefName {
+		exactCount := p.reserved.Size()
+		if oldCpuCount == exactCount && bln.Cpus.Equals(p.reserved) {
+			return nil
+		}
+		newCpuCount = exactCount
+	}
 	log.Debugf("resize %s to fit %d mCPU", bln, newMilliCpus)
 	log.Debugf("- change size from %d to %d full cpus", oldCpuCount, newCpuCount)
 	log.Debugf("- free cpus: %q", p.freeCpus)
@@ -2003,6 +2043,15 @@ func (p *balloons) resizeBalloon(bln *Balloon, newMilliCpus int) error {
 		return nil
 	}
 	cpuCountDelta := newCpuCount - oldCpuCount
+	if p.reservedExact && bln.Def.Name == reservedBalloonDefName {
+		if cpuCountDelta == 0 {
+			if !bln.Cpus.Equals(p.reserved) {
+				return balloonsError("reserved balloon exact cpuset drifted: expected %q, got %q", p.reserved, bln.Cpus)
+			}
+			return nil
+		}
+		return balloonsError("reserved balloon exact cpuset cannot be resized: expected %q, current %q", p.reserved, bln.Cpus)
+	}
 	p.forgetCpuClass(bln)
 	defer func() {
 		if err := p.useCpuClass(bln); err != nil {
