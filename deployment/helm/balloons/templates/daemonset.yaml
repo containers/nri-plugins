@@ -22,6 +22,7 @@ spec:
         {{ $name }}: "{{ $value }}"
       {{- end }}
     spec:
+      hostPID: true
     {{- with .Values.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
@@ -99,7 +100,9 @@ spec:
           image: {{ .Values.image.name }}:{{ .Values.image.tag | default .Chart.AppVersion }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
-            allowPrivilegeEscalation: false
+            privileged: true
+            allowPrivilegeEscalation: true
+            runAsUser: 0
             capabilities:
               drop:
                 - ALL
