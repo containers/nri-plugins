@@ -1104,19 +1104,23 @@ func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, erro
 		}
 	}
 	if p.reservedExact && blnDef.Name == reservedBalloonDefName {
-		exact := p.reserved.Clone()
-		if exact.Size() == 0 {
+                requested := p.reserved.Clone()
+                if requested.Size() == 0 {			
 			return nil, balloonsError("reservedCPUMode=hard-exact requires non-empty reserved cpuset")
 		}
-		if exact.Difference(p.freeCpus).Size() > 0 {
-			return nil, balloonsError("reserved exact cpuset %q is not fully free, missing %q", exact, exact.Difference(p.freeCpus))
+                if requested.Difference(p.freeCpus).Size() > 0 {
+                        return nil, balloonsError("reserved exact cpuset %q is not fully free, missing %q", requested, requested.Difference(p.freeCpus))			
 		}
-		newCpus, err := p.cpuAllocator.AllocateCpus(&exact, exact.Size(), blnDef.AllocatorPriority.Value().Option())
+                // AllocateCpus() may mutate the preferred/requested cpuset argument.
+                // Keep an immutable copy for post-allocation validation and logging.
+                exact := requested.Clone()
+                newCpus, err := p.cpuAllocator.AllocateCpus(&exact, requested.Size(), blnDef.AllocatorPriority.Value().Option())
 		if err != nil {
-			return nil, balloonsError("failed to allocate exact reserved cpuset %q: %w", exact, err)
+			return nil, balloonsError("failed to allocate exact reserved cpuset %q: %w", requested, err)
 		}
-		if !newCpus.Equals(exact) {
-			return nil, balloonsError("failed to allocate exact reserved cpuset: requested %q, got %q", exact, newCpus)
+                if !newCpus.Equals(requested) {
+                        return nil, balloonsError("failed to allocate exact reserved cpuset: requested %q, got %q", requested, newCpus)
+			
 		}
 		p.freeCpus = p.freeCpus.Difference(newCpus)
 		bln.Cpus = newCpus
