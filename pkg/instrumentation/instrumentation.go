@@ -20,8 +20,10 @@ import (
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/instrumentation"
 	"github.com/containers/nri-plugins/pkg/http"
+	"github.com/containers/nri-plugins/pkg/instrumentation/logging"
 	"github.com/containers/nri-plugins/pkg/instrumentation/metrics"
 	"github.com/containers/nri-plugins/pkg/instrumentation/tracing"
+
 	logger "github.com/containers/nri-plugins/pkg/log"
 )
 
@@ -134,6 +136,15 @@ func start() error {
 		metrics.WithMetrics(cfg.Metrics),
 	); err != nil {
 		return fmt.Errorf("failed to start metrics: %v", err)
+	}
+
+	if err := logging.Start(
+		ServiceName,
+		resource,
+		logging.WithExporter(cfg.LogExporter),
+		logging.WithExportInterval(cfg.LogExportPeriod.Duration),
+	); err != nil {
+		return fmt.Errorf("failed to start logging: %v", err)
 	}
 
 	return nil

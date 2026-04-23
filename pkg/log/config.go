@@ -16,154 +16,208 @@ package log
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"sync"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/log"
-	"github.com/containers/nri-plugins/pkg/log/klogcontrol"
-	"github.com/containers/nri-plugins/pkg/utils"
+	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/log/klogcontrol"
 )
 
-const (
-	// DefaultLevel is the default logging severity level.
-	DefaultLevel = LevelInfo
-	// debugEnvVar is the environment variable used to seed debugging flags.
-	debugEnvVar = "LOGGER_DEBUG"
-	// logSourceEnvVar is the environment variable used to seed source logging.
-	logSourceEnvVar = "LOGGER_LOG_SOURCE"
-)
-
-// srcmap tracks debugging settings for sources.
-type srcmap map[string]bool
+type config struct {
+	sync.RWMutex
+	*cfgapi.Config
+	sources    map[string]struct{}
+	debugging  map[string]bool
+	forceDebug bool
+	sourceLen  int
+}
 
 var (
-	// klog control
-	klogctl = klogcontrol.Get()
+	cfg = &config{
+		Config:    &cfgapi.Config{},
+		debugging: make(map[string]bool),
+		sources:   make(map[string]struct{}),
+	}
+	sigCh = make(chan os.Signal, 1)
+
+	out     io.Writer = os.Stderr
+	outLock sync.Mutex
 )
 
-// parse parses the given string and updates the srcmap accordingly.
-func (m *srcmap) parse(value string) error {
-	if *m == nil {
-		*m = make(srcmap)
-	}
-	if value = strings.TrimSpace(value); value == "" {
-		return nil
+func SetOutput(w io.Writer) io.Writer {
+	outLock.Lock()
+	defer outLock.Unlock()
+
+	old := out
+	out = w
+	return old
+}
+
+func Configure(config *cfgapi.Config) error {
+	return cfg.configure(config)
+}
+
+func EnableDebug(source string) bool {
+	return cfg.EnableDebug(source, true)
+}
+
+func Debugging(source string) bool {
+	return cfg.Debugging(source)
+}
+
+func (c *config) EnableDebug(source string, enable bool) bool {
+	c.Lock()
+	defer c.Unlock()
+
+	old := c.debugging[source]
+	c.debugging[source] = enable
+	return old
+}
+
+func (c *config) Debugging(source string) bool {
+	c.RLock()
+	defer c.RUnlock()
+
+	if debugging, ok := c.debugging[source]; ok {
+		return debugging
 	}
 
-	prev, state, src := "", "", ""
-	for _, entry := range strings.Split(value, ",") {
-		if entry = strings.TrimSpace(entry); entry == "" {
-			continue
+	return c.debugging["*"] || c.forceDebug
+}
+
+func (c *config) ForceDebug(enable bool) bool {
+	c.Lock()
+	defer c.Unlock()
+
+	old := c.forceDebug
+	c.forceDebug = enable
+
+	return old
+}
+
+func (c *config) DebugForced() bool {
+	c.RLock()
+	defer c.RUnlock()
+
+	return c.forceDebug
+}
+
+func SetupDebugToggleSignal(sig os.Signal) {
+	signal.Notify(sigCh, sig)
+
+	go func(signals <-chan os.Signal) {
+		for range signals {
+			cfg.ForceDebug(!cfg.DebugForced())
+			deflogger.Warnf("forced full debugging: %v", cfg.DebugForced())
 		}
-		statesrc := strings.Split(entry, ":")
-		switch len(statesrc) {
-		case 2:
-			state, src = statesrc[0], strings.TrimSpace(statesrc[1])
-		case 1:
-			state, src = "", strings.TrimSpace(statesrc[0])
-		default:
-			return loggerError("invalid state spec '%s' in source map", entry)
-		}
-		if state != "" {
-			prev = state
-		} else {
-			state = prev
-			if state == "" {
-				state = "on"
+	}(sigCh)
+}
+
+func ClearDebugToggleSignal() {
+	close(sigCh)
+	cfg.ForceDebug(false)
+}
+
+func (c *config) LogSource() bool {
+	c.RLock()
+	defer c.RUnlock()
+
+	return c.Config.LogSource
+}
+
+func (c *config) SkipHeaders() bool {
+	c.RLock()
+	defer c.RUnlock()
+
+	return c.Klog.Skip_headers != nil && *c.Klog.Skip_headers
+}
+
+func (c *config) MaxSourceLen() int {
+	c.RLock()
+	defer c.RUnlock()
+
+	return c.sourceLen
+}
+
+func (c *config) PadSource(source string) (pre, post int) {
+	pad := cfg.MaxSourceLen() - len(source)
+
+	pre = pad / 2
+	post = pad / 2
+
+	if pad > 0 && (pad&0x1) != 0 {
+		return pre + 1, post
+	}
+	return pre, post
+}
+
+func (c *config) configure(cfg *cfgapi.Config) error {
+	debugging := map[string]bool{}
+
+	for _, value := range cfg.Debug {
+		for _, val := range strings.Split(value, ",") {
+			src, state := "", "on"
+
+			val = strings.TrimSpace(val)
+			split := strings.SplitN(val, ":", 2)
+			switch len(split) {
+			case 1:
+				src = split[0]
+			case 2:
+				src, state = split[0], split[1]
+			default:
+				return fmt.Errorf("invalid debug spec %q", val)
 			}
-		}
 
-		if src == "all" {
-			src = "*"
-		}
+			switch state {
+			case "on", "off":
+			default:
+				return fmt.Errorf("invalid state '%s' in debug spec %q", state, val)
+			}
 
-		enabled, err := utils.ParseEnabled(state)
-		if err != nil {
-			return loggerError("invalid state '%s' in source map", state)
+			if src == "all" {
+				src = "*"
+			}
+
+			debugging[src] = state == "on"
 		}
-		(*m)[src] = enabled
 	}
+
+	c.Lock()
+	defer c.Unlock()
+
+	c.debugging = debugging
+	c.Config = cfg
 
 	return nil
 }
 
-// String returns a string representation of the srcmap.
-func (m *srcmap) String() string {
-	off := ""
-	on := ""
-	for src, state := range *m {
-		if state {
-			if on == "" {
-				on = src
-			} else {
-				on += "," + src
-			}
-		} else {
-			if off == "" {
-				off = src
-			} else {
-				off += "," + src
-			}
-		}
-	}
+func (c *config) addSource(source string) {
+	c.Lock()
+	defer c.Unlock()
 
-	switch {
-	case on == "" && off == "":
-		return ""
-	case off == "":
-		return "on:" + on
-	case on == "":
-		return "off:" + off
+	c.sources[source] = struct{}{}
+	if len(source) > c.sourceLen {
+		c.sourceLen = len(source)
 	}
-	return "on:" + on + "," + "off:" + off
 }
 
-// Configure updates the logging configuration.
-func Configure(cfg *cfgapi.Config) error {
-	deflog.Info("logger configuration update %+v", cfg)
-
-	log.Lock()
-	defer log.Unlock()
-
-	prefix := cfg.LogSource
-	if toStderr := cfg.Klog.Logtostderr; toStderr != nil && *toStderr {
-		if skipHeaders := cfg.Klog.Skip_headers; skipHeaders != nil && *skipHeaders {
-			prefix = true
-		}
+func ConfigFromEnv() *cfgapi.Config {
+	boolPtr := func(v bool) *bool { return &v }
+	return &cfgapi.Config{
+		Debug:     strings.Split(os.Getenv(DebugEnvVar), ","),
+		LogSource: os.Getenv(LogSourceEnvVar) != "",
+		Klog: klogcontrol.Config{
+			Skip_headers: boolPtr(os.Getenv(LogSkipHdrsEnvVar) != ""),
+		},
 	}
-
-	debugFlags := make(srcmap)
-	for _, value := range cfg.Debug {
-		if err := debugFlags.parse(value); err != nil {
-			Default().Error("failed to parse debug setting %q: %v", value, err)
-			return fmt.Errorf("failed to parse debug setting %q: %v", value, err)
-		}
-	}
-
-	log.setDbgMap(debugFlags)
-	log.setPrefix(prefix)
-
-	return klogctl.Configure(&cfg.Klog)
 }
 
-// Initialize debug logging from the environment.
 func init() {
-	cfg := &cfgapi.Config{
-		LogSource: os.Getenv(logSourceEnvVar) != "",
-	}
-	if value, ok := os.LookupEnv(debugEnvVar); ok {
-		debugFlags := make(srcmap)
-		if err := debugFlags.parse(value); err != nil {
-			Default().Error("failed to parse %s %q: %v", debugEnvVar,
-				value, err)
-		} else {
-			cfg.Debug = []string{debugFlags.String()}
-			Default().Info("seeded debug flags ($%s): %s", debugEnvVar, debugFlags.String())
-		}
-	}
-
-	err := Configure(cfg)
-	if err != nil {
-		Default().Error("initial logging configuration failed: %v", err)
+	if err := cfg.configure(ConfigFromEnv()); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to seed configuration from environment: %v\n", err)
 	}
 }
