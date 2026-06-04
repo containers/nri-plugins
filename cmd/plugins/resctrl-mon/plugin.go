@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -141,6 +143,9 @@ func (p *plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, contai
 			continue
 		}
 		pid := int(ctr.GetPid())
+		if pid == 0 {
+			pid = readContainerPID(ctr.GetId())
+		}
 		if pid > 0 {
 			monGroupDir := p.state.getMonGroupDir(podUID)
 			if err := p.rdt.writeTaskPID(monGroupDir, pid); err != nil {
@@ -270,15 +275,23 @@ func (p *plugin) PostStartContainer(ctx context.Context, pod *api.PodSandbox, ct
 		return nil
 	}
 
-	// Fallback: write the init PID if StartContainer didn't.
+	// Fallback: if the NRI event has no PID (CRI-O <= 1.35 does not
+	// populate Container.Pid), read it from the CRI-O pidfile.
+	if pid == 0 {
+		pid = readContainerPID(ctr.GetId())
+		if pid > 0 {
+			log.Debugf("PostStartContainer %s: read pid %d from pidfile", ctrName, pid)
+		}
+	}
+
 	if pid > 0 {
 		if err := p.rdt.writeTaskPID(monGroupDir, pid); err != nil {
 			log.Warnf("PostStartContainer %s: failed to write PID %d to tasks: %v", ctrName, pid, err)
 		} else {
-			log.Infof("PostStartContainer %s: fallback assigned pid %d to mon_group %s", ctrName, pid, monGroupDir)
+			log.Infof("PostStartContainer %s: assigned pid %d to mon_group %s", ctrName, pid, monGroupDir)
 		}
 	} else {
-		log.Warnf("PostStartContainer %s: PID still 0 after start, unexpected", ctrName)
+		log.Warnf("PostStartContainer %s: PID not available from NRI or pidfile", ctrName)
 	}
 
 	return nil
@@ -381,4 +394,24 @@ func getRDTClass(ctr *api.Container) string {
 // pprintCtr returns a human-readable container identifier.
 func pprintCtr(pod *api.PodSandbox, ctr *api.Container) string {
 	return fmt.Sprintf("%s/%s:%s", pod.GetNamespace(), pod.GetName(), ctr.GetName())
+}
+
+// readContainerPID reads the container init PID from the CRI-O pidfile.
+// CRI-O versions <= 1.35 do not populate Container.Pid in NRI events.
+// As a fallback, we read the PID from the container's pidfile at
+// /run/containers/storage/overlay-containers/<id>/userdata/pidfile.
+// Returns 0 if the PID cannot be read (e.g., running under containerd).
+func readContainerPID(containerID string) int {
+	pidfile := filepath.Join("/run/containers/storage/overlay-containers", containerID, "userdata/pidfile")
+	data, err := os.ReadFile(pidfile)
+	if err != nil {
+		log.Debugf("readContainerPID: cannot read %s: %v", pidfile, err)
+		return 0
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		log.Debugf("readContainerPID: invalid pid in %s: %v", pidfile, err)
+		return 0
+	}
+	return pid
 }
