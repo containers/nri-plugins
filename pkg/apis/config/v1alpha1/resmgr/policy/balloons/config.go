@@ -32,6 +32,8 @@ type (
 	CPUTopologyLevel          = policy.CPUTopologyLevel
 	ComponentCreationStrategy = policy.ComponentCreationStrategy
 	SchedulingClass           = policy.SchedulingClass
+	CPUClass                  = policy.CPUClass
+	Frequency                 = policy.Frequency
 )
 
 const (
@@ -135,6 +137,21 @@ type Config struct {
 	// SchedulingClasses specify scheduling classes available in
 	// balloon types.
 	SchedulingClasses []*SchedulingClass `json:"schedulingClasses,omitempty"`
+	// CPUClasses define CPU frequency, C-state, and turbo
+	// attributes for CPU classes referenced by balloon types.
+	// Exclusive turbo frequency access is controlled via
+	// turboPriority.
+	CPUClasses []*CPUClass `json:"cpuClasses,omitempty"`
+	// TurboDomain selects the scope over which TurboPriority
+	// arbitration happens. The default is "package": every CPU
+	// package independently picks its own TurboPriority winner,
+	// so a low-priority balloon on one socket can keep turbo even
+	// when a higher-priority balloon is running on another
+	// socket. Set to "system" to pick single TurboPriority winner
+	// for the whole system.
+	// +kubebuilder:validation:Enum=package;system
+	// +kubebuilder:default=package
+	TurboDomain string `json:"turboDomain,omitempty"`
 }
 
 // BalloonDef contains a balloon definition.
