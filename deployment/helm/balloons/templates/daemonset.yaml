@@ -99,6 +99,9 @@ spec:
           image: {{ .Values.image.name }}:{{ .Values.image.tag | default .Chart.AppVersion }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
+          {{- if .Values.allowPCT }}
+            privileged: true
+          {{- else }}
             allowPrivilegeEscalation: false
             capabilities:
               drop:
@@ -107,6 +110,7 @@ spec:
               add:
                 - SYS_ADMIN
                 - DAC_OVERRIDE
+          {{- end }}
           {{- end }}
           resources:
             requests:
@@ -125,6 +129,10 @@ spec:
           - name: pod-resources-socket
             mountPath: /var/lib/kubelet/pod-resources
             readOnly: true
+          {{- if .Values.allowPCT }}
+          - name: hostdev
+            mountPath: /host/dev
+          {{- end }}
       {{- if .Values.podPriorityClassNodeCritical }}
       priorityClassName: system-node-critical
       {{- end }}
@@ -148,6 +156,12 @@ spec:
         hostPath:
           path: /var/lib/kubelet/pod-resources
           type: DirectoryOrCreate
+      {{- if .Values.allowPCT }}
+      - name: hostdev
+        hostPath:
+          path: /dev
+          type: Directory
+      {{- end }}
       {{- if .Values.nri.runtime.patchConfig }}
       - name: containerd-config
         hostPath:
