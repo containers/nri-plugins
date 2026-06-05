@@ -100,10 +100,10 @@ helm repo add nri-plugins https://containers.github.io/nri-plugins
 helm repo update
 ```
 
-Install the balloons policy with default configuration:
+Install the balloons policy with default configuration [with PCT enabled]:
 
 ```sh
-helm install nri-resource-policy-balloons nri-plugins/nri-resource-policy-balloons --namespace kube-system
+helm install nri-resource-policy-balloons nri-plugins/nri-resource-policy-balloons --namespace kube-system [--set allowPCT=true]
 ```
 
 Install with a custom configuration from a values file:
@@ -851,23 +851,33 @@ memory-type.resource-policy.nri.io/container.CONTAINER_NAME: HBM,DRAM
 These options configure CPU behavior and power management.
 
 **`cpuClass`** (string)
-- References a CPU class defined in `control.cpu.classes`
-  (policy-level configuration).
+- References a CPU class name defined in `cpuClasses` (preferred) or
+  in `control.cpu.classes` (deprecated).
 - Applied when balloon is created, inflated, or deflated.
 - Configures frequency scaling and C-states for CPUs in the balloon.
+- If left unset and a `cpuClasses` entry named `default` exists, that
+  `default` class is applied instead.
 
 **`idleCPUClass`** (string, policy-level configuration)
 - CPU class for idle CPUs (not in any balloon).
 - Applied when CPUs are removed from balloons.
+- If left unset and a `cpuClasses` entry named `default` exists, that
+  `default` class is applied to idle CPUs instead.
 
-**`control.cpu.classes`** (object, policy-level configuration):
+**`cpuClasses`** (list, policy-level configuration):
 
-Each CPU class (keyed by name) can define:
+CPU class definitions. Each class is an object with:
 
-- `minFreq` (integer): Minimum CPU frequency in kHz.
-- `maxFreq` (integer): Maximum CPU frequency in kHz.
-- `uncoreMinFreq` (integer): Minimum uncore frequency in kHz.
-- `uncoreMaxFreq` (integer): Maximum uncore frequency in kHz.
+- `name` (string): Class name referenced by `cpuClass` in balloon types.
+- `minFreq` (string): Minimum CPU frequency. Accepts values with
+  units: `"3.2GHz"`, `"2900MHz"`, `"2900000kHz"`, or a string
+  containing plain number in kHz: `"2900000"`. Also accepts symbolic
+  names: `"min"` (platform minimum), `"base"` (CPU base frequency),
+  `"turbo"` (maximum turbo frequency), which are resolved at runtime
+  from sysfs.
+- `maxFreq` (string): Maximum CPU frequency (same format).
+- `uncoreMinFreq` / `uncoreMaxFreq` (string): Uncore frequency limits
+  (same format).
 - `disabledCstates` (list): C-state names to disable (e.g., `["C6", "C8"]`).
   - Disabling deep C-states reduces latency by preventing deep sleep.
   - Disabling intermediate C-states keeps CPU more responsive longer
@@ -875,6 +885,43 @@ Each CPU class (keyed by name) can define:
     not needed.
   - List available C-states: `grep
     . /sys/devices/system/cpu/cpu0/cpuidle/state*/name`.
+- `energyPerformancePreference` (integer): EPP value for CPUs.
+- `freqGovernor` (string): CPUFreq governor (e.g., `"performance"`).
+- `turboPriority` (integer): Controls exclusive turbo frequency
+  access. Among CPU classes with active balloons, only the class
+  with the highest `turboPriority` gets the symbolic frequency
+  `"turbo"` resolved to the actual turbo frequency. All other
+  classes get `"turbo"` resolved to the base frequency. When the
+  highest-priority class no longer has active balloons, the next
+  highest-priority class regains turbo. If all classes have
+  `turboPriority` 0 (default), every class gets real turbo -- no
+  competition occurs. `turboPriority` arbitration is scoped to a
+  *turbo domain* (see `turboDomain` below), so on multi-socket
+  systems a low-priority class on one socket can keep turbo even
+  when a higher-priority class is active on another socket.
+- `pctPriority` (string): reset system PCT configuration and use
+  `high`  or `low` priority CLOSes for CPUs. See [Priority Core
+  Turbo](#priority-core-turbo-pct) for details.
+- `sstClosID` (integer): use system PCT configuration and assign
+  CPUs to specified CLOS. See [Priority Core
+  Turbo](#priority-core-turbo-pct) for details.
+- `publishExtendedResource` (bool). If `true` in a class with either
+  `pctPriority: high` or `sstClosID: n` policy publishes class's
+  available CPU capacity as
+  `cpuclass.balloons.nri.io/<CPU-CLASS-NAME>` extended
+  resource. Enables Kubernetes to schedule pods on nodes with enough
+  CPUs of wanted priority. Note: container's `cpu` and
+  extended resource requests **must be equal** to avoid
+  over and under subscription.
+
+**`turboDomain`** (string, policy-level configuration):
+
+Selects the scope over which `turboPriority` arbitration happens. The
+default is `"package"`: every package independently pick its own
+turboPriority winner. Set to `"system"` if highest `turboPriority`
+classes anywhere should suppress turbo on every other class
+independently of CPU core locations. On single-socket systems the two
+modes behave identically.
 
 ```yaml
 balloonTypes:
@@ -884,6 +931,115 @@ balloonTypes:
   cpuClass: normal
 idleCPUClass: powersave
 
+cpuClasses:
+- name: turbo
+  minFreq: "turbo"
+  maxFreq: "turbo"
+  disabledCstates: [C6, C8, C10]
+  turboPriority: 10
+- name: normal
+  minFreq: "min"
+  maxFreq: "turbo"
+  turboPriority: 1
+- name: powersave
+  minFreq: "min"
+  maxFreq: "1.2GHz"
+```
+
+#### Priority Core Turbo (PCT)
+
+On Intel Xeon CPUs that support [Intel Speed Select
+Technology](https://docs.kernel.org/admin-guide/pm/intel-speed-select.html)
+(SST), the balloons policy can additionally drive *Priority Core
+Turbo* (PCT) on a per-cpuClass basis. PCT lets a small number of
+*High Priority* (HP) cores reach the maximum turbo frequency
+while the remaining *Low Priority* (LP) cores are capped. The
+mapping between cpuClasses and the underlying SST-CP CLOSes is
+managed by the *PCT allocator* using the
+[goresctrl SST library](https://github.com/intel/goresctrl).
+
+Two fields on a `cpuClasses` entry enable PCT:
+
+- `pctPriority` (string, optional): `"high"` or `"low"`. When set,
+  the balloons policy enters **managed mode** for PCT: it
+  performs the full SoC-wide SST setup (CP reset, TF enable, CLOS
+  configuration, CP enable) and associates CPUs of any balloon
+  using this cpuClass to the HP CLOS (default CLOS 0) or the LP
+  CLOS (default CLOS 3). At most one managed `high` and one
+  managed `low` cpuClass is allowed.
+- `sstClosID` (integer, optional, 0..*ClosCount-1*): pins this
+  cpuClass to a specific CLOS slot and selects **assoc-only
+  mode**: the policy only associates CPUs to the given CLOS
+  without reconfiguring the SoC-wide SST state. Use this when an
+  operator or the BIOS has already configured the CLOSes.
+
+`pctPriority` and `sstClosID` are **mutually exclusive** on the
+same cpuClass. Managed and assoc-only cpuClasses cannot be mixed
+in the same configuration.
+
+By default the CLOS minimum/maximum frequencies programmed in
+managed mode come from the cpuClass's own `minFreq`/`maxFreq`.
+Two optional overrides exist for cases where the hardware CLOS
+bounds should differ from the OS-visible cpufreq limits:
+
+- `pctMinFreq` (string, optional): CLOS minimum frequency,
+  defaults to `minFreq`. Accepts the same units and symbolic
+  names. Resolves `"turbo"` directly to the hardware maximum
+  turbo frequency, regardless of soft `turboPriority`
+  arbitration.
+- `pctMaxFreq` (string, optional): CLOS maximum frequency,
+  defaults to `maxFreq`. Same caveats as `pctMinFreq`.
+
+On hosts without SST support the PCT fields are ignored with a
+warning, so a single cpuClass YAML can be portable across PCT and
+non-PCT systems.
+
+**Allocation behaviour.** PCT settings also bias CPU selection:
+
+- For each `sstClosID: N` referenced by any cpuClass, a static
+  virtual device `SST CLOS N` is registered with the CPUs the SST
+  hardware currently maps to that CLOS. Balloon types using that
+  cpuClass prefer to be close to it; other balloon types
+  automatically prefer to be far from it.
+- In managed mode a dynamic virtual device `SST PCT HP reserve`
+  is registered with the CPUs of the package that has the most
+  free HP-capable CPUs. Balloon types whose cpuClass has
+  `pctPriority: high` prefer to be close to it (so their
+  containers actually enjoy PCT turbo), while every other balloon
+  type prefers to be far from it (so they do not drain the package
+  on which an HP container relies for turbo budget). The membership
+  is recomputed on every balloon resize.
+
+```yaml
+cpuClasses:
+- name: rt-hp
+  minFreq: "turbo"
+  maxFreq: "turbo"
+  pctPriority: high
+- name: bg-lp
+  minFreq: "min"
+  maxFreq: "base"
+  pctPriority: low
+```
+
+See [Quick start: PCT in Kubernetes with
+Balloons](howto/balloons-pct-quickstart.md) for more details.
+
+**`control.cpu.classes`** (object, policy-level configuration, DEPRECATED):
+
+This is deprecated CPU class configuration, use `cpuClasses`
+instead. If a class name is defined in both `cpuClasses` and
+`control.cpu.classes`, the `cpuClasses` definition takes precedence.
+
+Each CPU class (keyed by name) can define:
+
+- `minFreq` (integer): Minimum CPU frequency in kHz.
+- `maxFreq` (integer): Maximum CPU frequency in kHz.
+- `uncoreMinFreq` (integer): Minimum uncore frequency in kHz.
+- `uncoreMaxFreq` (integer): Maximum uncore frequency in kHz.
+- `disabledCstates` (list): C-state names to disable (e.g., `["C6", "C8"]`).
+
+```yaml
 control:
   cpu:
     classes:
@@ -1352,21 +1508,19 @@ spec:
     overloadsLevelInBalloon: false  # Share L2 between CPUs within balloon
 
   # CPU classes for frequency and C-state control
-  control:
-    cpu:
-      classes:
-        ultra-low-latency:
-          minFreq: 3500000
-          maxFreq: 3900000
-          uncoreMinFreq: 2400000
-          uncoreMaxFreq: 2400000
-          disabledCstates: [C6, C7, C8, C10]
-        normal:
-          minFreq: 800000
-          maxFreq: 2500000
-        powersave:
-          minFreq: 800000
-          maxFreq: 800000
+  cpuClasses:
+  - name: ultra-low-latency
+    minFreq: "base"
+    maxFreq: "turbo"
+    uncoreMinFreq: "2.4GHz"
+    uncoreMaxFreq: "2.4GHz"
+    disabledCstates: [C6, C7, C8, C10]
+  - name: normal
+    minFreq: "min"
+    maxFreq: "base"
+  - name: powersave
+    minFreq: "min"
+    maxFreq: "min"
 
   # Scheduling for high priority
   schedulingClasses:
