@@ -63,6 +63,8 @@ func (s *podState) removeContainer(podUID, containerID string) {
 	defer s.mu.Unlock()
 	if info, ok := s.pods[podUID]; ok {
 		delete(info.containers, containerID)
+	} else {
+		log.Warnf("removeContainer: pod %s not tracked (container %s)", podUID, containerID)
 	}
 }
 
@@ -84,12 +86,14 @@ func (s *podState) getMonGroupDir(podUID string) string {
 }
 
 // podHasNoContainers returns true if the pod has no remaining containers.
+// Returns true for untracked pods since there is nothing to protect.
 func (s *podState) podHasNoContainers(podUID string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if info, ok := s.pods[podUID]; ok {
 		return len(info.containers) == 0
 	}
+	log.Warnf("podHasNoContainers: pod %s not tracked, treating as empty", podUID)
 	return true
 }
 

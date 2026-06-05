@@ -2,9 +2,15 @@
     "$schema": "http://json-schema.org/schema#",
     "required": [
         "image",
-        "resources"
+        "resources",
+        "resctrlPath"
     ],
     "properties": {
+        "resctrlPath": {
+            "type": "string",
+            "description": "Mount point of the resctrl filesystem",
+            "default": "/sys/fs/resctrl"
+        },
         "image": {
             "type": "object",
             "required": [

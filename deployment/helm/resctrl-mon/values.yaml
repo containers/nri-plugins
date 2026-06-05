@@ -2,6 +2,8 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 ---
+resctrlPath: /sys/fs/resctrl
+
 image:
   name: ghcr.io/containers/nri-plugins/nri-resctrl-mon
   # tag, if defined will use the given image tag, otherwise Chart.AppVersion will be used

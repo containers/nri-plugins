@@ -1,8 +1,8 @@
 # Resctrl-Mon NRI Plugin
 
 The resctrl-mon NRI plugin creates per-pod resctrl monitoring groups
-(`mon_groups`) to support Kepler's passive mode for Application Energy
-Telemetry (AET).
+(`mon_groups`) to support [Kepler](https://sustainable-computing.io/)'s
+passive mode for Application Energy Telemetry (AET).
 
 When a container is created, the plugin assigns its init process to a
 `mon_group` before the process starts executing. The Linux kernel then

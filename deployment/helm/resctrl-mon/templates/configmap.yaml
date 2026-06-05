@@ -7,6 +7,6 @@ metadata:
     {{- include "nri-plugin.labels" . | nindent 4 }}
 data:
   config.yaml: |
-    resctrlPath: /sys/fs/resctrl
+    resctrlPath: {{ .Values.resctrlPath }}
     namespaces: []
     labelSelector: {}
