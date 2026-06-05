@@ -30,8 +30,10 @@ to support Application Energy Telemetry (AET) via Kepler passive mode.
       installation.
 
   - CRI-O
-    - At least [v1.26.0](https://github.com/cri-o/cri-o/releases/tag/v1.26.0)
-      release version to use the NRI feature
+    - At least [v1.36.0](https://github.com/cri-o/cri-o/releases/tag/v1.36.0)
+      release version. CRI-O >= 1.36 is required because earlier versions do
+      not provide container PIDs via NRI, which prevents the plugin from
+      assigning tasks to monitoring groups.
     - Enable NRI feature by following
       [these](https://github.com/cri-o/cri-o/blob/main/docs/crio.conf.5.md#crionri-table)
       detailed instructions.  You can optionally enable the NRI in CRI-O using

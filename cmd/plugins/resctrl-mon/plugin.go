@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -72,6 +74,9 @@ func newPlugin() *plugin {
 // Configure handles connecting to container runtime's NRI server.
 func (p *plugin) Configure(ctx context.Context, config, runtime, version string) (stub.EventMask, error) {
 	log.Infof("Connected to %s %s...", runtime, version)
+	if err := checkRuntimeVersion(runtime, version); err != nil {
+		return 0, err
+	}
 	if config != "" {
 		log.Debugf("loading configuration from NRI server")
 		if err := p.setConfig([]byte(config)); err != nil {
@@ -270,15 +275,14 @@ func (p *plugin) PostStartContainer(ctx context.Context, pod *api.PodSandbox, ct
 		return nil
 	}
 
-	// Fallback: write the init PID if StartContainer didn't.
 	if pid > 0 {
 		if err := p.rdt.writeTaskPID(monGroupDir, pid); err != nil {
 			log.Warnf("PostStartContainer %s: failed to write PID %d to tasks: %v", ctrName, pid, err)
 		} else {
-			log.Infof("PostStartContainer %s: fallback assigned pid %d to mon_group %s", ctrName, pid, monGroupDir)
+			log.Infof("PostStartContainer %s: assigned pid %d to mon_group %s", ctrName, pid, monGroupDir)
 		}
 	} else {
-		log.Warnf("PostStartContainer %s: PID still 0 after start, unexpected", ctrName)
+		log.Warnf("PostStartContainer %s: PID=0, cannot assign to mon_group (runtime did not provide PID via NRI)", ctrName)
 	}
 
 	return nil
@@ -381,4 +385,34 @@ func getRDTClass(ctr *api.Container) string {
 // pprintCtr returns a human-readable container identifier.
 func pprintCtr(pod *api.PodSandbox, ctr *api.Container) string {
 	return fmt.Sprintf("%s/%s:%s", pod.GetNamespace(), pod.GetName(), ctr.GetName())
+}
+
+// checkRuntimeVersion verifies that the container runtime provides PIDs via NRI.
+// CRI-O versions before 1.36 do not populate Container.Pid in NRI events,
+// making the plugin unable to assign tasks to monitoring groups.
+func checkRuntimeVersion(runtime, version string) error {
+	if !strings.EqualFold(runtime, "cri-o") {
+		return nil
+	}
+	// Normalize: strip leading "v" and any pre-release/build suffix.
+	version = strings.TrimPrefix(version, "v")
+	if idx := strings.IndexAny(version, "-+"); idx != -1 {
+		version = version[:idx]
+	}
+	parts := strings.SplitN(version, ".", 3)
+	if len(parts) < 2 {
+		return fmt.Errorf("CRI-O version %q: unable to parse; require >= 1.36 for NRI PID support", version)
+	}
+	major, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return fmt.Errorf("CRI-O version %q: unable to parse major version: %w", version, err)
+	}
+	minor, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return fmt.Errorf("CRI-O version %q: unable to parse minor version: %w", version, err)
+	}
+	if major < 1 || (major == 1 && minor < 36) {
+		return fmt.Errorf("CRI-O %s does not provide container PIDs via NRI (requires >= 1.36)", version)
+	}
+	return nil
 }
