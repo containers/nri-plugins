@@ -13,6 +13,14 @@ rules:
   - get
   - watch
 - apiGroups:
+  - ""
+  resources:
+  - nodes/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - topology.node.k8s.io
   resources:
   - noderesourcetopologies
