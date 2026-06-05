@@ -83,7 +83,8 @@ PLUGINS ?= \
 	nri-memory-policy \
 	nri-memory-qos \
 	nri-memtierd \
-        nri-sgx-epc
+        nri-sgx-epc \
+	nri-resctrl-mon
 
 BINARIES ?= \
 	config-manager \

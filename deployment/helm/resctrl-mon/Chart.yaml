@@ -1,0 +1,11 @@
+apiVersion: v2
+appVersion: unstable
+description: |
+  The resctrl-mon NRI plugin creates per-pod resctrl monitoring groups
+  (mon_groups) for Application Energy Telemetry via Kepler passive mode.
+name: nri-resctrl-mon
+sources:
+ - https://github.com/containers/nri-plugins
+home: https://github.com/containers/nri-plugins
+type: application
+version: v0.0.0

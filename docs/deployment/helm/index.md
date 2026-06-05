@@ -52,5 +52,6 @@ template.md
 memory-qos.md
 memtierd.md
 sgx-epc.md
+resctrl-mon.md
 resource-annotator.md
 ```
