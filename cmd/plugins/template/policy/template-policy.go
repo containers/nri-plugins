@@ -119,6 +119,12 @@ func (p *policy) GetTopologyZones() []*policyapi.TopologyZone {
 	return nil
 }
 
+// GetExtendedResources returns the node-level extended resources
+// to publish for this policy. The template policy publishes none.
+func (p *policy) GetExtendedResources() map[string]int64 {
+	return nil
+}
+
 // ExportResourceData provides resource data to export for the container.
 func (p *policy) ExportResourceData(c cache.Container) map[string]string {
 	return nil

@@ -117,6 +117,14 @@ type Backend interface {
 	ExportResourceData(cache.Container) map[string]string
 	// GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
 	GetTopologyZones() []*TopologyZone
+	// GetExtendedResources returns node-level extended resources
+	// this policy wishes to publish on the local Node, mapping
+	// fully-qualified resource name (e.g.
+	// "cpuclass.balloons.nri.io/hp-pct") to its current capacity
+	// (logical CPU count). Returning nil or an empty map means
+	// "publish nothing"; previously-published resources are then
+	// cleared by the agent.
+	GetExtendedResources() map[string]int64
 }
 
 // Policy is the exposed interface for container resource allocations decision making.
@@ -143,6 +151,9 @@ type Policy interface {
 	ExportResourceData(cache.Container)
 	// GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
 	GetTopologyZones() []*TopologyZone
+	// GetExtendedResources returns node-level extended resources
+	// the active policy wishes to publish on the local Node.
+	GetExtendedResources() map[string]int64
 }
 
 // Metrics is the interface we expect policy-specific metrics to implement.
@@ -335,4 +346,10 @@ func (p *policy) ExportResourceData(c cache.Container) {
 // GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
 func (p *policy) GetTopologyZones() []*TopologyZone {
 	return p.active.GetTopologyZones()
+}
+
+// GetExtendedResources returns node-level extended resources the
+// active policy wishes to publish on the local Node.
+func (p *policy) GetExtendedResources() map[string]int64 {
+	return p.active.GetExtendedResources()
 }

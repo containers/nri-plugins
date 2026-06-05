@@ -395,6 +395,12 @@ func (p *policy) GetTopologyZones() []*policyapi.TopologyZone {
 	return zones
 }
 
+// GetExtendedResources returns the node-level extended resources
+// to publish for this policy. The topology-aware policy publishes none.
+func (p *policy) GetExtendedResources() map[string]int64 {
+	return nil
+}
+
 // ExportResourceData provides resource data to export for the container.
 func (p *policy) ExportResourceData(c cache.Container) map[string]string {
 	grant, ok := p.allocations.grants[c.GetID()]
