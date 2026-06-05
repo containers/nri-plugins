@@ -160,6 +160,7 @@ func (m *resmgr) updateConfig(newCfg interface{}) (bool, error) {
 
 	reconfErr := m.reconfigure(cfg)
 	m.updateTopologyZones()
+	m.updateNodeExtendedResources()
 	return false, reconfErr
 }
 
@@ -294,6 +295,15 @@ func (m *resmgr) updateTopologyZones() {
 		if err := m.agent.UpdateNrtCR(m.policy.ActivePolicy(), zones); err != nil {
 			log.Errorf("failed to update topology zones: %v", err)
 		}
+	}
+}
+
+// updateNodeExtendedResources publishes (or clears) the
+// node-level extended resources the active policy advertises.
+func (m *resmgr) updateNodeExtendedResources() {
+	resources := m.policy.GetExtendedResources()
+	if err := m.agent.UpdateNodeExtendedResources(resources); err != nil {
+		log.Errorf("failed to update node extended resources: %v", err)
 	}
 }
 

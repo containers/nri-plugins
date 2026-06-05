@@ -284,6 +284,7 @@ func (p *nriPlugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, con
 	}
 
 	m.updateTopologyZones()
+	m.updateNodeExtendedResources()
 
 	return p.getPendingUpdates(nil), nil
 }
@@ -445,6 +446,7 @@ func (p *nriPlugin) CreateContainer(ctx context.Context, pod *api.PodSandbox, co
 
 	m.policy.ExportResourceData(c)
 	m.updateTopologyZones()
+	m.updateNodeExtendedResources()
 
 	adjust = p.getPendingAdjustment(container)
 	updates = p.getPendingUpdates(container)
@@ -596,6 +598,7 @@ func (p *nriPlugin) StopContainer(ctx context.Context, pod *api.PodSandbox, cont
 
 	c.UpdateState(cache.ContainerStateExited)
 	m.updateTopologyZones()
+	m.updateNodeExtendedResources()
 
 	return p.getPendingUpdates(container), nil
 }
