@@ -3,7 +3,6 @@ module github.com/containers/nri-plugins
 go 1.25.0
 
 require (
-	github.com/askervin/gofmbt v0.0.0-20250119175120-506d925f666f
 	github.com/containerd/nri v0.11.0
 	github.com/containerd/otelttrpc v0.0.0-20240305015340-ea5083fda723
 	github.com/containerd/ttrpc v1.2.7
@@ -75,6 +74,7 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/opencontainers/runtime-spec v1.3.0 // indirect
+	github.com/ozhuraki/gofmbt v0.0.0-20260602230753-ae0116f9519d // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
