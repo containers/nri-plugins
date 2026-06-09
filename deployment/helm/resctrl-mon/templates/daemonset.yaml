@@ -78,6 +78,7 @@ spec:
             mountPath: /etc/nri/resctrl-mon
           - name: nrisockets
             mountPath: /var/run/nri
+            readOnly: true
           - name: resctrlfs
             mountPath: /sys/fs/resctrl
       {{- if .Values.podPriorityClassNodeCritical }}

@@ -65,6 +65,7 @@ spec:
           volumeMounts:
           - name: nrisockets
             mountPath: /var/run/nri
+            readOnly: true
       {{- if .Values.podPriorityClassNodeCritical }}
       priorityClassName: system-node-critical
       {{- end }}

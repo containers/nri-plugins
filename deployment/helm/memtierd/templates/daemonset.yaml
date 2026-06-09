@@ -78,6 +78,7 @@ spec:
             mountPath: /etc/nri/memtierd
           - name: nrisockets
             mountPath: /var/run/nri
+            readOnly: true
           - name: host-bitmap
             mountPath: /sys/kernel/mm/page_idle/bitmap
           - name: cgroups-vol
