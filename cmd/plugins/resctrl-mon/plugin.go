@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"sigs.k8s.io/yaml"
 
 	"github.com/containerd/nri/pkg/api"
@@ -142,12 +143,15 @@ func (p *plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, contai
 			log.Warnf("Synchronize: failed to create mon_group for pod %s: %v", podUID, err)
 			continue
 		}
+		// Use canonical form for state lookups (ensureMonGroup stores canonical).
+		u, _ := uuid.Parse(podUID)
+		canonicalUID := u.String()
 		pid := int(ctr.GetPid())
 		if pid == 0 {
 			pid = readContainerPID(ctr.GetId())
 		}
 		if pid > 0 {
-			monGroupDir := p.state.getMonGroupDir(podUID)
+			monGroupDir := p.state.getMonGroupDir(canonicalUID)
 			if err := p.rdt.writeTaskPID(monGroupDir, pid); err != nil {
 				log.Warnf("Synchronize: failed to write PID %d for pod %s: %v", pid, podUID, err)
 			} else {
@@ -227,6 +231,9 @@ func (p *plugin) PostCreateContainer(ctx context.Context, pod *api.PodSandbox, c
 // to PostStartContainer which will write PIDs after the process starts.
 func (p *plugin) StartContainer(ctx context.Context, pod *api.PodSandbox, ctr *api.Container) error {
 	podUID := pod.GetUid()
+	if u, err := uuid.Parse(podUID); err == nil {
+		podUID = u.String()
+	}
 	ctrName := pprintCtr(pod, ctr)
 	pid := int(ctr.GetPid())
 
@@ -261,6 +268,9 @@ func (p *plugin) StartContainer(ctx context.Context, pod *api.PodSandbox, ctr *a
 // the RMID.
 func (p *plugin) PostStartContainer(ctx context.Context, pod *api.PodSandbox, ctr *api.Container) error {
 	podUID := pod.GetUid()
+	if u, err := uuid.Parse(podUID); err == nil {
+		podUID = u.String()
+	}
 	ctrName := pprintCtr(pod, ctr)
 	pid := int(ctr.GetPid())
 
@@ -300,6 +310,9 @@ func (p *plugin) PostStartContainer(ctx context.Context, pod *api.PodSandbox, ct
 // StopContainer is called when a container is being stopped.
 func (p *plugin) StopContainer(ctx context.Context, pod *api.PodSandbox, ctr *api.Container) ([]*api.ContainerUpdate, error) {
 	podUID := pod.GetUid()
+	if u, err := uuid.Parse(podUID); err == nil {
+		podUID = u.String()
+	}
 	ctrName := pprintCtr(pod, ctr)
 
 	log.Debugf("StopContainer %s", ctrName)
@@ -329,9 +342,11 @@ func (p *plugin) StopContainer(ctx context.Context, pod *api.PodSandbox, ctr *ap
 // container's RDT class. If an allocation plugin assigns different classes to
 // containers in the same pod, subsequent containers use the first class.
 func (p *plugin) ensureMonGroup(podUID, containerID, rdtClass string) error {
-	if !looksLikePodUID(podUID) {
+	u, err := uuid.Parse(podUID)
+	if err != nil {
 		return fmt.Errorf("invalid pod UID %q", podUID)
 	}
+	podUID = u.String()
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
