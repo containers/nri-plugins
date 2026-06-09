@@ -175,29 +175,41 @@ func (r *resctrlOps) cleanOrphanedInDir(monGroupsPath string, state *podState) {
 	}
 }
 
-// looksLikePodUID returns true if the name looks like a Kubernetes pod UID
-// (UUID format with dashes, e.g., a1b2c3d4-e5f6-7890-abcd-ef1234567890).
+// looksLikePodUID returns true if the name looks like a Kubernetes pod UID.
+// It accepts both the standard UUID format with dashes (e.g.,
+// a1b2c3d4-e5f6-7890-abcd-ef1234567890) and the compact 32-char hex format
+// without dashes (e.g., a1b2c3d4e5f678901234567890abcdef).
 func looksLikePodUID(name string) bool {
-	if len(name) != 36 {
-		return false
-	}
-	// Check for UUID-like pattern: 8-4-4-4-12 hex chars.
-	parts := strings.Split(name, "-")
-	if len(parts) != 5 {
-		return false
-	}
-	expectedLens := []int{8, 4, 4, 4, 12}
-	for i, part := range parts {
-		if len(part) != expectedLens[i] {
+	switch len(name) {
+	case 36:
+		// Check for UUID-like pattern: 8-4-4-4-12 hex chars.
+		parts := strings.Split(name, "-")
+		if len(parts) != 5 {
 			return false
 		}
-		for _, c := range part {
+		expectedLens := []int{8, 4, 4, 4, 12}
+		for i, part := range parts {
+			if len(part) != expectedLens[i] {
+				return false
+			}
+			for _, c := range part {
+				if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
+					return false
+				}
+			}
+		}
+		return true
+	case 32:
+		// Compact hex format without dashes.
+		for _, c := range name {
 			if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
 				return false
 			}
 		}
+		return true
+	default:
+		return false
 	}
-	return true
 }
 
 // isValidRDTClass returns true if the name is a safe resctrl ctrl_group name.
