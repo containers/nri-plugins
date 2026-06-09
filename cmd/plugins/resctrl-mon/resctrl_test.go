@@ -193,15 +193,22 @@ func TestCleanOrphanedMonGroups_StaleLocation(t *testing.T) {
 }
 
 func TestLooksLikePodUID(t *testing.T) {
+	// Standard UUID format with dashes.
 	assert.True(t, looksLikePodUID("a1b2c3d4-e5f6-7890-abcd-ef1234567890"))
 	assert.True(t, looksLikePodUID("DEADBEEF-DEAD-BEEF-DEAD-BEEFDEADBEEF"))
 	assert.True(t, looksLikePodUID("00000000-0000-0000-0000-000000000000"))
+
+	// Compact 32-char hex format without dashes.
+	assert.True(t, looksLikePodUID("9d6530de59bb553c393de789dcfc6da7"))
+	assert.True(t, looksLikePodUID("00000000000000000000000000000000"))
+	assert.True(t, looksLikePodUID("DEADBEEFDEADBEEFDEADBEEFDEADBEEF"))
 
 	assert.False(t, looksLikePodUID("short"))
 	assert.False(t, looksLikePodUID("not-a-uuid-at-all-nope-notthisone!"))
 	assert.False(t, looksLikePodUID("a1b2c3d4-e5f6-7890-abcd-ef123456789"))   // too short last segment
 	assert.False(t, looksLikePodUID("g1b2c3d4-e5f6-7890-abcd-ef1234567890"))  // 'g' is not hex
 	assert.False(t, looksLikePodUID("a1b2c3d4-e5f6-7890-abcd-ef1234567890x")) // too long
+	assert.False(t, looksLikePodUID("9d6530de59bb553c393de789dcfc6da!"))      // invalid char in 32-char form
 }
 
 func TestIsValidRDTClass(t *testing.T) {
