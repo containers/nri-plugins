@@ -121,6 +121,7 @@ spec:
             mountPath: /var/run/nri-resource-policy
           - name: nrisockets
             mountPath: /var/run/nri
+            readOnly: true
           - name: pod-resources-socket
             mountPath: /var/lib/kubelet/pod-resources
             readOnly: true
