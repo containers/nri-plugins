@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	m "github.com/askervin/gofmbt/gofmbt"
+	m "github.com/ozhuraki/gofmbt/gofmbt"
 )
 
 type PodResources struct {
