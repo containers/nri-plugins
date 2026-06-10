@@ -468,7 +468,7 @@ func GetGlobalNumaStats() (map[int]GlobalNumaStats, error) {
 
 	for _, dir := range nodeDirs {
 		id := strings.TrimPrefix(dir, prefix)
-		node, err := strconv.ParseInt(id, 10, 64)
+		node, err := strconv.Atoi(id)
 		if err != nil {
 			return map[int]GlobalNumaStats{}, fmt.Errorf("error parsing directory name")
 		}
@@ -498,7 +498,7 @@ func GetGlobalNumaStats() (map[int]GlobalNumaStats, error) {
 			return map[int]GlobalNumaStats{}, fmt.Errorf("error parsing numastat file: %v", err)
 		}
 
-		result[int(node)] = nodeStat
+		result[node] = nodeStat
 	}
 
 	return result, nil

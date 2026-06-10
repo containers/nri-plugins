@@ -1009,7 +1009,7 @@ var (
 	ignoredTopologyPathRegexps = []*regexp.Regexp{
 		// Kubelet directory can be different, but we can detect it by structure inside of it.
 		// For now, we can safely ignore exposed config maps and secrets for topology hints.
-		regexp.MustCompile(`(kubelet)?/pods/[[:xdigit:]-]+/volumes/kubernetes.io~(configmap|secret)/`),
+		regexp.MustCompile(`(kubelet)?/pods/[[:xdigit:]-]+/volumes/kubernetes\.io~(configmap|secret)/`),
 	}
 )
 
