@@ -246,7 +246,6 @@ func (m *TopologyAwareMetrics) Update() {
 			int64(zone.SharedPool.Size()),
 			metric.WithAttributes(
 				attribute.String("zone", zone.Name),
-				attribute.String("cpus", zone.SharedPool.String()),
 			),
 		)
 
@@ -255,7 +254,6 @@ func (m *TopologyAwareMetrics) Update() {
 			float64(zone.SharedAssigned)/1000.0,
 			metric.WithAttributes(
 				attribute.String("zone", zone.Name),
-				attribute.String("cpus", zone.SharedPool.String()),
 			),
 		)
 
@@ -264,7 +262,6 @@ func (m *TopologyAwareMetrics) Update() {
 			float64(zone.SharedAvailable)/1000.0,
 			metric.WithAttributes(
 				attribute.String("zone", zone.Name),
-				attribute.String("cpus", zone.SharedPool.String()),
 			),
 		)
 
