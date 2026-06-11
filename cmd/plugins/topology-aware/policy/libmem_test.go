@@ -23,7 +23,7 @@ import (
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
-	"github.com/containers/nri-plugins/pkg/utils"
+	"github.com/containers/nri-plugins/pkg/testutils"
 )
 
 // setupTestPolicy creates a policy from the server sysfs testdata.
@@ -33,7 +33,7 @@ func setupTestPolicy(t *testing.T) (*policy, string) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	if err := utils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), dir); err != nil {
+	if err := testutils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), dir); err != nil {
 		if rerr := os.RemoveAll(dir); rerr != nil {
 			t.Logf("failed to remove temp dir %q: %v", dir, rerr)
 		}
