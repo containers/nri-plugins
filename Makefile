@@ -67,6 +67,8 @@ E2E_WORKDIR   ?= $(TOP_DIR)/e2e-results
 DOCKER       := docker
 DOCKER_BUILD := $(DOCKER) buildx build
 
+MAKEFLAGS += -j$(shell nproc || printf 1)
+
 # Plugins and other binaries we build.
 #
 # Notes:
