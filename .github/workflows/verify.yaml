@@ -102,4 +102,5 @@ jobs:
         with:
           go-version-file: go.mod
       - run: |
-          make install-go-licenses verify-licenses
+          make install-go-licenses
+          make verify-licenses
