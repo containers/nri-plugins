@@ -531,7 +531,7 @@ func (sys *system) SetCpusOnline(online bool, cpus idset.IDSet) (idset.IDSet, er
 			continue
 		}
 
-		if _, err := writeSysfsEntry(entry, "online", desired, &current); err != nil {
+		if err := writeSysfsInt(entry, "online", desired, &current); err != nil {
 			return nil, sysfsError(entry, "failed to set online to %d: %v", desired, err)
 		}
 
@@ -879,22 +879,22 @@ func (sys *system) discoverCPUs() error {
 	sys.cpus = make(map[idset.ID]*cpu)
 
 	base := filepath.Join(sys.path, sysfsCPUPath)
-	_, err := readSysfsEntry(base, "possible", &sys.possibleCPUs, ",")
+	err := readSysfsIDSet(base, "possible", ",", &sys.possibleCPUs)
 	if err != nil {
 		sys.Errorf("failed to get set of possible cpus: %v", err)
 	}
 
-	_, err = readSysfsEntry(base, "present", &sys.presentCPUs, ",")
+	err = readSysfsIDSet(base, "present", ",", &sys.presentCPUs)
 	if err != nil {
 		sys.Errorf("failed to get set of present cpus: %v", err)
 	}
 
-	_, err = readSysfsEntry(base, "online", &sys.onlineCPUs, ",")
+	err = readSysfsIDSet(base, "online", ",", &sys.onlineCPUs)
 	if err != nil {
 		sys.Errorf("failed to get set of online cpus: %v", err)
 	}
 
-	_, err = readSysfsEntry(base, "isolated", &sys.isolatedCPUs, ",")
+	err = readSysfsIDSet(base, "isolated", ",", &sys.isolatedCPUs)
 	if err != nil {
 		sys.Errorf("failed to get set of isolated cpus: %v", err)
 	}
@@ -917,7 +917,7 @@ func (sys *system) discoverCPUs() error {
 	if len(sys.coreKindCPUs) == 0 {
 		for kind, entry := range coreKindCPUPath {
 			cpus := idset.NewIDSet()
-			_, err = readSysfsEntry(sys.path, entry, &cpus, ",")
+			err = readSysfsIDSet(sys.path, entry, ",", &cpus)
 			if err != nil {
 				sys.Errorf("failed to get set of %s cpus: %v", kind, err)
 				if kind == PerformanceCore {
@@ -1031,22 +1031,22 @@ func (sys *system) discoverCPU(path string) error {
 	cpu.online = sys.onlineCPUs.Has(cpu.id)
 
 	if cpu.online {
-		if _, err := readSysfsEntry(path, "topology/physical_package_id", &cpu.pkg); err != nil {
+		if err := readSysfsInt(path, "topology/physical_package_id", &cpu.pkg); err != nil {
 			return err
 		}
-		if _, err := readSysfsEntry(path, "topology/die_id", &cpu.die); err != nil {
+		if err := readSysfsInt(path, "topology/die_id", &cpu.die); err != nil {
 			log.Warnf("failed to read die ID for CPU %d: %v", cpu.id, err)
 		}
-		if _, err := readSysfsEntry(path, "topology/cluster_id", &cpu.cluster); err != nil {
+		if err := readSysfsInt(path, "topology/cluster_id", &cpu.cluster); err != nil {
 			log.Warnf("failed to read cluster ID for CPU %d: %v", cpu.id, err)
 		}
-		if _, err := readSysfsEntry(path, "topology/core_id", &cpu.core); err != nil {
+		if err := readSysfsInt(path, "topology/core_id", &cpu.core); err != nil {
 			return err
 		}
 
-		if _, err := readSysfsEntry(path, "topology/core_cpus_list", &cpu.threads, ","); err != nil {
+		if err := readSysfsIDSet(path, "topology/core_cpus_list", ",", &cpu.threads); err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
-				_, err = readSysfsEntry(path, "topology/thread_siblings_list", &cpu.threads, ",")
+				err = readSysfsIDSet(path, "topology/thread_siblings_list", ",", &cpu.threads)
 			}
 			if err != nil {
 				return err
@@ -1054,16 +1054,16 @@ func (sys *system) discoverCPU(path string) error {
 		}
 	}
 
-	if _, err := readSysfsEntry(path, "cpufreq/base_frequency", &cpu.freq.Base); err != nil {
+	if err := readSysfsUint(path, "cpufreq/base_frequency", &cpu.freq.Base); err != nil {
 		cpu.freq.Base = 0
 	}
-	if _, err := readSysfsEntry(path, "cpufreq/cpuinfo_min_freq", &cpu.freq.Min); err != nil {
+	if err := readSysfsUint(path, "cpufreq/cpuinfo_min_freq", &cpu.freq.Min); err != nil {
 		cpu.freq.Min = 0
 	}
-	if _, err := readSysfsEntry(path, "cpufreq/cpuinfo_max_freq", &cpu.freq.Max); err != nil {
+	if err := readSysfsUint(path, "cpufreq/cpuinfo_max_freq", &cpu.freq.Max); err != nil {
 		cpu.freq.Max = 0
 	}
-	if _, err := readSysfsEntry(path, "cpufreq/energy_performance_preference", &cpu.epp); err != nil {
+	if err := readSysfsEPP(path, "cpufreq/energy_performance_preference", &cpu.epp); err != nil {
 		cpu.epp = EPPUnknown
 	}
 	if node, _ := filepath.Glob(filepath.Join(path, "node[0-9]*")); len(node) == 1 {
@@ -1199,10 +1199,10 @@ func (c *cpu) SetFrequencyLimits(min, max uint64) error {
 		max = c.freq.Max
 	}
 
-	if _, err := writeSysfsEntry(c.path, "cpufreq/scaling_min_freq", min, nil); err != nil {
+	if err := writeSysfsUint(c.path, "cpufreq/scaling_min_freq", min); err != nil {
 		return err
 	}
-	if _, err := writeSysfsEntry(c.path, "cpufreq/scaling_max_freq", max, nil); err != nil {
+	if err := writeSysfsUint(c.path, "cpufreq/scaling_max_freq", max); err != nil {
 		return err
 	}
 
@@ -1376,7 +1376,7 @@ func (sys *system) discoverNodes() error {
 		return nil
 	}
 
-	normalMemNodeIDs, err := readSysfsEntry(sysNodesPath, "has_normal_memory", nil)
+	normalMemNodeIDs, err := readSysfsRaw(sysNodesPath, "has_normal_memory")
 	if err != nil {
 		return fmt.Errorf("failed to discover nodes with normal memory: %v", err)
 	}
@@ -1385,7 +1385,7 @@ func (sys *system) discoverNodes() error {
 		return fmt.Errorf("failed to parse nodes with normal memory (%q): %v",
 			normalMemNodes, err)
 	}
-	memoryNodeIDs, err := readSysfsEntry(sysNodesPath, "has_memory", nil)
+	memoryNodeIDs, err := readSysfsRaw(sysNodesPath, "has_memory")
 	if err != nil {
 		return fmt.Errorf("failed to discover nodes with memory: %v", err)
 	}
@@ -1394,7 +1394,7 @@ func (sys *system) discoverNodes() error {
 		return fmt.Errorf("failed to parse nodes with memory (%q): %v",
 			memoryNodeIDs, err)
 	}
-	onlineNodeIDs, err := readSysfsEntry(sysNodesPath, "online", nil)
+	onlineNodeIDs, err := readSysfsRaw(sysNodesPath, "online")
 	if err != nil {
 		return fmt.Errorf("failed to discover online nodes: %v", err)
 	}
@@ -1505,10 +1505,10 @@ func (sys *system) discoverNodes() error {
 func (sys *system) discoverNode(path string) error {
 	node := &node{path: path, id: getEnumeratedID(path)}
 
-	if _, err := readSysfsEntry(path, "cpulist", &node.cpus, ","); err != nil {
+	if err := readSysfsIDSet(path, "cpulist", ",", &node.cpus); err != nil {
 		return err
 	}
-	if _, err := readSysfsEntry(path, "distance", &node.distance); err != nil {
+	if err := readSysfsIntList(path, "distance", " ", &node.distance); err != nil {
 		return err
 	}
 
@@ -2091,7 +2091,7 @@ func (sys *system) discoverCache(cpu *cpu, path string) error {
 		return sysfsError(path, "unexpected cache path %s", path)
 	}
 
-	if _, err := readSysfsEntry(path, "id", &id); err != nil {
+	if err := readSysfsInt(path, "id", &id); err != nil {
 		return sysfsError(path, "can't read cache id: %v", err)
 	}
 
@@ -2099,14 +2099,14 @@ func (sys *system) discoverCache(cpu *cpu, path string) error {
 		id: id,
 	}
 
-	if _, err := readSysfsEntry(path, "level", &c.level); err != nil {
+	if err := readSysfsInt(path, "level", &c.level); err != nil {
 		return sysfsError(path, "can't read cache level: %v", err)
 	}
-	if _, err := readSysfsEntry(path, "shared_cpu_list", &c.cpus, ","); err != nil {
+	if err := readSysfsIDSet(path, "shared_cpu_list", ",", &c.cpus); err != nil {
 		return sysfsError(path, "can't read shared CPUs: %v", err)
 	}
 	kind := ""
-	if _, err := readSysfsEntry(path, "type", &kind); err != nil {
+	if err := readSysfsString(path, "type", &kind); err != nil {
 		return sysfsError(path, "can't read cache type: %v", err)
 	}
 	switch kind {
@@ -2121,7 +2121,7 @@ func (sys *system) discoverCache(cpu *cpu, path string) error {
 	}
 
 	size := ""
-	if _, err := readSysfsEntry(path, "size", &size); err != nil {
+	if err := readSysfsString(path, "size", &size); err != nil {
 		return sysfsError(path, "can't read cache size: %v", err)
 	}
 

@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -47,316 +48,207 @@ func getEnumeratedID(name string) idset.ID {
 	return idset.ID(-1)
 }
 
-// Read content of a sysfs entry and convert it according to the type of a given pointer.
-func readSysfsEntry(base, entry string, ptr interface{}, args ...interface{}) (string, error) {
-	var buf string
+// signedInt covers signed integers and named types with a signed-integer
+// underlying type (e.g. idset.ID).
+type signedInt interface {
+	~int | ~int8 | ~int16 | ~int32 | ~int64
+}
 
+// unsignedInt covers unsigned integers and named types with an unsigned-integer
+// underlying type.
+type unsignedInt interface {
+	~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64
+}
+
+// readSysfsRaw reads and trims the newline-terminated content of base/entry.
+func readSysfsRaw(base, entry string) (string, error) {
 	path := filepath.Join(base, entry)
-
 	blob, err := os.ReadFile(path)
 	if err != nil {
 		return "", sysfsError(path, "failed to read sysfs entry: %w", err)
 	}
-	buf = strings.Trim(string(blob), "\n")
-
-	if ptr == interface{}(nil) {
-		return buf, nil
-	}
-
-	switch ptr := ptr.(type) {
-	case *string, *int, *uint, *int8, *uint8, *int16, *uint16, *int32, *uint32, *int64, *uint64:
-		err := parseValue(buf, ptr)
-		if err != nil {
-			return "", sysfsError(path, "%w", err)
-		}
-		return buf, nil
-
-	case *idset.IDSet, *[]int, *[]uint, *[]int8, *[]uint8, *[]int16, *[]uint16, *[]int32, *[]uint32, *[]int64, *[]uint64:
-		sep, err := getSeparator(" ", args)
-		if err != nil {
-			return "", sysfsError(path, "%w", err)
-		}
-		err = parseValueList(buf, sep, ptr)
-		if err != nil {
-			return "", sysfsError(path, "%w", err)
-		}
-		return buf, nil
-	case *EPP:
-		*ptr = EPPFromString(buf)
-		return buf, nil
-	}
-
-	return "", sysfsError(path, "unsupported sysfs entry type %T", ptr)
+	return strings.Trim(string(blob), "\n"), nil
 }
 
-// Write a value to a sysfs entry. An optional item separator can be specified for slice values.
-func writeSysfsEntry(base, entry string, val, oldp interface{}, args ...interface{}) (string, error) {
-	var buf, old string
-	var err error
-
-	if oldp != nil {
-		if old, err = readSysfsEntry(base, entry, oldp, args...); err != nil {
-			return "", err
-		}
+// readSysfsInt reads base/entry and parses the content as a signed integer of
+// type T. Named types with a signed-integer underlying type (e.g. idset.ID) work too.
+func readSysfsInt[T signedInt](base, entry string, dst *T) error {
+	buf, err := readSysfsRaw(base, entry)
+	if err != nil {
+		return err
 	}
-
-	path := filepath.Join(base, entry)
-
-	switch val.(type) {
-	case string, int, uint, int8, uint8, int16, uint16, int32, uint32, int64, uint64:
-		buf, err = formatValue(val)
-		if err != nil {
-			return "", sysfsError(path, "%w", err)
-		}
-
-	case idset.IDSet, []int, []uint, []int8, []uint8, []int16, []uint16, []int32, []uint32, []int64, []uint64:
-		sep, err := getSeparator(" ", args)
-		if err != nil {
-			return "", sysfsError(path, "%w", err)
-		}
-		buf, err = formatValueList(sep, val)
-		if err != nil {
-			return "", sysfsError(path, "%w", err)
-		}
-
-	default:
-		return "", sysfsError(path, "unsupported sysfs entry type %T", val)
+	v, err := parseIntTo[T](buf)
+	if err != nil {
+		return sysfsError(filepath.Join(base, entry), "invalid integer %q: %w", buf, err)
 	}
+	*dst = v
+	return nil
+}
 
+// readSysfsUint reads a sysfs file and parses it as an unsigned integer of type T.
+func readSysfsUint[T unsignedInt](base, entry string, dst *T) error {
+	buf, err := readSysfsRaw(base, entry)
+	if err != nil {
+		return err
+	}
+	v, err := parseUintTo[T](buf)
+	if err != nil {
+		return sysfsError(filepath.Join(base, entry), "invalid unsigned integer %q: %w", buf, err)
+	}
+	*dst = v
+	return nil
+}
+
+// readSysfsString reads a sysfs file and stores the trimmed content in dst.
+func readSysfsString(base, entry string, dst *string) error {
+	buf, err := readSysfsRaw(base, entry)
+	if err != nil {
+		return err
+	}
+	*dst = buf
+	return nil
+}
+
+// readSysfsIDSet reads a sysfs file and parses it as a sep-delimited IDSet.
+func readSysfsIDSet(base, entry, sep string, dst *idset.IDSet) error {
+	buf, err := readSysfsRaw(base, entry)
+	if err != nil {
+		return err
+	}
+	if err := parseIDSet(buf, sep, dst); err != nil {
+		return sysfsError(filepath.Join(base, entry), "%w", err)
+	}
+	return nil
+}
+
+// readSysfsIntList reads a sysfs file as a sep-delimited list of signed integers.
+func readSysfsIntList[T signedInt](base, entry, sep string, dst *[]T) error {
+	buf, err := readSysfsRaw(base, entry)
+	if err != nil {
+		return err
+	}
+	v, err := parseIntSlice[T](buf, sep)
+	if err != nil {
+		return sysfsError(filepath.Join(base, entry), "%w", err)
+	}
+	*dst = v
+	return nil
+}
+
+// readSysfsEPP reads a sysfs file and parses it as an EPP value.
+func readSysfsEPP(base, entry string, dst *EPP) error {
+	buf, err := readSysfsRaw(base, entry)
+	if err != nil {
+		return err
+	}
+	*dst = EPPFromString(buf)
+	return nil
+}
+
+// writeSysfsRaw writes buf (plus a trailing newline) to the file at path.
+func writeSysfsRaw(path, buf string) (err error) {
 	f, err := os.OpenFile(path, os.O_WRONLY, 0)
 	if err != nil {
-		return "", sysfsError(path, "cannot open: %w", err)
+		return sysfsError(path, "cannot open: %w", err)
 	}
 	defer func() {
 		if cerr := f.Close(); cerr != nil && err == nil {
 			err = sysfsError(path, "failed to close: %w", cerr)
 		}
 	}()
-
 	if _, err = f.Write([]byte(buf + "\n")); err != nil {
-		return "", sysfsError(path, "cannot write: %w", err)
+		return sysfsError(path, "cannot write: %w", err)
 	}
-
-	return old, nil
-}
-
-// Determine list separator string, given an optional separator variadic argument.
-func getSeparator(defaultVal string, args []interface{}) (string, error) {
-	switch len(args) {
-	case 0:
-		return defaultVal, nil
-	case 1:
-		return args[0].(string), nil
-	}
-
-	return "", fmt.Errorf("invalid separator (%v), 1 expected, %d given", args, len(args))
-}
-
-// Parse a value from a string.
-func parseValue(str string, value interface{}) error {
-	switch value := value.(type) {
-	case *string:
-		*value = str
-
-	case *int, *int8, *int16, *int32, *int64:
-		v, err := strconv.ParseInt(str, 0, 0)
-		if err != nil {
-			return fmt.Errorf("invalid entry '%s': %w", str, err)
-		}
-
-		switch value := value.(type) {
-		case *int:
-			*value = int(v)
-		case *int8:
-			*value = int8(v)
-		case *int16:
-			*value = int16(v)
-		case *int32:
-			*value = int32(v)
-		case *int64:
-			*value = v
-		}
-
-	case *uint, *uint8, *uint16, *uint32, *uint64:
-		v, err := strconv.ParseUint(str, 0, 0)
-		if err != nil {
-			return fmt.Errorf("invalid entry: '%s': %w", str, err)
-		}
-
-		switch value := value.(type) {
-		case *uint:
-			*value = uint(v)
-		case *uint8:
-			*value = uint8(v)
-		case *uint16:
-			*value = uint16(v)
-		case *uint32:
-			*value = uint32(v)
-		case *uint64:
-			*value = v
-		}
-	}
-
 	return nil
 }
 
-// Parse a list of values from a string into a slice.
-func parseValueList(str, sep string, valuep interface{}) error {
-	var value interface{}
-
-	switch valuep.(type) {
-	case *idset.IDSet:
-		value = idset.NewIDSet()
-	case *[]int:
-		value = []int{}
-	case *[]uint:
-		value = []uint{}
-	case *[]int8:
-		value = []int8{}
-	case *[]uint8:
-		value = []uint8{}
-	case *[]int16:
-		value = []int16{}
-	case *[]uint16:
-		value = []uint16{}
-	case *[]int32:
-		value = []int32{}
-	case *[]uint32:
-		value = []uint32{}
-	case *[]int64:
-		value = []int64{}
-	case *[]uint64:
-		value = []uint64{}
-	default:
-		return fmt.Errorf("invalid slice value type: %T", valuep)
+// writeSysfsInt writes val to base/entry. If old is non-nil, the current value
+// is read into *old first.
+func writeSysfsInt[T signedInt](base, entry string, val T, old ...*T) error {
+	if len(old) > 0 && old[0] != nil {
+		if err := readSysfsInt(base, entry, old[0]); err != nil {
+			return err
+		}
 	}
+	return writeSysfsRaw(filepath.Join(base, entry), fmt.Sprintf("%d", val))
+}
 
+// writeSysfsUint writes val to base/entry. If old is non-nil, the current value
+// is read into *old first.
+func writeSysfsUint[T unsignedInt](base, entry string, val T, old ...*T) error {
+	if len(old) > 0 && old[0] != nil {
+		if err := readSysfsUint(base, entry, old[0]); err != nil {
+			return err
+		}
+	}
+	return writeSysfsRaw(filepath.Join(base, entry), fmt.Sprintf("%d", val))
+}
+
+// parseIntTo parses str as a signed integer of type T, using T's actual bit
+// width. Works correctly for named types (e.g. type MyInt8 int8).
+func parseIntTo[T signedInt](str string) (T, error) {
+	var zero T
+	bits := int(reflect.TypeOf(zero).Size()) * 8
+	v, err := strconv.ParseInt(str, 0, bits)
+	return T(v), err
+}
+
+// parseUintTo parses str as an unsigned integer of type T, using T's actual
+// bit width. Works correctly for named types (e.g. type MyUint8 uint8).
+func parseUintTo[T unsignedInt](str string) (T, error) {
+	var zero T
+	bits := int(reflect.TypeOf(zero).Size()) * 8
+	v, err := strconv.ParseUint(str, 0, bits)
+	return T(v), err
+}
+
+// parseIntSlice splits str on sep and parses each token as a T.
+func parseIntSlice[T signedInt](str, sep string) ([]T, error) {
+	var out []T
 	for _, s := range strings.Split(str, sep) {
 		if s == "" {
-			break
+			continue
 		}
-		switch val := value.(type) {
-		case idset.IDSet:
-			if rng := strings.Split(s, "-"); len(rng) == 1 {
-				id, err := strconv.Atoi(s)
-				if err != nil {
-					return fmt.Errorf("invalid entry '%s': %w", s, err)
-				}
-				val.Add(idset.ID(id))
-			} else {
-				beg, err := strconv.Atoi(rng[0])
-				if err != nil {
-					return fmt.Errorf("invalid entry '%s': %w", s, err)
-				}
-				end, err := strconv.Atoi(rng[1])
-				if err != nil {
-					return fmt.Errorf("invalid entry '%s': %w", s, err)
-				}
-				for id := beg; id <= end; id++ {
-					val.Add(idset.ID(id))
-				}
-			}
-			value = val
+		v, err := parseIntTo[T](s)
+		if err != nil {
+			return nil, fmt.Errorf("invalid entry %q: %w", s, err)
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
 
-		case []int, []int8, []int16, []int32, []int64:
-			v, err := strconv.ParseInt(s, 0, 0)
+// parseIDSet parses a separator-delimited string of integers and ranges (e.g.
+// "0-3 8 12-15") into an idset.IDSet.
+func parseIDSet(str, sep string, dst *idset.IDSet) error {
+	ids := idset.NewIDSet()
+	for _, s := range strings.Split(str, sep) {
+		if s == "" {
+			continue
+		}
+		rng := strings.SplitN(s, "-", 2)
+		if len(rng) == 1 {
+			id, err := strconv.Atoi(s)
 			if err != nil {
-				return fmt.Errorf("invalid entry '%s': %w", s, err)
+				return fmt.Errorf("invalid entry %q: %w", s, err)
 			}
-			switch val := value.(type) {
-			case []int:
-				value = append(val, int(v))
-			case []int8:
-				value = append(val, int8(v))
-			case []int16:
-				value = append(val, int16(v))
-			case []int32:
-				value = append(val, int32(v))
-			case []int64:
-				value = append(val, v)
-			}
-
-		case []uint, []uint8, []uint16, []uint32, []uint64:
-			v, err := strconv.ParseUint(s, 0, 0)
+			ids.Add(idset.ID(id))
+		} else {
+			beg, err := strconv.Atoi(rng[0])
 			if err != nil {
-				return fmt.Errorf("invalid entry '%s': %w", s, err)
+				return fmt.Errorf("invalid entry %q: %w", s, err)
 			}
-			switch val := value.(type) {
-			case []uint:
-				value = append(val, uint(v))
-			case []uint8:
-				value = append(val, uint8(v))
-			case []uint16:
-				value = append(val, uint16(v))
-			case []uint32:
-				value = append(val, uint32(v))
-			case []uint64:
-				value = append(val, v)
+			end, err := strconv.Atoi(rng[1])
+			if err != nil {
+				return fmt.Errorf("invalid entry %q: %w", s, err)
+			}
+			for id := beg; id <= end; id++ {
+				ids.Add(idset.ID(id))
 			}
 		}
 	}
-
-	switch valuep := valuep.(type) {
-	case *idset.IDSet:
-		*valuep = value.(idset.IDSet)
-	case *[]int:
-		*valuep = value.([]int)
-	case *[]uint:
-		*valuep = value.([]uint)
-	case *[]int8:
-		*valuep = value.([]int8)
-	case *[]uint8:
-		*valuep = value.([]uint8)
-	case *[]int16:
-		*valuep = value.([]int16)
-	case *[]uint16:
-		*valuep = value.([]uint16)
-	case *[]int32:
-		*valuep = value.([]int32)
-	case *[]uint32:
-		*valuep = value.([]uint32)
-	case *[]int64:
-		*valuep = value.([]int64)
-	case *[]uint64:
-		*valuep = value.([]uint64)
-	}
-
+	*dst = ids
 	return nil
-}
-
-// Format a value into a string.
-func formatValue(value interface{}) (string, error) {
-	switch value := value.(type) {
-	case string:
-		return value, nil
-	case int, uint, int8, uint8, int16, uint16, int32, uint32, int64, uint64:
-		return fmt.Sprintf("%d", value), nil
-	default:
-		return "", fmt.Errorf("invalid value type %T", value)
-	}
-}
-
-// Format a list of values from a slice into a string.
-func formatValueList(sep string, value interface{}) (string, error) {
-	var v []interface{}
-
-	switch value := value.(type) {
-	case idset.IDSet:
-		return value.StringWithSeparator(sep), nil
-	case []int, []uint, []int8, []uint8, []int16, []uint16, []int32, []uint32, []int64, []uint64:
-		v = value.([]interface{})
-	default:
-		return "", fmt.Errorf("invalid value type %T", value)
-	}
-
-	str := ""
-	t := ""
-	for idx := range v {
-		str = str + t + fmt.Sprintf("%d", v[idx])
-		t = sep
-	}
-
-	return "", nil
 }
 
 // IDSetFromCPUSet returns an id set corresponding to a cpuset.CPUSet.
