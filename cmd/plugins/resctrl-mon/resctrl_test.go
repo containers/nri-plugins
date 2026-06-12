@@ -192,6 +192,33 @@ func TestCleanOrphanedMonGroups_StaleLocation(t *testing.T) {
 	assert.True(t, os.IsNotExist(err))
 }
 
+func TestCleanOrphanedMonGroups_CompactUIDIsOrphaned(t *testing.T) {
+	tmpDir := t.TempDir()
+	r := newResctrlOps(tmpDir)
+	state := newPodState()
+
+	// Simulate: pod is tracked under the canonical dashed UID (as ensureMonGroup stores it).
+	canonicalUID := "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+	canonicalDir, err := r.createMonGroup("", canonicalUID)
+	require.NoError(t, err)
+	state.addPod(canonicalUID, canonicalDir)
+
+	// Simulate: a stale compact-form directory left by a previous run (e.g. CRI-O).
+	compactUID := "a1b2c3d4e5f678901234abcdef567890"
+	compactDir := filepath.Join(tmpDir, "mon_groups", compactUID)
+	require.NoError(t, os.Mkdir(compactDir, 0755))
+
+	r.cleanOrphanedMonGroups(state)
+
+	// Canonical mon_group (tracked) must survive.
+	_, err = os.Stat(canonicalDir)
+	assert.NoError(t, err)
+
+	// Compact-named directory is not tracked — must be removed as orphan.
+	_, err = os.Stat(compactDir)
+	assert.True(t, os.IsNotExist(err))
+}
+
 func TestIsValidRDTClass(t *testing.T) {
 	assert.True(t, isValidRDTClass("BestEffort"))
 	assert.True(t, isValidRDTClass("Guaranteed"))

@@ -343,6 +343,77 @@ func TestStartContainer_FilteredPod(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestCompactUID_EnsureMonGroupStoresCanonical(t *testing.T) {
+	tmpDir := t.TempDir()
+	p := newTestPlugin(tmpDir)
+
+	compactUID := "a1b2c3d4e5f678901234abcdef567890"
+	canonicalUID := "a1b2c3d4-e5f6-7890-1234-abcdef567890"
+
+	pod := makePod(compactUID, "default", "test-pod")
+	ctr := makeContainer("c1", "container1", compactUID, 0, "")
+
+	err := p.PostCreateContainer(context.Background(), pod, ctr)
+	require.NoError(t, err)
+
+	// State must be keyed under the canonical dashed form.
+	assert.True(t, p.state.hasPod(canonicalUID))
+	assert.False(t, p.state.hasPod(compactUID))
+
+	monDir := p.state.getMonGroupDir(canonicalUID)
+	assert.Contains(t, monDir, canonicalUID)
+}
+
+func TestCompactUID_StartContainerFindsMonGroup(t *testing.T) {
+	tmpDir := t.TempDir()
+	p := newTestPlugin(tmpDir)
+
+	compactUID := "a1b2c3d4e5f678901234abcdef567890"
+	canonicalUID := "a1b2c3d4-e5f6-7890-1234-abcdef567890"
+
+	pod := makePod(compactUID, "default", "test-pod")
+	ctr := makeContainer("c1", "container1", compactUID, 0, "")
+
+	// Create mon_group via compact UID.
+	err := p.PostCreateContainer(context.Background(), pod, ctr)
+	require.NoError(t, err)
+
+	monDir := p.state.getMonGroupDir(canonicalUID)
+	require.NotEmpty(t, monDir)
+	require.NoError(t, os.WriteFile(filepath.Join(monDir, "tasks"), nil, 0644))
+
+	// StartContainer also using compact UID must find and write to the same mon_group.
+	ctrWithPid := makeContainer("c1", "container1", compactUID, 77, "")
+	err = p.StartContainer(context.Background(), pod, ctrWithPid)
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(filepath.Join(monDir, "tasks"))
+	require.NoError(t, err)
+	assert.Equal(t, "77\n", string(data))
+}
+
+func TestCompactUID_StopContainerCleansUp(t *testing.T) {
+	tmpDir := t.TempDir()
+	p := newTestPlugin(tmpDir)
+
+	compactUID := "a1b2c3d4e5f678901234abcdef567890"
+	canonicalUID := "a1b2c3d4-e5f6-7890-1234-abcdef567890"
+
+	pod := makePod(compactUID, "default", "test-pod")
+	ctr := makeContainer("c1", "container1", compactUID, 0, "")
+
+	err := p.PostCreateContainer(context.Background(), pod, ctr)
+	require.NoError(t, err)
+	assert.Equal(t, 1, p.state.podCount())
+
+	_, err = p.StopContainer(context.Background(), pod, ctr)
+	require.NoError(t, err)
+
+	// Pod must be gone from state after stop.
+	assert.Equal(t, 0, p.state.podCount())
+	assert.False(t, p.state.hasPod(canonicalUID))
+}
+
 func TestStopContainer_RemovesStateOnRmdirFailure(t *testing.T) {
 	tmpDir := t.TempDir()
 	p := newTestPlugin(tmpDir)
