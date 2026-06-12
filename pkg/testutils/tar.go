@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package utils
+package testutils
 
 import (
 	"archive/tar"
@@ -22,6 +22,8 @@ import (
 	"path"
 )
 
+// UncompressTbz2 extracts a bzip2-compressed tar archive.
+// This is a test-only utility and must not be used in production code.
 func UncompressTbz2(archive string, dir string) error {
 	file, err := os.Open(archive)
 	if err != nil {
