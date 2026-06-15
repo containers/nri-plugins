@@ -28,7 +28,7 @@ func TestPrometheusConfiguration(t *testing.T) {
 	log.EnableDebug(true)
 
 	if cfg.HTTPEndpoint == "" {
-		cfg.HTTPEndpoint = ":0"
+		cfg.HTTPEndpoint = "127.0.0.1:0"
 	}
 
 	require.NoError(t, Start(), "start test server")
