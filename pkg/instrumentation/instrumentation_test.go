@@ -44,6 +44,7 @@ func TestPrometheusConfiguration(t *testing.T) {
 	newCfg.PrometheusExport = !newCfg.PrometheusExport
 	require.NoError(t, Reconfigure(&newCfg), "reconfigure test server")
 	checkPrometheus(t, address, !newCfg.PrometheusExport)
+	cfg.MetricsExporter = "" // clean-up "prometheus" filled in Start()
 
 	newCfg = *cfg
 	newCfg.PrometheusExport = !newCfg.PrometheusExport
