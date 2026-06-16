@@ -161,8 +161,9 @@ func (s *Server) Start(addr string) error {
 		s.server.Addr = ln.Addr().String()
 	}
 
+	serveFn := s.server.Serve
 	go func() {
-		err := s.server.Serve(ln)
+		err := serveFn(ln)
 		if err != nil && err != http.ErrServerClosed {
 			log.Warnf("HTTP server exited with error: %v", err)
 		}
