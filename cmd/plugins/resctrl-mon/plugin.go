@@ -74,6 +74,9 @@ func newPlugin() *plugin {
 // Configure handles connecting to container runtime's NRI server.
 func (p *plugin) Configure(ctx context.Context, config, runtime, version string) (stub.EventMask, error) {
 	log.Infof("Connected to %s %s...", runtime, version)
+	if err := checkRuntimeVersion(runtime, version); err != nil {
+		return 0, err
+	}
 	if config != "" {
 		log.Debugf("loading configuration from NRI server")
 		if err := p.setConfig([]byte(config)); err != nil {
@@ -143,9 +146,6 @@ func (p *plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, contai
 			continue
 		}
 		pid := int(ctr.GetPid())
-		if pid == 0 {
-			pid = readContainerPID(ctr.GetId())
-		}
 		if pid > 0 {
 			monGroupDir := p.state.getMonGroupDir(podUID)
 			if err := p.rdt.writeTaskPID(monGroupDir, pid); err != nil {
@@ -275,15 +275,6 @@ func (p *plugin) PostStartContainer(ctx context.Context, pod *api.PodSandbox, ct
 		return nil
 	}
 
-	// Fallback: if the NRI event has no PID (CRI-O <= 1.35 does not
-	// populate Container.Pid), read it from the CRI-O pidfile.
-	if pid == 0 {
-		pid = readContainerPID(ctr.GetId())
-		if pid > 0 {
-			log.Debugf("PostStartContainer %s: read pid %d from pidfile", ctrName, pid)
-		}
-	}
-
 	if pid > 0 {
 		if err := p.rdt.writeTaskPID(monGroupDir, pid); err != nil {
 			log.Warnf("PostStartContainer %s: failed to write PID %d to tasks: %v", ctrName, pid, err)
@@ -291,7 +282,7 @@ func (p *plugin) PostStartContainer(ctx context.Context, pod *api.PodSandbox, ct
 			log.Infof("PostStartContainer %s: assigned pid %d to mon_group %s", ctrName, pid, monGroupDir)
 		}
 	} else {
-		log.Warnf("PostStartContainer %s: PID not available from NRI or pidfile", ctrName)
+		log.Warnf("PostStartContainer %s: PID=0, cannot assign to mon_group (runtime did not provide PID via NRI)", ctrName)
 	}
 
 	return nil
@@ -396,22 +387,32 @@ func pprintCtr(pod *api.PodSandbox, ctr *api.Container) string {
 	return fmt.Sprintf("%s/%s:%s", pod.GetNamespace(), pod.GetName(), ctr.GetName())
 }
 
-// readContainerPID reads the container init PID from the CRI-O pidfile.
-// CRI-O versions <= 1.35 do not populate Container.Pid in NRI events.
-// As a fallback, we read the PID from the container's pidfile at
-// /run/containers/storage/overlay-containers/<id>/userdata/pidfile.
-// Returns 0 if the PID cannot be read (e.g., running under containerd).
-func readContainerPID(containerID string) int {
-	pidfile := filepath.Join("/run/containers/storage/overlay-containers", containerID, "userdata/pidfile")
-	data, err := os.ReadFile(pidfile)
-	if err != nil {
-		log.Debugf("readContainerPID: cannot read %s: %v", pidfile, err)
-		return 0
+// checkRuntimeVersion verifies that the container runtime provides PIDs via NRI.
+// CRI-O versions before 1.36 do not populate Container.Pid in NRI events,
+// making the plugin unable to assign tasks to monitoring groups.
+func checkRuntimeVersion(runtime, version string) error {
+	if !strings.EqualFold(runtime, "cri-o") {
+		return nil
 	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil {
-		log.Debugf("readContainerPID: invalid pid in %s: %v", pidfile, err)
-		return 0
+	// Normalize: strip leading "v" and any pre-release/build suffix.
+	version = strings.TrimPrefix(version, "v")
+	if idx := strings.IndexAny(version, "-+"); idx != -1 {
+		version = version[:idx]
 	}
-	return pid
+	parts := strings.SplitN(version, ".", 3)
+	if len(parts) < 2 {
+		return fmt.Errorf("CRI-O version %q: unable to parse; require >= 1.36 for NRI PID support", version)
+	}
+	major, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return fmt.Errorf("CRI-O version %q: unable to parse major version: %w", version, err)
+	}
+	minor, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return fmt.Errorf("CRI-O version %q: unable to parse minor version: %w", version, err)
+	}
+	if major < 1 || (major == 1 && minor < 36) {
+		return fmt.Errorf("CRI-O %s does not provide container PIDs via NRI (requires >= 1.36)", version)
+	}
+	return nil
 }

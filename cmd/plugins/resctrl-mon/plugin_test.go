@@ -367,3 +367,40 @@ func TestStopContainer_RemovesStateOnRmdirFailure(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 0, p.state.podCount())
 }
+
+func TestCheckRuntimeVersion(t *testing.T) {
+	tests := []struct {
+		name    string
+		runtime string
+		version string
+		wantErr bool
+	}{
+		{"containerd any version", "containerd", "2.0.0", false},
+		{"cri-o 1.36.0", "cri-o", "1.36.0", false},
+		{"cri-o 1.37.0", "cri-o", "1.37.0", false},
+		{"cri-o 2.0.0", "cri-o", "2.0.0", false},
+		{"cri-o 1.35.0 rejected", "cri-o", "1.35.0", true},
+		{"cri-o 1.35.2 rejected", "cri-o", "1.35.2", true},
+		{"cri-o 1.31.5 rejected", "cri-o", "1.31.5", true},
+		{"cri-o 0.99.0 rejected", "cri-o", "0.99.0", true},
+		{"CRI-O case insensitive", "CRI-O", "1.35.0", true},
+		{"cri-o no patch", "cri-o", "1.36", false},
+		{"cri-o unparsable", "cri-o", "latest", true},
+		{"cri-o v prefix accepted", "cri-o", "v1.36.0", false},
+		{"cri-o v prefix rejected", "cri-o", "v1.35.0", true},
+		{"cri-o strips pre-release suffix", "cri-o", "1.36.0-rc1", false},
+		{"cri-o strips pre-release old version", "cri-o", "1.35.0-beta.1", true},
+		{"cri-o strips build metadata", "cri-o", "1.36.0+build123", false},
+		{"cri-o strips v prefix and pre-release", "cri-o", "v1.35.0-alpha.0", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := checkRuntimeVersion(tt.runtime, tt.version)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
