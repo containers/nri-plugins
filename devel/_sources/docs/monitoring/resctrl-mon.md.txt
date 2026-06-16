@@ -86,8 +86,10 @@ RMID allocation is delegated entirely to the Linux kernel:
 
 ### Prerequisites
 
-- Containerd v1.7+ or CRI-O v1.26+
-- Enable NRI in /etc/containerd/config.toml:
+- Containerd v1.7+ or CRI-O v1.36+
+- Enable NRI in the container runtime:
+
+  **containerd** — in `/etc/containerd/config.toml`:
 
   ```toml
   [plugins."io.containerd.nri.v1.nri"]
@@ -99,6 +101,16 @@ RMID allocation is delegated entirely to the Linux kernel:
     plugin_request_timeout = "2s"
     socket_path = "/var/run/nri/nri.sock"
   ```
+
+  **CRI-O** — in `/etc/crio/crio.conf.d/10-nri.conf` (or equivalent):
+
+  ```toml
+  [crio.nri]
+  enable_nri = true
+  ```
+
+  See the [CRI-O NRI documentation](https://github.com/cri-o/cri-o/blob/main/docs/crio.conf.5.md#crionri-table)
+  for additional options.
 
 - Intel CPU with RDT monitoring support
 - resctrl filesystem mounted at `/sys/fs/resctrl`

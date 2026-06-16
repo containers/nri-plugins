@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Resctrl-Mon NRI Plugin &mdash; NRI Plugins v0.12.2-48-gf06862b5 documentation</title>
+  <title>Resctrl-Mon NRI Plugin &mdash; NRI Plugins v0.12.2-51-g8bd71995 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../_static/documentation_options.js?v=b086c131"></script>
+        <script src="../../_static/documentation_options.js?v=a4fb8e5d"></script>
         <script src="../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/js/theme.js"></script>
@@ -186,8 +186,9 @@ hardware recycling window.</p></li>
 <section id="prerequisites">
 <h3>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading"></a></h3>
 <ul>
-<li><p>Containerd v1.7+ or CRI-O v1.26+</p></li>
-<li><p>Enable NRI in /etc/containerd/config.toml:</p>
+<li><p>Containerd v1.7+ or CRI-O v1.36+</p></li>
+<li><p>Enable NRI in the container runtime:</p>
+<p><strong>containerd</strong> — in <code class="docutils literal notranslate"><span class="pre">/etc/containerd/config.toml</span></code>:</p>
 <div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="k">[plugins.</span><span class="s2">&quot;io.containerd.nri.v1.nri&quot;</span><span class="k">]</span>
 <span class="w">  </span><span class="n">disable</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span>
 <span class="w">  </span><span class="n">disable_connections</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span>
@@ -198,6 +199,13 @@ hardware recycling window.</p></li>
 <span class="w">  </span><span class="n">socket_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/var/run/nri/nri.sock&quot;</span>
 </pre></div>
 </div>
+<p><strong>CRI-O</strong> — in <code class="docutils literal notranslate"><span class="pre">/etc/crio/crio.conf.d/10-nri.conf</span></code> (or equivalent):</p>
+<div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="k">[crio.nri]</span>
+<span class="n">enable_nri</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+</pre></div>
+</div>
+<p>See the <a class="reference external" href="https://github.com/cri-o/cri-o/blob/main/docs/crio.conf.5.md#crionri-table">CRI-O NRI documentation</a>
+for additional options.</p>
 </li>
 <li><p>Intel CPU with RDT monitoring support</p></li>
 <li><p>resctrl filesystem mounted at <code class="docutils literal notranslate"><span class="pre">/sys/fs/resctrl</span></code></p></li>
