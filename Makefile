@@ -65,7 +65,7 @@ E2E_TESTS     ?= $(E2E_DIR)/policies.test-suite
 E2E_WORKDIR   ?= $(TOP_DIR)/e2e-results
 
 DOCKER       := docker
-DOCKER_BUILD := $(DOCKER) buildx build
+DOCKER_BUILD := $(DOCKER) buildx build --load
 
 MAKEFLAGS += -j$(shell nproc || printf 1)
 
