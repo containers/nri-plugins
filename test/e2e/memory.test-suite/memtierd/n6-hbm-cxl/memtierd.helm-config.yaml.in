@@ -1,0 +1,4 @@
+outputDir: "/tmp/nri-memtierd-e2e"
+nri:
+  plugin:
+    index: 90
