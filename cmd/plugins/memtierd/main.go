@@ -36,6 +36,99 @@ import (
 	_ "github.com/containers/nri-plugins/cmd/plugins/memtierd/licensechack"
 )
 
+// Permissions for memtierd's per-container runtime directory tree.
+const (
+	runDirPerm  os.FileMode = 0700
+	cfgFilePerm os.FileMode = 0600
+	outFilePerm os.FileMode = 0600
+	pidFilePerm os.FileMode = 0400
+)
+
+// defaultRunDirPath is used when --run-dir is not given.
+const defaultRunDirPath = "/var/run/nri-memtierd"
+
+// sanitizePathSegment rejects strings that are not safe to use as a
+// single path component.
+func sanitizePathSegment(s string) error {
+	if s == "" {
+		return fmt.Errorf("empty path segment")
+	}
+	if s == "." || s == ".." {
+		return fmt.Errorf("path segment %q is not allowed", s)
+	}
+	if strings.ContainsAny(s, "/\x00") {
+		return fmt.Errorf("path segment %q contains illegal character", s)
+	}
+	return nil
+}
+
+// ensureSecureDir creates runDir/seg1/seg2/... with runDirPerm. Each
+// existing segment must be a non-symlink directory and is chmod'd to
+// runDirPerm.
+func ensureSecureDir(runDir string, segments ...string) error {
+	if err := os.MkdirAll(runDir, runDirPerm); err != nil {
+		return err
+	}
+	cur := runDir
+	for _, seg := range segments {
+		cur = filepath.Join(cur, seg)
+		fi, err := os.Lstat(cur)
+		switch {
+		case err == nil:
+			if fi.Mode()&os.ModeSymlink != 0 {
+				return fmt.Errorf("path %q is a symlink, refusing to use", cur)
+			}
+			if !fi.IsDir() {
+				return fmt.Errorf("path %q exists but is not a directory", cur)
+			}
+			if err := os.Chmod(cur, runDirPerm); err != nil {
+				return fmt.Errorf("cannot tighten perms on %q: %w", cur, err)
+			}
+		case os.IsNotExist(err):
+			if err := os.Mkdir(cur, runDirPerm); err != nil {
+				return fmt.Errorf("cannot create %q: %w", cur, err)
+			}
+			// Mkdir mode is masked by umask; set the exact bits.
+			if err := os.Chmod(cur, runDirPerm); err != nil {
+				return fmt.Errorf("cannot chmod %q: %w", cur, err)
+			}
+		default:
+			return fmt.Errorf("cannot stat %q: %w", cur, err)
+		}
+	}
+	return nil
+}
+
+// writeFileAtomic writes data to path via a sibling .tmp file with
+// O_EXCL|O_NOFOLLOW, then renames it into place.
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	tmp := path + ".tmp"
+	_ = os.Remove(tmp)
+	f, err := os.OpenFile(tmp,
+		os.O_WRONLY|os.O_CREATE|os.O_EXCL|os.O_TRUNC|syscall.O_NOFOLLOW, perm)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+	}()
+	if _, err := f.Write(data); err != nil {
+		return err
+	}
+	// OpenFile mode is masked by umask; set the exact bits.
+	if err := f.Chmod(perm); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	return nil
+}
+
 type plugin struct {
 	stub           stub.Stub
 	config         *pluginConfig
@@ -389,15 +482,21 @@ func (p *plugin) getFullCgroupsPath(ctr *api.Container) (string, error) {
 // newMemtierdEnv prepares new memtierd run environment with a
 // configuration file template instantiated for managing a container.
 func newMemtierdEnv(fullCgroupPath string, namespace string, podName string, containerName string, memtierdConfigIn string, runDir string) (*memtierdEnv, error) {
-	// Create container directory if it doesn't exist
-	ctrDir := fmt.Sprintf("%s/%s/%s/%s", runDir, namespace, podName, containerName)
-	if err := os.MkdirAll(ctrDir, 0755); err != nil {
+	// Reject unsafe path segments from CRI before joining them.
+	for _, seg := range []string{namespace, podName, containerName} {
+		if err := sanitizePathSegment(seg); err != nil {
+			return nil, fmt.Errorf("invalid path segment %q: %w", seg, err)
+		}
+	}
+
+	ctrDir := filepath.Join(runDir, namespace, podName, containerName)
+	if err := ensureSecureDir(runDir, namespace, podName, containerName); err != nil {
 		return nil, fmt.Errorf("cannot create memtierd run directory %q: %w", ctrDir, err)
 	}
 
-	outputFilePath := fmt.Sprintf("%s/memtierd.output", ctrDir)
-	statsFilePath := fmt.Sprintf("%s/memtierd.stats", ctrDir)
-	pidFilePath := fmt.Sprintf("%s/memtierd.pid", ctrDir)
+	outputFilePath := filepath.Join(ctrDir, "memtierd.output")
+	statsFilePath := filepath.Join(ctrDir, "memtierd.stats")
+	pidFilePath := filepath.Join(ctrDir, "memtierd.pid")
 
 	// Instantiate memtierd configuration from configuration template
 	replace := map[string]string{
@@ -409,8 +508,8 @@ func newMemtierdEnv(fullCgroupPath string, namespace string, podName string, con
 		memtierdConfigOut = strings.ReplaceAll(memtierdConfigOut, key, value)
 	}
 
-	configFilePath := fmt.Sprintf("%s/memtierd.config.yaml", ctrDir)
-	if err := os.WriteFile(configFilePath, []byte(memtierdConfigOut), 0644); err != nil {
+	configFilePath := filepath.Join(ctrDir, "memtierd.config.yaml")
+	if err := writeFileAtomic(configFilePath, []byte(memtierdConfigOut), cfgFilePerm); err != nil {
 		return nil, fmt.Errorf("cannot write memtierd configuration into file %q: %w", configFilePath, err)
 	}
 
@@ -424,9 +523,20 @@ func newMemtierdEnv(fullCgroupPath string, namespace string, podName string, con
 
 // startMemtierd launches memtierd in prepared environment.
 func (me *memtierdEnv) startMemtierd() error {
-	outputFile, err := os.OpenFile(me.outputFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	outputFile, err := os.OpenFile(me.outputFile,
+		os.O_WRONLY|os.O_CREATE|os.O_TRUNC|syscall.O_NOFOLLOW, outFilePerm)
 	if err != nil {
 		return fmt.Errorf("failed to create memtierd output file: %w", err)
+	}
+	defer func() {
+		if err := outputFile.Close(); err != nil {
+			log.Warnf("failed to close memtierd output file %q: %s", me.outputFile, err)
+		}
+	}()
+	// OpenFile mode is masked by umask, and ignored if the file
+	// existed; set the exact bits.
+	if err := outputFile.Chmod(outFilePerm); err != nil {
+		log.Warnf("failed to chmod memtierd output file %q: %s", me.outputFile, err)
 	}
 
 	// Create the command and write its output to the output file
@@ -442,9 +552,8 @@ func (me *memtierdEnv) startMemtierd() error {
 		return fmt.Errorf("failed to start command %s: %q", cmd, err)
 	}
 	if cmd.Process != nil {
-		if err := os.WriteFile(me.pidFile,
-			[]byte(fmt.Sprintf("%d\n", cmd.Process.Pid)),
-			0400); err != nil {
+		pidContents := []byte(fmt.Sprintf("%d\n", cmd.Process.Pid))
+		if err := writeFileAtomic(me.pidFile, pidContents, pidFilePerm); err != nil {
 			log.Warnf("failed to write PID file %q: %s", me.pidFile, err)
 		}
 	}
@@ -485,7 +594,7 @@ func main() {
 	}
 
 	if opt.runDir == "" {
-		opt.runDir = filepath.Join(os.TempDir(), "nri-memtierd")
+		opt.runDir = defaultRunDirPath
 	}
 
 	p := &plugin{
