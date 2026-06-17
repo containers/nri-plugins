@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${NAME:-pod0}
+  labels:
+    app: ${NAME:-pod0}
+  annotations:
+    $(for ann in ${!ANN*}; do [[ "$ann" == ANN[0-9]* ]] && echo "
+    ${!ann}
+    "; done)
+spec:
+  containers:
+  - name: c0-managed
+    image: quay.io/prometheus/busybox
+    imagePullPolicy: IfNotPresent
+    command:
+      - sh
+      - -c
+      - 'export mem10MB=\"\$(dd if=/dev/zero bs=1M count=10 2>/dev/null | base64 -w0)\"; echo c0-managed size=\${#mem10MB}; while :; do sleep 30; done'
+    resources:
+      requests:
+        memory: 64M
+      limits:
+        memory: 100M
+  - name: c1-managed
+    image: quay.io/prometheus/busybox
+    imagePullPolicy: IfNotPresent
+    command:
+      - sh
+      - -c
+      - 'export mem10MB=\"\$(dd if=/dev/zero bs=1M count=10 2>/dev/null | base64 -w0)\"; echo c1-managed size=\${#mem10MB}; while :; do sleep 30; done'
+    resources:
+      requests:
+        memory: 64M
+      limits:
+        memory: 100M
+  - name: c2-unmanaged
+    image: quay.io/prometheus/busybox
+    imagePullPolicy: IfNotPresent
+    command:
+      - sh
+      - -c
+      - 'export mem10MB=\"\$(dd if=/dev/zero bs=1M count=10 2>/dev/null | base64 -w0)\"; echo c2-unmanaged size=\${#mem10MB}; while :; do sleep 30; done'
+    resources:
+      requests:
+        memory: 64M
+      limits:
+        memory: 100M
+  terminationGracePeriodSeconds: 1
