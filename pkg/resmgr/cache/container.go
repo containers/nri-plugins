@@ -282,12 +282,21 @@ func (c *container) generateTopologyHints() {
 				log.Errorf("failed to parse test topology hints annotation for %s: %v",
 					c.PrettyName(), err)
 			} else {
-				for p, h := range hints {
-					h.Provider = p
-					hints[h.Provider] = h
+				for _, h := range hints {
+					testPath := h.Provider
+					denied := checkAllowedAndDeniedPaths(testPath, allowPathList, denyPathList)
+					if denied {
+						log.Infof("%s: denied test topology hint %v", c.PrettyName(), h)
+						continue
+					}
+
 					log.Infof("%s: injected test topology hint %v", c.PrettyName(), h)
+					c.TopologyHints = topology.MergeTopologyHints(
+						c.TopologyHints, map[string]topology.Hint{
+							h.Provider: h,
+						},
+					)
 				}
-				c.TopologyHints = topology.MergeTopologyHints(c.TopologyHints, hints)
 			}
 		}
 	}
