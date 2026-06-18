@@ -905,18 +905,18 @@ func (cch *cache) GetPolicyEntry(key string, ptr interface{}) bool {
 
 		// first access to key since startup
 		if err := unmarshalEntry([]byte(entry), ptr); err != nil {
-			log.Fatal("failed to unmarshal '%s' policy entry for key '%s' (%T): %v",
+			log.Fatalf("failed to unmarshal '%s' policy entry for key '%s' (%T): %v",
 				cch.PolicyName, key, ptr, err)
 		}
 
 		if err := cch.cacheEntry(key, ptr); err != nil {
-			log.Fatal("failed to cache '%s' policy entry for key '%s': %v",
+			log.Fatalf("failed to cache '%s' policy entry for key '%s': %v",
 				cch.PolicyName, key, err)
 		}
 	} else {
 		// subsequent accesses to key
 		if err := cch.setEntry(key, ptr, obj); err != nil {
-			log.Fatal("failed use cached entry for key '%s' of policy '%s': %v",
+			log.Fatalf("failed use cached entry for key '%s' of policy '%s': %v",
 				key, cch.PolicyName, err)
 		}
 	}

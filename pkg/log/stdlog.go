@@ -1,4 +1,4 @@
-// Copyright 2019-2020 Intel Corporation. All Rights Reserved.
+// Copyright The NRI Plugins Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,28 +18,17 @@ import (
 	stdlog "log"
 )
 
-// stdlogger implements an io.Writer to redirect logging by the stock log package.
 type stdlogger struct {
 	l Logger
 }
 
-// SetStdLogger sets up a logger for the standard log package.
 func SetStdLogger(source string) {
-	var l Logger
-
-	if source == "" {
-		l = Default()
-	} else {
-		l = log.get(source)
-	}
-
 	stdlog.SetPrefix("")
 	stdlog.SetFlags(0)
-	stdlog.SetOutput(&stdlogger{l: l})
+	stdlog.SetOutput(&stdlogger{l: NewLogger(source)})
 }
 
-// Write implements io.Writer for stdlogger.
 func (s *stdlogger) Write(p []byte) (int, error) {
-	s.l.Debug("%s", string(p))
+	s.l.Debugf("%s", string(p))
 	return len(p), nil
 }
