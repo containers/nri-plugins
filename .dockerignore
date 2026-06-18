@@ -1,3 +1,7 @@
 # Ignore any e2e VM directories
 **/n*-containerd/
 **/n*-crio/
+
+# Ignore host build artifacts so they cannot satisfy in-image build targets
+# (e.g. a dynamically linked host binary slipping into a distroless image).
+build/
