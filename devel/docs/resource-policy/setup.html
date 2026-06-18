@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Setup and Usage &mdash; NRI Plugins v0.12.2-60-gff3452f6 documentation</title>
+  <title>Setup and Usage &mdash; NRI Plugins v0.12.2-68-g417f2378 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../_static/documentation_options.js?v=c1ac282d"></script>
+        <script src="../../_static/documentation_options.js?v=22b5aeea"></script>
         <script src="../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/js/theme.js"></script>
@@ -57,7 +57,10 @@
 <li class="toctree-l4"><a class="reference internal" href="#dynamic-configuration-with-custom-resources">Dynamic Configuration with Custom Resources</a></li>
 </ul>
 </li>
-<li class="toctree-l3"><a class="reference internal" href="#logging-and-debugging">Logging and debugging</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#logging-and-debugging">Logging and debugging</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#exporting-logs-to-opentelemetry">Exporting Logs to OpenTelemetry</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="configuration.html">Dynamic Configuration</a></li>
@@ -123,19 +126,168 @@ file is supplied using the <code class="docutils literal notranslate"><span clas
 </section>
 <section id="logging-and-debugging">
 <h2>Logging and debugging<a class="headerlink" href="#logging-and-debugging" title="Link to this heading"></a></h2>
-<p>You can control logging with the klog options in the configuration or by
-setting corresponding environment variables. You can get the name of the
-environment variable for a klog option by prepending the <code class="docutils literal notranslate"><span class="pre">LOGGER_</span></code> prefix
-to the capitalized option name without any leading dashes. For instance,
-setting the environment variable <code class="docutils literal notranslate"><span class="pre">LOGGER_SKIP_HEADERS=true</span></code> has the same
-effect as setting the log.klog.Skip_headers` config option</p>
-<p>Additionally, the <code class="docutils literal notranslate"><span class="pre">LOGGER_DEBUG</span></code> environment variable controls debug logs.
-These are globally disabled by default. You can turn on full debugging by
-setting <code class="docutils literal notranslate"><span class="pre">LOGGER_DEBUG='*'</span></code>.</p>
-<p>When using environment variables, once configuration from a custom resource
-or a configuration file is taken into use, it suppresses the settings from
-the environment.</p>
+<p>You can use the <code class="docutils literal notranslate"><span class="pre">debug</span></code> setting in the <code class="docutils literal notranslate"><span class="pre">log</span></code> section of the configuration custom
+resource to control whether and which internal components produce debug log messages.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">LOGGER_DEBUG</span></code> environment variable can be used to seed this for early logging
+before the first configuration is acquired. By default debug logging is globally
+turned off. You can turn on full debugging by setting <code class="docutils literal notranslate"><span class="pre">log.debug</span></code> to <code class="docutils literal notranslate"><span class="pre">[</span> <span class="pre">&quot;*&quot;</span> <span class="pre">]</span></code>. You
+can turn on early full debugging by setting <code class="docutils literal notranslate"><span class="pre">LOGGER_DEBUG='*'</span></code> in the environment.</p>
+<p>Additionally, you can toggle temporarily forced full debugging on using the <code class="docutils literal notranslate"><span class="pre">SIGUSR1</span></code>,
+and toggle it again off using the same signal.</p>
+<p>When using environment variables for early debug logging, once configuration from a
+custom resource or a configuration file is taken into use, it suppresses any setting
+from the environment.</p>
+<section id="exporting-logs-to-opentelemetry">
+<h3>Exporting Logs to OpenTelemetry<a class="headerlink" href="#exporting-logs-to-opentelemetry" title="Link to this heading"></a></h3>
+<p>Logs can be exported to an OpenTelemetry-compatible log collector. The following
+custom resource fragment enables gRPC based log exporting.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">config.nri/v1alpha1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">TopologyAwarePolicy</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">default</span>
+<span class="nt">spec</span><span class="p">:</span>
+<span class="nn">...</span>
+<span class="w">  </span><span class="nt">instrumentation</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">httpEndpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8891</span>
+<span class="w">    </span><span class="nt">logExportPeriod</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">15s</span>
+<span class="w">    </span><span class="nt">logExporter</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otlp-grpc</span>
+<span class="w">  </span><span class="nt">log</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">debug</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">policy</span>
+<span class="nn">...</span>
+</pre></div>
+</div>
+<p>Additionally you need to pass the collector endpoint to the resource policy plugin
+using the stock Opentelemetry environment variables. With the above configuration,
+you need to pass <code class="docutils literal notranslate"><span class="pre">OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://otel-collector:4317</span></code>
+if your collector is <code class="docutils literal notranslate"><span class="pre">otel-collector</span></code> and configured to use the standard port.</p>
+<p>You can set both the configuration and the necessary extra environment variable
+with a Helm config fragment like this:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">config</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">reservedResources</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">750m</span>
+<span class="w">  </span><span class="nt">pinCPU</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">pinMemory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">instrumentation</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">httpEndpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">:8891</span>
+<span class="w">    </span><span class="nt">logExporter</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otlp-grpc</span>
+<span class="w">    </span><span class="nt">logExportPeriod</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">15s</span>
+<span class="w">  </span><span class="nt">log</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">debug</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">policy</span>
+<span class="nt">extraEnv</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">OTEL_EXPORTER_OTLP_LOGS_ENDPOINT</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://otel-collector:4317</span>
+</pre></div>
+</div>
+<p>For testing, you can set up a corresponding collector with a file backend for log
+collection using, for instance, the following deployment, service, and ConfigMap.
+Additionally you’ll need to create <code class="docutils literal notranslate"><span class="pre">/tmp/otel/data/otel-export.out</span></code> with the right
+permissions for your containerized collector to be able to access it.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ConfigMap</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-config</span>
+<span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-system</span>
+<span class="nt">data</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">config.yaml</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">    </span><span class="no">receivers:</span>
+<span class="w">      </span><span class="no">otlp:</span>
+<span class="w">        </span><span class="no">protocols:</span>
+<span class="w">          </span><span class="no">grpc:</span>
+<span class="w">            </span><span class="no">endpoint: 0.0.0.0:4317</span>
+<span class="w">          </span><span class="no">http:</span>
+<span class="w">            </span><span class="no">endpoint: 0.0.0.0:4318</span>
+<span class="w">    </span><span class="no">exporters:</span>
+<span class="w">      </span><span class="no">file:</span>
+<span class="w">        </span><span class="no">path: /data/otel-export.out</span>
+<span class="w">      </span><span class="no">debug:</span>
+<span class="w">        </span><span class="no">verbosity: normal</span>
+<span class="w">    </span><span class="no">processors:</span>
+<span class="w">      </span><span class="no">batch:</span>
+<span class="w">    </span><span class="no">service:</span>
+<span class="w">      </span><span class="no">telemetry:</span>
+<span class="w">        </span><span class="no">metrics:</span>
+<span class="w">      </span><span class="no">pipelines:</span>
+<span class="w">        </span><span class="no">traces:</span>
+<span class="w">          </span><span class="no">receivers: [otlp]</span>
+<span class="w">          </span><span class="no">exporters: [file]</span>
+<span class="w">          </span><span class="no">processors: [batch]</span>
+<span class="w">        </span><span class="no">metrics:</span>
+<span class="w">          </span><span class="no">receivers: [otlp]</span>
+<span class="w">          </span><span class="no">exporters: [file]</span>
+<span class="w">          </span><span class="no">processors: [batch]</span>
+<span class="w">        </span><span class="no">logs:</span>
+<span class="w">          </span><span class="no">receivers: [otlp]</span>
+<span class="w">          </span><span class="no">exporters: [file, debug]</span>
+<span class="w">          </span><span class="no">processors: [batch]</span>
+<span class="nn">---</span>
+<span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">apps/v1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Deployment</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-collector</span>
+<span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-system</span>
+<span class="nt">spec</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">selector</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">matchLabels</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">app</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-collector</span>
+<span class="w">  </span><span class="nt">template</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">metadata</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">labels</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">app</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-collector</span>
+<span class="w">    </span><span class="nt">spec</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">containers</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">collector</span>
+<span class="w">        </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector</span>
+<span class="w">        </span><span class="nt">resources</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">requests</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">750m</span>
+<span class="w">            </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">250M</span>
+<span class="w">          </span><span class="nt">limits</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">750m</span>
+<span class="w">            </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">750M</span>
+<span class="w">        </span><span class="nt">ports</span><span class="p">:</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">containerPort</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4317</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">containerPort</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4318</span>
+<span class="w">        </span><span class="nt">volumeMounts</span><span class="p">:</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-config</span>
+<span class="w">          </span><span class="nt">mountPath</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/etc/otelcol</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-data</span>
+<span class="w">          </span><span class="nt">mountPath</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/data</span>
+<span class="w">          </span><span class="nt">readOnly</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">        </span><span class="nt">imagePullPolicy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">IfNotPresent</span>
+<span class="w">      </span><span class="nt">terminationGracePeriodSeconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+<span class="w">      </span><span class="nt">volumes</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-config</span>
+<span class="w">        </span><span class="nt">configMap</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-config</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-data</span>
+<span class="w">        </span><span class="nt">hostPath</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/tmp/otel/data</span>
+<span class="w">          </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Directory</span>
+<span class="nn">---</span>
+<span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Service</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-collector</span>
+<span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-system</span>
+<span class="w">  </span><span class="nt">labels</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">app</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-collector</span>
+<span class="nt">spec</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">selector</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">app</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-collector</span>
+<span class="w">  </span><span class="nt">ports</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-grpc</span>
+<span class="w">    </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4317</span>
+<span class="w">    </span><span class="nt">targetPort</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4317</span>
+<span class="w">    </span><span class="nt">protocol</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">TCP</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-http</span>
+<span class="w">    </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4318</span>
+<span class="w">    </span><span class="nt">targetPort</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4318</span>
+<span class="w">    </span><span class="nt">protocol</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">TCP</span>
+</pre></div>
+</div>
 <!-- Links -->
+</section>
 </section>
 </section>
 
