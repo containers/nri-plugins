@@ -313,17 +313,50 @@ func (p *plugin) StopContainer(ctx context.Context, pod *api.PodSandbox, ctr *ap
 		return nil, nil
 	}
 
+	// Drop only the container from tracking. The mon_group is intentionally
+	// retained until the pod sandbox is removed (see RemovePodSandbox).
+	//
+	// A pod with restartPolicy Always/OnFailure restarts its container under
+	// the same pod UID after the process exits (e.g. a workload that runs for
+	// a fixed duration). If we removed the mon_group here, the kernel would
+	// release the RMID and reassign a fresh one on the next PostCreateContainer.
+	// The new RMID carries residual hardware counter values, producing a
+	// counter discontinuity that surfaces as a false energy/bandwidth spike in
+	// downstream rate() consumers. Tying mon_group lifetime to the pod sandbox
+	// keeps the RMID stable across container restarts.
 	p.state.removeContainer(podUID, ctr.GetId())
 
 	if p.state.podHasNoContainers(podUID) {
-		log.Infof("StopContainer %s: last container, removing mon_group %s", ctrName, monGroupDir)
-		if err := p.rdt.removeMonGroup(monGroupDir); err != nil {
-			log.Warnf("StopContainer %s: failed to remove mon_group (will be cleaned on next restart): %v", ctrName, err)
-		}
-		p.state.removePod(podUID)
+		log.Debugf("StopContainer %s: last container stopped, retaining mon_group %s until pod removal", ctrName, monGroupDir)
 	}
 
 	return nil, nil
+}
+
+// RemovePodSandbox is called when a pod sandbox is torn down. This is the point
+// at which the pod (and its UID) is truly gone, so it is the correct place to
+// release the mon_group and its RMID. Removing the mon_group earlier (e.g. in
+// StopContainer) would release the RMID across container restarts and cause
+// false counter spikes; see StopContainer for details.
+func (p *plugin) RemovePodSandbox(ctx context.Context, pod *api.PodSandbox) error {
+	podUID := pod.GetUid()
+	if u, err := uuid.Parse(podUID); err == nil {
+		podUID = u.String()
+	}
+
+	monGroupDir := p.state.getMonGroupDir(podUID)
+	if monGroupDir == "" {
+		return nil
+	}
+
+	log.Infof("RemovePodSandbox %s/%s: removing mon_group %s", pod.GetNamespace(), pod.GetName(), monGroupDir)
+	if err := p.rdt.removeMonGroup(monGroupDir); err != nil {
+		log.Warnf("RemovePodSandbox %s/%s: failed to remove mon_group (will be cleaned by reconciler): %v",
+			pod.GetNamespace(), pod.GetName(), err)
+	}
+	p.state.removePod(podUID)
+
+	return nil
 }
 
 // ensureMonGroup creates the mon_group directory if it doesn't exist and registers

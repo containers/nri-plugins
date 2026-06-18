@@ -188,8 +188,16 @@ func TestMultiContainerPod(t *testing.T) {
 	assert.Equal(t, 1, p.state.podCount())
 	assert.False(t, p.state.podHasNoContainers(podUID))
 
-	// Stopping second container should remove the mon_group.
+	// Stopping the last container retains the mon_group (it is released only
+	// when the pod sandbox is removed, so the RMID stays stable across
+	// container restarts).
 	_, err = p.StopContainer(context.Background(), pod, ctr2)
+	require.NoError(t, err)
+	assert.Equal(t, 1, p.state.podCount())
+	assert.True(t, p.state.podHasNoContainers(podUID))
+
+	// Removing the pod sandbox releases the mon_group.
+	err = p.RemovePodSandbox(context.Background(), pod)
 	require.NoError(t, err)
 	assert.Equal(t, 0, p.state.podCount())
 }
@@ -203,6 +211,84 @@ func TestStopContainer_UnknownPod(t *testing.T) {
 	updates, err := p.StopContainer(context.Background(), pod, ctr)
 	require.NoError(t, err)
 	assert.Nil(t, updates)
+}
+
+// TestContainerRestart_RetainsMonGroup verifies that a container restart under
+// the same pod UID (e.g. restartPolicy: Always after a fixed-duration workload
+// exits) keeps the same mon_group directory, so the kernel does not release and
+// reassign the RMID. RMID reassignment would carry residual hardware counter
+// values and surface as a false counter spike.
+func TestContainerRestart_RetainsMonGroup(t *testing.T) {
+	tmpDir := t.TempDir()
+	p := newTestPlugin(tmpDir)
+	podUID := "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+	pod := makePod(podUID, "default", "restart-pod")
+	ctr := makeContainer("c1", "container1", podUID, 0, "")
+
+	// Container starts: mon_group is created.
+	err := p.PostCreateContainer(context.Background(), pod, ctr)
+	require.NoError(t, err)
+	monDir := p.state.getMonGroupDir(podUID)
+	require.NotEmpty(t, monDir)
+	require.DirExists(t, monDir)
+
+	// Container exits (workload timed out). The mon_group must be retained.
+	_, err = p.StopContainer(context.Background(), pod, ctr)
+	require.NoError(t, err)
+	assert.Equal(t, 1, p.state.podCount())
+	assert.DirExists(t, monDir, "mon_group must survive a container restart")
+
+	// kubelet restarts the container under the same pod UID. The same
+	// mon_group directory (and thus RMID) must be reused.
+	err = p.PostCreateContainer(context.Background(), pod, ctr)
+	require.NoError(t, err)
+	assert.Equal(t, monDir, p.state.getMonGroupDir(podUID), "restart must reuse the same mon_group")
+
+	// Pod is finally deleted: mon_group is released.
+	err = p.RemovePodSandbox(context.Background(), pod)
+	require.NoError(t, err)
+	assert.Equal(t, 0, p.state.podCount())
+	assert.NoDirExists(t, monDir)
+}
+
+// TestRemovePodSandbox_UnknownPod verifies that removing a pod we never tracked
+// is a no-op and does not error.
+func TestRemovePodSandbox_UnknownPod(t *testing.T) {
+	p := newTestPlugin(t.TempDir())
+
+	pod := makePod("a1b2c3d4-e5f6-7890-abcd-ef1234567890", "default", "unknown-pod")
+
+	err := p.RemovePodSandbox(context.Background(), pod)
+	require.NoError(t, err)
+	assert.Equal(t, 0, p.state.podCount())
+}
+
+// TestMissingPodUID_NoMonGroup verifies that a sandbox without a valid pod UID
+// is handled as a safe no-op across the full lifecycle: no mon_group is created
+// (mon_groups are keyed by pod UID, not per container), and the stop/remove
+// handlers neither panic nor leak state. This documents that the plugin does
+// not currently fall back to per-container monitoring when the UID is absent.
+func TestMissingPodUID_NoMonGroup(t *testing.T) {
+	p := newTestPlugin(t.TempDir())
+
+	pod := makePod("", "default", "no-uid-pod")
+	ctr := makeContainer("c1", "container1", "", 1234, "")
+
+	// Creation must not create a group and must be non-fatal.
+	require.NoError(t, p.PostCreateContainer(context.Background(), pod, ctr))
+	assert.Equal(t, 0, p.state.podCount())
+
+	// The remaining handlers must be safe no-ops.
+	require.NoError(t, p.StartContainer(context.Background(), pod, ctr))
+	require.NoError(t, p.PostStartContainer(context.Background(), pod, ctr))
+
+	_, err := p.StopContainer(context.Background(), pod, ctr)
+	require.NoError(t, err)
+	assert.Equal(t, 0, p.state.podCount())
+
+	require.NoError(t, p.RemovePodSandbox(context.Background(), pod))
+	assert.Equal(t, 0, p.state.podCount())
 }
 
 func TestSetConfig(t *testing.T) {
@@ -392,7 +478,7 @@ func TestCompactUID_StartContainerFindsMonGroup(t *testing.T) {
 	assert.Equal(t, "77\n", string(data))
 }
 
-func TestCompactUID_StopContainerCleansUp(t *testing.T) {
+func TestCompactUID_RemovePodSandboxCleansUp(t *testing.T) {
 	tmpDir := t.TempDir()
 	p := newTestPlugin(tmpDir)
 
@@ -406,15 +492,19 @@ func TestCompactUID_StopContainerCleansUp(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, p.state.podCount())
 
+	// Stopping the last container retains the mon_group.
 	_, err = p.StopContainer(context.Background(), pod, ctr)
 	require.NoError(t, err)
+	assert.Equal(t, 1, p.state.podCount())
 
-	// Pod must be gone from state after stop.
+	// Removing the pod sandbox (compact UID) must normalize and clean up.
+	err = p.RemovePodSandbox(context.Background(), pod)
+	require.NoError(t, err)
 	assert.Equal(t, 0, p.state.podCount())
 	assert.False(t, p.state.hasPod(canonicalUID))
 }
 
-func TestStopContainer_RemovesStateOnRmdirFailure(t *testing.T) {
+func TestRemovePodSandbox_RemovesStateOnRmdirFailure(t *testing.T) {
 	tmpDir := t.TempDir()
 	p := newTestPlugin(tmpDir)
 	podUID := "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
@@ -433,8 +523,14 @@ func TestStopContainer_RemovesStateOnRmdirFailure(t *testing.T) {
 	// Put a file inside the mon_group dir so os.Remove fails (dir not empty).
 	require.NoError(t, os.WriteFile(filepath.Join(monDir, "tasks"), nil, 0644))
 
-	// StopContainer should still remove pod from state even if rmdir fails.
+	// Stopping the last container retains the mon_group.
 	_, err = p.StopContainer(context.Background(), pod, ctr)
+	require.NoError(t, err)
+	assert.Equal(t, 1, p.state.podCount())
+
+	// RemovePodSandbox should still drop the pod from state even if rmdir
+	// fails (the orphaned directory is reaped later by the reconciler).
+	err = p.RemovePodSandbox(context.Background(), pod)
 	require.NoError(t, err)
 	assert.Equal(t, 0, p.state.podCount())
 }
