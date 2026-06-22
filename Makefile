@@ -391,7 +391,7 @@ ginkgo-test-cleanup: ginkgo-tests ginkgo-subpkgs-tests
 	        fi); \
 	done
 
-ginkgo-tests:
+ginkgo-tests: ginkgo-test-setup
 	$(Q)$(GINKGO) run \
 	    --race \
 	    --trace \
@@ -400,28 +400,24 @@ ginkgo-tests:
 	    --output-dir $(COVERAGE_PATH) \
 	    --junit-report junit.xml \
 	    --coverprofile coverprofile \
-	    --keep-separate-coverprofiles \
 	    --succinct \
             --skip-package $$(echo $(GO_SUBPKGS) | tr -s '\t ' ',') \
-	    -r $(TEST_PKGS); \
+	    -r $(TEST_PKGS) && \
 	$(GO_CMD) tool cover -html=$(COVERAGE_PATH)/coverprofile -o $(COVERAGE_PATH)/coverage.html
 
-ginkgo-subpkgs-tests: # TODO(klihub): coverage
-	@enabled=""; find $(TEST_PKGS) -type d | while read i; do \
-	    for j in $(GO_SUBPKGS); do \
-                if [ "$$j" == "$$i" ]; then \
-	            enabled="$$enabled $$j"; \
+
+ginkgo-subpkgs-tests: ginkgo-test-setup # TODO(klihub): coverage
+	@find $(TEST_PKGS) -type d | while read t; do \
+	    for sub in $(GO_SUBPKGS); do \
+	        if [ "$$t" = "$$sub" ]; then \
+	            $(GINKGO) run \
+	                --race \
+	                --trace \
+	                --succinct \
+	                -r $$sub || exit 1; \
 	            break; \
 	        fi; \
 	    done; \
-        done; \
-	for i in $$enabled; do \
-	    (cd $$i; \
-	        $(GINKGO) run \
-	            --race \
-	            --trace \
-	            --succinct \
-	            -r . || exit 1); \
 	done
 
 e2e-tests: build images
