@@ -1462,12 +1462,19 @@ func (c *topologyCache) discoverCPUPriorities(sys sysfs.System) {
 }
 
 func (c *topologyCache) discoverSstCPUPriority(sys sysfs.System, pkgID idset.ID) ([NumCPUPriorities][]idset.ID, bool) {
+	var ret [NumCPUPriorities][]idset.ID
+
 	active := false
 
 	pkg := sys.Package(pkgID)
-	sst := pkg.SstInfo()
-	cpuIDs := c.pkg[pkgID].List()
-	prios := make(map[idset.ID]CPUPriority, len(cpuIDs))
+	pkgStatus := pkg.SstInfo()
+	prios := make(map[idset.ID]CPUPriority, c.pkg[pkgID].Size())
+
+	if pkgStatus == nil {
+		return ret, false
+	}
+
+	var plInfos map[idset.ID]*sst.PerfLevelInfo // indexed with pkg's punit IDs
 
 	// Determine SST-based priority. Based on experimentation there is some
 	// hierarchy between the SST features. Without trying to be too smart
@@ -1476,59 +1483,73 @@ func (c *topologyCache) discoverSstCPUPriority(sys sysfs.System, pkgID idset.ID)
 	//    of SST-CP settings ineffective
 	// 2. SST-CP dictates over SST-BF
 	// 3. SST-BF is meaningful if neither SST-TF nor SST-CP is enabled
-	switch {
-	case sst == nil:
-	case sst.TFEnabled:
-		log.Debugf("package #%d: using SST-TF based CPU prioritization", pkgID)
-		// We only look at the CLOS id as SST-TF (seems to) follows ordered CLOS priority
-		for _, i := range cpuIDs {
-			id := idset.ID(i)
-			p := PriorityLow
-			// First two CLOSes are prioritized by SST
-			if sys.CPU(id).SstClos() < 2 {
-				p = PriorityHigh
+	for punitID, punit := range pkgStatus.Punits {
+		cpuIDs := punit.CPUs.SortedMembers()
+		switch {
+		case punit.TF.Enabled:
+			log.Debugf("package #%d punit #%d: using SST-TF based CPU prioritization", pkgID, punitID)
+			// We only look at the CLOS id as SST-TF (seems to) follows ordered CLOS priority
+			for _, i := range cpuIDs {
+				id := idset.ID(i)
+				p := PriorityLow
+				// First two CLOSes are prioritized by SST
+				if sys.CPU(id).SstClos() < 2 {
+					p = PriorityHigh
+				}
+				prios[id] = p
 			}
-			prios[id] = p
-		}
-		active = true
-	case sst.CPEnabled:
-		closPrio := c.sstClosPriority(sys, pkgID)
-		log.Debugf("package #%d: using SST-CP based CPU prioritization with CLOS mapping %v", pkgID, closPrio)
+			active = true
+		case punit.CP.Enabled:
+			closPrio := c.sstClosPriority(pkgID, punitID, punit)
+			log.Debugf("package #%d punit #%d: using SST-CP based CPU prioritization with CLOS mapping %v", pkgID, punitID, closPrio)
 
-		active = false
-		for _, i := range cpuIDs {
-			id := idset.ID(i)
-			clos := sys.CPU(id).SstClos()
-			p := closPrio[clos]
-			if p != PriorityNormal {
-				active = true
+			for _, i := range cpuIDs {
+				id := idset.ID(i)
+				clos := sys.CPU(id).SstClos()
+				p := closPrio[clos]
+				if p != PriorityNormal {
+					active = true
+				}
+				prios[id] = p
 			}
-			prios[id] = p
+		}
+
+		if !active && punit.PP.Supported && punit.BF.Enabled {
+			var err error
+			log.Debugf("package #%d punit #%d: using SST-BF based CPU prioritization", pkgID, punitID)
+			currentPerfLevel := punit.PP.CurrentLevel
+			if plInfos == nil {
+				sstPkg, ok := sys.Sst().Package(pkgID)
+				if !ok {
+					log.Debugf("package #%d punit #%d: unable to get package for SST-PP info, skipping", pkgID, punitID)
+					continue
+				}
+				plInfos, err = sstPkg.GetPerfLevelInfo(currentPerfLevel)
+				if err != nil || plInfos == nil {
+					log.Debugf("package #%d punit #%d: unable to get SST-PP perf level info, skipping: %v", pkgID, punitID, err)
+					continue
+				}
+			}
+			plInfo, ok := plInfos[idset.ID(punitID)]
+			if !ok {
+				log.Debugf("package #%d punit #%d: unable to get SST-PP perf level info for punit, skipping", pkgID, punitID)
+				continue
+			}
+			for i := range plInfo.BF.HighPriorityCPUs {
+				prios[i] = PriorityHigh
+			}
+			active = true
 		}
 	}
-
-	if !active && sst != nil && sst.BFEnabled {
-		log.Debugf("package #%d: using SST-BF based CPU prioritization", pkgID)
-		for _, i := range cpuIDs {
-			id := idset.ID(i)
-			p := PriorityLow
-			if sst.BFCores.Has(id) {
-				p = PriorityHigh
-			}
-			prios[id] = p
-		}
-		active = true
-	}
-
-	var ret [NumCPUPriorities][]idset.ID
 
 	for cpu, prio := range prios {
 		ret[prio] = append(ret[prio], cpu)
 	}
+
 	return ret, active
 }
 
-func (c *topologyCache) sstClosPriority(sys sysfs.System, pkgID idset.ID) map[int]CPUPriority {
+func (c *topologyCache) sstClosPriority(pkgID idset.ID, punitID idset.ID, punit *sst.PunitStatus) map[int]CPUPriority {
 	sortedKeys := func(m map[int]int) []int {
 		keys := make([]int, 0, len(m))
 		for k := range m {
@@ -1538,25 +1559,21 @@ func (c *topologyCache) sstClosPriority(sys sysfs.System, pkgID idset.ID) map[in
 		return keys
 	}
 
-	pkg := sys.Package(pkgID)
-	sstinfo := pkg.SstInfo()
-
 	// Get a list of unique CLOS proportional priority values
 	closPps := make(map[int]int)
 	closIds := make(map[int]int)
-	for _, cpuID := range c.pkg[pkgID].List() {
-		clos := sys.CPU(idset.ID(cpuID)).SstClos()
-		pp := sstinfo.ClosInfo[clos].ProportionalPriority
+	for clos, closStatus := range punit.Clos {
+		pp := closStatus.Config.ProportionalPriority
 		closPps[pp] = clos
 		closIds[clos] = 0 // 0 is a dummy value here
 	}
 
 	// Form a list of (active) CLOS ids in sorted order
 	var closSorted []int
-	if sstinfo.CPPriority == sst.Ordered {
+	if punit.CP.Priority == sst.Ordered {
 		// In ordered mode the priority is simply the CLOS id
 		closSorted = sortedKeys(closIds)
-		log.Debugf("package #%d, ordered SST-CP priority with CLOS ids %v", pkgID, closSorted)
+		log.Debugf("package #%d punit #%d: ordered SST-CP priority with CLOS ids %v", pkgID, punitID, closSorted)
 	} else {
 		// In proportional mode we sort by the proportional priority parameter
 		closPpSorted := sortedKeys(closPps)
@@ -1564,7 +1581,7 @@ func (c *topologyCache) sstClosPriority(sys sysfs.System, pkgID idset.ID) map[in
 		for _, pp := range closPpSorted {
 			closSorted = append(closSorted, closPps[pp])
 		}
-		log.Debugf("package #%d, proportional SST-CP priority with PP-to-CLOS parity %v", pkgID, closPps)
+		log.Debugf("package #%d punit #%d: proportional SST-CP priority with PP-to-CLOS parity %v", pkgID, punitID, closPps)
 	}
 
 	// Map from CLOS id to cpuallocator CPU priority

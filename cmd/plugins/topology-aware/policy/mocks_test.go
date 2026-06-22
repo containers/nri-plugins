@@ -134,8 +134,8 @@ func (p *mockCPUPackage) L3CacheCPUSet(idset.ID) cpuset.CPUSet {
 	return cpuset.New()
 }
 
-func (p *mockCPUPackage) SstInfo() *sst.SstPackageInfo {
-	return &sst.SstPackageInfo{}
+func (p *mockCPUPackage) SstInfo() *sst.PackageStatus {
+	return &sst.PackageStatus{}
 }
 
 type mockCPU struct {
@@ -355,6 +355,9 @@ func (fake *mockSystem) NodeDistance(idset.ID, idset.ID) int {
 }
 func (fake *mockSystem) NodeHintToCPUs(string) string {
 	return ""
+}
+func (fake *mockSystem) Sst() *sst.Platform {
+	return nil
 }
 
 type mockContainer struct {
