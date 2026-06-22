@@ -382,7 +382,7 @@ ginkgo-test-setup:
 	        fi); \
 	done
 
-ginkgo-test-cleanup:
+ginkgo-test-cleanup: ginkgo-tests ginkgo-subpkgs-tests
 	$(Q)for i in $$(find $(TEST_PKGS) -name $(TEST_CLEANUP)); do \
 	    echo "- Running test cleanup $$i..."; \
 	    (cd $${i%/*}; \
