@@ -18,7 +18,7 @@ helm_config=$(instantiate custom-config.yaml) helm-launch topology-aware
 pod=pod0
 CONTCOUNT=4 create besteffort
 
-vm-command 'kubectl wait --timeout=5s --for=condition=Ready pods/$pod'
+vm-command 'kubectl wait --timeout=5s --for=condition=Ready pod $pod'
 
 for ctr in ${pod}c0 ${pod}c1 ${pod}c2 ${pod}c3; do
     echo "verifying logs for default/$pod/$ctr..."
