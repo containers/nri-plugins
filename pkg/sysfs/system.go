@@ -29,7 +29,6 @@ import (
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
-	"github.com/containers/nri-plugins/pkg/utils"
 	"github.com/intel/goresctrl/pkg/sst"
 	idset "github.com/intel/goresctrl/pkg/utils"
 )
@@ -134,6 +133,8 @@ type System interface {
 	Isolated() cpuset.CPUSet
 
 	NodeHintToCPUs(string) string
+
+	Sst() *sst.Platform
 }
 
 // System devices
@@ -152,6 +153,7 @@ type system struct {
 	coreKindCPUs  map[CoreKind]idset.IDSet             // CPU cores by kind (P-/E-cores)
 	minThreads    int                                  // min. hyperthreads per core
 	maxThreads    int                                  // max. hyperthreads per core
+	sst           *sst.Platform                        // Speed Select Technology handle
 }
 
 // CPUPackage is a physical package (a collection of CPUs).
@@ -168,7 +170,7 @@ type CPUPackage interface {
 	LogicalDieClusterCPUSet(idset.ID, idset.ID) cpuset.CPUSet
 	L3CacheIDs() []idset.ID
 	L3CacheCPUSet(idset.ID) cpuset.CPUSet
-	SstInfo() *sst.SstPackageInfo
+	SstInfo() *sst.PackageStatus
 }
 
 type cpuPackage struct {
@@ -181,7 +183,7 @@ type cpuPackage struct {
 	clusterCPUs     map[idset.ID]map[idset.ID]idset.IDSet // per die per cluster CPUs
 	logicalClusters map[idset.ID]map[idset.ID]idset.IDSet // clusters with combined hyperthreads
 	l3CacheCPUs     map[idset.ID]idset.IDSet              // CPUs per L3 cache
-	sstInfo         *sst.SstPackageInfo                   // Speed Select Technology info
+	sstInfo         *sst.PackageStatus                    // Speed Select Technology info
 }
 
 // Node represents a NUMA node.
@@ -868,6 +870,11 @@ func (sys *system) NodeHintToCPUs(nodes string) string {
 	}
 
 	return cset.Intersection(sys.OnlineCPUs()).String()
+}
+
+// Sst returns the Speed Select Technology platform handle.
+func (sys *system) Sst() *sst.Platform {
+	return sys.sst
 }
 
 // Discover Cpus present in the system.
@@ -1839,27 +1846,37 @@ func (sys *system) discoverSst() error {
 		sys.Infof("Speed Select Technology (SST) support not detected")
 		return nil
 	}
+	// Always re-initialize SST platform to ensure we have the latest information.
+	// For instance, onlined CPUs may have changed in old sys.sst.
+	sstPlatform, err := sst.Init()
+	if err != nil || sstPlatform == nil {
+		return fmt.Errorf("failed to initialize Speed Select Technology (SST) platform: %v", err)
+	}
+	sys.sst = sstPlatform
 
 	for _, pkg := range sys.packages {
-		sstInfo, err := sst.GetPackageInfo(pkg.id)
-		if err != nil {
-			return fmt.Errorf("failed to get SST info for package %d: %v", pkg.id, err)
+		sstPkg, ok := sys.sst.Package(pkg.id)
+		if !ok {
+			return fmt.Errorf("failed to get SST handle for package %d", pkg.id)
 		}
-		sys.DebugBlock("", "Speed Select Technology info detected for package %d:\n%s", pkg.id, utils.DumpJSON(sstInfo))
+		pkgStatus, err := sstPkg.GetStatus()
+		if err != nil {
+			return fmt.Errorf("failed to get SST status for package %d: %v", pkg.id, err)
+		}
 
-		if sstInfo[pkg.id].CPEnabled {
-			ids := pkg.cpus.SortedMembers()
-
-			for _, id := range ids {
-				clos, err := sst.GetCPUClosID(id)
-				if err != nil {
-					return fmt.Errorf("failed to get SST-CP clos id for cpu %d: %v", id, err)
+		for _, punit := range pkgStatus.Punits {
+			if punit.CP.Supported && punit.CP.Enabled {
+				ids := punit.CPUs.SortedMembers()
+				for _, id := range ids {
+					clos, err := sys.sst.GetCPUClosID(id)
+					if err != nil {
+						return fmt.Errorf("failed to get SST-CP clos id for cpu %d: %v", id, err)
+					}
+					sys.cpus[id].sstClos = clos
 				}
-
-				sys.cpus[id].sstClos = clos
 			}
 		}
-		pkg.sstInfo = sstInfo[pkg.id]
+		pkg.sstInfo = pkgStatus
 	}
 
 	return nil
@@ -2045,7 +2062,7 @@ func (p *cpuPackage) L3CacheCPUSet(l3CacheID idset.ID) cpuset.CPUSet {
 	return cpuset.New()
 }
 
-func (p *cpuPackage) SstInfo() *sst.SstPackageInfo {
+func (p *cpuPackage) SstInfo() *sst.PackageStatus {
 	return p.sstInfo
 }
 
