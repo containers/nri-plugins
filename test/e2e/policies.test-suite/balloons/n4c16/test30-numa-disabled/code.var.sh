@@ -1,4 +1,7 @@
-vm-command '[ -d /sys/devices/system/node ]' && vm-kernel-pkgs-install
+vm-command '[ -d /sys/devices/system/node ]' && {
+    vm-kernel-pkgs-install
+    vm-post-reboot-runtime-check balloons
+}
 
 vm-command '[ -d /sys/devices/system/node ]' && error "failed to disable NUMA in kernel"
 
@@ -24,3 +27,4 @@ verify "cpus['pod1c0'].isdisjoint({'cpu06', 'cpu07'})" \
        "disjoint_sets(cpus['pod1c0'], cpus['pod1c1'])"
 
 vm-kernel-pkgs-uninstall
+vm-post-reboot-runtime-check balloons
