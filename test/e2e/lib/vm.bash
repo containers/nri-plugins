@@ -988,3 +988,129 @@ vm-kernel-pkgs-uninstall() { # script API
 
     vm-command "uname -a"
 }
+
+vm-post-reboot-runtime-check() { # script API
+    # Usage: vm-post-reboot-runtime-check [image_type]
+    #
+    # Check whether a reboot rendered some runtime image blobs unreadable
+    # and try to fix it. Optionally also reimport and tag a local image
+    # from a tarball for the given (balloons or topology-aware) image type.
+    #
+    # The blob problem is known to be triggerable when the underlying fs
+    # is BTRFS and the old or new running kernel was from Torvalds tree
+    # ('vanilla' in provisioning). The exact reasons are unknown.
+
+    local image_type=$1
+
+    if ! $k8scri-check-unreadable-blobs; then
+        echo "no post-boot runtime blob read failures detected..."
+        return 0
+    fi
+
+    echo "post-boot runtime blob read failures detected... trying to fix them"
+    vm-command "systemctl stop kubelet"
+    vm-command "systemctl stop $k8scri"
+    vm-command "killall -9 etcd"
+    vm-command "killall -9 kube-apiserver"
+    vm-command "killall -9 kube-scheduler"
+    vm-command "killall -9 kube-controller-manager"
+
+    $k8scri-fix-unreadable-blobs
+
+    vm-command "systemctl start $k8scri"
+    vm-command "systemctl start kubelet"
+
+    wait-for-node-ready
+
+    $k8scri-reimport-image $image_type
+}
+
+wait-for-node-ready() {
+    local now=$(date +%s)
+    local deadline=$(($now + 5 * 60))
+
+    while true; do
+        vm-command "crictl ps | grep kube-apiserver | grep Running"
+        if ! grep -q Running <<< $COMMAND_OUTPUT; then
+            sleep 5
+        else
+            vm-command "kubectl wait --for=condition=Ready=True nodes/$VM_HOSTNAME --timeout=15s"
+            if grep -q "condition met" <<< $COMMAND_OUTPUT; then
+                break
+            fi
+
+            sleep 1
+            now=$(date +%s)
+            if [ $now -gt $deadline ]; then
+                command-error "failed to wait for VM k8s node to get ready"
+            fi
+        fi
+    done
+}
+
+containerd-check-unreadable-blobs() {
+    vm-command "journalctl -u containerd -I | grep blob | grep 'operation not supported' | \
+                   head -1"
+    return $?
+}
+
+containerd-fix-unreadable-blobs() {
+    vm-command "mv /var/lib/containerd /var/lib/containerd.unreadable-blobs.$(date +%s)" || \
+        command-error "failed to fix unreadable blobs"
+    vm-command "mkdir /var/lib/containerd" || \
+        command-error "failed to fix unreadable blobs"
+}
+
+containerd-reimport-image() {
+    local image_type="$1" tarball="" sha256="" ref="" tag=""
+
+    if [ -z "$image_type" ]; then
+        return 0
+    fi
+
+    vm-command "ls *$image_type*-image-*.tar"
+    tarball="$COMMAND_OUTPUT"
+
+    if [ "$(echo $tarball | wc -w)" != 1 ]; then
+        command-error "failed to reimport image, one image expected (found: $tarball)"
+    fi
+
+   case $tarball in
+        *balloons*)
+            tag=localhost/balloons:testing
+            ;;
+        *topology-aware*)
+            tag=localhost/topology-aware:testing
+            ;;
+        *)
+            command-error "failed to reimport, unknown image type/name for $image_type ($tarball)"
+            ;;
+    esac
+
+    vm-command "ctr -n k8s.io images import $tarball" || \
+        command-error "failed to reimport image tarball $tarball"
+
+    sha256=${tarball%.tar}
+    sha256=${sha256##*-image-}
+
+    vm-command "ctr -n k8s.io images ls | grep sha256:$sha256 | tr -s '\t' ' ' | cut -d ' ' -f1"
+    ref="$COMMAND_OUTPUT"
+    if [ -z "$ref" ]; then
+        command-error "failed to resolve image ref for sha256:$sha256"
+    fi
+
+    vm-command "ctr -n k8s.io images tag --force $ref $tag" || \
+        command-error "failed to tag reimported image"
+}
+
+crio-check-unreadable-blobs() {
+    error "TODO: implement unreadable blob check for CRI-O..."
+}
+
+crio-fix-unreadable-blobs() {
+    error "TODO: implement unreadable blob fix for CRI-O (if possible)..."
+}
+
+crio-reimport-image() {
+    error "TODO: implement image reimport for CRI-O..."
+}

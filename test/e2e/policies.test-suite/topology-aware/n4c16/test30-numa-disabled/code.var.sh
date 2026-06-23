@@ -1,4 +1,7 @@
-vm-command '[ -d /sys/devices/system/node ]' && vm-kernel-pkgs-install
+vm-command '[ -d /sys/devices/system/node ]' && {
+    vm-kernel-pkgs-install
+    vm-post-reboot-runtime-check topology-aware
+}
 
 vm-command '[ -d /sys/devices/system/node ]' && error "failed to disable NUMA in kernel"
 
@@ -19,3 +22,4 @@ vm-command "kubectl delete pods --all --now"
 
 helm-terminate
 vm-kernel-pkgs-uninstall
+vm-post-reboot-runtime-check topology-aware
