@@ -24,10 +24,23 @@ import (
 	"testing"
 )
 
+type logger int
+
+func (logger) Debugf(format string, v ...interface{}) {
+	fmt.Printf("D: [topology] "+format+"\n", v...)
+}
+
+var pkgDir string
+
 func setupTestEnv(t *testing.T) func() {
+	SetLogger(logger(0))
+
 	pwd, err := os.Getwd()
 	if err != nil {
 		t.Fatal("unable to get current directory")
+	}
+	if pkgDir == "" {
+		pkgDir = pwd
 	}
 	if path, err := filepath.EvalSymlinks(pwd); err == nil {
 		pwd = path
@@ -35,7 +48,9 @@ func setupTestEnv(t *testing.T) func() {
 	SetSysRoot(pwd + "/testdata")
 	teardown := func() {
 		SetSysRoot("")
+		os.Chdir(pkgDir)
 	}
+
 	return teardown
 }
 
@@ -74,6 +89,9 @@ func TestMapKeys(t *testing.T) {
 }
 
 func TestSetSysRoot(t *testing.T) {
+	teardown := setupTestEnv(t)
+	defer teardown()
+
 	type testCase struct {
 		name   string
 		cwd    string
