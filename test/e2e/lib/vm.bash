@@ -1,6 +1,8 @@
 source "$(dirname "${BASH_SOURCE[0]}")/command.bash"
 
-VM_PROMPT=${VM_PROMPT-"\e[38;5;11mroot@vm>\e[0m "}
+export VM_CONTEXT=""
+export VM_PROMPT=${VM_PROMPT-"\e[38;5;11mroot@vm>\e[0m "}
+export VM_SAVED_PROMPT=""
 CACHE_DIR="${CACHE_DIR:-$HOME/.cache/nri-plugins/e2e}"
 CACHE_DECAY="${CACHE_DECAY:-$((3 * 24 * 3600))}" # global cached variables valid for 3 days
 
@@ -17,6 +19,19 @@ out() {
         echo "$1"
     fi
     echo ""
+}
+
+vm-set-context() {
+    VM_CONTEXT="$1"
+    # we can't stack contexts, only original one gets saved/restored
+    if [ -z "$VM_SAVED_PROMPT" ]; then
+        VM_SAVED_PROMPT="$VM_PROMPT"
+    fi
+    VM_PROMPT="\e[38;5;11mroot@vm${VM_CONTEXT+ }${VM_CONTEXT:-}>\e[0m "
+}
+
+vm-reset-context() {
+    VM_PROMPT="$VM_SAVED_PROMPT"
 }
 
 vm-create-name() {

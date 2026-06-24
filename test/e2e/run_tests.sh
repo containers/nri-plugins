@@ -266,7 +266,7 @@ ${code}"
                         export outdir="$OUTPUT_DIR"
 
 			test_outdir="$outdir/$TEST_SUITE_NAME/$policy_name/$(basename "$TEST_DIR")"
-
+                        vm-set-context "$policy_name/$TEST_NAME"
                         mkdir -p "$test_outdir"
                         echo "Run $TEST_NAME"
 
@@ -290,6 +290,7 @@ ${code}"
                         else
                             echo "ERROR $test_name" >> "$summary_file"
                         fi
+                        vm-reset-context
                     )
                 done
             )
