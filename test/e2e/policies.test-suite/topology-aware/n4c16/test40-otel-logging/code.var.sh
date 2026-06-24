@@ -20,6 +20,16 @@ CONTCOUNT=4 create besteffort
 
 vm-command "kubectl wait --timeout=5s --for=condition=Ready pods/$pod"
 
+cnt=0
+while [ $cnt -lt 5 ]; do
+   vm-command "crictl ps | grep ${pod}c3 | grep Running"
+   if grep Running <<< $COMMAND_OUTPUT; then
+       break
+   fi
+   sleep 1
+   let cnt=$cnt+1
+done
+
 for ctr in ${pod}c0 ${pod}c1 ${pod}c2 ${pod}c3; do
     echo "verifying logs for default/$pod/$ctr..."
     vm-command-q "cat $OTEL_LOGS" | \
