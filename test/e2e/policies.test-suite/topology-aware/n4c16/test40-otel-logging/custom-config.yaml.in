@@ -6,7 +6,7 @@ config:
   instrumentation:
     httpEndpoint: :8891
     logExporter: otlp-grpc
-    logExportPeriod: 10ms
+    logExportPeriod: 1s
   log:
     debug:
       - nri-resource-policy
