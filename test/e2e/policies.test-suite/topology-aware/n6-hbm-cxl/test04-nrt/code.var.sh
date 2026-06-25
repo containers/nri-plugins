@@ -28,8 +28,6 @@ verify-zone-attribute "socket #0" "reserved cpuset" "3"
 verify-zone-attribute "socket #1" "memory set" "1,3,5"
 verify-zone-attribute "socket #1" "shared cpuset" "4-7"
 
-# TODO: Perhaps IDSet.String() or maybe some other method could print
-# ranges so that "memory set" below would be just "0-5".
-verify-zone-attribute "root" "memory set" "0,1,2,3,4,5"
+verify-zone-attribute "root" "memory set" "0-5"
 verify-zone-attribute "root" "shared cpuset" "0-2,4-7"
 verify-zone-attribute "root" "reserved cpuset" "3"
