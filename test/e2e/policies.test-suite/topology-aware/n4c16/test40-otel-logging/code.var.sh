@@ -23,23 +23,38 @@ vm-command "kubectl wait --timeout=5s --for=condition=Ready pods/$pod"
 cnt=0
 while [ $cnt -lt 5 ]; do
    vm-command "crictl ps | grep ${pod}c3 | grep Running"
-   if grep Running <<< $COMMAND_OUTPUT; then
+   if grep -q Running <<< $COMMAND_OUTPUT; then
        break
    fi
    sleep 1
    let cnt=$cnt+1
 done
 
-for ctr in ${pod}c0 ${pod}c1 ${pod}c2 ${pod}c3; do
-    echo "verifying logs for default/$pod/$ctr..."
-    vm-command-q "cat $OTEL_LOGS" | \
-        jq '.resourceLogs[].scopeLogs[].logRecords[].body.stringValue' | \
-            grep -q "CreateContainer default/$pod/$ctr" || {
-        echo "----- Collected otel logs -----"
-        vm-command-q "cat $OTEL_LOGS"
-        echo "-----     End of logs     -----"
-        error "expected CreateContainer 'default/$pod/$ctr' log record not found for $ctr"
-    }
+cnt=0
+while [ $cnt -lt 5 ]; do
+    missing=""
+    for ctr in ${pod}c0 ${pod}c1 ${pod}c2 ${pod}c3; do
+        echo "verifying logs for default/$pod/$ctr..."
+        vm-command-q "cat $OTEL_LOGS" | \
+            jq '.resourceLogs[].scopeLogs[].logRecords[].body.stringValue' | \
+                grep -q "CreateContainer default/$pod/$ctr" || {
+            echo "----- Collected otel logs -----"
+            vm-command-q "cat $OTEL_LOGS"
+            echo "-----     End of logs     -----"
+            info "expected CreateContainer 'default/$pod/$ctr' log record not found for $ctr"
+            missing="${missing:+ }$ctr"
+            break
+        }
+    done
+    if [ -z "$missing" ]; then
+        break
+    fi
+    sleep 1
+    let cnt=cnt+1
 done
+
+if [ -n "$missing" ]; then
+    error "expected CreateContainer log record not found for $missing"
+fi
 
 cleanup
