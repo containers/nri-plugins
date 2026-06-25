@@ -28,6 +28,10 @@ COPY . .
 
 RUN --mount=type=cache,target=/go/pkg/mod/ \
     --mount=type=cache,target="/root/.cache/go-build" \
+    make install-go-licenses
+
+RUN --mount=type=cache,target=/go/pkg/mod/ \
+    --mount=type=cache,target="/root/.cache/go-build" \
     make IMAGE_VERSION=${IMAGE_VERSION} \
          BUILD_VERSION=${BUILD_VERSION} \
          BUILD_BUILDID=${BUILD_BUILDID} \
@@ -36,7 +40,7 @@ RUN --mount=type=cache,target=/go/pkg/mod/ \
          OTHER_IMAGE_TARGETS="" \
          BINARIES="" \
          PLUGINS=nri-memtierd \
-         clean install-go-licenses build-plugins-static licenses
+         clean build-plugins-static licenses
 
 FROM gcr.io/distroless/static
 ENV PATH=/bin

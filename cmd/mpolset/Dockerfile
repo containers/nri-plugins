@@ -19,6 +19,9 @@ RUN --mount=type=cache,target=/go/pkg/mod/ go mod download
 # Build mpolset
 COPY . .
 
+RUN --mount=type=cache,target=/go/pkg/mod/ \
+    --mount=type=cache,target="/root/.cache/go-build" \
+    make install-go-licenses
 
 RUN --mount=type=cache,target=/go/pkg/mod/ \
     --mount=type=cache,target="/root/.cache/go-build" \
@@ -31,7 +34,7 @@ RUN --mount=type=cache,target=/go/pkg/mod/ \
          OTHER_IMAGE_TARGETS="" \
          BINARIES=mpolset \
          PLUGINS="" \
-         clean install-go-licenses build-binaries-static licenses
+         clean build-binaries-static licenses
 
 FROM gcr.io/distroless/static
 
