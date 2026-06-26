@@ -580,8 +580,8 @@ func (p *balloons) GetTopologyZones() []*policy.TopologyZone {
 
 // GetExtendedResources returns the node-level extended resources
 // the balloons policy publishes for the local Node.
-func (p *balloons) GetExtendedResources() map[string]int64 {
-	out := map[string]int64{}
+func (p *balloons) GetExtendedResources() map[string]resource.Quantity {
+	out := map[string]resource.Quantity{}
 	if p.cpuClasses == nil || !p.cpuClasses.PctActive() {
 		return out
 	}
@@ -607,7 +607,7 @@ func (p *balloons) GetExtendedResources() map[string]int64 {
 		if free < 0 {
 			free = 0
 		}
-		out["cpuclass.balloons.nri.io/"+cc.Name] = int64(free)
+		out["cpuclass.balloons.nri.io/"+cc.Name] = *resource.NewMilliQuantity(int64(free), resource.DecimalSI)
 	}
 	return out
 }

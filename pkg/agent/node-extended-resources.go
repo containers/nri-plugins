@@ -36,7 +36,7 @@ var extendedResourcesLock sync.Mutex
 // lastPublishedExtendedResources tracks the resources we currently
 // own on this node, so that we can issue 'remove' patches for
 // resources that the policy stops reporting.
-var lastPublishedExtendedResources = map[string]int64{}
+var lastPublishedExtendedResources = map[string]resource.Quantity{}
 
 // extendedResourcesSynced is set after the first successful
 // node-status scan. Until then, every publish will first try to
@@ -56,7 +56,7 @@ const extendedResourceDomain = "cpuclass.balloons.nri.io/"
 // to Node.status.capacity using a JSON patch. Resources previously
 // owned by the agent but absent from 'resources' are removed.
 // Runs asynchronously to avoid stalling NRI request paths.
-func (a *Agent) UpdateNodeExtendedResources(resources map[string]int64) error {
+func (a *Agent) UpdateNodeExtendedResources(resources map[string]resource.Quantity) error {
 	if a.hasLocalConfig() {
 		return nil
 	}
@@ -66,7 +66,7 @@ func (a *Agent) UpdateNodeExtendedResources(resources map[string]int64) error {
 	// Snapshot inputs and run in the background; node-status
 	// PATCHes can be slow under apiserver load and we never
 	// want NRI hooks to block on them.
-	snapshot := make(map[string]int64, len(resources))
+	snapshot := make(map[string]resource.Quantity, len(resources))
 	for k, v := range resources {
 		snapshot[k] = v
 	}
@@ -78,7 +78,7 @@ func (a *Agent) UpdateNodeExtendedResources(resources map[string]int64) error {
 	return nil
 }
 
-func (a *Agent) updateNodeExtendedResources(resources map[string]int64) error {
+func (a *Agent) updateNodeExtendedResources(resources map[string]resource.Quantity) error {
 	extendedResourcesLock.Lock()
 	defer extendedResourcesLock.Unlock()
 
@@ -109,11 +109,10 @@ func (a *Agent) updateNodeExtendedResources(resources map[string]int64) error {
 				name, extendedResourceDomain)
 			continue
 		}
-		q := resource.NewQuantity(qty, resource.DecimalSI)
 		ops = append(ops, jsonPatchOp{
 			Op:    "add",
 			Path:  "/status/capacity/" + escapeJSONPointer(name),
-			Value: q.String(),
+			Value: qty.String(),
 		})
 	}
 	for name := range lastPublishedExtendedResources {
@@ -150,7 +149,7 @@ func (a *Agent) updateNodeExtendedResources(resources map[string]int64) error {
 	}
 
 	// Record current set for next diff.
-	lastPublishedExtendedResources = make(map[string]int64, len(resources))
+	lastPublishedExtendedResources = make(map[string]resource.Quantity, len(resources))
 	for k, v := range resources {
 		lastPublishedExtendedResources[k] = v
 	}
@@ -173,14 +172,15 @@ func escapeJSONPointer(s string) string {
 
 // summarizeExtendedResources formats the map deterministically
 // for logs: "name1=N1, name2=N2, ...".
-func summarizeExtendedResources(m map[string]int64) string {
+func summarizeExtendedResources(m map[string]resource.Quantity) string {
 	if len(m) == 0 {
 		return ""
 	}
 	sortedKeys := slices.Sorted(maps.Keys(m))
 	parts := make([]string, 0, len(sortedKeys))
 	for _, k := range sortedKeys {
-		parts = append(parts, fmt.Sprintf("%s=%d", k, m[k]))
+		v := m[k]
+		parts = append(parts, fmt.Sprintf("%s=%s", k, &v))
 	}
 	return strings.Join(parts, ", ")
 }
@@ -196,19 +196,15 @@ func (a *Agent) syncExtendedResourcesFromNode() error {
 	if err != nil {
 		return fmt.Errorf("get node %s: %w", a.nodeName, err)
 	}
-	owned := map[string]int64{}
+	owned := map[string]resource.Quantity{}
 	for name, q := range node.Status.Capacity {
 		key := string(name)
 		if !strings.HasPrefix(key, extendedResourceDomain) {
 			continue
 		}
-		v, ok := q.AsInt64()
-		if !ok {
-			v = q.Value()
-		}
-		owned[key] = v
+		owned[key] = q
 		if _, ours := lastPublishedExtendedResources[key]; !ours {
-			lastPublishedExtendedResources[key] = v
+			lastPublishedExtendedResources[key] = q
 		}
 	}
 	if len(owned) > 0 {
@@ -298,5 +294,5 @@ func (a *Agent) ClearNodeExtendedResources() {
 	}
 	log.Infof("cleared node extended resources on shutdown: %s", strings.Join(keys, ", "))
 
-	lastPublishedExtendedResources = map[string]int64{}
+	lastPublishedExtendedResources = map[string]resource.Quantity{}
 }
