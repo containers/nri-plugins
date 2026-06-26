@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quick start: Priority Core Turbo (PCT) in Kubernetes with Balloons &mdash; NRI Plugins v0.12.2-102-gf206c264 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../../_static/documentation_options.js?v=ba16f6f3"></script>
+        <script src="../../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" />
+    <link rel="next" title="Balloons + Priority Core Turbo (managed) example" href="balloons-pct-example-auto.html" />
+    <link rel="prev" title="How-to guides" href="index.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            NRI Plugins
+          </a>
+              <div class="version">
+                devel
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../../../introduction.html">Introduction</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../../index.html">Resource Policy Plugins</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../setup.html">Setup and Usage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../configuration.html">Dynamic Configuration</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="../index.html">Policies</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="../topology-aware.html">Topology-Aware Policy</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../balloons.html">Balloons Policy</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../template.html">Template Policy</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../common-functionality.html">Common Functionality</a></li>
+<li class="toctree-l3 current"><a class="reference internal" href="index.html">How-to guides</a><ul class="current">
+<li class="toctree-l4 current"><a class="current reference internal" href="#">Quick start: Priority Core Turbo (PCT) in Kubernetes with Balloons</a></li>
+<li class="toctree-l4"><a class="reference internal" href="balloons-pct-example-auto.html">Balloons + Priority Core Turbo (managed) example</a></li>
+<li class="toctree-l4"><a class="reference internal" href="balloons-pct-example-manual.html">Balloons + Priority Core Turbo (assoc-only) example</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../../developers-guide/index.html">Developer’s Guide</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../../memory/index.html">Memory plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../monitoring/index.html">Monitoring plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../deployment/index.html">Deployment</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/containers/nri-plugins">Project GitHub repository</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">NRI Plugins</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Resource Policy Plugins</a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Policies</a></li>
+          <li class="breadcrumb-item"><a href="index.html">How-to guides</a></li>
+      <li class="breadcrumb-item active">Quick start: Priority Core Turbo (PCT) in Kubernetes with Balloons</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../../../_sources/docs/resource-policy/policy/howto/balloons-pct-quickstart.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="quick-start-priority-core-turbo-pct-in-kubernetes-with-balloons">
+<h1>Quick start: Priority Core Turbo (PCT) in Kubernetes with Balloons<a class="headerlink" href="#quick-start-priority-core-turbo-pct-in-kubernetes-with-balloons" title="Link to this heading"></a></h1>
+<p>Balloons policy is an NRI plugin to container runtimes, containerd and
+CRI-O. The policy creates balloons that associate sets of containers
+with sets of CPUs. Containers belonging to a balloon are allowed to
+run on the CPUs belonging to the same balloon and not on CPUs
+belonging to other balloons. Balloons policy allows different CPU
+tunings on different balloons. This guide shows how to run
+high-priority containers with maximum turbo frequencies in Kubernetes
+by scheduling them on nodes with free PCT capacity, and by tuning
+their CPUs.</p>
+<p>This short guide shows the minimum required to:</p>
+<ol class="arabic simple">
+<li><p>install the balloons NRI policy in a Kubernetes cluster,</p></li>
+<li><p>configure it so that nodes with Intel Priority Core Turbo (PCT)
+hardware publish a <code class="docutils literal notranslate"><span class="pre">cpuclass.balloons.nri.io/hp-pct</span></code> extended
+resource the scheduler can bin-pack on, and</p></li>
+<li><p>run two Burstable pods on the same node – one that asks for HP
+cores and runs at the platform’s top turbo frequency, and one
+that does not and runs at the base frequency – and observe the
+performance difference with one <code class="docutils literal notranslate"><span class="pre">kubectl</span> <span class="pre">exec</span></code> per pod.</p></li>
+</ol>
+<p>This guide uses balloons plugin’s <strong>managed</strong> PCT mode, that is, the
+plugin owns the SST-CP/SST-TF configuration, overriding whatever
+existing configuration from BIOS settings and/or the
+intel-speed-select tool. Balloons supports also <strong>assoc-only mode</strong>
+that uses pre-defined and only associates balloons’ CPUs to existing
+CLOSes.</p>
+<p>This document does not cover manual configuration of underlying SST
+technology, step-by-step validation of real CPU frequencies,
+CPUs-to-containers mapping, benchmarking. These are covered in longer
+balloons PCT examples written separately for
+<a class="reference internal" href="balloons-pct-example-auto.html"><span class="std std-doc">managed-mode</span></a> and
+<a class="reference internal" href="balloons-pct-example-manual.html"><span class="std std-doc">assoc-only-mode</span></a>.</p>
+<section id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p>A Kubernetes cluster (1.27 or newer) with NRI enabled in every
+node’s container runtime (containerd &gt;= 1.7 or CRI-O &gt;= 1.26).</p></li>
+<li><p>At least one node that supports Intel SST-CP and SST-TF, e.g.
+Intel Xeon 6700P/6900P. Nodes without PCT-capable hardware
+will simply not publish the <code class="docutils literal notranslate"><span class="pre">cpuclass.balloons.nri.io/hp-pct</span></code>
+extended resource, so HP pods naturally land on nodes that do.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">kubectl</span></code> configured to talk to the cluster.</p></li>
+</ul>
+</section>
+<section id="install-balloons-with-pct-enabled">
+<h2>1. Install balloons with PCT enabled<a class="headerlink" href="#install-balloons-with-pct-enabled" title="Link to this heading"></a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>nri-resource-policy-balloons<span class="w"> </span>nri-plugins/nri-resource-policy-balloons<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>--set<span class="w"> </span><span class="nv">allowPCT</span><span class="o">=</span><span class="nb">true</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">--set</span> <span class="pre">allowPCT=true</span></code> gives the plugin pod the <code class="docutils literal notranslate"><span class="pre">privileged:</span> <span class="pre">true</span></code>
+security context and <code class="docutils literal notranslate"><span class="pre">/dev</span></code> mount it needs to talk to
+<code class="docutils literal notranslate"><span class="pre">/dev/isst_interface</span></code>.</p>
+<p>Wait for the daemonset to be Ready (one Pod per node):</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl<span class="w"> </span>-n<span class="w"> </span>kube-system<span class="w"> </span>rollout<span class="w"> </span>status<span class="w"> </span>ds/nri-resource-policy-balloons
+</pre></div>
+</div>
+</section>
+<section id="apply-the-minimal-pct-policy">
+<h2>2. Apply the minimal PCT policy<a class="headerlink" href="#apply-the-minimal-pct-policy" title="Link to this heading"></a></h2>
+<p>The policy below defines two cpuClasses and four balloonTypes.</p>
+<p>cpuClasses:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">default</span></code> – the implicit fallback class. It carries
+<code class="docutils literal notranslate"><span class="pre">pctPriority:</span> <span class="pre">low</span></code>, which makes it the <strong>LP class</strong>: idle
+CPUs and every balloon whose <code class="docutils literal notranslate"><span class="pre">cpuClass</span></code> is unset (i.e. uses
+<code class="docutils literal notranslate"><span class="pre">default</span></code>) run on cores capped at base frequency. Defining
+an LP class is required: balloons routes idle CPUs to the LP
+CLOS so they do not inflate the active-HP-core count on each
+PCT power domain (punit).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">hp-pct</span></code> – <code class="docutils literal notranslate"><span class="pre">pctPriority:</span> <span class="pre">high</span></code>. Containers in this class
+run on cores programmed for top turbo frequency. The
+<code class="docutils literal notranslate"><span class="pre">publishExtendedResource:</span> <span class="pre">true</span></code> flag is what makes the
+scheduler see the per-node HP capacity.</p></li>
+</ul>
+<p>balloonTypes (this part mirrors a typical Kubernetes
+CPU-manager-style split, with one extra balloon for HP pods):</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">reserved</span></code> – the implicit kube-system balloon that runs on
+<code class="docutils literal notranslate"><span class="pre">reservedResources.cpu</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">hp-bln</span></code> – picked by the
+<code class="docutils literal notranslate"><span class="pre">balloon.balloons.resource-policy.nri.io:</span> <span class="pre">hp-bln</span></code> pod
+annotation. Uses the <code class="docutils literal notranslate"><span class="pre">hp-pct</span></code> cpuClass, so its containers
+get top-turbo HP cores. <code class="docutils literal notranslate"><span class="pre">preferNewBalloons:</span> <span class="pre">true</span></code> puts each
+HP pod in a fresh balloon on a separate PCT power domain,
+and <code class="docutils literal notranslate"><span class="pre">maxCPUs:</span> <span class="pre">8</span></code> keeps the balloon within one bucket-0 HP
+budget per punit on Xeon 6.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">guaranteed</span></code> – picked by Kubernetes pod QoS class
+<code class="docutils literal notranslate"><span class="pre">Guaranteed</span></code>. Containers get exclusive CPUs in the same
+spirit as Kubernetes’ built-in CPU manager.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">burstable</span></code> – picked by Kubernetes pod QoS class
+<code class="docutils literal notranslate"><span class="pre">Burstable</span></code>. Containers share CPUs with other burstables.
+<code class="docutils literal notranslate"><span class="pre">shareIdleCPUsInSame:</span> <span class="pre">package</span></code> lets a burstable container
+burst onto every otherwise-idle CPU in the same CPU package,
+giving the largest pool of burst CPUs that still preserves
+data locality (good balance between memory latency and
+bandwidth).</p></li>
+</ul>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>cat<span class="w"> </span>&gt;<span class="w"> </span>balloons-pct.yaml<span class="w"> </span><span class="s">&lt;&lt;EOF</span>
+<span class="s">apiVersion: config.nri/v1alpha1</span>
+<span class="s">kind: BalloonsPolicy</span>
+<span class="s">metadata:</span>
+<span class="s">  name: default</span>
+<span class="s">  namespace: kube-system</span>
+<span class="s">spec:</span>
+<span class="s">  pinCPU: true</span>
+<span class="s">  pinMemory: false</span>
+<span class="s">  allocatorTopologyBalancing: true</span>
+<span class="s">  balloonTypes:</span>
+<span class="s">  - name: reserved</span>
+<span class="s">  - name: hp-bln</span>
+<span class="s">    cpuClass: hp-pct</span>
+<span class="s">    maxCPUs: 8</span>
+<span class="s">    preferNewBalloons: true</span>
+<span class="s">  - name: guaranteed</span>
+<span class="s">    matchExpressions:</span>
+<span class="s">    - key: qosclass</span>
+<span class="s">      operator: Equals</span>
+<span class="s">      values: [&quot;Guaranteed&quot;]</span>
+<span class="s">    preferNewBalloons: true</span>
+<span class="s">  - name: burstable</span>
+<span class="s">    matchExpressions:</span>
+<span class="s">    - key: qosclass</span>
+<span class="s">      operator: In</span>
+<span class="s">      values: [&quot;Burstable&quot;, &quot;BestEffort&quot;]</span>
+<span class="s">    shareIdleCPUsInSame: package</span>
+<span class="s">    minBalloons: 2</span>
+<span class="s">  cpuClasses:</span>
+<span class="s">  - name: default</span>
+<span class="s">    pctPriority: low</span>
+<span class="s">    pctMinFreq: min</span>
+<span class="s">    pctMaxFreq: base</span>
+<span class="s">  - name: hp-pct</span>
+<span class="s">    pctPriority: high</span>
+<span class="s">    pctMinFreq: base</span>
+<span class="s">    pctMaxFreq: turbo</span>
+<span class="s">    publishExtendedResource: true</span>
+<span class="s">EOF</span>
+kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>balloons-pct.yaml
+</pre></div>
+</div>
+<p>Verify that the cluster now advertises HP-core capacity per
+node. PCT-capable nodes show a non-zero number; other nodes
+omit the resource entirely.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl<span class="w"> </span>get<span class="w"> </span>nodes<span class="w"> </span>-o<span class="w"> </span>json<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-r<span class="w"> </span><span class="s1">&#39;</span>
+<span class="s1">  .items[] | [.metadata.name,</span>
+<span class="s1">    (.status.capacity[&quot;cpuclass.balloons.nri.io/hp-pct&quot;] // &quot;-&quot;)]</span>
+<span class="s1">  | @tsv&#39;</span>
+</pre></div>
+</div>
+<p>Example output (one PCT-capable node, two regular nodes):</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>node-pct-1   32
+node-2       -
+node-3       -
+</pre></div>
+</div>
+<p>The HP capacity is the platform’s <em>guaranteed top-turbo HP CPU
+count</em> – the number of CPUs across the node that can
+simultaneously run at the highest turbo bucket. On a dual-socket
+Xeon 6776P with eight HP cores per punit and four active punits
+that is 32.</p>
+</section>
+<section id="deploy-one-hp-pod-and-one-normal-pod">
+<h2>3. Deploy one HP pod and one normal pod<a class="headerlink" href="#deploy-one-hp-pod-and-one-normal-pod" title="Link to this heading"></a></h2>
+<p>Both pods use the <code class="docutils literal notranslate"><span class="pre">nginx:stable</span></code> Docker Official image (which
+ships with <code class="docutils literal notranslate"><span class="pre">openssl</span></code>) and stay idle waiting for <code class="docutils literal notranslate"><span class="pre">kubectl</span> <span class="pre">exec</span></code>.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">hp-app</span></code> – <strong>Guaranteed</strong> (CPU request equals limit, memory
+request equals limit). Requests
+<code class="docutils literal notranslate"><span class="pre">cpuclass.balloons.nri.io/hp-pct:</span> <span class="pre">&quot;2&quot;</span></code>. That extended-resource
+request forces the scheduler to place the pod on a node that
+has at least two free HP CPUs, and the
+<code class="docutils literal notranslate"><span class="pre">balloon.balloons.resource-policy.nri.io:</span> <span class="pre">hp-bln</span></code> annotation
+routes it into the HP balloon.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">plain-app</span></code> – <strong>Guaranteed</strong> (same shape, no extended
+resource, no annotation). It lands in the <code class="docutils literal notranslate"><span class="pre">guaranteed</span></code>
+balloon type by Kubernetes QoS class. It runs on LP cores.</p></li>
+</ul>
+<p>Both pods request the same number of CPUs (<code class="docutils literal notranslate"><span class="pre">2</span></code>), so the
+performance comparison reflects only the HP vs. LP cpuClass
+difference, not the CPU count.</p>
+<blockquote>
+<div><p><strong>Bookkeeping rule.</strong> When using
+<code class="docutils literal notranslate"><span class="pre">publishExtendedResource</span></code>, the number of HP CPUs requested
+via <code class="docutils literal notranslate"><span class="pre">cpuclass.balloons.nri.io/hp-pct</span></code> <strong>must equal the pod’s
+<code class="docutils literal notranslate"><span class="pre">cpu</span></code> request</strong>. Each HP CPU consumed by the container has
+to be counted once in the scheduler’s extended-resource
+bookkeeping and once in normal CPU bookkeeping; mismatched
+counts let the scheduler oversubscribe HP CPUs on the node
+or, conversely, leave them stranded.</p>
+</div></blockquote>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>cat<span class="w"> </span>&gt;<span class="w"> </span>pods.yaml<span class="w"> </span><span class="s">&lt;&lt;EOF</span>
+<span class="s">apiVersion: v1</span>
+<span class="s">kind: Pod</span>
+<span class="s">metadata:</span>
+<span class="s">  name: hp-app</span>
+<span class="s">  annotations:</span>
+<span class="s">    balloon.balloons.resource-policy.nri.io: hp-bln</span>
+<span class="s">spec:</span>
+<span class="s">  containers:</span>
+<span class="s">  - name: app</span>
+<span class="s">    image: docker.io/library/nginx:stable</span>
+<span class="s">    command: [&quot;sleep&quot;, &quot;3600&quot;]</span>
+<span class="s">    resources:</span>
+<span class="s">      requests:</span>
+<span class="s">        cpu: &quot;2&quot;</span>
+<span class="s">        memory: &quot;64Mi&quot;</span>
+<span class="s">        cpuclass.balloons.nri.io/hp-pct: &quot;2&quot;</span>
+<span class="s">      limits:</span>
+<span class="s">        cpu: &quot;2&quot;</span>
+<span class="s">        memory: &quot;64Mi&quot;</span>
+<span class="s">        cpuclass.balloons.nri.io/hp-pct: &quot;2&quot;</span>
+<span class="s">---</span>
+<span class="s">apiVersion: v1</span>
+<span class="s">kind: Pod</span>
+<span class="s">metadata:</span>
+<span class="s">  name: plain-app</span>
+<span class="s">spec:</span>
+<span class="s">  containers:</span>
+<span class="s">  - name: app</span>
+<span class="s">    image: docker.io/library/nginx:stable</span>
+<span class="s">    command: [&quot;sleep&quot;, &quot;3600&quot;]</span>
+<span class="s">    resources:</span>
+<span class="s">      requests:</span>
+<span class="s">        cpu: &quot;2&quot;</span>
+<span class="s">        memory: &quot;64Mi&quot;</span>
+<span class="s">      limits:</span>
+<span class="s">        cpu: &quot;2&quot;</span>
+<span class="s">        memory: &quot;64Mi&quot;</span>
+<span class="s">EOF</span>
+kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>pods.yaml
+kubectl<span class="w"> </span><span class="nb">wait</span><span class="w"> </span>--for<span class="o">=</span><span class="nv">condition</span><span class="o">=</span>Ready<span class="w"> </span>--timeout<span class="o">=</span>60s<span class="w"> </span>pod/hp-app<span class="w"> </span>pod/plain-app
+</pre></div>
+</div>
+<p>If <code class="docutils literal notranslate"><span class="pre">hp-app</span></code> stays <code class="docutils literal notranslate"><span class="pre">Pending</span></code> with
+<code class="docutils literal notranslate"><span class="pre">FailedScheduling</span> <span class="pre">...</span> <span class="pre">Insufficient</span> <span class="pre">cpuclass.balloons.nri.io/hp-pct</span></code>,
+either no node in the cluster has HP CPUs available (see step
+2’s capacity listing) or every HP CPU is currently taken by
+other HP pods. Drop the request to fit, or wait.</p>
+<p>To confirm which balloon each pod landed in, ask the plugin:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl<span class="w"> </span>-n<span class="w"> </span>kube-system<span class="w"> </span>logs<span class="w"> </span>ds/nri-resource-policy-balloons<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s1">&#39;assigning container default/(hp-app|plain-app)&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-2
+</pre></div>
+</div>
+<p>Example:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>assigning container default/hp-app/app    to balloon hp-bln[0]{cpus:&quot;32,160&quot;, mems:&quot;1&quot;}
+assigning container default/plain-app/app to balloon guaranteed[0]{cpus:&quot;64,192&quot;, mems:&quot;2&quot;}
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">hp-app</span></code> is in the HP balloon; <code class="docutils literal notranslate"><span class="pre">plain-app</span></code> is in a fresh
+<code class="docutils literal notranslate"><span class="pre">guaranteed</span></code> balloon with its own exclusive CPUs. Both pods
+hold the same number of CPUs, so the throughput difference
+in the next step reflects only the HP vs. LP frequency.</p>
+</section>
+<section id="observe-the-performance-difference">
+<h2>4. Observe the performance difference<a class="headerlink" href="#observe-the-performance-difference" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">nginx:stable</span></code> ships with <code class="docutils literal notranslate"><span class="pre">openssl</span></code>, which has a built-in
+self-benchmark (<code class="docutils literal notranslate"><span class="pre">openssl</span> <span class="pre">speed</span></code>) that measures cipher
+throughput on the local CPU. Pure CPU work, no I/O, no
+warm-up needed. Run it in both pods:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>hp-app<span class="w">    </span>--<span class="w"> </span>openssl<span class="w"> </span>speed<span class="w"> </span>-seconds<span class="w"> </span><span class="m">5</span><span class="w"> </span>-evp<span class="w"> </span>aes-128-cbc<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-2
+kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>plain-app<span class="w"> </span>--<span class="w"> </span>openssl<span class="w"> </span>speed<span class="w"> </span>-seconds<span class="w"> </span><span class="m">5</span><span class="w"> </span>-evp<span class="w"> </span>aes-128-cbc<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-2
+</pre></div>
+</div>
+<p>Example output (Xeon 6776P, 4.6 GHz HP vs. 2.3 GHz LP):</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span># hp-app
+type             16 bytes     64 bytes    256 bytes   1024 bytes   8192 bytes  16384 bytes
+AES-128-CBC    1788838.33k  2156328.92k  2205063.68k  2217644.85k  2221249.33k  2221617.97k
+
+# plain-app
+type             16 bytes     64 bytes    256 bytes   1024 bytes   8192 bytes  16384 bytes
+AES-128-CBC     893471.74k   1075806.28k 1100445.44k  1106751.28k  1108534.89k  1108836.35k
+</pre></div>
+</div>
+<p>The HP pod processes AES-128-CBC at roughly 2x the throughput
+of the plain pod (<code class="docutils literal notranslate"><span class="pre">2221617.97k</span></code> vs. <code class="docutils literal notranslate"><span class="pre">1108836.35k</span></code> bytes/s on
+the 16 KB block size). The ratio mirrors the HP/LP frequency
+ratio of the node and is reproducible from one invocation to
+the next.</p>
+</section>
+<section id="clean-up">
+<h2>5. Clean up<a class="headerlink" href="#clean-up" title="Link to this heading"></a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl<span class="w"> </span>delete<span class="w"> </span>-f<span class="w"> </span>pods.yaml
+kubectl<span class="w"> </span>delete<span class="w"> </span>-f<span class="w"> </span>balloons-pct.yaml
+helm<span class="w"> </span>-n<span class="w"> </span>kube-system<span class="w"> </span>uninstall<span class="w"> </span>balloons
+rm<span class="w"> </span>-f<span class="w"> </span>balloons-pct.yaml<span class="w"> </span>pods.yaml
+</pre></div>
+</div>
+</section>
+<section id="what-next">
+<h2>What next<a class="headerlink" href="#what-next" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p>For a deeper, fully verified walk-through of managed mode –
+including <code class="docutils literal notranslate"><span class="pre">intel-speed-select</span></code> inspection, <code class="docutils literal notranslate"><span class="pre">NodeResourceTopology</span></code>
+verification, and per-pod <code class="docutils literal notranslate"><span class="pre">sysbench</span></code>/<code class="docutils literal notranslate"><span class="pre">turbostat</span></code> reporting –
+see <a class="reference internal" href="balloons-pct-example-auto.html"><span class="std std-doc">balloons-pct-example-auto.md</span></a>.</p></li>
+<li><p>For the assoc-only PCT mode, where the operator owns the
+SST-CP/SST-TF configuration and balloons only associates CPUs
+to operator-programmed CLOSes, see
+<a class="reference internal" href="balloons-pct-example-manual.html"><span class="std std-doc">balloons-pct-example-manual.md</span></a>.</p></li>
+<li><p>For the full balloons policy reference (other cpuClass
+fields, C-state control, cpufreq, scheduling-class
+integration), see <a class="reference internal" href="../balloons.html"><span class="std std-doc">balloons documentation</span></a>.</p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="index.html" class="btn btn-neutral float-left" title="How-to guides" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="balloons-pct-example-auto.html" class="btn btn-neutral float-right" title="Balloons + Priority Core Turbo (managed) example" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, various.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+  
+    <div class="rst-versions" data-toggle="rst-versions" role="note" aria-label="versions">
+      <span class="rst-current-version" data-toggle="rst-current-version">
+        <span class="fa fa-book"> GitHub Pages</span>
+        devel
+        <span class="fa fa-caret-down"></span>
+      </span>
+      <div class="rst-other-versions">
+        <dl id="versions">
+          <dt>Versions</dt>
+        </dl>
+        <dl>
+          <dt>
+          <a href="/nri-plugins/releases">all releases</a>
+          </dt>
+        </dl>
+      </div>
+    </div>
+  
+  <script src="../../../../../versions.js"></script>
+  <script>
+      var list = document.getElementById('versions')
+      var menuItems = getVersionsMenuItems();
+      for (var i=0; i < menuItems.length; i++) {
+        var item = document.createElement('dd');
+        var anchor = item.appendChild(document.createElement('a'));
+        anchor.appendChild(document.createTextNode(menuItems[i].name));
+        anchor.href = menuItems[i].url;
+        list.appendChild(item);
+      }
+  </script>
+
+
+</body>
+</html>

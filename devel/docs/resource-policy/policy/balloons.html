@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.12.2-92-gd4c1b198 documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.12.2-102-gf206c264 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=460c059e"></script>
+        <script src="../../../_static/documentation_options.js?v=ba16f6f3"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -66,6 +66,7 @@
 </li>
 <li class="toctree-l3"><a class="reference internal" href="template.html">Template Policy</a></li>
 <li class="toctree-l3"><a class="reference internal" href="common-functionality.html">Common Functionality</a></li>
+<li class="toctree-l3"><a class="reference internal" href="howto/index.html">How-to guides</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="../developers-guide/index.html">Developer’s Guide</a></li>
@@ -212,8 +213,8 @@ up-to-date runtimes).</p></li>
 helm<span class="w"> </span>repo<span class="w"> </span>update
 </pre></div>
 </div>
-<p>Install the balloons policy with default configuration:</p>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>nri-resource-policy-balloons<span class="w"> </span>nri-plugins/nri-resource-policy-balloons<span class="w"> </span>--namespace<span class="w"> </span>kube-system
+<p>Install the balloons policy with default configuration [with PCT enabled]:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>nri-resource-policy-balloons<span class="w"> </span>nri-plugins/nri-resource-policy-balloons<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span><span class="o">[</span>--set<span class="w"> </span><span class="nv">allowPCT</span><span class="o">=</span>true<span class="o">]</span>
 </pre></div>
 </div>
 <p>Install with a custom configuration from a values file:</p>
@@ -998,23 +999,33 @@ latter override the former.</p>
 <p>These options configure CPU behavior and power management.</p>
 <p><strong><code class="docutils literal notranslate"><span class="pre">cpuClass</span></code></strong> (string)</p>
 <ul class="simple">
-<li><p>References a CPU class defined in <code class="docutils literal notranslate"><span class="pre">control.cpu.classes</span></code>
-(policy-level configuration).</p></li>
+<li><p>References a CPU class name defined in <code class="docutils literal notranslate"><span class="pre">cpuClasses</span></code> (preferred) or
+in <code class="docutils literal notranslate"><span class="pre">control.cpu.classes</span></code> (deprecated).</p></li>
 <li><p>Applied when balloon is created, inflated, or deflated.</p></li>
 <li><p>Configures frequency scaling and C-states for CPUs in the balloon.</p></li>
+<li><p>If left unset and a <code class="docutils literal notranslate"><span class="pre">cpuClasses</span></code> entry named <code class="docutils literal notranslate"><span class="pre">default</span></code> exists, that
+<code class="docutils literal notranslate"><span class="pre">default</span></code> class is applied instead.</p></li>
 </ul>
 <p><strong><code class="docutils literal notranslate"><span class="pre">idleCPUClass</span></code></strong> (string, policy-level configuration)</p>
 <ul class="simple">
 <li><p>CPU class for idle CPUs (not in any balloon).</p></li>
 <li><p>Applied when CPUs are removed from balloons.</p></li>
+<li><p>If left unset and a <code class="docutils literal notranslate"><span class="pre">cpuClasses</span></code> entry named <code class="docutils literal notranslate"><span class="pre">default</span></code> exists, that
+<code class="docutils literal notranslate"><span class="pre">default</span></code> class is applied to idle CPUs instead.</p></li>
 </ul>
-<p><strong><code class="docutils literal notranslate"><span class="pre">control.cpu.classes</span></code></strong> (object, policy-level configuration):</p>
-<p>Each CPU class (keyed by name) can define:</p>
+<p><strong><code class="docutils literal notranslate"><span class="pre">cpuClasses</span></code></strong> (list, policy-level configuration):</p>
+<p>CPU class definitions. Each class is an object with:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">minFreq</span></code> (integer): Minimum CPU frequency in kHz.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">maxFreq</span></code> (integer): Maximum CPU frequency in kHz.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">uncoreMinFreq</span></code> (integer): Minimum uncore frequency in kHz.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">uncoreMaxFreq</span></code> (integer): Maximum uncore frequency in kHz.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">name</span></code> (string): Class name referenced by <code class="docutils literal notranslate"><span class="pre">cpuClass</span></code> in balloon types.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">minFreq</span></code> (string): Minimum CPU frequency. Accepts values with
+units: <code class="docutils literal notranslate"><span class="pre">&quot;3.2GHz&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;2900MHz&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;2900000kHz&quot;</span></code>, or a string
+containing plain number in kHz: <code class="docutils literal notranslate"><span class="pre">&quot;2900000&quot;</span></code>. Also accepts symbolic
+names: <code class="docutils literal notranslate"><span class="pre">&quot;min&quot;</span></code> (platform minimum), <code class="docutils literal notranslate"><span class="pre">&quot;base&quot;</span></code> (CPU base frequency),
+<code class="docutils literal notranslate"><span class="pre">&quot;turbo&quot;</span></code> (maximum turbo frequency), which are resolved at runtime
+from sysfs.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">maxFreq</span></code> (string): Maximum CPU frequency (same format).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">uncoreMinFreq</span></code> / <code class="docutils literal notranslate"><span class="pre">uncoreMaxFreq</span></code> (string): Uncore frequency limits
+(same format).</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">disabledCstates</span></code> (list): C-state names to disable (e.g., <code class="docutils literal notranslate"><span class="pre">[&quot;C6&quot;,</span> <span class="pre">&quot;C8&quot;]</span></code>).</p>
 <ul>
 <li><p>Disabling deep C-states reduces latency by preventing deep sleep.</p></li>
@@ -1024,7 +1035,42 @@ not needed.</p></li>
 <li><p>List available C-states: <code class="docutils literal notranslate"><span class="pre">grep</span> <span class="pre">.</span> <span class="pre">/sys/devices/system/cpu/cpu0/cpuidle/state*/name</span></code>.</p></li>
 </ul>
 </li>
+<li><p><code class="docutils literal notranslate"><span class="pre">energyPerformancePreference</span></code> (integer): EPP value for CPUs.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">freqGovernor</span></code> (string): CPUFreq governor (e.g., <code class="docutils literal notranslate"><span class="pre">&quot;performance&quot;</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">turboPriority</span></code> (integer): Controls exclusive turbo frequency
+access. Among CPU classes with active balloons, only the class
+with the highest <code class="docutils literal notranslate"><span class="pre">turboPriority</span></code> gets the symbolic frequency
+<code class="docutils literal notranslate"><span class="pre">&quot;turbo&quot;</span></code> resolved to the actual turbo frequency. All other
+classes get <code class="docutils literal notranslate"><span class="pre">&quot;turbo&quot;</span></code> resolved to the base frequency. When the
+highest-priority class no longer has active balloons, the next
+highest-priority class regains turbo. If all classes have
+<code class="docutils literal notranslate"><span class="pre">turboPriority</span></code> 0 (default), every class gets real turbo – no
+competition occurs. <code class="docutils literal notranslate"><span class="pre">turboPriority</span></code> arbitration is scoped to a
+<em>turbo domain</em> (see <code class="docutils literal notranslate"><span class="pre">turboDomain</span></code> below), so on multi-socket
+systems a low-priority class on one socket can keep turbo even
+when a higher-priority class is active on another socket.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pctPriority</span></code> (string): reset system PCT configuration and use
+<code class="docutils literal notranslate"><span class="pre">high</span></code>  or <code class="docutils literal notranslate"><span class="pre">low</span></code> priority CLOSes for CPUs. See <a class="reference internal" href="#priority-core-turbo-pct">Priority Core
+Turbo</a> for details.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sstClosID</span></code> (integer): use system PCT configuration and assign
+CPUs to specified CLOS. See <a class="reference internal" href="#priority-core-turbo-pct">Priority Core
+Turbo</a> for details.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">publishExtendedResource</span></code> (bool). If <code class="docutils literal notranslate"><span class="pre">true</span></code> in a class with either
+<code class="docutils literal notranslate"><span class="pre">pctPriority:</span> <span class="pre">high</span></code> or <code class="docutils literal notranslate"><span class="pre">sstClosID:</span> <span class="pre">n</span></code> policy publishes class’s
+available CPU capacity as
+<code class="docutils literal notranslate"><span class="pre">cpuclass.balloons.nri.io/&lt;CPU-CLASS-NAME&gt;</span></code> extended
+resource. Enables Kubernetes to schedule pods on nodes with enough
+CPUs of wanted priority. Note: container’s <code class="docutils literal notranslate"><span class="pre">cpu</span></code> and
+extended resource requests <strong>must be equal</strong> to avoid
+over and under subscription.</p></li>
 </ul>
+<p><strong><code class="docutils literal notranslate"><span class="pre">turboDomain</span></code></strong> (string, policy-level configuration):</p>
+<p>Selects the scope over which <code class="docutils literal notranslate"><span class="pre">turboPriority</span></code> arbitration happens. The
+default is <code class="docutils literal notranslate"><span class="pre">&quot;package&quot;</span></code>: every package independently pick its own
+turboPriority winner. Set to <code class="docutils literal notranslate"><span class="pre">&quot;system&quot;</span></code> if highest <code class="docutils literal notranslate"><span class="pre">turboPriority</span></code>
+classes anywhere should suppress turbo on every other class
+independently of CPU core locations. On single-socket systems the two
+modes behave identically.</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">balloonTypes</span><span class="p">:</span>
 <span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">latency-critical</span>
 <span class="w">  </span><span class="nt">cpuClass</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">turbo</span>
@@ -1032,7 +1078,108 @@ not needed.</p></li>
 <span class="w">  </span><span class="nt">cpuClass</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">normal</span>
 <span class="nt">idleCPUClass</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">powersave</span>
 
-<span class="nt">control</span><span class="p">:</span>
+<span class="nt">cpuClasses</span><span class="p">:</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">turbo</span>
+<span class="w">  </span><span class="nt">minFreq</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;turbo&quot;</span>
+<span class="w">  </span><span class="nt">maxFreq</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;turbo&quot;</span>
+<span class="w">  </span><span class="nt">disabledCstates</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">C6</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">C8</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">C10</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">turboPriority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">normal</span>
+<span class="w">  </span><span class="nt">minFreq</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;min&quot;</span>
+<span class="w">  </span><span class="nt">maxFreq</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;turbo&quot;</span>
+<span class="w">  </span><span class="nt">turboPriority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">powersave</span>
+<span class="w">  </span><span class="nt">minFreq</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;min&quot;</span>
+<span class="w">  </span><span class="nt">maxFreq</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;1.2GHz&quot;</span>
+</pre></div>
+</div>
+<section id="priority-core-turbo-pct">
+<h4>Priority Core Turbo (PCT)<a class="headerlink" href="#priority-core-turbo-pct" title="Link to this heading"></a></h4>
+<p>On Intel Xeon CPUs that support <a class="reference external" href="https://docs.kernel.org/admin-guide/pm/intel-speed-select.html">Intel Speed Select
+Technology</a>
+(SST), the balloons policy can additionally drive <em>Priority Core
+Turbo</em> (PCT) on a per-cpuClass basis. PCT lets a small number of
+<em>High Priority</em> (HP) cores reach the maximum turbo frequency
+while the remaining <em>Low Priority</em> (LP) cores are capped. The
+mapping between cpuClasses and the underlying SST-CP CLOSes is
+managed by the <em>PCT allocator</em> using the
+<a class="reference external" href="https://github.com/intel/goresctrl">goresctrl SST library</a>.</p>
+<p>Two fields on a <code class="docutils literal notranslate"><span class="pre">cpuClasses</span></code> entry enable PCT:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">pctPriority</span></code> (string, optional): <code class="docutils literal notranslate"><span class="pre">&quot;high&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;low&quot;</span></code>. When set,
+the balloons policy enters <strong>managed mode</strong> for PCT: it
+performs the full SoC-wide SST setup (CP reset, TF enable, CLOS
+configuration, CP enable) and associates CPUs of any balloon
+using this cpuClass to the HP CLOS (default CLOS 0) or the LP
+CLOS (default CLOS 3). At most one managed <code class="docutils literal notranslate"><span class="pre">high</span></code> and one
+managed <code class="docutils literal notranslate"><span class="pre">low</span></code> cpuClass is allowed.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sstClosID</span></code> (integer, optional, 0..<em>ClosCount-1</em>): pins this
+cpuClass to a specific CLOS slot and selects <strong>assoc-only
+mode</strong>: the policy only associates CPUs to the given CLOS
+without reconfiguring the SoC-wide SST state. Use this when an
+operator or the BIOS has already configured the CLOSes.</p></li>
+</ul>
+<p><code class="docutils literal notranslate"><span class="pre">pctPriority</span></code> and <code class="docutils literal notranslate"><span class="pre">sstClosID</span></code> are <strong>mutually exclusive</strong> on the
+same cpuClass. Managed and assoc-only cpuClasses cannot be mixed
+in the same configuration.</p>
+<p>By default the CLOS minimum/maximum frequencies programmed in
+managed mode come from the cpuClass’s own <code class="docutils literal notranslate"><span class="pre">minFreq</span></code>/<code class="docutils literal notranslate"><span class="pre">maxFreq</span></code>.
+Two optional overrides exist for cases where the hardware CLOS
+bounds should differ from the OS-visible cpufreq limits:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">pctMinFreq</span></code> (string, optional): CLOS minimum frequency,
+defaults to <code class="docutils literal notranslate"><span class="pre">minFreq</span></code>. Accepts the same units and symbolic
+names. Resolves <code class="docutils literal notranslate"><span class="pre">&quot;turbo&quot;</span></code> directly to the hardware maximum
+turbo frequency, regardless of soft <code class="docutils literal notranslate"><span class="pre">turboPriority</span></code>
+arbitration.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pctMaxFreq</span></code> (string, optional): CLOS maximum frequency,
+defaults to <code class="docutils literal notranslate"><span class="pre">maxFreq</span></code>. Same caveats as <code class="docutils literal notranslate"><span class="pre">pctMinFreq</span></code>.</p></li>
+</ul>
+<p>On hosts without SST support the PCT fields are ignored with a
+warning, so a single cpuClass YAML can be portable across PCT and
+non-PCT systems.</p>
+<p><strong>Allocation behaviour.</strong> PCT settings also bias CPU selection:</p>
+<ul class="simple">
+<li><p>For each <code class="docutils literal notranslate"><span class="pre">sstClosID:</span> <span class="pre">N</span></code> referenced by any cpuClass, a static
+virtual device <code class="docutils literal notranslate"><span class="pre">SST</span> <span class="pre">CLOS</span> <span class="pre">N</span></code> is registered with the CPUs the SST
+hardware currently maps to that CLOS. Balloon types using that
+cpuClass prefer to be close to it; other balloon types
+automatically prefer to be far from it.</p></li>
+<li><p>In managed mode a dynamic virtual device <code class="docutils literal notranslate"><span class="pre">SST</span> <span class="pre">PCT</span> <span class="pre">HP</span> <span class="pre">reserve</span></code>
+is registered with the CPUs of the package that has the most
+free HP-capable CPUs. Balloon types whose cpuClass has
+<code class="docutils literal notranslate"><span class="pre">pctPriority:</span> <span class="pre">high</span></code> prefer to be close to it (so their
+containers actually enjoy PCT turbo), while every other balloon
+type prefers to be far from it (so they do not drain the package
+on which an HP container relies for turbo budget). The membership
+is recomputed on every balloon resize.</p></li>
+</ul>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">cpuClasses</span><span class="p">:</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rt-hp</span>
+<span class="w">  </span><span class="nt">minFreq</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;turbo&quot;</span>
+<span class="w">  </span><span class="nt">maxFreq</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;turbo&quot;</span>
+<span class="w">  </span><span class="nt">pctPriority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">high</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bg-lp</span>
+<span class="w">  </span><span class="nt">minFreq</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;min&quot;</span>
+<span class="w">  </span><span class="nt">maxFreq</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;base&quot;</span>
+<span class="w">  </span><span class="nt">pctPriority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">low</span>
+</pre></div>
+</div>
+<p>See <a class="reference internal" href="howto/balloons-pct-quickstart.html"><span class="std std-doc">Quick start: PCT in Kubernetes with
+Balloons</span></a> for more details.</p>
+<p><strong><code class="docutils literal notranslate"><span class="pre">control.cpu.classes</span></code></strong> (object, policy-level configuration, DEPRECATED):</p>
+<p>This is deprecated CPU class configuration, use <code class="docutils literal notranslate"><span class="pre">cpuClasses</span></code>
+instead. If a class name is defined in both <code class="docutils literal notranslate"><span class="pre">cpuClasses</span></code> and
+<code class="docutils literal notranslate"><span class="pre">control.cpu.classes</span></code>, the <code class="docutils literal notranslate"><span class="pre">cpuClasses</span></code> definition takes precedence.</p>
+<p>Each CPU class (keyed by name) can define:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">minFreq</span></code> (integer): Minimum CPU frequency in kHz.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">maxFreq</span></code> (integer): Maximum CPU frequency in kHz.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">uncoreMinFreq</span></code> (integer): Minimum uncore frequency in kHz.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">uncoreMaxFreq</span></code> (integer): Maximum uncore frequency in kHz.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">disabledCstates</span></code> (list): C-state names to disable (e.g., <code class="docutils literal notranslate"><span class="pre">[&quot;C6&quot;,</span> <span class="pre">&quot;C8&quot;]</span></code>).</p></li>
+</ul>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">control</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">cpu</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">classes</span><span class="p">:</span>
 <span class="w">      </span><span class="nt">turbo</span><span class="p">:</span>
@@ -1049,6 +1196,7 @@ not needed.</p></li>
 <span class="w">        </span><span class="nt">maxFreq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1200000</span>
 </pre></div>
 </div>
+</section>
 </section>
 <section id="built-in-balloon-types">
 <h3>Built-in Balloon Types<a class="headerlink" href="#built-in-balloon-types" title="Link to this heading"></a></h3>
@@ -1509,21 +1657,19 @@ CPU configuration.</p>
 <span class="w">    </span><span class="nt">overloadsLevelInBalloon</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">  </span><span class="c1"># Share L2 between CPUs within balloon</span>
 
 <span class="w">  </span><span class="c1"># CPU classes for frequency and C-state control</span>
-<span class="w">  </span><span class="nt">control</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">cpu</span><span class="p">:</span>
-<span class="w">      </span><span class="nt">classes</span><span class="p">:</span>
-<span class="w">        </span><span class="nt">ultra-low-latency</span><span class="p">:</span>
-<span class="w">          </span><span class="nt">minFreq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3500000</span>
-<span class="w">          </span><span class="nt">maxFreq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3900000</span>
-<span class="w">          </span><span class="nt">uncoreMinFreq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2400000</span>
-<span class="w">          </span><span class="nt">uncoreMaxFreq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2400000</span>
-<span class="w">          </span><span class="nt">disabledCstates</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">C6</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">C7</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">C8</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">C10</span><span class="p p-Indicator">]</span>
-<span class="w">        </span><span class="nt">normal</span><span class="p">:</span>
-<span class="w">          </span><span class="nt">minFreq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">800000</span>
-<span class="w">          </span><span class="nt">maxFreq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2500000</span>
-<span class="w">        </span><span class="nt">powersave</span><span class="p">:</span>
-<span class="w">          </span><span class="nt">minFreq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">800000</span>
-<span class="w">          </span><span class="nt">maxFreq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">800000</span>
+<span class="w">  </span><span class="nt">cpuClasses</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ultra-low-latency</span>
+<span class="w">    </span><span class="nt">minFreq</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;base&quot;</span>
+<span class="w">    </span><span class="nt">maxFreq</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;turbo&quot;</span>
+<span class="w">    </span><span class="nt">uncoreMinFreq</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2.4GHz&quot;</span>
+<span class="w">    </span><span class="nt">uncoreMaxFreq</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2.4GHz&quot;</span>
+<span class="w">    </span><span class="nt">disabledCstates</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">C6</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">C7</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">C8</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">C10</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">normal</span>
+<span class="w">    </span><span class="nt">minFreq</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;min&quot;</span>
+<span class="w">    </span><span class="nt">maxFreq</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;base&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">powersave</span>
+<span class="w">    </span><span class="nt">minFreq</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;min&quot;</span>
+<span class="w">    </span><span class="nt">maxFreq</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;min&quot;</span>
 
 <span class="w">  </span><span class="c1"># Scheduling for high priority</span>
 <span class="w">  </span><span class="nt">schedulingClasses</span><span class="p">:</span>
