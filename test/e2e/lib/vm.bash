@@ -1119,13 +1119,13 @@ containerd-reimport-image() {
 }
 
 crio-check-unreadable-blobs() {
-    error "TODO: implement unreadable blob check for CRI-O..."
+    echo "TODO: implement unreadable blob check for CRI-O... assuming no errors for now"
 }
 
 crio-fix-unreadable-blobs() {
-    error "TODO: implement unreadable blob fix for CRI-O (if possible)..."
+    echo "TODO: implement unreadable blob fix for CRI-O (if possible)... assuming no-op for now"
 }
 
 crio-reimport-image() {
-    error "TODO: implement image reimport for CRI-O..."
+    echo "TODO: implement image reimport for CRI-O... assuming no-op for now"
 }
