@@ -1,0 +1,1192 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Balloons + Priority Core Turbo (assoc-only) example &mdash; NRI Plugins v0.13.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../../../_static/documentation_options.js?v=bb33721e"></script>
+        <script src="../../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" />
+    <link rel="next" title="Developer’s Guide" href="../../developers-guide/index.html" />
+    <link rel="prev" title="Balloons + Priority Core Turbo (managed) example" href="balloons-pct-example-auto.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            NRI Plugins
+          </a>
+              <div class="version">
+                v0.13.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../../../introduction.html">Introduction</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../../index.html">Resource Policy Plugins</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../../introduction.html">Introduction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../setup.html">Setup and Usage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../configuration.html">Dynamic Configuration</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="../index.html">Policies</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="../topology-aware.html">Topology-Aware Policy</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../balloons.html">Balloons Policy</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../template.html">Template Policy</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../common-functionality.html">Common Functionality</a></li>
+<li class="toctree-l3 current"><a class="reference internal" href="index.html">How-to guides</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="balloons-pct-quickstart.html">Quick start: Priority Core Turbo (PCT) in Kubernetes with Balloons</a></li>
+<li class="toctree-l4"><a class="reference internal" href="balloons-pct-example-auto.html">Balloons + Priority Core Turbo (managed) example</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">Balloons + Priority Core Turbo (assoc-only) example</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../../developers-guide/index.html">Developer’s Guide</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../../memory/index.html">Memory plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../monitoring/index.html">Monitoring plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../deployment/index.html">Deployment</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/containers/nri-plugins">Project GitHub repository</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">NRI Plugins</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Resource Policy Plugins</a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Policies</a></li>
+          <li class="breadcrumb-item"><a href="index.html">How-to guides</a></li>
+      <li class="breadcrumb-item active">Balloons + Priority Core Turbo (assoc-only) example</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../../../_sources/docs/resource-policy/policy/howto/balloons-pct-example-manual.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="balloons-priority-core-turbo-assoc-only-example">
+<h1>Balloons + Priority Core Turbo (assoc-only) example<a class="headerlink" href="#balloons-priority-core-turbo-assoc-only-example" title="Link to this heading"></a></h1>
+<p>This example demonstrates how to use the balloons policy to associate
+container CPUs to <em>pre-configured</em> Intel Speed Select Technology -
+Core Power (SST-CP) classes of service (CLOSes), so that some
+containers run on <strong>High Priority (HP)</strong> cores that reach maximum
+turbo frequency while others run on <strong>Low Priority (LP)</strong> cores that
+are capped at base. This is the “assoc-only” PCT mode: the operator
+(or BIOS) owns the SST-CP configuration; balloons only associates
+container CPUs to the chosen CLOSes and does not reconfigure SST-CP.</p>
+<p>For background on the feature, see the
+<a class="reference external" href="https://www.intel.com/content/www/us/en/products/docs/processors/xeon/6-priority-core-turbo-brief.html">Intel(R) Xeon(R) 6 with Priority Core Turbo Technical
+Brief</a>,
+the <a class="reference internal" href="../balloons.html#priority-core-turbo-pct"><span class="std std-ref">PCT section of the balloons policy
+documentation</span></a>, and the
+<a class="reference external" href="https://docs.kernel.org/admin-guide/pm/intel-speed-select.html">Intel Speed Select kernel
+documentation</a>.</p>
+<p>The full session below is meant to be copy-pasted into a bash prompt
+on a workstation that has <code class="docutils literal notranslate"><span class="pre">kubectl</span></code> configured to talk to a single
+target node. Commands that must run <em>on the node itself</em> are marked
+with <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">node:</span></code>.</p>
+<section id="what-you-will-see">
+<h2>What you will see<a class="headerlink" href="#what-you-will-see" title="Link to this heading"></a></h2>
+<p>Four HP pods and one LP pod running the same benchmark image, on
+the same node, in balloons that pin them to different SST-CP
+CLOSes. The HP balloons spread across separate SST power domains
+(punits), so each gets its own SST-TF turbo budget. Each pod
+prints, once per <code class="docutils literal notranslate"><span class="pre">sysbench</span> <span class="pre">cpu</span></code> iteration, the CPUs it is pinned
+to, the sysbench thread count, sysbench events/s and the average
+<code class="docutils literal notranslate"><span class="pre">Bzy_MHz</span></code> (APERF/MPERF-derived effective frequency, sampled by
+<code class="docutils literal notranslate"><span class="pre">turbostat</span></code> from inside the pod) across the pinned CPUs:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>[hp-1] cpus=&lt;...&gt; threads=&lt;N&gt; events_per_sec=&lt;...&gt; mhz_avg=&lt;HP MHz&gt;
+[hp-2] cpus=&lt;...&gt; threads=&lt;N&gt; events_per_sec=&lt;...&gt; mhz_avg=&lt;HP MHz&gt;
+[hp-3] cpus=&lt;...&gt; threads=&lt;N&gt; events_per_sec=&lt;...&gt; mhz_avg=&lt;HP MHz&gt;
+[hp-4] cpus=&lt;...&gt; threads=&lt;N&gt; events_per_sec=&lt;...&gt; mhz_avg=&lt;HP MHz&gt;
+[lp]   cpus=&lt;...&gt; threads=&lt;N&gt; events_per_sec=&lt;...&gt; mhz_avg=&lt;LP MHz&gt;
+</pre></div>
+</div>
+<p>With PCT in effect, <code class="docutils literal notranslate"><span class="pre">mhz_avg</span></code> and per-thread <code class="docutils literal notranslate"><span class="pre">events_per_sec</span></code> are
+visibly higher in the HP pods than in the LP pod.</p>
+</section>
+<section id="prerequisites">
+<h2>1. Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading"></a></h2>
+<p>Hardware and platform:</p>
+<ul class="simple">
+<li><p>A server with Intel(R) Xeon(R) 6 CPUs that support SST-PP and SST-CP.
+This example was written against a dual-socket Xeon 6776P.</p></li>
+<li><p>SST-PP and SST-CP enabled on the platform (see step 2).</p></li>
+<li><p>A Linux kernel with the <code class="docutils literal notranslate"><span class="pre">isst_if_*</span></code> (or <code class="docutils literal notranslate"><span class="pre">isst_tpmi_*</span></code>) modules
+loaded. Modern distro kernels include them.</p></li>
+</ul>
+<p>Kubernetes:</p>
+<ul class="simple">
+<li><p>A working cluster. All commands target a single node; on a
+multi-node cluster, schedule the demo pods on the PCT-capable node
+(e.g. with <code class="docutils literal notranslate"><span class="pre">nodeSelector</span></code> or by tainting other nodes).</p></li>
+<li><p>Container runtime: containerd 1.7+ or CRI-O 1.26+ with NRI
+enabled (the default in current versions).</p></li>
+<li><p>The balloons policy installed with PCT enabled (see step 5).</p></li>
+</ul>
+<p>Optional tools used in this example:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">intel-speed-select</span></code>. Most Linux distributions package it as part
+of <code class="docutils literal notranslate"><span class="pre">linux-tools</span></code> or <code class="docutils literal notranslate"><span class="pre">intel-speed-select</span></code>; otherwise build it from
+the Linux source tree under
+<code class="docutils literal notranslate"><span class="pre">tools/power/x86/intel-speed-select/</span></code> (see the upstream
+<a class="reference external" href="https://docs.kernel.org/admin-guide/pm/intel-speed-select.html">documentation</a>).
+Used only to configure and inspect SST-CP. Configuration via BIOS
+is an alternative (see step 2.1).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">turbostat</span></code>. The benchmark image already includes it (from the
+Debian <code class="docutils literal notranslate"><span class="pre">linux-cpupower</span></code> package) and the demo pods use it to
+report <code class="docutils literal notranslate"><span class="pre">Bzy_MHz</span></code> from inside the container. You only need
+<code class="docutils literal notranslate"><span class="pre">turbostat</span></code> on the <em>node</em> if you want to cross-check the demo
+numbers from outside the pod; in that case install it from your
+distro’s kernel-tools package.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">crictl</span></code> and <code class="docutils literal notranslate"><span class="pre">ctr</span></code> (containerd) or <code class="docutils literal notranslate"><span class="pre">podman</span></code> (CRI-O) on the node
+for loading the benchmark image without a registry.</p></li>
+</ul>
+</section>
+<section id="prepare-the-node">
+<h2>2. Prepare the node<a class="headerlink" href="#prepare-the-node" title="Link to this heading"></a></h2>
+<section id="clear-stale-cpufreq-caps">
+<h3>2.1. Clear stale <code class="docutils literal notranslate"><span class="pre">cpufreq</span></code> caps<a class="headerlink" href="#clear-stale-cpufreq-caps" title="Link to this heading"></a></h3>
+<p>The Linux <code class="docutils literal notranslate"><span class="pre">cpufreq</span></code> subsystem caps each CPU at the lower of its
+per-CPU <code class="docutils literal notranslate"><span class="pre">scaling_max_freq</span></code> and the SST-CP CLOS max. If a previous
+workload (e.g. another resource policy, an earlier balloons run
+with a <code class="docutils literal notranslate"><span class="pre">maxFreq:</span></code> cpuClass, or a manual <code class="docutils literal notranslate"><span class="pre">cpupower</span> <span class="pre">frequency-set</span></code>)
+left <code class="docutils literal notranslate"><span class="pre">scaling_max_freq</span></code> below the hardware maximum on some CPUs,
+those CPUs will stay capped even after they are associated to
+CLOS 0. Reset every CPU’s per-CPU <code class="docutils literal notranslate"><span class="pre">scaling_min_freq</span></code> and
+<code class="docutils literal notranslate"><span class="pre">scaling_max_freq</span></code> to the hardware limits before starting the
+demo:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># node:</span>
+<span class="k">for</span><span class="w"> </span>f<span class="w"> </span><span class="k">in</span><span class="w"> </span>/sys/devices/system/cpu/cpu*/cpufreq/scaling_max_freq<span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<span class="w">    </span><span class="nv">base</span><span class="o">=</span><span class="si">${</span><span class="nv">f</span><span class="p">%scaling_max_freq</span><span class="si">}</span>cpuinfo_max_freq
+<span class="w">    </span>sudo<span class="w"> </span>tee<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$f</span><span class="s2">&quot;</span><span class="w"> </span>&lt;<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$base</span><span class="s2">&quot;</span><span class="w"> </span>&gt;<span class="w"> </span>/dev/null
+<span class="k">done</span>
+<span class="k">for</span><span class="w"> </span>f<span class="w"> </span><span class="k">in</span><span class="w"> </span>/sys/devices/system/cpu/cpu*/cpufreq/scaling_min_freq<span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<span class="w">    </span><span class="nv">base</span><span class="o">=</span><span class="si">${</span><span class="nv">f</span><span class="p">%scaling_min_freq</span><span class="si">}</span>cpuinfo_min_freq
+<span class="w">    </span>sudo<span class="w"> </span>tee<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$f</span><span class="s2">&quot;</span><span class="w"> </span>&lt;<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$base</span><span class="s2">&quot;</span><span class="w"> </span>&gt;<span class="w"> </span>/dev/null
+<span class="k">done</span>
+
+<span class="c1"># Verify (should print exactly two lines: the hardware min and max</span>
+<span class="c1"># in kHz, e.g. &quot;800000&quot; and &quot;4600000&quot; on Xeon 6776P).</span>
+<span class="k">for</span><span class="w"> </span>i<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="k">$(</span>seq<span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="k">$(($(</span>nproc<span class="k">)</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="m">1</span><span class="k">)))</span><span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<span class="w">    </span>cat<span class="w"> </span>/sys/devices/system/cpu/cpu<span class="nv">$i</span>/cpufreq/scaling_max_freq<span class="w"> </span><span class="se">\</span>
+<span class="w">        </span>/sys/devices/system/cpu/cpu<span class="nv">$i</span>/cpufreq/scaling_min_freq
+<span class="k">done</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>sort<span class="w"> </span>-u
+</pre></div>
+</div>
+<p>The cpuClasses below (step 5) deliberately leave <code class="docutils literal notranslate"><span class="pre">minFreq</span></code> /
+<code class="docutils literal notranslate"><span class="pre">maxFreq</span></code> unset, so balloons will not write to these files; once
+reset they stay at the hardware limits and the SST-CP CLOS bounds
+become the effective frequency caps. This is also what the Linux
+SST documentation recommends: <em>“Once associated, avoid changing
+Linux cpufreq subsystem scaling frequency limits.”</em></p>
+</section>
+<section id="enable-sst-tf-and-sst-cp">
+<h3>2.2. Enable SST-TF and SST-CP<a class="headerlink" href="#enable-sst-tf-and-sst-cp" title="Link to this heading"></a></h3>
+<p>In assoc-only mode the balloons policy does <strong>not</strong> enable SST
+features or program CLOS frequency bounds. Those must be in place
+<em>before</em> deploying pods. With SST-TF enabled in ordered priority
+mode the CLOS frequency bounds come from the SST-TF buckets
+themselves (CLOS 0 = the bucket-0 HP turbo limit; CLOS 3 = the LP
+clip frequency), so no manual <code class="docutils literal notranslate"><span class="pre">core-power</span> <span class="pre">config</span></code> is needed.</p>
+<p><code class="docutils literal notranslate"><span class="pre">intel-speed-select</span> <span class="pre">turbo-freq</span> <span class="pre">enable</span> <span class="pre">--auto</span></code> enables, on every
+punit that contains at least one of the CPUs passed via <code class="docutils literal notranslate"><span class="pre">-c</span></code>:</p>
+<ul class="simple">
+<li><p>SST-TF (so HP cores can exceed the standard turbo-ratio bucket
+limit),</p></li>
+<li><p>SST-CP with <code class="docutils literal notranslate"><span class="pre">priority-type:ordered</span></code>,</p></li>
+<li><p>the initial CPU-to-CLOS association (the passed CPUs -&gt; CLOS 0,
+every other CPU on the punit -&gt; CLOS 3).</p></li>
+</ul>
+<p>The balloons policy overwrites the CPU-to-CLOS associations at pod
+admission time, but it does <strong>not</strong> enable SST-TF or SST-CP for
+you, so the initial designation must cover every punit you plan to
+run HP pods on. Pick one CPU per punit on the node:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># node:</span>
+<span class="c1"># Discover punits and one representative CPU each. The &quot;sst&quot; tool</span>
+<span class="c1"># (https://github.com/intel/intel-speed-select) prints this cleanly;</span>
+<span class="c1"># you can also read it from goresctrl debug or from sysfs.</span>
+sudo<span class="w"> </span>./sst<span class="w"> </span>info<span class="w"> </span><span class="p">|</span><span class="w"> </span>awk<span class="w"> </span><span class="s1">&#39;/SST-PP/,/SST-BF/&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s1">&#39;^\s+[0-9]&#39;</span>
+<span class="c1"># Output on a dual-socket Xeon 6776P:</span>
+<span class="c1">#   0    0      0-31,128-159</span>
+<span class="c1">#   0    1      32-63,160-191</span>
+<span class="c1">#   1    0      64-95,192-223</span>
+<span class="c1">#   1    1      96-127,224-255</span>
+
+<span class="c1"># Pick one CPU from each of the four punits, then:</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">TF_INIT_CPUS</span><span class="o">=</span><span class="m">2</span>,34,66,98
+sudo<span class="w"> </span>intel-speed-select<span class="w"> </span>-c<span class="w"> </span><span class="nv">$TF_INIT_CPUS</span><span class="w"> </span>turbo-freq<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>-a
+</pre></div>
+</div>
+</section>
+<section id="configure-sst-tf-from-bios-alternative">
+<h3>2.3. Configure SST-TF from BIOS (alternative)<a class="headerlink" href="#configure-sst-tf-from-bios-alternative" title="Link to this heading"></a></h3>
+<p>Many OEM BIOSes for Intel Xeon 6 expose SST-PP profile selection
+and SST-TF enablement directly in Setup. If your platform supports
+it, do the equivalent of the <code class="docutils literal notranslate"><span class="pre">turbo-freq</span> <span class="pre">enable</span> <span class="pre">-a</span></code> command from
+BIOS and skip the <code class="docutils literal notranslate"><span class="pre">intel-speed-select</span></code> step. Consult your server
+vendor’s BIOS guide for the exact menu paths.</p>
+</section>
+<section id="verify">
+<h3>2.4. Verify<a class="headerlink" href="#verify" title="Link to this heading"></a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># node:</span>
+<span class="c1"># SST-TF status on every punit (should print &quot;enabled&quot; for every</span>
+<span class="c1"># punit you intend to host HP pods on).</span>
+sudo<span class="w"> </span>intel-speed-select<span class="w"> </span>perf-profile<span class="w"> </span>info<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s1">&#39;package-|powerdomain-|speed-select-turbo-freq:&#39;</span>
+
+<span class="c1"># Per-CPU CLOS association (initial; balloons will overwrite later).</span>
+sudo<span class="w"> </span>intel-speed-select<span class="w"> </span>-c<span class="w"> </span><span class="m">0</span>,2,34,66,98<span class="w"> </span>core-power<span class="w"> </span>get-assoc<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s1">&#39;cpu-|clos:&#39;</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">get-assoc</span></code> should show <code class="docutils literal notranslate"><span class="pre">clos:0</span></code> for the CPUs in <code class="docutils literal notranslate"><span class="pre">$TF_INIT_CPUS</span></code>
+and <code class="docutils literal notranslate"><span class="pre">clos:3</span></code> for every other CPU (including CPU 0, even though
+its punit received an HP designation, because CPU 0 itself was
+not in <code class="docutils literal notranslate"><span class="pre">$TF_INIT_CPUS</span></code>).</p>
+</section>
+</section>
+<section id="build-the-benchmark-image">
+<h2>3. Build the benchmark image<a class="headerlink" href="#build-the-benchmark-image" title="Link to this heading"></a></h2>
+<p>The benchmark image runs <code class="docutils literal notranslate"><span class="pre">sysbench</span> <span class="pre">cpu</span></code> in a loop and prints one
+status line per iteration. The effective frequency is measured with
+<code class="docutils literal notranslate"><span class="pre">turbostat</span> <span class="pre">--cpu</span></code> over the same time window as the <code class="docutils literal notranslate"><span class="pre">sysbench</span></code> run,
+restricted to the CPUs the container is pinned to.</p>
+<p><code class="docutils literal notranslate"><span class="pre">turbostat</span></code> is used instead of <code class="docutils literal notranslate"><span class="pre">scaling_cur_freq</span></code> /
+<code class="docutils literal notranslate"><span class="pre">/proc/cpuinfo</span></code>’s <code class="docutils literal notranslate"><span class="pre">cpu</span> <span class="pre">MHz</span></code> because the latter reflect what the OS
+<em>requests</em> from the firmware; on HWP/<code class="docutils literal notranslate"><span class="pre">intel_pstate</span></code> kernels they
+can lag or under-report when the firmware boosts autonomously.
+<code class="docutils literal notranslate"><span class="pre">Bzy_MHz</span></code> is derived from the <code class="docutils literal notranslate"><span class="pre">APERF</span></code>/<code class="docutils literal notranslate"><span class="pre">MPERF</span></code> MSRs over the
+sampling window and is the actual <em>busy</em> frequency the cores ran
+at.</p>
+<p>Reading those MSRs requires access to <code class="docutils literal notranslate"><span class="pre">/dev/cpu/*/msr</span></code> and
+<code class="docutils literal notranslate"><span class="pre">CAP_SYS_RAWIO</span></code>. In a standard Kubernetes cluster the simplest way
+to get both is to run the benchmark pod as <code class="docutils literal notranslate"><span class="pre">privileged:</span> <span class="pre">true</span></code> with
+the host <code class="docutils literal notranslate"><span class="pre">/dev</span></code> mounted. The pod yaml in step 6 does that. Make
+sure the <code class="docutils literal notranslate"><span class="pre">msr</span></code> kernel module is loaded on the node:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># node:</span>
+sudo<span class="w"> </span>modprobe<span class="w"> </span>msr
+ls<span class="w"> </span>/dev/cpu/0/msr<span class="w">   </span><span class="c1"># must exist</span>
+</pre></div>
+</div>
+<p>Create the build context:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>mkdir<span class="w"> </span>-p<span class="w"> </span>pct-reporter<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>pct-reporter
+
+cat<span class="w"> </span>&gt;<span class="w"> </span>reporter.sh<span class="w"> </span><span class="s">&lt;&lt;&#39;EOF&#39;</span>
+<span class="s">#!/bin/bash</span>
+<span class="s"># Continuously run sysbench cpu and report, per iteration:</span>
+<span class="s">#   label, cpus the container is pinned to (from /proc/self/status,</span>
+<span class="s">#   which is correct even when running as privileged), thread count,</span>
+<span class="s">#   sysbench events/s, and the average Bzy_MHz across the pinned</span>
+<span class="s">#   CPUs as measured by turbostat over the same interval.</span>
+<span class="s">set -u</span>
+<span class="s">LABEL=&quot;${LABEL:-reporter}&quot;</span>
+<span class="s">INTERVAL=&quot;${INTERVAL:-5}&quot;</span>
+
+<span class="s">CPUS_LIST=&quot;$(awk &#39;/Cpus_allowed_list/ {print $2}&#39; /proc/self/status)&quot;</span>
+
+<span class="s">expand_count() {</span>
+<span class="s">    local list=&quot;$1&quot; n=0 part lo hi</span>
+<span class="s">    IFS=&quot;,&quot; read -ra parts &lt;&lt;&lt; &quot;$list&quot;</span>
+<span class="s">    for part in &quot;${parts[@]}&quot;; do</span>
+<span class="s">        if [[ &quot;$part&quot; == *-* ]]; then</span>
+<span class="s">            lo=&quot;${part%-*}&quot;; hi=&quot;${part#*-}&quot;</span>
+<span class="s">            n=$(( n + hi - lo + 1 ))</span>
+<span class="s">        else</span>
+<span class="s">            n=$(( n + 1 ))</span>
+<span class="s">        fi</span>
+<span class="s">    done</span>
+<span class="s">    echo &quot;$n&quot;</span>
+<span class="s">}</span>
+<span class="s"># Default: one sysbench thread per pinned logical CPU. Override</span>
+<span class="s"># with THREADS env (used by the A/B pod in step 8).</span>
+<span class="s">NTHREADS=&quot;${THREADS:-$(expand_count &quot;$CPUS_LIST&quot;)}&quot;</span>
+
+<span class="s">echo &quot;[$LABEL] starting: cpus=$CPUS_LIST threads=$NTHREADS interval=${INTERVAL}s&quot;</span>
+
+<span class="s">while true; do</span>
+<span class="s">    TS_OUT=&quot;$(mktemp)&quot;</span>
+<span class="s">    turbostat --quiet --cpu &quot;$CPUS_LIST&quot; --show CPU,Bzy_MHz \</span>
+<span class="s">              --num_iterations 1 --interval &quot;$INTERVAL&quot; \</span>
+<span class="s">              &gt; &quot;$TS_OUT&quot; 2&gt;/dev/null &amp;</span>
+<span class="s">    TS_PID=$!</span>
+
+<span class="s">    SB_OUT=&quot;$(sysbench cpu --threads=&quot;$NTHREADS&quot; --time=&quot;$INTERVAL&quot; \</span>
+<span class="s">              run 2&gt;/dev/null)&quot;</span>
+<span class="s">    wait &quot;$TS_PID&quot;</span>
+
+<span class="s">    EVPS=&quot;$(echo &quot;$SB_OUT&quot; | awk -F: &#39;/events per second/ {gsub(/ /,&quot;&quot;,$2); print $2}&#39;)&quot;</span>
+<span class="s">    # Average Bzy_MHz across the requested CPUs. Skip header and</span>
+<span class="s">    # turbostat&#39;s &quot;-&quot; all-CPUs summary row.</span>
+<span class="s">    MHZ_AVG=&quot;$(awk &#39;NR&gt;1 &amp;&amp; $1 ~ /^[0-9]+$/ {s+=$2; n++} END {if (n) printf &quot;%.0f&quot;, s/n}&#39; &quot;$TS_OUT&quot;)&quot;</span>
+<span class="s">    rm -f &quot;$TS_OUT&quot;</span>
+
+<span class="s">    printf &#39;[%s] cpus=%s threads=%d events_per_sec=%s mhz_avg=%s\n&#39; \</span>
+<span class="s">        &quot;$LABEL&quot; &quot;$CPUS_LIST&quot; &quot;$NTHREADS&quot; &quot;${EVPS:-?}&quot; &quot;${MHZ_AVG:-?}&quot;</span>
+<span class="s">done</span>
+<span class="s">EOF</span>
+chmod<span class="w"> </span>+x<span class="w"> </span>reporter.sh
+
+cat<span class="w"> </span>&gt;<span class="w"> </span>Dockerfile<span class="w"> </span><span class="s">&lt;&lt;&#39;EOF&#39;</span>
+<span class="s">FROM debian:stable-slim</span>
+<span class="s">RUN apt-get update \</span>
+<span class="s"> &amp;&amp; apt-get install -y --no-install-recommends \</span>
+<span class="s">        sysbench linux-cpupower util-linux ca-certificates \</span>
+<span class="s"> &amp;&amp; rm -rf /var/lib/apt/lists/*</span>
+<span class="s">COPY reporter.sh /usr/local/bin/reporter.sh</span>
+<span class="s">ENTRYPOINT [&quot;/usr/local/bin/reporter.sh&quot;]</span>
+<span class="s">EOF</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">linux-cpupower</span></code> ships <code class="docutils literal notranslate"><span class="pre">/usr/sbin/turbostat</span></code>. <code class="docutils literal notranslate"><span class="pre">util-linux</span></code> provides
+<code class="docutils literal notranslate"><span class="pre">taskset</span></code> and the rest of the standard userspace.</p>
+<p>Build the image. Use whichever tool is available on your build host.
+With docker, prefix with <code class="docutils literal notranslate"><span class="pre">sudo</span></code> if your user is not in the <code class="docutils literal notranslate"><span class="pre">docker</span></code>
+group:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># With docker:</span>
+docker<span class="w"> </span>build<span class="w"> </span>-t<span class="w"> </span>localhost/pct-reporter:demo<span class="w"> </span>.
+
+<span class="c1"># Or with podman:</span>
+podman<span class="w"> </span>build<span class="w"> </span>-t<span class="w"> </span>localhost/pct-reporter:demo<span class="w"> </span>.
+</pre></div>
+</div>
+<p>If the build host is behind an HTTP proxy, pass it through:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>docker<span class="w"> </span>build<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--build-arg<span class="w"> </span><span class="nv">http_proxy</span><span class="o">=</span><span class="nv">$http_proxy</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--build-arg<span class="w"> </span><span class="nv">https_proxy</span><span class="o">=</span><span class="nv">$https_proxy</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-t<span class="w"> </span>localhost/pct-reporter:demo<span class="w"> </span>.
+</pre></div>
+</div>
+</section>
+<section id="make-the-image-available-to-the-kubelet-no-registry">
+<h2>4. Make the image available to the kubelet (no registry)<a class="headerlink" href="#make-the-image-available-to-the-kubelet-no-registry" title="Link to this heading"></a></h2>
+<p>If you built the image on the same machine as the kubelet, import it
+directly into the container runtime’s image store. Pick the
+subsection that matches your runtime.</p>
+<section id="containerd">
+<h3>4.1. containerd<a class="headerlink" href="#containerd" title="Link to this heading"></a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># On the build host:</span>
+docker<span class="w"> </span>save<span class="w"> </span>localhost/pct-reporter:demo<span class="w"> </span>-o<span class="w"> </span>/tmp/pct-reporter.tar
+<span class="c1"># (or: podman save -o /tmp/pct-reporter.tar localhost/pct-reporter:demo)</span>
+
+<span class="c1"># node:</span>
+sudo<span class="w"> </span>ctr<span class="w"> </span>-n<span class="w"> </span>k8s.io<span class="w"> </span>images<span class="w"> </span>import<span class="w"> </span>/tmp/pct-reporter.tar
+sudo<span class="w"> </span>crictl<span class="w"> </span>images<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>pct-reporter
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">-n</span> <span class="pre">k8s.io</span></code> namespace is the one kubelet uses; without it the
+image will not be visible to Kubernetes.</p>
+</section>
+<section id="cri-o">
+<h3>4.2. CRI-O<a class="headerlink" href="#cri-o" title="Link to this heading"></a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># On the build host:</span>
+docker<span class="w"> </span>save<span class="w"> </span>localhost/pct-reporter:demo<span class="w"> </span>-o<span class="w"> </span>/tmp/pct-reporter.tar
+<span class="c1"># (or: podman save -o /tmp/pct-reporter.tar localhost/pct-reporter:demo)</span>
+
+<span class="c1"># node:</span>
+sudo<span class="w"> </span>podman<span class="w"> </span>--root<span class="w"> </span>/var/lib/containers/storage<span class="w"> </span>load<span class="w"> </span>-i<span class="w"> </span>/tmp/pct-reporter.tar
+sudo<span class="w"> </span>crictl<span class="w"> </span>images<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>pct-reporter
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">--root</span> <span class="pre">/var/lib/containers/storage</span></code> makes <code class="docutils literal notranslate"><span class="pre">podman</span></code> load the image
+into the same storage CRI-O reads from. If you built the image
+directly on the node with <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">podman</span> <span class="pre">build</span></code>, this step is not
+needed.</p>
+<p>The demo pods set <code class="docutils literal notranslate"><span class="pre">imagePullPolicy:</span> <span class="pre">IfNotPresent</span></code> and use the image
+reference <code class="docutils literal notranslate"><span class="pre">localhost/pct-reporter:demo</span></code>, so the kubelet will not
+attempt to pull from a registry. Note that the kubelet garbage-
+collects unused local images: re-import the image if pod creation
+later fails with <code class="docutils literal notranslate"><span class="pre">ErrImagePull</span></code>.</p>
+</section>
+</section>
+<section id="install-reconfigure-the-balloons-policy-with-pct-enabled">
+<h2>5. Install / reconfigure the balloons policy with PCT enabled<a class="headerlink" href="#install-reconfigure-the-balloons-policy-with-pct-enabled" title="Link to this heading"></a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>nri-resource-policy-balloons<span class="w"> </span>nri-plugins/nri-resource-policy-balloons<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span>--set<span class="w"> </span><span class="nv">allowPCT</span><span class="o">=</span><span class="nb">true</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">--set</span> <span class="pre">allowPCT=true</span></code> makes the plugin pod privileged and mounts the
+host <code class="docutils literal notranslate"><span class="pre">/dev</span></code> at <code class="docutils literal notranslate"><span class="pre">/host/dev</span></code>. Enable it only on nodes where PCT
+cpuClasses are used.</p>
+<p>Verify the plugin pod has the privileged settings the chart’s
+<code class="docutils literal notranslate"><span class="pre">allowPCT=true</span></code> flag enables:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl<span class="w"> </span>-n<span class="w"> </span>kube-system<span class="w"> </span>get<span class="w"> </span>pod<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-l<span class="w"> </span>app.kubernetes.io/name<span class="o">=</span>nri-resource-policy-balloons<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.items[0].spec.containers[0].securityContext}{&quot;\n&quot;}&#39;</span>
+<span class="c1"># Expect: {&quot;privileged&quot;:true}</span>
+
+kubectl<span class="w"> </span>-n<span class="w"> </span>kube-system<span class="w"> </span>get<span class="w"> </span>pod<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-l<span class="w"> </span>app.kubernetes.io/name<span class="o">=</span>nri-resource-policy-balloons<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.items[0].spec.containers[0].volumeMounts[?(@.name==&quot;hostdev&quot;)]}{&quot;\n&quot;}&#39;</span>
+<span class="c1"># Expect a mount of /host/dev.</span>
+</pre></div>
+</div>
+<p>Now apply the policy configuration. The <code class="docutils literal notranslate"><span class="pre">BalloonsPolicy</span></code> below
+defines three cpuClasses with only <code class="docutils literal notranslate"><span class="pre">sstClosID</span></code> set (no
+<code class="docutils literal notranslate"><span class="pre">pctPriority</span></code>, no frequency overrides), which selects assoc-only
+mode for PCT and lets the SST-CP CLOS bounds – set by the
+<code class="docutils literal notranslate"><span class="pre">intel-speed-select</span> <span class="pre">turbo-freq</span> <span class="pre">enable</span> <span class="pre">-a</span></code> recipe in step 2 – define
+the actual frequency caps. Following the Linux SST guidance, the
+cpuClasses do not touch <code class="docutils literal notranslate"><span class="pre">minFreq</span></code> / <code class="docutils literal notranslate"><span class="pre">maxFreq</span></code> at all.</p>
+<p>The CLOS layout matches what <code class="docutils literal notranslate"><span class="pre">turbo-freq</span> <span class="pre">enable</span> <span class="pre">-a</span></code> programs in
+ordered priority mode:</p>
+<ul class="simple">
+<li><p>CLOS 0 – HP – bucket-0 turbo (Pmax),</p></li>
+<li><p>CLOS 3 – LP – LP clip (= base on this platform),</p></li>
+<li><p>the class named <code class="docutils literal notranslate"><span class="pre">default</span></code> is the implicit fallback for idle CPUs
+and balloons that do not specify their <code class="docutils literal notranslate"><span class="pre">cpuClass</span></code>. It is mapped
+to the LP CLOS so idle CPUs do not consume HP turbo budget.</p></li>
+</ul>
+<p>The HP cpuClass additionally disables the deep C-states <code class="docutils literal notranslate"><span class="pre">C6</span></code> and
+<code class="docutils literal notranslate"><span class="pre">C6P</span></code>. The HP cores in this demo are continuously busy with
+<code class="docutils literal notranslate"><span class="pre">sysbench</span></code>, so C-state entry would normally not happen anyway;
+the setting is included because removing C-state wake-up latency
+is the typical reason latency-sensitive workloads ask for priority
+cores. List the C-state names available on the node with
+<code class="docutils literal notranslate"><span class="pre">grep</span> <span class="pre">.</span> <span class="pre">/sys/devices/system/cpu/cpu0/cpuidle/state*/name</span></code>. <strong>Do
+not</strong> disable C-states on the default / LP classes: idle CPUs in
+deep C-states do not count toward the package’s active-core count
+and therefore free turbo budget for the HP cores.</p>
+<p>The HP balloon type uses <code class="docutils literal notranslate"><span class="pre">preferNewBalloons:</span> <span class="pre">true</span></code> and
+<code class="docutils literal notranslate"><span class="pre">maxCPUs:</span> <span class="pre">8</span></code> (the SST-TF bucket-0 HP-core limit per punit), so
+each HP pod lands in its own balloon and the balloons spread
+across separate punits. <code class="docutils literal notranslate"><span class="pre">minCPUs</span></code> is intentionally left unset so
+the balloon size equals what the pod requests; with no
+<code class="docutils literal notranslate"><span class="pre">hideHyperthreads</span></code> the container sees exactly the logical CPUs the
+balloon allocated.</p>
+<p><code class="docutils literal notranslate"><span class="pre">agent.nodeResourceTopology:</span> <span class="pre">true</span></code> and <code class="docutils literal notranslate"><span class="pre">showContainersInNrt:</span> <span class="pre">true</span></code>
+make the plugin publish per-balloon and per-container CPU sets in
+the cluster’s <code class="docutils literal notranslate"><span class="pre">NodeResourceTopology</span></code> (NRT) CRs. The verification
+queries in step 7 read those CRs to confirm exactly which CPUs
+each pod’s container ended up pinned to. The NRT CRD must exist
+in the cluster (<code class="docutils literal notranslate"><span class="pre">kubectl</span> <span class="pre">get</span> <span class="pre">crd</span> <span class="pre">noderesourcetopologies.topology.node.k8s.io</span></code>).</p>
+<p><code class="docutils literal notranslate"><span class="pre">availableResources</span></code> is intentionally left unset: balloons manages
+all CPUs of the node, as in the normal mode of operation. The
+<code class="docutils literal notranslate"><span class="pre">reservedResources</span></code> covers physical CPU 0 (<code class="docutils literal notranslate"><span class="pre">0</span></code> and its SMT sibling
+<code class="docutils literal notranslate"><span class="pre">128</span></code>) and physical CPU 1 (<code class="docutils literal notranslate"><span class="pre">1</span></code> and its SMT sibling <code class="docutils literal notranslate"><span class="pre">129</span></code>); adjust
+the sibling numbers if your topology differs (<code class="docutils literal notranslate"><span class="pre">lscpu</span> <span class="pre">-e</span></code> shows
+them).</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>cat<span class="w"> </span>&gt;<span class="w"> </span>balloons-pct-assoconly.yaml<span class="w"> </span><span class="s">&lt;&lt;EOF</span>
+<span class="s">apiVersion: config.nri/v1alpha1</span>
+<span class="s">kind: BalloonsPolicy</span>
+<span class="s">metadata:</span>
+<span class="s">  name: default</span>
+<span class="s">  namespace: kube-system</span>
+<span class="s">spec:</span>
+<span class="s">  agent:</span>
+<span class="s">    nodeResourceTopology: true</span>
+<span class="s">  reservedResources:</span>
+<span class="s">    cpu: cpuset:0,1,128,129</span>
+<span class="s">  pinCPU: true</span>
+<span class="s">  showContainersInNrt: true</span>
+
+<span class="s">  balloonTypes:</span>
+<span class="s">  - name: reserved</span>
+<span class="s">    # uses the implicit &quot;default&quot; cpuClass below</span>
+<span class="s">  - name: hp-bln</span>
+<span class="s">    cpuClass: hp-clos0</span>
+<span class="s">    maxCPUs: 8</span>
+<span class="s">    preferNewBalloons: true</span>
+<span class="s">    preferSpreadingPods: false</span>
+<span class="s">  - name: lp-bln</span>
+<span class="s">    cpuClass: lp-clos3</span>
+<span class="s">    preferSpreadingPods: false</span>
+
+<span class="s">  cpuClasses:</span>
+<span class="s">  - name: default</span>
+<span class="s">    sstClosID: 3</span>
+<span class="s">  - name: hp-clos0</span>
+<span class="s">    sstClosID: 0</span>
+<span class="s">    disabledCstates: [C6, C6P]</span>
+<span class="s">  - name: lp-clos3</span>
+<span class="s">    sstClosID: 3</span>
+
+<span class="s">  log:</span>
+<span class="s">    debug:</span>
+<span class="s">    - policy</span>
+<span class="s">    - cpu</span>
+<span class="s">EOF</span>
+
+kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>balloons-pct-assoconly.yaml
+</pre></div>
+</div>
+<p>Confirm that balloons picked up the configuration and entered
+assoc-only mode – you should see <code class="docutils literal notranslate"><span class="pre">mode=assoc-only</span></code> and (after pods
+are deployed) <code class="docutils literal notranslate"><span class="pre">associated</span> <span class="pre">cpus</span> <span class="pre">...</span> <span class="pre">to</span> <span class="pre">CLOS</span> <span class="pre">N</span></code> lines, but <strong>no</strong>
+<code class="docutils literal notranslate"><span class="pre">PrepareManagedMode</span> <span class="pre">done</span></code> nor <code class="docutils literal notranslate"><span class="pre">EnableCP</span> <span class="pre">done</span></code>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl<span class="w"> </span>-n<span class="w"> </span>kube-system<span class="w"> </span>logs<span class="w"> </span>ds/nri-resource-policy-balloons<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s1">&#39;pct(:| mock:)&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-n<span class="w"> </span><span class="m">20</span>
+</pre></div>
+</div>
+<p>Expected:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>pct: SST discovered: pkg=0 punit=0 level=1 cpus=&lt;...&gt; ...
+pct: mode=assoc-only, 3 PCT cpuClass(es), 4 punit(s) across 2 package(s)
+pct: assoc-only: CLOS 0 programmed min=0 max=&lt;ceiling&gt; kHz
+pct: assoc-only: CLOS 3 programmed min=0 max=&lt;ceiling&gt; kHz
+pct: cpuClass &quot;hp-clos0&quot; classified HP (assoc-only: CLOS 0 ...)
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">assoc-only:</span> <span class="pre">CLOS</span> <span class="pre">N</span> <span class="pre">programmed</span></code> lines record permissive
+(min=0, max=hardware ceiling) bounds that the plugin writes when
+entering assoc-only mode; they leave the SST-CP CLOS bounds that
+<code class="docutils literal notranslate"><span class="pre">turbo-freq</span> <span class="pre">enable</span> <span class="pre">-a</span></code> programmed in step 2 unchanged in practice,
+because the effective frequency is the minimum of the per-CLOS
+cap and the SST-TF bucket-0 limit. The plugin only classifies one
+cpuClass per priority bucket on the same CLOS, so when both
+<code class="docutils literal notranslate"><span class="pre">default</span></code> and <code class="docutils literal notranslate"><span class="pre">lp-clos3</span></code> use CLOS 3 only one of them is reported in
+the classification log.</p>
+<p>If any punit you intend to host HP pods on shows up with an
+<code class="docutils literal notranslate"><span class="pre">assoc-only:</span> <span class="pre">SST-TF</span> <span class="pre">disabled</span> <span class="pre">on</span> <span class="pre">pkg=N</span> <span class="pre">punit=M</span></code> warning, repeat
+step 2 with a CPU from that punit included in <code class="docutils literal notranslate"><span class="pre">$TF_INIT_CPUS</span></code>.</p>
+</section>
+<section id="deploy-the-hp-and-lp-pods">
+<h2>6. Deploy the HP and LP pods<a class="headerlink" href="#deploy-the-hp-and-lp-pods" title="Link to this heading"></a></h2>
+<p>Four HP pods and one LP pod. Each HP pod requests 2 CPUs; with
+<code class="docutils literal notranslate"><span class="pre">preferNewBalloons:</span> <span class="pre">true</span></code> and <code class="docutils literal notranslate"><span class="pre">maxCPUs:</span> <span class="pre">8</span></code> on <code class="docutils literal notranslate"><span class="pre">hp-bln</span></code>, each pod
+gets its own balloon, and PCT placement spreads the balloons
+across separate punits (one per HP pod, up to four on a
+dual-socket Xeon 6776P). Because <code class="docutils literal notranslate"><span class="pre">hideHyperthreads</span></code> is not set,
+the container sees exactly the requested logical CPUs and the
+reporter starts that many sysbench threads.</p>
+<p>The pods are <code class="docutils literal notranslate"><span class="pre">privileged:</span> <span class="pre">true</span></code> and mount the host <code class="docutils literal notranslate"><span class="pre">/dev</span></code> because
+<code class="docutils literal notranslate"><span class="pre">turbostat</span></code> inside the container reads <code class="docutils literal notranslate"><span class="pre">/dev/cpu/*/msr</span></code> to compute
+<code class="docutils literal notranslate"><span class="pre">Bzy_MHz</span></code> (see step 3).</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="k">for</span><span class="w"> </span>i<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="m">3</span><span class="w"> </span><span class="m">4</span><span class="p">;</span><span class="w"> </span><span class="k">do</span>
+cat<span class="w"> </span>&gt;<span class="w"> </span>pod-hp-<span class="nv">$i</span>.yaml<span class="w"> </span><span class="s">&lt;&lt;EOF</span>
+<span class="s">apiVersion: v1</span>
+<span class="s">kind: Pod</span>
+<span class="s">metadata:</span>
+<span class="s">  name: pct-hp-$i</span>
+<span class="s">  annotations:</span>
+<span class="s">    balloon.balloons.resource-policy.nri.io: hp-bln</span>
+<span class="s">spec:</span>
+<span class="s">  restartPolicy: Never</span>
+<span class="s">  containers:</span>
+<span class="s">  - name: bench</span>
+<span class="s">    image: localhost/pct-reporter:demo</span>
+<span class="s">    imagePullPolicy: IfNotPresent</span>
+<span class="s">    env:</span>
+<span class="s">    - name: LABEL</span>
+<span class="s">      value: &quot;hp-$i&quot;</span>
+<span class="s">    - name: INTERVAL</span>
+<span class="s">      value: &quot;5&quot;</span>
+<span class="s">    securityContext:</span>
+<span class="s">      privileged: true</span>
+<span class="s">    volumeMounts:</span>
+<span class="s">    - name: hostdev</span>
+<span class="s">      mountPath: /dev</span>
+<span class="s">    resources:</span>
+<span class="s">      requests: { cpu: &quot;2&quot;, memory: &quot;128Mi&quot; }</span>
+<span class="s">      limits:   { cpu: &quot;2&quot;, memory: &quot;128Mi&quot; }</span>
+<span class="s">  volumes:</span>
+<span class="s">  - name: hostdev</span>
+<span class="s">    hostPath: { path: /dev, type: Directory }</span>
+<span class="s">EOF</span>
+<span class="k">done</span>
+
+cat<span class="w"> </span>&gt;<span class="w"> </span>pod-lp.yaml<span class="w"> </span><span class="s">&lt;&lt;EOF</span>
+<span class="s">apiVersion: v1</span>
+<span class="s">kind: Pod</span>
+<span class="s">metadata:</span>
+<span class="s">  name: pct-lp</span>
+<span class="s">  annotations:</span>
+<span class="s">    balloon.balloons.resource-policy.nri.io: lp-bln</span>
+<span class="s">spec:</span>
+<span class="s">  restartPolicy: Never</span>
+<span class="s">  containers:</span>
+<span class="s">  - name: bench</span>
+<span class="s">    image: localhost/pct-reporter:demo</span>
+<span class="s">    imagePullPolicy: IfNotPresent</span>
+<span class="s">    env:</span>
+<span class="s">    - name: LABEL</span>
+<span class="s">      value: &quot;lp&quot;</span>
+<span class="s">    - name: INTERVAL</span>
+<span class="s">      value: &quot;5&quot;</span>
+<span class="s">    securityContext:</span>
+<span class="s">      privileged: true</span>
+<span class="s">    volumeMounts:</span>
+<span class="s">    - name: hostdev</span>
+<span class="s">      mountPath: /dev</span>
+<span class="s">    resources:</span>
+<span class="s">      requests: { cpu: &quot;8&quot;, memory: &quot;128Mi&quot; }</span>
+<span class="s">      limits:   { cpu: &quot;8&quot;, memory: &quot;128Mi&quot; }</span>
+<span class="s">  volumes:</span>
+<span class="s">  - name: hostdev</span>
+<span class="s">    hostPath: { path: /dev, type: Directory }</span>
+<span class="s">EOF</span>
+
+kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>pod-hp-1.yaml<span class="w"> </span>-f<span class="w"> </span>pod-hp-2.yaml<span class="w"> </span>-f<span class="w"> </span>pod-hp-3.yaml<span class="w"> </span>-f<span class="w"> </span>pod-hp-4.yaml<span class="w"> </span>-f<span class="w"> </span>pod-lp.yaml
+kubectl<span class="w"> </span><span class="nb">wait</span><span class="w"> </span>--for<span class="o">=</span><span class="nv">condition</span><span class="o">=</span>Ready<span class="w"> </span>--timeout<span class="o">=</span>60s<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>pod/pct-hp-1<span class="w"> </span>pod/pct-hp-2<span class="w"> </span>pod/pct-hp-3<span class="w"> </span>pod/pct-hp-4<span class="w"> </span>pod/pct-lp
+</pre></div>
+</div>
+</section>
+<section id="observe">
+<h2>7. Observe<a class="headerlink" href="#observe" title="Link to this heading"></a></h2>
+<p>Tail every pod’s log:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="k">for</span><span class="w"> </span>p<span class="w"> </span><span class="k">in</span><span class="w"> </span>pct-hp-1<span class="w"> </span>pct-hp-2<span class="w"> </span>pct-hp-3<span class="w"> </span>pct-hp-4<span class="w"> </span>pct-lp<span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<span class="w">    </span>kubectl<span class="w"> </span>logs<span class="w"> </span>-f<span class="w"> </span>--prefix<span class="o">=</span><span class="nb">true</span><span class="w"> </span>--max-log-requests<span class="o">=</span><span class="m">5</span><span class="w"> </span><span class="nv">$p</span><span class="w"> </span><span class="p">&amp;</span>
+<span class="k">done</span>
+<span class="nb">wait</span>
+</pre></div>
+</div>
+<p>Sample shape on a dual-socket Intel(R) Xeon(R) 6776P (replace
+<code class="docutils literal notranslate"><span class="pre">&lt;...&gt;</span></code> with your own measurements):</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>[hp-1] cpus=32,160 threads=2 events_per_sec=4154.72 mhz_avg=4600
+[hp-2] cpus=100,228 threads=2 events_per_sec=4152.06 mhz_avg=4600
+[hp-3] cpus=10,138 threads=2 events_per_sec=4154.54 mhz_avg=4600
+[hp-4] cpus=64,192 threads=2 events_per_sec=4151.79 mhz_avg=4600
+[lp]   cpus=65-68,193-196 threads=8 events_per_sec=8295.63 mhz_avg=2300
+</pre></div>
+</div>
+<p>Per-thread throughput on this run:</p>
+<table border="1" class="docutils">
+<thead>
+<tr>
+<th>Tag</th>
+<th>threads</th>
+<th>mhz_avg</th>
+<th>events_per_sec</th>
+<th>events_per_sec per thread</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>hp-1</td>
+<td>2</td>
+<td>4600</td>
+<td>4154.72</td>
+<td>2077.36</td>
+</tr>
+<tr>
+<td>hp-2</td>
+<td>2</td>
+<td>4600</td>
+<td>4152.06</td>
+<td>2076.03</td>
+</tr>
+<tr>
+<td>hp-3</td>
+<td>2</td>
+<td>4600</td>
+<td>4154.54</td>
+<td>2077.27</td>
+</tr>
+<tr>
+<td>hp-4</td>
+<td>2</td>
+<td>4600</td>
+<td>4151.79</td>
+<td>2075.89</td>
+</tr>
+<tr>
+<td>lp</td>
+<td>8</td>
+<td>2300</td>
+<td>8295.63</td>
+<td>1036.95</td>
+</tr>
+</tbody>
+</table>
+<p>Verify that the four HP balloons landed on four distinct punits.
+With the policy’s <code class="docutils literal notranslate"><span class="pre">cpu</span></code> debug log enabled, balloons logs the
+(pkg, punit) of each balloon at admission time. You can also map
+the <code class="docutils literal notranslate"><span class="pre">cpus</span></code> line of each HP pod back to a punit through the
+<code class="docutils literal notranslate"><span class="pre">sst</span> <span class="pre">info</span></code> output from step 2 – each HP pod’s CPUs should fall
+into a different punit row.</p>
+<p>Optionally cross-check the same numbers from outside the pod with
+<code class="docutils literal notranslate"><span class="pre">turbostat</span></code> on the node:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># node:</span>
+<span class="c1"># Replace the CPU list with the union of cpus= reported by the</span>
+<span class="c1"># five pods.</span>
+sudo<span class="w"> </span>turbostat<span class="w"> </span>--show<span class="w"> </span>CPU,Bzy_MHz<span class="w"> </span>--quiet<span class="w"> </span>-c<span class="w"> </span>&lt;cpu-list&gt;<span class="w"> </span>-i<span class="w"> </span><span class="m">2</span><span class="w"> </span>-n<span class="w"> </span><span class="m">2</span>
+</pre></div>
+</div>
+<p>The pod-reported <code class="docutils literal notranslate"><span class="pre">mhz_avg</span></code> and the node-side <code class="docutils literal notranslate"><span class="pre">Bzy_MHz</span></code> come from
+the same source (APERF/MPERF), so they should agree to within a
+few MHz.</p>
+<p>Verify the CLOS association of the pinned CPUs:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># node:</span>
+sudo<span class="w"> </span>intel-speed-select<span class="w"> </span>-c<span class="w"> </span>&lt;cpu-list&gt;<span class="w"> </span>core-power<span class="w"> </span>get-assoc<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s1">&#39;cpu-|clos:&#39;</span>
+</pre></div>
+</div>
+<p>Expected: <code class="docutils literal notranslate"><span class="pre">clos:0</span></code> for every CPU in any HP pod, <code class="docutils literal notranslate"><span class="pre">clos:3</span></code> for every
+CPU in the LP pod.</p>
+<p>Confirm the policy decision from its log:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl<span class="w"> </span>-n<span class="w"> </span>kube-system<span class="w"> </span>logs<span class="w"> </span>ds/nri-resource-policy-balloons<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s1">&#39;assigning container|associated cpus .* to CLOS&#39;</span>
+</pre></div>
+</div>
+<section id="verify-container-to-balloon-to-cpu-mapping-via-nrt">
+<h3>7.1. Verify container-to-balloon-to-CPU mapping via NRT<a class="headerlink" href="#verify-container-to-balloon-to-cpu-mapping-via-nrt" title="Link to this heading"></a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">agent.nodeResourceTopology:</span> <span class="pre">true</span></code> and <code class="docutils literal notranslate"><span class="pre">showContainersInNrt:</span> <span class="pre">true</span></code> settings in step 5 make the plugin publish per-balloon and
+per-container CPU sets in the
+<code class="docutils literal notranslate"><span class="pre">noderesourcetopologies.topology.node.k8s.io</span></code> CR for the node.
+Print every balloon (zone type <code class="docutils literal notranslate"><span class="pre">balloon</span></code>) with its CPU set, and
+every container assigned to it (zone type <code class="docutils literal notranslate"><span class="pre">allocation</span> <span class="pre">for</span> <span class="pre">container</span></code>):</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl<span class="w"> </span>get<span class="w"> </span>noderesourcetopologies.topology.node.k8s.io<span class="w"> </span>-o<span class="w"> </span>json<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-r<span class="w"> </span><span class="s1">&#39;</span>
+<span class="s1">  [&quot;NODE&quot;,&quot;BALLOON&quot;,&quot;CPUSET&quot;],</span>
+<span class="s1">  (</span>
+<span class="s1">    .items.[] as $node</span>
+<span class="s1">    | $node.zones[]</span>
+<span class="s1">    | select(.type == &quot;balloon&quot;)</span>
+<span class="s1">    | [</span>
+<span class="s1">        $node.metadata.name,</span>
+<span class="s1">        .name,</span>
+<span class="s1">        (.attributes[] | select(.name==&quot;cpuset&quot;) | .value)</span>
+<span class="s1">      ]</span>
+<span class="s1">  ) | @tsv&#39;</span>
+
+kubectl<span class="w"> </span>get<span class="w"> </span>noderesourcetopologies.topology.node.k8s.io<span class="w"> </span>-o<span class="w"> </span>json<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-r<span class="w"> </span><span class="s1">&#39;</span>
+<span class="s1">  [&quot;NODE&quot;,&quot;BALLOON&quot;,&quot;CONTAINER&quot;,&quot;CPUS&quot;],</span>
+<span class="s1">  (</span>
+<span class="s1">    .items.[] as $node</span>
+<span class="s1">    | $node.zones[]</span>
+<span class="s1">    | select(.type == &quot;allocation for container&quot;)</span>
+<span class="s1">    | [</span>
+<span class="s1">        $node.metadata.name,</span>
+<span class="s1">        .parent,</span>
+<span class="s1">        .name,</span>
+<span class="s1">        (.attributes[] | select(.name==&quot;cpuset&quot;) | .value)</span>
+<span class="s1">      ]</span>
+<span class="s1">  ) | @tsv&#39;</span>
+</pre></div>
+</div>
+<p>Expected (one row per balloon and one row per pod’s container):</p>
+<ul class="simple">
+<li><p>One <code class="docutils literal notranslate"><span class="pre">hp-bln[0]</span></code>..<code class="docutils literal notranslate"><span class="pre">hp-bln[3]</span></code> zone, each with a 2-CPU set on a
+distinct punit, and the corresponding <code class="docutils literal notranslate"><span class="pre">pct-hp-N/bench</span></code> container
+pinned to that exact set.</p></li>
+<li><p>One <code class="docutils literal notranslate"><span class="pre">lp-bln[0]</span></code> zone with the 8-CPU set, and <code class="docutils literal notranslate"><span class="pre">pct-lp/bench</span></code>
+pinned to the same set.</p></li>
+<li><p>A <code class="docutils literal notranslate"><span class="pre">reserved[0]</span></code> zone covering the currently-used subset of the
+reserved pool (the SMT pair of physical CPU 0 – <code class="docutils literal notranslate"><span class="pre">0,128</span></code> – is the
+typical outcome on this layout; balloons compacts the reserved
+balloon to what its containers actually need).</p></li>
+<li><p>An empty <code class="docutils literal notranslate"><span class="pre">default[0]</span></code> zone may also appear; it is the unused
+default balloon and can be ignored.</p></li>
+</ul>
+<p>The CPU sets here must match the <code class="docutils literal notranslate"><span class="pre">cpus=</span></code> value printed by the
+benchmark inside each pod (step 7) and the <code class="docutils literal notranslate"><span class="pre">clos:N</span></code> reported by
+<code class="docutils literal notranslate"><span class="pre">core-power</span> <span class="pre">get-assoc</span></code> for those same CPUs.</p>
+</section>
+</section>
+<section id="a-b-comparison">
+<h2>8. A/B comparison<a class="headerlink" href="#a-b-comparison" title="Link to this heading"></a></h2>
+<p>Run the same 2-thread workload on the LP CLOS instead of an HP
+CLOS. The pod below pins to the LP balloon (CLOS 3, base
+frequency cap) and uses <code class="docutils literal notranslate"><span class="pre">THREADS=2</span></code> to keep the sysbench workload
+identical to a single <code class="docutils literal notranslate"><span class="pre">pct-hp-*</span></code>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl<span class="w"> </span>delete<span class="w"> </span>pod<span class="w"> </span>pct-lp<span class="w"> </span>--now<span class="w">    </span><span class="c1"># free LP-balloon CPUs</span>
+
+cat<span class="w"> </span>&gt;<span class="w"> </span>pod-hp-on-lp.yaml<span class="w"> </span><span class="s">&lt;&lt;EOF</span>
+<span class="s">apiVersion: v1</span>
+<span class="s">kind: Pod</span>
+<span class="s">metadata:</span>
+<span class="s">  name: pct-hp-on-lp</span>
+<span class="s">  annotations:</span>
+<span class="s">    balloon.balloons.resource-policy.nri.io: lp-bln</span>
+<span class="s">spec:</span>
+<span class="s">  restartPolicy: Never</span>
+<span class="s">  containers:</span>
+<span class="s">  - name: bench</span>
+<span class="s">    image: localhost/pct-reporter:demo</span>
+<span class="s">    imagePullPolicy: IfNotPresent</span>
+<span class="s">    env:</span>
+<span class="s">    - name: LABEL</span>
+<span class="s">      value: &quot;hp-on-lp&quot;</span>
+<span class="s">    - name: THREADS</span>
+<span class="s">      value: &quot;2&quot;</span>
+<span class="s">    - name: INTERVAL</span>
+<span class="s">      value: &quot;5&quot;</span>
+<span class="s">    securityContext:</span>
+<span class="s">      privileged: true</span>
+<span class="s">    volumeMounts:</span>
+<span class="s">    - name: hostdev</span>
+<span class="s">      mountPath: /dev</span>
+<span class="s">    resources:</span>
+<span class="s">      requests: { cpu: &quot;2&quot;, memory: &quot;128Mi&quot; }</span>
+<span class="s">      limits:   { cpu: &quot;2&quot;, memory: &quot;128Mi&quot; }</span>
+<span class="s">  volumes:</span>
+<span class="s">  - name: hostdev</span>
+<span class="s">    hostPath: { path: /dev, type: Directory }</span>
+<span class="s">EOF</span>
+
+kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>pod-hp-on-lp.yaml
+kubectl<span class="w"> </span>logs<span class="w"> </span>-f<span class="w"> </span>pct-hp-on-lp
+</pre></div>
+</div>
+<p>Sample shape (replace with your own measurements):</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>[hp-on-lp] cpus=65,193 threads=2 events_per_sec=2074.27 mhz_avg=2300
+</pre></div>
+</div>
+<p>Per-thread <code class="docutils literal notranslate"><span class="pre">events_per_sec</span></code> should drop from the HP value to
+roughly LP base / HP turbo x HP value – the same ratio as the
+per-CPU frequency ratio reported by <code class="docutils literal notranslate"><span class="pre">mhz_avg</span></code>. This is the
+headline number aligned with the PCT brief: priority cores let
+the same code finish more work per unit time because they run at
+a higher frequency.</p>
+<p>Record your own numbers:</p>
+<table border="1" class="docutils">
+<thead>
+<tr>
+<th>Tag</th>
+<th>threads</th>
+<th>mhz_avg (MHz)</th>
+<th>events_per_sec</th>
+<th>events_per_sec per thread</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>hp-1</code></td>
+<td>2</td>
+<td>4600</td>
+<td>4154.72</td>
+<td>2077.36</td>
+</tr>
+<tr>
+<td><code>hp-2</code></td>
+<td>2</td>
+<td>4600</td>
+<td>4152.06</td>
+<td>2076.03</td>
+</tr>
+<tr>
+<td><code>hp-3</code></td>
+<td>2</td>
+<td>4600</td>
+<td>4154.54</td>
+<td>2077.27</td>
+</tr>
+<tr>
+<td><code>hp-4</code></td>
+<td>2</td>
+<td>4600</td>
+<td>4151.79</td>
+<td>2075.89</td>
+</tr>
+<tr>
+<td><code>lp</code></td>
+<td>8</td>
+<td>2300</td>
+<td>8295.63</td>
+<td>1036.95</td>
+</tr>
+<tr>
+<td><code>hp-on-lp</code></td>
+<td>2</td>
+<td>2300</td>
+<td>2074.27</td>
+<td>1037.13</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="cleanup">
+<h2>9. Cleanup<a class="headerlink" href="#cleanup" title="Link to this heading"></a></h2>
+<p>Reset the cluster, then the host, back to a defined initial state.</p>
+<section id="kubernetes-side">
+<h3>9.1. Kubernetes side<a class="headerlink" href="#kubernetes-side" title="Link to this heading"></a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl<span class="w"> </span>delete<span class="w"> </span>-f<span class="w"> </span>pod-hp-1.yaml<span class="w"> </span>-f<span class="w"> </span>pod-hp-2.yaml<span class="w"> </span>-f<span class="w"> </span>pod-hp-3.yaml<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-f<span class="w"> </span>pod-hp-4.yaml<span class="w"> </span>-f<span class="w"> </span>pod-lp.yaml<span class="w"> </span>-f<span class="w"> </span>pod-hp-on-lp.yaml<span class="w"> </span>--ignore-not-found
+kubectl<span class="w"> </span>delete<span class="w"> </span>-f<span class="w"> </span>balloons-pct-assoconly.yaml<span class="w"> </span>--ignore-not-found
+</pre></div>
+</div>
+<p>Deleting the <code class="docutils literal notranslate"><span class="pre">BalloonsPolicy</span></code> CR is the policy’s defined “reset”
+trigger: the plugin reacts to losing its effective configuration
+by removing every <code class="docutils literal notranslate"><span class="pre">cpuclass.balloons.nri.io/*</span></code> extended resource
+it had published. Verify before uninstalling the chart:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl<span class="w"> </span>get<span class="w"> </span>node<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.items[0].status.capacity}&#39;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;with_entries(select(.key | startswith(&quot;cpuclass.balloons.nri.io/&quot;)))&#39;</span>
+<span class="c1"># Expect: {}</span>
+</pre></div>
+</div>
+<p>Then uninstall the chart:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>uninstall<span class="w"> </span>balloons<span class="w"> </span>-n<span class="w"> </span>kube-system
+</pre></div>
+</div>
+<p>Uninstalling the chart triggers the plugin’s graceful shutdown,
+but in assoc-only mode the plugin does <strong>not</strong> touch SST-CP /
+SST-TF state on the host (that is the whole point of assoc-only
+mode), so SST stays in whatever state step 2 left it. The next
+two sub-steps complete the reset.</p>
+</section>
+<section id="restore-sst-defaults-on-the-node">
+<h3>9.2. Restore SST defaults on the node<a class="headerlink" href="#restore-sst-defaults-on-the-node" title="Link to this heading"></a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># node:</span>
+sudo<span class="w"> </span>intel-speed-select<span class="w"> </span>turbo-freq<span class="w"> </span>disable<span class="w"> </span>-a
+sudo<span class="w"> </span>intel-speed-select<span class="w"> </span>core-power<span class="w"> </span>disable
+
+<span class="c1"># Verify:</span>
+sudo<span class="w"> </span>intel-speed-select<span class="w"> </span>core-power<span class="w"> </span>info<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s1">&#39;enable-status&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>sort<span class="w"> </span>-u
+<span class="c1"># Expect (both lines):</span>
+<span class="c1">#   clos-enable-status:disabled</span>
+<span class="c1">#   enable-status:disabled</span>
+
+sudo<span class="w"> </span>intel-speed-select<span class="w"> </span>perf-profile<span class="w"> </span>info<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s1">&#39;speed-select-turbo-freq:&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>sort<span class="w"> </span>-u
+<span class="c1"># Expect: speed-select-turbo-freq:disabled</span>
+</pre></div>
+</div>
+</section>
+<section id="restore-cpufreq-defaults-on-the-node">
+<h3>9.3. Restore <code class="docutils literal notranslate"><span class="pre">cpufreq</span></code> defaults on the node<a class="headerlink" href="#restore-cpufreq-defaults-on-the-node" title="Link to this heading"></a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># node:</span>
+<span class="k">for</span><span class="w"> </span>f<span class="w"> </span><span class="k">in</span><span class="w"> </span>/sys/devices/system/cpu/cpu*/cpufreq/scaling_max_freq<span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<span class="w">    </span><span class="nv">base</span><span class="o">=</span><span class="si">${</span><span class="nv">f</span><span class="p">%scaling_max_freq</span><span class="si">}</span>cpuinfo_max_freq
+<span class="w">    </span>sudo<span class="w"> </span>tee<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$f</span><span class="s2">&quot;</span><span class="w"> </span>&lt;<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$base</span><span class="s2">&quot;</span><span class="w"> </span>&gt;<span class="w"> </span>/dev/null
+<span class="k">done</span>
+<span class="k">for</span><span class="w"> </span>f<span class="w"> </span><span class="k">in</span><span class="w"> </span>/sys/devices/system/cpu/cpu*/cpufreq/scaling_min_freq<span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<span class="w">    </span><span class="nv">base</span><span class="o">=</span><span class="si">${</span><span class="nv">f</span><span class="p">%scaling_min_freq</span><span class="si">}</span>cpuinfo_min_freq
+<span class="w">    </span>sudo<span class="w"> </span>tee<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$f</span><span class="s2">&quot;</span><span class="w"> </span>&lt;<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$base</span><span class="s2">&quot;</span><span class="w"> </span>&gt;<span class="w"> </span>/dev/null
+<span class="k">done</span>
+
+<span class="c1"># Verify (should print exactly the hardware min and the hardware</span>
+<span class="c1"># max in kHz):</span>
+<span class="k">for</span><span class="w"> </span>i<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="k">$(</span>seq<span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="k">$(($(</span>nproc<span class="k">)</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="m">1</span><span class="k">)))</span><span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<span class="w">    </span>cat<span class="w"> </span>/sys/devices/system/cpu/cpu<span class="nv">$i</span>/cpufreq/scaling_max_freq<span class="w"> </span><span class="se">\</span>
+<span class="w">        </span>/sys/devices/system/cpu/cpu<span class="nv">$i</span>/cpufreq/scaling_min_freq
+<span class="k">done</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>sort<span class="w"> </span>-u
+</pre></div>
+</div>
+</section>
+<section id="remove-leftover-files">
+<h3>9.4. Remove leftover files<a class="headerlink" href="#remove-leftover-files" title="Link to this heading"></a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>rm<span class="w"> </span>-f<span class="w"> </span>balloons-pct-assoconly.yaml<span class="w"> </span><span class="se">\</span>
+<span class="w">      </span>pod-hp-1.yaml<span class="w"> </span>pod-hp-2.yaml<span class="w"> </span>pod-hp-3.yaml<span class="w"> </span>pod-hp-4.yaml<span class="w"> </span><span class="se">\</span>
+<span class="w">      </span>pod-lp.yaml<span class="w"> </span>pod-hp-on-lp.yaml
+<span class="c1"># Optional:</span>
+rm<span class="w"> </span>-rf<span class="w"> </span>pct-reporter
+<span class="c1"># Optional, on the node, free disk used by the demo image:</span>
+<span class="c1"># sudo crictl rmi localhost/pct-reporter:demo</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="optional-help-the-scheduler-avoid-hp-over-subscription-experimental">
+<h2>10. Optional: help the scheduler avoid HP over-subscription (experimental)<a class="headerlink" href="#optional-help-the-scheduler-avoid-hp-over-subscription-experimental" title="Link to this heading"></a></h2>
+<p>By default the Kubernetes scheduler is unaware of how many CPUs
+on a node can become HP cores: it sees the BalloonsPolicy
+neither as a CRD it understands nor as a resource it can
+bin-pack on. Two HP pods can therefore land on the same node
+even if a second node would have given them HP capacity, and
+HP pods can pile up beyond the platform’s actual HP budget.</p>
+<p>The balloons policy ships an experimental opt-in that publishes
+a per-cpuClass extended resource on the local Node so that the
+default scheduler can do that bin-packing for you. Set
+<code class="docutils literal notranslate"><span class="pre">publishExtendedResource:</span> <span class="pre">true</span></code> on every PCT-enabled cpuClass
+(i.e. classes that carry <code class="docutils literal notranslate"><span class="pre">sstClosID</span></code> or <code class="docutils literal notranslate"><span class="pre">pctPriority</span></code>) and the
+agent advertises:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>status.capacity:
+  cpuclass.balloons.nri.io/&lt;class-name&gt;: &lt;free logical CPUs&gt;
+</pre></div>
+</div>
+<p>The capacity reflects “CPUs eligible for this class that are
+not currently held by balloons of other classes”, and is
+re-published on every container create/update/release, so
+cross-class consumption (e.g. an LP balloon eating CPUs that
+would otherwise have been available for HP) is reflected
+immediately.</p>
+<p>For HP classes, the per-punit cap used in the capacity
+formula is the <em>guaranteed top-turbo HP CPU count</em> (the
+smallest non-zero SST-TF bucket <code class="docutils literal notranslate"><span class="pre">HighPriorityCoreCount</span></code>, or
+the SST-BF <code class="docutils literal notranslate"><span class="pre">HighPriorityCPUs</span></code> count when TF is unsupported)
+– not the larger <code class="docutils literal notranslate"><span class="pre">MaxHpCpus</span></code>. That is the number of HP CPUs
+per punit that can simultaneously sustain the highest turbo
+frequency this platform exposes, which is the right figure
+for the scheduler to bin-pack on. In assoc-only mode a punit
+contributes to HP capacity only when SST-TF is currently
+enabled on it (the operator’s responsibility – typically via
+<code class="docutils literal notranslate"><span class="pre">intel-speed-select</span> <span class="pre">...</span> <span class="pre">turbo-freq</span> <span class="pre">enable</span> <span class="pre">-a</span></code>); a punit where
+SST-TF is disabled cannot exceed the standard turbo-ratio
+bucket frequency and contributes <code class="docutils literal notranslate"><span class="pre">0</span></code>, so the scheduler will
+not bin-pack HP pods onto nodes that cannot deliver top
+turbo. Same-class consumption inside HP is intentionally not
+subtracted (an admitted HP pod does not shrink the published
+HP capacity); only cross-class consumption is. LP capacity
+equals <code class="docutils literal notranslate"><span class="pre">|Allowed</span> <span class="pre">\</span> <span class="pre">held|</span></code>.</p>
+<p>Add the flag to the policy:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="w">  </span><span class="nt">cpuClasses</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hp-clos0</span>
+<span class="w">    </span><span class="nt">sstClosID</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
+<span class="w">    </span><span class="nt">disabledCstates</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">C6</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">C6P</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">publishExtendedResource</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># experimental</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">lp-clos3</span>
+<span class="w">    </span><span class="nt">sstClosID</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+<span class="w">    </span><span class="nt">publishExtendedResource</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># experimental</span>
+</pre></div>
+</div>
+<p>…and to every HP/LP pod, alongside the existing <code class="docutils literal notranslate"><span class="pre">cpu</span></code>
+request:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="w">    </span><span class="nt">resources</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">requests</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2&quot;</span>
+<span class="w">        </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;128Mi&quot;</span>
+<span class="w">        </span><span class="nt">cpuclass.balloons.nri.io/hp-clos0</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2&quot;</span>
+<span class="w">      </span><span class="nt">limits</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2&quot;</span>
+<span class="w">        </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;128Mi&quot;</span>
+<span class="w">        </span><span class="nt">cpuclass.balloons.nri.io/hp-clos0</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2&quot;</span>
+</pre></div>
+</div>
+<p>Verify on the node after applying:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl<span class="w"> </span>get<span class="w"> </span>node<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.items[0].status.capacity}&#39;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;with_entries(select(.key | startswith(&quot;cpuclass&quot;)))&#39;</span>
+<span class="c1"># Expect (HP capacity = sum_punit GuaranteedHpCpus over</span>
+<span class="c1"># SST-TF-enabled punits; LP capacity = |Allowed \ held|):</span>
+<span class="c1"># {</span>
+<span class="c1">#   &quot;cpuclass.balloons.nri.io/hp-clos0&quot;: &quot;&lt;HP capacity&gt;&quot;,</span>
+<span class="c1">#   &quot;cpuclass.balloons.nri.io/lp-clos3&quot;: &quot;&lt;free CPUs&gt;&quot;</span>
+<span class="c1"># }</span>
+</pre></div>
+</div>
+<p>A pod whose request exceeds the published capacity gets
+<code class="docutils literal notranslate"><span class="pre">FailedScheduling:</span> <span class="pre">Insufficient</span> <span class="pre">cpuclass.balloons.nri.io/&lt;name&gt;</span></code>
+and stays <code class="docutils literal notranslate"><span class="pre">Pending</span></code> until another pod releases the resource.</p>
+<p>This is an experimental flag: the resource name, semantics
+(capacity vs. allocatable, conservative-on-grow), and update
+cadence may change before becoming stable.</p>
+</section>
+<section id="troubleshooting">
+<h2>11. Troubleshooting<a class="headerlink" href="#troubleshooting" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p>Plugin pod log shows <code class="docutils literal notranslate"><span class="pre">Speed</span> <span class="pre">Select</span> <span class="pre">Technology</span> <span class="pre">(SST)</span> <span class="pre">support</span> <span class="pre">not</span> <span class="pre">detected</span></code>: the pod cannot access <code class="docutils literal notranslate"><span class="pre">/dev/isst_interface</span></code>. Re-install
+the chart with <code class="docutils literal notranslate"><span class="pre">--set</span> <span class="pre">allowPCT=true</span></code>. Verify with <code class="docutils literal notranslate"><span class="pre">kubectl</span> <span class="pre">-n</span> <span class="pre">kube-system</span> <span class="pre">get</span> <span class="pre">pod</span> <span class="pre">-l</span> <span class="pre">app.kubernetes.io/name=nri-resource-policy-balloons</span> <span class="pre">-o</span> <span class="pre">jsonpath='{.items[0].spec.containers[0].securityContext}'</span></code>
+that it shows <code class="docutils literal notranslate"><span class="pre">privileged:true</span></code>.</p></li>
+<li><p>Plugin log shows <code class="docutils literal notranslate"><span class="pre">pct:</span> <span class="pre">assoc-only:</span> <span class="pre">SST-TF</span> <span class="pre">disabled</span> <span class="pre">on</span> <span class="pre">pkg=N</span> <span class="pre">punit=M</span></code>: that punit has SST-TF off, so HP cores on it cannot
+exceed the standard turbo-ratio bucket frequency even when
+associated to CLOS 0. Add a CPU from that punit to
+<code class="docutils literal notranslate"><span class="pre">$TF_INIT_CPUS</span></code> in step 2 and rerun <code class="docutils literal notranslate"><span class="pre">intel-speed-select</span> <span class="pre">-c</span> <span class="pre">$TF_INIT_CPUS</span> <span class="pre">turbo-freq</span> <span class="pre">enable</span> <span class="pre">-a</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">intel-speed-select</span> <span class="pre">--info</span></code> reports SST-TF as <em>not supported</em>: the
+<code class="docutils literal notranslate"><span class="pre">isst_if_*</span></code> or <code class="docutils literal notranslate"><span class="pre">isst_tpmi_*</span></code> kernel modules may be missing; load
+them or use a more recent distro kernel. On some platforms SST
+features must be enabled in BIOS first.</p></li>
+<li><p>Pods stuck in <code class="docutils literal notranslate"><span class="pre">ErrImagePull</span></code> with image
+<code class="docutils literal notranslate"><span class="pre">localhost/pct-reporter:demo</span></code>: the image was not imported into
+the kubelet’s container runtime store, or the kubelet has
+garbage-collected it. Repeat step 4, then <code class="docutils literal notranslate"><span class="pre">kubectl</span> <span class="pre">delete</span> <span class="pre">pod</span> <span class="pre">...</span></code> to retry.</p></li>
+<li><p>Pod log shows <code class="docutils literal notranslate"><span class="pre">turbostat:</span> <span class="pre">no</span> <span class="pre">/dev/cpu/0/msr</span></code> or <code class="docutils literal notranslate"><span class="pre">mhz_avg=?</span></code>: the
+<code class="docutils literal notranslate"><span class="pre">msr</span></code> kernel module is not loaded on the node. Run <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">modprobe</span> <span class="pre">msr</span></code> on the node and recreate the pod. If the pod is not
+privileged or <code class="docutils literal notranslate"><span class="pre">/dev</span></code> is not mounted, fix the pod yaml (step 6).</p></li>
+<li><p>HP CPUs do not reach Pmax under load: another HP pod on the same
+punit may be consuming the bucket-0 turbo budget. Verify the
+per-punit HP CPU count stays within the SST-TF bucket-0 limit
+(8 on this platform; check with <code class="docutils literal notranslate"><span class="pre">sst</span> <span class="pre">info</span></code>) and that each HP
+balloon really ended up on a different punit (see step 7).
+Cross-check with <code class="docutils literal notranslate"><span class="pre">turbostat</span> <span class="pre">--show</span> <span class="pre">CPU,Bzy_MHz</span></code>.</p></li>
+<li><p>All four HP balloons end up on the same punit: confirm
+<code class="docutils literal notranslate"><span class="pre">preferNewBalloons:</span> <span class="pre">true</span></code> on <code class="docutils literal notranslate"><span class="pre">hp-bln</span></code> and that the plugin
+build includes PCT-aware balloon placement. The plugin log
+prints the punit each new balloon is assigned to.</p></li>
+<li><p>Validation error <code class="docutils literal notranslate"><span class="pre">pctPriority</span> <span class="pre">and</span> <span class="pre">sstClosID</span> <span class="pre">are</span> <span class="pre">mutually</span> <span class="pre">exclusive</span></code>: only one of the two may be set on a cpuClass. For
+assoc-only mode use <code class="docutils literal notranslate"><span class="pre">sstClosID</span></code> and leave <code class="docutils literal notranslate"><span class="pre">pctPriority</span></code> unset.</p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="balloons-pct-example-auto.html" class="btn btn-neutral float-left" title="Balloons + Priority Core Turbo (managed) example" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../../developers-guide/index.html" class="btn btn-neutral float-right" title="Developer’s Guide" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, various.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+  
+    <div class="rst-versions" data-toggle="rst-versions" role="note" aria-label="versions">
+      <span class="rst-current-version" data-toggle="rst-current-version">
+        <span class="fa fa-book"> GitHub Pages</span>
+        v0.13
+        <span class="fa fa-caret-down"></span>
+      </span>
+      <div class="rst-other-versions">
+        <dl id="versions">
+          <dt>Versions</dt>
+        </dl>
+        <dl>
+          <dt>
+          <a href="/nri-plugins/releases">all releases</a>
+          </dt>
+        </dl>
+      </div>
+    </div>
+  
+  <script src="../../../../../versions.js"></script>
+  <script>
+      var list = document.getElementById('versions')
+      var menuItems = getVersionsMenuItems();
+      for (var i=0; i < menuItems.length; i++) {
+        var item = document.createElement('dd');
+        var anchor = item.appendChild(document.createElement('a'));
+        anchor.appendChild(document.createTextNode(menuItems[i].name));
+        anchor.href = menuItems[i].url;
+        list.appendChild(item);
+      }
+  </script>
+
+
+</body>
+</html>

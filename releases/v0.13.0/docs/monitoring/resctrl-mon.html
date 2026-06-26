@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Resctrl-Mon NRI Plugin &mdash; NRI Plugins v0.13.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../_static/documentation_options.js?v=bb33721e"></script>
+        <script src="../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="Deployment" href="../deployment/index.html" />
+    <link rel="prev" title="Monitoring plugins" href="index.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            NRI Plugins
+          </a>
+              <div class="version">
+                v0.13.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../introduction.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../resource-policy/index.html">Resource Policy Plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../memory/index.html">Memory plugins</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">Monitoring plugins</a><ul class="current">
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Resctrl-Mon NRI Plugin</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#how-it-works">How It Works</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#mon-group-naming">Mon_Group Naming</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#plugin-configuration">Plugin Configuration</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#coexistence-with-allocation-plugins">Coexistence with Allocation Plugins</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rmid-management">RMID Management</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#developer-s-guide">Developer’s Guide</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#build">Build</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#run">Run</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#manual-test">Manual Test</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#debug">Debug</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#deploy">Deploy</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../deployment/index.html">Deployment</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/containers/nri-plugins">Project GitHub repository</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NRI Plugins</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">Monitoring plugins</a></li>
+      <li class="breadcrumb-item active">Resctrl-Mon NRI Plugin</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/docs/monitoring/resctrl-mon.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="resctrl-mon-nri-plugin">
+<h1>Resctrl-Mon NRI Plugin<a class="headerlink" href="#resctrl-mon-nri-plugin" title="Link to this heading"></a></h1>
+<p>The resctrl-mon NRI plugin creates per-pod resctrl monitoring groups
+(<code class="docutils literal notranslate"><span class="pre">mon_groups</span></code>) to support <a class="reference external" href="https://sustainable-computing.io/">Kepler</a>’s
+passive mode for Application Energy Telemetry (AET).</p>
+<p>When a container is created, the plugin assigns its init process to a
+<code class="docutils literal notranslate"><span class="pre">mon_group</span></code> before the process starts executing. The Linux kernel then
+propagates the RMID (Resource Monitoring ID) to all child processes
+automatically, eliminating the fork race that affects userspace-based
+approaches.</p>
+<section id="how-it-works">
+<h2>How It Works<a class="headerlink" href="#how-it-works" title="Link to this heading"></a></h2>
+<ol class="arabic simple">
+<li><p>The container runtime creates a container process (paused).</p></li>
+<li><p>The NRI <code class="docutils literal notranslate"><span class="pre">PostCreateContainer</span></code> hook fires.</p></li>
+<li><p>The plugin creates a <code class="docutils literal notranslate"><span class="pre">mon_group</span></code> named with the pod’s UUID under
+the appropriate resctrl control group.</p></li>
+<li><p>The NRI <code class="docutils literal notranslate"><span class="pre">StartContainer</span></code> hook fires with the container’s init PID.</p></li>
+<li><p>The plugin writes the init PID to the <code class="docutils literal notranslate"><span class="pre">mon_group</span></code>’s <code class="docutils literal notranslate"><span class="pre">tasks</span></code> file.
+(If the PID is not yet available, <code class="docutils literal notranslate"><span class="pre">PostStartContainer</span></code> retries.)</p></li>
+<li><p>The runtime starts the container. All child processes inherit the RMID.</p></li>
+<li><p>Kepler scans the resctrl filesystem and reads monitoring data.</p></li>
+<li><p>When the last container in a pod stops, the plugin removes the <code class="docutils literal notranslate"><span class="pre">mon_group</span></code>.</p></li>
+</ol>
+<p>The plugin DaemonSet runs with <code class="docutils literal notranslate"><span class="pre">hostPID:</span> <span class="pre">true</span></code> so that it can write
+host-namespace PIDs to the resctrl <code class="docutils literal notranslate"><span class="pre">tasks</span></code> file. Without <code class="docutils literal notranslate"><span class="pre">hostPID</span></code>,
+the kernel rejects the write with <code class="docutils literal notranslate"><span class="pre">ESRCH</span></code> because the PID does not
+exist in the plugin’s PID namespace.</p>
+</section>
+<section id="mon-group-naming">
+<h2>Mon_Group Naming<a class="headerlink" href="#mon-group-naming" title="Link to this heading"></a></h2>
+<p>Mon_groups are named with the Kubernetes pod UID:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">/</span><span class="n">sys</span><span class="o">/</span><span class="n">fs</span><span class="o">/</span><span class="n">resctrl</span><span class="o">/</span><span class="p">[</span><span class="o">&lt;</span><span class="n">rdt</span><span class="o">-</span><span class="n">class</span><span class="o">&gt;/</span><span class="p">]</span><span class="n">mon_groups</span><span class="o">/&lt;</span><span class="n">pod</span><span class="o">-</span><span class="n">uid</span><span class="o">&gt;/</span>
+</pre></div>
+</div>
+<p>This enables Kepler to correlate monitoring data with Kubernetes metadata
+by querying the K8s API using the pod UID extracted from the directory name.</p>
+</section>
+<section id="plugin-configuration">
+<h2>Plugin Configuration<a class="headerlink" href="#plugin-configuration" title="Link to this heading"></a></h2>
+<p>Configuration is loaded from a YAML file specified with the <code class="docutils literal notranslate"><span class="pre">-config</span></code> flag
+or pushed by the container runtime via NRI.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1"># Path to the resctrl filesystem. Override for testing.</span>
+<span class="nt">resctrlPath</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/sys/fs/resctrl</span>
+
+<span class="c1"># Namespace filter: only create mon_groups for pods in these namespaces.</span>
+<span class="c1"># Empty list = all namespaces.</span>
+<span class="nt">namespaces</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+
+<span class="c1"># Pod label selector: only create mon_groups for pods matching these labels.</span>
+<span class="c1"># Empty = all pods.</span>
+<span class="nt">labelSelector</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span>
+</pre></div>
+</div>
+</section>
+<section id="coexistence-with-allocation-plugins">
+<h2>Coexistence with Allocation Plugins<a class="headerlink" href="#coexistence-with-allocation-plugins" title="Link to this heading"></a></h2>
+<p>If an NRI resource allocation plugin (balloons, topology-aware) is running,
+it assigns containers to RDT classes via <code class="docutils literal notranslate"><span class="pre">SetLinuxRDTClass</span></code>. The resctrl-mon
+plugin reads the effective RDT class from the NRI container spec and creates
+<code class="docutils literal notranslate"><span class="pre">mon_groups</span></code> under the corresponding control group:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">/</span><span class="n">sys</span><span class="o">/</span><span class="n">fs</span><span class="o">/</span><span class="n">resctrl</span><span class="o">/&lt;</span><span class="n">rdt</span><span class="o">-</span><span class="n">class</span><span class="o">&gt;/</span><span class="n">mon_groups</span><span class="o">/&lt;</span><span class="n">pod</span><span class="o">-</span><span class="n">uid</span><span class="o">&gt;/</span>
+</pre></div>
+</div>
+<p>The container keeps its CLOSID (allocation) and gets a distinct RMID
+(monitoring). If no allocation plugin is active, <code class="docutils literal notranslate"><span class="pre">mon_groups</span></code> are created
+under the root resctrl directory.</p>
+</section>
+<section id="rmid-management">
+<h2>RMID Management<a class="headerlink" href="#rmid-management" title="Link to this heading"></a></h2>
+<p>RMID allocation is delegated entirely to the Linux kernel:</p>
+<ul class="simple">
+<li><p><strong>Allocation</strong>: <code class="docutils literal notranslate"><span class="pre">mkdir</span></code> on a <code class="docutils literal notranslate"><span class="pre">mon_group</span></code> directory assigns an RMID. If
+none are available, the kernel returns <code class="docutils literal notranslate"><span class="pre">ENOSPC</span></code> and the plugin logs a
+warning and skips the pod.</p></li>
+<li><p><strong>Deallocation</strong>: <code class="docutils literal notranslate"><span class="pre">rmdir</span></code> releases the RMID. The kernel handles the
+hardware recycling window.</p></li>
+</ul>
+</section>
+<section id="developer-s-guide">
+<h2>Developer’s Guide<a class="headerlink" href="#developer-s-guide" title="Link to this heading"></a></h2>
+<section id="prerequisites">
+<h3>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading"></a></h3>
+<ul>
+<li><p>Containerd v1.7+ or CRI-O v1.36+</p></li>
+<li><p>Enable NRI in the container runtime:</p>
+<p><strong>containerd</strong> — in <code class="docutils literal notranslate"><span class="pre">/etc/containerd/config.toml</span></code>:</p>
+<div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="k">[plugins.</span><span class="s2">&quot;io.containerd.nri.v1.nri&quot;</span><span class="k">]</span>
+<span class="w">  </span><span class="n">disable</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span>
+<span class="w">  </span><span class="n">disable_connections</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span>
+<span class="w">  </span><span class="n">plugin_config_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/etc/nri/conf.d&quot;</span>
+<span class="w">  </span><span class="n">plugin_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/opt/nri/plugins&quot;</span>
+<span class="w">  </span><span class="n">plugin_registration_timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;5s&quot;</span>
+<span class="w">  </span><span class="n">plugin_request_timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;2s&quot;</span>
+<span class="w">  </span><span class="n">socket_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/var/run/nri/nri.sock&quot;</span>
+</pre></div>
+</div>
+<p><strong>CRI-O</strong> — in <code class="docutils literal notranslate"><span class="pre">/etc/crio/crio.conf.d/10-nri.conf</span></code> (or equivalent):</p>
+<div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="k">[crio.nri]</span>
+<span class="n">enable_nri</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+</pre></div>
+</div>
+<p>See the <a class="reference external" href="https://github.com/cri-o/cri-o/blob/main/docs/crio.conf.5.md#crionri-table">CRI-O NRI documentation</a>
+for additional options.</p>
+</li>
+<li><p>Intel CPU with RDT monitoring support</p></li>
+<li><p>resctrl filesystem mounted at <code class="docutils literal notranslate"><span class="pre">/sys/fs/resctrl</span></code></p></li>
+</ul>
+</section>
+<section id="build">
+<h3>Build<a class="headerlink" href="#build" title="Link to this heading"></a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>make<span class="w"> </span><span class="nv">PLUGINS</span><span class="o">=</span>nri-resctrl-mon<span class="w"> </span>build-plugins
+</pre></div>
+</div>
+</section>
+<section id="run">
+<h3>Run<a class="headerlink" href="#run" title="Link to this heading"></a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./build/bin/nri-resctrl-mon<span class="w"> </span>-config<span class="w"> </span>sample-configs/nri-resctrl-mon.yaml<span class="w"> </span>-idx<span class="w"> </span><span class="m">90</span><span class="w"> </span>-vv
+</pre></div>
+</div>
+</section>
+<section id="manual-test">
+<h3>Manual Test<a class="headerlink" href="#manual-test" title="Link to this heading"></a></h3>
+<p>Verify that <code class="docutils literal notranslate"><span class="pre">mon_groups</span></code> are created when pods start:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Start a test pod</span>
+kubectl<span class="w"> </span>run<span class="w"> </span>test-pod<span class="w"> </span>--image<span class="o">=</span>busybox<span class="w"> </span>--<span class="w"> </span>sleep<span class="w"> </span><span class="m">3600</span>
+
+<span class="c1"># Check that a mon_group was created with the pod UID</span>
+<span class="nv">POD_UID</span><span class="o">=</span><span class="k">$(</span>kubectl<span class="w"> </span>get<span class="w"> </span>pod<span class="w"> </span>test-pod<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.metadata.uid}&#39;</span><span class="k">)</span>
+
+<span class="c1"># Without an RDT allocation plugin, mon_groups are under the root class:</span>
+<span class="nv">MON_GROUP_BASE</span><span class="o">=</span>/sys/fs/resctrl/mon_groups
+<span class="c1"># With an allocation plugin that assigns an RDT class (e.g. BestEffort):</span>
+<span class="c1"># MON_GROUP_BASE=/sys/fs/resctrl/BestEffort/mon_groups</span>
+
+ls<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$MON_GROUP_BASE</span><span class="s2">/</span><span class="nv">$POD_UID</span><span class="s2">/&quot;</span>
+
+<span class="c1"># Verify monitoring data is available</span>
+cat<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$MON_GROUP_BASE</span><span class="s2">/</span><span class="nv">$POD_UID</span><span class="s2">/mon_data/mon_L3_00/llc_occupancy&quot;</span>
+</pre></div>
+</div>
+</section>
+<section id="debug">
+<h3>Debug<a class="headerlink" href="#debug" title="Link to this heading"></a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>go<span class="w"> </span>install<span class="w"> </span>github.com/go-delve/delve/cmd/dlv@latest
+dlv<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>build/bin/nri-resctrl-mon<span class="w"> </span>--<span class="w"> </span>-config<span class="w"> </span>sample-configs/nri-resctrl-mon.yaml<span class="w"> </span>-idx<span class="w"> </span><span class="m">90</span>
+<span class="o">(</span>dlv<span class="o">)</span><span class="w"> </span><span class="k">break</span><span class="w"> </span>plugin.PostCreateContainer
+<span class="o">(</span>dlv<span class="o">)</span><span class="w"> </span><span class="k">continue</span>
+</pre></div>
+</div>
+</section>
+<section id="deploy">
+<h3>Deploy<a class="headerlink" href="#deploy" title="Link to this heading"></a></h3>
+<p>Build an image, import it on the node, and deploy the plugin by
+running the following in <code class="docutils literal notranslate"><span class="pre">nri-plugins</span></code>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>rm<span class="w"> </span>-rf<span class="w"> </span>build
+make<span class="w"> </span>clean
+make<span class="w"> </span><span class="nv">PLUGINS</span><span class="o">=</span>nri-resctrl-mon<span class="w"> </span><span class="nv">IMAGE_VERSION</span><span class="o">=</span>devel<span class="w"> </span>images
+ctr<span class="w"> </span>-n<span class="w"> </span>k8s.io<span class="w"> </span>images<span class="w"> </span>import<span class="w"> </span>build/images/nri-resctrl-mon-image-*.tar
+kubectl<span class="w"> </span>create<span class="w"> </span>-f<span class="w"> </span>build/images/nri-resctrl-mon-deployment.yaml
+</pre></div>
+</div>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="index.html" class="btn btn-neutral float-left" title="Monitoring plugins" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../deployment/index.html" class="btn btn-neutral float-right" title="Deployment" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, various.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+  
+    <div class="rst-versions" data-toggle="rst-versions" role="note" aria-label="versions">
+      <span class="rst-current-version" data-toggle="rst-current-version">
+        <span class="fa fa-book"> GitHub Pages</span>
+        v0.13
+        <span class="fa fa-caret-down"></span>
+      </span>
+      <div class="rst-other-versions">
+        <dl id="versions">
+          <dt>Versions</dt>
+        </dl>
+        <dl>
+          <dt>
+          <a href="/nri-plugins/releases">all releases</a>
+          </dt>
+        </dl>
+      </div>
+    </div>
+  
+  <script src="../../../versions.js"></script>
+  <script>
+      var list = document.getElementById('versions')
+      var menuItems = getVersionsMenuItems();
+      for (var i=0; i < menuItems.length; i++) {
+        var item = document.createElement('dd');
+        var anchor = item.appendChild(document.createElement('a'));
+        anchor.appendChild(document.createTextNode(menuItems[i].name));
+        anchor.href = menuItems[i].url;
+        list.appendChild(item);
+      }
+  </script>
+
+
+</body>
+</html>

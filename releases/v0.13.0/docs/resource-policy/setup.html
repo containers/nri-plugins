@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Setup and Usage &mdash; NRI Plugins v0.13.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../_static/documentation_options.js?v=bb33721e"></script>
+        <script src="../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="Dynamic Configuration" href="configuration.html" />
+    <link rel="prev" title="Introduction" href="introduction.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            NRI Plugins
+          </a>
+              <div class="version">
+                v0.13.0
+              </div>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../introduction.html">Introduction</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">Resource Policy Plugins</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="introduction.html">Introduction</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Setup and Usage</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#setting-up-nri-resource-policy">Setting up NRI Resource Policy</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#dynamic-configuration-with-custom-resources">Dynamic Configuration with Custom Resources</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#logging-and-debugging">Logging and debugging</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#exporting-logs-to-opentelemetry">Exporting Logs to OpenTelemetry</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="configuration.html">Dynamic Configuration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="policy/index.html">Policies</a></li>
+<li class="toctree-l2"><a class="reference internal" href="developers-guide/index.html">Developer’s Guide</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../memory/index.html">Memory plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../monitoring/index.html">Monitoring plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../deployment/index.html">Deployment</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/containers/nri-plugins">Project GitHub repository</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NRI Plugins</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">Resource Policy Plugins</a></li>
+      <li class="breadcrumb-item active">Setup and Usage</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/docs/resource-policy/setup.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="setup-and-usage">
+<h1>Setup and Usage<a class="headerlink" href="#setup-and-usage" title="Link to this heading"></a></h1>
+<p>When you want to try NRI Resource Policy, here is the list of things
+you need to do, assuming you already have a Kubernetes* cluster up and
+running, using either <code class="docutils literal notranslate"><span class="pre">containerd</span></code> or <code class="docutils literal notranslate"><span class="pre">cri-o</span></code> as the runtime.</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="../deployment/index.html"><span class="std std-doc">Deploy</span></a> NRI Resource Policy Helm Charts.</p></li>
+<li><p>Runtime (containerd / cri-o) configuration</p></li>
+</ul>
+<p>Resource Policy plugins are configured using plugin-specific custom
+resources. The Helm charts for each policy contain a default configuration.
+This configuration can be overridden using extra helm options.</p>
+<p><strong>NOTE</strong>: Currently, the available policies are a work in progress.</p>
+<section id="setting-up-nri-resource-policy">
+<h2>Setting up NRI Resource Policy<a class="headerlink" href="#setting-up-nri-resource-policy" title="Link to this heading"></a></h2>
+<section id="dynamic-configuration-with-custom-resources">
+<h3>Dynamic Configuration with Custom Resources<a class="headerlink" href="#dynamic-configuration-with-custom-resources" title="Link to this heading"></a></h3>
+<p>The resource policies plugins support<a class="reference internal" href="configuration.html"><span class="std std-doc">dynamic configuration</span></a>
+using custom resources. Plugins watch changes in their configuration and
+reconfigure themselves on any update.</p>
+<p>Cluster-based dynamic configuration is disabled if a local configuration
+file is supplied using the <code class="docutils literal notranslate"><span class="pre">--config-file</span> <span class="pre">&lt;config-file&gt;</span></code> command line option.</p>
+</section>
+</section>
+<section id="logging-and-debugging">
+<h2>Logging and debugging<a class="headerlink" href="#logging-and-debugging" title="Link to this heading"></a></h2>
+<p>You can use the <code class="docutils literal notranslate"><span class="pre">debug</span></code> setting in the <code class="docutils literal notranslate"><span class="pre">log</span></code> section of the configuration custom
+resource to control whether and which internal components produce debug log messages.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">LOGGER_DEBUG</span></code> environment variable can be used to seed this for early logging
+before the first configuration is acquired. By default debug logging is globally
+turned off. You can turn on full debugging by setting <code class="docutils literal notranslate"><span class="pre">log.debug</span></code> to <code class="docutils literal notranslate"><span class="pre">[</span> <span class="pre">&quot;*&quot;</span> <span class="pre">]</span></code>. You
+can turn on early full debugging by setting <code class="docutils literal notranslate"><span class="pre">LOGGER_DEBUG='*'</span></code> in the environment.</p>
+<p>Additionally, you can toggle temporarily forced full debugging on using the <code class="docutils literal notranslate"><span class="pre">SIGUSR1</span></code>,
+and toggle it again off using the same signal.</p>
+<p>When using environment variables for early debug logging, once configuration from a
+custom resource or a configuration file is taken into use, it suppresses any setting
+from the environment.</p>
+<section id="exporting-logs-to-opentelemetry">
+<h3>Exporting Logs to OpenTelemetry<a class="headerlink" href="#exporting-logs-to-opentelemetry" title="Link to this heading"></a></h3>
+<p>Logs can be exported to an OpenTelemetry-compatible log collector. The following
+custom resource fragment enables gRPC based log exporting.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">config.nri/v1alpha1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">TopologyAwarePolicy</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">default</span>
+<span class="nt">spec</span><span class="p">:</span>
+<span class="nn">...</span>
+<span class="w">  </span><span class="nt">instrumentation</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">httpEndpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8891</span>
+<span class="w">    </span><span class="nt">logExportPeriod</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">15s</span>
+<span class="w">    </span><span class="nt">logExporter</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otlp-grpc</span>
+<span class="w">  </span><span class="nt">log</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">debug</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">policy</span>
+<span class="nn">...</span>
+</pre></div>
+</div>
+<p>Additionally you need to pass the collector endpoint to the resource policy plugin
+using the stock Opentelemetry environment variables. With the above configuration,
+you need to pass <code class="docutils literal notranslate"><span class="pre">OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://otel-collector:4317</span></code>
+if your collector is <code class="docutils literal notranslate"><span class="pre">otel-collector</span></code> and configured to use the standard port.</p>
+<p>You can set both the configuration and the necessary extra environment variable
+with a Helm config fragment like this:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">config</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">reservedResources</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">750m</span>
+<span class="w">  </span><span class="nt">pinCPU</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">pinMemory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">instrumentation</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">httpEndpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">:8891</span>
+<span class="w">    </span><span class="nt">logExporter</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otlp-grpc</span>
+<span class="w">    </span><span class="nt">logExportPeriod</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">15s</span>
+<span class="w">  </span><span class="nt">log</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">debug</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">policy</span>
+<span class="nt">extraEnv</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">OTEL_EXPORTER_OTLP_LOGS_ENDPOINT</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://otel-collector:4317</span>
+</pre></div>
+</div>
+<p>For testing, you can set up a corresponding collector with a file backend for log
+collection using, for instance, the following deployment, service, and ConfigMap.
+Additionally you’ll need to create <code class="docutils literal notranslate"><span class="pre">/tmp/otel/data/otel-export.out</span></code> with the right
+permissions for your containerized collector to be able to access it.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ConfigMap</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-config</span>
+<span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-system</span>
+<span class="nt">data</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">config.yaml</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">    </span><span class="no">receivers:</span>
+<span class="w">      </span><span class="no">otlp:</span>
+<span class="w">        </span><span class="no">protocols:</span>
+<span class="w">          </span><span class="no">grpc:</span>
+<span class="w">            </span><span class="no">endpoint: 0.0.0.0:4317</span>
+<span class="w">          </span><span class="no">http:</span>
+<span class="w">            </span><span class="no">endpoint: 0.0.0.0:4318</span>
+<span class="w">    </span><span class="no">exporters:</span>
+<span class="w">      </span><span class="no">file:</span>
+<span class="w">        </span><span class="no">path: /data/otel-export.out</span>
+<span class="w">      </span><span class="no">debug:</span>
+<span class="w">        </span><span class="no">verbosity: normal</span>
+<span class="w">    </span><span class="no">processors:</span>
+<span class="w">      </span><span class="no">batch:</span>
+<span class="w">    </span><span class="no">service:</span>
+<span class="w">      </span><span class="no">telemetry:</span>
+<span class="w">        </span><span class="no">metrics:</span>
+<span class="w">      </span><span class="no">pipelines:</span>
+<span class="w">        </span><span class="no">traces:</span>
+<span class="w">          </span><span class="no">receivers: [otlp]</span>
+<span class="w">          </span><span class="no">exporters: [file]</span>
+<span class="w">          </span><span class="no">processors: [batch]</span>
+<span class="w">        </span><span class="no">metrics:</span>
+<span class="w">          </span><span class="no">receivers: [otlp]</span>
+<span class="w">          </span><span class="no">exporters: [file]</span>
+<span class="w">          </span><span class="no">processors: [batch]</span>
+<span class="w">        </span><span class="no">logs:</span>
+<span class="w">          </span><span class="no">receivers: [otlp]</span>
+<span class="w">          </span><span class="no">exporters: [file, debug]</span>
+<span class="w">          </span><span class="no">processors: [batch]</span>
+<span class="nn">---</span>
+<span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">apps/v1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Deployment</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-collector</span>
+<span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-system</span>
+<span class="nt">spec</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">selector</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">matchLabels</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">app</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-collector</span>
+<span class="w">  </span><span class="nt">template</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">metadata</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">labels</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">app</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-collector</span>
+<span class="w">    </span><span class="nt">spec</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">containers</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">collector</span>
+<span class="w">        </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector</span>
+<span class="w">        </span><span class="nt">resources</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">requests</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">750m</span>
+<span class="w">            </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">250M</span>
+<span class="w">          </span><span class="nt">limits</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">750m</span>
+<span class="w">            </span><span class="nt">memory</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">750M</span>
+<span class="w">        </span><span class="nt">ports</span><span class="p">:</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">containerPort</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4317</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">containerPort</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4318</span>
+<span class="w">        </span><span class="nt">volumeMounts</span><span class="p">:</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-config</span>
+<span class="w">          </span><span class="nt">mountPath</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/etc/otelcol</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-data</span>
+<span class="w">          </span><span class="nt">mountPath</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/data</span>
+<span class="w">          </span><span class="nt">readOnly</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">        </span><span class="nt">imagePullPolicy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">IfNotPresent</span>
+<span class="w">      </span><span class="nt">terminationGracePeriodSeconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+<span class="w">      </span><span class="nt">volumes</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-config</span>
+<span class="w">        </span><span class="nt">configMap</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-config</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-data</span>
+<span class="w">        </span><span class="nt">hostPath</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/tmp/otel/data</span>
+<span class="w">          </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Directory</span>
+<span class="nn">---</span>
+<span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Service</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-collector</span>
+<span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">kube-system</span>
+<span class="w">  </span><span class="nt">labels</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">app</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-collector</span>
+<span class="nt">spec</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">selector</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">app</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-collector</span>
+<span class="w">  </span><span class="nt">ports</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-grpc</span>
+<span class="w">    </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4317</span>
+<span class="w">    </span><span class="nt">targetPort</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4317</span>
+<span class="w">    </span><span class="nt">protocol</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">TCP</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">otel-http</span>
+<span class="w">    </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4318</span>
+<span class="w">    </span><span class="nt">targetPort</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4318</span>
+<span class="w">    </span><span class="nt">protocol</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">TCP</span>
+</pre></div>
+</div>
+<!-- Links -->
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="introduction.html" class="btn btn-neutral float-left" title="Introduction" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="configuration.html" class="btn btn-neutral float-right" title="Dynamic Configuration" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, various.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+  
+    <div class="rst-versions" data-toggle="rst-versions" role="note" aria-label="versions">
+      <span class="rst-current-version" data-toggle="rst-current-version">
+        <span class="fa fa-book"> GitHub Pages</span>
+        v0.13
+        <span class="fa fa-caret-down"></span>
+      </span>
+      <div class="rst-other-versions">
+        <dl id="versions">
+          <dt>Versions</dt>
+        </dl>
+        <dl>
+          <dt>
+          <a href="/nri-plugins/releases">all releases</a>
+          </dt>
+        </dl>
+      </div>
+    </div>
+  
+  <script src="../../../versions.js"></script>
+  <script>
+      var list = document.getElementById('versions')
+      var menuItems = getVersionsMenuItems();
+      for (var i=0; i < menuItems.length; i++) {
+        var item = document.createElement('dd');
+        var anchor = item.appendChild(document.createElement('a'));
+        anchor.appendChild(document.createTextNode(menuItems[i].name));
+        anchor.href = menuItems[i].url;
+        list.appendChild(item);
+      }
+  </script>
+
+
+</body>
+</html>
