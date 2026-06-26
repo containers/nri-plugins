@@ -124,7 +124,7 @@ type Backend interface {
 	// (logical CPU count). Returning nil or an empty map means
 	// "publish nothing"; previously-published resources are then
 	// cleared by the agent.
-	GetExtendedResources() map[string]int64
+	GetExtendedResources() map[string]resource.Quantity
 }
 
 // Policy is the exposed interface for container resource allocations decision making.
@@ -153,7 +153,7 @@ type Policy interface {
 	GetTopologyZones() []*TopologyZone
 	// GetExtendedResources returns node-level extended resources
 	// the active policy wishes to publish on the local Node.
-	GetExtendedResources() map[string]int64
+	GetExtendedResources() map[string]resource.Quantity
 }
 
 // Metrics is the interface we expect policy-specific metrics to implement.
@@ -350,6 +350,6 @@ func (p *policy) GetTopologyZones() []*TopologyZone {
 
 // GetExtendedResources returns node-level extended resources the
 // active policy wishes to publish on the local Node.
-func (p *policy) GetExtendedResources() map[string]int64 {
+func (p *policy) GetExtendedResources() map[string]resource.Quantity {
 	return p.active.GetExtendedResources()
 }

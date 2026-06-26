@@ -22,6 +22,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const (
@@ -121,7 +122,7 @@ func (p *policy) GetTopologyZones() []*policyapi.TopologyZone {
 
 // GetExtendedResources returns the node-level extended resources
 // to publish for this policy. The template policy publishes none.
-func (p *policy) GetExtendedResources() map[string]int64 {
+func (p *policy) GetExtendedResources() map[string]resource.Quantity {
 	return nil
 }
 
