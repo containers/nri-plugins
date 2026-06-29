@@ -30,12 +30,18 @@ spec:
         $(if [ -n "${MEMREQ}" ]; then echo "
         memory: '${MEMREQ}'
         "; fi)
+        $(for extreq in "${EXTREQ[@]}"; do echo "
+        $extreq
+        "; done)
       $(if [ -n "${CPULIM}" ]; then echo "
       limits:
         cpu: ${CPULIM}
         $(if [ -n "$MEMLIM" ]; then echo "
         memory: '${MEMLIM}'
         "; fi)
+        $(for extlim in "${EXTLIM[@]}"; do echo "
+        $extlim
+        "; done)
     "; fi)
     "; fi)
   "; done )

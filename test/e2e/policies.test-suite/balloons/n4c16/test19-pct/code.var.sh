@@ -105,8 +105,15 @@ wait-assert-log-contains 'ConfigureClos.*ClosID:0 MinFreq:3800000 MaxFreq:380000
 wait-assert-log-contains 'ConfigureClos.*ClosID:3 MinFreq:800000 MaxFreq:2900000' "LP CLOS 3 not programmed with MinFreq=min (800000) MaxFreq=base (2900000)"
 wait-assert-log-contains 'EnableCP done' "EnableCP missing"
 
+vm-command "kubectl get nodes -o json | jq -r '
+  .items[] | (.status.capacity[\"cpuclass.balloons.nri.io/pct-hp\"] // \"extended resource missing\")'"
+[ "$COMMAND_OUTPUT" == "4" ] || \
+    command-error "expected 4 PCT HP CPUs published as extended resources"
+
 # Phase 1.2: schedule a pod in the HP balloon.
 CPUREQ=1 CPULIM=1 MEMREQ=10M MEMLIM=10M \
+       EXTREQ="cpuclass.balloons.nri.io/pct-hp: \"1\"" \
+       EXTLIM="cpuclass.balloons.nri.io/pct-hp: \"1\"" \
        POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: pct-hp-bln" CONTCOUNT=1 \
        create balloons-busybox
 wait-assert-log-contains 'associated cpus .* to CLOS 0' "HP pod CPUs not associated to CLOS 0"
@@ -138,6 +145,8 @@ verify 'cpus["pod1c0"].issubset({"cpu10","cpu11","cpu12","cpu13"})'
 # balloon should land on pkg1 because it has the larger HP room,
 # even though pkg0 also has free CPUs.
 CPUREQ=1 CPULIM=1 MEMREQ=10M MEMLIM=10M \
+       EXTREQ="cpuclass.balloons.nri.io/pct-hp: \"1\"" \
+       EXTLIM="cpuclass.balloons.nri.io/pct-hp: \"1\"" \
        POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: pct-hp2-bln" CONTCOUNT=1 \
        create balloons-busybox
 report allowed
@@ -159,6 +168,8 @@ verify 'packages["pod2c0"] != packages["pod0c0"]'
 pct-log 500
 prev_to_clos0=$(grep -c 'to CLOS 0' <<< "$COMMAND_OUTPUT")
 CPUREQ=1 CPULIM=1 MEMREQ=10M MEMLIM=10M \
+       EXTREQ="cpuclass.balloons.nri.io/pct-hp: \"1\"" \
+       EXTLIM="cpuclass.balloons.nri.io/pct-hp: \"1\"" \
        POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: pct-hp2-bln" CONTCOUNT=1 \
        create balloons-busybox
 wait-assert-log-grew 'to CLOS 0' "$prev_to_clos0" "resize of pct-hp2-bln did not associate the new CPU(s) to CLOS 0"
@@ -200,6 +211,11 @@ vm-command "kubectl delete pods --all --now"
 wait-assert-log-grew 'to CLOS 3' "$prev_to_clos3" "after deleting remaining pods CPUs were not reassociated to LP fallback CLOS 3"
 
 helm-terminate
+
+vm-command "kubectl get nodes -o json | jq -r '
+  .items[] | (.status.capacity[\"cpuclass.balloons.nri.io/pct-hp\"] // \"extended resource missing\")'"
+[ "$COMMAND_OUTPUT" == "extended resource missing" ] || \
+    command-error "expected published extended resources to be cleaned up and missing after uninstall"
 
 ###############################################################################
 # Phase 2: Assoc-only mode (sstClosID without pctPriority)
