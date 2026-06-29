@@ -607,7 +607,7 @@ func (p *balloons) GetExtendedResources() map[string]resource.Quantity {
 		if free < 0 {
 			free = 0
 		}
-		out["cpuclass.balloons.nri.io/"+cc.Name] = *resource.NewMilliQuantity(int64(free), resource.DecimalSI)
+		out["cpuclass.balloons.nri.io/"+cc.Name] = *resource.NewQuantity(int64(free), resource.DecimalSI)
 	}
 	return out
 }
