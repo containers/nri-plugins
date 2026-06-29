@@ -810,7 +810,7 @@ kubectl get node -o jsonpath='{.items[0].status.capacity}' \
 Then uninstall the chart:
 
 ```bash
-helm uninstall balloons -n kube-system
+helm uninstall nri-resource-policy-balloons -n kube-system
 ```
 
 ### 9.2. Restore SST defaults on the node

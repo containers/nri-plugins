@@ -305,7 +305,7 @@ the next.
 ```bash
 kubectl delete -f pods.yaml
 kubectl delete -f balloons-pct.yaml
-helm -n kube-system uninstall balloons
+helm -n kube-system uninstall nri-resource-policy-balloons
 rm -f balloons-pct.yaml pods.yaml
 ```
 
