@@ -818,7 +818,7 @@ kubectl get node -o jsonpath='{.items[0].status.capacity}' \
 Then uninstall the chart:
 
 ```bash
-helm uninstall balloons -n kube-system
+helm uninstall nri-resource-policy-balloons -n kube-system
 ```
 
 Uninstalling the chart triggers the plugin's graceful shutdown,
