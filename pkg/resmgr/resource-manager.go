@@ -298,8 +298,8 @@ func (m *resmgr) updateTopologyZones() {
 	}
 }
 
-// updateNodeExtendedResources publishes (or clears) the
-// node-level extended resources the active policy advertises.
+// updateNodeExtendedResources reconciles the node-level extended
+// resources the active policy manages.
 func (m *resmgr) updateNodeExtendedResources() {
 	resources := m.policy.GetExtendedResources()
 	if err := m.agent.UpdateNodeExtendedResources(resources); err != nil {

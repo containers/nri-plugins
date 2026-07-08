@@ -579,13 +579,15 @@ func (p *balloons) GetTopologyZones() []*policy.TopologyZone {
 }
 
 // GetExtendedResources returns the node-level extended resources
-// the balloons policy publishes for the local Node.
-func (p *balloons) GetExtendedResources() map[string]resource.Quantity {
-	out := map[string]resource.Quantity{}
-	if p.cpuClasses == nil || !p.cpuClasses.PctActive() {
-		return out
+// the balloons policy manages on the local Node.
+func (p *balloons) GetExtendedResources() map[string]*resource.Quantity {
+	// Own the entire domain unconditionally: any key under it
+	// that we do not explicitly publish below must be removed.
+	out := map[string]*resource.Quantity{
+		"cpuclass.balloons.nri.io/*": nil,
 	}
-	if p.bpoptions == nil {
+	// Experimental cpuClass.PublishExtendedResource publishes only PCT capacity.
+	if p.cpuClasses == nil || !p.cpuClasses.PctActive() || p.bpoptions == nil {
 		return out
 	}
 	for _, cc := range p.bpoptions.CPUClasses {
@@ -607,7 +609,7 @@ func (p *balloons) GetExtendedResources() map[string]resource.Quantity {
 		if free < 0 {
 			free = 0
 		}
-		out["cpuclass.balloons.nri.io/"+cc.Name] = *resource.NewQuantity(int64(free), resource.DecimalSI)
+		out["cpuclass.balloons.nri.io/"+cc.Name] = resource.NewQuantity(int64(free), resource.DecimalSI)
 	}
 	return out
 }

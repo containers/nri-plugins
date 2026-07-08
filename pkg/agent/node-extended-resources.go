@@ -19,9 +19,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"path"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -29,270 +29,271 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-// extendedResourcesLock serializes concurrent node.status PATCHes
-// emitted by the policy on container events. Last writer wins.
-var extendedResourcesLock sync.Mutex
+// extResResyncInterval bounds how often the reconciler re-checks
+// the Node against the desired state without an explicit request.
+// It retries transient API failures and heals external drift.
+const extResResyncInterval = 30 * time.Second
 
-// lastPublishedExtendedResources tracks the resources we currently
-// own on this node, so that we can issue 'remove' patches for
-// resources that the policy stops reporting.
-var lastPublishedExtendedResources = map[string]resource.Quantity{}
+// extResRetrySyncInterval is time between reconciliation rounds
+// when previous round failed. Avoids flooding the API server.
+const extResRetrySyncInterval = 5 * time.Second
 
-// extendedResourcesSynced is set after the first successful
-// node-status scan. Until then, every publish will first try to
-// seed lastPublishedExtendedResources from the node so that
-// resources left over by a prior plugin process (helm reinstall,
-// pod crash, switch to a different policy, etc.) get pruned by
-// the regular diff logic on the next publish.
-var extendedResourcesSynced bool
+// nriExtendedResourceGlob restricts which extended resources this
+// agent is ever allowed to publish or remove. Regardless of what a
+// policy claims to own or wants to publish, only resources whose
+// name matches this pattern can be changed.
+const nriExtendedResourceGlob = "*.nri.io/*"
 
-// extendedResourceDomain is the per-domain prefix the agent owns.
-// Only resources whose name starts with this prefix are touched
-// by the agent (other extended resources advertised by other
-// controllers are left alone).
-const extendedResourceDomain = "cpuclass.balloons.nri.io/"
+// isNRIExtendedResource reports whether 'name' is an extended
+// resource this agent is allowed to manage.
+func isNRIExtendedResource(name string) bool {
+	return globMatch(nriExtendedResourceGlob, name)
+}
 
-// UpdateNodeExtendedResources publishes the given resource map
-// to Node.status.capacity using a JSON patch. Resources previously
-// owned by the agent but absent from 'resources' are removed.
-// Runs asynchronously to avoid stalling NRI request paths.
-func (a *Agent) UpdateNodeExtendedResources(resources map[string]resource.Quantity) error {
+// UpdateNodeExtendedResources records 'resources' as the desired
+// state of the local Node's status.capacity and wakes the
+// reconciler to take care of status change.
+//
+// 'resources' must describe the *complete* desired state:
+//
+//   - A non-nil value publishes (adds/replaces) the named resource
+//     with the given capacity.
+//   - A nil value whose key contains no '*' removes that exact
+//     resource if it is currently present on the Node.
+//   - A nil value whose key contains '*' is an ownership pattern:
+//     every resource currently on the Node that matches the
+//     pattern but is not being published is removed.
+//
+// If the resources map is empty or nil, nothing is to be published or
+// removed, and therefore querying and modifying Node status/capacity
+// is omitted.
+//
+// Because every request carries the full desired state, a newer
+// request fully supersedes older ones; the reconciler therefore
+// coalesces bursts and only ever drives the Node towards the most
+// recent request.
+func (a *Agent) UpdateNodeExtendedResources(resources map[string]*resource.Quantity) error {
 	if a.hasLocalConfig() {
 		return nil
 	}
 	if a.k8sCli == nil || a.nodeName == "" {
 		return nil
 	}
-	// Snapshot inputs and run in the background; node-status
-	// PATCHes can be slow under apiserver load and we never
-	// want NRI hooks to block on them.
-	snapshot := make(map[string]resource.Quantity, len(resources))
+
+	snapshot := make(map[string]*resource.Quantity, len(resources))
 	for k, v := range resources {
-		snapshot[k] = v
-	}
-	go func() {
-		if err := a.updateNodeExtendedResources(snapshot); err != nil {
-			log.Errorf("failed to publish extended resources: %v", err)
-		}
-	}()
-	return nil
-}
-
-func (a *Agent) updateNodeExtendedResources(resources map[string]resource.Quantity) error {
-	extendedResourcesLock.Lock()
-	defer extendedResourcesLock.Unlock()
-
-	// First call after process start: scan the node for keys we
-	// already own (from a prior plugin process), so the diff
-	// below can prune any that the current policy no longer
-	// publishes. Failure is non-fatal -- we just fall back to
-	// "trust our in-memory state".
-	if !extendedResourcesSynced {
-		if err := a.syncExtendedResourcesFromNode(); err != nil {
-			log.Warnf("extended-resource startup sync failed (orphans from a prior plugin process may persist): %v", err)
-		}
-		extendedResourcesSynced = true
-	}
-
-	// Compute the patch: add/replace keys present in 'resources',
-	// remove keys we owned before but are now gone.
-	type jsonPatchOp struct {
-		Op    string      `json:"op"`
-		Path  string      `json:"path"`
-		Value interface{} `json:"value,omitempty"`
-	}
-
-	ops := []jsonPatchOp{}
-	for name, qty := range resources {
-		if !strings.HasPrefix(name, extendedResourceDomain) {
-			log.Warnf("refusing to publish resource %q: not in domain %q",
-				name, extendedResourceDomain)
+		if v == nil {
+			snapshot[k] = nil
 			continue
 		}
-		ops = append(ops, jsonPatchOp{
-			Op:    "add",
-			Path:  "/status/capacity/" + escapeJSONPointer(name),
-			Value: qty.String(),
-		})
-	}
-	for name := range lastPublishedExtendedResources {
-		if _, kept := resources[name]; kept {
-			continue
-		}
-		ops = append(ops, jsonPatchOp{
-			Op:   "remove",
-			Path: "/status/capacity/" + escapeJSONPointer(name),
-		})
+		q := v.DeepCopy()
+		snapshot[k] = &q
 	}
 
-	if len(ops) == 0 {
-		return nil
-	}
+	a.extResLock.Lock()
+	a.extResWant = snapshot
+	a.extResLock.Unlock()
 
-	body, err := json.Marshal(ops)
-	if err != nil {
-		return fmt.Errorf("marshal patch: %w", err)
-	}
-
-	ctx := context.Background()
-	_, err = a.k8sCli.CoreV1().Nodes().Patch(
-		ctx, a.nodeName, types.JSONPatchType, body,
-		metav1.PatchOptions{}, "status")
-	if err != nil {
-		// JSON patch "add" on a missing path fails when the
-		// node has no prior resource of that name -- 'add'
-		// requires the parent to exist, but for a map value
-		// it should create the key. In practice apiservers
-		// behave correctly here. If we ever hit issues, fall
-		// back to a strategic merge patch.
-		return fmt.Errorf("patch node %s status: %w", a.nodeName, err)
-	}
-
-	// Record current set for next diff.
-	lastPublishedExtendedResources = make(map[string]resource.Quantity, len(resources))
-	for k, v := range resources {
-		lastPublishedExtendedResources[k] = v
-	}
-
-	publishedSummary := summarizeExtendedResources(resources)
-	if publishedSummary != "" {
-		log.Infof("published node extended resources: %s", publishedSummary)
+	// Coalescing wakeup: if a signal is already pending, the
+	// reconciler will pick up the latest desired state anyway.
+	select {
+	case a.extResWake <- struct{}{}:
+	default:
 	}
 	return nil
 }
 
-// escapeJSONPointer escapes '~' and '/' per RFC 6901 so that a
-// resource name containing slashes survives as a single JSON
-// Pointer segment.
-func escapeJSONPointer(s string) string {
-	s = strings.ReplaceAll(s, "~", "~0")
-	s = strings.ReplaceAll(s, "/", "~1")
-	return s
+// reconcileExtendedResourcesLoop is the single long-lived worker
+// that drives the Node's status.capacity towards the most recently
+// requested desired state. Running as a single goroutine, it
+// guarantees in-order, non-overlapping reconciles (no last-writer
+// race) and at most one in-flight GET+PATCH. It reconciles on every
+// wakeup and periodically, so transient API failures and external
+// drift are corrected even without new requests.
+func (a *Agent) reconcileExtendedResourcesLoop() {
+	timer := time.NewTimer(extResResyncInterval)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-a.stopC:
+			return
+		case <-a.extResWake:
+		case <-timer.C:
+		}
+
+		// We are about to reconcile, so cancel any pending timer
+		// fire and recompute the next deadline from now below. This
+		// drains the channel if the timer already fired but we were
+		// woken by something else, keeping the single-fire invariant.
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+
+		nextInterval := extResResyncInterval
+
+		a.extResLock.Lock()
+		resources := a.extResWant
+		a.extResLock.Unlock()
+		if len(resources) > 0 {
+			// Only touch the API server when there is a desired
+			// state to reconcile towards.
+			if err := a.reconcileNodeExtendedResources(); err != nil {
+				log.Errorf("failed to reconcile extended resources: %v", err)
+				nextInterval = extResRetrySyncInterval
+			}
+		}
+
+		timer.Reset(nextInterval)
+	}
 }
 
-// summarizeExtendedResources formats the map deterministically
-// for logs: "name1=N1, name2=N2, ...".
-func summarizeExtendedResources(m map[string]resource.Quantity) string {
-	if len(m) == 0 {
-		return ""
-	}
-	sortedKeys := slices.Sorted(maps.Keys(m))
-	parts := make([]string, 0, len(sortedKeys))
-	for _, k := range sortedKeys {
-		v := m[k]
-		parts = append(parts, fmt.Sprintf("%s=%s", k, &v))
-	}
-	return strings.Join(parts, ", ")
-}
-
-// syncExtendedResourcesFromNode reads Node.status.capacity and
-// seeds lastPublishedExtendedResources with every entry whose
-// key carries extendedResourceDomain. Caller must hold
-// extendedResourcesLock.
-func (a *Agent) syncExtendedResourcesFromNode() error {
+// reconcileNodeExtendedResources computes and applies the JSON
+// patch that brings Node.status.capacity in line with the most
+// recently requested desired state.
+func (a *Agent) reconcileNodeExtendedResources() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	node, err := a.k8sCli.CoreV1().Nodes().Get(ctx, a.nodeName, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("get node %s: %w", a.nodeName, err)
+		return fmt.Errorf("failed to get extended resources: get node %s: %w", a.nodeName, err)
 	}
-	owned := map[string]resource.Quantity{}
-	for name, q := range node.Status.Capacity {
-		key := string(name)
-		if !strings.HasPrefix(key, extendedResourceDomain) {
+
+	// Snapshot the latest desired state now that we hold fresh
+	// node status.
+	a.extResLock.Lock()
+	resources := a.extResWant
+	a.extResLock.Unlock()
+	if len(resources) == 0 {
+		return nil
+	}
+
+	// Split the input into the things we want published, the
+	// exact keys we want gone, and the ownership patterns that
+	// tell us which additional (possibly unknown) keys on the
+	// Node we are responsible for pruning. Names outside our
+	// ownership domain are refused here and never acted upon.
+	publish := map[string]string{}
+	exactRemove := map[string]bool{}
+	ownGlobs := []string{}
+	for name, qty := range resources {
+		if qty != nil {
+			if strings.Contains(name, "*") {
+				log.Errorf("ignoring extended resource %q: wildcards are only allowed on owned (nil-valued) keys", name)
+				continue
+			}
+			if !isNRIExtendedResource(name) {
+				log.Errorf("refusing to publish extended resource %q: name does not match %q", name, nriExtendedResourceGlob)
+				continue
+			}
+			publish[name] = qty.String()
 			continue
 		}
-		owned[key] = q
-		if _, ours := lastPublishedExtendedResources[key]; !ours {
-			lastPublishedExtendedResources[key] = q
+		if strings.Contains(name, "*") {
+			ownGlobs = append(ownGlobs, name)
+			continue
+		}
+		if !isNRIExtendedResource(name) {
+			log.Errorf("refusing to remove extended resource %q: name does not match %q", name, nriExtendedResourceGlob)
+			continue
+		}
+		exactRemove[name] = true
+	}
+
+	current := map[string]string{}
+	for name, q := range node.Status.Capacity {
+		current[string(name)] = q.String()
+	}
+
+	// Determine which currently-present keys must be removed:
+	// exact removals plus every key matched by an ownership glob
+	// that we are not publishing. Regardless of what the policy
+	// asked for, never touch a key outside our ownership domain.
+	removeSet := map[string]bool{}
+	for name := range current {
+		if !isNRIExtendedResource(name) {
+			continue
+		}
+		if _, keep := publish[name]; keep {
+			continue
+		}
+		if exactRemove[name] {
+			removeSet[name] = true
+			continue
+		}
+		for _, glob := range ownGlobs {
+			if globMatch(glob, name) {
+				removeSet[name] = true
+				break
+			}
 		}
 	}
-	if len(owned) > 0 {
-		log.Infof("extended-resource startup sync: found %d existing key(s) on node %s: %s",
-			len(owned), a.nodeName, summarizeExtendedResources(owned))
+
+	// Now we have the current state, the desired state, and the
+	// set of keys to remove. Build a single JSON merge patch that
+	// will bring the Node into compliance.
+	updatedCapacity := map[string]any{}
+	for name, newValue := range publish {
+		if curValue, ok := current[name]; ok && curValue == newValue {
+			continue
+		}
+		updatedCapacity[name] = newValue
+	}
+	for name := range removeSet {
+		updatedCapacity[name] = nil
+	}
+	if len(updatedCapacity) == 0 {
+		return nil
+	}
+
+	body, err := json.Marshal(map[string]any{
+		"status": map[string]any{
+			"capacity": updatedCapacity,
+		},
+	})
+	if err != nil {
+		log.Warnf("failed to marshal update-resources patch: %v", err)
+		return err
+	}
+
+	mergeCtx, mergeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer mergeCancel()
+	_, err = a.k8sCli.CoreV1().Nodes().Patch(
+		mergeCtx, a.nodeName, types.MergePatchType, body,
+		metav1.PatchOptions{}, "status")
+	if err != nil {
+		return fmt.Errorf("patch node %s status: %w", a.nodeName, err)
+	}
+
+	if s := summarizeResources(publish); s != "" {
+		log.Infof("published node extended resources: %s", s)
+	}
+	if len(removeSet) > 0 {
+		log.Infof("removed node extended resources: %s", strings.Join(slices.Sorted(maps.Keys(removeSet)), ", "))
 	}
 	return nil
 }
 
-// ClearNodeExtendedResources removes every node-status key the
-// agent currently owns (every key in lastPublishedExtendedResources
-// plus, for safety, every key currently present on the node that
-// carries our domain prefix). Best-effort and synchronous, with a
-// short timeout; intended for Agent.Stop() so a graceful shutdown
-// does not leave orphan capacity entries behind.
-func (a *Agent) ClearNodeExtendedResources() {
-	if a.hasLocalConfig() {
-		return
-	}
-	if a.k8sCli == nil || a.nodeName == "" {
-		return
-	}
-
-	extendedResourcesLock.Lock()
-	defer extendedResourcesLock.Unlock()
-
-	toRemove := map[string]struct{}{}
-	for k := range lastPublishedExtendedResources {
-		toRemove[k] = struct{}{}
-	}
-
-	// Also fold in anything currently on the node under our
-	// domain that we may not be tracking (e.g., startup sync
-	// never ran because no publish happened before Stop). Best
-	// effort: ignore the read error and fall back to the
-	// in-memory set.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	if node, err := a.k8sCli.CoreV1().Nodes().Get(ctx, a.nodeName, metav1.GetOptions{}); err == nil {
-		for name := range node.Status.Capacity {
-			key := string(name)
-			if strings.HasPrefix(key, extendedResourceDomain) {
-				toRemove[key] = struct{}{}
-			}
-		}
-	}
-	cancel()
-
-	if len(toRemove) == 0 {
-		return
-	}
-
-	type jsonPatchOp struct {
-		Op   string `json:"op"`
-		Path string `json:"path"`
-	}
-	ops := make([]jsonPatchOp, 0, len(toRemove))
-	keys := make([]string, 0, len(toRemove))
-	for k := range toRemove {
-		ops = append(ops, jsonPatchOp{
-			Op:   "remove",
-			Path: "/status/capacity/" + escapeJSONPointer(k),
-		})
-		keys = append(keys, k)
-	}
-
-	body, err := json.Marshal(ops)
+func globMatch(pattern, name string) bool {
+	matched, err := path.Match(pattern, name)
 	if err != nil {
-		log.Warnf("ClearNodeExtendedResources: marshal patch: %v", err)
-		return
+		log.Errorf("invalid extended resources glob pattern %q: %v", pattern, err)
 	}
+	return matched
+}
 
-	pctx, pcancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer pcancel()
-	_, err = a.k8sCli.CoreV1().Nodes().Patch(
-		pctx, a.nodeName, types.JSONPatchType, body,
-		metav1.PatchOptions{}, "status")
-	if err != nil {
-		log.Warnf("ClearNodeExtendedResources: patch node %s: %v", a.nodeName, err)
-		return
+// summarizeResources formats a name->value map deterministically
+// for logs: "name1=v1, name2=v2, ...".
+func summarizeResources(m map[string]string) string {
+	if len(m) == 0 {
+		return ""
 	}
-
-	// Stable order in the log
-	for i := 1; i < len(keys); i++ {
-		for j := i; j > 0 && keys[j-1] > keys[j]; j-- {
-			keys[j-1], keys[j] = keys[j], keys[j-1]
-		}
+	parts := make([]string, 0, len(m))
+	for _, k := range slices.Sorted(maps.Keys(m)) {
+		parts = append(parts, fmt.Sprintf("%s=%s", k, m[k]))
 	}
-	log.Infof("cleared node extended resources on shutdown: %s", strings.Join(keys, ", "))
-
-	lastPublishedExtendedResources = map[string]resource.Quantity{}
+	return strings.Join(parts, ", ")
 }

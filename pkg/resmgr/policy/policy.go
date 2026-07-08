@@ -117,14 +117,21 @@ type Backend interface {
 	ExportResourceData(cache.Container) map[string]string
 	// GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
 	GetTopologyZones() []*TopologyZone
-	// GetExtendedResources returns node-level extended resources
-	// this policy wishes to publish on the local Node, mapping
-	// fully-qualified resource name (e.g.
-	// "cpuclass.balloons.nri.io/hp-pct") to its current capacity
-	// (logical CPU count). Returning nil or an empty map means
-	// "publish nothing"; previously-published resources are then
-	// cleared by the agent.
-	GetExtendedResources() map[string]resource.Quantity
+	// GetExtendedResources returns the node-level extended
+	// resources this policy manages on the local Node. The map
+	// communicates both what to publish and what the policy owns,
+	// so that the agent can reconcile node state without any
+	// policy-specific knowledge:
+	//   - A non-nil value publishes (or replaces) the named
+	//     resource with the given capacity.
+	//   - A nil value marks the key as "owned but not published":
+	//     if the key is a plain resource name it is removed when
+	//     present; if the key contains '*' it is an ownership
+	//     pattern and every matching resource currently on the
+	//     Node that the policy is not publishing is removed.
+	// Returning nil or an empty map means the policy owns and
+	// publishes nothing.
+	GetExtendedResources() map[string]*resource.Quantity
 }
 
 // Policy is the exposed interface for container resource allocations decision making.
@@ -151,9 +158,9 @@ type Policy interface {
 	ExportResourceData(cache.Container)
 	// GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
 	GetTopologyZones() []*TopologyZone
-	// GetExtendedResources returns node-level extended resources
-	// the active policy wishes to publish on the local Node.
-	GetExtendedResources() map[string]resource.Quantity
+	// GetExtendedResources returns the node-level extended
+	// resources the active policy manages on the local Node.
+	GetExtendedResources() map[string]*resource.Quantity
 }
 
 // Metrics is the interface we expect policy-specific metrics to implement.
@@ -348,8 +355,8 @@ func (p *policy) GetTopologyZones() []*TopologyZone {
 	return p.active.GetTopologyZones()
 }
 
-// GetExtendedResources returns node-level extended resources the
-// active policy wishes to publish on the local Node.
-func (p *policy) GetExtendedResources() map[string]resource.Quantity {
+// GetExtendedResources returns the node-level extended resources
+// the active policy manages on the local Node.
+func (p *policy) GetExtendedResources() map[string]*resource.Quantity {
 	return p.active.GetExtendedResources()
 }
