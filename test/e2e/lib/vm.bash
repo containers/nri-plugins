@@ -1108,7 +1108,7 @@ containerd-reimport-image() {
     sha256=${tarball%.tar}
     sha256=${sha256##*-image-}
 
-    vm-command "ctr -n k8s.io images ls | grep sha256:$sha256 | tr -s '\t' ' ' | cut -d ' ' -f1"
+    vm-command "ctr -n k8s.io images ls | grep sha256:$sha256 | head -n 1 | tr -s '\t' ' ' | cut -d ' ' -f1"
     ref="$COMMAND_OUTPUT"
     if [ -z "$ref" ]; then
         command-error "failed to resolve image ref for sha256:$sha256"
