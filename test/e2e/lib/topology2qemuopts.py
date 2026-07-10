@@ -362,7 +362,11 @@ def qemucxlopts(cxl_host_bridges):
 
 def qemuopts(numalist):
     machineparam = "-machine q35,kernel-irqchip=split"
-    cpuparam = "-cpu host,x2apic=on"
+    machineparam += ",smp-cache.0.cache=l1d,smp-cache.0.topology=core"
+    machineparam += ",smp-cache.1.cache=l1i,smp-cache.1.topology=core"
+    machineparam += ",smp-cache.2.cache=l2,smp-cache.2.topology=core"
+    machineparam += ",smp-cache.3.cache=l3,smp-cache.3.topology=socket"
+    cpuparam = "-cpu host,x2apic=on,host-cache-info=off"
     numaparams = []
     objectparams = []
     deviceparams = []
