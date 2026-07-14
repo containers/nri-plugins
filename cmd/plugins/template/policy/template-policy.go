@@ -122,7 +122,7 @@ func (p *policy) GetTopologyZones() []*policyapi.TopologyZone {
 
 // GetExtendedResources returns the node-level extended resources
 // to publish for this policy. The template policy publishes none.
-func (p *policy) GetExtendedResources() map[string]resource.Quantity {
+func (p *policy) GetExtendedResources() map[string]*resource.Quantity {
 	return nil
 }
 

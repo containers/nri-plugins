@@ -23,6 +23,7 @@ import (
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -143,6 +144,10 @@ type Agent struct {
 	groupCfg      metav1.Object   // group-specific/default config resource
 	currentCfg    metav1.Object
 
+	extResWant map[string]*resource.Quantity // extended resources desired state
+	extResLock sync.Mutex                    // lock accessing the desired state
+	extResWake chan struct{}                 // reconciliation trigger
+
 	stopLock sync.Mutex
 	stopC    chan struct{}
 	doneC    chan struct{}
@@ -161,6 +166,7 @@ func New(cfgIf ConfigInterface, options ...Option) (*Agent, error) {
 		namespace:  defaultNamespace,
 		groupLabel: defaultGroupLabel,
 		cfgIf:      cfgIf,
+		extResWake: make(chan struct{}, 1),
 		stopC:      make(chan struct{}),
 	}
 
@@ -200,6 +206,8 @@ func (a *Agent) Start(notifyFn NotifyFn) error {
 		}
 		return w.ResultChan()
 	}
+
+	go a.reconcileExtendedResourcesLoop()
 
 	for {
 		select {
@@ -258,10 +266,6 @@ func (a *Agent) Stop() {
 	defer a.stopLock.Unlock()
 
 	if a.stopC != nil {
-		// Remove any extended resources we own on this node so
-		// a graceful shutdown does not leave orphan capacity
-		// entries behind.
-		a.ClearNodeExtendedResources()
 		close(a.stopC)
 		<-a.doneC
 		a.stopC = nil
@@ -601,10 +605,6 @@ func (a *Agent) updateGroupConfig(obj runtime.Object) {
 func (a *Agent) updateConfig(cfg metav1.Object) {
 	if cfg == nil {
 		log.Warnf("node (%s) has no effective configuration", a.nodeName)
-		// With no effective configuration there is nothing left to
-		// publish, so drop any extended resources we currently own
-		// on the node.
-		a.ClearNodeExtendedResources()
 		return
 	}
 

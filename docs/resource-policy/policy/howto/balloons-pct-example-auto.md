@@ -796,10 +796,24 @@ kubectl delete -f pod-hp-1.yaml -f pod-hp-2.yaml -f pod-hp-3.yaml \
 kubectl delete -f balloons-pct-managed.yaml --ignore-not-found
 ```
 
-Deleting the `BalloonsPolicy` CR is the policy's defined "reset"
-trigger: the plugin reacts to losing its effective configuration
-by removing every `cpuclass.balloons.nri.io/*` extended resource
-it had published. Verify before uninstalling the chart:
+Deleting the `BalloonsPolicy` CR, or uninstalling the chart, does
+not remove published `cpuclass.balloons.nri.io/*` extended
+resources by itself: they live in the node's status capacity, not
+in CR-managed objects, and the plugin does not clear them on
+shutdown. A running plugin reconciles them instead: whenever the
+balloons policy is (re)configured so that it no longer publishes a
+resource, the agent removes the stale resource; likewise, starting
+the plugin with a non-publishing configuration reconciles away any
+resource left over from a previous run, regardless of how it got
+there.
+
+It is therefore good practice to apply a "reset" `BalloonsPolicy`
+(one that publishes nothing) and let the plugin reconcile before
+uninstalling: this also clears any published
+`cpuclass.balloons.nri.io/*` extended resources while the plugin is
+still running.
+
+To verify no `cpuclass.balloons.nri.io/*` resources remain:
 
 ```bash
 kubectl get node -o jsonpath='{.items[0].status.capacity}' \

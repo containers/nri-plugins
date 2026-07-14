@@ -18,6 +18,13 @@
 #     set is rejected.
 #  8. Assoc-only mode: configuration with sstClosID only does NOT
 #     call PrepareManagedMode (no log line) and only associates CPUs.
+#  9. Extended-resource reconciliation (Phase 1.5): in-process
+#     reconfiguration that stops/starts publishing removes/re-adds
+#     the resource; and a resource injected directly on the node
+#     (simulating an orphan left behind e.g. by a non-graceful
+#     kill, a crash, an upgrade or manual intervention) is
+#     reconciled away by a freshly launched, non-publishing policy
+#     via its cpuclass.balloons.nri.io/* domain ownership.
 
 helm-terminate
 
@@ -90,6 +97,54 @@ wait-pod-gone() {
     return 0
 }
 
+# get-ext <resource-name> stores the given extended resource
+# capacity (or the string "missing") in COMMAND_OUTPUT.
+get-ext() {
+    local name=$1
+    vm-command "kubectl get nodes -o json | jq -r '.items[] | (.status.capacity[\"$name\"] // \"missing\")'"
+}
+
+# get-ext-hp stores the pct-hp extended resource capacity (or the
+# string "missing") in COMMAND_OUTPUT.
+get-ext-hp() {
+    get-ext "cpuclass.balloons.nri.io/pct-hp"
+}
+
+# wait-ext-hp <want> <message> [timeout=30] [interval=2]
+# Polls until the pct-hp extended resource equals <want> (a number
+# or the string "missing"), or fails with <message> on timeout.
+wait-ext-hp() {
+    local want=$1 msg=$2 timeout=${3:-30} interval=${4:-2} elapsed=0
+    while [ "$elapsed" -lt "$timeout" ]; do
+        get-ext-hp
+        [ "$COMMAND_OUTPUT" == "$want" ] && return 0
+        sleep "$interval"
+        elapsed=$((elapsed + interval))
+    done
+    get-ext-hp
+    command-error "$msg (expected '$want', got '$COMMAND_OUTPUT')"
+}
+
+# helm-upgrade <config> performs an in-process reconfiguration by
+# upgrading the running helm release with a new plugin config. Only
+# the policy custom resource changes, so the plugin pod is not
+# restarted and the agent reconfigures in place.
+helm-upgrade() {
+    local cfg=$1
+    host-command "$SCP \"$cfg\" $VM_HOSTNAME:" ||
+        command-error "copying \"$cfg\" to VM failed"
+    vm-command "helm upgrade -n kube-system test ./helm/balloons \
+             --values=$(basename "$cfg") \
+             --set image.name=localhost/balloons \
+             --set image.tag=testing \
+             --set image.pullPolicy=Never \
+             --set resources.cpu=50m \
+             --set resources.memory=256Mi \
+             --set plugin-test.enableAPIs=true" ||
+        command-error "helm upgrade with $cfg failed"
+}
+
+
 ###############################################################################
 # Phase 1: Managed mode -- HP + LP cpuClasses
 ###############################################################################
@@ -105,10 +160,7 @@ wait-assert-log-contains 'ConfigureClos.*ClosID:0 MinFreq:3800000 MaxFreq:380000
 wait-assert-log-contains 'ConfigureClos.*ClosID:3 MinFreq:800000 MaxFreq:2900000' "LP CLOS 3 not programmed with MinFreq=min (800000) MaxFreq=base (2900000)"
 wait-assert-log-contains 'EnableCP done' "EnableCP missing"
 
-vm-command "kubectl get nodes -o json | jq -r '
-  .items[] | (.status.capacity[\"cpuclass.balloons.nri.io/pct-hp\"] // \"extended resource missing\")'"
-[ "$COMMAND_OUTPUT" == "4" ] || \
-    command-error "expected 4 PCT HP CPUs published as extended resources"
+wait-ext-hp 4 "expected 4 PCT HP CPUs published as extended resources"
 
 # Phase 1.2: schedule a pod in the HP balloon.
 CPUREQ=1 CPULIM=1 MEMREQ=10M MEMLIM=10M \
@@ -212,10 +264,80 @@ wait-assert-log-grew 'to CLOS 3' "$prev_to_clos3" "after deleting remaining pods
 
 helm-terminate
 
-vm-command "kubectl get nodes -o json | jq -r '
-  .items[] | (.status.capacity[\"cpuclass.balloons.nri.io/pct-hp\"] // \"extended resource missing\")'"
-[ "$COMMAND_OUTPUT" == "extended resource missing" ] || \
-    command-error "expected published extended resources to be cleaned up and missing after uninstall"
+###############################################################################
+# Phase 1.5: extended-resource reconciliation
+###############################################################################
+
+helm_config=$TEST_DIR/balloons-pct-managed.cfg helm-launch balloons
+wait-ext-hp 4 "HP extended resource not published after (re)launch"
+
+# In-process reconfiguration: switch to a config that keeps the
+# pct-hp cpuClass but stops publishing it. The running plugin must
+# reconcile the node and REMOVE the now-unowned resource without a
+# restart.
+helm-upgrade "$TEST_DIR/balloons-pct-nopublish.cfg"
+wait-ext-hp missing "in-process reconfig to a non-publishing config did not remove the HP extended resource"
+
+# In-process reconfiguration back to publishing: the resource must
+# reappear.
+helm-upgrade "$TEST_DIR/balloons-pct-managed.cfg"
+wait-ext-hp 4 "in-process reconfig back to a publishing config did not re-publish the HP extended resource"
+
+# Tear down the release so the next helm-launch starts from a clean
+# slate. Note: the plugin no longer removes published extended
+# resources on shutdown; leftovers are reconciled away on the next
+# launch (verified below).
+helm-terminate
+
+# Reconciliation must remove extended resources it does not own
+# regardless of how they got there (e.g. left behind by a
+# non-graceful kill, a crash, or manual intervention) as long as the
+# policy claims ownership of their domain. Simulate such leftover
+# state directly, without depending on any particular failure mode
+# of a previous plugin instance, by patching the node's status
+# ourselves.
+node_name=$(vm-command-q "kubectl get nodes -o jsonpath='{.items[0].metadata.name}'")
+vm-command "kubectl patch node $node_name --subresource=status --type merge \
+    -p '{\"status\":{\"capacity\":{\"cpuclass.balloons.nri.io/pct-hp\":\"4\"}}}'" ||
+    command-error "failed to inject orphan HP extended resource for the reconciliation test"
+get-ext-hp
+[ "$COMMAND_OUTPUT" == "4" ] || \
+    command-error "expected injected orphan HP extended resource (4) to be visible, got '$COMMAND_OUTPUT'"
+
+# Also inject an unrelated extended resource that lives OUTSIDE the
+# *.nri.io/* domain. Even though the balloons policy claims to own
+# (and could accidentally request the removal of) resources, the
+# agent must never touch resources outside the *.nri.io/* domain.
+# This resource must survive reconciliation untouched.
+vm-command "kubectl patch node $node_name --subresource=status --type merge \
+    -p '{\"status\":{\"capacity\":{\"example.com/not-owned\":\"7\"}}}'" ||
+    command-error "failed to inject unrelated non-nri.io extended resource"
+get-ext "example.com/not-owned"
+[ "$COMMAND_OUTPUT" == "7" ] || \
+    command-error "expected injected non-nri.io extended resource (7) to be visible, got '$COMMAND_OUTPUT'"
+
+# Launch a config that publishes nothing. On startup the fresh
+# plugin process has no memory of the resource injected above, yet
+# the balloons policy claims ownership of the whole
+# cpuclass.balloons.nri.io/* domain, so the agent must reconcile the
+# node and remove the orphan.
+helm_config=$TEST_DIR/balloons-pct-nopublish.cfg helm-launch balloons
+wait-ext-hp missing "reconciliation on launch did not remove the orphan HP extended resource"
+
+# The unrelated non-nri.io resource must NOT have been removed: the
+# agent refuses to touch anything outside the *.nri.io/* domain.
+get-ext "example.com/not-owned"
+[ "$COMMAND_OUTPUT" == "7" ] || \
+    command-error "reconciliation removed or altered a non-nri.io extended resource (expected '7', got '$COMMAND_OUTPUT')"
+
+# Clean up the unrelated resource we injected so we leave the node
+# as we found it.
+vm-command "kubectl patch node $node_name --subresource=status --type merge \
+    -p '{\"status\":{\"capacity\":{\"example.com/not-owned\":null}}}'" ||
+    command-error "failed to clean up the injected non-nri.io extended resource"
+
+helm-terminate
+
 
 ###############################################################################
 # Phase 2: Assoc-only mode (sstClosID without pctPriority)

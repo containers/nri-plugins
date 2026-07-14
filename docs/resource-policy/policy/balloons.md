@@ -910,9 +910,11 @@ CPU class definitions. Each class is an object with:
   available CPU capacity as
   `cpuclass.balloons.nri.io/<CPU-CLASS-NAME>` extended
   resource. Enables Kubernetes to schedule pods on nodes with enough
-  CPUs of wanted priority. Note: container's `cpu` and
-  extended resource requests **must be equal** to avoid
-  over and under subscription.
+  CPUs of wanted priority. Notes: container's `cpu` and extended
+  resource requests **must be equal** to avoid over and under
+  subscription. Extended resources are not cleaned up from node status
+  when balloons is stopped or uninstalled. Balloons reconciliation
+  removes extended resources when configured not to publish them.
 
 **`turboDomain`** (string, policy-level configuration):
 
