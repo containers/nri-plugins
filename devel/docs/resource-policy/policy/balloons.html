@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.13.0-7-g883723c6 documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.13.0-11-gc6c406d2 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=940b63e0"></script>
+        <script src="../../../_static/documentation_options.js?v=8ab9baf9"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -1060,9 +1060,11 @@ Turbo</a> for details.</p></li>
 available CPU capacity as
 <code class="docutils literal notranslate"><span class="pre">cpuclass.balloons.nri.io/&lt;CPU-CLASS-NAME&gt;</span></code> extended
 resource. Enables Kubernetes to schedule pods on nodes with enough
-CPUs of wanted priority. Note: container’s <code class="docutils literal notranslate"><span class="pre">cpu</span></code> and
-extended resource requests <strong>must be equal</strong> to avoid
-over and under subscription.</p></li>
+CPUs of wanted priority. Notes: container’s <code class="docutils literal notranslate"><span class="pre">cpu</span></code> and extended
+resource requests <strong>must be equal</strong> to avoid over and under
+subscription. Extended resources are not cleaned up from node status
+when balloons is stopped or uninstalled. Balloons reconciliation
+removes extended resources when configured not to publish them.</p></li>
 </ul>
 <p><strong><code class="docutils literal notranslate"><span class="pre">turboDomain</span></code></strong> (string, policy-level configuration):</p>
 <p>Selects the scope over which <code class="docutils literal notranslate"><span class="pre">turboPriority</span></code> arbitration happens. The

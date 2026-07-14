@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons + Priority Core Turbo (managed) example &mdash; NRI Plugins v0.13.0-7-g883723c6 documentation</title>
+  <title>Balloons + Priority Core Turbo (managed) example &mdash; NRI Plugins v0.13.0-11-gc6c406d2 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../../_static/documentation_options.js?v=940b63e0"></script>
+        <script src="../../../../_static/documentation_options.js?v=8ab9baf9"></script>
         <script src="../../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../../_static/js/theme.js"></script>
@@ -935,10 +935,22 @@ a higher frequency.</p>
 kubectl<span class="w"> </span>delete<span class="w"> </span>-f<span class="w"> </span>balloons-pct-managed.yaml<span class="w"> </span>--ignore-not-found
 </pre></div>
 </div>
-<p>Deleting the <code class="docutils literal notranslate"><span class="pre">BalloonsPolicy</span></code> CR is the policy’s defined “reset”
-trigger: the plugin reacts to losing its effective configuration
-by removing every <code class="docutils literal notranslate"><span class="pre">cpuclass.balloons.nri.io/*</span></code> extended resource
-it had published. Verify before uninstalling the chart:</p>
+<p>Deleting the <code class="docutils literal notranslate"><span class="pre">BalloonsPolicy</span></code> CR, or uninstalling the chart, does
+not remove published <code class="docutils literal notranslate"><span class="pre">cpuclass.balloons.nri.io/*</span></code> extended
+resources by itself: they live in the node’s status capacity, not
+in CR-managed objects, and the plugin does not clear them on
+shutdown. A running plugin reconciles them instead: whenever the
+balloons policy is (re)configured so that it no longer publishes a
+resource, the agent removes the stale resource; likewise, starting
+the plugin with a non-publishing configuration reconciles away any
+resource left over from a previous run, regardless of how it got
+there.</p>
+<p>It is therefore good practice to apply a “reset” <code class="docutils literal notranslate"><span class="pre">BalloonsPolicy</span></code>
+(one that publishes nothing) and let the plugin reconcile before
+uninstalling: this also clears any published
+<code class="docutils literal notranslate"><span class="pre">cpuclass.balloons.nri.io/*</span></code> extended resources while the plugin is
+still running.</p>
+<p>To verify no <code class="docutils literal notranslate"><span class="pre">cpuclass.balloons.nri.io/*</span></code> resources remain:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>kubectl<span class="w"> </span>get<span class="w"> </span>node<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">&#39;{.items[0].status.capacity}&#39;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;with_entries(select(.key | startswith(&quot;cpuclass.balloons.nri.io/&quot;)))&#39;</span>
 <span class="c1"># Expect: {}</span>
