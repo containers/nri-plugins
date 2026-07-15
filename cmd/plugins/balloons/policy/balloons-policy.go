@@ -1430,7 +1430,8 @@ func (p *balloons) dumpBalloon(bln *Balloon) string {
 		pods = append(pods, podName)
 		for _, contID := range contIDs {
 			if cont, ok := p.cch.LookupContainer(contID); ok {
-				conts = append(conts, cont.PrettyName())
+				contMilliCpus := p.containerRequestedMilliCpus(contID)
+				conts = append(conts, cont.PrettyName()+",req="+strconv.Itoa(contMilliCpus)+"mCPUs")
 			} else {
 				conts = append(conts, podName+"."+contID)
 			}
