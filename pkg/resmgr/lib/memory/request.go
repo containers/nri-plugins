@@ -150,7 +150,7 @@ func WithQosClass(qosClass string) RequestOption {
 	case "guaranteed":
 		return WithPriority(Guaranteed)
 	default:
-		log.Error("%v: %q", ErrInvalidQosClass, qosClass)
+		log.Errorf("%v: %q", ErrInvalidQosClass, qosClass)
 		return WithPriority(NoPriority)
 	}
 }

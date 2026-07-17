@@ -126,8 +126,16 @@ func (p *mockCPUPackage) LogicalDieClusterCPUSet(idset.ID, idset.ID) cpuset.CPUS
 	return cpuset.New()
 }
 
-func (p *mockCPUPackage) SstInfo() *sst.SstPackageInfo {
-	return &sst.SstPackageInfo{}
+func (p *mockCPUPackage) L3CacheIDs() []idset.ID {
+	return []idset.ID{}
+}
+
+func (p *mockCPUPackage) L3CacheCPUSet(idset.ID) cpuset.CPUSet {
+	return cpuset.New()
+}
+
+func (p *mockCPUPackage) SstInfo() *sst.PackageStatus {
+	return &sst.PackageStatus{}
 }
 
 type mockCPU struct {
@@ -348,6 +356,9 @@ func (fake *mockSystem) NodeDistance(idset.ID, idset.ID) int {
 func (fake *mockSystem) NodeHintToCPUs(string) string {
 	return ""
 }
+func (fake *mockSystem) Sst() *sst.Platform {
+	return nil
+}
 
 type mockContainer struct {
 	name                                  string
@@ -433,6 +444,13 @@ func (m *mockContainer) GetEffectiveAnnotation(key string) (string, bool) {
 	}
 	return pod.GetEffectiveAnnotation(key, m.name)
 }
+func (m *mockContainer) QueryEffectiveAnnotation(key string) (string, cache.AnnotationScope, bool) {
+	pod, ok := m.GetPod()
+	if !ok {
+		return "", cache.UnscopedAnnotation, false
+	}
+	return pod.QueryEffectiveAnnotation(key, m.name)
+}
 func (m *mockContainer) EvalKey(string) interface{} {
 	panic("unimplemented")
 }
@@ -461,6 +479,9 @@ func (m *mockContainer) InsertMount(*cache.Mount) {
 func (m *mockContainer) GetTopologyHints() topology.Hints {
 	return topology.Hints{}
 }
+func (m *mockContainer) StrictTopologyHints() bool {
+	return false
+}
 func (m *mockContainer) SetCPUShares(int64) {
 }
 func (m *mockContainer) SetCPUPeriod(int64) {
@@ -477,6 +498,33 @@ func (m *mockContainer) SetMemoryLimit(int64) {
 	panic("unimplemented")
 }
 func (m *mockContainer) SetMemorySwap(int64) {
+	panic("unimplemented")
+}
+func (m *mockContainer) SetSchedulingPolicy(nri.LinuxSchedulerPolicy) {
+	panic("unimplemented")
+}
+func (m *mockContainer) SetSchedulingNice(int32) {
+	panic("unimplemented")
+}
+func (m *mockContainer) SetSchedulingPriority(int32) {
+	panic("unimplemented")
+}
+func (m *mockContainer) SetSchedulingFlags([]nri.LinuxSchedulerFlag) {
+	panic("unimplemented")
+}
+func (m *mockContainer) SetSchedulingRuntime(uint64) {
+	panic("unimplemented")
+}
+func (m *mockContainer) SetSchedulingDeadline(uint64) {
+	panic("unimplemented")
+}
+func (m *mockContainer) SetSchedulingPeriod(uint64) {
+	panic("unimplemented")
+}
+func (m *mockContainer) SetSchedulingIOClass(nri.IOPrioClass) {
+	panic("unimplemented")
+}
+func (m *mockContainer) SetSchedulingIOPriority(int32) {
 	panic("unimplemented")
 }
 func (m *mockContainer) GetPendingAdjustment() *nri.ContainerAdjustment {
@@ -623,6 +671,16 @@ func (m *mockPod) GetEffectiveAnnotation(key, container string) (string, bool) {
 	v, ok := m.annotations[key]
 	return v, ok
 }
+func (m *mockPod) QueryEffectiveAnnotation(key, container string) (string, cache.AnnotationScope, bool) {
+	if v, ok := m.annotations[key+"/container."+container]; ok {
+		return v, cache.ContainerScopedAnnotation, true
+	}
+	if v, ok := m.annotations[key+"/pod"]; ok {
+		return v, cache.PodScopedAnnotation, true
+	}
+	v, ok := m.annotations[key]
+	return v, cache.UnscopedAnnotation, ok
+}
 func (m *mockPod) GetContainerAffinity(string) ([]*cache.Affinity, error) {
 	panic("unimplemented")
 }
@@ -728,6 +786,12 @@ func (m *mockCache) GetPolicyEntry(string, interface{}) bool {
 func (m *mockCache) Save() error {
 	return nil
 }
+func (m *mockCache) BlockSave() {
+}
+func (m *mockCache) UnblockSave() error {
+	return nil
+}
+
 func (m *mockCache) RefreshPods([]*nri.PodSandbox, <-chan *podresapi.PodResourcesList) ([]cache.Pod, []cache.Pod, []cache.Container) {
 	panic("unimplemented")
 }

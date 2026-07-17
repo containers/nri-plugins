@@ -1,0 +1,43 @@
+name: CodeQL
+on:
+  workflow_call:
+    inputs:
+      export-report:
+        default: false
+        required: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  codeql-scan:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+    - name: Checkout
+      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@3d8036cf7fe7433e4a725cf513a6ea56c7fd0f14 # codeql-bundle-v2.25.0
+      with:
+        languages: go
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@3d8036cf7fe7433e4a725cf513a6ea56c7fd0f14 # codeql-bundle-v2.25.0
+
+    - name: Generate CodeQL Security Report
+      if: ${{ inputs.export-report }}
+      uses: rsdmike/github-security-report-action@a149b24539044c92786ec39af8ba38c93496495d # v3.0.4
+      with:
+        template: report
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload PDF report as an artifact
+      if: ${{ inputs.export-report }}
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: codeql-report
+        path: report.pdf

@@ -480,6 +480,10 @@ helm-launch() { # script API
                 ds_name=nri-memory-policy
                 ctr_name=nri-memory-policy
                 ;;
+            *memtierd*)
+                ds_name=nri-memtierd
+                ctr_name=nri-memtierd
+                ;;
             *)
                 error "Can't wait for plugin $plugin to start, daemonset_name not set"
                 return 0

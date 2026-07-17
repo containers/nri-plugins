@@ -21,7 +21,7 @@ import (
 
 // Calculate pool affinities for the given container.
 func (p *policy) calculatePoolAffinities(container cache.Container) (map[int]int32, error) {
-	log.Debug("=> calculating pool affinities...")
+	log.Debugf("=> calculating pool affinities...")
 
 	affinities, err := p.calculateContainerAffinity(container)
 	if err != nil {
@@ -45,7 +45,7 @@ func (p *policy) calculatePoolAffinities(container cache.Container) (map[int]int
 
 // Calculate affinity of this container (against all other containers).
 func (p *policy) calculateContainerAffinity(container cache.Container) (map[string]int32, error) {
-	log.Debug("* calculating affinity for container %s...", container.PrettyName())
+	log.Debugf("* calculating affinity for container %s...", container.PrettyName())
 
 	ca, err := container.GetAffinity()
 	if err != nil {
@@ -62,7 +62,7 @@ func (p *policy) calculateContainerAffinity(container cache.Container) (map[stri
 	// self-affinity does not make sense, so remove any
 	delete(result, container.GetID())
 
-	log.Debug("  => affinity: %v", result)
+	log.Debugf("  => affinity: %v", result)
 
 	return result, nil
 }
@@ -83,7 +83,7 @@ func (p *policy) registerImplicitAffinities() error {
 				}
 				pod, ok := c.GetPod()
 				if !ok {
-					log.Error("failed to inject pod-colocation affinity, can't find pod")
+					log.Errorf("failed to inject pod-colocation affinity, can't find pod")
 					return nil
 				}
 				return &cache.Affinity{
@@ -129,10 +129,10 @@ func (p *policy) registerImplicitAffinities() error {
 		del = append(del, name)
 
 		if !a.disabled {
-			log.Info("implicit affinity %s is enabled", a.name)
+			log.Infof("implicit affinity %s is enabled", a.name)
 			add[name] = a.affinity
 		} else {
-			log.Info("implicit affinity %s is disabled", a.name)
+			log.Infof("implicit affinity %s is disabled", a.name)
 		}
 	}
 

@@ -19,10 +19,10 @@ import (
 	"path"
 	"testing"
 
+	"github.com/containers/nri-plugins/pkg/testutils"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 
 	"github.com/containers/nri-plugins/pkg/sysfs"
-	"github.com/containers/nri-plugins/pkg/utils"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
 )
@@ -35,7 +35,7 @@ func TestAllocatorHelper(t *testing.T) {
 	}
 	defer removeAll(t, tmpdir)
 
-	if err := utils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), tmpdir); err != nil {
+	if err := testutils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), tmpdir); err != nil {
 		t.Fatalf("failed to decompress testdata: %v", err)
 	}
 
@@ -113,7 +113,7 @@ func TestClusteredAllocation(t *testing.T) {
 	}
 	defer removeAll(t, tmpdir)
 
-	if err := utils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), tmpdir); err != nil {
+	if err := testutils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), tmpdir); err != nil {
 		t.Fatalf("failed to decompress testdata: %v", err)
 	}
 
@@ -329,7 +329,7 @@ func TestClusteredCoreKindAllocation(t *testing.T) {
 	}
 	defer removeAll(t, tmpdir)
 
-	if err := utils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), tmpdir); err != nil {
+	if err := testutils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), tmpdir); err != nil {
 		t.Fatalf("failed to decompress testdata: %v", err)
 	}
 

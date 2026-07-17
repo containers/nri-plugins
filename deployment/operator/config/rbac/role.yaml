@@ -1,29 +1,24 @@
----
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: manager-role
 rules:
   ##
-  ## Rules for the operator
+  ## Core Operator Permissions
   ##
   - apiGroups:
-      - config.nri
+    - config.nri
     resources:
-      - nriplugindeployments
+    - templatepolicies
+    - templatepolicies/status
+    - balloonspolicies
+    - balloonspolicies/status
+    - topologyawarepolicies
+    - topologyawarepolicies/status
+    - nriplugindeployments
+    - nriplugindeployments/status
     verbs:
-      - get
-      - list
-      - watch
-      - update
-  - apiGroups:
-      - config.nri
-    resources:
-      - nriplugindeployments/status
-    verbs:
-      - get
-      - update
-      - patch
+    - "*"
   - apiGroups:
     - topology.node.k8s.io
     resources:
@@ -33,11 +28,27 @@ rules:
     - get
     - update
   ##
-  ## Rules for config.nri/v1alpha1, Kind: NriPluginDeployment
+  ## Permissions for Helm Release Management
+  ## Helm needs these to create/get/update the release state secrets.
   ##
-  - verbs:
-    - "*"
-    apiGroups:
+  - apiGroups:
+    - ""
+    resources:
+    - secrets
+    - events
+    verbs:
+    - create
+    - get
+    - list
+    - watch
+    - update
+    - patch
+    - delete
+  ##
+  ## Rules for config.nri/v1alpha1, Kind: NriPluginDeployment
+  ## (Resources the Helm chart will actually deploy)
+  ##
+  - apiGroups:
     - "rbac.authorization.k8s.io"
     - "apps"
     - ""
@@ -50,5 +61,6 @@ rules:
     - "configmaps"
     - "serviceaccounts"
     - "namespaces"
-    - "secrets"
- #+kubebuilder:scaffold:rules
+    verbs:
+    - "*"
+  #+kubebuilder:scaffold:rules

@@ -26,4 +26,5 @@ topology-aware.md
 balloons.md
 template.md
 common-functionality.md
+howto/index.md
 ```

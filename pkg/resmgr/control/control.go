@@ -113,7 +113,7 @@ func (c *control) StartStopControllers(cfg *cfgapi.Config) error {
 
 	c.cfg = cfg.DeepCopy()
 
-	log.Info("syncing controllers with configuration...")
+	log.Infof("syncing controllers with configuration...")
 
 	for _, controller := range c.controllers {
 		if controller.running {
@@ -212,7 +212,7 @@ func (c *control) runhook(controller *controller, hook string, container cache.C
 		fn = controller.c.PostStopHook
 	}
 
-	log.Debug("running %s %s hook for container %s", controller.name, hook, container.PrettyName())
+	log.Debugf("running %s %s hook for container %s", controller.name, hook, container.PrettyName())
 
 	if err := fn(container); err != nil {
 		return controlError("%s %s hook failed: %v", controller.name, hook, err)
@@ -223,7 +223,7 @@ func (c *control) runhook(controller *controller, hook string, container cache.C
 
 // Register registers a new controller.
 func Register(name, description string, c Controller) error {
-	log.Info("registering controller %s...", name)
+	log.Infof("registering controller %s...", name)
 
 	if oc, ok := controllers[name]; ok {
 		return controlError("controller %s (%s) already registered.", oc.name, oc.description)

@@ -82,7 +82,7 @@ func TestPatternsp(t *testing.T) {
 	srv := NewServer()
 	mux := srv.GetMux()
 
-	if err := srv.Start(":0"); err != nil {
+	if err := srv.Start("127.0.0.1:0"); err != nil {
 		t.Errorf("failed to start HTTP server: %v", err)
 	}
 

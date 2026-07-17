@@ -24,7 +24,7 @@ import (
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 
 	system "github.com/containers/nri-plugins/pkg/sysfs"
-	"github.com/containers/nri-plugins/pkg/utils"
+	"github.com/containers/nri-plugins/pkg/testutils"
 )
 
 func findNodeWithName(name string, nodes []Node) Node {
@@ -53,7 +53,7 @@ func TestPoolCreation(t *testing.T) {
 	defer removeAll(t, dir)
 
 	// Uncompress the test data to the directory.
-	err = utils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), dir)
+	err = testutils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), dir)
 	if err != nil {
 		panic(err)
 	}
@@ -208,7 +208,7 @@ func TestWorkloadPlacement(t *testing.T) {
 	defer removeAll(t, dir)
 
 	// Uncompress the test data to the directory.
-	err = utils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), dir)
+	err = testutils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), dir)
 	if err != nil {
 		panic(err)
 	}
@@ -314,7 +314,7 @@ func TestAffinities(t *testing.T) {
 	defer removeAll(t, dir)
 
 	// Uncompress the test data to the directory.
-	err = utils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), dir)
+	err = testutils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), dir)
 	if err != nil {
 		panic(err)
 	}

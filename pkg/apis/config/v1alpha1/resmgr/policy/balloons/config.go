@@ -31,14 +31,18 @@ type (
 	AmountKind                = policy.AmountKind
 	CPUTopologyLevel          = policy.CPUTopologyLevel
 	ComponentCreationStrategy = policy.ComponentCreationStrategy
+	SchedulingClass           = policy.SchedulingClass
+	CPUClass                  = policy.CPUClass
+	Frequency                 = policy.Frequency
 )
 
 const (
-	CPU            = policy.CPU
-	Memory         = policy.Memory
-	AmountAbsent   = policy.AmountAbsent
-	AmountQuantity = policy.AmountQuantity
-	AmountCPUSet   = policy.AmountCPUSet
+	CPU                 = policy.CPU
+	Memory              = policy.Memory
+	AmountAbsent        = policy.AmountAbsent
+	AmountQuantity      = policy.AmountQuantity
+	AmountCPUSet        = policy.AmountCPUSet
+	AmountExcludeCPUSet = policy.AmountExcludeCPUSet
 
 	CPUTopologyLevelUndefined = policy.CPUTopologyLevelUndefined
 	CPUTopologyLevelSystem    = policy.CPUTopologyLevelSystem
@@ -51,6 +55,22 @@ const (
 
 	ComponentCreationAll             = policy.ComponentCreationAll
 	ComponentCreationBalanceBalloons = policy.ComponentCreationBalanceBalloons
+
+	SchedulingPolicyUndefined  = policy.SchedulingPolicyUndefined
+	SchedulingPolicyNone       = policy.SchedulingPolicyNone
+	SchedulingPolicyOther      = policy.SchedulingPolicyOther
+	SchedulingPolicyFifo       = policy.SchedulingPolicyFifo
+	SchedulingPolicyRr         = policy.SchedulingPolicyRr
+	SchedulingPolicyBatch      = policy.SchedulingPolicyBatch
+	SchedulingPolicyIdle       = policy.SchedulingPolicyIdle
+	SchedulingPolicyDeadline   = policy.SchedulingPolicyDeadline
+	SchedulingFlagResetOnFork  = policy.SchedulingFlagResetOnFork
+	SchedulingFlagReclaimable  = policy.SchedulingFlagReclaimable
+	SchedulingFlagDlOverrun    = policy.SchedulingFlagDlOverrun
+	SchedulingFlagKeepPolicy   = policy.SchedulingFlagKeepPolicy
+	SchedulingFlagKeepParams   = policy.SchedulingFlagKeepParams
+	SchedulingFlagUtilClampMin = policy.SchedulingFlagUtilClampMin
+	SchedulingFlagUtilClampMax = policy.SchedulingFlagUtilClampMax
 )
 
 var (
@@ -114,6 +134,24 @@ type Config struct {
 	ShowContainersInNrt *bool `json:"showContainersInNrt,omitempty"`
 	// LoadClasses specify available loads in balloon types.
 	LoadClasses []LoadClass `json:"loadClasses,omitempty"`
+	// SchedulingClasses specify scheduling classes available in
+	// balloon types.
+	SchedulingClasses []*SchedulingClass `json:"schedulingClasses,omitempty"`
+	// CPUClasses define CPU frequency, C-state, and turbo
+	// attributes for CPU classes referenced by balloon types.
+	// Exclusive turbo frequency access is controlled via
+	// turboPriority.
+	CPUClasses []*CPUClass `json:"cpuClasses,omitempty"`
+	// TurboDomain selects the scope over which TurboPriority
+	// arbitration happens. The default is "package": every CPU
+	// package independently picks its own TurboPriority winner,
+	// so a low-priority balloon on one socket can keep turbo even
+	// when a higher-priority balloon is running on another
+	// socket. Set to "system" to pick single TurboPriority winner
+	// for the whole system.
+	// +kubebuilder:validation:Enum=package;system
+	// +kubebuilder:default=package
+	TurboDomain string `json:"turboDomain,omitempty"`
 }
 
 // BalloonDef contains a balloon definition.
@@ -255,6 +293,12 @@ type BalloonDef struct {
 	// +optional
 	// +kubebuilder:validation:Enum=efficient;performance
 	PreferCoreType string `json:"preferCoreType,omitempty"`
+	// SchedulingClass is the name of the scheduling class from
+	// which default Linux scheduling and IO priority parameters
+	// are applied on new containers created in these
+	// balloons. Parameters for the class are specified in the
+	// schedulingClasses list.
+	SchedulingClass string `json:"schedulingClass,omitempty"`
 	// ShowContainersInNrt controls showing containers and their
 	// resource affinities as part of
 	// NodeResourceTopology. Overrides the policy level

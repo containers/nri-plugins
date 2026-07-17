@@ -445,7 +445,7 @@ func GetNumaStats(cgroupPath string) (NumaStat, error) {
 }
 
 // GetGlobalNumaStats returns the global (non-cgroup) NUMA statistics per node.
-func GetGlobalNumaStats() (map[int]GlobalNumaStats, error) {
+func GetGlobalNumaStats() (map[int64]GlobalNumaStats, error) {
 	const (
 		prefix = "/sys/devices/system/node/node"
 	)
@@ -459,18 +459,18 @@ func GetGlobalNumaStats() (map[int]GlobalNumaStats, error) {
 	// local_node 1851614569
 	// other_node 0
 
-	result := make(map[int]GlobalNumaStats)
+	result := make(map[int64]GlobalNumaStats)
 
 	nodeDirs, err := filepath.Glob(prefix + "*")
 	if err != nil {
-		return map[int]GlobalNumaStats{}, err
+		return map[int64]GlobalNumaStats{}, err
 	}
 
 	for _, dir := range nodeDirs {
 		id := strings.TrimPrefix(dir, prefix)
 		node, err := strconv.ParseInt(id, 10, 64)
 		if err != nil {
-			return map[int]GlobalNumaStats{}, fmt.Errorf("error parsing directory name")
+			return map[int64]GlobalNumaStats{}, fmt.Errorf("error parsing directory name %q: %w", id, err)
 		}
 
 		nodeStat := GlobalNumaStats{}
@@ -495,10 +495,10 @@ func GetGlobalNumaStats() (map[int]GlobalNumaStats, error) {
 		)
 
 		if err != nil {
-			return map[int]GlobalNumaStats{}, fmt.Errorf("error parsing numastat file: %v", err)
+			return map[int64]GlobalNumaStats{}, fmt.Errorf("error parsing numastat file %s: %w", numastat, err)
 		}
 
-		result[int(node)] = nodeStat
+		result[node] = nodeStat
 	}
 
 	return result, nil

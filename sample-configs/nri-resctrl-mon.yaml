@@ -1,0 +1,3 @@
+resctrlPath: /sys/fs/resctrl
+namespaces: []
+labelSelector: {}

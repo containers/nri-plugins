@@ -37,7 +37,7 @@ GO_LINT    := golint -set_exit_status
 GO_FMT     := gofmt
 GO_VET     := $(GO_CMD) vet
 GO_DEPS    := $(GO_CMD) list -f '{{ join .Deps "\n" }}'
-GO_VERSION ?= 1.25.0
+GO_VERSION ?= 1.26.0
 
 GO_MODULES := $(shell $(GO_CMD) list ./...)
 GO_SUBPKGS := $(shell find ./pkg -name go.mod | sed 's:/go.mod::g' | grep -v testdata | \
@@ -65,7 +65,9 @@ E2E_TESTS     ?= $(E2E_DIR)/policies.test-suite
 E2E_WORKDIR   ?= $(TOP_DIR)/e2e-results
 
 DOCKER       := docker
-DOCKER_BUILD := $(DOCKER) buildx build
+DOCKER_BUILD := $(DOCKER) buildx build --load
+
+MAKEFLAGS += -j$(shell nproc || printf 1)
 
 # Plugins and other binaries we build.
 #
@@ -83,7 +85,8 @@ PLUGINS ?= \
 	nri-memory-policy \
 	nri-memory-qos \
 	nri-memtierd \
-        nri-sgx-epc
+        nri-sgx-epc \
+	nri-resctrl-mon
 
 BINARIES ?= \
 	config-manager \
@@ -379,7 +382,7 @@ ginkgo-test-setup:
 	        fi); \
 	done
 
-ginkgo-test-cleanup:
+ginkgo-test-cleanup: ginkgo-tests ginkgo-subpkgs-tests
 	$(Q)for i in $$(find $(TEST_PKGS) -name $(TEST_CLEANUP)); do \
 	    echo "- Running test cleanup $$i..."; \
 	    (cd $${i%/*}; \
@@ -388,7 +391,7 @@ ginkgo-test-cleanup:
 	        fi); \
 	done
 
-ginkgo-tests:
+ginkgo-tests: ginkgo-test-setup
 	$(Q)$(GINKGO) run \
 	    --race \
 	    --trace \
@@ -396,29 +399,25 @@ ginkgo-tests:
 	    --covermode atomic \
 	    --output-dir $(COVERAGE_PATH) \
 	    --junit-report junit.xml \
-	    --coverprofile $(COVERAGE_PATH)/coverprofile \
-	    --keep-separate-coverprofiles \
+	    --coverprofile coverprofile \
 	    --succinct \
             --skip-package $$(echo $(GO_SUBPKGS) | tr -s '\t ' ',') \
-	    -r $(TEST_PKGS); \
+	    -r $(TEST_PKGS) && \
 	$(GO_CMD) tool cover -html=$(COVERAGE_PATH)/coverprofile -o $(COVERAGE_PATH)/coverage.html
 
-ginkgo-subpkgs-tests: # TODO(klihub): coverage
-	@enabled=""; find $(TEST_PKGS) -type d | while read i; do \
-	    for j in $(GO_SUBPKGS); do \
-                if [ "$$j" == "$$i" ]; then \
-	            enabled="$$enabled $$j"; \
+
+ginkgo-subpkgs-tests: ginkgo-test-setup # TODO(klihub): coverage
+	@find $(TEST_PKGS) -type d | while read t; do \
+	    for sub in $(GO_SUBPKGS); do \
+	        if [ "$$t" = "$$sub" ]; then \
+	            $(GINKGO) run \
+	                --race \
+	                --trace \
+	                --succinct \
+	                -r $$sub || exit 1; \
 	            break; \
 	        fi; \
 	    done; \
-        done; \
-	for i in $$enabled; do \
-	    (cd $$i; \
-	        $(GINKGO) run \
-	            --race \
-	            --trace \
-	            --succinct \
-	            -r . || exit 1); \
 	done
 
 e2e-tests: build images

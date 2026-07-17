@@ -31,6 +31,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/kubernetes"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	"github.com/containers/nri-plugins/pkg/topology"
+	"github.com/containers/nri-plugins/pkg/utils"
 
 	nri "github.com/containerd/nri/pkg/api"
 	v1 "k8s.io/api/core/v1"
@@ -77,16 +78,16 @@ func (c *container) getAllowDenyPathList(typeStr string) *PathList {
 	)
 
 	if value, ok = c.GetEffectiveAnnotation(key); !ok {
-		log.Info("no hint %s-list annotation (%s) for %s", typeStr, key, c.PrettyName())
+		log.Infof("no hint %s-list annotation (%s) for %s", typeStr, key, c.PrettyName())
 		return nil
 	}
 
 	if err := yaml.Unmarshal([]byte(value), &list); err != nil {
-		log.Error("failed to parse hint %s-list (%s) for %s: %v", typeStr, key, c.PrettyName(), err)
+		log.Errorf("failed to parse hint %s-list (%s) for %s: %v", typeStr, key, c.PrettyName(), err)
 		return nil
 	}
 
-	log.Debug("got hint %s-list for %s: %v", typeStr, c.PrettyName(), list)
+	log.Debugf("got hint %s-list for %s: %v", typeStr, c.PrettyName(), list)
 
 	return &list
 }
@@ -117,9 +118,9 @@ func (cch *cache) createContainer(nriCtr *nri.Container, opts ...InsertContainer
 	}
 
 	if c.PodResources == nil {
-		log.Info("no pod resources for container %s", c.PrettyName())
+		log.Infof("no pod resources for container %s", c.PrettyName())
 	} else {
-		log.Info("got pod resources %+v", c.PodResources)
+		log.Infof("got pod resources %+v", c.PodResources)
 	}
 
 	for _, opt := range opts {
@@ -145,18 +146,17 @@ func checkAllowedAndDeniedPaths(hostPath string, allowPathList, denyPathList *Pa
 
 			if denyPathList.Type == GlobMatch {
 				matched, err = filepath.Match(path, hostPath)
+				if err != nil {
+					log.Errorf("Malformed pattern \"%s\"", path)
+					return false
+				}
 			} else {
 				// Note that match requires pattern to match all of name, not just a substring.
 				matched = strings.HasPrefix(hostPath, path)
 			}
 
-			if err != nil {
-				log.Error("Malformed pattern \"%s\"", matched)
-				return false
-			}
-
 			if matched {
-				log.Debug("Deny match, removing %s from hints", path)
+				log.Debugf("Deny match, removing %s from hints", path)
 				denied = true
 				break
 			}
@@ -170,18 +170,17 @@ func checkAllowedAndDeniedPaths(hostPath string, allowPathList, denyPathList *Pa
 
 			if allowPathList.Type == GlobMatch {
 				matched, err = filepath.Match(path, hostPath)
+				if err != nil {
+					log.Errorf("Malformed pattern \"%s\"", path)
+					return denied
+				}
 			} else {
 				// Note that match requires pattern to match all of name, not just a substring.
 				matched = strings.HasPrefix(hostPath, path)
 			}
 
-			if err != nil {
-				log.Error("Malformed pattern \"%s\"", matched)
-				return denied
-			}
-
 			if matched {
-				log.Debug("Allow match, adding %s to hints", path)
+				log.Debugf("Allow match, adding %s to hints", path)
 				return false
 			}
 		}
@@ -195,12 +194,13 @@ func (c *container) generateTopologyHints() {
 		mountHints       = true
 		deviceHints      = true
 		podResourceHints = true
+		testHints        = utils.TestAPIsEnabled()
 	)
 
 	if preference, ok := c.GetEffectiveAnnotation(TopologyHintsKey); ok {
 		if genHints, err := strconv.ParseBool(preference); err == nil {
 			if !genHints {
-				log.Info("%s: automatic topology hint generation disabled", c.PrettyName())
+				log.Infof("%s: automatic topology hint generation disabled", c.PrettyName())
 				return
 			}
 		} else {
@@ -226,10 +226,10 @@ func (c *container) generateTopologyHints() {
 					deviceHints = true
 					podResourceHints = true
 				case NoHints:
-					log.Info("%s: automatic topology hint generation disabled", c.PrettyName())
+					log.Infof("%s: automatic topology hint generation disabled", c.PrettyName())
 					return
 				default:
-					log.Error("%s: invalid preference %s (annotation '%s=%s'): ignoring it",
+					log.Errorf("%s: invalid preference %s (annotation '%s=%s'): ignoring it",
 						c.PrettyName(), pref, TopologyHintsKey, preference)
 				}
 			}
@@ -247,7 +247,7 @@ func (c *container) generateTopologyHints() {
 			}
 		}
 	} else {
-		log.Info("automatic topology hint generation disabled for mounts")
+		log.Infof("automatic topology hint generation disabled for mounts")
 	}
 
 	if deviceHints {
@@ -259,7 +259,7 @@ func (c *container) generateTopologyHints() {
 			}
 		}
 	} else {
-		log.Info("automatic topology hint generation disabled for devices")
+		log.Infof("automatic topology hint generation disabled for devices")
 	}
 
 	if podResourceHints {
@@ -272,7 +272,33 @@ func (c *container) generateTopologyHints() {
 			c.TopologyHints = topology.MergeTopologyHints(c.TopologyHints, hints)
 		}
 	} else {
-		log.Info("automatic topology hint generation disabled for pod resources")
+		log.Infof("automatic topology hint generation disabled for pod resources")
+	}
+
+	if testHints {
+		hints := map[string]topology.Hint{}
+		if value, ok := c.GetEffectiveAnnotation(TestTopologyHintsKey); ok {
+			if err := yaml.Unmarshal([]byte(value), &hints); err != nil {
+				log.Errorf("failed to parse test topology hints annotation for %s: %v",
+					c.PrettyName(), err)
+			} else {
+				for _, h := range hints {
+					testPath := h.Provider
+					denied := checkAllowedAndDeniedPaths(testPath, allowPathList, denyPathList)
+					if denied {
+						log.Infof("%s: denied test topology hint %v", c.PrettyName(), h)
+						continue
+					}
+
+					log.Infof("%s: injected test topology hint %v", c.PrettyName(), h)
+					c.TopologyHints = topology.MergeTopologyHints(
+						c.TopologyHints, map[string]topology.Hint{
+							h.Provider: h,
+						},
+					)
+				}
+			}
+		}
 	}
 }
 
@@ -319,7 +345,7 @@ func (c *container) GetAnnotatedResources() (v1.ResourceRequirements, bool) {
 
 	annotated := &kubernetes.AnnotatedResources{}
 	if err := annotated.Unmarshal([]byte(data)); err != nil {
-		log.Error("failed to unmarshal annotated resources for pod %s: %v",
+		log.Errorf("failed to unmarshal annotated resources for pod %s: %v",
 			pod.PrettyName(), err)
 		return v1.ResourceRequirements{}, false
 	}
@@ -331,7 +357,7 @@ func (c *container) GetAnnotatedResources() (v1.ResourceRequirements, bool) {
 // Estimate resource requirements using the containers cgroup parameters and QoS class.
 func (c *container) estimateResourceRequirements() {
 	if annotated, ok := c.GetAnnotatedResources(); ok {
-		log.Info("%s: using annotated resources %+v", c.PrettyName(), annotated)
+		log.Infof("%s: using annotated resources %+v", c.PrettyName(), annotated)
 		c.Requirements = annotated
 		return
 	}
@@ -431,7 +457,7 @@ func (c *container) GetAnnotation(key string, objPtr interface{}) (string, bool)
 
 	if objPtr != nil {
 		if err := json.Unmarshal([]byte(jsonStr), objPtr); err != nil {
-			log.Error("failed to unmarshal annotation %s (%s) of pod %s into %T",
+			log.Errorf("failed to unmarshal annotation %s (%s) of pod %s into %T",
 				key, jsonStr, c.GetID(), objPtr)
 			return "", false
 		}
@@ -505,6 +531,14 @@ func (c *container) GetEffectiveAnnotation(key string) (string, bool) {
 	return pod.GetEffectiveAnnotation(key, c.GetName())
 }
 
+func (c *container) QueryEffectiveAnnotation(key string) (string, AnnotationScope, bool) {
+	pod, ok := c.GetPod()
+	if !ok {
+		return "", UnscopedAnnotation, false
+	}
+	return pod.QueryEffectiveAnnotation(key, c.GetName())
+}
+
 func (c *container) GetResourceRequirements() v1.ResourceRequirements {
 	return c.Requirements
 }
@@ -549,7 +583,7 @@ func (c *container) SetResourceUpdates(r *nri.LinuxResources) bool {
 }
 
 func mergeNRIResources(u *nri.LinuxResources, orig *nri.LinuxResources) *nri.LinuxResources {
-	log.Debug("merging resource update %+v with fallback/orig %+v", u, orig)
+	log.Debugf("merging resource update %+v with fallback/orig %+v", u, orig)
 
 	if u.Cpu == nil {
 		u.Cpu = &nri.LinuxCPU{}
@@ -584,7 +618,7 @@ func mergeNRIResources(u *nri.LinuxResources, orig *nri.LinuxResources) *nri.Lin
 		}
 	}
 
-	log.Debug("merged resource update: %+v", u)
+	log.Debugf("merged resource update: %+v", u)
 
 	return u
 }
@@ -601,8 +635,32 @@ func (c *container) GetLinuxResources() *nri.LinuxResources {
 	return c.Resources
 }
 
+func (c *container) GetLinuxScheduler() *nri.LinuxScheduler {
+	return c.LinuxScheduler
+}
+
+func (c *container) GetLinuxIOPriority() *nri.LinuxIOPriority {
+	return c.LinuxIOPriority
+}
+
 func (c *container) GetTopologyHints() topology.Hints {
 	return c.TopologyHints
+}
+
+func (c *container) StrictTopologyHints() bool {
+	value, ok := c.GetEffectiveAnnotation(StrictTopologyHintsKey)
+	if !ok {
+		return false
+	}
+
+	strict, err := strconv.ParseBool(value)
+	if err != nil {
+		log.Errorf("%s: invalid strict topology hints annotation (%q, %q): %v",
+			c.PrettyName(), StrictTopologyHintsKey, value, err)
+		return false
+	}
+
+	return strict
 }
 
 func (c *container) getPendingRequest() interface{} {
@@ -625,7 +683,7 @@ func (c *container) GetPendingAdjustment() *nri.ContainerAdjustment {
 
 	req, ok := c.request.(*nri.ContainerAdjustment)
 	if !ok {
-		log.Error("%s: queried pending adjustment has mismatching type %T",
+		log.Errorf("%s: queried pending adjustment has mismatching type %T",
 			c.PrettyName(), c.request)
 		req = nil
 	}
@@ -641,7 +699,7 @@ func (c *container) GetPendingUpdate() *nri.ContainerUpdate {
 
 	req, ok := c.request.(*nri.ContainerUpdate)
 	if !ok {
-		log.Error("%s: queried pending update has mismatching type %T",
+		log.Errorf("%s: queried pending update has mismatching type %T",
 			c.PrettyName(), c.request)
 		req = nil
 	}
@@ -655,7 +713,7 @@ func (c *container) InsertMount(m *Mount) {
 
 	adjust, ok := c.getPendingRequest().(*nri.ContainerAdjustment)
 	if !ok {
-		log.Error("%s: can't insert mount %s -> %s, container is not being created",
+		log.Errorf("%s: can't insert mount %s -> %s, container is not being created",
 			c.PrettyName(), m.Source, m.Destination)
 		return
 	}
@@ -687,6 +745,18 @@ func (c *container) ensureLinuxResourcesMemory() {
 	}
 }
 
+func (c *container) ensureLinuxScheduler() {
+	if c.LinuxScheduler == nil {
+		c.LinuxScheduler = &nri.LinuxScheduler{}
+	}
+}
+
+func (c *container) ensureLinuxIOPriority() {
+	if c.LinuxIOPriority == nil {
+		c.LinuxIOPriority = &nri.LinuxIOPriority{}
+	}
+}
+
 func (c *container) SetCPUShares(value int64) {
 	switch req := c.getPendingRequest().(type) {
 	case *nri.ContainerAdjustment:
@@ -694,7 +764,7 @@ func (c *container) SetCPUShares(value int64) {
 	case *nri.ContainerUpdate:
 		req.SetLinuxCPUShares(uint64(value))
 	default:
-		log.Error("%s: can't set CPU shares (%d): incorrect pending request type %T",
+		log.Errorf("%s: can't set CPU shares (%d): incorrect pending request type %T",
 			c.PrettyName(), value, c.request)
 		return
 	}
@@ -711,7 +781,7 @@ func (c *container) SetCPUQuota(value int64) {
 	case *nri.ContainerUpdate:
 		req.SetLinuxCPUQuota(value)
 	default:
-		log.Error("%s: can't set CPU quota (%d): incorrect pending request type %T",
+		log.Errorf("%s: can't set CPU quota (%d): incorrect pending request type %T",
 			c.PrettyName(), value, c.request)
 		return
 	}
@@ -728,7 +798,7 @@ func (c *container) SetCPUPeriod(value int64) {
 	case *nri.ContainerUpdate:
 		req.SetLinuxCPUPeriod(value)
 	default:
-		log.Error("%s: can't set CPU period (%d): incorrect pending request type %T",
+		log.Errorf("%s: can't set CPU period (%d): incorrect pending request type %T",
 			c.PrettyName(), value, c.request)
 		return
 	}
@@ -745,7 +815,7 @@ func (c *container) SetCpusetCpus(value string) {
 	case *nri.ContainerUpdate:
 		req.SetLinuxCPUSetCPUs(value)
 	default:
-		log.Error("%s: can't set cpuset CPUs (%s): incorrect pending request type %T",
+		log.Errorf("%s: can't set cpuset CPUs (%s): incorrect pending request type %T",
 			c.PrettyName(), value, c.request)
 		return
 	}
@@ -762,7 +832,7 @@ func (c *container) SetCpusetMems(value string) {
 	case *nri.ContainerUpdate:
 		req.SetLinuxCPUSetMems(value)
 	default:
-		log.Error("%s: can't set cpuset memory (%s): incorrect pending request type %T",
+		log.Errorf("%s: can't set cpuset memory (%s): incorrect pending request type %T",
 			c.PrettyName(), value, c.request)
 		return
 	}
@@ -779,7 +849,7 @@ func (c *container) SetMemoryLimit(value int64) {
 	case *nri.ContainerUpdate:
 		req.SetLinuxMemoryLimit(value)
 	default:
-		log.Error("%s: can't set memory limit (%d): incorrect pending request type %T",
+		log.Errorf("%s: can't set memory limit (%d): incorrect pending request type %T",
 			c.PrettyName(), value, c.request)
 		return
 	}
@@ -796,7 +866,7 @@ func (c *container) SetMemorySwap(value int64) {
 	case *nri.ContainerUpdate:
 		req.SetLinuxMemorySwap(value)
 	default:
-		log.Error("%s: can't set memory swap (%d): incorrect pending request type %T",
+		log.Errorf("%s: can't set memory swap (%d): incorrect pending request type %T",
 			c.PrettyName(), value, c.request)
 		return
 	}
@@ -804,6 +874,93 @@ func (c *container) SetMemorySwap(value int64) {
 
 	c.ensureLinuxResourcesMemory()
 	c.Ctr.Linux.Resources.Memory.Swap = nri.Int64(value)
+}
+
+// Scheduling properties can be set only during container creation.
+// setSchedulingOnAdjustment is a helper to set scheduling parameters
+func (c *container) setSchedulingOnAdjustment(setter func(sch *nri.LinuxScheduler)) {
+	switch req := c.getPendingRequest().(type) {
+	case *nri.ContainerAdjustment:
+		c.ensureLinuxScheduler()
+		sch := c.GetLinuxScheduler()
+		setter(sch)
+		req.SetLinuxScheduler(sch)
+	default:
+		log.Errorf("%s: can't set scheduling parameter: incorrect pending request type %T",
+			c.PrettyName(), c.request)
+		return
+	}
+	c.markPending(NRI)
+}
+
+func (c *container) SetSchedulingPolicy(value nri.LinuxSchedulerPolicy) {
+	c.setSchedulingOnAdjustment(func(sch *nri.LinuxScheduler) {
+		sch.Policy = value
+	})
+}
+
+func (c *container) SetSchedulingNice(value int32) {
+	c.setSchedulingOnAdjustment(func(sch *nri.LinuxScheduler) {
+		sch.Nice = value
+	})
+}
+
+func (c *container) SetSchedulingPriority(value int32) {
+	c.setSchedulingOnAdjustment(func(sch *nri.LinuxScheduler) {
+		sch.Priority = value
+	})
+}
+
+func (c *container) SetSchedulingFlags(value []nri.LinuxSchedulerFlag) {
+	c.setSchedulingOnAdjustment(func(sch *nri.LinuxScheduler) {
+		sch.Flags = make([]nri.LinuxSchedulerFlag, len(value))
+		copy(sch.Flags, value)
+	})
+}
+
+func (c *container) SetSchedulingRuntime(value uint64) {
+	c.setSchedulingOnAdjustment(func(sch *nri.LinuxScheduler) {
+		sch.Runtime = value
+	})
+}
+
+func (c *container) SetSchedulingDeadline(value uint64) {
+	c.setSchedulingOnAdjustment(func(sch *nri.LinuxScheduler) {
+		sch.Deadline = value
+	})
+}
+
+func (c *container) SetSchedulingPeriod(value uint64) {
+	c.setSchedulingOnAdjustment(func(sch *nri.LinuxScheduler) {
+		sch.Period = value
+	})
+}
+
+func (c *container) setIOPriorityOnAdjustment(setter func(iop *nri.LinuxIOPriority)) {
+	switch req := c.getPendingRequest().(type) {
+	case *nri.ContainerAdjustment:
+		c.ensureLinuxIOPriority()
+		iop := c.GetLinuxIOPriority()
+		setter(iop)
+		req.SetLinuxIOPriority(iop)
+	default:
+		log.Errorf("%s: can't set IO priority parameter: incorrect pending request type %T",
+			c.PrettyName(), c.request)
+		return
+	}
+	c.markPending(NRI)
+}
+
+func (c *container) SetSchedulingIOClass(value nri.IOPrioClass) {
+	c.setIOPriorityOnAdjustment(func(iop *nri.LinuxIOPriority) {
+		iop.Class = value
+	})
+}
+
+func (c *container) SetSchedulingIOPriority(value int32) {
+	c.setIOPriorityOnAdjustment(func(iop *nri.LinuxIOPriority) {
+		iop.Priority = value
+	})
 }
 
 func (c *container) GetCPUShares() int64 {
@@ -861,7 +1018,7 @@ var (
 	ignoredTopologyPathRegexps = []*regexp.Regexp{
 		// Kubelet directory can be different, but we can detect it by structure inside of it.
 		// For now, we can safely ignore exposed config maps and secrets for topology hints.
-		regexp.MustCompile(`(kubelet)?/pods/[[:xdigit:]-]+/volumes/kubernetes.io~(configmap|secret)/`),
+		regexp.MustCompile(`(kubelet)?/pods/[[:xdigit:]-]+/volumes/kubernetes\.io~(configmap|secret)/`),
 	}
 )
 
@@ -873,7 +1030,7 @@ func getTopologyHintsForMount(hostPath, containerPath string, readOnly bool, all
 		return topology.Hints{}
 	}
 
-	log.Debug("getting topology hints for mount %s (at %s)", hostPath, containerPath)
+	log.Debugf("getting topology hints for mount %s (at %s)", hostPath, containerPath)
 
 	// ignore topology information for small files in /etc, service files in /var/lib/kubelet and host libraries mounts
 	ignoredTopologyPaths := []string{"/.nri-resource-policy", "/etc/", "/dev/termination-log", "/lib/", "/lib64/", "/usr/lib/", "/usr/lib32/", "/usr/lib64/"}
@@ -913,7 +1070,7 @@ func getTopologyHintsForMount(hostPath, containerPath string, readOnly bool, all
 }
 
 func getTopologyHintsForDevice(devType string, major, minor int64, allowPathList, denyPathList *PathList) topology.Hints {
-	log.Debug("getting topology hints for device <%s %d,%d>", devType, major, minor)
+	log.Debugf("getting topology hints for device <%s %d,%d>", devType, major, minor)
 
 	if devPath, err := topology.FindGivenSysFsDevice(devType, major, minor); err == nil {
 		if denied := checkAllowedAndDeniedPaths(devPath, allowPathList, denyPathList); denied {
@@ -933,16 +1090,16 @@ func getTopologyHintsForDevice(devType string, major, minor int64, allowPathList
 func (c *container) GetAffinity() ([]*Affinity, error) {
 	pod, ok := c.GetPod()
 	if !ok {
-		log.Error("internal error: can't find Pod for container %s", c.PrettyName())
+		log.Errorf("internal error: can't find Pod for container %s", c.PrettyName())
 	}
 	affinity, err := pod.GetContainerAffinity(c.GetName())
 	if err != nil {
 		return nil, err
 	}
 	affinity = append(affinity, c.implicitAffinities(len(affinity) > 0)...)
-	log.Debug("affinity for container %s:", c.PrettyName())
+	log.Debugf("affinity for container %s:", c.PrettyName())
 	for _, a := range affinity {
-		log.Debug("  - %s", a.String())
+		log.Debugf("  - %s", a.String())
 	}
 
 	return affinity, nil
@@ -977,7 +1134,7 @@ func (c *container) SetRDTClass(class string) {
 				c.PrettyName(), class)
 		}
 	default:
-		log.Error("%s: can't set RDT class (%s): incorrect pending request type %T",
+		log.Errorf("%s: can't set RDT class (%s): incorrect pending request type %T",
 			c.PrettyName(), class, c.request)
 		return
 	}
@@ -1009,7 +1166,7 @@ func (c *container) SetBlockIOClass(class string) {
 				c.PrettyName(), class)
 		}
 	default:
-		log.Error("%s: can't set block I/O class (%s): incorrect pending request type %T",
+		log.Errorf("%s: can't set block I/O class (%s): incorrect pending request type %T",
 			c.PrettyName(), class, req)
 		return
 	}
@@ -1099,12 +1256,12 @@ func (c *container) implicitAffinities(hasExplicit bool) []*Affinity {
 	for name, generate := range c.cache.implicit {
 		implicit := generate(c, hasExplicit)
 		if implicit == nil {
-			log.Debug("no implicit affinity %s for container %s",
+			log.Debugf("no implicit affinity %s for container %s",
 				name, c.PrettyName())
 			continue
 		}
 
-		log.Debug("using implicit affinity %s for %s", name, c.PrettyName())
+		log.Debugf("using implicit affinity %s for %s", name, c.PrettyName())
 		affinities = append(affinities, implicit)
 	}
 	return affinities

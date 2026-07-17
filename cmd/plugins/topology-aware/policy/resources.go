@@ -29,6 +29,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/kubernetes"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
+	topoutil "github.com/containers/nri-plugins/pkg/utils/topology"
 )
 
 type (
@@ -374,6 +375,11 @@ func (cs *supply) Allocate(r Request, o *libmem.Offer) (Grant, map[string]libmem
 		return nil, nil, err
 	}
 
+	if err := r.(*request).verifyStrictPreferences(grant); err != nil {
+		cs.ReleaseCPU(grant)
+		return nil, nil, err
+	}
+
 	zone, updates, err := o.Commit()
 	if err != nil {
 		cs.ReleaseCPU(grant)
@@ -404,17 +410,17 @@ func (cs *supply) AllocateCPU(r Request) (Grant, error) {
 	cpuType := cr.cpuType
 
 	if cpuType == cpuReserved && full > 0 {
-		log.Warn("exclusive reserved CPUs not supported, allocating %d full CPUs as fractions", full)
+		log.Warnf("exclusive reserved CPUs not supported, allocating %d full CPUs as fractions", full)
 		fraction += full * 1000
 		full = 0
 	}
 
 	if cpuType == cpuReserved && fraction > 0 && cs.AllocatableReservedCPU() < fraction {
-		log.Warn("possible misconfiguration of reserved resources:")
-		log.Warn("  %s: allocatable %s", cs.GetNode().Name(), cs.DumpAllocatable())
-		log.Warn("  %s: needs %d reserved, only %d available",
+		log.Warnf("possible misconfiguration of reserved resources:")
+		log.Warnf("  %s: allocatable %s", cs.GetNode().Name(), cs.DumpAllocatable())
+		log.Warnf("  %s: needs %d reserved, only %d available",
 			cr.GetContainer().PrettyName(), fraction, cs.AllocatableReservedCPU())
-		log.Warn("  falling back to using normal unreserved CPUs instead...")
+		log.Warnf("  falling back to using normal unreserved CPUs instead...")
 		cpuType = cpuNormal
 	}
 
@@ -443,7 +449,7 @@ func (cs *supply) AllocateCPU(r Request) (Grant, error) {
 				cs.node.Name(), full, cs.SharableCPUs(), err)
 		}
 
-		log.Debug("%s: sliceable cpuset is %s", cs.node.Name(), sliceable)
+		log.Debugf("%s: sliceable cpuset is %s", cs.node.Name(), sliceable)
 		if cr.PickByHints() {
 			exclusive, ok = cs.takeCPUsByHints(&sliceable, cr)
 			if !ok {
@@ -738,7 +744,7 @@ func newRequest(container cache.Container, types libmem.TypeMask) Request {
 	req, lim, mtype := memoryAllocationPreference(pod, container)
 	coldStart := time.Duration(0)
 
-	log.Debug("%s: CPU preferences: cpuType=%s, full=%v, fraction=%v, isolate=%v, prio=%v",
+	log.Debugf("%s: CPU preferences: cpuType=%s, full=%v, fraction=%v, isolate=%v, prio=%v",
 		container.PrettyName(), cpuType, full, fraction, isolate, prio)
 
 	if mtype == memoryUnspec {
@@ -751,13 +757,13 @@ func newRequest(container cache.Container, types libmem.TypeMask) Request {
 		if coldStartOff {
 			if mtype == memoryPMEM {
 				mtype |= memoryDRAM
-				log.Error("%s: coldstart disabled (movable non-DRAM memory zones present)",
+				log.Errorf("%s: coldstart disabled (movable non-DRAM memory zones present)",
 					container.PrettyName())
 			}
 		} else {
 			pref, err := coldStartPreference(pod, container)
 			if err != nil {
-				log.Error("failed to parse coldstart preference")
+				log.Errorf("failed to parse coldstart preference")
 			} else {
 				coldStart = time.Duration(pref.Duration.Duration)
 				if coldStart > 0 {
@@ -871,6 +877,75 @@ func (cr *request) ColdStart() time.Duration {
 	return cr.coldStart
 }
 
+func (cr *request) verifyStrictPreferences(g Grant) error {
+	if err := cr.verifyStrictTopologyHints(g); err != nil {
+		return err
+	}
+	if err := cr.verifyStrictCPUPreferences(g); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (cr *request) verifyStrictTopologyHints(g Grant) error {
+	if !cr.GetContainer().StrictTopologyHints() {
+		return nil
+	}
+
+	for _, h := range cr.GetContainer().GetTopologyHints() {
+		hint := topoutil.NewHint(g.GetCPUNode().System(), h)
+
+		if g.SharedPortion() > 0 {
+			if cpus := hint.MisalignedCPUSet(g.SharedCPUs()); cpus.Size() > 0 {
+				return policyError("granted shared CPUs %q fail strict hint %v",
+					cpus.String(), h)
+			}
+		}
+
+		if g.ReservedPortion() > 0 {
+			if cpus := hint.MisalignedCPUSet(g.ReservedCPUs()); cpus.Size() > 0 {
+				return policyError("granted reserved CPUs %q fail strict hint %v",
+					cpus.String(), h)
+			}
+		}
+
+		if excl := g.ExclusiveCPUs(); excl.Size() > 0 {
+			if cpus := hint.MisalignedCPUSet(excl); cpus.Size() > 0 {
+				return policyError("granted exclusive CPUs %q fail strict hint %v",
+					cpus.String(), h)
+			}
+		}
+
+		if mems := hint.MisalignedMems(g.GetMemoryZone()); mems.Size() > 0 {
+			return policyError("granted memory zones %s fail strict hint %v",
+				mems.String(), h)
+		}
+	}
+
+	return nil
+}
+
+func (cr *request) verifyStrictCPUPreferences(g Grant) error {
+	full := cr.FullCPUs()
+
+	if full < 1 || !cr.Isolate() {
+		return nil
+	}
+
+	ctr := cr.GetContainer()
+	pod, _ := ctr.GetPod()
+	if !strictIsolatedCPUsPreference(pod, ctr) {
+		return nil
+	}
+
+	if cpus := g.IsolatedCPUs(); cpus.Size() < full {
+		return policyError("granted isolated CPUs %q less than requested %d",
+			cpus.String(), full)
+	}
+
+	return nil
+}
+
 // Score collects data for scoring this supply wrt. the given request.
 func (cs *supply) GetScore(req Request) Score {
 	score := &score{
@@ -940,7 +1015,7 @@ func (cs *supply) GetScore(req Request) Score {
 	score.hints = make(map[string]float64, len(hints))
 
 	for provider, hint := range cr.container.GetTopologyHints() {
-		log.Debug(" - evaluating topology hint %s", hint)
+		log.Debugf(" - evaluating topology hint %s", hint)
 		score.hints[provider] = cs.node.HintScore(hint)
 	}
 
@@ -965,9 +1040,9 @@ func (cs *supply) GetScore(req Request) Score {
 	}
 
 	if err != nil {
-		log.Error("failed to get offer for request %s: %v", req, err)
+		log.Errorf("failed to get offer for request %s: %v", req, err)
 	} else {
-		log.Debug("got node %s offer for request %s: %s", node.Name(), req, o.NodeMask())
+		log.Debugf("got node %s offer for request %s: %s", node.Name(), req, o.NodeMask())
 		score.offer = o
 	}
 
@@ -1000,14 +1075,14 @@ func (cs *supply) AllocatableSharedCPU(quiet ...bool) int {
 	//   none of them gets overcommitted as the result of fulfilling this request.
 	shared := 1000*cs.sharable.Size() - cs.node.GrantedSharedCPU()
 	if verbose {
-		log.Debug("%s: unadjusted free shared CPU: %dm", cs.node.Name(), shared)
+		log.Debugf("%s: unadjusted free shared CPU: %dm", cs.node.Name(), shared)
 	}
 	for node := cs.node.Parent(); !node.IsNil(); node = node.Parent() {
 		pSupply := node.FreeSupply()
 		pShared := 1000*pSupply.SharableCPUs().Size() - pSupply.GetNode().GrantedSharedCPU()
 		if pShared < shared {
 			if verbose {
-				log.Debug("%s: capping free shared CPU (%dm -> %dm) to avoid overcommit of %s",
+				log.Debugf("%s: capping free shared CPU (%dm -> %dm) to avoid overcommit of %s",
 					cs.node.Name(), shared, pShared, node.Name())
 			}
 			shared = pShared
@@ -1015,7 +1090,7 @@ func (cs *supply) AllocatableSharedCPU(quiet ...bool) int {
 	}
 
 	if verbose {
-		log.Debug("%s: ancestor-adjusted free shared CPU: %dm", cs.node.Name(), shared)
+		log.Debugf("%s: ancestor-adjusted free shared CPU: %dm", cs.node.Name(), shared)
 	}
 
 	// If there are BestEffort or 0 CPU request Burstable containers in the node
@@ -1023,18 +1098,18 @@ func (cs *supply) AllocatableSharedCPU(quiet ...bool) int {
 	// of shared capacity.
 	//
 	// TODO(klihub): We might need to try speeding this up if it gets too slow.
-	// Obvious optimizations would be to 1) allow {Breadth,Depth}First to stop
-	// early if possible, and 2) store grants per assigned node.
+	// Obvious optimization would be to 1) store grants per assigned node.
 	hasZeroCpuReqs := false
-	cs.node.BreadthFirst(func(n Node) {
+	cs.node.BreadthFirst(func(n Node) bool {
 		if cs.node.Policy().hasZeroCpuReqContainer(n) {
 			hasZeroCpuReqs = true
 		}
+		return hasZeroCpuReqs
 	})
 	if hasZeroCpuReqs {
 		shared--
 		if verbose {
-			log.Debug("%s: 0 CPU req-adjusted free shared CPU: %dm",
+			log.Debugf("%s: 0 CPU req-adjusted free shared CPU: %dm",
 				cs.node.Name(), shared)
 		}
 	}
@@ -1055,14 +1130,14 @@ func (cs *supply) SliceableCPUs() (cpuset.CPUSet, error) {
 	// CPUs in each for their current BestEffort and Burstable QoS class
 	// shared allocations.
 
-	cs.node.DepthFirst(func(n Node) {
+	cs.node.DepthFirst(func(n Node) (done bool) {
 		if n.IsSameNode(cs.node) && !n.IsLeafNode() {
 			return
 		}
 
 		ns := n.FreeSupply()
 		if ns == nil {
-			return
+			return false
 		}
 
 		cpus := ns.SharableCPUs()
@@ -1075,10 +1150,11 @@ func (cs *supply) SliceableCPUs() (cpuset.CPUSet, error) {
 		cset, err := cs.takeCPUs(&cpus, nil, free, nonePrio)
 		if err != nil {
 			errs = append(errs, err)
-			return
+			return false
 		}
 
 		sliceable = sliceable.Union(cset)
+		return false
 	})
 
 	if len(errs) > 0 {
@@ -1297,8 +1373,9 @@ func (cg *grant) String() string {
 }
 
 func (cg *grant) AccountAllocateCPU() {
-	cg.node.DepthFirst(func(n Node) {
+	cg.node.DepthFirst(func(n Node) (done bool) {
 		n.FreeSupply().AccountAllocateCPU(cg)
+		return false
 	})
 	for node := cg.node.Parent(); !node.IsNil(); node = node.Parent() {
 		node.FreeSupply().AccountAllocateCPU(cg)
@@ -1309,7 +1386,7 @@ func (cg *grant) Release() {
 	cg.GetCPUNode().FreeSupply().ReleaseCPU(cg)
 	err := cg.node.Policy().releaseMem(cg.container.GetID())
 	if err != nil {
-		log.Error("releasing memory for %s failed: %v", cg.container.PrettyName(), err)
+		log.Errorf("releasing memory for %s failed: %v", cg.container.PrettyName(), err)
 	}
 	cg.StopTimer()
 }
@@ -1328,9 +1405,9 @@ func (cg *grant) ReallocMemory(types libmem.TypeMask) error {
 	for id, z := range updates {
 		g, ok := cg.node.Policy().allocations.grants[id]
 		if !ok {
-			log.Error("offer commit returned zone update %s for unknown container %s", z, id)
+			log.Errorf("offer commit returned zone update %s for unknown container %s", z, id)
 		} else {
-			log.Info("updating memory allocation for %s to %s", g.GetContainer().PrettyName(), z)
+			log.Infof("updating memory allocation for %s to %s", g.GetContainer().PrettyName(), z)
 			g.SetMemoryZone(z)
 			if opt.PinMemory {
 				g.GetContainer().SetCpusetMems(z.MemsetString())
@@ -1342,8 +1419,9 @@ func (cg *grant) ReallocMemory(types libmem.TypeMask) error {
 }
 
 func (cg *grant) AccountReleaseCPU() {
-	cg.node.DepthFirst(func(n Node) {
+	cg.node.DepthFirst(func(n Node) (done bool) {
 		n.FreeSupply().AccountReleaseCPU(cg)
+		return false
 	})
 	for node := cg.node.Parent(); !node.IsNil(); node = node.Parent() {
 		node.FreeSupply().AccountReleaseCPU(cg)

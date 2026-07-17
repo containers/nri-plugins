@@ -10,6 +10,7 @@ CHECK_IMAGES="\
   nri-memory-qos \
   nri-memtierd \
   nri-sgx-epc \
+  nri-resource-annotator \
 "
 
 CHECK_CHARTS="\
@@ -19,6 +20,7 @@ CHECK_CHARTS="\
   nri-memory-qos \
   nri-memtierd \
   nri-sgx-epc \
+  nri-resource-annotator \
 "
 
 CHECKS="all"

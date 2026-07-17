@@ -22,6 +22,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const (
@@ -70,7 +71,7 @@ func (p *policy) Setup(opts *policyapi.BackendOptions) error {
 
 // Start prepares this policy for accepting allocation/release requests.
 func (p *policy) Start() error {
-	log.Info("started...")
+	log.Infof("started...")
 	return nil
 }
 
@@ -86,36 +87,42 @@ func (p *policy) Reconfigure(newCfg interface{}) error {
 
 // Sync synchronizes the state of this policy.
 func (p *policy) Sync(add []cache.Container, del []cache.Container) error {
-	log.Info("synchronizing state...")
+	log.Infof("synchronizing state...")
 	return nil
 }
 
 // AllocateResources is a resource allocation request for this policy.
 func (p *policy) AllocateResources(container cache.Container) error {
-	log.Info("allocating resources for %s...", container.PrettyName())
+	log.Infof("allocating resources for %s...", container.PrettyName())
 	return nil
 }
 
 // ReleaseResources is a resource release request for this policy.
 func (p *policy) ReleaseResources(container cache.Container) error {
-	log.Info("releasing resources of %s...", container.PrettyName())
+	log.Infof("releasing resources of %s...", container.PrettyName())
 	return nil
 }
 
 // UpdateResources is a resource allocation update request for this policy.
 func (p *policy) UpdateResources(c cache.Container) error {
-	log.Info("(not) updating container %s...", c.PrettyName())
+	log.Infof("(not) updating container %s...", c.PrettyName())
 	return nil
 }
 
 // HandleEvent handles policy-specific events.
 func (p *policy) HandleEvent(e *events.Policy) (bool, error) {
-	log.Info("received policy event %s.%s with data %v...", e.Source, e.Type, e.Data)
+	log.Infof("received policy event %s.%s with data %v...", e.Source, e.Type, e.Data)
 	return true, nil
 }
 
 // GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
 func (p *policy) GetTopologyZones() []*policyapi.TopologyZone {
+	return nil
+}
+
+// GetExtendedResources returns the node-level extended resources
+// to publish for this policy. The template policy publishes none.
+func (p *policy) GetExtendedResources() map[string]*resource.Quantity {
 	return nil
 }
 

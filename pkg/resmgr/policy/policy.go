@@ -117,6 +117,21 @@ type Backend interface {
 	ExportResourceData(cache.Container) map[string]string
 	// GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
 	GetTopologyZones() []*TopologyZone
+	// GetExtendedResources returns the node-level extended
+	// resources this policy manages on the local Node. The map
+	// communicates both what to publish and what the policy owns,
+	// so that the agent can reconcile node state without any
+	// policy-specific knowledge:
+	//   - A non-nil value publishes (or replaces) the named
+	//     resource with the given capacity.
+	//   - A nil value marks the key as "owned but not published":
+	//     if the key is a plain resource name it is removed when
+	//     present; if the key contains '*' it is an ownership
+	//     pattern and every matching resource currently on the
+	//     Node that the policy is not publishing is removed.
+	// Returning nil or an empty map means the policy owns and
+	// publishes nothing.
+	GetExtendedResources() map[string]*resource.Quantity
 }
 
 // Policy is the exposed interface for container resource allocations decision making.
@@ -143,6 +158,9 @@ type Policy interface {
 	ExportResourceData(cache.Container)
 	// GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
 	GetTopologyZones() []*TopologyZone
+	// GetExtendedResources returns the node-level extended
+	// resources the active policy manages on the local Node.
+	GetExtendedResources() map[string]*resource.Quantity
 }
 
 // Metrics is the interface we expect policy-specific metrics to implement.
@@ -220,7 +238,7 @@ var log logger.Logger = logger.NewLogger("policy")
 
 // NewPolicy creates a policy instance using the given backend.
 func NewPolicy(backend Backend, cache cache.Cache, o *Options) (Policy, error) {
-	log.Info("creating '%s' policy...", backend.Name())
+	log.Infof("creating '%s' policy...", backend.Name())
 
 	p := &policy{
 		cache:   cache,
@@ -246,7 +264,7 @@ func (p *policy) ActivePolicy() string {
 
 // Start starts up policy, preparing it for serving requests.
 func (p *policy) Start(cfg interface{}) error {
-	log.Info("activating '%s' policy...", p.active.Name())
+	log.Infof("activating '%s' policy...", p.active.Name())
 
 	if err := p.active.Setup(&BackendOptions{
 		Cache:     p.cache,
@@ -307,7 +325,7 @@ func (p *policy) HandleEvent(e *events.Policy) (bool, error) {
 
 // ExportResourceData exports/updates resource data for the container.
 func (p *policy) ExportResourceData(c cache.Container) {
-	var buf bytes.Buffer
+	buf := &bytes.Buffer{}
 
 	data := p.active.ExportResourceData(c)
 	keys := []string{}
@@ -318,8 +336,8 @@ func (p *policy) ExportResourceData(c cache.Container) {
 
 	for _, key := range keys {
 		value := data[key]
-		if _, err := buf.WriteString(fmt.Sprintf("%s=%q\n", key, value)); err != nil {
-			log.Error("container %s: failed to export resource data (%s=%q)",
+		if _, err := fmt.Fprintf(buf, "%s=%q\n", key, value); err != nil {
+			log.Errorf("container %s: failed to export resource data (%s=%q)",
 				c.PrettyName(), key, value)
 			buf.Reset()
 			break
@@ -335,4 +353,10 @@ func (p *policy) ExportResourceData(c cache.Container) {
 // GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
 func (p *policy) GetTopologyZones() []*TopologyZone {
 	return p.active.GetTopologyZones()
+}
+
+// GetExtendedResources returns the node-level extended resources
+// the active policy manages on the local Node.
+func (p *policy) GetExtendedResources() map[string]*resource.Quantity {
+	return p.active.GetExtendedResources()
 }

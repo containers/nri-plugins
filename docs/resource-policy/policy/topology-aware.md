@@ -1,6 +1,8 @@
 # Topology-Aware Policy
 
-## Background
+## Overview
+
+### What Problems Does the Topology-Aware Policy Solve?
 
 On server-grade hardware the CPU cores, I/O devices and other peripherals
 form a rather complex network together with the memory controllers, the
@@ -26,7 +28,19 @@ of resources for optimal workload performance requires identifying and
 understanding the multiple dimensions of access latency locality present
 in hardware or, in other words, hardware topology awareness.
 
-## Overview
+The topology-aware policy addresses these challenges by:
+
+- **Hardware topology awareness**: Automatically builds a tree of pools based on
+  detected CPU physical hardware topology (sockets and dies) and logical memory
+  hardware topology (NUMA nodes)
+- **Aligned resource allocation**: Assigns CPU, memory, and devices with optimal
+  topological alignment
+- **Multi-tier memory support**: Handles DRAM, PMEM, and HBM memory types
+- **Flexible CPU allocation**: Supports shared, exclusive, and mixed CPU core assignments
+- **Device locality**: Considers device connection topology to CPU and memory when
+  placing workloads
+
+### How the Topology-Aware Policy Works
 
 The `topology-aware` policy automatically builds a tree of pools based on the
 detected hardware topology. Each pool has a set of CPUs and memory zones
@@ -34,13 +48,13 @@ assigned as their resources. Resource allocation for workloads happens by
 first picking the pool which is considered to fit the best the resource
 requirements of the workload and then assigning CPU and memory from this pool.
 
-The pool nodes at various depths from bottom to top represent the NUMA nodes,
-dies, sockets, and finally the whole of the system at the root node. Leaf NUMA
-nodes are assigned the memory behind their controllers / zones and CPU cores
+The pool nodes at various depths from bottom to top represent the L3 caches,
+NUMA nodes, dies, sockets, and finally the whole of the system at the root node.
+L3 cache pools group CPUs sharing the same L3 cache. Leaf NUMA nodes are assigned
+the memory behind their controllers / zones and CPU cores
 with the smallest distance / access penalty to this memory. If the machine
 has multiple types of memory separately visible to both the kernel and user
-space, for instance both DRAM and
-[PMEM](https://www.intel.com/content/www/us/en/products/memory-storage/optane-dc-persistent-memory.html),
+ space, for instance both DRAM and PMEM,
 each zone of special type of memory is assigned to the closest NUMA node pool.
 
 Each non-leaf pool node in the tree is assigned the union of the resources of
@@ -83,40 +97,103 @@ implementation evolves, its basic principles are roughly
   fewer workloads
 - prefer pools with better overall device alignment
 
-## Features
+### Key Features
 
 The `topology-aware` policy has the following features:
 
-- topologically aligned allocation of CPU and memory
-  - assign CPU and memory to workloads with tightest available alignment
-- aligned allocation of devices
-  - pick pool for workload based on locality of devices already assigned
-- shared allocation of CPU cores
-  - assign workload to shared subset of pool CPUs
-- exclusive allocation of CPU cores
-  - dynamically slice off CPU cores from shared subset and assign to workload
-- mixed allocation of CPU cores
-  - assign both exclusive and shared CPU cores to workload
-- discovering and using kernel-isolated CPU cores (['isolcpus'](https://www.kernel.org/doc/html/latest/admin-guide/kernel-parameters.html#cpu-lists))
-  - use kernel-isolated CPU cores for exclusively assigned CPU cores
-- exposing assigned resources to workloads
-- notifying workloads about changes in resource assignment
-- dynamic relaxation of memory alignment to prevent OOM
-  - dynamically widen workload memory set to avoid pool/workload OOM
-- multi-tier memory allocation
-  - assign workloads to memory zones of their preferred type
-  - the policy knows about three kinds of memory:
-    - DRAM is regular system main memory
-    - PMEM is large-capacity memory, such as
-      [Intel® Optane™ memory](https://www.intel.com/content/www/us/en/products/memory-storage/optane-dc-persistent-memory.html)
-    - [HBM](https://en.wikipedia.org/wiki/High_Bandwidth_Memory) is high
-      speed memory, typically found on some special-purpose computing systems
-- cold start
-  - pin workload exclusively to PMEM for an initial warm-up period
+- **Topologically aligned allocation** of CPU and memory
+  - Assign CPU and memory to workloads with tightest available alignment
+- **Aligned allocation of devices**
+  - Pick pool for workload based on locality of devices already assigned
+- **Shared allocation** of CPU cores
+  - Assign workload to shared subset of pool CPUs
+- **Exclusive allocation** of CPU cores
+  - Dynamically slice off CPU cores from shared subset and assign to workload
+- **Mixed allocation** of CPU cores
+  - Assign both exclusive and shared CPU cores to workload
+- **Kernel-isolated CPU support** (['isolcpus'](https://www.kernel.org/doc/html/latest/admin-guide/kernel-parameters.html#cpu-lists))
+  - Use kernel-isolated CPU cores for exclusively assigned CPU cores
+- **Resource exposure**
+  - Expose assigned resources to workloads and notify about changes
+- **Dynamic memory relaxation**
+  - Dynamically widen workload memory set to avoid pool/workload OOM
+- **Multi-tier memory allocation**
+  - Assign workloads to memory zones of their preferred type
+  - Support for DRAM, PMEM (such as Intel® Optane™ memory), and [HBM](https://en.wikipedia.org/wiki/High_Bandwidth_Memory)
+- **Cold start support**
+  - Pin workload exclusively to PMEM for an initial warm-up period
 
-## Configuring the Policy
+### Organization of this document
 
-The policy has a number of configuration options which affect its default
+This document is organized as follows:
+
+- **Installation and configuration** describes installation and basic configuration
+- **Configuration options** covers detailed configuration options
+- **Cookbook** provides recipes for common use cases
+- **Troubleshooting** offers troubleshooting guidance
+
+### Integration with Kubernetes
+
+The topology-aware policy integrates with Kubernetes through the
+[Node Resource Interface (NRI)](https://github.com/containerd/nri). It uses its
+configuration stored as a Kubernetes Custom Resource together with optional
+policy-specific Pod annotations to control resource allocation behavior.
+
+## Installation and Configuration
+
+### Prerequisites
+
+- Kubernetes cluster with NRI-enabled container runtime
+- NRI plugins support enabled in the container runtime configuration
+
+### Installing with Helm
+
+The topology-aware policy can be installed using Helm charts. Refer to the
+[topology-aware Helm documentation](../../deployment/helm/topology-aware.md) for detailed instructions.
+
+### Managing Configuration with kubectl
+
+The policy configuration can be managed using kubectl and the `TopologyAware`
+[dynamic configuration][configuration] custom resource. Configuration
+changes are applied dynamically without requiring pod restarts.
+
+Example configuration commands:
+
+```bash
+# List all topology-aware policy configurations (in the kube-system namespace)
+kubectl -n kube-system get topologyawarepolicies.config.nri
+
+# View the default configuration
+kubectl -n kube-system get topologyawarepolicies.config.nri/default -o yaml
+
+# Edit/update the default configuration
+kubectl -n kube-system edit topologyawarepolicies.config.nri/default
+```
+
+Replace `kube-system` with the namespace where the plugin is deployed.
+
+### Configuration Scopes
+
+The topology-aware policy supports three levels of configuration precedence:
+
+1. **Default configuration** (lowest precedence): Applies to all nodes
+   without more specific configuration
+   - Resource name: `default`
+
+2. **Group-specific configuration**: Applies to nodes labeled with a
+   configuration group
+   - Resource name: `group.$GROUP_NAME`
+   - Node label: `config.nri/group=$GROUP_NAME`
+
+3. **Node-specific configuration** (highest precedence): Applies to a
+   single named node
+   - Resource name: `node.$NODE_NAME`
+
+## Configuration Options
+
+### Policy-Level Settings
+
+The following policy-level configuration options affect its default
 behavior. These options can be supplied as part of the effective
 [dynamic configuration][configuration] custom resource.
 
@@ -149,7 +226,43 @@ behavior. These options can be supplied as part of the effective
   - is the default topology level preference for containers with unlimited
     burstability. The policy will try to allocate Burstable containers with
     no CPU limit to a pool at this topology level. The possible values are:
-    `system`, `package`, `die`, `numa`.
+    `system`, `package`, `die`, `numa`, `l3cache`.
+- `schedulingClasses`
+  - Define scheduling classes recognized by the policy. A scheduling class
+    has the following set of associated Linux scheduling policy and I/O
+    priority attributes
+    - `name` is the name of the scheduling class.
+    - `policy` is the Linux scheduling policy. Supported policies are:
+    `none`, `other`, `fifo`, `rr`, `batch`, `idle`, and `deadline`.
+    - `priority` is the scheduling priority. Refer to
+      sched_setscheduler(2) documentation for valid values depending on
+      the policy.
+    - `flags` is a list of scheduling flags. Supported flags are:
+      `reset-on-fork`, `reclaim`, `dl-overrun`, `keep-policy`,
+      `keep-params`, `util-clamp-min`, `util-clamp-max`.
+    - `nice`: nice value for the container process.
+    - `runtime`: runtime value for `deadline` scheduling policy (in
+      microseconds).
+    - `deadline`: deadline value for `deadline` scheduling policy (in
+      microseconds).
+    - `period`: period value for `deadline` scheduling policy (in
+      microseconds).
+    - `ioClass`: IO class for the container process. Supported classes
+      are: `none`, `rt` for realtime, `be` for best-effort, and `idle`.
+    - `ioPriority`: IO priority for the container process. Refer
+      to ionice(1) documentation for valid values.
+    These attributes are applied to containers which get assigned to the
+    class. Use the `scheduling-class.resource-policy.nri.io` annotation
+    key to annotate a pod or a container to a class.
+- `namespaceSchedulingClasses`
+  - can assign default scheduling classes to namespaces. If a container
+    is not annotated to use a specific scheduling class but its namespace
+    has a default scheduling class, this will apply to the container.
+- `podQoSSchedulingClasses`
+  - can assign default scheduling classes to Pod QoS classes. If container
+    is neither annotated to use a specific scheduling class nor its namespace
+    has a default scheduling class, but its Pod QoS class has a default
+    scheduling class, this will apply to the container.
 
 Additionally, the following sub-configuration is available for instrumentation:
 
@@ -161,7 +274,73 @@ Additionally, the following sub-configuration is available for instrumentation:
      `httpEndpoint`.
   - `reportPeriod`: `/metrics` aggregation interval for polled metrics.
 
-## Policy CPU Allocation Preferences
+### Reserved and Available Resources
+
+Available and reserved resources are set up using the `availableResources`
+and `reservedResources` configuration options.
+
+Available resources can be used to set aside otherwise available CPU and
+memory resources and prevent the policy from assigning them to any workload.
+If available resources are omitted the policy can and will assign resources
+to workloads from the full available set.
+
+Reserved resources reserve resources for the control plane, which by default
+is all workloads in the `kube-system` namespace. Reserved resources cannot be
+omitted. At least some amount of CPU must be reserved.
+
+Both available and reserved resources can contain CPU and memory. Memory can
+be defined using the same quantity notation as in container resource requests
+and limits. CPU can be defined as quantity, amount of CPU to allocate to be
+available or reserved, or as an explicit CPU set either to be allocated or to
+be excluded from the allocated set.
+
+A common case for the reserved resources is to set aside CPU for the control
+plane by quantity. The following fragment reserves 0.75 CPUs
+
+```yaml
+...
+  reservedResources:
+    cpu: 750m
+...
+```
+
+Alternatively, one can reserve full CPU cores explicitly. For instance this
+configuration fragment reserves CPUs 0-1 for the control plane.
+
+```yaml
+...
+  reservedResources:
+    cpu: cpuset:0-1
+...
+```
+
+A typical use case for available resources is to set aside some CPUs for
+system daemons unrelated to Kubernetes. The following configuration leaves
+CPUs 0-1 unallocated for the available set on a system with 128 CPUs thus
+leaving them for use by other daemons.
+
+```yaml
+...
+  availableResources:
+    cpu: cpuset:2-128
+...
+```
+
+One can also specify available CPUs by explicitly excluding the ones that
+should be set aside for other use:
+
+```yaml
+...
+  availableResources:
+    cpu: exclude-cpuset:0-1
+...
+```
+
+Note that both for the available and reserved resources you should make
+sure that the policy settings match any comparable settings of the node
+agent, the kubelet.
+
+### CPU Allocation Preferences
 
 There are a number of workload properties this policy actively checks to decide
 if the workload could potentially benefit from extra resource allocation
@@ -239,14 +418,12 @@ groups, are all pinned to run on the shared subset of CPU cores in the
 container's assigned pool. This shared subset can and usually does change
 dynamically as exclusive CPU cores are allocated and released in the pool.
 
-## Container CPU Allocation Preference Annotations
+### Shared, Exclusive, and Isolated CPU Preference, CPU Priorities
 
 Containers can be annotated to diverge from the default CPU allocation
 preferences the policy would otherwise apply to them. These Pod annotations
 can be given both with per pod and per container resolution. If for any
 container both of these exist, the container-specific one takes precedence.
-
-### Shared, Exclusive, and Isolated CPU Preference, CPU Priorities
 
 A container can opt in to or opt out from shared CPU allocation using the
 following Pod annotation.
@@ -286,6 +463,13 @@ metadata:
 These Pod annotations have no effect on containers which are not eligible for
 exclusive allocation.
 
+The `require-isolated-cpus.resource-policy.nri.io` annotation key can be
+used instead of `prefer-isolated-cpus` to require isolated CPUs for eligible
+containers. It is syntactically identical to `prefer-isolate-cpus`, but the
+semantics are strict. If the exclusively allocated CPUs for such a container
+are not isolated, the policy will fail the creation of the container with an
+error.
+
 ### Preferred Topology Level for Burstable Containers Without CPU Limit
 
 CPU-unlimited burstable containers are by default preferred to allocate to a
@@ -305,6 +489,8 @@ metadata:
     unlimited-burstable.resource-policy.nri.io/container.C2: "package"
     # prefer to allocate C3 to all sockets in the system
     unlimited-burstable.resource-policy.nri.io/container.C3: "system"
+    # prefer to allocate C4 to a single L3 cache
+    unlimited-burstable.resource-policy.nri.io/container.C4: "l3cache"
     # any other containers in the pod will prefer allocation to a single die
 ```
 
@@ -327,36 +513,47 @@ metadata:
     hide-hyperthreads.resource-policy.nri.io/container.LLM: "true"
 ```
 
-### Implicit Hardware Topology Hints
+### Assigning Containers to Scheduling Classes
 
-`NRI Resource Policy` automatically generates HW `Topology Hints` for devices
-assigned to a container, prior to handing the container off to the active policy
-for resource allocation. The `topology-aware` policy is hint-aware and normally
-takes topology hints into account when picking the best pool to allocate resources.
-Hints indicate optimal `HW locality` for device access and they can alter
-significantly which pool gets picked for a container.
-
-Since device topology hints are implicitly generated, there are cases where one
-would like the policy to disregard them altogether. For instance, when a local
-volume is used by a container but not in any performance critical manner.
-
-Containers can be annotated to opt out from and selectively opt in to hint-aware
-pool selection using the following Pod annotations.
+A container can be assigned to a known 'scheduling class' by name using the
+`scheduling-class.resource-policy.nri.io` effective annotation key. The value
+of the annotation is the name of the class for the container or the pod. The
+class itself needs to be defined in the active policy configuration using the
+`schedulingClasses` configuration option. For instance the following Helm
+configuration fragment defines two classes, `realtime` and `idle` with the
+corresponding scheduling and I/O priority attributes.
 
 ```yaml
-metadata:
-  annotations:
-    # only disregard hints for container C1
-    topologyhints.resource-policy.nri.io/container.C1: "false"
-    # disregard hints for all containers by default
-    topologyhints.resource-policy.nri.io/pod: "false"
-    # but take hints into account for container C2
-    topologyhints.resource-policy.nri.io/container.C2: "true"
+config:
+  reservedResources:
+    cpu: 2
+  ...
+  schedulingClasses:
+  - name: realtime
+    policy: fifo # SCHED_FIFO
+    priority: 42
+
+  - name: idle
+    policy: idle # SCHED_IDLE
+    nice: 17
+    ioClass: be
+    ioPriority: 6
+...
 ```
 
-Topology hint generation is globally enabled by default. Therefore, using the
-Pod annotation as opt in only has an effect when the whole pod is annotated to
-opt out from hint-aware pool selection.
+The following pod annotation will assign the container c0 to the `realtime` class:
+
+```
+metadata:
+  annotations:
+    scheduling-class.resource-policy.nri.io/container.c0: realtime
+```
+
+### Inherited Default Scheduling Classes
+
+If a container is not assigned to a scheduling class by annotation, it inherits
+the default scheduling class for its namespace or Pod QoS class, in this order
+of precedence, if either or both is set.
 
 ### Implicit Topological Co-location for Pods and Namespaces
 
@@ -375,7 +572,8 @@ defined affinities with implicit co-location requires both careful consideration
 and a thorough understanding of affinity evaluation, or it should be avoided
 altogether.
 
-## Disabling CPU or Memory Pinning of a Container
+
+### CPU and Memory Pinning Controls
 
 Some containers may need to run on all CPUs or access all memories
 without restrictions. Annotate these pods and containers to prevent
@@ -391,7 +589,16 @@ memory.preserve.resource-policy.nri.io/pod: "true"
 memory.preserve.resource-policy.nri.io: "true"
 ```
 
-## Cold Start
+
+### Memory Configuration
+
+It is not possible for the policy to accurately determine memory requests for
+pods in the `Burstable` QoS class. If high accuracy is critical for such containers
+you can annotate the pod with exact per container resource requirements, or use the
+resource annotator webhook to do this for you. See the related Helm chart
+[documentation](../../deployment/helm/resource-annotator.md) for more details.
+
+#### Cold Start
 
 The `topology-aware` policy supports "cold start" functionality. When cold start
 is enabled and the workload is allocated to a topology node with both DRAM and
@@ -427,15 +634,8 @@ In the above example, `container1` would be initially granted only PMEM
 memory controller, but after 60 seconds the DRAM controller would be
 added to the container memset.
 
-## Container memory requests and limits
 
-Due to inaccuracies in how `nri-resource-policy` calculates memory requests for
-pods in QoS class `Burstable`, you should either use `Limit` for setting
-the amount of memory for containers in `Burstable` pods to provide `cri-resmgr`
-with an exact copy of the resource requirements from the Pod Spec as an extra
-Pod annotation.
-
-## Reserved pool namespaces
+### Reserved Resources
 
 User is able to mark certain namespaces to have a reserved CPU allocation.
 Containers belonging to such namespaces will only run on CPUs set aside
@@ -455,7 +655,6 @@ starting with `reserved-` string are allocated to reserved CPU class.
 The workloads in `kube-system` are automatically assigned to reserved CPU
 class so no need to mention `kube-system` in this list.
 
-## Reserved CPU annotations
 
 User is able to mark certain pods and containers to have a reserved CPU
 allocation by using annotations. Containers having a such annotation will only
@@ -471,14 +670,45 @@ metadata:
     prefer-reserved-cpus.resource-policy.nri.io/container.special: "false"
 ```
 
-## Controlling Topology Hints Via Annotations
+
+### Topology Hints
+
+`NRI Resource Policy` automatically generates HW `Topology Hints` for devices
+assigned to a container, prior to handing the container off to the active policy
+for resource allocation. The `topology-aware` policy is hint-aware and normally
+takes topology hints into account when picking the best pool to allocate resources.
+Hints indicate optimal `HW locality` for device access and they can alter
+significantly which pool gets picked for a container.
+
+Since device topology hints are implicitly generated, there are cases where one
+would like the policy to disregard them altogether. For instance, when a local
+volume is used by a container but not in any performance critical manner.
+
+Containers can be annotated to opt out from and selectively opt in to hint-aware
+pool selection using the following Pod annotations.
+
+```yaml
+metadata:
+  annotations:
+    # only disregard hints for container C1
+    topologyhints.resource-policy.nri.io/container.C1: "false"
+    # disregard hints for all containers by default
+    topologyhints.resource-policy.nri.io/pod: "false"
+    # but take hints into account for container C2
+    topologyhints.resource-policy.nri.io/container.C2: "true"
+```
+
+Topology hint generation is globally enabled by default. Therefore, using the
+Pod annotation as opt in only has an effect when the whole pod is annotated to
+opt out from hint-aware pool selection.
+
 
 It is possible to control whether and what kind of topology hints are
 generated using extra pod annotations. By default hints are generated
 from mounts and devices injected into the container. If pod resource API
 queries are enabled, query replies are also used for hint generation.
 
-### Enabling Or Disabling Selected Types of Topology Hints
+**Enabling Or Disabling Selected Types of Topology Hints**
 
 The `topologyhints.resource-policy.nri.io` annotation key can be used
 to enable or disable topology hint generation for one or more containers
@@ -521,7 +751,7 @@ spec:
     podResourceAPI: true
 ```
 
-### Controlling Topology Hints by Path
+**Controlling Topology Hints by Path**
 
 It is also possible to enable and disable topology hint generation based
 on mount or device path, using `allow` and `deny` lists. When the policy
@@ -558,7 +788,7 @@ metadata:
         - /dev/nvme
 ```
 
-### Using Pod Resource API for Extra Topology Hints
+**Using Pod Resource API for Extra Topology Hints**
 
 If access to the `kubelet`'s `Pod Resource API` is enabled in the
 [Node Agent's](../developers-guide/architecture.md#node-agent) configuration,
@@ -568,7 +798,7 @@ locality to a NUMA node is advertised by the API. Annotated allow and deny
 lists can be used to selectively disable or enable per-resource hints, using
 `podresapi:$RESOURCE_NAME` as the path for the resource.
 
-### Picking CPU And Memory By Topology Hints
+**Picking CPU And Memory By Topology Hints**
 
 Normally topology hints are only used to pick the assigned pool for a workload.
 Once a pool is selected the available resources within the pool are considered
@@ -629,10 +859,24 @@ the individually picked resources. If picking resources by hints fails for any
 of the devices, the policy falls back to picking resource from the pool without
 considering device hints.
 
+**Strict Topology Hints**
 
-## Container Affinity and Anti-Affinity
+Containers can be annotated for strict topology hints using the
+`strict.topologyhints.resource-policy.nri.io` annotation. For instance the
+following annotation select strict topology hints for container `highprio`:
 
-### Introduction
+```yaml
+...
+  metadata:
+    annotations:
+      strict.topologyhints.resource-policy.nri.io/container.highprio: "true"
+...
+```
+
+If the allocated CPU and memory leave any topology hint unsatisfied for such
+a container, the policy will fail container creation with an error.
+
+### Container Affinity and Anti-Affinity
 
 The topology-aware resource policy allow the user to give hints about how
 particular containers should be *co-located* within a node. In particular these
@@ -915,7 +1159,157 @@ metadata:
 <!-- Links -->
 [configuration]: ../configuration.md
 
-## Metrics and Debugging
+
+## Cookbook
+
+### Mixed Workloads with Different QoS Requirements
+
+Deploy multiple containers with varying QoS on the same node, using pod
+annotations and policy configuration:
+
+```yaml
+# High-priority realtime container
+#   - SCHED_FIFO scheduling policy
+#   - prefer isolated CPUs for the single requested one
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    prefer-isolated-cpus.resource-policy.nri.io/pod: "true"
+    scheduling-class.resource-policy.nri.io/pod: "realtime"
+spec:
+  containers:
+  - name: realtime-app
+    resources:
+      requests:
+        cpu: "1"
+        memory: "8Gi"
+      limits:
+        cpu: "1"
+        memory: "8Gi"
+# Prioritized task with elevated priority
+#   - SCHED_OTHER scheduling policy with elevated priority
+#   - burstable container (without resource limits)
+#   - burstability limited to a NUMA node
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    scheduling-class.resource-policy.nri.io/pod: "prioritized"
+    unlimited-burstable.resource-policy.nri.io/pod: "numa"
+spec:
+  containers:
+  - name: prioritized-app
+    resources:
+      requests:
+        cpu: "1500m"
+        memory: "1Gi"
+
+# Best-effort background task
+#   - SCHED_IDLE to run only when nothing else needs CPU in the same pool
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    scheduling-class.resource-policy.nri.io/pod: "idle"
+spec:
+  containers:
+  - name: background-task
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+```
+
+```yaml
+apiVersion: config.nri/v1alpha1
+kind: TopologyAwarePolicy
+metadata:
+  name: default
+spec:
+  preferIsolatedCPUs: false
+  schedulingClasses:
+  - name: realtime
+    policy: fifo
+    priority: 42
+  - name: prioritized
+    policy: other
+    priority: 30
+  - idle:
+    policy: idle
+```
+
+### Multi-Tier Memory Applications
+
+Use PMEM for warm-up and DRAM for active working set with pod annotations. If you
+want this as a default, set it via your admission policy or template the pod
+annotations at deployment time.
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    memory-type.resource-policy.nri.io/container.app: dram,pmem
+    cold-start.resource-policy.nri.io/container.app: |
+      duration: 60s
+spec:
+  containers:
+  - name: app
+    resources:
+      requests:
+        memory: "32Gi"
+      limits:
+        memory: "32Gi"
+```
+
+### Co-located Pod Workloads
+
+Prefer co-location of containers within the same pod by enabling the policy-level
+setting, or use explicit affinity annotations:
+
+```yaml
+apiVersion: config.nri/v1alpha1
+kind: TopologyAwarePolicy
+metadata:
+  name: default
+spec:
+  colocatePods: true
+```
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    resource-policy.nri.io/affinity: |
+      backend:
+      - match:
+          key: name
+          operator: Equals
+          values:
+          - frontend
+        weight: 10
+spec:
+  containers:
+  - name: frontend
+    resources:
+      requests:
+        cpu: "2"
+        memory: "4Gi"
+  - name: backend
+    resources:
+      requests:
+        cpu: "2"
+        memory: "4Gi"
+```
+
+For more affinity options, see [Container Affinity and Anti-Affinity](#container-affinity-and-anti-affinity).
+
+## Troubleshooting
 
 In order to enable more verbose logging and metrics exporting from the
 topology-aware policy, enable instrumentation and policy debugging from
@@ -926,11 +1320,12 @@ instrumentation:
   # The topology-aware policy can exports various system and topology
   # zone utilisation metrics. Accessible in command line with
   # curl --silent http://$localhost_or_pod_IP:8891/metrics
-  HTTPEndpoint: :8891
-  PrometheusExport: true
+  httpEndpoint: :8891
+  prometheusExport: true
   metrics:
     enabled: # use '*' instead for all available metrics
     - policy
 logger:
-  Debug: policy
+  debug:
+    - policy
 ```

@@ -43,9 +43,12 @@ const (
 	keyHideHyperthreads = "hide-hyperthreads"
 	// annotation key for picking individual resources by topology hints
 	keyPickResourcesByHints = "pick-resources-by-hints"
-
+	// annotation key for scheduling class
+	keySchedulingClass = "scheduling-class." + kubernetes.ResmgrKeyNamespace
 	// effective annotation key for isolated CPU preference
 	preferIsolatedCPUsKey = "prefer-isolated-cpus" + "." + kubernetes.ResmgrKeyNamespace
+	// effective annotation key for strict isolated CPU preference
+	strictPreferIsolatedCPUsKey = "require-isolated-cpus" + "." + kubernetes.ResmgrKeyNamespace
 	// effective annotation key for shared CPU preference
 	preferSharedCPUsKey = "prefer-shared-cpus" + "." + kubernetes.ResmgrKeyNamespace
 	// effective annotation key for memory type preference
@@ -128,22 +131,41 @@ func boolConfigPreference(ptr *bool) (bool, prefKind) {
 // for the given container. If an effective annotation is not found, it uses
 // the global configuration for isolated CPU preference.
 func isolatedCPUsPreference(pod cache.Pod, container cache.Container) (bool, prefKind) {
-	key := preferIsolatedCPUsKey
-	value, ok := pod.GetEffectiveAnnotation(key, container.GetName())
-	if !ok {
+	sKey := strictPreferIsolatedCPUsKey
+	sVal, sScope, sOk := pod.QueryEffectiveAnnotation(sKey, container.GetName())
+
+	pKey := preferIsolatedCPUsKey
+	pVal, pScope, pOk := pod.QueryEffectiveAnnotation(pKey, container.GetName())
+
+	key, value := "", ""
+
+	switch {
+	case !sOk && !pOk:
 		return boolConfigPreference(opt.PreferIsolated)
+	case (sOk && !pOk) || sScope <= pScope:
+		key, value = sKey, sVal
+	default: // case (!sOk && pOk) || pScope < sScope:
+		key, value = pKey, pVal
 	}
 
 	preference, err := strconv.ParseBool(value)
 	if err != nil {
-		log.Error("invalid CPU isolation preference annotation (%q, %q): %v",
+		log.Errorf("invalid CPU isolation preference annotation (%q, %q): %v",
 			key, value, err)
 		return boolConfigPreference(opt.PreferIsolated)
 	}
 
-	log.Debug("%s: effective CPU isolation preference %v", container.PrettyName(), preference)
+	log.Debugf("%s: effective CPU isolation preference %v", container.PrettyName(), preference)
 
 	return preference, prefAnnotated
+}
+
+// strictIsolatedCPUsPreference returns true if isolated CPU allocation is required.
+func strictIsolatedCPUsPreference(pod cache.Pod, container cache.Container) bool {
+	_, sScope, sOk := pod.QueryEffectiveAnnotation(strictPreferIsolatedCPUsKey, container.GetName())
+	_, pScope, pOk := pod.QueryEffectiveAnnotation(preferIsolatedCPUsKey, container.GetName())
+
+	return (sOk && !pOk) || (sOk && pOk && sScope <= pScope)
 }
 
 // sharedCPUsPreference returns whether shared CPU allocation is preferred for
@@ -158,12 +180,12 @@ func sharedCPUsPreference(pod cache.Pod, container cache.Container) (bool, prefK
 
 	preference, err := strconv.ParseBool(value)
 	if err != nil {
-		log.Error("invalid shared CPU preference annotation (%q, %q): %v",
+		log.Errorf("invalid shared CPU preference annotation (%q, %q): %v",
 			key, value, err)
 		return boolConfigPreference(opt.PreferShared)
 	}
 
-	log.Debug("%s: effective shared CPU preference %v", container.PrettyName(), preference)
+	log.Debugf("%s: effective shared CPU preference %v", container.PrettyName(), preference)
 
 	return preference, prefAnnotated
 }
@@ -176,25 +198,25 @@ func cpuPrioPreference(pod cache.Pod, container cache.Container, fallback cpuPri
 
 	if !ok {
 		prio := fallback
-		log.Debug("%s: implicit CPU priority preference %q", container.PrettyName(), prio)
+		log.Debugf("%s: implicit CPU priority preference %q", container.PrettyName(), prio)
 		return prio
 	}
 
 	if value == "default" {
 		prio := defaultPrio
-		log.Debug("%s: explicit default CPU priority preference %q", container.PrettyName(), prio)
+		log.Debugf("%s: explicit default CPU priority preference %q", container.PrettyName(), prio)
 		return prio
 	}
 
 	prio, ok := cpuPrioByName[value]
 	if !ok {
-		log.Error("%s: invalid CPU priority preference %q", container.PrettyName(), value)
+		log.Errorf("%s: invalid CPU priority preference %q", container.PrettyName(), value)
 		prio := fallback
-		log.Debug("%s: implicit CPU priority preference %q", container.PrettyName(), prio)
+		log.Debugf("%s: implicit CPU priority preference %q", container.PrettyName(), prio)
 		return prio
 	}
 
-	log.Debug("%s: explicit CPU priority preference %q", container.PrettyName(), prio)
+	log.Debugf("%s: explicit CPU priority preference %q", container.PrettyName(), prio)
 	return prio
 }
 
@@ -221,19 +243,36 @@ func memoryTypePreference(pod cache.Pod, container cache.Container) memoryType {
 	key := preferMemoryTypeKey
 	value, ok := pod.GetEffectiveAnnotation(key, container.GetName())
 	if !ok {
-		log.Debug("pod %s has no memory preference annotations", pod.GetName())
+		log.Debugf("pod %s has no memory preference annotations", pod.GetName())
 		return memoryUnspec
 	}
 
 	mtype, err := parseMemoryType(value)
 	if err != nil {
-		log.Error("invalid memory type preference (%q, %q): %v", key, value, err)
+		log.Errorf("invalid memory type preference (%q, %q): %v", key, value, err)
 		return memoryUnspec
 	}
 
-	log.Debug("%s: effective memory type preference %v", container.PrettyName(), mtype)
+	log.Debugf("%s: effective memory type preference %v", container.PrettyName(), mtype)
 
 	return mtype
+}
+
+// schedulingClassPreference returns an explicitly annotated or default scheduling
+// class based on the containers namespace or the Pod QoS class.
+func schedulingClassPreference(ctr cache.Container) (*cfgapi.SchedulingClass, error) {
+	name, ok := ctr.GetEffectiveAnnotation(keySchedulingClass)
+	if ok {
+		log.Debugf("%s: annotated scheduling preference %q", ctr.PrettyName(), name)
+		sc := opt.GetSchedulingClass(name)
+		if sc == nil {
+			return nil, fmt.Errorf("unknown scheduling class %q", name)
+		}
+		return sc, nil
+	}
+
+	sc, err := opt.GetDefaultSchedulingClass(ctr.GetNamespace(), ctr.GetQOSClass())
+	return sc, err
 }
 
 // coldStartPreference figures out 'cold start' preferences for the container, IOW
@@ -248,7 +287,7 @@ func coldStartPreference(pod cache.Pod, container cache.Container) (ColdStartPre
 
 	preference := ColdStartPreference{}
 	if err := yaml.Unmarshal([]byte(value), &preference); err != nil {
-		log.Error("failed to parse cold start preference (%q, %q): %v",
+		log.Errorf("failed to parse cold start preference (%q, %q): %v",
 			key, value, err)
 		return ColdStartPreference{}, policyError("invalid cold start preference %q: %v",
 			value, err)
@@ -259,7 +298,7 @@ func coldStartPreference(pod cache.Pod, container cache.Container) (ColdStartPre
 			preference.Duration.String())
 	}
 
-	log.Debug("%s: effective cold start preference %v",
+	log.Debugf("%s: effective cold start preference %v",
 		container.PrettyName(), preference.Duration.Duration.String())
 
 	return preference, nil
@@ -300,7 +339,7 @@ func checkReservedCPUsAnnotations(c cache.Container) (bool, bool) {
 
 	preference, err := strconv.ParseBool(hintSetting)
 	if err != nil {
-		log.Error("failed to parse reserved CPU preference %s = '%s': %v",
+		log.Errorf("failed to parse reserved CPU preference %s = '%s': %v",
 			keyReservedCPUsPreference, hintSetting, err)
 		return false, false
 	}
@@ -482,12 +521,12 @@ func pickByHintsPreference(pod cache.Pod, container cache.Container) bool {
 
 	pick, err := strconv.ParseBool(value)
 	if err != nil {
-		log.Error("failed to parse pick resources by hints preference %s = '%s': %v",
+		log.Errorf("failed to parse pick resources by hints preference %s = '%s': %v",
 			pickResourcesByHints, value, err)
 		return false
 	}
 
-	log.Debug("%s: effective pick resources by hints preference %v",
+	log.Debugf("%s: effective pick resources by hints preference %v",
 		container.PrettyName(), pick)
 
 	return pick

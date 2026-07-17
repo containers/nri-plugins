@@ -160,6 +160,14 @@ nodeSelector: []
 # nodeSelector:
 #  kubernetes.io/disk: "ssd"
 
+# Enable support for Intel Speed Select Technology (SST), required by
+# the Priority Core Turbo (PCT) feature of the balloons policy. When
+# true, the plugin pod is granted access to the host SST device by
+# running as privileged and mounting /dev from the host at /host/dev.
+# Enable this only on nodes where PCT cpuClasses (with pctPriority or
+# sstClosID) are used.
+allowPCT: false
+
 # NRI plugins should be considered as part of the container runtime.
 # By default we make them part of the system-node-critical priority
 # class. This should mitigate the potential risk of a plugin getting

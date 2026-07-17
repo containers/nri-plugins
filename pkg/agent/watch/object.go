@@ -106,7 +106,7 @@ func (w *ObjectWatch) run() error {
 
 			case e, ok := <-w.eventChan():
 				if !ok {
-					log.Debug("watch %s expired", w.watchname())
+					log.Debugf("watch %s expired", w.watchname())
 					w.reopen()
 					continue
 				}
@@ -154,7 +154,7 @@ func (w *ObjectWatch) reopen() {
 	if err := w.open(); err != nil {
 		w.scheduleReopen()
 	} else {
-		log.Debug("watch %s reopened", w.watchname())
+		log.Debugf("watch %s reopened", w.watchname())
 		w.markRunning()
 	}
 }
@@ -182,14 +182,14 @@ func (w *ObjectWatch) watchname() string {
 
 func (w *ObjectWatch) markFailing() {
 	if !w.failing {
-		log.Error("watch %s is now failing", w.watchname())
+		log.Errorf("watch %s is now failing", w.watchname())
 		w.failing = true
 	}
 }
 
 func (w *ObjectWatch) markRunning() {
 	if w.failing {
-		log.Info("watch %s is now running again", w.watchname())
+		log.Infof("watch %s is now running again", w.watchname())
 		w.failing = false
 	}
 }

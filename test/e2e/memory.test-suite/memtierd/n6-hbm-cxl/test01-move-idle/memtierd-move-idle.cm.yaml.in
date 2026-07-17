@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nri-memtierd-config.default
+  namespace: kube-system
+data:
+  config.yaml: |
+    classes:
+    - name: move-idle-to-node2
+      memtierdconfig: |
+        policy:
+          name: age
+          config: |
+            intervalms: 2000
+            pidwatcher:
+              name: cgroups
+              config: |
+                cgroups:
+                  - \$CGROUP2_ABS_PATH
+            idledurationms: 3000
+            idlenumas: [2]
+            tracker:
+              name: idlepage
+              config: |
+                pagesinregion: 256
+                maxcountperregion: 1
+                scanintervalms: 2000
+            mover:
+              intervalms: 20
+              bandwidth: 200

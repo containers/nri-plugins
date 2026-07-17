@@ -69,6 +69,7 @@ spec:
             mountPath: /etc/nri/memory-policy
           - name: nrisockets
             mountPath: /var/run/nri
+            readOnly: true
           - name: mpolset-vol
             mountPath: /mnt/nri-memory-policy-mpolset
       {{- if .Values.podPriorityClassNodeCritical }}

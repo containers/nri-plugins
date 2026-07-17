@@ -71,6 +71,13 @@ func klogError(format string, args ...interface{}) error {
 func init() {
 	ctl.SetOutput(io.Discard)
 	klog.InitFlags(ctl.FlagSet)
+	// Opt into fixed stderrthreshold behavior (kubernetes/klog#212).
+	if err := ctl.Set("legacy_stderr_threshold_behavior", "false"); err != nil {
+		klog.Errorf("failed to set klog flag legacy_stderr_threshold_behavior: %v", err)
+	}
+	if err := ctl.Set("stderrthreshold", "INFO"); err != nil {
+		klog.Errorf("failed to set klog flag stderrthreshold: %v", err)
+	}
 	ctl.VisitAll(func(f *flag.Flag) {
 		if name, value, ok := getEnvForFlag(f.Name); ok {
 			if err := ctl.Set(f.Name, value); err != nil {

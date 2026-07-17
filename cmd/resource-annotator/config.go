@@ -32,9 +32,9 @@ const (
 	// DefaultPort is the default port our HTTPS server listens on.
 	DefaultPort = 8443
 	// DefaultCertFile is the default path to our TLS certificate file.
-	DefaultCertFile = "/etc/resource-annotator/certs.d/svc.crt"
+	DefaultCertFile = "/etc/resource-annotator/certs.d/tls.crt"
 	// DefaultKeyFile is the default path to our TLS private key file.
-	DefaultKeyFile = "/etc/resource-annotator/certs.d/svc.key"
+	DefaultKeyFile = "/etc/resource-annotator/certs.d/tls.key"
 
 	// EnvPort is the environment variable used to override the default port.
 	EnvPort = "RESOURCE_ANNOTATOR_PORT"

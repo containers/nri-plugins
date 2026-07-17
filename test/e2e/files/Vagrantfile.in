@@ -4,7 +4,7 @@
 ENV['VAGRANT_DEFAULT_PROVIDER'] = 'qemu'
 
 require 'dotenv'
-Dotenv.load("env")
+Dotenv.overload("env")
 
 # Distro image to use
 IMAGE_NAME = "DISTRO"

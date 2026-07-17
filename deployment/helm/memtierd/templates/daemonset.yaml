@@ -58,9 +58,11 @@ spec:
             - "{{ .Values.nri.plugin.index | int | printf "%02d"  }}"
             - --config
             - /etc/nri/memtierd/config.yaml
-            {{- if .Values.outputDir }}
             - --run-dir
+            {{- if .Values.outputDir }}
             - /run-dir
+            {{- else }}
+            - /var/run/nri-memtierd
             {{- end }}
             - --cgroups-dir
             - /sys/fs/cgroup
@@ -78,6 +80,7 @@ spec:
             mountPath: /etc/nri/memtierd
           - name: nrisockets
             mountPath: /var/run/nri
+            readOnly: true
           - name: host-bitmap
             mountPath: /sys/kernel/mm/page_idle/bitmap
           - name: cgroups-vol
@@ -86,6 +89,9 @@ spec:
           # Set outputDir parameter to access memtierd.output files from host
           - name: run-dir-vol
             mountPath: /run-dir
+          {{- else }}
+          - name: run-dir-vol
+            mountPath: /var/run/nri-memtierd
           {{- end }}
       {{- if .Values.podPriorityClassNodeCritical }}
       priorityClassName: system-node-critical
@@ -110,6 +116,10 @@ spec:
         hostPath:
           path: {{ .Values.outputDir }}
           type: DirectoryOrCreate
+      {{- else }}
+      - name: run-dir-vol
+        emptyDir:
+          medium: Memory
       {{- end }}
       {{- if .Values.nri.runtime.patchConfig }}
       - name: containerd-config

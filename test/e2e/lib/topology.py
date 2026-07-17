@@ -52,7 +52,26 @@ import re
 import subprocess
 import sys
 
-_bash_topology_dump = """for cpu in /sys/devices/system/cpu/cpu[0-9]*; do cpu_id=${cpu#/sys/devices/system/cpu/cpu}; echo "cpu p:$(< ${cpu}/topology/physical_package_id) d:$(< ${cpu}/topology/die_id) n:$(basename  ${cpu}/node* | sed 's:node::g') c:$(< ${cpu}/topology/core_id) t:$(< ${cpu}/topology/thread_siblings) cpu:${cpu_id}" ; done;  for node in /sys/devices/system/node/node[0-9]*; do node_id=${node#/sys/devices/system/node/node}; echo "dist n:$node_id d:$(< $node/distance)"; echo "mem n:$node_id s:$(awk '/MemTotal/{print $4/1024}' < $node/meminfo)"; done"""
+_bash_topology_dump = """
+for cpu in /sys/devices/system/cpu/cpu[0-9]*; do
+    cpu_id=${cpu#/sys/devices/system/cpu/cpu};
+    echo "cpu p:$(< ${cpu}/topology/physical_package_id) d:$(< ${cpu}/topology/die_id) n:$(basename  ${cpu}/node* | sed -e 's:node::g' -e 's:[*]:0:g') c:$(< ${cpu}/topology/core_id) t:$(< ${cpu}/topology/thread_siblings) cpu:${cpu_id}";
+done;
+
+for node in /sys/devices/system/node/node[0-9]*; do
+    node_id=${node#/sys/devices/system/node/node};
+    if ! [ -d "$node" ]; then
+        node_id=0;
+        node_distance=10;
+        node_meminfo=$(< /proc/meminfo);
+    else
+        node_distance=$(< $node/distance);
+        node_meminfo=$(< $node/meminfo);
+    fi;
+    echo "dist n:$node_id d:$node_distance";
+    echo "mem n:$node_id s:$(awk '/MemTotal/{print $(NF-1)/1024}' <<< $node_meminfo)";
+done
+"""
 
 _bash_res_allowed = r"""for process in '%s'; do for pid in $(pgrep -f "$process"); do name=$(cat /proc/$pid/cmdline | tr '\0 ' '\n' | grep -E "^$process" | head -n 1); [ -n "$name" ] && [ "$pid" != "$$" ] && [ "$pid" != "$PPID" ] && echo "${name}/${pid} $(awk '/Cpus_allowed:/{c=$2}/Mems_allowed:/{m=$2}END{print "c:"c" m:"m}' < /proc/$pid/status)"; done; done"""
 

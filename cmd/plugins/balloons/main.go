@@ -30,7 +30,7 @@ func main() {
 
 	agt, err := agent.New(agent.BalloonsConfigInterface())
 	if err != nil {
-		log.Fatal("%v", err)
+		log.Fatalf("%v", err)
 	}
 
 	mgr, err := resmgr.New(agt, policy.New())

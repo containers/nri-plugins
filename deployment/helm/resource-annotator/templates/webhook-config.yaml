@@ -1,9 +1,14 @@
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
-  name: resource-annotator
+  name: nri-resource-annotator
+{{ if (not (or (eq .Values.service.certificateIssuer nil)
+               (eq .Values.service.certificateIssuer ""))) }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/nri-resource-annotator
+{{ end }}
 webhooks:
-- name: resource-annotator.noderesource.dev
+- name: nri-resource-annotator.noderesource.dev
   sideEffects: None
   admissionReviewVersions: ["v1"]
   rules:
@@ -25,5 +30,8 @@ webhooks:
   clientConfig:
     service:
       namespace: {{ .Release.Namespace }}
-      name: resource-annotator
+      name: nri-resource-annotator
+    {{- if (or (eq .Values.service.certificateIssuer nil)
+               (eq .Values.service.certificateIssuer "")) }}
     caBundle: {{ .Values.service.base64Crt }}
+    {{- end }}

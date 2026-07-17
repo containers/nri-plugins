@@ -116,7 +116,7 @@ VALIDATE_KEYS:
 
 // Evaluate evaluates an expression against a container.
 func (e *Expression) Evaluate(subject Evaluable) bool {
-	log.Debug("evaluating %q @ %s...", *e, subject)
+	log.Debugf("evaluating %q @ %s...", *e, subject)
 
 	if e.Op == AlwaysTrue {
 		return true
@@ -168,7 +168,7 @@ func (e *Expression) Evaluate(subject Evaluable) bool {
 		result = !ok
 	}
 
-	log.Debug("%q @ %s => %v", *e, subject, result)
+	log.Debugf("%q @ %s => %v", *e, subject, result)
 
 	return result
 }
@@ -180,7 +180,7 @@ func (e *Expression) String() string {
 
 // KeyValue extracts the value of the expression in the scope of the given subject.
 func KeyValue(key string, subject Evaluable) (string, bool) {
-	log.Debug("looking up %q @ %s...", key, subject)
+	log.Debugf("looking up %q @ %s...", key, subject)
 
 	value := ""
 	ok := false
@@ -198,7 +198,7 @@ func KeyValue(key string, subject Evaluable) (string, bool) {
 		value = strings.Join(vals, vsep)
 	}
 
-	log.Debug("%q @ %s => %q, %v", key, subject, value, ok)
+	log.Debugf("%q @ %s => %q, %v", key, subject, value, ok)
 
 	return value, ok
 }
@@ -258,10 +258,10 @@ func ResolveRef(subject Evaluable, spec string) (string, bool, error) {
 		obj interface{} = subject
 	)
 
-	log.Debug("resolving %q in %s...", key, subject)
+	log.Debugf("resolving %q in %s...", key, subject)
 
 	for {
-		log.Debug("- resolve %q in %s", key, obj)
+		log.Debugf("- resolve %q in %s", key, obj)
 
 		switch v := obj.(type) {
 		case Evaluable:
@@ -294,11 +294,11 @@ func ResolveRef(subject Evaluable, spec string) (string, bool, error) {
 	if !ok {
 		err := exprError("%s: failed to resolve %q: non-string type %T",
 			subject, spec, obj)
-		log.Error("internal error: %s", err)
+		log.Errorf("internal error: %s", err)
 		return "", false, err
 	}
 
-	log.Debug("resolved %q in %s => %s", spec, subject, s)
+	log.Debugf("resolved %q in %s => %s", spec, subject, s)
 
 	return s, true, nil
 }

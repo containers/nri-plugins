@@ -196,6 +196,13 @@
             state:
               present
           when: ansible_facts['distribution_major_version'] | int >= 40
+        - name: cri-tools for crictl
+          ansible.builtin.dnf:
+            pkg:
+              - cri-tools
+            state:
+              present
+          when: ansible_facts['distribution_major_version'] | int >= 43
 
     - name: Resize root filesystem to the maximum possible
       when: ansible_facts['distribution'] == "Fedora"

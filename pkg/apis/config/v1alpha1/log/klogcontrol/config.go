@@ -14,6 +14,10 @@ type Config struct {
     // +optional
     Alsologtostderr *bool `json:"alsologtostderr,omitempty"`
     // +optional
+    Alsologtostderrthreshold *string `json:"alsologtostderrthreshold,omitempty"`
+    // +optional
+    Legacy_stderr_threshold_behavior *bool `json:"legacy_stderr_threshold_behavior,omitempty"`
+    // +optional
     Log_backtrace_at *string `json:"log_backtrace_at,omitempty"`
     // +optional
     Log_dir *string `json:"log_dir,omitempty"`
@@ -45,6 +49,14 @@ func (f *Config) GetByFlag(name string) (string, bool) {
         }
     case "alsologtostderr":
         if ptr := f.Alsologtostderr; ptr != nil {
+            return fmt.Sprintf("%v", *ptr), true
+        }
+    case "alsologtostderrthreshold":
+        if ptr := f.Alsologtostderrthreshold; ptr != nil {
+            return fmt.Sprintf("%v", *ptr), true
+        }
+    case "legacy_stderr_threshold_behavior":
+        if ptr := f.Legacy_stderr_threshold_behavior; ptr != nil {
             return fmt.Sprintf("%v", *ptr), true
         }
     case "log_backtrace_at":

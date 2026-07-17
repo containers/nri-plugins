@@ -35,7 +35,7 @@ func (a *Agent) UpdateNrtCR(policy string, zones []*policyapi.TopologyZone) erro
 		return fmt.Errorf("no node resource topology client, can't update CR")
 	}
 
-	log.Info("updating node resource topology CR")
+	log.Infof("updating node resource topology CR")
 
 	// To minimize the risk of an NRI request timeout (and the plugin getting
 	// kicked out) we do the update asynchronously. We can rework this to use
@@ -63,7 +63,7 @@ func (a *Agent) updateNrtCR(policy string, zones []*policyapi.TopologyZone) erro
 	if err != nil {
 		cr = nil
 		if !errors.IsNotFound(err) {
-			log.Warn("failed to look up current node resource topology CR: %v", err)
+			log.Warnf("failed to look up current node resource topology CR: %v", err)
 		}
 	}
 

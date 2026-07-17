@@ -1,4 +1,4 @@
-ARG GO_VERSION=1.25
+ARG GO_VERSION=1.26
 
 FROM golang:${GO_VERSION}-bookworm AS builder
 
@@ -19,13 +19,24 @@ RUN --mount=type=cache,target=/go/pkg/mod/ \
           GOBIN=/debug-extras/bin go install -tags osusergo,netgo -ldflags "-extldflags=-static" github.com/go-delve/delve/cmd/dlv@latest; \
     fi
 
-# Fetch go dependencies in a separate layer for caching
+# Fetch go dependencies in a separate layer for caching.
+# If vendor/ is present in the build context (e.g. when using a
+# local replace directive), use vendor mode and skip the download.
 COPY go.mod go.sum .
 COPY pkg/topology/ pkg/topology/
-RUN --mount=type=cache,target=/go/pkg/mod/ go mod download
+RUN --mount=type=cache,target=/go/pkg/mod/ \
+    if grep -q '^replace .* => /' go.mod 2>/dev/null; then \
+        echo "go.mod contains local replace; will rely on vendor/"; \
+    else \
+        go mod download; \
+    fi
 
 # Build nri-resource-policy
 COPY . .
+
+RUN --mount=type=cache,target=/go/pkg/mod/ \
+    --mount=type=cache,target="/root/.cache/go-build" \
+    make install-go-licenses
 
 RUN --mount=type=cache,target=/go/pkg/mod/ \
     --mount=type=cache,target="/root/.cache/go-build" \
@@ -39,7 +50,7 @@ RUN --mount=type=cache,target=/go/pkg/mod/ \
          BINARIES="" \
          OTHER_IMAGE_TARGETS="" \
          PLUGINS=nri-resource-policy-balloons \
-         clean install-go-licenses build-plugins-static licenses
+         clean build-plugins-static licenses
 
 RUN cpgodir() { \
         mkdir -p $2; \

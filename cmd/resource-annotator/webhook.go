@@ -65,7 +65,8 @@ type Webhook struct {
 }
 
 func NewWebhook(cfg *Config) (*Webhook, error) {
-	cert, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
+	// test loading the certificate/key pair
+	_, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load certificate: %w", err)
 	}
@@ -74,9 +75,8 @@ func NewWebhook(cfg *Config) (*Webhook, error) {
 		Logger: logger.Get("webhook"),
 		cfg:    cfg,
 		srv: &http.Server{
-			Addr:      ":" + strconv.FormatUint(uint64(cfg.Port), 10),
-			TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}},
-			Handler:   http.NewServeMux(),
+			Addr:    ":" + strconv.FormatUint(uint64(cfg.Port), 10),
+			Handler: http.NewServeMux(),
 		},
 	}
 
@@ -86,7 +86,7 @@ func NewWebhook(cfg *Config) (*Webhook, error) {
 }
 
 func (w *Webhook) Run() error {
-	return w.srv.ListenAndServeTLS("", "")
+	return w.srv.ListenAndServeTLS(w.cfg.CertFile, w.cfg.KeyFile)
 }
 
 func (w *Webhook) handler(rw http.ResponseWriter, r *http.Request) {
@@ -118,7 +118,7 @@ func (w *Webhook) processRequest(r *http.Request) (*admv1.AdmissionReview, error
 	switch t := r.Header.Get("Content-Type"); t {
 	case contentTypeJSON:
 	case contentTypeProbe:
-		w.Debug("received liveness probe")
+		w.Debugf("received liveness probe")
 		rpl.Response = probeResponse()
 		return rpl, nil
 	default:

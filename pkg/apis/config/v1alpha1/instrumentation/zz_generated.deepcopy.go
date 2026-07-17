@@ -26,6 +26,7 @@ import (
 func (in *Config) DeepCopyInto(out *Config) {
 	*out = *in
 	out.ReportPeriod = in.ReportPeriod
+	out.LogExportPeriod = in.LogExportPeriod
 	if in.Metrics != nil {
 		in, out := &in.Metrics, &out.Metrics
 		*out = new(metrics.Config)

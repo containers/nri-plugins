@@ -18,6 +18,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
 	"syscall"
 
@@ -66,6 +67,26 @@ func (m *Main) Run() error {
 		log.Warnf("failed to start tracing: %v", err)
 	}
 	defer m.stopTracing()
+
+	// Install a SIGTERM/SIGINT handler that triggers a graceful
+	// agent shutdown: this lets us clean up node state (e.g.,
+	// extended resources we published) before the kubelet kills
+	// the container. Closing the agent's stop channel makes its
+	// event loop return, which unwinds m.mgr.Start() and lets
+	// Run() exit normally.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	go func() {
+		sig, ok := <-sigCh
+		if !ok {
+			return
+		}
+		log.Infof("received signal %s, shutting down gracefully", sig)
+		if m.agt != nil {
+			m.agt.Stop()
+		}
+	}()
+	defer signal.Stop(sigCh)
 
 	err := m.mgr.Start()
 	return err

@@ -38,7 +38,7 @@ func (cch *cache) createPod(nriPod *nri.PodSandbox, ch <-chan *podresapi.PodReso
 	p.goFetchPodResources(ch)
 
 	if err := p.parseCgroupForQOSClass(); err != nil {
-		log.Error("pod %s: %v", p.PrettyName(), err)
+		log.Errorf("pod %s: %v", p.PrettyName(), err)
 	}
 
 	return p
@@ -121,15 +121,20 @@ func (p *pod) GetResmgrAnnotation(key string) (string, bool) {
 }
 
 func (p *pod) GetEffectiveAnnotation(key, container string) (string, bool) {
+	value, _, ok := p.QueryEffectiveAnnotation(key, container)
+	return value, ok
+}
+
+func (p *pod) QueryEffectiveAnnotation(key, container string) (string, AnnotationScope, bool) {
 	annotations := p.Pod.GetAnnotations()
 	if v, ok := annotations[key+"/container."+container]; ok {
-		return v, true
+		return v, ContainerScopedAnnotation, true
 	}
 	if v, ok := annotations[key+"/pod"]; ok {
-		return v, true
+		return v, PodScopedAnnotation, true
 	}
 	v, ok := annotations[key]
-	return v, ok
+	return v, UnscopedAnnotation, ok
 }
 
 func (p *pod) GetQOSClass() v1.PodQOSClass {
@@ -138,25 +143,25 @@ func (p *pod) GetQOSClass() v1.PodQOSClass {
 
 func (p *pod) goFetchPodResources(ch <-chan *podresapi.PodResources) {
 	go func() {
-		p.podResCh = ch
-		p.waitResCh = make(chan struct{})
-		defer close(p.waitResCh)
+		if ch != nil {
+			p.podResCh = ch
+			p.waitResCh = make(chan struct{})
+			defer close(p.waitResCh)
 
-		if p.podResCh != nil {
-			p.PodResources = <-p.podResCh
-			log.Debug("fetched pod resources %+v for %s", p.PodResources, p.GetName())
+			p.PodResources = <-ch
+			log.Debugf("fetched pod resources %+v for %s", p.PodResources, p.GetName())
 		}
 	}()
 }
 
 func (p *pod) setPodResources(podRes *podresapi.PodResources) {
 	p.PodResources = podRes
-	log.Debug("set pod resources %+v for %s", p.PodResources, p.GetName())
+	log.Debugf("set pod resources %+v for %s", p.PodResources, p.GetName())
 }
 
 func (p *pod) GetPodResources() *podresapi.PodResources {
 	if p.waitResCh != nil {
-		log.Debug("waiting for pod resources fetch to complete...")
+		log.Debugf("waiting for pod resources fetch to complete...")
 		<-p.waitResCh
 	}
 	return p.PodResources
@@ -174,7 +179,7 @@ func (p *pod) GetContainerAffinity(name string) ([]*Affinity, error) {
 		weight := DefaultWeight
 		if !affinity.parseSimple(p, value, weight) {
 			if err := affinity.parseFull(p, value, weight); err != nil {
-				log.Error("%v", err)
+				log.Errorf("%v", err)
 				return nil, err
 			}
 		}
@@ -184,18 +189,18 @@ func (p *pod) GetContainerAffinity(name string) ([]*Affinity, error) {
 		weight := -DefaultWeight
 		if !affinity.parseSimple(p, value, weight) {
 			if err := affinity.parseFull(p, value, weight); err != nil {
-				log.Error("%v", err)
+				log.Errorf("%v", err)
 				return nil, err
 			}
 		}
 	}
 
 	if log.DebugEnabled() {
-		log.Debug("Pod container affinity for %s:", p.GetName())
+		log.Debugf("Pod container affinity for %s:", p.GetName())
 		for id, ca := range *affinity {
-			log.Debug("  - container %s:", id)
+			log.Debugf("  - container %s:", id)
 			for _, a := range ca {
-				log.Debug("    * %s", a.String())
+				log.Debugf("    * %s", a.String())
 			}
 		}
 	}
@@ -289,7 +294,7 @@ func (p *pod) getTasks(recursive, processes bool) ([]string, error) {
 				continue
 			}
 
-			log.Error("%s: failed to read pids of %s: %v", p.PrettyName(), c.GetName(), err)
+			log.Errorf("%s: failed to read pids of %s: %v", p.PrettyName(), c.GetName(), err)
 		}
 	}
 

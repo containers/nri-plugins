@@ -41,6 +41,7 @@ spec:
                 - message: pluginName is immutable
                   rule: self == oldSelf
                 enum:
+                - template
                 - topology-aware
                 - balloons
                 - memtierd
