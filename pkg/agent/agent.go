@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -258,6 +259,7 @@ func (a *Agent) Stop() {
 	defer a.stopLock.Unlock()
 
 	if a.stopC != nil {
+		a.clearOwnConfigStatus()
 		close(a.stopC)
 		<-a.doneC
 		a.stopC = nil
@@ -623,6 +625,31 @@ func (a *Agent) updateConfig(cfg metav1.Object) {
 
 	a.currentCfg = cfg
 	a.configure(cfg)
+}
+
+// clearOwnConfigStatus nulls this node's Status.nodes entry on the current
+// config resource so a clean shutdown does not leave a permanent orphan.
+func (a *Agent) clearOwnConfigStatus() {
+	if a.cfgIf == nil || a.nodeName == "" || a.hasLocalConfig() || a.currentCfg == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	ns := a.namespace
+	name := a.currentCfg.GetName()
+	node := a.nodeName
+
+	data, pt, err := cfgapi.NodeStatusPatch(node, nil)
+	if err == nil {
+		err = a.cfgIf.PatchStatus(ctx, ns, name, pt, data, metav1.PatchOptions{})
+	}
+	if err != nil {
+		log.Errorf("failed to clear own config status on %s/%s: %v", ns, name, err)
+		return
+	}
+	log.Infof("cleared own config status on %s/%s", ns, name)
 }
 
 func (a *Agent) patchConfigStatus(prev, curr metav1.Object, errors error) {
