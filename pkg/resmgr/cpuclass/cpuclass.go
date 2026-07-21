@@ -265,22 +265,30 @@ func (h *Handler) Shutdown() error {
 }
 
 // intersectHints returns a copy of hints with every CpuPreference
-// constrained to the given bound. Empty preferences are dropped.
+// candidate set constrained to the given bound. Empty candidate sets
+// are dropped; a preference is dropped only when all of its candidate
+// sets become empty. Candidate order is preserved.
 func intersectHints(hints AllocationHints, bound cpuset.CPUSet) AllocationHints {
 	out := AllocationHints{}
-	for _, p := range hints.Prefer {
-		s := p.Cpus.Intersection(bound)
-		if s.IsEmpty() {
-			continue
+	clip := func(prefs []CpuPreference) []CpuPreference {
+		var res []CpuPreference
+		for _, p := range prefs {
+			sets := make([]cpuset.CPUSet, 0, len(p.Cpus))
+			for _, c := range p.Cpus {
+				s := c.Intersection(bound)
+				if s.IsEmpty() {
+					continue
+				}
+				sets = append(sets, s)
+			}
+			if len(sets) == 0 {
+				continue
+			}
+			res = append(res, CpuPreference{Name: p.Name, Cpus: sets})
 		}
-		out.Prefer = append(out.Prefer, CpuPreference{Name: p.Name, Cpus: s})
+		return res
 	}
-	for _, p := range hints.Avoid {
-		s := p.Cpus.Intersection(bound)
-		if s.IsEmpty() {
-			continue
-		}
-		out.Avoid = append(out.Avoid, CpuPreference{Name: p.Name, Cpus: s})
-	}
+	out.Prefer = clip(hints.Prefer)
+	out.Avoid = clip(hints.Avoid)
 	return out
 }

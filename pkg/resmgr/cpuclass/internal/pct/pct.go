@@ -696,31 +696,37 @@ func (a *Allocator) hpInUseCpus() cpuset.CPUSet {
 	return out
 }
 
-// hpReserveCpus returns the CPU set the upcoming HP allocation
+// hpReserveCpus returns the CPU sets the upcoming HP allocation
 // should prefer, computed with punit-granular HP-room accounting:
 //
 //	room(punit) = MaxHpCpus(punit) - len(hpUsed[punit] \ excludeBln)
 //
+// The result is a priority-ordered list of disjoint candidate sets,
+// from most to least preferred. One should honor the first possible
+// candidate and ignore others.
+//
 // Selection follows a strict tier order:
 //
-//   - Tier A (single-punit win): the punit with the largest
-//     non-zero room and at least requested free CPUs. Returns the
-//     free CPUs of that punit.
+//   - Tier A (single-punit wins): every punit with non-zero room and
+//     at least requested free CPUs, ordered by descending room, then
+//     descending free-CPU count, then ascending package/punit ID.
+//     Each punit's free CPUs form one candidate set.
 //   - Tier B (same-package union): when no single punit can host
-//     `requested` HP CPUs but some package's punits jointly can,
-//     return the union of free CPUs across that package's punits.
-//     The picked package is the one with the largest aggregate
-//     room; ties broken by largest aggregate free-CPU count.
+//     `requested` HP CPUs but some packages' punits jointly can,
+//     each such package's union of free CPUs forms one candidate
+//     set, ordered by descending aggregate room, then descending
+//     aggregate free-CPU count, then ascending package ID.
 //   - Tier C (cross-package): never. Steering HP work across
 //     sockets defeats the turbo gains it would obtain, because
 //     cross-socket data traffic typically dominates per-core
 //     frequency benefits.
 //
+// Tiers are never mixed, so all returned candidate sets are disjoint.
 // When `requested` is 0 the function falls back to Tier A only --
-// pick the punit with the most HP room and at least one free CPU.
-// Returns the empty set when no punit/package satisfies any tier
-// or no free CPUs remain after Allowed-intersection; the caller
-// then falls back to topology-only placement.
+// every punit with HP room and at least one free CPU.
+// Returns nil when no punit/package satisfies any tier or no free
+// CPUs remain after Allowed-intersection; the caller then falls back
+// to topology-only placement.
 //
 //   - free: free CPUs to consider for placement.
 //   - excludeBln: CPUs to exclude from HP-room accounting (the
@@ -729,15 +735,15 @@ func (a *Allocator) hpInUseCpus() cpuset.CPUSet {
 //   - requested: number of CPUs the upcoming allocation wants.
 //     0 means "unknown" (initial priming before the count is
 //     known); Tier A is used.
-func (a *Allocator) hpReserveCpus(free cpuset.CPUSet, excludeBln cpuset.CPUSet, requested int) cpuset.CPUSet {
+func (a *Allocator) hpReserveCpus(free cpuset.CPUSet, excludeBln cpuset.CPUSet, requested int) []cpuset.CPUSet {
 	if !a.hpHintsActive() {
-		return cpuset.New()
+		return nil
 	}
 	if a.allowed.Size() > 0 {
 		free = free.Intersection(a.allowed)
 	}
 	if free.IsEmpty() {
-		return cpuset.New()
+		return nil
 	}
 
 	type punitState struct {
@@ -767,17 +773,16 @@ func (a *Allocator) hpReserveCpus(free cpuset.CPUSet, excludeBln cpuset.CPUSet, 
 		states[i].room = room
 	}
 	if !anyKnown {
-		return cpuset.New()
+		return nil
 	}
 
-	// Tier A: best single punit that satisfies the request.
+	// Tier A: every single punit that can host the request, best
+	// first. Punit free sets are disjoint by construction.
 	need := requested
 	if need < 1 {
 		need = 1
 	}
-	bestIdx := -1
-	bestRoom := 0
-	bestFree := -1
+	tierA := make([]int, 0, len(a.punits))
 	for i := range a.punits {
 		s := states[i]
 		if s.free.IsEmpty() || s.room <= 0 {
@@ -788,20 +793,34 @@ func (a *Allocator) hpReserveCpus(free cpuset.CPUSet, excludeBln cpuset.CPUSet, 
 		if s.free.Size() < need || s.room < need {
 			continue
 		}
-		if s.room > bestRoom || (s.room == bestRoom && s.free.Size() > bestFree) {
-			bestIdx = i
-			bestRoom = s.room
-			bestFree = s.free.Size()
-		}
+		tierA = append(tierA, i)
 	}
-	if bestIdx >= 0 {
-		log.Debugf("pct: hpReserveCpus tier=A punit=%d/%d room=%d free=%s",
-			a.punits[bestIdx].PkgID, a.punits[bestIdx].PunitID, bestRoom, states[bestIdx].free)
-		return states[bestIdx].free
+	if len(tierA) > 0 {
+		sort.Slice(tierA, func(x, y int) bool {
+			ix, iy := tierA[x], tierA[y]
+			if states[ix].room != states[iy].room {
+				return states[ix].room > states[iy].room
+			}
+			if states[ix].free.Size() != states[iy].free.Size() {
+				return states[ix].free.Size() > states[iy].free.Size()
+			}
+			if a.punits[ix].PkgID != a.punits[iy].PkgID {
+				return a.punits[ix].PkgID < a.punits[iy].PkgID
+			}
+			return a.punits[ix].PunitID < a.punits[iy].PunitID
+		})
+		reserve := make([]cpuset.CPUSet, 0, len(tierA))
+		for _, i := range tierA {
+			reserve = append(reserve, states[i].free)
+			log.Debugf("pct: hpReserveCpus tier=A punit=%d/%d room=%d free=%s",
+				a.punits[i].PkgID, a.punits[i].PunitID, states[i].room, states[i].free)
+		}
+		return reserve
 	}
 
-	// Tier B: aggregate per package; pick the package whose
-	// punits together have the most room (and free CPUs).
+	// Tier B: aggregate per package; every package whose punits
+	// together can host the request, best first. Package unions
+	// are disjoint by construction.
 	if requested > 0 {
 		type pkgAgg struct {
 			room  int
@@ -824,37 +843,36 @@ func (a *Allocator) hpReserveCpus(free cpuset.CPUSet, excludeBln cpuset.CPUSet, 
 		pkgIDs := make([]int, 0, len(agg))
 		for id, e := range agg {
 			e.freeN = e.free.Size()
+			if e.room < requested || e.freeN < requested {
+				continue
+			}
 			pkgIDs = append(pkgIDs, id)
 		}
-		sort.Ints(pkgIDs) // deterministic tie-break order
-		bestPkg := -1
-		bestPkgRoom := 0
-		bestPkgFree := -1
-		for _, id := range pkgIDs {
-			e := agg[id]
-			if e.room < requested {
-				continue
+		sort.Slice(pkgIDs, func(x, y int) bool {
+			ex, ey := agg[pkgIDs[x]], agg[pkgIDs[y]]
+			if ex.room != ey.room {
+				return ex.room > ey.room
 			}
-			if e.freeN < requested {
-				continue
+			if ex.freeN != ey.freeN {
+				return ex.freeN > ey.freeN
 			}
-			if e.room > bestPkgRoom || (e.room == bestPkgRoom && e.freeN > bestPkgFree) {
-				bestPkg = id
-				bestPkgRoom = e.room
-				bestPkgFree = e.freeN
+			return pkgIDs[x] < pkgIDs[y]
+		})
+		if len(pkgIDs) > 0 {
+			reserve := make([]cpuset.CPUSet, 0, len(pkgIDs))
+			for _, id := range pkgIDs {
+				reserve = append(reserve, agg[id].free)
+				log.Debugf("pct: hpReserveCpus tier=B pkg=%d room=%d free=%s",
+					id, agg[id].room, agg[id].free)
 			}
-		}
-		if bestPkg >= 0 {
-			log.Debugf("pct: hpReserveCpus tier=B pkg=%d room=%d free=%s",
-				bestPkg, bestPkgRoom, agg[bestPkg].free)
-			return agg[bestPkg].free
+			return reserve
 		}
 	}
 
 	// Tier C is never taken: do not hint across packages.
 	log.Debugf("pct: hpReserveCpus tier=none (no punit or package has %d HP room with %d free CPUs)",
 		requested, free.Size())
-	return cpuset.New()
+	return nil
 }
 
 // classClosID returns the CLOS ID that the named cpuClass maps to,
@@ -892,8 +910,9 @@ func virtDevSstClosHint(closID int) string {
 //   - Class has an explicit CLOS plan (assoc-only or managed): Prefer
 //     CLOS-member CPUs.
 //   - Class is currently classified HP: Prefer hpReserveCpus
-//     (best-fit punit; same-package union as fallback), and also
-//     CLOS-member CPUs. No cross-package hint is ever emitted.
+//     (per-punit candidates best first, same-package unions as
+//     fallback), and also CLOS-member CPUs. No cross-package hint is
+//     ever emitted.
 //   - Class is not HP and at least one HP class exists: Avoid
 //     hpInUseCpus (punits currently hosting HP work).
 func (a *Allocator) Hints(intent types.AllocationIntent) types.AllocationHints {
@@ -907,14 +926,14 @@ func (a *Allocator) Hints(intent types.AllocationIntent) types.AllocationHints {
 		if !closCpus.IsEmpty() {
 			out.Prefer = append(out.Prefer, types.CpuPreference{
 				Name: virtDevSstClosHint(closID),
-				Cpus: closCpus,
+				Cpus: []cpuset.CPUSet{closCpus},
 			})
 		}
 	}
 
 	if a.classIsHighPriority(intent.ClassName) {
 		reserve := a.hpReserveCpus(intent.FreeCpus, intent.CurrentCpus, intent.RequestedCount)
-		if !reserve.IsEmpty() {
+		if len(reserve) > 0 {
 			out.Prefer = append(out.Prefer, types.CpuPreference{
 				Name: virtDevSstHpReserveHint,
 				Cpus: reserve,
@@ -928,7 +947,7 @@ func (a *Allocator) Hints(intent types.AllocationIntent) types.AllocationHints {
 		if !inUse.IsEmpty() {
 			out.Avoid = append(out.Avoid, types.CpuPreference{
 				Name: virtDevSstHpInUseHint,
-				Cpus: inUse,
+				Cpus: []cpuset.CPUSet{inUse},
 			})
 		}
 	}
