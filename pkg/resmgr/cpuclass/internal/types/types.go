@@ -71,11 +71,14 @@ type AllocationIntent struct {
 	RequestedCount int
 }
 
-// CpuPreference is a named CPU set carrying a single placement
-// preference (prefer or avoid depending on the slice it appears in).
+// CpuPreference is a named, priority-ordered list of candidate CPU
+// sets carrying a single placement preference (prefer or avoid
+// depending on the slice it appears in). Cpus lists candidate sets
+// ordered from most to least preferred: an allocation should honor
+// the first candidate it can and ignore others.
 type CpuPreference struct {
 	Name string
-	Cpus cpuset.CPUSet
+	Cpus []cpuset.CPUSet
 }
 
 // AllocationHints carries technology-agnostic placement preferences
