@@ -665,11 +665,13 @@ func (ta *cpuTreeAllocator) resizeCpusWithDevices(resizers []cpuResizerFunc, cur
 	allCloseCpuSets := [][]cpuset.CPUSet{}
 	for _, devPath := range ta.options.preferCloseToDevices {
 		if closeCpuSets := ta.topologyHintCpus(devPath); len(closeCpuSets) > 0 {
+			log.Debugf("  - prepare: close to %q, prefer cpusets: %v", devPath, closeCpuSets)
 			allCloseCpuSets = append(allCloseCpuSets, closeCpuSets)
 		}
 	}
 	for _, devPath := range ta.options.preferFarFromDevices {
 		for _, farCpuSet := range ta.topologyHintCpus(devPath) {
+			log.Debugf("  - prepare: far from %q, prefer cpusets: %s", devPath, freeCpus.Difference(farCpuSet))
 			allCloseCpuSets = append(allCloseCpuSets, []cpuset.CPUSet{freeCpus.Difference(farCpuSet)})
 		}
 	}
