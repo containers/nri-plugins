@@ -923,10 +923,11 @@ func (a *Allocator) Hints(intent types.AllocationIntent) types.AllocationHints {
 
 	if closID, ok := a.classClosID(intent.ClassName); ok {
 		closCpus := a.closCpus(closID)
-		if !closCpus.IsEmpty() {
+		freeClosCpus := closCpus.Intersection(intent.FreeCpus)
+		if !freeClosCpus.IsEmpty() && freeClosCpus.Size() >= intent.RequestedCount {
 			out.Prefer = append(out.Prefer, types.CpuPreference{
 				Name: virtDevSstClosHint(closID),
-				Cpus: []cpuset.CPUSet{closCpus},
+				Cpus: []cpuset.CPUSet{freeClosCpus},
 			})
 		}
 	}
