@@ -16,13 +16,17 @@ package balloons
 
 import (
 	"fmt"
+	"maps"
 	"math"
+	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 
+	"github.com/containers/nri-plugins/pkg/agent/podresapi"
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/balloons"
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
 	"github.com/containers/nri-plugins/pkg/irq"
@@ -1080,7 +1084,7 @@ func (p *balloons) virtDevsChangeDuringCpuAllocation(loadClassNames []string) bo
 	return false
 }
 
-func (p *balloons) newCompositeBalloon(blnDef *BalloonDef, confCpus bool, freeInstance int) (*Balloon, error) {
+func (p *balloons) newCompositeBalloon(blnDef *BalloonDef, confCpus bool, freeInstance int, c cache.Container) (*Balloon, error) {
 	componentBlns := make([]*Balloon, 0, len(blnDef.Components))
 	deleteComponentBlns := func() {
 		for _, compBln := range componentBlns {
@@ -1099,7 +1103,7 @@ func (p *balloons) newCompositeBalloon(blnDef *BalloonDef, confCpus bool, freeIn
 				return nil, balloonsError("unknown balloon definition %q in composite balloon %q",
 					comp.DefName, blnDef.Name)
 			}
-			compBln, err := p.newBalloon(compDef, confCpus)
+			compBln, err := p.newBalloon(compDef, confCpus, c)
 			if err != nil || compBln == nil {
 				deleteComponentBlns()
 				return nil, balloonsError("failed to create component balloon %q for composite balloon %q: %v",
@@ -1137,7 +1141,7 @@ func (p *balloons) newCompositeBalloon(blnDef *BalloonDef, confCpus bool, freeIn
 			return nil, balloonsError("unknown balloon definition %q in balanced composite balloon %q",
 				comp.DefName, blnDef.Name)
 		}
-		compBln, err := p.newBalloon(compDef, confCpus)
+		compBln, err := p.newBalloon(compDef, confCpus, c)
 		if err != nil || compBln == nil {
 			deleteComponentBlns()
 			return nil, balloonsError("failed to create component balloon %q for composite balloon %q: %v",
@@ -1181,7 +1185,7 @@ func (p *balloons) newCompositeBalloon(blnDef *BalloonDef, confCpus bool, freeIn
 	return bln, nil
 }
 
-func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, error) {
+func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool, c cache.Container) (*Balloon, error) {
 	var cpus cpuset.CPUSet
 	var err error
 	blnsOfDef := p.balloonsByDef(blnDef)
@@ -1204,7 +1208,7 @@ func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, erro
 		}
 	}
 	if len(blnDef.Components) > 0 {
-		return p.newCompositeBalloon(blnDef, confCpus, freeInstance)
+		return p.newCompositeBalloon(blnDef, confCpus, freeInstance, c)
 	}
 	// Configure cpuTreeAllocator for this balloon. The reserved
 	// balloon always prefers to be close to the virtual device
@@ -1222,6 +1226,13 @@ func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool) (*Balloon, erro
 			virtDevPCores:       {p.cpuAllocator.GetCPUPriorities()[cpuallocator.PriorityHigh]},
 		},
 	}
+	// Pod resource hints to container's physical devices (GPUs,
+	// NICs, etc.) do not have acceptable alternative CPU
+	// sets. Therefore, apply these hints before CPU class hints.
+	// The latter may include alternative sets, which enables the
+	// allocator to choose the best alternative CPU set for the
+	// pod resources.
+	p.applyPodResourcesHints(&allocatorOptions, c)
 	p.applyCpuClassHints(&allocatorOptions, p.resolveCpuClassName(blnDef.CpuClass), cpuset.New(), 0)
 	if blnDef.AllocatorTopologyBalancing != nil {
 		allocatorOptions.topologyBalancing = *blnDef.AllocatorTopologyBalancing
@@ -1313,7 +1324,7 @@ func (p *balloons) fillableBalloonInstances(blnDef *BalloonDef, fm FillMethod, c
 			}
 			return nil, nil
 		}
-		newBln, err := p.newBalloon(blnDef, false)
+		newBln, err := p.newBalloon(blnDef, false, c)
 		if err != nil {
 			if fm == FillNewBalloonMust {
 				return nil, err
@@ -1679,7 +1690,7 @@ func (p *balloons) Reconfigure(newCfg interface{}) error {
 // balloons according to the blnDef. Does not initialize balloon CPUs.
 func (p *balloons) applyBalloonDef(balloons *[]*Balloon, blnDef *BalloonDef, freeCpus *cpuset.CPUSet) error {
 	for blnIdx := 0; blnIdx < blnDef.MinBalloons; blnIdx++ {
-		newBln, err := p.newBalloon(blnDef, false)
+		newBln, err := p.newBalloon(blnDef, false, nil)
 		if err != nil {
 			return err
 		}
@@ -1698,6 +1709,7 @@ func (p *balloons) validateConfig(bpoptions *BalloonsOptions) error {
 	undefinedSchedulingClasses := map[string]struct{}{}
 	compositeBlnDefs := map[string]*BalloonDef{}
 	for _, blnDef := range bpoptions.BalloonDefs {
+		podResourceDevices := map[string]struct{}{}
 		if blnDef.Name == "" {
 			return balloonsError("missing or empty name in a balloon type")
 		}
@@ -1768,6 +1780,18 @@ func (p *balloons) validateConfig(bpoptions *BalloonsOptions) error {
 		for _, load := range blnDef.Loads {
 			undefinedLoadClasses[load] = struct{}{}
 		}
+		for _, dev := range blnDef.PreferCloseToDevices {
+			if resourceName, ok := podResourceDeviceName(dev); ok {
+				podResourceDevices[resourceName] = struct{}{}
+			}
+		}
+		if len(podResourceDevices) > 0 {
+			if !blnDef.PreferNewBalloons || !blnDef.PreferSpreadingPods {
+				devs := slices.Sorted(maps.Keys(podResourceDevices))
+				log.Warnf("balloon type %q prefers affinity container's devices %v, but the same balloon may contain many containers because PreferNewBalloons=%v (suggest: true) and PreferSpreadingPods=%v (suggest: true) to prefer single container per balloon", blnDef.Name, devs, blnDef.PreferNewBalloons, blnDef.PreferSpreadingPods)
+			}
+		}
+
 		if blnDef.SchedulingClass != "" {
 			undefinedSchedulingClasses[blnDef.SchedulingClass] = struct{}{}
 		}
@@ -2166,8 +2190,8 @@ func mergeCpuClassHints(opts *cpuTreeAllocatorOptions, provider cpuClassHints, i
 	if opts.virtDevCpusets == nil {
 		opts.virtDevCpusets = map[string][]cpuset.CPUSet{}
 	}
-	opts.preferCloseToDevices = filterOutHintDevs(opts.preferCloseToDevices)
-	opts.preferFarFromDevices = filterOutHintDevs(opts.preferFarFromDevices)
+	opts.preferCloseToDevices = filterOutPrefixDevs(opts.preferCloseToDevices, cpuClassHintDevPrefix)
+	opts.preferFarFromDevices = filterOutPrefixDevs(opts.preferFarFromDevices, cpuClassHintDevPrefix)
 	for name := range opts.virtDevCpusets {
 		if strings.HasPrefix(name, cpuClassHintDevPrefix) {
 			delete(opts.virtDevCpusets, name)
@@ -2188,17 +2212,177 @@ func mergeCpuClassHints(opts *cpuTreeAllocatorOptions, provider cpuClassHints, i
 	}
 }
 
-// filterOutHintDevs returns devs with all cpuClass hint device names
-// (those carrying cpuClassHintDevPrefix) removed. The returned slice
-// reuses devs' backing array.
-func filterOutHintDevs(devs []string) []string {
+// podResourceHintDevPrefix is the prefix of synthetic virtual device
+// names that carry per-container pod-resource device locality hints.
+const podResourceHintDevPrefix = "__podres_"
+
+// podResourceDeviceName returns the device-plugin extended resource
+// name and true if dev refers to a pod-resource device, that is if it
+// is of the form "podresourceapi:<resourceName>". Otherwise it
+// returns "", false.
+func podResourceDeviceName(dev string) (string, bool) {
+	if podresapi.IsPodResourceHint(dev) {
+		return strings.TrimPrefix(dev, podresapi.HintProvider), true
+	}
+	return "", false
+}
+
+// podResourceHintDevName returns the synthetic virtual device name
+// for the pod-resource device locality hint of resourceName assigned
+// to the container. If resourceName is empty, returned name is a
+// common prefix for all synthetic device names associated with the
+// given (and only the given) container.
+func podResourceHintDevName(c cache.Container, resourceName string) string {
+	ctrID := "unknown"
+	if c != nil {
+		ctrID = c.GetID()
+	}
+	return podResourceHintDevPrefix + ctrID + "_" + resourceName
+}
+
+// filterOutPrefixDevs returns devs with all entries carrying prefix
+// removed. The returned slice reuses devs' backing array.
+func filterOutPrefixDevs(devs []string, prefix string) []string {
 	out := devs[:0]
 	for _, d := range devs {
-		if !strings.HasPrefix(d, cpuClassHintDevPrefix) {
+		if !strings.HasPrefix(d, prefix) {
 			out = append(out, d)
 		}
 	}
 	return out
+}
+
+// containerDeviceCpus returns the set of CPUs that are topologically
+// close to the device instance(s) of resourceName that the kubelet
+// device manager assigned to container c. The second return value is
+// false if the pod resources are not available, if c has no such
+// device assigned, or if the assigned devices carry no NUMA topology
+// information.
+func (p *balloons) containerDeviceCpus(c cache.Container, resourceName string) (cpuset.CPUSet, bool) {
+	if c == nil {
+		return emptyCpuSet, false
+	}
+	ctrRes := c.GetPodResources()
+	if ctrRes == nil {
+		return emptyCpuSet, false
+	}
+	numas := idset.NewIDSet()
+	for _, dev := range ctrRes.GetDevices() {
+		// glob match resourceName (wildcards allowed) against
+		// the device name reported by the pod resources API
+		if matched, err := path.Match(resourceName, dev.GetResourceName()); err != nil || !matched {
+			if err != nil {
+				log.Errorf("invalid resource glob pattern %q: %v", resourceName, err)
+			}
+			continue
+		}
+		devNumas := idset.NewIDSet()
+		for _, node := range dev.GetTopology().GetNodes() {
+			devNumas.Add(idset.ID(node.GetID()))
+		}
+		numas.Add(devNumas.Members()...)
+		log.Debugf("pod-resource device %q of container %s matches pattern %q, NUMA nodes %s, device IDs %v",
+			dev.GetResourceName(), c.PrettyName(), resourceName, devNumas, dev.GetDeviceIds())
+	}
+	if numas.Size() == 0 {
+		return emptyCpuSet, false
+	}
+	cpus := cpuset.New()
+	for _, numaID := range numas.SortedMembers() {
+		// Check that the node exists before calling Node(): for an
+		// unknown id Node() returns a nil *node wrapped in a non-nil
+		// Node interface. FilterNode without filters is an existence
+		// check.
+		if !p.options.System.FilterNode(numaID) {
+			log.Errorf("unknown NUMA node %d in the topology of device %q of container %s",
+				numaID, resourceName, c.PrettyName())
+			continue
+		}
+		cpus = cpus.Union(p.options.System.Node(numaID).CPUSet())
+	}
+	if cpus.IsEmpty() {
+		return emptyCpuSet, false
+	}
+	return cpus.Intersection(p.allowed), true
+}
+
+// applyPodResourcesHints resolves every "podresourceapi:<resourceName>"
+// entry in opts to the CPUs close to the device(s) that the kubelet
+// assigned to container c, and injects the result as synthetic virtual
+// devices. It must be called before creating the CPU tree allocator so
+// that the resolved CPUs are visible to it. Entries are resolved in
+// place, preserving their original priority order among other device
+// hints. Unresolvable entries (no container context, missing pod
+// resources, no assigned device, or no topology info) are dropped.
+func (p *balloons) applyPodResourcesHints(opts *cpuTreeAllocatorOptions, c cache.Container) {
+	if opts == nil {
+		return
+	}
+	if opts.virtDevCpusets == nil {
+		opts.virtDevCpusets = map[string][]cpuset.CPUSet{}
+	}
+	opts.preferCloseToDevices = p.resolvePodResourceDevs(opts.preferCloseToDevices, opts.virtDevCpusets, c)
+}
+
+// resolvePodResourceDevs replaces every pod-resource device entry in
+// devs with a synthetic per-container virtual device, registering the
+// resolved CPUs in virtDevCpusets. Non-pod-resource entries are kept
+// unchanged in their original position. Unresolvable pod-resource
+// entries are dropped.
+func (p *balloons) resolvePodResourceDevs(devs []string, virtDevCpusets map[string][]cpuset.CPUSet, c cache.Container) []string {
+	out := make([]string, 0, len(devs))
+	for _, dev := range devs {
+		resourceName, isPodRes := podResourceDeviceName(dev)
+		if !isPodRes {
+			out = append(out, dev)
+			continue
+		}
+		if c == nil {
+			log.Debugf("dropping pod-resource device %q hint: no container context", dev)
+			continue
+		}
+		cpus, ok := p.containerDeviceCpus(c, resourceName)
+		if !ok {
+			log.Debugf("dropping pod-resource device %q hint: no device locality for container %s",
+				dev, c.PrettyName())
+			continue
+		}
+		name := podResourceHintDevName(c, resourceName)
+		virtDevCpusets[name] = []cpuset.CPUSet{cpus}
+		out = append(out, name)
+		log.Debugf("pod-resource hint: device %q of container %s prefers CPUs %s",
+			resourceName, c.PrettyName(), cpus)
+	}
+	return out
+}
+
+// removePodResourcesHints removes all pod-resource device locality
+// hints that originate from container c from the allocator options of
+// balloon bln and its component balloons.
+func (p *balloons) removePodResourcesHints(bln *Balloon, c cache.Container) {
+	if bln == nil || c == nil {
+		return
+	}
+	prefix := podResourceHintDevName(c, "")
+	blns := append([]*Balloon{bln}, bln.components...)
+	for _, b := range blns {
+		if b.cpuTreeAlloc == nil {
+			continue
+		}
+		opts := &b.cpuTreeAlloc.options
+		removed := false
+		for name := range opts.virtDevCpusets {
+			if strings.HasPrefix(name, prefix) {
+				delete(opts.virtDevCpusets, name)
+				removed = true
+			}
+		}
+		if removed {
+			opts.preferCloseToDevices = filterOutPrefixDevs(opts.preferCloseToDevices, prefix)
+			log.Debugf("removed pod-resource device hints of container %s from balloon %s",
+				c.PrettyName(), b.PrettyName())
+		}
+	}
 }
 
 // fillFarFromDevices adds BalloonDefs implicit device anti-affinities
@@ -2218,6 +2402,13 @@ func (p *balloons) fillFarFromDevices(blnDefs []*BalloonDef) {
 	}
 	for _, blnDef := range blnDefs {
 		for _, closeDev := range blnDef.PreferCloseToDevices {
+			if podresapi.IsPodResourceHint(closeDev) {
+				// A logical pod resources can match multiple
+				// physical devices. Avoiding a logical resource
+				// would mean avoiding the physical device that
+				// the container actually got assigned.
+				continue
+			}
 			if _, ok := devDefClose[closeDev]; !ok {
 				avoidDevs = append(avoidDevs, closeDev)
 				devDefClose[closeDev] = map[string]bool{}
@@ -2574,6 +2765,9 @@ func (p *balloons) dismissContainer(c cache.Container, bln *Balloon) {
 		delete(bln.PodIDs, podID)
 	}
 	bln.updateGroups(c, -1)
+	// Drop pod-resource device locality hints of this container
+	// so that they no longer bias resizing of the balloon.
+	p.removePodResourcesHints(bln, c)
 }
 
 // pinCpuMem pins container to CPUs and memory nodes if flagged
