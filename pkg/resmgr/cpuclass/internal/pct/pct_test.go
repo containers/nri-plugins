@@ -279,7 +279,7 @@ func TestPctHintsNoClassNoOp(t *testing.T) {
 
 	// disabled allocator: hints must short-circuit to empty.
 	a := &Allocator{sys: sys, sst: sst, mode: pctModeDisabled}
-	got := a.Hints(types.AllocationIntent{ClassName: "anything"})
+	got := a.Hints(types.AllocationIntent{ClassName: "anything", RequestedCount: 1})
 	if len(got.Prefer) != 0 || len(got.Avoid) != 0 {
 		t.Errorf("disabled mode: hints=%+v, want empty", got)
 	}
@@ -292,21 +292,21 @@ func TestPctHintsNoClassNoOp(t *testing.T) {
 	a2 := newManagedPctForTest(t, classes,
 		map[string]*pctClassPlan{"lp": {ClosID: 3}},
 		cpuset.MustParse("0-7"), sys, sst)
-	got = a2.Hints(types.AllocationIntent{ClassName: "unknown-class"})
+	got = a2.Hints(types.AllocationIntent{ClassName: "unknown-class", RequestedCount: 1})
 	if len(got.Avoid) != 0 {
 		t.Errorf("no HP class: Avoid=%+v, want empty", got.Avoid)
 	}
 }
 
 // TestPctHintsAssocOnlyPreferClosCpus covers the "explicit CLOS plan"
-// branch in assoc-only mode: hints prefer CPUs already associated to
-// the class's CLOS, enabling bin packing.
+// branch in assoc-only mode: hints prefer free CPUs already
+// associated to the class's CLOS, enabling bin packing.
 func TestPctHintsAssocOnlyPreferClosCpus(t *testing.T) {
 	sys := newTwoPackageFakeSys()
 	sst := &fakeSst{
 		supported: true,
-		// cpus 2 and 3 already on CLOS 1, others on default CLOS 0.
-		cpuClos: map[int]int{2: 1, 3: 1},
+		// cpus 1, 2 and 3 already on CLOS 1, others on default CLOS 0.
+		cpuClos: map[int]int{1: 1, 2: 1, 3: 1},
 	}
 	a := &Allocator{
 		sys:         sys,
@@ -318,7 +318,13 @@ func TestPctHintsAssocOnlyPreferClosCpus(t *testing.T) {
 		hpUsed:      map[int]cpuset.CPUSet{},
 	}
 	pctTestWirePunits(a)
-	got := a.Hints(types.AllocationIntent{ClassName: "c1"})
+	got := a.Hints(types.AllocationIntent{
+		ClassName: "c1",
+		// cpu 1 is on CLOS 1 but already taken by someone
+		// else, so it must not show up in the hint.
+		FreeCpus:       cpuset.MustParse("2-7"),
+		RequestedCount: 1,
+	})
 	if len(got.Prefer) != 1 {
 		t.Fatalf("Prefer count = %d, want 1: got=%+v", len(got.Prefer), got)
 	}
@@ -335,14 +341,14 @@ func TestPctHintsAssocOnlyPreferClosCpus(t *testing.T) {
 }
 
 // TestPctHintsHighPriorityReserveAndClosCpus covers the HP class
-// branch: hints contain (a) CPUs already on the HP CLOS for bin
+// branch: hints contain (a) free CPUs already on the HP CLOS for bin
 // packing and (b) the HP-reserve preference (largest-room package).
 func TestPctHintsHighPriorityReserveAndClosCpus(t *testing.T) {
 	sys := newTwoPackageFakeSys()
 	sst := &fakeSst{
 		supported: true,
-		// cpu 0 already on CLOS 0 (HP).
-		cpuClos: map[int]int{0: 0},
+		// cpus 0 and 1 already on CLOS 0 (HP), cpu 0 in use.
+		cpuClos: map[int]int{0: 0, 1: 0},
 		// max_hp_cpus = 2 per package on both packages.
 		maxHp: map[int]int{0: 2, 1: 2},
 	}
@@ -369,14 +375,20 @@ func TestPctHintsHighPriorityReserveAndClosCpus(t *testing.T) {
 		RequestedCount: 1,
 	})
 
-	// Expect two Prefer hints: CLOS 0 members (cpu 0) and HP reserve
-	// (the package with more HP room - pkg1, since pkg0 has 2-1=1
-	// room left and pkg1 has 2-0=2 room left).
+	// Expect two Prefer hints: free CLOS 0 members (cpu 1, as cpu 0
+	// is already in use) and HP reserve (the package with more HP
+	// room - pkg1, since pkg0 has 2-1=1 room left and pkg1 has
+	// 2-0=2 room left).
 	if len(got.Prefer) != 2 {
 		t.Fatalf("Prefer count = %d, want 2: got=%+v", len(got.Prefer), got.Prefer)
 	}
 	if got.Prefer[0].Name != virtDevSstClosHint(0) {
 		t.Errorf("Prefer[0].Name = %q, want %q", got.Prefer[0].Name, virtDevSstClosHint(0))
+	}
+	wantClos := cpuset.MustParse("1")
+	if !got.Prefer[0].Cpus[0].Equals(wantClos) {
+		t.Errorf("Prefer[0].Cpus = %v, want %s (cpu 0 on CLOS 0 but not free)",
+			got.Prefer[0].Cpus, wantClos)
 	}
 	if got.Prefer[1].Name != virtDevSstHpReserveHint {
 		t.Errorf("Prefer[1].Name = %q, want %q", got.Prefer[1].Name, virtDevSstHpReserveHint)
@@ -420,14 +432,16 @@ func TestPctHintsManagedNonHpAvoidsHpInUse(t *testing.T) {
 	}
 	pctTestWirePunits(a)
 	got := a.Hints(types.AllocationIntent{
-		ClassName: "lp",
-		FreeCpus:  cpuset.MustParse("2-7"),
+		ClassName:      "lp",
+		FreeCpus:       cpuset.MustParse("2-7"),
+		RequestedCount: 1,
 	})
 
-	// LP has a CLOS plan, so Prefer must include CLOS 3 (empty in
-	// our setup) - but only if any CPU is currently on CLOS 3. With
-	// none, classClosID still matches but closCpus returns empty
-	// and the Prefer entry is skipped. So len(Prefer) == 0.
+	// LP has a CLOS plan, so Prefer would include CLOS 3 - but only
+	// if any free CPU is currently on CLOS 3. With none, classClosID
+	// still matches but closCpus returns empty and the Prefer entry
+	// is skipped rather than emitted as an empty CPU set. So
+	// len(Prefer) == 0.
 	if len(got.Prefer) != 0 {
 		t.Errorf("Prefer = %+v, want empty (no LP CPUs currently on CLOS 3)", got.Prefer)
 	}
@@ -452,7 +466,7 @@ func TestPctHintsAllowedBoundsResults(t *testing.T) {
 	sys := newTwoPackageFakeSys()
 	sst := &fakeSst{
 		supported: true,
-		cpuClos:   map[int]int{0: 0, 4: 0}, // HP cpus on both packages
+		cpuClos:   map[int]int{1: 0, 4: 0}, // HP cpus on both packages
 		maxHp:     map[int]int{0: 2, 1: 2},
 	}
 	a := &Allocator{
@@ -477,12 +491,12 @@ func TestPctHintsAllowedBoundsResults(t *testing.T) {
 		RequestedCount: 1,
 	})
 	// closCpus walks a.allowed, so cpu 4 is excluded automatically.
-	// Prefer[0] (closCpus) must contain only cpu 0.
+	// Prefer[0] (free closCpus) must contain only cpu 1.
 	if len(got.Prefer) == 0 {
 		t.Fatalf("Prefer empty, want at least closCpus hint")
 	}
-	if !got.Prefer[0].Cpus[0].Equals(cpuset.MustParse("0")) {
-		t.Errorf("Prefer[0].Cpus = %v, want {0} (cpu 4 outside allowed)", got.Prefer[0].Cpus)
+	if !got.Prefer[0].Cpus[0].Equals(cpuset.MustParse("1")) {
+		t.Errorf("Prefer[0].Cpus = %v, want {1} (cpu 4 outside allowed)", got.Prefer[0].Cpus)
 	}
 	// HP reserve must come from a package whose free CPUs are
 	// inside allowed; only pkg0 qualifies.
@@ -685,8 +699,9 @@ func TestPctHints_HpInUseIsPunitGranular(t *testing.T) {
 	pctTestWirePunits(a)
 
 	got := a.Hints(types.AllocationIntent{
-		ClassName: "lp",
-		FreeCpus:  cpuset.MustParse("1-15"),
+		ClassName:      "lp",
+		FreeCpus:       cpuset.MustParse("1-15"),
+		RequestedCount: 1,
 	})
 	if len(got.Avoid) != 1 {
 		t.Fatalf("Avoid count = %d, want 1: got=%+v", len(got.Avoid), got.Avoid)

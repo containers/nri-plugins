@@ -919,14 +919,20 @@ func (a *Allocator) Hints(intent types.AllocationIntent) types.AllocationHints {
 	if a == nil || !a.Active() {
 		return types.AllocationHints{}
 	}
+	if intent.RequestedCount < 1 {
+		// Not implemented for shrinking CPUsets (negative RequestedCount).
+		// No hints for allocations of unknown size (RequestedCount == 0).
+		return types.AllocationHints{}
+	}
 	out := types.AllocationHints{}
 
 	if closID, ok := a.classClosID(intent.ClassName); ok {
 		closCpus := a.closCpus(closID)
-		if !closCpus.IsEmpty() {
+		freeClosCpus := closCpus.Intersection(intent.FreeCpus)
+		if freeClosCpus.Size() >= intent.RequestedCount {
 			out.Prefer = append(out.Prefer, types.CpuPreference{
 				Name: virtDevSstClosHint(closID),
-				Cpus: []cpuset.CPUSet{closCpus},
+				Cpus: []cpuset.CPUSet{freeClosCpus},
 			})
 		}
 	}
