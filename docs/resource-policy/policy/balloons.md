@@ -477,6 +477,17 @@ balloonTypes:
   - `/sys/class/drm/card0`
   - `/sys/devices/system/cpu/cpu14/cache/index2`
   - `/sys/devices/system/node/node0`
+- Device-plugin devices assigned to a container via the kubelet pod
+  resources API, referenced by their extended resource name with the
+  `podresourceapi:` prefix, like
+  - `podresourceapi:nvidia.com/gpu`
+  - `podresourceapi:intel.com/sgx`
+
+  The resource name may contain shell-style wildcards (`*` matches any
+  sequence of characters, `?` matches a single character) to match
+  several resources at once, like
+  - `podresourceapi:nvidia.com/*`
+  - `podresourceapi:*/gpu`
 - First device in list has highest priority.
 - Automatically adds anti-affinity between listed devices and other balloon types.
 
@@ -487,7 +498,38 @@ balloonTypes:
   - /sys/class/drm/card0
 - name: network-io
   preferCloseToDevices:
-  - /sys/class/net/eth0
+  - podresourceapi:*.com/nic
+```
+
+Unlike sysfs device paths, whose CPU locality is fixed, a
+`podresourceapi:<resourceName>` entry is resolved per container: when
+a container that got such a device triggers creation of a new balloon
+(`preferNewBalloons: true`), the CPUs of the new balloon are selected
+close to the NUMA node(s) of the exact device instance that the
+kubelet device manager assigned to that container. This enables, for
+example, allocating CPUs from the socket that is closest to the
+specific PCI device a container was given, when similar physical
+devices providing the same logical resource exist on multiple
+sockets. When the resource name contains wildcards, the CPUs are
+selected close to the NUMA node(s) of all assigned device instances
+whose resource name matches the pattern.
+
+Using `podresourceapi:` devices requires the pod resources API to be
+enabled with the agent option `podResourceAPI: true`. The balloon type
+should have `preferNewBalloons: true`. Otherwise the container might
+be assigned to an existing balloon instance whose CPUs have been
+selected based on affinity to another physical device in the system
+because another container got that device instead.
+
+```yaml
+config:
+  agent:
+    podResourceAPI: true
+  balloonTypes:
+  - name: gpu-containers
+    preferNewBalloons: true
+    preferCloseToDevices:
+    - podresourceapi:nvidia.com/gpu
 ```
 
 #### Dynamic CPU Preferences
