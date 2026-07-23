@@ -307,6 +307,19 @@ type BalloonDef struct {
 	// may generate a lot of traffic and large CR object updates
 	// to Kubernetes API server.
 	ShowContainersInNrt *bool `json:"showContainersInNrt,omitempty"`
+	// IrqClaim lists IRQs whose CPU affinity is set to the CPUs
+	// of balloons of this type. Each list item refers to IRQs
+	// either by an exact number or by a shell-like wildcard
+	// pattern matching a device or chip name in /proc/interrupts
+	IrqClaim []string `json:"irqClaim,omitempty"`
+	// IrqMode controls how CPU affinities of unclaimed (see
+	// irqClaim) IRQs relate to the CPUs of balloons of this
+	// type. "sink" adds the CPUs to the affinity of IRQs. If sink
+	// balloons are present, they take unclaimed IRQs from other
+	// balloons. "isolate" removes the CPUs of this balloon type
+	// from the affinity of IRQs that are neither claimed nor
+	// sinked.  +kubebuilder:validation:Enum="";sink;isolate
+	IrqMode string `json:"irqMode,omitempty"`
 }
 
 // BalloonDefComponent contains a balloon component definition.
@@ -345,6 +358,15 @@ type LoadClass struct {
 func (bdef BalloonDef) String() string {
 	return bdef.Name
 }
+
+const (
+	// IrqModeSink adds CPUs of a balloon to the affinity of
+	// unclaimed IRQs.
+	IrqModeSink = "sink"
+	// IrqModeIsolate removes CPUs of a balloon from the affinity
+	// of IRQs that are neither claimed nor sinked.
+	IrqModeIsolate = "isolate"
+)
 
 type CPUPriority string
 

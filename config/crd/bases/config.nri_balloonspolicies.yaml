@@ -158,6 +158,25 @@ spec:
                         will remain completely idle as they cannot be allocated to
                         other balloons.
                       type: boolean
+                    irqClaim:
+                      description: |-
+                        IrqClaim lists IRQs whose CPU affinity is set to the CPUs
+                        of balloons of this type. Each list item refers to IRQs
+                        either by an exact number or by a shell-like wildcard
+                        pattern matching a device or chip name in /proc/interrupts
+                      items:
+                        type: string
+                      type: array
+                    irqMode:
+                      description: |-
+                        IrqMode controls how CPU affinities of unclaimed (see
+                        irqClaim) IRQs relate to the CPUs of balloons of this
+                        type. "sink" adds the CPUs to the affinity of IRQs. If sink
+                        balloons are present, they take unclaimed IRQs from other
+                        balloons. "isolate" removes the CPUs of this balloon type
+                        from the affinity of IRQs that are neither claimed nor
+                        sinked.  +kubebuilder:validation:Enum="";sink;isolate
+                      type: string
                     loads:
                       description: |-
                         Loads is a list of loadClasses that describe load generated
