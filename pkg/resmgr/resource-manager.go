@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1"
+	"github.com/containers/nri-plugins/pkg/irq"
 )
 
 // ResourceManager is the interface we expose for controlling the CRI resource manager.
@@ -78,6 +79,7 @@ func NewResourceManager(backend policy.Backend, agt *agent.Agent) (ResourceManag
 	if opt.HostRoot != "" {
 		sysfs.SetSysRoot(opt.HostRoot)
 		topology.SetSysRoot(opt.HostRoot)
+		irq.SetProcRoot(opt.HostRoot)
 	}
 
 	m := &resmgr{
