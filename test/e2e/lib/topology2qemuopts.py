@@ -365,8 +365,8 @@ def qemuopts(numalist):
     machineparam += ",smp-cache.0.cache=l1d,smp-cache.0.topology=core"
     machineparam += ",smp-cache.1.cache=l1i,smp-cache.1.topology=core"
     machineparam += ",smp-cache.2.cache=l2,smp-cache.2.topology=core"
-    machineparam += ",smp-cache.3.cache=l3,smp-cache.3.topology=socket"
-    cpuparam = "-cpu host,x2apic=on,host-cache-info=off"
+    machineparam += ",smp-cache.3.cache=l3,smp-cache.3.topology=die"
+    cpuparam = "-cpu host,+topoext,x2apic=on,host-cache-info=off"
     numaparams = []
     objectparams = []
     deviceparams = []
@@ -527,12 +527,7 @@ def qemuopts(numalist):
                 sourcenode, destnode, node_node_dist[sourcenode][destnode]))
     if lastcpu == -1:
         raise ValueError('no CPUs found, make sure at least one NUMA node has "cores" > 0')
-    if (lastdie + 1) // (lastsocket + 1) > 1:
-        diesparam = ",dies=%s" % ((lastdie + 1) // (lastsocket + 1),)
-    else:
-        # Don't give dies parameter unless it is absolutely necessary
-        # because it requires Qemu >= 5.0.
-        diesparam = ""
+    diesparam = ",dies=%s" % ((lastdie + 1) // (lastsocket + 1),)
     smpparam = "-smp cpus=%s,threads=%s%s,sockets=%s,maxcpus=%s" % (lastcpupresent + 1, threadcount, diesparam, lastsocket + 1, lastcpu + 1)
     maxmem = siadd(siadd(totalmem, totalnvmem), totalcxlmem)
     startmem = sisub(sisub(sisub(maxmem, unpluggedmem), pluggedmem), totalcxlmem)
