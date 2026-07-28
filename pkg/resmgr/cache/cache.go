@@ -217,6 +217,8 @@ type Container interface {
 	GetNamespace() string
 	// GetCtime returns the creation time of the container cache object.
 	GetCtime() time.Time
+	// GetCreatedAt returns the CreatedAt timestamp of the container.
+	GetCreatedAt() int64
 	// UpdateState updates the state of the container.
 	UpdateState(ContainerState)
 	// GetState returns the ContainerState of the container.

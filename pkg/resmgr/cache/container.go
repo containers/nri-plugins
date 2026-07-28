@@ -423,6 +423,10 @@ func (c *container) GetCtime() time.Time {
 	return c.ctime
 }
 
+func (c *container) GetCreatedAt() int64 {
+	return c.Ctr.CreatedAt
+}
+
 func (c *container) UpdateState(state ContainerState) {
 	c.Ctr.State = state
 }
