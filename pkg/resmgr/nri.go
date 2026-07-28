@@ -123,13 +123,13 @@ func (p *nriPlugin) onClose() {
 	os.Exit(1)
 }
 
-func (p *nriPlugin) syncNamesToContainers(containers []cache.Container) []cache.Container {
-	unmapped := make([]cache.Container, 0, len(p.byname))
+func (p *nriPlugin) syncNamesToContainers(containers []cache.Container) map[string]cache.Container {
+	unmapped := map[string]cache.Container{}
 
 	for _, ctr := range containers {
 		old := p.mapNameToContainer(ctr)
-		if old != nil && old.GetID() != ctr.GetID() {
-			unmapped = append(unmapped, old)
+		if old != nil {
+			unmapped[old.GetID()] = old
 		}
 	}
 
@@ -140,13 +140,43 @@ func (p *nriPlugin) mapNameToContainer(ctr cache.Container) cache.Container {
 	name := ctr.PrettyName()
 	old, ok := p.byname[name]
 
-	p.byname[name] = ctr
 	if ok {
-		nri.Infof("%s: remapped container from %s to %s", name, old.GetID(), ctr.GetID())
-		return old
+		switch {
+		case ctr.GetState() == cache.ContainerStateCreating:
+			p.byname[name] = ctr
+			nri.Infof("%s: remapped container from %s to %s (container creation)",
+				name, old.GetID(), ctr.GetID())
+			return old
+		case ctr.GetCreatedAt() > old.GetCreatedAt():
+			p.byname[name] = ctr
+			nri.Infof("%s: remapped container from %s to %s (by creation time)",
+				name, old.GetID(), ctr.GetID())
+			return old
+		case ctr.GetCreatedAt() < old.GetCreatedAt():
+			nri.Infof("%s: keeping container mapped to %s (by creation time)",
+				name, old.GetID())
+			return ctr
+		case ctr.GetState() == cache.ContainerStateCreated &&
+			old.GetState() == cache.ContainerStateRunning:
+			p.byname[name] = ctr
+			nri.Infof("%s: remapped container from %s to %s (by state)",
+				name, old.GetID(), ctr.GetID())
+			return old
+		case ctr.GetState() == cache.ContainerStateRunning &&
+			old.GetState() == cache.ContainerStateCreated:
+			nri.Infof("%s: keeping container mapped to %s (by state)", name, old.GetID())
+			return ctr
+		default:
+			nri.Errorf("%s: remapped container from %s to %s (fallback by order might be wrong)",
+				name, old.GetID(), ctr.GetID())
+			p.byname[name] = ctr
+			return old
+		}
 	}
 
+	p.byname[name] = ctr
 	nri.Infof("%s: mapped container to %s", name, ctr.GetID())
+
 	return nil
 }
 
@@ -279,7 +309,24 @@ func (p *nriPlugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, con
 	}
 
 	unmapped := p.syncNamesToContainers(allocated)
-	if err := m.policy.Sync(allocated, append(released, unmapped...)); err != nil {
+	allocate := []cache.Container{}
+
+	for _, old := range unmapped {
+		old.UpdateState(cache.ContainerStateExited)
+		nri.Infof("marked unmapped container %s (%s) as exited...",
+			old.PrettyName(), old.GetID())
+	}
+
+	for _, c := range allocated {
+		if _, ok := unmapped[c.GetID()]; ok {
+			nri.Infof("filtering unmapped container %s (%s) from being (re)allocated...",
+				c.PrettyName(), c.GetID())
+			continue
+		}
+		allocate = append(allocate, c)
+	}
+
+	if err := m.policy.Sync(allocate, released); err != nil {
 		return nil, fmt.Errorf("failed to sync policy %s: %w", m.policy.ActivePolicy(), err)
 	}
 
