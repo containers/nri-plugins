@@ -599,6 +599,9 @@ func (m *mockContainer) GetMemorySwap() int64 {
 func (m *mockContainer) GetCtime() time.Time {
 	panic("unimplemented")
 }
+func (m *mockContainer) GetCreatedAt() int64 {
+	return 0
+}
 func (m *mockContainer) PreserveCpuResources() bool {
 	return false
 }
