@@ -47,6 +47,7 @@ TOPOLOGY_DIR=${TOPOLOGY_DIR:=e2e}
 
 GH_K8S_REPO="kubernetes/kubernetes"
 export k8s_release=${k8s_release:-"latest"}
+k8s_release="${k8s_release#v}"
 export k8s_version=""
 
 GH_HELM_REPO="helm/helm"
@@ -180,6 +181,7 @@ fi
 # a compiled version of containerd which we should install.
 GH_CONTAINERD_REPO="containerd/containerd"
 export containerd_release=${containerd_release:-latest}
+containerd_release="${containerd_release#v}"
 
 if [ "$k8scri" = "containerd" -a "$containerd_release" = "latest" ]; then
     if latest_containerd_release=$(vm-load-cached-var "$OUTPUT_DIR" latest_containerd_release); then
@@ -205,6 +207,7 @@ export containerd_src=${containerd_src:-}
 # a compiled version of CRI-O which we should install.
 GH_CRIO_REPO="cri-o/cri-o"
 export crio_release=${crio_release:-latest}
+crio_release="${crio_release#v}"
 export crio_src=${crio_src:-}
 
 if [ "$k8scri" = "crio" -a "$crio_release" = "latest" ]; then
