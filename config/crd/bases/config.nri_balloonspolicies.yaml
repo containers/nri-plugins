@@ -856,7 +856,7 @@ spec:
                 type: array
               idleCPUClass:
                 description: |-
-                  IdleCpuClass controls how unusded CPUs outside any a
+                  IdleCpuClass controls how unused CPUs outside any a
                   balloons are (re)configured.
                 type: string
               instrumentation:
