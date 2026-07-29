@@ -85,7 +85,7 @@ type Config struct {
 	// PinMemory controls pinning containers to memory nodes.
 	// +kubebuilder:default=true
 	PinMemory *bool `json:"pinMemory,omitempty"`
-	// IdleCpuClass controls how unusded CPUs outside any a
+	// IdleCpuClass controls how unused CPUs outside any a
 	// balloons are (re)configured.
 	IdleCpuClass string `json:"idleCPUClass,omitempty"`
 	// ReservedPoolNamespaces is a list of namespace globs that
