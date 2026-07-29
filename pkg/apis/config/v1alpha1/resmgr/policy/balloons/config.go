@@ -75,6 +75,7 @@ const (
 
 var (
 	CPUTopologyLevelCount = policy.CPUTopologyLevelCount
+	ValidateCPUClasses    = policy.ValidateCPUClasses
 )
 
 // +kubebuilder:object:generate=true
