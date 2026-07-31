@@ -31,11 +31,9 @@ config:
     httpEndpoint: ":8891"
   log:
     debug:
-      - nri-resource-policy
-      - resource-manager
-      - cache
-      - libmem
-      - policy
+      $(for logger in ${DEBUG_LOGGERS:-resource-manager cache libmem policy}; do echo "
+      - $logger
+      "; done )
     source: true
     klog:
       skip_headers: true
