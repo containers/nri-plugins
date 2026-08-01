@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
 )
 
@@ -112,6 +113,13 @@ func (w *ObjectWatch) run() error {
 				}
 
 				if e.Type == Error {
+					if status, ok := e.Object.(*metav1.Status); ok {
+						log.Errorf("watch %s failed, %s: %s", w.watchname(),
+							status.Reason, status.Message)
+					} else {
+						log.Errorf("watch %s failed with unexpected event +%v", w.watchname(), e)
+					}
+
 					w.markFailing()
 					w.stop()
 					w.scheduleReopen()
