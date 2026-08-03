@@ -45,6 +45,8 @@ const (
 	keyPickResourcesByHints = "pick-resources-by-hints"
 	// annotation key for scheduling class
 	keySchedulingClass = "scheduling-class." + kubernetes.ResmgrKeyNamespace
+	// annotation key for CPU class
+	keyCpuClass = "cpu-class." + kubernetes.ResmgrKeyNamespace
 	// effective annotation key for isolated CPU preference
 	preferIsolatedCPUsKey = "prefer-isolated-cpus" + "." + kubernetes.ResmgrKeyNamespace
 	// effective annotation key for strict isolated CPU preference
@@ -273,6 +275,25 @@ func schedulingClassPreference(ctr cache.Container) (*cfgapi.SchedulingClass, er
 
 	sc, err := opt.GetDefaultSchedulingClass(ctr.GetNamespace(), ctr.GetQOSClass())
 	return sc, err
+}
+
+// cpuClassPreference returns the explicitly annotated or default CPU class
+// for Guaranteed QoS class containers.
+func cpuClassPreference(ctr cache.Container) (string, error) {
+	class, scope, ok := ctr.QueryEffectiveAnnotation(keyCpuClass)
+
+	if ctr.GetQOSClass() == corev1.PodQOSGuaranteed {
+		if !ok {
+			class = opt.DefaultExclusiveCpuClass
+		}
+		return class, nil
+	}
+
+	if ok && scope == cache.ContainerScopedAnnotation {
+		return "", fmt.Errorf("CPU class annotation for non-Guaranteed QoS class container")
+	}
+
+	return "", nil
 }
 
 // coldStartPreference figures out 'cold start' preferences for the container, IOW
