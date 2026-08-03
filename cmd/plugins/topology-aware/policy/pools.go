@@ -417,7 +417,18 @@ func (p *policy) allocatePool(container cache.Container, poolHint string) (Grant
 		offer *libmem.Offer
 	)
 
-	request := newRequest(container, p.memAllocator.Masks().AvailableTypes())
+	class, err := p.resolveCpuClass(container)
+	if err != nil {
+		log.Errorf("%s: failed to resolve CPU class: %v", container.PrettyName(), err)
+		return nil, policyError("failed to resolve CPU class for container %s: %w",
+			container.PrettyName(), err)
+	} else {
+		if class != "" {
+			log.Infof("%s: effective CPU class: %s", container.PrettyName(), class)
+		}
+	}
+
+	request := newRequest(container, p.memAllocator.Masks().AvailableTypes(), class)
 
 	if p.root.FreeSupply().ReservedCPUs().IsEmpty() && request.CPUType() == cpuReserved {
 		// Fallback to allocating reserved CPUs from the shared pool
@@ -609,6 +620,13 @@ func (p *policy) applyGrant(grant Grant) {
 			milliCPU = 1000 * grant.ExclusiveCPUs().Size()
 		}
 		container.SetCPUShares(int64(cache.MilliCPUToShares(int64(milliCPU))))
+
+		if exclusive.Size() > 0 && grant.CPUClass() != "" {
+			if err := p.cpuClasses.UseClass(grant.CPUClass(), exclusive); err != nil {
+				log.Errorf("%s: failed to apply CPU class to cpuset %s: %v",
+					container.PrettyName(), exclusive, err)
+			}
+		}
 	}
 
 	if grant.MemoryType() == memoryPreserve {
@@ -643,11 +661,13 @@ func (p *policy) releasePool(container cache.Container) (Grant, bool) {
 
 	log.Infof("  => releasing grant %s...", grant)
 
-	// Remove the grant from all supplys it uses.
+	// Remove the grant from all supplies it uses.
 	grant.Release()
 
 	delete(p.allocations.grants, container.GetID())
 	p.saveAllocations()
+
+	p.resetCpuClass(container.PrettyName(), grant.ExclusiveCPUs())
 
 	return grant, true
 }
@@ -836,6 +856,13 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 	log.Debugf("  %s: %s, affinity score %f", node1.Name(), score1.String(), a1)
 	log.Debugf("  %s: %s, affinity score %f", node2.Name(), score2.String(), a2)
 
+	if request.FullCPUs() > 0 {
+		log.Debugf("  %s: free %s, CPU class hints: %+v, class hinted %s", node1.Name(),
+			score1.Supply().SharableCPUs(), score1.CpuClassHints(), score1.CpuClassCpus())
+		log.Debugf("  %s: free %s, CPU class hints: %+v, class hinted %s", node2.Name(),
+			score2.Supply().SharableCPUs(), score2.CpuClassHints(), score2.CpuClassCpus())
+	}
+
 	//
 	// Notes:
 	//
@@ -850,6 +877,7 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 	//   - if we have a burstable container, sufficient capacity for the limit wins
 	//   - if we have or tighter fitting memory offer, it wins
 	//   - if only one node matches the memory type request, it wins
+	//   - for CPU classes, if only one node can fulfill the request, it wins
 	//   - for low-prio and high-prio CPU preference, if only one node has such CPUs, it wins
 	//   - if a node is lower in the tree it wins
 	//   - for reserved allocations
@@ -1091,6 +1119,47 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 		}
 
 		log.Debugf("  - memory type is a TIE")
+	}
+
+	// for cpuClasses the sole node that can fufill the request wins
+	if score1.CpuClassHints() != nil && score2.CpuClassHints() != nil {
+		offer1, offer2 := score1.CPUOffer(), score2.CPUOffer()
+		hcpus1, hcpus2 := cpuset.New(), cpuset.New()
+
+		for _, h := range score1.CpuClassHints().Prefer {
+			for _, hinted := range h.Cpus {
+				if offer1.Intersection(hinted).Equals(offer1) {
+					hcpus1 = hinted
+					break
+				}
+			}
+			if hcpus1.Size() > 0 {
+				break
+			}
+		}
+		for _, h := range score2.CpuClassHints().Prefer {
+			for _, hinted := range h.Cpus {
+				if offer2.Intersection(hinted).Equals(offer2) {
+					hcpus2 = hinted
+					break
+				}
+			}
+			if hcpus2.Size() > 0 {
+				break
+			}
+		}
+
+		if offer1.Size() > 0 && offer2.Size() > 0 {
+			if hcpus1.Size() > 0 && hcpus2.Size() == 0 {
+				log.Debugf("  => %s WINS on CPU class hints", node1.Name())
+				return true
+			}
+			if hcpus2.Size() > 0 && hcpus1.Size() == 0 {
+				log.Debugf("  => %s WINS on CPU class hints", node2.Name())
+				return false
+			}
+			log.Debugf("  - CPU class hints are a TIE")
+		}
 	}
 
 	// for low-prio and high-prio CPU preference, the only fulfilling node wins
