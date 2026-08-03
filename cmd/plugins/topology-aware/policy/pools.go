@@ -472,7 +472,7 @@ func (p *policy) allocatePool(container cache.Container, poolHint string) (Grant
 			pool = pools[0]
 		}
 
-		offer = scores[pool.NodeID()].Offer()
+		offer = scores[pool.NodeID()].MemOffer()
 		if offer == nil {
 			return nil, policyError("failed to get offer for request %s", request)
 		}
@@ -830,7 +830,7 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 	isolated2, reserved2, shared2 := score2.IsolatedCapacity(), score2.ReservedCapacity(), score2.SharedCapacity()
 	a1 := affinityScore(affinity, node1)
 	a2 := affinityScore(affinity, node2)
-	o1, o2 := score1.Offer(), score2.Offer()
+	o1, o2 := score1.MemOffer(), score2.MemOffer()
 
 	log.Debugf("comparing scores for %s and %s", node1.Name(), node2.Name())
 	log.Debugf("  %s: %s, affinity score %f", node1.Name(), score1.String(), a1)
