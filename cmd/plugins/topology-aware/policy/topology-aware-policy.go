@@ -24,6 +24,7 @@ import (
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
+	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 
@@ -39,6 +40,9 @@ const (
 
 	// ColdStartDone is the event generated for the end of a container cold start period.
 	ColdStartDone = "cold-start-done"
+
+	// CPU class extended resource domain.
+	CpuClassResourceDomain = "cpuclass.resource-policy.nri.io"
 )
 
 // allocations is our cache.Cachable for saving resource allocations in the cache.
@@ -64,8 +68,9 @@ type policy struct {
 	depth        int                       // tree depth
 	allocations  allocations               // container pool assignments
 	cpuAllocator cpuallocator.CPUAllocator // CPU allocator used by the policy
-	memAllocator *libmem.Allocator
-	metrics      *TopologyAwareMetrics
+	memAllocator *libmem.Allocator         // memory allocator user by the policy
+	cpuClasses   *cpuclass.Handler         // CPU class handler (cpufreq, SST/PCT, etc.)
+	metrics      *TopologyAwareMetrics     // metrics provided by this policy
 }
 
 var opt = &cfgapi.Config{}
@@ -104,6 +109,8 @@ func (p *policy) Setup(opts *policyapi.BackendOptions) error {
 
 	opt = cfg
 	defaultPrio = cfg.DefaultCPUPriority.Value()
+
+	defer p.commitCpuClasses("setup")
 
 	if err := p.initialize(); err != nil {
 		return policyError("failed to initialize %s policy: %w", PolicyName, err)
@@ -225,6 +232,8 @@ func (p *policy) checkAllocations(format string, args ...interface{}) {
 func (p *policy) AllocateResources(container cache.Container) error {
 	log.Debugf("allocating resources for %s (%s)...", container.PrettyName(), container.GetID())
 
+	defer p.commitCpuClasses(container.PrettyName())
+
 	err := p.allocateResources(container, "")
 	if err != nil {
 		return err
@@ -254,6 +263,8 @@ func (p *policy) allocateResources(container cache.Container, poolHint string) e
 func (p *policy) ReleaseResources(container cache.Container) error {
 	log.Debugf("releasing resources for %s (%s)...", container.PrettyName(), container.GetID())
 
+	defer p.commitCpuClasses(container.PrettyName())
+
 	if grant, found := p.releasePool(container); found {
 		p.updateSharedAllocations(&grant)
 	}
@@ -269,6 +280,8 @@ func (p *policy) ReleaseResources(container cache.Container) error {
 // UpdateResources is a resource allocation update request for this policy.
 func (p *policy) UpdateResources(container cache.Container) error {
 	log.Debugf("updating (reallocating) container %s...", container.PrettyName())
+
+	defer p.commitCpuClasses(container.PrettyName())
 
 	grant, found := p.releasePool(container)
 	if !found {
@@ -396,9 +409,32 @@ func (p *policy) GetTopologyZones() []*policyapi.TopologyZone {
 }
 
 // GetExtendedResources returns the node-level extended resources
-// to publish for this policy. The topology-aware policy publishes none.
+// to publish for this policy.
 func (p *policy) GetExtendedResources() map[string]*resource.Quantity {
-	return nil
+	// Own the entire domain unconditionally: any key under it
+	// that we do not explicitly publish below must be removed.
+	out := map[string]*resource.Quantity{
+		CpuClassResourceDomain + "/*": nil,
+	}
+	// Experimental cpuClass.PublishExtendedResource publishes only PCT capacity.
+	if p.cpuClasses == nil || !p.cpuClasses.PctActive() || p.cfg == nil {
+		return out
+	}
+	for _, cc := range p.cfg.CPUClasses {
+		if cc == nil || !cc.PublishExtendedResource {
+			continue
+		}
+		if cc.PctPriority == "" && cc.SstClosID == nil {
+			log.Warnf("ignoring publishExtendedResource on non-PCT cpuClass %q", cc.Name)
+			continue
+		}
+		free := p.cpuClasses.PctFreeClassCapacity(cc.Name, cpuset.New())
+		if free < 0 {
+			free = 0
+		}
+		out[CpuClassResourceDomain+"/"+cc.Name] = resource.NewQuantity(int64(free), resource.DecimalSI)
+	}
+	return out
 }
 
 // ExportResourceData provides resource data to export for the container.
@@ -487,6 +523,8 @@ func (p *policy) Reconfigure(newCfg interface{}) error {
 	p.cfg = cfg
 	defaultPrio = cfg.DefaultCPUPriority.Value()
 
+	defer p.commitCpuClasses("reconfigure")
+
 	if err := p.initialize(); err != nil {
 		*p = savedPolicy
 		return policyError("failed to reconfigure: %v", err)
@@ -533,6 +571,7 @@ func (p *policy) initialize() error {
 	p.nodeCnt = 0
 	p.depth = 0
 	p.allocations = p.newAllocations()
+	p.cpuClasses = nil
 
 	if err := p.checkConstraints(); err != nil {
 		return err
@@ -543,6 +582,29 @@ func (p *policy) initialize() error {
 	}
 
 	opt.UnlimitedBurstable = p.findExistingTopologyLevel(opt.UnlimitedBurstable)
+
+	if len(opt.CPUClasses) > 0 {
+		cc, err := cpuclass.New(p.options.System)
+		if err != nil {
+			return policyError("failed to create CPU class handler: %w", err)
+		}
+		p.cpuClasses = cc
+
+		if err := p.cpuClasses.Configure(cpuclass.ConfigSpec{
+			Classes:     opt.CPUClasses,
+			TurboDomain: "package",
+			Allowed:     p.allowed,
+		}); err != nil {
+			return policyError("failed to configure CPU class handler: %w", err)
+		}
+
+		if err := p.validateCpuClasses(); err != nil {
+			return policyError("failed to validate CPU classes: %w", err)
+		}
+
+		p.resetCpuClass("initialize", p.allowed)
+		p.setReservedPoolCpuClass()
+	}
 
 	return nil
 }

@@ -299,7 +299,7 @@ func TestCpuAllocationPreferences(t *testing.T) {
 		expectedFull           int
 		expectedFraction       int
 		expectedIsolate        bool
-		expectedCpuType        cpuClass
+		expectedCpuType        cpuType
 		disabled               bool
 		reservedPoolNamespaces []string
 	}{

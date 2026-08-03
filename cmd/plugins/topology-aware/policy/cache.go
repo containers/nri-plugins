@@ -84,6 +84,18 @@ func (p *policy) reinstateGrants(grants map[string]Grant) error {
 	for id, grant := range grants {
 		c := grant.GetContainer()
 
+		class, _, err := p.resolveCpuClass(c)
+		switch {
+		case err != nil:
+			log.Warnf("%s: resetting CPU class (%q) due to error: %v",
+				c.PrettyName(), grant.CPUClass(), err)
+			grant.SetCPUClass("")
+		case class != grant.CPUClass():
+			log.Warnf("%s: updating CPU class from %q to %q in reinstated grant",
+				c.PrettyName(), grant.CPUClass(), class)
+			grant.SetCPUClass(class)
+		}
+
 		pool := grant.GetCPUNode()
 		supply := pool.FreeSupply()
 
@@ -128,7 +140,8 @@ type cachedGrant struct {
 	PrettyName string
 	Exclusive  string
 	Part       int
-	CPUType    cpuClass
+	CPUType    cpuType
+	CPUClass   string
 	Container  string
 	Pool       string
 	MemoryPool libmem.NodeMask
@@ -143,6 +156,7 @@ func newCachedGrant(cg Grant) *cachedGrant {
 	ccg.Exclusive = cg.ExclusiveCPUs().String()
 	ccg.Part = cg.CPUPortion()
 	ccg.CPUType = cg.CPUType()
+	ccg.CPUClass = cg.CPUClass()
 	ccg.Container = cg.GetContainer().GetID()
 	ccg.Pool = cg.GetCPUNode().Name()
 	ccg.MemoryPool = cg.GetMemoryZone()
@@ -167,6 +181,7 @@ func (ccg *cachedGrant) ToGrant(policy *policy) (Grant, error) {
 		node,
 		container,
 		ccg.CPUType,
+		ccg.CPUClass,
 		cpuset.MustParse(ccg.Exclusive),
 		ccg.Part,
 		ccg.MemType,
