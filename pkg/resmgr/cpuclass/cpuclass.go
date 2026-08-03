@@ -81,6 +81,8 @@ type Handler struct {
 	// defs maps synthetic class name -> resolved class definition.
 	// Populated by SetClassDef calls from the cpufreq allocator.
 	defs map[string]types.ClassDef
+	// classNames list all known/configured class names
+	classNames map[string]struct{}
 	// cpuClass maps cpu id -> synthetic class name. Value "" means
 	// "explicitly assigned to no class". Absent CPUs are unmanaged.
 	cpuClass map[int]string
@@ -155,7 +157,20 @@ func (h *Handler) Configure(spec ConfigSpec) error {
 	if err := h.pct.Configure(spec.Classes, spec.Allowed); err != nil {
 		return fmt.Errorf("cpuclass: pct configure: %w", err)
 	}
+
+	h.classNames = map[string]struct{}{}
+	for _, cls := range spec.Classes {
+		h.classNames[cls.Name] = struct{}{}
+	}
+
 	return nil
+}
+
+// IsKnownClass returns true if the named CPU class exists. Always returns
+// false before Configure() has been called at least once.
+func (h *Handler) IsKnownClass(name string) bool {
+	_, ok := h.classNames[name]
+	return ok
 }
 
 // SetClassDef records a class definition keyed by its synthetic
