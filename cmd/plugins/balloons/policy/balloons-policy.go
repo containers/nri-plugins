@@ -2151,15 +2151,15 @@ func mergeCpuClassHints(opts *cpuTreeAllocatorOptions, provider cpuClassHints, i
 	hints := provider.Hints(intent)
 	for i, pref := range hints.Prefer {
 		name := fmt.Sprintf("%spref_%d_%s", cpuClassHintDevPrefix, i, pref.Name)
-		opts.virtDevCpusets[name] = []cpuset.CPUSet{pref.Cpus}
+		opts.virtDevCpusets[name] = pref.Cpus
 		opts.preferCloseToDevices = append(opts.preferCloseToDevices, name)
-		log.Debugf("cpuclass hint: prefer %q -> %s", name, pref.Cpus)
+		log.Debugf("cpuclass hint: prefer %q -> %v", name, pref.Cpus)
 	}
 	for i, av := range hints.Avoid {
 		name := fmt.Sprintf("%savoid_%d_%s", cpuClassHintDevPrefix, i, av.Name)
-		opts.virtDevCpusets[name] = []cpuset.CPUSet{av.Cpus}
+		opts.virtDevCpusets[name] = av.Cpus
 		opts.preferFarFromDevices = append(opts.preferFarFromDevices, name)
-		log.Debugf("cpuclass hint: avoid %q -> %s", name, av.Cpus)
+		log.Debugf("cpuclass hint: avoid %q -> %v", name, av.Cpus)
 	}
 }
 

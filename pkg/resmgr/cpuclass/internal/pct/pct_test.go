@@ -326,8 +326,8 @@ func TestPctHintsAssocOnlyPreferClosCpus(t *testing.T) {
 		t.Errorf("Prefer[0].Name = %q, want %q", got.Prefer[0].Name, virtDevSstClosHint(1))
 	}
 	want := cpuset.MustParse("2-3")
-	if !got.Prefer[0].Cpus.Equals(want) {
-		t.Errorf("Prefer[0].Cpus = %s, want %s", got.Prefer[0].Cpus, want)
+	if !got.Prefer[0].Cpus[0].Equals(want) {
+		t.Errorf("Prefer[0].Cpus = %v, want %s", got.Prefer[0].Cpus, want)
 	}
 	if len(got.Avoid) != 0 {
 		t.Errorf("assoc-only mode must not emit Avoid hints: %+v", got.Avoid)
@@ -382,8 +382,8 @@ func TestPctHintsHighPriorityReserveAndClosCpus(t *testing.T) {
 		t.Errorf("Prefer[1].Name = %q, want %q", got.Prefer[1].Name, virtDevSstHpReserveHint)
 	}
 	wantReserve := cpuset.MustParse("4-7")
-	if !got.Prefer[1].Cpus.Equals(wantReserve) {
-		t.Errorf("HP reserve = %s, want %s (largest-room package)", got.Prefer[1].Cpus, wantReserve)
+	if !got.Prefer[1].Cpus[0].Equals(wantReserve) {
+		t.Errorf("HP reserve = %v, want %s (largest-room package)", got.Prefer[1].Cpus, wantReserve)
 	}
 	// HP-class hints must NOT carry an Avoid (HP picks first).
 	if len(got.Avoid) != 0 {
@@ -439,8 +439,8 @@ func TestPctHintsManagedNonHpAvoidsHpInUse(t *testing.T) {
 		t.Errorf("Avoid[0].Name = %q, want %q", got.Avoid[0].Name, virtDevSstHpInUseHint)
 	}
 	wantAvoid := cpuset.MustParse("0-3") // entire pkg0
-	if !got.Avoid[0].Cpus.Equals(wantAvoid) {
-		t.Errorf("Avoid[0].Cpus = %s, want %s (pkg0 == HP-in-use package)", got.Avoid[0].Cpus, wantAvoid)
+	if !got.Avoid[0].Cpus[0].Equals(wantAvoid) {
+		t.Errorf("Avoid[0].Cpus = %v, want %s (pkg0 == HP-in-use package)", got.Avoid[0].Cpus, wantAvoid)
 	}
 }
 
@@ -481,15 +481,15 @@ func TestPctHintsAllowedBoundsResults(t *testing.T) {
 	if len(got.Prefer) == 0 {
 		t.Fatalf("Prefer empty, want at least closCpus hint")
 	}
-	if !got.Prefer[0].Cpus.Equals(cpuset.MustParse("0")) {
-		t.Errorf("Prefer[0].Cpus = %s, want {0} (cpu 4 outside allowed)", got.Prefer[0].Cpus)
+	if !got.Prefer[0].Cpus[0].Equals(cpuset.MustParse("0")) {
+		t.Errorf("Prefer[0].Cpus = %v, want {0} (cpu 4 outside allowed)", got.Prefer[0].Cpus)
 	}
 	// HP reserve must come from a package whose free CPUs are
 	// inside allowed; only pkg0 qualifies.
 	if len(got.Prefer) >= 2 {
 		want := cpuset.MustParse("1-3")
-		if !got.Prefer[1].Cpus.Equals(want) {
-			t.Errorf("HP reserve = %s, want %s (pkg0 free cpus inside allowed)", got.Prefer[1].Cpus, want)
+		if !got.Prefer[1].Cpus[0].Equals(want) {
+			t.Errorf("HP reserve = %v, want %s (pkg0 free cpus inside allowed)", got.Prefer[1].Cpus, want)
 		}
 	}
 }
@@ -556,7 +556,7 @@ func TestPctHints_HpRoomTierAPunitWins(t *testing.T) {
 	var reserve cpuset.CPUSet
 	for _, p := range got.Prefer {
 		if p.Name == virtDevSstHpReserveHint {
-			reserve = p.Cpus
+			reserve = p.Cpus[0]
 		}
 	}
 	if reserve.IsEmpty() {
@@ -607,7 +607,7 @@ func TestPctHints_HpRoomTierBSamePackage(t *testing.T) {
 	var reserve cpuset.CPUSet
 	for _, p := range got.Prefer {
 		if p.Name == virtDevSstHpReserveHint {
-			reserve = p.Cpus
+			reserve = p.Cpus[0]
 		}
 	}
 	if reserve.IsEmpty() {
@@ -693,8 +693,8 @@ func TestPctHints_HpInUseIsPunitGranular(t *testing.T) {
 	}
 	// Must be punit-0 (cpus 0-3) ONLY, not all of pkg0 (0-7).
 	want := cpuset.MustParse("0-3")
-	if !got.Avoid[0].Cpus.Equals(want) {
-		t.Errorf("Avoid = %s, want %s (punit-0 only, not full pkg0)", got.Avoid[0].Cpus, want)
+	if !got.Avoid[0].Cpus[0].Equals(want) {
+		t.Errorf("Avoid = %v, want %s (punit-0 only, not full pkg0)", got.Avoid[0].Cpus, want)
 	}
 }
 
