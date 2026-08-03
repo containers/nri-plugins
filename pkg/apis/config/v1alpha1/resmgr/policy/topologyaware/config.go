@@ -31,6 +31,7 @@ type (
 	AmountKind       = policy.AmountKind
 	CPUTopologyLevel = policy.CPUTopologyLevel
 	SchedulingClass  = policy.SchedulingClass
+	CPUClass         = policy.CPUClass
 )
 
 const (
@@ -70,6 +71,7 @@ const (
 
 var (
 	CPUTopologyLevelCount = policy.CPUTopologyLevelCount
+	ValidateCPUClasses    = policy.ValidateCPUClasses
 )
 
 type CPUPriority string
@@ -167,6 +169,26 @@ type Config struct {
 	// in that QoS class inherit it unless they are annotated otherwise.
 	// +optional
 	PodQoSSchedulingClasses map[string]string `json:"podQoSSchedulingClasses,omitempty"`
+	// CPUClasses define a combination of CPU frequency, C-state, and turbo
+	// attributes. Containers eligible for exclusive CPU allocation can then
+	// be annotated to a CPU class.
+	// +optional
+	CPUClasses []*CPUClass `json:"cpuClasses,omitempty"`
+	// SharedPoolCpuClass controls how CPUs are reconfigured when they are returned
+	// from exclusive use to a shared pool. If any CPU classes are defined
+	// a shared CPU class must be specified.
+	// +optional
+	SharedPoolCpuClass string `json:"sharedPoolCPUClass,omitempty"`
+	// ReservedPoolCpuClass controls how CPUs are reconfigured when they are assigned
+	// to the reserved pool. If no reserved CPU class is designated, the shared
+	// CPU class will be used for the reserved pool.
+	// +optional
+	ReservedPoolCpuClass string `json:"reservedPoolCPUClass,omitempty"`
+	// DefaultExclusiveCpuClass controls how CPUs are reconfigured when they are
+	// assigned for excusive use to containers which are not annotated to use
+	// any CPU class.
+	// +optional
+	DefaultExclusiveCpuClass string `json:"defaultExclusiveCPUClass,omitempty"`
 }
 
 var (
@@ -207,6 +229,36 @@ func (c *Config) Validate() error {
 		if c.GetSchedulingClass(scheduling) == nil {
 			errs = append(errs,
 				fmt.Errorf("unknown scheduling class %q for namespace %q", scheduling, ns))
+		}
+	}
+
+	if len(c.CPUClasses) > 0 {
+		cc, _, _, err := ValidateCPUClasses(c.CPUClasses)
+		if err != nil {
+			errs = append(errs, err)
+		}
+
+		if c.SharedPoolCpuClass == "" {
+			errs = append(errs, fmt.Errorf("shared CPU class not specified"))
+		}
+		if _, ok := cc[c.SharedPoolCpuClass]; !ok {
+			errs = append(errs, fmt.Errorf("unknown shared CPU class %q", c.SharedPoolCpuClass))
+		}
+
+		if c.ReservedPoolCpuClass != "" {
+			if _, ok := cc[c.ReservedPoolCpuClass]; !ok {
+				errs = append(errs, fmt.Errorf("unknown reserved CPU class %q",
+					c.ReservedPoolCpuClass))
+			}
+		} else {
+			c.ReservedPoolCpuClass = c.SharedPoolCpuClass
+		}
+
+		if c.DefaultExclusiveCpuClass != "" {
+			if _, ok := cc[c.DefaultExclusiveCpuClass]; !ok {
+				errs = append(errs, fmt.Errorf("unknown default exclusive CPU class %q",
+					c.DefaultExclusiveCpuClass))
+			}
 		}
 	}
 
