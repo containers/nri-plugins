@@ -45,6 +45,8 @@ const (
 	keyPickResourcesByHints = "pick-resources-by-hints"
 	// annotation key for scheduling class
 	keySchedulingClass = "scheduling-class." + kubernetes.ResmgrKeyNamespace
+	// annotation key for CPU class
+	keyCpuClass = "cpu-class." + kubernetes.ResmgrKeyNamespace
 	// effective annotation key for isolated CPU preference
 	preferIsolatedCPUsKey = "prefer-isolated-cpus" + "." + kubernetes.ResmgrKeyNamespace
 	// effective annotation key for strict isolated CPU preference
@@ -78,18 +80,18 @@ const (
 	prefAnnotated
 )
 
-// cpuClass is a type of CPU to allocate
-type cpuClass int
+// cpuType is a type of CPU to allocate
+type cpuType int
 
-// names by cpu class
-var cpuClassNames = map[cpuClass]string{
+// names by cpu type
+var cpuTypeNames = map[cpuType]string{
 	cpuNormal:   "normal",
 	cpuReserved: "reserved",
 	cpuPreserve: "preserve",
 }
 
 const (
-	cpuNormal cpuClass = iota
+	cpuNormal cpuType = iota
 	cpuReserved
 	cpuPreserve
 )
@@ -275,6 +277,40 @@ func schedulingClassPreference(ctr cache.Container) (*cfgapi.SchedulingClass, er
 	return sc, err
 }
 
+// cpuClassPreference returns the explicitly annotated or default CPU class
+// for Guaranteed QoS class containers.
+func cpuClassPreference(ctr cache.Container) (string, bool, error) {
+	class, scope, ok := ctr.QueryEffectiveAnnotation(keyCpuClass)
+	qos := ctr.GetQOSClass()
+
+	// CPU class annotations are valid for Guaranteed QoS class containers with
+	// exclusive CPU allocation. If unannotated, such containers get assigned to
+	// the default exclusive CPU class (if it is set). Exclusive CPU allocation
+	// is checked elsewhere, so for Guaranteed QoS class we also return whether
+	// the preference is from a container-scoped annotation.
+	//
+	// Non-Guaranteed QoS class containers are not allowed to get assigned to
+	// any class. We only flag as error container-scoped annotations for such
+	// containers to allow setting pod-wide defaults with container-specific
+	// exceptions.
+
+	if !ok {
+		if qos == corev1.PodQOSGuaranteed {
+			return opt.DefaultExclusiveCpuClass, false, nil
+		}
+	} else {
+		if qos == corev1.PodQOSGuaranteed {
+			return class, scope == cache.ContainerScopedAnnotation, nil
+		}
+		if scope == cache.ContainerScopedAnnotation {
+			return "", false, fmt.Errorf("CPU class (%q) invalid for non-Guaranteed QoS class (%v)",
+				class, qos)
+		}
+	}
+
+	return "", false, nil
+}
+
 // coldStartPreference figures out 'cold start' preferences for the container, IOW
 // if the container memory should be allocated for an initial 'cold start' period
 // from PMEM, and how long this initial period should be.
@@ -353,9 +389,9 @@ func checkReservedCPUsAnnotations(c cache.Container) (bool, bool) {
 // 2. fraction: amount of fractional CPU in milli-CPU
 // 3. limit: CPU limit for this container
 // 4. isolate: (bool) whether to prefer isolated full CPUs
-// 5. cpuType: (cpuClass) class of CPU to allocate (reserved vs. normal)
+// 5. cpuType: type of CPU to allocate (reserved vs. normal)
 // 6. cpuPrio: preferred CPU allocator priority for CPU allocation.
-func cpuAllocationPreferences(pod cache.Pod, container cache.Container) (int, int, int, bool, cpuClass, cpuPrio) {
+func cpuAllocationPreferences(pod cache.Pod, container cache.Container) (int, int, int, bool, cpuType, cpuPrio) {
 	//
 	// CPU allocation preferences for a container consist of
 	//
@@ -550,12 +586,12 @@ func (p *policy) unlimitedBurstablePreference(container cache.Container) cfgapi.
 	return level
 }
 
-// String stringifies a cpuClass.
-func (t cpuClass) String() string {
-	if cpuClassName, ok := cpuClassNames[t]; ok {
-		return cpuClassName
+// String stringifies a cpuType.
+func (t cpuType) String() string {
+	if cpuTypeName, ok := cpuTypeNames[t]; ok {
+		return cpuTypeName
 	}
-	return fmt.Sprintf("#UNNAMED-CPUCLASS(%d)", int(t))
+	return fmt.Sprintf("#UNNAMED-CPUTYPE(%d)", int(t))
 }
 
 // String stringifies a memoryType.
