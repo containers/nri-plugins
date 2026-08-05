@@ -452,7 +452,7 @@ func (a *Allocator) Active() bool {
 	return a != nil && a.mode != pctModeDisabled
 }
 
-// freeClassCapacity returns the number of logical CPUs that can
+// FreeClassCapacity returns the number of logical CPUs that can
 // still be allocated to className, given that 'held' lists CPUs
 // already consumed by some balloon on this node (any class).
 //
