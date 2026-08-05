@@ -453,6 +453,13 @@ func (p *nriPlugin) CreateContainer(ctx context.Context, pod *api.PodSandbox, co
 	m.Lock()
 	defer m.Unlock()
 
+	m.cache.BlockSave()
+	defer func() {
+		if err := m.cache.UnblockSave(); err != nil {
+			nri.Errorf("failed to unblock cache save: %v", err)
+		}
+	}()
+
 	c, err := m.cache.InsertContainer(container, cache.WithContainerState(cache.ContainerStateCreating))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to cache container: %w", err)
