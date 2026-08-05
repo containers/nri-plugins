@@ -43,8 +43,7 @@
 #include <pthread.h>
 #include <linux/futex.h>
 #include <sys/syscall.h>
-
-#define uint64_t u_int64_t
+#include <stdint.h>
 
 #define NS_PER_SEC 1000000000ULL
 #define MICROSECOND 1000ULL
@@ -129,6 +128,10 @@ void delay(uint64_t ns) {
     req.tv_sec = ns / NS_PER_SEC;
     req.tv_nsec = ns % NS_PER_SEC;
     while (nanosleep(&req, &rem) == -1) {
+        if (errno != EINTR) {
+            perror("delay: nanosleep");
+            exit(EXIT_FAILURE);
+        }
         req = rem; // continue sleeping for the remaining time if interrupted
     }
 }
@@ -260,10 +263,10 @@ uint64_t get_time_ns() {
   return (uint64_t)ts.tv_sec * NS_PER_SEC + (uint64_t)ts.tv_nsec;
 }
 
-// compare_uint64 - comparison function for qsort
-int compare_uint64(const void *a, const void *b) {
-  uint64_t val1 = *(const uint64_t *)a;
-  uint64_t val2 = *(const uint64_t *)b;
+// compare_int64 - comparison function for qsort
+int compare_int64(const void *a, const void *b) {
+  uint64_t val1 = *(const int64_t *)a;
+  uint64_t val2 = *(const int64_t *)b;
   if (val1 < val2) return -1;
   if (val1 > val2) return 1;
   return 0;
@@ -329,8 +332,7 @@ void measure_nanosleep(int64_t busy_ns, int64_t sleep_ns, int64_t *out_latencies
 
         // request a short sleep using nanosleep, even if sleep_ns is 0
         if (sleep_ns >= 0) {
-            struct timespec req = {0, sleep_ns};
-            nanosleep(&req, NULL);
+            delay(sleep_ns);
         }
 
         int64_t sleep_end = get_time_ns();
@@ -480,8 +482,7 @@ void measure_networking(int64_t busy_ns, int64_t sleep_ns, int64_t *out_latencie
         }
 
         if (sleep_ns > 0) {
-            struct timespec req = {0, sleep_ns};
-            nanosleep(&req, NULL);
+            delay(sleep_ns);
         }
 
         int64_t start = get_time_ns();
@@ -560,8 +561,7 @@ void* futex_thread_func(void *arg) {
         // Thread 1: initiates the ping-pong
         for (int i = 0; i < iters; i++) {
             if (args->sleep_ns > 0) {
-                struct timespec req = {0, args->sleep_ns};
-                nanosleep(&req, NULL);
+                delay(args->sleep_ns);
             }
 
             if (args->busy_ns > 0) {
@@ -731,14 +731,14 @@ const char* benchmark_name(benchmark_type_t type) {
 }
 
 void print_latencies(int64_t *latencies) {
-    uint64_t total_latency = 0;
+    int64_t total_latency = 0;
     int64_t iters = options.iterations;
     for (int i = 0; i < iters; i++) {
         total_latency += latencies[i];
     }
 
     // Sort latencies for percentile calculation
-    qsort(latencies, iters, sizeof(uint64_t), compare_uint64);
+    qsort(latencies, iters, sizeof(int64_t), compare_int64);
 
     double avg_latency = (double)total_latency / iters;
 
@@ -761,6 +761,8 @@ void parse_options(int argc, char *argv[]) {
     // Default values
     options.cpu_count = 0;
     options.polprio_count = 0;
+    options.cpuidle_count = 0;
+    options.cpufreq_count = 0;
     options.busy_count = 0;
     options.sleep_count = 0;
     options.toggle_count = 0;
@@ -861,21 +863,21 @@ void parse_options(int argc, char *argv[]) {
             options.busy_count = 0; // Reset defaults
             char *token = strtok(argv[++i], ",");
             while (token && options.busy_count < MAX_COMB) {
-                options.busy_times[options.busy_count++] = strtoull(token, NULL, 10);
+                options.busy_times[options.busy_count++] = strtoll(token, NULL, 10);
                 token = strtok(NULL, ",");
             }
         } else if (strcmp(argv[i], "-s") == 0 && i + 1 < argc) {
             options.sleep_count = 0; // Reset defaults
             char *token = strtok(argv[++i], ",");
             while (token && options.sleep_count < MAX_COMB) {
-                options.sleep_times[options.sleep_count++] = strtoull(token, NULL, 10);
+                options.sleep_times[options.sleep_count++] = strtoll(token, NULL, 10);
                 token = strtok(NULL, ",");
             }
         } else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
             options.toggle_count = 0; // Reset defaults
             char *token = strtok(argv[++i], ",");
             while (token && options.toggle_count < MAX_COMB) {
-                options.toggle_intervals[options.toggle_count++] = strtoull(token, NULL, 10);
+                options.toggle_intervals[options.toggle_count++] = strtoll(token, NULL, 10);
                 token = strtok(NULL, ",");
             }
         } else if (strcmp(argv[i], "-I") == 0 && i + 1 < argc) {
@@ -914,7 +916,7 @@ int main(int argc, char *argv[]) {
             benchmark_type_t benchmark = options.benchmarks[bench_idx];
 
         for (int toggle_idx = 0; toggle_idx < options.toggle_count; toggle_idx++) {
-            int toggle_ns = options.toggle_intervals[toggle_idx];
+            int64_t toggle_ns = options.toggle_intervals[toggle_idx];
 
             for (int cpu_idx = 0; cpu_idx < (options.cpu_count ? options.cpu_count : 1); cpu_idx++) {
                 int cpu = options.cpu_count ? options.cpus[cpu_idx][0] : -1;
@@ -975,7 +977,7 @@ int main(int argc, char *argv[]) {
                                     }
 
                                     // print measurement parameters and results
-                                    printf("%s %d %d %d %d %d %d %d %d %d %d %ld %ld ",
+                                    printf("%s %d %d %d %ld %d %d %d %d %d %d %ld %ld ",
                                            benchmark_name(benchmark),
                                            r + 1,
                                            cpu,
