@@ -223,7 +223,7 @@ func (a *Allocator) Configure(classes []*policyapi.CPUClass, allowed cpuset.CPUS
 		// defined). Leaving them on CLOS 0 inflates the SST-TF
 		// active-HP-core count on every punit and prevents bucket-0
 		// turbo selection on punits hosting both an HP and an LP
-		// balloon.
+		// allocations.
 		if lpClos != nil {
 			a.fallbackClos = *lpClos
 			log.Infof("pct: fallback CLOS for non-PCT CPUs set to %d (LP)", a.fallbackClos)
@@ -454,7 +454,7 @@ func (a *Allocator) Active() bool {
 
 // FreeClassCapacity returns the number of logical CPUs that can
 // still be allocated to className, given that 'held' lists CPUs
-// already consumed by some balloon on this node (any class).
+// already consumed by some allocations on this node (any class).
 //
 // Same formula in managed and assoc-only modes:
 //   - HP class: sum over HP-eligible punits of
