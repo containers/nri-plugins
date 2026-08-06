@@ -87,8 +87,9 @@ func (w *Writer) Enforce(class string, def types.ClassDef, cpus []int) error {
 
 	var firstErr error
 	for _, cpu := range cpus {
-		state := w.lastWritten[cpu]
+		log.Debugf("enforcing cpu frequency from class %q on cpu %d", class, cpu)
 
+		state := w.lastWritten[cpu]
 		if min > 0 && (!state.hasMin || state.min != min) {
 			log.Debugf("enforcing cpu frequency min %d from class %q on cpu %d", min, class, cpu)
 			if err := w.callSetMin(cpu, int(min)); err != nil {
