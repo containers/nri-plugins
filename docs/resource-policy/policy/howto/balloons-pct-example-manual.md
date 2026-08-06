@@ -13,7 +13,7 @@ For background on the feature, see the
 [Intel(R) Xeon(R) 6 with Priority Core Turbo Technical
 Brief](https://www.intel.com/content/www/us/en/products/docs/processors/xeon/6-priority-core-turbo-brief.html),
 the [PCT section of the balloons policy
-documentation](../balloons.md#priority-core-turbo-pct), and the
+documentation](../common-functionality.md#priority-core-turbo-pct), and the
 [Intel Speed Select kernel
 documentation](https://docs.kernel.org/admin-guide/pm/intel-speed-select.html).
 
