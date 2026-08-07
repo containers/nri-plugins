@@ -14,6 +14,11 @@
 
 package policy
 
+import (
+	"errors"
+	"fmt"
+)
+
 // CPUClass specifies CPU frequency, C-state, and turbo attributes
 // for a CPU class.
 // +k8s:deepcopy-gen=true
@@ -94,4 +99,96 @@ type CPUClass struct {
 	// on a single node. Has effect only when the class also carries
 	// PctPriority or SstClosID. Experimental.
 	PublishExtendedResource bool `json:"publishExtendedResource,omitempty"`
+}
+
+func (cc *CPUClass) Validate() error {
+	if cc.Name == "" {
+		return errors.New("missing or empty name in a cpuClasses entry")
+	}
+	// Validate PCT fields.
+	if cc.PctPriority != "" && cc.SstClosID != nil {
+		return fmt.Errorf("cpuClass %q: pctPriority and sstClosID are mutually exclusive", cc.Name)
+	}
+	switch cc.PctPriority {
+	case "", "high", "low":
+	default:
+		return fmt.Errorf("cpuClass %q: invalid pctPriority %q (allowed: \"high\", \"low\")", cc.Name, cc.PctPriority)
+	}
+	if cc.SstClosID != nil {
+		if *cc.SstClosID < 0 {
+			return fmt.Errorf("cpuClass %q: sstClosID must be >= 0, got %d", cc.Name, *cc.SstClosID)
+		}
+	}
+	// pctMinFreq/pctMaxFreq only take effect in managed
+	// mode (pctPriority); they program the SST CLOS that
+	// policies own. With sstClosID the CLOS is
+	// pre-programmed by intel-speed-select/BIOS, and
+	// without any PCT field the cpuClass is not a PCT
+	// class at all. In both cases these fields are silent
+	// no-ops; reject them so users don't tweak values that
+	// have no effect.
+	if cc.PctMinFreq != 0 || cc.PctMaxFreq != 0 {
+		switch {
+		case cc.SstClosID != nil:
+			return fmt.Errorf("cpuClass %q: pctMinFreq/pctMaxFreq require pctPriority (managed mode); they are incompatible with sstClosID, where the SST CLOS is pre-programmed by intel-speed-select/BIOS", cc.Name)
+		case cc.PctPriority == "":
+			return fmt.Errorf("cpuClass %q: pctMinFreq/pctMaxFreq require pctPriority (managed mode); the cpuClass is currently not a PCT class", cc.Name)
+		}
+	}
+	// publishExtendedResource only makes sense for PCT
+	// classes -- the agent computes capacity from a PCT
+	// plan. Reject it on non-PCT classes so users don't
+	// expect a node-level resource that will never be
+	// published.
+	if cc.PublishExtendedResource && cc.PctPriority == "" && cc.SstClosID == nil {
+		return fmt.Errorf("cpuClass %q: publishExtendedResource requires the cpuClass to be a PCT class (set pctPriority or sstClosID)", cc.Name)
+	}
+
+	return nil
+}
+
+func ValidateCPUClasses(cpuClasses []*CPUClass) (cpuClassNames map[string]struct{}, pctManaged map[string]string, pctAssocOnly map[string]int, err error) {
+	cpuClassNames = map[string]struct{}{}
+	pctManaged = map[string]string{}
+	pctAssocOnly = map[string]int{}
+
+	for _, cc := range cpuClasses {
+		if err = cc.Validate(); err != nil {
+			return nil, nil, nil, err
+		}
+
+		if _, dup := cpuClassNames[cc.Name]; dup {
+			return nil, nil, nil, fmt.Errorf("duplicate cpuClasses name: %q", cc.Name)
+		}
+
+		switch {
+		case cc.PctPriority != "":
+			pctManaged[cc.Name] = cc.PctPriority
+		case cc.SstClosID != nil:
+			pctAssocOnly[cc.Name] = *cc.SstClosID
+		}
+		cpuClassNames[cc.Name] = struct{}{}
+	}
+
+	if len(pctManaged) > 0 && len(pctAssocOnly) > 0 {
+		return nil, nil, nil, fmt.Errorf("mixing managed (pctPriority) and assoc-only (sstClosID) PCT cpuClasses is not allowed: managed=%v, assocOnly=%v", pctManaged, pctAssocOnly)
+	}
+	if len(pctManaged) > 0 {
+		hpClasses, lpClasses := []string{}, []string{}
+		for name, prio := range pctManaged {
+			if prio == "high" {
+				hpClasses = append(hpClasses, name)
+			} else {
+				lpClasses = append(lpClasses, name)
+			}
+		}
+		if len(hpClasses) > 1 {
+			return nil, nil, nil, fmt.Errorf("at most one managed PCT cpuClass with pctPriority=high allowed, got %d: %v", len(hpClasses), hpClasses)
+		}
+		if len(lpClasses) > 1 {
+			return nil, nil, nil, fmt.Errorf("at most one managed PCT cpuClass with pctPriority=low allowed, got %d: %v", len(lpClasses), lpClasses)
+		}
+	}
+
+	return cpuClassNames, pctManaged, pctAssocOnly, nil
 }

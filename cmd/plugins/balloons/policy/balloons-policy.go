@@ -1702,79 +1702,11 @@ func (p *balloons) validateConfig(bpoptions *BalloonsOptions) error {
 		return balloonsError("schedulingClass(es) defined in balloonTypes but missing from schedulingClasses: %v", undefinedSchedulingClasses)
 	}
 	// Validate CPUClasses.
-	cpuClassNames := map[string]struct{}{}
-	pctManaged := map[string]string{} // class name -> "high"/"low"
-	pctAssocOnly := map[string]int{}  // class name -> CLOS id
-	for _, cc := range bpoptions.CPUClasses {
-		if cc.Name == "" {
-			return balloonsError("missing or empty name in a cpuClasses entry")
-		}
-		if _, dup := cpuClassNames[cc.Name]; dup {
-			return balloonsError("duplicate cpuClasses name: %q", cc.Name)
-		}
-		cpuClassNames[cc.Name] = struct{}{}
-		// Validate PCT fields.
-		if cc.PctPriority != "" && cc.SstClosID != nil {
-			return balloonsError("cpuClass %q: pctPriority and sstClosID are mutually exclusive", cc.Name)
-		}
-		switch cc.PctPriority {
-		case "", "high", "low":
-		default:
-			return balloonsError("cpuClass %q: invalid pctPriority %q (allowed: \"high\", \"low\")", cc.Name, cc.PctPriority)
-		}
-		if cc.PctPriority != "" {
-			pctManaged[cc.Name] = cc.PctPriority
-		}
-		if cc.SstClosID != nil {
-			if *cc.SstClosID < 0 {
-				return balloonsError("cpuClass %q: sstClosID must be >= 0, got %d", cc.Name, *cc.SstClosID)
-			}
-			pctAssocOnly[cc.Name] = *cc.SstClosID
-		}
-		// pctMinFreq/pctMaxFreq only take effect in managed
-		// mode (pctPriority); they program the SST CLOS that
-		// balloons owns. With sstClosID the CLOS is
-		// pre-programmed by intel-speed-select/BIOS, and
-		// without any PCT field the cpuClass is not a PCT
-		// class at all. In both cases these fields are silent
-		// no-ops; reject them so users don't tweak values that
-		// have no effect.
-		if cc.PctMinFreq != 0 || cc.PctMaxFreq != 0 {
-			switch {
-			case cc.SstClosID != nil:
-				return balloonsError("cpuClass %q: pctMinFreq/pctMaxFreq require pctPriority (managed mode); they are incompatible with sstClosID, where the SST CLOS is pre-programmed by intel-speed-select/BIOS", cc.Name)
-			case cc.PctPriority == "":
-				return balloonsError("cpuClass %q: pctMinFreq/pctMaxFreq require pctPriority (managed mode); the cpuClass is currently not a PCT class", cc.Name)
-			}
-		}
-		// publishExtendedResource only makes sense for PCT
-		// classes -- the agent computes capacity from a PCT
-		// plan. Reject it on non-PCT classes so users don't
-		// expect a node-level resource that will never be
-		// published.
-		if cc.PublishExtendedResource && cc.PctPriority == "" && cc.SstClosID == nil {
-			return balloonsError("cpuClass %q: publishExtendedResource requires the cpuClass to be a PCT class (set pctPriority or sstClosID)", cc.Name)
-		}
+	cpuClassNames, _, _, err := cfgapi.ValidateCPUClasses(bpoptions.CPUClasses)
+	if err != nil {
+		return err
 	}
-	if len(pctManaged) > 0 && len(pctAssocOnly) > 0 {
-		return balloonsError("mixing managed (pctPriority) and assoc-only (sstClosID) PCT cpuClasses is not allowed: managed=%v, assocOnly=%v", pctManaged, pctAssocOnly)
-	}
-	if len(pctManaged) > 0 {
-		hpClasses, lpClasses := []string{}, []string{}
-		for name, prio := range pctManaged {
-			if prio == "high" {
-				hpClasses = append(hpClasses, name)
-			} else {
-				lpClasses = append(lpClasses, name)
-			}
-		}
-		if len(hpClasses) > 1 {
-			return balloonsError("at most one managed PCT cpuClass with pctPriority=high allowed, got %d: %v", len(hpClasses), hpClasses)
-		}
-		if len(lpClasses) > 1 {
-			return balloonsError("at most one managed PCT cpuClass with pctPriority=low allowed, got %d: %v", len(lpClasses), lpClasses)
-		}
-	}
+
 	// Verify that cpuClass references in balloon types are
 	// defined in cpuClasses. Using the legacy control.cpu.classes
 	// configuration is discouraged and it is possibly out-of-date
