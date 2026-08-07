@@ -48,8 +48,8 @@ type CPUClass struct {
 	// Example: ["C4", "C6", "C8", "C10"]
 	DisabledCstates []string `json:"disabledCstates,omitempty"`
 	// TurboPriority controls exclusive turbo frequency access.
-	// Among CPU classes with active balloons, only the class with
-	// the highest turboPriority gets the symbolic frequency "turbo"
+	// Among CPU classes with active CPU allocations, only the class
+	// with the highest turboPriority gets the symbolic frequency "turbo"
 	// resolved to the actual turbo frequency. All other classes get
 	// "turbo" resolved to the base frequency instead.
 	// If all classes have turboPriority 0 (default), every class
@@ -86,13 +86,12 @@ type CPUClass struct {
 	// Same caveat as PctMinFreq.
 	PctMaxFreq Frequency `json:"pctMaxFreq,omitempty"`
 	// PublishExtendedResource opts this CPU class into publishing
-	// a node-level extended resource named
-	// "cpuclass.balloons.nri.io/<class-name>" whose value reflects
-	// the number of logical CPUs that the balloons policy is
-	// currently able to route into this class on the node. The
-	// scheduler can then bin-pack/spread balloons by adding the
-	// same resource to pod requests, avoiding HP-CPU
-	// over-subscription on a single node. Has effect only when
-	// the class also carries PctPriority or SstClosID. Experimental.
+	// a node-level extended resource, using a policy chosen name,
+	// whose value reflects the number of logical CPUs that the policy
+	// is currently able to route into this class on the node. The
+	// scheduler can then bin-pack/spread containers by adding the
+	// same resource to pod requests, avoiding HP-CPU over-subscription
+	// on a single node. Has effect only when the class also carries
+	// PctPriority or SstClosID. Experimental.
 	PublishExtendedResource bool `json:"publishExtendedResource,omitempty"`
 }
