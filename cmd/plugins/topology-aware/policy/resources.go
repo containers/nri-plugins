@@ -127,6 +127,8 @@ type Request interface {
 	MemoryLimit() int64
 	// PickByHints returns if picking resources by hints is preferred for this request.
 	PickByHints() bool
+	// IrqAffinity returns the IRQ affinity for this request.
+	IrqAffinity() *IrqAffinity
 	// ColdStart returns the cold start timeout.
 	ColdStart() time.Duration
 }
@@ -176,6 +178,9 @@ type Grant interface {
 	SetMemoryZone(libmem.NodeMask)
 	// SetMemorySize sets the amount of memory to allocate.
 	SetMemorySize(int64)
+	// IrqAffinity returns the IRQ affinity for this grant.
+	IrqAffinity() *IrqAffinity
+
 	// SetColdstart sets coldstart period for the grant.
 	SetColdstart(time.Duration)
 
@@ -249,6 +254,7 @@ type request struct {
 	memLim      int64           // memory limit
 	memType     memoryType      // requested types of memory
 	pickByHints bool            // preference to pick resources by hints
+	irqs        *IrqAffinity    // IRQ affinity for this request
 
 	// coldStart tells the timeout (in milliseconds) how long to wait until
 	// a DRAM memory controller should be added to a container asking for a
@@ -273,6 +279,7 @@ type grant struct {
 	memSize        int64           // amount of memory to allocate
 	memZone        libmem.NodeMask // allocated memory zone
 	cpuClass       string          // CPU class to apply to exclusive CPUs
+	irqs           *IrqAffinity    // IRQ affinity for this request
 }
 
 var _ Grant = &grant{}
@@ -424,6 +431,7 @@ func (cs *supply) AllocateCPU(r Request) (Grant, error) {
 
 	cpuType := cr.cpuType
 	cpuClass := cr.cpuClass
+	irqs := cr.irqs
 
 	if cpuType == cpuReserved && full > 0 {
 		log.Warnf("exclusive reserved CPUs not supported, allocating %d full CPUs as fractions", full)
@@ -446,7 +454,7 @@ func (cs *supply) AllocateCPU(r Request) (Grant, error) {
 		return nil, err
 	}
 
-	grant := newGrant(cs.node, cr.GetContainer(), cpuType, cpuClass, exclusive, 0, 0, 0)
+	grant := newGrant(cs.node, cr.GetContainer(), cpuType, cpuClass, exclusive, 0, 0, irqs, 0)
 	grant.AccountAllocateCPU()
 
 	// allocate the shared fraction of CPUs
@@ -821,6 +829,16 @@ func (p *policy) newRequest(container cache.Container, types libmem.TypeMask) (R
 	log.Debugf("%s: CPU preferences: cpuType=%s, cpuClass=%s, full=%v, fraction=%v, isolate=%v, prio=%v",
 		container.PrettyName(), cpuType, cpuClass, full, fraction, isolate, prio)
 
+	irqs, isCtrScoped, err := irqAffinityPreference(container)
+	switch {
+	case err != nil:
+		return nil, err
+	case irqs != nil && full == 0 && isCtrScoped:
+		return nil, fmt.Errorf("IRQ affinity (%v) invalid without exclusive CPUs", irqs)
+	case irqs != nil:
+		log.Debugf("%s: IRQ affinity preference: %v", container.PrettyName(), irqs)
+	}
+
 	if mtype == memoryUnspec {
 		mtype = defaultMemoryType &^ memoryHBM
 	}
@@ -860,6 +878,7 @@ func (p *policy) newRequest(container cache.Container, types libmem.TypeMask) (R
 		coldStart:   coldStart,
 		prio:        prio,
 		pickByHints: pickByHintsPreference(pod, container),
+		irqs:        irqs,
 	}, nil
 }
 
@@ -948,6 +967,11 @@ func (cr *request) MemoryType() memoryType {
 
 func (cr *request) PickByHints() bool {
 	return cr.pickByHints
+}
+
+// IrqAffinity returns the IRQ affinity for the request.
+func (cr *request) IrqAffinity() *IrqAffinity {
+	return cr.irqs
 }
 
 // ColdStart returns the cold start timeout (in milliseconds).
@@ -1320,7 +1344,7 @@ func (score *score) String() string {
 }
 
 // newGrant creates a CPU grant from the given node for the container.
-func newGrant(n Node, c cache.Container, cpuType cpuType, cpuCls string, exclusive cpuset.CPUSet, cpuPortion int, mt memoryType, coldstart time.Duration) Grant {
+func newGrant(n Node, c cache.Container, cpuType cpuType, cpuCls string, exclusive cpuset.CPUSet, cpuPortion int, mt memoryType, irqs *IrqAffinity, coldstart time.Duration) Grant {
 	grant := &grant{
 		node:       n,
 		container:  c,
@@ -1329,6 +1353,7 @@ func newGrant(n Node, c cache.Container, cpuType cpuType, cpuCls string, exclusi
 		exclusive:  exclusive,
 		cpuPortion: cpuPortion,
 		memType:    mt,
+		irqs:       irqs,
 		coldStart:  coldstart,
 	}
 	return grant
@@ -1352,6 +1377,11 @@ func (cg *grant) SetMemoryZone(zone libmem.NodeMask) {
 // SetMemorySize sets the amount of memory to allocate.
 func (cg *grant) SetMemorySize(size int64) {
 	cg.memSize = size
+}
+
+// IrqAffinity returns the IRQ affinity for this grant.
+func (cg *grant) IrqAffinity() *IrqAffinity {
+	return cg.irqs
 }
 
 // SetColdstart sets coldstart period for the grant.
@@ -1525,7 +1555,7 @@ func (cg *grant) ReallocMemory(types libmem.TypeMask) error {
 	}
 
 	for id, z := range updates {
-		g, ok := cg.node.Policy().allocations.grants[id]
+		g, ok := cg.node.Policy().allocations.getGrant(id)
 		if !ok {
 			log.Errorf("offer commit returned zone update %s for unknown container %s", z, id)
 		} else {

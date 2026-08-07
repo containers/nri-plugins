@@ -490,7 +490,7 @@ func (p *policy) allocatePool(container cache.Container, poolHint string) (Grant
 	}
 
 	for id, z := range updates {
-		g, ok := p.allocations.grants[id]
+		g, ok := p.allocations.getGrant(id)
 		if !ok {
 			log.Errorf("offer commit returned zone update %s for unknown container %s", z, id)
 		} else {
@@ -505,8 +505,7 @@ func (p *policy) allocatePool(container cache.Container, poolHint string) (Grant
 	log.Debugf("allocated req '%s' to memory zone %s", container.PrettyName(),
 		grant.GetMemoryZone())
 
-	p.allocations.grants[container.GetID()] = grant
-
+	p.allocations.addGrant(grant)
 	p.saveAllocations()
 
 	return grant, nil
@@ -646,7 +645,7 @@ func (p *policy) applyGrant(grant Grant) {
 func (p *policy) releasePool(container cache.Container) (Grant, bool) {
 	log.Infof("* releasing resources allocated to %s", container.PrettyName())
 
-	grant, ok := p.allocations.grants[container.GetID()]
+	grant, ok := p.allocations.getGrant(container.GetID())
 	if !ok {
 		log.Infof("  => no grant found, nothing to do...")
 		return nil, false
@@ -657,7 +656,7 @@ func (p *policy) releasePool(container cache.Container) (Grant, bool) {
 	// Remove the grant from all supplies it uses.
 	grant.Release()
 
-	delete(p.allocations.grants, container.GetID())
+	p.allocations.delGrant(container.GetID())
 	p.saveAllocations()
 
 	p.resetCpuClass(container.PrettyName(), grant.ExclusiveCPUs())

@@ -25,7 +25,7 @@ import (
 // trigger cold start for the container if necessary.
 func (p *policy) triggerColdStart(c cache.Container) error {
 	log.Infof("coldstart: triggering coldstart for %s...", c.PrettyName())
-	g, ok := p.allocations.grants[c.GetID()]
+	g, ok := p.allocations.getGrant(c.GetID())
 	if !ok {
 		log.Warnf("coldstart: no grant found, nothing to do...")
 		return nil
@@ -58,7 +58,7 @@ func (p *policy) triggerColdStart(c cache.Container) error {
 
 // finish an ongoing coldstart for the container.
 func (p *policy) finishColdStart(c cache.Container) (bool, error) {
-	g, ok := p.allocations.grants[c.GetID()]
+	g, ok := p.allocations.getGrant(c.GetID())
 	if !ok {
 		log.Warnf("coldstart: no grant found, nothing to do...")
 		return false, policyError("coldstart: no grant found for %s", c.PrettyName())

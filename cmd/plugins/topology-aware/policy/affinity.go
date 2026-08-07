@@ -30,7 +30,7 @@ func (p *policy) calculatePoolAffinities(container cache.Container) (map[int]int
 
 	result := make(map[int]int32, len(p.nodes))
 	for id, w := range affinities {
-		grant, ok := p.allocations.grants[id]
+		grant, ok := p.allocations.getGrant(id)
 		if !ok {
 			continue
 		}

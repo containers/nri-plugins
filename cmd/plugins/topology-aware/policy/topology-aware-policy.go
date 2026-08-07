@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/containers/nri-plugins/pkg/irq"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	"k8s.io/apimachinery/pkg/api/resource"
 
@@ -47,8 +48,9 @@ const (
 
 // allocations is our cache.Cachable for saving resource allocations in the cache.
 type allocations struct {
-	policy *policy
-	grants map[string]Grant
+	policy *policy          // policy back pointer
+	grants map[string]Grant // container grants by container ID
+	irqCnt int              // number of grant additions/deletions with IRQ affinity
 }
 
 // policy is our runtime state for this policy.
@@ -71,6 +73,7 @@ type policy struct {
 	memAllocator *libmem.Allocator         // memory allocator user by the policy
 	cpuClasses   *cpuclass.Handler         // CPU class handler (cpufreq, SST/PCT, etc.)
 	metrics      *TopologyAwareMetrics     // metrics provided by this policy
+	irqCnt       int                       // last applied [allocations.]irqCnt
 }
 
 var opt = &cfgapi.Config{}
@@ -111,6 +114,7 @@ func (p *policy) Setup(opts *policyapi.BackendOptions) error {
 	defaultPrio = cfg.DefaultCPUPriority.Value()
 
 	defer p.commitCpuClasses("setup")
+	defer p.applyIrqAffinity("setup")
 
 	if err := p.initialize(); err != nil {
 		return policyError("failed to initialize %s policy: %w", PolicyName, err)
@@ -233,6 +237,7 @@ func (p *policy) AllocateResources(container cache.Container) error {
 	log.Debugf("allocating resources for %s (%s)...", container.PrettyName(), container.GetID())
 
 	defer p.commitCpuClasses(container.PrettyName())
+	defer p.applyIrqAffinity(container.PrettyName())
 
 	err := p.allocateResources(container, "")
 	if err != nil {
@@ -264,6 +269,7 @@ func (p *policy) ReleaseResources(container cache.Container) error {
 	log.Debugf("releasing resources for %s (%s)...", container.PrettyName(), container.GetID())
 
 	defer p.commitCpuClasses(container.PrettyName())
+	defer p.applyIrqAffinity(container.PrettyName())
 
 	if grant, found := p.releasePool(container); found {
 		p.updateSharedAllocations(&grant)
@@ -282,6 +288,7 @@ func (p *policy) UpdateResources(container cache.Container) error {
 	log.Debugf("updating (reallocating) container %s...", container.PrettyName())
 
 	defer p.commitCpuClasses(container.PrettyName())
+	defer p.applyIrqAffinity(container.PrettyName())
 
 	grant, found := p.releasePool(container)
 	if !found {
@@ -439,7 +446,7 @@ func (p *policy) GetExtendedResources() map[string]*resource.Quantity {
 
 // ExportResourceData provides resource data to export for the container.
 func (p *policy) ExportResourceData(c cache.Container) map[string]string {
-	grant, ok := p.allocations.grants[c.GetID()]
+	grant, ok := p.allocations.getGrant(c.GetID())
 	if !ok {
 		return nil
 	}
@@ -524,6 +531,7 @@ func (p *policy) Reconfigure(newCfg interface{}) error {
 	defaultPrio = cfg.DefaultCPUPriority.Value()
 
 	defer p.commitCpuClasses("reconfigure")
+	defer p.applyIrqAffinity("reconfigure")
 
 	if err := p.initialize(); err != nil {
 		*p = savedPolicy
@@ -604,6 +612,10 @@ func (p *policy) initialize() error {
 
 		p.resetCpuClass("initialize", p.allowed)
 		p.setReservedPoolCpuClass()
+	}
+
+	if _, err := irq.SetAllowedInterrupts(opt.ControllableInterrupts); err != nil {
+		return policyError("failed to set controllable interrupts: %w", err)
 	}
 
 	return nil
@@ -749,11 +761,38 @@ func (p *policy) newAllocations() allocations {
 
 // clone creates a copy of the allocation.
 func (a *allocations) clone() allocations {
-	o := allocations{policy: a.policy, grants: make(map[string]Grant)}
+	o := allocations{policy: a.policy, grants: make(map[string]Grant), irqCnt: a.irqCnt}
 	for id, grant := range a.grants {
 		o.grants[id] = grant.Clone()
 	}
 	return o
+}
+
+func (a *allocations) addGrant(g Grant) {
+	a.grants[g.GetContainer().GetID()] = g
+	if g.IrqAffinity() != nil {
+		a.irqCnt++
+	}
+}
+
+func (a *allocations) getGrant(ctrID string) (Grant, bool) {
+	g, ok := a.grants[ctrID]
+	return g, ok
+}
+
+func (a *allocations) delGrant(ctrID string) (Grant, bool) {
+	g, ok := a.grants[ctrID]
+	if ok {
+		delete(a.grants, ctrID)
+		if g.IrqAffinity() != nil {
+			a.irqCnt++
+		}
+	}
+	return g, ok
+}
+
+func (a *allocations) irqState() int {
+	return a.irqCnt
 }
 
 // getContainerPoolHints creates container pool hints for the current grants.
