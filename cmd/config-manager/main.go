@@ -180,6 +180,10 @@ func readConfig(file string) (map[string]interface{}, error) {
 	if err := tomlv2.Unmarshal(tomlData, &tomlMap); err != nil {
 		return nil, fmt.Errorf("error unmarshaling TOML: %w", err)
 	}
+
+	if tomlMap == nil {
+		tomlMap = make(map[string]interface{})
+	}
 	return tomlMap, nil
 }
 
