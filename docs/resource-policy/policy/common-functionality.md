@@ -289,3 +289,148 @@ you must have
   - a hardware platform which supports these features,
   - resctrlfs pseudofilesystem enabled in your kernel
   - the resctrlfs filesystem mounted (possibly with extra options for your platform)
+
+
+## Class Based CPU Tuning
+
+Some plugins provide fine grained control over CPU behavior and power
+management. They use the common plugin agnostic CPU class functionality
+for doing this. Currently the [balloons](balloons.md#cpu-tuning) and
+[topology-aware](topology-aware.md) policies have such functionality.
+For a more policy specific description of the provided functionality
+please refer to their respective documentation.
+
+The sections below only describe the common policy agnostic CPU class
+functionality.
+
+### CPU class definitions. Each class is an object with:
+
+- `name` (string): Class name referenced by policy configuration.
+- `minFreq` (string): Minimum CPU frequency. Accepts values with
+  units: `"3.2GHz"`, `"2900MHz"`, `"2900000kHz"`, or a string
+  containing plain number in kHz: `"2900000"`. Also accepts symbolic
+  names: `"min"` (platform minimum), `"base"` (CPU base frequency),
+  `"turbo"` (maximum turbo frequency), which are resolved at runtime
+  from sysfs.
+- `maxFreq` (string): Maximum CPU frequency (same format).
+- `uncoreMinFreq` / `uncoreMaxFreq` (string): Uncore frequency limits
+  (same format).
+- `disabledCstates` (list): C-state names to disable (e.g., `["C6", "C8"]`).
+  - Disabling deep C-states reduces latency by preventing deep sleep.
+  - Disabling intermediate C-states keeps CPU more responsive longer
+    after use, but allows it to enter deeper power saving states if
+    not needed.
+  - List available C-states: `grep
+    . /sys/devices/system/cpu/cpu0/cpuidle/state*/name`.
+- `energyPerformancePreference` (integer): EPP value for CPUs.
+- `freqGovernor` (string): CPUFreq governor (e.g., `"performance"`).
+- `turboPriority` (integer): Controls exclusive turbo frequency
+  access. Among CPU classes with active allocations, only the class
+  with the highest `turboPriority` gets the symbolic frequency
+  `"turbo"` resolved to the actual turbo frequency. All other
+  classes get `"turbo"` resolved to the base frequency. When the
+  highest-priority class no longer has active allocations, the next
+  highest-priority class regains turbo. If all classes have
+  `turboPriority` 0 (default), every class gets real turbo -- no
+  competition occurs. `turboPriority` arbitration is scoped to a
+  *turbo domain* (see `turboDomain` below), so on multi-socket
+  systems a low-priority class on one socket can keep turbo even
+  when a higher-priority class is active on another socket.
+- `pctPriority` (string): reset system PCT configuration and use
+  `high`  or `low` priority CLOSes for CPUs. See [Priority Core
+  Turbo](#priority-core-turbo-pct) for details.
+- `sstClosID` (integer): use system PCT configuration and assign
+  CPUs to specified CLOS. See [Priority Core
+  Turbo](#priority-core-turbo-pct) for details.
+- `publishExtendedResource` (bool). If `true` in a class with either
+  `pctPriority: high` or `sstClosID: n` policy publishes class's
+  available CPU capacity using a policy-specific extended resource.
+  Enables Kubernetes to schedule pods on nodes with enough
+  CPUs of wanted priority. Notes: container's `cpu` and extended
+  resource requests **must be equal** to avoid over and under
+  subscription. Extended resources are not cleaned up from node status
+  when a plugin is stopped or uninstalled. The agent's reconciliation
+  removes extended resources when configured not to publish them.
+
+**`turboDomain`** (string, policy-level configuration):
+
+Selects the scope over which `turboPriority` arbitration happens. The
+default is `"package"`: every package independently pick its own
+turboPriority winner. Set to `"system"` if highest `turboPriority`
+classes anywhere should suppress turbo on every other class
+independently of CPU core locations. On single-socket systems the two
+modes behave identically.
+
+```yaml
+balloonTypes:
+- name: latency-critical
+  cpuClass: turbo
+- name: best-effort
+  cpuClass: normal
+idleCPUClass: powersave
+
+cpuClasses:
+- name: turbo
+  minFreq: "turbo"
+  maxFreq: "turbo"
+  disabledCstates: [C6, C8, C10]
+  turboPriority: 10
+- name: normal
+  minFreq: "min"
+  maxFreq: "turbo"
+  turboPriority: 1
+- name: powersave
+  minFreq: "min"
+  maxFreq: "1.2GHz"
+```
+
+Currently this is only configurable in the [balloons](balloons.md) policy.
+The [topology-aware](topology-aware.md) policy always sets `turboDomain` to `package`.
+
+#### Priority Core Turbo (PCT)
+
+On Intel Xeon CPUs that support [Intel Speed Select
+Technology](https://docs.kernel.org/admin-guide/pm/intel-speed-select.html)
+(SST), policy plugins can additionally drive *Priority Core
+Turbo* (PCT) on a per-cpuClass basis. PCT lets a small number of
+*High Priority* (HP) cores reach the maximum turbo frequency
+while the remaining *Low Priority* (LP) cores are capped. The
+mapping between cpuClasses and the underlying SST-CP CLOSes is
+managed by the *PCT allocator* using the
+[goresctrl SST library](https://github.com/intel/goresctrl).
+
+Two fields on a `cpuClasses` entry enable PCT:
+
+- `pctPriority` (string, optional): `"high"` or `"low"`. When set,
+  the CPU classes for PCT are put into **managed mode** for PCT: it
+  performs the full SoC-wide SST setup (CP reset, TF enable, CLOS
+  configuration, CP enable) and associates CPUs of any active allocations
+  using this cpuClass to the HP CLOS (default CLOS 0) or the LP
+  CLOS (default CLOS 3). At most one managed `high` and one
+  managed `low` cpuClass is allowed.
+- `sstClosID` (integer, optional, 0..*ClosCount-1*): pins this
+  cpuClass to a specific CLOS slot and selects **assoc-only
+  mode**: the policy only associates CPUs to the given CLOS
+  without reconfiguring the SoC-wide SST state. Use this when an
+  operator or the BIOS has already configured the CLOSes.
+
+`pctPriority` and `sstClosID` are **mutually exclusive** on the
+same cpuClass. Managed and assoc-only cpuClasses cannot be mixed
+in the same configuration.
+
+By default the CLOS minimum/maximum frequencies programmed in
+managed mode come from the cpuClass's own `minFreq`/`maxFreq`.
+Two optional overrides exist for cases where the hardware CLOS
+bounds should differ from the OS-visible cpufreq limits:
+
+- `pctMinFreq` (string, optional): CLOS minimum frequency,
+  defaults to `minFreq`. Accepts the same units and symbolic
+  names. Resolves `"turbo"` directly to the hardware maximum
+  turbo frequency, regardless of soft `turboPriority`
+  arbitration.
+- `pctMaxFreq` (string, optional): CLOS maximum frequency,
+  defaults to `maxFreq`. Same caveats as `pctMinFreq`.
+
+On hosts without SST support the PCT fields are ignored with a
+warning, so a single cpuClass YAML can be portable across PCT and
+non-PCT systems.

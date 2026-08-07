@@ -26,6 +26,18 @@ config:
   $([ -n "$PODQOS_SCHEDULING_CLASSES" ] && echo "
   podQoSSchedulingClasses: $PODQOS_SCHEDULING_CLASSES
   ")
+  $([ -n "$CPU_CLASSES" ] && echo "
+  cpuClasses: $CPU_CLASSES
+  ")
+  $([ -n "$DEFAULT_EXCLUSIVE_CPUCLASS" ] && echo "
+  defaultExclusiveCPUClass: $DEFAULT_EXCLUSIVE_CPUCLASS
+  ")
+  $([ -n "$SHARED_CPUCLASS" ] && echo "
+  sharedCPUClass: $SHARED_CPUCLASS
+  ")
+  $([ -n "$RESERVED_CPUCLASS" ] && echo "
+  reservedCPUClass: $RESERVED_CPUCLASS
+  ")
 
   instrumentation:
     httpEndpoint: ":8891"
@@ -41,6 +53,6 @@ config:
 $([ -n "${!EXTRA_ENV_*}" ] && echo "
 extraEnv:
   $(for var in ${!EXTRA_ENV_*}; do [[ "${!var}" != "" ]] && echo "
-  ${var#EXTRA_ENV_}: ${!var}
+  ${var#EXTRA_ENV_}: '''${!var}'''
   "; done)
 ")

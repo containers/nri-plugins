@@ -263,6 +263,22 @@ behavior. These options can be supplied as part of the effective
     is neither annotated to use a specific scheduling class nor its namespace
     has a default scheduling class, but its Pod QoS class has a default
     scheduling class, this will apply to the container.
+- `cpuClasses`
+   - Define a combination of CPU frequency, C-state, and turbo attributes.
+     Containers eligible for exclusive CPU allocation can then be annotated to
+     a CPU class. See the [CPU Tuning](common-functionality.md#class-based-cpu-tuning)
+     for more details on defining CPU classes themselves.
+- `sharedPoolCPUClass`
+   - Controls how CPUs are reconfigured when they are returned from exclusive
+     allocation to a shared pool. If any CPU classes are defined a shared CPU
+     class must be specified.
+- `reservedPoolCPUClass`
+   - Controls how CPUs are reconfigured when they are assigned to the reserved
+     pool. If no reserved CPU class is designated, the shared CPU class will be
+     used for the reserved pool.
+- `defaultExclusiveCPUClass`
+   - Controls how CPUs are reconfigured when they are assigned for excusive use
+     to containers which are not annotated to use any CPU class.
 
 Additionally, the following sub-configuration is available for instrumentation:
 
@@ -548,6 +564,60 @@ metadata:
   annotations:
     scheduling-class.resource-policy.nri.io/container.c0: realtime
 ```
+
+### Assigning Containers to CPU Classes
+
+Containers eligible for exclusive CPU allocation can be assigned to CPU classes.
+This can happen either by setting up defaultExclusiveCPUClass in the configuration,
+or by annotating the container to a particular CPU class.
+
+```yaml
+config:
+  reservedResources:
+    cpu: 2
+  ...
+  cpuClasses:
+  - name: low-prio
+    minFreq: min
+    maxFreq: base
+    pctPriority: low
+  - name: reserved
+    minFreq: base
+    maxFreq: turbo
+  - name: default-exclusive
+    minFreq: min
+    maxFreq: turbo
+  - name: high-prio
+    minFreq: turbo
+    maxFreq: turbo
+    pctPriority: high
+  sharedPoolCPUClass: low-prio
+  reservedPoolCPUClass: reserved
+  defaultExclusiveCPUClass: default-exclusive
+```
+
+Now any CPUs exclusively allocated to `Guaranteed` QoS class containers
+will get reconfigured by default according to the `default-exclusive` CPU
+class. You can alter this by using the `cpu-class.resource-policy.nri.io`
+annotation key:
+
+```yaml
+...
+metadata:
+  annotations:
+    cpu-class.resource-policy.nri.io/container.data-pump: high-prio
+    cpu-class.resource-policy.nri.io/container.logger: low-prio
+...
+```
+
+Now if your pod with this annotation has 3 containers, `c0`, `data-pump`
+and `logger`, each eligible for exclusive CPU allocation, the CPUs assigned
+to them will get reconfigured according to the `default-exclusive`, `high-prio`,
+and `low-prio` CPU classes. Moreover every CPU which is part of any other than
+the reserved pool will get configured according to the `low-prio` CPU class,
+both on startup and when they are returned to the shared pool from exclusive
+allocation. The CPU assigned for the reserved pool (`kube-system` namespace)
+will get configured according to the `reserved` CPU class.
 
 ### Inherited Default Scheduling Classes
 
