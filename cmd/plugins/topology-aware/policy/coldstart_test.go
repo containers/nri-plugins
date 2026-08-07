@@ -123,7 +123,7 @@ func TestColdStart(t *testing.T) {
 				t.Errorf("Expected coldstart value '%v', but got '%v'", tc.expectedColdStartTimeout, grant.ColdStart())
 			}
 
-			policy.allocations.grants[tc.container.GetID()] = grant
+			policy.allocations.addGrant(grant)
 
 			mems := grant.GetMemoryZone()
 			if mems.Size() != 1 || mems.Slice()[0] != tc.expectedPMEMSystemNodeID {

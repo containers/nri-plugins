@@ -81,7 +81,7 @@ func (p *policy) reinstateGrants(grants map[string]Grant) error {
 		}
 	}
 
-	for id, grant := range grants {
+	for _, grant := range grants {
 		c := grant.GetContainer()
 
 		class, _, err := p.resolveCpuClass(c)
@@ -112,7 +112,7 @@ func (p *policy) reinstateGrants(grants map[string]Grant) error {
 		}
 
 		for uID, uZone := range updates {
-			if ug, ok := p.allocations.grants[uID]; !ok {
+			if ug, ok := p.allocations.getGrant(uID); !ok {
 				log.Errorf("failed to update grant %s to memory zone to %s, grant not found",
 					uID, uZone)
 			} else {
@@ -127,7 +127,7 @@ func (p *policy) reinstateGrants(grants map[string]Grant) error {
 		log.Infof("updated pool %q with reinstated CPU grant of %q, memory zone %s",
 			pool.Name(), c.PrettyName(), grant.GetMemoryZone())
 
-		p.allocations.grants[id] = grant
+		p.allocations.addGrant(grant)
 		p.applyGrant(grant)
 	}
 
@@ -148,6 +148,7 @@ type cachedGrant struct {
 	MemType    memoryType
 	MemSize    int64
 	ColdStart  time.Duration
+	Irqs       *IrqAffinity
 }
 
 func newCachedGrant(cg Grant) *cachedGrant {
@@ -163,6 +164,7 @@ func newCachedGrant(cg Grant) *cachedGrant {
 	ccg.MemType = cg.MemoryType()
 	ccg.MemSize = cg.GetMemorySize()
 	ccg.ColdStart = cg.ColdStart()
+	ccg.Irqs = cg.IrqAffinity()
 
 	return ccg
 }
@@ -185,6 +187,7 @@ func (ccg *cachedGrant) ToGrant(policy *policy) (Grant, error) {
 		cpuset.MustParse(ccg.Exclusive),
 		ccg.Part,
 		ccg.MemType,
+		ccg.Irqs,
 		ccg.ColdStart,
 	)
 
