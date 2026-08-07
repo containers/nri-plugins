@@ -38,6 +38,9 @@ const (
 	resultDone           = "done"
 	containerdUnit       = "containerd.service"
 	crioUnit             = "crio.service"
+	// containerd reads these only from plugins."io.containerd.nri.v1.nri".
+	pluginRegistrationTimeoutKey = "plugin_registration_timeout"
+	pluginRequestTimeoutKey      = "plugin_request_timeout"
 )
 
 var (
@@ -204,7 +207,16 @@ func updateContainerdConfig(config map[string]interface{}, cfg *nriConfig) map[s
 
 	nri["disable"] = false
 
-	cfg.updateContainerdConfig(config)
+	// Older builds wrote these at the root. containerd ignores them there.
+	// Drop them so a retry does not leave a misleading root copy behind.
+	if cfg.registrationTimeout != "" {
+		nri[pluginRegistrationTimeoutKey] = cfg.registrationTimeout
+		delete(config, pluginRegistrationTimeoutKey)
+	}
+	if cfg.requestTimeout != "" {
+		nri[pluginRequestTimeoutKey] = cfg.requestTimeout
+		delete(config, pluginRequestTimeoutKey)
+	}
 
 	return config
 }
@@ -254,20 +266,6 @@ func (cfg *nriConfig) writeCrioConfig(f *os.File) error {
 		}
 	}
 	return nil
-}
-
-func (cfg *nriConfig) updateContainerdConfig(tomlCfg map[string]interface{}) {
-	const (
-		registrationTimeout = "plugin_registration_timeout"
-		requestTimeout      = "plugin_request_timeout"
-	)
-
-	if cfg.registrationTimeout != "" {
-		tomlCfg[registrationTimeout] = cfg.registrationTimeout
-	}
-	if cfg.requestTimeout != "" {
-		tomlCfg[requestTimeout] = cfg.requestTimeout
-	}
 }
 
 func detectRuntime() (string, *dbus.Conn, error) {
