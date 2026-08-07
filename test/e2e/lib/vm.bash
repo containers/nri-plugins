@@ -914,7 +914,7 @@ vm-kernel-pkgs-install() { # script API
         vm-command "grubby --default-kernel | tee .$feat.default-kernel" || \
             command-error "cannot save current default kernel"
         # Install new kernel packages / Fedora
-        vm-command "rpm -Uvh $feat/*.rpm" || \
+        vm-command "rpm -Uvh --force $feat/*.rpm" || \
             command-error "cannot install kernel rpm packages from $file"
     elif grep -q .deb <<< "$to_be_installed"; then
         # Store current kernel / Ubuntu
