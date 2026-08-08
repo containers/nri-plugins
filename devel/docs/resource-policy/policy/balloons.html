@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.13.1-13-g12d21229 documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.13.1-19-ge8e29bff documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=a07bc1f9"></script>
+        <script src="../../../_static/documentation_options.js?v=66b6c69c"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -996,7 +996,8 @@ latter override the former.</p>
 </section>
 <section id="cpu-tuning">
 <h3>CPU Tuning<a class="headerlink" href="#cpu-tuning" title="Link to this heading"></a></h3>
-<p>These options configure CPU behavior and power management.</p>
+<p>These options configure CPU behavior, power management, and tuning
+IRQs CPU affinity.</p>
 <p><strong><code class="docutils literal notranslate"><span class="pre">cpuClass</span></code></strong> (string)</p>
 <ul class="simple">
 <li><p>References a CPU class name defined in <code class="docutils literal notranslate"><span class="pre">cpuClasses</span></code> (preferred) or
@@ -1196,6 +1197,52 @@ instead. If a class name is defined in both <code class="docutils literal notran
 <span class="w">      </span><span class="nt">powersave</span><span class="p">:</span>
 <span class="w">        </span><span class="nt">minFreq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">800000</span>
 <span class="w">        </span><span class="nt">maxFreq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1200000</span>
+</pre></div>
+</div>
+</section>
+<section id="irq-cpu-affinity-tuning">
+<h4>IRQ CPU Affinity Tuning<a class="headerlink" href="#irq-cpu-affinity-tuning" title="Link to this heading"></a></h4>
+<p>These balloon type options control the CPU affinity of hardware
+interrupts (IRQs). By default the policy does not touch IRQ affinities.
+Affinities are updated by writing
+<code class="docutils literal notranslate"><span class="pre">/proc/irq/&lt;NUMBER&gt;/smp_affinity_list</span></code>, and IRQs are matched against
+<code class="docutils literal notranslate"><span class="pre">/proc/interrupts</span></code>.</p>
+<p><strong><code class="docutils literal notranslate"><span class="pre">irqClaim</span></code></strong> (list of strings)</p>
+<ul class="simple">
+<li><p>Lists IRQs handled by CPUs of balloons of this type.</p></li>
+<li><p>Each item refers to IRQs either by an exact number, or by a pattern
+matching last columns in <code class="docutils literal notranslate"><span class="pre">/proc/interrupts</span></code>. Supports wildcards, for
+instance “<em>nvme</em>”.</p></li>
+<li><p>The affinity of a claimed IRQ is set to the union of CPUs of all
+balloons that claim it.</p></li>
+</ul>
+<p><strong><code class="docutils literal notranslate"><span class="pre">irqMode</span></code></strong> (string: <code class="docutils literal notranslate"><span class="pre">&quot;sink&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;isolate&quot;</span></code>)</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">sink</span></code>: CPUs of balloons of this type handle IRQs that no balloon
+has claimed. The affinity of such an unclaimed IRQ is set to the
+union of CPUs of all sink balloons.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">isolate</span></code>: CPUs of balloons of this type are removed from the
+affinity of IRQs that are neither claimed nor sinked. This keeps
+such CPUs free from interrupts.</p></li>
+</ul>
+<p>The options can be combined. Common use cases:</p>
+<ul class="simple">
+<li><p><em>Latency-sensitive balloon</em>: use <code class="docutils literal notranslate"><span class="pre">irqMode:</span> <span class="pre">isolate</span></code> to keep the
+CPUs of the balloon free from unrelated IRQs.</p></li>
+<li><p><em>Hardware-specific balloon</em>: use <code class="docutils literal notranslate"><span class="pre">irqClaim</span></code> to direct IRQs of the
+relevant devices to the CPUs of the balloon. Add <code class="docutils literal notranslate"><span class="pre">irqMode:</span> <span class="pre">isolate</span></code>
+to additionally keep all other IRQs away from those CPUs.</p></li>
+<li><p><em>IRQ sink balloon</em>: use <code class="docutils literal notranslate"><span class="pre">irqMode:</span> <span class="pre">sink</span></code> to gather all otherwise
+unclaimed IRQs on the CPUs of the balloon.</p></li>
+</ul>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">balloonTypes</span><span class="p">:</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">network</span>
+<span class="w">  </span><span class="nt">irqClaim</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;*eth0</span><span class="nv"> </span><span class="s">*&quot;</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;42&quot;</span>
+<span class="w">  </span><span class="nt">irqMode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">isolate</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">housekeeping</span>
+<span class="w">  </span><span class="nt">irqMode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sink</span>
 </pre></div>
 </div>
 </section>
