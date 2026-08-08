@@ -848,7 +848,8 @@ memory-type.resource-policy.nri.io/container.CONTAINER_NAME: HBM,DRAM
 
 ### CPU Tuning
 
-These options configure CPU behavior and power management.
+These options configure CPU behavior, power management, and tuning
+IRQs CPU affinity.
 
 **`cpuClass`** (string)
 - References a CPU class name defined in `cpuClasses` (preferred) or
@@ -1057,6 +1058,51 @@ control:
       powersave:
         minFreq: 800000
         maxFreq: 1200000
+```
+
+#### IRQ CPU Affinity Tuning
+
+These balloon type options control the CPU affinity of hardware
+interrupts (IRQs). By default the policy does not touch IRQ affinities.
+Affinities are updated by writing
+`/proc/irq/<NUMBER>/smp_affinity_list`, and IRQs are matched against
+`/proc/interrupts`.
+
+**`irqClaim`** (list of strings)
+- Lists IRQs handled by CPUs of balloons of this type.
+- Each item refers to IRQs either by an exact number, or by a pattern
+  matching last columns in `/proc/interrupts`. Supports wildcards, for
+  instance "*nvme*".
+- The affinity of a claimed IRQ is set to the union of CPUs of all
+  balloons that claim it.
+
+**`irqMode`** (string: `"sink"` or `"isolate"`)
+- `sink`: CPUs of balloons of this type handle IRQs that no balloon
+  has claimed. The affinity of such an unclaimed IRQ is set to the
+  union of CPUs of all sink balloons.
+- `isolate`: CPUs of balloons of this type are removed from the
+  affinity of IRQs that are neither claimed nor sinked. This keeps
+  such CPUs free from interrupts.
+
+The options can be combined. Common use cases:
+
+- *Latency-sensitive balloon*: use `irqMode: isolate` to keep the
+  CPUs of the balloon free from unrelated IRQs.
+- *Hardware-specific balloon*: use `irqClaim` to direct IRQs of the
+  relevant devices to the CPUs of the balloon. Add `irqMode: isolate`
+  to additionally keep all other IRQs away from those CPUs.
+- *IRQ sink balloon*: use `irqMode: sink` to gather all otherwise
+  unclaimed IRQs on the CPUs of the balloon.
+
+```yaml
+balloonTypes:
+- name: network
+  irqClaim:
+    - "*eth0 *"
+    - "42"
+  irqMode: isolate
+- name: housekeeping
+  irqMode: sink
 ```
 
 ### Built-in Balloon Types

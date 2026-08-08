@@ -25,6 +25,7 @@ import (
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/balloons"
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
+	"github.com/containers/nri-plugins/pkg/irq"
 	"github.com/containers/nri-plugins/pkg/kubernetes"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
@@ -254,6 +255,7 @@ func (p *balloons) Sync(add []cache.Container, del []cache.Container) error {
 	p.BlockMeters()
 	defer p.UnblockMeters()
 	defer p.commitCpuClasses()
+	defer p.applyIrqAffinities()
 
 	log.Debugf("synchronizing state...")
 	for _, c := range del {
@@ -278,6 +280,7 @@ func (p *balloons) AllocateResources(c cache.Container) error {
 	p.BlockMeters()
 	defer p.UnblockMeters()
 	defer p.commitCpuClasses()
+	defer p.applyIrqAffinities()
 
 	if c.PreserveCpuResources() {
 		log.Infof("not handling resources of container %s, preserving CPUs %q and memory %q", c.PrettyName(), c.GetCpusetCpus(), c.GetCpusetMems())
@@ -332,6 +335,7 @@ func (p *balloons) ReleaseResources(c cache.Container) error {
 	p.BlockMeters()
 	defer p.UnblockMeters()
 	defer p.commitCpuClasses()
+	defer p.applyIrqAffinities()
 
 	log.Debugf("releasing container %s...", c.PrettyName())
 	if bln := p.balloonByContainer(c); bln != nil {
@@ -366,6 +370,7 @@ func (p *balloons) UpdateResources(c cache.Container) error {
 	p.BlockMeters()
 	defer p.UnblockMeters()
 	defer p.commitCpuClasses()
+	defer p.applyIrqAffinities()
 
 	log.Debugf("(not) updating container %s...", c.PrettyName())
 	return nil
@@ -927,6 +932,89 @@ func (p *balloons) forgetCpuClass(bln *Balloon) {
 				bln.Def.Name, bln.Cpus, idle)
 		} else {
 			log.Debugf("forget class of cpus %q (idle class %q)", bln.Cpus, idle)
+		}
+	}
+}
+
+// irqOptionsInUse returns whether any balloon type configures IRQ
+// affinities.
+func (p *balloons) irqOptionsInUse() bool {
+	for _, blnDef := range p.bpoptions.BalloonDefs {
+		if len(blnDef.IrqClaim) > 0 || blnDef.IrqMode != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// irqClaimCpus returns the union of CPUs of balloons that claim the
+// given interrupt.
+func (p *balloons) irqClaimCpus(hwIrq *irq.Irq) cpuset.CPUSet {
+	claimCpus := cpuset.New()
+	for _, bln := range p.balloons {
+		if bln.Cpus.IsEmpty() {
+			continue
+		}
+		for _, claim := range bln.Def.IrqClaim {
+			if hwIrq.Match(claim) {
+				claimCpus = claimCpus.Union(bln.Cpus)
+				break
+			}
+		}
+	}
+	return claimCpus
+}
+
+// applyIrqAffinities sets CPU affinities of system IRQs according to
+// the irqClaim and irqMode options of balloon types.
+func (p *balloons) applyIrqAffinities() {
+	if !p.irqOptionsInUse() {
+		return
+	}
+	hwIrqs, err := irq.Interrupts()
+	if err != nil {
+		log.Warnf("failed to read interrupts for IRQ affinity update: %v", err)
+		return
+	}
+	sinkCpus := cpuset.New()
+	isolateCpus := cpuset.New()
+	for _, bln := range p.balloons {
+		if bln.Cpus.IsEmpty() {
+			continue
+		}
+		switch bln.Def.IrqMode {
+		case cfgapi.IrqModeSink:
+			sinkCpus = sinkCpus.Union(bln.Cpus)
+		case cfgapi.IrqModeIsolate:
+			isolateCpus = isolateCpus.Union(bln.Cpus)
+		}
+	}
+	for _, hwIrq := range hwIrqs {
+		newCpus := p.allowed
+		curCpus, err := hwIrq.AffinityCpus()
+		if err != nil {
+			continue
+		}
+		switch claimCpus := p.irqClaimCpus(hwIrq); {
+		case !claimCpus.IsEmpty():
+			newCpus = claimCpus
+		case !sinkCpus.IsEmpty():
+			newCpus = sinkCpus
+		case curCpus.Intersection(p.allowed).IsEmpty():
+			// IRQ is out of our scope
+			continue
+		case !isolateCpus.IsEmpty():
+			// Keep IRQs affinity outside allowed CPUs as is.
+			// Allow IRQ on any allowed CPUs except for isolateCpus.
+			newCpus = curCpus.Union(p.allowed).Difference(isolateCpus)
+		}
+		if curCpus.Equals(newCpus) {
+			continue
+		}
+		if err := hwIrq.SetAffinityCpus(newCpus); err != nil {
+			log.Debugf("failed to set affinity of %s to %q: %v", hwIrq, newCpus, err)
+		} else {
+			log.Debugf("set affinity of %s to %q", hwIrq, newCpus)
 		}
 	}
 }
@@ -1526,6 +1614,7 @@ func (p *balloons) Reconfigure(newCfg interface{}) error {
 	p.BlockMeters()
 	defer p.UnblockMeters()
 	defer p.commitCpuClasses()
+	defer p.applyIrqAffinities()
 
 	balloonsOptions, ok := newCfg.(*BalloonsOptions)
 	if !ok {
