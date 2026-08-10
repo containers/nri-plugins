@@ -733,6 +733,78 @@ both on startup and when they are returned to the shared pool from exclusive
 allocation. The CPU assigned for the reserved pool (`kube-system` namespace)
 will get configured according to the `reserved` CPU class.
 
+### IRQ CPU Affinity Tuning
+
+Containers eligible for exclusive CPU allocation can be annotated with IRQ
+tuning to claim selected IRQs, mask selected IRQs, or do both, using the
+`irq-affinity.resource-policy.nri.io` annotation key.
+
+The annotation has 3 fields:
+**`claim`** (list of strings)
+- Lists IRQs handled by the exclusive CPUs allocated to the container.
+- Each item refers to IRQs either by an exact number, or by a pattern
+  matching last columns in `/proc/interrupts`. Supports wildcards, for
+  instance "*nvme*".
+- The affinity of a claimed IRQ is set to the union of CPUs of all
+  containers that claim it.
+**`mask`** (list of strings)
+- Lists IRQs which should not be handled by the exclusive CPUs allocated
+  to the container.
+- Each item refers to IRQs in the same way as for claims.
+**`mode`** (string, `mask-first` (default if left empty), `claim-first`)
+- The mode in which claims versus masks are applied.
+- mask-first: apply masks first then claims
+- claim-first: apply claims first then masks
+
+The default (empty) mode is `mask-first`. In this mode IRQs which are
+both claimed and masked will be effectively claimed. In `claim-first`
+mode IRQs which are both claimed and masked will be effectively masked.
+
+For instance, the following annotation
+
+```yaml
+  annotations:
+    irq-affinity.resource-policy.nri.io/container.data-pump: |
+      claim:
+        - "*eth0 *"
+      mask:
+        - "*"
+    irq-affinity.resource-policy.nri.io/container.mgmt: |
+      claim:
+        - "*"
+      mask:
+        - "*eth0 *"
+      mode: claim-first
+```
+
+will set the affinity of the IRQ matching `"*eth0 "` to the
+exclusive CPU set of the `data-pump` container, while the `mgmt`
+container will grab all other IRQs.
+
+The following annotation
+
+```yaml
+metadata:
+  annotations:
+    irq-affinity.resource-policy.nri.io/container.compute: |
+      mask:
+        - "*"
+```
+
+will mask the exclusive CPUs allocated to the `compute`
+container from the CPU affinity of all IRQs.
+
+Any container scoped effective IRQ affinity annotation for containers
+without exclusive CPU allocation is considered an error, regardless of
+the container's QoS class, and should prevent the creation of the container.
+
+#### Restricting IRQ CPU Affinity Tuning
+
+The `controllableInterrupts` configuration setting can be used to restrict
+which interrupts the policy can exercise control over. It is a list of
+glob patterns which is matched against IRQ descriptions in `/proc/interrupts`.
+If an interrupt description is matched by any of the patterns it is allowed
+to be controlled. By default all interrupts are controllable.
 
 ### Implicit Topological Co-location for Pods and Namespaces
 
