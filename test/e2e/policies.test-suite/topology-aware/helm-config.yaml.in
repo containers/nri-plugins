@@ -38,6 +38,9 @@ config:
   $([ -n "$RESERVED_CPUCLASS" ] && echo "
   reservedPoolCPUClass: $RESERVED_CPUCLASS
   ")
+  $([ -n "$CONTROLLABLE_INTERRUPTS" ] && echo "
+  controllableInterrupts: ${CONTROLLABLE_INTERRUPTS:-\"*\"}
+  ")
 
   instrumentation:
     httpEndpoint: ":8891"
