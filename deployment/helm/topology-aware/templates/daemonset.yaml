@@ -121,6 +121,8 @@ spec:
             mountPath: /var/lib/nri-resource-policy
           - name: hostsysfs
             mountPath: /host/sys
+          - name: hostprocfs
+            mountPath: /host/proc
           - name: resource-policysockets
             mountPath: /var/run/nri-resource-policy
           - name: nrisockets
@@ -145,6 +147,10 @@ spec:
       - name: hostsysfs
         hostPath:
           path: /sys
+          type: Directory
+      - name: hostprocfs
+        hostPath:
+          path: /proc
           type: Directory
       - name: resource-policysockets
         hostPath:
