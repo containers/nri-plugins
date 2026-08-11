@@ -141,10 +141,6 @@ func (p *policy) Description() string {
 
 // Start prepares this policy for accepting allocation/release requests.
 func (p *policy) Start() error {
-	if err := p.restoreCache(); err != nil {
-		return policyError("failed to start: %v", err)
-	}
-
 	// Turn coldstart forcibly off if we have movable non-DRAM memory.
 	// Note that although this can change dynamically we only check it
 	// during startup and trust users to either not fiddle with memory
@@ -726,19 +722,6 @@ func (p *policy) findExistingTopologyLevel(level cfgapi.CPUTopologyLevel) cfgapi
 	}
 
 	return cfgapi.CPUTopologyLevelPackage
-}
-
-func (p *policy) restoreCache() error {
-	allocations := p.newAllocations()
-	if p.cache.GetPolicyEntry(keyAllocations, &allocations) {
-		if err := p.restoreAllocations(&allocations); err != nil {
-			return policyError("failed to restore allocations from cache: %v", err)
-		}
-		p.allocations.Dump(log.Infof, "restored ")
-	}
-	p.saveAllocations()
-
-	return nil
 }
 
 func (p *policy) checkColdstartOff() {
