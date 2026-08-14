@@ -21,6 +21,7 @@ import (
 
 	policy "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
+	"github.com/containers/nri-plugins/pkg/irq"
 	v1 "k8s.io/api/core/v1"
 )
 
@@ -189,6 +190,13 @@ type Config struct {
 	// any CPU class.
 	// +optional
 	DefaultExclusiveCpuClass string `json:"defaultExclusiveCPUClass,omitempty"`
+	// ControllableInterrupts control which IRQs' CPU affinity the policy is
+	// allowed to control. When configured with a list of glob patterns only
+	// interrupts with a matching description in /proc/interrupts are allowed.
+	// Otherwise all interrupts are controllable.
+	// +optional
+	// +kubebuilder:default={"*"}
+	ControllableInterrupts []string `json:"controllableInterrupts,omitempty"`
 }
 
 var (
@@ -260,6 +268,10 @@ func (c *Config) Validate() error {
 					c.DefaultExclusiveCpuClass))
 			}
 		}
+	}
+
+	if err := irq.ValidateAllowedPatterns(c.ControllableInterrupts); err != nil {
+		errs = append(errs, fmt.Errorf("invalid controllable interrupts: %w", err))
 	}
 
 	return errors.Join(errs...)

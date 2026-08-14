@@ -454,6 +454,17 @@ spec:
                         type: boolean
                     type: object
                 type: object
+              controllableInterrupts:
+                default:
+                - '*'
+                description: |-
+                  ControllableInterrupts control which IRQs' CPU affinity the policy is
+                  allowed to control. When configured with a list of glob patterns only
+                  interrupts with a matching description in /proc/interrupts are allowed.
+                  Otherwise all interrupts are controllable.
+                items:
+                  type: string
+                type: array
               cpuClasses:
                 description: |-
                   CPUClasses define a combination of CPU frequency, C-state, and turbo
