@@ -1896,6 +1896,10 @@ func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
 		p.cpuClasses = h
 	}
 
+	if _, err := irq.SetAllowedInterrupts(bpoptions.ControllableInterrupts); err != nil {
+		return balloonsError("failed to set allowed interrupts: %w", err)
+	}
+
 	reservedBalloonDef, defaultBalloonDef, err := p.fillBuiltinBalloonDefs(bpoptions)
 	if err != nil {
 		return err

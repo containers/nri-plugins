@@ -1105,6 +1105,14 @@ balloonTypes:
   irqMode: sink
 ```
 
+#### Restricting IRQ CPU Affinity Tuning
+
+The `controllableInterrupts` configuration setting can be used to restrict
+which interrupts the policy can exercise control over. It is a list of
+glob patterns which is matched against IRQ descriptions in `/proc/interrupts`.
+If an interrupt description is matched by any of the patterns it is allowed
+to be controlled. By default all interrupts are controllable.
+
 ### Built-in Balloon Types
 
 The policy includes two built-in balloon types that can be customized
