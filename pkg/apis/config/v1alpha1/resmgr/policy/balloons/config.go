@@ -16,11 +16,13 @@ package balloons
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	policy "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
 	resmgr "github.com/containers/nri-plugins/pkg/apis/resmgr/v1alpha1"
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
+	"github.com/containers/nri-plugins/pkg/irq"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 )
 
@@ -153,6 +155,13 @@ type Config struct {
 	// +kubebuilder:validation:Enum=package;system
 	// +kubebuilder:default=package
 	TurboDomain string `json:"turboDomain,omitempty"`
+	// ControllableInterrupts control which IRQs' CPU affinity the policy is
+	// allowed to control. When configured with a list of glob patterns only
+	// interrupts with a matching description in /proc/interrupts are allowed.
+	// Otherwise all interrupts are controllable.
+	// +optional
+	// +kubebuilder:default={"*"}
+	ControllableInterrupts []string `json:"controllableInterrupts,omitempty"`
 }
 
 // BalloonDef contains a balloon definition.
@@ -415,12 +424,19 @@ func (c *Config) Validate() error {
 			}
 		}
 	}
+
 	for _, blnDef := range c.BalloonDefs {
 		for _, expr := range blnDef.MatchExpressions {
 			if err := expr.Validate(); err != nil {
 				errs = append(errs, err)
 			}
 		}
+		if _, err := irq.ValidateAllowedReferencedInterrupts(
+			blnDef.IrqClaim, c.ControllableInterrupts,
+		); err != nil {
+			errs = append(errs, fmt.Errorf("invalid irqclaim %q: %w", blnDef.IrqClaim, err))
+		}
 	}
+
 	return errors.Join(errs...)
 }
