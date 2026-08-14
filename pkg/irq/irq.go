@@ -18,6 +18,7 @@
 package irq
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -34,6 +35,12 @@ var (
 	proc     = "/proc"
 
 	log = logger.NewLogger("irq")
+
+	allowed []string
+
+	// ErrDeniedInterrupt is the error returned for attempts to reference or control
+	// globally globally disallowed interrupts.
+	ErrDeniedInterrupt = errors.New("denied interrupt")
 )
 
 // SetProcRoot sets the procfs root directory and proc mountpoint.
@@ -56,26 +63,167 @@ func SetProcRoot(root string) {
 	proc = filepath.Join(procRoot, "/proc")
 }
 
+// ValidateAllowedPatterns validates zero or more globbing patterns
+// for interrupt description matching.
+func ValidateAllowedPatterns(patterns []string) error {
+	for _, p := range patterns {
+		if _, err := path.Match(p, "0"); err != nil {
+			return fmt.Errorf("invalid globbing pattern %q: %v", p, err)
+		}
+	}
+	return nil
+}
+
+// SetAllowedInterrupts configures which interrupts can be controller
+// using this package. With allow patterns unset any interrupt can be
+// controlled. With patterns set, only interrupts with a matching
+// description in /proc/interrupts can be controlled. If any pattern
+// fails validity checking an error is returned. On success, the old
+// patterns previously in effect are returned.
+func SetAllowedInterrupts(patterns []string) ([]string, error) {
+	if err := ValidateAllowedPatterns(patterns); err != nil {
+		return nil, err
+	}
+
+	old := allowed
+	allowed = patterns
+	log.Debugf("allowed interrupts to %v", patterns)
+
+	return old, nil
+}
+
+// IsAllowedInterrupt returns true if the IRQ corresponding to the given
+// description is allowed to be controlled via this package, as defined
+// by the currently set allowed patterns.
+func IsAllowedInterrupt(description string) bool {
+	return isAllowedInterruptBy(description, allowed)
+}
+
+// isAllowedInterruptBy returns true if the IRQ corresponding to the given
+// description is allowed to be controlled via this package, as defined by
+// the given allow patterns.
+func isAllowedInterruptBy(description string, allow []string) bool {
+	if len(allow) == 0 {
+		return true
+	}
+	for _, p := range allow {
+		if ok, _ := path.Match(p, description); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // Irq represents a single numbered hardware interrupt.
 type Irq struct {
 	num         int
 	description string
+	denied      bool
 }
 
-// Interrupts returns all numbered interrupts listed in
-// /proc/interrupts.
-func Interrupts() ([]*Irq, error) {
+// ForEachInterrupt collects all numbered interrupts listed in
+// /proc/interrupts, calling the given function on each. If the
+// function returns an error, iteration is stopped early and
+// the received error is returned. It uses the currently set
+// allowed patterns to determine if an interrupt is allowed to
+// be controller by this package.
+func ForEachInterrupt(fn func(*Irq) error) error {
+	return forEachInterrupt(fn, allowed)
+}
+
+// forEachInterrupt collects all numbered interrupts listed in
+// /proc/interrupts, calling the given function on each. If the
+// function returns an error, iteration is stopped early and the
+// received error is returned. It uses the given allow patterns
+// to determine if an interrupt is allowed to be controlled
+// by this package.
+func forEachInterrupt(fn func(*Irq) error, allow []string) error {
 	data, err := os.ReadFile(filepath.Join(proc, "interrupts"))
 	if err != nil {
-		return nil, fmt.Errorf("failed to read interrupts: %w", err)
+		return fmt.Errorf("failed to read interrupts: %w", err)
 	}
-	irqs := []*Irq{}
 	for line := range strings.SplitSeq(string(data), "\n") {
 		if irq, ok := parseInterruptsLine(line); ok {
-			irqs = append(irqs, irq)
+			if !isAllowedInterruptBy(irq.description, allow) {
+				irq.denied = true
+			}
+			if err := fn(irq); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
+
+}
+
+// Interrupts collects and returns the numbered interrupts listed in
+// /proc/interrupts which can be controlled by this package according
+// to the currently set allowed patterns.
+func Interrupts() ([]*Irq, error) {
+	return allowedInterrupts(allowed)
+}
+
+// allowedInterrupts collects and returns the numbered interrupts
+// listed in /proc/interrupts which can be controlled by this package
+// according to the given allow patterns.
+func allowedInterrupts(allow []string) ([]*Irq, error) {
+	var (
+		irqs           = []*Irq{}
+		collectAllowed = func(irq *Irq) error {
+			if !irq.denied {
+				irqs = append(irqs, irq)
+			}
+			return nil
+		}
+	)
+
+	if err := forEachInterrupt(collectAllowed, allow); err != nil {
+		return nil, err
+	}
+
 	return irqs, nil
+}
+
+// ValidateAllowedReferencedInterrupts takes a set of user interrupt glob
+// patterns and validates them against the denied set of HW IRQs, as defined
+// by the given allow patterns. Returns denied IRQs referenced by any pattern,
+// with denied reference details in errors.
+func ValidateAllowedReferencedInterrupts(references []string, allow []string) ([]*Irq, error) {
+	var (
+		errs          []error
+		denied        = []*Irq{}
+		collectDenied = func(irq *Irq) error {
+			if !irq.denied {
+				return nil
+			}
+
+			for _, p := range references {
+				if ok, _ := path.Match(p, irq.description); ok {
+					denied = append(denied, irq)
+					errs = append(errs,
+						fmt.Errorf("%w: irq %d (%s) denied but matched by user pattern %q",
+							ErrDeniedInterrupt, irq.num, irq.description, p))
+				}
+			}
+
+			return nil
+		}
+	)
+
+	if err := forEachInterrupt(collectDenied, allow); err != nil {
+		return nil, err
+	}
+
+	return denied, errors.Join(errs...)
+}
+
+// ValidateReferencedInterrupts takes a set of user interrupt glob
+// patterns and validates them against the denied set of HW IRQs,
+// as defined by the currently set allowed patterns. Returns denied IRQs
+// referenced by any pattern, with denied reference details in errors.
+func ValidateReferencedInterrupts(references []string) ([]*Irq, error) {
+	denied, err := ValidateAllowedReferencedInterrupts(references, allowed)
+	return denied, err
 }
 
 // parseInterruptsLine returns the interrupt parsed from a
@@ -138,6 +286,10 @@ func (irq *Irq) Match(pattern string) bool {
 	return err == nil && match
 }
 
+func (irq *Irq) isAllowed() bool {
+	return !irq.denied
+}
+
 // AffinityCpus returns the CPUs in the affinity of the interrupt.
 func (irq *Irq) AffinityCpus() (cpuset.CPUSet, error) {
 	data, err := os.ReadFile(irq.smpAffinityListPath())
@@ -153,6 +305,9 @@ func (irq *Irq) AffinityCpus() (cpuset.CPUSet, error) {
 
 // SetAffinityCpus sets the CPUs in the affinity of the interrupt.
 func (irq *Irq) SetAffinityCpus(cpus cpuset.CPUSet) error {
+	if !irq.isAllowed() {
+		return fmt.Errorf("%w: refusing to set affinity of irq %d", ErrDeniedInterrupt, irq.num)
+	}
 	if cpus.IsEmpty() {
 		return fmt.Errorf("refusing to set empty affinity on irq %d", irq.num)
 	}
