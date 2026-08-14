@@ -588,7 +588,8 @@ generate-go:
 
 # rule to update generated CRDs in our helm charts
 .PHONY: update-helm-crds
-update-helm-crds:
+
+update-helm-crds: generate-clients
 	$(Q)for plugin in $(PLUGINS); do \
 	    plugin="$${plugin#nri-}"; plugin="$${plugin#resource-policy-}"; \
             helm_dir=$(HELM_TOP_DIR)/$$plugin/crds; \
@@ -596,7 +597,7 @@ update-helm-crds:
 	        echo "No generated CRD found for $$plugin plugin..."; \
 	    else \
 	        echo "Updating Helm chart CRDs for $$plugin plugin..."; \
-	        cp $(CRD_BASE_DIR)/*_$${plugin//-/}*.yaml $$helm_dir; \
+	        cp -v $(CRD_BASE_DIR)/*_$${plugin//-/}*.yaml $$helm_dir | sed 's/^/  /g'; \
 	    fi; \
 	done
 
