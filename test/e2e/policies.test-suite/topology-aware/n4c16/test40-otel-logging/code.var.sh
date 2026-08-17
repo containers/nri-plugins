@@ -1,12 +1,23 @@
 OTEL_LOGS=/tmp/otel/data/otel-export.out
 
 cleanup() {
-    vm-command "kubectl delete -f otel-collector.yaml" || :
+    always-cleanup
     vm-command "kubectl delete pods --all" || :
     helm-terminate || :
     vm-command "mkdir -p /tmp/otel/data && chmod a+rw /tmp/otel/data"
     vm-command "rm -f $OTEL_LOGS && touch -f $OTEL_LOGS && chmod a+rw $OTEL_LOGS"
 }
+
+# We better always clean up the otel collector. It takes an extra 750m CPU
+# request allocation from the reserved/kube-system CPUs which is normally
+# enough alone to exhaust our CPU reservation. Otherwise any subsequent
+# tests, or typically subsequent test runs against the same VM, might have
+# false positives due to the extra lingering CPU allocation.
+always-cleanup() {
+    vm-command "kubectl delete -f otel-collector.yaml" || :
+}
+
+trap always-cleanup EXIT
 
 cleanup
 
