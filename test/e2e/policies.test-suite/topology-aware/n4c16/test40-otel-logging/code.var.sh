@@ -23,6 +23,7 @@ cleanup
 
 vm-put-file $(instantiate otel-collector.yaml) otel-collector.yaml
 vm-command "kubectl apply -f otel-collector.yaml"
+vm-command "kubectl -n kube-system wait deployments/otel-collector --for=condition=Available --timeout=300s"
 
 helm_config=$(instantiate custom-config.yaml) helm-launch topology-aware
 
