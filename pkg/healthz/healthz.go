@@ -17,6 +17,7 @@ package healthz
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"sync"
 
@@ -91,7 +92,8 @@ func check() (Status, map[string]error) {
 	details := map[string]error{}
 
 	lock.Lock()
-	defer lock.Unlock()
+	sorted := slices.Clone(sorted)
+	lock.Unlock()
 
 	for _, name := range sorted {
 		if s, err := checkers[name](); s != Healthy {
