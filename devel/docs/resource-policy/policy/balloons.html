@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.13.1-56-g613ea0f6 documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.13.1-61-ge023908f documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=273885b1"></script>
+        <script src="../../../_static/documentation_options.js?v=22cecf0e"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -581,14 +581,29 @@ kernel-isolated CPUs.</p>
 </pre></div>
 </div>
 <p><strong><code class="docutils literal notranslate"><span class="pre">preferCloseToDevices</span></code></strong> (list of strings)</p>
-<ul class="simple">
+<ul>
 <li><p>Prefers CPUs topologically close to specified devices.</p></li>
 <li><p>Device paths like</p>
-<ul>
+<ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">/sys/class/net/eth0</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">/sys/class/drm/card0</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">/sys/devices/system/cpu/cpu14/cache/index2</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">/sys/devices/system/node/node0</span></code></p></li>
+</ul>
+</li>
+<li><p>Device-plugin devices assigned to a container via the kubelet pod
+resources API, referenced by their extended resource name with the
+<code class="docutils literal notranslate"><span class="pre">podresourceapi:</span></code> prefix, like</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">podresourceapi:nvidia.com/gpu</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">podresourceapi:intel.com/sgx</span></code></p></li>
+</ul>
+<p>The resource name may contain shell-style wildcards (<code class="docutils literal notranslate"><span class="pre">*</span></code> matches any
+sequence of characters, <code class="docutils literal notranslate"><span class="pre">?</span></code> matches a single character) to match
+several resources at once, like</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">podresourceapi:nvidia.com/*</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">podresourceapi:*/gpu</span></code></p></li>
 </ul>
 </li>
 <li><p>First device in list has highest priority.</p></li>
@@ -600,7 +615,35 @@ kernel-isolated CPUs.</p>
 <span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/sys/class/drm/card0</span>
 <span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">network-io</span>
 <span class="w">  </span><span class="nt">preferCloseToDevices</span><span class="p">:</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/sys/class/net/eth0</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">podresourceapi:*.com/nic</span>
+</pre></div>
+</div>
+<p>Unlike sysfs device paths, whose CPU locality is fixed, a
+<code class="docutils literal notranslate"><span class="pre">podresourceapi:&lt;resourceName&gt;</span></code> entry is resolved per container: when
+a container that got such a device triggers creation of a new balloon
+(<code class="docutils literal notranslate"><span class="pre">preferNewBalloons:</span> <span class="pre">true</span></code>), the CPUs of the new balloon are selected
+close to the NUMA node(s) of the exact device instance that the
+kubelet device manager assigned to that container. This enables, for
+example, allocating CPUs from the socket that is closest to the
+specific PCI device a container was given, when similar physical
+devices providing the same logical resource exist on multiple
+sockets. When the resource name contains wildcards, the CPUs are
+selected close to the NUMA node(s) of all assigned device instances
+whose resource name matches the pattern.</p>
+<p>Using <code class="docutils literal notranslate"><span class="pre">podresourceapi:</span></code> devices requires the pod resources API to be
+enabled with the agent option <code class="docutils literal notranslate"><span class="pre">podResourceAPI:</span> <span class="pre">true</span></code>. The balloon type
+should have <code class="docutils literal notranslate"><span class="pre">preferNewBalloons:</span> <span class="pre">true</span></code>. Otherwise the container might
+be assigned to an existing balloon instance whose CPUs have been
+selected based on affinity to another physical device in the system
+because another container got that device instead.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">config</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">agent</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">podResourceAPI</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">balloonTypes</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpu-containers</span>
+<span class="w">    </span><span class="nt">preferNewBalloons</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">preferCloseToDevices</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">podresourceapi:nvidia.com/gpu</span>
 </pre></div>
 </div>
 </section>
