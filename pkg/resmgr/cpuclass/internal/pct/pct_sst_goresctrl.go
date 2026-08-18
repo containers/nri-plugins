@@ -43,7 +43,7 @@ func newSstGoresctrl() (sst, error) {
 	}
 	plat, err := gosst.Init()
 	if err != nil {
-		return nil, fmt.Errorf("SST init failed: %w", err)
+		return nil, fmt.Errorf("failed to initialize SST: %w", err)
 	}
 	b.plat = plat
 	b.punits = discoverPunits(plat)

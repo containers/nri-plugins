@@ -76,7 +76,7 @@ VALIDATE_KEYS:
 			case KeyID, KeyUID, KeyName, KeyNamespace, KeyQOSClass:
 				if restKey != "" {
 					return exprError("invalid expression, trailing key %q after %q",
-						prefKey, restKey)
+						restKey, prefKey)
 				}
 
 			case KeyPod:

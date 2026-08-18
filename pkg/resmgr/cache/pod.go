@@ -142,16 +142,16 @@ func (p *pod) GetQOSClass() v1.PodQOSClass {
 }
 
 func (p *pod) goFetchPodResources(ch <-chan *podresapi.PodResources) {
-	go func() {
-		if ch != nil {
+	if ch != nil {
+		p.waitResCh = make(chan struct{})
+		go func() {
 			p.podResCh = ch
-			p.waitResCh = make(chan struct{})
 			defer close(p.waitResCh)
 
 			p.PodResources = <-ch
 			log.Debugf("fetched pod resources %+v for %s", p.PodResources, p.GetName())
-		}
-	}()
+		}()
+	}
 }
 
 func (p *pod) setPodResources(podRes *podresapi.PodResources) {

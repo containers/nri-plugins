@@ -189,7 +189,7 @@ func (s *Server) Stop() {
 
 // Shutdown shuts down the server gracefully.
 func (s *Server) Shutdown(wait bool) {
-	var sync chan struct{}
+	sync := make(chan struct{})
 
 	log.Infof("shutting down %s...", httpServer)
 
@@ -201,10 +201,11 @@ func (s *Server) Shutdown(wait bool) {
 	}
 
 	if wait {
-		sync = make(chan struct{})
 		s.server.RegisterOnShutdown(func() {
 			close(sync)
 		})
+	} else {
+		close(sync)
 	}
 	if err := s.server.Shutdown(context.Background()); err != nil && err != http.ErrServerClosed {
 		log.Warnf("failed to shutdown server: %v", err)

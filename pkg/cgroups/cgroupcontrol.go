@@ -153,11 +153,11 @@ func (g Group) AddProcesses(pids ...string) error {
 }
 
 // Write writes the formatted data to the groups entry.
-func (g Group) Write(entry, format string, args ...interface{}) error {
+func (g Group) Write(entry, format string, args ...interface{}) (err error) {
 	entryPath := path.Join(string(g), entry)
-	f, err := os.OpenFile(entryPath, os.O_WRONLY, 0644)
-	if err != nil {
-		return g.errorf("%q: failed to open: %v", entry, err)
+	f, oerr := os.OpenFile(entryPath, os.O_WRONLY, 0644)
+	if oerr != nil {
+		return g.errorf("%q: failed to open: %v", entry, oerr)
 	}
 	defer func() {
 		if cerr := f.Close(); cerr != nil && err == nil {
@@ -166,7 +166,7 @@ func (g Group) Write(entry, format string, args ...interface{}) error {
 	}()
 
 	data := fmt.Sprintf(format, args...)
-	if _, err := f.Write([]byte(data)); err != nil {
+	if _, err = f.Write([]byte(data)); err != nil {
 		return g.errorf("%q: failed to write %q: %v", entry, data, err)
 	}
 
@@ -189,7 +189,7 @@ func (g Group) readPids(entry string) ([]string, error) {
 	for s.Scan() {
 		pids = append(pids, s.Text())
 	}
-	if s.Err() != nil {
+	if err := s.Err(); err != nil {
 		return nil, g.errorf("failed to read %q: %v", entry, err)
 	}
 
@@ -197,12 +197,12 @@ func (g Group) readPids(entry string) ([]string, error) {
 }
 
 // writePids writes pids to a cgroup's tasks or procs entry.
-func (g Group) writePids(entry string, pids ...string) error {
+func (g Group) writePids(entry string, pids ...string) (err error) {
 	pidFile := path.Join(string(g), entry)
 
-	f, err := os.OpenFile(pidFile, os.O_WRONLY, 0644)
-	if err != nil {
-		return g.errorf("failed to write pids to %q: %v", pidFile, err)
+	f, oerr := os.OpenFile(pidFile, os.O_WRONLY, 0644)
+	if oerr != nil {
+		return g.errorf("failed to write pids to %q: %v", pidFile, oerr)
 	}
 	defer func() {
 		if cerr := f.Close(); cerr != nil && err == nil {
@@ -211,7 +211,7 @@ func (g Group) writePids(entry string, pids ...string) error {
 	}()
 
 	for _, pid := range pids {
-		if _, err := f.Write([]byte(pid)); err != nil {
+		if _, err = f.Write([]byte(pid)); err != nil {
 			if !errors.Is(err, syscall.ESRCH) {
 				return g.errorf("failed to write pid %s to %q: %v",
 					pid, pidFile, err)

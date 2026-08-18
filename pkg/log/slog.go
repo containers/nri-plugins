@@ -89,6 +89,9 @@ func (l *slogger) Panic(msg string, attrs ...Attr) {
 }
 
 func (l *slogger) Debugf(format string, args ...any) {
+	if !l.DebugEnabled() {
+		return
+	}
 	l.Log(LevelDebug, fmt.Sprintf(format, args...))
 }
 
@@ -126,6 +129,9 @@ func (l *slogger) LogBlock(lvl Level, prefix, format string, args ...any) {
 }
 
 func (l *slogger) DebugBlock(prefix, format string, args ...any) {
+	if !l.DebugEnabled() {
+		return
+	}
 	l.LogBlock(LevelDebug, prefix, format, args...)
 }
 
