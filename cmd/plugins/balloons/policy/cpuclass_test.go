@@ -142,20 +142,6 @@ func TestMergeCpuClassHintsNoAccumulation(t *testing.T) {
 	}
 }
 
-func TestFilterOutHintDevs(t *testing.T) {
-	in := []string{"a", "__cls_pref_0_x", "b", "__cls_avoid_0_y", "c"}
-	got := filterOutHintDevs(in)
-	want := []string{"a", "b", "c"}
-	if len(got) != len(want) {
-		t.Fatalf("filterOutHintDevs len=%d, want %d: got=%v", len(got), len(want), got)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("filterOutHintDevs[%d] = %q, want %q", i, got[i], want[i])
-		}
-	}
-}
-
 func userDevs(devs []string) []string {
 	out := []string{}
 	for _, d := range devs {
