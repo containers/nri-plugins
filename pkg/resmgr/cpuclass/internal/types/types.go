@@ -65,9 +65,16 @@ func (c ClassDef) Equal(other ClassDef) bool {
 // helpers (e.g. pct) can implement Hints without depending on the
 // public cpuclass package.
 type AllocationIntent struct {
-	ClassName      string
-	CurrentCpus    cpuset.CPUSet
-	FreeCpus       cpuset.CPUSet
+	// ClassName is the cpuClass the upcoming allocation will use.
+	ClassName string
+	// CurrentCpus are the CPUs the caller already owns.
+	CurrentCpus cpuset.CPUSet
+	// FreeCpus are the CPUs the allocation can pick from. Prefer
+	// hints never contain CPUs outside this set.
+	FreeCpus cpuset.CPUSet
+	// RequestedCount is the number of CPUs the allocation wants.
+	// A negative count means releasing that many CPUs from
+	// CurrentCpus. Zero is reserved and unspecified.
 	RequestedCount int
 }
 

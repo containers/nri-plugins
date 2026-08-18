@@ -2158,8 +2158,8 @@ const cpuClassHintDevPrefix = "__cls_"
 //   - cpuClass: the cpuClass that the upcoming allocation will use.
 //   - currentCpus: CPUs the balloon already owns (excluded from HP
 //     room accounting in PCT hints).
-//   - requestedCount: number of CPUs the upcoming allocation wants.
-//     Pass 0 when unknown (e.g. balloon creation before sizing).
+//   - requestedCount: number of CPUs the upcoming allocation wants,
+//     negative when the balloon is about to release CPUs.
 func (p *balloons) applyCpuClassHints(opts *cpuTreeAllocatorOptions, cpuClass string, currentCpus cpuset.CPUSet, requestedCount int) {
 	if p.cpuClasses == nil || opts == nil {
 		return
