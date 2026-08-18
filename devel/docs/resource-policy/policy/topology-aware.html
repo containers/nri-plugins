@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.13.1-29-gc01dbafb documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.13.1-44-gf9abe9ab documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=5aa9d2e6"></script>
+        <script src="../../../_static/documentation_options.js?v=9baaae85"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -444,6 +444,34 @@ has a default scheduling class, but its Pod QoS class has a default
 scheduling class, this will apply to the container.</p></li>
 </ul>
 </li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cpuClasses</span></code></p>
+<ul>
+<li><p>Define a combination of CPU frequency, C-state, and turbo attributes.
+Containers eligible for exclusive CPU allocation can then be annotated to
+a CPU class. See the <a class="reference internal" href="#class-based-cpu-tuning">CPU Tuning</a>
+for more details on defining CPU classes themselves.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sharedPoolCPUClass</span></code></p>
+<ul>
+<li><p>Controls how CPUs are reconfigured when they are returned from exclusive
+allocation to a shared pool. If any CPU classes are defined a shared CPU
+class must be specified.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">reservedPoolCPUClass</span></code></p>
+<ul>
+<li><p>Controls how CPUs are reconfigured when they are assigned to the reserved
+pool. If no reserved CPU class is designated, the shared CPU class will be
+used for the reserved pool.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">defaultExclusiveCPUClass</span></code></p>
+<ul>
+<li><p>Controls how CPUs are reconfigured when they are assigned for excusive use
+to containers which are not annotated to use any CPU class.</p></li>
+</ul>
+</li>
 </ul>
 <p>Additionally, the following sub-configuration is available for instrumentation:</p>
 <ul class="simple">
@@ -747,6 +775,230 @@ corresponding scheduling and I/O priority attributes.</p>
 <p>If a container is not assigned to a scheduling class by annotation, it inherits
 the default scheduling class for its namespace or Pod QoS class, in this order
 of precedence, if either or both is set.</p>
+</section>
+<section id="class-based-cpu-tuning">
+<h3>Class Based CPU Tuning<a class="headerlink" href="#class-based-cpu-tuning" title="Link to this heading"></a></h3>
+<p>CPU classes provide fine grained control over CPU behavior and power
+management.</p>
+<section id="cpu-class-definitions">
+<h4>CPU class definitions.<a class="headerlink" href="#cpu-class-definitions" title="Link to this heading"></a></h4>
+<p>Each CPU class in the configuration is an object with the following
+properties:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">name</span></code> (string): Class name referenced by policy configuration.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">minFreq</span></code> (string): Minimum CPU frequency. Accepts values with
+units: <code class="docutils literal notranslate"><span class="pre">&quot;3.2GHz&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;2900MHz&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;2900000kHz&quot;</span></code>, or a string
+containing plain number in kHz: <code class="docutils literal notranslate"><span class="pre">&quot;2900000&quot;</span></code>. Also accepts symbolic
+names: <code class="docutils literal notranslate"><span class="pre">&quot;min&quot;</span></code> (platform minimum), <code class="docutils literal notranslate"><span class="pre">&quot;base&quot;</span></code> (CPU base frequency),
+<code class="docutils literal notranslate"><span class="pre">&quot;turbo&quot;</span></code> (maximum turbo frequency), which are resolved at runtime
+from sysfs.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">maxFreq</span></code> (string): Maximum CPU frequency (same format).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">uncoreMinFreq</span></code> / <code class="docutils literal notranslate"><span class="pre">uncoreMaxFreq</span></code> (string): Uncore frequency limits
+(same format).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">disabledCstates</span></code> (list): C-state names to disable (e.g., <code class="docutils literal notranslate"><span class="pre">[&quot;C6&quot;,</span> <span class="pre">&quot;C8&quot;]</span></code>).</p>
+<ul>
+<li><p>Disabling deep C-states reduces latency by preventing deep sleep.</p></li>
+<li><p>Disabling intermediate C-states keeps CPU more responsive longer
+after use, but allows it to enter deeper power saving states if
+not needed.</p></li>
+<li><p>List available C-states: <code class="docutils literal notranslate"><span class="pre">grep</span> <span class="pre">.</span> <span class="pre">/sys/devices/system/cpu/cpu0/cpuidle/state*/name</span></code>.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">energyPerformancePreference</span></code> (integer): EPP value for CPUs.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">freqGovernor</span></code> (string): CPUFreq governor (e.g., <code class="docutils literal notranslate"><span class="pre">&quot;performance&quot;</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">turboPriority</span></code> (integer): Controls exclusive turbo frequency
+access. Among CPU classes with active allocations, only the class
+with the highest <code class="docutils literal notranslate"><span class="pre">turboPriority</span></code> gets the symbolic frequency
+<code class="docutils literal notranslate"><span class="pre">&quot;turbo&quot;</span></code> resolved to the actual turbo frequency. All other
+classes get <code class="docutils literal notranslate"><span class="pre">&quot;turbo&quot;</span></code> resolved to the base frequency. When the
+highest-priority class no longer has active allocations, the next
+highest-priority class regains turbo. If all classes have
+<code class="docutils literal notranslate"><span class="pre">turboPriority</span></code> 0 (default), every class gets real turbo – no
+competition occurs. <code class="docutils literal notranslate"><span class="pre">turboPriority</span></code> arbitration is scoped to a
+<em>turbo domain</em> (see <code class="docutils literal notranslate"><span class="pre">turboDomain</span></code> below), so on multi-socket
+systems a low-priority class on one socket can keep turbo even
+when a higher-priority class is active on another socket.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pctPriority</span></code> (string): reset system PCT configuration and use
+<code class="docutils literal notranslate"><span class="pre">high</span></code>  or <code class="docutils literal notranslate"><span class="pre">low</span></code> priority CLOSes for CPUs. See <a class="reference internal" href="#priority-core-turbo-pct">Priority Core
+Turbo</a> for details.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sstClosID</span></code> (integer): use system PCT configuration and assign
+CPUs to specified CLOS. See <a class="reference internal" href="#priority-core-turbo-pct">Priority Core
+Turbo</a> for details.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">publishExtendedResource</span></code> (bool). If <code class="docutils literal notranslate"><span class="pre">true</span></code> in a class with either
+<code class="docutils literal notranslate"><span class="pre">pctPriority:</span> <span class="pre">high</span></code> or <code class="docutils literal notranslate"><span class="pre">sstClosID:</span> <span class="pre">n</span></code> policy publishes class’s
+available CPU capacity using a policy-specific extended resource.
+Enables Kubernetes to schedule pods on nodes with enough
+CPUs of wanted priority. Notes: container’s <code class="docutils literal notranslate"><span class="pre">cpu</span></code> and extended
+resource requests <strong>must be equal</strong> to avoid over and under
+subscription. Extended resources are not cleaned up from node status
+when a plugin is stopped or uninstalled. The agent’s reconciliation
+removes extended resources when configured not to publish them.</p></li>
+</ul>
+</section>
+<section id="priority-core-turbo-pct">
+<h4>Priority Core Turbo (PCT)<a class="headerlink" href="#priority-core-turbo-pct" title="Link to this heading"></a></h4>
+<p>On Intel Xeon CPUs that support <a class="reference external" href="https://docs.kernel.org/admin-guide/pm/intel-speed-select.html">Intel Speed Select
+Technology</a>
+(SST), policy plugins can additionally drive <em>Priority Core
+Turbo</em> (PCT) on a per-cpuClass basis. PCT lets a small number of
+<em>High Priority</em> (HP) cores reach the maximum turbo frequency
+while the remaining <em>Low Priority</em> (LP) cores are capped. The
+mapping between cpuClasses and the underlying SST-CP CLOSes is
+managed by the <em>PCT allocator</em> using the
+<a class="reference external" href="https://github.com/intel/goresctrl">goresctrl SST library</a>.</p>
+<p>Two fields on a <code class="docutils literal notranslate"><span class="pre">cpuClasses</span></code> entry enable PCT:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">pctPriority</span></code> (string, optional): <code class="docutils literal notranslate"><span class="pre">&quot;high&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;low&quot;</span></code>. When set,
+the CPU classes for PCT are put into <strong>managed mode</strong> for PCT: it
+performs the full SoC-wide SST setup (CP reset, TF enable, CLOS
+configuration, CP enable) and associates CPUs of any active allocations
+using this cpuClass to the HP CLOS (default CLOS 0) or the LP
+CLOS (default CLOS 3). At most one managed <code class="docutils literal notranslate"><span class="pre">high</span></code> and one
+managed <code class="docutils literal notranslate"><span class="pre">low</span></code> cpuClass is allowed.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sstClosID</span></code> (integer, optional, 0..<em>ClosCount-1</em>): pins this
+cpuClass to a specific CLOS slot and selects <strong>assoc-only
+mode</strong>: the policy only associates CPUs to the given CLOS
+without reconfiguring the SoC-wide SST state. Use this when an
+operator or the BIOS has already configured the CLOSes.</p></li>
+</ul>
+<p><code class="docutils literal notranslate"><span class="pre">pctPriority</span></code> and <code class="docutils literal notranslate"><span class="pre">sstClosID</span></code> are <strong>mutually exclusive</strong> on the
+same cpuClass. Managed and assoc-only cpuClasses cannot be mixed
+in the same configuration.</p>
+<p>By default the CLOS minimum/maximum frequencies programmed in
+managed mode come from the cpuClass’s own <code class="docutils literal notranslate"><span class="pre">minFreq</span></code>/<code class="docutils literal notranslate"><span class="pre">maxFreq</span></code>.
+Two optional overrides exist for cases where the hardware CLOS
+bounds should differ from the OS-visible cpufreq limits:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">pctMinFreq</span></code> (string, optional): CLOS minimum frequency,
+defaults to <code class="docutils literal notranslate"><span class="pre">minFreq</span></code>. Accepts the same units and symbolic
+names. Resolves <code class="docutils literal notranslate"><span class="pre">&quot;turbo&quot;</span></code> directly to the hardware maximum
+turbo frequency, regardless of soft <code class="docutils literal notranslate"><span class="pre">turboPriority</span></code>
+arbitration.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pctMaxFreq</span></code> (string, optional): CLOS maximum frequency,
+defaults to <code class="docutils literal notranslate"><span class="pre">maxFreq</span></code>. Same caveats as <code class="docutils literal notranslate"><span class="pre">pctMinFreq</span></code>.</p></li>
+</ul>
+<p>On hosts without SST support the PCT fields are ignored with a
+warning, so a single cpuClass YAML can be portable across PCT and
+non-PCT systems.</p>
+</section>
+<section id="assigning-containers-to-cpu-classes">
+<h4>Assigning Containers To CPU Classes<a class="headerlink" href="#assigning-containers-to-cpu-classes" title="Link to this heading"></a></h4>
+<p>The topology-aware policy allows assigning containers eligible for
+exclusive CPU allocation to designated CPU classes. This happens
+either by setting up a <code class="docutils literal notranslate"><span class="pre">defaultExclusiveCPUClass</span></code> in the configuration,
+or by annotating the container to a particular CPU class using the
+<code class="docutils literal notranslate"><span class="pre">cpu-class.resource-policy.nri.io</span></code> effective annotation base key.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">config</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">reservedResources</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">cpu</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+<span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">...</span>
+<span class="w">  </span><span class="nt">cpuClasses</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">low-prio</span>
+<span class="w">    </span><span class="nt">minFreq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">min</span>
+<span class="w">    </span><span class="nt">maxFreq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">base</span>
+<span class="w">    </span><span class="nt">pctPriority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">low</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">reserved</span>
+<span class="w">    </span><span class="nt">minFreq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">base</span>
+<span class="w">    </span><span class="nt">maxFreq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">turbo</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">default-exclusive</span>
+<span class="w">    </span><span class="nt">minFreq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">min</span>
+<span class="w">    </span><span class="nt">maxFreq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">turbo</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">high-prio</span>
+<span class="w">    </span><span class="nt">minFreq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">turbo</span>
+<span class="w">    </span><span class="nt">maxFreq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">turbo</span>
+<span class="w">    </span><span class="nt">pctPriority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">high</span>
+<span class="w">  </span><span class="nt">sharedPoolCPUClass</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">low-prio</span>
+<span class="w">  </span><span class="nt">reservedPoolCPUClass</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">reserved</span>
+<span class="w">  </span><span class="nt">defaultExclusiveCPUClass</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">default-exclusive</span>
+</pre></div>
+</div>
+<p>Now any CPUs exclusively allocated to <code class="docutils literal notranslate"><span class="pre">Guaranteed</span></code> QoS class containers
+will get reconfigured by default according to the <code class="docutils literal notranslate"><span class="pre">default-exclusive</span></code> CPU
+class. You can alter this by using the <code class="docutils literal notranslate"><span class="pre">cpu-class.resource-policy.nri.io</span></code>
+annotation key:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nn">...</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">cpu-class.resource-policy.nri.io/container.data-pump</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">high-prio</span>
+<span class="w">    </span><span class="nt">cpu-class.resource-policy.nri.io/container.logger</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">low-prio</span>
+<span class="nn">...</span>
+</pre></div>
+</div>
+<p>Now if your pod with this annotation has 3 containers, <code class="docutils literal notranslate"><span class="pre">c0</span></code>, <code class="docutils literal notranslate"><span class="pre">data-pump</span></code>
+and <code class="docutils literal notranslate"><span class="pre">logger</span></code>, each eligible for exclusive CPU allocation, the CPUs assigned
+to them will get reconfigured according to the <code class="docutils literal notranslate"><span class="pre">default-exclusive</span></code>, <code class="docutils literal notranslate"><span class="pre">high-prio</span></code>,
+and <code class="docutils literal notranslate"><span class="pre">low-prio</span></code> CPU classes. Moreover every CPU which is part of any other than
+the reserved pool will get configured according to the <code class="docutils literal notranslate"><span class="pre">low-prio</span></code> CPU class,
+both on startup and when they are returned to the shared pool from exclusive
+allocation. The CPU assigned for the reserved pool (<code class="docutils literal notranslate"><span class="pre">kube-system</span></code> namespace)
+will get configured according to the <code class="docutils literal notranslate"><span class="pre">reserved</span></code> CPU class.</p>
+</section>
+</section>
+<section id="irq-cpu-affinity-tuning">
+<h3>IRQ CPU Affinity Tuning<a class="headerlink" href="#irq-cpu-affinity-tuning" title="Link to this heading"></a></h3>
+<p>Containers eligible for exclusive CPU allocation can be annotated with IRQ
+tuning to claim selected IRQs, mask selected IRQs, or do both, using the
+<code class="docutils literal notranslate"><span class="pre">irq-affinity.resource-policy.nri.io</span></code> annotation key.</p>
+<p>The annotation has 3 fields:
+<strong><code class="docutils literal notranslate"><span class="pre">claim</span></code></strong> (list of strings)</p>
+<ul class="simple">
+<li><p>Lists IRQs handled by the exclusive CPUs allocated to the container.</p></li>
+<li><p>Each item refers to IRQs either by an exact number, or by a pattern
+matching last columns in <code class="docutils literal notranslate"><span class="pre">/proc/interrupts</span></code>. Supports wildcards, for
+instance “<em>nvme</em>”.</p></li>
+<li><p>The affinity of a claimed IRQ is set to the union of CPUs of all
+containers that claim it.
+<strong><code class="docutils literal notranslate"><span class="pre">mask</span></code></strong> (list of strings)</p></li>
+<li><p>Lists IRQs which should not be handled by the exclusive CPUs allocated
+to the container.</p></li>
+<li><p>Each item refers to IRQs in the same way as for claims.
+<strong><code class="docutils literal notranslate"><span class="pre">mode</span></code></strong> (string, <code class="docutils literal notranslate"><span class="pre">mask-first</span></code> (default if left empty), <code class="docutils literal notranslate"><span class="pre">claim-first</span></code>)</p></li>
+<li><p>The mode in which claims versus masks are applied.</p></li>
+<li><p>mask-first: apply masks first then claims</p></li>
+<li><p>claim-first: apply claims first then masks</p></li>
+</ul>
+<p>The default (empty) mode is <code class="docutils literal notranslate"><span class="pre">mask-first</span></code>. In this mode IRQs which are
+both claimed and masked will be effectively claimed. In <code class="docutils literal notranslate"><span class="pre">claim-first</span></code>
+mode IRQs which are both claimed and masked will be effectively masked.</p>
+<p>For instance, the following annotation</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">irq-affinity.resource-policy.nri.io/container.data-pump</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">claim:</span>
+<span class="w">        </span><span class="no">- &quot;*eth0 *&quot;</span>
+<span class="w">      </span><span class="no">mask:</span>
+<span class="w">        </span><span class="no">- &quot;*&quot;</span>
+<span class="w">    </span><span class="nt">irq-affinity.resource-policy.nri.io/container.mgmt</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">claim:</span>
+<span class="w">        </span><span class="no">- &quot;*&quot;</span>
+<span class="w">      </span><span class="no">mask:</span>
+<span class="w">        </span><span class="no">- &quot;*eth0 *&quot;</span>
+<span class="w">      </span><span class="no">mode: claim-first</span>
+</pre></div>
+</div>
+<p>will set the affinity of the IRQ matching <code class="docutils literal notranslate"><span class="pre">&quot;*eth0</span> <span class="pre">&quot;</span></code> to the
+exclusive CPU set of the <code class="docutils literal notranslate"><span class="pre">data-pump</span></code> container, while the <code class="docutils literal notranslate"><span class="pre">mgmt</span></code>
+container will grab all other IRQs.</p>
+<p>The following annotation</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">irq-affinity.resource-policy.nri.io/container.compute</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">      </span><span class="no">mask:</span>
+<span class="w">        </span><span class="no">- &quot;*&quot;</span>
+</pre></div>
+</div>
+<p>will mask the exclusive CPUs allocated to the <code class="docutils literal notranslate"><span class="pre">compute</span></code>
+container from the CPU affinity of all IRQs.</p>
+<p>Any container scoped effective IRQ affinity annotation for containers
+without exclusive CPU allocation is considered an error, regardless of
+the container’s QoS class, and should prevent the creation of the container.</p>
+<section id="restricting-irq-cpu-affinity-tuning">
+<h4>Restricting IRQ CPU Affinity Tuning<a class="headerlink" href="#restricting-irq-cpu-affinity-tuning" title="Link to this heading"></a></h4>
+<p>The <code class="docutils literal notranslate"><span class="pre">controllableInterrupts</span></code> configuration setting can be used to restrict
+which interrupts the policy can exercise control over. It is a list of
+glob patterns which is matched against IRQ descriptions in <code class="docutils literal notranslate"><span class="pre">/proc/interrupts</span></code>.
+If an interrupt description is matched by any of the patterns it is allowed
+to be controlled. By default all interrupts are controllable.</p>
+</section>
 </section>
 <section id="implicit-topological-co-location-for-pods-and-namespaces">
 <h3>Implicit Topological Co-location for Pods and Namespaces<a class="headerlink" href="#implicit-topological-co-location-for-pods-and-namespaces" title="Link to this heading"></a></h3>

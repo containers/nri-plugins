@@ -263,6 +263,22 @@ behavior. These options can be supplied as part of the effective
     is neither annotated to use a specific scheduling class nor its namespace
     has a default scheduling class, but its Pod QoS class has a default
     scheduling class, this will apply to the container.
+- `cpuClasses`
+   - Define a combination of CPU frequency, C-state, and turbo attributes.
+     Containers eligible for exclusive CPU allocation can then be annotated to
+     a CPU class. See the [CPU Tuning](#class-based-cpu-tuning)
+     for more details on defining CPU classes themselves.
+- `sharedPoolCPUClass`
+   - Controls how CPUs are reconfigured when they are returned from exclusive
+     allocation to a shared pool. If any CPU classes are defined a shared CPU
+     class must be specified.
+- `reservedPoolCPUClass`
+   - Controls how CPUs are reconfigured when they are assigned to the reserved
+     pool. If no reserved CPU class is designated, the shared CPU class will be
+     used for the reserved pool.
+- `defaultExclusiveCPUClass`
+   - Controls how CPUs are reconfigured when they are assigned for excusive use
+     to containers which are not annotated to use any CPU class.
 
 Additionally, the following sub-configuration is available for instrumentation:
 
@@ -554,6 +570,241 @@ metadata:
 If a container is not assigned to a scheduling class by annotation, it inherits
 the default scheduling class for its namespace or Pod QoS class, in this order
 of precedence, if either or both is set.
+
+
+### Class Based CPU Tuning
+
+CPU classes provide fine grained control over CPU behavior and power
+management.
+
+#### CPU class definitions.
+
+Each CPU class in the configuration is an object with the following
+properties:
+
+- `name` (string): Class name referenced by policy configuration.
+- `minFreq` (string): Minimum CPU frequency. Accepts values with
+  units: `"3.2GHz"`, `"2900MHz"`, `"2900000kHz"`, or a string
+  containing plain number in kHz: `"2900000"`. Also accepts symbolic
+  names: `"min"` (platform minimum), `"base"` (CPU base frequency),
+  `"turbo"` (maximum turbo frequency), which are resolved at runtime
+  from sysfs.
+- `maxFreq` (string): Maximum CPU frequency (same format).
+- `uncoreMinFreq` / `uncoreMaxFreq` (string): Uncore frequency limits
+  (same format).
+- `disabledCstates` (list): C-state names to disable (e.g., `["C6", "C8"]`).
+  - Disabling deep C-states reduces latency by preventing deep sleep.
+  - Disabling intermediate C-states keeps CPU more responsive longer
+    after use, but allows it to enter deeper power saving states if
+    not needed.
+  - List available C-states: `grep
+    . /sys/devices/system/cpu/cpu0/cpuidle/state*/name`.
+- `energyPerformancePreference` (integer): EPP value for CPUs.
+- `freqGovernor` (string): CPUFreq governor (e.g., `"performance"`).
+- `turboPriority` (integer): Controls exclusive turbo frequency
+  access. Among CPU classes with active allocations, only the class
+  with the highest `turboPriority` gets the symbolic frequency
+  `"turbo"` resolved to the actual turbo frequency. All other
+  classes get `"turbo"` resolved to the base frequency. When the
+  highest-priority class no longer has active allocations, the next
+  highest-priority class regains turbo. If all classes have
+  `turboPriority` 0 (default), every class gets real turbo -- no
+  competition occurs. `turboPriority` arbitration is scoped to a
+  *turbo domain* (see `turboDomain` below), so on multi-socket
+  systems a low-priority class on one socket can keep turbo even
+  when a higher-priority class is active on another socket.
+- `pctPriority` (string): reset system PCT configuration and use
+  `high`  or `low` priority CLOSes for CPUs. See [Priority Core
+  Turbo](#priority-core-turbo-pct) for details.
+- `sstClosID` (integer): use system PCT configuration and assign
+  CPUs to specified CLOS. See [Priority Core
+  Turbo](#priority-core-turbo-pct) for details.
+- `publishExtendedResource` (bool). If `true` in a class with either
+  `pctPriority: high` or `sstClosID: n` policy publishes class's
+  available CPU capacity using a policy-specific extended resource.
+  Enables Kubernetes to schedule pods on nodes with enough
+  CPUs of wanted priority. Notes: container's `cpu` and extended
+  resource requests **must be equal** to avoid over and under
+  subscription. Extended resources are not cleaned up from node status
+  when a plugin is stopped or uninstalled. The agent's reconciliation
+  removes extended resources when configured not to publish them.
+
+#### Priority Core Turbo (PCT)
+
+On Intel Xeon CPUs that support [Intel Speed Select
+Technology](https://docs.kernel.org/admin-guide/pm/intel-speed-select.html)
+(SST), policy plugins can additionally drive *Priority Core
+Turbo* (PCT) on a per-cpuClass basis. PCT lets a small number of
+*High Priority* (HP) cores reach the maximum turbo frequency
+while the remaining *Low Priority* (LP) cores are capped. The
+mapping between cpuClasses and the underlying SST-CP CLOSes is
+managed by the *PCT allocator* using the
+[goresctrl SST library](https://github.com/intel/goresctrl).
+
+Two fields on a `cpuClasses` entry enable PCT:
+
+- `pctPriority` (string, optional): `"high"` or `"low"`. When set,
+  the CPU classes for PCT are put into **managed mode** for PCT: it
+  performs the full SoC-wide SST setup (CP reset, TF enable, CLOS
+  configuration, CP enable) and associates CPUs of any active allocations
+  using this cpuClass to the HP CLOS (default CLOS 0) or the LP
+  CLOS (default CLOS 3). At most one managed `high` and one
+  managed `low` cpuClass is allowed.
+- `sstClosID` (integer, optional, 0..*ClosCount-1*): pins this
+  cpuClass to a specific CLOS slot and selects **assoc-only
+  mode**: the policy only associates CPUs to the given CLOS
+  without reconfiguring the SoC-wide SST state. Use this when an
+  operator or the BIOS has already configured the CLOSes.
+
+`pctPriority` and `sstClosID` are **mutually exclusive** on the
+same cpuClass. Managed and assoc-only cpuClasses cannot be mixed
+in the same configuration.
+
+By default the CLOS minimum/maximum frequencies programmed in
+managed mode come from the cpuClass's own `minFreq`/`maxFreq`.
+Two optional overrides exist for cases where the hardware CLOS
+bounds should differ from the OS-visible cpufreq limits:
+
+- `pctMinFreq` (string, optional): CLOS minimum frequency,
+  defaults to `minFreq`. Accepts the same units and symbolic
+  names. Resolves `"turbo"` directly to the hardware maximum
+  turbo frequency, regardless of soft `turboPriority`
+  arbitration.
+- `pctMaxFreq` (string, optional): CLOS maximum frequency,
+  defaults to `maxFreq`. Same caveats as `pctMinFreq`.
+
+On hosts without SST support the PCT fields are ignored with a
+warning, so a single cpuClass YAML can be portable across PCT and
+non-PCT systems.
+
+#### Assigning Containers To CPU Classes
+
+The topology-aware policy allows assigning containers eligible for
+exclusive CPU allocation to designated CPU classes. This happens
+either by setting up a `defaultExclusiveCPUClass` in the configuration,
+or by annotating the container to a particular CPU class using the
+`cpu-class.resource-policy.nri.io` effective annotation base key.
+
+```yaml
+config:
+  reservedResources:
+    cpu: 2
+  ...
+  cpuClasses:
+  - name: low-prio
+    minFreq: min
+    maxFreq: base
+    pctPriority: low
+  - name: reserved
+    minFreq: base
+    maxFreq: turbo
+  - name: default-exclusive
+    minFreq: min
+    maxFreq: turbo
+  - name: high-prio
+    minFreq: turbo
+    maxFreq: turbo
+    pctPriority: high
+  sharedPoolCPUClass: low-prio
+  reservedPoolCPUClass: reserved
+  defaultExclusiveCPUClass: default-exclusive
+```
+
+Now any CPUs exclusively allocated to `Guaranteed` QoS class containers
+will get reconfigured by default according to the `default-exclusive` CPU
+class. You can alter this by using the `cpu-class.resource-policy.nri.io`
+annotation key:
+
+```yaml
+...
+metadata:
+  annotations:
+    cpu-class.resource-policy.nri.io/container.data-pump: high-prio
+    cpu-class.resource-policy.nri.io/container.logger: low-prio
+...
+```
+
+Now if your pod with this annotation has 3 containers, `c0`, `data-pump`
+and `logger`, each eligible for exclusive CPU allocation, the CPUs assigned
+to them will get reconfigured according to the `default-exclusive`, `high-prio`,
+and `low-prio` CPU classes. Moreover every CPU which is part of any other than
+the reserved pool will get configured according to the `low-prio` CPU class,
+both on startup and when they are returned to the shared pool from exclusive
+allocation. The CPU assigned for the reserved pool (`kube-system` namespace)
+will get configured according to the `reserved` CPU class.
+
+### IRQ CPU Affinity Tuning
+
+Containers eligible for exclusive CPU allocation can be annotated with IRQ
+tuning to claim selected IRQs, mask selected IRQs, or do both, using the
+`irq-affinity.resource-policy.nri.io` annotation key.
+
+The annotation has 3 fields:
+**`claim`** (list of strings)
+- Lists IRQs handled by the exclusive CPUs allocated to the container.
+- Each item refers to IRQs either by an exact number, or by a pattern
+  matching last columns in `/proc/interrupts`. Supports wildcards, for
+  instance "*nvme*".
+- The affinity of a claimed IRQ is set to the union of CPUs of all
+  containers that claim it.
+**`mask`** (list of strings)
+- Lists IRQs which should not be handled by the exclusive CPUs allocated
+  to the container.
+- Each item refers to IRQs in the same way as for claims.
+**`mode`** (string, `mask-first` (default if left empty), `claim-first`)
+- The mode in which claims versus masks are applied.
+- mask-first: apply masks first then claims
+- claim-first: apply claims first then masks
+
+The default (empty) mode is `mask-first`. In this mode IRQs which are
+both claimed and masked will be effectively claimed. In `claim-first`
+mode IRQs which are both claimed and masked will be effectively masked.
+
+For instance, the following annotation
+
+```yaml
+  annotations:
+    irq-affinity.resource-policy.nri.io/container.data-pump: |
+      claim:
+        - "*eth0 *"
+      mask:
+        - "*"
+    irq-affinity.resource-policy.nri.io/container.mgmt: |
+      claim:
+        - "*"
+      mask:
+        - "*eth0 *"
+      mode: claim-first
+```
+
+will set the affinity of the IRQ matching `"*eth0 "` to the
+exclusive CPU set of the `data-pump` container, while the `mgmt`
+container will grab all other IRQs.
+
+The following annotation
+
+```yaml
+metadata:
+  annotations:
+    irq-affinity.resource-policy.nri.io/container.compute: |
+      mask:
+        - "*"
+```
+
+will mask the exclusive CPUs allocated to the `compute`
+container from the CPU affinity of all IRQs.
+
+Any container scoped effective IRQ affinity annotation for containers
+without exclusive CPU allocation is considered an error, regardless of
+the container's QoS class, and should prevent the creation of the container.
+
+#### Restricting IRQ CPU Affinity Tuning
+
+The `controllableInterrupts` configuration setting can be used to restrict
+which interrupts the policy can exercise control over. It is a list of
+glob patterns which is matched against IRQ descriptions in `/proc/interrupts`.
+If an interrupt description is matched by any of the patterns it is allowed
+to be controlled. By default all interrupts are controllable.
 
 ### Implicit Topological Co-location for Pods and Namespaces
 
