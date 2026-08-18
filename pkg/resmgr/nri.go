@@ -378,9 +378,16 @@ func (p *nriPlugin) StopPodSandbox(ctx context.Context, podSandbox *api.PodSandb
 
 	m := p.resmgr
 
-	// TODO(klihub): shouldn't we m.Lock()/defer m.Unlock() here?
+	m.Lock()
+	defer m.Unlock()
 
-	pod, _ := m.cache.LookupPod(podSandbox.GetId())
+	pod, ok := m.cache.LookupPod(podSandbox.GetId())
+	if !ok {
+		log.Errorf("%s/%s: failed to look up pod for StopPodSandbox",
+			podSandbox.GetNamespace(), podSandbox.GetName())
+		return nil
+	}
+
 	released := slices.Clone(pod.GetContainers())
 	m.agent.PurgePodResources(pod.GetNamespace(), pod.GetName())
 
@@ -416,7 +423,16 @@ func (p *nriPlugin) RemovePodSandbox(ctx context.Context, podSandbox *api.PodSan
 
 	m := p.resmgr
 
-	pod, _ := m.cache.LookupPod(podSandbox.GetId())
+	m.Lock()
+	defer m.Unlock()
+
+	pod, ok := m.cache.LookupPod(podSandbox.GetId())
+	if !ok {
+		log.Errorf("%s/%s: failed to look up pod for RemovePodSandbox",
+			podSandbox.GetNamespace(), podSandbox.GetName())
+		return nil
+	}
+
 	released := slices.Clone(pod.GetContainers())
 	m.agent.PurgePodResources(pod.GetNamespace(), pod.GetName())
 
@@ -424,9 +440,6 @@ func (p *nriPlugin) RemovePodSandbox(ctx context.Context, podSandbox *api.PodSan
 		nri.Errorf("%s: failed to run post-release hooks for pod %s: %v",
 			event, pod.GetName(), err)
 	}
-
-	m.Lock()
-	defer m.Unlock()
 
 	m.cache.DeletePod(podSandbox.GetId())
 	return nil
