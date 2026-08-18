@@ -27,6 +27,6 @@ func ParseEnabled(value string) (bool, error) {
 	case "false", "off", "disable", "disabled", "0":
 		return false, nil
 	default:
-		return false, fmt.Errorf("ParseEnabled: invalid string %q", value)
+		return false, fmt.Errorf("invalid enabled string %q", value)
 	}
 }

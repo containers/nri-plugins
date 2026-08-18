@@ -138,7 +138,7 @@ func OwnerPid() (int, error) {
 
 	p, err = os.FindProcess(pid)
 	if err != nil {
-		return -1, fmt.Errorf("FindProcess() failed for PID %d: %w", pid, err)
+		return -1, fmt.Errorf("failed to find process for PID %d: %w", pid, err)
 	}
 
 	err = p.Signal(syscall.Signal(0))

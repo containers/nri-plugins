@@ -46,7 +46,7 @@ const (
 )
 
 var (
-	errGetDisabled = fmt.Errorf("PodResources API Get method disabled")
+	errGetDisabled = fmt.Errorf("pod resource API Get method disabled")
 	log            = logger.Get("podresapi")
 )
 
