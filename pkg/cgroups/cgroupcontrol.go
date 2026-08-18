@@ -189,7 +189,7 @@ func (g Group) readPids(entry string) ([]string, error) {
 	for s.Scan() {
 		pids = append(pids, s.Text())
 	}
-	if s.Err() != nil {
+	if err := s.Err(); err != nil {
 		return nil, g.errorf("failed to read %q: %v", entry, err)
 	}
 
