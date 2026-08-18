@@ -21,7 +21,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	nri "github.com/containerd/nri/pkg/api"
@@ -526,9 +525,8 @@ var (
 
 // Our cache of objects.
 type cache struct {
-	sync.Mutex `json:"-"` // we're lockable
-	filePath   string     // where to store to/load from
-	dataDir    string     // container data directory
+	filePath string // where to store to/load from
+	dataDir  string // container data directory
 
 	rdtControl     bool // whether RDT class control is enabled
 	blockIOControl bool // whether BlockIO class control is enabled
