@@ -256,6 +256,8 @@ func (p *balloons) Start() error {
 
 // Sync synchronizes the active policy state.
 func (p *balloons) Sync(add []cache.Container, del []cache.Container) error {
+	irq.BlockWrites()
+	defer irq.UnblockWrites()
 	p.BlockMeters()
 	defer p.UnblockMeters()
 	defer p.commitCpuClasses()
@@ -281,6 +283,8 @@ func (p *balloons) Sync(add []cache.Container, del []cache.Container) error {
 
 // AllocateResources is a resource allocation request for this policy.
 func (p *balloons) AllocateResources(c cache.Container) error {
+	irq.BlockWrites()
+	defer irq.UnblockWrites()
 	p.BlockMeters()
 	defer p.UnblockMeters()
 	defer p.commitCpuClasses()
@@ -336,6 +340,8 @@ func (p *balloons) AllocateResources(c cache.Container) error {
 
 // ReleaseResources is a resource release request for this policy.
 func (p *balloons) ReleaseResources(c cache.Container) error {
+	irq.BlockWrites()
+	defer irq.UnblockWrites()
 	p.BlockMeters()
 	defer p.UnblockMeters()
 	defer p.commitCpuClasses()
@@ -371,6 +377,8 @@ func (p *balloons) ReleaseResources(c cache.Container) error {
 
 // UpdateResources is a resource allocation update request for this policy.
 func (p *balloons) UpdateResources(c cache.Container) error {
+	irq.BlockWrites()
+	defer irq.UnblockWrites()
 	p.BlockMeters()
 	defer p.UnblockMeters()
 	defer p.commitCpuClasses()
@@ -1622,6 +1630,8 @@ func changesCpuClasses(opts0, opts1 *BalloonsOptions) bool {
 }
 
 func (p *balloons) Reconfigure(newCfg interface{}) error {
+	irq.BlockWrites()
+	defer irq.UnblockWrites()
 	p.BlockMeters()
 	defer p.UnblockMeters()
 	defer p.commitCpuClasses()
