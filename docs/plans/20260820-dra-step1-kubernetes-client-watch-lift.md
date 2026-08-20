@@ -68,7 +68,7 @@ One new package and one relocation:
 - **Functional options over a config struct.** Matches Kubernetes ecosystem convention (`kubeletplugin.Start` uses the same pattern). Makes it easy to add options later without breaking callers.
 - **Two-pass option application.** Options that need `c.cfg` present (content-type options) return a sentinel `errRetryWhenConfigSet`; `New()` collects them, applies the config source, then re-runs them. Result: option ordering doesn't matter to callers.
 - **`Client` embeds `*kubernetes.Clientset`.** Callers who need the raw clientset just use it directly; `Client` adds nothing to their surface. This means we don't have to proxy every method on `Clientset`.
-- **`Client.RestConfig()` returns a deep copy** of the internal `*rest.Config` via `rest.CopyConfig`. Symmetric with `WithRestConfig` on input, and callers can freely mutate the returned config — including its nested `TLSClientConfig`, `Impersonate`, and other slice/map fields — without affecting the client's internal state.
+- **`Client.RestConfig()` returns a `rest.CopyConfig` copy** of the internal `*rest.Config`. Symmetric with `WithRestConfig` on input. `rest.CopyConfig` copies top-level fields and value-typed nested structs (`TLSClientConfig`, `Impersonate`, `ContentConfig`) but *shares* underlying map/slice storage (`Impersonate.Extra`, `TLSClientConfig.CAData`, etc.). Callers may overwrite top-level and value-struct fields on the returned config freely; callers must NOT mutate the contents of nested maps or slices. This matches the Kubernetes-ecosystem convention used by `dra-driver-cpu` and PR #536's `WithRestConfig` side. Discovered during Task 2 implementation — the earlier plan promise of "safe to mutate at any depth" was aspirational; matching upstream is correct.
 - **Move `pkg/agent/watch` verbatim** rather than adopting PR #536's `ObjectClient` redesign. Keeps this step a pure refactor with zero API change. The `ObjectClient` redesign is a defensible future improvement, tracked separately.
 - **Agent gains four getters.** `NodeName() string`, `KubeClient() *client.Client`, `KubeConfig() string` (the kubeconfig file path), `RestConfig() *rest.Config`. Simple accessors, no side effects; the DRA driver in later plan steps consumes them.
 
@@ -102,7 +102,7 @@ One new package and one relocation:
 
 ### Client methods
 
-- `RestConfig() *rest.Config` — returns a deep copy of the internal rest config via `rest.CopyConfig`. Safe for callers to mutate at any depth without affecting the client.
+- `RestConfig() *rest.Config` — returns a `rest.CopyConfig` copy of the internal rest config. Top-level and value-struct fields are safe to overwrite; nested map/slice contents (`Impersonate.Extra`, `TLSClientConfig.CAData`, etc.) are shared with the internal copy and must not be mutated.
 - `HttpClient() *http.Client` — the underlying HTTP client (used by `agent.setupClients` to construct `nrtCli` and to pass into `ConfigInterface.SetKubeClient`).
 - `K8sClient() *kubernetes.Clientset` — the wrapped clientset. Callers can also use the embedded field directly.
 - `Close()` — release resources (idempotent). Used by `agent.cleanupClients`.
@@ -114,7 +114,7 @@ New methods on `pkg/agent/agent.Agent`:
 - `NodeName() string` — node name (already known internally; exposed).
 - `KubeClient() *client.Client` — the new client type.
 - `KubeConfig() string` — the kubeconfig **file path** (i.e., the value of `a.kubeConfig`, matches PR #536 commit `88140644`).
-- `RestConfig() *rest.Config` — shortcut for `KubeClient().RestConfig()`; returns the deep copy.
+- `RestConfig() *rest.Config` — shortcut for `KubeClient().RestConfig()`; returns the `rest.CopyConfig` copy.
 
 ### Processing flow
 
@@ -176,13 +176,13 @@ The `httpCli *http.Client` field on `Agent` is removed; every caller reaches it 
 - [ ] write tests for `New(WithKubeOrInClusterConfig(""))` and `New(WithKubeOrInClusterConfig(file))` — verifies file-first behavior
 - [ ] write tests for `New(WithRestConfig(cfg))` — accepts a pre-built config and does not call any file / in-cluster resolver
 - [ ] write tests for `New(WithHttpClient(hc))` — accepts a pre-built HTTP client; verifies `Client.HttpClient()` returns the same pointer
-- [ ] write tests for `Client.RestConfig()` — returned config is a **deep copy** (mutating top-level fields *and* nested slices like `TLSClientConfig.CAData` does not affect subsequent `RestConfig()` calls)
-- [ ] write tests for `WithRestConfig(cfg)` deep-copy on input — mutate `cfg` after `New()` returns; verify the client's config is unaffected
+- [ ] write tests for `Client.RestConfig()` — `rest.CopyConfig` semantics: mutating a top-level field (`Host`) on the returned config does not affect subsequent `RestConfig()` calls. Do NOT assert nested-map/slice-content independence — that is not `rest.CopyConfig`'s guarantee.
+- [ ] write tests for `WithRestConfig(cfg)` — `rest.CopyConfig` semantics on input: overwriting `cfg.Host` after `New()` returns does not affect the client's `RestConfig()`
 - [ ] write tests for `Client.HttpClient()`, `Client.K8sClient()` — return the expected inner values
 - [ ] write tests for `Client.Close()` — safe to call multiple times (idempotent)
 - [ ] implement `New(opts ...Option) (*Client, error)` — applies options; if `c.cfg` still nil, run `WithInClusterConfig()`; construct HTTP client and clientset
 - [ ] implement `WithKubeConfig`, `WithInClusterConfig`, `WithKubeOrInClusterConfig`, `WithRestConfig`, `WithHttpClient` options
-- [ ] implement `RestConfig() *rest.Config` (returning `rest.CopyConfig(c.cfg)` deep copy), `HttpClient()`, `K8sClient()`, `Close()`
+- [ ] implement `RestConfig() *rest.Config` (returning `rest.CopyConfig(c.cfg)`), `HttpClient()`, `K8sClient()`, `Close()`
 - [ ] run tests — must pass before task 3
 
 ### Task 3: Add content-type options with retry-when-config-not-set

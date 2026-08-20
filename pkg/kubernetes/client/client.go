@@ -23,6 +23,7 @@ limitations under the License.
 package client
 
 import (
+	"errors"
 	"net/http"
 
 	"k8s.io/client-go/kubernetes"
@@ -49,6 +50,11 @@ type Client struct {
 // callers can pass options in any order.
 type Option func(*Client) error
 
+// errRetryWhenConfigSet is returned by options that require the REST
+// config to be present. New collects such options and re-applies them
+// after the config-source options have run.
+var errRetryWhenConfigSet = errors.New("retry when client config is set")
+
 // GetConfigForFile returns a REST configuration parsed from the given
 // kubeconfig file path. Thin wrapper over clientcmd.BuildConfigFromFlags
 // exposed for callers that need a config but not a full Client.
@@ -61,4 +67,150 @@ func GetConfigForFile(kubeConfig string) (*rest.Config, error) {
 // Returns rest.ErrNotInCluster (wrapped) when not in a cluster.
 func InClusterConfig() (*rest.Config, error) {
 	return rest.InClusterConfig()
+}
+
+// New constructs a Client by applying the given options in order. If no
+// option sets a REST config, New falls back to WithInClusterConfig()
+// automatically. Options are applied in two passes to make ordering
+// irrelevant to callers: any option that returns errRetryWhenConfigSet
+// on the first pass is deferred and re-applied after the config source
+// has run.
+func New(options ...Option) (*Client, error) {
+	c := &Client{}
+
+	var retry []Option
+	for _, o := range options {
+		if err := o(c); err != nil {
+			if errors.Is(err, errRetryWhenConfigSet) {
+				retry = append(retry, o)
+				continue
+			}
+			return nil, err
+		}
+	}
+
+	if c.cfg == nil {
+		if err := WithInClusterConfig()(c); err != nil {
+			return nil, err
+		}
+	}
+
+	for _, o := range retry {
+		if err := o(c); err != nil {
+			return nil, err
+		}
+	}
+
+	if c.http == nil {
+		hc, err := rest.HTTPClientFor(c.cfg)
+		if err != nil {
+			return nil, err
+		}
+		c.http = hc
+	}
+
+	cs, err := kubernetes.NewForConfigAndClient(c.cfg, c.http)
+	if err != nil {
+		return nil, err
+	}
+	c.Clientset = cs
+
+	return c, nil
+}
+
+// WithKubeConfig returns an Option that resolves the REST config from
+// the given kubeconfig file.
+func WithKubeConfig(file string) Option {
+	return func(c *Client) error {
+		cfg, err := GetConfigForFile(file)
+		if err != nil {
+			return err
+		}
+		return WithRestConfig(cfg)(c)
+	}
+}
+
+// WithInClusterConfig returns an Option that resolves the REST config
+// from the pod's service-account credentials.
+func WithInClusterConfig() Option {
+	return func(c *Client) error {
+		cfg, err := InClusterConfig()
+		if err != nil {
+			return err
+		}
+		return WithRestConfig(cfg)(c)
+	}
+}
+
+// WithKubeOrInClusterConfig returns an Option that resolves the REST
+// config from the given kubeconfig file if the path is non-empty, or
+// falls back to in-cluster credentials otherwise. This is the typical
+// choice for daemons that can run inside or outside a cluster.
+func WithKubeOrInClusterConfig(file string) Option {
+	if file == "" {
+		return WithInClusterConfig()
+	}
+	return WithKubeConfig(file)
+}
+
+// WithRestConfig returns an Option that uses the given pre-built REST
+// config. The input is deep-copied via rest.CopyConfig so the caller
+// retains full ownership of the original and post-New mutations do
+// not leak into the client.
+func WithRestConfig(cfg *rest.Config) Option {
+	return func(c *Client) error {
+		c.cfg = rest.CopyConfig(cfg)
+		return nil
+	}
+}
+
+// WithHttpClient returns an Option that uses the given pre-built HTTP
+// client. Useful when multiple components should share one client
+// (and therefore its connection pool).
+func WithHttpClient(hc *http.Client) Option {
+	return func(c *Client) error {
+		c.http = hc
+		return nil
+	}
+}
+
+// RestConfig returns a copy of the Client's REST configuration produced
+// by rest.CopyConfig. Callers may overwrite top-level fields (Host,
+// APIPath, UserAgent, ...) and value-typed nested structs
+// (TLSClientConfig, Impersonate, ContentConfig, ...) freely. Callers
+// must NOT mutate the contents of nested maps or slices
+// (Impersonate.Extra, TLSClientConfig.CAData, etc.) — those share
+// storage with the Client's internal config. This matches the
+// Kubernetes-ecosystem convention.
+func (c *Client) RestConfig() *rest.Config {
+	return rest.CopyConfig(c.cfg)
+}
+
+// HttpClient returns the Client's underlying HTTP client. Callers can
+// use it to construct additional clients (e.g. an NRT client via
+// nrtapi.NewForConfigAndClient) that share the same transport.
+func (c *Client) HttpClient() *http.Client {
+	return c.http
+}
+
+// K8sClient returns the Client's underlying *kubernetes.Clientset.
+// Callers may alternatively use the embedded Clientset directly on
+// the Client value.
+func (c *Client) K8sClient() *kubernetes.Clientset {
+	return c.Clientset
+}
+
+// Close releases resources held by the Client. It is idempotent:
+// calling Close on a nil Client or a previously-closed Client is a
+// no-op that does not panic.
+func (c *Client) Close() {
+	if c == nil {
+		return
+	}
+	if c.http != nil {
+		c.http.CloseIdleConnections()
+	}
+	c.cfg = nil
+	c.http = nil
+	c.Clientset = nil
 }

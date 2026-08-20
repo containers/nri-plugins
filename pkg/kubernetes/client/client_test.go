@@ -18,6 +18,7 @@ package client
 
 import (
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -88,4 +89,186 @@ func TestInClusterConfig_NotInCluster(t *testing.T) {
 	if cfg != nil {
 		t.Errorf("expected nil config on error, got %+v", cfg)
 	}
+}
+
+// TestNew_NoOptions verifies that New() with no options falls back to
+// WithInClusterConfig — which fails when the test runs outside a Pod.
+// Only exercises the fallback path; the success path requires an in-
+// cluster environment which is not usable from a unit test.
+func TestNew_NoOptions(t *testing.T) {
+	skipIfInCluster(t)
+	c, err := New()
+	if err == nil {
+		t.Fatalf("expected error from New() outside a cluster, got: %+v", c)
+	}
+	if !errors.Is(err, rest.ErrNotInCluster) {
+		t.Errorf("expected rest.ErrNotInCluster, got: %v", err)
+	}
+	if c != nil {
+		t.Errorf("expected nil client on error, got %+v", c)
+	}
+}
+
+func TestNew_WithKubeConfig_Success(t *testing.T) {
+	c, err := New(WithKubeConfig(fixtureKubeconfig))
+	if err != nil {
+		t.Fatalf("New(WithKubeConfig) returned error: %v", err)
+	}
+	if c == nil {
+		t.Fatal("New returned nil client with no error")
+	}
+	if c.K8sClient() == nil {
+		t.Error("Client.K8sClient() is nil")
+	}
+	if c.RestConfig() == nil {
+		t.Error("Client.RestConfig() is nil")
+	}
+	if c.HttpClient() == nil {
+		t.Error("Client.HttpClient() is nil")
+	}
+}
+
+func TestNew_WithKubeConfig_MissingFile(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "nope.yaml")
+	c, err := New(WithKubeConfig(missing))
+	if err == nil {
+		t.Fatalf("expected error for missing kubeconfig, got: %+v", c)
+	}
+	if c != nil {
+		t.Errorf("expected nil client on error, got %+v", c)
+	}
+}
+
+func TestNew_WithInClusterConfig(t *testing.T) {
+	skipIfInCluster(t)
+	c, err := New(WithInClusterConfig())
+	if err == nil {
+		t.Fatalf("expected error outside a cluster, got: %+v", c)
+	}
+	if !errors.Is(err, rest.ErrNotInCluster) {
+		t.Errorf("expected rest.ErrNotInCluster, got: %v", err)
+	}
+	if c != nil {
+		t.Errorf("expected nil client on error, got %+v", c)
+	}
+}
+
+func TestNew_WithKubeOrInClusterConfig_EmptyFallsBack(t *testing.T) {
+	skipIfInCluster(t)
+	// Empty file path should fall back to in-cluster, which fails outside
+	// a cluster; that's how we know the fallback path was taken.
+	_, err := New(WithKubeOrInClusterConfig(""))
+	if !errors.Is(err, rest.ErrNotInCluster) {
+		t.Errorf("expected rest.ErrNotInCluster from empty-file fallback, got: %v", err)
+	}
+}
+
+func TestNew_WithKubeOrInClusterConfig_FileWins(t *testing.T) {
+	c, err := New(WithKubeOrInClusterConfig(fixtureKubeconfig))
+	if err != nil {
+		t.Fatalf("New(WithKubeOrInClusterConfig(file)) returned error: %v", err)
+	}
+	if c == nil || c.K8sClient() == nil {
+		t.Fatalf("expected non-nil client, got %+v", c)
+	}
+}
+
+func TestNew_WithRestConfig(t *testing.T) {
+	// Build a config via the file helper first; use it as input to WithRestConfig
+	// to skip the file/in-cluster resolvers entirely.
+	cfg, err := GetConfigForFile(fixtureKubeconfig)
+	if err != nil {
+		t.Fatalf("GetConfigForFile fixture failed: %v", err)
+	}
+	c, err := New(WithRestConfig(cfg))
+	if err != nil {
+		t.Fatalf("New(WithRestConfig) returned error: %v", err)
+	}
+	if c == nil || c.K8sClient() == nil {
+		t.Fatalf("expected non-nil client, got %+v", c)
+	}
+}
+
+func TestNew_WithHttpClient(t *testing.T) {
+	// Provide a pre-built HTTP client, verify HttpClient() returns the same pointer.
+	hc := &http.Client{}
+	c, err := New(WithHttpClient(hc), WithKubeConfig(fixtureKubeconfig))
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	if c.HttpClient() != hc {
+		t.Errorf("HttpClient() returned different pointer than provided: got %p, want %p", c.HttpClient(), hc)
+	}
+}
+
+// newTestConfig returns a fresh rest.Config. Built inline (not via the
+// fixture) so tests fully control every field. Uses Insecure=true and no
+// CAData so rest.HTTPClientFor inside New() does not try to parse CAData
+// as a PEM block.
+func newTestConfig() *rest.Config {
+	return &rest.Config{
+		Host: "https://example.com:6443",
+		TLSClientConfig: rest.TLSClientConfig{
+			Insecure: true,
+		},
+		UserAgent: "test-user-agent",
+	}
+}
+
+// TestClient_RestConfig_CopySemantics verifies RestConfig() returns a copy
+// with rest.CopyConfig semantics: top-level and value-struct fields are
+// safely overwritable on the returned value without affecting subsequent
+// RestConfig() calls. Nested map/slice contents are NOT tested here —
+// they share storage per rest.CopyConfig's contract.
+func TestClient_RestConfig_CopySemantics(t *testing.T) {
+	c, err := New(WithRestConfig(newTestConfig()))
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	first := c.RestConfig()
+	first.Host = "https://mutated.example.com"
+	first.UserAgent = "mutated-user-agent"
+
+	second := c.RestConfig()
+	if second.Host == first.Host {
+		t.Errorf("RestConfig Host mutation leaked: got %q, want unchanged", second.Host)
+	}
+	if second.UserAgent == first.UserAgent {
+		t.Errorf("RestConfig UserAgent mutation leaked: got %q, want unchanged", second.UserAgent)
+	}
+}
+
+// TestClient_WithRestConfig_CopySemanticsOnInput verifies that WithRestConfig
+// takes a rest.CopyConfig copy of its input — post-New mutations of the
+// original config's top-level fields do not leak into the client.
+func TestClient_WithRestConfig_CopySemanticsOnInput(t *testing.T) {
+	cfg := newTestConfig()
+
+	c, err := New(WithRestConfig(cfg))
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	cfg.Host = "https://mutated-input.example.com"
+	cfg.UserAgent = "mutated-input-user-agent"
+
+	rc := c.RestConfig()
+	if rc.Host == cfg.Host {
+		t.Errorf("input-side Host mutation leaked to client: got %q", rc.Host)
+	}
+	if rc.UserAgent == cfg.UserAgent {
+		t.Errorf("input-side UserAgent mutation leaked to client: got %q", rc.UserAgent)
+	}
+}
+
+func TestClient_Close_Idempotent(t *testing.T) {
+	c, err := New(WithKubeConfig(fixtureKubeconfig))
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	// First call — must not panic.
+	c.Close()
+	// Second call — must also not panic.
+	c.Close()
 }
