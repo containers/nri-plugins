@@ -21,3 +21,4 @@ coverage.txt
 test/e2e/**/output
 
 test/statistics-analysis/output
+*.test
