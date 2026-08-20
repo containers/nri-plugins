@@ -96,8 +96,12 @@ type Allocator struct {
 	// allocator treats them as "no HP knowledge".
 	punitByCpu map[int]int
 	// hpUsed[i] is the set of CPUs currently held by HP-class
-	// workloads on punits[i].
+	// workloads on punits[i] via the non-DRA (hint-driven) path.
 	hpUsed map[int]cpuset.CPUSet
+	// hpDRAUsed[i] is the set of CPUs currently held by DRA claims
+	// on punits[i]. Separate from hpUsed so that clearHpUsage (called
+	// from the non-DRA UseClass path) can never evict DRA holds.
+	hpDRAUsed map[int]cpuset.CPUSet
 	// hpEligiblePunit[i] reports whether punits[i] can actually
 	// host HP-class CPUs at top turbo. Populated at Configure().
 	// In managed mode every punit becomes eligible (the plugin
@@ -138,6 +142,7 @@ func (a *Allocator) Configure(classes []*policyapi.CPUClass, allowed cpuset.CPUS
 	a.fallbackClos = pctDefaultHpClos // CLOS 0 == default-after-reset
 	a.allowed = allowed
 	a.hpUsed = map[int]cpuset.CPUSet{}
+	a.hpDRAUsed = map[int]cpuset.CPUSet{}
 	a.hpClasses = map[string]bool{}
 	a.hpEligiblePunit = map[int]bool{}
 	a.punits = nil
@@ -520,6 +525,147 @@ func (a *Allocator) FreeClassCapacity(className string, held cpuset.CPUSet) int 
 	return total
 }
 
+// PunitInfo is a snapshot of one SST punit's DRA-relevant capacity.
+// Returned by Allocator.Punits(); valid within the current
+// Configure/Reconfigure cycle (indices may change on next Configure).
+type PunitInfo struct {
+	PkgID         int
+	PunitID       int
+	HPCapacity    int // GuaranteedHpCpus, or 0 if the punit is HP-ineligible
+	NonHPCapacity int // allocatable non-HP CPUs (allowed ∩ punit.CPUs − GuaranteedHpCpus)
+}
+
+// Punits returns a snapshot of per-punit DRA-relevant capacity for all
+// punits known to the allocator. Returns nil when the allocator is not
+// active. Step 5 (DRADevices) uses this to set RequestPolicy.max values.
+func (a *Allocator) Punits() []PunitInfo {
+	if !a.Active() {
+		return nil
+	}
+	out := make([]PunitInfo, len(a.punits))
+	for i, pu := range a.punits {
+		out[i] = PunitInfo{
+			PkgID:         pu.PkgID,
+			PunitID:       pu.PunitID,
+			HPCapacity:    a.punitHPCapacity(i),
+			NonHPCapacity: a.punitNonHPCapacity(i),
+		}
+	}
+	return out
+}
+
+// punitIdxByID returns the index in a.punits for the punit identified
+// by (pkgID, punitID), or -1 if not found.
+func (a *Allocator) punitIdxByID(pkgID, punitID int) int {
+	for i, pu := range a.punits {
+		if pu.PkgID == pkgID && pu.PunitID == punitID {
+			return i
+		}
+	}
+	return -1
+}
+
+// punitHPCapacity returns the guaranteed HP CPU count for punits[idx],
+// or 0 if the punit is HP-ineligible or the index is out of range.
+func (a *Allocator) punitHPCapacity(idx int) int {
+	if !a.Active() || idx < 0 || idx >= len(a.punits) {
+		return 0
+	}
+	if !a.hpEligiblePunit[idx] {
+		return 0
+	}
+	return a.punits[idx].GuaranteedHpCpus
+}
+
+// punitNonHPCapacity returns the count of allocatable non-HP CPUs in
+// punits[idx]. Applies the allowed.Size()>0 guard consistent with other
+// allowed-consuming sites in this file.
+func (a *Allocator) punitNonHPCapacity(idx int) int {
+	if !a.Active() || idx < 0 || idx >= len(a.punits) {
+		return 0
+	}
+	pu := a.punits[idx]
+	cpus := pu.CPUs
+	if a.allowed.Size() > 0 {
+		cpus = cpus.Intersection(a.allowed)
+	}
+	n := cpus.Size() - pu.GuaranteedHpCpus
+	if n < 0 {
+		return 0
+	}
+	return n
+}
+
+// PickHpCpus selects n HP-eligible CPUs from the punit identified by
+// (pkgID, punitID), excluding CPUs in held and those already tracked in
+// hpUsed or hpDRAUsed. Records the selection in hpDRAUsed (not hpUsed,
+// so clearHpUsage called from the non-DRA path cannot evict DRA holds).
+// Returns an error when the allocator is inactive, the punit is not
+// found or not HP-eligible, or fewer than n CPUs are available.
+func (a *Allocator) PickHpCpus(pkgID, punitID, n int, held cpuset.CPUSet) (cpuset.CPUSet, error) {
+	if !a.Active() {
+		return cpuset.New(), fmt.Errorf("pct: PickHpCpus: allocator not active")
+	}
+	idx := a.punitIdxByID(pkgID, punitID)
+	if idx < 0 {
+		return cpuset.New(), fmt.Errorf("pct: PickHpCpus: punit (pkg=%d, punit=%d) not found", pkgID, punitID)
+	}
+	if !a.hpEligiblePunit[idx] {
+		return cpuset.New(), fmt.Errorf("pct: PickHpCpus: punit (pkg=%d, punit=%d) is not HP-eligible", pkgID, punitID)
+	}
+	pu := a.punits[idx]
+	avail := pu.CPUs
+	if a.allowed.Size() > 0 {
+		avail = avail.Intersection(a.allowed)
+	}
+	avail = avail.Difference(held).Difference(a.hpUsed[idx]).Difference(a.hpDRAUsed[idx])
+	// Also enforce the GuaranteedHpCpus cap: can't pick more HP CPUs than
+	// the punit guarantees, regardless of how many are physically free.
+	hpAlreadyHeld := a.hpUsed[idx].Size() + a.hpDRAUsed[idx].Size()
+	hpRoom := pu.GuaranteedHpCpus - hpAlreadyHeld
+	if hpRoom < 0 {
+		hpRoom = 0
+	}
+	if avail.Size() < n || hpRoom < n {
+		available := avail.Size()
+		if hpRoom < available {
+			available = hpRoom
+		}
+		return cpuset.New(), fmt.Errorf("pct: PickHpCpus: punit (pkg=%d, punit=%d) has %d available HP CPUs (room=%d, free=%d), need %d",
+			pkgID, punitID, available, hpRoom, avail.Size(), n)
+	}
+	// Sort for deterministic selection; take first n.
+	list := avail.List()
+	picked := cpuset.New(list[:n]...)
+	if a.hpDRAUsed == nil {
+		a.hpDRAUsed = map[int]cpuset.CPUSet{}
+	}
+	a.hpDRAUsed[idx] = a.hpDRAUsed[idx].Union(picked)
+	return picked, nil
+}
+
+// ReleaseHpCpus removes cpus from hpDRAUsed[punitIdx] for the punit
+// identified by (pkgID, punitID). Silently ignores unknown punits and
+// CPUs not present in hpDRAUsed (idempotent).
+func (a *Allocator) ReleaseHpCpus(pkgID, punitID int, cpus cpuset.CPUSet) {
+	if !a.Active() {
+		return
+	}
+	idx := a.punitIdxByID(pkgID, punitID)
+	if idx < 0 {
+		return
+	}
+	if a.hpDRAUsed == nil {
+		return
+	}
+	remaining := a.hpDRAUsed[idx].Difference(cpus)
+	if remaining.IsEmpty() {
+		delete(a.hpDRAUsed, idx)
+	} else {
+		a.hpDRAUsed[idx] = remaining
+	}
+}
+
 // useClass associates the given CPUs to the CLOS chosen for className.
 // In managed mode, CPUs whose className is not a PCT class are
 // associated to the fallback CLOS. In assoc-only mode such CPUs are
@@ -675,11 +821,11 @@ func (a *Allocator) hpInUseCpus() cpuset.CPUSet {
 		return cpuset.New()
 	}
 	out := cpuset.New()
-	for idx, used := range a.hpUsed {
-		if used.IsEmpty() {
-			continue
-		}
-		if idx < 0 || idx >= len(a.punits) {
+	// Range over punits rather than hpUsed so that DRA-only punits
+	// (present in hpDRAUsed but absent from hpUsed) are not skipped.
+	for idx := range a.punits {
+		combined := a.hpUsed[idx].Union(a.hpDRAUsed[idx])
+		if combined.IsEmpty() {
 			continue
 		}
 		out = out.Union(a.punits[idx].CPUs)
@@ -756,7 +902,9 @@ func (a *Allocator) hpReserveCpus(free cpuset.CPUSet, excludeBln cpuset.CPUSet, 
 			continue
 		}
 		anyKnown = true
-		used := a.hpUsed[i]
+		// Union hpUsed and hpDRAUsed so DRA holds reduce reported HP room,
+		// preventing HP over-subscription via the hint path.
+		used := a.hpUsed[i].Union(a.hpDRAUsed[i])
 		if excludeBln.Size() > 0 {
 			used = used.Difference(excludeBln)
 		}
