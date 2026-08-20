@@ -1,6 +1,6 @@
 # PR #536 — analysis of the topology-aware DRA prototype
 
-Analysis notes for <https://github.com/containers/nri-plugins/pull/536> ("[proto]: bolt a DRA driver frontend on the topology-aware policy," klihub). Fetched locally as branch `pr-536-dra`. Companion: `landscape.md` for the broader DRA context this prototype predates.
+Analysis notes for [containers/nri-plugins#536](https://github.com/containers/nri-plugins/pull/536) ("[proto]: bolt a DRA driver frontend on the topology-aware policy," klihub). Fetched locally as branch `pr-536-dra`. Companion: [landscape.md](landscape.md) for the broader DRA context this prototype predates.
 
 **Status.** Prototype from June 2025, rebased through Feb 2026. Author-labeled "prototype for feasibility study, *not a proposal* for a first real DRA-based CPU driver."
 
@@ -17,30 +17,30 @@ Files of interest:
 
 ## The DRA-to-NRI bridge
 
-The bridge from DRA to NRI in PR #536 is **CDI + env vars**:
+The bridge from DRA to NRI in [PR #536](https://github.com/containers/nri-plugins/pull/536) is **CDI + env vars**:
 
 1. Kubelet resolves the claim and calls the driver's `PrepareResourceClaims`.
 2. Driver returns `CDIDeviceIDs: ["native.cpu/device=cpuN"]`.
 3. Runtime applies the CDI spec → container gets `DRA_CPU<N>=1` in its env.
 4. On NRI `CreateContainer`, the topology-aware policy scans env vars, extracts the DRA-preallocated CPU set, and treats those CPUs as claim-pre-allocated in its pool bookkeeping.
 
-**This mechanism is still valid** for future DRA drivers in this repo. The PCT-DRA design (`pct-design.md`) reuses the same shape with `NRI_HP_CPU<N>=1` env vars.
+**This mechanism is still valid** for future DRA drivers in this repo. The cpuClass-DRA design ([design.md](design.md)) reuses the same shape with `NRI_CPU<N>=1` env vars.
 
 ## Prototype scars
 
-- `getClaimedCPUs` env-var parsing to bridge DRA and native CPU accounting — needed because KEP-5517 didn't exist yet. No longer required for scheduler-side accounting once KEP-5517 is assumed available; env-var parsing may still be needed as a driver-internal signal to the NRI phase (which CPUs are DRA-preallocated).
-- User must currently mirror DRA CPU count in `spec.cpu` — a workaround KEP-5517 removes.
+- `getClaimedCPUs` env-var parsing to bridge DRA and native CPU accounting — needed because [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517) didn't exist yet. No longer required for scheduler-side accounting once [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517) is assumed available; env-var parsing may still be needed as a driver-internal signal to the NRI phase (which CPUs are DRA-preallocated).
+- User must currently mirror DRA CPU count in `spec.cpu` — a workaround [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517) removes.
 - Verbose `***** ...` debug logging left in `allocateClaim`.
 - `TODO: sort old grants by QoS class or size and pool distance from root` in reallocation logic.
 - Memory not exposed as DRA (CPUs only). No cross-container / pod-scope claims. No tests for the DRA path.
 
-## Where the mechanism holds up vs where KEP-5517 replaces it
+## Where the mechanism holds up vs where [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517) replaces it
 
-| PR #536 approach | Post-KEP-5517 replacement |
+| PR #536 approach | Post-[KEP-5517](https://github.com/kubernetes/enhancements/issues/5517) replacement |
 |---|---|
 | User mirrors CPU count in `spec.cpu` | Scheduler adds mapped quantity automatically via `NodeAllocatableResources` |
 | `getClaimedCPUs()` parses `DRA_CPU<N>=1` env vars to reconcile accounting | Kubelet reads `pod.status.nodeAllocatableResourceClaimStatuses`; env-var parsing not needed for accounting |
-| Prototype scars in `allocateClaim` (evict conflicting grants) still needed | Still needed — that is *inside-driver* logic, orthogonal to KEP-5517 |
+| Prototype scars in `allocateClaim` (evict conflicting grants) still needed | Still needed — that is *inside-driver* logic, orthogonal to [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517) |
 | CDI + `DRA_CPU<N>=1` env var to signal per-CPU allocation to NRI phase | Same mechanism — this is driver ↔ NRI enforcement, not driver ↔ kubelet accounting |
 
 ## Takeaway for future DRA work in this repo

@@ -1,8 +1,8 @@
 # DRA support for cpuClass — implementation plan
 
-**Status:** draft. Companion to `design.md`. Update alongside the design as decisions land.
+**Status:** draft. Companion to [design.md](design.md). Update alongside the design as decisions land.
 
-**Related:** `design.md` (what to build), `landscape.md` (why / DRA ecosystem context), `pr-536-analysis.md` (prior-art reference for the CDI+NRI bridge).
+**Related:** [design.md](design.md) (what to build), [landscape.md](landscape.md) (why / DRA ecosystem context), [pr-536-analysis.md](pr-536-analysis.md) (prior-art reference for the CDI+NRI bridge).
 
 ## Scope of this plan
 
@@ -18,12 +18,12 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
 
 ### Step 1 — Lift `pkg/kubernetes/{client,watch}` out of `pkg/agent`
 
-**Rationale.** Every subsequent DRA step needs a Kubernetes client and object-watch helpers. PR #536 already did this lift; the code is proven. Doing it as its own PR isolates a pure refactor from any behavioral change.
+**Rationale.** Every subsequent DRA step needs a Kubernetes client and object-watch helpers. [PR #536](https://github.com/containers/nri-plugins/pull/536) already did this lift; the code is proven. Doing it as its own PR isolates a pure refactor from any behavioral change.
 
 **Actions.**
-- Cherry-pick / re-derive the `pkg/kubernetes/client/` and `pkg/kubernetes/watch/` packages from PR #536 branch `pr-536-dra` (commits `5dcb66dc`, `42ec1022`, `45a14d1c`).
+- Cherry-pick / re-derive the `pkg/kubernetes/client/` and `pkg/kubernetes/watch/` packages from [PR #536](https://github.com/containers/nri-plugins/pull/536) branch `pr-536-dra` (commits `5dcb66dc`, `42ec1022`, `45a14d1c`).
 - Update `pkg/agent/agent.go` to use the new packages instead of its inline client bootstrap.
-- Expose node name, kube client, and kube config from the agent (PR #536 commit `88140644`).
+- Expose node name, kube client, and kube config from the agent ([PR #536](https://github.com/containers/nri-plugins/pull/536) commit `88140644`).
 
 **Files touched:** `pkg/kubernetes/client/*`, `pkg/kubernetes/watch/*`, `pkg/agent/agent.go`.
 
@@ -96,10 +96,10 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
 - Add to `pkg/resmgr/cpuclass/`:
   - New file `dra.go` with method `Manager.DRADevices(driverName string) ([]resapi.Device, error)`.
   - Emits one device per (class × punit) where `class.DRA.Publish == true` and the class is applicable to that punit's tier.
-  - Attributes as spec'd in `design.md` (topology + class-derived).
+  - Attributes as spec'd in [design.md](design.md) (topology + class-derived).
   - Capacity `nri/cpus` with `RequestPolicy` tied to `punitHPCapacity` / `punitNonHPCapacity`.
   - `NodeAllocatableResources: {cpu: mapping: {capacityKey: nri/cpus, capacityMultiplier: 1}}`.
-  - `resource.kubernetes.io/numaNode` attribute (scalar int; list form deferred until KEP-5491 is baseline).
+  - `resource.kubernetes.io/numaNode` attribute (scalar int; list form deferred until [KEP-5491](https://github.com/kubernetes/enhancements/issues/5491) is baseline).
 - Unit tests covering: single-HP class one punit, two HP classes one punit (one opted out), non-HP-only class, non-SST-TF (single "package" pseudo-punit).
 
 **Files touched:** `pkg/resmgr/cpuclass/dra.go`, unit tests.
@@ -125,12 +125,12 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
 
 **Verification:** integration test that starts the plugin against a fake kubelet-plugin harness, publishes a device list, verifies the harness saw the expected ResourceSlices.
 
-**Risk:** medium. First real interaction with `k8s.io/dynamic-resource-allocation/kubeletplugin`. Consider a paired prototype experiment (`design.md` "Feature-gate detection" section — probe test) before landing.
+**Risk:** medium. First real interaction with `k8s.io/dynamic-resource-allocation/kubeletplugin`. Consider a paired prototype experiment ([design.md](design.md) "Feature-gate detection" section — probe test) before landing.
 
 **Imports & deps.** The Kubernetes-side helper packages this step (and steps 5/7) will pull in. Chosen after inspecting what `dra-example-driver` imports from Kubernetes and filtering to what we actually need for a kubelet-plugin driver. Tiered by necessity:
 
 *Must-have — cannot build a DRA driver without these:*
-- `k8s.io/dynamic-resource-allocation/kubeletplugin` — `kubeletplugin.Start`, `Helper`, `PrepareResult`, `Device`, `NamespacedObject`, `ErrRecoverable`, path constants `KubeletRegistryDir`/`KubeletPluginsDir`. The DRA kubelet-plugin library. Used by PR #536 and every DRA driver.
+- `k8s.io/dynamic-resource-allocation/kubeletplugin` — `kubeletplugin.Start`, `Helper`, `PrepareResult`, `Device`, `NamespacedObject`, `ErrRecoverable`, path constants `KubeletRegistryDir`/`KubeletPluginsDir`. The DRA kubelet-plugin library. Used by [PR #536](https://github.com/containers/nri-plugins/pull/536) and every DRA driver.
 - `k8s.io/dynamic-resource-allocation/resourceslice` — `DriverResources`, `Pool`, `Slice`. The type `PublishResources` expects.
 - `k8s.io/api/resource/v1` (`resapi`) — DRA API types (`Device`, `ResourceClaim`, `DeviceAttribute`).
 - `k8s.io/apimachinery/pkg/types` — `types.UID`, `types.NamespacedName`. Already used across nri-plugins.
@@ -142,15 +142,15 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
 
 *Explicitly not adopted (with rationale):*
 - `k8s.io/klog/v2` — the DRA library expects `logr.Logger` and reads it from `context.Context` via `klog.FromContext`. nri-plugins uses its own logger (`pkg/log/`). Bridge with a small adapter under `pkg/resmgr/dra/logging.go` that wraps nri-plugins' logger as `logr.Logger` and injects it into the context passed to `kubeletplugin.Start`. Do not switch DRA-side code to raw klog.
-- `k8s.io/component-base/featuregate` — reads `--feature-gates` CLI flags. nri-plugins doesn't expose those; we probe the API server at startup (`design.md` "Feature-gate detection") instead.
+- `k8s.io/component-base/featuregate` — reads `--feature-gates` CLI flags. nri-plugins doesn't expose those; we probe the API server at startup ([design.md](design.md) "Feature-gate detection") instead.
 - `k8s.io/component-base/metrics` + `legacyregistry` — Prometheus via a second registry. nri-plugins already has its own metrics setup; reuse that.
-- `k8s.io/apimachinery/pkg/runtime` + `runtime/serializer/json` — needed by `dra-example-driver` for its versioned checkpoint file. We are using PR #536's opaque `pkg/resmgr/cache` entry instead of a dedicated checkpoint file (see design.md step 7 discussion).
+- `k8s.io/apimachinery/pkg/runtime` + `runtime/serializer/json` — needed by `dra-example-driver` for its versioned checkpoint file. We are using [PR #536](https://github.com/containers/nri-plugins/pull/536)'s opaque `pkg/resmgr/cache` entry instead of a dedicated checkpoint file (see [design.md](design.md) step 7 discussion).
 - `sigs.k8s.io/controller-runtime` — used by `dra-example-driver`'s controller binary. We are not shipping a controller in v1.
 - `k8s.io/kubelet/pkg/apis/dra/v1` (`drapb`) — older DRA protobuf types. `kubeletplugin` exposes its own `Device` type; driver authors don't touch the protobufs directly.
 - `k8s.io/kubelet/pkg/apis/pluginregistration/v1` — plugin-registration protobuf, under-the-hood detail of `kubeletplugin`. Don't import directly.
 
 *Deferred to future work (v2 or later):*
-- `k8s.io/dynamic-resource-allocation/client` (`draclient`) — thin wrapper for DRA-specific status endpoints (`resourceclaims/status` etc.). Needed if we ever adopt KEP-4817 device-status reporting. Not in v1.
+- `k8s.io/dynamic-resource-allocation/client` (`draclient`) — thin wrapper for DRA-specific status endpoints (`resourceclaims/status` etc.). Needed if we ever adopt [KEP-4817](https://github.com/kubernetes/enhancements/issues/4817) device-status reporting. Not in v1.
 
 **Do not import from `sigs.k8s.io/dra-example-driver` or `github.com/kubernetes-sigs/dra-driver-cpu`.** Both are positioned as reference implementations, not libraries. Their reusable-looking helpers live in `internal/` and are not exported. Copy patterns, credit the source in code comments.
 
@@ -164,16 +164,16 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
   - Call `cpuclass.Manager.PickCpus(className, punitID, count)` (delegates to `pct.Allocator.PickHpCpus` for HP classes; simple "free-CPU-in-punit" pick for non-HP).
   - Emit CDI entry `claim-<uid>` with env vars `NRI_CLASS=<className>`, `NRI_CPU<id>=1` for each picked CPU.
   - Return `PrepareResult` with `CDIDeviceIDs: ["nri.topology-aware.cpu/device=claim-<uid>"]`.
-  - Persist claim state (`{uid, className, punitID, cpus}`) via the existing opaque cache (`pkg/resmgr/cache/cache.go` `SetEntry`/`GetEntry` — PR #536 already added this).
+  - Persist claim state (`{uid, className, punitID, cpus}`) via the existing opaque cache (`pkg/resmgr/cache/cache.go` `SetEntry`/`GetEntry` — [PR #536](https://github.com/containers/nri-plugins/pull/536) already added this).
 - Implement `UnprepareResourceClaims`: release CPUs, remove CDI entry, drop cache entry.
-- CDI writer in `pkg/resmgr/dra/cdi.go` — reuse PR #536 shape.
+- CDI writer in `pkg/resmgr/dra/cdi.go` — reuse [PR #536](https://github.com/containers/nri-plugins/pull/536) shape.
 - Restart reconciliation: on `Plugin.Start`, load persisted claims and rebuild `hpUsed`. If the persisted claim's CPUs are still in the CDI spec, keep it; otherwise drop and warn.
 
 **Files touched:** `pkg/resmgr/dra/{plugin,cdi,state}.go`, unit tests, integration tests.
 
 **Verification:** integration test — publish, receive fake `PrepareResourceClaims` call, assert CDI spec written correctly, assert `hpUsed` updated. Restart-with-existing-claim test.
 
-**Risk:** high. Correctness of concurrent Prepare + NRI-phase access to `hpUsed` (design.md "Coexistence" section) must be locked down.
+**Risk:** high. Correctness of concurrent Prepare + NRI-phase access to `hpUsed` ([design.md](design.md) "Coexistence" section) must be locked down.
 
 ### Step 8 — Topology-aware policy wire-up
 
@@ -184,9 +184,9 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
   - Read `TopologyAwarePolicy.spec.dra.enabled` config.
   - If enabled, instantiate `dra.Plugin` with driver name `nri.topology-aware.cpu` and start it.
   - Publish devices on plugin start and after every `Reconfigure`.
-- Extend `pkg/resmgr/policy/policy.go` `Backend` interface with `AllocateClaim(Claim)` / `ReleaseClaim(Claim)` (PR #536 pattern, cleaned up).
+- Extend `pkg/resmgr/policy/policy.go` `Backend` interface with `AllocateClaim(Claim)` / `ReleaseClaim(Claim)` ([PR #536](https://github.com/containers/nri-plugins/pull/536) pattern, cleaned up).
 - Implement in `cmd/plugins/topology-aware/policy/pools.go`:
-  - `allocateClaim` — find tightest pool containing claim CPUs, evict conflicting exclusive grants, mark CPUs claimed in pool supply, reallocate displaced grants. Adapted from PR #536 with the `getClaimedCPUs` env-var parser generalized to read both `NRI_CLASS` and `NRI_CPU<N>` (see design.md CDI env-var protocol).
+  - `allocateClaim` — find tightest pool containing claim CPUs, evict conflicting exclusive grants, mark CPUs claimed in pool supply, reallocate displaced grants. Adapted from [PR #536](https://github.com/containers/nri-plugins/pull/536) with the `getClaimedCPUs` env-var parser generalized to read both `NRI_CLASS` and `NRI_CPU<N>` (see [design.md](design.md) CDI env-var protocol).
   - `releaseClaim` — reverse.
 - Extend `TopologyAwarePolicy` config CR with `spec.dra { enabled: bool, sharedCounters: bool }`.
 - Add `spec.dra.enabled: false` to all existing test configs to keep behavior unchanged.
@@ -195,7 +195,7 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
 
 **Verification:** e2e test — deploy topology-aware with `dra.enabled: true`, create a `ResourceClaim` selecting an HP class, verify pod gets the expected CPUs at CLOS/EPP/etc.
 
-**Risk:** high. Same class of concurrency and eviction hazards as PR #536 flagged (`TODO: sort old grants by QoS class`). Prototype scars need cleanup before merge, not after.
+**Risk:** high. Same class of concurrency and eviction hazards as [PR #536](https://github.com/containers/nri-plugins/pull/536) flagged (`TODO: sort old grants by QoS class`). Prototype scars need cleanup before merge, not after.
 
 ### Step 9 — Helm chart additions
 
@@ -203,14 +203,14 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
 
 **Actions.**
 - `deployment/helm/topology-aware/templates/`:
-  - `clusterrole.yaml` — add RBAC rules from `design.md` "Helm chart additions."
+  - `clusterrole.yaml` — add RBAC rules from [design.md](design.md) "Helm chart additions."
   - `daemonset.yaml` — add host mounts for `/var/lib/kubelet/plugins`, `.../plugins_registry`, `/var/run/cdi`.
   - `native-cpu-device-class.yaml` — the base `DeviceClass nri.topology-aware.cpu`. Per-class shortcut DeviceClasses generated from Helm values if listed.
 - Values additions: `dra.enabled` toggles the DeviceClass emission and RBAC installation.
 
 **Files touched:** `deployment/helm/topology-aware/templates/*`, `deployment/helm/topology-aware/values.yaml`.
 
-**Verification:** `helm template` + `helm lint`. Deploy on a KEP-5075+5517-enabled cluster; verify ResourceSlices appear.
+**Verification:** `helm template` + `helm lint`. Deploy on a [KEP-5075](https://github.com/kubernetes/enhancements/issues/5075) + [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517)-enabled cluster; verify ResourceSlices appear.
 
 **Risk:** low-medium. Kubelet-plugin socket path mounts have historically been the source of "why doesn't my driver register" bugs; verify against `dra-driver-cpu`'s Helm chart as a known-good reference.
 
@@ -223,12 +223,12 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
   - `config.yaml` — topology-aware config with `dra.enabled: true`, one HP cpuClass, one non-HP.
   - `resourceclaim.yaml` — claim requesting `hp-cpus: 2` on numa 0.
   - `pod.yaml` — pod referencing the claim.
-  - `code.var.sh` — assertions: pod runs, its CPUs are on numa 0, HP CLOS association is visible via SST tooling, cgroup pod-level `cpu.max` inflated per KEP-5517.
+  - `code.var.sh` — assertions: pod runs, its CPUs are on numa 0, HP CLOS association is visible via SST tooling, cgroup pod-level `cpu.max` inflated per [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517).
 - If cluster lacks required feature gates, skip with a clear message.
 
 **Files touched:** `test/e2e/policies.test-suite/topology-aware/n4c16/testXX-dra/*`.
 
-**Verification:** e2e test passes on the KEP-5075+5517 test cluster.
+**Verification:** e2e test passes on the [KEP-5075](https://github.com/kubernetes/enhancements/issues/5075)+5517 test cluster.
 
 **Risk:** medium. Depends on cluster support for the feature gates; the CI environment may need updating.
 
@@ -236,26 +236,26 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
 
 ### Feature gate probes
 
-Design.md "Feature-gate detection" spec'd probe-at-startup for `AllowMultipleAllocations`, `NodeAllocatableResources`. Implement in step 6 as part of `Plugin.Start`. Land the probes even without KEP-5941 (Model C stays not-yet-implemented) so the code path exists when Model C is added.
+Design.md "Feature-gate detection" spec'd probe-at-startup for `AllowMultipleAllocations`, `NodeAllocatableResources`. Implement in step 6 as part of `Plugin.Start`. Land the probes even without [KEP-5941](https://github.com/kubernetes/enhancements/issues/5941) (Model C stays not-yet-implemented) so the code path exists when Model C is added.
 
 ### Not part of v1
 
 Explicitly deferred to later work, tracked here so nobody accidentally scope-creeps a step:
 - Balloons policy wire-up (v2).
-- Model C / KEP-5941 shared counters (waits for upstream alpha).
-- Class-derived attribute freshness resolution (open decision 1 in `design.md`; implementation depends on which option maintainers pick).
+- Model C / [KEP-5941](https://github.com/kubernetes/enhancements/issues/5941) shared counters (waits for upstream alpha).
+- Class-derived attribute freshness resolution (open decision 1 in [design.md](design.md); implementation depends on which option maintainers pick).
 - `cpuClass.dra` sub-block fields beyond `publish` (custom `capacityKey`, per-class DeviceClass suppression).
-- PodResources API integration for DRA-claimed CPUs (KEP-3695; complementary but independent).
+- PodResources API integration for DRA-claimed CPUs ([KEP-3695](https://github.com/kubernetes/enhancements/issues/3695); complementary but independent).
 
 ### Testing philosophy
 
 - Steps 1–5: unit tests only, no live cluster needed.
 - Steps 6–7: integration tests against a fake kubelet-plugin harness; still no live cluster.
-- Steps 8–10: e2e cluster required, KEP-5075 and KEP-5517 feature gates on.
+- Steps 8–10: e2e cluster required, [KEP-5075](https://github.com/kubernetes/enhancements/issues/5075) and [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517) feature gates on.
 
 Splitting this way means the first 5 PRs can land and be reviewed in parallel with cluster-setup work, and any KEP-graduation delays only affect the last three steps.
 
 ## Change log
 
 - **2026-08-19 (later).** Step 6 gained an **Imports & deps** subsection: enumerates must-have Kubernetes helper packages (`kubeletplugin`, `resourceslice`, `resapi`, `types`, `resource`), lists small additions worth pulling in (`client-go/util/retry`, `utils/ptr`), and explicitly documents what we are *not* adopting (klog switch, `component-base/featuregate`, `component-base/metrics`, `runtime/serializer` for checkpoints, `controller-runtime`, low-level DRA/registration protobufs) with rationale. Also codifies "do not import from `dra-example-driver` or `dra-driver-cpu`."
-- **2026-08-19.** Initial plan created based on `design.md` as of that date.
+- **2026-08-19.** Initial plan created based on [design.md](design.md) as of that date.
