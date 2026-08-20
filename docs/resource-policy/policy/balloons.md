@@ -1110,6 +1110,13 @@ Affinities are updated by writing
 `/proc/irq/<NUMBER>/smp_affinity_list`, and IRQs are matched against
 `/proc/interrupts`.
 
+The policy assumes that it is the only entity which manages the
+affinities of the IRQs it controls. It caches IRQ data read from procfs,
+so affinities changed by other means while the policy runs are neither
+noticed nor reverted, and IRQs which appear at runtime are not seen.
+Affinities are updated when a policy operation, such as allocating
+resources to a container, completes.
+
 **`irqClaim`** (list of strings)
 - Lists IRQs handled by CPUs of balloons of this type.
 - Each item refers to IRQs either by an exact number, or by a pattern

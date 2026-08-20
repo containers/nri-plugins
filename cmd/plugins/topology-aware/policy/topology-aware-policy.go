@@ -93,6 +93,9 @@ func New() policyapi.Backend {
 func (p *policy) Setup(opts *policyapi.BackendOptions) error {
 	var err error
 
+	irq.BlockWrites()
+	defer irq.UnblockWrites()
+
 	cfg, ok := opts.Config.(*cfgapi.Config)
 	if !ok {
 		return policyError("failed initialize %s policy: config of wrong type %T",
@@ -162,6 +165,9 @@ func (p *policy) Start() error {
 
 // Sync synchronizes the state of this policy.
 func (p *policy) Sync(add []cache.Container, del []cache.Container) error {
+	irq.BlockWrites()
+	defer irq.UnblockWrites()
+
 	log.Debugf("synchronizing state...")
 	for _, c := range del {
 		if err := p.ReleaseResources(c); err != nil {
@@ -230,6 +236,9 @@ func (p *policy) checkAllocations(format string, args ...interface{}) {
 
 // AllocateResources is a resource allocation request for this policy.
 func (p *policy) AllocateResources(container cache.Container) error {
+	irq.BlockWrites()
+	defer irq.UnblockWrites()
+
 	log.Debugf("allocating resources for %s (%s)...", container.PrettyName(), container.GetID())
 
 	defer p.commitCpuClasses(container.PrettyName())
@@ -262,6 +271,9 @@ func (p *policy) allocateResources(container cache.Container, poolHint string) e
 
 // ReleaseResources is a resource release request for this policy.
 func (p *policy) ReleaseResources(container cache.Container) error {
+	irq.BlockWrites()
+	defer irq.UnblockWrites()
+
 	log.Debugf("releasing resources for %s (%s)...", container.PrettyName(), container.GetID())
 
 	defer p.commitCpuClasses(container.PrettyName())
@@ -281,6 +293,9 @@ func (p *policy) ReleaseResources(container cache.Container) error {
 
 // UpdateResources is a resource allocation update request for this policy.
 func (p *policy) UpdateResources(container cache.Container) error {
+	irq.BlockWrites()
+	defer irq.UnblockWrites()
+
 	log.Debugf("updating (reallocating) container %s...", container.PrettyName())
 
 	defer p.commitCpuClasses(container.PrettyName())
@@ -512,6 +527,9 @@ func (p *policy) reallocateResources(containers []cache.Container, pools map[str
 }
 
 func (p *policy) Reconfigure(newCfg interface{}) error {
+	irq.BlockWrites()
+	defer irq.UnblockWrites()
+
 	cfg, ok := newCfg.(*cfgapi.Config)
 	if !ok {
 		return policyError("got config of wrong type %T", newCfg)

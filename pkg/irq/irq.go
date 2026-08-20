@@ -15,16 +15,20 @@
 // irq package provides low-level functions to read interrupts from
 // /proc/interrupts and to read and write CPU affinities of interrupts
 // through /proc/irq/NUMBER/smp_affinity_list.
+//
+// Interrupt data read from procfs is cached, which assumes that
+// interrupts are neither added nor removed at runtime and that no
+// entity outside this package alters interrupt affinities. Affinities
+// set between BlockWrites and UnblockWrites are buffered, and only
+// the affinity set last for an interrupt reaches procfs.
 package irq
 
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path"
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
@@ -39,11 +43,13 @@ var (
 	allowed []string
 
 	// ErrDeniedInterrupt is the error returned for attempts to reference or control
-	// globally globally disallowed interrupts.
+	// globally disallowed interrupts.
 	ErrDeniedInterrupt = errors.New("denied interrupt")
 )
 
-// SetProcRoot sets the procfs root directory and proc mountpoint.
+// SetProcRoot sets the procfs root directory and proc mountpoint. All
+// data cached from the previous mountpoint is dropped, including
+// buffered interrupt affinities.
 func SetProcRoot(root string) {
 	if root != "" {
 		procRoot = filepath.Clean(root)
@@ -61,6 +67,28 @@ func SetProcRoot(root string) {
 		procRoot = ""
 	}
 	proc = filepath.Join(procRoot, "/proc")
+	cache.reset(proc)
+}
+
+// DropCache drops all cached interrupt data: the interrupts read from
+// the interrupts file, the affinities read from or written to procfs,
+// and the affinities which are buffered but not written yet.
+func DropCache() {
+	cache.reset(proc)
+}
+
+// BlockWrites starts buffering interrupt affinities instead of writing
+// them to procfs. Every call must be paired with an UnblockWrites call,
+// and the calls may be nested.
+func BlockWrites() {
+	cache.blockWrites()
+}
+
+// UnblockWrites removes one write block set by BlockWrites. Removing
+// the last block writes all buffered interrupt affinities to procfs,
+// logging write errors instead of returning them.
+func UnblockWrites() {
+	cache.unblockWrites()
 }
 
 // ValidateAllowedPatterns validates zero or more globbing patterns
@@ -138,22 +166,7 @@ func ForEachInterrupt(fn func(*Irq) error) error {
 // to determine if an interrupt is allowed to be controlled
 // by this package.
 func forEachInterrupt(fn func(*Irq) error, allow []string) error {
-	data, err := os.ReadFile(filepath.Join(proc, "interrupts"))
-	if err != nil {
-		return fmt.Errorf("failed to read interrupts: %w", err)
-	}
-	for line := range strings.SplitSeq(string(data), "\n") {
-		if irq, ok := parseInterruptsLine(line); ok {
-			if !isAllowedInterruptBy(irq.description, allow) {
-				irq.denied = true
-			}
-			if err := fn(irq); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-
+	return cache.forEachInterrupt(fn, allow)
 }
 
 // Interrupts collects and returns the numbered interrupts listed in
@@ -226,37 +239,6 @@ func ValidateReferencedInterrupts(references []string) ([]*Irq, error) {
 	return denied, err
 }
 
-// parseInterruptsLine returns the interrupt parsed from a
-// /proc/interrupts line and whether the line described a numbered
-// interrupt.
-func parseInterruptsLine(line string) (*Irq, bool) {
-	fields := strings.Fields(line)
-	if len(fields) < 2 {
-		return nil, false
-	}
-	head, rest := fields[0], fields[1:]
-	if !strings.HasSuffix(head, ":") {
-		return nil, false
-	}
-	num, err := strconv.Atoi(strings.TrimSuffix(head, ":"))
-	if err != nil {
-		return nil, false
-	}
-	// Skip the leading per-CPU interrupt counters and keep the
-	// remaining chip and device description for matching.
-	descStart := len(rest)
-	for i, field := range rest {
-		if _, err := strconv.Atoi(field); err != nil {
-			descStart = i
-			break
-		}
-	}
-	return &Irq{
-		num:         num,
-		description: strings.Join(rest[descStart:], " "),
-	}, true
-}
-
 // Num returns the number of the interrupt.
 func (irq *Irq) Num() int {
 	return irq.num
@@ -290,20 +272,16 @@ func (irq *Irq) isAllowed() bool {
 	return !irq.denied
 }
 
-// AffinityCpus returns the CPUs in the affinity of the interrupt.
+// AffinityCpus returns the CPUs in the affinity of the interrupt. The
+// returned CPUs are the ones set last through this package, even if
+// they have not reached procfs yet.
 func (irq *Irq) AffinityCpus() (cpuset.CPUSet, error) {
-	data, err := os.ReadFile(irq.smpAffinityListPath())
-	if err != nil {
-		return cpuset.New(), fmt.Errorf("failed to read affinity of irq %d: %w", irq.num, err)
-	}
-	cpus, err := cpuset.Parse(strings.TrimSpace(string(data)))
-	if err != nil {
-		return cpuset.New(), fmt.Errorf("failed to parse affinity of irq %d: %w", irq.num, err)
-	}
-	return cpus, nil
+	return cache.affinityOf(irq.num)
 }
 
 // SetAffinityCpus sets the CPUs in the affinity of the interrupt.
+// While writes are blocked, the affinity is only buffered and write
+// errors are logged instead of being returned.
 func (irq *Irq) SetAffinityCpus(cpus cpuset.CPUSet) error {
 	if !irq.isAllowed() {
 		return fmt.Errorf("%w: refusing to set affinity of irq %d", ErrDeniedInterrupt, irq.num)
@@ -311,15 +289,5 @@ func (irq *Irq) SetAffinityCpus(cpus cpuset.CPUSet) error {
 	if cpus.IsEmpty() {
 		return fmt.Errorf("refusing to set empty affinity on irq %d", irq.num)
 	}
-	if err := os.WriteFile(irq.smpAffinityListPath(), []byte(cpus.String()), 0644); err != nil {
-		return fmt.Errorf("failed to set affinity of irq %d to %q: %w", irq.num, cpus, err)
-	}
-	log.Debugf("irq %s smp_affinity_list written: %s", irq, cpus)
-	return nil
-}
-
-// smpAffinityListPath returns the path to the smp_affinity_list file
-// of the interrupt.
-func (irq *Irq) smpAffinityListPath() string {
-	return filepath.Join(proc, "irq", strconv.Itoa(irq.num), "smp_affinity_list")
+	return cache.setAffinity(irq.num, cpus)
 }
