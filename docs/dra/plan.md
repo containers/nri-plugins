@@ -59,21 +59,22 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
 - Extend `pkg/apis/config/v1alpha1/resmgr/policy/cpuclass.go`:
   - Add `DRA *CPUClassDRA` struct field to `CPUClass`.
   - Define `type CPUClassDRA struct { Publish *bool }` — pointer so "unset" is distinguishable from "explicit false."
-  - Default `Publish` to `true` in a getter method.
-- Add validation function `ValidateCPUClassesForDRA(classes []*CPUClass, punits []Punit, sharedCountersEnabled bool) error`:
-  - Groups published classes by (tier, punitID).
-  - Returns an error naming the tier / punit / conflicting class names if any group has >1 published class and `sharedCountersEnabled == false`.
-  - Widens punit → package on non-SST-TF systems.
-- Unit tests covering: default publish, explicit false, single-HP conflict, multi-non-HP conflict, shared-counters allows conflict, non-SST-TF widening.
-- Regenerate CRD YAML in `config/crd/bases/`.
+  - Add `DRAPublish() bool` getter (nil → true).
+- Add `ValidateCPUClassesForDRA(classes []*policyapi.CPUClass, sharedCounters bool) error` in **`pkg/resmgr/cpuclass/dra.go`** (new file; extended by Step 5):
+  - Tier classification is static from config: managed PCT → `"pctPriority=<value>"`; assoc-only PCT → `"closID=<N>"`; non-PCT classes exempt.
+  - Groups DRA-published PCT classes by tier label; returns a sorted, deterministic error if any tier has >1 published class and `sharedCounters == false`.
+  - No `[]Punit` parameter — per-punit enforcement is deferred to Step 5 where runtime punit topology is available (CPUClass carries no punit affinity).
+- Regenerate CRDs via `make generate` — updates all four YAML files (bases + helm copies).
 
-**Files touched:** `pkg/apis/config/v1alpha1/resmgr/policy/cpuclass.go`, new tests, generated CRDs.
+**Files touched:** `pkg/apis/config/.../cpuclass.go`, `pkg/resmgr/cpuclass/dra.go` (new), `zz_generated.deepcopy.go`, four CRD YAML files, tests.
 
-**Verification:** unit tests pass. Existing tests untouched.
+**Verification:** unit tests pass. Existing tests untouched. `make verify-generate` passes.
 
 **Risk:** low. Additive config change.
 
 **Not yet wired into anything — validation is called from step 6.**
+
+**Landed:** commit `a0fd7f10` on branch `DRA` (see [`docs/plans/20260820-dra-step3-cpuclass-dra-publish.md`](../plans/completed/20260820-dra-step3-cpuclass-dra-publish.md)).
 
 ### Step 4 — Add `pct.Allocator.PickCpus` / `ReleaseCpus`, extract capacity helpers
 
@@ -98,8 +99,8 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
 
 **Actions.**
 - Add to `pkg/resmgr/cpuclass/`:
-  - New file `dra.go` with method `Manager.DRADevices(driverName string) ([]resapi.Device, error)`.
-  - Emits one device per (class × punit) where `class.DRA.Publish == true` and the class is applicable to that punit's tier.
+  - **Extend existing** `dra.go` (created in Step 3) with method `Manager.DRADevices(driverName string) ([]resapi.Device, error)`. Do not recreate the file.
+  - Emits one device per (class × punit) where `class.DRAPublish() == true` (use the getter, not `class.DRA.Publish` directly — the latter panics on nil `DRA`) and the class is applicable to that punit's tier.
   - Attributes as spec'd in [design.md](design.md) (topology + class-derived).
   - Capacity `nri/cpus` with `RequestPolicy` tied to `punitHPCapacity` / `punitNonHPCapacity`.
   - `NodeAllocatableResources: {cpu: mapping: {capacityKey: nri/cpus, capacityMultiplier: 1}}`.

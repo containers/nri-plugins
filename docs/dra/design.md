@@ -126,11 +126,13 @@ cpuClasses:
 - Placement: colocated with the class so "is this class DRA-visible?" is answered where the class is defined, not in a separate list that can drift.
 - Extensibility: the `dra` sub-block gives us a home for future per-class DRA config without polluting the top-level class fields.
 
-**Validation at driver Configure:**
+**Validation at driver Configure** — implemented in `pkg/resmgr/cpuclass/dra.go:ValidateCPUClassesForDRA`:
 
-1. Collect the set of DRA-published classes (`cpuClass.dra.publish == true`).
-2. For each `(priorityTier, punitID)` pair (where "priorityTier" is HP on SST-TF-eligible punits, non-HP otherwise; and "punit" widens to "package" on non-SST-TF systems), count matching published classes.
-3. If any pair has `count > 1` and `TopologyAwarePolicy.spec.dra.sharedCounters == false`, **refuse to start** with an error naming the tier, the punit(s), and the conflicting classes, and pointing at the two resolutions:
+v1 validates at **tier granularity only**, not per-(tier, punit), because `CPUClass` carries no punit affinity — the per-class→punit mapping only exists at runtime. Per-punit enforcement is deferred to the device-build step (Step 5) where runtime punit topology is available. Tier classification is static from config: managed PCT → `"pctPriority=<value>"`; assoc-only PCT → `"closID=<N>"`; non-PCT classes are exempt from the tier check (they have no turbo-frequency tier concept) but are still published by Step 5 when `DRAPublish() == true`.
+
+1. Collect the set of DRA-published PCT classes (those with `PctPriority != ""` or `SstClosID != nil` and `DRAPublish() == true`).
+2. For each tier label, count published classes.
+3. If any tier has `count > 1` and `TopologyAwarePolicy.spec.dra.sharedCounters == false`, **refuse to start** with an error naming the tier, the conflicting classes (sorted), and pointing at the two resolutions:
    - Opt out on all but one via `cpuClass.dra.publish: false`, **or**
    - Enable `TopologyAwarePolicy.spec.dra.sharedCounters: true` (requires [KEP-5941](https://github.com/kubernetes/enhancements/issues/5941) in the cluster).
 
