@@ -49,6 +49,8 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
 
 **Risk:** low. Structural only.
 
+**Landed:** commits `a1244e33`…`404ff242` on branch `DRA` (see [`docs/plans/20260820-dra-step2-resmgr-dra-skeleton.md`](../plans/completed/20260820-dra-step2-resmgr-dra-skeleton.md) for the detailed implementation log). Also added `*.test` to `.gitignore` (cleanup).
+
 ### Step 3 — Add `cpuClass.dra.publish` config field + validation
 
 **Rationale.** Resolved decision 7 requires this before device publication makes sense. It's a small, self-contained config-API change that can land ahead of any driver code.
