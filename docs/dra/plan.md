@@ -135,6 +135,11 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
 - `k8s.io/api/resource/v1` (`resapi`) — DRA API types (`Device`, `ResourceClaim`, `DeviceAttribute`).
 - `k8s.io/apimachinery/pkg/types` — `types.UID`, `types.NamespacedName`. Already used across nri-plugins.
 - `k8s.io/apimachinery/pkg/api/resource` — `resource.Quantity`, needed for `RequestPolicy.default/min/max/step`.
+- `tags.cncf.io/container-device-interface/pkg/cdi` — `Cache` with `WriteSpec`/`RemoveSpec`/`NewCache(WithSpecDirs(...), WithAutoRefresh(false))`, name helpers `GenerateSpecName` / `GenerateTransientSpecName`. Atomic tmp+rename writes and spec validation, so we don't reinvent them.
+- `tags.cncf.io/container-device-interface/specs-go` — the wire types `Spec`, `Device`, `ContainerEdits` used to construct CDI spec content in a type-safe way.
+- `tags.cncf.io/container-device-interface/pkg/parser` — `QualifiedName(vendor, class, name)` helper for CDI device references returned in `PrepareResult.CDIDeviceIDs`.
+
+  Not currently a nri-plugins dep — will be added at step 7. Apache-2.0, tracked upstream at [cncf-tags/container-device-interface](https://github.com/cncf-tags/container-device-interface). Both reference DRA drivers use it.
 
 *Should probably use — idiomatic, low-risk, small additions:*
 - `k8s.io/client-go/util/retry` — retry-with-backoff for API-server writes. Pull in when step 7 first writes to `resourceclaims/status` or similar.
@@ -166,7 +171,7 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
   - Return `PrepareResult` with `CDIDeviceIDs: ["nri.topology-aware.cpu/device=claim-<uid>"]`.
   - Persist claim state (`{uid, className, punitID, cpus}`) via the existing opaque cache (`pkg/resmgr/cache/cache.go` `SetEntry`/`GetEntry` — [PR #536](https://github.com/containers/nri-plugins/pull/536) already added this).
 - Implement `UnprepareResourceClaims`: release CPUs, remove CDI entry, drop cache entry.
-- CDI writer in `pkg/resmgr/dra/cdi.go` — reuse [PR #536](https://github.com/containers/nri-plugins/pull/536) shape.
+- CDI writer in `pkg/resmgr/dra/cdi.go` — use `tags.cncf.io/container-device-interface` upstream library (`cdiapi.Cache` with `WithAutoRefresh(false)`, `WriteSpec`, `RemoveSpec`; `specs-go.Spec`/`Device`/`ContainerEdits` types; `GenerateTransientSpecName(vendor, class, claimUID)` for per-claim filenames). Do NOT carry forward [PR #536](https://github.com/containers/nri-plugins/pull/536)'s hand-rolled `fmt.Fprintf` YAML — it lacks atomic writes, spec validation, and version tracking. See `dra-driver-cpu`'s [`pkg/driver/cdi.go`](https://github.com/kubernetes-sigs/dra-driver-cpu/blob/main/pkg/driver/cdi.go) as the pattern.
 - Restart reconciliation: on `Plugin.Start`, load persisted claims and rebuild `hpUsed`. If the persisted claim's CPUs are still in the CDI spec, keep it; otherwise drop and warn.
 
 **Files touched:** `pkg/resmgr/dra/{plugin,cdi,state}.go`, unit tests, integration tests.

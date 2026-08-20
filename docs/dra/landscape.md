@@ -114,6 +114,7 @@ Skeleton driver, mock GPU + mock CPU + mock net profiles. Its value is showing t
   - [`staging/src/k8s.io/component-helpers/resource/helpers.go`](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/component-helpers/resource/helpers.go) — `PodRequests()` with `UseDRANodeAllocatableResourceClaimStatus`.
   - [`pkg/kubelet/cm/helpers_linux.go:182`](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/cm/helpers_linux.go#L182) — kubelet gates DRA into cgroup calc.
 - [kubernetes/enhancements](https://github.com/kubernetes/enhancements) — KEPs live under [`keps/sig-scheduling/`](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling) and [`keps/sig-node/`](https://github.com/kubernetes/enhancements/tree/master/keps/sig-node).
+- [cncf-tags/container-device-interface](https://github.com/cncf-tags/container-device-interface) — the CDI spec and its Go library `tags.cncf.io/container-device-interface`. Every DRA driver that returns `CDIDeviceIDs` writes CDI spec files; both reference drivers use this library (`pkg/cdi.Cache.WriteSpec`, `specs-go` types, `GenerateTransientSpecName`) rather than hand-rolling YAML. Apache-2.0; drivers should import it rather than reinvent atomic writes, spec validation, and version tracking.
 
 ## Design options being weighed for nri-plugins DRA integration
 

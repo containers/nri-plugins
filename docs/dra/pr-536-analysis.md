@@ -62,7 +62,6 @@ Refactors and additive utilities whose scope is orthogonal to the DRA design cha
 
 The mechanism is correct; the surrounding shape needs to change.
 
-- **CDI writer** (`writeCDISpecFile` in `pkg/resmgr/dra.go`) → new `pkg/resmgr/dra/cdi.go`. Env-var naming updated (`DRA_CPU<N>=1` → `NRI_CPU<N>=1` + `NRI_CLASS=`).
 - **Kubelet-plugin startup** (`newDRAPlugin`, `connect`, `Start`, `stop`, `unaryInterceptor`, `IsRegistered`, `HandleError`) → new `pkg/resmgr/dra/plugin.go`.
 - **`resmgr` DRA plumbing** in `pkg/resmgr/resource-manager.go` (start/stop wiring, cache setup) — adapt to the new package boundary.
 - **`saveClaims` / `restoreClaims` persistence** via `cache.SetEntry` / `GetEntry` — same shape; persisted struct changes to per-(class × punit).
@@ -78,3 +77,4 @@ The design changes moved the ground under these; no meaningful line-level reuse.
 - **`getClaimedCPUs` env-var-parsing helper** — reduces to a smaller helper because [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517) handles accounting; only the "which CPUs" signal remains.
 - **`allocateClaim` capacity math** (`ClaimCPUs`, `UnclaimCPUs`, `getLargestSharedUsers`) — per-(class × punit) accounting shifts from pool-supply "shared CPU capacity" to per-punit tier capacity; some helpers may survive, most is redesigned.
 - **User-facing accounting workarounds** (mirroring `spec.cpu`) — obsolete under [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517), do not carry forward.
+- **CDI writer** (`writeCDISpecFile` in `pkg/resmgr/dra.go`) — hand-rolled `fmt.Fprintf` YAML lacks atomic writes, spec validation, and version tracking. Replace with `tags.cncf.io/container-device-interface` (`cdiapi.Cache.WriteSpec`, `specs-go.Spec` types, `GenerateTransientSpecName` for per-claim filenames), same as `dra-driver-cpu` and `dra-example-driver`. See [plan.md](plan.md) step 7.
