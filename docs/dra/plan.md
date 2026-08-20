@@ -93,6 +93,8 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
 
 **Risk:** low-medium. Existing HP-room accounting is nontrivial; the new methods must share `hpUsed` semantics with `trackHpUsage`/`clearHpUsage`.
 
+**Landed:** commit `5c4c04fa` on branch `DRA` (see [`docs/plans/20260820-dra-step4-pct-pick-release-hp-cpus.md`](../plans/completed/20260820-dra-step4-pct-pick-release-hp-cpus.md)). Implementation deviations from the original plan.md spec: signature uses `(pkgID, punitID int, ...)` not `(punitID int, ...)`; DRA holds tracked in a separate `hpDRAUsed` map (not `hpUsed`) to prevent `clearHpUsage` aliasing; exported `PunitInfo` + `Punits()` added for Step 5.
+
 ### Step 5 — `cpuclass.Manager.DRADevices()` — build the device list
 
 **Rationale.** Given a set of cpuClass definitions and the PCT allocator's punit list, emit `[]resapi.Device` in Model B shape. Pure function; unit-testable without any DRA plumbing.
