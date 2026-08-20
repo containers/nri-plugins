@@ -7,7 +7,7 @@ This file is auto-loaded by Claude Code at the start of every session in this re
 `containers/nri-plugins` — NRI (Node Resource Interface) plugins for Kubernetes container runtimes. Ships several policy plugins that steer container CPU/memory placement via NRI: `topology-aware`, `balloons`, `memory-policy`, `memory-qos`, `memtierd`, `resctrl-mon`, `sgx-epc`, `template`.
 
 Primary areas of interest right now:
-- Topology-aware policy ([cmd/plugins/topology-aware/](cmd/plugins/topology-aware/), [pkg/resmgr/policy/topology-aware/](pkg/resmgr/policy/topology-aware/)).
+- Topology-aware policy ([cmd/plugins/topology-aware/](cmd/plugins/topology-aware/), including its policy code at [cmd/plugins/topology-aware/policy/](cmd/plugins/topology-aware/policy/)).
 - Balloons policy ([cmd/plugins/balloons/](cmd/plugins/balloons/), particularly its `preferCloseToDevices` + PodResources API integration — recently added).
 - Resource manager plumbing ([pkg/resmgr/](pkg/resmgr/)), cache ([pkg/resmgr/cache/](pkg/resmgr/cache/)), libmem allocator ([pkg/resmgr/lib/memory/](pkg/resmgr/lib/memory/)), sysfs ([pkg/sysfs/](pkg/sysfs/)).
 - PCT allocator ([pkg/resmgr/cpuclass/internal/pct/](pkg/resmgr/cpuclass/internal/pct/)) — Intel Speed Select (SST-CP + SST-TF) integration driven by `cpuClass` config.
