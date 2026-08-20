@@ -31,6 +31,8 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
 
 **Risk:** low. Refactor of already-vetted code.
 
+**Landed:** commits `022b876f`…`f595440b` on branch `DRA` (see [`docs/plans/20260820-dra-step1-kubernetes-client-watch-lift.md`](../plans/completed/20260820-dra-step1-kubernetes-client-watch-lift.md) for the detailed per-task implementation log).
+
 ### Step 2 — Introduce `pkg/resmgr/dra/` package skeleton (no functionality)
 
 **Rationale.** Physically separate the shared DRA driver code from any policy binary. Enforces resolved decision 6 (code-sharing verification checklist) structurally — subsequent steps can only add to this package, not to a policy-specific location.
