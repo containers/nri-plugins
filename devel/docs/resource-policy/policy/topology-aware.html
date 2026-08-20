@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.13.1-65-g286cb0b9 documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.13.1-70-g83d986e9 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=72efd470"></script>
+        <script src="../../../_static/documentation_options.js?v=73e74532"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -991,6 +991,12 @@ container from the CPU affinity of all IRQs.</p>
 <p>Any container scoped effective IRQ affinity annotation for containers
 without exclusive CPU allocation is considered an error, regardless of
 the container’s QoS class, and should prevent the creation of the container.</p>
+<p>The policy assumes that it is the only entity which manages the
+affinities of the IRQs it controls. It caches IRQ data read from procfs,
+so affinities changed by other means while the policy runs are neither
+noticed nor reverted, and IRQs which appear at runtime are not seen.
+Affinities are updated when a policy operation, such as allocating
+resources to a container, completes.</p>
 <section id="restricting-irq-cpu-affinity-tuning">
 <h4>Restricting IRQ CPU Affinity Tuning<a class="headerlink" href="#restricting-irq-cpu-affinity-tuning" title="Link to this heading"></a></h4>
 <p>The <code class="docutils literal notranslate"><span class="pre">controllableInterrupts</span></code> configuration setting can be used to restrict

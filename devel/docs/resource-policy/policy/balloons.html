@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Balloons Policy &mdash; NRI Plugins v0.13.1-65-g286cb0b9 documentation</title>
+  <title>Balloons Policy &mdash; NRI Plugins v0.13.1-70-g83d986e9 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=72efd470"></script>
+        <script src="../../../_static/documentation_options.js?v=73e74532"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -1250,6 +1250,12 @@ interrupts (IRQs). By default the policy does not touch IRQ affinities.
 Affinities are updated by writing
 <code class="docutils literal notranslate"><span class="pre">/proc/irq/&lt;NUMBER&gt;/smp_affinity_list</span></code>, and IRQs are matched against
 <code class="docutils literal notranslate"><span class="pre">/proc/interrupts</span></code>.</p>
+<p>The policy assumes that it is the only entity which manages the
+affinities of the IRQs it controls. It caches IRQ data read from procfs,
+so affinities changed by other means while the policy runs are neither
+noticed nor reverted, and IRQs which appear at runtime are not seen.
+Affinities are updated when a policy operation, such as allocating
+resources to a container, completes.</p>
 <p><strong><code class="docutils literal notranslate"><span class="pre">irqClaim</span></code></strong> (list of strings)</p>
 <ul class="simple">
 <li><p>Lists IRQs handled by CPUs of balloons of this type.</p></li>
