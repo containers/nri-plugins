@@ -43,9 +43,38 @@ The bridge from DRA to NRI in [PR #536](https://github.com/containers/nri-plugin
 | Prototype scars in `allocateClaim` (evict conflicting grants) still needed | Still needed — that is *inside-driver* logic, orthogonal to [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517) |
 | CDI + `DRA_CPU<N>=1` env var to signal per-CPU allocation to NRI phase | Same mechanism — this is driver ↔ NRI enforcement, not driver ↔ kubelet accounting |
 
-## Takeaway for future DRA work in this repo
+## Reuse tiers for the implementation work
 
-- The **kubelet-plugin registration, CDI writer, and CDI+env-var bridge** are the reusable pieces.
-- The **user-facing accounting workarounds** (mirroring `spec.cpu`, env-var parsing for capacity reconciliation) are obsolete and should not be copied.
-- The **prototype scars** (evict-and-reallocate, exclusive-grant conflict handling) are inside-policy logic that any DRA-integrated policy still needs and can be lifted with cleanup.
-- The **RBAC + host-mount + `DeviceClass`** Helm additions are directly reusable as a starting template.
+"Not a proposal" does not mean "not a source." Individual commits and files hold up to different degrees against the design in [design.md](design.md) and are reused accordingly. [plan.md](plan.md) step 1 schedules the clean cherry-picks; steps 6–8 govern the salvage-and-adapt work.
+
+### Tier 1 — direct cherry-pick (whole commits, minimal touch)
+
+Refactors and additive utilities whose scope is orthogonal to the DRA design changes.
+
+- `5dcb66dc` — `pkg/kubernetes: split out client setup code from agent.`
+- `42ec1022` — `pkg/kubernetes: allow setting accepted and wire content types.`
+- `45a14d1c` — `pkg/kubernetes: split out watch wrapper from agent.`
+- `88140644` — `agent: expose node name, kube client and config.`
+- `b0efadc3` — `cache: add opaque cache entries, container.GetEnvList().`
+- `86e4c7a6` — `log: add AsYaml() for YAML-formatted log (blocks).` (nice-to-have; optional)
+
+### Tier 2 — salvage-and-adapt (copy code into the new package structure, rename symbols)
+
+The mechanism is correct; the surrounding shape needs to change.
+
+- **CDI writer** (`writeCDISpecFile` in `pkg/resmgr/dra.go`) → new `pkg/resmgr/dra/cdi.go`. Env-var naming updated (`DRA_CPU<N>=1` → `NRI_CPU<N>=1` + `NRI_CLASS=`).
+- **Kubelet-plugin startup** (`newDRAPlugin`, `connect`, `Start`, `stop`, `unaryInterceptor`, `IsRegistered`, `HandleError`) → new `pkg/resmgr/dra/plugin.go`.
+- **`resmgr` DRA plumbing** in `pkg/resmgr/resource-manager.go` (start/stop wiring, cache setup) — adapt to the new package boundary.
+- **`saveClaims` / `restoreClaims` persistence** via `cache.SetEntry` / `GetEntry` — same shape; persisted struct changes to per-(class × punit).
+- **Eviction / reallocation** in `cmd/plugins/topology-aware/policy/pools.go` `allocateClaim` — the algorithm survives; clean up `***** ...` logging and address `TODO: sort old grants by QoS class` before merge.
+- **Helm chart RBAC + host mounts + `DeviceClass`** — copy with driver-name rename (`native.cpu` → `nri.topology-aware.cpu`).
+
+### Tier 3 — learn-from-only (patterns understood, code rewritten)
+
+The design changes moved the ground under these; no meaningful line-level reuse.
+
+- **`pkg/sysfs/dra.go` DRA device schema** — attributes are entirely different in the new design (per-(class × punit) with `nri/cpuClass`, `nri/pctPriority`, `nri/energyPerformancePreference`, etc., not per-CPU with `package`/`die`/`cluster`/`coreType`). Rewrite.
+- **Device construction** in `PublishCPUs` — `[]resapi.Device` shape changed from per-CPU to per-(class × punit). Rewrite around `cpuclass.Manager.DRADevices()`.
+- **`getClaimedCPUs` env-var-parsing helper** — reduces to a smaller helper because [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517) handles accounting; only the "which CPUs" signal remains.
+- **`allocateClaim` capacity math** (`ClaimCPUs`, `UnclaimCPUs`, `getLargestSharedUsers`) — per-(class × punit) accounting shifts from pool-supply "shared CPU capacity" to per-punit tier capacity; some helpers may survive, most is redesigned.
+- **User-facing accounting workarounds** (mirroring `spec.cpu`) — obsolete under [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517), do not carry forward.
