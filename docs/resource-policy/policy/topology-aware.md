@@ -798,6 +798,13 @@ Any container scoped effective IRQ affinity annotation for containers
 without exclusive CPU allocation is considered an error, regardless of
 the container's QoS class, and should prevent the creation of the container.
 
+The policy assumes that it is the only entity which manages the
+affinities of the IRQs it controls. It caches IRQ data read from procfs,
+so affinities changed by other means while the policy runs are neither
+noticed nor reverted, and IRQs which appear at runtime are not seen.
+Affinities are updated when a policy operation, such as allocating
+resources to a container, completes.
+
 #### Restricting IRQ CPU Affinity Tuning
 
 The `controllableInterrupts` configuration setting can be used to restrict
