@@ -35,5 +35,5 @@ const (
 )
 
 var (
-	log = logger.Get("agent")
+	log = logger.Get("watch")
 )
