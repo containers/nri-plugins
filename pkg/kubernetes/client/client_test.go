@@ -262,6 +262,104 @@ func TestClient_WithRestConfig_CopySemanticsOnInput(t *testing.T) {
 	}
 }
 
+func TestWithAcceptContentTypes(t *testing.T) {
+	c, err := New(
+		WithKubeConfig(fixtureKubeconfig),
+		WithAcceptContentTypes(ContentTypeProtobuf, ContentTypeJSON),
+	)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	got := c.RestConfig().AcceptContentTypes
+	want := ContentTypeProtobuf + "," + ContentTypeJSON
+	if got != want {
+		t.Errorf("AcceptContentTypes: got %q, want %q", got, want)
+	}
+}
+
+func TestWithContentType(t *testing.T) {
+	c, err := New(
+		WithKubeConfig(fixtureKubeconfig),
+		WithContentType(ContentTypeProtobuf),
+	)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	if got := c.RestConfig().ContentType; got != ContentTypeProtobuf {
+		t.Errorf("ContentType: got %q, want %q", got, ContentTypeProtobuf)
+	}
+}
+
+// TestContentType_OrderIndependence exercises the retry-when-config-not-set
+// mechanism: content-type options passed BEFORE the config-source option
+// must produce the same result as content-type options passed AFTER.
+func TestContentType_OrderIndependence(t *testing.T) {
+	// Case A: config-source first, content-type second — no retry needed.
+	a, err := New(
+		WithKubeConfig(fixtureKubeconfig),
+		WithContentType(ContentTypeProtobuf),
+		WithAcceptContentTypes(ContentTypeProtobuf, ContentTypeJSON),
+	)
+	if err != nil {
+		t.Fatalf("case A New returned error: %v", err)
+	}
+
+	// Case B: content-type first, config-source second — retry required.
+	b, err := New(
+		WithContentType(ContentTypeProtobuf),
+		WithAcceptContentTypes(ContentTypeProtobuf, ContentTypeJSON),
+		WithKubeConfig(fixtureKubeconfig),
+	)
+	if err != nil {
+		t.Fatalf("case B New returned error: %v", err)
+	}
+
+	if a.RestConfig().ContentType != b.RestConfig().ContentType {
+		t.Errorf("ContentType differs: a=%q, b=%q", a.RestConfig().ContentType, b.RestConfig().ContentType)
+	}
+	if a.RestConfig().AcceptContentTypes != b.RestConfig().AcceptContentTypes {
+		t.Errorf("AcceptContentTypes differs: a=%q, b=%q", a.RestConfig().AcceptContentTypes, b.RestConfig().AcceptContentTypes)
+	}
+}
+
+// TestContentType_OnlyNoConfigSource verifies that content-type options
+// alone (no config-source option) still work: the WithInClusterConfig
+// fallback runs first, then the retry list is re-applied. Outside a Pod
+// the fallback errors — we assert that error path.
+func TestContentType_OnlyNoConfigSource(t *testing.T) {
+	skipIfInCluster(t)
+	_, err := New(WithContentType(ContentTypeProtobuf))
+	if !errors.Is(err, rest.ErrNotInCluster) {
+		t.Errorf("expected rest.ErrNotInCluster from in-cluster fallback, got: %v", err)
+	}
+}
+
+// TestContentType_MultipleRetries verifies that when multiple content-type
+// options are deferred to the retry list, all of them apply in the order
+// they were passed (last write within the retry list wins). Note: this
+// mechanism means options in the retry list execute AFTER all non-retry
+// options, so a retry-list content-type overrides any content-type
+// applied earlier during the first pass. Callers should therefore not
+// mix retry-required and non-retry setters for the same setting.
+func TestContentType_MultipleRetries(t *testing.T) {
+	c, err := New(
+		WithAcceptContentTypes(ContentTypeProtobuf), // retry #1
+		WithAcceptContentTypes(ContentTypeJSON),     // retry #2 — applies last within retry
+		WithContentType(ContentTypeProtobuf),        // retry #3
+		WithKubeConfig(fixtureKubeconfig),           // provides the config
+	)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	// Retry-list order preserved: last WithAcceptContentTypes wins.
+	if got := c.RestConfig().AcceptContentTypes; got != ContentTypeJSON {
+		t.Errorf("last-applied retry AcceptContentTypes should win: got %q, want %q", got, ContentTypeJSON)
+	}
+	if got := c.RestConfig().ContentType; got != ContentTypeProtobuf {
+		t.Errorf("ContentType: got %q, want %q", got, ContentTypeProtobuf)
+	}
+}
+
 func TestClient_Close_Idempotent(t *testing.T) {
 	c, err := New(WithKubeConfig(fixtureKubeconfig))
 	if err != nil {

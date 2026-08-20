@@ -25,10 +25,19 @@ package client
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+)
+
+// Wire content types accepted by the Kubernetes API server, exposed as
+// constants so callers do not need to import mime packages just to set
+// WithContentType / WithAcceptContentTypes.
+const (
+	ContentTypeJSON     = "application/json"
+	ContentTypeProtobuf = "application/vnd.kubernetes.protobuf"
 )
 
 // Client wraps a Kubernetes clientset together with the REST config and
@@ -170,6 +179,35 @@ func WithRestConfig(cfg *rest.Config) Option {
 func WithHttpClient(hc *http.Client) Option {
 	return func(c *Client) error {
 		c.http = hc
+		return nil
+	}
+}
+
+// WithAcceptContentTypes returns an Option that sets the Accept content
+// types the client will negotiate with the API server. Multiple values
+// are joined with commas. Requires the REST config to be present; if
+// applied before a config-source option, New() defers it via
+// errRetryWhenConfigSet and re-applies after the fallback runs.
+func WithAcceptContentTypes(contentTypes ...string) Option {
+	return func(c *Client) error {
+		if c.cfg == nil {
+			return errRetryWhenConfigSet
+		}
+		c.cfg.AcceptContentTypes = strings.Join(contentTypes, ",")
+		return nil
+	}
+}
+
+// WithContentType returns an Option that sets the wire content type the
+// client uses for requests. Requires the REST config to be present; if
+// applied before a config-source option, New() defers it via
+// errRetryWhenConfigSet and re-applies after the fallback runs.
+func WithContentType(contentType string) Option {
+	return func(c *Client) error {
+		if c.cfg == nil {
+			return errRetryWhenConfigSet
+		}
+		c.cfg.ContentType = contentType
 		return nil
 	}
 }
