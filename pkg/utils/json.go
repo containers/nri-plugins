@@ -23,7 +23,7 @@ import (
 )
 
 // DumpJSON dumps a json-compatible struct in human-readable form
-func DumpJSON(r interface{}) string {
+func DumpJSON(r any) string {
 	out, err := yaml.Marshal(r)
 	if err != nil {
 		return fmt.Sprintf("!!!!!\nUnable to stringify %T: %v\n!!!!!", r, err)
