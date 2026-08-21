@@ -110,11 +110,11 @@ can register and publish devices. Step 7 fills in the actual allocation logic.
 - Create: `pkg/resmgr/dra/logging.go`
 - Modify: `pkg/resmgr/dra/plugin_test.go`
 
-- [ ] create `pkg/resmgr/dra/logging.go` with Apache-2.0 header
+- [x] create `pkg/resmgr/dra/logging.go` with Apache-2.0 header
   - `func newLogr(l log.Logger) logr.Logger { return logr.FromSlogHandler(l.SlogHandler()) }`
   - no custom `LogSink` implementation needed
-- [ ] write `TestNewLogr` — verify `newLogr(log.Default())` returns a non-zero `logr.Logger` and calling `.Info("test")` does not panic
-- [ ] run `go test ./pkg/resmgr/dra/...` — must pass
+- [x] write `TestNewLogr` — verify `newLogr(log.Default())` returns a non-zero `logr.Logger` and calling `.Info("test")` does not panic
+- [x] run `go test ./pkg/resmgr/dra/...` — must pass
 
 ### Task 3: Implement DRAPlugin interface methods (stubs)
 

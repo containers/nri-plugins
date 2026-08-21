@@ -24,7 +24,20 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/containers/nri-plugins/pkg/log"
 )
+
+// TestNewLogr verifies that newLogr returns a usable logr.Logger backed by the
+// default pkg/log Logger and that calling Info on it does not panic.
+func TestNewLogr(t *testing.T) {
+	l := newLogr(log.Default())
+	if l.IsZero() {
+		t.Error("newLogr returned a zero logr.Logger")
+	}
+	// Calling Info must not panic.
+	l.Info("test message from TestNewLogr")
+}
 
 func TestNew_ReturnsNotImplemented(t *testing.T) {
 	p, err := New("test-driver", Deps{})
