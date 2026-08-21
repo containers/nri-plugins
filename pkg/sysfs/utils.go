@@ -205,7 +205,7 @@ func parseUintTo[T unsignedInt](str string) (T, error) {
 // parseIntSlice splits str on sep and parses each token as a T.
 func parseIntSlice[T signedInt](str, sep string) ([]T, error) {
 	var out []T
-	for _, s := range strings.Split(str, sep) {
+	for s := range strings.SplitSeq(str, sep) {
 		if s == "" {
 			continue
 		}
@@ -222,7 +222,7 @@ func parseIntSlice[T signedInt](str, sep string) ([]T, error) {
 // "0-3 8 12-15") into an idset.IDSet.
 func parseIDSet(str, sep string, dst *idset.IDSet) error {
 	ids := idset.NewIDSet()
-	for _, s := range strings.Split(str, sep) {
+	for s := range strings.SplitSeq(str, sep) {
 		if s == "" {
 			continue
 		}
@@ -273,7 +273,7 @@ func GetMemoryCapacity() int64 {
 		return -1
 	}
 
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		keyval := strings.Split(line, ":")
 		if len(keyval) != 2 || keyval[0] != "MemTotal" {
 			continue

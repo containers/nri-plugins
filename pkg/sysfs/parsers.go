@@ -60,7 +60,7 @@ func splitNumericAndUnit(path string, value string) (string, int64, error) {
 }
 
 // PparseNumberic parses a numeric string into integer of the right size.
-func parseNumeric(path, value string, ptr interface{}) error {
+func parseNumeric(path, value string, ptr any) error {
 	var numstr string
 	var num, unit int64
 	var f float64
@@ -116,7 +116,7 @@ func parseNumeric(path, value string, ptr interface{}) error {
 }
 
 // ParseFileEntries parses a sysfs files for the given entries.
-func ParseFileEntries(path string, values map[string]interface{}, pickFn PickEntryFn) error {
+func ParseFileEntries(path string, values map[string]any, pickFn PickEntryFn) error {
 	var err error
 
 	data, err := os.ReadFile(path)
@@ -125,7 +125,7 @@ func ParseFileEntries(path string, values map[string]interface{}, pickFn PickEnt
 	}
 
 	left := len(values)
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		key, value, err := pickFn(line)
 		if err != nil {
 			return err
