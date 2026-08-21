@@ -241,6 +241,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // httpError returns a formatted instrumentation/http-specific error.
-func httpError(format string, args ...interface{}) error {
+func httpError(format string, args ...any) error {
 	return fmt.Errorf("instrumentation/http: "+format, args...)
 }
