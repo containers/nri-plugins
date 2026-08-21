@@ -26,7 +26,7 @@ func ShortCPUSet(cset cpuset.CPUSet) string {
 	str, sep := "", ""
 
 	beg, end, step := -1, -1, -1
-	for _, cpu := range strings.Split(cset.String(), ",") {
+	for cpu := range strings.SplitSeq(cset.String(), ",") {
 		if strings.Contains(cpu, "-") {
 			str += sep + cpu
 			sep = ","
