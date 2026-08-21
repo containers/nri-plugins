@@ -53,9 +53,9 @@ var (
 )
 
 type jsonPatch struct {
-	Op    string      `json:"op"`
-	Path  string      `json:"path"`
-	Value interface{} `json:"value"`
+	Op    string `json:"op"`
+	Path  string `json:"path"`
+	Value any    `json:"value"`
 }
 
 type Webhook struct {
@@ -263,7 +263,7 @@ func errorResponse(uid types.UID, err error) *admv1.AdmissionResponse {
 	}
 }
 
-func AsYaml(obj interface{}) string {
+func AsYaml(obj any) string {
 	data, err := yaml.Marshal(obj)
 	if err != nil {
 		return fmt.Sprintf("%%!(MARSHAL-FAILED type=%T, err=%v)", obj, err)
