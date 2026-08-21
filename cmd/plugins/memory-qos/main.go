@@ -19,6 +19,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -156,12 +157,7 @@ func associate(m map[string]string, key, value string, override bool) bool {
 // sliceContains returns true if and only if haystack contains
 // needle. Note: go 1.21+ will enable using slices.Contains().
 func sliceContains(haystack []string, needle string) bool {
-	for _, hay := range haystack {
-		if hay == needle {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(haystack, needle)
 }
 
 // effectiveAnnotations returns map of annotation key prefixes and
