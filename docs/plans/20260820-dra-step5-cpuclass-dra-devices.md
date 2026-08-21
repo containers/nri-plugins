@@ -217,9 +217,9 @@ Returns `[]resapi.Device{}` (not nil) when empty; always returns nil error in v1
 - Modify: `pkg/resmgr/cpuclass/cpuclass.go` (add `classes` field + populate in `Configure`)
 - Modify: `pkg/resmgr/cpuclass/dra_test.go`
 
-- [ ] add `classes []*policyapi.CPUClass` field to `Handler`
-- [ ] set `h.classes = spec.Classes` in `Configure` before existing allocator configure calls
-- [ ] write `TestBuildDRADevices` table-driven (compile will fail until Task 4 — Tasks 3+4 are committed together):
+- [x] add `classes []*policyapi.CPUClass` field to `Handler`
+- [x] set `h.classes = spec.Classes` in `Configure` before existing allocator configure calls
+- [x] write `TestBuildDRADevices` table-driven (compile will fail until Task 4 — Tasks 3+4 are committed together):
   - one HP class + one punit (`PkgID=0, PunitID=0`) → one device: `AllowMultipleAllocations=true`, `nri/cpus` max=HPCapacity, `NodeAllocatableResourceMappings` present, `nri/packageID=0` and `nri/punitID=0` **present**, device name DNS-valid
   - one non-HP class + one punit → max=NonHPCapacity
   - HP class + HPCapacity==0 → device skipped for that punit
@@ -231,32 +231,32 @@ Returns `[]resapi.Device{}` (not nil) when empty; always returns nil error in v1
   - long class name (>60 chars) → device name ≤ 63 chars
   - two classes that sanitize to same base → distinct names
   - non-PCT class → `nri/pctPriority` absent
-- [ ] confirm tests fail to compile (expected — `buildDRADevices` not yet defined; Tasks 3+4 are committed as one unit)
+- [x] confirm tests fail to compile (expected — `buildDRADevices` not yet defined; Tasks 3+4 are committed as one unit)
 
 ### Task 4: Implement `buildDRADevices`, `Handler.DRADevices`, and helpers
 
 **Files:**
 - Modify: `pkg/resmgr/cpuclass/dra.go`
 
-- [ ] add imports: `resapi "k8s.io/api/resource/v1"`, `corev1 "k8s.io/api/core/v1"`, `"k8s.io/apimachinery/pkg/api/resource"`, `"k8s.io/utils/ptr"`, `"regexp"`, `"strconv"`
-- [ ] implement `sanitizeBase(s string, maxLen int) string` — lowercase, replace `[^a-z0-9]+` → `-`, trim, fallback to `"class"` if empty, truncate to `maxLen`; compile `regexp.MustCompile` as a package-level var (not per-call)
-- [ ] implement `deviceName(classBase string, pkgID, punitID int) string` — assembles `classBase + suffix`; caller is responsible for pre-computing `classBase` once per class name via `sanitizeBase`
-- [ ] implement per-class base pre-computation loop in `buildDRADevices`: compute `baseForClass[cc.Name]` with dedup — if two different class names sanitize to the same base, append `-N` suffix to the second; key `seen` on `cc.Name` (not on base) so the same class across punits is unaffected
-- [ ] implement `intAttr(v int64) resapi.DeviceAttribute` and `strAttr(v string) resapi.DeviceAttribute` helpers (use `ptr.To` from `k8s.io/utils/ptr` for pointer fields)
-- [ ] implement `buildDRADevices(driverName string, classes []*policyapi.CPUClass, punits []pct.PunitInfo, isHP func(string) bool) []resapi.Device` — the pure builder; always emits topology int attributes; omits `nri/pctPriority` when empty
-- [ ] implement `Handler.DRADevices(driverName string) ([]resapi.Device, error)` as a wrapper calling `buildDRADevices(driverName, h.classes, h.pct.Punits(), h.pct.IsHPClass)`
-- [ ] run `go test ./pkg/resmgr/cpuclass/...` — all tests including `TestBuildDRADevices` must pass
-- [ ] run `go build ./...` — must compile
+- [x] add imports: `resapi "k8s.io/api/resource/v1"`, `corev1 "k8s.io/api/core/v1"`, `"k8s.io/apimachinery/pkg/api/resource"`, `kptr "k8s.io/utils/ptr"` (aliased to avoid conflict with test-local `ptr` helper), `"regexp"`, `"strconv"`, `"strings"`
+- [x] implement `sanitizeBase(s string, maxLen int) string` — lowercase, replace `[^a-z0-9]+` → `-`, trim, fallback to `"class"` if empty, truncate to `maxLen`; compile `regexp.MustCompile` as a package-level var (not per-call)
+- [x] implement `deviceName(classBase string, pkgID, punitID int) string` — assembles `classBase + suffix`; caller is responsible for pre-computing `classBase` once per class name via `sanitizeBase`
+- [x] implement per-class base pre-computation loop in `buildDRADevices`: compute `baseForClass[cc.Name]` with dedup — if two different class names sanitize to the same base, append `-N` suffix to the second; key `seen` on `cc.Name` (not on base) so the same class across punits is unaffected
+- [x] implement `intAttr(v int64) resapi.DeviceAttribute` and `strAttr(v string) resapi.DeviceAttribute` helpers (use `kptr.To` from `k8s.io/utils/ptr` for pointer fields)
+- [x] implement `buildDRADevices(driverName string, classes []*policyapi.CPUClass, punits []pct.PunitInfo, isHP func(string) bool) []resapi.Device` — the pure builder; always emits topology int attributes; omits `nri/pctPriority` when empty
+- [x] implement `Handler.DRADevices(driverName string) ([]resapi.Device, error)` as a wrapper calling `buildDRADevices(driverName, h.classes, h.pct.Punits(), h.pct.IsHPClass)`
+- [x] run `go test ./pkg/resmgr/cpuclass/...` — all tests including `TestBuildDRADevices` must pass
+- [x] run `go build ./...` — must compile
 
 ### Task 5: Verify acceptance criteria
 
-- [ ] `go test ./pkg/resmgr/cpuclass/... ./pkg/resmgr/cpuclass/internal/pct/...` passes (all new + existing)
-- [ ] `go build ./...` compiles cleanly
-- [ ] `go vet ./pkg/resmgr/cpuclass/...` is clean
-- [ ] `golangci-lint run ./pkg/resmgr/cpuclass/...` is clean
-- [ ] `Handler.DRADevices` is accessible from `pkg/resmgr/dra/` — confirm with `go build ./pkg/resmgr/dra/...`
-- [ ] `resapi.Device.NodeAllocatableResourceMappings` compiles at the upgraded k8s.io/api version (confirmed by build passing)
-- [ ] device names in test assertions pass DNS-label validation (`[a-z0-9-]+`, max 63 chars)
+- [x] `go test ./pkg/resmgr/cpuclass/... ./pkg/resmgr/cpuclass/internal/pct/...` passes (all new + existing)
+- [x] `go build ./...` compiles cleanly
+- [x] `go vet ./pkg/resmgr/cpuclass/...` is clean
+- [x] `golangci-lint run ./pkg/resmgr/cpuclass/...` is clean
+- [x] `Handler.DRADevices` is accessible from `pkg/resmgr/dra/` — confirm with `go build ./pkg/resmgr/dra/...`
+- [x] `resapi.Device.NodeAllocatableResourceMappings` compiles at the upgraded k8s.io/api version (confirmed by build passing)
+- [x] device names in test assertions pass DNS-label validation (`[a-z0-9-]+`, max 63 chars)
 
 ### Task 6: Update documentation
 
