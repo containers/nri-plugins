@@ -51,20 +51,13 @@ func TestNewLogr(t *testing.T) {
 	l.Info("test message from TestNewLogr")
 }
 
-// mockDeviceLister is a minimal DeviceLister for tests.
-type mockDeviceLister struct{}
-
-func (m *mockDeviceLister) DRADevices(_ string) ([]resourceapi.Device, error) {
-	return nil, nil
-}
-
 // validDeps returns a Deps with all required fields populated.
 func validDeps() Deps {
 	return Deps{
 		KubeClient:      fake.NewClientset(),
 		NodeName:        "test-node",
 		ValidateClasses: func() error { return nil },
-		DeviceLister:    &mockDeviceLister{},
+		DeviceLister:    &fixedDeviceLister{},
 		Logger:          log.Default(),
 	}
 }
@@ -85,63 +78,54 @@ func TestNew_Succeeds(t *testing.T) {
 // dependency is absent.
 func TestNew_Validation(t *testing.T) {
 	tests := []struct {
-		name    string
-		mutate  func(*Deps)
-		wantErr bool
+		name       string
+		driverName string
+		mutate     func(*Deps)
 	}{
 		{
-			name:    "empty driverName",
-			mutate:  nil, // driverName is a parameter, handled via empty string below
-			wantErr: true,
+			name:       "empty driverName",
+			driverName: "",
+			mutate:     nil,
 		},
 		{
-			name:    "nil KubeClient",
-			mutate:  func(d *Deps) { d.KubeClient = nil },
-			wantErr: true,
+			name:       "nil KubeClient",
+			driverName: "test-driver",
+			mutate:     func(d *Deps) { d.KubeClient = nil },
 		},
 		{
-			name:    "empty NodeName",
-			mutate:  func(d *Deps) { d.NodeName = "" },
-			wantErr: true,
+			name:       "empty NodeName",
+			driverName: "test-driver",
+			mutate:     func(d *Deps) { d.NodeName = "" },
 		},
 		{
-			name:    "nil ValidateClasses",
-			mutate:  func(d *Deps) { d.ValidateClasses = nil },
-			wantErr: true,
+			name:       "nil ValidateClasses",
+			driverName: "test-driver",
+			mutate:     func(d *Deps) { d.ValidateClasses = nil },
 		},
 		{
-			name:    "nil DeviceLister",
-			mutate:  func(d *Deps) { d.DeviceLister = nil },
-			wantErr: true,
+			name:       "nil DeviceLister",
+			driverName: "test-driver",
+			mutate:     func(d *Deps) { d.DeviceLister = nil },
 		},
 		{
-			name:    "nil Logger",
-			mutate:  func(d *Deps) { d.Logger = nil },
-			wantErr: true,
+			name:       "nil Logger",
+			driverName: "test-driver",
+			mutate:     func(d *Deps) { d.Logger = nil },
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			deps := validDeps()
-			driverName := "test-driver"
-			if tc.name == "empty driverName" {
-				driverName = ""
-			} else if tc.mutate != nil {
+			if tc.mutate != nil {
 				tc.mutate(&deps)
 			}
-			p, err := New(driverName, deps)
-			if tc.wantErr {
-				if err == nil {
-					t.Errorf("New() expected error, got nil")
-				}
-				if p != nil {
-					t.Errorf("New() expected nil Plugin on error, got %v", p)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("New() unexpected error: %v", err)
-				}
+			p, err := New(tc.driverName, deps)
+			if err == nil {
+				t.Errorf("New() expected error, got nil")
+			}
+			if p != nil {
+				t.Errorf("New() expected nil Plugin on error, got %v", p)
 			}
 		})
 	}
@@ -192,7 +176,8 @@ func TestHandleError_FatalLogsError(t *testing.T) {
 }
 
 // TestPublishResources_NilHelper verifies that PublishResources returns an
-// error (not a panic) when called before Start.
+// error (not a panic) when called before Start, and that the error message
+// references "Start" so callers can diagnose the ordering mistake.
 func TestPublishResources_NilHelper(t *testing.T) {
 	p, err := New("test-driver", validDeps())
 	if err != nil {
@@ -202,6 +187,9 @@ func TestPublishResources_NilHelper(t *testing.T) {
 	err = p.PublishResources(context.Background())
 	if err == nil {
 		t.Fatal("PublishResources() expected error when helper is nil, got nil")
+	}
+	if !strings.Contains(err.Error(), "Start") {
+		t.Errorf("PublishResources() err = %q, want message containing \"Start\"", err.Error())
 	}
 }
 
@@ -331,6 +319,54 @@ func (f *fixedDeviceLister) DRADevices(_ string) ([]resourceapi.Device, error) {
 	return f.devices, nil
 }
 
+// errorDeviceLister is a DeviceLister that always returns the configured error.
+type errorDeviceLister struct {
+	err error
+}
+
+func (e *errorDeviceLister) DRADevices(_ string) ([]resourceapi.Device, error) {
+	return nil, e.err
+}
+
+// TestPublishResources_DRADevicesError verifies that an error from
+// DeviceLister.DRADevices is propagated by PublishResources.
+func TestPublishResources_DRADevicesError(t *testing.T) {
+	sentinel := errors.New("DRADevices failed")
+	deps := validDeps()
+	deps.DeviceLister = &errorDeviceLister{err: sentinel}
+	p, err := New("test-driver", deps)
+	if err != nil {
+		t.Fatalf("New() unexpected error: %v", err)
+	}
+	// Set helper to a non-nil stub so the nil-helper guard is bypassed,
+	// allowing the test to reach the DRADevices call.
+	p.helper = new(kubeletplugin.Helper)
+	err = p.PublishResources(context.Background())
+	if !errors.Is(err, sentinel) {
+		t.Errorf("PublishResources() err = %v, want to wrap sentinel error", err)
+	}
+}
+
+// TestStart_AlreadyStarted verifies that a second call to Start returns an
+// error without spawning a second helper. The guard is tested by setting
+// p.helper to a non-nil stub before calling Start.
+func TestStart_AlreadyStarted(t *testing.T) {
+	deps := validDeps()
+	p, err := New("test-driver", deps)
+	if err != nil {
+		t.Fatalf("New() unexpected error: %v", err)
+	}
+	// Simulate an already-started plugin.
+	p.helper = new(kubeletplugin.Helper)
+	err = p.Start(context.Background())
+	if err == nil {
+		t.Fatal("Start() expected error on double-call, got nil")
+	}
+	if !strings.Contains(err.Error(), "already started") {
+		t.Errorf("Start() err = %q, want message containing \"already started\"", err.Error())
+	}
+}
+
 // TestPublishResources_Integration starts a Plugin against a fake Kubernetes
 // clientset, calls PublishResources, and polls until the fake cluster receives
 // at least one ResourceSlice create, then validates the driver name field.
@@ -432,7 +468,7 @@ func TestNoCmdPluginsImport(t *testing.T) {
 	// Run from the package directory so ./... covers future subpackages.
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
-		t.Skip("runtime.Caller failed; skipping import-boundary check")
+		t.Fatal("runtime.Caller failed; this indicates a corrupted runtime")
 	}
 	pkgDir := filepath.Dir(filename)
 
@@ -441,7 +477,7 @@ func TestNoCmdPluginsImport(t *testing.T) {
 	cmd.Env = append(os.Environ(), "GO111MODULE=on")
 	out, err := cmd.Output()
 	if err != nil {
-		t.Skipf("go list failed (%v); skipping import-boundary check", err)
+		t.Fatalf("go list failed (%v); import-boundary check cannot proceed", err)
 	}
 
 	const forbidden = "github.com/containers/nri-plugins/cmd/"

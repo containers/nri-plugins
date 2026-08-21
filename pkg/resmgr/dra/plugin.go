@@ -21,6 +21,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"sync"
 
 	"github.com/go-logr/logr"
 	resourceapi "k8s.io/api/resource/v1"
@@ -33,6 +35,7 @@ var errNotImplemented = errors.New("dra plugin: not yet implemented")
 
 // Plugin is the DRA kubelet plugin.
 type Plugin struct {
+	mu         sync.Mutex
 	driverName string
 	deps       Deps
 	helper     *kubeletplugin.Helper
@@ -77,37 +80,60 @@ func (p *Plugin) UnprepareResourceClaims(_ context.Context, _ []kubeletplugin.Na
 // Start registers this plugin with the kubelet and begins serving DRA
 // requests. It validates cpuClass configuration, creates the plugin data
 // directory, injects a logr.Logger into the context, and calls
-// kubeletplugin.Start. Returns an error if ValidateClasses fails or if
-// the kubelet plugin cannot be started.
+// kubeletplugin.Start. Returns an error if the plugin is already started,
+// if ValidateClasses fails, or if the kubelet plugin cannot be started.
 func (p *Plugin) Start(ctx context.Context) error {
+	p.mu.Lock()
+	alreadyStarted := p.helper != nil
+	p.mu.Unlock()
+	if alreadyStarted {
+		return fmt.Errorf("dra plugin: already started")
+	}
 	if err := p.deps.ValidateClasses(); err != nil {
 		return fmt.Errorf("dra plugin: ValidateClasses failed: %w", err)
 	}
-	if err := os.MkdirAll(p.deps.PluginDataDir, 0750); err != nil {
-		return fmt.Errorf("dra plugin: create plugin data dir %q: %w", p.deps.PluginDataDir, err)
+	// Resolve the plugin data directory default before creating it: an empty
+	// string passed to os.MkdirAll would fail immediately.
+	pluginDataDir := p.deps.PluginDataDir
+	if pluginDataDir == "" {
+		pluginDataDir = filepath.Join(kubeletplugin.KubeletPluginsDir, p.driverName)
+	}
+	if err := os.MkdirAll(pluginDataDir, 0750); err != nil {
+		return fmt.Errorf("dra plugin: create plugin data dir %q: %w", pluginDataDir, err)
 	}
 	ctx = logr.NewContext(ctx, newLogr(p.deps.Logger))
-	helper, err := kubeletplugin.Start(ctx, p,
+	opts := []kubeletplugin.Option{
 		kubeletplugin.DriverName(p.driverName),
 		kubeletplugin.KubeClient(p.deps.KubeClient),
 		kubeletplugin.NodeName(p.deps.NodeName),
-		kubeletplugin.RegistrarDirectoryPath(p.deps.RegistrarDir),
-		kubeletplugin.PluginDataDirectoryPath(p.deps.PluginDataDir),
+		kubeletplugin.PluginDataDirectoryPath(pluginDataDir),
 		kubeletplugin.GRPCVerbosity(-1),
-	)
+	}
+	// Only override the registrar directory when explicitly set; passing an
+	// empty string would clobber kubeletplugin's built-in KubeletRegistryDir
+	// default (the option setter stores the value unconditionally).
+	if p.deps.RegistrarDir != "" {
+		opts = append(opts, kubeletplugin.RegistrarDirectoryPath(p.deps.RegistrarDir))
+	}
+	helper, err := kubeletplugin.Start(ctx, p, opts...)
 	if err != nil {
 		return fmt.Errorf("dra plugin: kubeletplugin.Start: %w", err)
 	}
+	p.mu.Lock()
 	p.helper = helper
+	p.mu.Unlock()
 	return nil
 }
 
 // Stop shuts down the kubelet plugin and releases resources. It is
 // idempotent: calling Stop on an already-stopped Plugin is safe.
 func (p *Plugin) Stop() {
-	if p.helper != nil {
-		p.helper.Stop()
-		p.helper = nil
+	p.mu.Lock()
+	h := p.helper
+	p.helper = nil
+	p.mu.Unlock()
+	if h != nil {
+		h.Stop()
 	}
 }
 
@@ -118,9 +144,12 @@ func (p *Plugin) Stop() {
 // visible. Returns an error if the plugin has not been started yet.
 func (p *Plugin) PublishResources(ctx context.Context) error {
 	if err := p.deps.ValidateClasses(); err != nil {
-		return fmt.Errorf("dra plugin: PublishResources: ValidateClasses failed: %w", err)
+		return fmt.Errorf("dra plugin: ValidateClasses failed: %w", err)
 	}
-	if p.helper == nil {
+	p.mu.Lock()
+	h := p.helper
+	p.mu.Unlock()
+	if h == nil {
 		return fmt.Errorf("dra plugin: PublishResources called before Start")
 	}
 	devices, err := p.deps.DeviceLister.DRADevices(p.driverName)
@@ -128,8 +157,8 @@ func (p *Plugin) PublishResources(ctx context.Context) error {
 		return fmt.Errorf("dra plugin: DRADevices: %w", err)
 	}
 	resources := buildDriverResources(p.deps.NodeName, devices)
-	if err := p.helper.PublishResources(ctx, resources); err != nil {
-		return fmt.Errorf("dra plugin: PublishResources: %w", err)
+	if err := h.PublishResources(ctx, resources); err != nil {
+		return fmt.Errorf("dra plugin: helper.PublishResources: %w", err)
 	}
 	return nil
 }
@@ -165,10 +194,9 @@ func buildDriverResources(nodeName string, devices []resourceapi.Device) resourc
 // Recoverable errors (errors.Is(err, kubeletplugin.ErrRecoverable)) are
 // logged at Warn level; all other errors are logged at Error level.
 func (p *Plugin) HandleError(_ context.Context, err error, msg string) {
-	logger := p.deps.Logger
 	if errors.Is(err, kubeletplugin.ErrRecoverable) {
-		logger.Warnf("%s: %v", msg, err)
+		p.deps.Logger.Warnf("%s: %v", msg, err)
 	} else {
-		logger.Errorf("%s: %v", msg, err)
+		p.deps.Logger.Errorf("%s: %v", msg, err)
 	}
 }

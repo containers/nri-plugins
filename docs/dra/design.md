@@ -195,7 +195,7 @@ The NRI-side handler (`getClaimedCPUs` / equivalent) returns both the CPU set an
 2. `pct.Allocator.Configure()` runs, populating punits and HP-tier capacity.
 3. If `dra.enabled` config flag is set:
    - `cpuclass.Manager.DRADevices()` returns `[]resapi.Device` in the selected model shape (Model B by default, Model C if `dra.sharedCounters: true` **and** [KEP-5941](https://github.com/kubernetes/enhancements/issues/5941) feature-gate is detected).
-   - Driver calls `kubeletplugin.PublishResources`, paginating into `pool0..poolN`.
+   - Driver calls `kubeletplugin.PublishResources` with one pool named after the node, containing N slices (at most `ResourceSliceMaxDevices` devices per slice).
 4. On `Reconfigure`, diff and re-publish. Class definitions changed → devices re-emitted. `GuaranteedHpCpus` changed (operator changed SST-TF buckets) → capacities re-emitted.
 
 **Note: "publish on Reconfigure" is a nri-plugins-specific requirement.** Both reference drivers we examined ([kubernetes-sigs/dra-driver-cpu](https://github.com/kubernetes-sigs/dra-driver-cpu) and [kubernetes-sigs/dra-example-driver](https://github.com/kubernetes-sigs/dra-example-driver)) publish ResourceSlices exactly once at process start and never re-publish. Config changes there mean DaemonSet restart. Live-reconfigure republication is where our design does something the reference drivers do not, and is the root of open decision 1 (class-derived attribute freshness). See [landscape.md](landscape.md) for the reference-driver patterns.
