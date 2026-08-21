@@ -191,7 +191,7 @@ can register and publish devices. Step 7 fills in the actual allocation logic.
 **Files:**
 - Modify: `pkg/resmgr/dra/plugin_test.go`
 
-- [ ] add `TestPublishResources_Integration`:
+- [x] add `TestPublishResources_Integration`:
   - create two temp dirs: `registrarDir := t.TempDir()`, `pluginDataDir := t.TempDir()`
   - build a `fake.NewClientset(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "test-node"}})` as `KubeClient`
   - install a `CreateAction` reactor on the fake clientset to capture ResourceSlice creates
@@ -201,8 +201,8 @@ can register and publish devices. Step 7 fills in the actual allocation logic.
   - poll the captured creates (with `time.AfterFunc` deadline) until at least one ResourceSlice is observed in the fake clientset
   - assert the ResourceSlice's `spec.driverName` equals the test driver name
   - call `p.Stop()` to clean up
-- [ ] run `go test -v -run TestPublishResources_Integration ./pkg/resmgr/dra/...` — must pass
-- [ ] run `go test ./pkg/resmgr/dra/...` — all tests pass
+- [x] run `go test -v -run TestPublishResources_Integration ./pkg/resmgr/dra/...` — must pass
+- [x] run `go test ./pkg/resmgr/dra/...` — all tests pass
 
 ### Task 7: Feature-gate probes — explicit deferral
 

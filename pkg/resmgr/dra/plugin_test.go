@@ -25,10 +25,16 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 
 	"github.com/containers/nri-plugins/pkg/log"
@@ -313,6 +319,102 @@ func makeTestDevices(n int) []resourceapi.Device {
 		devices[i] = resourceapi.Device{Name: fmt.Sprintf("dev-%d", i)}
 	}
 	return devices
+}
+
+// fixedDeviceLister is a DeviceLister that always returns a preset list of
+// devices, used in integration tests.
+type fixedDeviceLister struct {
+	devices []resourceapi.Device
+}
+
+func (f *fixedDeviceLister) DRADevices(_ string) ([]resourceapi.Device, error) {
+	return f.devices, nil
+}
+
+// TestPublishResources_Integration starts a Plugin against a fake Kubernetes
+// clientset, calls PublishResources, and polls until the fake cluster receives
+// at least one ResourceSlice create, then validates the driver name field.
+//
+// Both the kubelet-plugin registration socket and plugin data socket are
+// created under t.TempDir() — no real kubelet is required.
+func TestPublishResources_Integration(t *testing.T) {
+	registrarDir := t.TempDir()
+	pluginDataDir := t.TempDir()
+
+	// Fake clientset pre-loaded with the node object so the
+	// resourceslice.Controller can look up the node UID.
+	fakeClient := fake.NewClientset(&corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
+	})
+
+	// Reactor captures every ResourceSlice create call and passes it through
+	// to the default object tracker so the controller behaves normally.
+	var (
+		mu             sync.Mutex
+		capturedSlices []*resourceapi.ResourceSlice
+	)
+	fakeClient.PrependReactor("create", "resourceslices",
+		func(action k8stesting.Action) (bool, k8sruntime.Object, error) {
+			createAction := action.(k8stesting.CreateAction)
+			if slice, ok := createAction.GetObject().(*resourceapi.ResourceSlice); ok {
+				mu.Lock()
+				capturedSlices = append(capturedSlices, slice.DeepCopy())
+				mu.Unlock()
+			}
+			return false, nil, nil // pass through to default tracker
+		},
+	)
+
+	deps := Deps{
+		KubeClient:      fakeClient,
+		NodeName:        "test-node",
+		RegistrarDir:    registrarDir,
+		PluginDataDir:   pluginDataDir,
+		ValidateClasses: func() error { return nil },
+		DeviceLister:    &fixedDeviceLister{devices: makeTestDevices(5)},
+		Logger:          log.Default(),
+	}
+
+	const driverName = "test.driver.io"
+	p, err := New(driverName, deps)
+	if err != nil {
+		t.Fatalf("New() unexpected error: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := p.Start(ctx); err != nil {
+		t.Fatalf("Start() unexpected error: %v", err)
+	}
+	defer p.Stop()
+
+	if err := p.PublishResources(ctx); err != nil {
+		t.Fatalf("PublishResources() unexpected error: %v", err)
+	}
+
+	// The resourceslice.Controller drives ResourceSlice creation
+	// asynchronously; poll with a 5-second deadline.
+	const pollDeadline = 5 * time.Second
+	deadline := time.Now().Add(pollDeadline)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		n := len(capturedSlices)
+		mu.Unlock()
+		if n > 0 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(capturedSlices) == 0 {
+		t.Fatalf("no ResourceSlice was created within the %s deadline", pollDeadline)
+	}
+	if got := capturedSlices[0].Spec.Driver; got != driverName {
+		t.Errorf("ResourceSlice[0].Spec.Driver = %q, want %q", got, driverName)
+	}
 }
 
 // TestNoCmdPluginsImport verifies that pkg/resmgr/dra has no transitive
