@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -229,7 +230,7 @@ type Container interface {
 	// GetLabel returns the value of a container label.
 	GetLabel(string) (string, bool)
 	// GetAnnotation returns the value of a container annotation.
-	GetAnnotation(key string, objPtr interface{}) (string, bool)
+	GetAnnotation(key string, objPtr any) (string, bool)
 	// GetEnv returns the value of a container environment variable.
 	GetEnv(string) (string, bool)
 	// GetMounts returns all the mounts of the container.
@@ -245,7 +246,7 @@ type Container interface {
 	GetResmgrLabel(string) (string, bool)
 	// GetResmgrAnnotation returns the value of a container annotation from the
 	// nri-resource-policy namespace.
-	GetResmgrAnnotation(key string, objPtr interface{}) (string, bool)
+	GetResmgrAnnotation(key string, objPtr any) (string, bool)
 	// GetEffectiveAnnotation returns the effective annotation for the container from the pod.
 	GetEffectiveAnnotation(key string) (string, bool)
 
@@ -391,7 +392,7 @@ type container struct {
 	Requirements    v1.ResourceRequirements
 	PodResources    *podresapi.ContainerResources
 	ResourceUpdates *v1.ResourceRequirements
-	request         interface{}
+	request         any
 
 	Resources       *nri.LinuxResources
 	LinuxScheduler  *nri.LinuxScheduler
@@ -414,9 +415,9 @@ type Device = nri.LinuxDevice
 
 type Cacheable interface {
 	// Set value (via a pointer receiver) to the object.
-	Set(value interface{})
+	Set(value any)
 	// Get the object that should be cached.
-	Get() interface{}
+	Get() any
 }
 
 // InsertContainerOption is an option to apply to an inserted container.
@@ -478,9 +479,9 @@ type Cache interface {
 	ResetActivePolicy() error
 
 	// SetPolicyEntry sets the policy entry for a key.
-	SetPolicyEntry(string, interface{})
+	SetPolicyEntry(string, any)
 	// GetPolicyEntry gets the policy entry for a key.
-	GetPolicyEntry(string, interface{}) bool
+	GetPolicyEntry(string, any) bool
 
 	// Save requests a cache save.
 	Save() error
@@ -535,9 +536,9 @@ type cache struct {
 	Containers map[string]*container // known/cache containers
 	NextID     uint64                // next container cache id to use
 
-	PolicyName string                 // name of the active policy
-	policyData map[string]interface{} // opaque policy data
-	PolicyJSON map[string]string      // ditto in raw, unmarshaled form
+	PolicyName string            // name of the active policy
+	policyData map[string]any    // opaque policy data
+	PolicyJSON map[string]string // ditto in raw, unmarshaled form
 
 	pending map[string]struct{} // cache IDs of containers with pending changes
 
@@ -563,7 +564,7 @@ func NewCache(options Options) (Cache, error) {
 		Pods:       make(map[string]*pod),
 		Containers: make(map[string]*container),
 		NextID:     1,
-		policyData: make(map[string]interface{}),
+		policyData: make(map[string]any),
 		PolicyJSON: make(map[string]string),
 		implicit:   make(map[string]ImplicitAffinity),
 	}
@@ -611,7 +612,7 @@ func (cch *cache) ResetActivePolicy() error {
 		cch.PolicyName)
 
 	cch.PolicyName = ""
-	cch.policyData = make(map[string]interface{})
+	cch.policyData = make(map[string]any)
 	cch.PolicyJSON = make(map[string]string)
 
 	return cch.Save()
@@ -870,7 +871,7 @@ func (cch *cache) GetContainers() []Container {
 }
 
 // Set the policy entry for a key.
-func (cch *cache) SetPolicyEntry(key string, obj interface{}) {
+func (cch *cache) SetPolicyEntry(key string, obj any) {
 	cch.policyData[key] = obj
 
 	if log.DebugEnabled() {
@@ -883,7 +884,7 @@ func (cch *cache) SetPolicyEntry(key string, obj interface{}) {
 }
 
 // Get the policy entry for a key.
-func (cch *cache) GetPolicyEntry(key string, ptr interface{}) bool {
+func (cch *cache) GetPolicyEntry(key string, ptr any) bool {
 
 	//
 	// Notes:
@@ -925,7 +926,7 @@ func (cch *cache) GetPolicyEntry(key string, ptr interface{}) bool {
 }
 
 // Marshal an opaque policy entry, special-casing cpusets and maps of cpusets.
-func marshalEntry(obj interface{}) ([]byte, error) {
+func marshalEntry(obj any) ([]byte, error) {
 	switch obj := obj.(type) {
 	case cpuset.CPUSet:
 		return []byte("\"" + obj.String() + "\""), nil
@@ -942,7 +943,7 @@ func marshalEntry(obj interface{}) ([]byte, error) {
 }
 
 // Unmarshal an opaque policy entry, special-casing cpusets and maps of cpusets.
-func unmarshalEntry(data []byte, ptr interface{}) error {
+func unmarshalEntry(data []byte, ptr any) error {
 	switch ptr := ptr.(type) {
 	case *cpuset.CPUSet:
 		cset, err := cpuset.Parse(string(data[1 : len(data)-1]))
@@ -977,7 +978,7 @@ func unmarshalEntry(data []byte, ptr interface{}) error {
 }
 
 // Cache an unmarshaled opaque policy entry, special-casing some simple/common types.
-func (cch *cache) cacheEntry(key string, ptr interface{}) error {
+func (cch *cache) cacheEntry(key string, ptr any) error {
 	if cacheable, ok := ptr.(Cacheable); ok {
 		cch.policyData[key] = cacheable.Get()
 		return nil
@@ -1018,7 +1019,7 @@ func (cch *cache) cacheEntry(key string, ptr interface{}) error {
 }
 
 // Serve an unmarshaled opaque policy entry, special-casing some simple/common types.
-func (cch *cache) setEntry(key string, ptr, obj interface{}) error {
+func (cch *cache) setEntry(key string, ptr, obj any) error {
 	if cacheable, ok := ptr.(Cacheable); ok {
 		cacheable.Set(obj)
 		return nil
@@ -1147,9 +1148,7 @@ func (cch *cache) Snapshot() ([]byte, error) {
 		PolicyJSON: cch.PolicyJSON,
 	}
 
-	for id, p := range cch.Pods {
-		s.Pods[id] = p
-	}
+	maps.Copy(s.Pods, cch.Pods)
 
 	for _, c := range cch.Containers {
 		s.Containers[c.GetID()] = c
@@ -1194,7 +1193,7 @@ func (cch *cache) Restore(data []byte) error {
 	cch.NextID = s.NextID
 	cch.PolicyJSON = s.PolicyJSON
 	cch.PolicyName = s.PolicyName
-	cch.policyData = make(map[string]interface{})
+	cch.policyData = make(map[string]any)
 
 	for _, p := range cch.Pods {
 		p.cache = cch

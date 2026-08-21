@@ -33,7 +33,7 @@ const (
 var _ = Describe("CPU request", func() {
 	It("estimated with reasonable accuracy", func() {
 		t := GinkgoT()
-		for request := 0; request < maxCPU; request++ {
+		for request := range maxCPU {
 			shares := cache.MilliCPUToShares(int64(request))
 			estimate := cache.SharesToMilliCPU(int64(shares))
 
@@ -62,7 +62,7 @@ var _ = Describe("CPU request", func() {
 var _ = Describe("CPU limit", func() {
 	It("estimated with reasonable accurace", func() {
 		t := GinkgoT()
-		for limit := int64(0); limit < int64(maxCPU); limit++ {
+		for limit := range int64(maxCPU) {
 			quota, period := cache.MilliCPUToQuota(limit)
 			estimate := cache.QuotaToMilliCPU(quota, period)
 

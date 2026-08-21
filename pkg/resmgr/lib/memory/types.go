@@ -174,7 +174,7 @@ func NewTypeMaskForSysfs(sysTypes ...sysfs.MemoryType) TypeMask {
 // ParseTypeMask parses the given string into a TypeMask.
 func ParseTypeMask(str string) (TypeMask, error) {
 	m := TypeMask(0)
-	for _, s := range strings.Split(str, ",") {
+	for s := range strings.SplitSeq(str, ",") {
 		t, err := ParseType(strings.TrimSpace(s))
 		if err != nil {
 			return 0, fmt.Errorf("%w: %q", ErrInvalidType, str)

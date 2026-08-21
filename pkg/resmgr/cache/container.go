@@ -303,12 +303,7 @@ func (c *container) generateTopologyHints() {
 }
 
 func isReadOnlyMount(m *nri.Mount) bool {
-	for _, o := range m.Options {
-		if o == "ro" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(m.Options, "ro")
 }
 
 func isReadOnlyDevice(rules []*nri.LinuxDeviceCgroup, d *nri.LinuxDevice) bool {
@@ -453,7 +448,7 @@ func (c *container) GetLabel(key string) (string, bool) {
 	return value, ok
 }
 
-func (c *container) GetAnnotation(key string, objPtr interface{}) (string, bool) {
+func (c *container) GetAnnotation(key string, objPtr any) (string, bool) {
 	jsonStr, ok := c.Ctr.GetAnnotations()[key]
 	if !ok {
 		return "", false
@@ -523,7 +518,7 @@ func (c *container) GetResmgrLabel(key string) (string, bool) {
 	return value, ok
 }
 
-func (c *container) GetResmgrAnnotation(key string, objPtr interface{}) (string, bool) {
+func (c *container) GetResmgrAnnotation(key string, objPtr any) (string, bool) {
 	return c.GetAnnotation(kubernetes.ResmgrKey(key), objPtr)
 }
 
@@ -667,7 +662,7 @@ func (c *container) StrictTopologyHints() bool {
 	return strict
 }
 
-func (c *container) getPendingRequest() interface{} {
+func (c *container) getPendingRequest() any {
 	if c.request == nil {
 		if c.GetState() == ContainerStateCreating {
 			c.request = &nri.ContainerAdjustment{}
@@ -1276,7 +1271,7 @@ func (c *container) String() string {
 }
 
 // EvalKey returns the value of a key for expression evaluation.
-func (c *container) EvalKey(key string) interface{} {
+func (c *container) EvalKey(key string) any {
 	switch key {
 	case resmgr.KeyPod:
 		pod, ok := c.GetPod()

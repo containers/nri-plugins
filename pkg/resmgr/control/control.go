@@ -239,6 +239,6 @@ func Register(name, description string, c Controller) error {
 }
 
 // controlError returns a controller-specific formatted error.
-func controlError(format string, args ...interface{}) error {
+func controlError(format string, args ...any) error {
 	return fmt.Errorf("control: "+format, args...)
 }

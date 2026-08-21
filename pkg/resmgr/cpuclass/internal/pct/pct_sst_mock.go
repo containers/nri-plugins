@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
@@ -412,14 +413,14 @@ func splitComma(s string) []string {
 }
 
 func joinComma(parts []string) string {
-	out := ""
+	var out strings.Builder
 	for i, p := range parts {
 		if i > 0 {
-			out += ","
+			out.WriteString(",")
 		}
-		out += p
+		out.WriteString(p)
 	}
-	return out
+	return out.String()
 }
 
 func parseRange(s string) (int, int, error) {

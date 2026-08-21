@@ -750,7 +750,7 @@ func (p *nriPlugin) getPendingUpdates(skip *api.Container) []*api.ContainerUpdat
 	return updates
 }
 
-func (p *nriPlugin) setDefaultClasses(c cache.Container, request interface{}) {
+func (p *nriPlugin) setDefaultClasses(c cache.Container, request any) {
 	var (
 		rdtClass     string
 		blockIOClass string
@@ -809,7 +809,7 @@ const (
 	UpdateContainers = "UpdateContainers"
 )
 
-func (p *nriPlugin) dump(dir, event string, args ...interface{}) {
+func (p *nriPlugin) dump(dir, event string, args ...any) {
 	switch event {
 	case RunPodSandbox, StopPodSandbox, RemovePodSandbox:
 		if dir == in {
@@ -1024,7 +1024,7 @@ func (p *nriPlugin) dump(dir, event string, args ...interface{}) {
 	}
 }
 
-func (p *nriPlugin) dumpDetails(dir, event string, arg interface{}) {
+func (p *nriPlugin) dumpDetails(dir, event string, arg any) {
 	// if debug is off for our debug source, we don't dump any details
 	if !nri.DebugEnabled() {
 		return
@@ -1081,14 +1081,14 @@ func (p *nriPlugin) dumpDetails(dir, event string, arg interface{}) {
 			nri.DebugBlock(dir+fmt.Sprintf("   <ctr #%d> ", idx), "%s", data)
 		}
 	default:
-		nri.DebugBlock(dir+"   <unknown data of type> ", "%s", []byte(fmt.Sprintf("%T", arg)))
+		nri.DebugBlock(dir+"   <unknown data of type> ", "%s", fmt.Appendf(nil, "%T", arg))
 	}
 }
 
-func marshal(kind string, obj interface{}) []byte {
+func marshal(kind string, obj any) []byte {
 	data, err := yaml.Marshal(obj)
 	if err != nil {
-		data = []byte(fmt.Sprintf("<failed to marshal details of %s (%T): %v>", kind, obj, err))
+		data = fmt.Appendf(nil, "<failed to marshal details of %s (%T): %v>", kind, obj, err)
 	}
 	return data
 }

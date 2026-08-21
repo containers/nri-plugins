@@ -26,7 +26,7 @@ var (
 	details = logger.Get("libmem-details")
 )
 
-func (a *Allocator) DumpNodes(context ...interface{}) {
+func (a *Allocator) DumpNodes(context ...any) {
 	prefix := formatPrefix(context...)
 	a.ForeachNode(a.masks.AvailableNodes(), func(n *Node) bool {
 		var (
@@ -58,19 +58,19 @@ func (a *Allocator) DumpNodes(context ...interface{}) {
 	})
 }
 
-func (a *Allocator) DumpConfig(context ...interface{}) {
+func (a *Allocator) DumpConfig(context ...any) {
 	prefix := formatPrefix(context...)
 	log.Infof("%smemory allocator configuration", prefix)
 	a.DumpNodes(prefix)
 }
 
-func (a *Allocator) DumpState(context ...interface{}) {
+func (a *Allocator) DumpState(context ...any) {
 	prefix := formatPrefix(context...)
 	a.DumpRequests(prefix)
 	a.DumpZones(prefix)
 }
 
-func (a *Allocator) DumpRequests(context ...interface{}) {
+func (a *Allocator) DumpRequests(context ...any) {
 	if !details.DebugEnabled() {
 		return
 	}
@@ -88,7 +88,7 @@ func (a *Allocator) DumpRequests(context ...interface{}) {
 	}
 }
 
-func (a *Allocator) DumpZones(prefixFmt ...interface{}) {
+func (a *Allocator) DumpZones(prefixFmt ...any) {
 	if !details.DebugEnabled() {
 		return
 	}
@@ -144,7 +144,7 @@ func (a *Allocator) dumpOvercommit(where string, oc []NodeMask, spill map[NodeMa
 	}
 }
 
-func formatPrefix(args ...interface{}) string {
+func formatPrefix(args ...any) string {
 	narg := len(args)
 	if narg == 0 {
 		return ""

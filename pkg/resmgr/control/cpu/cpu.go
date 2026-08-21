@@ -16,6 +16,8 @@ package cpu
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 
@@ -166,13 +168,7 @@ func (ctl *cpuctl) enforceCstates(class string, cpus ...int) error {
 	}
 	enabledCstates := []string{}
 	for _, name := range ctl.cstates.Names() {
-		enabled := true
-		for _, dname := range c.DisabledCstates {
-			if name == dname {
-				enabled = false
-				break
-			}
-		}
+		enabled := !slices.Contains(c.DisabledCstates, name)
 		if enabled {
 			enabledCstates = append(enabledCstates, name)
 		}
@@ -350,9 +346,7 @@ func (ctl *cpuctl) configure(cfg *cfgapi.Config) error {
 
 func (ctl *cpuctl) getClasses() map[string]Class {
 	ret := make(map[string]Class, len(ctl.classes))
-	for k, v := range ctl.classes {
-		ret[k] = v
-	}
+	maps.Copy(ret, ctl.classes)
 	return ret
 }
 

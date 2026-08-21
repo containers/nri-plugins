@@ -18,6 +18,6 @@ import (
 	"fmt"
 )
 
-func policyError(format string, args ...interface{}) error {
+func policyError(format string, args ...any) error {
 	return fmt.Errorf("policy: "+format, args...)
 }

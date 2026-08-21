@@ -15,6 +15,7 @@
 package cache
 
 import (
+	"strings"
 	"testing"
 
 	nri "github.com/containerd/nri/pkg/api"
@@ -111,13 +112,13 @@ c4: [ c5 ]
 				}
 			}
 			for name, others := range found {
-				val := ""
+				var val strings.Builder
 				sep := ""
 				for o := range others {
-					val += sep + o
+					val.WriteString(sep + o)
 					sep = ", "
 				}
-				t.Errorf("simple affinity %q produced unexpected %s: [ %s ]", tc.source, name, val)
+				t.Errorf("simple affinity %q produced unexpected %s: [ %s ]", tc.source, name, val.String())
 			}
 		})
 	}

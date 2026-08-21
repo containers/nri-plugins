@@ -514,13 +514,7 @@ func (a *Allocator) FreeClassCapacity(className string, held cpuset.CPUSet) int 
 		if gtdHp <= 0 {
 			continue
 		}
-		room := gtdHp
-		if puFree < room {
-			room = puFree
-		}
-		if room < 0 {
-			room = 0
-		}
+		room := max(min(puFree, gtdHp), 0)
 		total += room
 	}
 	return total
@@ -766,10 +760,7 @@ func (a *Allocator) hpReserveCpus(free cpuset.CPUSet, excludeBln cpuset.CPUSet, 
 		if excludeBln.Size() > 0 {
 			used = used.Difference(excludeBln)
 		}
-		room := pu.MaxHpCpus - used.Size()
-		if room < 0 {
-			room = 0
-		}
+		room := max(pu.MaxHpCpus-used.Size(), 0)
 		states[i].room = room
 	}
 	if !anyKnown {
@@ -778,10 +769,7 @@ func (a *Allocator) hpReserveCpus(free cpuset.CPUSet, excludeBln cpuset.CPUSet, 
 
 	// Tier A: every single punit that can host the request, best
 	// first. Punit free sets are disjoint by construction.
-	need := requested
-	if need < 1 {
-		need = 1
-	}
+	need := max(requested, 1)
 	tierA := make([]int, 0, len(a.punits))
 	for i := range a.punits {
 		s := states[i]

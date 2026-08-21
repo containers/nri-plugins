@@ -219,7 +219,7 @@ func (p *pod) ScopeExpression() *resmgr.Expression {
 }
 
 // EvalKey returns the value of a key for expression evaluation.
-func (p *pod) EvalKey(key string) interface{} {
+func (p *pod) EvalKey(key string) any {
 	switch key {
 	case resmgr.KeyName:
 		return p.GetName()
