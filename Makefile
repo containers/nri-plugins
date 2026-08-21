@@ -33,7 +33,6 @@ GO_CMD     := go
 GO_BUILD    = $(GO_CMD) build $(BUILD_FLAGS)
 GO_INSTALL := $(GO_CMD) install
 GO_TEST    := $(GO_CMD) test
-GO_LINT    := golint -set_exit_status
 GO_FMT     := gofmt
 GO_VET     := $(GO_CMD) vet
 GO_DEPS    := $(GO_CMD) list -f '{{ join .Deps "\n" }}'
@@ -439,8 +438,7 @@ fmt format:
 reformat:
 	$(Q)$(GO_FMT) -s -d -w $$(git ls-files '*.go')
 
-lint:
-	$(Q)$(GO_LINT) -set_exit_status ./...
+lint: golangci-lint
 
 vet:
 	$(Q)$(GO_VET) ./...
