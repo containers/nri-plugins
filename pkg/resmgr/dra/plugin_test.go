@@ -17,13 +17,18 @@ limitations under the License.
 package dra
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 
 	"github.com/containers/nri-plugins/pkg/log"
 )
@@ -50,6 +55,50 @@ func TestNew_ReturnsNotImplemented(t *testing.T) {
 	if !errors.Is(err, errNotImplemented) {
 		t.Errorf("New() error = %v, want errors.Is(err, errNotImplemented) == true", err)
 	}
+}
+
+// TestPrepareResourceClaims_Stub verifies that PrepareResourceClaims returns
+// errNotImplemented before real allocation logic is wired in Step 7.
+func TestPrepareResourceClaims_Stub(t *testing.T) {
+	p := &Plugin{}
+	result, err := p.PrepareResourceClaims(context.Background(), []*resourceapi.ResourceClaim{})
+	if result != nil {
+		t.Errorf("PrepareResourceClaims() result = %v, want nil", result)
+	}
+	if !errors.Is(err, errNotImplemented) {
+		t.Errorf("PrepareResourceClaims() err = %v, want errNotImplemented", err)
+	}
+}
+
+// TestUnprepareResourceClaims_Stub verifies that UnprepareResourceClaims returns
+// errNotImplemented before real deallocation logic is wired in Step 7.
+func TestUnprepareResourceClaims_Stub(t *testing.T) {
+	p := &Plugin{}
+	result, err := p.UnprepareResourceClaims(context.Background(), []kubeletplugin.NamespacedObject{})
+	if result != nil {
+		t.Errorf("UnprepareResourceClaims() result = %v, want nil", result)
+	}
+	if !errors.Is(err, errNotImplemented) {
+		t.Errorf("UnprepareResourceClaims() err = %v, want errNotImplemented", err)
+	}
+}
+
+// TestHandleError_RecoverableLogsWarn verifies that a recoverable error is
+// handled without panicking. The method logs at Warn level.
+func TestHandleError_RecoverableLogsWarn(t *testing.T) {
+	p := &Plugin{}
+	recoverableErr := fmt.Errorf("transient failure: %w", kubeletplugin.ErrRecoverable)
+	// Must not panic.
+	p.HandleError(context.Background(), recoverableErr, "publish failed")
+}
+
+// TestHandleError_FatalLogsError verifies that a non-recoverable (fatal) error
+// is handled without panicking. The method logs at Error level.
+func TestHandleError_FatalLogsError(t *testing.T) {
+	p := &Plugin{}
+	fatalErr := errors.New("fatal background error")
+	// Must not panic.
+	p.HandleError(context.Background(), fatalErr, "fatal error encountered")
 }
 
 // TestNoCmdPluginsImport verifies that pkg/resmgr/dra has no transitive

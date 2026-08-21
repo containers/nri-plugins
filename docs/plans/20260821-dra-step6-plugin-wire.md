@@ -123,18 +123,18 @@ can register and publish devices. Step 7 fills in the actual allocation logic.
 
 *These must be added before `Start` so `*Plugin` satisfies `kubeletplugin.DRAPlugin`.*
 
-- [ ] implement `PrepareResourceClaims(ctx context.Context, claims []*resourceapi.ResourceClaim) (map[types.UID]kubeletplugin.PrepareResult, error)`:
+- [x] implement `PrepareResourceClaims(ctx context.Context, claims []*resourceapi.ResourceClaim) (map[types.UID]kubeletplugin.PrepareResult, error)`:
   - `return nil, errNotImplemented`
-- [ ] implement `UnprepareResourceClaims(ctx context.Context, claims []kubeletplugin.NamespacedObject) (map[types.UID]error, error)`:
+- [x] implement `UnprepareResourceClaims(ctx context.Context, claims []kubeletplugin.NamespacedObject) (map[types.UID]error, error)`:
   - `return nil, errNotImplemented`
-- [ ] implement `HandleError(ctx context.Context, err error, msg string)`:
+- [x] implement `HandleError(ctx context.Context, err error, msg string)`:
   - if `errors.Is(err, kubeletplugin.ErrRecoverable)` → log at Warn level; otherwise log at Error level
-- [ ] write unit tests:
+- [x] write unit tests:
   - `TestPrepareResourceClaims_Stub` — verify returns `errNotImplemented`
   - `TestUnprepareResourceClaims_Stub` — verify returns `errNotImplemented`
   - `TestHandleError_RecoverableLogsWarn` — verify recoverable error does not panic (log-only)
   - `TestHandleError_FatalLogsError` — verify fatal error does not panic (log-only)
-- [ ] run `go test ./pkg/resmgr/dra/...` — must pass
+- [x] run `go test ./pkg/resmgr/dra/...` — must pass
 
 ### Task 4: Flesh out Deps and Plugin struct; implement New
 
