@@ -589,7 +589,7 @@ func (a *Allocator) punitNonHPCapacity(idx int) int {
 	if a.allowed.Size() > 0 {
 		cpus = cpus.Intersection(a.allowed)
 	}
-	n := cpus.Size() - pu.GuaranteedHpCpus
+	n := cpus.Size() - a.punitHPCapacity(idx)
 	if n < 0 {
 		return 0
 	}
@@ -621,7 +621,8 @@ func (a *Allocator) PickHpCpus(pkgID, punitID, n int, held cpuset.CPUSet) (cpuse
 	avail = avail.Difference(held).Difference(a.hpUsed[idx]).Difference(a.hpDRAUsed[idx])
 	// Also enforce the GuaranteedHpCpus cap: can't pick more HP CPUs than
 	// the punit guarantees, regardless of how many are physically free.
-	hpAlreadyHeld := a.hpUsed[idx].Size() + a.hpDRAUsed[idx].Size()
+	// Use Union.Size() to avoid double-counting any CPU in both sets.
+	hpAlreadyHeld := a.hpUsed[idx].Union(a.hpDRAUsed[idx]).Size()
 	hpRoom := pu.GuaranteedHpCpus - hpAlreadyHeld
 	if hpRoom < 0 {
 		hpRoom = 0
@@ -637,9 +638,9 @@ func (a *Allocator) PickHpCpus(pkgID, punitID, n int, held cpuset.CPUSet) (cpuse
 	// Sort for deterministic selection; take first n.
 	list := avail.List()
 	picked := cpuset.New(list[:n]...)
-	if a.hpDRAUsed == nil {
-		a.hpDRAUsed = map[int]cpuset.CPUSet{}
-	}
+	// hpDRAUsed is always non-nil here: Configure() initialises it
+	// unconditionally, and Active() (checked above) is true only after
+	// a successful Configure().
 	a.hpDRAUsed[idx] = a.hpDRAUsed[idx].Union(picked)
 	return picked, nil
 }
@@ -655,9 +656,9 @@ func (a *Allocator) ReleaseHpCpus(pkgID, punitID int, cpus cpuset.CPUSet) {
 	if idx < 0 {
 		return
 	}
-	if a.hpDRAUsed == nil {
-		return
-	}
+	// hpDRAUsed is always non-nil here: Configure() initialises it
+	// unconditionally, and Active() (checked above) is true only after
+	// a successful Configure().
 	remaining := a.hpDRAUsed[idx].Difference(cpus)
 	if remaining.IsEmpty() {
 		delete(a.hpDRAUsed, idx)
@@ -783,9 +784,7 @@ func (a *Allocator) classIsHighPriority(className string) bool {
 }
 
 // IsHPClass reports whether className is currently classified as PCT
-// high priority. It is the exported counterpart of classIsHighPriority
-// and is used by pkg/resmgr/cpuclass/dra.go to build DRA device
-// attributes without duplicating the assoc-only MaxFreq logic here.
+// high priority. It is the exported counterpart of classIsHighPriority.
 // Returns false when the allocator is inactive or the class is unknown.
 func (a *Allocator) IsHPClass(className string) bool {
 	return a.classIsHighPriority(className)

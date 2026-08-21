@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package cpuclass — DRA-specific helpers.
-// This file is created in Step 3 and extended in Step 5 with
-// Manager.DRADevices() and related methods.
+// DRA-specific helpers for the cpuclass package:
+// ValidateCPUClassesForDRA, buildDRADevices, and Handler.DRADevices.
 
 package cpuclass
 
@@ -25,12 +24,13 @@ import (
 	"strconv"
 	"strings"
 
-	policyapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
-	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/pct"
 	corev1 "k8s.io/api/core/v1"
 	resapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	kptr "k8s.io/utils/ptr"
+
+	policyapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
+	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/pct"
 )
 
 // nonAlphaRe matches runs of characters that are not lowercase letters or digits.
@@ -38,9 +38,11 @@ import (
 var nonAlphaRe = regexp.MustCompile(`[^a-z0-9]+`)
 
 // maxDeviceBase is the maximum length for the sanitized class-name portion of a
-// device name. The full name is base + "-pkg<N>-punit<M>" (≤12 chars) and the
-// dedup suffix is at most 3 chars ("-NN"), so: 63 - 12 - 3 = 48.
-const maxDeviceBase = 48
+// device name before any dedup suffix is appended.
+//
+// Budget: 63 (DNS label max) - 14 (worst-case punit suffix "-pkg99-punit99") -
+// 3 (worst-case dedup suffix "-99") = 46.
+const maxDeviceBase = 46
 
 // ValidateCPUClassesForDRA checks that DRA-published PCT classes do not
 // overcommit any priority tier.
@@ -203,10 +205,11 @@ func buildDRADevices(
 		if !cc.DRAPublish() {
 			continue
 		}
-		base, ok := baseForClass[cc.Name]
-		if !ok {
-			continue
-		}
+		base := baseForClass[cc.Name]
+		// baseForClass always has an entry for published classes at this point:
+		// the first loop processes every published class name exactly once, and
+		// duplicate class names in the input are skipped defensively there.
+		// If upstream validation passes, duplicate names cannot reach here.
 		for _, pu := range punits {
 			// Select capacity based on HP classification.
 			var capacity int
@@ -268,14 +271,20 @@ func buildDRADevices(
 }
 
 // DRADevices returns the DRA device slice for the current cpuClass configuration.
-// Returns an empty (non-nil) slice when PCT is inactive or no punits are available.
+// Returns an empty (non-nil) slice when the handler is nil, PCT is inactive,
+// or no punits are available.
 // Always returns nil error in v1; error handling will be added in Step 6.
 //
 // Must be called on the resmgr goroutine or under the resmgr lock — same as all
 // other Handler methods.
 func (h *Handler) DRADevices(driverName string) ([]resapi.Device, error) {
+	if h == nil || h.pct == nil {
+		return []resapi.Device{}, nil
+	}
+	// Punits() returns nil when inactive, so len()==0 covers both
+	// the inactive and the "no punits" cases.
 	punits := h.pct.Punits()
-	if !h.pct.Active() || len(punits) == 0 {
+	if len(punits) == 0 {
 		return []resapi.Device{}, nil
 	}
 	return buildDRADevices(driverName, h.classes, punits, h.pct.IsHPClass), nil

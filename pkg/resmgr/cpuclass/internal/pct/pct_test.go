@@ -211,6 +211,7 @@ func newManagedPctForTest(t *testing.T, classes []*policyapi.CPUClass, plans map
 		classPlan:   plans,
 		allowed:     allowed,
 		hpUsed:      map[int]cpuset.CPUSet{},
+		hpDRAUsed:   map[int]cpuset.CPUSet{},
 		hpClasses:   map[string]bool{},
 	}
 	for _, cc := range classes {
@@ -1173,6 +1174,20 @@ func TestPunitNonHPCapacity(t *testing.T) {
 	if got := a2.punitNonHPCapacity(0); got != 0 {
 		t.Errorf("all-HP punit nonHPCapacity = %d, want 0", got)
 	}
+
+	// HP-ineligible punit with non-zero GuaranteedHpCpus: the guard in
+	// punitHPCapacity must zero out the HP deduction so the full CPU count
+	// is reported as non-HP capacity.
+	// punit 0: HP-ineligible, GuaranteedHpCpus=2, CPUs 0-3 → 4 non-HP (not 2)
+	// punit 1: HP-eligible,   GuaranteedHpCpus=2, CPUs 4-7 → 2 non-HP
+	a3 := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2))
+	a3.hpEligiblePunit[0] = false
+	if got := a3.punitNonHPCapacity(0); got != 4 {
+		t.Errorf("HP-ineligible punit nonHPCapacity = %d, want 4", got)
+	}
+	if got := a3.punitNonHPCapacity(1); got != 2 {
+		t.Errorf("HP-eligible punit nonHPCapacity = %d, want 2", got)
+	}
 }
 
 // ── TestAllocatorPunits ───────────────────────────────────────────────────────
@@ -1292,24 +1307,9 @@ func TestReleaseHpCpus(t *testing.T) {
 // ── TestHpDRAUsedIsolation ────────────────────────────────────────────────────
 
 func TestHpDRAUsedIsolation(t *testing.T) {
-	// Punit 0 has 4 CPUs (0-3), MaxHpCpus=2, GuaranteedHpCpus=2.
-	// hpUsed[0] is empty (no non-DRA HP work on punit 0) — this makes the
-	// hpInUseCpus test non-vacuous: it can only see DRA holds if it
-	// explicitly handles DRA-only punits.
-	a := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2))
-
-	// Pick 2 CPUs via DRA — no non-DRA HP work on this punit.
-	draHeld, err := a.PickHpCpus(0, 0, 2, cpuset.New())
-	if err != nil {
-		t.Fatalf("PickHpCpus: %v", err)
-	}
-
-	// Non-HP UseClass call covering the DRA-held CPUs.
-	// clearHpUsage is called inside UseClass via trackHpUsage.
-	// hpDRAUsed[0] must survive unchanged.
-	_ = a.UseClass("hp", draHeld) // hp is HP class → trackHpUsage adds to hpUsed[0]
-	// Actually use a non-HP class to test the clobber scenario.
-	// Build a second allocator with a non-HP class "lp".
+	// Build an allocator that also has a non-HP class "lp" to test the
+	// clobber scenario: UseClass("lp") on DRA-held CPUs must NOT remove
+	// them from hpDRAUsed, and hpInUseCpus must still report the DRA holds.
 	sys2 := newTwoPunitFakeSys()
 	sst2 := &fakeSst{supported: true, punits: makePunitsWithGtdHp(4, 2, 4, 2)}
 	classes2 := []*policyapi.CPUClass{

@@ -105,7 +105,7 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
   - Emits one device per (class × punit) where `class.DRAPublish() == true` (use the getter, not `class.DRA.Publish` directly — the latter panics on nil `DRA`) and the class is applicable to that punit's tier.
   - Attributes as spec'd in [design.md](design.md) (topology + class-derived).
   - Capacity `nri/cpus` with `RequestPolicy` tied to `punitHPCapacity` / `punitNonHPCapacity`.
-  - `NodeAllocatableResources: {cpu: mapping: {capacityKey: nri/cpus, capacityMultiplier: 1}}`.
+  - `NodeAllocatableResourceMappings: {cpu: {capacityKey: nri/cpus, allocationMultiplier: "1"}}`.
   - `resource.kubernetes.io/numaNode` attribute (scalar int; list form deferred until [KEP-5491](https://github.com/kubernetes/enhancements/issues/5491) is baseline).
 - Unit tests covering: single-HP class one punit, two HP classes one punit (one opted out), non-HP-only class, non-SST-TF (single "package" pseudo-punit).
 

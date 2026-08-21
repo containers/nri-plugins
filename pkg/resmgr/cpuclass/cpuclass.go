@@ -81,7 +81,6 @@ type Handler struct {
 	// classes is the last-applied cpuClass list. Updated on every
 	// Configure() call. Used by DRADevices to enumerate published classes.
 	// Caller-owned slice; not deep-copied (consistent with pct.Configure behavior).
-	// Must be called on the resmgr goroutine or under the resmgr lock.
 	classes []*policyapi.CPUClass
 
 	// defs maps synthetic class name -> resolved class definition.
@@ -148,7 +147,6 @@ func (h *Handler) PctActive() bool {
 // called repeatedly with changed classes, turbo-domain mode, or
 // allowed set.
 func (h *Handler) Configure(spec ConfigSpec) error {
-	h.classes = spec.Classes
 	h.allowed = spec.Allowed
 	h.defs = map[string]types.ClassDef{}
 	h.cpuClass = map[int]string{}
@@ -165,6 +163,10 @@ func (h *Handler) Configure(spec ConfigSpec) error {
 		return fmt.Errorf("cpuclass: pct configure: %w", err)
 	}
 
+	// h.classes is set after all fallible operations so that a partial
+	// Configure failure leaves h.classes consistent with the previously
+	// committed state (not a half-applied new config).
+	h.classes = spec.Classes
 	h.classNames = map[string]struct{}{}
 	for _, cls := range spec.Classes {
 		h.classNames[cls.Name] = struct{}{}

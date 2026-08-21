@@ -25,7 +25,7 @@ Expose the full nri-plugins `cpuClass` surface (min/max frequency, EPP, freqGove
 ## Assumed baseline
 
 - **[KEP-5075](https://github.com/kubernetes/enhancements/issues/5075) (DRA Consumable Capacity)** — `AllowMultipleAllocations` + `DeviceCapacity.RequestPolicy`. Alpha in Kubernetes v1.34+.
-- **[KEP-5517](https://github.com/kubernetes/enhancements/issues/5517) (DRA Node Allocatable Resources)** — `Device.NodeAllocatableResources.Mapping`, scheduler-side node-allocatable accounting, kubelet-side pod-level cgroup inflation. Alpha in v1.36, alpha2 in v1.37.
+- **[KEP-5517](https://github.com/kubernetes/enhancements/issues/5517) (DRA Node Allocatable Resources)** — `Device.NodeAllocatableResourceMappings`, scheduler-side node-allocatable accounting, kubelet-side pod-level cgroup inflation. Alpha in v1.36, alpha2 in v1.37.
 - **[KEP-5941](https://github.com/kubernetes/enhancements/issues/5941) (DRA Shared Consumable Capacity)** — pre-alpha, no upstream code yet. Design has an opt-in path for it (Model C below). Not required for v1.
 - Existing PCT allocator in `pkg/resmgr/cpuclass/internal/pct/` — reused as-is for HP-room accounting, SST-CP/SST-TF programming, and CLOS association.
 - Existing cpuClass application (EPP, governor, uncore freq, disabledCstates) in `pkg/resmgr/cpuclass/` — reused as-is.
