@@ -46,7 +46,7 @@ func WithAttributes(attrs ...attribute.KeyValue) SpanStartOption {
 }
 
 // WithAttributeMap sets initial attributes of a Span from a map.
-func WithAttributeMap(attrMap map[string]interface{}) SpanStartOption {
+func WithAttributeMap(attrMap map[string]any) SpanStartOption {
 	return func(o *SpanOptions) {
 		attrs := make([]attribute.KeyValue, 0, len(attrMap))
 		for k, v := range attrMap {
@@ -139,7 +139,7 @@ func nilSpan(s *Span) bool {
 }
 
 // Attribute returns an attribute with the given key and value.
-func Attribute(key string, value interface{}) attribute.KeyValue {
+func Attribute(key string, value any) attribute.KeyValue {
 	if value == nil {
 		return attribute.String(key, "<nil>")
 	}
