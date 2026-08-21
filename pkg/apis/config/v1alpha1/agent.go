@@ -26,7 +26,7 @@ type AgentConfig struct {
 }
 
 // GetAgentConfig returns the agent-specific configuration if we have one.
-func GetAgentConfig(cfg interface{}) *AgentConfig {
+func GetAgentConfig(cfg any) *AgentConfig {
 	if ac, ok := cfg.(interface{ AgentConfig() *AgentConfig }); ok {
 		return ac.AgentConfig()
 	}

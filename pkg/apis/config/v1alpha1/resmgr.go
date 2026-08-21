@@ -31,7 +31,7 @@ type ResmgrConfig interface {
 	metav1.ObjectMetaAccessor
 	AgentConfig() *AgentConfig
 	CommonConfig() *CommonConfig
-	PolicyConfig() interface{}
+	PolicyConfig() any
 }
 
 type CommonConfig struct {

@@ -55,7 +55,7 @@ func (c *BalloonsPolicy) CommonConfig() *CommonConfig {
 // longer used by the balloons policy; this reverse merge preserves
 // backwards compatibility so existing configurations keep working
 // while users migrate to the cpuClasses syntax.
-func (c *BalloonsPolicy) PolicyConfig() interface{} {
+func (c *BalloonsPolicy) PolicyConfig() any {
 	if c == nil {
 		return nil
 	}

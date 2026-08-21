@@ -39,7 +39,7 @@ func (c *TopologyAwarePolicy) CommonConfig() *CommonConfig {
 	}
 }
 
-func (c *TopologyAwarePolicy) PolicyConfig() interface{} {
+func (c *TopologyAwarePolicy) PolicyConfig() any {
 	if c == nil {
 		return nil
 	}

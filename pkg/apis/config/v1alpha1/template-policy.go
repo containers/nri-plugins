@@ -41,7 +41,7 @@ func (c *TemplatePolicy) CommonConfig() *CommonConfig {
 	}
 }
 
-func (c *TemplatePolicy) PolicyConfig() interface{} {
+func (c *TemplatePolicy) PolicyConfig() any {
 	if c == nil {
 		return nil
 	}
