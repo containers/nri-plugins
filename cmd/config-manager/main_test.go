@@ -93,9 +93,9 @@ version = 2
 	}
 }
 
-func mustUnmarshalTOML(t *testing.T, raw string) map[string]interface{} {
+func mustUnmarshalTOML(t *testing.T, raw string) map[string]any {
 	t.Helper()
-	var config map[string]interface{}
+	var config map[string]any
 	if err := tomlv2.Unmarshal([]byte(raw), &config); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -105,13 +105,13 @@ func mustUnmarshalTOML(t *testing.T, raw string) map[string]interface{} {
 	return config
 }
 
-func nriPluginSection(t *testing.T, config map[string]interface{}) map[string]interface{} {
+func nriPluginSection(t *testing.T, config map[string]any) map[string]any {
 	t.Helper()
-	plugins, ok := config["plugins"].(map[string]interface{})
+	plugins, ok := config["plugins"].(map[string]any)
 	if !ok {
 		t.Fatalf("plugins type %T", config["plugins"])
 	}
-	nri, ok := plugins[nriPluginKey].(map[string]interface{})
+	nri, ok := plugins[nriPluginKey].(map[string]any)
 	if !ok {
 		t.Fatalf("nri plugin type %T", plugins[nriPluginKey])
 	}
