@@ -42,11 +42,11 @@ var (
 
 func modeToString(mode uint) string {
 	// Convert mode to string representation
-	flagsStr := ""
+	var flagsStr strings.Builder
 	for name, value := range mempolicy.Flags {
 		if mode&value != 0 {
-			flagsStr += "|"
-			flagsStr += name
+			flagsStr.WriteString("|")
+			flagsStr.WriteString(name)
 			mode &= ^value
 		}
 	}
@@ -54,7 +54,7 @@ func modeToString(mode uint) string {
 	if modeStr == "" {
 		modeStr = fmt.Sprintf("unknown mode %d)", mode)
 	}
-	return modeStr + flagsStr
+	return modeStr + flagsStr.String()
 }
 
 func main() {
@@ -122,8 +122,8 @@ func main() {
 			}
 			os.Exit(0)
 		}
-		flags := strings.Split(*flagsFlag, ",")
-		for _, flag := range flags {
+		flags := strings.SplitSeq(*flagsFlag, ",")
+		for flag := range flags {
 			flagBit, ok := mempolicy.Flags[flag]
 			if !ok {
 				log.Fatalf("invalid -flags: %v", flag)
