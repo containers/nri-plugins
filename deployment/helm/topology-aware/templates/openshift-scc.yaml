@@ -1,0 +1,91 @@
+{{- if index .Values.openshift "grant-scc" }}
+{{- if .Values.allowPCT }}
+# allowPCT: the pod runs privileged (SST access via host /dev). Bind the plugin
+# ServiceAccount to the built-in `privileged` SCC via its cluster role.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nri-resource-policy-topology-aware-scc
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nri-plugin.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:privileged
+subjects:
+- kind: ServiceAccount
+  name: nri-resource-policy-topology-aware
+  namespace: {{ .Release.Namespace }}
+{{- else }}
+# Non-PCT: the pod is not privileged but still mounts host paths (/sys,
+# /var/run/nri, pod-resources). A dedicated least-privilege SCC admits exactly
+# that: hostPath volumes, but no privilege, no privilege escalation, all caps
+# dropped, and no host namespaces.
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: nri-resource-policy-topology-aware
+  labels:
+    {{- include "nri-plugin.labels" . | nindent 4 }}
+allowPrivilegedContainer: false
+allowPrivilegeEscalation: false
+allowHostDirVolumePlugin: true
+allowHostNetwork: false
+allowHostPorts: false
+allowHostPID: false
+allowHostIPC: false
+readOnlyRootFilesystem: false
+requiredDropCapabilities:
+  - ALL
+allowedCapabilities: []
+defaultAddCapabilities: []
+# The plugin writes host dirs as root and reads host /sys, so let the runtime
+# keep the pod's uid and SELinux label rather than forcing a namespace range.
+runAsUser:
+  type: RunAsAny
+seLinuxContext:
+  type: RunAsAny
+fsGroup:
+  type: RunAsAny
+supplementalGroups:
+  type: RunAsAny
+seccompProfiles:
+  - runtime/default
+volumes:
+  - hostPath
+  - configMap
+  - downwardAPI
+  - emptyDir
+  - projected
+  - secret
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nri-resource-policy-topology-aware-scc-use
+  labels:
+    {{- include "nri-plugin.labels" . | nindent 4 }}
+rules:
+- apiGroups: ["security.openshift.io"]
+  resources: ["securitycontextconstraints"]
+  resourceNames: ["nri-resource-policy-topology-aware"]
+  verbs: ["use"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nri-resource-policy-topology-aware-scc
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nri-plugin.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nri-resource-policy-topology-aware-scc-use
+subjects:
+- kind: ServiceAccount
+  name: nri-resource-policy-topology-aware
+  namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- end }}

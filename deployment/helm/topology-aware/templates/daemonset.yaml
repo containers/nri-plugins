@@ -111,6 +111,13 @@ spec:
                 - SYS_ADMIN
                 - DAC_OVERRIDE
           {{- end }}
+          {{- if index .Values.openshift "grant-scc" }}
+            # On OpenShift the non-privileged pod is confined as container_t and
+            # cannot write its hostPath data dir; spc_t lets it while staying
+            # non-privileged (admitted by the least-privilege SCC).
+            seLinuxOptions:
+              type: spc_t
+          {{- end }}
           {{- end }}
           resources:
             requests:

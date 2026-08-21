@@ -145,6 +145,13 @@ allowPCT: false
 # plugin on each new node.
 podPriorityClassNodeCritical: true
 
+# OpenShift / OKD support. When grant-scc is true, grant the plugin
+# ServiceAccount an SCC so its pods pass admission: the built-in `privileged`
+# SCC when allowPCT is set, otherwise a dedicated least-privilege SCC (hostPath,
+# no privilege). Leave false on vanilla Kubernetes.
+openshift:
+  grant-scc: false
+
 # extra ports to expose, and optionally to the host too
 #ports: []
 #
