@@ -106,7 +106,7 @@ func TemplateConfigInterface() ConfigInterface {
 }
 
 // NotifyFn is a function to call when the effective configuration changes.
-type NotifyFn func(cfg interface{}) (bool, error)
+type NotifyFn func(cfg any) (bool, error)
 
 var (
 	// Our logger instance for the agent.
