@@ -16,6 +16,7 @@ package balloons
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -75,23 +76,23 @@ func newCpuTreeFromInt5(pdnct [5]int) (*cpuTreeNode, cpusInTopology) {
 	sysTree := NewCpuTree("system")
 	sysTree.level = CPUTopologyLevelSystem
 	csit := cpusInTopology{}
-	for packageID := 0; packageID < pkgs; packageID++ {
+	for packageID := range pkgs {
 		packageTree := NewCpuTree(fmt.Sprintf("p%d", packageID))
 		packageTree.level = CPUTopologyLevelPackage
 		sysTree.AddChild(packageTree)
-		for dieID := 0; dieID < dies; dieID++ {
+		for dieID := range dies {
 			dieTree := NewCpuTree(fmt.Sprintf("p%dd%d", packageID, dieID))
 			dieTree.level = CPUTopologyLevelDie
 			packageTree.AddChild(dieTree)
-			for numaID := 0; numaID < numas; numaID++ {
+			for numaID := range numas {
 				numaTree := NewCpuTree(fmt.Sprintf("p%dd%dn%d", packageID, dieID, numaID))
 				numaTree.level = CPUTopologyLevelNuma
 				dieTree.AddChild(numaTree)
-				for coreID := 0; coreID < cores; coreID++ {
+				for coreID := range cores {
 					coreTree := NewCpuTree(fmt.Sprintf("p%dd%dn%dc%02d", packageID, dieID, numaID, coreID))
 					coreTree.level = CPUTopologyLevelCore
 					numaTree.AddChild(coreTree)
-					for threadID := 0; threadID < threads; threadID++ {
+					for threadID := range threads {
 						threadTree := NewCpuTree(fmt.Sprintf("p%dd%dn%dc%02dt%d", packageID, dieID, numaID, coreID, threadID))
 						threadTree.level = CPUTopologyLevelThread
 						coreTree.AddChild(threadTree)
@@ -178,12 +179,10 @@ func (csit cpusInTopology) verifyDisjoint(t *testing.T, topoLevel string, cpusA 
 	eltsA := csit.getElements(topoLevel, cpusA)
 	eltsB := csit.getElements(topoLevel, cpusB)
 	for _, eltA := range eltsA {
-		for _, eltB := range eltsB {
-			if eltA == eltB {
-				t.Errorf("expected disjoint %ss, got %s on both cpusets %s and %s",
-					topoLevel, eltA, cpusA, cpusB)
-				return
-			}
+		if slices.Contains(eltsB, eltA) {
+			t.Errorf("expected disjoint %ss, got %s on both cpusets %s and %s",
+				topoLevel, eltA, cpusA, cpusB)
+			return
 		}
 	}
 }

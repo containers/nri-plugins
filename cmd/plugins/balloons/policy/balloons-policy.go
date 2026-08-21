@@ -622,10 +622,7 @@ func (p *balloons) GetExtendedResources() map[string]*resource.Quantity {
 			}
 			held = held.Union(bln.Cpus)
 		}
-		free := p.cpuClasses.PctFreeClassCapacity(cc.Name, held)
-		if free < 0 {
-			free = 0
-		}
+		free := max(p.cpuClasses.PctFreeClassCapacity(cc.Name, held), 0)
 		out["cpuclass.balloons.nri.io/"+cc.Name] = resource.NewQuantity(int64(free), resource.DecimalSI)
 	}
 	return out
@@ -636,10 +633,8 @@ func (p *balloons) balloonByContainer(c cache.Container) *Balloon {
 	podID := c.GetPodID()
 	cID := c.GetID()
 	for _, bln := range p.balloons {
-		for _, ctrID := range bln.PodIDs[podID] {
-			if ctrID == cID {
-				return bln
-			}
+		if slices.Contains(bln.PodIDs[podID], cID) {
+			return bln
 		}
 	}
 	return nil
@@ -830,7 +825,7 @@ func largest(sliceLen int, valueOf func(i int) int) ([]int, int) {
 	// the largest value found so far is the smallest number that
 	// can be presented with int:
 	largestValue := math.MinInt
-	for index := 0; index < sliceLen; index++ {
+	for index := range sliceLen {
 		value := valueOf(index)
 		switch {
 		case len(largestIndices) == 0:
@@ -967,11 +962,8 @@ func (p *balloons) irqClaimCpus(hwIrq *irq.Irq) cpuset.CPUSet {
 		if bln.Cpus.IsEmpty() {
 			continue
 		}
-		for _, claim := range bln.Def.IrqClaim {
-			if hwIrq.Match(claim) {
-				claimCpus = claimCpus.Union(bln.Cpus)
-				break
-			}
+		if slices.ContainsFunc(bln.Def.IrqClaim, hwIrq.Match) {
+			claimCpus = claimCpus.Union(bln.Cpus)
 		}
 	}
 	return claimCpus
@@ -1629,7 +1621,7 @@ func changesCpuClasses(opts0, opts1 *BalloonsOptions) bool {
 	return false
 }
 
-func (p *balloons) Reconfigure(newCfg interface{}) error {
+func (p *balloons) Reconfigure(newCfg any) error {
 	irq.BlockWrites()
 	defer irq.UnblockWrites()
 	p.BlockMeters()
@@ -2083,11 +2075,7 @@ func (p *balloons) fillBuiltinBalloonDefs(bpoptions *BalloonsOptions) (*BalloonD
 		}
 		p.reserved = p.allowed.Intersection(cset)
 		if reservedBalloonDef.MinCpus == 0 {
-			if p.reserved.Size() < reservedBalloonDef.MaxCpus {
-				reservedBalloonDef.MinCpus = p.reserved.Size()
-			} else {
-				reservedBalloonDef.MinCpus = reservedBalloonDef.MaxCpus
-			}
+			reservedBalloonDef.MinCpus = min(p.reserved.Size(), reservedBalloonDef.MaxCpus)
 		}
 		reservedBalloonDef.AllocatorPriority = cfgapi.PriorityNormal
 		// The reserved balloon prefers CPUs close to a
@@ -2900,7 +2888,7 @@ func getMemoryLimit(c cache.Container) int64 {
 }
 
 // balloonsError formats an error from this policy.
-func balloonsError(format string, args ...interface{}) error {
+func balloonsError(format string, args ...any) error {
 	return fmt.Errorf(PolicyName+": "+format, args...)
 }
 
@@ -2913,11 +2901,4 @@ func removeString(strings []string, element string) []string {
 		}
 	}
 	return strings
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
