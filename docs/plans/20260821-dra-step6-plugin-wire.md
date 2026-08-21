@@ -142,7 +142,7 @@ can register and publish devices. Step 7 fills in the actual allocation logic.
 - Modify: `pkg/resmgr/dra/deps.go`
 - Modify: `pkg/resmgr/dra/plugin.go`
 
-- [ ] add to `Deps` (replacing the empty struct from Step 2):
+- [x] add to `Deps` (replacing the empty struct from Step 2):
   - `KubeClient kubernetes.Interface`
   - `NodeName string`
   - `RegistrarDir string`
@@ -150,13 +150,13 @@ can register and publish devices. Step 7 fills in the actual allocation logic.
   - `ValidateClasses func() error`
   - `DeviceLister` interface with `DRADevices(driverName string) ([]resapi.Device, error)`
   - `Logger log.Logger`
-- [ ] add to `Plugin` struct: `driverName string`, `deps Deps`, `helper kubeletplugin.Helper`
-- [ ] implement `New(driverName string, deps Deps) (*Plugin, error)`:
+- [x] add to `Plugin` struct: `driverName string`, `deps Deps`, `helper kubeletplugin.Helper`
+- [x] implement `New(driverName string, deps Deps) (*Plugin, error)`:
   - validate: non-empty `driverName`, non-nil `KubeClient`, non-empty `NodeName`, non-nil `ValidateClasses`, non-nil `DeviceLister`, non-nil `Logger`
   - return `&Plugin{driverName: driverName, deps: deps}, nil`
   - remove `errNotImplemented` as the return value of `New` (but keep `var errNotImplemented` — it is used by stubs)
-- [ ] update `TestNew_ReturnsNotImplemented` → replace with `TestNew_Succeeds` (valid deps → no error) and `TestNew_Validation` (table test: missing each required dep → error)
-- [ ] run `go test ./pkg/resmgr/dra/...` — must pass
+- [x] update `TestNew_ReturnsNotImplemented` → replace with `TestNew_Succeeds` (valid deps → no error) and `TestNew_Validation` (table test: missing each required dep → error)
+- [x] run `go test ./pkg/resmgr/dra/...` — must pass
 
 ### Task 5: Implement Plugin.Start, Stop, PublishResources
 

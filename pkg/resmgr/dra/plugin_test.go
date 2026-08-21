@@ -28,6 +28,7 @@ import (
 	"testing"
 
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 
 	"github.com/containers/nri-plugins/pkg/log"
@@ -44,16 +45,99 @@ func TestNewLogr(t *testing.T) {
 	l.Info("test message from TestNewLogr")
 }
 
-func TestNew_ReturnsNotImplemented(t *testing.T) {
-	p, err := New("test-driver", Deps{})
-	if p != nil {
-		t.Errorf("New() returned non-nil Plugin, want nil")
+// mockDeviceLister is a minimal DeviceLister for tests.
+type mockDeviceLister struct{}
+
+func (m *mockDeviceLister) DRADevices(_ string) ([]resourceapi.Device, error) {
+	return nil, nil
+}
+
+// validDeps returns a Deps with all required fields populated.
+func validDeps() Deps {
+	return Deps{
+		KubeClient:      fake.NewClientset(),
+		NodeName:        "test-node",
+		ValidateClasses: func() error { return nil },
+		DeviceLister:    &mockDeviceLister{},
+		Logger:          log.Default(),
 	}
-	if err == nil {
-		t.Fatal("New() returned nil error, want non-nil")
+}
+
+// TestNew_Succeeds verifies that New returns a non-nil Plugin when all
+// required fields are provided.
+func TestNew_Succeeds(t *testing.T) {
+	p, err := New("test-driver", validDeps())
+	if err != nil {
+		t.Fatalf("New() unexpected error: %v", err)
 	}
-	if !errors.Is(err, errNotImplemented) {
-		t.Errorf("New() error = %v, want errors.Is(err, errNotImplemented) == true", err)
+	if p == nil {
+		t.Fatal("New() returned nil Plugin, want non-nil")
+	}
+}
+
+// TestNew_Validation verifies that New returns an error when any required
+// dependency is absent.
+func TestNew_Validation(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(*Deps)
+		wantErr bool
+	}{
+		{
+			name:    "empty driverName",
+			mutate:  nil, // driverName is a parameter, handled via empty string below
+			wantErr: true,
+		},
+		{
+			name:    "nil KubeClient",
+			mutate:  func(d *Deps) { d.KubeClient = nil },
+			wantErr: true,
+		},
+		{
+			name:    "empty NodeName",
+			mutate:  func(d *Deps) { d.NodeName = "" },
+			wantErr: true,
+		},
+		{
+			name:    "nil ValidateClasses",
+			mutate:  func(d *Deps) { d.ValidateClasses = nil },
+			wantErr: true,
+		},
+		{
+			name:    "nil DeviceLister",
+			mutate:  func(d *Deps) { d.DeviceLister = nil },
+			wantErr: true,
+		},
+		{
+			name:    "nil Logger",
+			mutate:  func(d *Deps) { d.Logger = nil },
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			deps := validDeps()
+			driverName := "test-driver"
+			if tc.name == "empty driverName" {
+				driverName = ""
+			} else if tc.mutate != nil {
+				tc.mutate(&deps)
+			}
+			p, err := New(driverName, deps)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("New() expected error, got nil")
+				}
+				if p != nil {
+					t.Errorf("New() expected nil Plugin on error, got %v", p)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("New() unexpected error: %v", err)
+				}
+			}
+		})
 	}
 }
 
@@ -86,7 +170,7 @@ func TestUnprepareResourceClaims_Stub(t *testing.T) {
 // TestHandleError_RecoverableLogsWarn verifies that a recoverable error is
 // handled without panicking. The method logs at Warn level.
 func TestHandleError_RecoverableLogsWarn(t *testing.T) {
-	p := &Plugin{}
+	p := &Plugin{deps: Deps{Logger: log.Default()}}
 	recoverableErr := fmt.Errorf("transient failure: %w", kubeletplugin.ErrRecoverable)
 	// Must not panic.
 	p.HandleError(context.Background(), recoverableErr, "publish failed")
@@ -95,7 +179,7 @@ func TestHandleError_RecoverableLogsWarn(t *testing.T) {
 // TestHandleError_FatalLogsError verifies that a non-recoverable (fatal) error
 // is handled without panicking. The method logs at Error level.
 func TestHandleError_FatalLogsError(t *testing.T) {
-	p := &Plugin{}
+	p := &Plugin{deps: Deps{Logger: log.Default()}}
 	fatalErr := errors.New("fatal background error")
 	// Must not panic.
 	p.HandleError(context.Background(), fatalErr, "fatal error encountered")

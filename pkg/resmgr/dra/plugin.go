@@ -19,26 +19,44 @@ package dra
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
-
-	"github.com/containers/nri-plugins/pkg/log"
 )
 
 var errNotImplemented = errors.New("dra plugin: not yet implemented")
 
-// Plugin is the DRA kubelet plugin. Its fields and methods are added
-// incrementally in subsequent plan steps.
+// Plugin is the DRA kubelet plugin.
 type Plugin struct {
-	helper *kubeletplugin.Helper
+	driverName string
+	deps       Deps
+	helper     *kubeletplugin.Helper
 }
 
 // New constructs a Plugin with the given driver name and dependencies.
-// Returns ErrNotImplemented until the implementation is complete.
+// Returns an error if any required dependency is missing.
 func New(driverName string, deps Deps) (*Plugin, error) {
-	return nil, errNotImplemented
+	if driverName == "" {
+		return nil, fmt.Errorf("dra plugin: driverName must not be empty")
+	}
+	if deps.KubeClient == nil {
+		return nil, fmt.Errorf("dra plugin: KubeClient must not be nil")
+	}
+	if deps.NodeName == "" {
+		return nil, fmt.Errorf("dra plugin: NodeName must not be empty")
+	}
+	if deps.ValidateClasses == nil {
+		return nil, fmt.Errorf("dra plugin: ValidateClasses must not be nil")
+	}
+	if deps.DeviceLister == nil {
+		return nil, fmt.Errorf("dra plugin: DeviceLister must not be nil")
+	}
+	if deps.Logger == nil {
+		return nil, fmt.Errorf("dra plugin: Logger must not be nil")
+	}
+	return &Plugin{driverName: driverName, deps: deps}, nil
 }
 
 // PrepareResourceClaims is a stub that satisfies kubeletplugin.DRAPlugin.
@@ -56,9 +74,8 @@ func (p *Plugin) UnprepareResourceClaims(_ context.Context, _ []kubeletplugin.Na
 // HandleError handles background errors from the kubelet plugin helper.
 // Recoverable errors (errors.Is(err, kubeletplugin.ErrRecoverable)) are
 // logged at Warn level; all other errors are logged at Error level.
-// The logger used is the package default until Task 4 wires in deps.Logger.
 func (p *Plugin) HandleError(_ context.Context, err error, msg string) {
-	logger := log.Default()
+	logger := p.deps.Logger
 	if errors.Is(err, kubeletplugin.ErrRecoverable) {
 		logger.Warnf("%s: %v", msg, err)
 	} else {
