@@ -55,7 +55,7 @@ func parseFilters() []map[string]string {
 		}
 
 		filter := map[string]string{}
-		for _, expr := range strings.Split(arg, ",") {
+		for expr := range strings.SplitSeq(arg, ",") {
 			kv := strings.SplitN(expr, "=", 2)
 			if len(kv) != 2 {
 				log.Fatalf("invalid filter expression %s (in %s)", expr, arg)
