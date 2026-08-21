@@ -367,10 +367,33 @@ func TestNewTopologyHints(t *testing.T) {
 			input: "/sys/devices/pci0000:00/0000:00:02.0/drm/card1",
 			output: Hints{
 				"/sys/devices/pci0000:00/0000:00:02.0": Hint{
-					Provider: "/sys/devices/pci0000:00/0000:00:02.0",
-					CPUs:     "0-7",
-					NUMAs:    "",
-					Sockets:  ""},
+					Provider:  "/sys/devices/pci0000:00/0000:00:02.0",
+					CPUs:      "0-7",
+					NUMAs:     "",
+					Sockets:   "",
+					PCIeChain: []PCIeHop{{Address: "pci0000:00", Type: PCIeHopRoot}},
+					IRQs:      []int{16, 24, 25},
+				},
+			},
+			expectedErr: false,
+		},
+		{
+			name:  "pci endpoint behind a bridge",
+			input: "/sys/devices/pci0000:00/0000:00:1c.0/0000:01:00.0",
+			output: Hints{
+				"/sys/devices/pci0000:00/0000:00:1c.0/0000:01:00.0": Hint{
+					Provider: "/sys/devices/pci0000:00/0000:00:1c.0/0000:01:00.0",
+					CPUs:     "8-15",
+					NUMAs:    "1",
+					Sockets:  "",
+					PCIeChain: []PCIeHop{
+						{Address: "0000:00:1c.0", Type: PCIeHopBridge},
+						{Address: "pci0000:00", Type: PCIeHopRoot},
+					},
+					// irq is 0 (no legacy interrupt), only the
+					// MSI vector should show up here.
+					IRQs: []int{33},
+				},
 			},
 			expectedErr: false,
 		},
@@ -385,6 +408,92 @@ func TestNewTopologyHints(t *testing.T) {
 				t.Fatalf("unexpected success: %+v", output)
 			case !reflect.DeepEqual(output, test.output):
 				t.Fatalf("expected: %v got: %v", test.output, output)
+			}
+		})
+	}
+}
+
+func TestPcieChain(t *testing.T) {
+	teardown := setupTestEnv(t)
+	defer teardown()
+	pwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal("unable to get current directory")
+	}
+	root := pwd + "/testdata"
+
+	cases := []struct {
+		name   string
+		devDir string
+		want   []PCIeHop
+	}{
+		{
+			name:   "endpoint directly on the root complex",
+			devDir: root + "/sys/devices/pci0000:00/0000:00:02.0",
+			want:   []PCIeHop{{Address: "pci0000:00", Type: PCIeHopRoot}},
+		},
+		{
+			name:   "endpoint behind one bridge",
+			devDir: root + "/sys/devices/pci0000:00/0000:00:1c.0/0000:01:00.0",
+			want: []PCIeHop{
+				{Address: "0000:00:1c.0", Type: PCIeHopBridge},
+				{Address: "pci0000:00", Type: PCIeHopRoot},
+			},
+		},
+		{
+			name:   "non-PCI device has no chain",
+			devDir: root + "/sys/devices/virtual/mem/null",
+			want:   []PCIeHop{},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := pcieChain(tc.devDir); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("pcieChain(%s) = %+v, want %+v", tc.devDir, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestDeviceIRQs(t *testing.T) {
+	teardown := setupTestEnv(t)
+	defer teardown()
+	pwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal("unable to get current directory")
+	}
+	root := pwd + "/testdata"
+
+	cases := []struct {
+		name   string
+		devDir string
+		want   []int
+	}{
+		{
+			name:   "legacy irq plus non-overlapping MSI vectors",
+			devDir: root + "/sys/devices/pci0000:00/0000:00:02.0",
+			want:   []int{16, 24, 25},
+		},
+		{
+			name:   "legacy irq overlapping an MSI vector is deduplicated",
+			devDir: root + "/sys/devices/pci0000:00/0000:00:03.0",
+			want:   []int{24, 26},
+		},
+		{
+			name:   "irq==0 means MSI-only",
+			devDir: root + "/sys/devices/pci0000:00/0000:00:1c.0/0000:01:00.0",
+			want:   []int{33},
+		},
+		{
+			name:   "no irq file, no msi_irqs dir",
+			devDir: root + "/sys/devices/virtual/mem/null",
+			want:   nil,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := deviceIRQs(tc.devDir); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("deviceIRQs(%s) = %v, want %v", tc.devDir, got, tc.want)
 			}
 		})
 	}
