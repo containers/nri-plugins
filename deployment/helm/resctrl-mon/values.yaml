@@ -4,6 +4,25 @@
 ---
 resctrlPath: /sys/fs/resctrl
 
+# Telemetry configuration — embedded OTel exporter.
+telemetry:
+  prometheus:
+    enabled: true
+    listenAddress: ":9100"
+    scrapeInterval: "15s"    # recommended scrape interval (annotation hint)
+    namespace: ""            # empty = resctrl_* Prometheus metric names
+  otlp:
+    enabled: false
+    endpoint: ""             # e.g. "otel-collector.monitoring.svc:4317"
+    protocol: grpc           # grpc | http
+    interval: 15s
+    insecure: true
+  perfCounters:
+    enabled: false           # gate rdt=perf counters (c1_res, stalls_*, etc.)
+    include: []
+    exclude: []
+  resourceAttributes: {}     # static OTel resource attributes
+
 image:
   name: ghcr.io/containers/nri-plugins/nri-resctrl-mon
   # tag, if defined will use the given image tag, otherwise Chart.AppVersion will be used

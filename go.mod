@@ -10,7 +10,6 @@ require (
 	github.com/containers/nri-plugins/pkg/topology v0.0.0
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/google/uuid v1.6.0
 	github.com/intel/goresctrl v0.13.0
 	github.com/intel/memtierd v0.1.1
 	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.3
@@ -67,6 +66,7 @@ require (
 	github.com/google/gnostic-models v0.7.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/pprof v0.0.0-20260402051712-545e8a4df936 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
@@ -114,6 +114,9 @@ require (
 
 replace (
 	github.com/containers/nri-plugins/pkg/topology v0.0.0 => ./pkg/topology
+	// Temporary: depends on unreleased goresctrl pkg/monitor (intel/goresctrl#192).
+	// Drop once a goresctrl release containing pkg/monitor is available.
+	github.com/intel/goresctrl v0.13.0 => github.com/cmcantalupo/goresctrl v0.0.0-20260812225045-3705888589be
 	github.com/opencontainers/runtime-tools => github.com/opencontainers/runtime-tools v0.0.0-20221026201742-946c877fa809
 )
 

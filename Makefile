@@ -155,6 +155,26 @@ test: test-gopkgs
 verify: verify-godeps verify-fmt verify-generate verify-build verify-docs
 
 #
+# install targets
+#
+
+# NRI plugin install directory and default index for static plugin discovery.
+NRI_PLUGINS_DIR ?= /opt/nri/plugins
+NRI_DEFAULT_IDX ?= 90
+
+# install-plugins: install plugin binaries to NRI_PLUGINS_DIR with the
+# <NN>-<name> prefix required by CRI-O/containerd static plugin discovery.
+install-plugins: build-plugins
+	$(Q)echo "Installing plugins to $(NRI_PLUGINS_DIR)..."; \
+	mkdir -p $(NRI_PLUGINS_DIR); \
+	for bin in $(PLUGINS); do \
+	    name=$${bin#nri-}; \
+	    dst="$(NRI_PLUGINS_DIR)/$(NRI_DEFAULT_IDX)-$$name"; \
+	    install -m 755 "$(BIN_PATH)/$$bin" "$$dst"; \
+	    echo "  $$dst"; \
+	done
+
+#
 # build targets
 #
 
