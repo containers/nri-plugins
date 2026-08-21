@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/askervin/gofmbt v0.0.0-20250119175120-506d925f666f
-	github.com/containerd/nri v0.11.0
+	github.com/containerd/nri v0.12.2
 	github.com/containerd/otelttrpc v0.0.0-20240305015340-ea5083fda723
 	github.com/containerd/ttrpc v1.2.7
 	github.com/containers/nri-plugins/pkg/topology v0.0.0
@@ -84,7 +84,7 @@ require (
 	github.com/prometheus/otlptranslator v1.0.0 // indirect
 	github.com/prometheus/procfs v0.20.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/tetratelabs/wazero v1.10.1 // indirect
+	github.com/tetratelabs/wazero v1.11.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.44.0 // indirect
