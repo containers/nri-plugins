@@ -264,7 +264,7 @@ func TestSharedPoolMetricsDoNotLeakSeriesOnCpusetChange(t *testing.T) {
 	// finds nothing left to shrink, so the test can't silently stop exercising
 	// the leak.
 	const rounds = 3
-	for round := 0; round < rounds; round++ {
+	for round := range rounds {
 		changed := false
 		for _, pool := range p.pools {
 			s := pool.FreeSupply().(*supply)

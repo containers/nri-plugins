@@ -800,7 +800,7 @@ func prettyMem(value int64) string {
 	coeffs := []int64{1 << 10, 1 << 20, 1 << 30, 1 << 40}
 
 	c, u := int64(1), ""
-	for i := 0; i < len(units); i++ {
+	for i := range units {
 		if coeffs[i] > value {
 			break
 		}
