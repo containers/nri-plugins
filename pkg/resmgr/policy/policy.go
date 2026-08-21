@@ -47,7 +47,7 @@ const (
 )
 
 // Constraint describes constraint of one hardware domain
-type Constraint interface{}
+type Constraint any
 
 // ConstraintSet describes, per hardware domain, the resources available for a policy.
 type ConstraintSet map[Domain]Constraint
@@ -67,14 +67,14 @@ type BackendOptions struct {
 	// SendEvent is the function for delivering events up to the resource manager.
 	SendEvent SendEventFn
 	// Config is the policy-specific configuration.
-	Config interface{}
+	Config any
 }
 
 // CreateFn is the type for functions used to create a policy instance.
 type CreateFn func(*BackendOptions) Backend
 
 // SendEventFn is the type for a function to send events back to the resource manager.
-type SendEventFn func(interface{}) error
+type SendEventFn func(any) error
 
 const (
 	// ExportedResources is the basename of the file container resources are exported to.
@@ -99,7 +99,7 @@ type Backend interface {
 	// Setup initializes the policy backend with the given options.
 	Setup(*BackendOptions) error
 	// Reconfigure the policy backend.
-	Reconfigure(interface{}) error
+	Reconfigure(any) error
 	// Start up and sycnhronizes the policy, using the given cache and resource constraints.
 	Start() error
 	// Sync synchronizes the policy, allocating/releasing the given containers.
@@ -139,9 +139,9 @@ type Policy interface {
 	// ActivePolicy returns the name of the policy backend in use.
 	ActivePolicy() string
 	// Start starts up policy, prepare for serving resource management requests.
-	Start(interface{}) error
+	Start(any) error
 	// Reconfigure the policy.
-	Reconfigure(interface{}) error
+	Reconfigure(any) error
 	// Sync synchronizes the state of the active policy.
 	Sync([]cache.Container, []cache.Container) error
 	// AllocateResources allocates resources to a container.
@@ -263,7 +263,7 @@ func (p *policy) ActivePolicy() string {
 }
 
 // Start starts up policy, preparing it for serving requests.
-func (p *policy) Start(cfg interface{}) error {
+func (p *policy) Start(cfg any) error {
 	log.Infof("activating '%s' policy...", p.active.Name())
 
 	if err := p.active.Setup(&BackendOptions{
@@ -285,7 +285,7 @@ func (p *policy) Start(cfg interface{}) error {
 }
 
 // Reconfigure the policy.
-func (p *policy) Reconfigure(cfg interface{}) error {
+func (p *policy) Reconfigure(cfg any) error {
 	scollect, err := p.newSystemCollector()
 	if err != nil {
 		return err

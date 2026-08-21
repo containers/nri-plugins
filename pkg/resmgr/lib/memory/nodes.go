@@ -218,7 +218,7 @@ func ParseNodeMask(str string) (NodeMask, error) {
 	if str == "" {
 		return m, nil
 	}
-	for _, s := range strings.Split(str, ",") {
+	for s := range strings.SplitSeq(str, ",") {
 		switch minmax := strings.SplitN(s, "-", 2); len(minmax) {
 		case 2:
 			beg, err := strconv.ParseInt(minmax[0], 10, 32)

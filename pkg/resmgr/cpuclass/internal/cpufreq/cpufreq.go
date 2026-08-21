@@ -21,7 +21,7 @@ package cpufreq
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 
 	policyapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
 	logger "github.com/containers/nri-plugins/pkg/log"
@@ -229,7 +229,7 @@ func (a *Allocator) buildCpuDomains() {
 	for d := range seen {
 		a.domains = append(a.domains, d)
 	}
-	sort.Slice(a.domains, func(i, j int) bool { return a.domains[i] < a.domains[j] })
+	slices.Sort(a.domains)
 	for _, d := range a.domains {
 		a.winnerPrio[d] = -1
 	}

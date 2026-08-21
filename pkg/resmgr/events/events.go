@@ -25,7 +25,7 @@ type Policy struct {
 	// Source describes where this event is originated from.
 	Source string
 	// Data is any optional arbitrary data associated with this event.
-	Data interface{}
+	Data any
 }
 
 const (

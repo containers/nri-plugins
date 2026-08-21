@@ -16,6 +16,7 @@ package cache_test
 
 import (
 	"fmt"
+	"maps"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -258,9 +259,7 @@ func WithPodLabels(labels map[string]string) PodOption {
 			return nil
 		}
 		nriPod.Labels = make(map[string]string)
-		for k, v := range labels {
-			nriPod.Labels[k] = v
-		}
+		maps.Copy(nriPod.Labels, labels)
 		return nil
 	}
 }
@@ -272,9 +271,7 @@ func WithPodAnnotations(annotations map[string]string) PodOption {
 			return nil
 		}
 		nriPod.Annotations = make(map[string]string)
-		for k, v := range annotations {
-			nriPod.Annotations[k] = v
-		}
+		maps.Copy(nriPod.Annotations, annotations)
 		return nil
 	}
 }

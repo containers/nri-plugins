@@ -18,6 +18,6 @@ import (
 	"fmt"
 )
 
-func cacheError(format string, args ...interface{}) error {
+func cacheError(format string, args ...any) error {
 	return fmt.Errorf("cache: "+format, args...)
 }

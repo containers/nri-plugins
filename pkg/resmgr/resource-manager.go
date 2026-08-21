@@ -43,7 +43,7 @@ type ResourceManager interface {
 	// Stop stops the resource manager.
 	Stop()
 	// SendEvent sends an event to be processed by the resource manager.
-	SendEvent(event interface{}) error
+	SendEvent(event any) error
 }
 
 type Config = cfgapi.CommonConfig
@@ -53,14 +53,14 @@ type resmgr struct {
 	sync.RWMutex
 	agent   *agent.Agent
 	cfg     cfgapi.ResmgrConfig
-	cache   cache.Cache      // cached state
-	policy  policy.Policy    // resource manager policy
-	control control.Control  // policy controllers/enforcement
-	events  chan interface{} // channel for delivering events
-	stop    chan interface{} // channel for signalling shutdown to goroutines
-	nri     *nriPlugin       // NRI plugins, if we're running as such
-	rdt     *rdtControl      // control for RDT allocation and monitoring
-	blkio   *blkioControl    // control for block I/O prioritization and throttling
+	cache   cache.Cache     // cached state
+	policy  policy.Policy   // resource manager policy
+	control control.Control // policy controllers/enforcement
+	events  chan any        // channel for delivering events
+	stop    chan any        // channel for signalling shutdown to goroutines
+	nri     *nriPlugin      // NRI plugins, if we're running as such
+	rdt     *rdtControl     // control for RDT allocation and monitoring
+	blkio   *blkioControl   // control for block I/O prioritization and throttling
 	running bool
 }
 
@@ -127,7 +127,7 @@ func (m *resmgr) Start() error {
 	return nil
 }
 
-func (m *resmgr) updateConfig(newCfg interface{}) (bool, error) {
+func (m *resmgr) updateConfig(newCfg any) (bool, error) {
 	if newCfg == nil {
 		return false, fmt.Errorf("can't run without effective configuration")
 	}

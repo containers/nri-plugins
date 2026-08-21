@@ -19,6 +19,6 @@ import (
 )
 
 // resmgrError creates a resource manager-specific formatted error.
-func resmgrError(format string, args ...interface{}) error {
+func resmgrError(format string, args ...any) error {
 	return fmt.Errorf("resource-manager: "+format, args...)
 }

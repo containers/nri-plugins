@@ -16,6 +16,7 @@ package cache
 
 import (
 	"fmt"
+	"maps"
 
 	"sigs.k8s.io/yaml"
 
@@ -243,9 +244,7 @@ func (cch *cache) AddImplicitAffinities(implicit map[string]ImplicitAffinity) er
 			return cacheError("implicit affinity %s already defined", name)
 		}
 	}
-	for name, a := range implicit {
-		cch.implicit[name] = a
-	}
+	maps.Copy(cch.implicit, implicit)
 	return nil
 }
 

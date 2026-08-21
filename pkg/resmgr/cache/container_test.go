@@ -17,6 +17,7 @@ package cache_test
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -236,7 +237,7 @@ var _ = Describe("Container", func() {
 
 	It("can look up annotations", func() {
 		var (
-			objects = map[string]interface{}{
+			objects = map[string]any{
 				"key1": true,
 				"key2": "foobar",
 				"key3": 3.141,
@@ -954,9 +955,7 @@ func WithCtrLabels(labels map[string]string) CtrOption {
 			return nil
 		}
 		nriCtr.Labels = make(map[string]string)
-		for k, v := range labels {
-			nriCtr.Labels[k] = v
-		}
+		maps.Copy(nriCtr.Labels, labels)
 		return nil
 	}
 }
@@ -968,9 +967,7 @@ func WithCtrAnnotations(annotations map[string]string) CtrOption {
 			return nil
 		}
 		nriCtr.Annotations = make(map[string]string)
-		for k, v := range annotations {
-			nriCtr.Annotations[k] = v
-		}
+		maps.Copy(nriCtr.Annotations, annotations)
 		return nil
 	}
 }
@@ -990,7 +987,7 @@ func makeCtr(options ...CtrOption) *nri.Container {
 	return ctr
 }
 
-func jsonEncode(o interface{}) string {
+func jsonEncode(o any) string {
 	bytes, err := json.Marshal(o)
 	Expect(err).To(BeNil())
 	return string(bytes)

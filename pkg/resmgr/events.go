@@ -23,8 +23,8 @@ var evtlog = logger.NewLogger("events")
 
 // setupEventProcessing sets up event and metrics processing.
 func (m *resmgr) setupEventProcessing() error {
-	m.events = make(chan interface{}, 8)
-	m.stop = make(chan interface{})
+	m.events = make(chan any, 8)
+	m.stop = make(chan any)
 
 	return nil
 }
@@ -48,7 +48,7 @@ func (m *resmgr) startEventProcessing() error {
 }
 
 // SendEvent injects the given event to the resource manager's event processing loop.
-func (m *resmgr) SendEvent(event interface{}) error {
+func (m *resmgr) SendEvent(event any) error {
 	if m.events == nil {
 		return resmgrError("can't send event, no event channel")
 	}
@@ -61,7 +61,7 @@ func (m *resmgr) SendEvent(event interface{}) error {
 }
 
 // processEvent processes the given event.
-func (m *resmgr) processEvent(e interface{}) {
+func (m *resmgr) processEvent(e any) {
 	evtlog.Debugf("received event of type %T...", e)
 
 	switch event := e.(type) {

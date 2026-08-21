@@ -20,6 +20,7 @@ package cpuidle
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/intel/goresctrl/pkg/cstates"
 
@@ -72,13 +73,7 @@ func (w *Writer) Enforce(class string, disabledCstates []string, cpus []int) err
 	}
 	enabledCstates := []string{}
 	for _, name := range w.cs.Names() {
-		enabled := true
-		for _, d := range disabledCstates {
-			if name == d {
-				enabled = false
-				break
-			}
-		}
+		enabled := !slices.Contains(disabledCstates, name)
 		if enabled {
 			enabledCstates = append(enabledCstates, name)
 		}
