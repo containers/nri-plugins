@@ -115,6 +115,8 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
 
 **Risk:** medium. Attribute schema needs to be right on first design pass — changing it after users write claims is disruptive. Freeze attribute names via the tests.
 
+**Landed:** commits `63a0df1c`…`db0b8770` on branch `DRA` (see [`docs/plans/20260820-dra-step5-cpuclass-dra-devices.md`](../plans/completed/20260820-dra-step5-cpuclass-dra-devices.md) for the detailed per-task implementation log). **go.mod bump** (`k8s.io/api`, `k8s.io/apimachinery`, `k8s.io/client-go`, `k8s.io/kubelet` → v0.36.3) is part of this step, not Step 6. **Deferred attributes:** `resource.kubernetes.io/numaNode` blocked (needs per-punit CPU list; `pct.PunitInfo` carries `PkgID`/`PunitID`/`HPCapacity`/`NonHPCapacity` but not CPU IDs); frequency attrs (`nri/minFreqKHz`, `nri/maxFreqKHz`, `nri/guaranteedHpFreqKHz`) blocked (symbolic frequency sentinels overflow without resolver — `resolveHWFreq` is unexported in `pct/cpufreq`); `nri/freqGovernor`, `nri/energyPerformancePreference`, `nri/uncoreMinFreqKHz`, `nri/uncoreMaxFreqKHz`, `nri/disabledCstates` deferred by choice (unblocked, plain config reads — additive follow-up).
+
 ### Step 6 — Wire `pkg/resmgr/dra/` to `PublishResources` + Prepare/Unprepare stubs
 
 **Rationale.** With devices constructible (step 5) and a picker (step 4), stand up the actual kubelet plugin. Steps 5–6 could be one PR, but splitting keeps the Kubernetes-facing surface isolated from the domain logic.

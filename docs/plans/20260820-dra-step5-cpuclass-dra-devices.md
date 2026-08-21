@@ -260,9 +260,9 @@ Returns `[]resapi.Device{}` (not nil) when empty; always returns nil error in v1
 
 ### Task 6: Update documentation
 
-- [ ] update `docs/dra/plan.md` Step 5 — add `Landed:` pointer; note deferred attributes (`numaNode`, freq attrs); note go.mod bump here not in Step 6
-- [ ] update `docs/dra/design.md` §Device shape — correct `NodeAllocatableResources` → `NodeAllocatableResourceMappings` and `CapacityMultiplier` → `AllocationMultiplier` to match actual v0.36.0 API
-- [ ] move this plan to `docs/plans/completed/`
+- [x] update `docs/dra/plan.md` Step 5 — add `Landed:` pointer; note deferred attributes (`numaNode`, freq attrs); note go.mod bump here not in Step 6
+- [x] update `docs/dra/design.md` §Device shape — correct `NodeAllocatableResources` → `NodeAllocatableResourceMappings` and `CapacityMultiplier` → `AllocationMultiplier` to match actual v0.36.0 API
+- [x] move this plan to `docs/plans/completed/` (moved by harness)
 
 ## Post-Completion
 

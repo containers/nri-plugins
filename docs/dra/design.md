@@ -43,12 +43,11 @@ The natural DRA unit is **(cpuClass × punit)**: one virtual device for each cpu
 - The `max` in `RequestPolicy` and the reported capacity value depend on the class's priority tier:
   - **HP class** (`pctPriority: "high"` OR assoc-only class targeting the largest-MaxFreq CLOS): `min(GuaranteedHpCpus, punit.CPUs.Size())`.
   - **Non-HP class**: `punit.CPUs.Size() - GuaranteedHpCpus` (LP/generic room on the punit).
-- `NodeAllocatableResources` ([KEP-5517](https://github.com/kubernetes/enhancements/issues/5517)):
+- `NodeAllocatableResourceMappings` ([KEP-5517](https://github.com/kubernetes/enhancements/issues/5517)):
   ```yaml
   cpu:
-    mapping:
-      capacityKey: "nri/cpus"
-      capacityMultiplier: "1"
+    capacityKey: "nri/cpus"
+    allocationMultiplier: "1"
   ```
   One requested `cpus` == one CPU deducted from `node.status.allocatable.cpu`, regardless of class.
 - Attributes on the device fall into two groups:
