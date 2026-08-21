@@ -147,7 +147,7 @@ func configureNriForCrio(cfg *nriConfig) error {
 	return nil
 }
 
-func writeToContainerdConfig(file string, config map[string]interface{}) error {
+func writeToContainerdConfig(file string, config map[string]any) error {
 	var buf bytes.Buffer
 	enc := tomlv2.NewEncoder(&buf)
 	enc.SetIndentTables(true)
@@ -173,35 +173,35 @@ func writeToContainerdConfig(file string, config map[string]interface{}) error {
 	return w.Flush()
 }
 
-func readConfig(file string) (map[string]interface{}, error) {
+func readConfig(file string) (map[string]any, error) {
 	tomlData, err := os.ReadFile(file)
 	if err != nil {
 		return nil, fmt.Errorf("error reading file: %w", err)
 	}
 
-	var tomlMap map[string]interface{}
+	var tomlMap map[string]any
 	if err := tomlv2.Unmarshal(tomlData, &tomlMap); err != nil {
 		return nil, fmt.Errorf("error unmarshaling TOML: %w", err)
 	}
 
 	if tomlMap == nil {
-		tomlMap = make(map[string]interface{})
+		tomlMap = make(map[string]any)
 	}
 	return tomlMap, nil
 }
 
-func updateContainerdConfig(config map[string]interface{}, cfg *nriConfig) map[string]interface{} {
-	plugins, exists := config["plugins"].(map[string]interface{})
+func updateContainerdConfig(config map[string]any, cfg *nriConfig) map[string]any {
+	plugins, exists := config["plugins"].(map[string]any)
 	if !exists {
 		log.Println("top level plugins section not found, adding it to enable NRI...")
-		plugins = make(map[string]interface{})
+		plugins = make(map[string]any)
 		config["plugins"] = plugins
 	}
 
-	nri, exists := plugins[nriPluginKey].(map[string]interface{})
+	nri, exists := plugins[nriPluginKey].(map[string]any)
 	if !exists {
 		log.Println("NRI plugin section not found, adding it to enable NRI...")
-		nri = make(map[string]interface{})
+		nri = make(map[string]any)
 		plugins[nriPluginKey] = nri
 	}
 
