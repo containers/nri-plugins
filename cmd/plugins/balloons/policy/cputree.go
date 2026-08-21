@@ -17,6 +17,7 @@ package balloons
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -199,11 +200,9 @@ func (t *cpuTreeNode) FindLeafWithCpu(cpu int) *cpuTreeNode {
 		if len(tn.children) > 0 {
 			return nil
 		}
-		for _, cpuHere := range tn.cpus.List() {
-			if cpu == cpuHere {
-				found = tn
-				return WalkStop
-			}
+		if slices.Contains(tn.cpus.List(), cpu) {
+			found = tn
+			return WalkStop
 		}
 		return nil // not found here, no more children to search
 	}); err != nil && err != WalkSkipChildren && err != WalkStop {
@@ -780,7 +779,7 @@ func (ta *cpuTreeAllocator) resizeCpusOneAtATime(resizers []cpuResizerFunc, curr
 		// result. Therefore, in this case, construct addFrom
 		// set by adding one CPU at a time.
 		addFrom := cpuset.New()
-		for n := 0; n < delta; n++ {
+		for n := range delta {
 			addSingleFrom, _, err := ta.nextCpuResizer(resizers, currentCpus, freeCpus, 1)
 			if err != nil {
 				return addFromSuperset, removeFromSuperset, err
