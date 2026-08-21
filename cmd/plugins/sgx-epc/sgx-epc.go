@@ -104,7 +104,7 @@ func containerName(pod *api.PodSandbox, container *api.Container) string {
 }
 
 // Dump one or more objects, with an optional global prefix and per-object tags.
-func dump(args ...interface{}) {
+func dump(args ...any) {
 	var (
 		prefix string
 		idx    int
@@ -125,12 +125,12 @@ func dump(args ...interface{}) {
 
 		if prefix != "" {
 			log.Infof("%s: %s:", prefix, tag)
-			for _, line := range strings.Split(strings.TrimSpace(string(msg)), "\n") {
+			for line := range strings.SplitSeq(strings.TrimSpace(string(msg)), "\n") {
 				log.Infof("%s:    %s", prefix, line)
 			}
 		} else {
 			log.Infof("%s:", tag)
-			for _, line := range strings.Split(strings.TrimSpace(string(msg)), "\n") {
+			for line := range strings.SplitSeq(strings.TrimSpace(string(msg)), "\n") {
 				log.Infof("  %s", line)
 			}
 		}
