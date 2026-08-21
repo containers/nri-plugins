@@ -63,7 +63,7 @@ func getEnvForFlag(flagName string) (string, string, bool) {
 }
 
 // klogError returns a package-specific formatted error.
-func klogError(format string, args ...interface{}) error {
+func klogError(format string, args ...any) error {
 	return fmt.Errorf("klogcontrol: "+format, args...)
 }
 

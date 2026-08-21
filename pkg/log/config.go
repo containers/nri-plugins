@@ -163,7 +163,7 @@ func (c *config) configure(cfg *cfgapi.Config) error {
 	debugging := map[string]bool{}
 
 	for _, value := range cfg.Debug {
-		for _, val := range strings.Split(value, ",") {
+		for val := range strings.SplitSeq(value, ",") {
 			if val == "" {
 				continue
 			}

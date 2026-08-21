@@ -123,7 +123,7 @@ func (l *slogger) LogContext(ctx context.Context, lvl Level, msg string, attrs .
 }
 
 func (l *slogger) LogBlock(lvl Level, prefix, format string, args ...any) {
-	for _, msg := range strings.Split(fmt.Sprintf(format, args...), "\n") {
+	for msg := range strings.SplitSeq(fmt.Sprintf(format, args...), "\n") {
 		l.Log(lvl, prefix+" "+msg)
 	}
 }
