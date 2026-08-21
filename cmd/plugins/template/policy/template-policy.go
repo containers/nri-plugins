@@ -76,7 +76,7 @@ func (p *policy) Start() error {
 }
 
 // Reconfigure this policy.
-func (p *policy) Reconfigure(newCfg interface{}) error {
+func (p *policy) Reconfigure(newCfg any) error {
 	cfg, ok := newCfg.(*cfgapi.Config)
 	if !ok {
 		return fmt.Errorf("config data of wrong type %T", newCfg)
