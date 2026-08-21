@@ -83,11 +83,7 @@ func MilliCPUToQuota(milliCPU int64) (quota, period int64) {
 	// TODO(klihub): this is behind the CPUSFSQuotaPerdiod feature gate in kubelet
 	period = int64(QuotaPeriod)
 
-	quota = (milliCPU * period) / MilliCPUToCPU
-
-	if quota < MinQuotaPeriod {
-		quota = MinQuotaPeriod
-	}
+	quota = max((milliCPU*period)/MilliCPUToCPU, MinQuotaPeriod)
 
 	return quota, period
 }
