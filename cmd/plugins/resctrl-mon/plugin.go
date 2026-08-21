@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -396,13 +397,7 @@ func (p *plugin) ensureMonGroup(podUID, containerID, rdtClass string) error {
 func (p *plugin) shouldMonitorPod(pod *api.PodSandbox) bool {
 	if len(p.config.Namespaces) > 0 {
 		ns := pod.GetNamespace()
-		found := false
-		for _, allowed := range p.config.Namespaces {
-			if ns == allowed {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(p.config.Namespaces, ns)
 		if !found {
 			return false
 		}
