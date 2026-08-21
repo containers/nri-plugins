@@ -721,10 +721,7 @@ func (sys *system) CPUCount() int {
 
 // NUMANodeCount returns the number of discovered NUMA nodes.
 func (sys *system) NUMANodeCount() int {
-	cnt := len(sys.nodes)
-	if cnt < 1 {
-		cnt = 1
-	}
+	cnt := max(len(sys.nodes), 1)
 	return cnt
 }
 
@@ -1646,7 +1643,7 @@ func (n *node) MemoryInfo() (*MemInfo, error) {
 
 	buf := &MemInfo{}
 	err := ParseFileEntries(meminfo,
-		map[string]interface{}{
+		map[string]any{
 			"MemTotal:": &buf.MemTotal,
 			"MemFree:":  &buf.MemFree,
 		},
@@ -1929,7 +1926,7 @@ func parseCpuCacheOverrides(overrideJson string) (map[int][]*Cache, error) {
 	if overrideJson == "" {
 		return cpuCacheOverrides, nil
 	}
-	parseCcoError := func(format string, args ...interface{}) error {
+	parseCcoError := func(format string, args ...any) error {
 		return fmt.Errorf("cache override: "+format, args...)
 	}
 	overrides := cacheOverrides{}
@@ -2065,9 +2062,7 @@ func (p *cpuPackage) L3CacheIDs() []idset.ID {
 	for id := range p.l3CacheCPUs {
 		ids = append(ids, id)
 	}
-	sort.Slice(ids, func(i, j int) bool {
-		return ids[i] < ids[j]
-	})
+	slices.Sort(ids)
 	return ids
 }
 
@@ -2223,7 +2218,7 @@ func (sys *system) saveCache(c *Cache) *Cache {
 		sys.caches = make([][NumCacheTypes]map[idset.ID]*Cache, c.level)
 		copy(sys.caches, caches)
 		for levelIdx := 0; levelIdx < c.level; levelIdx++ {
-			for ct := 0; ct < NumCacheTypes; ct++ {
+			for ct := range NumCacheTypes {
 				if sys.caches[levelIdx][ct] == nil {
 					sys.caches[levelIdx][ct] = make(map[idset.ID]*Cache)
 				}

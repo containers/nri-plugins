@@ -610,7 +610,6 @@ func TestReadSysfsEPP(t *testing.T) {
 		{"power\n", EPPPower},
 		{"unknown_value\n", EPPUnknown},
 	} {
-		tc := tc
 		t.Run(tc.content[:len(tc.content)-1], func(t *testing.T) {
 			dir := t.TempDir()
 			writeSysfsFile(t, dir, "epp", tc.content)

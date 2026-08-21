@@ -18,6 +18,6 @@ import (
 	"fmt"
 )
 
-func sysfsError(path, format string, args ...interface{}) error {
+func sysfsError(path, format string, args ...any) error {
 	return fmt.Errorf(path+": "+format, args...)
 }
