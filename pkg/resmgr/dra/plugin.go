@@ -16,13 +16,19 @@ limitations under the License.
 
 package dra
 
-import "errors"
+import (
+	"errors"
+
+	"k8s.io/dynamic-resource-allocation/kubeletplugin"
+)
 
 var errNotImplemented = errors.New("dra plugin: not yet implemented")
 
 // Plugin is the DRA kubelet plugin. Its fields and methods are added
 // incrementally in subsequent plan steps.
-type Plugin struct{}
+type Plugin struct {
+	helper *kubeletplugin.Helper
+}
 
 // New constructs a Plugin with the given driver name and dependencies.
 // Returns ErrNotImplemented until the implementation is complete.
