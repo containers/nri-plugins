@@ -95,13 +95,13 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
 
 **Landed:** commit `5c4c04fa` on branch `DRA` (see [`docs/plans/20260820-dra-step4-pct-pick-release-hp-cpus.md`](../plans/completed/20260820-dra-step4-pct-pick-release-hp-cpus.md)). Implementation deviations from the original plan.md spec: signature uses `(pkgID, punitID int, ...)` not `(punitID int, ...)`; DRA holds tracked in a separate `hpDRAUsed` map (not `hpUsed`) to prevent `clearHpUsage` aliasing; exported `PunitInfo` + `Punits()` added for Step 5.
 
-### Step 5 — `cpuclass.Manager.DRADevices()` — build the device list
+### Step 5 — `cpuclass.Handler.DRADevices()` — build the device list
 
 **Rationale.** Given a set of cpuClass definitions and the PCT allocator's punit list, emit `[]resapi.Device` in Model B shape. Pure function; unit-testable without any DRA plumbing.
 
 **Actions.**
 - Add to `pkg/resmgr/cpuclass/`:
-  - **Extend existing** `dra.go` (created in Step 3) with method `Manager.DRADevices(driverName string) ([]resapi.Device, error)`. Do not recreate the file.
+  - **Extend existing** `dra.go` (created in Step 3) with method `Handler.DRADevices(driverName string) ([]resapi.Device, error)`. Do not recreate the file.
   - Emits one device per (class × punit) where `class.DRAPublish() == true` (use the getter, not `class.DRA.Publish` directly — the latter panics on nil `DRA`) and the class is applicable to that punit's tier.
   - Attributes as spec'd in [design.md](design.md) (topology + class-derived).
   - Capacity `nri/cpus` with `RequestPolicy` tied to `punitHPCapacity` / `punitNonHPCapacity`.
@@ -167,6 +167,8 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
 - `k8s.io/dynamic-resource-allocation/client` (`draclient`) — thin wrapper for DRA-specific status endpoints (`resourceclaims/status` etc.). Needed if we ever adopt [KEP-4817](https://github.com/kubernetes/enhancements/issues/4817) device-status reporting. Not in v1.
 
 **Do not import from `sigs.k8s.io/dra-example-driver` or `github.com/kubernetes-sigs/dra-driver-cpu`.** Both are positioned as reference implementations, not libraries. Their reusable-looking helpers live in `internal/` and are not exported. Copy patterns, credit the source in code comments.
+
+**Landed:** commits `5c39733a`…`10d0403c` on branch `DRA` (see [`docs/plans/20260821-dra-step6-plugin-wire.md`](../plans/20260821-dra-step6-plugin-wire.md) for the detailed per-task implementation log). Deviations from spec: `Deps` uses `ValidateClasses func() error` closure (not `ClaimAllocator`/`CDIWriter` — those are Step 7); pool layout is one pool (node name) with N slices (not `pool0..poolN` as stated above); logger bridge uses `logr.FromSlogHandler` (not hand-rolled `LogSink`); feature-gate probes deferred to follow-up (see Cross-cutting note); `k8s.io/dynamic-resource-allocation` resolved to v0.36.4 by Go MVS (not v0.36.3 as requested).
 
 ### Step 7 — Prepare/Unprepare implementation + CDI writer
 

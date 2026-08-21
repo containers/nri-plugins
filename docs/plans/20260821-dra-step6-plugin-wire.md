@@ -224,14 +224,14 @@ can register and publish devices. Step 7 fills in the actual allocation logic.
 
 ### Task 9: [Final] Update documentation
 
-- [ ] update `docs/dra/plan.md` Step 6 "Landed:" with commit hash and deviations from spec:
+- [x] update `docs/dra/plan.md` Step 6 "Landed:" with commit hash and deviations from spec:
   - `Deps` uses `ValidateClasses func() error` closure (not `ClaimAllocator`/`CDIWriter` — those are Step 7)
   - pool layout: one pool (node name), N slices (not pool0..poolN as original plan.md stated)
   - logger bridge: `logr.FromSlogHandler` (not hand-rolled `LogSink`)
   - feature-gate probes deferred (see Cross-cutting note)
-- [ ] update `docs/dra/design.md` if any Deps interface shape differs from the design
-- [ ] correct `docs/dra/plan.md` Step 5 reference from `cpuclass.Manager.DRADevices()` to `Handler.DRADevices()` (landed method name)
-- [ ] move this plan to `docs/plans/completed/`
+- [x] update `docs/dra/design.md` if any Deps interface shape differs from the design (no change needed — design.md does not specify Deps fields; DeviceLister shape matches implementation)
+- [x] correct `docs/dra/plan.md` Step 5 reference from `cpuclass.Manager.DRADevices()` to `Handler.DRADevices()` (landed method name)
+- [x] move this plan to `docs/plans/completed/` (harness handles move)
 
 ## Post-Completion
 
