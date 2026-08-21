@@ -413,7 +413,7 @@ func (m *mockContainer) GetLabel(string) (string, bool) {
 func (m *mockContainer) GetResmgrLabelKeys() []string {
 	panic("unimplemented")
 }
-func (m *mockContainer) GetAnnotation(string, interface{}) (string, bool) {
+func (m *mockContainer) GetAnnotation(string, any) (string, bool) {
 	panic("unimplemented")
 }
 func (m *mockContainer) GetEnv(string) (string, bool) {
@@ -434,7 +434,7 @@ func (m *mockContainer) PrettyName() string {
 func (m *mockContainer) GetResmgrLabel(string) (string, bool) {
 	panic("unimplemented")
 }
-func (m *mockContainer) GetResmgrAnnotation(string, interface{}) (string, bool) {
+func (m *mockContainer) GetResmgrAnnotation(string, any) (string, bool) {
 	panic("unimplemented")
 }
 func (m *mockContainer) GetEffectiveAnnotation(key string) (string, bool) {
@@ -451,7 +451,7 @@ func (m *mockContainer) QueryEffectiveAnnotation(key string) (string, cache.Anno
 	}
 	return pod.QueryEffectiveAnnotation(key, m.name)
 }
-func (m *mockContainer) EvalKey(string) interface{} {
+func (m *mockContainer) EvalKey(string) any {
 	panic("unimplemented")
 }
 func (m *mockContainer) EvalRef(string) (string, bool) {
@@ -693,7 +693,7 @@ func (m *mockPod) ScopeExpression() *resmgr.Expression {
 func (m *mockPod) String() string {
 	return "mockPod"
 }
-func (m *mockPod) EvalKey(string) interface{} {
+func (m *mockPod) EvalKey(string) any {
 	panic("unimplemented")
 }
 func (m *mockPod) EvalRef(string) (string, bool) {
@@ -781,9 +781,9 @@ func (m *mockCache) SetActivePolicy(string) error {
 func (m *mockCache) ResetActivePolicy() error {
 	panic("unimplemented")
 }
-func (m *mockCache) SetPolicyEntry(string, interface{}) {
+func (m *mockCache) SetPolicyEntry(string, any) {
 }
-func (m *mockCache) GetPolicyEntry(string, interface{}) bool {
+func (m *mockCache) GetPolicyEntry(string, any) bool {
 	return m.returnValueForGetPolicyEntry
 }
 func (m *mockCache) Save() error {

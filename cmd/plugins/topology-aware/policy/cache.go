@@ -17,6 +17,7 @@ package topologyaware
 import (
 	"encoding/json"
 	"errors"
+	"maps"
 	"time"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
@@ -244,11 +245,11 @@ func (a *allocations) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (a *allocations) Get() interface{} {
+func (a *allocations) Get() any {
 	return a
 }
 
-func (a *allocations) Set(value interface{}) {
+func (a *allocations) Set(value any) {
 	var from *allocations
 
 	switch val := value.(type) {
@@ -259,12 +260,10 @@ func (a *allocations) Set(value interface{}) {
 	}
 
 	a.grants = make(map[string]Grant, 32)
-	for id, cg := range from.grants {
-		a.grants[id] = cg
-	}
+	maps.Copy(a.grants, from.grants)
 }
 
-func (a *allocations) Dump(logfn func(format string, args ...interface{}), prefix string) {
+func (a *allocations) Dump(logfn func(format string, args ...any), prefix string) {
 	for _, cg := range a.grants {
 		logfn(prefix+"%s", cg)
 	}

@@ -185,7 +185,7 @@ func (p *policy) Sync(add []cache.Container, del []cache.Container) error {
 	return nil
 }
 
-func (p *policy) checkAllocations(format string, args ...interface{}) {
+func (p *policy) checkAllocations(format string, args ...any) {
 	var (
 		prefix  = fmt.Sprintf(format, args...)
 		cpuExcl = 0
@@ -446,10 +446,7 @@ func (p *policy) GetExtendedResources() map[string]*resource.Quantity {
 			log.Warnf("ignoring publishExtendedResource on non-PCT cpuClass %q", cc.Name)
 			continue
 		}
-		free := p.cpuClasses.PctFreeClassCapacity(cc.Name, cpuset.New())
-		if free < 0 {
-			free = 0
-		}
+		free := max(p.cpuClasses.PctFreeClassCapacity(cc.Name, cpuset.New()), 0)
 		out[CpuClassResourceDomain+"/"+cc.Name] = resource.NewQuantity(int64(free), resource.DecimalSI)
 	}
 	return out
@@ -526,7 +523,7 @@ func (p *policy) reallocateResources(containers []cache.Container, pools map[str
 	return nil
 }
 
-func (p *policy) Reconfigure(newCfg interface{}) error {
+func (p *policy) Reconfigure(newCfg any) error {
 	irq.BlockWrites()
 	defer irq.UnblockWrites()
 

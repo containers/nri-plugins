@@ -37,7 +37,7 @@ func cpuHintScore(hint topology.Hint, CPUs cpuset.CPUSet) float64 {
 
 // Calculate the NUMA node score of the given hint and NUMA node.
 func numaHintScore(hint topology.Hint, sysIDs ...idset.ID) float64 {
-	for _, idstr := range strings.Split(hint.NUMAs, ",") {
+	for idstr := range strings.SplitSeq(hint.NUMAs, ",") {
 		hID, err := strconv.ParseInt(idstr, 0, 0)
 		if err != nil {
 			log.Warnf("invalid hint NUMA node %s from %s", idstr, hint.Provider)
@@ -58,7 +58,7 @@ func numaHintScore(hint topology.Hint, sysIDs ...idset.ID) float64 {
 func dieHintScore(hint topology.Hint, sysID idset.ID, socket system.CPUPackage) float64 {
 	numaNodes := idset.NewIDSet(socket.DieNodeIDs(sysID)...)
 
-	for _, idstr := range strings.Split(hint.NUMAs, ",") {
+	for idstr := range strings.SplitSeq(hint.NUMAs, ",") {
 		hID, err := strconv.ParseInt(idstr, 0, 0)
 		if err != nil {
 			log.Warnf("invalid hint NUMA node %s from %s", idstr, hint.Provider)
@@ -75,7 +75,7 @@ func dieHintScore(hint topology.Hint, sysID idset.ID, socket system.CPUPackage) 
 
 // Calculate the socket node score of the given hint and NUMA node.
 func socketHintScore(hint topology.Hint, sysID idset.ID) float64 {
-	for _, idstr := range strings.Split(hint.Sockets, ",") {
+	for idstr := range strings.SplitSeq(hint.Sockets, ",") {
 		id, err := strconv.ParseInt(idstr, 0, 0)
 		if err != nil {
 			log.Warnf("invalid hint socket '%s' from %s", idstr, hint.Provider)
@@ -98,7 +98,7 @@ func (cs *supply) hintCpus(h topology.Hint) cpuset.CPUSet {
 		cpus = cpuset.MustParse(h.CPUs)
 
 	case h.NUMAs != "":
-		for _, idstr := range strings.Split(h.NUMAs, ",") {
+		for idstr := range strings.SplitSeq(h.NUMAs, ",") {
 			if id, err := strconv.ParseInt(idstr, 0, 0); err == nil {
 				if node := cs.node.System().Node(idset.ID(id)); node != nil {
 					cpus = cpus.Union(node.CPUSet())
@@ -107,7 +107,7 @@ func (cs *supply) hintCpus(h topology.Hint) cpuset.CPUSet {
 		}
 
 	case h.Sockets != "":
-		for _, idstr := range strings.Split(h.Sockets, ",") {
+		for idstr := range strings.SplitSeq(h.Sockets, ",") {
 			if id, err := strconv.ParseInt(idstr, 0, 0); err == nil {
 				if pkg := cs.node.System().Package(idset.ID(id)); pkg != nil {
 					cpus = cpus.Union(pkg.CPUSet())

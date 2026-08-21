@@ -632,7 +632,7 @@ func parseMemoryType(value string) (memoryType, error) {
 		return memoryUnspec, nil
 	}
 	mtype := 0
-	for _, typestr := range strings.Split(value, ",") {
+	for typestr := range strings.SplitSeq(value, ",") {
 		t, ok := memoryNamedTypes[strings.ToLower(typestr)]
 		if !ok {
 			return memoryUnspec, policyError("unknown memory type value '%s'", typestr)

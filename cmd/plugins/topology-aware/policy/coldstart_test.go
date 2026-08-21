@@ -31,7 +31,7 @@ import (
 var globalPolicy *policy
 var mutex sync.Mutex
 
-func sendEvent(param interface{}) error {
+func sendEvent(param any) error {
 	// Simulate event synchronization in the upper levels.
 	mutex.Lock()
 	defer mutex.Unlock()

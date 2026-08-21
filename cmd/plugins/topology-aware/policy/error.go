@@ -19,6 +19,6 @@ import (
 )
 
 // policyError creates a formatted policy-specific error.
-func policyError(format string, args ...interface{}) error {
+func policyError(format string, args ...any) error {
 	return fmt.Errorf(PolicyName+": "+format, args...)
 }
