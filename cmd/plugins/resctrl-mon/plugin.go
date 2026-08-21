@@ -16,36 +16,40 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"sigs.k8s.io/yaml"
 
 	"github.com/containerd/nri/pkg/api"
 	"github.com/containerd/nri/pkg/stub"
+	"github.com/intel/goresctrl/pkg/monitor"
 )
 
 const (
 	// reconcileInterval is how often the background reconciler checks for
 	// orphaned mon_groups left behind by failed StopContainer removals.
 	reconcileInterval = 30 * time.Second
+
+	// telemetryShutdownTimeout bounds how long onClose waits for the telemetry
+	// stack (MeterProvider flush + HTTP server) to drain before exiting.
+	telemetryShutdownTimeout = 5 * time.Second
 )
 
 // plugin implements the NRI plugin interface for resctrl monitoring groups.
 type plugin struct {
 	stub           stub.Stub
 	config         *pluginConfig
-	state          *podState
-	rdt            *resctrlOps
-	mu             sync.Mutex    // serializes ensureMonGroup to prevent TOCTOU races
+	mgr            *monitor.Manager
 	stopReconciler chan struct{} // closed to stop the background reconciler
+	telemetry      *telemetryState
+	metrics        *monitor.Registration
 }
 
 // pluginConfig holds the runtime configuration for the plugin.
@@ -60,16 +64,29 @@ type pluginConfig struct {
 	// LabelSelector filters mon_group creation to pods matching these labels.
 	// Empty map means all pods.
 	LabelSelector map[string]string `json:"labelSelector"`
+
+	// Telemetry configures the embedded OTel exporter (Prometheus + OTLP).
+	Telemetry telemetryConfig `json:"telemetry"`
 }
+
+const defaultResctrlPath = "/sys/fs/resctrl"
 
 func newPlugin() *plugin {
 	cfg := &pluginConfig{
 		ResctrlPath: defaultResctrlPath,
+		Telemetry:   defaultTelemetryConfig(),
+	}
+	mgr, err := monitor.New(monitor.Options{
+		ResctrlRoot:      cfg.ResctrlPath,
+		KeyValidator:     monitor.PodUIDValidator,
+		KeyCanonicalizer: monitor.CanonicalizePodUID,
+	})
+	if err != nil {
+		log.Fatalf("failed to create monitor manager: %v", err)
 	}
 	return &plugin{
 		config: cfg,
-		state:  newPodState(),
-		rdt:    newResctrlOps(cfg.ResctrlPath),
+		mgr:    mgr,
 	}
 }
 
@@ -93,6 +110,15 @@ func (p *plugin) onClose() {
 	if p.stopReconciler != nil {
 		close(p.stopReconciler)
 	}
+	if p.metrics != nil {
+		_ = p.metrics.Unregister()
+		p.metrics = nil
+	}
+	if p.telemetry != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), telemetryShutdownTimeout)
+		p.telemetry.shutdown(ctx)
+		cancel()
+	}
 	log.Infof("Connection to the runtime lost, exiting...")
 	os.Exit(0)
 }
@@ -102,6 +128,7 @@ func (p *plugin) setConfig(data []byte) error {
 	log.Tracef("setConfig: parsing\n---8<---\n%s\n--->8---", data)
 	cfg := pluginConfig{
 		ResctrlPath: defaultResctrlPath,
+		Telemetry:   defaultTelemetryConfig(),
 	}
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return fmt.Errorf("setConfig: cannot parse configuration: %w", err)
@@ -111,8 +138,53 @@ func (p *plugin) setConfig(data []byte) error {
 		return fmt.Errorf("setConfig: resctrlPath must be an absolute path, got %q", cfg.ResctrlPath)
 	}
 	cfg.ResctrlPath = resctrlPath
+	if err := validateTelemetryConfig(&cfg.Telemetry); err != nil {
+		return fmt.Errorf("setConfig: %w", err)
+	}
+
+	// Recreate the monitor manager with the new path before mutating any plugin
+	// state, so a failure here leaves the running configuration fully intact.
+	mgr, err := monitor.New(monitor.Options{
+		ResctrlRoot:      cfg.ResctrlPath,
+		KeyValidator:     monitor.PodUIDValidator,
+		KeyCanonicalizer: monitor.CanonicalizePodUID,
+	})
+	if err != nil {
+		return fmt.Errorf("setConfig: failed to create monitor manager: %w", err)
+	}
+
 	p.config = &cfg
-	p.rdt = newResctrlOps(cfg.ResctrlPath)
+
+	// Stop the old reconciler before swapping the manager; it holds a
+	// reference to the old manager and would otherwise leak.
+	if p.stopReconciler != nil {
+		close(p.stopReconciler)
+		p.stopReconciler = nil
+	}
+
+	// If telemetry is already running, its OTel batch callback is bound to the
+	// manager we are about to replace (which is pinned to the previous
+	// ResctrlPath). Tear it down so we neither leak the old manager nor keep a
+	// second registration reading the old root, then restart it against the new
+	// manager below.
+	restartTelemetry := p.telemetry != nil
+	if restartTelemetry {
+		if p.metrics != nil {
+			_ = p.metrics.Unregister()
+			p.metrics = nil
+		}
+		p.telemetry.shutdown(context.Background())
+		p.telemetry = nil
+	}
+
+	p.mgr = mgr
+
+	if restartTelemetry {
+		if err := p.startTelemetry(context.Background()); err != nil {
+			return fmt.Errorf("setConfig: restart telemetry: %w", err)
+		}
+	}
+
 	log.Debugf("configuration: resctrlPath=%s namespaces=%v labelSelector=%v",
 		cfg.ResctrlPath, cfg.Namespaces, cfg.LabelSelector)
 	return nil
@@ -132,6 +204,7 @@ func (p *plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, contai
 
 	// Create mon_groups for running containers that don't have one,
 	// and write their PIDs to ensure monitoring is active after restart.
+	var liveKeys []string
 	for _, ctr := range containers {
 		pod, ok := podBySandboxID[ctr.GetPodSandboxId()]
 		if !ok {
@@ -143,32 +216,34 @@ func (p *plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, contai
 		}
 		podUID := pod.GetUid()
 		rdtClass := getRDTClass(ctr)
-		if err := p.ensureMonGroup(podUID, ctr.GetId(), rdtClass); err != nil {
+
+		grp, err := p.mgr.EnsureGroup(podUID, rdtClass)
+		if err != nil {
 			log.Warnf("Synchronize: failed to create mon_group for pod %s: %v", podUID, err)
 			continue
 		}
-		// Use canonical form for state lookups (ensureMonGroup stores canonical).
-		u, _ := uuid.Parse(podUID)
-		canonicalUID := u.String()
+		liveKeys = append(liveKeys, podUID)
+
 		pid := int(ctr.GetPid())
 		if pid > 0 {
-			monGroupDir := p.state.getMonGroupDir(canonicalUID)
-			if err := p.rdt.writeTaskPID(monGroupDir, pid); err != nil {
+			if err := p.mgr.AssignPID(podUID, pid); err != nil {
 				log.Warnf("Synchronize: failed to write PID %d for pod %s: %v", pid, podUID, err)
 			} else {
-				log.Debugf("Synchronize: assigned pid %d for pod %s", pid, podUID)
+				log.Debugf("Synchronize: assigned pid %d for pod %s in %s", pid, podUID, grp.Path())
 			}
 		}
 	}
 
 	// Remove orphaned mon_groups from a previous plugin instance.
-	p.rdt.cleanOrphanedMonGroups(p.state)
+	if err := p.mgr.Reconcile(liveKeys); err != nil {
+		log.Warnf("Synchronize: reconcile failed: %v", err)
+	}
 
 	// Start the background reconciler to periodically clean up orphaned
 	// mon_groups that could not be removed during StopContainer.
 	p.startReconciler()
 
-	log.Infof("synchronization complete: tracking %d pods", p.state.podCount())
+	log.Infof("synchronization complete: tracking %d pods", len(p.mgr.List()))
 	return nil, nil
 }
 
@@ -189,7 +264,9 @@ func (p *plugin) startReconciler() {
 			case <-p.stopReconciler:
 				return
 			case <-ticker.C:
-				p.rdt.cleanOrphanedMonGroups(p.state)
+				if err := p.mgr.Reconcile(p.mgr.List()); err != nil {
+					log.Warnf("reconciler: %v", err)
+				}
 			}
 		}
 	}()
@@ -212,7 +289,7 @@ func (p *plugin) PostCreateContainer(ctx context.Context, pod *api.PodSandbox, c
 	}
 
 	rdtClass := getRDTClass(ctr)
-	if err := p.ensureMonGroup(podUID, ctr.GetId(), rdtClass); err != nil {
+	if _, err := p.mgr.EnsureGroup(podUID, rdtClass); err != nil {
 		log.Warnf("PostCreateContainer %s: failed to create mon_group: %v", ctrName, err)
 		return nil // non-fatal: don't block container creation
 	}
@@ -227,14 +304,8 @@ func (p *plugin) PostCreateContainer(ctx context.Context, pod *api.PodSandbox, c
 // This is the ideal moment to write the PID to the resctrl mon_group tasks
 // file: the kernel assigns the RMID to this PID, and when the process starts
 // and forks threads they all inherit the RMID automatically.
-//
-// If the PID is not available (should not happen at this stage), we fall back
-// to PostStartContainer which will write PIDs after the process starts.
 func (p *plugin) StartContainer(ctx context.Context, pod *api.PodSandbox, ctr *api.Container) error {
 	podUID := pod.GetUid()
-	if u, err := uuid.Parse(podUID); err == nil {
-		podUID = u.String()
-	}
 	ctrName := pprintCtr(pod, ctr)
 	pid := int(ctr.GetPid())
 
@@ -244,17 +315,11 @@ func (p *plugin) StartContainer(ctx context.Context, pod *api.PodSandbox, ctr *a
 		return nil
 	}
 
-	monGroupDir := p.state.getMonGroupDir(podUID)
-	if monGroupDir == "" {
-		log.Debugf("StartContainer %s: no mon_group (pod not tracked), skipping", ctrName)
-		return nil
-	}
-
 	if pid > 0 {
-		if err := p.rdt.writeTaskPID(monGroupDir, pid); err != nil {
-			log.Warnf("StartContainer %s: failed to write PID %d to tasks: %v", ctrName, pid, err)
+		if err := p.mgr.AssignPID(podUID, pid); err != nil {
+			log.Warnf("StartContainer %s: failed to assign PID %d: %v", ctrName, pid, err)
 		} else {
-			log.Infof("StartContainer %s: assigned pid %d to mon_group %s (pre-start, no threads yet)", ctrName, pid, monGroupDir)
+			log.Infof("StartContainer %s: assigned pid %d (pre-start, no threads yet)", ctrName, pid)
 		}
 	} else {
 		log.Warnf("StartContainer %s: PID not available at pre-start, will retry in PostStartContainer", ctrName)
@@ -265,13 +330,9 @@ func (p *plugin) StartContainer(ctx context.Context, pod *api.PodSandbox, ctr *a
 
 // PostStartContainer is called after the container process has been started.
 // This is a fallback: if StartContainer did not have the PID, we write the
-// init PID here. The init PID is sufficient because all child threads inherit
-// the RMID.
+// init PID here.
 func (p *plugin) PostStartContainer(ctx context.Context, pod *api.PodSandbox, ctr *api.Container) error {
 	podUID := pod.GetUid()
-	if u, err := uuid.Parse(podUID); err == nil {
-		podUID = u.String()
-	}
 	ctrName := pprintCtr(pod, ctr)
 	pid := int(ctr.GetPid())
 
@@ -281,16 +342,11 @@ func (p *plugin) PostStartContainer(ctx context.Context, pod *api.PodSandbox, ct
 		return nil
 	}
 
-	monGroupDir := p.state.getMonGroupDir(podUID)
-	if monGroupDir == "" {
-		return nil
-	}
-
 	if pid > 0 {
-		if err := p.rdt.writeTaskPID(monGroupDir, pid); err != nil {
-			log.Warnf("PostStartContainer %s: failed to write PID %d to tasks: %v", ctrName, pid, err)
+		if err := p.mgr.AssignPID(podUID, pid); err != nil {
+			log.Warnf("PostStartContainer %s: failed to assign PID %d: %v", ctrName, pid, err)
 		} else {
-			log.Infof("PostStartContainer %s: assigned pid %d to mon_group %s", ctrName, pid, monGroupDir)
+			log.Infof("PostStartContainer %s: assigned pid %d", ctrName, pid)
 		}
 	} else {
 		log.Warnf("PostStartContainer %s: PID=0, cannot assign to mon_group (runtime did not provide PID via NRI)", ctrName)
@@ -299,97 +355,37 @@ func (p *plugin) PostStartContainer(ctx context.Context, pod *api.PodSandbox, ct
 	return nil
 }
 
-// StopContainer is called when a container is being stopped.
-func (p *plugin) StopContainer(ctx context.Context, pod *api.PodSandbox, ctr *api.Container) ([]*api.ContainerUpdate, error) {
-	podUID := pod.GetUid()
-	if u, err := uuid.Parse(podUID); err == nil {
-		podUID = u.String()
-	}
-	ctrName := pprintCtr(pod, ctr)
+// StopContainer is intentionally not implemented. A container stop must NOT
+// tear down the pod's mon_group: a restart keeps the pod sandbox alive, and
+// releasing the RMID would give the replacement container a fresh RMID whose
+// hardware counters carry a non-zeroed residual, producing a false energy
+// spike. The mon_group is removed in RemovePodSandbox when the pod is truly
+// gone (and the reconciler cleans orphans from any missed teardown events).
+// Because the NRI stub derives its event subscription from the implemented
+// handler interfaces, omitting StopContainer also unsubscribes the plugin from
+// STOP_CONTAINER events entirely.
 
-	log.Debugf("StopContainer %s", ctrName)
-
-	monGroupDir := p.state.getMonGroupDir(podUID)
-	if monGroupDir == "" {
-		return nil, nil
-	}
-
-	// Drop only the container from tracking. The mon_group is intentionally
-	// retained until the pod sandbox is removed (see RemovePodSandbox).
-	//
-	// A pod with restartPolicy Always/OnFailure restarts its container under
-	// the same pod UID after the process exits (e.g. a workload that runs for
-	// a fixed duration). If we removed the mon_group here, the kernel would
-	// release the RMID and reassign a fresh one on the next PostCreateContainer.
-	// The new RMID carries residual hardware counter values, producing a
-	// counter discontinuity that surfaces as a false energy/bandwidth spike in
-	// downstream rate() consumers. Tying mon_group lifetime to the pod sandbox
-	// keeps the RMID stable across container restarts.
-	p.state.removeContainer(podUID, ctr.GetId())
-
-	if p.state.podHasNoContainers(podUID) {
-		log.Debugf("StopContainer %s: last container stopped, retaining mon_group %s until pod removal", ctrName, monGroupDir)
-	}
-
-	return nil, nil
-}
-
-// RemovePodSandbox is called when a pod sandbox is torn down. This is the point
-// at which the pod (and its UID) is truly gone, so it is the correct place to
-// release the mon_group and its RMID. Removing the mon_group earlier (e.g. in
-// StopContainer) would release the RMID across container restarts and cause
-// false counter spikes; see StopContainer for details.
+// RemovePodSandbox is called when the pod sandbox is being torn down.
+// This is the point at which the mon_group should be cleaned up, because
+// the pod (and its UID) will not be reused.
 func (p *plugin) RemovePodSandbox(ctx context.Context, pod *api.PodSandbox) error {
 	podUID := pod.GetUid()
-	if u, err := uuid.Parse(podUID); err == nil {
-		podUID = u.String()
-	}
 
-	monGroupDir := p.state.getMonGroupDir(podUID)
-	if monGroupDir == "" {
-		return nil
-	}
-
-	log.Infof("RemovePodSandbox %s/%s: removing mon_group %s", pod.GetNamespace(), pod.GetName(), monGroupDir)
-	if err := p.rdt.removeMonGroup(monGroupDir); err != nil {
+	// Attempt removal unconditionally rather than gating on shouldMonitorPod: a
+	// pod may have been monitored under a configuration that was later changed to
+	// exclude it. Gating here would strand its mon_group, because Remove would
+	// never run and the key would linger in the Manager, so the reconciler would
+	// keep treating it as live and never reap it. Remove is idempotent and
+	// reports ErrNotTracked for a pod that was never monitored.
+	switch err := p.mgr.Remove(podUID); {
+	case err == nil:
+		log.Infof("RemovePodSandbox %s/%s: removed mon_group", pod.GetNamespace(), pod.GetName())
+	case errors.Is(err, monitor.ErrNotTracked):
+		// Pod was never monitored; nothing to clean up.
+	default:
 		log.Warnf("RemovePodSandbox %s/%s: failed to remove mon_group (will be cleaned by reconciler): %v",
 			pod.GetNamespace(), pod.GetName(), err)
 	}
-	p.state.removePod(podUID)
-
-	return nil
-}
-
-// ensureMonGroup creates the mon_group directory if it doesn't exist and registers
-// the container in the in-memory state.
-//
-// Limitation: all containers in a pod share a single mon_group under the first
-// container's RDT class. If an allocation plugin assigns different classes to
-// containers in the same pod, subsequent containers use the first class.
-func (p *plugin) ensureMonGroup(podUID, containerID, rdtClass string) error {
-	u, err := uuid.Parse(podUID)
-	if err != nil {
-		return fmt.Errorf("invalid pod UID %q", podUID)
-	}
-	podUID = u.String()
-
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if p.state.getMonGroupDir(podUID) != "" {
-		// Mon_group already exists for this pod. Just add the container.
-		p.state.addContainer(podUID, containerID)
-		return nil
-	}
-
-	monGroupDir, err := p.rdt.createMonGroup(rdtClass, podUID)
-	if err != nil {
-		return err
-	}
-
-	p.state.addPod(podUID, monGroupDir)
-	p.state.addContainer(podUID, containerID)
-	log.Infof("created mon_group %s for pod %s", monGroupDir, podUID)
 	return nil
 }
 
