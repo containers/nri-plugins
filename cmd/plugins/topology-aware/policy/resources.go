@@ -1136,7 +1136,7 @@ func (cs *supply) GetScore(req Request) Score {
 	score.hints = make(map[string]float64, len(hints))
 
 	for provider, hint := range cr.container.GetTopologyHints() {
-		log.Debugf(" - evaluating topology hint %s", hint)
+		log.Debugf(" - evaluating topology hint %s", hint.String())
 		score.hints[provider] = cs.node.HintScore(hint)
 	}
 

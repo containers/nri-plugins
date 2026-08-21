@@ -16,8 +16,12 @@ package topology
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -33,12 +37,50 @@ const (
 	ProviderKubelet = "kubelet"
 )
 
+// PCIeHopType tells what kind of node a PCIeHop entry refers to.
+type PCIeHopType string
+
+const (
+	// PCIeHopBridge marks a PCI-to-PCI bridge (class 0604): a root
+	// port, a switch upstream or downstream port, or a plain bridge.
+	// Sysfs has no separate class for switches, so a switch just
+	// shows up as consecutive bridge hops in the chain.
+	PCIeHopBridge PCIeHopType = "bridge"
+	// PCIeHopRoot marks the host bridge / root complex at the top of
+	// a device's PCI hierarchy.
+	PCIeHopRoot PCIeHopType = "root"
+)
+
+// PCIeHop is one ancestor bridge or the root complex above a device
+// in its PCIe hierarchy.
+type PCIeHop struct {
+	// Address is the PCI address (e.g. "0000:00:1c.0"), or the sysfs
+	// root bridge directory name (e.g. "pci0000:00") when Type is
+	// PCIeHopRoot.
+	Address string
+	Type    PCIeHopType
+}
+
 // Hint represents various hints that can be detected from sysfs for the device.
 type Hint struct {
+	// Provider is the sysfs path this hint was collected from.
 	Provider string
-	CPUs     string
-	NUMAs    string
-	Sockets  string
+	// CPUs is the CPU list the device is affine to, in Linux list
+	// format (e.g. "0-3,7").
+	CPUs string
+	// NUMAs is the list of NUMA nodes the device is attached to.
+	NUMAs string
+	// Sockets is the list of physical sockets the device is on. Set
+	// only as a fallback, when a kernel/BIOS quirk leaves NUMAs set
+	// but no usable CPU list to derive it from.
+	Sockets string
+	// PCIeChain lists the device's ancestor PCI bridges and its root
+	// complex, ordered from the nearest bridge to the root. Empty for
+	// devices with no PCI ancestry.
+	PCIeChain []PCIeHop
+	// IRQs lists the interrupt numbers tied to the device, read from
+	// its own sysfs "irq" file and "msi_irqs" entries.
+	IRQs []int
 }
 
 // Hints represents set of hints collected from multiple providers.
@@ -173,11 +215,93 @@ func getTopologyHint(sysFSPath string) (*Hint, error) {
 		}
 	}
 
+	hint.PCIeChain = pcieChain(sysFSPath)
+	hint.IRQs = deviceIRQs(sysFSPath)
+
 	if hint.CPUs != "" || hint.NUMAs != "" || hint.Sockets != "" {
 		log.Debugf("  => %s", hint.String())
 	}
 
 	return &hint, nil
+}
+
+var (
+	// pciAddressRe matches a PCI BDF address directory name, e.g.
+	// "0000:00:1c.0".
+	pciAddressRe = regexp.MustCompile(`^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-9a-f]$`)
+	// pciRootNameRe matches the sysfs root bridge directory name,
+	// e.g. "pci0000:00".
+	pciRootNameRe = regexp.MustCompile(`^pci[0-9a-f]{4}:[0-9a-f]{2}$`)
+)
+
+// isPCIBridgeClass reports whether a sysfs "class" file's content
+// (e.g. "0x060400") denotes a PCI-to-PCI bridge (base class 06,
+// sub-class 04).
+func isPCIBridgeClass(class string) bool {
+	class = strings.TrimPrefix(strings.TrimSpace(class), "0x")
+	return len(class) >= 4 && class[:4] == "0604"
+}
+
+// pcieChain walks up from devPath's parent directory and returns the
+// device's ancestor PCI bridges and root complex, nearest first. It
+// stops at the first non-PCI ancestor, so a device with no PCI
+// ancestry gets an empty chain. Every step is best effort: a read
+// error or an unexpected path shape just ends the walk with whatever
+// was found so far, rather than failing the whole hint.
+func pcieChain(devPath string) []PCIeHop {
+	chain := []PCIeHop{}
+	dir := filepath.Dir(devPath)
+	for {
+		name := filepath.Base(dir)
+		switch {
+		case pciRootNameRe.MatchString(name):
+			return append(chain, PCIeHop{Address: name, Type: PCIeHopRoot})
+		case pciAddressRe.MatchString(name):
+			class, err := os.ReadFile(filepath.Join(dir, "class"))
+			if err != nil {
+				log.Debugf("pcie chain for %s: stopping at %s, no class file: %v", devPath, dir, err)
+				return chain
+			}
+			if !isPCIBridgeClass(string(class)) {
+				return chain
+			}
+			chain = append(chain, PCIeHop{Address: name, Type: PCIeHopBridge})
+		default:
+			return chain
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return chain
+		}
+		dir = parent
+	}
+}
+
+// deviceIRQs collects the interrupt numbers tied to the device at
+// devPath: its legacy "irq" file, if set to a positive number, plus
+// every entry under its "msi_irqs" directory. Missing files or
+// directories are not an error, they just mean nothing was found
+// from that source. When MSI/MSI-X is enabled, the legacy "irq" file
+// can report a vector that also shows up under "msi_irqs", so values
+// are collected into a set and returned sorted, each appearing once.
+func deviceIRQs(devPath string) []int {
+	irqSet := map[int]struct{}{}
+
+	if b, err := os.ReadFile(filepath.Join(devPath, "irq")); err == nil {
+		if n, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && n > 0 {
+			irqSet[n] = struct{}{}
+		}
+	}
+
+	if entries, err := os.ReadDir(filepath.Join(devPath, "msi_irqs")); err == nil {
+		for _, e := range entries {
+			if n, err := strconv.Atoi(e.Name()); err == nil {
+				irqSet[n] = struct{}{}
+			}
+		}
+	}
+
+	return slices.Sorted(maps.Keys(irqSet))
 }
 
 // NewTopologyHints return array of hints for the main device and its
@@ -240,7 +364,7 @@ func (hints Hints) ResolvePartialHints(resolve func(NUMAs string) string) {
 
 // String returns the hints as a string.
 func (h *Hint) String() string {
-	cpus, nodes, sockets, sep := "", "", "", ""
+	cpus, nodes, sockets, irqs, sep := "", "", "", "", ""
 
 	if h.CPUs != "" {
 		cpus = "CPUs:" + h.CPUs
@@ -252,9 +376,17 @@ func (h *Hint) String() string {
 	}
 	if h.Sockets != "" {
 		sockets = sep + "sockets:" + h.Sockets
+		sep = ", "
+	}
+	if len(h.IRQs) > 0 {
+		list := make([]string, len(h.IRQs))
+		for i, irq := range h.IRQs {
+			list[i] = strconv.Itoa(irq)
+		}
+		irqs = sep + "IRQs:" + strings.Join(list, ",")
 	}
 
-	return "<hints " + cpus + nodes + sockets + " (from " + h.Provider + ")>"
+	return "<hints " + cpus + nodes + sockets + irqs + " (from " + h.Provider + ")>"
 }
 
 // FindGivenSysFsDevice returns the physical device with the given device type,
