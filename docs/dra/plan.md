@@ -252,6 +252,10 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
 
 Design.md "Feature-gate detection" spec'd probe-at-startup for `AllowMultipleAllocations`, `NodeAllocatableResources`. Implement in step 6 as part of `Plugin.Start`. Land the probes even without [KEP-5941](https://github.com/kubernetes/enhancements/issues/5941) (Model C stays not-yet-implemented) so the code path exists when Model C is added.
 
+⚠️ Feature-gate probes (`AllowMultipleAllocations`, `NodeAllocatableResources`) deferred from Step 6 to a follow-up task; add before Step 8 lands.
+
+⚠️ Without the probe, DRA-published capacity fields that require `NodeAllocatableResources` will be silently stripped by the API server — acceptable for the stub phase.
+
 ### Not part of v1
 
 Explicitly deferred to later work, tracked here so nobody accidentally scope-creeps a step:

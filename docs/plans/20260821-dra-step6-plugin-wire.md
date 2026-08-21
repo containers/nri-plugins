@@ -209,18 +209,18 @@ can register and publish devices. Step 7 fills in the actual allocation logic.
 **Files:**
 - Modify: `docs/dra/plan.md`
 
-- [ ] add a ⚠️ note under Step 6 in `docs/dra/plan.md` Cross-cutting: "Feature-gate probes (`AllowMultipleAllocations`, `NodeAllocatableResources`) deferred from Step 6 to a follow-up task; add before Step 8 lands"
-- [ ] note that without the probe, DRA-published capacity fields that require `NodeAllocatableResources` will be silently stripped by the API server — acceptable for the stub phase
-- [ ] no code changes in this task
+- [x] add a ⚠️ note under Step 6 in `docs/dra/plan.md` Cross-cutting: "Feature-gate probes (`AllowMultipleAllocations`, `NodeAllocatableResources`) deferred from Step 6 to a follow-up task; add before Step 8 lands"
+- [x] note that without the probe, DRA-published capacity fields that require `NodeAllocatableResources` will be silently stripped by the API server — acceptable for the stub phase
+- [x] no code changes in this task
 
 ### Task 8: Verify acceptance criteria
 
-- [ ] run `go test ./...` — full test suite passes
-- [ ] run `go build ./cmd/plugins/topology-aware/...` — no compile regressions
-- [ ] run `make golangci-lint` — clean
-- [ ] verify `TestNoCmdPluginsImport` still passes (import-boundary guard)
-- [ ] verify `p.helper` nil-guard: call `PublishResources` before `Start` → returns error, not panic
-- [ ] verify `Stop` idempotent: double-`Stop` does not panic
+- [x] run `go test ./...` — full test suite passes
+- [x] run `go build ./cmd/plugins/topology-aware/...` — no compile regressions
+- [x] run `make golangci-lint` — clean
+- [x] verify `TestNoCmdPluginsImport` still passes (import-boundary guard)
+- [x] verify `p.helper` nil-guard: call `PublishResources` before `Start` → returns error, not panic
+- [x] verify `Stop` idempotent: double-`Stop` does not panic
 
 ### Task 9: [Final] Update documentation
 
