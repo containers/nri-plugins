@@ -163,20 +163,20 @@ can register and publish devices. Step 7 fills in the actual allocation logic.
 **Files:**
 - Modify: `pkg/resmgr/dra/plugin.go`
 
-- [ ] implement `Plugin.Start(ctx context.Context) error`:
+- [x] implement `Plugin.Start(ctx context.Context) error`:
   - call `p.deps.ValidateClasses()`; return wrapped error on failure
   - `os.MkdirAll(p.deps.PluginDataDir, 0750)`
   - `ctx = logr.NewContext(ctx, newLogr(p.deps.Logger))`
   - call `kubeletplugin.Start(ctx, p, kubeletplugin.KubeClient(p.deps.KubeClient), kubeletplugin.NodeName(p.deps.NodeName), kubeletplugin.RegistrarDirectoryPath(p.deps.RegistrarDir), kubeletplugin.PluginDataDirectoryPath(p.deps.PluginDataDir), kubeletplugin.GRPCVerbosity(-1))`; store result in `p.helper`
-- [ ] implement `Plugin.Stop()`:
+- [x] implement `Plugin.Stop()`:
   - if `p.helper != nil` → `p.helper.Stop()`; set `p.helper = nil` (idempotent)
-- [ ] implement `Plugin.PublishResources(ctx context.Context) error`:
+- [x] implement `Plugin.PublishResources(ctx context.Context) error`:
   - guard: if `p.helper == nil` → return clear error
   - call `p.deps.ValidateClasses()`; return on error
   - call `p.deps.DeviceLister.DRADevices(p.driverName)`
   - paginate into `resourceslice.Pool.Slices` under one pool named `p.deps.NodeName`; at most `resapi.ResourceSliceMaxDevices` devices per slice; publish even one empty slice when device count is zero
   - call `p.helper.PublishResources(ctx, resourceslice.DriverResources{Pools: []resourceslice.Pool{pool}})`
-- [ ] write unit tests:
+- [x] write unit tests:
   - `TestPublishResources_NilHelper` — returns error before `Start`
   - `TestPublishResources_ValidationError` — ValidateClasses error propagated
   - `TestPublishResources_Pagination_Zero` — zero devices → one slice with zero devices
@@ -184,7 +184,7 @@ can register and publish devices. Step 7 fills in the actual allocation logic.
   - `TestPublishResources_Pagination_OverMax` — `ResourceSliceMaxDevices+1` devices → two slices, same pool
   - `TestStop_Idempotent` — calling `Stop()` twice does not panic
   - `TestStart_ValidateClassesError` — returns error if ValidateClasses fails (before calling kubeletplugin.Start)
-- [ ] run `go test ./pkg/resmgr/dra/...` — must pass
+- [x] run `go test ./pkg/resmgr/dra/...` — must pass
 
 ### Task 6: Integration test — publish against fake clientset
 

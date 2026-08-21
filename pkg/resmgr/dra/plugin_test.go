@@ -185,6 +185,136 @@ func TestHandleError_FatalLogsError(t *testing.T) {
 	p.HandleError(context.Background(), fatalErr, "fatal error encountered")
 }
 
+// TestPublishResources_NilHelper verifies that PublishResources returns an
+// error (not a panic) when called before Start.
+func TestPublishResources_NilHelper(t *testing.T) {
+	p, err := New("test-driver", validDeps())
+	if err != nil {
+		t.Fatalf("New() unexpected error: %v", err)
+	}
+	// helper is nil at this point (Start has not been called)
+	err = p.PublishResources(context.Background())
+	if err == nil {
+		t.Fatal("PublishResources() expected error when helper is nil, got nil")
+	}
+}
+
+// TestPublishResources_ValidationError verifies that a ValidateClasses failure
+// is propagated by PublishResources.
+func TestPublishResources_ValidationError(t *testing.T) {
+	validateErr := errors.New("invalid class config")
+	deps := validDeps()
+	deps.ValidateClasses = func() error { return validateErr }
+	p, err := New("test-driver", deps)
+	if err != nil {
+		t.Fatalf("New() unexpected error: %v", err)
+	}
+	// helper is nil — but ValidateClasses is checked first, so that error
+	// is returned before the nil-helper guard.
+	err = p.PublishResources(context.Background())
+	if err == nil {
+		t.Fatal("PublishResources() expected error from ValidateClasses, got nil")
+	}
+	if !errors.Is(err, validateErr) {
+		t.Errorf("PublishResources() err = %v, want to wrap %v", err, validateErr)
+	}
+}
+
+// TestPublishResources_Pagination_Zero verifies that zero devices produce
+// exactly one empty slice.
+func TestPublishResources_Pagination_Zero(t *testing.T) {
+	res := buildDriverResources("node1", nil)
+	pool, ok := res.Pools["node1"]
+	if !ok {
+		t.Fatal("expected pool named 'node1'")
+	}
+	if len(pool.Slices) != 1 {
+		t.Errorf("zero devices: got %d slice(s), want 1", len(pool.Slices))
+	}
+	if len(pool.Slices[0].Devices) != 0 {
+		t.Errorf("zero devices: slice[0] has %d device(s), want 0", len(pool.Slices[0].Devices))
+	}
+}
+
+// TestPublishResources_Pagination_ExactMax verifies that exactly
+// ResourceSliceMaxDevices devices fit into one slice.
+func TestPublishResources_Pagination_ExactMax(t *testing.T) {
+	max := resourceapi.ResourceSliceMaxDevices
+	devices := makeTestDevices(max)
+	res := buildDriverResources("node1", devices)
+	pool := res.Pools["node1"]
+	if len(pool.Slices) != 1 {
+		t.Errorf("exact max devices: got %d slice(s), want 1", len(pool.Slices))
+	}
+	if len(pool.Slices[0].Devices) != max {
+		t.Errorf("exact max devices: slice[0] has %d device(s), want %d", len(pool.Slices[0].Devices), max)
+	}
+}
+
+// TestPublishResources_Pagination_OverMax verifies that
+// ResourceSliceMaxDevices+1 devices are split into exactly two slices
+// belonging to the same pool.
+func TestPublishResources_Pagination_OverMax(t *testing.T) {
+	max := resourceapi.ResourceSliceMaxDevices
+	devices := makeTestDevices(max + 1)
+	res := buildDriverResources("node1", devices)
+	pool := res.Pools["node1"]
+	if len(pool.Slices) != 2 {
+		t.Errorf("max+1 devices: got %d slice(s), want 2", len(pool.Slices))
+	}
+	if len(pool.Slices[0].Devices) != max {
+		t.Errorf("max+1 devices: slice[0] has %d device(s), want %d", len(pool.Slices[0].Devices), max)
+	}
+	if len(pool.Slices[1].Devices) != 1 {
+		t.Errorf("max+1 devices: slice[1] has %d device(s), want 1", len(pool.Slices[1].Devices))
+	}
+}
+
+// TestStop_Idempotent verifies that calling Stop twice on a Plugin does not
+// panic. Both calls are made on a plugin that was never started (helper == nil).
+func TestStop_Idempotent(t *testing.T) {
+	p, err := New("test-driver", validDeps())
+	if err != nil {
+		t.Fatalf("New() unexpected error: %v", err)
+	}
+	// Must not panic.
+	p.Stop()
+	p.Stop()
+}
+
+// TestStart_ValidateClassesError verifies that Start returns the ValidateClasses
+// error before attempting to call kubeletplugin.Start.
+func TestStart_ValidateClassesError(t *testing.T) {
+	validateErr := errors.New("cpu class config invalid")
+	deps := validDeps()
+	deps.ValidateClasses = func() error { return validateErr }
+	deps.PluginDataDir = t.TempDir()
+	p, err := New("test-driver", deps)
+	if err != nil {
+		t.Fatalf("New() unexpected error: %v", err)
+	}
+	err = p.Start(context.Background())
+	if err == nil {
+		t.Fatal("Start() expected error from ValidateClasses, got nil")
+	}
+	if !errors.Is(err, validateErr) {
+		t.Errorf("Start() err = %v, want to wrap %v", err, validateErr)
+	}
+	if p.helper != nil {
+		t.Error("Start() set p.helper on ValidateClasses failure, want nil")
+	}
+}
+
+// makeTestDevices returns a slice of n named resourceapi.Device objects for
+// use in pagination tests.
+func makeTestDevices(n int) []resourceapi.Device {
+	devices := make([]resourceapi.Device, n)
+	for i := range devices {
+		devices[i] = resourceapi.Device{Name: fmt.Sprintf("dev-%d", i)}
+	}
+	return devices
+}
+
 // TestNoCmdPluginsImport verifies that pkg/resmgr/dra has no transitive
 // dependency on any nri-plugins cmd binary package. Such an import would
 // violate design.md resolved decision 6 (code-sharing verification
