@@ -1397,7 +1397,7 @@ func (ca *cpuAllocator) ReleaseCpus(from *cpuset.CPUSet, cnt int, options ...Opt
 // GetCPUPriorities returns the CPUSets for the discovered priorities.
 func (ca *cpuAllocator) GetCPUPriorities() map[CPUPriority]cpuset.CPUSet {
 	prios := make(map[CPUPriority]cpuset.CPUSet)
-	for prio := CPUPriority(0); prio < NumCPUPriorities; prio++ {
+	for prio := range NumCPUPriorities {
 		cset := ca.topologyCache.cpuPriorities[prio]
 		prios[prio] = cset.Clone()
 	}
@@ -1924,7 +1924,7 @@ func (c *cpuPriorities) cmpCPUSet(csetA, csetB cpuset.CPUSet, prefer CPUPriority
 		}
 	}
 	// Repel cpuset having CPUs with higher priority than what was requested
-	for prio := PriorityHigh; prio < prefer; prio++ {
+	for prio := range prefer {
 		nonprefA := csetA.Intersection(c[prio]).Size()
 		nonprefB := csetB.Intersection(c[prio]).Size()
 		if nonprefA != nonprefB {
