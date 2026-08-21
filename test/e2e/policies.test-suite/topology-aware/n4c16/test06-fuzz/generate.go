@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"maps"
 	"runtime"
 	"sort"
 	"strings"
@@ -56,9 +57,7 @@ func createPod(pod string, cpu, rcpu, mem int) m.StateChange {
 			return nil
 		}
 		newPodRes := make(map[string]*PodResources)
-		for k, v := range s.podRes {
-			newPodRes[k] = v
-		}
+		maps.Copy(newPodRes, s.podRes)
 		newPodRes[pod] = &PodResources{cpu, rcpu, mem}
 		return &TestState{
 			cpu:    s.cpu - cpu,
