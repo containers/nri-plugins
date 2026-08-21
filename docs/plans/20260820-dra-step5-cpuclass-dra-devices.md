@@ -194,11 +194,11 @@ Returns `[]resapi.Device{}` (not nil) when empty; always returns nil error in v1
 **Files:**
 - Modify: `go.mod`, `go.sum`
 
-- [ ] run `go get k8s.io/api@v0.36.3 k8s.io/apimachinery@v0.36.3 k8s.io/client-go@v0.36.3 k8s.io/kubelet@v0.36.3`
-- [ ] run `go mod tidy`
-- [ ] run `go build ./...` — must compile; fix any API breakage (pre-validated clean in reviewer's scratch build, but record any actual breakage here with ➕)
-- [ ] run `go test ./pkg/...` — existing tests must pass
-- [ ] commit this task standalone before proceeding
+- [x] run `go get k8s.io/api@v0.36.3 k8s.io/apimachinery@v0.36.3 k8s.io/client-go@v0.36.3 k8s.io/kubelet@v0.36.3`
+- [x] run `go mod tidy`
+- [x] run `go build ./...` — must compile; fix any API breakage (pre-validated clean in reviewer's scratch build, but record any actual breakage here with ➕)
+- [x] run `go test ./pkg/...` — existing tests must pass
+- [x] commit this task standalone before proceeding
 
 ### Task 2: Export `pct.Allocator.IsHPClass`
 
