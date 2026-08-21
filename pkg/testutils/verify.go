@@ -7,7 +7,7 @@ import (
 )
 
 // VerifyDeepEqual checks that two values (including structures) are equal, or else it fails the test.
-func VerifyDeepEqual(t *testing.T, valueName string, expectedValue interface{}, seenValue interface{}) bool {
+func VerifyDeepEqual(t *testing.T, valueName string, expectedValue any, seenValue any) bool {
 	if reflect.DeepEqual(expectedValue, seenValue) {
 		return true
 	}
