@@ -206,10 +206,10 @@ Returns `[]resapi.Device{}` (not nil) when empty; always returns nil error in v1
 - Modify: `pkg/resmgr/cpuclass/internal/pct/pct.go`
 - Modify: `pkg/resmgr/cpuclass/internal/pct/pct_test.go`
 
-- [ ] add `func (a *Allocator) IsHPClass(className string) bool { return a.classIsHighPriority(className) }` — one-line exported wrapper
-- [ ] write `TestIsHPClass`: HP class returns true; non-HP class returns false; unknown class returns false; inactive allocator returns false
-- [ ] run `go test ./pkg/resmgr/cpuclass/internal/pct/...` — must pass
-- [ ] run `go build ./...` — must compile
+- [x] add `func (a *Allocator) IsHPClass(className string) bool { return a.classIsHighPriority(className) }` — one-line exported wrapper
+- [x] write `TestIsHPClass`: HP class returns true; non-HP class returns false; unknown class returns false; inactive allocator returns false
+- [x] run `go test ./pkg/resmgr/cpuclass/internal/pct/...` — must pass
+- [x] run `go build ./...` — must compile
 
 ### Task 3: Cache `classes` on `Handler` + write TDD tests for `buildDRADevices`
 

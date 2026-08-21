@@ -782,6 +782,15 @@ func (a *Allocator) classIsHighPriority(className string) bool {
 	return a.hpClasses[className]
 }
 
+// IsHPClass reports whether className is currently classified as PCT
+// high priority. It is the exported counterpart of classIsHighPriority
+// and is used by pkg/resmgr/cpuclass/dra.go to build DRA device
+// attributes without duplicating the assoc-only MaxFreq logic here.
+// Returns false when the allocator is inactive or the class is unknown.
+func (a *Allocator) IsHPClass(className string) bool {
+	return a.classIsHighPriority(className)
+}
+
 // hpHintsActive reports whether HP-room reasoning (hpReserveCpus,
 // hpInUseCpus, trackHpUsage) is currently meaningful. It requires
 // PCT to be active *and* at least one cpuClass to be classified as

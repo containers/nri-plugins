@@ -1343,6 +1343,42 @@ func TestHpDRAUsedIsolation(t *testing.T) {
 	}
 }
 
+// ── TestIsHPClass ─────────────────────────────────────────────────────────────
+
+// TestIsHPClass covers the exported IsHPClass wrapper: HP class returns true;
+// non-HP class returns false; unknown class returns false; inactive allocator
+// returns false.
+func TestIsHPClass(t *testing.T) {
+	sys := newTwoPackageFakeSys()
+	sst := &fakeSst{supported: true, maxHp: map[int]int{0: 2, 1: 2}}
+	classes := []*policyapi.CPUClass{
+		{Name: "hp", PctPriority: "high"},
+		{Name: "lp", PctPriority: "low"},
+	}
+	a := newManagedPctForTest(t, classes,
+		map[string]*pctClassPlan{"hp": {ClosID: 0}, "lp": {ClosID: 3}},
+		cpuset.MustParse("0-7"), sys, sst)
+
+	// HP class must return true.
+	if !a.IsHPClass("hp") {
+		t.Error("IsHPClass(\"hp\") = false, want true")
+	}
+	// Non-HP class must return false.
+	if a.IsHPClass("lp") {
+		t.Error("IsHPClass(\"lp\") = true, want false")
+	}
+	// Unknown class must return false.
+	if a.IsHPClass("unknown") {
+		t.Error("IsHPClass(\"unknown\") = true, want false")
+	}
+
+	// Inactive allocator must return false.
+	inactiveA := &Allocator{}
+	if inactiveA.IsHPClass("hp") {
+		t.Error("IsHPClass on inactive allocator = true, want false")
+	}
+}
+
 // ── TestHpReserveRoomWithDRAHolds ─────────────────────────────────────────────
 
 func TestHpReserveRoomWithDRAHolds(t *testing.T) {
