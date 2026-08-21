@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 
 	xhttp "github.com/containers/nri-plugins/pkg/http"
@@ -60,12 +61,12 @@ func serve(w http.ResponseWriter, req *http.Request) {
 			log.Errorf("failed to write response: %v", err)
 		}
 	} else {
-		errors := ""
+		var errors strings.Builder
 		for _, err := range details {
-			errors += fmt.Sprintf("%v\n", err)
+			errors.WriteString(fmt.Sprintf("%v\n", err)) //nolint:staticcheck
 		}
 		w.WriteHeader(500)
-		_, err := w.Write([]byte(errors))
+		_, err := w.Write([]byte(errors.String()))
 		if err != nil {
 			log.Errorf("failed to write response: %v", err)
 		}
