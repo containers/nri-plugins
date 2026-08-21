@@ -153,7 +153,7 @@ func (g Group) AddProcesses(pids ...string) error {
 }
 
 // Write writes the formatted data to the groups entry.
-func (g Group) Write(entry, format string, args ...interface{}) (err error) {
+func (g Group) Write(entry, format string, args ...any) (err error) {
 	entryPath := path.Join(string(g), entry)
 	f, oerr := os.OpenFile(entryPath, os.O_WRONLY, 0644)
 	if oerr != nil {
@@ -223,7 +223,7 @@ func (g Group) writePids(entry string, pids ...string) (err error) {
 }
 
 // error returns a formatted group-specific error.
-func (g Group) errorf(format string, args ...interface{}) error {
+func (g Group) errorf(format string, args ...any) error {
 	name := strings.TrimPrefix(string(g), mountDir+"/")
 	return fmt.Errorf("cgroup "+name+": "+format, args...)
 }

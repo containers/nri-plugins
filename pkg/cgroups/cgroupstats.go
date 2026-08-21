@@ -477,7 +477,7 @@ func GetGlobalNumaStats() (map[int64]GlobalNumaStats, error) {
 
 		numastat := path.Join(dir, "numastat")
 		err = sysfs.ParseFileEntries(numastat,
-			map[string]interface{}{
+			map[string]any{
 				"numa_hit":       &nodeStat.NumaHit,
 				"numa_miss":      &nodeStat.NumaMiss,
 				"numa_foreign":   &nodeStat.NumaForeign,
