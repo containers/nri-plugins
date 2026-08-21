@@ -651,9 +651,7 @@ func TestConcurrentInterruptReaders(t *testing.T) {
 	// sets affinities.
 	var wg sync.WaitGroup
 	for range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 50 {
 				if _, err := ValidateAllowedReferencedInterrupts(
 					[]string{"*acpi*"}, []string{"*i8042*"},
@@ -662,7 +660,7 @@ func TestConcurrentInterruptReaders(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
 
 	for pass := range 50 {
