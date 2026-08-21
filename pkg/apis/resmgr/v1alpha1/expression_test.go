@@ -43,7 +43,7 @@ func newEvaluable(name, ns, qos string, labels, tags map[string]string, p Evalua
 	}
 }
 
-func (e *evaluable) EvalKey(key string) interface{} {
+func (e *evaluable) EvalKey(key string) any {
 	switch key {
 	case KeyName:
 		return e.name

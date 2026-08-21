@@ -254,8 +254,8 @@ func validSeparator(b byte) bool {
 // evaluated object.
 func ResolveRef(subject Evaluable, spec string) (string, bool, error) {
 	var (
-		key             = path.Clean(spec)
-		obj interface{} = subject
+		key     = path.Clean(spec)
+		obj any = subject
 	)
 
 	log.Debugf("resolving %q in %s...", key, subject)
@@ -400,6 +400,6 @@ func Expand(src string, subject Evaluable, mustResolve bool) (string, error) {
 }
 
 // exprError returns a formatted error specific to expressions.
-func exprError(format string, args ...interface{}) error {
+func exprError(format string, args ...any) error {
 	return fmt.Errorf("expression: "+format, args...)
 }
