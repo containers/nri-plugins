@@ -59,7 +59,7 @@ func loadConfig(path string) (*Config, error) {
 func newPlugin(cfg *Config) *FakeDevicePlugin {
 	p := &FakeDevicePlugin{
 		resourceName: cfg.ResourceName,
-		stop:         make(chan interface{}),
+		stop:         make(chan any),
 	}
 
 	for _, d := range cfg.Devices {
