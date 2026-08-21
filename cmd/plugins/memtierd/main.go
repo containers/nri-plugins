@@ -552,7 +552,7 @@ func (me *memtierdEnv) startMemtierd() error {
 		return fmt.Errorf("failed to start command %s: %q", cmd, err)
 	}
 	if cmd.Process != nil {
-		pidContents := []byte(fmt.Sprintf("%d\n", cmd.Process.Pid))
+		pidContents := fmt.Appendf(nil, "%d\n", cmd.Process.Pid)
 		if err := writeFileAtomic(me.pidFile, pidContents, pidFilePerm); err != nil {
 			log.Warnf("failed to write PID file %q: %s", me.pidFile, err)
 		}
