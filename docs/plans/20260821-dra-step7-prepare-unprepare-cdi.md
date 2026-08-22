@@ -158,18 +158,18 @@ Stored as `map[string]string` (uid → JSON of ClaimState) under key `dra/claims
 - Modify: `pkg/resmgr/cpuclass/cpuclass.go`
 - Create: `pkg/resmgr/cpuclass/cpuclass_dra_test.go` (does not exist; use `package cpuclass`)
 
-- [ ] add `Handler.PickHpCpus(pkgID, punitID, n int, held cpuset.CPUSet) (cpuset.CPUSet, error)`
+- [x] add `Handler.PickHpCpus(pkgID, punitID, n int, held cpuset.CPUSet) (cpuset.CPUSet, error)`
   delegating to `h.pct.PickHpCpus`
-- [ ] add `Handler.ReleaseHpCpus(pkgID, punitID int, cpus cpuset.CPUSet)` delegating to
+- [x] add `Handler.ReleaseHpCpus(pkgID, punitID int, cpus cpuset.CPUSet)` delegating to
   `h.pct.ReleaseHpCpus`
-- [ ] add `Handler.AccountHpCpus(pkgID, punitID int, cpus cpuset.CPUSet) error` delegating to
+- [x] add `Handler.AccountHpCpus(pkgID, punitID int, cpus cpuset.CPUSet) error` delegating to
   `h.pct.AccountHpCpus`
-- [ ] add `Handler.IsHPClass(className string) bool` delegating to `h.pct.IsHPClass`
-- [ ] write tests: each pass-through delegates correctly; inactive allocator returns appropriate
+- [x] add `Handler.IsHPClass(className string) bool` delegating to `h.pct.IsHPClass`
+- [x] write tests: each pass-through delegates correctly; inactive allocator returns appropriate
   error/false
-- [ ] NOTE: the `dra.ClaimAllocator` compile-time assertion is deferred to Task 4 — `ClaimAllocator`
+- [x] NOTE: the `dra.ClaimAllocator` compile-time assertion is deferred to Task 4 — `ClaimAllocator`
   is not yet defined at Task 2 time
-- [ ] run `go test ./pkg/resmgr/cpuclass/... -race` — must pass before Task 3
+- [x] run `go test ./pkg/resmgr/cpuclass/... -race` — must pass before Task 3
 
 ### Task 3: Filter non-HP devices from DRADevices
 
