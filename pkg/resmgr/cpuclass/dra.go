@@ -156,6 +156,10 @@ func strAttr(v string) resapi.DeviceAttribute {
 // For each published class, for each punit: emits one device if capacity > 0.
 // HP classes use HPCapacity; non-HP classes use NonHPCapacity.
 //
+// When hpOnly is true, only HP classes (isHP returns true) are emitted.
+// Non-HP DRA is deferred because PunitInfo carries no per-punit CPU list;
+// see plan.md Step 7.
+//
 // driverName is currently unused in device attributes but is retained for
 // call-site stability and future use as an attribute-domain prefix in Step 6.
 func buildDRADevices(
@@ -163,6 +167,7 @@ func buildDRADevices(
 	classes []*policyapi.CPUClass,
 	punits []pct.PunitInfo,
 	isHP func(className string) bool,
+	hpOnly bool,
 ) []resapi.Device {
 	if len(classes) == 0 || len(punits) == 0 {
 		return []resapi.Device{}
@@ -177,6 +182,10 @@ func buildDRADevices(
 
 	for _, cc := range classes {
 		if !cc.DRAPublish() {
+			continue
+		}
+		// non-HP DRA deferred — PunitInfo has no per-punit CPU list; see plan.md Step 7
+		if hpOnly && !isHP(cc.Name) {
 			continue
 		}
 		if _, done := baseForClass[cc.Name]; done {
@@ -203,6 +212,10 @@ func buildDRADevices(
 
 	for _, cc := range classes {
 		if !cc.DRAPublish() {
+			continue
+		}
+		// non-HP DRA deferred — PunitInfo has no per-punit CPU list; see plan.md Step 7
+		if hpOnly && !isHP(cc.Name) {
 			continue
 		}
 		base := baseForClass[cc.Name]
@@ -287,5 +300,5 @@ func (h *Handler) DRADevices(driverName string) ([]resapi.Device, error) {
 	if len(punits) == 0 {
 		return []resapi.Device{}, nil
 	}
-	return buildDRADevices(driverName, h.classes, punits, h.pct.IsHPClass), nil
+	return buildDRADevices(driverName, h.classes, punits, h.pct.IsHPClass, true), nil
 }

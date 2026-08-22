@@ -177,12 +177,12 @@ Stored as `map[string]string` (uid → JSON of ClaimState) under key `dra/claims
 - Modify: `pkg/resmgr/cpuclass/dra.go`
 - Modify: `pkg/resmgr/cpuclass/dra_test.go`
 
-- [ ] add `hpOnly bool` parameter to `buildDRADevices`; when true, skip classes where
+- [x] add `hpOnly bool` parameter to `buildDRADevices`; when true, skip classes where
   `isHP(className) == false`; comment: "non-HP DRA deferred — PunitInfo has no per-punit CPU
   list; see plan.md Step 7"
-- [ ] update `Handler.DRADevices` to pass `hpOnly: true`
-- [ ] update tests to cover the filter; mixed HP/non-HP config → only HP devices emitted
-- [ ] run `go test ./pkg/resmgr/cpuclass/... -race` — must pass before Task 4
+- [x] update `Handler.DRADevices` to pass `hpOnly: true`
+- [x] update tests to cover the filter; mixed HP/non-HP config → only HP devices emitted
+- [x] run `go test ./pkg/resmgr/cpuclass/... -race` — must pass before Task 4
 
 ### Task 4: Define state types, extend deps.go, fix PublishResources
 
