@@ -13,8 +13,6 @@
 // limitations under the License.
 
 // Tests for the DRA ClaimAllocator pass-through methods on Handler.
-// The compile-time assertion (var _ dra.ClaimAllocator = (*Handler)(nil))
-// is added in Task 4 once the ClaimAllocator interface is defined.
 
 package cpuclass
 
@@ -24,9 +22,13 @@ import (
 	idset "github.com/intel/goresctrl/pkg/utils"
 
 	policyapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
+	"github.com/containers/nri-plugins/pkg/resmgr/dra"
 	"github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
+
+// Compile-time assertion: *Handler must satisfy dra.ClaimAllocator.
+var _ dra.ClaimAllocator = (*Handler)(nil)
 
 // draTestSys is a minimal sysfs.System implementation for DRA pass-through
 // tests. Only CPUIDs is overridden; all other methods are delegated to the

@@ -62,6 +62,18 @@ func New(driverName string, deps Deps) (*Plugin, error) {
 	if deps.Logger == nil {
 		return nil, fmt.Errorf("dra plugin: Logger must not be nil")
 	}
+	if deps.ClaimAllocator == nil {
+		return nil, fmt.Errorf("dra plugin: ClaimAllocator must not be nil")
+	}
+	if deps.CDIWriter == nil {
+		return nil, fmt.Errorf("dra plugin: CDIWriter must not be nil")
+	}
+	if deps.ClaimStore == nil {
+		return nil, fmt.Errorf("dra plugin: ClaimStore must not be nil")
+	}
+	if deps.WithLock == nil {
+		return nil, fmt.Errorf("dra plugin: WithLock must not be nil")
+	}
 	return &Plugin{driverName: driverName, deps: deps}, nil
 }
 
@@ -142,9 +154,24 @@ func (p *Plugin) Stop() {
 // slice), and hands the resulting DriverResources to the helper for
 // publishing. Even zero devices produce one empty slice so the pool remains
 // visible. Returns an error if the plugin has not been started yet.
+//
+// PublishResources must not be called while holding the resmgr lock
+// (see RestoreClaimsLocked for the complementary lock-already-held variant).
 func (p *Plugin) PublishResources(ctx context.Context) error {
-	if err := p.deps.ValidateClasses(); err != nil {
-		return fmt.Errorf("dra plugin: ValidateClasses failed: %w", err)
+	var (
+		validateErr error
+		devices     []resourceapi.Device
+		devicesErr  error
+	)
+	p.deps.WithLock(func() {
+		validateErr = p.deps.ValidateClasses()
+		if validateErr != nil {
+			return
+		}
+		devices, devicesErr = p.deps.DeviceLister.DRADevices(p.driverName)
+	})
+	if validateErr != nil {
+		return fmt.Errorf("dra plugin: ValidateClasses failed: %w", validateErr)
 	}
 	p.mu.Lock()
 	h := p.helper
@@ -152,9 +179,8 @@ func (p *Plugin) PublishResources(ctx context.Context) error {
 	if h == nil {
 		return fmt.Errorf("dra plugin: PublishResources called before Start")
 	}
-	devices, err := p.deps.DeviceLister.DRADevices(p.driverName)
-	if err != nil {
-		return fmt.Errorf("dra plugin: DRADevices: %w", err)
+	if devicesErr != nil {
+		return fmt.Errorf("dra plugin: DRADevices: %w", devicesErr)
 	}
 	resources := buildDriverResources(p.deps.NodeName, devices)
 	if err := h.PublishResources(ctx, resources); err != nil {

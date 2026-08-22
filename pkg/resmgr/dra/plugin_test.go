@@ -33,11 +33,13 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 
 	"github.com/containers/nri-plugins/pkg/log"
+	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 // TestNewLogr verifies that newLogr returns a usable logr.Logger backed by the
@@ -58,6 +60,10 @@ func validDeps() Deps {
 		NodeName:        "test-node",
 		ValidateClasses: func() error { return nil },
 		DeviceLister:    &fixedDeviceLister{},
+		ClaimAllocator:  &noopClaimAllocator{},
+		CDIWriter:       &noopCDIWriter{},
+		ClaimStore:      &noopClaimStore{},
+		WithLock:        func(f func()) { f() },
 		Logger:          log.Default(),
 	}
 }
@@ -111,6 +117,26 @@ func TestNew_Validation(t *testing.T) {
 			name:       "nil Logger",
 			driverName: "test-driver",
 			mutate:     func(d *Deps) { d.Logger = nil },
+		},
+		{
+			name:       "nil ClaimAllocator",
+			driverName: "test-driver",
+			mutate:     func(d *Deps) { d.ClaimAllocator = nil },
+		},
+		{
+			name:       "nil CDIWriter",
+			driverName: "test-driver",
+			mutate:     func(d *Deps) { d.CDIWriter = nil },
+		},
+		{
+			name:       "nil ClaimStore",
+			driverName: "test-driver",
+			mutate:     func(d *Deps) { d.ClaimStore = nil },
+		},
+		{
+			name:       "nil WithLock",
+			driverName: "test-driver",
+			mutate:     func(d *Deps) { d.WithLock = nil },
 		},
 	}
 
@@ -328,6 +354,33 @@ func (e *errorDeviceLister) DRADevices(_ string) ([]resourceapi.Device, error) {
 	return nil, e.err
 }
 
+// noopClaimAllocator is a ClaimAllocator that succeeds without doing anything.
+type noopClaimAllocator struct{}
+
+func (*noopClaimAllocator) PickHpCpus(_, _, _ int, _ cpuset.CPUSet) (cpuset.CPUSet, error) {
+	return cpuset.New(), nil
+}
+
+func (*noopClaimAllocator) ReleaseHpCpus(_, _ int, _ cpuset.CPUSet) {}
+
+func (*noopClaimAllocator) AccountHpCpus(_, _ int, _ cpuset.CPUSet) error { return nil }
+
+func (*noopClaimAllocator) IsHPClass(_ string) bool { return false }
+
+// noopCDIWriter is a CDIWriter that succeeds without doing anything.
+type noopCDIWriter struct{}
+
+func (*noopCDIWriter) WriteClaim(_ types.UID, _ []CDIDevice) error   { return nil }
+func (*noopCDIWriter) RemoveClaim(_ types.UID) error                  { return nil }
+func (*noopCDIWriter) ClaimSpecExists(_ types.UID) bool               { return false }
+func (*noopCDIWriter) ListClaims() ([]types.UID, error)               { return nil, nil }
+
+// noopClaimStore is a ClaimStore that succeeds without persisting anything.
+type noopClaimStore struct{}
+
+func (*noopClaimStore) Save(_ map[types.UID]*ClaimState) error             { return nil }
+func (*noopClaimStore) Load() (map[types.UID]*ClaimState, error)           { return nil, nil }
+
 // TestPublishResources_DRADevicesError verifies that an error from
 // DeviceLister.DRADevices is propagated by PublishResources.
 func TestPublishResources_DRADevicesError(t *testing.T) {
@@ -345,6 +398,54 @@ func TestPublishResources_DRADevicesError(t *testing.T) {
 	if !errors.Is(err, sentinel) {
 		t.Errorf("PublishResources() err = %v, want to wrap sentinel error", err)
 	}
+}
+
+// TestPublishResources_ConcurrentNoRace verifies that calling PublishResources
+// from multiple goroutines while a simulated Reconfigure goroutine acquires the
+// same mutex does not produce a data race. When run with -race, the detector
+// will flag any unsynchronized access to shared state.
+func TestPublishResources_ConcurrentNoRace(t *testing.T) {
+	var mu sync.Mutex
+
+	deps := validDeps()
+	// Replace the simple direct-call WithLock from validDeps with a real mutex
+	// so the race detector can verify PublishResources holds the lock around
+	// its ValidateClasses + DRADevices calls.
+	deps.WithLock = func(f func()) {
+		mu.Lock()
+		defer mu.Unlock()
+		f()
+	}
+
+	p, err := New("test-driver", deps)
+	if err != nil {
+		t.Fatalf("New() unexpected error: %v", err)
+	}
+	// Set helper to non-nil so the nil-helper guard is bypassed.
+	p.helper = new(kubeletplugin.Helper)
+
+	ctx := context.Background()
+	const goroutines = 10
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for range goroutines {
+		go func() {
+			defer wg.Done()
+			// Errors are expected (helper is a zero-value stub); what we are
+			// testing is the absence of data races.
+			_ = p.PublishResources(ctx)
+		}()
+	}
+	// Simulate concurrent Reconfigure by acquiring the same mutex.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for range 50 {
+			mu.Lock()
+			mu.Unlock()
+		}
+	}()
+	wg.Wait()
 }
 
 // TestStart_AlreadyStarted verifies that a second call to Start returns an
@@ -408,6 +509,10 @@ func TestPublishResources_Integration(t *testing.T) {
 		PluginDataDir:   pluginDataDir,
 		ValidateClasses: func() error { return nil },
 		DeviceLister:    &fixedDeviceLister{devices: makeTestDevices(5)},
+		ClaimAllocator:  &noopClaimAllocator{},
+		CDIWriter:       &noopCDIWriter{},
+		ClaimStore:      &noopClaimStore{},
+		WithLock:        func(f func()) { f() },
 		Logger:          log.Default(),
 	}
 

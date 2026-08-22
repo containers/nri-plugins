@@ -195,39 +195,39 @@ Task 4 defines `ResultAlloc`/`ClaimState` structs first so that the `ClaimStore`
 - Modify: `pkg/resmgr/dra/plugin.go` (PublishResources only)
 - Modify: `pkg/resmgr/dra/plugin_test.go`
 
-- [ ] create `state.go` with exported `ResultAlloc` and `ClaimState` struct definitions and JSON
+- [x] create `state.go` with exported `ResultAlloc` and `ClaimState` struct definitions and JSON
   tags exactly as specified in Solution Overview (CPUs as `string`, ShareID as `string`);
   add `Allocs[i]` ordering invariant comment: "`Allocs[i]` corresponds to filtered allocation
   result `i`; CDI device-name index is positional — order must be preserved on rebuild"
-- [ ] in `deps.go`, define exported `CDIDevice` struct: `{Name, ClassName string; CPUs cpuset.CPUSet}`
+- [x] in `deps.go`, define exported `CDIDevice` struct: `{Name, ClassName string; CPUs cpuset.CPUSet}`
   where `Name` is the CDI device name, precomputed by the caller via `cdiDeviceName`; `WriteClaim`
   uses it directly
-- [ ] define exported `ClaimAllocator` interface:
+- [x] define exported `ClaimAllocator` interface:
   `PickHpCpus(pkgID, punitID, n int, held cpuset.CPUSet) (cpuset.CPUSet, error)`,
   `ReleaseHpCpus(pkgID, punitID int, cpus cpuset.CPUSet)`,
   `AccountHpCpus(pkgID, punitID int, cpus cpuset.CPUSet) error`,
   `IsHPClass(className string) bool`
-- [ ] define exported `CDIWriter` interface:
+- [x] define exported `CDIWriter` interface:
   `WriteClaim(uid types.UID, devices []CDIDevice) error`,
   `RemoveClaim(uid types.UID) error`,
   `ClaimSpecExists(uid types.UID) bool`,
   `ListClaims() ([]types.UID, error)`
-- [ ] define exported `ClaimStore` interface:
+- [x] define exported `ClaimStore` interface:
   `Save(claims map[types.UID]*ClaimState) error`,
   `Load() (map[types.UID]*ClaimState, error)`
-- [ ] add to `Deps`: `ClaimAllocator`, `CDIWriter`, `ClaimStore`, `WithLock func(func())`
+- [x] add to `Deps`: `ClaimAllocator`, `CDIWriter`, `ClaimStore`, `WithLock func(func())`
   (drop `CDIDir` from `Deps` — default cdiDir inside `NewCDIWriter` when empty, see Task 5)
-- [ ] update `New()` nil-checks for the four new required deps
-- [ ] add compile-time assertion in `cpuclass_dra_test.go` (from Task 2):
+- [x] update `New()` nil-checks for the four new required deps
+- [x] add compile-time assertion in `cpuclass_dra_test.go` (from Task 2):
   `var _ dra.ClaimAllocator = (*Handler)(nil)` (in-package test, so `Handler` not `cpuclass.Handler`;
   import `pkg/resmgr/dra` — no cycle, verified)
-- [ ] in `PublishResources`: wrap the `deps.ValidateClasses()` + `deps.DeviceLister.DRADevices()`
+- [x] in `PublishResources`: wrap the `deps.ValidateClasses()` + `deps.DeviceLister.DRADevices()`
   calls inside `deps.WithLock(func(){ ... })` to guard unsynchronized Handler access; add a
   race test covering concurrent `Reconfigure` + `PublishResources`; add godoc contract:
   "`PublishResources` must not be called while holding the resmgr lock (see RestoreClaimsLocked
   for the complementary lock-already-held variant)"
-- [ ] update `plugin_test.go` fakes to satisfy the new interfaces
-- [ ] run `go test ./pkg/resmgr/dra/... -race` — must pass before Task 5
+- [x] update `plugin_test.go` fakes to satisfy the new interfaces
+- [x] run `go test ./pkg/resmgr/dra/... -race` — must pass before Task 5
 
 ### Task 5: Add CDI dependency and implement cdi.go
 
