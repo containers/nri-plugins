@@ -29,9 +29,26 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
+
+	"github.com/containers/nri-plugins/pkg/utils/cpuset"
+	"tags.cncf.io/container-device-interface/pkg/parser"
 )
 
 var errNotImplemented = errors.New("dra plugin: not yet implemented")
+
+// Sentinel errors for PrepareResourceClaims.
+var (
+	errNilAllocation           = errors.New("dra plugin: claim has nil Allocation")
+	errMissingConsumedCapacity = errors.New("dra plugin: ConsumedCapacity[nri/cpus] absent or zero")
+	errNonHPNotSupported       = errors.New("dra plugin: non-HP CPU class not supported (deferred)")
+)
+
+// deviceInfo holds the device attributes looked up from the published device list.
+type deviceInfo struct {
+	ClassName string
+	PkgID     int
+	PunitID   int
+}
 
 // Plugin is the DRA kubelet plugin.
 type Plugin struct {
@@ -39,6 +56,7 @@ type Plugin struct {
 	driverName string
 	deps       Deps
 	helper     *kubeletplugin.Helper
+	claims     map[types.UID]*ClaimState
 }
 
 // New constructs a Plugin with the given driver name and dependencies.
@@ -74,13 +92,264 @@ func New(driverName string, deps Deps) (*Plugin, error) {
 	if deps.WithLock == nil {
 		return nil, fmt.Errorf("dra plugin: WithLock must not be nil")
 	}
-	return &Plugin{driverName: driverName, deps: deps}, nil
+	return &Plugin{driverName: driverName, deps: deps, claims: make(map[types.UID]*ClaimState)}, nil
 }
 
-// PrepareResourceClaims is a stub that satisfies kubeletplugin.DRAPlugin.
-// Real allocation logic is added in Step 7.
-func (p *Plugin) PrepareResourceClaims(_ context.Context, _ []*resourceapi.ResourceClaim) (map[types.UID]kubeletplugin.PrepareResult, error) {
-	return nil, errNotImplemented
+// shareIDPtr converts a ShareID string to *types.UID. Returns nil if s is "".
+func shareIDPtr(s string) *types.UID {
+	if s == "" {
+		return nil
+	}
+	uid := types.UID(s)
+	return &uid
+}
+
+// deviceIndex builds a map from device name to deviceInfo by calling
+// deps.DeviceLister.DRADevices. Must be called inside deps.WithLock.
+// Called once per PrepareResourceClaims invocation, not per result.
+func (p *Plugin) deviceIndex() (map[string]deviceInfo, error) {
+	devs, err := p.deps.DeviceLister.DRADevices(p.driverName)
+	if err != nil {
+		return nil, fmt.Errorf("dra plugin: DRADevices: %w", err)
+	}
+	idx := make(map[string]deviceInfo, len(devs))
+	for _, d := range devs {
+		info := deviceInfo{}
+		if attr, ok := d.Attributes[resourceapi.QualifiedName("nri/cpuClass")]; ok && attr.StringValue != nil {
+			info.ClassName = *attr.StringValue
+		}
+		if attr, ok := d.Attributes[resourceapi.QualifiedName("nri/packageID")]; ok && attr.IntValue != nil {
+			info.PkgID = int(*attr.IntValue)
+		}
+		if attr, ok := d.Attributes[resourceapi.QualifiedName("nri/punitID")]; ok && attr.IntValue != nil {
+			info.PunitID = int(*attr.IntValue)
+		}
+		idx[d.Name] = info
+	}
+	return idx, nil
+}
+
+// allClaimedCPUs returns the union of all CPUs currently tracked in p.claims.
+// Must be called inside deps.WithLock.
+func (p *Plugin) allClaimedCPUs() cpuset.CPUSet {
+	result := cpuset.New()
+	for _, cs := range p.claims {
+		for _, alloc := range cs.Allocs {
+			parsed, err := cpuset.Parse(alloc.CPUs)
+			if err == nil {
+				result = result.Union(parsed)
+			}
+		}
+	}
+	return result
+}
+
+// PrepareResourceClaims prepares all resource claims allocated for this driver.
+// For each claim it picks HP CPUs, writes a CDI spec, and persists claim state.
+// The entire body runs inside deps.WithLock to serialize with Reconfigure.
+func (p *Plugin) PrepareResourceClaims(_ context.Context, claims []*resourceapi.ResourceClaim) (map[types.UID]kubeletplugin.PrepareResult, error) {
+	result := make(map[types.UID]kubeletplugin.PrepareResult, len(claims))
+	p.deps.WithLock(func() {
+		devIdx, idxErr := p.deviceIndex()
+		if idxErr != nil {
+			// Fill all UIDs with the same error and return.
+			for _, claim := range claims {
+				result[claim.UID] = kubeletplugin.PrepareResult{Err: idxErr}
+			}
+			return
+		}
+
+		for _, claim := range claims {
+			uid := claim.UID
+			result[uid] = func() kubeletplugin.PrepareResult {
+				// Step 2: nil allocation check.
+				if claim.Status.Allocation == nil {
+					return kubeletplugin.PrepareResult{Err: errNilAllocation}
+				}
+
+				// Step 3: filter results to our driver.
+				allResults := claim.Status.Allocation.Devices.Results
+				var filtered []resourceapi.DeviceRequestAllocationResult
+				for _, r := range allResults {
+					if r.Driver == p.driverName {
+						filtered = append(filtered, r)
+					}
+				}
+				if len(filtered) == 0 {
+					// No results for our driver — valid, no work to do.
+					return kubeletplugin.PrepareResult{}
+				}
+
+				// Step 4: idempotency — check if already prepared.
+				if _, exists := p.claims[uid]; exists {
+					if p.deps.CDIWriter.ClaimSpecExists(uid) {
+						// Spec present — re-build PrepareResult from stored state.
+						return p.buildPrepareResult(uid, filtered)
+					}
+					// Spec missing (e.g. node reboot) — re-write CDI spec from
+					// existing stored state without re-picking CPUs.
+					cdiDevices := p.cdiDevicesFromClaims(uid, filtered)
+					if len(cdiDevices) > 0 {
+						if writeErr := p.deps.CDIWriter.WriteClaim(uid, cdiDevices); writeErr != nil {
+							return kubeletplugin.PrepareResult{Err: fmt.Errorf("dra plugin: re-write CDI spec: %w", writeErr)}
+						}
+					}
+					return p.buildPrepareResult(uid, filtered)
+				}
+
+				// Steps 5-9: allocate CPUs for each filtered result.
+				heldCPUs := p.allClaimedCPUs()
+				var pickedAllocs []ResultAlloc
+				var cdiDevices []CDIDevice
+
+				for i, r := range filtered {
+					// Step 5: look up device attrs.
+					attrs, attrOk := devIdx[r.Device]
+					if !attrOk {
+						// Unknown device — rollback and report error.
+						p.rollbackPicks(pickedAllocs)
+						return kubeletplugin.PrepareResult{Err: fmt.Errorf("dra plugin: unknown device %q", r.Device)}
+					}
+					if attrs.ClassName == "" {
+						p.rollbackPicks(pickedAllocs)
+						return kubeletplugin.PrepareResult{Err: fmt.Errorf("dra plugin: device %q missing nri/cpuClass attribute", r.Device)}
+					}
+
+					// Step 6: read CPU count from ConsumedCapacity.
+					q, ok := r.ConsumedCapacity[resourceapi.QualifiedName("nri/cpus")]
+					if !ok {
+						p.rollbackPicks(pickedAllocs)
+						return kubeletplugin.PrepareResult{Err: errMissingConsumedCapacity}
+					}
+					n := int(q.Value())
+					if n <= 0 {
+						p.rollbackPicks(pickedAllocs)
+						return kubeletplugin.PrepareResult{Err: errMissingConsumedCapacity}
+					}
+
+					// Step 7: HP gate.
+					if !p.deps.ClaimAllocator.IsHPClass(attrs.ClassName) {
+						p.rollbackPicks(pickedAllocs)
+						return kubeletplugin.PrepareResult{Err: errNonHPNotSupported}
+					}
+
+					// Step 8: pick CPUs.
+					picked, pickErr := p.deps.ClaimAllocator.PickHpCpus(attrs.PkgID, attrs.PunitID, n, heldCPUs)
+					if pickErr != nil {
+						p.rollbackPicks(pickedAllocs)
+						return kubeletplugin.PrepareResult{Err: fmt.Errorf("dra plugin: PickHpCpus: %w", pickErr)}
+					}
+					heldCPUs = heldCPUs.Union(picked)
+
+					// Determine ShareID.
+					shareID := ""
+					if r.ShareID != nil {
+						shareID = string(*r.ShareID)
+					}
+
+					pickedAllocs = append(pickedAllocs, ResultAlloc{
+						Request:   r.Request,
+						Pool:      r.Pool,
+						Device:    r.Device,
+						ShareID:   shareID,
+						ClassName: attrs.ClassName,
+						PkgID:     attrs.PkgID,
+						PunitID:   attrs.PunitID,
+						CPUs:      picked.String(),
+					})
+					name := cdiDeviceName(uid, r.Request, r.Device, i)
+					cdiDevices = append(cdiDevices, CDIDevice{
+						Name:      name,
+						ClassName: attrs.ClassName,
+						CPUs:      picked,
+					})
+				}
+
+				// Step 10: write CDI spec.
+				if writeErr := p.deps.CDIWriter.WriteClaim(uid, cdiDevices); writeErr != nil {
+					p.rollbackPicks(pickedAllocs)
+					return kubeletplugin.PrepareResult{Err: fmt.Errorf("dra plugin: WriteClaim: %w", writeErr)}
+				}
+
+				// Step 11: persist state.
+				p.claims[uid] = &ClaimState{UID: string(uid), Allocs: pickedAllocs}
+				if saveErr := p.deps.ClaimStore.Save(p.claims); saveErr != nil {
+					p.deps.Logger.Errorf("dra plugin: ClaimStore.Save: %v", saveErr)
+				}
+
+				// Step 12: build PrepareResult.
+				return p.buildPrepareResult(uid, filtered)
+			}()
+		}
+	})
+	return result, nil
+}
+
+// cdiDevicesFromClaims rebuilds the []CDIDevice slice for uid from the stored
+// ClaimState. filtered provides the allocation results for our driver, in the
+// same order as the original allocs. Used by the idempotency spec-missing path.
+func (p *Plugin) cdiDevicesFromClaims(uid types.UID, filtered []resourceapi.DeviceRequestAllocationResult) []CDIDevice {
+	cs, ok := p.claims[uid]
+	if !ok {
+		return nil
+	}
+	devices := make([]CDIDevice, 0, len(cs.Allocs))
+	for i, alloc := range cs.Allocs {
+		if i >= len(filtered) {
+			break
+		}
+		r := filtered[i]
+		name := cdiDeviceName(uid, r.Request, r.Device, i)
+		cpus, err := cpuset.Parse(alloc.CPUs)
+		if err != nil {
+			continue
+		}
+		devices = append(devices, CDIDevice{
+			Name:      name,
+			ClassName: alloc.ClassName,
+			CPUs:      cpus,
+		})
+	}
+	return devices
+}
+
+// rollbackPicks releases all CPU picks accumulated so far for a claim that
+// encountered an error mid-way through allocation.
+func (p *Plugin) rollbackPicks(allocs []ResultAlloc) {
+	for _, a := range allocs {
+		cs, err := cpuset.Parse(a.CPUs)
+		if err != nil {
+			continue
+		}
+		p.deps.ClaimAllocator.ReleaseHpCpus(a.PkgID, a.PunitID, cs)
+	}
+}
+
+// buildPrepareResult constructs a kubeletplugin.PrepareResult from the stored
+// claim state for uid. filtered contains the allocation results for our driver,
+// in the same order they were originally processed (positional index matches
+// cdiDeviceName index).
+func (p *Plugin) buildPrepareResult(uid types.UID, filtered []resourceapi.DeviceRequestAllocationResult) kubeletplugin.PrepareResult {
+	cs, ok := p.claims[uid]
+	if !ok {
+		return kubeletplugin.PrepareResult{}
+	}
+	devices := make([]kubeletplugin.Device, 0, len(cs.Allocs))
+	for i, alloc := range cs.Allocs {
+		if i >= len(filtered) {
+			break
+		}
+		r := filtered[i]
+		name := cdiDeviceName(uid, r.Request, r.Device, i)
+		devices = append(devices, kubeletplugin.Device{
+			Requests:     []string{r.Request},
+			PoolName:     r.Pool,
+			DeviceName:   r.Device,
+			CDIDeviceIDs: []string{parser.QualifiedName(p.driverName, "device", name)},
+			ShareID:      shareIDPtr(alloc.ShareID),
+		})
+	}
+	return kubeletplugin.PrepareResult{Devices: devices}
 }
 
 // UnprepareResourceClaims is a stub that satisfies kubeletplugin.DRAPlugin.

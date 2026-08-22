@@ -321,19 +321,19 @@ persistence layer to the same file.
 - Modify: `pkg/resmgr/dra/plugin.go`
 - Modify: `pkg/resmgr/dra/plugin_test.go`
 
-- [ ] declare sentinel errors: `errNilAllocation`, `errMissingConsumedCapacity`,
+- [x] declare sentinel errors: `errNilAllocation`, `errMissingConsumedCapacity`,
   `errNonHPNotSupported` (unexported package-level vars or `errors.New(...)`)
-- [ ] add unexported helper `shareIDPtr(s string) *types.UID` — returns nil if `s == ""`,
+- [x] add unexported helper `shareIDPtr(s string) *types.UID` — returns nil if `s == ""`,
   otherwise `ptr.To(types.UID(s))`
-- [ ] add `claims map[types.UID]*ClaimState` to `Plugin`; initialize empty map in `New()`
-- [ ] add unexported `deviceIndex() (map[string]deviceInfo, error)` — calls
+- [x] add `claims map[types.UID]*ClaimState` to `Plugin`; initialize empty map in `New()`
+- [x] add unexported `deviceIndex() (map[string]deviceInfo, error)` — calls
   `deps.DeviceLister.DRADevices(driverName)`, builds name → `{ClassName, PkgID, PunitID}`;
   nil-check all three attributes before dereferencing
-- [ ] add unexported `allClaimedCPUs() cpuset.CPUSet` — union of all CPUs in `p.claims`
-- [ ] remove the `_Stub` tests (`TestPrepareResourceClaims_Stub`,
+- [x] add unexported `allClaimedCPUs() cpuset.CPUSet` — union of all CPUs in `p.claims`
+- [x] remove the `_Stub` tests (`TestPrepareResourceClaims_Stub`,
   `TestUnprepareResourceClaims_Stub`); keep `errNotImplemented` until Task 8 removes it
   (Unprepare still returns it until then, and removing it in Task 7 breaks compilation)
-- [ ] replace stub `PrepareResourceClaims` with real implementation; entire body inside
+- [x] replace stub `PrepareResourceClaims` with real implementation; entire body inside
   `deps.WithLock(func(){ ... })`:
   1. For each claim: ensure claim UID gets a map entry even on error — use a per-claim inner
      function `func() PrepareResult { ... }()` whose return value is assigned to `result[uid]`;
@@ -361,14 +361,14 @@ persistence layer to the same file.
       CDIDeviceIDs: []string{parser.QualifiedName(vendor, "device", cdiDeviceName(uid, r.Request, r.Device, i))},
       ShareID: shareIDPtr(alloc.ShareID)}`
      (note: `deviceIndex()` called ONCE per PrepareResourceClaims invocation, not per result)
-- [ ] write tests: single HP success; repeat Prepare (idempotent, CDI spec present); repeat Prepare
+- [x] write tests: single HP success; repeat Prepare (idempotent, CDI spec present); repeat Prepare
   (spec missing → re-written); nil Allocation → per-claim error; foreign-driver-only results →
   empty PrepareResult no error; unknown device → per-claim error; nil attr → per-claim error;
   absent ConsumedCapacity → per-claim error; non-HP → errNonHPNotSupported; PickHpCpus failure →
   CPUs rolled back; CDI write failure → CPUs rolled back; multi-result claim two punits; ShareID
   nil → nil in Device; ShareID set → non-nil in Device; all UIDs in result map including errors;
   subrequest `/` in Request name → valid CDI device name (no validation error)
-- [ ] run `go test ./pkg/resmgr/dra/... -race` — must pass before Task 8
+- [x] run `go test ./pkg/resmgr/dra/... -race` — must pass before Task 8
 
 ### Task 8: Implement UnprepareResourceClaims
 
