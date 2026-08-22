@@ -37,8 +37,9 @@ func newTestPlugin(resctrlPath string) *plugin {
 		ResctrlPath: resctrlPath,
 	}
 	mgr, err := monitor.New(monitor.Options{
-		ResctrlRoot:  resctrlPath,
-		KeyValidator: monitor.PodUIDValidator,
+		ResctrlRoot:      resctrlPath,
+		KeyValidator:     monitor.PodUIDValidator,
+		KeyCanonicalizer: monitor.CanonicalizePodUID,
 	})
 	if err != nil {
 		panic(err)
@@ -258,6 +259,55 @@ func TestSynchronize_UsesUIDNotSandboxID(t *testing.T) {
 	monDir := filepath.Join(tmpDir, "mon_groups", podUID)
 	_, err = os.Stat(monDir)
 	assert.NoError(t, err)
+}
+
+func TestSynchronize_RemovesOrphanMonGroup(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// An orphaned mon_group left behind by a previous run, keyed by a
+	// UUID-shaped pod UID that is no longer live.
+	orphanUID := "deadbeef-0000-4000-8000-000000000000"
+	orphanDir := filepath.Join(tmpDir, "mon_groups", orphanUID)
+	require.NoError(t, os.MkdirAll(orphanDir, 0755))
+
+	p := newTestPlugin(tmpDir)
+
+	// Synchronize with a single live pod that is not the orphan.
+	podUID := "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+	pod := makePod(podUID, "default", "live-pod")
+	ctr := makeContainer("c1", "container1", pod.GetId(), 0, "")
+
+	_, err := p.Synchronize(context.Background(), []*api.PodSandbox{pod}, []*api.Container{ctr})
+	require.NoError(t, err)
+
+	// The live pod's mon_group exists...
+	_, err = os.Stat(filepath.Join(tmpDir, "mon_groups", podUID))
+	assert.NoError(t, err)
+
+	// ...and the orphan was reaped via Reconcile.
+	_, err = os.Stat(orphanDir)
+	assert.True(t, os.IsNotExist(err), "orphan mon_group should have been removed by Reconcile")
+}
+
+func TestReconcile_RetriesPendingRemoval(t *testing.T) {
+	tmpDir := t.TempDir()
+	p := newTestPlugin(tmpDir)
+	podUID := "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+	// A tracked group whose earlier Remove is assumed to have failed.
+	_, err := p.mgr.EnsureGroup(podUID, "")
+	require.NoError(t, err)
+	require.Contains(t, p.mgr.List(), podUID)
+	p.markPendingRemoval(podUID)
+
+	// The reconciler must retry Remove (not merely Reconcile, which preserves
+	// tracked keys) and clear the pending entry on success.
+	p.reconcile(p.mgr)
+
+	assert.NotContains(t, p.mgr.List(), podUID)
+	assert.Empty(t, p.pendingRemovalKeys())
+	_, err = os.Stat(filepath.Join(tmpDir, "mon_groups", podUID))
+	assert.True(t, os.IsNotExist(err), "pending mon_group should have been removed on retry")
 }
 
 func TestPostCreateContainer_InvalidUID(t *testing.T) {

@@ -23,6 +23,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"sigs.k8s.io/yaml"
@@ -50,6 +51,9 @@ type plugin struct {
 	stopReconciler chan struct{} // closed to stop the background reconciler
 	telemetry      *telemetryState
 	metrics        *monitor.Registration
+
+	mu             sync.Mutex          // guards pendingRemoval
+	pendingRemoval map[string]struct{} // keys whose Remove failed, retried by the reconciler
 }
 
 // pluginConfig holds the runtime configuration for the plugin.
@@ -102,6 +106,15 @@ func (p *plugin) Configure(ctx context.Context, config, runtime, version string)
 			return 0, err
 		}
 	}
+	// Start telemetry now that configuration (from a --config file and/or the
+	// NRI server) is finalized. Binding here rather than in main() lets a
+	// runtime-provided config disable Prometheus or pick a different port
+	// before we bind, instead of fatally exiting on a pre-config port clash.
+	if p.telemetry == nil {
+		if err := p.startTelemetry(ctx); err != nil {
+			return 0, err
+		}
+	}
 	return 0, nil
 }
 
@@ -142,47 +155,84 @@ func (p *plugin) setConfig(data []byte) error {
 		return fmt.Errorf("setConfig: %w", err)
 	}
 
-	// Recreate the monitor manager with the new path before mutating any plugin
+	// Only recreate the monitor manager when the resctrl root actually changes.
+	// The manager holds the in-memory tracking for every running pod; recreating
+	// it on an unrelated telemetry/filter change would strand those pods
+	// (subsequent AssignPID/Remove would return ErrNotTracked until the next
+	// create/synchronize event). Build any new manager up front, before mutating
 	// state, so a failure here leaves the running configuration fully intact.
-	mgr, err := monitor.New(monitor.Options{
-		ResctrlRoot:      cfg.ResctrlPath,
-		KeyValidator:     monitor.PodUIDValidator,
-		KeyCanonicalizer: monitor.CanonicalizePodUID,
-	})
-	if err != nil {
-		return fmt.Errorf("setConfig: failed to create monitor manager: %w", err)
+	rootChanged := p.config == nil || cfg.ResctrlPath != p.config.ResctrlPath
+	var newMgr *monitor.Manager
+	if rootChanged {
+		var err error
+		newMgr, err = monitor.New(monitor.Options{
+			ResctrlRoot:      cfg.ResctrlPath,
+			KeyValidator:     monitor.PodUIDValidator,
+			KeyCanonicalizer: monitor.CanonicalizePodUID,
+		})
+		if err != nil {
+			return fmt.Errorf("setConfig: failed to create monitor manager: %w", err)
+		}
 	}
+
+	// Remember the currently-applied config/manager so a failed reload can be
+	// rolled back to the last working state instead of leaving telemetry and
+	// the reconciler permanently disabled.
+	prevConfig := p.config
+	prevMgr := p.mgr
 
 	p.config = &cfg
 
-	// Stop the old reconciler before swapping the manager; it holds a
-	// reference to the old manager and would otherwise leak.
-	if p.stopReconciler != nil {
-		close(p.stopReconciler)
-		p.stopReconciler = nil
-	}
-
-	// If telemetry is already running, its OTel batch callback is bound to the
-	// manager we are about to replace (which is pinned to the previous
-	// ResctrlPath). Tear it down so we neither leak the old manager nor keep a
-	// second registration reading the old root, then restart it against the new
-	// manager below.
+	// If telemetry is already running, tear it down so it can be rebound to the
+	// (possibly new) manager with the new telemetry settings below.
 	restartTelemetry := p.telemetry != nil
 	if restartTelemetry {
 		if p.metrics != nil {
 			_ = p.metrics.Unregister()
 			p.metrics = nil
 		}
-		p.telemetry.shutdown(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), telemetryShutdownTimeout)
+		p.telemetry.shutdown(ctx)
+		cancel()
 		p.telemetry = nil
 	}
 
-	p.mgr = mgr
+	// Swap the manager only on a root change. The background reconciler pins the
+	// manager it was started with, so stop it here and restart it below against
+	// the new manager; on an unchanged root it keeps running untouched.
+	reconcilerWasRunning := p.stopReconciler != nil
+	if rootChanged {
+		if p.stopReconciler != nil {
+			close(p.stopReconciler)
+			p.stopReconciler = nil
+		}
+		p.mgr = newMgr
+	}
 
 	if restartTelemetry {
 		if err := p.startTelemetry(context.Background()); err != nil {
+			// Roll back to the previously working configuration: the old
+			// telemetry/manager have already been torn down, so restore the
+			// prior config/manager and bring telemetry (and, if we swapped the
+			// manager, the reconciler) back up. This keeps a failed reload
+			// (e.g. the new Prometheus port is occupied) from permanently
+			// disabling telemetry and reconciliation.
+			p.config = prevConfig
+			if rootChanged {
+				p.mgr = prevMgr
+			}
+			if rerr := p.startTelemetry(context.Background()); rerr != nil {
+				log.Errorf("setConfig: failed to restore telemetry after failed reload: %v", rerr)
+			}
+			if rootChanged && reconcilerWasRunning {
+				p.startReconciler()
+			}
 			return fmt.Errorf("setConfig: restart telemetry: %w", err)
 		}
+	}
+
+	if rootChanged && reconcilerWasRunning {
+		p.startReconciler()
 	}
 
 	log.Debugf("configuration: resctrlPath=%s namespaces=%v labelSelector=%v",
@@ -247,30 +297,79 @@ func (p *plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, contai
 	return nil, nil
 }
 
-// startReconciler launches a background goroutine that periodically removes
-// orphaned mon_group directories. This handles the case where removeMonGroup
-// fails in StopContainer (e.g., kernel busy) and the directory lingers.
+// startReconciler launches a background goroutine that periodically retries
+// failed removals and removes orphaned mon_group directories. This handles the
+// case where removeMonGroup fails in RemovePodSandbox (e.g., kernel busy) and
+// the directory lingers.
 func (p *plugin) startReconciler() {
 	if p.stopReconciler != nil {
 		// Already running from a previous Synchronize call.
 		return
 	}
-	p.stopReconciler = make(chan struct{})
+	// Capture the channel and manager this goroutine owns. A later config reload
+	// may close p.stopReconciler, swap p.mgr, and start a fresh goroutine; binding
+	// to these locals keeps this goroutine's select on an immutable channel and
+	// pinned to the manager it was started with.
+	stop := make(chan struct{})
+	p.stopReconciler = stop
+	mgr := p.mgr
 	go func() {
 		ticker := time.NewTicker(reconcileInterval)
 		defer ticker.Stop()
 		for {
 			select {
-			case <-p.stopReconciler:
+			case <-stop:
 				return
 			case <-ticker.C:
-				if err := p.mgr.Reconcile(p.mgr.List()); err != nil {
-					log.Warnf("reconciler: %v", err)
-				}
+				p.reconcile(mgr)
 			}
 		}
 	}()
 	log.Debugf("background reconciler started (interval=%s)", reconcileInterval)
+}
+
+// reconcile retries removals that previously failed and reaps untracked orphan
+// directories. A failed Remove leaves its key tracked, so Reconcile(List())
+// would treat it as live forever; retrying Remove is what actually frees the
+// RMID once the kernel releases the directory.
+func (p *plugin) reconcile(mgr *monitor.Manager) {
+	for _, key := range p.pendingRemovalKeys() {
+		switch err := mgr.Remove(key); {
+		case err == nil, errors.Is(err, monitor.ErrNotTracked):
+			p.clearPendingRemoval(key)
+		default:
+			log.Warnf("reconciler: retry remove %s failed: %v", key, err)
+		}
+	}
+	if err := mgr.Reconcile(mgr.List()); err != nil {
+		log.Warnf("reconciler: %v", err)
+	}
+}
+
+// markPendingRemoval records a key whose Remove failed so the reconciler retries it.
+func (p *plugin) markPendingRemoval(key string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.pendingRemoval == nil {
+		p.pendingRemoval = make(map[string]struct{})
+	}
+	p.pendingRemoval[key] = struct{}{}
+}
+
+func (p *plugin) clearPendingRemoval(key string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.pendingRemoval, key)
+}
+
+func (p *plugin) pendingRemovalKeys() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	keys := make([]string, 0, len(p.pendingRemoval))
+	for k := range p.pendingRemoval {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // PostCreateContainer is called after the container is created but before
@@ -383,8 +482,9 @@ func (p *plugin) RemovePodSandbox(ctx context.Context, pod *api.PodSandbox) erro
 	case errors.Is(err, monitor.ErrNotTracked):
 		// Pod was never monitored; nothing to clean up.
 	default:
-		log.Warnf("RemovePodSandbox %s/%s: failed to remove mon_group (will be cleaned by reconciler): %v",
+		log.Warnf("RemovePodSandbox %s/%s: failed to remove mon_group (will be retried by reconciler): %v",
 			pod.GetNamespace(), pod.GetName(), err)
+		p.markPendingRemoval(podUID)
 	}
 	return nil
 }

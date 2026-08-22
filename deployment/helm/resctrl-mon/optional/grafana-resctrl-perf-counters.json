@@ -9,6 +9,20 @@
   "templating": {
     "list": [
       {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Prometheus",
+        "multi": false,
+        "name": "DS_PROMETHEUS",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
         "current": {
           "selected": true,
           "text": [
@@ -20,7 +34,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "prometheus"
+          "uid": "${DS_PROMETHEUS}"
         },
         "definition": "label_values(kube_pod_info, pod)",
         "hide": 0,
@@ -49,7 +63,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "prometheus"
+          "uid": "${DS_PROMETHEUS}"
         },
         "definition": "label_values(kube_pod_info, namespace)",
         "hide": 0,
@@ -84,7 +98,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "Total power across all monitored pods",
       "fieldConfig": {
@@ -142,12 +156,12 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum(rate({__name__=\"perf.core.energy_joules_total\", \"resctrl.group.source\"=\"pod\"}[$__rate_interval]))",
+          "expr": "sum(rate({__name__=\"perf_core_energy_joules_total\", resctrl_group_source=\"pod\"}[$__rate_interval]))",
           "interval": "5s",
-          "legendFormat": "{{k8s.pod.uid}}",
+          "legendFormat": "{{k8s_pod_uid}}",
           "refId": "A"
         }
       ],
@@ -157,7 +171,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "Total CPU activity rate across all monitored pods",
       "fieldConfig": {
@@ -207,12 +221,12 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum(rate({__name__=\"perf.activity_farads_total\", \"resctrl.group.source\"=\"pod\"}[$__rate_interval]))",
+          "expr": "sum(rate({__name__=\"perf_activity_farads_total\", resctrl_group_source=\"pod\"}[$__rate_interval]))",
           "interval": "5s",
-          "legendFormat": "{{k8s.pod.uid}}",
+          "legendFormat": "{{k8s_pod_uid}}",
           "refId": "A"
         }
       ],
@@ -222,7 +236,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "Total unhalted core cycles/sec across all monitored pods",
       "fieldConfig": {
@@ -272,12 +286,12 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum(rate({__name__=\"perf.unhalted.core.cycles_total\", \"resctrl.group.source\"=\"pod\"}[$__rate_interval]))",
+          "expr": "sum(rate({__name__=\"perf_unhalted_core_cycles_total\", resctrl_group_source=\"pod\"}[$__rate_interval]))",
           "interval": "5s",
-          "legendFormat": "{{k8s.pod.uid}}",
+          "legendFormat": "{{k8s_pod_uid}}",
           "refId": "A"
         }
       ],
@@ -287,7 +301,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "Total retired micro-ops/sec across all monitored pods",
       "fieldConfig": {
@@ -337,12 +351,12 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum(rate({__name__=\"perf.uops.retired_total\", \"resctrl.group.source\"=\"pod\"}[$__rate_interval]))",
+          "expr": "sum(rate({__name__=\"perf_uops_retired_total\", resctrl_group_source=\"pod\"}[$__rate_interval]))",
           "interval": "5s",
-          "legendFormat": "{{k8s.pod.uid}}",
+          "legendFormat": "{{k8s_pod_uid}}",
           "refId": "A"
         }
       ],
@@ -364,7 +378,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "Per-pod power consumption derived from Intel AET energy counter",
       "fieldConfig": {
@@ -416,10 +430,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum by (pod) (\n  rate({__name__=\"perf.core.energy_joules_total\"}[$__rate_interval])\n  * on(\"k8s.pod.uid\") group_left(pod, namespace)\nlabel_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info{pod=~\"$pod_name\", namespace=~\"$namespace\"}[$__range])), \"k8s.pod.uid\", \"$1\", \"uid\", \"(.+)\")\n)",
+          "expr": "sum by (pod) (\n  rate({__name__=\"perf_core_energy_joules_total\"}[$__rate_interval])\n  * on(k8s_pod_uid) group_left(pod, namespace)\nlabel_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info{pod=~\"$pod_name\", namespace=~\"$namespace\"}[$__range])), \"k8s_pod_uid\", \"$1\", \"uid\", \"(.+)\")\n)",
           "interval": "5s",
           "legendFormat": "{{pod}}",
           "refId": "A"
@@ -443,7 +457,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "Per-pod CPU activity rate (capacitance proxy from AET)",
       "fieldConfig": {
@@ -495,10 +509,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum by (pod) (\n  rate({__name__=\"perf.activity_farads_total\"}[$__rate_interval])\n  * on(\"k8s.pod.uid\") group_left(pod, namespace)\nlabel_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info{pod=~\"$pod_name\", namespace=~\"$namespace\"}[$__range])), \"k8s.pod.uid\", \"$1\", \"uid\", \"(.+)\")\n)",
+          "expr": "sum by (pod) (\n  rate({__name__=\"perf_activity_farads_total\"}[$__rate_interval])\n  * on(k8s_pod_uid) group_left(pod, namespace)\nlabel_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info{pod=~\"$pod_name\", namespace=~\"$namespace\"}[$__range])), \"k8s_pod_uid\", \"$1\", \"uid\", \"(.+)\")\n)",
           "interval": "5s",
           "legendFormat": "{{pod}}",
           "refId": "A"
@@ -522,7 +536,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "Ratio of unhalted core cycles to reference cycles per pod. 1.0 = base frequency, >1.0 = turbo, <1.0 = throttled.",
       "fieldConfig": {
@@ -592,10 +606,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum by (pod) (\n  (\n    sum by (\"k8s.pod.uid\") (rate({__name__=\"perf.unhalted.core.cycles_total\"}[$__rate_interval]))\n    / clamp_min(sum by (\"k8s.pod.uid\") (rate({__name__=\"perf.unhalted.ref.cycles_total\"}[$__rate_interval])), 1)\n  )\n  * on(\"k8s.pod.uid\") group_left(pod, namespace)\n  label_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info{pod=~\"$pod_name\", namespace=~\"$namespace\"}[$__range])), \"k8s.pod.uid\", \"$1\", \"uid\", \"(.+)\")\n)",
+          "expr": "sum by (pod) (\n  (\n    sum by (k8s_pod_uid) (rate({__name__=\"perf_unhalted_core_cycles_total\"}[$__rate_interval]))\n    / clamp_min(sum by (k8s_pod_uid) (rate({__name__=\"perf_unhalted_ref_cycles_total\"}[$__rate_interval])), 1)\n  )\n  * on(k8s_pod_uid) group_left(pod, namespace)\n  label_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info{pod=~\"$pod_name\", namespace=~\"$namespace\"}[$__range])), \"k8s_pod_uid\", \"$1\", \"uid\", \"(.+)\")\n)",
           "interval": "5s",
           "legendFormat": "{{pod}}",
           "refId": "A"
@@ -619,7 +633,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "Per-pod retired micro-operations per second",
       "fieldConfig": {
@@ -671,10 +685,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum by (pod) (\n  rate({__name__=\"perf.uops.retired_total\"}[$__rate_interval])\n  * on(\"k8s.pod.uid\") group_left(pod, namespace)\nlabel_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info{pod=~\"$pod_name\", namespace=~\"$namespace\"}[$__range])), \"k8s.pod.uid\", \"$1\", \"uid\", \"(.+)\")\n)",
+          "expr": "sum by (pod) (\n  rate({__name__=\"perf_uops_retired_total\"}[$__rate_interval])\n  * on(k8s_pod_uid) group_left(pod, namespace)\nlabel_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info{pod=~\"$pod_name\", namespace=~\"$namespace\"}[$__range])), \"k8s_pod_uid\", \"$1\", \"uid\", \"(.+)\")\n)",
           "interval": "5s",
           "legendFormat": "{{pod}}",
           "refId": "A"
@@ -698,7 +712,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "Per-pod C1 residency rate",
       "fieldConfig": {
@@ -750,10 +764,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum by (pod) (\n  rate({__name__=\"perf.c1.res_total\"}[$__rate_interval])\n  * on(\"k8s.pod.uid\") group_left(pod, namespace)\nlabel_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info{pod=~\"$pod_name\", namespace=~\"$namespace\"}[$__range])), \"k8s.pod.uid\", \"$1\", \"uid\", \"(.+)\")\n)",
+          "expr": "sum by (pod) (\n  rate({__name__=\"perf_c1_res_total\"}[$__rate_interval])\n  * on(k8s_pod_uid) group_left(pod, namespace)\nlabel_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info{pod=~\"$pod_name\", namespace=~\"$namespace\"}[$__range])), \"k8s_pod_uid\", \"$1\", \"uid\", \"(.+)\")\n)",
           "interval": "5s",
           "legendFormat": "{{pod}}",
           "refId": "A"
@@ -765,7 +779,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "Per-pod C6 residency rate",
       "fieldConfig": {
@@ -817,10 +831,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum by (pod) (\n  rate({__name__=\"perf.c6.res_total\"}[$__rate_interval])\n  * on(\"k8s.pod.uid\") group_left(pod, namespace)\nlabel_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info{pod=~\"$pod_name\", namespace=~\"$namespace\"}[$__range])), \"k8s.pod.uid\", \"$1\", \"uid\", \"(.+)\")\n)",
+          "expr": "sum by (pod) (\n  rate({__name__=\"perf_c6_res_total\"}[$__rate_interval])\n  * on(k8s_pod_uid) group_left(pod, namespace)\nlabel_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info{pod=~\"$pod_name\", namespace=~\"$namespace\"}[$__range])), \"k8s_pod_uid\", \"$1\", \"uid\", \"(.+)\")\n)",
           "interval": "5s",
           "legendFormat": "{{pod}}",
           "refId": "A"
@@ -844,7 +858,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "Per-pod LLC hit stalls per second",
       "fieldConfig": {
@@ -896,10 +910,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum by (pod) (\n  rate({__name__=\"perf.stalls.llc.hit_total\"}[$__rate_interval])\n  * on(\"k8s.pod.uid\") group_left(pod, namespace)\nlabel_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info{pod=~\"$pod_name\", namespace=~\"$namespace\"}[$__range])), \"k8s.pod.uid\", \"$1\", \"uid\", \"(.+)\")\n)",
+          "expr": "sum by (pod) (\n  rate({__name__=\"perf_stalls_llc_hit_total\"}[$__rate_interval])\n  * on(k8s_pod_uid) group_left(pod, namespace)\nlabel_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info{pod=~\"$pod_name\", namespace=~\"$namespace\"}[$__range])), \"k8s_pod_uid\", \"$1\", \"uid\", \"(.+)\")\n)",
           "interval": "5s",
           "legendFormat": "{{pod}}",
           "refId": "A"
@@ -911,7 +925,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "Per-pod LLC miss stalls per second",
       "fieldConfig": {
@@ -963,10 +977,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum by (pod) (\n  rate({__name__=\"perf.stalls.llc.miss_total\"}[$__rate_interval])\n  * on(\"k8s.pod.uid\") group_left(pod, namespace)\nlabel_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info{pod=~\"$pod_name\", namespace=~\"$namespace\"}[$__range])), \"k8s.pod.uid\", \"$1\", \"uid\", \"(.+)\")\n)",
+          "expr": "sum by (pod) (\n  rate({__name__=\"perf_stalls_llc_miss_total\"}[$__rate_interval])\n  * on(k8s_pod_uid) group_left(pod, namespace)\nlabel_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info{pod=~\"$pod_name\", namespace=~\"$namespace\"}[$__range])), \"k8s_pod_uid\", \"$1\", \"uid\", \"(.+)\")\n)",
           "interval": "5s",
           "legendFormat": "{{pod}}",
           "refId": "A"

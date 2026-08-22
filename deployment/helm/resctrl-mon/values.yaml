@@ -10,10 +10,10 @@ telemetry:
     enabled: true
     listenAddress: ":9100"
     scrapeInterval: "15s"    # recommended scrape interval (annotation hint)
-    namespace: ""            # empty = resctrl_* Prometheus metric names
+    namespace: ""            # empty = no prefix (l3_*/perf_* metric names)
   otlp:
     enabled: false
-    endpoint: ""             # e.g. "otel-collector.monitoring.svc:4317"
+    endpoint: ""             # e.g. "otel-collector-resctrl.monitoring.svc:4317"
     protocol: grpc           # grpc | http
     interval: 15s
     insecure: true

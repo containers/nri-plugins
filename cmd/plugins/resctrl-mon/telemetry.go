@@ -66,6 +66,9 @@ func defaultTelemetryConfig() telemetryConfig {
 	var cfg telemetryConfig
 	cfg.Prometheus.Enabled = true
 	cfg.Prometheus.ListenAddress = ":9100"
+	// Match the chart/sample/README default: OTLP uses a plaintext connection
+	// unless the operator explicitly opts into TLS.
+	cfg.OTLP.Insecure = true
 	return cfg
 }
 
@@ -230,14 +233,16 @@ func (p *plugin) startTelemetry(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	p.telemetry = state
 
 	meter := state.provider.Meter("nri-resctrl-mon")
-	reg, err := setupMetrics(p.mgr, cfg, meter)
+	reg, err := setupMetrics(p.mgr, cfg, p.config.ResctrlPath, meter)
 	if err != nil {
 		state.shutdown(ctx)
 		return fmt.Errorf("metrics registration: %w", err)
 	}
+	// Publish only after registration succeeds; otherwise a failed setupMetrics
+	// would leave p.telemetry non-nil and a later Configure would skip startup.
+	p.telemetry = state
 	p.metrics = reg
 	return nil
 }

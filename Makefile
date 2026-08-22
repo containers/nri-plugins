@@ -165,7 +165,8 @@ NRI_DEFAULT_IDX ?= 90
 # install-plugins: install plugin binaries to NRI_PLUGINS_DIR with the
 # <NN>-<name> prefix required by CRI-O/containerd static plugin discovery.
 install-plugins: build-plugins
-	$(Q)echo "Installing plugins to $(NRI_PLUGINS_DIR)..."; \
+	$(Q)set -e; \
+	echo "Installing plugins to $(NRI_PLUGINS_DIR)..."; \
 	mkdir -p $(NRI_PLUGINS_DIR); \
 	for bin in $(PLUGINS); do \
 	    name=$${bin#nri-}; \

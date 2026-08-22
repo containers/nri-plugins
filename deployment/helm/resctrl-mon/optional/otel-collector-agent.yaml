@@ -24,6 +24,13 @@ data:
           grpc:
             endpoint: 0.0.0.0:4317
     processors:
+      # resctrl-mon emits k8s.pod.uid as a data-point attribute. The
+      # k8sattributes pod_association can only match on resource attributes,
+      # so promote it (and any other shared data-point attributes) to the
+      # resource level first with groupbyattrs.
+      groupbyattrs:
+        keys:
+          - k8s.pod.uid
       k8sattributes:
         auth_type: serviceAccount
         extract:
@@ -46,7 +53,7 @@ data:
       pipelines:
         metrics:
           receivers: [otlp]
-          processors: [k8sattributes, batch]
+          processors: [groupbyattrs, k8sattributes, batch]
           exporters: [prometheus]
 ---
 apiVersion: apps/v1
@@ -90,3 +97,30 @@ spec:
         - name: config
           configMap:
             name: otel-collector-resctrl-config
+---
+# Service exposing the OTLP gRPC receiver so the plugin can reach the
+# collector at otel-collector-resctrl.monitoring.svc:4317. Because the
+# collector runs as a DaemonSet, this ClusterIP Service load-balances across
+# all node-local collectors; enrichment is correct regardless of which pod
+# handles a request (k8sattributes has cluster-wide pod visibility). For
+# strict node-local delivery, have the plugin target the node's host IP
+# (status.hostIP) instead.
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector-resctrl
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: otel-collector-resctrl
+spec:
+  selector:
+    app.kubernetes.io/name: otel-collector-resctrl
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+      protocol: TCP
+    - name: prom-export
+      port: 8889
+      targetPort: prom-export
+      protocol: TCP

@@ -101,7 +101,7 @@ func TestTelemetryPrometheusEndpoint(t *testing.T) {
 	_, err = mgr.EnsureGroup(podUID, "")
 	require.NoError(t, err)
 
-	// Use a random port to avoid conflicts.
+	// Bind an ephemeral port to avoid conflicts on shared CI runners.
 	cfg := defaultTelemetryConfig()
 	cfg.Prometheus.ListenAddress = "127.0.0.1:0"
 	cfg.PerfCounters.Enabled = false // default: suppress perf counters
@@ -110,24 +110,17 @@ func TestTelemetryPrometheusEndpoint(t *testing.T) {
 	require.NoError(t, err)
 	defer state.shutdown(context.Background())
 
-	// Get the actual port from the listener.
-	// Since we used :0, we need to start with a listener first.
-	// Workaround: use a fixed high port for testing.
-	state.shutdown(context.Background())
-
-	cfg.Prometheus.ListenAddress = "127.0.0.1:19100"
-	state, err = newTelemetry(context.Background(), cfg)
-	require.NoError(t, err)
-	defer state.shutdown(context.Background())
-
 	meter := state.provider.Meter("nri-resctrl-mon-test")
-	_, err = setupMetrics(mgr, cfg, meter)
+	_, err = setupMetrics(mgr, cfg, root, meter)
 	require.NoError(t, err)
+
+	// Scrape the actual address the listener bound to.
+	addr := state.promListener.Addr().String()
 
 	// Wait for server to be ready.
 	time.Sleep(50 * time.Millisecond)
 
-	resp, err := http.Get("http://127.0.0.1:19100/metrics")
+	resp, err := http.Get("http://" + addr + "/metrics")
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 
@@ -264,16 +257,19 @@ func TestPerfCountersGate(t *testing.T) {
 
 func TestControlGroupOf(t *testing.T) {
 	tests := []struct {
+		root string
 		path string
 		want string
 	}{
-		{"/sys/fs/resctrl/mon_groups/abc-123", ""},
-		{"/sys/fs/resctrl/COS1/mon_groups/abc-123", "COS1"},
-		{"/sys/fs/resctrl/my-class/mon_groups/abc-123", "my-class"},
+		{"/sys/fs/resctrl", "/sys/fs/resctrl/mon_groups/abc-123", ""},
+		{"/sys/fs/resctrl", "/sys/fs/resctrl/COS1/mon_groups/abc-123", "COS1"},
+		{"/sys/fs/resctrl", "/sys/fs/resctrl/my-class/mon_groups/abc-123", "my-class"},
+		{"/mnt/rdt", "/mnt/rdt/mon_groups/abc-123", ""},
+		{"/mnt/rdt", "/mnt/rdt/COS1/mon_groups/abc-123", "COS1"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
-			assert.Equal(t, tt.want, controlGroupOf(tt.path))
+			assert.Equal(t, tt.want, controlGroupOf(tt.root, tt.path))
 		})
 	}
 }

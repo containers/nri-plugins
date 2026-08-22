@@ -129,9 +129,9 @@ customize with their own values, along with the default values.
 | `telemetry.prometheus.enabled`         | `true`    | expose a `/metrics` Prometheus endpoint                            |
 | `telemetry.prometheus.listenAddress`   | `":9100"` | address:port for the Prometheus HTTP listener                      |
 | `telemetry.prometheus.scrapeInterval`  | `"15s"`   | recommended scrape interval (set via pod annotation hint)          |
-| `telemetry.prometheus.namespace`       | `""`      | Prometheus metric prefix (empty = `resctrl_`)                      |
+| `telemetry.prometheus.namespace`       | `""`      | Prometheus metric prefix (empty = no prefix, e.g. `l3_*`/`perf_*`) |
 | `telemetry.otlp.enabled`              | `false`   | push metrics via OTLP                                              |
-| `telemetry.otlp.endpoint`             | `""`      | OTLP receiver endpoint (e.g. `otel-collector:4317`)                |
+| `telemetry.otlp.endpoint`             | `""`      | OTLP receiver endpoint (e.g. `otel-collector-resctrl:4317`)        |
 | `telemetry.otlp.protocol`             | `grpc`    | `grpc` or `http`                                                   |
 | `telemetry.otlp.interval`             | `15s`     | OTLP export interval                                               |
 | `telemetry.otlp.insecure`             | `true`    | disable TLS for OTLP connection                                    |

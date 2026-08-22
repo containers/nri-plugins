@@ -32,10 +32,10 @@ var coreAETFiles = map[string]bool{
 }
 
 // setupMetrics registers OTel instruments via the goresctrl adapter.
-func setupMetrics(mgr *monitor.Manager, cfg telemetryConfig, meter otelmetric.Meter) (*monitor.Registration, error) {
+func setupMetrics(mgr *monitor.Manager, cfg telemetryConfig, resctrlRoot string, meter otelmetric.Meter) (*monitor.Registration, error) {
 	return mgr.RegisterOTelInstruments(meter,
 		monitor.WithFilter(perfCounterFilter(cfg)),
-		monitor.WithAttributes(groupAttributes),
+		monitor.WithAttributes(groupAttributesFor(resctrlRoot)),
 	)
 }
 
@@ -75,38 +75,57 @@ func perfCounterFilter(cfg telemetryConfig) monitor.FilterFunc {
 	}
 }
 
-// groupAttributes provides per-group OTel attributes.
-func groupAttributes(key, path string) []attribute.KeyValue {
-	return []attribute.KeyValue{
-		attribute.String("k8s.pod.uid", key),
-		attribute.String("resctrl.control_group", controlGroupOf(path)),
-		attribute.String("resctrl.group.source", sourceFor(key)),
+// groupAttributesFor returns a per-group OTel attribute function bound to the
+// configured resctrl root, which is needed to recognize the root ctrl_group.
+func groupAttributesFor(resctrlRoot string) monitor.AttributeFunc {
+	root := filepath.Clean(resctrlRoot)
+	return func(key, path string) []attribute.KeyValue {
+		return []attribute.KeyValue{
+			attribute.String("k8s.pod.uid", key),
+			attribute.String("resctrl.control_group", controlGroupOf(root, path)),
+			attribute.String("resctrl.group.source", sourceFor(key)),
+		}
 	}
 }
 
 // matchGlob does simple glob matching (only * is supported as wildcard).
 func matchGlob(pattern, name string) bool {
-	if pattern == name {
-		return true
+	if !strings.Contains(pattern, "*") {
+		return pattern == name
 	}
-	if strings.Contains(pattern, "*") {
-		re := "^" + strings.ReplaceAll(regexp.QuoteMeta(pattern), `\*`, ".*") + "$"
-		matched, _ := regexp.MatchString(re, name)
-		return matched
+	parts := strings.Split(pattern, "*")
+	// The name must start with the segment before the first '*' and end with
+	// the segment after the last '*'.
+	if !strings.HasPrefix(name, parts[0]) {
+		return false
 	}
-	return false
+	name = name[len(parts[0]):]
+	last := parts[len(parts)-1]
+	if !strings.HasSuffix(name, last) {
+		return false
+	}
+	name = name[:len(name)-len(last)]
+	// Any interior segments must appear in order.
+	for _, seg := range parts[1 : len(parts)-1] {
+		i := strings.Index(name, seg)
+		if i < 0 {
+			return false
+		}
+		name = name[i+len(seg):]
+	}
+	return true
 }
 
-// controlGroupOf extracts the CTRL group name from a mon_group path.
-// e.g. "/sys/fs/resctrl/COS1/mon_groups/abc-123" → "COS1"
-// e.g. "/sys/fs/resctrl/mon_groups/abc-123" → "" (root/default)
-func controlGroupOf(groupPath string) string {
+// controlGroupOf extracts the CTRL group name from a mon_group path, relative
+// to the configured resctrl root.
+// e.g. root=/sys/fs/resctrl, "/sys/fs/resctrl/COS1/mon_groups/abc-123" → "COS1"
+// e.g. root=/sys/fs/resctrl, "/sys/fs/resctrl/mon_groups/abc-123" → "" (root)
+func controlGroupOf(resctrlRoot, groupPath string) string {
 	ctrlDir := filepath.Dir(filepath.Dir(groupPath))
-	base := filepath.Base(ctrlDir)
-	if base == "resctrl" || base == "." || base == "/" {
+	if filepath.Clean(ctrlDir) == filepath.Clean(resctrlRoot) {
 		return ""
 	}
-	return base
+	return filepath.Base(ctrlDir)
 }
 
 // uuidPattern matches standard dashed UUID (pod UIDs).
