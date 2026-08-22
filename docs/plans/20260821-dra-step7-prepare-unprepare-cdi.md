@@ -395,6 +395,13 @@ persistence layer to the same file.
 - Modify: `pkg/resmgr/dra/plugin.go`
 - Modify: `pkg/resmgr/dra/plugin_test.go`
 
+- [ ] add exported `LiveClaimClasses() map[string]int` — returns `className → liveClaimCount`
+  over all entries in `p.claims`; used by Step 8's Reconfigure refusal check (resolved
+  decision 8 / Option B: refuse Reconfigure that changes class-derived attributes while
+  claims are live). No locking — caller must already hold the resmgr lock OR call outside
+  `WithLock` (Step 8 checks inside the Reconfigure path which already holds the lock).
+  Add unit test: zero claims → empty map; two claims same class → count 2; two claims different
+  classes → two entries.
 - [ ] add exported `RestoreClaimsLocked() error` — re-runs `AccountHpCpus` for every entry in
   `p.claims` (no cache reload, no locking); godoc: "caller must already hold the resmgr lock;
   do not call via WithLock"; for each alloc: `cs, err := cpuset.Parse(alloc.CPUs); if err !=
@@ -453,7 +460,8 @@ persistence layer to the same file.
   (`claim-<uid>-<sanitize(request)>-<device>-<idx>`), concurrency model alignment
   (resmgr lock via `WithLock`/`RestoreClaimsLocked`), `Start`/`PublishResources`/`RestoreClaims`
   must-not-hold-lock contract
-- [ ] update [plan.md](../dra/plan.md) "Not part of v1": add non-HP DRA pick (deferred)
+- [ ] update [plan.md](../dra/plan.md) "Not part of v1": add non-HP DRA pick (deferred); confirm
+  class-derived attribute freshness is no longer listed (resolved decision 8, already removed)
 - [ ] move this plan to `docs/plans/completed/`
 
 ## Post-Completion
@@ -470,4 +478,5 @@ persistence layer to the same file.
 - Step 8 wire-up: inject `*cpuclass.Handler` as `ClaimAllocator`; `NewCDIWriter(driverName,
   cdiDir)` as `CDIWriter`; `NewCacheClaimStore(cache)` as `ClaimStore`; resmgr write-lock
   closure as `WithLock`; wire `RestoreClaimsLocked()` after `policy.Reconfigure()` in
-  `resmgr.apply()`
+  `resmgr.apply()`; use `LiveClaimClasses()` in the Reconfigure refusal check (resolved
+  decision 8 — refuse if any class-derived attribute changed and `liveClaimCount > 0`)
