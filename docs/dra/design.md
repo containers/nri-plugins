@@ -312,10 +312,11 @@ This lets users write `deviceClassName: nri.topology-aware.cpu.hp-perf` instead 
 
    Applies at v2 review time and to any subsequent policy integration.
 7. **Multiple published classes per (tier, punit) without [KEP-5941](https://github.com/kubernetes/enhancements/issues/5941).** (Resolved 2026-08-19.) Add `cpuClass.dra.publish` (bool, default `true`). Driver validates at Configure: if any (priorityTier, punitID) has >1 published class **and** `TopologyAwarePolicy.spec.dra.sharedCounters == false`, refuse to start with an error naming the conflict and its two resolutions (opt-out via `dra.publish: false`, or enable `sharedCounters`). Applies to both HP and non-HP tiers; on non-SST-TF systems the granularity widens to (tier, package). Under [KEP-5941](https://github.com/kubernetes/enhancements/issues/5941) (Model C) the constraint is lifted; `dra.publish: false` remains as an "hide from DRA" knob.
+8. **Class-derived attribute freshness.** (Resolved 2026-08-22.) **Option B: refuse Reconfigure that changes class-derived attributes if any claim is currently allocated for the affected class.** At Reconfigure time the driver compares the incoming class definitions against the currently-published slice. If any class-derived attribute differs **and** the affected class has live claims, return an error from `policy.Reconfigure`. The resmgr `reconfigure` rollback-on-failure path (`pkg/resmgr/resource-manager.go`) then re-applies the old config — `m.cfg` is only committed on full success. This fits the existing component-refusal contract that `instrumentation`, `blkio`, and `rdt` already use. Operator experience: a clear error tells them which class changed and that they must drain DRA-claiming pods before updating config. Claim state tracking required for Prepare/Unprepare (already in design) covers the live-claim check at zero additional cost. Failure modes 2 (cosmetic drift) and 3 (class deletion with live claims) are handled by: not committing the config change (the deleted class remains live until pods drain).
 
 ## Open decisions
 
-1. **Class-derived attribute freshness.** Attributes like EPP, governor, uncore freq depend on cpuClass config. If a user updates policy config while pods are running, the driver re-publishes ResourceSlices — but claims in flight might see stale attributes. Design assumes existing policy `Reconfigure` semantics apply. Needs confirmation from maintainers on how strict a guarantee to make. Solution space and recommendation are detailed below.
+None.
 
 ## Discussion: class-derived attribute freshness
 
@@ -338,10 +339,10 @@ Docs say: "cpuClass config changes propagate to new claims via ResourceSlice re-
 - Pro: zero code.
 - Con: silent contract violation possible; debugging surface is "why did my claim get EPP=128 when I asked for EPP=0?"
 
-**B. Refuse Reconfigure that changes class-derived attributes if any claim is currently allocated for the affected class.**
+**B. Refuse Reconfigure that changes class-derived attributes if any claim is currently allocated for the affected class.** *(chosen)*
 Configure re-runs at reconfigure time. Before it commits, driver checks whether class-derived attributes actually differ from the currently-published slice and whether affected classes have live claims. If yes, refuse the reconfigure and error to the operator.
-- Pro: hard guarantee against silent drift.
-- Con: breaks operator workflow (can't change class config until DRA-claiming pods are gone). "Live claim" check requires the driver to track claim state across restarts (design already does via CDI-reflection à la `dra-driver-cpu.Synchronize`).
+- Pro: hard guarantee against silent drift. Fits naturally into the resmgr rollback-on-failure contract — `m.policy.Reconfigure` returning an error triggers `apply(old cfg)` and leaves `m.cfg` unchanged, exactly as `blkio` and `rdt` can do today.
+- Con: operator must drain DRA-claiming pods before applying a class config change. Acceptable for the deployments targeted.
 
 **C. Publish class-derived attributes under a version attribute.**
 Every re-publish increments `nri/classGeneration` on affected devices. Users can pin generation in CEL if they care. Makes drift observable but doesn't prevent it.
@@ -365,17 +366,17 @@ Enforce sharp guarantees at Prepare time (E), document the residual race (A), an
 
 ### Recommendation
 
-**Option F.** Rationale:
+**Option B.** Rationale:
 
-- The two sharp edges are (1) silent contract violation on Prepare and (3) class deletion. F addresses both.
-- Converts a class of hard-to-debug silent bugs (wrong EPP/governor on a workload that "looked right") into a class of explicit errors the user can act on (Prepare fails with a message pointing at the changed class).
-- nri-plugins users historically care about turbo/EPP guarantees (that's what PCT exists for). Being loud beats being fast.
+- The resmgr `reconfigure` method already implements rollback-on-failure (`pkg/resmgr/resource-manager.go`): if `m.policy.Reconfigure` returns an error, the old config is re-applied and `m.cfg` is not updated. This is the same contract used by `blkio` and `rdt` today — B is not surprising coupling, it is the intended use of the mechanism.
+- Hard guarantee against silent attribute drift at the earliest possible point (config apply), not deferred to Prepare time.
+- Claim state tracking is already required for Prepare/Unprepare; the live-claim check reuses that state at zero additional cost.
+- Operator experience is explicit and actionable: drain DRA-claiming pods, then re-apply config.
 
-Concrete mechanics for F:
-- **At publish:** driver records `classSnapshot[className] = attributes` at each publish.
-- **At Prepare:** driver reconstructs the attribute set from the current class definition and compares against the claim's `Status.Allocation.Devices.Results[].DeviceRequest`. Mismatch → refuse Prepare with an error message telling the user to recreate the claim.
-- **At Reconfigure with class removal:** any deleted-but-still-referenced class stays alive internally as a "retired class." Retired classes are used by NRI-phase application but are excluded from new DRA publishes. Refcount = live claims. When refcount hits zero, class definition is dropped.
-- **Documented residual race:** the "operator reconfigures between scheduler-observes-slice and driver-Prepare" window remains but is now a loud Prepare failure rather than silent attribute drift.
+Concrete mechanics for B:
+- **At Reconfigure:** compare incoming `cpuClass` definitions against the currently-published slice's per-class attribute snapshot. If any attribute differs for a class that has `liveClaimCount > 0`, return an error naming the class(es) and the changed fields.
+- **Live claim tracking:** maintained by Prepare/Unprepare handlers (already required). Survives restarts via CDI-reflection synchronization (same pattern as `dra-driver-cpu.Synchronize`).
+- **Class deletion with live claims:** a class removed from config is a special case of "attribute change" (all attributes go to zero/absent). Same refusal applies — operator must drain pods referencing the deleted class before the config change commits.
 
 ### Reference: how `dra-driver-cpu` avoids this problem
 
@@ -385,17 +386,16 @@ That approach is not open to us: nri-plugins already supports live `Reconfigure`
 
 ### Fallback
 
-If maintainers consider F too invasive for v1, the acceptable simpler choices are:
+If B proves too restrictive in practice (e.g., long-lived claims block urgent class config changes), the acceptable simpler fallback is:
 
 - **A alone** — accept the sharp edge, treat cpuClass config changes as maintenance-window operations, document loudly.
-- **A + C** — publish a `classGeneration` attribute so operators can audit whether their running claims are on the current class definition; sophisticated users can pin generation in CEL.
+- **A + C** — publish a `classGeneration` attribute so operators can audit whether running claims are on the current class definition; sophisticated users can pin generation in CEL.
 
-**B** (refuse Reconfigure with live claims) is not recommended because it collides with the resmgr's existing Reconfigure semantics — the rest of the plugin already handles live config changes and the DRA driver blocking them creates surprising coupling.
-
-**D** (structural vs identifying) is not recommended because the split is subjective and hard to document.
+**D** (structural vs identifying split) is not recommended because the split is subjective and hard to document.
 
 ## Change log
 
+- **2026-08-22 (latest).** Class-derived attribute freshness resolved as Option B: refuse Reconfigure that changes class-derived attributes when live DRA claims exist for the affected class. Key insight: resmgr `reconfigure` already implements rollback-on-failure — `m.policy.Reconfigure` returning an error triggers `apply(old cfg)` and leaves `m.cfg` unchanged, so B fits the existing component-refusal contract rather than fighting it. Updated recommendation, mechanics, and fallback in the Discussion section; moved to Resolved decisions item 8; Open decisions now empty.
 - **2026-08-19 (latest).** Added note to "Publish flow" that "publish on Reconfigure" is a nri-plugins-specific requirement; both reference DRA drivers (`dra-driver-cpu` and `dra-example-driver`) publish exactly once at start and never re-publish. Reinforces the framing that class-freshness (open decision 1) is a problem we're inventing by supporting live Reconfigure.
 - **2026-08-19.** Added "Reference: how `dra-driver-cpu` avoids this problem" to the class-freshness discussion. Their approach — no live reconfigure, restart-the-DaemonSet on config change — is not available to us because nri-plugins already supports live `Reconfigure`. Options A–F remain the answer space.
 - **2026-08-19.** Multi-class overcommit resolved: introduced `cpuClass.dra.publish` (bool, default true) and Configure-time validation that refuses to start on any (tier, punit) with >1 published class unless `sharedCounters` is on. Old "v1-a first-configured wins" text replaced. Non-HP tier explicitly covered alongside HP.
