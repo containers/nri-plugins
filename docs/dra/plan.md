@@ -184,6 +184,7 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
 - Implement `UnprepareResourceClaims`: release CPUs, remove CDI entry, drop cache entry.
 - CDI writer in `pkg/resmgr/dra/cdi.go` — use `tags.cncf.io/container-device-interface` upstream library (`cdiapi.Cache` with `WithAutoRefresh(false)`, `WriteSpec`, `RemoveSpec`; `specs-go.Spec`/`Device`/`ContainerEdits` types; `GenerateTransientSpecName(vendor, class, claimUID)` for per-claim filenames). Do NOT carry forward [PR #536](https://github.com/containers/nri-plugins/pull/536)'s hand-rolled `fmt.Fprintf` YAML — it lacks atomic writes, spec validation, and version tracking. See `dra-driver-cpu`'s [`pkg/driver/cdi.go`](https://github.com/kubernetes-sigs/dra-driver-cpu/blob/main/pkg/driver/cdi.go) as the pattern.
 - Restart reconciliation: on `Plugin.Start`, load persisted claims and rebuild `hpUsed`. If the persisted claim's CPUs are still in the CDI spec, keep it; otherwise drop and warn.
+- Expose `Plugin.LiveClaimClasses() map[string]int` — returns a map of `className → liveClaimCount` over all persisted claim state. Used by Step 8's Reconfigure check (resolved decision 8 / Option B).
 
 **Files touched:** `pkg/resmgr/dra/{plugin,cdi,state}.go`, unit tests, integration tests.
 
@@ -204,6 +205,7 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
 - Implement in `cmd/plugins/topology-aware/policy/pools.go`:
   - `allocateClaim` — find tightest pool containing claim CPUs, evict conflicting exclusive grants, mark CPUs claimed in pool supply, reallocate displaced grants. Adapted from [PR #536](https://github.com/containers/nri-plugins/pull/536) with the `getClaimedCPUs` env-var parser generalized to read both `NRI_CLASS` and `NRI_CPU<N>` (see [design.md](design.md) CDI env-var protocol).
   - `releaseClaim` — reverse.
+- **Option B — Reconfigure refusal (resolved decision 8):** before committing a new config, compare incoming `cpuClass` definitions against the currently-published slice's per-class attribute snapshot stored in `pkg/resmgr/dra/`. For each class whose attributes differ, call `Plugin.LiveClaimClasses()` (Step 7); if `liveClaimCount > 0`, return an error from `policy.Reconfigure` naming the affected class(es) and changed fields. The resmgr rollback-on-failure path (`resource-manager.go`) then re-applies the old config without any further action needed. Class deletion with live claims is treated as an attribute change (all attributes go to absent) — same code path.
 - Extend `TopologyAwarePolicy` config CR with `spec.dra { enabled: bool, sharedCounters: bool }`.
 - Add `spec.dra.enabled: false` to all existing test configs to keep behavior unchanged.
 
@@ -263,7 +265,6 @@ Design.md "Feature-gate detection" spec'd probe-at-startup for `AllowMultipleAll
 Explicitly deferred to later work, tracked here so nobody accidentally scope-creeps a step:
 - Balloons policy wire-up (v2).
 - Model C / [KEP-5941](https://github.com/kubernetes/enhancements/issues/5941) shared counters (waits for upstream alpha).
-- Class-derived attribute freshness resolution (open decision 1 in [design.md](design.md); implementation depends on which option maintainers pick).
 - `cpuClass.dra` sub-block fields beyond `publish` (custom `capacityKey`, per-class DeviceClass suppression).
 - PodResources API integration for DRA-claimed CPUs ([KEP-3695](https://github.com/kubernetes/enhancements/issues/3695); complementary but independent).
 
@@ -277,5 +278,6 @@ Splitting this way means the first 5 PRs can land and be reviewed in parallel wi
 
 ## Change log
 
+- **2026-08-22 (latest).** Class-derived attribute freshness resolved as Option B (design.md resolved decision 8). Removed from "Not part of v1." Added `Plugin.LiveClaimClasses()` to Step 7 (claim tracking infrastructure) and the Reconfigure refusal check to Step 8 (policy wire-up where `Reconfigure` fires).
 - **2026-08-19 (later).** Step 6 gained an **Imports & deps** subsection: enumerates must-have Kubernetes helper packages (`kubeletplugin`, `resourceslice`, `resapi`, `types`, `resource`), lists small additions worth pulling in (`client-go/util/retry`, `utils/ptr`), and explicitly documents what we are *not* adopting (klog switch, `component-base/featuregate`, `component-base/metrics`, `runtime/serializer` for checkpoints, `controller-runtime`, low-level DRA/registration protobufs) with rationale. Also codifies "do not import from `dra-example-driver` or `dra-driver-cpu`."
 - **2026-08-19.** Initial plan created based on [design.md](design.md) as of that date.
