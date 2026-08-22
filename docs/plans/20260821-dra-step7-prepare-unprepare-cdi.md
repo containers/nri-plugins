@@ -295,25 +295,25 @@ persistence layer to the same file.
 **Files:**
 - Modify: `pkg/resmgr/dra/state.go` (add functions to file created in Task 4)
 - Create: `pkg/resmgr/dra/state_test.go`
-- [ ] define `draClaimsKey = "dra/claims"` constant
-- [ ] implement `marshalClaims(claims map[types.UID]*ClaimState) (map[string]string, error)` —
+- [x] define `draClaimsKey = "dra/claims"` constant
+- [x] implement `marshalClaims(claims map[types.UID]*ClaimState) (map[string]string, error)` —
   JSON-encode each ClaimState into the value
-- [ ] implement `unmarshalClaims(raw map[string]string) (map[types.UID]*ClaimState, error)`
-- [ ] implement `NewCacheClaimStore(c cache.Cache) ClaimStore`:
+- [x] implement `unmarshalClaims(raw map[string]string) (map[types.UID]*ClaimState, error)`
+- [x] implement `NewCacheClaimStore(c cache.Cache) ClaimStore`:
   - `Save`: `m, err := marshalClaims(claims); if err != nil { return err }; c.SetPolicyEntry(key, m); return c.Save()`  
     (note: `c.Save()` is a no-op when `saveBlock > 0` — data is still in-memory `policyData` and
     persists on the next unblocked Save; ClaimStore.Save callers must tolerate this)
   - `Load`: `m := map[string]string{}; if !c.GetPolicyEntry(key, &m) { return nil, nil }; return unmarshalClaims(m)`
     (named variable is required — a composite-literal address is not addressable in this call)
-- [ ] export `NewCacheClaimStore` so Step 8 can use it outside package `dra`; note the
+- [x] export `NewCacheClaimStore` so Step 8 can use it outside package `dra`; note the
   `dra → cache` import is cycle-free
-- [ ] unit tests (use `cache.NewCache(cache.Options{CacheDir: t.TempDir()})` for a real cache):
+- [x] unit tests (use `cache.NewCache(cache.Options{CacheDir: t.TempDir()})` for a real cache):
   round-trip Save → Load with multi-alloc claim; empty cache → empty map; CPUs survive round-trip
   (round-trip: `got, err := cpuset.Parse(alloc.CPUs); ... if !got.Equals(original)` —
   `cpuset.CPUSet` cannot be compared with `==`, and `Parse` is two-valued); verify Load returns saved data
   (not empty due to composite-literal bug); BlockSave window test (optional: verify in-memory
   data is still accessible after Save no-op)
-- [ ] run `go test ./pkg/resmgr/dra/... -race` — must pass before Task 7
+- [x] run `go test ./pkg/resmgr/dra/... -race` — must pass before Task 7
 
 ### Task 7: Implement PrepareResourceClaims
 
