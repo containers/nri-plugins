@@ -121,3 +121,66 @@ customize with their own values, along with the default values.
 | `affinity`               | []                                                                                                                            | specify node affinity                                |
 | `nodeSelector`           | []                                                                                                                            | specify node selector labels                         |
 | `podPriorityClassNodeCritical` | true                                                                                                                    | enable [marking Pod as node critical](https://kubernetes.io/docs/tasks/administer-cluster/guaranteed-scheduling-critical-addon-pods/#marking-pod-as-critical) |
+
+### Telemetry options
+
+| Name                                   | Default   | Description                                                        |
+| -------------------------------------- | --------- | ------------------------------------------------------------------ |
+| `telemetry.prometheus.enabled`         | `true`    | expose a `/metrics` Prometheus endpoint                            |
+| `telemetry.prometheus.listenAddress`   | `":9100"` | address:port for the Prometheus HTTP listener                      |
+| `telemetry.prometheus.scrapeInterval`  | `"15s"`   | recommended scrape interval (set via pod annotation hint)          |
+| `telemetry.prometheus.namespace`       | `""`      | Prometheus metric prefix (empty = no prefix, e.g. `l3_*`/`perf_*`) |
+| `telemetry.otlp.enabled`              | `false`   | push metrics via OTLP                                              |
+| `telemetry.otlp.endpoint`             | `""`      | OTLP receiver endpoint (e.g. `otel-collector-resctrl:4317`)        |
+| `telemetry.otlp.protocol`             | `grpc`    | `grpc` or `http`                                                   |
+| `telemetry.otlp.interval`             | `15s`     | OTLP export interval                                               |
+| `telemetry.otlp.insecure`             | `true`    | disable TLS for OTLP connection                                    |
+| `telemetry.perfCounters.enabled`      | `false`   | gate `rdt=perf` counters (c1_res, stalls_*, etc.)                  |
+| `telemetry.perfCounters.include`      | `[]`      | glob patterns for counters to include                              |
+| `telemetry.perfCounters.exclude`      | `[]`      | glob patterns for counters to exclude                              |
+| `telemetry.resourceAttributes`        | `{}`      | static OTel resource attributes added to all metrics               |
+
+## Prometheus Integration
+
+The DaemonSet pods are annotated with `prometheus.io/scrape: "true"` so that
+standard Prometheus service-discovery configurations will pick them up
+automatically. The `prometheus.io/interval` annotation is set to the
+configured `telemetry.prometheus.scrapeInterval` (default 15s) as a hint,
+but note that most Prometheus deployments do not honor this annotation
+without additional relabel configuration.
+
+If you need a specific scrape interval, configure a dedicated scrape job
+in your Prometheus configuration with the desired `scrape_interval`.
+
+## Runtime Requirements
+
+| Component        | Minimum Version | Notes                                                                 |
+| ---------------- | --------------- | --------------------------------------------------------------------- |
+| Linux kernel     | 7.0+            | Required for AET (`rdt=perf` Kconfig). CMT/MBM works on 5.x+.        |
+| containerd       | 1.7.0+          | NRI support required.                                                 |
+| CRI-O            | 1.36.0+         | Provides container PIDs via NRI `LinuxContainer.Pid`.                 |
+| Kubernetes       | 1.24+           | DaemonSet and NRI socket conventions.                                 |
+| CPU              | Intel RDT       | CMT/MBM for bandwidth/LLC counters; AET for energy/perf counters.     |
+
+### Kernel feature matrix
+
+| Counter family                  | Kernel Kconfig                | Available since |
+| ------------------------------- | ----------------------------- | --------------- |
+| `llc_occupancy`, `mbm_*`       | `CONFIG_X86_CPU_RESCTRL`      | 5.x             |
+| `c1_res`, `stalls_*`, `energy_*` | `CONFIG_X86_CPU_RESCTRL` + `rdt=perf` boot param | 7.0 (under review) |
+
+## Optional: OTel Collector sidecar
+
+When using OTLP push mode (`telemetry.otlp.enabled=true`), you may deploy an
+OTel Collector agent to receive, enrich, and fan out the metrics. Reference
+manifests are provided in `optional/`:
+
+```sh
+kubectl apply -f optional/otel-collector-rbac.yaml
+kubectl apply -f optional/otel-collector-agent.yaml
+```
+
+The reference config uses the `k8sattributes` processor to attach pod/namespace
+labels and a Prometheus exporter on port 8889. Customize
+`otel-collector-agent.yaml` to add additional exporters (e.g. `otlphttp` to a
+remote backend).
