@@ -236,27 +236,27 @@ Task 4 defines `ResultAlloc`/`ClaimState` structs first so that the `ClaimStore`
 - Create: `pkg/resmgr/dra/cdi_test.go`
 - Modify: `go.mod`, `go.sum`
 
-- [ ] run `go get tags.cncf.io/container-device-interface/pkg/cdi tags.cncf.io/container-device-interface/specs-go tags.cncf.io/container-device-interface/pkg/parser`
-- [ ] run `go mod tidy` (only; `make verify-godeps` requires a clean working tree —
+- [x] run `go get tags.cncf.io/container-device-interface/pkg/cdi tags.cncf.io/container-device-interface/specs-go tags.cncf.io/container-device-interface/pkg/parser`
+- [x] run `go mod tidy` (only; `make verify-godeps` requires a clean working tree —
   run it in Task 10 after committing)
-- [ ] implement `cdiDeviceName(uid types.UID, request, device string, idx int) string`:
+- [x] implement `cdiDeviceName(uid types.UID, request, device string, idx int) string`:
   replace `/` and any invalid CDI device name char with `-`; trim any leading/trailing
   non-alphanumeric characters; concatenate as
   `"claim-"+string(uid)+"-"+sanitized+"-"+device+"-"+strconv.Itoa(idx)`;
   validate result with `parser.ValidateDeviceName` in unit test (panics if invalid — catching
   it early is the point); add unit test for basic case, subrequest with `/`, and two results
   with identical Request+Device+different idx → distinct valid names
-- [ ] create `cdiWriter` struct with fields: `cache *cdi.Cache`, `vendor string`, `class string`,
+- [x] create `cdiWriter` struct with fields: `cache *cdi.Cache`, `vendor string`, `class string`,
   `cdiDir string` (needed by `ClaimSpecExists` to stat the spec file path — `cdi.Cache` exposes
   no accessor for its spec dirs; open cache with `cdi.WithAutoRefresh(false)`,
   `cdi.WithSpecDirs(cdiDir)`)
-- [ ] implement `NewCDIWriter(driverName, cdiDir string) (CDIWriter, error)`:
+- [x] implement `NewCDIWriter(driverName, cdiDir string) (CDIWriter, error)`:
   if `cdiDir == ""` default to `"/var/run/cdi"` (do NOT use `Deps.CDIDir` — that field was
   removed; the default lives here);
   validate vendor/class via `parser.ValidateVendorName(driverName)` and
   `parser.ValidateClassName("device")`; call `os.MkdirAll(cdiDir, 0750)` before opening the
   CDI cache
-- [ ] implement `WriteClaim(uid types.UID, devices []CDIDevice) error`:
+- [x] implement `WriteClaim(uid types.UID, devices []CDIDevice) error`:
   return error immediately if `len(devices) == 0` (CDI rejects specs with no devices);
   for each `d` in devices, build:
   ```
@@ -270,22 +270,22 @@ Task 4 defines `ResultAlloc`/`ClaimState` structs first so that the `ClaimStore`
   (set Kind BEFORE `MinimumRequiredVersion` — the function reads it; set Version AFTER assembly);
   call `cache.WriteSpec` using `cdi.GenerateTransientSpecName(vendor, class, string(uid))`
   (`GenerateTransientSpecName` is in `pkg/cdi`, not `pkg/parser`)
-- [ ] implement `RemoveClaim(uid types.UID) error`: `cache.RemoveSpec` with same transient spec
+- [x] implement `RemoveClaim(uid types.UID) error`: `cache.RemoveSpec` with same transient spec
   name; `ErrNotExist` → success
-- [ ] implement `ClaimSpecExists(uid types.UID) bool`: stat
+- [x] implement `ClaimSpecExists(uid types.UID) bool`: stat
   `<cdiDir>/<vendor>-<class>_<string(uid)>.yaml` (the `.yaml` suffix is appended by WriteSpec)
-- [ ] implement `ListClaims() ([]types.UID, error)`: call `cache.Refresh()` first; log any
+- [x] implement `ListClaims() ([]types.UID, error)`: call `cache.Refresh()` first; log any
   Refresh errors at warn level and continue (`GetVendorSpecs` never errors, Refresh errors
   are from foreign/malformed specs in the dir — they must not abort our sweep); iterate
   `cache.GetVendorSpecs(vendor)` (class = `"device"`); for each spec `s`, derive UID from
   `filepath.Base(s.GetPath())` by stripping prefix `<vendor>-<class>_` and suffix `.yaml`;
   skip entries that do not match this pattern — foreign specs must survive
-- [ ] unit tests: WriteClaim → env vars on disk (golden check, verify spec.Kind is set);
+- [x] unit tests: WriteClaim → env vars on disk (golden check, verify spec.Kind is set);
   remove; idempotent remove; ClaimSpecExists; ListClaims with two claims; same-request +
   same-device + different idx → two distinct valid CDI device names, spec writes without
   duplicate-name error; malformed foreign spec in cdiDir → Refresh logs warning, ListClaims
   still returns our UIDs, orphan sweep does not remove the foreign file
-- [ ] run `go test ./pkg/resmgr/dra/... -race` — must pass before Task 6
+- [x] run `go test ./pkg/resmgr/dra/... -race` — must pass before Task 6
 
 ### Task 6: Claim state persistence (state.go — marshal/unmarshal/store)
 
