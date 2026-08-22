@@ -144,13 +144,13 @@ Stored as `map[string]string` (uid → JSON of ClaimState) under key `dra/claims
 - Modify: `pkg/resmgr/cpuclass/internal/pct/pct.go`
 - Modify: `pkg/resmgr/cpuclass/internal/pct/pct_test.go`
 
-- [ ] add `AccountHpCpus(pkgID, punitID int, cpus cpuset.CPUSet) error`: validate `Active()`,
+- [x] add `AccountHpCpus(pkgID, punitID int, cpus cpuset.CPUSet) error`: validate `Active()`,
   find punit, check HP-eligibility (error if not eligible), union into `hpDRAUsed[punitIdx]`;
   log over-commit warning if `hpDRAUsed + hpUsed > HPCapacity` (do NOT reject — container may
   be running)
-- [ ] write tests: success; HP-ineligible punit → error; allocator inactive → error; over-capacity
+- [x] write tests: success; HP-ineligible punit → error; allocator inactive → error; over-capacity
   → warning logged, no error, hpDRAUsed updated; double-account same CPUs (union is idempotent)
-- [ ] run `go test ./pkg/resmgr/cpuclass/... -race` — must pass before Task 2
+- [x] run `go test ./pkg/resmgr/cpuclass/... -race` — must pass before Task 2
 
 ### Task 2: Add ClaimAllocator pass-throughs on cpuclass.Handler
 

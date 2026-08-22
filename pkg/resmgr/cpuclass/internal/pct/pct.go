@@ -667,6 +667,40 @@ func (a *Allocator) ReleaseHpCpus(pkgID, punitID int, cpus cpuset.CPUSet) {
 	}
 }
 
+// AccountHpCpus records cpus as HP DRA-held on the punit identified by
+// (pkgID, punitID). Used during restart reconciliation to rebuild
+// hpDRAUsed from persisted claim state without reallocating CPUs.
+// Returns an error when the allocator is inactive, the punit is not
+// found, or the punit is not HP-eligible. Over-commit (hpDRAUsed +
+// hpUsed > GuaranteedHpCpus) is permitted — the container may already
+// be running; a warning is logged but no error is returned. Union
+// semantics make repeated calls with the same CPUs idempotent.
+func (a *Allocator) AccountHpCpus(pkgID, punitID int, cpus cpuset.CPUSet) error {
+	if !a.Active() {
+		return fmt.Errorf("pct: AccountHpCpus: allocator not active")
+	}
+	idx := a.punitIdxByID(pkgID, punitID)
+	if idx < 0 {
+		return fmt.Errorf("pct: AccountHpCpus: punit (pkg=%d, punit=%d) not found", pkgID, punitID)
+	}
+	if !a.hpEligiblePunit[idx] {
+		return fmt.Errorf("pct: AccountHpCpus: punit (pkg=%d, punit=%d) is not HP-eligible", pkgID, punitID)
+	}
+	// Union is idempotent: repeated calls with the same CPUs do not
+	// double-count them.
+	a.hpDRAUsed[idx] = a.hpDRAUsed[idx].Union(cpus)
+	// Warn on over-commit but do not reject — the container may already
+	// be running with these CPUs.
+	pu := a.punits[idx]
+	held := a.hpUsed[idx].Union(a.hpDRAUsed[idx]).Size()
+	if held > pu.GuaranteedHpCpus {
+		log.Warnf("pct: AccountHpCpus: punit (pkg=%d, punit=%d) over-committed: "+
+			"hpDRAUsed+hpUsed=%d > GuaranteedHpCpus=%d",
+			pkgID, punitID, held, pu.GuaranteedHpCpus)
+	}
+	return nil
+}
+
 // useClass associates the given CPUs to the CLOS chosen for className.
 // In managed mode, CPUs whose className is not a PCT class are
 // associated to the fallback CLOS. In assoc-only mode such CPUs are
