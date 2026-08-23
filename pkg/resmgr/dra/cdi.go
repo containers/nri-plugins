@@ -58,9 +58,6 @@ func NewCDIWriter(driverName, cdiDir string) (CDIWriter, error) {
 	if err := parser.ValidateVendorName(driverName); err != nil {
 		return nil, fmt.Errorf("dra cdi: invalid driverName %q: %w", driverName, err)
 	}
-	if err := parser.ValidateClassName(cdiClass); err != nil {
-		return nil, fmt.Errorf("dra cdi: invalid class %q: %w", cdiClass, err)
-	}
 	if cdiDir == "" {
 		cdiDir = defaultCDIDir
 	}
@@ -184,7 +181,8 @@ func (w *cdiWriter) ListClaims() ([]types.UID, error) {
 // (e.g. AllowMultipleAllocations with count > 1) produce distinct names.
 func cdiDeviceName(uid types.UID, request, device string, idx int) string {
 	sanitized := sanitizeCDIName(request)
-	return "claim-" + string(uid) + "-" + sanitized + "-" + device + "-" + strconv.Itoa(idx)
+	sanitizedDev := sanitizeCDIName(device)
+	return "claim-" + string(uid) + "-" + sanitized + "-" + sanitizedDev + "-" + strconv.Itoa(idx)
 }
 
 // sanitizeCDIName replaces any character that is invalid in a CDI device name

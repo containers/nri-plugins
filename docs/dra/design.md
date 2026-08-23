@@ -206,9 +206,13 @@ The NRI-side handler (`getClaimedCPUs` / equivalent) returns both the CPU set an
 2. Scheduler at PreBind writes `pod.status.nodeAllocatableResourceClaimStatuses`.
 3. Kubelet calls `PrepareResourceClaims(claim)` on the driver.
 4. Driver locks the resmgr and calls `cpuclass.Manager.PickCpus(className, punitID, N)` — selects N CPUs from that punit that fit the class's requirements, updates `hpUsed[punitID]` if HP.
-5. Driver writes a CDI spec at `/var/run/cdi/nri.native.cpu.yaml` with:
+5. Driver writes one CDI spec file per claim at `/var/run/cdi/<vendor>-device_<uid>.yaml`
+   (using `cdi.GenerateTransientSpecName(vendor, "device", string(uid))`).  The spec contains
+   one `specs_go.Device` per allocation result.  The CDI device name for result `i` is:
+   `claim-<uid>-<sanitize(request)>-<device>-<i>` where `sanitize` replaces `/` and any
+   invalid CDI name chars (anything outside `[A-Za-z0-9._-:]`) with `-`.  Example:
    ```yaml
-   - name: claim-<uid>
+   - name: claim-<uid>-cpus-<devicename>-0
      containerEdits:
        env:
          - NRI_CLASS=<className>
@@ -216,7 +220,8 @@ The NRI-side handler (`getClaimedCPUs` / equivalent) returns both the CPU set an
          - NRI_CPU<id1>=1
          # ...
    ```
-6. Returns `PrepareResult` with `CDIDeviceIDs: ["nri.native.cpu/device=claim-<uid>"]`.
+6. Returns `PrepareResult.Devices[]` — one entry per allocation result — with:
+   `CDIDeviceIDs: ["<vendor>/device=claim-<uid>-<sanitize(request)>-<device>-<i>"]`.
 7. Driver does **not** call `sst.AssociateCPUs`, `WriteEPP`, or governor writes here. All physical cpuClass application is deferred to the NRI phase.
 
 ### NRI enforcement flow (unchanged trust boundary)
@@ -235,7 +240,9 @@ The NRI-side handler (`getClaimedCPUs` / equivalent) returns both the CPU set an
 
 ### Coexistence with the existing hint path
 
-Same as prior draft: both DRA-claimed and non-DRA workloads share `hpUsed` and `cpuclass.Manager` state. `FreeClassCapacity()` reflects DRA holds. Concurrent Prepare and NRI-phase paths synchronize on the resmgr lock.
+Both DRA-claimed and non-DRA workloads share `hpDRAUsed`/`hpUsed` and `cpuclass.Handler` state. `FreeClassCapacity()` reflects DRA holds. Concurrent Prepare and NRI-phase paths synchronize on the resmgr write-lock via a `WithLock func(func())` closure injected in `Deps` at construction time. The entire Prepare/Unprepare body (including `deviceIndex()` lookups and all `ClaimAllocator` calls) runs inside `WithLock`. `PublishResources` guards its `ValidateClasses` + `DRADevices` calls under `WithLock` as well.
+
+**Must-not-hold-lock contract.** `Plugin.Start`, `Plugin.PublishResources`, and `Plugin.RestoreClaims` all acquire the resmgr lock internally via `WithLock`. They **must not be called while the caller already holds the resmgr lock** — the lock is a `sync.RWMutex` and is non-reentrant. The lock-held complement is `Plugin.RestoreClaimsLocked() error` (no locking; caller must already hold the lock): this is the method wired inside `resmgr.apply()` after `policy.Reconfigure()` to rebuild HP-tier accounting after a config reload.
 
 ### Feature-gate detection
 
@@ -395,7 +402,8 @@ If B proves too restrictive in practice (e.g., long-lived claims block urgent cl
 
 ## Change log
 
-- **2026-08-22 (latest).** Class-derived attribute freshness resolved as Option B: refuse Reconfigure that changes class-derived attributes when live DRA claims exist for the affected class. Key insight: resmgr `reconfigure` already implements rollback-on-failure — `m.policy.Reconfigure` returning an error triggers `apply(old cfg)` and leaves `m.cfg` unchanged, so B fits the existing component-refusal contract rather than fighting it. Updated recommendation, mechanics, and fallback in the Discussion section; moved to Resolved decisions item 8; Open decisions now empty.
+- **2026-08-23 (latest).** CDI device naming updated to per-result `claim-<uid>-<sanitize(request)>-<device>-<idx>` (replaces per-claim `claim-<uid>`); spec file is one-per-claim at `<vendor>-device_<uid>.yaml`. Concurrency model made precise: resmgr write-lock via `WithLock func(func())` in Deps; entire Prepare/Unprepare body runs inside `WithLock`; `PublishResources` guards its device-listing calls under `WithLock`. Added must-not-hold-lock contract for `Start`, `PublishResources`, and `RestoreClaims`; documented `RestoreClaimsLocked()` as the lock-held complement for use inside `resmgr.apply()`.
+- **2026-08-22.** Class-derived attribute freshness resolved as Option B: refuse Reconfigure that changes class-derived attributes when live DRA claims exist for the affected class. Key insight: resmgr `reconfigure` already implements rollback-on-failure — `m.policy.Reconfigure` returning an error triggers `apply(old cfg)` and leaves `m.cfg` unchanged, so B fits the existing component-refusal contract rather than fighting it. Updated recommendation, mechanics, and fallback in the Discussion section; moved to Resolved decisions item 8; Open decisions now empty.
 - **2026-08-19 (latest).** Added note to "Publish flow" that "publish on Reconfigure" is a nri-plugins-specific requirement; both reference DRA drivers (`dra-driver-cpu` and `dra-example-driver`) publish exactly once at start and never re-publish. Reinforces the framing that class-freshness (open decision 1) is a problem we're inventing by supporting live Reconfigure.
 - **2026-08-19.** Added "Reference: how `dra-driver-cpu` avoids this problem" to the class-freshness discussion. Their approach — no live reconfigure, restart-the-DaemonSet on config change — is not available to us because nri-plugins already supports live `Reconfigure`. Options A–F remain the answer space.
 - **2026-08-19.** Multi-class overcommit resolved: introduced `cpuClass.dra.publish` (bool, default true) and Configure-time validation that refuses to start on any (tier, punit) with >1 published class unless `sharedCounters` is on. Old "v1-a first-configured wins" text replaced. Non-HP tier explicitly covered alongside HP.

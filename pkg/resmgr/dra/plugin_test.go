@@ -41,6 +41,7 @@ import (
 
 	"github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
+	"tags.cncf.io/container-device-interface/pkg/parser"
 )
 
 // TestNewLogr verifies that newLogr returns a usable logr.Logger backed by the
@@ -755,6 +756,24 @@ func TestPrepare_Idempotent_SpecPresent(t *testing.T) {
 	if len(cdiW.written) != firstWrites {
 		t.Errorf("second Prepare re-wrote CDI spec (writes: %d → %d)", firstWrites, len(cdiW.written))
 	}
+	// Devices content must be identical between calls.
+	devs1 := result1[uid].Devices
+	devs2 := result2[uid].Devices
+	if len(devs1) != len(devs2) {
+		t.Errorf("Devices len differs between calls: first=%d second=%d", len(devs1), len(devs2))
+	} else {
+		for i := range devs1 {
+			if len(devs1[i].CDIDeviceIDs) != len(devs2[i].CDIDeviceIDs) {
+				t.Errorf("Device[%d] CDIDeviceIDs len differs: first=%d second=%d", i, len(devs1[i].CDIDeviceIDs), len(devs2[i].CDIDeviceIDs))
+				continue
+			}
+			for j := range devs1[i].CDIDeviceIDs {
+				if devs1[i].CDIDeviceIDs[j] != devs2[i].CDIDeviceIDs[j] {
+					t.Errorf("Device[%d].CDIDeviceIDs[%d]: first=%q second=%q", i, j, devs1[i].CDIDeviceIDs[j], devs2[i].CDIDeviceIDs[j])
+				}
+			}
+		}
+	}
 }
 
 // TestPrepare_Idempotent_SpecMissing verifies that a second Prepare call for the
@@ -797,6 +816,86 @@ func TestPrepare_Idempotent_SpecMissing(t *testing.T) {
 	}
 	if len(cdiW.written) != firstWrites+1 {
 		t.Errorf("second Prepare should have re-written CDI spec (writes: %d → %d)", firstWrites, len(cdiW.written))
+	}
+	// Devices content must be identical between calls.
+	devs1 := result1[uid].Devices
+	devs2 := result2[uid].Devices
+	if len(devs1) != len(devs2) {
+		t.Errorf("Devices len differs between calls: first=%d second=%d", len(devs1), len(devs2))
+	} else {
+		for i := range devs1 {
+			if len(devs1[i].CDIDeviceIDs) != len(devs2[i].CDIDeviceIDs) {
+				t.Errorf("Device[%d] CDIDeviceIDs len differs: first=%d second=%d", i, len(devs1[i].CDIDeviceIDs), len(devs2[i].CDIDeviceIDs))
+				continue
+			}
+			for j := range devs1[i].CDIDeviceIDs {
+				if devs1[i].CDIDeviceIDs[j] != devs2[i].CDIDeviceIDs[j] {
+					t.Errorf("Device[%d].CDIDeviceIDs[%d]: first=%q second=%q", i, j, devs1[i].CDIDeviceIDs[j], devs2[i].CDIDeviceIDs[j])
+				}
+			}
+		}
+	}
+}
+
+// TestPrepare_Idempotent_SpecMissing_PartialCorruptCPU verifies that the
+// spec-missing idempotency path returns an error when only some stored alloc
+// CPUs are parseable (partial corruption), preventing a mismatched CDI spec
+// from being written.
+func TestPrepare_Idempotent_SpecMissing_PartialCorruptCPU(t *testing.T) {
+	alloc := &trackingClaimAllocator{}
+	cdiW := &trackingCDIWriter{}
+	store := &trackingClaimStore{}
+
+	uid := types.UID("uid-partial-corrupt")
+	// Two stored allocs: first is valid, second has an unparseable CPU string.
+	claimState := &ClaimState{
+		UID: string(uid),
+		Allocs: []ResultAlloc{
+			{Device: "dev0", PkgID: 0, PunitID: 0, CPUs: "0-1", ClassName: "gold"},
+			{Device: "dev1", PkgID: 0, PunitID: 1, CPUs: "NOT-A-CPUSET", ClassName: "gold"},
+		},
+	}
+
+	qty := resource.MustParse("2")
+	// Claim carries two allocation results for our driver — one per device.
+	claim := &resourceapi.ResourceClaim{
+		ObjectMeta: metav1.ObjectMeta{UID: uid},
+		Status: resourceapi.ResourceClaimStatus{
+			Allocation: &resourceapi.AllocationResult{
+				Devices: resourceapi.DeviceAllocationResult{
+					Results: []resourceapi.DeviceRequestAllocationResult{
+						{Driver: "test-driver", Pool: "p", Device: "dev0", Request: "req0",
+							ConsumedCapacity: map[resourceapi.QualifiedName]resource.Quantity{"nri/cpus": qty}},
+						{Driver: "test-driver", Pool: "p", Device: "dev1", Request: "req1",
+							ConsumedCapacity: map[resourceapi.QualifiedName]resource.Quantity{"nri/cpus": qty}},
+					},
+				},
+			},
+		},
+	}
+
+	// Wire in the pre-loaded claim state so the idempotency path fires.
+	p := preparePlugin(t, alloc, cdiW, store, map[types.UID]*ClaimState{uid: claimState})
+	// CDI spec is missing (cdiW.existsValue == false by default).
+
+	result, globalErr := p.PrepareResourceClaims(context.Background(), []*resourceapi.ResourceClaim{claim})
+	if globalErr != nil {
+		t.Fatalf("PrepareResourceClaims() unexpected global error: %v", globalErr)
+	}
+	r, ok := result[uid]
+	if !ok {
+		t.Fatal("result map missing UID")
+	}
+	if r.Err == nil {
+		t.Fatal("PrepareResult.Err = nil; want error for partial corrupt stored CPUs")
+	}
+	// No CDI spec should have been written.
+	if len(cdiW.written) != 0 {
+		t.Errorf("CDIWriter.WriteClaim called %d time(s), want 0", len(cdiW.written))
+	}
+	// No CPU picks should have been made.
+	if len(alloc.picks) != 0 {
+		t.Errorf("PickHpCpus called %d time(s), want 0", len(alloc.picks))
 	}
 }
 
@@ -925,6 +1024,43 @@ func TestPrepare_NilAttr(t *testing.T) {
 	}
 }
 
+// TestPrepare_NilIntAttr verifies that a device attribute with a nil IntValue
+// (for packageID or punitID) is handled gracefully: the field defaults to 0
+// and Prepare succeeds when all other required attrs are present.
+func TestPrepare_NilIntAttr(t *testing.T) {
+	alloc := &trackingClaimAllocator{pickResult: cpuset.MustParse("0-3"), isHP: true}
+	deps := validDeps()
+	deps.ClaimAllocator = alloc
+	deps.CDIWriter = &trackingCDIWriter{}
+	deps.ClaimStore = &trackingClaimStore{}
+	// Device has cpuClass set but packageID and punitID with nil IntValue.
+	deps.DeviceLister = hpDeviceLister(resourceapi.Device{
+		Name: "dev0",
+		Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+			"nri/cpuClass":  {StringValue: strPtr("gold")},
+			"nri/packageID": {IntValue: nil}, // nil IntValue → PkgID defaults to 0
+			"nri/punitID":   {IntValue: nil}, // nil IntValue → PunitID defaults to 0
+		},
+	})
+
+	p, err := New("test-driver", deps)
+	if err != nil {
+		t.Fatalf("New() unexpected error: %v", err)
+	}
+
+	uid := types.UID("uid-nil-int-attr")
+	claim := makeClaim(uid, "test-driver", "pool0", "dev0", "req0", 4)
+	result, globalErr := p.PrepareResourceClaims(context.Background(), []*resourceapi.ResourceClaim{claim})
+	if globalErr != nil {
+		t.Fatalf("PrepareResourceClaims() unexpected global error: %v", globalErr)
+	}
+	r := result[uid]
+	// Nil IntValue falls back to zero — Prepare should succeed (pick from pkg 0, punit 0).
+	if r.Err != nil {
+		t.Errorf("PrepareResult.Err = %v, want nil for nil IntValue attrs (defaults to 0)", r.Err)
+	}
+}
+
 // TestPrepare_AbsentConsumedCapacity verifies that a result with no nri/cpus
 // entry in ConsumedCapacity produces errMissingConsumedCapacity.
 func TestPrepare_AbsentConsumedCapacity(t *testing.T) {
@@ -1013,6 +1149,10 @@ func TestPrepare_PickFailure(t *testing.T) {
 	if !errors.Is(r.Err, pickErr) {
 		t.Errorf("PrepareResult.Err = %v, want to wrap pickErr", r.Err)
 	}
+	// Claim must not be stored after a PickHpCpus failure.
+	if _, ok := p.claims[uid]; ok {
+		t.Error("claim stored in p.claims after PickHpCpus failure (should not be present)")
+	}
 }
 
 // TestPrepare_CDIWriteFailure verifies that a CDI WriteClaim failure rolls back
@@ -1047,6 +1187,10 @@ func TestPrepare_CDIWriteFailure(t *testing.T) {
 	// Rollback: CPUs must be released.
 	if len(alloc.releases) == 0 {
 		t.Error("expected ReleaseHpCpus to be called on CDI write failure")
+	}
+	// Claim must not be stored after a CDI write failure.
+	if _, ok := p.claims[uid]; ok {
+		t.Error("claim stored in p.claims after CDI write failure (should have been rolled back)")
 	}
 }
 
@@ -1250,14 +1394,16 @@ func TestPrepare_SubrequestSlashInName(t *testing.T) {
 	if len(r.Devices) != 1 {
 		t.Fatalf("PrepareResult.Devices len = %d, want 1", len(r.Devices))
 	}
-	// Verify the CDI device IDs contain only valid CDI name characters (no '/').
+	// Verify the device name part of each CDI qualified ID passes parser.ValidateDeviceName.
+	// CDI qualified names have the format "vendor/class=name"; split on "=" to get the name.
 	for _, cdiID := range r.Devices[0].CDIDeviceIDs {
-		for _, ch := range cdiID {
-			if ch == '/' {
-				// '/' may appear in the qualified name vendor/class=name, but not in the device name part.
-				// We just verify the spec was written (WriteClaim was called) without error.
-				break
-			}
+		parts := strings.SplitN(cdiID, "=", 2)
+		if len(parts) != 2 || parts[1] == "" {
+			t.Errorf("CDI device ID %q has unexpected format (want vendor/class=name)", cdiID)
+			continue
+		}
+		if err := parser.ValidateDeviceName(parts[1]); err != nil {
+			t.Errorf("CDI device name %q from ID %q failed validation: %v", parts[1], cdiID, err)
 		}
 	}
 	if len(cdiW.written) == 0 {
@@ -1356,6 +1502,10 @@ func TestUnprepare_UnknownUID(t *testing.T) {
 	if len(cdiW.removed) != 0 {
 		t.Errorf("RemoveClaim called for unknown UID (removed = %v)", cdiW.removed)
 	}
+	// ReleaseHpCpus must NOT be called for unknown claims.
+	if len(alloc.releases) != 0 {
+		t.Errorf("ReleaseHpCpus called %d times, want 0 for unknown UID", len(alloc.releases))
+	}
 	// Save must still be called once (batch write even with no-ops).
 	if store.saved != 1 {
 		t.Errorf("ClaimStore.Save called %d times, want 1", store.saved)
@@ -1388,6 +1538,10 @@ func TestUnprepare_CDIRemoveError(t *testing.T) {
 	// Claim must still be deleted from in-memory state.
 	if _, exists := p.claims[uid]; exists {
 		t.Error("claim still in p.claims after Unprepare despite CDI error")
+	}
+	// ReleaseHpCpus must have been called once — CPU leak on CDI error goes undetected otherwise.
+	if len(alloc.releases) != 1 {
+		t.Errorf("ReleaseHpCpus called %d times, want 1 (must release CPUs even on CDI error)", len(alloc.releases))
 	}
 }
 
@@ -1573,6 +1727,16 @@ func TestRestoreClaimsLocked_RebuildsAccounting(t *testing.T) {
 	}
 	if len(alloc.accounts) != 2 {
 		t.Errorf("AccountHpCpus called %d times, want 2", len(alloc.accounts))
+	}
+	// Verify the union of all accounted CPU sets matches the expected total.
+	// Map iteration order is non-deterministic so we check the union.
+	totalAccounted := cpuset.New()
+	for _, cs := range alloc.accounts {
+		totalAccounted = totalAccounted.Union(cs)
+	}
+	wantTotal := cpuset.MustParse("0-7")
+	if !totalAccounted.Equals(wantTotal) {
+		t.Errorf("AccountHpCpus total CPUs = %v, want %v", totalAccounted, wantTotal)
 	}
 }
 

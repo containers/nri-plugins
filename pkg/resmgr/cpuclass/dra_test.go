@@ -363,9 +363,8 @@ func TestBuildDRADevices(t *testing.T) {
 	isHP := func(name string) bool { return strings.HasPrefix(name, "hp") }
 
 	tests := []struct {
-		name       string
-		driverName string
-		classes    []*policyapi.CPUClass
+		name    string
+		classes []*policyapi.CPUClass
 		punits     []pct.PunitInfo
 		isHP       func(string) bool
 		hpOnly     bool
@@ -375,9 +374,8 @@ func TestBuildDRADevices(t *testing.T) {
 		verify func(t *testing.T, devices []resapi.Device)
 	}{
 		{
-			name:       "one HP class + one punit (pkg=0 punit=0)",
-			driverName: "test.driver",
-			classes:    []*policyapi.CPUClass{hpClass("hp")},
+			name:    "one HP class + one punit (pkg=0 punit=0)",
+			classes: []*policyapi.CPUClass{hpClass("hp")},
 			punits:     []pct.PunitInfo{punit(0, 0, 4, 8)},
 			isHP:       isHP,
 			wantCount:  1,
@@ -701,11 +699,7 @@ func TestBuildDRADevices(t *testing.T) {
 			if isHPFn == nil {
 				isHPFn = func(string) bool { return false }
 			}
-			driverName := tc.driverName
-			if driverName == "" {
-				driverName = "test.driver"
-			}
-			devices := buildDRADevices(driverName, tc.classes, tc.punits, isHPFn, tc.hpOnly)
+			devices := buildDRADevices(tc.classes, tc.punits, isHPFn, tc.hpOnly)
 			if len(devices) != tc.wantCount {
 				t.Fatalf("buildDRADevices() returned %d devices, want %d; devices=%v",
 					len(devices), tc.wantCount, deviceNames(devices))

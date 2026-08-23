@@ -192,6 +192,8 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
 
 **Risk:** high. Correctness of concurrent Prepare + NRI-phase access to `hpUsed` ([design.md](design.md) "Coexistence" section) must be locked down.
 
+**Landed:** commits `148d09b2`…`52b6f182` on branch `DRA` (see [`docs/plans/20260821-dra-step7-prepare-unprepare-cdi.md`](../plans/20260821-dra-step7-prepare-unprepare-cdi.md) for the detailed per-task implementation log). Deviations from spec: concurrency is via resmgr write-lock closure (`WithLock func(func())` in Deps), not a per-allocator mutex; CDI device name is per-result `claim-<uid>-<sanitize(request)>-<device>-<idx>` (not per-claim `claim-<uid>`), where `sanitize` replaces `/` and invalid CDI name chars with `-`; `ClaimState`/`ResultAlloc` are exported types; non-HP DRA pick is deferred (see "Not part of v1" below — `pct.PunitInfo` carries capacity counts but not per-punit CPU lists); `RestoreClaimsLocked() error` is the lock-held variant for use inside `resmgr.apply()`, with `RestoreClaims() error` as the `WithLock` wrapper for external callers not already holding the lock; `Start`, `PublishResources`, and `RestoreClaims` must not be called while holding the resmgr lock (non-reentrant `sync.RWMutex`).
+
 ### Step 8 — Topology-aware policy wire-up
 
 **Rationale.** Finally connect the driver to the topology-aware plugin binary and its allocator.
@@ -267,6 +269,7 @@ Explicitly deferred to later work, tracked here so nobody accidentally scope-cre
 - Model C / [KEP-5941](https://github.com/kubernetes/enhancements/issues/5941) shared counters (waits for upstream alpha).
 - `cpuClass.dra` sub-block fields beyond `publish` (custom `capacityKey`, per-class DeviceClass suppression).
 - PodResources API integration for DRA-claimed CPUs ([KEP-3695](https://github.com/kubernetes/enhancements/issues/3695); complementary but independent).
+- Non-HP DRA CPU pick (deferred from Step 7): `pct.PunitInfo` carries HP/non-HP capacity counts but not per-punit CPU lists; non-HP devices are filtered out of DRA publication until `PunitInfo` is extended with per-punit CPU IDs. Tracked in Step 7 plan; see `buildDRADevices` `hpOnly: true` filter in `pkg/resmgr/cpuclass/dra.go`.
 
 ### Testing philosophy
 
@@ -278,6 +281,7 @@ Splitting this way means the first 5 PRs can land and be reviewed in parallel wi
 
 ## Change log
 
-- **2026-08-22 (latest).** Class-derived attribute freshness resolved as Option B (design.md resolved decision 8). Removed from "Not part of v1." Added `Plugin.LiveClaimClasses()` to Step 7 (claim tracking infrastructure) and the Reconfigure refusal check to Step 8 (policy wire-up where `Reconfigure` fires).
+- **2026-08-23 (latest).** Step 7 landed: added "Landed" line with commit range `148d09b2`…`52b6f182` and implementation deviations (per-result CDI device naming, `WithLock` concurrency model, exported state types, non-HP deferred, `RestoreClaimsLocked`/`RestoreClaims` split, must-not-hold-lock contract). Added non-HP DRA pick to "Not part of v1."
+- **2026-08-22.** Class-derived attribute freshness resolved as Option B (design.md resolved decision 8). Removed from "Not part of v1." Added `Plugin.LiveClaimClasses()` to Step 7 (claim tracking infrastructure) and the Reconfigure refusal check to Step 8 (policy wire-up where `Reconfigure` fires).
 - **2026-08-19 (later).** Step 6 gained an **Imports & deps** subsection: enumerates must-have Kubernetes helper packages (`kubeletplugin`, `resourceslice`, `resapi`, `types`, `resource`), lists small additions worth pulling in (`client-go/util/retry`, `utils/ptr`), and explicitly documents what we are *not* adopting (klog switch, `component-base/featuregate`, `component-base/metrics`, `runtime/serializer` for checkpoints, `controller-runtime`, low-level DRA/registration protobufs) with rationale. Also codifies "do not import from `dra-example-driver` or `dra-driver-cpu`."
 - **2026-08-19.** Initial plan created based on [design.md](design.md) as of that date.

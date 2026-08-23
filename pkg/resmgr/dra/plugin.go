@@ -50,7 +50,7 @@ type deviceInfo struct {
 
 // Plugin is the DRA kubelet plugin.
 type Plugin struct {
-	mu         sync.Mutex
+	mu         sync.Mutex // mu guards helper
 	driverName string
 	deps       Deps
 	helper     *kubeletplugin.Helper
@@ -187,6 +187,14 @@ func (p *Plugin) PrepareResourceClaims(_ context.Context, claims []*resourceapi.
 					// Spec missing (e.g. node reboot) — re-write CDI spec from
 					// existing stored state without re-picking CPUs.
 					cdiDevices := p.cdiDevicesFromClaims(uid, filtered)
+					if len(cdiDevices) != len(p.claims[uid].Allocs) {
+						// Some (or all) stored CPU strings failed to parse — stored
+						// state is corrupt; writing a partial CDI spec and then
+						// returning CDIDeviceIDs for all allocs would give the runtime
+						// device IDs that don't exist in the spec, causing container
+						// start failures.
+						return kubeletplugin.PrepareResult{Err: fmt.Errorf("dra plugin: idempotent re-write: only %d of %d CDI devices rebuilt from stored state (stored CPUs unparseable)", len(cdiDevices), len(p.claims[uid].Allocs))}
+					}
 					if len(cdiDevices) > 0 {
 						if writeErr := p.deps.CDIWriter.WriteClaim(uid, cdiDevices); writeErr != nil {
 							return kubeletplugin.PrepareResult{Err: fmt.Errorf("dra plugin: re-write CDI spec: %w", writeErr)}
@@ -391,10 +399,10 @@ func (p *Plugin) UnprepareResourceClaims(_ context.Context, claims []kubeletplug
 
 // LiveClaimClasses returns a map from className to the number of live claims
 // using that class. Each claim is counted once per distinct class it uses.
-// No locking — caller must already hold the resmgr lock OR call outside
-// WithLock. Used by the Step 8 Reconfigure refusal check (resolved decision 8
-// / Option B: refuse Reconfigure that changes class-derived attributes while
-// claims are live).
+// Caller must hold the resmgr lock (do not call from inside a WithLock
+// callback — the resmgr lock is not reentrant). Used by the Step 8
+// Reconfigure refusal check (resolved decision 8 / Option B: refuse
+// Reconfigure that changes class-derived attributes while claims are live).
 func (p *Plugin) LiveClaimClasses() map[string]int {
 	result := make(map[string]int)
 	for _, cs := range p.claims {
@@ -554,7 +562,15 @@ func (p *Plugin) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("dra plugin: kubeletplugin.Start: %w", err)
 	}
+	// Re-check under lock to close the TOCTOU window between the initial
+	// guard (above) and this assignment. If a racing Start() won, stop the
+	// helper we just created and return an error.
 	p.mu.Lock()
+	if p.helper != nil {
+		p.mu.Unlock()
+		helper.Stop()
+		return fmt.Errorf("dra plugin: already started")
+	}
 	p.helper = helper
 	p.mu.Unlock()
 	return nil

@@ -159,11 +159,7 @@ func strAttr(v string) resapi.DeviceAttribute {
 // When hpOnly is true, only HP classes (isHP returns true) are emitted.
 // Non-HP DRA is deferred because PunitInfo carries no per-punit CPU list;
 // see plan.md Step 7.
-//
-// driverName is currently unused in device attributes but is retained for
-// call-site stability and future use as an attribute-domain prefix in Step 6.
 func buildDRADevices(
-	driverName string,
 	classes []*policyapi.CPUClass,
 	punits []pct.PunitInfo,
 	isHP func(className string) bool,
@@ -177,7 +173,7 @@ func buildDRADevices(
 	// Dedup: if two different class names produce the same base, the second
 	// gets a "-N" suffix (N starting at 2). The same class name across multiple
 	// punits always reuses the same pre-computed base (no counter increment).
-	takenBases := map[string]struct{}{}  // bases already claimed by some class
+	takenBases := map[string]struct{}{} // bases already claimed by some class
 	baseForClass := map[string]string{} // className -> final sanitized base
 
 	for _, cc := range classes {
@@ -214,7 +210,6 @@ func buildDRADevices(
 		if !cc.DRAPublish() {
 			continue
 		}
-		// non-HP DRA deferred — PunitInfo has no per-punit CPU list; see plan.md Step 7
 		if hpOnly && !isHP(cc.Name) {
 			continue
 		}
@@ -290,7 +285,7 @@ func buildDRADevices(
 //
 // Must be called on the resmgr goroutine or under the resmgr lock — same as all
 // other Handler methods.
-func (h *Handler) DRADevices(driverName string) ([]resapi.Device, error) {
+func (h *Handler) DRADevices(_ string) ([]resapi.Device, error) {
 	if h == nil || h.pct == nil {
 		return []resapi.Device{}, nil
 	}
@@ -300,5 +295,5 @@ func (h *Handler) DRADevices(driverName string) ([]resapi.Device, error) {
 	if len(punits) == 0 {
 		return []resapi.Device{}, nil
 	}
-	return buildDRADevices(driverName, h.classes, punits, h.pct.IsHPClass, true), nil
+	return buildDRADevices(h.classes, punits, h.pct.IsHPClass, true), nil
 }

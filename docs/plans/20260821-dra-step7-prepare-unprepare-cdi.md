@@ -453,16 +453,16 @@ persistence layer to the same file.
 
 ### Task 12: Update documentation
 
-- [ ] update [plan.md](../dra/plan.md) Step 7 "Landed" line with commit range and deviations:
+- [x] update [plan.md](../dra/plan.md) Step 7 "Landed" line with commit range and deviations:
   resmgr-lock (WithLock) not allocator mutex; one CDI device per request with sanitized name;
   exported ClaimState/ResultAlloc; non-HP deferred; RestoreClaimsLocked vs. RestoreClaims
-- [ ] update [design.md](../dra/design.md): CDI device naming
+- [x] update [design.md](../dra/design.md): CDI device naming
   (`claim-<uid>-<sanitize(request)>-<device>-<idx>`), concurrency model alignment
   (resmgr lock via `WithLock`/`RestoreClaimsLocked`), `Start`/`PublishResources`/`RestoreClaims`
   must-not-hold-lock contract
-- [ ] update [plan.md](../dra/plan.md) "Not part of v1": add non-HP DRA pick (deferred); confirm
+- [x] update [plan.md](../dra/plan.md) "Not part of v1": add non-HP DRA pick (deferred); confirm
   class-derived attribute freshness is no longer listed (resolved decision 8, already removed)
-- [ ] move this plan to `docs/plans/completed/`
+- [x] move this plan to `docs/plans/completed/` (harness will move)
 
 ## Post-Completion
 
