@@ -443,13 +443,13 @@ persistence layer to the same file.
 
 ### Task 11: Verify acceptance criteria
 
-- [ ] verify Prepare allocates CPUs, writes CDI spec per request, persists state
-- [ ] verify idempotent Prepare (spec present → same result; spec missing → re-written)
-- [ ] verify Unprepare releases CPUs, removes CDI spec, removes persisted state
-- [ ] verify restart reconciliation: live claims restored, stale dropped, orphans swept
-- [ ] verify RestoreClaimsLocked() re-accounts after hpDRAUsed reset
-- [ ] verify non-HP devices not published
-- [ ] run `go test ./pkg/resmgr/... -race` — all green
+- [x] verify Prepare allocates CPUs, writes CDI spec per request, persists state — covered by TestPrepare_SingleHPSuccess and TestPrepare_MultiResultTwoPunits
+- [x] verify idempotent Prepare (spec present → same result; spec missing → re-written) — covered by TestPrepare_Idempotent_SpecPresent and TestPrepare_Idempotent_SpecMissing
+- [x] verify Unprepare releases CPUs, removes CDI spec, removes persisted state — covered by TestUnprepare_KnownClaim
+- [x] verify restart reconciliation: live claims restored, stale dropped, orphans swept — covered by TestStart_Reconciliation
+- [x] verify RestoreClaimsLocked() re-accounts after hpDRAUsed reset — covered by TestRestoreClaimsLocked_RebuildsAccounting
+- [x] verify non-HP devices not published — covered by TestPrepare_NonHP (errNonHPNotSupported) and TestBuildDRADevices hpOnly=true case in dra_test.go
+- [x] run `go test ./pkg/resmgr/... -race` — all green (cache, cpuclass, pct, dra, lib/memory all pass)
 
 ### Task 12: Update documentation
 
