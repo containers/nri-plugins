@@ -1444,6 +1444,329 @@ func TestShareIDPtr(t *testing.T) {
 	}
 }
 
+// ---- Task 9: LiveClaimClasses, RestoreClaimsLocked, Start reconciliation ----
+
+// startTestCDIWriter supports per-UID ClaimSpecExists state and a fixed
+// ListClaims result for Start reconciliation tests. WriteClaim is a no-op.
+type startTestCDIWriter struct {
+	existsByUID map[types.UID]bool
+	listResult  []types.UID
+	listErr     error
+	removed     []types.UID
+	removeErr   error
+}
+
+func (w *startTestCDIWriter) WriteClaim(_ types.UID, _ []CDIDevice) error { return nil }
+func (w *startTestCDIWriter) RemoveClaim(uid types.UID) error {
+	w.removed = append(w.removed, uid)
+	return w.removeErr
+}
+func (w *startTestCDIWriter) ClaimSpecExists(uid types.UID) bool { return w.existsByUID[uid] }
+func (w *startTestCDIWriter) ListClaims() ([]types.UID, error) {
+	return w.listResult, w.listErr
+}
+
+// preloadedClaimStore loads a pre-configured map on Load and tracks saves.
+type preloadedClaimStore struct {
+	initial     map[types.UID]*ClaimState
+	loadErr     error
+	saved       int
+	savedClaims map[types.UID]*ClaimState // last map passed to Save
+}
+
+func (s *preloadedClaimStore) Load() (map[types.UID]*ClaimState, error) {
+	return s.initial, s.loadErr
+}
+
+func (s *preloadedClaimStore) Save(claims map[types.UID]*ClaimState) error {
+	s.saved++
+	cp := make(map[types.UID]*ClaimState, len(claims))
+	for k, v := range claims {
+		cp[k] = v
+	}
+	s.savedClaims = cp
+	return nil
+}
+
+// TestLiveClaimClasses_Empty verifies that LiveClaimClasses returns an empty
+// map when there are no claims.
+func TestLiveClaimClasses_Empty(t *testing.T) {
+	p, err := New("test-driver", validDeps())
+	if err != nil {
+		t.Fatalf("New() unexpected error: %v", err)
+	}
+	got := p.LiveClaimClasses()
+	if len(got) != 0 {
+		t.Errorf("LiveClaimClasses() = %v, want empty map", got)
+	}
+}
+
+// TestLiveClaimClasses_SameClass verifies that two claims using the same class
+// produce a count of 2.
+func TestLiveClaimClasses_SameClass(t *testing.T) {
+	p, err := New("test-driver", validDeps())
+	if err != nil {
+		t.Fatalf("New() unexpected error: %v", err)
+	}
+	p.claims[types.UID("a")] = &ClaimState{UID: "a", Allocs: []ResultAlloc{{ClassName: "gold"}}}
+	p.claims[types.UID("b")] = &ClaimState{UID: "b", Allocs: []ResultAlloc{{ClassName: "gold"}}}
+
+	got := p.LiveClaimClasses()
+	if got["gold"] != 2 {
+		t.Errorf("LiveClaimClasses()[gold] = %d, want 2", got["gold"])
+	}
+	if len(got) != 1 {
+		t.Errorf("LiveClaimClasses() len = %d, want 1", len(got))
+	}
+}
+
+// TestLiveClaimClasses_DifferentClasses verifies that two claims using
+// different classes produce two entries in the result map.
+func TestLiveClaimClasses_DifferentClasses(t *testing.T) {
+	p, err := New("test-driver", validDeps())
+	if err != nil {
+		t.Fatalf("New() unexpected error: %v", err)
+	}
+	p.claims[types.UID("a")] = &ClaimState{UID: "a", Allocs: []ResultAlloc{{ClassName: "gold"}}}
+	p.claims[types.UID("b")] = &ClaimState{UID: "b", Allocs: []ResultAlloc{{ClassName: "silver"}}}
+
+	got := p.LiveClaimClasses()
+	if len(got) != 2 {
+		t.Errorf("LiveClaimClasses() len = %d, want 2", len(got))
+	}
+	if got["gold"] != 1 {
+		t.Errorf("LiveClaimClasses()[gold] = %d, want 1", got["gold"])
+	}
+	if got["silver"] != 1 {
+		t.Errorf("LiveClaimClasses()[silver] = %d, want 1", got["silver"])
+	}
+}
+
+// TestRestoreClaimsLocked_RebuildsAccounting verifies that RestoreClaimsLocked
+// calls AccountHpCpus for each alloc in p.claims, rebuilding accounting after
+// a Reconfigure reset (simulated by a fresh trackingClaimAllocator).
+func TestRestoreClaimsLocked_RebuildsAccounting(t *testing.T) {
+	alloc := &trackingClaimAllocator{}
+	deps := validDeps()
+	deps.ClaimAllocator = alloc
+
+	p, err := New("test-driver", deps)
+	if err != nil {
+		t.Fatalf("New() unexpected error: %v", err)
+	}
+
+	// Pre-populate two claims with one alloc each.
+	p.claims[types.UID("uid-a")] = &ClaimState{
+		UID:    "uid-a",
+		Allocs: []ResultAlloc{{Device: "dev0", PkgID: 0, PunitID: 0, CPUs: "0-3", ClassName: "gold"}},
+	}
+	p.claims[types.UID("uid-b")] = &ClaimState{
+		UID:    "uid-b",
+		Allocs: []ResultAlloc{{Device: "dev1", PkgID: 0, PunitID: 1, CPUs: "4-7", ClassName: "gold"}},
+	}
+
+	if err := p.RestoreClaimsLocked(); err != nil {
+		t.Fatalf("RestoreClaimsLocked() unexpected error: %v", err)
+	}
+	if len(alloc.accounts) != 2 {
+		t.Errorf("AccountHpCpus called %d times, want 2", len(alloc.accounts))
+	}
+}
+
+// TestRestoreClaims_WithLockWrapper verifies that RestoreClaims acquires the
+// lock (via WithLock) and calls AccountHpCpus for each alloc.
+func TestRestoreClaims_WithLockWrapper(t *testing.T) {
+	var mu sync.Mutex
+	alloc := &trackingClaimAllocator{}
+	deps := validDeps()
+	deps.ClaimAllocator = alloc
+	deps.WithLock = func(f func()) {
+		mu.Lock()
+		defer mu.Unlock()
+		f()
+	}
+
+	p, err := New("test-driver", deps)
+	if err != nil {
+		t.Fatalf("New() unexpected error: %v", err)
+	}
+	p.claims[types.UID("uid-c")] = &ClaimState{
+		UID:    "uid-c",
+		Allocs: []ResultAlloc{{Device: "dev0", PkgID: 0, PunitID: 0, CPUs: "0-1", ClassName: "gold"}},
+	}
+
+	if err := p.RestoreClaims(); err != nil {
+		t.Fatalf("RestoreClaims() unexpected error: %v", err)
+	}
+	if len(alloc.accounts) != 1 {
+		t.Errorf("AccountHpCpus called %d times, want 1", len(alloc.accounts))
+	}
+}
+
+// TestStart_Reconciliation is an integration test that verifies Start's
+// claim reconciliation: live claims (CDI spec present) are kept and
+// AccountHpCpus is called; stale claims (CDI spec absent) are dropped and
+// saved; orphan CDI specs (not in claims) are removed.
+func TestStart_Reconciliation(t *testing.T) {
+	liveUID := types.UID("uid-live")
+	staleUID := types.UID("uid-stale")
+	orphanUID := types.UID("uid-orphan")
+
+	alloc := &trackingClaimAllocator{isHP: true}
+
+	cdiW := &startTestCDIWriter{
+		existsByUID: map[types.UID]bool{
+			liveUID:  true,
+			staleUID: false,
+		},
+		// ListClaims returns liveUID and orphanUID (orphan has no claim entry).
+		listResult: []types.UID{liveUID, orphanUID},
+	}
+
+	store := &preloadedClaimStore{
+		initial: map[types.UID]*ClaimState{
+			liveUID: {
+				UID: string(liveUID),
+				Allocs: []ResultAlloc{
+					{Device: "dev0", PkgID: 0, PunitID: 0, CPUs: "0-3", ClassName: "gold"},
+				},
+			},
+			staleUID: {
+				UID: string(staleUID),
+				Allocs: []ResultAlloc{
+					{Device: "dev1", PkgID: 0, PunitID: 1, CPUs: "4-7", ClassName: "gold"},
+				},
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientset(&corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
+	})
+	deps := validDeps()
+	deps.KubeClient = fakeClient
+	deps.NodeName = "test-node"
+	deps.RegistrarDir = t.TempDir()
+	deps.PluginDataDir = t.TempDir()
+	deps.ClaimAllocator = alloc
+	deps.CDIWriter = cdiW
+	deps.ClaimStore = store
+
+	p, err := New("test-driver", deps)
+	if err != nil {
+		t.Fatalf("New() unexpected error: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := p.Start(ctx); err != nil {
+		t.Fatalf("Start() unexpected error: %v", err)
+	}
+	defer p.Stop()
+
+	// Only liveUID should remain in p.claims.
+	if _, ok := p.claims[liveUID]; !ok {
+		t.Error("liveUID missing from p.claims after Start")
+	}
+	if _, ok := p.claims[staleUID]; ok {
+		t.Error("staleUID still in p.claims after Start — should have been dropped")
+	}
+
+	// AccountHpCpus called once (for the live claim's single alloc).
+	if len(alloc.accounts) != 1 {
+		t.Errorf("AccountHpCpus called %d times, want 1", len(alloc.accounts))
+	}
+
+	// ClaimStore.Save called once (to persist the drop of staleUID).
+	if store.saved != 1 {
+		t.Errorf("ClaimStore.Save called %d times, want 1", store.saved)
+	}
+	// staleUID must not be in the saved map.
+	if store.savedClaims != nil {
+		if _, ok := store.savedClaims[staleUID]; ok {
+			t.Error("staleUID still in saved ClaimStore after Start")
+		}
+	}
+
+	// Orphan sweep: orphanUID must have been removed via CDI writer.
+	found := false
+	for _, uid := range cdiW.removed {
+		if uid == orphanUID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("orphanUID was not removed by orphan sweep (removed = %v)", cdiW.removed)
+	}
+	// staleUID should NOT be in cdiW.removed (it had no CDI spec to remove).
+	for _, uid := range cdiW.removed {
+		if uid == staleUID {
+			t.Error("staleUID was unexpectedly passed to CDI RemoveClaim")
+		}
+	}
+}
+
+// TestStart_InactiveAllocator verifies that if AccountHpCpus returns an error
+// (simulating an inactive allocator), all claims with CDI specs present are
+// still kept with a warning (not dropped).
+func TestStart_InactiveAllocator(t *testing.T) {
+	uid1 := types.UID("uid-1")
+	uid2 := types.UID("uid-2")
+
+	alloc := &trackingClaimAllocator{accountErr: errors.New("allocator inactive")}
+
+	cdiW := &startTestCDIWriter{
+		existsByUID: map[types.UID]bool{uid1: true, uid2: true},
+		listResult:  []types.UID{uid1, uid2},
+	}
+
+	store := &preloadedClaimStore{
+		initial: map[types.UID]*ClaimState{
+			uid1: {UID: string(uid1), Allocs: []ResultAlloc{{Device: "dev0", PkgID: 0, PunitID: 0, CPUs: "0-3", ClassName: "gold"}}},
+			uid2: {UID: string(uid2), Allocs: []ResultAlloc{{Device: "dev1", PkgID: 0, PunitID: 1, CPUs: "4-7", ClassName: "gold"}}},
+		},
+	}
+
+	fakeClient := fake.NewClientset(&corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
+	})
+	deps := validDeps()
+	deps.KubeClient = fakeClient
+	deps.NodeName = "test-node"
+	deps.RegistrarDir = t.TempDir()
+	deps.PluginDataDir = t.TempDir()
+	deps.ClaimAllocator = alloc
+	deps.CDIWriter = cdiW
+	deps.ClaimStore = store
+
+	p, err := New("test-driver", deps)
+	if err != nil {
+		t.Fatalf("New() unexpected error: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := p.Start(ctx); err != nil {
+		t.Fatalf("Start() unexpected error: %v", err)
+	}
+	defer p.Stop()
+
+	// Both claims must still be present despite AccountHpCpus errors.
+	if _, ok := p.claims[uid1]; !ok {
+		t.Error("uid1 missing from p.claims — should be kept despite AccountHpCpus error")
+	}
+	if _, ok := p.claims[uid2]; !ok {
+		t.Error("uid2 missing from p.claims — should be kept despite AccountHpCpus error")
+	}
+	// No drops occurred, so ClaimStore.Save must not have been called.
+	if store.saved != 0 {
+		t.Errorf("ClaimStore.Save called %d times, want 0 (no drops)", store.saved)
+	}
+}
+
 // TestNoCmdPluginsImport verifies that pkg/resmgr/dra has no transitive
 // dependency on any nri-plugins cmd binary package. Such an import would
 // violate design.md resolved decision 6 (code-sharing verification

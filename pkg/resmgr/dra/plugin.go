@@ -389,11 +389,79 @@ func (p *Plugin) UnprepareResourceClaims(_ context.Context, claims []kubeletplug
 	return perUID, nil
 }
 
+// LiveClaimClasses returns a map from className to the number of live claims
+// using that class. Each claim is counted once per distinct class it uses.
+// No locking — caller must already hold the resmgr lock OR call outside
+// WithLock. Used by the Step 8 Reconfigure refusal check (resolved decision 8
+// / Option B: refuse Reconfigure that changes class-derived attributes while
+// claims are live).
+func (p *Plugin) LiveClaimClasses() map[string]int {
+	result := make(map[string]int)
+	for _, cs := range p.claims {
+		// Count each claim once per distinct class it uses.
+		seen := make(map[string]bool)
+		for _, alloc := range cs.Allocs {
+			if alloc.ClassName != "" && !seen[alloc.ClassName] {
+				result[alloc.ClassName]++
+				seen[alloc.ClassName] = true
+			}
+		}
+	}
+	return result
+}
+
+// RestoreClaimsLocked re-runs AccountHpCpus for every entry in p.claims,
+// rebuilding HP accounting after a Reconfigure that reset hpDRAUsed. It does
+// not reload from cache and does not acquire any lock.
+//
+// Caller must already hold the resmgr lock; do not call via WithLock.
+// RestoreClaims is the complementary WithLock wrapper for callers that are not
+// already holding the lock.
+func (p *Plugin) RestoreClaimsLocked() error {
+	var errs []error
+	for _, cs := range p.claims {
+		for _, alloc := range cs.Allocs {
+			cpus, err := cpuset.Parse(alloc.CPUs)
+			if err != nil {
+				p.deps.Logger.Warnf("dra plugin: RestoreClaimsLocked: claim %s device %s: parse CPUs %q: %v (skipping)", cs.UID, alloc.Device, alloc.CPUs, err)
+				continue
+			}
+			if err := p.deps.ClaimAllocator.AccountHpCpus(alloc.PkgID, alloc.PunitID, cpus); err != nil {
+				p.deps.Logger.Warnf("dra plugin: RestoreClaimsLocked: claim %s device %s: AccountHpCpus: %v", cs.UID, alloc.Device, err)
+				errs = append(errs, err)
+			}
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// RestoreClaims wraps RestoreClaimsLocked inside deps.WithLock for callers
+// that are not already holding the resmgr lock.
+//
+// RestoreClaims must not be called while holding the resmgr lock
+// (see RestoreClaimsLocked for the complementary lock-already-held variant).
+func (p *Plugin) RestoreClaims() error {
+	var err error
+	p.deps.WithLock(func() {
+		err = p.RestoreClaimsLocked()
+	})
+	return err
+}
+
 // Start registers this plugin with the kubelet and begins serving DRA
-// requests. It validates cpuClass configuration, creates the plugin data
-// directory, injects a logr.Logger into the context, and calls
-// kubeletplugin.Start. Returns an error if the plugin is already started,
-// if ValidateClasses fails, or if the kubelet plugin cannot be started.
+// requests. It validates cpuClass configuration, loads and reconciles
+// persisted claim state, creates the plugin data directory, injects a
+// logr.Logger into the context, and calls kubeletplugin.Start. Returns an
+// error if the plugin is already started, if ValidateClasses fails, or if
+// the kubelet plugin cannot be started.
+//
+// Start must not be called while holding the resmgr lock
+// (see RestoreClaimsLocked for the complementary lock-already-held variant).
+//
+// cpuclass.Handler must have completed Configure() before Start() so that
+// AccountHpCpus finds active punits. If the allocator is inactive when Start
+// is called, live claims are kept with a warning (same over-commit model as
+// PrepareResourceClaims).
 func (p *Plugin) Start(ctx context.Context) error {
 	p.mu.Lock()
 	alreadyStarted := p.helper != nil
@@ -404,6 +472,61 @@ func (p *Plugin) Start(ctx context.Context) error {
 	if err := p.deps.ValidateClasses(); err != nil {
 		return fmt.Errorf("dra plugin: ValidateClasses failed: %w", err)
 	}
+
+	// Reconcile persisted claims inside the resmgr lock before registering
+	// with the kubelet so that accounting is consistent before any new
+	// Prepare/Unprepare calls can arrive.
+	p.deps.WithLock(func() {
+		loaded, loadErr := p.deps.ClaimStore.Load()
+		if loadErr != nil {
+			p.deps.Logger.Warnf("dra plugin: Start: ClaimStore.Load: %v (proceeding with empty claims)", loadErr)
+		} else if loaded != nil {
+			p.claims = loaded
+		}
+
+		// For each persisted claim: if CDI spec is present on disk, re-account
+		// CPUs and keep the claim. If the spec is absent the container has been
+		// cleaned up; drop the stale claim.
+		var dropped bool
+		for uid, cs := range p.claims {
+			if p.deps.CDIWriter.ClaimSpecExists(uid) {
+				for _, alloc := range cs.Allocs {
+					cpus, err := cpuset.Parse(alloc.CPUs)
+					if err != nil {
+						p.deps.Logger.Warnf("dra plugin: Start: claim %s device %s: parse CPUs %q: %v (skipping AccountHpCpus)", uid, alloc.Device, alloc.CPUs, err)
+						continue
+					}
+					if err := p.deps.ClaimAllocator.AccountHpCpus(alloc.PkgID, alloc.PunitID, cpus); err != nil {
+						p.deps.Logger.Warnf("dra plugin: Start: claim %s device %s: AccountHpCpus: %v (keeping claim — container may be running)", uid, alloc.Device, err)
+					}
+				}
+			} else {
+				p.deps.Logger.Warnf("dra plugin: dropping stale claim %s (CDI spec missing)", uid)
+				delete(p.claims, uid)
+				dropped = true
+			}
+		}
+		if dropped {
+			if saveErr := p.deps.ClaimStore.Save(p.claims); saveErr != nil {
+				p.deps.Logger.Errorf("dra plugin: Start: ClaimStore.Save after dropping stale claims: %v", saveErr)
+			}
+		}
+
+		// Orphan sweep: remove CDI specs that have no corresponding live claim.
+		listed, listErr := p.deps.CDIWriter.ListClaims()
+		if listErr != nil {
+			p.deps.Logger.Warnf("dra plugin: Start: CDIWriter.ListClaims: %v (skipping orphan sweep)", listErr)
+			return
+		}
+		for _, uid := range listed {
+			if _, ok := p.claims[uid]; !ok {
+				if removeErr := p.deps.CDIWriter.RemoveClaim(uid); removeErr != nil {
+					p.deps.Logger.Warnf("dra plugin: Start: orphan sweep: RemoveClaim %s: %v", uid, removeErr)
+				}
+			}
+		}
+	})
+
 	// Resolve the plugin data directory default before creating it: an empty
 	// string passed to os.MkdirAll would fail immediately.
 	pluginDataDir := p.deps.PluginDataDir

@@ -395,26 +395,26 @@ persistence layer to the same file.
 - Modify: `pkg/resmgr/dra/plugin.go`
 - Modify: `pkg/resmgr/dra/plugin_test.go`
 
-- [ ] add exported `LiveClaimClasses() map[string]int` — returns `className → liveClaimCount`
+- [x] add exported `LiveClaimClasses() map[string]int` — returns `className → liveClaimCount`
   over all entries in `p.claims`; used by Step 8's Reconfigure refusal check (resolved
   decision 8 / Option B: refuse Reconfigure that changes class-derived attributes while
   claims are live). No locking — caller must already hold the resmgr lock OR call outside
   `WithLock` (Step 8 checks inside the Reconfigure path which already holds the lock).
   Add unit test: zero claims → empty map; two claims same class → count 2; two claims different
   classes → two entries.
-- [ ] add exported `RestoreClaimsLocked() error` — re-runs `AccountHpCpus` for every entry in
+- [x] add exported `RestoreClaimsLocked() error` — re-runs `AccountHpCpus` for every entry in
   `p.claims` (no cache reload, no locking); godoc: "caller must already hold the resmgr lock;
   do not call via WithLock"; for each alloc: `cs, err := cpuset.Parse(alloc.CPUs); if err !=
   nil { log.Warnf(...); continue }; AccountHpCpus(pkgID, punitID, cs)`; returns combined errors
-- [ ] add public `RestoreClaims() error` — wraps `RestoreClaimsLocked()` inside `deps.WithLock`;
+- [x] add public `RestoreClaims() error` — wraps `RestoreClaimsLocked()` inside `deps.WithLock`;
   for callers NOT already holding the lock
-- [ ] **Step 8 note and contract**: three methods — `Start()`, `PublishResources()`, and
+- [x] **Step 8 note and contract**: three methods — `Start()`, `PublishResources()`, and
   `RestoreClaims()` — **must not be called while holding the resmgr lock** (all acquire it
   via `WithLock`; resmgr `sync.RWMutex` is non-reentrant). Add this contract to the godoc of
   all three. `RestoreClaimsLocked()` is the complementary lock-held variant wired inside
   `resmgr.apply()` after `policy.Reconfigure()`, at `resource-manager.go:349` which already
   holds `m.Lock()`.
-- [ ] in `Start()`, after `ValidateClasses`, inside `deps.WithLock`:
+- [x] in `Start()`, after `ValidateClasses`, inside `deps.WithLock`:
   - `deps.ClaimStore.Load()` → populate `p.claims`
   - for each claim: `CDIWriter.ClaimSpecExists(uid)` true → call `AccountHpCpus` per alloc
     (on failure: log warning, keep claim — container may be running, over-commit acceptable);
@@ -424,13 +424,13 @@ persistence layer to the same file.
   - document (godoc) that `cpuclass.Handler` must have completed `Configure()` before `Start()`
     so `AccountHpCpus` finds active punits; if allocator is inactive, claims are kept with a
     warning (same over-commit model)
-- [ ] write integration test: two claims in ClaimStore, one CDI spec present + one absent;
+- [x] write integration test: two claims in ClaimStore, one CDI spec present + one absent;
   Start() → only live claim in p.claims; AccountHpCpus called once; stale spec swept;
   stale claim absent from saved ClaimStore; foreign CDI spec in dir survives
-- [ ] write test: RestoreClaimsLocked() after hpDRAUsed manually cleared (simulates Configure
+- [x] write test: RestoreClaimsLocked() after hpDRAUsed manually cleared (simulates Configure
   reset); verify accounting rebuilt
-- [ ] write test: Start() with inactive allocator → all claims kept + over-commit warnings
-- [ ] run `go test ./pkg/resmgr/dra/... -race` — must pass before Task 10
+- [x] write test: Start() with inactive allocator → all claims kept + over-commit warnings
+- [x] run `go test ./pkg/resmgr/dra/... -race` — must pass before Task 10
 
 ### Task 10: Dependency hygiene + lint
 
