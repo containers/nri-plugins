@@ -158,19 +158,6 @@ func TestNew_Validation(t *testing.T) {
 	}
 }
 
-// TestUnprepareResourceClaims_Stub verifies that UnprepareResourceClaims returns
-// errNotImplemented (Task 8 will replace this stub).
-func TestUnprepareResourceClaims_Stub(t *testing.T) {
-	p := &Plugin{}
-	result, err := p.UnprepareResourceClaims(context.Background(), []kubeletplugin.NamespacedObject{})
-	if result != nil {
-		t.Errorf("UnprepareResourceClaims() result = %v, want nil", result)
-	}
-	if !errors.Is(err, errNotImplemented) {
-		t.Errorf("UnprepareResourceClaims() err = %v, want errNotImplemented", err)
-	}
-}
-
 // TestHandleError_RecoverableLogsWarn verifies that a recoverable error is
 // handled without panicking. The method logs at Warn level.
 func TestHandleError_RecoverableLogsWarn(t *testing.T) {
@@ -584,6 +571,7 @@ func (a *trackingClaimAllocator) IsHPClass(_ string) bool { return a.isHP }
 // trackingCDIWriter tracks WriteClaim and RemoveClaim calls.
 type trackingCDIWriter struct {
 	writeErr    error
+	removeErr   error
 	existsValue bool
 	written     []types.UID
 	removed     []types.UID
@@ -599,7 +587,7 @@ func (w *trackingCDIWriter) WriteClaim(uid types.UID, _ []CDIDevice) error {
 
 func (w *trackingCDIWriter) RemoveClaim(uid types.UID) error {
 	w.removed = append(w.removed, uid)
-	return nil
+	return w.removeErr
 }
 
 func (w *trackingCDIWriter) ClaimSpecExists(_ types.UID) bool   { return w.existsValue }
@@ -1271,6 +1259,173 @@ func TestPrepare_SubrequestSlashInName(t *testing.T) {
 	}
 	if len(cdiW.written) == 0 {
 		t.Error("WriteClaim was not called for subrequest claim")
+	}
+}
+
+// ---- Task 8: UnprepareResourceClaims tests ----
+
+// unprepareObj builds a kubeletplugin.NamespacedObject for a given UID,
+// used to drive UnprepareResourceClaims calls in tests.
+func unprepareObj(uid types.UID) kubeletplugin.NamespacedObject {
+	return kubeletplugin.NamespacedObject{UID: uid}
+}
+
+// preparePlugin is a helper that creates a Plugin, pre-populates p.claims with
+// the given ClaimState entries, and wires the provided allocator, CDI writer,
+// and store into Deps.
+func preparePlugin(t *testing.T, alloc ClaimAllocator, cdiW CDIWriter, store ClaimStore,
+	claimsIn map[types.UID]*ClaimState) *Plugin {
+	t.Helper()
+	deps := validDeps()
+	deps.ClaimAllocator = alloc
+	deps.CDIWriter = cdiW
+	deps.ClaimStore = store
+	p, err := New("test-driver", deps)
+	if err != nil {
+		t.Fatalf("New() unexpected error: %v", err)
+	}
+	for uid, cs := range claimsIn {
+		p.claims[uid] = cs
+	}
+	return p
+}
+
+// TestUnprepare_KnownClaim verifies that an existing claim is released,
+// CDI is removed, the claim is deleted from p.claims, and the result map
+// contains nil for the UID.
+func TestUnprepare_KnownClaim(t *testing.T) {
+	alloc := &trackingClaimAllocator{}
+	cdiW := &trackingCDIWriter{}
+	store := &trackingClaimStore{}
+
+	uid := types.UID("uid-known")
+	claimState := &ClaimState{
+		UID: string(uid),
+		Allocs: []ResultAlloc{
+			{Device: "dev0", PkgID: 0, PunitID: 0, CPUs: "0-3", ClassName: "gold"},
+		},
+	}
+	p := preparePlugin(t, alloc, cdiW, store, map[types.UID]*ClaimState{uid: claimState})
+
+	result, globalErr := p.UnprepareResourceClaims(context.Background(), []kubeletplugin.NamespacedObject{unprepareObj(uid)})
+	if globalErr != nil {
+		t.Fatalf("UnprepareResourceClaims() unexpected global error: %v", globalErr)
+	}
+	if perErr, ok := result[uid]; !ok {
+		t.Error("result map missing uid")
+	} else if perErr != nil {
+		t.Errorf("result[uid] = %v, want nil", perErr)
+	}
+	if len(alloc.releases) != 1 {
+		t.Errorf("ReleaseHpCpus called %d times, want 1", len(alloc.releases))
+	}
+	if len(cdiW.removed) != 1 || cdiW.removed[0] != uid {
+		t.Errorf("RemoveClaim called for %v, want [%v]", cdiW.removed, uid)
+	}
+	if _, exists := p.claims[uid]; exists {
+		t.Error("claim still in p.claims after Unprepare")
+	}
+	if store.saved != 1 {
+		t.Errorf("ClaimStore.Save called %d times, want 1", store.saved)
+	}
+}
+
+// TestUnprepare_UnknownUID verifies that an unknown UID produces a warning and
+// a nil entry in the result map (no panic, no error).
+func TestUnprepare_UnknownUID(t *testing.T) {
+	alloc := &trackingClaimAllocator{}
+	cdiW := &trackingCDIWriter{}
+	store := &trackingClaimStore{}
+
+	p := preparePlugin(t, alloc, cdiW, store, nil)
+
+	uid := types.UID("uid-unknown")
+	result, globalErr := p.UnprepareResourceClaims(context.Background(), []kubeletplugin.NamespacedObject{unprepareObj(uid)})
+	if globalErr != nil {
+		t.Fatalf("UnprepareResourceClaims() unexpected global error: %v", globalErr)
+	}
+	if perErr, ok := result[uid]; !ok {
+		t.Error("result map missing uid")
+	} else if perErr != nil {
+		t.Errorf("result[uid] = %v, want nil for unknown UID", perErr)
+	}
+	// CDI remove must NOT be called for unknown claims.
+	if len(cdiW.removed) != 0 {
+		t.Errorf("RemoveClaim called for unknown UID (removed = %v)", cdiW.removed)
+	}
+	// Save must still be called once (batch write even with no-ops).
+	if store.saved != 1 {
+		t.Errorf("ClaimStore.Save called %d times, want 1", store.saved)
+	}
+}
+
+// TestUnprepare_CDIRemoveError verifies that a CDI RemoveClaim error produces
+// a warning but does not surface as an error in the result map (nil for that UID).
+func TestUnprepare_CDIRemoveError(t *testing.T) {
+	removeErr := errors.New("CDI remove failed")
+	alloc := &trackingClaimAllocator{}
+	cdiW := &trackingCDIWriter{removeErr: removeErr}
+	store := &trackingClaimStore{}
+
+	uid := types.UID("uid-remove-err")
+	claimState := &ClaimState{
+		UID:    string(uid),
+		Allocs: []ResultAlloc{{Device: "dev0", PkgID: 0, PunitID: 0, CPUs: "4-7", ClassName: "gold"}},
+	}
+	p := preparePlugin(t, alloc, cdiW, store, map[types.UID]*ClaimState{uid: claimState})
+
+	result, globalErr := p.UnprepareResourceClaims(context.Background(), []kubeletplugin.NamespacedObject{unprepareObj(uid)})
+	if globalErr != nil {
+		t.Fatalf("UnprepareResourceClaims() unexpected global error: %v", globalErr)
+	}
+	// CDI error is a warning only — result must be nil for the UID.
+	if perErr := result[uid]; perErr != nil {
+		t.Errorf("result[uid] = %v, want nil on CDI remove error", perErr)
+	}
+	// Claim must still be deleted from in-memory state.
+	if _, exists := p.claims[uid]; exists {
+		t.Error("claim still in p.claims after Unprepare despite CDI error")
+	}
+}
+
+// TestUnprepare_MixedBatch verifies that a batch with one known and one unknown
+// UID both appear in the result map (nil for each), and only the known claim's
+// CDI is removed.
+func TestUnprepare_MixedBatch(t *testing.T) {
+	alloc := &trackingClaimAllocator{}
+	cdiW := &trackingCDIWriter{}
+	store := &trackingClaimStore{}
+
+	known := types.UID("uid-known-batch")
+	unknown := types.UID("uid-unknown-batch")
+	claimState := &ClaimState{
+		UID:    string(known),
+		Allocs: []ResultAlloc{{Device: "dev0", PkgID: 0, PunitID: 0, CPUs: "0-1", ClassName: "gold"}},
+	}
+	p := preparePlugin(t, alloc, cdiW, store, map[types.UID]*ClaimState{known: claimState})
+
+	result, globalErr := p.UnprepareResourceClaims(context.Background(),
+		[]kubeletplugin.NamespacedObject{unprepareObj(known), unprepareObj(unknown)})
+	if globalErr != nil {
+		t.Fatalf("UnprepareResourceClaims() unexpected global error: %v", globalErr)
+	}
+	if perErr, ok := result[known]; !ok {
+		t.Error("result map missing known uid")
+	} else if perErr != nil {
+		t.Errorf("result[known] = %v, want nil", perErr)
+	}
+	if perErr, ok := result[unknown]; !ok {
+		t.Error("result map missing unknown uid")
+	} else if perErr != nil {
+		t.Errorf("result[unknown] = %v, want nil", perErr)
+	}
+	// Only the known UID's CDI should be removed.
+	if len(cdiW.removed) != 1 || cdiW.removed[0] != known {
+		t.Errorf("RemoveClaim called for %v, want [%v]", cdiW.removed, known)
+	}
+	// One batch save.
+	if store.saved != 1 {
+		t.Errorf("ClaimStore.Save called %d times, want 1", store.saved)
 	}
 }
 

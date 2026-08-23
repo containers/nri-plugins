@@ -376,8 +376,8 @@ persistence layer to the same file.
 - Modify: `pkg/resmgr/dra/plugin.go`
 - Modify: `pkg/resmgr/dra/plugin_test.go`
 
-- [ ] remove `errNotImplemented` (last reference — Unprepare stub is being replaced)
-- [ ] replace stub with real implementation inside `deps.WithLock`:
+- [x] remove `errNotImplemented` (last reference — Unprepare stub is being replaced)
+- [x] replace stub with real implementation inside `deps.WithLock`:
   1. For each `obj`: look up `p.claims[uid]`; absent → log warning, add `nil` to per-UID map
   2. For each `ResultAlloc`: `cs, err := cpuset.Parse(alloc.CPUs); if err != nil { log.Warnf(...)
      continue /* still remove CDI and claim entry */ }; ReleaseHpCpus(pkgID, punitID, cs)`
@@ -385,9 +385,9 @@ persistence layer to the same file.
   4. Delete `p.claims[uid]`
   5. After all UIDs: `ClaimStore.Save(p.claims)` (one batch write)
   6. Return per-UID error map (nil for success/absent)
-- [ ] write tests: known claim → released + CDI removed + nil in map; unknown UID → warning + nil;
+- [x] write tests: known claim → released + CDI removed + nil in map; unknown UID → warning + nil;
   CDI remove error → warning, nil in map; mixed batch
-- [ ] run `go test ./pkg/resmgr/dra/... -race` — must pass before Task 9
+- [x] run `go test ./pkg/resmgr/dra/... -race` — must pass before Task 9
 
 ### Task 9: Restart reconciliation + post-Reconfigure re-accounting
 

@@ -34,8 +34,6 @@ import (
 	"tags.cncf.io/container-device-interface/pkg/parser"
 )
 
-var errNotImplemented = errors.New("dra plugin: not yet implemented")
-
 // Sentinel errors for PrepareResourceClaims.
 var (
 	errNilAllocation           = errors.New("dra plugin: claim has nil Allocation")
@@ -352,10 +350,43 @@ func (p *Plugin) buildPrepareResult(uid types.UID, filtered []resourceapi.Device
 	return kubeletplugin.PrepareResult{Devices: devices}
 }
 
-// UnprepareResourceClaims is a stub that satisfies kubeletplugin.DRAPlugin.
-// Real deallocation logic is added in Step 7.
-func (p *Plugin) UnprepareResourceClaims(_ context.Context, _ []kubeletplugin.NamespacedObject) (map[types.UID]error, error) {
-	return nil, errNotImplemented
+// UnprepareResourceClaims releases CPUs and CDI specs for the given claims and
+// removes them from persisted state. The entire body runs inside deps.WithLock
+// to serialize with Reconfigure.
+func (p *Plugin) UnprepareResourceClaims(_ context.Context, claims []kubeletplugin.NamespacedObject) (map[types.UID]error, error) {
+	perUID := make(map[types.UID]error, len(claims))
+	p.deps.WithLock(func() {
+		for _, obj := range claims {
+			uid := obj.UID
+			cs, exists := p.claims[uid]
+			if !exists {
+				p.deps.Logger.Warnf("dra plugin: UnprepareResourceClaims: claim %s not found in state", uid)
+				perUID[uid] = nil
+				continue
+			}
+			// Release CPUs for each allocation result; parse errors are logged
+			// but do not block CDI removal or claim deletion.
+			for _, alloc := range cs.Allocs {
+				cpus, err := cpuset.Parse(alloc.CPUs)
+				if err != nil {
+					p.deps.Logger.Warnf("dra plugin: UnprepareResourceClaims: claim %s device %s: parse CPUs %q: %v (skipping release)", uid, alloc.Device, alloc.CPUs, err)
+					continue
+				}
+				p.deps.ClaimAllocator.ReleaseHpCpus(alloc.PkgID, alloc.PunitID, cpus)
+			}
+			// Remove CDI spec unconditionally; log but do not block deletion.
+			if err := p.deps.CDIWriter.RemoveClaim(uid); err != nil {
+				p.deps.Logger.Warnf("dra plugin: UnprepareResourceClaims: claim %s: RemoveClaim: %v", uid, err)
+			}
+			delete(p.claims, uid)
+			perUID[uid] = nil
+		}
+		// Persist the updated claims map in a single batch write.
+		if saveErr := p.deps.ClaimStore.Save(p.claims); saveErr != nil {
+			p.deps.Logger.Errorf("dra plugin: UnprepareResourceClaims: ClaimStore.Save: %v", saveErr)
+		}
+	})
+	return perUID, nil
 }
 
 // Start registers this plugin with the kubelet and begins serving DRA
