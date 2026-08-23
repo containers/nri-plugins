@@ -411,12 +411,15 @@ func TestPublishResources_ConcurrentNoRace(t *testing.T) {
 			_ = p.PublishResources(ctx)
 		}()
 	}
-	// Simulate concurrent Reconfigure by acquiring the same mutex.
+	// Simulate concurrent Reconfigure by acquiring the same mutex for a brief
+	// hold, which is what resmgr.apply() does when it calls policy.Reconfigure()
+	// under the write lock.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		for range 50 {
 			mu.Lock()
+			runtime.Gosched() // hold briefly to interleave with PublishResources
 			mu.Unlock()
 		}
 	}()

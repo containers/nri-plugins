@@ -434,12 +434,12 @@ persistence layer to the same file.
 
 ### Task 10: Dependency hygiene + lint
 
-- [ ] commit all changes from Tasks 1-9 (or stage them); `verify-godeps` requires a clean
+- [x] commit all changes from Tasks 1-9 (or stage them); `verify-godeps` requires a clean
   working tree (`go mod tidy && git diff --quiet`) — run only after staging/committing
-- [ ] run `make verify-godeps`
-- [ ] run `make verify-licenses` (CDI library is Apache-2.0)
-- [ ] run `make golangci-lint` — fix all findings
-- [ ] run `go test ./pkg/resmgr/... -race` — all green
+- [x] run `make verify-godeps`
+- [x] run `make verify-licenses` (CDI library is Apache-2.0)
+- [x] run `make golangci-lint` — fix all findings
+- [x] run `go test ./pkg/resmgr/... -race` — all green
 
 ### Task 11: Verify acceptance criteria
 
