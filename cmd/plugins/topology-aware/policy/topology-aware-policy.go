@@ -167,6 +167,20 @@ func (p *policy) Description() string {
 
 // Start prepares this policy for accepting allocation/release requests.
 func (p *policy) Start() error {
+	if err := p.restoreCache(); err != nil {
+		return policyError("failed to start: %v", err)
+	}
+
+	// Re-mark any DRA-claimed CPUs in the freshly rebuilt pool supplies.
+	// Ordering note: once Task 9 (see
+	// docs/plans/20260823-dra-step8-topology-aware-wire-up.md) wires up the
+	// DRA plugin lifecycle, draPlugin.Start(ctx) (which loads the persisted
+	// ClaimStore) must run before this call — reapplyDRAClaims reads
+	// draPlugin.LiveClaimsLocked(), which is empty until the plugin has
+	// loaded its claim state. For now (draPlugin == nil until Task 9 builds
+	// it in Setup()) this call is a no-op.
+	p.reapplyDRAClaims()
+
 	// Turn coldstart forcibly off if we have movable non-DRAM memory.
 	// Note that although this can change dynamically we only check it
 	// during startup and trust users to either not fiddle with memory
@@ -617,6 +631,12 @@ func (p *policy) Reconfigure(newCfg any) error {
 		return policyError("failed to reconfigure: %v", err)
 	}
 
+	// Re-mark any DRA-claimed CPUs in the freshly rebuilt pool supplies.
+	// Still inside the resmgr write lock held by the caller: reapplyDRAClaims
+	// only reads in-memory Plugin/pool state (no I/O, no WithLock), so it is
+	// safe to run here.
+	p.reapplyDRAClaims()
+
 	p.root.Dump("<post-config>")
 	p.checkAllocations("  <post-config>")
 
@@ -785,6 +805,78 @@ func (p *policy) findExistingTopologyLevel(level cfgapi.CPUTopologyLevel) cfgapi
 	}
 
 	return cfgapi.CPUTopologyLevelPackage
+}
+
+func (p *policy) restoreCache() error {
+	allocations := p.newAllocations()
+	if p.cache.GetPolicyEntry(keyAllocations, &allocations) {
+		if err := p.restoreAllocations(&allocations); err != nil {
+			return policyError("failed to restore allocations from cache: %v", err)
+		}
+		p.allocations.Dump(log.Infof, "restored ")
+	}
+	p.saveAllocations()
+
+	return nil
+}
+
+// remarkClaimInSupply marks cpus as claimed by DRA ResourceClaim uid in the
+// tightest pool that fully contains them (tree-wide, via
+// Supply.ClaimCPUs — see resources.go), without touching
+// claimContainerRefs. This is the marking-only counterpart to allocateClaim
+// (pools.go): reapplyDRAClaims uses it to restore Supply.claimRefs after
+// Start()/Reconfigure() rebuild pool/supply state in initialize(), which
+// discards any marks a prior allocateClaim call applied. Using allocateClaim
+// here instead would double-count: the containers backing these claims were
+// already counted in claimContainerRefs when AllocateResources first ran.
+func (p *policy) remarkClaimInSupply(uid types.UID, cpus cpuset.CPUSet) error {
+	if cpus.IsEmpty() {
+		return policyError("cannot remark DRA claim %s: empty CPU set", uid)
+	}
+
+	pool, err := p.poolForCPUs(cpus)
+	if err != nil {
+		return policyError("cannot remark DRA claim %s (CPUs %s): %v", uid, cpus, err)
+	}
+
+	pool.FreeSupply().ClaimCPUs(uid, cpus)
+
+	return nil
+}
+
+// reapplyDRAClaims re-marks pool supplies for every currently live DRA
+// claim, restoring the Supply.claimRefs bookkeeping that Start()'s
+// restoreCache() and Reconfigure()'s restoreAllocations() lose whenever
+// initialize() rebuilds the pool/supply tree from scratch. It is a no-op if
+// DRA is disabled (draPlugin == nil).
+//
+// Caller must hold the resmgr write lock (LiveClaimsLocked's contract);
+// callers must not invoke this from inside a WithLock callback.
+func (p *policy) reapplyDRAClaims() {
+	if p.draPlugin == nil {
+		return
+	}
+
+	for uid, allocs := range p.draPlugin.LiveClaimsLocked() {
+		cpus := cpuset.New()
+		for _, alloc := range allocs {
+			parsed, err := cpuset.Parse(alloc.CPUs)
+			if err != nil {
+				log.Warnf("dra: reapplyDRAClaims: claim %s device %s: failed to parse CPUs %q: %v",
+					uid, alloc.Device, alloc.CPUs, err)
+				continue
+			}
+			cpus = cpus.Union(parsed)
+		}
+
+		if cpus.IsEmpty() {
+			continue
+		}
+
+		if err := p.remarkClaimInSupply(uid, cpus); err != nil {
+			log.Errorf("dra: reapplyDRAClaims: %v", err)
+		}
+	}
 }
 
 func (p *policy) checkColdstartOff() {

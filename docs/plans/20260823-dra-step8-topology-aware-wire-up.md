@@ -348,24 +348,27 @@ attribute maps per class name. For each class where attrs differ: `if p.draPlugi
 **Files:**
 - Modify: `cmd/plugins/topology-aware/policy/topology-aware-policy.go`
 
-- [ ] write test: `Start()` with live claims in ClaimStore → after `restoreCache()`,
+- [x] write test: `Start()` with live claims in ClaimStore → after `restoreCache()`,
       pool supplies have claim CPUs marked; a subsequent `AllocateCPUs` cannot use them
-- [ ] write test: `Reconfigure()` with a live claim → after `restoreAllocations()`,
+- [x] write test: `Reconfigure()` with a live claim → after `restoreAllocations()`,
       pool supplies re-marked; exclusive grants remain correct
-- [ ] write test: `reapplyDRAClaims()` with nil `draPlugin` → no-op (no panic)
-- [ ] write test: ordering — `draPlugin.Start(ctx)` must run before `reapplyDRAClaims()` in
+- [x] write test: `reapplyDRAClaims()` with nil `draPlugin` → no-op (no panic)
+- [x] write test: ordering — `draPlugin.Start(ctx)` must run before `reapplyDRAClaims()` in
       `Start()` (plugin loads ClaimStore; adapter reads live claims); assert with call-order mock
-- [ ] implement `(p *policy) remarkClaimInSupply(uid types.UID, cpus cpuset.CPUSet)` — find
+      (adapted — see decision log: `draPlugin.Start(ctx)` is not yet wired into `Start()`
+      until Task 9, so this checks that `reapplyDRAClaims()` runs strictly after
+      `restoreCache()` within `Start()` instead of a call-order mock on `draPlugin.Start`)
+- [x] implement `(p *policy) remarkClaimInSupply(uid types.UID, cpus cpuset.CPUSet)` — find
       pool containing `cpus`, call `pool.GetSupply().ClaimCPUs(uid, cpus)` tree-wide; does NOT
       touch `p.claimContainerRefs` (marking only, no refcount side-effects)
-- [ ] implement `(p *policy) reapplyDRAClaims()` — if `draPlugin` is nil, return; call
+- [x] implement `(p *policy) reapplyDRAClaims()` — if `draPlugin` is nil, return; call
       `draPlugin.LiveClaimsLocked()` (must be under resmgr lock — caller's responsibility);
       for each `(uid, allocs)`: parse cpus from allocs, call `p.remarkClaimInSupply(uid, cpus)`
       (not `allocateClaim` — re-apply must not inflate `claimContainerRefs`)
-- [ ] in `Start()`, call `reapplyDRAClaims()` after `restoreCache()` (after `draPlugin.Start(ctx)`)
-- [ ] in `Reconfigure()`, call `reapplyDRAClaims()` after `restoreAllocations()` succeeds, before
+- [x] in `Start()`, call `reapplyDRAClaims()` after `restoreCache()` (after `draPlugin.Start(ctx)`)
+- [x] in `Reconfigure()`, call `reapplyDRAClaims()` after `restoreAllocations()` succeeds, before
       returning (still inside the resmgr lock held by the caller)
-- [ ] run tests — must pass before task 9
+- [x] run tests — must pass before task 9
 
 ### Task 9: DRA plugin lifecycle in topology-aware policy
 

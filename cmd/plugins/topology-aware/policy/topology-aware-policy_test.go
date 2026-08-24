@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 
+	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	"github.com/containers/nri-plugins/pkg/resmgr/dra"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
@@ -264,5 +265,144 @@ func TestAllocateResourcesNilDRAPluginNoCrash(t *testing.T) {
 	}
 	if err := p.ReleaseResources(container); err != nil {
 		t.Fatalf("ReleaseResources() with nil draPlugin: unexpected error: %v", err)
+	}
+}
+
+// ---- Task 8 tests: reapplyDRAClaims()/remarkClaimInSupply() and their
+// Start()/Reconfigure() wiring. ----
+
+// TestStartMarksLiveDRAClaimsInPoolSupply verifies that Start() re-marks
+// pool supplies for every claim the (already-loaded) DRA plugin reports as
+// live, so a subsequent regular allocation cannot pick those CPUs. This
+// stands in for a full ClaimStore-backed reload: p.draPlugin is seeded with
+// a live claim via PrepareResourceClaims before Start() runs, exactly as it
+// would be once Task 9's draPlugin.Start(ctx) has loaded persisted claims
+// from the ClaimStore before Start() reaches reapplyDRAClaims().
+func TestStartMarksLiveDRAClaimsInPoolSupply(t *testing.T) {
+	p := newDRATestPolicy(t)
+
+	leaf := findPoolNode(t, p, "NUMA node #0")
+	sharable := leaf.FreeSupply().SharableCPUs().List()
+	if len(sharable) < 2 {
+		t.Fatalf("expected at least 2 sharable CPUs on %q", leaf.Name())
+	}
+	claimed := cpuset.New(sharable[0], sharable[1])
+
+	plugin := newTestDRAPlugin(t, claimed, "dev0")
+	uid := types.UID("claim-start-1")
+	_ = seedLiveClaim(t, plugin, uid, "dev0", claimed.Size())
+	p.draPlugin = plugin
+
+	if err := p.Start(); err != nil {
+		t.Fatalf("Start() unexpected error: %v", err)
+	}
+
+	free := leaf.FreeSupply()
+	if got := free.SharableCPUs().Union(free.IsolatedCPUs()).Intersection(claimed); got.Size() != 0 {
+		t.Errorf("claimed CPUs %s still free in %q supply after Start(): %s", claimed, leaf.Name(), got)
+	}
+}
+
+// TestStartReappliesDRAClaimsAfterRestoreCache verifies the ordering that
+// Start() must observe: restoreCache() alone (which only restores
+// previously-cached container allocations, and knows nothing about DRA
+// claims) must not mark any claimed CPUs; only the rest of Start() (which
+// calls reapplyDRAClaims() after restoreCache() returns) does.
+//
+// This is the closest ordering check obtainable at Task 8: draPlugin.Start(ctx)
+// itself is not yet wired into policy.Start() (that lifecycle wiring is
+// Task 9's job), so there is no real "draPlugin.Start(ctx) must precede
+// reapplyDRAClaims()" call sequence to assert against with a call-order
+// mock yet. What can be verified now is that reapplyDRAClaims() runs *after*
+// restoreCache() within Start(), which this test does directly.
+func TestStartReappliesDRAClaimsAfterRestoreCache(t *testing.T) {
+	p := newDRATestPolicy(t)
+
+	leaf := findPoolNode(t, p, "NUMA node #0")
+	sharable := leaf.FreeSupply().SharableCPUs().List()
+	if len(sharable) < 2 {
+		t.Fatalf("expected at least 2 sharable CPUs on %q", leaf.Name())
+	}
+	claimed := cpuset.New(sharable[0], sharable[1])
+
+	plugin := newTestDRAPlugin(t, claimed, "dev0")
+	uid := types.UID("claim-start-order-1")
+	_ = seedLiveClaim(t, plugin, uid, "dev0", claimed.Size())
+	p.draPlugin = plugin
+
+	if err := p.restoreCache(); err != nil {
+		t.Fatalf("restoreCache() unexpected error: %v", err)
+	}
+	if got := leaf.FreeSupply().SharableCPUs(); got.Intersection(claimed).Size() != claimed.Size() {
+		t.Fatalf("test setup error: claimed CPUs %s unexpectedly marked by restoreCache() alone (want unmarked at this point): sharable=%s",
+			claimed, got)
+	}
+
+	if err := p.Start(); err != nil {
+		t.Fatalf("Start() unexpected error: %v", err)
+	}
+	if got := leaf.FreeSupply().SharableCPUs(); got.Intersection(claimed).Size() != 0 {
+		t.Errorf("claimed CPUs %s not marked once Start() completed: sharable=%s", claimed, got)
+	}
+}
+
+// TestReconfigureReappliesLiveDRAClaims verifies that Reconfigure() re-marks
+// pool supplies for live DRA claims after restoreAllocations() rebuilds the
+// pool tree from scratch (initialize() resets p.nodes/p.pools/p.root and
+// wipes any earlier Supply.claimRefs marks), and that doing so does not
+// disturb the (empty, in this test) set of regular container grants.
+func TestReconfigureReappliesLiveDRAClaims(t *testing.T) {
+	p := newDRATestPolicy(t)
+
+	leaf := findPoolNode(t, p, "NUMA node #0")
+	sharable := leaf.FreeSupply().SharableCPUs().List()
+	if len(sharable) < 2 {
+		t.Fatalf("expected at least 2 sharable CPUs on %q", leaf.Name())
+	}
+	claimed := cpuset.New(sharable[0], sharable[1])
+
+	plugin := newTestDRAPlugin(t, claimed, "dev0")
+	uid := types.UID("claim-reconf-1")
+	_ = seedLiveClaim(t, plugin, uid, "dev0", claimed.Size())
+	p.draPlugin = plugin
+
+	newCfg := &cfgapi.Config{
+		ReservedResources: cfgapi.Constraints{
+			cfgapi.CPU: "750m",
+		},
+	}
+
+	if err := p.Reconfigure(newCfg); err != nil {
+		t.Fatalf("Reconfigure() unexpected error: %v", err)
+	}
+
+	// initialize() rebuilt the pool tree: re-fetch by name rather than
+	// reusing the pre-Reconfigure leaf Node.
+	leaf = findPoolNode(t, p, "NUMA node #0")
+	if got := leaf.FreeSupply().SharableCPUs(); got.Intersection(claimed).Size() != 0 {
+		t.Errorf("claimed CPUs %s not re-marked in %q sharable set after Reconfigure(): %s",
+			claimed, leaf.Name(), got)
+	}
+	if len(p.allocations.grants) != 0 {
+		t.Errorf("Reconfigure()'s DRA re-apply unexpectedly created/left grants: %v", p.allocations.grants)
+	}
+}
+
+// TestReapplyDRAClaimsNilDRAPluginNoop verifies that reapplyDRAClaims() is a
+// no-op (no panic, no supply changes) when DRA is disabled (draPlugin ==
+// nil, the default).
+func TestReapplyDRAClaimsNilDRAPluginNoop(t *testing.T) {
+	p := newDRATestPolicy(t)
+	if p.draPlugin != nil {
+		t.Fatalf("test setup error: draPlugin unexpectedly non-nil")
+	}
+
+	leaf := findPoolNode(t, p, "NUMA node #0")
+	before := leaf.FreeSupply().SharableCPUs()
+
+	p.reapplyDRAClaims()
+
+	if got := leaf.FreeSupply().SharableCPUs(); !got.Equals(before) {
+		t.Errorf("reapplyDRAClaims() with nil draPlugin changed pool supply: got %s, want unchanged %s", got, before)
 	}
 }
