@@ -453,13 +453,13 @@ attribute maps per class name. For each class where attrs differ: `if p.draPlugi
 
 ### Task 11: Verify acceptance criteria
 
-- [ ] `make build` succeeds; `go vet ./...` clean; `golangci-lint run` clean (no new warnings)
-- [ ] `go test ./...` passes across all packages
-- [ ] `make verify-generate` passes
-- [ ] DRA disabled: full existing test suite unchanged; no behavioral change
-- [ ] DRA enabled: plugin constructs + starts + publishes; Reconfigure refusal fires for class-attr
+- [x] `make build` succeeds; `go vet ./...` clean; `golangci-lint run` clean (no new warnings)
+- [x] `go test ./...` passes across all packages
+- [x] `make verify-generate` passes
+- [x] DRA disabled: full existing test suite unchanged; no behavioral change
+- [x] DRA enabled: plugin constructs + starts + publishes; Reconfigure refusal fires for class-attr
       changes with live claims; pool accounting consistent after Reconfigure + restart (unit-level)
-- [ ] Lock-contract tests pass: `Start`, `PublishResources`, `RestoreClaims`, `PostReconfigure`
+- [x] Lock-contract tests pass: `Start`, `PublishResources`, `RestoreClaims`, `PostReconfigure`
       never called while re-entrancy stub is held
 
 ### Task 12: Update documentation
