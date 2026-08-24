@@ -89,6 +89,7 @@ func (m *Main) Run() error {
 	defer signal.Stop(sigCh)
 
 	err := m.mgr.Start()
+	m.mgr.Stop()
 	return err
 }
 

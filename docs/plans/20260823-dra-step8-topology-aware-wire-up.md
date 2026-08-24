@@ -213,27 +213,27 @@ attribute maps per class name. For each class where attrs differ: `if p.draPlugi
 - Modify: `pkg/resmgr/main/main.go`
 - Modify: balloons + template policy backends (no-op `Stop() error`)
 
-- [ ] write test: `Backend.Stop()` is called from `resmgr.Stop()` and is reachable from
+- [x] write test: `Backend.Stop()` is called from `resmgr.Stop()` and is reachable from
       `Main.Run()` shutdown path (use mock backend that records calls)
-- [ ] write test: `resmgr.Stop()` calls `p.active.Stop()` **before** acquiring the lock;
+- [x] write test: `resmgr.Stop()` calls `p.active.Stop()` **before** acquiring the lock;
       verify with a backend stub that asserts it is not called inside a `withWriteLock` callback
-- [ ] write test: `resmgr.Stop()` when `Start()` was never called (nil `m.policy`) → no panic
-- [ ] write test: `BackendOptions.KubeClientFn()` evaluated at `Setup()` time returns nil when
+- [x] write test: `resmgr.Stop()` when `Start()` was never called (nil `m.policy`) → no panic
+- [x] write test: `BackendOptions.KubeClientFn()` evaluated at `Setup()` time returns nil when
       the agent has no kube client; `Setup()` must see the nil **as a nil interface** (not
       typed-nil-wrapped-in-interface)
-- [ ] write test (lock-contract): a `WithLock` stub that panics on re-entrancy; `Start()` and
+- [x] write test (lock-contract): a `WithLock` stub that panics on re-entrancy; `Start()` and
       `PublishResources()` must not be called while the stub is held
-- [ ] add `KubeClientFn func() kubernetes.Interface`, `NodeName string`, `WithLock func(func())`
+- [x] add `KubeClientFn func() kubernetes.Interface`, `NodeName string`, `WithLock func(func())`
       to `policy.Options`; forward them to `BackendOptions` in `policy.Start()`
-- [ ] add same fields to `BackendOptions`
-- [ ] add `(m *resmgr) withWriteLock(f func())` method; wire into `setupPolicy()` as
+- [x] add same fields to `BackendOptions`
+- [x] add `(m *resmgr) withWriteLock(f func())` method; wire into `setupPolicy()` as
       `WithLock: m.withWriteLock`; wire `KubeClientFn` with the typed-nil-safe wrapper;
       wire `NodeName: m.agent.NodeName()`
-- [ ] add `Stop() error` to `Backend` interface and `Policy` interface; implement in
+- [x] add `Stop() error` to `Backend` interface and `Policy` interface; implement in
       `policy.go` wrapper via `p.active.Stop()`; add no-op impls to balloons + template
-- [ ] in `resmgr.Stop()`, call `m.policy.Stop()` **before** `m.Lock()` (if `m.policy != nil`)
-- [ ] in `Main.Run()`, call `m.mgr.Stop()` after `m.mgr.Start()` returns (deferred or explicit)
-- [ ] run tests — must pass before task 3
+- [x] in `resmgr.Stop()`, call `m.policy.Stop()` **before** `m.Lock()` (if `m.policy != nil`)
+- [x] in `Main.Run()`, call `m.mgr.Stop()` after `m.mgr.Start()` returns (deferred or explicit)
+- [x] run tests — must pass before task 3
 
 ### Task 3: `cache.Container` accessors + mock update
 

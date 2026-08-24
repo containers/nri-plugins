@@ -163,6 +163,14 @@ func (p *policy) Start() error {
 	return nil
 }
 
+// Stop shuts down this policy. This is a placeholder implementation:
+// DRA plugin lifecycle (cancel draCtx, call draPlugin.Stop()) is wired
+// up in a later step (see docs/plans/20260823-dra-step8-topology-aware-wire-up.md
+// Task 9).
+func (p *policy) Stop() error {
+	return nil
+}
+
 // Sync synchronizes the state of this policy.
 func (p *policy) Sync(add []cache.Container, del []cache.Container) error {
 	irq.BlockWrites()

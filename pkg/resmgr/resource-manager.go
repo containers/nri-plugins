@@ -30,6 +30,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/policy"
 	"github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/topology"
+	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/yaml"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1"
@@ -223,10 +224,30 @@ func (m *resmgr) start(cfg cfgapi.ResmgrConfig) error {
 func (m *resmgr) Stop() {
 	log.Infof("shutting down...")
 
+	// Stop the active policy backend (e.g. the DRA plugin) before
+	// acquiring the write lock: an in-flight Prepare/AllocateResources
+	// call may be holding the lock via WithLock, and the backend's
+	// Stop() must be able to run (and complete) without waiting on it.
+	// Calling it under the lock would deadlock in that case.
+	if m.policy != nil {
+		if err := m.policy.Stop(); err != nil {
+			log.Warnf("failed to stop policy: %v", err)
+		}
+	}
+
 	m.Lock()
 	defer m.Unlock()
 
 	m.nri.stop()
+}
+
+// withWriteLock runs f while holding the resource manager's write lock.
+// It is not re-entrant: calling withWriteLock again from within f deadlocks,
+// since the underlying mutex is not recursive.
+func (m *resmgr) withWriteLock(f func()) {
+	m.Lock()
+	defer m.Unlock()
+	f()
 }
 
 // setupCache creates a cache and reloads its last saved state if found.
@@ -254,13 +275,31 @@ func (m *resmgr) setupPolicy(backend policy.Backend) error {
 		log.Warnf("failed to set active policy: %v", err)
 	}
 
-	p, err := policy.NewPolicy(backend, m.cache, &policy.Options{SendEvent: m.SendEvent})
+	p, err := policy.NewPolicy(backend, m.cache, &policy.Options{
+		SendEvent:    m.SendEvent,
+		KubeClientFn: m.kubeClientFn,
+		NodeName:     m.agent.NodeName(),
+		WithLock:     m.withWriteLock,
+	})
 	if err != nil {
 		return resmgrError("failed to create policy %s: %v", backend.Name(), err)
 	}
 	m.policy = p
 
 	return nil
+}
+
+// kubeClientFn returns the resource manager's shared kubernetes client, or
+// a nil interface if the agent has none (yet). Wrapping agent.KubeClient()
+// directly as a kubernetes.Interface would yield a non-nil interface
+// wrapping a typed nil *client.Client in local-config mode; the explicit
+// nil check below avoids that trap.
+func (m *resmgr) kubeClientFn() kubernetes.Interface {
+	c := m.agent.KubeClient()
+	if c == nil {
+		return nil
+	}
+	return c
 }
 
 // setupHealthCheck prepares the resource manager for serving health-check requests.
