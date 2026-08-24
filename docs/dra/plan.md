@@ -239,18 +239,57 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
 **Rationale.** Prove the full path end-to-end. Follows the pattern of existing `test/e2e/policies.test-suite/topology-aware/n4c16/test*/`.
 
 **Actions.**
-- New test directory `test/e2e/policies.test-suite/topology-aware/n4c16/testXX-dra/`:
-  - `config.yaml` — topology-aware config with `dra.enabled: true`, one HP cpuClass, one non-HP.
-  - `resourceclaim.yaml` — claim requesting `hp-cpus: 2` on numa 0.
-  - `pod.yaml` — pod referencing the claim.
-  - `code.var.sh` — assertions: pod runs, its CPUs are on numa 0, HP CLOS association is visible via SST tooling, cgroup pod-level `cpu.max` inflated per [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517).
-- If cluster lacks required feature gates, skip with a clear message.
+- New test directory `test/e2e/policies.test-suite/topology-aware/n4c16/testXX-dra/` containing
+  a single `code.var.sh` — matches the convention of `test19-cpuclass` (cpuClass config and
+  Kubernetes manifests generated inline via shell variables + `instantiate helm-config.yaml`,
+  not separate static `config.yaml`/`resourceclaim.yaml`/`pod.yaml` files).
+- **Hardware-independent setup.** Reuse `test19-cpuclass`'s exact `OVERRIDE_SYS_CPUFREQ` /
+  `OVERRIDE_SST` / `OVERRIDE_SST_STATE_DIR` mock block so the test runs identically on any
+  machine — no physical Intel PCT/SST-TF silicon or real cpufreq driver required:
+  ```bash
+  OVERRIDE_SYS_CPUFREQ='[{"cpus": "0-15", "base": 2900000, "min": 800000, "max": 3800000}]'
+  OVERRIDE_SST='{"supported": true, "clos_count": 4, "packages": [
+    {"id": 0, "cpus": "0-7",  "tf_supported": true, "cp_supported": true, "max_hp_cpus": 2},
+    {"id": 1, "cpus": "8-15", "tf_supported": true, "cp_supported": true, "max_hp_cpus": 2}]}'
+  OVERRIDE_SST_STATE_DIR="/tmp/nri-pct-mock"
+  CPU_CLASSES="[ { name: hp-turbo, pctPriority: high, pctMinFreq: turbo, pctMaxFreq: turbo } ]"
+  ```
+  wired via `EXTRA_ENV_OVERRIDE_SYS_CPUFREQ` / `EXTRA_ENV_OVERRIDE_SST` /
+  `EXTRA_ENV_OVERRIDE_SST_STATE_DIR` into `helm-config.yaml`, plus `dra.enabled: true`.
+- A `ResourceClaim` selecting on the already-landed `nri/pctPriority` attribute only — no
+  class-name selector, no frequency-bound attributes (those remain deferred; see Cross-cutting
+  "Not part of v1"):
+  ```yaml
+  apiVersion: resource.k8s.io/v1
+  kind: ResourceClaim
+  metadata:
+    name: hp-turbo-cpus
+  spec:
+    devices:
+      requests:
+      - name: cpus
+        exactly:
+          deviceClassName: nri.topology-aware.cpu
+          capacity:
+            requests:
+              nri/cpus: "2"
+          selectors:
+          - cel:
+              expression: |
+                device.attributes["nri"].pctPriority == "high"
+  ```
+- A pod referencing the claim via `resourceClaims` / `resources.claims`.
+- `code.var.sh` assertions: pod scheduled and running; `NRI_CLASS` / `NRI_CPU<N>` env vars
+  present in the container; the claimed CPUs are associated to the HP CLOS in the SST mock log
+  (`wait-assert-log-contains 'ConfigureClos.*ClosID:<hp-clos-id>'`, same style as
+  `test19-cpuclass`); `node.status.allocatable.cpu` deducted by 2 ([KEP-5517](https://github.com/kubernetes/enhancements/issues/5517)).
+- **Feature-gate precondition — all-or-nothing.** Probe both [KEP-5075](https://github.com/kubernetes/enhancements/issues/5075) and [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517) at test setup; skip the entire test with a clear message if either is missing. KEP-5075 is a hard requirement (the device/claim shape itself depends on `AllowMultipleAllocations`+`RequestPolicy`; without it there's no fallback claim shape). KEP-5517 is only a soft requirement at the plugin level (design.md's "Feature-gate detection": mapping ignored, not fatal) — but the test treats it the same as KEP-5075 for simplicity, rather than conditionally skipping just the `node.status.allocatable.cpu` assertion on clusters with partial gate support.
 
-**Files touched:** `test/e2e/policies.test-suite/topology-aware/n4c16/testXX-dra/*`.
+**Files touched:** `test/e2e/policies.test-suite/topology-aware/n4c16/testXX-dra/code.var.sh`.
 
-**Verification:** e2e test passes on the [KEP-5075](https://github.com/kubernetes/enhancements/issues/5075)+5517 test cluster.
+**Verification:** e2e test passes on the [KEP-5075](https://github.com/kubernetes/enhancements/issues/5075)+5517 test cluster. Hardware-independence is limited to the SST/cpufreq mocks — the test still depends on the K8s API server itself exposing the alpha DRA feature gates.
 
-**Risk:** medium. Depends on cluster support for the feature gates; the CI environment may need updating.
+**Risk:** medium. Depends on cluster support for the DRA feature gates specifically (not on physical PCT/SST-TF hardware, which is mocked); the CI environment may need updating for [KEP-5075](https://github.com/kubernetes/enhancements/issues/5075)/[KEP-5517](https://github.com/kubernetes/enhancements/issues/5517).
 
 ## Cross-cutting
 
@@ -281,7 +320,8 @@ Splitting this way means the first 5 PRs can land and be reviewed in parallel wi
 
 ## Change log
 
-- **2026-08-23 (latest).** Step 7 landed: added "Landed" line with commit range `148d09b2`…`52b6f182` and implementation deviations (per-result CDI device naming, `WithLock` concurrency model, exported state types, non-HP deferred, `RestoreClaimsLocked`/`RestoreClaims` split, must-not-hold-lock contract). Added non-HP DRA pick to "Not part of v1."
+- **2026-08-24 (latest).** Step 10 fleshed out with a concrete scenario: single-file `code.var.sh` test (matching `test19-cpuclass`'s convention, not the earlier sketch's separate static YAML files); reuses `test19-cpuclass`'s `OVERRIDE_SYS_CPUFREQ`/`OVERRIDE_SST`/`OVERRIDE_SST_STATE_DIR` mocks for hardware-independence (no physical PCT/SST-TF silicon needed); `ResourceClaim` selects on the already-landed `nri/pctPriority` attribute only. Feature-gate precondition is all-or-nothing (skip whole test if either KEP-5075 or KEP-5517 is missing), chosen for simplicity over conditionally skipping individual assertions.
+- **2026-08-23.** Step 7 landed: added "Landed" line with commit range `148d09b2`…`52b6f182` and implementation deviations (per-result CDI device naming, `WithLock` concurrency model, exported state types, non-HP deferred, `RestoreClaimsLocked`/`RestoreClaims` split, must-not-hold-lock contract). Added non-HP DRA pick to "Not part of v1."
 - **2026-08-22.** Class-derived attribute freshness resolved as Option B (design.md resolved decision 8). Removed from "Not part of v1." Added `Plugin.LiveClaimClasses()` to Step 7 (claim tracking infrastructure) and the Reconfigure refusal check to Step 8 (policy wire-up where `Reconfigure` fires).
 - **2026-08-19 (later).** Step 6 gained an **Imports & deps** subsection: enumerates must-have Kubernetes helper packages (`kubeletplugin`, `resourceslice`, `resapi`, `types`, `resource`), lists small additions worth pulling in (`client-go/util/retry`, `utils/ptr`), and explicitly documents what we are *not* adopting (klog switch, `component-base/featuregate`, `component-base/metrics`, `runtime/serializer` for checkpoints, `controller-runtime`, low-level DRA/registration protobufs) with rationale. Also codifies "do not import from `dra-example-driver` or `dra-driver-cpu`."
 - **2026-08-19.** Initial plan created based on [design.md](design.md) as of that date.
