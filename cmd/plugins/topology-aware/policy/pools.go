@@ -1437,6 +1437,19 @@ func matchLiveClaimUID(name string, live map[types.UID][]dra.ResultAlloc) (types
 // recognizable claim device name, or if the embedded UID has no
 // corresponding entry in plugin.LiveClaimsLocked() (e.g. a foreign/stale CDI
 // device, or a claim that has already been unprepared).
+//
+// Assumes a container is backed by at most one live TA CPU ResourceClaim:
+// allocateClaim/releaseClaim (pools.go) and the AllocateResources/
+// ReleaseResources call sites operate on a single (uid, cpus, className)
+// tuple per container, mirroring how a ResourceClaim with
+// AllowMultipleAllocations fans out to *many containers* (handled via the
+// claimContainerRefs refcount), not how one container could consume *many
+// distinct ResourceClaims* for this driver. If c's CDI devices resolve to
+// more than one distinct live claim UID (a pattern the DRA plugin's own
+// device model does not currently produce, but that Kubernetes' general
+// pod.spec.resourceClaims plumbing does not forbid), only the first
+// encountered live claim's CPUs are accounted for; any further distinct
+// claim UID is logged and otherwise ignored.
 func claimCPUsFromContainer(c cache.Container, plugin claimLister) (types.UID, cpuset.CPUSet, string, bool) {
 	none := cpuset.New()
 
@@ -1446,42 +1459,74 @@ func claimCPUsFromContainer(c cache.Container, plugin claimLister) (types.UID, c
 
 	live := plugin.LiveClaimsLocked()
 
+	var (
+		foundUID types.UID
+		found    bool
+	)
+	cpus := cpuset.New()
+	className := ""
+
 	for _, name := range c.GetCDIDeviceNames() {
 		uid, ok := matchLiveClaimUID(name, live)
 		if !ok {
 			continue
 		}
 
-		allocs := live[uid]
-		cpus := cpuset.New()
-		className := ""
-		for _, a := range allocs {
+		if found && uid != foundUID {
+			log.Warnf("dra: %s: CDI device %q resolves to claim %s, additional to already-found "+
+				"claim %s; only one live claim per container is currently supported, ignoring %s",
+				c.PrettyName(), name, uid, foundUID, uid)
+			continue
+		}
+
+		claimCPUs := cpuset.New()
+		claimClassName := ""
+		for _, a := range live[uid] {
 			parsed, err := cpuset.Parse(a.CPUs)
 			if err != nil {
 				log.Warnf("dra: claim %s: failed to parse allocated CPUs %q: %v", uid, a.CPUs, err)
 				continue
 			}
-			cpus = cpus.Union(parsed)
-			if className == "" {
-				className = a.ClassName
+			claimCPUs = claimCPUs.Union(parsed)
+			if claimClassName == "" {
+				claimClassName = a.ClassName
 			}
 		}
-		if cpus.IsEmpty() {
+		if claimCPUs.IsEmpty() {
 			continue
 		}
 
-		return uid, cpus, className, true
+		foundUID = uid
+		found = true
+		cpus = claimCPUs
+		className = claimClassName
 	}
 
-	return "", none, "", false
+	if !found {
+		return "", none, "", false
+	}
+
+	return foundUID, cpus, className, true
 }
 
-// poolForCPUs returns the tightest (deepest) pool whose statically assigned
-// CPU range (GetSupply(), which — unlike FreeSupply() — never changes with
-// allocation or claim accounting) fully contains cpus. Returns an error if no
-// single pool's range is a superset of cpus: either cpus lies (at least
-// partly) outside p.allowed altogether, or it straddles more than one leaf
-// pool (which a legitimate single-punit DRA CPU pick never does).
+// poolForCPUs returns the tightest (deepest) *leaf* pool whose statically
+// assigned CPU range (GetSupply(), which — unlike FreeSupply() — never
+// changes with allocation or claim accounting) fully contains cpus. Returns
+// an error if no single pool's range is a superset of cpus: either cpus lies
+// (at least partly) outside p.allowed altogether, or it straddles more than
+// one leaf pool (which a legitimate single-punit DRA CPU pick never does).
+//
+// Candidates are restricted to leaf pools (Node.IsLeafNode()) deliberately:
+// every non-leaf ancestor's static range is, by construction, the union of
+// its descendants' ranges, so it is always a superset of any cpus subset of
+// p.allowed — including a cpus set that straddles two *different* leaf
+// pools. Without this restriction, such a straddling cpus set would
+// incorrectly resolve to the lowest common ancestor (worst case, root)
+// instead of being rejected: Supply.ClaimCPUs only walks *up* the
+// node.Parent() chain from whatever pool it's called on, never down into
+// children, so marking the CPUs claimed at the ancestor would fail to
+// exclude them from either leaf's own FreeSupply() — a double-booking gap
+// this restriction closes.
 func (p *policy) poolForCPUs(cpus cpuset.CPUSet) (Node, error) {
 	var (
 		best      Node
@@ -1489,6 +1534,9 @@ func (p *policy) poolForCPUs(cpus cpuset.CPUSet) (Node, error) {
 	)
 
 	for _, n := range p.pools {
+		if !n.IsLeafNode() {
+			continue
+		}
 		full := n.GetSupply()
 		total := full.IsolatedCPUs().Union(full.ReservedCPUs()).Union(full.SharableCPUs())
 		if !cpus.IsSubsetOf(total) {
@@ -1534,11 +1582,14 @@ func (p *policy) allocateClaim(uid types.UID, cpus cpuset.CPUSet, className stri
 		}
 
 		var evicted []cache.Container
+		evictedCpusets := map[string]string{}
 		for _, g := range p.allocations.grants {
 			if g.ExclusiveCPUs().Intersection(cpus).IsEmpty() {
 				continue
 			}
-			evicted = append(evicted, g.GetContainer())
+			c := g.GetContainer()
+			evicted = append(evicted, c)
+			evictedCpusets[c.GetID()] = c.GetCpusetCpus()
 		}
 
 		for _, c := range evicted {
@@ -1548,10 +1599,58 @@ func (p *policy) allocateClaim(uid types.UID, cpus cpuset.CPUSet, className stri
 
 		pool.FreeSupply().ClaimCPUs(uid, cpus)
 
+		// Apply the physical cpuClass (SST-CP CLOS association, EPP,
+		// governor, ...) to the claimed CPUs. Without this, pool accounting
+		// excludes the CPUs from regular grants but the hardware is left in
+		// whatever class it was in before — the whole point of associating a
+		// DRA claim with a cpuClass would otherwise have no physical effect.
+		if p.cpuClasses != nil && className != "" {
+			if err := p.cpuClasses.UseClass(className, cpus); err != nil {
+				log.Errorf("dra: failed to apply CPU class %q to claim %s CPUs %s: %v",
+					className, uid, cpus, err)
+			}
+		}
+
+		// The claimed CPUs may have been subtracted from the sharable pool
+		// (not just isolated/exclusive), in which case containers already
+		// pinned (via applyGrant) to the pool's previous, wider sharable
+		// cpuset need to be re-pinned to the now-reduced set — otherwise they
+		// keep running on CPUs the pool considers exclusively owned by this
+		// DRA claim. Run this unconditionally: it is a no-op for containers
+		// whose cpuset does not include any of the reserved-CPU-type grants
+		// affected here (see updateSharedAllocations).
+		p.updateSharedAllocations(nil)
+
 		if len(evicted) > 0 {
 			if err := p.reallocateResources(evicted, nil); err != nil {
 				log.Errorf("dra: failed to fully reallocate %d container(s) evicted for claim %s: %v",
 					len(evicted), uid, err)
+
+				// Safety net: any evicted container that still has no grant
+				// (reallocatePool failed for it) must not be left pinned to
+				// a cpuset that overlaps the CPUs now exclusively owned by
+				// this DRA claim — that would let two workloads run on the
+				// same physical CPUs simultaneously. Forcibly strip the
+				// claimed CPUs out of its last-known cgroup cpuset.
+				for _, c := range evicted {
+					if _, ok := p.allocations.getGrant(c.GetID()); ok {
+						continue
+					}
+					prev, perr := cpuset.Parse(evictedCpusets[c.GetID()])
+					if perr != nil {
+						log.Errorf("dra: claim %s: cannot safely re-pin %s off claimed CPUs %s: %v",
+							uid, c.PrettyName(), cpus, perr)
+						continue
+					}
+					safe := prev.Difference(cpus)
+					log.Warnf("dra: claim %s: %s could not be reallocated after eviction; "+
+						"forcing cpuset from %s to %s to avoid overlap with claimed CPUs %s",
+						uid, c.PrettyName(), prev, safe, cpus)
+					c.SetCpusetCpus(safe.String())
+				}
+
+				return policyError("dra: claim %s: evicted %d container(s) to free CPUs %s but failed "+
+					"to fully reallocate them: %v", uid, len(evicted), cpus, err)
 			}
 		}
 	}

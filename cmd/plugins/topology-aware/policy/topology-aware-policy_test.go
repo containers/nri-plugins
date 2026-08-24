@@ -26,6 +26,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/dra"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
@@ -416,6 +417,58 @@ func TestReconfigureReappliesLiveDRAClaims(t *testing.T) {
 	}
 	if len(p.allocations.grants) != 0 {
 		t.Errorf("Reconfigure()'s DRA re-apply unexpectedly created/left grants: %v", p.allocations.grants)
+	}
+}
+
+// TestClaimContainerRefsRebuiltAfterStartResync verifies the mechanism
+// documented on remarkClaimInSupply/reapplyDRAClaims for the restart case:
+// p.claimContainerRefs is a plain in-memory map, so it is empty right after
+// Start(), even though a container backed by a live DRA claim is already
+// running. It is only rebuilt once pkg/resmgr/nri.go's syncWithNRI/
+// Synchronize forces that already-running container through
+// ReleaseResources (a no-op, since the refcount is already 0) followed by
+// AllocateResources (which increments it) — reproduced here directly via
+// p.Sync(add, del) with the same container in both lists, exactly as
+// syncWithNRI does for every container discovered in ContainerStateRunning/
+// ContainerStateCreated.
+func TestClaimContainerRefsRebuiltAfterStartResync(t *testing.T) {
+	p := newDRATestPolicy(t)
+
+	leaf := findPoolNode(t, p, "NUMA node #0")
+	sharable := leaf.FreeSupply().SharableCPUs().List()
+	if len(sharable) < 2 {
+		t.Fatalf("expected at least 2 sharable CPUs on %q", leaf.Name())
+	}
+	claimed := cpuset.New(sharable[0], sharable[1])
+
+	plugin := newTestDRAPlugin(t, claimed, "dev0")
+	uid := types.UID("claim-restart-resync-1")
+	cdiName := seedLiveClaim(t, plugin, uid, "dev0", claimed.Size())
+	p.draPlugin = plugin
+
+	if err := p.Start(); err != nil {
+		t.Fatalf("Start() unexpected error: %v", err)
+	}
+
+	// Right after Start(), the pool supply already excludes the claimed
+	// CPUs (reapplyDRAClaims), but claimContainerRefs knows nothing about
+	// the container yet — it hasn't gone through AllocateResources in this
+	// process.
+	if got := p.claimContainerRefs[uid]; got != 0 {
+		t.Fatalf("test setup error: claimContainerRefs[%s] = %d right after Start(), want 0", uid, got)
+	}
+
+	container := &mockContainer{returnValueForGetID: "restart-c1", cdiDeviceNames: []string{cdiName}}
+
+	// Mirror syncWithNRI: an already-running container is placed in both
+	// the "allocated" and "released" lists so Sync() releases (no-op) then
+	// re-allocates it.
+	if err := p.Sync([]cache.Container{container}, []cache.Container{container}); err != nil {
+		t.Fatalf("Sync() unexpected error: %v", err)
+	}
+
+	if got := p.claimContainerRefs[uid]; got != 1 {
+		t.Errorf("claimContainerRefs[%s] = %d after Start()+resync Sync(), want 1", uid, got)
 	}
 }
 

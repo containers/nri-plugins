@@ -216,6 +216,39 @@ func TestSetupDRAEnabledValidDepsBuildsPlugin(t *testing.T) {
 	}
 }
 
+// TestSetupDRAEnabledCDIWriterFailureReturnsError verifies buildDRAPlugin's
+// genuine-hard-failure path: unlike the four "not ready yet" guards above
+// (nil kube client, empty node name, no cpuClasses — all warn-and-nil), a
+// real construction failure in one of its own dependencies (here,
+// dra.NewCDIWriter failing because p.cdiDir cannot be created) must be
+// returned as an error from Setup(), not swallowed.
+func TestSetupDRAEnabledCDIWriterFailureReturnsError(t *testing.T) {
+	// A regular file can't be MkdirAll'd into: NewCDIWriter's os.MkdirAll on
+	// p.cdiDir (or a path beneath it) will fail with ENOTDIR.
+	tmp := t.TempDir()
+	blocker := path.Join(tmp, "not-a-directory")
+	if err := os.WriteFile(blocker, []byte("x"), 0644); err != nil {
+		t.Fatalf("failed to create blocking file: %v", err)
+	}
+	cdiDir := path.Join(blocker, "cdi")
+
+	p, err := setupDRATestPolicy(t,
+		func(cfg *cfgapi.Config) { withOneHPClass(cfg); withDRAEnabled(cfg) },
+		func(opts *policyapi.BackendOptions) {
+			opts.KubeClientFn = func() kubernetes.Interface { return fake.NewClientset() }
+			opts.NodeName = "test-node"
+			opts.WithLock = func(f func()) { f() }
+		},
+		func(p *policy) { p.cdiDir = cdiDir },
+	)
+	if err == nil {
+		t.Fatalf("Setup() with an unusable cdiDir: got nil error, want a descriptive error")
+	}
+	if p.draPlugin != nil {
+		t.Errorf("draPlugin: got non-nil after a failed Setup(), want nil")
+	}
+}
+
 // TestStopCancelsContextAndStopsDRAPlugin verifies that Stop() cancels
 // p.draCtx and calls draPlugin.Stop(), and that calling Stop() a second
 // time is safe (both context.CancelFunc and dra.Plugin.Stop are documented

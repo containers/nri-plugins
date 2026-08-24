@@ -15,7 +15,7 @@
 package topologyaware
 
 import (
-	"reflect"
+	"encoding/json"
 	"sort"
 
 	resapi "k8s.io/api/resource/v1"
@@ -159,7 +159,7 @@ func changedDRAClasses(oldDevices, newDevices []resapi.Device) []string {
 	seen := make(map[string]bool)
 	for class, oldDevs := range oldByClass {
 		seen[class] = true
-		if !reflect.DeepEqual(oldDevs, newByClass[class]) {
+		if !devicesEqual(oldDevs, newByClass[class]) {
 			changed = append(changed, class)
 		}
 	}
@@ -167,10 +167,34 @@ func changedDRAClasses(oldDevices, newDevices []resapi.Device) []string {
 		if seen[class] {
 			continue
 		}
-		if !reflect.DeepEqual(oldByClass[class], newDevs) {
+		if !devicesEqual(oldByClass[class], newDevs) {
 			changed = append(changed, class)
 		}
 	}
 
 	return changed
+}
+
+// devicesEqual reports whether a and b are equal, comparing values rather
+// than raw struct fields. resapi.Device embeds resource.Quantity (in
+// Capacity), whose zero value carries an internal cached string
+// representation (set lazily by String()/MarshalJSON, not by the numeric
+// value alone) — reflect.DeepEqual on the raw struct would see two
+// numerically-equal Quantities as different whenever that cache differs,
+// causing changedDRAClasses to spuriously report a class as changed with no
+// actual DRA-visible effect (and Reconfigure to needlessly refuse a config
+// change). Comparing marshaled JSON instead is safe: json.Marshal always
+// renders a Quantity through its canonical String() form, so two
+// numerically-equal Quantities always marshal identically regardless of
+// their internal cache state.
+func devicesEqual(a, b []resapi.Device) bool {
+	aj, aerr := json.Marshal(a)
+	bj, berr := json.Marshal(b)
+	if aerr != nil || berr != nil {
+		// Should never happen for well-formed k8s API types; fall back to
+		// "not equal" so a marshal failure surfaces as a refused Reconfigure
+		// (safe direction) rather than a silently accepted attribute change.
+		return false
+	}
+	return string(aj) == string(bj)
 }

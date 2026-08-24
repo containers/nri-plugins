@@ -164,6 +164,72 @@ func TestSupplyClaimCPUsTreeWide(t *testing.T) {
 	}
 }
 
+// TestSupplyClaimCPUsReservedPartition covers the reserved-CPU case
+// poolForCPUs (pools.go) allows for but that ClaimCPUs/UnclaimCPUs used to
+// ignore: poolForCPUs matches a pool's static range as
+// isolated+reserved+sharable, so a DRA claim can legitimately land on a CPU
+// that is part of a pool's reserved partition (the DRA CPU-pick allocator's
+// own "allowed" domain, p.allowed, is not required to exclude p.reserved).
+// ClaimCPUs must subtract from the reserved cpuset too, or
+// AllocatableReservedCPU would keep advertising that CPU's capacity to
+// ordinary reserved-type grants even though DRA already owns it exclusively
+// (a double-booking gap on the reserved partition).
+func TestSupplyClaimCPUsReservedPartition(t *testing.T) {
+	p := newDRATestPolicy(t)
+
+	var reservedPool Node
+	for _, n := range p.pools {
+		if n.GetSupply().ReservedCPUs().Size() > 0 {
+			reservedPool = n
+			break
+		}
+	}
+	if reservedPool == nil {
+		t.Fatalf("test setup error: no pool in the test topology has a non-empty reserved partition")
+	}
+
+	reservedSupply, ok := reservedPool.FreeSupply().(*supply)
+	if !ok {
+		t.Fatalf("pool %q FreeSupply() is not a *supply", reservedPool.Name())
+	}
+
+	reserved := reservedSupply.ReservedCPUs()
+	cpus := cpuset.New(reserved.List()[0])
+	uid := types.UID("claim-uid-reserved")
+
+	reservedAllocatableBefore := reservedSupply.AllocatableReservedCPU()
+
+	reservedSupply.ClaimCPUs(uid, cpus)
+
+	if got := reservedSupply.ReservedCPUs(); got.Intersection(cpus).Size() != 0 {
+		t.Errorf("claimed reserved CPU %s still present in %q reserved set after ClaimCPUs: %s",
+			cpus, reservedPool.Name(), got)
+	}
+	// AllocatableReservedCPU has a special sentinel: it returns -1 (not a
+	// proportional milliCPU amount) once the reserved cpuset becomes
+	// entirely empty, rather than when its granted capacity merely drops to
+	// zero. Claiming the last reserved CPU on this pool hits that sentinel;
+	// claiming one of several would not.
+	wantAfterClaim := reservedAllocatableBefore - 1000
+	if reserved.Difference(cpus).IsEmpty() {
+		wantAfterClaim = -1
+	}
+	if got := reservedSupply.AllocatableReservedCPU(); got != wantAfterClaim {
+		t.Errorf("%q allocatable reserved CPU after claiming 1 reserved CPU = %dm, want %dm",
+			reservedPool.Name(), got, wantAfterClaim)
+	}
+
+	reservedSupply.UnclaimCPUs(uid)
+
+	if got := reservedSupply.ReservedCPUs(); !got.Equals(reserved) {
+		t.Errorf("%q reserved set after UnclaimCPUs = %s, want restored %s", reservedPool.Name(), got, reserved)
+	}
+	if got := reservedSupply.AllocatableReservedCPU(); got != reservedAllocatableBefore {
+		t.Errorf("%q allocatable reserved CPU after UnclaimCPUs = %dm, want restored %dm",
+			reservedPool.Name(), got, reservedAllocatableBefore)
+	}
+}
+
 func TestSupplyClaimCPUsIdempotentReplace(t *testing.T) {
 	p := newDRATestPolicy(t)
 

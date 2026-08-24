@@ -834,6 +834,39 @@ func TestAllocateClaimOutsideAllowedReturnsError(t *testing.T) {
 	}
 }
 
+// TestAllocateClaimSpanningNoPoolReturnsError covers the other poolForCPUs
+// failure mode from TestAllocateClaimOutsideAllowedReturnsError: CPUs that
+// are individually within p.allowed (each belongs to some pool), but
+// straddle two sibling pools so that no single pool's static range is a
+// superset of the whole set. A legitimate single-punit DRA CPU pick never
+// does this; allocateClaim must still reject it with a descriptive error
+// rather than, say, silently marking one of the two pools.
+func TestAllocateClaimSpanningNoPoolReturnsError(t *testing.T) {
+	p := newDRATestPolicy(t)
+
+	// "NUMA node #0" and "NUMA node #2" are siblings under "socket #0" (see
+	// TestSupplyClaimCPUsAncestorNotDoubleSubtracted): no pool below "root"
+	// (or "socket #0") is a strict subset spanning both, so a cpuset with
+	// one CPU from each cannot be contained by any single pool.
+	leafA := findPoolNode(t, p, "NUMA node #0")
+	leafB := findPoolNode(t, p, "NUMA node #2")
+
+	cpuA := leafA.GetSupply().SharableCPUs().List()
+	cpuB := leafB.GetSupply().SharableCPUs().List()
+	if len(cpuA) < 1 || len(cpuB) < 1 {
+		t.Fatalf("expected at least 1 CPU on both %q and %q", leafA.Name(), leafB.Name())
+	}
+	spanning := cpuset.New(cpuA[0], cpuB[0])
+
+	err := p.allocateClaim(types.UID("claim-spanning"), spanning, "gold")
+	if err == nil {
+		t.Fatalf("allocateClaim() with CPUs spanning two pools: got nil error, want a descriptive error")
+	}
+	if _, exists := p.claimContainerRefs[types.UID("claim-spanning")]; exists {
+		t.Errorf("claimContainerRefs unexpectedly populated for a claim that failed to allocate")
+	}
+}
+
 func TestAllocateClaimRefcountsMultipleContainers(t *testing.T) {
 	// A ResourceClaim with AllowMultipleAllocations backs more than one
 	// container; allocateClaim is called once per container sharing it.
@@ -931,5 +964,21 @@ func TestAllocateClaimEvictsOverlappingExclusiveGrant(t *testing.T) {
 	free := leaf.FreeSupply()
 	if free.SharableCPUs().Union(free.IsolatedCPUs()).Intersection(claimed).Size() != 0 {
 		t.Errorf("claimed CPU %s still free in %q supply after allocateClaim", claimed, leaf.Name())
+	}
+
+	// allocateClaim returned nil, so the evicted victim must actually have
+	// been reallocated a new grant (not just released and forgotten) — there
+	// is ample capacity left on this test system for reallocatePool to
+	// succeed. The new grant's exact shape (exclusive vs. shared/fractional)
+	// depends on the request reallocatePool derives from the container's own
+	// declared resource requirements — zero for the bare mockContainer used
+	// here as "victim" — so only its existence and non-overlap with the
+	// claimed CPU are asserted, not its exact size/type.
+	newGrant, ok := p.allocations.getGrant("victim")
+	if !ok {
+		t.Fatalf("victim has no grant after allocateClaim() succeeded; eviction must reallocate, not just release")
+	}
+	if newGrant.ExclusiveCPUs().Intersection(claimed).Size() != 0 {
+		t.Errorf("victim's new grant %s still overlaps claimed CPU %s", newGrant.ExclusiveCPUs(), claimed)
 	}
 }

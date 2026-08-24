@@ -720,6 +720,7 @@ func (p *policy) Reconfigure(newCfg any) error {
 	if err := p.restoreAllocations(&allocations); err != nil {
 		*p = savedPolicy
 		opt = p.cfg
+		defaultPrio = p.cfg.DefaultCPUPriority.Value()
 		return policyError("failed to reconfigure: %v", err)
 	}
 
@@ -926,10 +927,36 @@ func (p *policy) restoreCache() error {
 // claimContainerRefs. This is the marking-only counterpart to allocateClaim
 // (pools.go): reapplyDRAClaims uses it to restore Supply.claimRefs after
 // Start()/Reconfigure() rebuild pool/supply state in initialize(), which
-// discards any marks a prior allocateClaim call applied. Using allocateClaim
-// here instead would double-count: the containers backing these claims were
-// already counted in claimContainerRefs when AllocateResources first ran.
-func (p *policy) remarkClaimInSupply(uid types.UID, cpus cpuset.CPUSet) error {
+// discards any marks a prior allocateClaim call applied.
+//
+// Using allocateClaim here instead of this marking-only path would
+// double-count in the Reconfigure() case: p.claimContainerRefs is an
+// in-process map that Reconfigure() never resets, so containers backing a
+// live claim are already reflected in it from the AllocateResources call
+// that admitted them.
+//
+// That reasoning does NOT hold across a process restart: claimContainerRefs
+// is a plain in-memory map with no persistence, so it is zero-valued right
+// after Start(), even though containers backed by live claims are already
+// running. The correct refcount is rebuilt indirectly: pkg/resmgr/nri.go's
+// syncWithNRI/Synchronize forces every already-running container through
+// ReleaseResources (a no-op here, since the refcount is already 0) followed
+// by AllocateResources (which calls allocateClaim and increments the
+// refcount) as part of the NRI resync that always follows agent Start().
+// reapplyDRAClaims only has to fix up Supply.claimRefs (pool CPU exclusion)
+// for the window between Start() and that resync; claimContainerRefs catches
+// up once the resync runs. If that syncWithNRI invariant ever changes (e.g.
+// running containers stop being included in both the "allocated" and
+// "released" lists), releaseClaim will silently no-op on the eventual real
+// ReleaseResources (refcount already 0) and the claimed CPUs will leak out
+// of pool capacity permanently, until the next restart.
+//
+// Also re-applies the physical cpuClass (className) to cpus: initialize()
+// (called by both Start() and Reconfigure() before this runs) resets every
+// allowed CPU's class back to the shared-pool default
+// (resetCpuClass("initialize", p.allowed)), which would otherwise silently
+// strip the SST-CP/EPP/governor settings a live DRA claim depends on.
+func (p *policy) remarkClaimInSupply(uid types.UID, cpus cpuset.CPUSet, className string) error {
 	if cpus.IsEmpty() {
 		return policyError("cannot remark DRA claim %s: empty CPU set", uid)
 	}
@@ -940,6 +967,13 @@ func (p *policy) remarkClaimInSupply(uid types.UID, cpus cpuset.CPUSet) error {
 	}
 
 	pool.FreeSupply().ClaimCPUs(uid, cpus)
+
+	if p.cpuClasses != nil && className != "" {
+		if err := p.cpuClasses.UseClass(className, cpus); err != nil {
+			log.Errorf("dra: failed to re-apply CPU class %q to claim %s CPUs %s: %v",
+				className, uid, cpus, err)
+		}
+	}
 
 	return nil
 }
@@ -957,8 +991,10 @@ func (p *policy) reapplyDRAClaims() {
 		return
 	}
 
+	remarked := false
 	for uid, allocs := range p.draPlugin.LiveClaimsLocked() {
 		cpus := cpuset.New()
+		className := ""
 		for _, alloc := range allocs {
 			parsed, err := cpuset.Parse(alloc.CPUs)
 			if err != nil {
@@ -967,15 +1003,29 @@ func (p *policy) reapplyDRAClaims() {
 				continue
 			}
 			cpus = cpus.Union(parsed)
+			if className == "" {
+				className = alloc.ClassName
+			}
 		}
 
 		if cpus.IsEmpty() {
 			continue
 		}
 
-		if err := p.remarkClaimInSupply(uid, cpus); err != nil {
+		if err := p.remarkClaimInSupply(uid, cpus, className); err != nil {
 			log.Errorf("dra: reapplyDRAClaims: %v", err)
+			continue
 		}
+		remarked = true
+	}
+
+	// Re-marking may have subtracted CPUs from one or more pools' sharable
+	// capacity; any container already pinned (via applyGrant, from before
+	// the rebuild) to the previous, wider sharable cpuset must be re-pinned
+	// to the now-reduced set so it cannot keep running on CPUs a live DRA
+	// claim exclusively owns.
+	if remarked {
+		p.updateSharedAllocations(nil)
 	}
 }
 
