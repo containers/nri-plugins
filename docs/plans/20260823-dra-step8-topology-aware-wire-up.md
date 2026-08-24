@@ -278,22 +278,22 @@ attribute maps per class name. For each class where attrs differ: `if p.draPlugi
 - Modify: `cmd/plugins/topology-aware/policy/resources.go`
 - Modify: `cmd/plugins/topology-aware/policy/pools_test.go` (or new supply test file)
 
-- [ ] write test: `ClaimCPUs(uid, cpus)` on pool X subtracts `cpus` from `AllocatableCPUs()`
+- [x] write test: `ClaimCPUs(uid, cpus)` on pool X subtracts `cpus` from `AllocatableCPUs()`
       in pool X **and in all ancestor pools**; `AllocateCPUs()` for another container cannot pick them
-- [ ] write test: two `ClaimCPUs` for the same UID replace (not stack) the entry (idempotent for re-apply)
-- [ ] write test: `UnclaimCPUs(uid)` restores CPUs in pool X and ancestors
-- [ ] write test: `UnclaimCPUs` for unknown UID is a no-op (no panic)
-- [ ] write test: `Clone()` carries the `claimRefs` map into the clone
-- [ ] write test: ancestor claim marks are not double-subtracted when two child pools share an ancestor
-- [ ] add `claimRefs map[types.UID]cpuset.CPUSet` field to the concrete supply struct
-- [ ] implement `ClaimCPUs(uid types.UID, cpus cpuset.CPUSet)` — subtract from `isolated`/`sharable`
+- [x] write test: two `ClaimCPUs` for the same UID replace (not stack) the entry (idempotent for re-apply)
+- [x] write test: `UnclaimCPUs(uid)` restores CPUs in pool X and ancestors
+- [x] write test: `UnclaimCPUs` for unknown UID is a no-op (no panic)
+- [x] write test: `Clone()` carries the `claimRefs` map into the clone
+- [x] write test: ancestor claim marks are not double-subtracted when two child pools share an ancestor
+- [x] add `claimRefs map[types.UID]cpuset.CPUSet` field to the concrete supply struct
+- [x] implement `ClaimCPUs(uid types.UID, cpus cpuset.CPUSet)` — subtract from `isolated`/`sharable`
       tree-wide (walk up `node.Parent()` chain); store in `claimRefs`
-- [ ] implement `UnclaimCPUs(uid types.UID)` — reverse; walk same path
-- [ ] update `Clone()` to copy `claimRefs` (Cumulate is dead-code path — no change needed)
-- [ ] verify all existing allocation read paths (`GetCPUOffer`, `GetScore`, `Reserve`, `Allocate`,
+- [x] implement `UnclaimCPUs(uid types.UID)` — reverse; walk same path
+- [x] update `Clone()` to copy `claimRefs` (Cumulate is dead-code path — no change needed)
+- [x] verify all existing allocation read paths (`GetCPUOffer`, `GetScore`, `Reserve`, `Allocate`,
       `AllocatableSharedCPU`, `SliceableCPUs`) use the subtracted `isolated`/`sharable` fields
       (no change needed if they already read those fields)
-- [ ] run tests — must pass before task 6
+- [x] run tests — must pass before task 6
 
 ### Task 6: Claim identification + `allocateClaim`/`releaseClaim` + eviction
 
