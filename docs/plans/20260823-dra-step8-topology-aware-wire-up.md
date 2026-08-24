@@ -196,14 +196,14 @@ attribute maps per class name. For each class where attrs differ: `if p.draPlugi
 - Modify: `config/crd/bases/config.nri_topologyawarepolicies.yaml`
 - Modify: `deployment/helm/topology-aware/crds/config.nri_topologyawarepolicies.yaml`
 
-- [ ] write test: zero `Config` (nil `DRA`) → `DRAEnabled()` returns false; `DRASharedCounters()` returns false
-- [ ] write test: `Config{DRA: &TopologyAwareDRA{Enabled: true}}` → `DRAEnabled()` true; `Validate()` passes
-- [ ] write test: `Config{DRA: &TopologyAwareDRA{SharedCounters: true}}` → `DRASharedCounters()` true; `Validate()` passes
-- [ ] add `TopologyAwareDRA` struct with `Enabled bool`, `SharedCounters bool` (+kubebuilder default:false tags)
-- [ ] add `DRA *TopologyAwareDRA` field to `Config`
-- [ ] add nil-safe getters `DRAEnabled() bool` and `DRASharedCounters() bool`
-- [ ] run `make generate`; verify `make verify-generate` passes
-- [ ] run tests — must pass before task 2
+- [x] write test: zero `Config` (nil `DRA`) → `DRAEnabled()` returns false; `DRASharedCounters()` returns false
+- [x] write test: `Config{DRA: &TopologyAwareDRA{Enabled: true}}` → `DRAEnabled()` true; `Validate()` passes
+- [x] write test: `Config{DRA: &TopologyAwareDRA{SharedCounters: true}}` → `DRASharedCounters()` true; `Validate()` passes
+- [x] add `TopologyAwareDRA` struct with `Enabled bool`, `SharedCounters bool` (+kubebuilder default:false tags)
+- [x] add `DRA *TopologyAwareDRA` field to `Config`
+- [x] add nil-safe getters `DRAEnabled() bool` and `DRASharedCounters() bool`
+- [x] run `make generate`; verify `make verify-generate` passes (verified idempotent; git diff is nonzero only because source changes are not yet committed — see decision log)
+- [x] run tests — must pass before task 2
 
 ### Task 2: `BackendOptions` / `policy.Options` / `Backend` interface + shutdown wiring
 
