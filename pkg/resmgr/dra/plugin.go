@@ -418,6 +418,21 @@ func (p *Plugin) LiveClaimClasses() map[string]int {
 	return result
 }
 
+// LiveClaimsLocked returns a snapshot of the currently live claims as
+// map[types.UID][]ResultAlloc. Caller must hold the resmgr lock (do not call
+// from inside a WithLock callback — the resmgr lock is not reentrant). Used
+// by the Step 8 pool-accounting re-apply path (reapplyDRAClaims) after
+// Start()/Reconfigure() rebuild policy state.
+func (p *Plugin) LiveClaimsLocked() map[types.UID][]ResultAlloc {
+	result := make(map[types.UID][]ResultAlloc, len(p.claims))
+	for uid, cs := range p.claims {
+		allocs := make([]ResultAlloc, len(cs.Allocs))
+		copy(allocs, cs.Allocs)
+		result[uid] = allocs
+	}
+	return result
+}
+
 // RestoreClaimsLocked re-runs AccountHpCpus for every entry in p.claims,
 // rebuilding HP accounting after a Reconfigure that reset hpDRAUsed. It does
 // not reload from cache and does not acquire any lock.

@@ -1699,6 +1699,58 @@ func TestLiveClaimClasses_DifferentClasses(t *testing.T) {
 	}
 }
 
+// TestLiveClaimsLocked_Empty verifies that LiveClaimsLocked returns an empty
+// map when there are no claims.
+func TestLiveClaimsLocked_Empty(t *testing.T) {
+	p, err := New("test-driver", validDeps())
+	if err != nil {
+		t.Fatalf("New() unexpected error: %v", err)
+	}
+	got := p.LiveClaimsLocked()
+	if len(got) != 0 {
+		t.Errorf("LiveClaimsLocked() = %v, want empty map", got)
+	}
+}
+
+// TestLiveClaimsLocked_Snapshot verifies that LiveClaimsLocked returns a
+// snapshot matching p.claims, and that mutating the returned map/slices does
+// not corrupt the plugin's internal state (caller holds the resmgr lock, but
+// the returned value must still be a defensive copy of the per-claim slice).
+func TestLiveClaimsLocked_Snapshot(t *testing.T) {
+	p, err := New("test-driver", validDeps())
+	if err != nil {
+		t.Fatalf("New() unexpected error: %v", err)
+	}
+	p.claims[types.UID("uid-a")] = &ClaimState{
+		UID:    "uid-a",
+		Allocs: []ResultAlloc{{Device: "dev0", PkgID: 0, PunitID: 0, CPUs: "0-3", ClassName: "gold"}},
+	}
+	p.claims[types.UID("uid-b")] = &ClaimState{
+		UID: "uid-b",
+		Allocs: []ResultAlloc{
+			{Device: "dev1", PkgID: 0, PunitID: 1, CPUs: "4-5", ClassName: "silver"},
+			{Device: "dev2", PkgID: 0, PunitID: 1, CPUs: "6-7", ClassName: "silver"},
+		},
+	}
+
+	got := p.LiveClaimsLocked()
+	if len(got) != 2 {
+		t.Fatalf("LiveClaimsLocked() len = %d, want 2", len(got))
+	}
+	if allocs := got[types.UID("uid-a")]; len(allocs) != 1 || allocs[0].ClassName != "gold" {
+		t.Errorf("LiveClaimsLocked()[uid-a] = %+v, want one gold alloc", allocs)
+	}
+	if allocs := got[types.UID("uid-b")]; len(allocs) != 2 {
+		t.Errorf("LiveClaimsLocked()[uid-b] len = %d, want 2", len(allocs))
+	}
+
+	// Mutating the returned slice must not affect p.claims (defensive copy).
+	got[types.UID("uid-a")][0].ClassName = "mutated"
+	if p.claims[types.UID("uid-a")].Allocs[0].ClassName != "gold" {
+		t.Errorf("LiveClaimsLocked() leaked internal state: p.claims mutated via returned snapshot")
+	}
+}
+
 // TestRestoreClaimsLocked_RebuildsAccounting verifies that RestoreClaimsLocked
 // calls AccountHpCpus for each alloc in p.claims, rebuilding accounting after
 // a Reconfigure reset (simulated by a fresh trackingClaimAllocator).

@@ -257,20 +257,20 @@ attribute maps per class name. For each class where attrs differ: `if p.draPlugi
 - Create: `cmd/plugins/topology-aware/policy/dra_adapter_test.go`
 - Modify: `pkg/resmgr/dra/plugin.go`
 
-- [ ] write test: adapter's `PickHpCpus`/`DRADevices`/`IsHPClass` route to the **current**
+- [x] write test: adapter's `PickHpCpus`/`DRADevices`/`IsHPClass` route to the **current**
       `p.cpuClasses` after a handler replacement (simulate by swapping the field)
-- [ ] write test: adapter methods with nil `p.cpuClasses` return safe zero-values / errors (no panic)
-- [ ] write test: `Plugin.LiveClaimsLocked()` returns the correct
+- [x] write test: adapter methods with nil `p.cpuClasses` return safe zero-values / errors (no panic)
+- [x] write test: `Plugin.LiveClaimsLocked()` returns the correct
       `map[types.UID][]ResultAlloc` snapshot while the caller holds the resmgr lock (use the
       fake-lock stub from Task 2)
-- [ ] define `const DRADriverName = "nri.topology-aware.cpu"` (in `dra_adapter.go` or a constants file)
-- [ ] implement unexported `policyDRAAdapter` struct holding `*policy`; implement `dra.ClaimAllocator`
+- [x] define `const DRADriverName = "nri.topology-aware.cpu"` (in `dra_adapter.go` or a constants file)
+- [x] implement unexported `policyDRAAdapter` struct holding `*policy`; implement `dra.ClaimAllocator`
       and `dra.DeviceLister` by forwarding to `p.cpuClasses` at call time
-- [ ] add compile checks: `var _ dra.ClaimAllocator = &policyDRAAdapter{}`
+- [x] add compile checks: `var _ dra.ClaimAllocator = &policyDRAAdapter{}`
       and `var _ dra.DeviceLister = &policyDRAAdapter{}`
-- [ ] add `LiveClaimsLocked() map[types.UID][]ResultAlloc` to `*Plugin` in `plugin.go`; it
+- [x] add `LiveClaimsLocked() map[types.UID][]ResultAlloc` to `*Plugin` in `plugin.go`; it
       reads `p.claims` directly (no `deps.WithLock`); doc: "caller must hold the resmgr lock"
-- [ ] run tests — must pass before task 5
+- [x] run tests — must pass before task 5
 
 ### Task 5: Supply claim refcount + tree-wide marking
 
