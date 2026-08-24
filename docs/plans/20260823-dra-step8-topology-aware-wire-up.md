@@ -377,20 +377,24 @@ attribute maps per class name. For each class where attrs differ: `if p.draPlugi
 - Create: `cmd/plugins/topology-aware/policy/dra.go`
 - Create: `cmd/plugins/topology-aware/policy/dra_test.go`
 
-- [ ] write test: DRA disabled → `Setup()` leaves `draPlugin` nil; all lifecycle methods
+- [x] write test: DRA disabled → `Setup()` leaves `draPlugin` nil; all lifecycle methods
       no-op cleanly
-- [ ] write test: DRA enabled + `KubeClientFn()` returns nil → `Setup()` logs warning, leaves
+- [x] write test: DRA enabled + `KubeClientFn()` returns nil → `Setup()` logs warning, leaves
       `draPlugin` nil; no error returned
-- [ ] write test: DRA enabled + empty NodeName → `Setup()` logs warning, leaves `draPlugin` nil
-- [ ] write test: DRA enabled + nil `cpuClasses` (no cpuClass config) → `Setup()` logs warning,
+- [x] write test: DRA enabled + empty NodeName → `Setup()` logs warning, leaves `draPlugin` nil
+- [x] write test: DRA enabled + nil `cpuClasses` (no cpuClass config) → `Setup()` logs warning,
       leaves `draPlugin` nil
-- [ ] write test: DRA enabled + valid deps → `Setup()` builds plugin; `Start()` calls
+- [x] write test: DRA enabled + valid deps → `Setup()` builds plugin; `Start()` calls
       `plugin.Start()` then `plugin.PublishResources()`; verify ordering and that neither
       is called while the re-entrancy `WithLock` stub is held
-- [ ] write test: `Stop()` cancels context and calls `plugin.Stop()`
-- [ ] write test: `ValidateClasses` closure uses `p.cfg.DRASharedCounters()` (nil-safe) and
+      (adapted — see decision log: ordering/lock-contract verified via the existing Task 7/8
+      real-`*dra.Plugin` test harness (`newTestDRAPlugin`) rather than a call-order mock,
+      since `*dra.Plugin` is a concrete struct, not an interface, so its methods cannot be
+      swapped for recording fakes)
+- [x] write test: `Stop()` cancels context and calls `plugin.Stop()`
+- [x] write test: `ValidateClasses` closure uses `p.cfg.DRASharedCounters()` (nil-safe) and
       picks up the config from a post-Reconfigure `p.cfg`
-- [ ] implement `buildDRAPlugin(opts *policyapi.BackendOptions) error` in `dra.go`:
+- [x] implement `buildDRAPlugin(opts *policyapi.BackendOptions) error` in `dra.go`:
       - guard: kube client, node name, cpuClasses all must be available; log + return nil on absence
       - construct `policyDRAAdapter` (Task 4)
       - `CDIWriter`: `dra.NewCDIWriter(DRADriverName, p.cdiDir)` (`p.cdiDir` injectable for tests)
@@ -399,16 +403,16 @@ attribute maps per class name. For each class where attrs differ: `if p.draPlugi
       - `WithLock`, `NodeName`, `Logger` from opts; `KubeClient` from `opts.KubeClientFn()`
         with typed-nil check (see Context)
       - call `dra.New(DRADriverName, deps)` and store result in `p.draPlugin`
-- [ ] add `draPlugin *dra.Plugin`, `draCtx context.Context`, `draCtxCancel context.CancelFunc`,
+- [x] add `draPlugin *dra.Plugin`, `draCtx context.Context`, `draCtxCancel context.CancelFunc`,
       `cdiDir string` to `policy` struct
-- [ ] in `Setup()`, call `buildDRAPlugin(opts)` if `cfg.DRAEnabled()` (initial setup only;
+- [x] in `Setup()`, call `buildDRAPlugin(opts)` if `cfg.DRAEnabled()` (initial setup only;
       no DRAEnabled-flip check here — `p.cfg` is nil at construction time, making the check
       unreachable; flip detection belongs in `Reconfigure()`, Task 10)
-- [ ] in `Start()`, if `draPlugin != nil`: create `ctx, cancel = context.WithCancel(context.Background())`;
+- [x] in `Start()`, if `draPlugin != nil`: create `ctx, cancel = context.WithCancel(context.Background())`;
       store `p.draCtx = ctx; p.draCtxCancel = cancel`; call `draPlugin.Start(ctx)` then `draPlugin.PublishResources(ctx)`;
       then call `reapplyDRAClaims()` (Task 8)
-- [ ] implement `Stop() error` on `*policy`: cancel `draCtxCancel`, call `draPlugin.Stop()` if set; return nil
-- [ ] run tests — must pass before task 10
+- [x] implement `Stop() error` on `*policy`: cancel `draCtxCancel`, call `draPlugin.Stop()` if set; return nil
+- [x] run tests — must pass before task 10
 
 ### Task 10: resmgr post-unlock seam + `PostReconfigure` hook + Reconfigure refusal
 

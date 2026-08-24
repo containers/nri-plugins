@@ -62,13 +62,37 @@ func (f *fakeDRAClaimAllocator) ReleaseHpCpus(_, _ int, _ cpuset.CPUSet)       {
 func (f *fakeDRAClaimAllocator) AccountHpCpus(_, _ int, _ cpuset.CPUSet) error { return nil }
 func (f *fakeDRAClaimAllocator) IsHPClass(_ string) bool                       { return true }
 
-// fakeDRACDIWriter is a dra.CDIWriter that succeeds without touching disk.
-type fakeDRACDIWriter struct{}
+// fakeDRACDIWriter is a dra.CDIWriter that tracks per-UID "written" state
+// in memory instead of touching disk. Stateful (rather than a fixed
+// false/nil) so that ClaimSpecExists/ListClaims accurately reflect prior
+// WriteClaim/RemoveClaim calls: dra.Plugin.Start()'s orphan-claim sweep
+// calls ClaimSpecExists for every persisted claim and drops any claim it
+// reports as missing, so a fixed `false` would silently discard every
+// claim seeded via seedLiveClaim before Start() runs (Task 9 exercises
+// Start() for real via policy.Start()).
+type fakeDRACDIWriter struct {
+	written map[types.UID]bool
+}
 
-func (*fakeDRACDIWriter) WriteClaim(types.UID, []dra.CDIDevice) error { return nil }
-func (*fakeDRACDIWriter) RemoveClaim(types.UID) error                 { return nil }
-func (*fakeDRACDIWriter) ClaimSpecExists(types.UID) bool              { return false }
-func (*fakeDRACDIWriter) ListClaims() ([]types.UID, error)            { return nil, nil }
+func (w *fakeDRACDIWriter) WriteClaim(uid types.UID, _ []dra.CDIDevice) error {
+	if w.written == nil {
+		w.written = map[types.UID]bool{}
+	}
+	w.written[uid] = true
+	return nil
+}
+func (w *fakeDRACDIWriter) RemoveClaim(uid types.UID) error {
+	delete(w.written, uid)
+	return nil
+}
+func (w *fakeDRACDIWriter) ClaimSpecExists(uid types.UID) bool { return w.written[uid] }
+func (w *fakeDRACDIWriter) ListClaims() ([]types.UID, error) {
+	uids := make([]types.UID, 0, len(w.written))
+	for uid := range w.written {
+		uids = append(uids, uid)
+	}
+	return uids, nil
+}
 
 // fakeDRAClaimStore is a dra.ClaimStore that succeeds without persisting
 // anything.
@@ -94,8 +118,15 @@ func newTestDRAPlugin(t *testing.T, pick cpuset.CPUSet, deviceName string) *dra.
 	}
 
 	deps := dra.Deps{
-		KubeClient:      fake.NewClientset(),
-		NodeName:        "test-node",
+		KubeClient: fake.NewClientset(),
+		NodeName:   "test-node",
+		// RegistrarDir/PluginDataDir: real tempdirs, not the kubeletplugin
+		// package defaults (/var/lib/kubelet/...) — Task 9 exercises
+		// plugin.Start() for real via policy.Start(), which would
+		// otherwise try (and likely fail, for lack of permissions) to
+		// create real kubelet directories in the test environment.
+		RegistrarDir:    t.TempDir(),
+		PluginDataDir:   t.TempDir(),
 		ValidateClasses: func() error { return nil },
 		DeviceLister:    &fakeDRADeviceLister{devices: []resourceapi.Device{device}},
 		ClaimAllocator:  &fakeDRAClaimAllocator{pick: pick},

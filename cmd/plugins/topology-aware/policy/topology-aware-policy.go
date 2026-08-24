@@ -15,6 +15,7 @@
 package topologyaware
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -88,15 +89,26 @@ type policy struct {
 
 	// draPlugin is the DRA kubelet plugin instance for this driver, or nil
 	// when DRA is disabled (cfg.DRAEnabled() == false) or Setup() could not
-	// build one (see docs/plans/20260823-dra-step8-topology-aware-wire-up.md
-	// Task 9, which wires construction/lifecycle). AllocateResources and
-	// ReleaseResources nil-check this field before passing it anywhere a
+	// build one (see buildDRAPlugin in dra.go: missing kube client, node
+	// name, or cpuClass configuration at Setup() time). AllocateResources
+	// and ReleaseResources nil-check this field before passing it anywhere a
 	// claimLister is expected: a nil *dra.Plugin handed to an interface
 	// parameter would produce a non-nil interface wrapping a nil pointer
 	// (the typed-nil trap), so callers must guard on p.draPlugin != nil
 	// themselves rather than relying on claimCPUsFromContainer's internal
 	// nil check.
 	draPlugin *dra.Plugin
+	// draCtx is the context passed to draPlugin.Start()/PublishResources();
+	// stored so PostReconfigure (a later step) can re-call PublishResources
+	// with the same context. nil when draPlugin is nil.
+	draCtx context.Context
+	// draCtxCancel cancels draCtx. Called from Stop() to shut the DRA
+	// plugin's background goroutines down. nil when draPlugin is nil.
+	draCtxCancel context.CancelFunc
+	// cdiDir is the directory DRA CDI spec files are written to. Empty
+	// means the dra package's default (/var/run/cdi). Overridable so tests
+	// can inject a temporary directory.
+	cdiDir string
 }
 
 var opt = &cfgapi.Config{}
@@ -150,6 +162,18 @@ func (p *policy) Setup(opts *policyapi.BackendOptions) error {
 		return policyError("failed to initialize %s policy: %w", PolicyName, err)
 	}
 
+	// Build the DRA plugin, if enabled, once at initial Setup() time. There
+	// is no DRAEnabled-flip check here: p.cfg is nil at construction time
+	// (the policy is zero-valued until this call), so "detect Reconfigure
+	// by checking p.cfg" is unreachable dead code. Flip detection belongs
+	// in Reconfigure() (a later step), which refuses a change to
+	// cfg.DRAEnabled() rather than tearing down/rebuilding the plugin here.
+	if p.cfg.DRAEnabled() {
+		if err := p.buildDRAPlugin(opts); err != nil {
+			return policyError("failed to initialize %s policy: %w", PolicyName, err)
+		}
+	}
+
 	log.Infof("***** default CPU priority is %s", defaultPrio)
 
 	return nil
@@ -171,14 +195,27 @@ func (p *policy) Start() error {
 		return policyError("failed to start: %v", err)
 	}
 
+	// Start the DRA plugin (if built by Setup()) before reapplyDRAClaims:
+	// draPlugin.Start(ctx) loads the persisted ClaimStore, which
+	// reapplyDRAClaims reads via LiveClaimsLocked() to re-mark pool
+	// supplies. Neither call is made while holding the resmgr lock —
+	// Start/PublishResources take their own internal WithLock only for the
+	// specific sections that touch shared Handler/claim state.
+	if p.draPlugin != nil {
+		ctx, cancel := context.WithCancel(context.Background())
+		p.draCtx = ctx
+		p.draCtxCancel = cancel
+		if err := p.draPlugin.Start(ctx); err != nil {
+			cancel()
+			return policyError("failed to start DRA plugin: %v", err)
+		}
+		if err := p.draPlugin.PublishResources(ctx); err != nil {
+			log.Errorf("dra: failed to publish DRA resources: %v", err)
+		}
+	}
+
 	// Re-mark any DRA-claimed CPUs in the freshly rebuilt pool supplies.
-	// Ordering note: once Task 9 (see
-	// docs/plans/20260823-dra-step8-topology-aware-wire-up.md) wires up the
-	// DRA plugin lifecycle, draPlugin.Start(ctx) (which loads the persisted
-	// ClaimStore) must run before this call — reapplyDRAClaims reads
-	// draPlugin.LiveClaimsLocked(), which is empty until the plugin has
-	// loaded its claim state. For now (draPlugin == nil until Task 9 builds
-	// it in Setup()) this call is a no-op.
+	// No-op if DRA is disabled (draPlugin == nil).
 	p.reapplyDRAClaims()
 
 	// Turn coldstart forcibly off if we have movable non-DRAM memory.
@@ -200,11 +237,17 @@ func (p *policy) Start() error {
 	return nil
 }
 
-// Stop shuts down this policy. This is a placeholder implementation:
-// DRA plugin lifecycle (cancel draCtx, call draPlugin.Stop()) is wired
-// up in a later step (see docs/plans/20260823-dra-step8-topology-aware-wire-up.md
-// Task 9).
+// Stop shuts down this policy: it cancels the DRA plugin's context and
+// stops the DRA plugin (kubeletplugin registration, background helper
+// goroutines), if one was built. A no-op when DRA is disabled
+// (draPlugin == nil) — safe to call regardless of whether Start() ran.
 func (p *policy) Stop() error {
+	if p.draCtxCancel != nil {
+		p.draCtxCancel()
+	}
+	if p.draPlugin != nil {
+		p.draPlugin.Stop()
+	}
 	return nil
 }
 
