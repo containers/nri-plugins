@@ -301,28 +301,29 @@ attribute maps per class name. For each class where attrs differ: `if p.draPlugi
 - Modify: `cmd/plugins/topology-aware/policy/pools.go`
 - Modify: `cmd/plugins/topology-aware/policy/pools_test.go`
 
-- [ ] write test: `parseCDIClaimUID("nri.topology-aware.cpu/device=claim-abc123-req-dev-0")` → `("abc123", true)`
-- [ ] write test: CDI device name not matching the driver prefix → `("", false)`
-- [ ] write test: container with a TA CDI device → `claimCPUsFromContainer(c, plugin)` returns
+- [x] write test: `parseCDIClaimUID("nri.topology-aware.cpu/device=claim-abc123-req-dev-0")` → `("abc123", true)`
+- [x] write test: CDI device name not matching the driver prefix → `("", false)`
+- [x] write test: container with a TA CDI device → `claimCPUsFromContainer(c, plugin)` returns
       the correct `(uid, cpus, className)` from `LiveClaimsLocked()`
-- [ ] write test: container without TA CDI devices → returns `("", empty, "", false)`
-- [ ] write test: `allocateClaim` marks CPUs in the tightest pool containing them; a subsequent
+- [x] write test: container without TA CDI devices → returns `("", empty, "", false)`
+- [x] write test: `allocateClaim` marks CPUs in the tightest pool containing them; a subsequent
       `AllocateCPUs` call for another container cannot pick those CPUs
-- [ ] write test: `allocateClaim` evicts an exclusive grant overlapping the claimed CPUs; the
+- [x] write test: `allocateClaim` evicts an exclusive grant overlapping the claimed CPUs; the
       displaced container is queued for reallocation
-- [ ] write test: `allocateClaim` for CPUs entirely outside `p.allowed` or spanning no pool →
+- [x] write test: `allocateClaim` for CPUs entirely outside `p.allowed` or spanning no pool →
       returns descriptive error
-- [ ] write test: `releaseClaim` restores CPUs; refcount — only releases when last referencing
+- [x] write test: `releaseClaim` restores CPUs; refcount — only releases when last referencing
       container is gone (two AllocateResources for same claim UID → two ReleaseResources needed)
-- [ ] write test: `releaseClaim` for unknown UID → nil (idempotent)
-- [ ] implement `parseCDIClaimUID(deviceName string) (uid string, ok bool)`
-- [ ] implement `claimCPUsFromContainer(c cache.Container, plugin *dra.Plugin) (uid types.UID, cpus cpuset.CPUSet, className string, ok bool)` — parse UID from `GetCDIDeviceNames()`, look up CPUs+class from `plugin.LiveClaimsLocked()[uid]`
-- [ ] implement `(p *policy) allocateClaim(uid types.UID, cpus cpuset.CPUSet, className string) error`
+- [x] write test: `releaseClaim` for unknown UID → nil (idempotent)
+- [x] implement `parseCDIClaimUID(deviceName string) (uid string, ok bool)`
+- [x] implement `claimCPUsFromContainer(c cache.Container, plugin *dra.Plugin) (uid types.UID, cpus cpuset.CPUSet, className string, ok bool)` — parse UID from `GetCDIDeviceNames()`, look up CPUs+class from `plugin.LiveClaimsLocked()[uid]`
+      (implemented against a local `claimLister` interface that `*dra.Plugin` satisfies — see decision log)
+- [x] implement `(p *policy) allocateClaim(uid types.UID, cpus cpuset.CPUSet, className string) error`
       — find tightest pool containing `cpus`, call `pool.GetSupply().ClaimCPUs(uid, cpus)`,
       evict + reallocate conflicting grants; maintain per-claim container refcount `p.claimContainerRefs map[types.UID]int`
-- [ ] implement `(p *policy) releaseClaim(uid types.UID, cpus cpuset.CPUSet)` — decrement
+- [x] implement `(p *policy) releaseClaim(uid types.UID, cpus cpuset.CPUSet)` — decrement
       refcount; call `pool.GetSupply().UnclaimCPUs(uid)` and restore grants only when refcount == 0
-- [ ] run tests — must pass before task 7
+- [x] run tests — must pass before task 7
 
 ### Task 7: NRI call sites — AllocateResources / ReleaseResources
 

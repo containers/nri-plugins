@@ -20,11 +20,16 @@ import (
 	"path"
 	"testing"
 
+	"k8s.io/apimachinery/pkg/types"
+
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
+	"github.com/containers/nri-plugins/pkg/resmgr/dra"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/testutils"
+	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 func findNodeWithName(name string, nodes []Node) Node {
@@ -554,5 +559,377 @@ func TestAffinities(t *testing.T) {
 				t.Errorf("expected best pool %s, got %s", tc.expected, node.Name())
 			}
 		})
+	}
+}
+
+//
+// DRA claim identification and pool accounting (Step 8, Task 6).
+//
+
+func TestParseCDIClaimUID(t *testing.T) {
+	tcases := []struct {
+		name       string
+		deviceName string
+		wantUID    string
+		wantOK     bool
+	}{
+		{
+			name:       "simple uid",
+			deviceName: "nri.topology-aware.cpu/device=claim-abc123-req-dev-0",
+			wantUID:    "abc123",
+			wantOK:     true,
+		},
+		{
+			// A uid containing '-' (the real Kubernetes UID shape) is still
+			// recovered exactly, as long as <request> and <device> are each
+			// single tokens: the split only has to strip a fixed 3 trailing
+			// tokens, so it doesn't matter how many tokens the leading uid
+			// part itself has.
+			name:       "uid with embedded dashes, single-token request/device",
+			deviceName: "nri.topology-aware.cpu/device=claim-13f7db45-eb2a-4dd1-b0cb-1234567890ab-myreq-dev0-0",
+			wantUID:    "13f7db45-eb2a-4dd1-b0cb-1234567890ab",
+			wantOK:     true,
+		},
+		{
+			// Documents the known best-effort limitation: when <device> is
+			// itself multi-token after sanitization (e.g. "punit-0-0"), the
+			// fixed trailing-3-token strip lands in the wrong place and
+			// "swallows" part of <request> into the returned uid.
+			// claimCPUsFromContainer's matchLiveClaimUID compensates for
+			// this by falling back to matching against the caller's known
+			// live claim UIDs; parseCDIClaimUID alone cannot.
+			name:       "documents limitation: multi-token device swallows the request",
+			deviceName: "nri.topology-aware.cpu/device=claim-13f7db45-myreq-punit-0-0-0",
+			wantUID:    "13f7db45-myreq-punit",
+			wantOK:     true,
+		},
+		{
+			name:       "wrong driver prefix",
+			deviceName: "other.driver/device=claim-abc123-req-dev-0",
+			wantOK:     false,
+		},
+		{
+			name:       "not a CDI qualified name at all",
+			deviceName: "not-a-cdi-device-name",
+			wantOK:     false,
+		},
+		{
+			name:       "right prefix, too few remaining tokens",
+			deviceName: "nri.topology-aware.cpu/device=claim-dev-0",
+			wantOK:     false,
+		},
+	}
+
+	for _, tc := range tcases {
+		t.Run(tc.name, func(t *testing.T) {
+			uid, ok := parseCDIClaimUID(tc.deviceName)
+			if ok != tc.wantOK {
+				t.Fatalf("parseCDIClaimUID(%q) ok = %v, want %v", tc.deviceName, ok, tc.wantOK)
+			}
+			if ok && uid != tc.wantUID {
+				t.Errorf("parseCDIClaimUID(%q) = %q, want %q", tc.deviceName, uid, tc.wantUID)
+			}
+		})
+	}
+}
+
+// fakeClaimLister is a minimal claimLister for tests, avoiding the need to
+// stand up a full *dra.Plugin (kubelet registration, CDI writer, claim
+// store, etc.) just to exercise claimCPUsFromContainer's lookup logic.
+type fakeClaimLister struct {
+	claims map[types.UID][]dra.ResultAlloc
+}
+
+func (f *fakeClaimLister) LiveClaimsLocked() map[types.UID][]dra.ResultAlloc {
+	return f.claims
+}
+
+func cdiClaimDeviceName(uid types.UID, request, device string, idx int) string {
+	return DRADriverName + "/device=claim-" + string(uid) + "-" + request + "-" + device + "-" + fmt.Sprint(idx)
+}
+
+func TestClaimCPUsFromContainer(t *testing.T) {
+	uid := types.UID("claim-uid-1")
+	name := cdiClaimDeviceName(uid, "myreq", "dev0", 0)
+
+	c := &mockContainer{cdiDeviceNames: []string{name}}
+	lister := &fakeClaimLister{
+		claims: map[types.UID][]dra.ResultAlloc{
+			uid: {{Request: "myreq", Device: "dev0", ClassName: "gold", CPUs: "0-1"}},
+		},
+	}
+
+	gotUID, gotCPUs, gotClass, ok := claimCPUsFromContainer(c, lister)
+	if !ok {
+		t.Fatalf("claimCPUsFromContainer() ok = false, want true")
+	}
+	if gotUID != uid {
+		t.Errorf("claimCPUsFromContainer() uid = %q, want %q", gotUID, uid)
+	}
+	if gotClass != "gold" {
+		t.Errorf("claimCPUsFromContainer() className = %q, want %q", gotClass, "gold")
+	}
+	if want := cpuset.MustParse("0-1"); !gotCPUs.Equals(want) {
+		t.Errorf("claimCPUsFromContainer() cpus = %s, want %s", gotCPUs, want)
+	}
+}
+
+func TestClaimCPUsFromContainerDashedUIDAndDashedDeviceName(t *testing.T) {
+	// A real k8s UID (embedded dashes) combined with a device name that
+	// is itself multi-token after sanitization (e.g. "punit-0-0") is exactly
+	// the case parseCDIClaimUID's fast path alone mis-splits (see
+	// TestParseCDIClaimUID's "documents limitation" case). claimCPUsFromContainer
+	// must still resolve it correctly via matchLiveClaimUID's live-UID fallback.
+	uid := types.UID("13f7db45-eb2a-4dd1-b0cb-1234567890ab")
+	name := cdiClaimDeviceName(uid, "myreq", "punit-0-0", 0)
+
+	c := &mockContainer{cdiDeviceNames: []string{name}}
+	lister := &fakeClaimLister{
+		claims: map[types.UID][]dra.ResultAlloc{
+			uid: {{Request: "myreq", Device: "punit-0-0", ClassName: "gold", CPUs: "4-5"}},
+		},
+	}
+
+	gotUID, gotCPUs, gotClass, ok := claimCPUsFromContainer(c, lister)
+	if !ok {
+		t.Fatalf("claimCPUsFromContainer() ok = false, want true")
+	}
+	if gotUID != uid {
+		t.Errorf("claimCPUsFromContainer() uid = %q, want %q", gotUID, uid)
+	}
+	if gotClass != "gold" {
+		t.Errorf("claimCPUsFromContainer() className = %q, want %q", gotClass, "gold")
+	}
+	if want := cpuset.MustParse("4-5"); !gotCPUs.Equals(want) {
+		t.Errorf("claimCPUsFromContainer() cpus = %s, want %s", gotCPUs, want)
+	}
+}
+
+func TestClaimCPUsFromContainerMultipleAllocs(t *testing.T) {
+	// A single claim can back more than one DeviceRequestAllocationResult
+	// (e.g. multiple requests in one claim); the union of their CPUs and the
+	// first non-empty className must be returned.
+	uid := types.UID("claim-uid-multi")
+	name0 := cdiClaimDeviceName(uid, "req0", "dev0", 0)
+
+	c := &mockContainer{cdiDeviceNames: []string{name0}}
+	lister := &fakeClaimLister{
+		claims: map[types.UID][]dra.ResultAlloc{
+			uid: {
+				{Request: "req0", Device: "dev0", ClassName: "gold", CPUs: "0-1"},
+				{Request: "req1", Device: "dev1", ClassName: "gold", CPUs: "2-3"},
+			},
+		},
+	}
+
+	_, gotCPUs, _, ok := claimCPUsFromContainer(c, lister)
+	if !ok {
+		t.Fatalf("claimCPUsFromContainer() ok = false, want true")
+	}
+	if want := cpuset.MustParse("0-3"); !gotCPUs.Equals(want) {
+		t.Errorf("claimCPUsFromContainer() cpus = %s, want %s (union of all allocs)", gotCPUs, want)
+	}
+}
+
+func TestClaimCPUsFromContainerNoCDIDevices(t *testing.T) {
+	c := &mockContainer{}
+	lister := &fakeClaimLister{claims: map[types.UID][]dra.ResultAlloc{}}
+
+	uid, cpus, class, ok := claimCPUsFromContainer(c, lister)
+	if ok {
+		t.Fatalf("claimCPUsFromContainer() ok = true, want false for a container with no CDI devices")
+	}
+	if uid != "" || !cpus.IsEmpty() || class != "" {
+		t.Errorf("claimCPUsFromContainer() = (%q, %s, %q, %v), want zero values", uid, cpus, class, ok)
+	}
+}
+
+func TestClaimCPUsFromContainerUnknownClaim(t *testing.T) {
+	// The container carries a well-formed claim device name, but the parsed
+	// UID has no entry in LiveClaimsLocked() (e.g. the claim was already
+	// unprepared, or the device belongs to some other driver's namespace).
+	uid := types.UID("claim-uid-gone")
+	name := cdiClaimDeviceName(uid, "myreq", "dev0", 0)
+
+	c := &mockContainer{cdiDeviceNames: []string{name}}
+	lister := &fakeClaimLister{claims: map[types.UID][]dra.ResultAlloc{}}
+
+	_, _, _, ok := claimCPUsFromContainer(c, lister)
+	if ok {
+		t.Fatalf("claimCPUsFromContainer() ok = true, want false for an unknown/stale claim UID")
+	}
+}
+
+// addTestGrant hands out an exclusive grant for container from pool's
+// FreeSupply, mirroring (at the level of supply-state mutation) what
+// supply.AllocateCPU does for the granting node itself, then records the
+// grant in p.allocations so p.releasePool/p.reallocateResources can find it.
+// This lets eviction tests exercise the real p.releasePool/grant.Release()
+// code path without going through the full container-annotation-driven
+// request/offer pipeline (which coldstart_test.go notes is impractical to
+// mock with a bare container).
+func addTestGrant(t *testing.T, p *policy, pool Node, container cache.Container, exclusive cpuset.CPUSet) Grant {
+	t.Helper()
+
+	g := newGrant(pool, container, cpuNormal, "", exclusive, 0, memoryDRAM, nil, 0)
+
+	s, ok := pool.FreeSupply().(*supply)
+	if !ok {
+		t.Fatalf("pool %q FreeSupply() is not a *supply", pool.Name())
+	}
+	s.isolated = s.isolated.Difference(exclusive)
+	s.sharable = s.sharable.Difference(exclusive)
+	g.AccountAllocateCPU()
+
+	p.allocations.addGrant(g)
+
+	return g
+}
+
+func TestAllocateClaimMarksTightestPool(t *testing.T) {
+	p := newDRATestPolicy(t)
+
+	leaf := findPoolNode(t, p, "NUMA node #0")
+	sharable := leaf.FreeSupply().SharableCPUs().List()
+	if len(sharable) < 2 {
+		t.Fatalf("expected at least 2 sharable CPUs on %q", leaf.Name())
+	}
+	cpus := cpuset.New(sharable[0], sharable[1])
+
+	uid := types.UID("claim-mark")
+	if err := p.allocateClaim(uid, cpus, "gold"); err != nil {
+		t.Fatalf("allocateClaim() failed: %v", err)
+	}
+
+	if got := leaf.FreeSupply().SharableCPUs(); got.Intersection(cpus).Size() != 0 {
+		t.Errorf("claimed CPUs %s still present in %q sharable set: %s", cpus, leaf.Name(), got)
+	}
+
+	// A regular exclusive-CPU request for another container must not be
+	// able to pick the claimed CPUs.
+	free := leaf.FreeSupply().AllocatableSharedCPU()
+	full := free / 1000
+	if full < 1 {
+		t.Fatalf("expected at least 1 full CPU still allocatable on %q, got %dm", leaf.Name(), free)
+	}
+	req := &request{full: full, container: &mockContainer{}}
+	offer, err := leaf.FreeSupply().GetCPUOffer(req)
+	if err != nil {
+		t.Fatalf("GetCPUOffer for %d full CPUs failed unexpectedly: %v", full, err)
+	}
+	if offer.Intersection(cpus).Size() != 0 {
+		t.Errorf("CPU offer %s for another container includes claimed CPUs %s", offer, cpus)
+	}
+}
+
+func TestAllocateClaimOutsideAllowedReturnsError(t *testing.T) {
+	p := newDRATestPolicy(t)
+
+	// CPU 99999 does not exist on the test system at all, so it can't be a
+	// subset of any pool's (including root's) statically assigned range.
+	cpus := cpuset.New(99999)
+
+	if err := p.allocateClaim(types.UID("claim-outside"), cpus, "gold"); err == nil {
+		t.Fatalf("allocateClaim() with CPUs outside the allowed set: got nil error, want a descriptive error")
+	}
+}
+
+func TestAllocateClaimRefcountsMultipleContainers(t *testing.T) {
+	// A ResourceClaim with AllowMultipleAllocations backs more than one
+	// container; allocateClaim is called once per container sharing it.
+	p := newDRATestPolicy(t)
+
+	leaf := findPoolNode(t, p, "NUMA node #0")
+	sharable := leaf.FreeSupply().SharableCPUs().List()
+	if len(sharable) < 1 {
+		t.Fatalf("expected at least 1 sharable CPU on %q", leaf.Name())
+	}
+	cpus := cpuset.New(sharable[0])
+	uid := types.UID("claim-shared")
+
+	if err := p.allocateClaim(uid, cpus, "gold"); err != nil {
+		t.Fatalf("first allocateClaim() failed: %v", err)
+	}
+	afterFirst := leaf.FreeSupply().SharableCPUs()
+
+	if err := p.allocateClaim(uid, cpus, "gold"); err != nil {
+		t.Fatalf("second allocateClaim() (second container, same claim) failed: %v", err)
+	}
+	if got := leaf.FreeSupply().SharableCPUs(); !got.Equals(afterFirst) {
+		t.Errorf("second allocateClaim() for the same uid changed pool supply: got %s, want unchanged %s", got, afterFirst)
+	}
+	if got := p.claimContainerRefs[uid]; got != 2 {
+		t.Errorf("claimContainerRefs[%s] = %d, want 2 after two containers", uid, got)
+	}
+
+	// Releasing once (one of the two containers) must not restore the CPUs yet.
+	if err := p.releaseClaim(uid, cpus); err != nil {
+		t.Fatalf("first releaseClaim() failed: %v", err)
+	}
+	if got := leaf.FreeSupply().SharableCPUs(); got.Intersection(cpus).Size() != 0 {
+		t.Errorf("CPUs %s restored after releasing only one of two referencing containers: sharable=%s", cpus, got)
+	}
+
+	// Releasing the second (last) container must restore the CPUs.
+	if err := p.releaseClaim(uid, cpus); err != nil {
+		t.Fatalf("second releaseClaim() failed: %v", err)
+	}
+	if got := leaf.FreeSupply().SharableCPUs(); got.Intersection(cpus).Size() != cpus.Size() {
+		t.Errorf("CPUs %s not restored after releasing the last referencing container: sharable=%s", cpus, got)
+	}
+	if _, exists := p.claimContainerRefs[uid]; exists {
+		t.Errorf("claimContainerRefs[%s] still present after refcount reached zero", uid)
+	}
+}
+
+func TestReleaseClaimUnknownUIDNoop(t *testing.T) {
+	p := newDRATestPolicy(t)
+
+	leaf := findPoolNode(t, p, "NUMA node #0")
+	before := leaf.FreeSupply().SharableCPUs()
+
+	if err := p.releaseClaim(types.UID("never-claimed"), cpuset.New(before.List()[0])); err != nil {
+		t.Errorf("releaseClaim() for an unknown uid: got error %v, want nil (idempotent)", err)
+	}
+	if got := leaf.FreeSupply().SharableCPUs(); !got.Equals(before) {
+		t.Errorf("releaseClaim() for an unknown uid changed pool supply: got %s, want unchanged %s", got, before)
+	}
+}
+
+func TestAllocateClaimEvictsOverlappingExclusiveGrant(t *testing.T) {
+	p := newDRATestPolicy(t)
+
+	leaf := findPoolNode(t, p, "NUMA node #0")
+	sharable := leaf.FreeSupply().SharableCPUs().List()
+	if len(sharable) < 1 {
+		t.Fatalf("expected at least 1 sharable CPU on %q", leaf.Name())
+	}
+	claimed := cpuset.New(sharable[0])
+
+	victim := &mockContainer{returnValueForGetID: "victim"}
+	addTestGrant(t, p, leaf, victim, claimed)
+
+	if _, ok := p.allocations.getGrant("victim"); !ok {
+		t.Fatalf("test setup error: victim grant not present before allocateClaim")
+	}
+
+	if err := p.allocateClaim(types.UID("evict-claim"), claimed, "gold"); err != nil {
+		t.Fatalf("allocateClaim() failed: %v", err)
+	}
+
+	// No grant anywhere may still exclusively hold the claimed CPU: either
+	// the victim's original grant was released outright, or it was
+	// reallocated to CPUs that no longer overlap the claim.
+	for _, g := range p.allocations.grants {
+		if g.ExclusiveCPUs().Intersection(claimed).Size() != 0 {
+			t.Errorf("claimed CPU %s still exclusively granted to %s after eviction",
+				claimed, g.GetContainer().PrettyName())
+		}
+	}
+
+	// And the claimed CPU must not be free for a new regular allocation.
+	free := leaf.FreeSupply()
+	if free.SharableCPUs().Union(free.IsolatedCPUs()).Intersection(claimed).Size() != 0 {
+		t.Errorf("claimed CPU %s still free in %q supply after allocateClaim", claimed, leaf.Name())
 	}
 }

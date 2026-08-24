@@ -367,6 +367,7 @@ type mockContainer struct {
 	returnValueForGetID                   string
 	returnValueForQOSClass                v1.PodQOSClass
 	pod                                   cache.Pod
+	cdiDeviceNames                        []string
 }
 
 func (m *mockContainer) GetPod() (cache.Pod, bool) {
@@ -429,7 +430,7 @@ func (m *mockContainer) GetDevices() []*cache.Device {
 	panic("unimplemented")
 }
 func (m *mockContainer) GetCDIDeviceNames() []string {
-	return nil
+	return m.cdiDeviceNames
 }
 func (m *mockContainer) PrettyName() string {
 	return m.name

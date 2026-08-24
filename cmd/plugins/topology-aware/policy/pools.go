@@ -18,12 +18,15 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
+	"github.com/containers/nri-plugins/pkg/resmgr/dra"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	idset "github.com/intel/goresctrl/pkg/utils"
@@ -1338,4 +1341,250 @@ func combineHintScores(scores map[string]float64) (float64, float64) {
 		}
 	}
 	return combined, filtered
+}
+
+//
+// DRA claim identification and pool accounting (Step 8, Task 6).
+//
+
+// cdiClaimDeviceNamePrefix is the fixed prefix of every qualified CDI device
+// name the DRA plugin (pkg/resmgr/dra) generates for this driver: the CDI
+// "device" class is hardcoded there (cdi.go: cdiClass = "device"), and every
+// device name it builds starts with "claim-" (cdi.go: cdiDeviceName). This is
+// duplicated here (rather than imported) because cdiClass and cdiDeviceName
+// are unexported in package dra.
+const cdiClaimDeviceNamePrefix = DRADriverName + "/device=claim-"
+
+// parseCDIClaimUID extracts the DRA ResourceClaim UID from a qualified CDI
+// device name of the form "nri.topology-aware.cpu/device=claim-<uid>-<request>-<device>-<idx>"
+// (see pkg/resmgr/dra/cdi.go's cdiDeviceName), by trimming the trailing
+// "-<request>-<device>-<idx>" three '-'-separated tokens and returning what's
+// left.
+//
+// This is a best-effort fast path, not a lossless inverse of cdiDeviceName:
+// <request> and <device> are themselves sanitized names that may contain
+// '-' (see sanitizeCDIName), so when they do, the split boundary can land in
+// the wrong place and the returned string will include extra trailing
+// tokens that actually belong to <request>/<device>. It is exact whenever
+// <request> and <device> are single tokens (the common case), which is all
+// this function alone can guarantee. claimCPUsFromContainer compensates for
+// the ambiguous case by falling back to matching against the caller's known
+// set of live claim UIDs, which this function has no access to.
+func parseCDIClaimUID(deviceName string) (string, bool) {
+	rest, ok := strings.CutPrefix(deviceName, cdiClaimDeviceNamePrefix)
+	if !ok {
+		return "", false
+	}
+
+	tokens := strings.Split(rest, "-")
+	if len(tokens) < 4 {
+		return "", false
+	}
+
+	uid := strings.Join(tokens[:len(tokens)-3], "-")
+	if uid == "" {
+		return "", false
+	}
+
+	return uid, true
+}
+
+// claimLister is the minimal slice of *dra.Plugin's API that
+// claimCPUsFromContainer needs. Declaring it locally (instead of taking a
+// *dra.Plugin directly) lets tests exercise the CDI-name-to-claim lookup
+// logic with a lightweight fake instead of standing up a full dra.Plugin
+// (kubelet registration, CDI writer, claim store, etc.); *dra.Plugin
+// satisfies this interface, so production call sites are unaffected.
+//
+// Callers must nil-check the concrete *dra.Plugin *before* passing it in
+// here: a nil *dra.Plugin wrapped in a non-nil claimLister interface value
+// would panic inside LiveClaimsLocked (typed-nil trap), same as the
+// KubeClientFn accessor elsewhere in Step 8.
+type claimLister interface {
+	LiveClaimsLocked() map[types.UID][]dra.ResultAlloc
+}
+
+// matchLiveClaimUID resolves the DRA claim UID embedded in a qualified CDI
+// device name against the caller's known set of live claims.
+//
+// It first tries parseCDIClaimUID's fast-path split, which is exact
+// whenever <request>/<device> contain no '-'. Because they can (see
+// parseCDIClaimUID), that candidate is only accepted once confirmed against
+// live; otherwise this falls back to checking, for every live UID, whether
+// name has "<prefix><uid>-" as a literal string prefix. That check is
+// unambiguous because it uses the caller's actual known-live UIDs instead of
+// guessing a token boundary, resolving exactly the case parseCDIClaimUID
+// alone cannot.
+func matchLiveClaimUID(name string, live map[types.UID][]dra.ResultAlloc) (types.UID, bool) {
+	if uidStr, ok := parseCDIClaimUID(name); ok {
+		if uid := types.UID(uidStr); live[uid] != nil {
+			return uid, true
+		}
+	}
+
+	for uid := range live {
+		if strings.HasPrefix(name, cdiClaimDeviceNamePrefix+string(uid)+"-") {
+			return uid, true
+		}
+	}
+
+	return "", false
+}
+
+// claimCPUsFromContainer looks for a CDI device name on c that identifies a
+// live DRA claim, and if found returns that claim's UID, the union of its
+// allocated CPUs, and its cpuClass name. Returns ok=false if c carries no
+// recognizable claim device name, or if the embedded UID has no
+// corresponding entry in plugin.LiveClaimsLocked() (e.g. a foreign/stale CDI
+// device, or a claim that has already been unprepared).
+func claimCPUsFromContainer(c cache.Container, plugin claimLister) (types.UID, cpuset.CPUSet, string, bool) {
+	none := cpuset.New()
+
+	if plugin == nil {
+		return "", none, "", false
+	}
+
+	live := plugin.LiveClaimsLocked()
+
+	for _, name := range c.GetCDIDeviceNames() {
+		uid, ok := matchLiveClaimUID(name, live)
+		if !ok {
+			continue
+		}
+
+		allocs := live[uid]
+		cpus := cpuset.New()
+		className := ""
+		for _, a := range allocs {
+			parsed, err := cpuset.Parse(a.CPUs)
+			if err != nil {
+				log.Warnf("dra: claim %s: failed to parse allocated CPUs %q: %v", uid, a.CPUs, err)
+				continue
+			}
+			cpus = cpus.Union(parsed)
+			if className == "" {
+				className = a.ClassName
+			}
+		}
+		if cpus.IsEmpty() {
+			continue
+		}
+
+		return uid, cpus, className, true
+	}
+
+	return "", none, "", false
+}
+
+// poolForCPUs returns the tightest (deepest) pool whose statically assigned
+// CPU range (GetSupply(), which — unlike FreeSupply() — never changes with
+// allocation or claim accounting) fully contains cpus. Returns an error if no
+// single pool's range is a superset of cpus: either cpus lies (at least
+// partly) outside p.allowed altogether, or it straddles more than one leaf
+// pool (which a legitimate single-punit DRA CPU pick never does).
+func (p *policy) poolForCPUs(cpus cpuset.CPUSet) (Node, error) {
+	var (
+		best      Node
+		bestDepth = -1
+	)
+
+	for _, n := range p.pools {
+		full := n.GetSupply()
+		total := full.IsolatedCPUs().Union(full.ReservedCPUs()).Union(full.SharableCPUs())
+		if !cpus.IsSubsetOf(total) {
+			continue
+		}
+		if n.RootDistance() > bestDepth {
+			best = n
+			bestDepth = n.RootDistance()
+		}
+	}
+
+	if best == nil {
+		return nil, policyError("no single pool contains CPUs %s (outside allowed CPUs, or spanning more than one pool)", cpus)
+	}
+
+	return best, nil
+}
+
+// allocateClaim marks cpus as claimed by DRA ResourceClaim uid in the
+// tightest pool that fully contains them, evicting and requeueing for
+// reallocation any exclusive grant that overlaps those CPUs.
+//
+// Safe to call more than once for the same uid: a ResourceClaim with
+// AllowMultipleAllocations can back more than one container, and
+// AllocateResources calls this once per container. The pool marking itself
+// (and any eviction it triggers) is only performed for the first container;
+// subsequent calls just bump the per-claim container refcount so that
+// releaseClaim knows to keep the CPUs marked until the last referencing
+// container is released.
+func (p *policy) allocateClaim(uid types.UID, cpus cpuset.CPUSet, className string) error {
+	if cpus.IsEmpty() {
+		return policyError("cannot allocate DRA claim %s: empty CPU set", uid)
+	}
+
+	if p.claimContainerRefs == nil {
+		p.claimContainerRefs = make(map[types.UID]int)
+	}
+
+	if p.claimContainerRefs[uid] == 0 {
+		pool, err := p.poolForCPUs(cpus)
+		if err != nil {
+			return policyError("cannot allocate DRA claim %s (class %q, CPUs %s): %v", uid, className, cpus, err)
+		}
+
+		var evicted []cache.Container
+		for _, g := range p.allocations.grants {
+			if g.ExclusiveCPUs().Intersection(cpus).IsEmpty() {
+				continue
+			}
+			evicted = append(evicted, g.GetContainer())
+		}
+
+		for _, c := range evicted {
+			log.Infof("dra: evicting %s to free CPUs %s for claim %s", c.PrettyName(), cpus, uid)
+			p.releasePool(c)
+		}
+
+		pool.FreeSupply().ClaimCPUs(uid, cpus)
+
+		if len(evicted) > 0 {
+			if err := p.reallocateResources(evicted, nil); err != nil {
+				log.Errorf("dra: failed to fully reallocate %d container(s) evicted for claim %s: %v",
+					len(evicted), uid, err)
+			}
+		}
+	}
+
+	p.claimContainerRefs[uid]++
+
+	return nil
+}
+
+// releaseClaim decrements the container refcount for DRA claim uid and,
+// once the last referencing container has been released, restores cpus to
+// the pool that had them marked as claimed. A no-op (not an error) for a uid
+// that allocateClaim was never called for, or that has already been fully
+// released — ReleaseResources may run for containers the policy never saw
+// AllocateResources for (e.g. across a restart).
+func (p *policy) releaseClaim(uid types.UID, cpus cpuset.CPUSet) error {
+	if p.claimContainerRefs == nil || p.claimContainerRefs[uid] == 0 {
+		return nil
+	}
+
+	p.claimContainerRefs[uid]--
+	if p.claimContainerRefs[uid] > 0 {
+		return nil
+	}
+
+	delete(p.claimContainerRefs, uid)
+
+	pool, err := p.poolForCPUs(cpus)
+	if err != nil {
+		return policyError("cannot release DRA claim %s (CPUs %s): %v", uid, cpus, err)
+	}
+
+	pool.FreeSupply().UnclaimCPUs(uid)
+
+	return nil
 }

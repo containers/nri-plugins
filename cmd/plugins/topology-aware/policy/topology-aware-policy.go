@@ -21,6 +21,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/irq"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/types"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
@@ -74,6 +75,15 @@ type policy struct {
 	cpuClasses   *cpuclass.Handler         // CPU class handler (cpufreq, SST/PCT, etc.)
 	metrics      *TopologyAwareMetrics     // metrics provided by this policy
 	irqCnt       int                       // last applied [allocations.]irqCnt
+
+	// claimContainerRefs counts, per DRA ResourceClaim UID, how many live
+	// containers currently reference that claim's CPUs (allocateClaim
+	// increments, releaseClaim decrements). The pool supply is marked via
+	// Supply.ClaimCPUs on the first container and unmarked via
+	// Supply.UnclaimCPUs only once the last referencing container is
+	// released — this is what makes a multi-container ResourceClaim
+	// (AllowMultipleAllocations) safe.
+	claimContainerRefs map[types.UID]int
 }
 
 var opt = &cfgapi.Config{}
