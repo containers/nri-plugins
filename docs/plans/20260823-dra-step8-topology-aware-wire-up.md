@@ -464,12 +464,15 @@ attribute maps per class name. For each class where attrs differ: `if p.draPlugi
 
 ### Task 12: Update documentation
 
-- [ ] update `docs/dra/plan.md` step 8 entry: add "Landed:" line with commit range + deviations:
+- [x] update `docs/dra/plan.md` step 8 entry: add "Landed:" line with commit range + deviations:
       (a) `AllocateClaim`/`ReleaseClaim` not on `Backend` interface — unexported TA policy methods;
       (b) Deps closures dropped — NRI path only; (c) CDI device names as claim UID source;
       (d) `LiveClaimsLocked()` added to `Plugin`; (e) `Backend.Stop()` + `PostReconfigure(ctx)` added
-- [ ] update `docs/dra/design.md` if any resolved decisions require wording corrections
-- [ ] move this plan to `docs/plans/completed/`
+- [x] update `docs/dra/design.md` if any resolved decisions require wording corrections
+      (corrected "CDI env-var protocol"/"NRI enforcement flow"/"Where the code lives" table:
+      claim identification uses CDI device names, not NRI_CLASS/NRI_CPU<N> env-var parsing;
+      no resolved decision itself changed)
+- [x] move this plan to `docs/plans/completed/` (harness moves this after all review phases finish)
 
 ## Post-Completion
 

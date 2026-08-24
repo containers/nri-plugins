@@ -174,7 +174,7 @@ The DRA driver code sits in `pkg/resmgr/` (used by every policy binary) but is i
 | Prepare/Unprepare handlers | `pkg/resmgr/dra/` | On `Prepare`, call `cpuclass.Manager.PickCpus(className, punitID, N)` (new method) to select concrete CPUs; return CDI env vars. On `Unprepare`, `ReleaseCpus`. Policy-agnostic. |
 | Policy wiring (v1) | `cmd/plugins/topology-aware/main.go` + `.../policy/` | Instantiate `dra.Plugin` with driver name `nri.topology-aware.cpu`. Register a claim-allocation callback that lets topology-aware's `allocateResources` see DRA-preselected CPUs. |
 | Policy wiring (v2) | `cmd/plugins/balloons/` | Same shared driver, driver name `nri.balloons.cpu`. Deferred to v2. |
-| NRI enforcement | existing `cmd/plugins/topology-aware/policy/pools.go` (v1); `cmd/plugins/balloons/policy/balloons-policy.go` (v2) | On `CreateContainer`, new helper parses env vars (see below) and treats those CPUs as claim-pre-allocated. Existing `cpuclass` application path (`UseClass()`, EPP writer, gov writer, PCT `AssociateCPUs`) runs unchanged. |
+| NRI enforcement | existing `cmd/plugins/topology-aware/policy/pools.go` (v1, landed); `cmd/plugins/balloons/policy/balloons-policy.go` (v2) | v1 landed: on `AllocateResources`/`ReleaseResources`, `claimCPUsFromContainer` reads the container's CDI device names (`cache.Container.GetCDIDeviceNames()`) — not env vars — to identify the claim and treats those CPUs as claim-pre-allocated. Existing `cpuclass` application path (`UseClass()`, EPP writer, gov writer, PCT `AssociateCPUs`) runs unchanged. |
 | Config surface | `pkg/apis/config/v1alpha1/resmgr/policy/topologyaware/config.go` (v1); `.../balloons/config.go` (v2) | New `dra` block under the policy's config. Not shared with other policies — each policy owns its own switch. |
 | Helm chart | `deployment/helm/topology-aware/templates/` (v1); `deployment/helm/balloons/templates/` (v2) | Add RBAC, plugin/plugin-registry mounts, per-policy `DeviceClass` objects. Reuse pattern from [PR #536](https://github.com/containers/nri-plugins/pull/536). |
 
@@ -187,7 +187,7 @@ Following [PR #536](https://github.com/containers/nri-plugins/pull/536)'s mechan
 
 Renamed from [PR #536](https://github.com/containers/nri-plugins/pull/536)'s `DRA_CPU<N>=1` to `NRI_CPU<N>=1` because `NRI_CLASS` is new and the pair should share a prefix. Existing [PR #536](https://github.com/containers/nri-plugins/pull/536) downstream forks can be updated by search/replace.
 
-The NRI-side handler (`getClaimedCPUs` / equivalent) returns both the CPU set and the class name. The policy allocates those CPUs into the appropriate pool/balloon *and* applies the cpuClass to them (which includes SST CLOS association, EPP write, governor write, uncore freq write).
+**Superseded for topology-aware (Step 8, landed).** The env vars above are still written into the CDI spec by the Step 7 CDI writer, but the topology-aware policy does not parse them to identify a claim. Instead it reads the container's CDI device names (`cache.Container.GetCDIDeviceNames()`) and recovers the claim UID from the `claim-<uid>-<sanitize(request)>-<device>-<idx>` device-name shape (`parseCDIClaimUID`, with a `matchLiveClaimUID` fallback for ambiguous multi-token names); CPUs and class name are then looked up from `Plugin.LiveClaimsLocked()[uid]`, not from env vars. This is independent of CDI container-edit ordering and avoids relying on env-var visibility at the NRI call site. `NRI_CLASS`/`NRI_CPU<N>` remain in the CDI spec as informational/debugging aids (and for any non-topology-aware consumer) but are not the v1 identification mechanism. See the "NRI enforcement flow" section below, corrected accordingly.
 
 ### Publish flow (at plugin start + on Reconfigure)
 
@@ -226,10 +226,14 @@ The NRI-side handler (`getClaimedCPUs` / equivalent) returns both the CPU set an
 
 ### NRI enforcement flow (unchanged trust boundary)
 
-1. NRI `CreateContainer` fires. Policy reads container env.
-2. Helper parses `NRI_CLASS` and `NRI_CPU<N>=1` env vars; returns `(className, cpuset, residualNativeCpuCount)`.
-3. Existing pool/balloon allocator treats the DRA-preselected CPUs as claim-pre-allocated (analogous to [PR #536](https://github.com/containers/nri-plugins/pull/536)'s `getClaimedCPUs`).
+**As landed for topology-aware (Step 8):**
+
+1. NRI `AllocateResources`/`ReleaseResources` fire. Policy reads the container's CDI device names (`cache.Container.GetCDIDeviceNames()`), not env vars.
+2. `claimCPUsFromContainer` parses a claim UID from a device name matching the driver's `claim-<uid>-...` shape (`parseCDIClaimUID`, falling back to `matchLiveClaimUID` against the plugin's known live-claim UIDs for ambiguous names), then looks up the CPU set and class name from `Plugin.LiveClaimsLocked()[uid]`.
+3. `(p *policy) allocateClaim`/`releaseClaim` mark/unmark those CPUs tree-wide in the pool supply (`Supply.ClaimCPUs`/`UnclaimCPUs`), evicting/reallocating any conflicting exclusive grant on allocate. This is the topology-aware analogue of [PR #536](https://github.com/containers/nri-plugins/pull/536)'s `getClaimedCPUs`, but keyed off CDI device names rather than `NRI_CLASS`/`NRI_CPU<N>` env vars.
 4. Existing `cpuclass.Manager.UseClass(className, cpuset)` applies all class properties: SST CLOS via `pct.Allocator.UseClass()`, EPP via `cpuclass.writeEPP()`, governor via cpufreq, uncore freq, disabled Cstates.
+
+(The `NRI_CLASS`/`NRI_CPU<N>` env-var protocol above remains part of the CDI spec written by Step 7 and is available to any consumer that wants to read it, but is not how topology-aware identifies a claim.)
 
 ### Release flow
 
@@ -402,6 +406,7 @@ If B proves too restrictive in practice (e.g., long-lived claims block urgent cl
 
 ## Change log
 
+- **2026-08-24 (latest).** Step 8 (topology-aware wire-up) landed — see [plan.md](plan.md) Step 8. Corrected "CDI env-var protocol," "NRI enforcement flow," and the "Where the code lives" table: the topology-aware policy identifies a claim from CDI device names (`cache.Container.GetCDIDeviceNames()` + `parseCDIClaimUID`/`matchLiveClaimUID`), not by parsing `NRI_CLASS`/`NRI_CPU<N>` env vars at the NRI call site. Those env vars are still written into the CDI spec (Step 7, unchanged) but are informational only for v1's identification path. No resolved decision changed; this is a wording correction to match what landed.
 - **2026-08-23 (latest).** CDI device naming updated to per-result `claim-<uid>-<sanitize(request)>-<device>-<idx>` (replaces per-claim `claim-<uid>`); spec file is one-per-claim at `<vendor>-device_<uid>.yaml`. Concurrency model made precise: resmgr write-lock via `WithLock func(func())` in Deps; entire Prepare/Unprepare body runs inside `WithLock`; `PublishResources` guards its device-listing calls under `WithLock`. Added must-not-hold-lock contract for `Start`, `PublishResources`, and `RestoreClaims`; documented `RestoreClaimsLocked()` as the lock-held complement for use inside `resmgr.apply()`.
 - **2026-08-22.** Class-derived attribute freshness resolved as Option B: refuse Reconfigure that changes class-derived attributes when live DRA claims exist for the affected class. Key insight: resmgr `reconfigure` already implements rollback-on-failure — `m.policy.Reconfigure` returning an error triggers `apply(old cfg)` and leaves `m.cfg` unchanged, so B fits the existing component-refusal contract rather than fighting it. Updated recommendation, mechanics, and fallback in the Discussion section; moved to Resolved decisions item 8; Open decisions now empty.
 - **2026-08-19 (latest).** Added note to "Publish flow" that "publish on Reconfigure" is a nri-plugins-specific requirement; both reference DRA drivers (`dra-driver-cpu` and `dra-example-driver`) publish exactly once at start and never re-publish. Reinforces the framing that class-freshness (open decision 1) is a problem we're inventing by supporting live Reconfigure.
