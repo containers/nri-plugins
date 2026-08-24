@@ -21,6 +21,7 @@ import (
 
 	"github.com/containers/nri-plugins/pkg/irq"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
+	resapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -642,6 +643,35 @@ func (p *policy) Reconfigure(newCfg any) error {
 	savedPolicy := *p
 	allocations := savedPolicy.allocations.clone()
 
+	// DRA enable/disable flip: buildDRAPlugin only ever runs once, from the
+	// initial Setup() (see its doc comment) — Reconfigure() never tears
+	// down or (re)builds p.draPlugin. A config change that flips
+	// cfg.DRAEnabled() would desync p.draPlugin from the new config's
+	// intent (e.g. "disabled" in the new config but the plugin keeps
+	// running, or "enabled" but no plugin ever gets built), so it is
+	// refused outright, independent of any live claims. This check must be
+	// in Reconfigure(), not Setup(): p.cfg is nil at initial Setup() time
+	// (the policy is zero-valued at construction), making a "detect
+	// Reconfigure by checking p.cfg" heuristic in Setup() unreachable dead
+	// code (see buildDRAPlugin's/Setup()'s comments).
+	if cfg.DRAEnabled() != p.cfg.DRAEnabled() {
+		return policyError("failed to reconfigure: cannot change dra.enabled (%v -> %v) without a restart",
+			p.cfg.DRAEnabled(), cfg.DRAEnabled())
+	}
+
+	// Snapshot the DRA-visible device attributes of every currently
+	// configured cpuClass *before* initialize() discards p.cpuClasses (it
+	// sets p.cpuClasses = nil, then builds a fresh Handler from the new
+	// config). Compared below (once the new Handler is built) against an
+	// equivalent post-initialize() snapshot to detect a cpuClass attribute
+	// change that would invalidate any DRA claim already backed by that
+	// class (resolved decision 8 / Option B: refuse, don't silently
+	// reshape live claims).
+	var oldDRADevices []resapi.Device
+	if p.draPlugin != nil && p.cpuClasses != nil {
+		oldDRADevices, _ = p.cpuClasses.DRADevices(DRADriverName)
+	}
+
 	opt = cfg
 	p.cfg = cfg
 	defaultPrio = cfg.DefaultCPUPriority.Value()
@@ -651,7 +681,26 @@ func (p *policy) Reconfigure(newCfg any) error {
 
 	if err := p.initialize(); err != nil {
 		*p = savedPolicy
+		opt = p.cfg
+		defaultPrio = p.cfg.DefaultCPUPriority.Value()
 		return policyError("failed to reconfigure: %v", err)
+	}
+
+	if p.draPlugin != nil {
+		var newDRADevices []resapi.Device
+		if p.cpuClasses != nil {
+			newDRADevices, _ = p.cpuClasses.DRADevices(DRADriverName)
+		}
+		liveClasses := p.draPlugin.LiveClaimClasses()
+		for _, class := range changedDRAClasses(oldDRADevices, newDRADevices) {
+			if live := liveClasses[class]; live > 0 {
+				*p = savedPolicy
+				opt = p.cfg
+				defaultPrio = p.cfg.DefaultCPUPriority.Value()
+				return policyError("failed to reconfigure: cpuClass %q has %d live DRA claim(s); "+
+					"reconfiguring its DRA-visible attributes would invalidate them", class, live)
+			}
+		}
 	}
 
 	if err := p.registerImplicitAffinities(); err != nil {
@@ -674,10 +723,18 @@ func (p *policy) Reconfigure(newCfg any) error {
 		return policyError("failed to reconfigure: %v", err)
 	}
 
-	// Re-mark any DRA-claimed CPUs in the freshly rebuilt pool supplies.
-	// Still inside the resmgr write lock held by the caller: reapplyDRAClaims
-	// only reads in-memory Plugin/pool state (no I/O, no WithLock), so it is
-	// safe to run here.
+	// Commit path (the refusal checks above did not fire): rebuild the DRA
+	// plugin's own in-memory HP-CPU accounting (RestoreClaimsLocked) and
+	// re-mark claimed CPUs in the freshly rebuilt pool supplies
+	// (reapplyDRAClaims). Both calls are still inside the resmgr write lock
+	// held by the caller — neither does I/O or calls WithLock, so both are
+	// safe to run here. draPlugin.PublishResources (I/O) is deferred to
+	// PostReconfigure(), which runs after the caller releases the lock.
+	if p.draPlugin != nil {
+		if err := p.draPlugin.RestoreClaimsLocked(); err != nil {
+			log.Errorf("dra: Reconfigure: RestoreClaimsLocked: %v", err)
+		}
+	}
 	p.reapplyDRAClaims()
 
 	p.root.Dump("<post-config>")

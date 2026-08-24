@@ -424,20 +424,20 @@ attribute maps per class name. For each class where attrs differ: `if p.draPlugi
 - Modify: `cmd/plugins/topology-aware/policy/dra_test.go`
 - Modify: balloons + template backends (no-op `PostReconfigure`)
 
-- [ ] write test: Reconfigure changes an HP-class attr + live claim → returns error; `p.cpuClasses`
+- [x] write test: Reconfigure changes an HP-class attr + live claim → returns error; `p.cpuClasses`
       and `p.root` are the old objects (verify `*p = savedPolicy` was applied); `opt` is old config
-- [ ] write test: Reconfigure with zero live claims for changed class → succeeds
-- [ ] write test: Reconfigure that changes `DRAEnabled()` (false→true or true→false) → returns
+- [x] write test: Reconfigure with zero live claims for changed class → succeeds
+- [x] write test: Reconfigure that changes `DRAEnabled()` (false→true or true→false) → returns
       error regardless of live claims
-- [ ] write test: `opt` (package global) is the old config after a refused Reconfigure
-- [ ] write test: `PostReconfigure()` not called while resmgr lock is held (re-entrancy stub);
+- [x] write test: `opt` (package global) is the old config after a refused Reconfigure
+- [x] write test: `PostReconfigure()` not called while resmgr lock is held (re-entrancy stub);
       also not called when `m.reconfigure()` returns an error (guarded on `reconfErr == nil`)
-- [ ] add `PostReconfigure() error` to `Backend` interface and `Policy` wrapper;
+- [x] add `PostReconfigure() error` to `Backend` interface and `Policy` wrapper;
       TA implementation calls `p.draPlugin.PublishResources(p.draCtx)` if set (Task 9 stores
       `draCtx context.Context` alongside `draCtxCancel`); balloons/template return nil
-- [ ] in `resmgr/resource-manager.go` `updateConfig()`, after the existing post-unlock calls and
+- [x] in `resmgr/resource-manager.go` `updateConfig()`, after the existing post-unlock calls and
       **only when `reconfErr == nil`**, call `m.policy.PostReconfigure()`
-- [ ] in `topology-aware Reconfigure()`:
+- [x] in `topology-aware Reconfigure()`:
       - **before** `opt = newCfg` / `p.cfg = newCfg`: snapshot old attrs via
         `p.cpuClasses.DRADevices(DRADriverName)` if `draPlugin != nil` and `p.cpuClasses != nil`
       - add DRA-enabled flip check: if `newCfg.DRAEnabled() != p.cfg.DRAEnabled()` → refuse
@@ -449,7 +449,7 @@ attribute maps per class name. For each class where attrs differ: `if p.draPlugi
       - on commit: call `p.draPlugin.RestoreClaimsLocked()` (inside the lock), then
         `p.reapplyDRAClaims()` (Task 8; inside the lock)
       - (PublishResources flows through `PostReconfigure` after the lock releases — no extra call here)
-- [ ] run tests — must pass before task 11
+- [x] run tests — must pass before task 11
 
 ### Task 11: Verify acceptance criteria
 

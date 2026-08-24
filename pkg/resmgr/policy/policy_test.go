@@ -47,17 +47,20 @@ func newTestCache(t *testing.T) cache.Cache {
 // mockBackend is a minimal Backend implementation that records calls and
 // the options it was set up with, for use by policy-level unit tests.
 type mockBackend struct {
-	setupOpts   *BackendOptions
-	setupErr    error
-	startErr    error
-	stopErr     error
-	reconfigErr error
-	startCalled bool
-	stopCalled  bool
-	setupCalled bool
-	callOrder   *[]string
-	onStart     func()
-	onSetup     func(*BackendOptions)
+	setupOpts           *BackendOptions
+	setupErr            error
+	startErr            error
+	stopErr             error
+	reconfigErr         error
+	postReconfigureErr  error
+	startCalled         bool
+	stopCalled          bool
+	setupCalled         bool
+	postReconfigureCall int
+	callOrder           *[]string
+	onStart             func()
+	onSetup             func(*BackendOptions)
+	onPostReconfigure   func()
 }
 
 func (m *mockBackend) Name() string        { return "mock" }
@@ -76,6 +79,17 @@ func (m *mockBackend) Setup(opts *BackendOptions) error {
 }
 
 func (m *mockBackend) Reconfigure(interface{}) error { return m.reconfigErr }
+
+func (m *mockBackend) PostReconfigure() error {
+	m.postReconfigureCall++
+	if m.callOrder != nil {
+		*m.callOrder = append(*m.callOrder, "post-reconfigure")
+	}
+	if m.onPostReconfigure != nil {
+		m.onPostReconfigure()
+	}
+	return m.postReconfigureErr
+}
 
 func (m *mockBackend) Start() error {
 	m.startCalled = true
@@ -127,6 +141,29 @@ func TestPolicyStopNilActiveBackendDoesNotPanic(t *testing.T) {
 	p := &policy{}
 	assert.NotPanics(t, func() {
 		err := p.Stop()
+		assert.NoError(t, err)
+	})
+}
+
+// TestPolicyPostReconfigureForwardsToBackend verifies that Policy.PostReconfigure
+// forwards to the active backend's PostReconfigure, and propagates its error.
+func TestPolicyPostReconfigureForwardsToBackend(t *testing.T) {
+	backend := &mockBackend{postReconfigureErr: assert.AnError}
+	p, err := NewPolicy(backend, newTestCache(t), &Options{})
+	require.NoError(t, err)
+
+	err = p.PostReconfigure()
+	assert.Equal(t, assert.AnError, err)
+	assert.Equal(t, 1, backend.postReconfigureCall)
+}
+
+// TestPolicyPostReconfigureNilActiveBackendDoesNotPanic verifies that
+// PostReconfigure is safe to call on a policy with no active backend set
+// (mirrors TestPolicyStopNilActiveBackendDoesNotPanic).
+func TestPolicyPostReconfigureNilActiveBackendDoesNotPanic(t *testing.T) {
+	p := &policy{}
+	assert.NotPanics(t, func() {
+		err := p.PostReconfigure()
 		assert.NoError(t, err)
 	})
 }

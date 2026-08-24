@@ -16,11 +16,16 @@ package topologyaware
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path"
 	"strings"
 	"testing"
 
+	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 
@@ -319,5 +324,356 @@ func TestBuildDRAPluginValidateClassesUsesLiveConfig(t *testing.T) {
 	err := p.draPlugin.PublishResources(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "called before Start") {
 		t.Fatalf("PublishResources() after simulated Reconfigure = %v, want \"called before Start\" error (proves ValidateClasses passed)", err)
+	}
+}
+
+// ---- Task 10 tests: Reconfigure refusal (DRA-enabled flip, cpuClass
+// attribute change with live claims) and its rollback/opt-restoration. ----
+
+// sstOverrideJSON builds an OVERRIDE_SST mock document with a single
+// package/punit spanning CPUs 0-7, with the given HP CPU capacity. Mirrors
+// newActiveClassHandler's fixture (dra_adapter_test.go) but with a
+// parameterized capacity, so a test can force a genuine cpuClass DRA-device
+// attribute change (capacity) between an initial Setup() and a later
+// Reconfigure() without touching the cpuClass config itself.
+func sstOverrideJSON(hpCpus int) string {
+	return fmt.Sprintf(
+		`{"supported":true,"clos_count":4,"packages":[{"id":0,"cpus":"0-7","tf_supported":true,"tf_enabled":true,"cp_supported":true,"cp_enabled":false,"punits":[{"id":0,"cpus":"0-7","max_hp_cpus":%d,"guaranteed_hp_cpus":%d}]}]}`,
+		hpCpus, hpCpus)
+}
+
+// setupDRATestPolicyWithActivePCT builds a real *policy (via
+// setupDRATestPolicy) with DRA enabled, one managed-PCT HP cpuClass ("hp",
+// PctPriority "high"), and OVERRIDE_SST/OVERRIDE_SST_STATE_DIR seeded so
+// p.cpuClasses ends up backed by a real (mocked) active PCT allocator with
+// non-empty DRADevices() output. Required by the Reconfigure refusal tests,
+// which need a genuine, comparable device-attribute change between two
+// configurations — a nil or inactive Handler always reports zero devices,
+// which can never "change".
+func setupDRATestPolicyWithActivePCT(t *testing.T, hpCpus int) *policy {
+	t.Helper()
+	t.Setenv("OVERRIDE_SST", sstOverrideJSON(hpCpus))
+	t.Setenv("OVERRIDE_SST_STATE_DIR", t.TempDir())
+
+	p, err := setupDRATestPolicy(t,
+		func(cfg *cfgapi.Config) {
+			cfg.CPUClasses = []*cfgapi.CPUClass{{Name: "hp", PctPriority: "high"}}
+			withDRAEnabled(cfg)
+		},
+		func(opts *policyapi.BackendOptions) {
+			opts.KubeClientFn = func() kubernetes.Interface { return fake.NewClientset() }
+			opts.NodeName = "test-node"
+			opts.WithLock = func(f func()) { f() }
+		},
+		func(p *policy) { p.cdiDir = t.TempDir() },
+	)
+	if err != nil {
+		t.Fatalf("Setup() failed: %v", err)
+	}
+	if p.cpuClasses == nil {
+		t.Fatal("test setup error: p.cpuClasses is nil (PCT mock not active)")
+	}
+	if p.draPlugin == nil {
+		t.Fatal("test setup error: p.draPlugin is nil")
+	}
+	return p
+}
+
+// seedLiveHPClaim runs PrepareResourceClaims on p.draPlugin for a single
+// claim requesting numCPUs from the first device p.cpuClasses.DRADevices
+// reports, so that a subsequent p.draPlugin.LiveClaimClasses() call reports
+// that device's cpuClass as live. Fails the test on any error.
+func seedLiveHPClaim(t *testing.T, p *policy, uid types.UID, numCPUs int) {
+	t.Helper()
+
+	devices, err := p.cpuClasses.DRADevices(DRADriverName)
+	if err != nil || len(devices) == 0 {
+		t.Fatalf("test setup error: DRADevices() = (%v, %v), want at least one device", devices, err)
+	}
+
+	claim := &resourceapi.ResourceClaim{
+		ObjectMeta: metav1.ObjectMeta{UID: uid},
+		Status: resourceapi.ResourceClaimStatus{
+			Allocation: &resourceapi.AllocationResult{
+				Devices: resourceapi.DeviceAllocationResult{
+					Results: []resourceapi.DeviceRequestAllocationResult{
+						{
+							Driver:  DRADriverName,
+							Pool:    "pool0",
+							Device:  devices[0].Name,
+							Request: "req0",
+							ConsumedCapacity: map[resourceapi.QualifiedName]resource.Quantity{
+								"nri/cpus": resource.MustParse(fmt.Sprintf("%d", numCPUs)),
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	result, err := p.draPlugin.PrepareResourceClaims(context.Background(), []*resourceapi.ResourceClaim{claim})
+	if err != nil {
+		t.Fatalf("PrepareResourceClaims() unexpected error: %v", err)
+	}
+	r, ok := result[uid]
+	if !ok {
+		t.Fatalf("PrepareResourceClaims() result missing uid %s", uid)
+	}
+	if r.Err != nil {
+		t.Fatalf("PrepareResourceClaims() PrepareResult.Err = %v, want nil", r.Err)
+	}
+}
+
+// TestReconfigureRefusesCpuClassAttrChangeWithLiveClaim verifies that a
+// Reconfigure() call which changes a cpuClass's DRA-visible device
+// attributes (here: HP CPU capacity, via a changed OVERRIDE_SST punit
+// definition) is refused when a live DRA claim references that class, and
+// that the refusal performs a *full* rollback -- *p = savedPolicy, not just
+// opt = p.cfg (see the Reconfigure doc comment in topology-aware-policy.go
+// and the plan's "opt global + full rollback" note). Verified by checking
+// that p.cpuClasses/p.root are the exact pre-Reconfigure objects (pointer
+// identity), not merely equivalent ones, and that opt/p.cfg are restored to
+// the pre-Reconfigure *cfgapi.Config.
+func TestReconfigureRefusesCpuClassAttrChangeWithLiveClaim(t *testing.T) {
+	p := setupDRATestPolicyWithActivePCT(t, 4)
+
+	seedLiveHPClaim(t, p, types.UID("live-claim-1"), 2)
+
+	liveClasses := p.draPlugin.LiveClaimClasses()
+	if liveClasses["hp"] == 0 {
+		t.Fatalf("test setup error: LiveClaimClasses() = %v, want class \"hp\" > 0", liveClasses)
+	}
+
+	oldCfg := p.cfg
+	oldCpuClasses := p.cpuClasses
+	oldRoot := p.root
+
+	// Change the mocked hardware's HP CPU capacity: once initialize()
+	// creates a fresh cpuclass.Handler from this env var, this changes the
+	// "nri/cpus" capacity attribute buildDRADevices emits for class "hp",
+	// without touching the cpuClass config itself (still {"hp", "high"}).
+	t.Setenv("OVERRIDE_SST", sstOverrideJSON(2))
+
+	newCfg := &cfgapi.Config{
+		ReservedResources: cfgapi.Constraints{cfgapi.CPU: "750m"},
+		CPUClasses:        []*cfgapi.CPUClass{{Name: "hp", PctPriority: "high"}},
+		DRA:               &cfgapi.TopologyAwareDRA{Enabled: true},
+	}
+
+	err := p.Reconfigure(newCfg)
+	if err == nil {
+		t.Fatal("Reconfigure() = nil, want an error (live claim on a changed cpuClass)")
+	}
+
+	if p.cpuClasses != oldCpuClasses {
+		t.Error("p.cpuClasses was replaced despite the refused Reconfigure: *p = savedPolicy was not applied")
+	}
+	if p.root != oldRoot {
+		t.Error("p.root was replaced despite the refused Reconfigure: *p = savedPolicy was not applied")
+	}
+	if opt != oldCfg {
+		t.Error("opt not restored to the pre-Reconfigure config after the refused Reconfigure")
+	}
+	if p.cfg != oldCfg {
+		t.Error("p.cfg was not restored to the pre-Reconfigure config after the refused Reconfigure")
+	}
+}
+
+// TestReconfigureSucceedsWithZeroLiveClaimsForChangedClass verifies that the
+// same cpuClass attribute change exercised in
+// TestReconfigureRefusesCpuClassAttrChangeWithLiveClaim is *not* refused
+// when no live DRA claim references the changed class.
+func TestReconfigureSucceedsWithZeroLiveClaimsForChangedClass(t *testing.T) {
+	p := setupDRATestPolicyWithActivePCT(t, 4)
+
+	if liveClasses := p.draPlugin.LiveClaimClasses(); len(liveClasses) != 0 {
+		t.Fatalf("test setup error: LiveClaimClasses() = %v, want empty", liveClasses)
+	}
+
+	t.Setenv("OVERRIDE_SST", sstOverrideJSON(2))
+
+	newCfg := &cfgapi.Config{
+		ReservedResources: cfgapi.Constraints{cfgapi.CPU: "750m"},
+		CPUClasses:        []*cfgapi.CPUClass{{Name: "hp", PctPriority: "high"}},
+		DRA:               &cfgapi.TopologyAwareDRA{Enabled: true},
+	}
+
+	if err := p.Reconfigure(newCfg); err != nil {
+		t.Fatalf("Reconfigure() = %v, want nil (no live claims on the changed class)", err)
+	}
+}
+
+// TestReconfigureRefusesDRAEnabledFlipToTrue verifies that Reconfigure()
+// refuses a config change that turns DRA on when it was off at Setup() time.
+// buildDRAPlugin only ever runs once, from Setup() (see its doc comment) --
+// Reconfigure() never (re)builds p.draPlugin, so flipping cfg.DRAEnabled()
+// in a later Reconfigure() would desync p.draPlugin from the new config's
+// intent; it is refused outright.
+func TestReconfigureRefusesDRAEnabledFlipToTrue(t *testing.T) {
+	p := newDRATestPolicy(t) // DRA disabled by default (cfg.DRA == nil)
+	if p.draPlugin != nil {
+		t.Fatal("test setup error: draPlugin unexpectedly non-nil")
+	}
+
+	oldCfg := p.cfg
+
+	newCfg := &cfgapi.Config{
+		ReservedResources: cfgapi.Constraints{cfgapi.CPU: "750m"},
+		DRA:               &cfgapi.TopologyAwareDRA{Enabled: true},
+	}
+
+	err := p.Reconfigure(newCfg)
+	if err == nil {
+		t.Fatal("Reconfigure() = nil, want an error (DRAEnabled() flip false -> true)")
+	}
+	if opt != oldCfg {
+		t.Error("opt not restored to the pre-Reconfigure config after the refused DRAEnabled flip")
+	}
+	if p.draPlugin != nil {
+		t.Error("draPlugin unexpectedly built by a refused Reconfigure")
+	}
+}
+
+// TestReconfigureRefusesDRAEnabledFlipToFalse mirrors
+// TestReconfigureRefusesDRAEnabledFlipToTrue for the opposite direction: DRA
+// was enabled (and successfully built) at Setup() time, and a later
+// Reconfigure() tries to turn it off. Refused regardless of live claims --
+// this test seeds none, showing the flip check fires independently of any
+// live-claim check.
+func TestReconfigureRefusesDRAEnabledFlipToFalse(t *testing.T) {
+	p := setupDRATestPolicyWithActivePCT(t, 4)
+	oldCfg := p.cfg
+	oldDRAPlugin := p.draPlugin
+
+	newCfg := &cfgapi.Config{
+		ReservedResources: cfgapi.Constraints{cfgapi.CPU: "750m"},
+		CPUClasses:        []*cfgapi.CPUClass{{Name: "hp", PctPriority: "high"}},
+		// DRA left nil: DRAEnabled() == false.
+	}
+
+	err := p.Reconfigure(newCfg)
+	if err == nil {
+		t.Fatal("Reconfigure() = nil, want an error (DRAEnabled() flip true -> false)")
+	}
+	if opt != oldCfg {
+		t.Error("opt not restored to the pre-Reconfigure config after the refused DRAEnabled flip")
+	}
+	if p.draPlugin != oldDRAPlugin {
+		t.Error("draPlugin was replaced/cleared despite the refused Reconfigure")
+	}
+}
+
+// TestPostReconfigurePublishesResourcesWhenDRAEnabled verifies that
+// (*policy).PostReconfigure calls draPlugin.PublishResources(p.draCtx) when
+// DRA is enabled. PublishResources itself requires Start() to have run (it
+// errors "called before Start" otherwise -- see
+// TestBuildDRAPluginValidateClassesUsesLiveConfig); that specific error is
+// used here as the probe that PostReconfigure actually reached
+// PublishResources, without needing a real kubelet registration directory.
+func TestPostReconfigurePublishesResourcesWhenDRAEnabled(t *testing.T) {
+	p := setupDRATestPolicyWithActivePCT(t, 4)
+	p.draCtx = context.Background()
+
+	err := p.PostReconfigure()
+	if err == nil || !strings.Contains(err.Error(), "called before Start") {
+		t.Fatalf("PostReconfigure() = %v, want a \"called before Start\" error from PublishResources", err)
+	}
+}
+
+// TestPostReconfigureNilDRAPluginNoop verifies that PostReconfigure is a
+// no-op (no panic, nil error) when DRA is disabled (draPlugin == nil, the
+// default).
+func TestPostReconfigureNilDRAPluginNoop(t *testing.T) {
+	p := newDRATestPolicy(t)
+	if p.draPlugin != nil {
+		t.Fatal("test setup error: draPlugin unexpectedly non-nil")
+	}
+
+	if err := p.PostReconfigure(); err != nil {
+		t.Fatalf("PostReconfigure() with nil draPlugin = %v, want nil", err)
+	}
+}
+
+// TestChangedDRAClassesNoDifference verifies that changedDRAClasses reports
+// no changed classes when the old and new device snapshots are identical
+// (down to attribute values), even when the device slices are ordered
+// differently -- groupDRADevicesByClass sorts by device name before
+// comparing.
+func TestChangedDRAClassesNoDifference(t *testing.T) {
+	className := "hp"
+	dev := func(name string) resourceapi.Device {
+		return resourceapi.Device{
+			Name: name,
+			Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+				"nri/cpuClass": {StringValue: &className},
+			},
+		}
+	}
+
+	oldDevices := []resourceapi.Device{dev("hp-pkg0-punit0"), dev("hp-pkg0-punit1")}
+	newDevices := []resourceapi.Device{dev("hp-pkg0-punit1"), dev("hp-pkg0-punit0")} // reordered
+
+	if changed := changedDRAClasses(oldDevices, newDevices); len(changed) != 0 {
+		t.Errorf("changedDRAClasses() = %v, want empty (identical device sets, different order)", changed)
+	}
+}
+
+// TestChangedDRAClassesDetectsAttributeChange verifies that changedDRAClasses
+// reports a class whose device attributes differ between the two snapshots,
+// and that an unrelated, unchanged class is not reported.
+func TestChangedDRAClassesDetectsAttributeChange(t *testing.T) {
+	hpClass, lpClass := "hp", "lp"
+	devWithPunit := func(name, class string, punitID int64) resourceapi.Device {
+		return resourceapi.Device{
+			Name: name,
+			Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+				"nri/cpuClass": {StringValue: &class},
+				"nri/punitID":  {IntValue: &punitID},
+			},
+		}
+	}
+
+	var punit0, punit1 int64 = 0, 1
+	oldDevices := []resourceapi.Device{
+		devWithPunit("hp-dev", hpClass, punit0),
+		devWithPunit("lp-dev", lpClass, punit0),
+	}
+	newDevices := []resourceapi.Device{
+		devWithPunit("hp-dev", hpClass, punit1), // changed
+		devWithPunit("lp-dev", lpClass, punit0), // unchanged
+	}
+
+	changed := changedDRAClasses(oldDevices, newDevices)
+	if len(changed) != 1 || changed[0] != hpClass {
+		t.Errorf("changedDRAClasses() = %v, want [%q]", changed, hpClass)
+	}
+}
+
+// TestChangedDRAClassesDeviceAddedOrRemoved verifies that a class gaining or
+// losing a device between snapshots counts as "changed" for that class.
+func TestChangedDRAClassesDeviceAddedOrRemoved(t *testing.T) {
+	className := "hp"
+	dev := func(name string) resourceapi.Device {
+		return resourceapi.Device{
+			Name: name,
+			Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+				"nri/cpuClass": {StringValue: &className},
+			},
+		}
+	}
+
+	oldDevices := []resourceapi.Device{dev("hp-pkg0-punit0")}
+	newDevices := []resourceapi.Device{} // class removed entirely
+
+	changed := changedDRAClasses(oldDevices, newDevices)
+	if len(changed) != 1 || changed[0] != className {
+		t.Errorf("changedDRAClasses() with a removed class = %v, want [%q]", changed, className)
+	}
+
+	// And the reverse: a brand new class appearing.
+	changed = changedDRAClasses(newDevices, oldDevices)
+	if len(changed) != 1 || changed[0] != className {
+		t.Errorf("changedDRAClasses() with an added class = %v, want [%q]", changed, className)
 	}
 }

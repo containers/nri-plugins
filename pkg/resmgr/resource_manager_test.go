@@ -15,6 +15,7 @@
 package resmgr
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -31,9 +32,12 @@ import (
 // calls (and, optionally, runs a probe from within Stop()) for use by
 // resmgr-level shutdown-ordering tests.
 type fakePolicy struct {
-	stopCalled int
-	stopErr    error
-	onStop     func()
+	stopCalled            int
+	stopErr               error
+	onStop                func()
+	postReconfigureCalled int
+	postReconfigureErr    error
+	onPostReconfigure     func()
 }
 
 func (f *fakePolicy) ActivePolicy() string    { return "fake" }
@@ -45,7 +49,14 @@ func (f *fakePolicy) Stop() error {
 	}
 	return f.stopErr
 }
-func (f *fakePolicy) Reconfigure(interface{}) error                       { return nil }
+func (f *fakePolicy) Reconfigure(interface{}) error { return nil }
+func (f *fakePolicy) PostReconfigure() error {
+	f.postReconfigureCalled++
+	if f.onPostReconfigure != nil {
+		f.onPostReconfigure()
+	}
+	return f.postReconfigureErr
+}
 func (f *fakePolicy) Sync([]cache.Container, []cache.Container) error     { return nil }
 func (f *fakePolicy) AllocateResources(cache.Container) error             { return nil }
 func (f *fakePolicy) ReleaseResources(cache.Container) error              { return nil }
@@ -130,4 +141,52 @@ func TestKubeClientFnNilWhenAgentHasNoClient(t *testing.T) {
 	m := &resmgr{agent: agt}
 
 	assert.Nil(t, m.kubeClientFn())
+}
+
+// TestPostReconfigureCalledOnSuccess verifies that m.postReconfigure calls
+// the active policy's PostReconfigure when handed a nil reconfErr (i.e. the
+// preceding m.reconfigure() call succeeded).
+func TestPostReconfigureCalledOnSuccess(t *testing.T) {
+	fp := &fakePolicy{}
+	m := &resmgr{policy: fp}
+
+	m.postReconfigure(nil)
+
+	assert.Equal(t, 1, fp.postReconfigureCalled)
+}
+
+// TestPostReconfigureNotCalledOnReconfigureError verifies that
+// m.postReconfigure is a no-op when handed a non-nil reconfErr: a failed
+// Reconfigure must not trigger DRA (or any other backend's) PostReconfigure
+// follow-up work.
+func TestPostReconfigureNotCalledOnReconfigureError(t *testing.T) {
+	fp := &fakePolicy{}
+	m := &resmgr{policy: fp}
+
+	m.postReconfigure(errors.New("reconfigure failed"))
+
+	assert.Equal(t, 0, fp.postReconfigureCalled)
+}
+
+// TestPostReconfigureNotCalledWhileLockHeld verifies that m.postReconfigure
+// runs without the resource manager's write lock held -- mirrors
+// TestResmgrStopCallsPolicyStopBeforeLock. In the real updateConfig() call
+// site, m.reconfigure() has already released the lock (via its own deferred
+// Unlock) by the time m.postReconfigure() runs; this test checks that
+// invariant directly at the postReconfigure call, not just by inference from
+// sequential code ordering.
+func TestPostReconfigureNotCalledWhileLockHeld(t *testing.T) {
+	m := &resmgr{}
+	fp := &fakePolicy{
+		onPostReconfigure: func() {
+			locked := m.TryLock()
+			require.True(t, locked, "resmgr write lock must not be held while policy.PostReconfigure() runs")
+			m.Unlock()
+		},
+	}
+	m.policy = fp
+
+	m.postReconfigure(nil)
+
+	assert.Equal(t, 1, fp.postReconfigureCalled)
 }

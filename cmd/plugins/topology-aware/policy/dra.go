@@ -15,6 +15,11 @@
 package topologyaware
 
 import (
+	"reflect"
+	"sort"
+
+	resapi "k8s.io/api/resource/v1"
+
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass"
@@ -97,4 +102,75 @@ func (p *policy) buildDRAPlugin(opts *policyapi.BackendOptions) error {
 	p.draPlugin = plugin
 
 	return nil
+}
+
+// PostReconfigure re-publishes DRA resources after a successful
+// Reconfigure(), once the caller (resmgr's updateConfig, via the resmgr
+// write lock's own deferred Unlock inside m.reconfigure()) has released the
+// resource manager's write lock: PublishResources performs kubeletplugin
+// gRPC I/O and must not run while that lock is held. A no-op when DRA is
+// disabled (draPlugin == nil) — Setup() never rebuilds draPlugin here, and
+// Reconfigure() refuses any change to cfg.DRAEnabled(), so nil is a stable
+// signal that DRA has been disabled since construction.
+func (p *policy) PostReconfigure() error {
+	if p.draPlugin == nil {
+		return nil
+	}
+	return p.draPlugin.PublishResources(p.draCtx)
+}
+
+// draClassNameOf returns the "nri/cpuClass" attribute value of a DRA device,
+// or "" if the device carries no such attribute (should not happen for
+// devices built by cpuclass.buildDRADevices, but handled defensively).
+func draClassNameOf(d resapi.Device) string {
+	if attr, ok := d.Attributes["nri/cpuClass"]; ok && attr.StringValue != nil {
+		return *attr.StringValue
+	}
+	return ""
+}
+
+// groupDRADevicesByClass partitions devices by their "nri/cpuClass"
+// attribute, sorting each class's devices by name so that two snapshots of
+// the same logical device set compare equal regardless of slice order.
+func groupDRADevicesByClass(devices []resapi.Device) map[string][]resapi.Device {
+	byClass := make(map[string][]resapi.Device)
+	for _, d := range devices {
+		class := draClassNameOf(d)
+		byClass[class] = append(byClass[class], d)
+	}
+	for class := range byClass {
+		sort.Slice(byClass[class], func(i, j int) bool {
+			return byClass[class][i].Name < byClass[class][j].Name
+		})
+	}
+	return byClass
+}
+
+// changedDRAClasses returns the cpuClass names whose DRA-visible device set
+// differs between oldDevices and newDevices — added/removed devices for the
+// class, or any attribute/capacity change on a device that class already
+// had. Used by Reconfigure() to decide which classes need a live-claim
+// check before a new cpuClass configuration can be committed.
+func changedDRAClasses(oldDevices, newDevices []resapi.Device) []string {
+	oldByClass := groupDRADevicesByClass(oldDevices)
+	newByClass := groupDRADevicesByClass(newDevices)
+
+	var changed []string
+	seen := make(map[string]bool)
+	for class, oldDevs := range oldByClass {
+		seen[class] = true
+		if !reflect.DeepEqual(oldDevs, newByClass[class]) {
+			changed = append(changed, class)
+		}
+	}
+	for class, newDevs := range newByClass {
+		if seen[class] {
+			continue
+		}
+		if !reflect.DeepEqual(oldByClass[class], newDevs) {
+			changed = append(changed, class)
+		}
+	}
+
+	return changed
 }

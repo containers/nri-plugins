@@ -117,6 +117,12 @@ type Backend interface {
 	Setup(*BackendOptions) error
 	// Reconfigure the policy backend.
 	Reconfigure(any) error
+	// PostReconfigure runs backend-specific follow-up work after a
+	// successful Reconfigure, once the resource manager's write lock has
+	// been released (e.g. publishing DRA resources, which performs I/O and
+	// must not run while that lock is held). Not called if Reconfigure
+	// itself returned an error.
+	PostReconfigure() error
 	// Start up and sycnhronizes the policy, using the given cache and resource constraints.
 	Start() error
 	// Stop shuts down the policy backend, releasing any resources it holds.
@@ -163,6 +169,10 @@ type Policy interface {
 	Stop() error
 	// Reconfigure the policy.
 	Reconfigure(any) error
+	// PostReconfigure runs after a successful Reconfigure, once the
+	// resource manager's write lock has been released. See
+	// Backend.PostReconfigure.
+	PostReconfigure() error
 	// Sync synchronizes the state of the active policy.
 	Sync([]cache.Container, []cache.Container) error
 	// AllocateResources allocates resources to a container.
@@ -324,6 +334,15 @@ func (p *policy) Reconfigure(cfg any) error {
 	}
 	p.scollect = scollect
 	return p.active.Reconfigure(cfg)
+}
+
+// PostReconfigure forwards to the active backend's PostReconfigure hook.
+// See Backend.PostReconfigure.
+func (p *policy) PostReconfigure() error {
+	if p.active == nil {
+		return nil
+	}
+	return p.active.PostReconfigure()
 }
 
 // Sync synchronizes the active policy state.

@@ -53,6 +53,7 @@ func (fakeBackend) Name() string                                    { return "fa
 func (fakeBackend) Description() string                             { return "fake backend for tests" }
 func (fakeBackend) Setup(*policyapi.BackendOptions) error           { return nil }
 func (fakeBackend) Reconfigure(interface{}) error                   { return nil }
+func (fakeBackend) PostReconfigure() error                          { return nil }
 func (fakeBackend) Start() error                                    { return nil }
 func (fakeBackend) Stop() error                                     { return nil }
 func (fakeBackend) Sync([]cache.Container, []cache.Container) error { return nil }

@@ -164,7 +164,27 @@ func (m *resmgr) updateConfig(newCfg any) (bool, error) {
 	reconfErr := m.reconfigure(cfg)
 	m.updateTopologyZones()
 	m.updateNodeExtendedResources()
+	m.postReconfigure(reconfErr)
 	return false, reconfErr
+}
+
+// postReconfigure runs the active policy's PostReconfigure hook once
+// m.reconfigure() has returned and released the resource manager's write
+// lock (m.reconfigure() acquires that lock for its own duration via a
+// deferred Unlock, so by the time this call runs the lock is already free —
+// this is the "post-unlock seam" the DRA plugin's PublishResources(), which
+// performs gRPC I/O, needs). Skipped when reconfErr != nil: PostReconfigure
+// covers follow-up work for a *successful* reconfiguration, not error
+// recovery. Errors are logged rather than propagated, since PostReconfigure
+// is best-effort follow-up work that must not turn an otherwise-successful
+// Reconfigure into a failure this late in updateConfig.
+func (m *resmgr) postReconfigure(reconfErr error) {
+	if reconfErr != nil {
+		return
+	}
+	if err := m.policy.PostReconfigure(); err != nil {
+		log.Errorf("failed to run post-reconfigure hook: %v", err)
+	}
 }
 
 // Start resource management once we acquired initial configuration.
