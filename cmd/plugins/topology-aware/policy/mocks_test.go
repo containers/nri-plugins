@@ -428,6 +428,9 @@ func (m *mockContainer) GetMounts() []*cache.Mount {
 func (m *mockContainer) GetDevices() []*cache.Device {
 	panic("unimplemented")
 }
+func (m *mockContainer) GetCDIDeviceNames() []string {
+	return nil
+}
 func (m *mockContainer) PrettyName() string {
 	return m.name
 }

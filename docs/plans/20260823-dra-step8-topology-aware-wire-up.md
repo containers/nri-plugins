@@ -243,12 +243,12 @@ attribute maps per class name. For each class where attrs differ: `if p.draPlugi
 - Modify: `pkg/resmgr/cache/cache_test.go` (or new test file)
 - Modify: `cmd/plugins/topology-aware/policy/mocks_test.go` (add stubs for new methods)
 
-- [ ] write test: container with `CDIDeviceIDs = ["nri.topology-aware.cpu/device=claim-abc-req-dev-0"]`
+- [x] write test: container with `CDIDeviceIDs = ["nri.topology-aware.cpu/device=claim-abc-req-dev-0"]`
       → `GetCDIDeviceNames()` returns that list
-- [ ] write test: container with no CDI devices → `GetCDIDeviceNames()` returns nil/empty
-- [ ] add `GetCDIDeviceNames() []string` to `cache.Container` interface + impl
-- [ ] add no-op stub for the new method to `mocks_test.go` mock
-- [ ] run tests — must pass before task 4
+- [x] write test: container with no CDI devices → `GetCDIDeviceNames()` returns nil/empty
+- [x] add `GetCDIDeviceNames() []string` to `cache.Container` interface + impl
+- [x] add no-op stub for the new method to `mocks_test.go` mock
+- [x] run tests — must pass before task 4
 
 ### Task 4: Driver name constant + `*policy`-backed adapter + `Plugin.LiveClaimsLocked()`
 

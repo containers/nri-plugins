@@ -513,6 +513,20 @@ func (c *container) GetDevices() []*Device {
 	return devices
 }
 
+func (c *container) GetCDIDeviceNames() []string {
+	cdiDevices := c.Ctr.GetCDIDevices()
+	if len(cdiDevices) == 0 {
+		return nil
+	}
+
+	names := make([]string, 0, len(cdiDevices))
+	for _, d := range cdiDevices {
+		names = append(names, d.GetName())
+	}
+
+	return names
+}
+
 func (c *container) GetResmgrLabel(key string) (string, bool) {
 	value, ok := c.GetLabel(kubernetes.ResmgrKey(key))
 	return value, ok

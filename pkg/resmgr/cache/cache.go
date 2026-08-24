@@ -237,6 +237,9 @@ type Container interface {
 	GetMounts() []*Mount
 	// GetDevices returns all the linux devices of the container.
 	GetDevices() []*Device
+	// GetCDIDeviceNames returns the qualified names of all CDI devices
+	// injected into this container (nil/empty if there are none).
+	GetCDIDeviceNames() []string
 
 	// PrettyName returns the user-friendly $namespace/$pod/$container for the container.
 	PrettyName() string
