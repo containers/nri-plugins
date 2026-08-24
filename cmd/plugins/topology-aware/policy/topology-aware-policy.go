@@ -27,6 +27,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass"
+	"github.com/containers/nri-plugins/pkg/resmgr/dra"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 
@@ -84,6 +85,18 @@ type policy struct {
 	// released — this is what makes a multi-container ResourceClaim
 	// (AllowMultipleAllocations) safe.
 	claimContainerRefs map[types.UID]int
+
+	// draPlugin is the DRA kubelet plugin instance for this driver, or nil
+	// when DRA is disabled (cfg.DRAEnabled() == false) or Setup() could not
+	// build one (see docs/plans/20260823-dra-step8-topology-aware-wire-up.md
+	// Task 9, which wires construction/lifecycle). AllocateResources and
+	// ReleaseResources nil-check this field before passing it anywhere a
+	// claimLister is expected: a nil *dra.Plugin handed to an interface
+	// parameter would produce a non-nil interface wrapping a nil pointer
+	// (the typed-nil trap), so callers must guard on p.draPlugin != nil
+	// themselves rather than relying on claimCPUsFromContainer's internal
+	// nil check.
+	draPlugin *dra.Plugin
 }
 
 var opt = &cfgapi.Config{}
@@ -262,6 +275,15 @@ func (p *policy) AllocateResources(container cache.Container) error {
 	defer p.commitCpuClasses(container.PrettyName())
 	defer p.applyIrqAffinity(container.PrettyName())
 
+	if p.draPlugin != nil {
+		if uid, cpus, className, ok := claimCPUsFromContainer(container, p.draPlugin); ok {
+			if err := p.allocateClaim(uid, cpus, className); err != nil {
+				return policyError("failed to allocate resources for %s: %v",
+					container.PrettyName(), err)
+			}
+		}
+	}
+
 	err := p.allocateResources(container, "")
 	if err != nil {
 		return err
@@ -296,6 +318,14 @@ func (p *policy) ReleaseResources(container cache.Container) error {
 
 	defer p.commitCpuClasses(container.PrettyName())
 	defer p.applyIrqAffinity(container.PrettyName())
+
+	if p.draPlugin != nil {
+		if uid, cpus, _, ok := claimCPUsFromContainer(container, p.draPlugin); ok {
+			if err := p.releaseClaim(uid, cpus); err != nil {
+				log.Errorf("failed to release DRA claim for %s: %v", container.PrettyName(), err)
+			}
+		}
+	}
 
 	if grant, found := p.releasePool(container); found {
 		p.updateSharedAllocations(&grant)

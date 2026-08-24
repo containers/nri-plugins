@@ -331,17 +331,17 @@ attribute maps per class name. For each class where attrs differ: `if p.draPlugi
 - Modify: `cmd/plugins/topology-aware/policy/topology-aware-policy.go`
 - Modify: `cmd/plugins/topology-aware/policy/mocks_test.go` (if mock needs updating)
 
-- [ ] write test: `AllocateResources` on a container with a TA CDI device → `allocateClaim` called;
+- [x] write test: `AllocateResources` on a container with a TA CDI device → `allocateClaim` called;
       pool supply updated
-- [ ] write test: `ReleaseResources` on that container → `releaseClaim` called; supply restored
-- [ ] write test: `AllocateResources` on a container with no TA CDI devices → no claim methods
+- [x] write test: `ReleaseResources` on that container → `releaseClaim` called; supply restored
+- [x] write test: `AllocateResources` on a container with no TA CDI devices → no claim methods
       called; behavior identical to pre-step-8
-- [ ] write test: `AllocateResources` with a nil `draPlugin` (DRA disabled) → no crash
-- [ ] in `AllocateResources(c)`, call `claimCPUsFromContainer(c, p.draPlugin)` and if ok,
+- [x] write test: `AllocateResources` with a nil `draPlugin` (DRA disabled) → no crash
+- [x] in `AllocateResources(c)`, call `claimCPUsFromContainer(c, p.draPlugin)` and if ok,
       call `p.allocateClaim(uid, cpus, className)` before regular pool allocation
-- [ ] in `ReleaseResources(c)`, call `claimCPUsFromContainer(c, p.draPlugin)` and if ok,
+- [x] in `ReleaseResources(c)`, call `claimCPUsFromContainer(c, p.draPlugin)` and if ok,
       call `p.releaseClaim(uid, cpus)`
-- [ ] run tests — must pass before task 8
+- [x] run tests — must pass before task 8
 
 ### Task 8: Pool claim mark restoration after rebuild
 
