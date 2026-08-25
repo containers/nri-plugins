@@ -389,3 +389,102 @@ grep -q "denied interrupt: .* denied but matched by user pattern .*" <<< $COMMAN
 
 cleanup
 unset ANN0
+
+#
+# Test IRQ affinity from topology hints.
+#
+
+CONTROLLABLE_INTERRUPTS="[\"*ttyS*\"]"
+
+helm_config=$(COLOCATE_PODS=false \
+              DEBUG_LOGGERS="$DEBUG_LOGGERS,policy" \
+    instantiate helm-config.yaml) helm-launch topology-aware
+
+# Create Guaranteed pod annotated to take IRQ affinity for hinted devices,
+# and with a test topology-hint with IRQ for an allowed ttyS0.
+pod=pod9
+ANN0=$(cat <<EOF
+irq-affinity.resource-policy.nri.io/container.${pod}c0: |
+      devices: [ "*ttyS0*" ]
+EOF
+)
+ANN1=$(cat <<EOF
+test.topologyhints.resource-policy.nri.io/container.${pod}c0: |
+      test:
+        NUMAs: "0"
+        IRQs: [ 4 ]
+EOF
+)
+
+ANN0=$ANN0 ANN1=$ANN1 \
+    CONTCOUNT=1 create guaranteed
+
+verify-irq-cpus ".*ttyS0.*" "$(ctr-cpu-ids $pod ${pod}c0)"
+
+vm-command "kubectl delete pod $pod"
+unset ANN0 ANN1
+
+
+# Create Guaranteed pod annotated to take IRQ affinity for hinted devices,
+# and with a test topology-hint with an IRQ for a denied rtc0. Shouldn't
+# claim IRQ.
+
+pod=pod10
+ANN0=$(cat <<EOF
+irq-affinity.resource-policy.nri.io/container.${pod}c0: |
+      devices: [ "*rtc0*" ]
+EOF
+)
+ANN1=$(cat <<EOF
+test.topologyhints.resource-policy.nri.io/container.${pod}c0: |
+      test:
+        NUMAs: "0"
+        IRQs: [ 8 ]
+EOF
+)
+
+ANN0=$ANN0 ANN1=$ANN1 \
+    CONTCOUNT=1 create guaranteed
+
+verify-irq-cpus ".*rtc0.*" $ALLCPUS
+
+vm-command "kubectl delete pod $pod"
+unset ANN0 ANN1
+
+# Create Guaranteed pod annotated to take IRQ affinity with an invalid
+# match glob. Should fail creating the container.
+
+pod=pod11
+ANN0=$(cat <<EOF
+irq-affinity.resource-policy.nri.io/container.${pod}c0: |
+      devices:
+        - "*ttyS0*"
+        - "[abc"
+EOF
+)
+ANN1=$(cat <<EOF
+test.topologyhints.resource-policy.nri.io/container.${pod}c0: |
+      test:
+        NUMAs: "0"
+        IRQs: [ 4 ]
+EOF
+)
+
+ANN0=$ANN0 ANN1=$ANN1 \
+    wait="" CONTCOUNT=1 create guaranteed
+
+wait-pod-waiting-reason $pod CreateContainerError
+
+ctr=${pod}c0
+vm-command "kubectl get pods $pod -ojson | \
+    jq '.status.containerStatuses | map(select(.name == \"$ctr\")) | .[0].state'"
+
+grep -q "invalid IRQ affinity devices pattern" <<< $COMMAND_OUTPUT ||
+    error "Missing invalid affinity devices pattern error for $ctr"
+
+
+verify-irq-cpus ".*rtc0.*" $ALLCPUS
+
+
+cleanup
+unset ANN0 ANN1
