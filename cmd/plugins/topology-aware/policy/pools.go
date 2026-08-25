@@ -1431,16 +1431,56 @@ func matchLiveClaimUID(name string, live map[types.UID][]dra.ResultAlloc) (types
 	return "", false
 }
 
+// classifyClaimCPUs parses every alloc's CPUs field and returns the union of
+// all of them plus a grouping of the same CPUs by cpuClass name.
+//
+// A single ResourceClaim can legitimately contain multiple
+// DeviceRequestAllocationResults that resolve to devices of *different*
+// cpuClasses: the per-punit multi-class-overcommit validation
+// (cpuclass.ValidateCPUClassesForDRA) only guards a single punit's classes
+// against each other, it does not forbid a claim's requests from spanning
+// more than one punit (and therefore more than one class). Grouping by
+// class here — instead of collapsing to a single className, as an earlier
+// version of this code did — lets callers apply each class only to the CPUs
+// that actually belong to it (see allocateClaim/remarkClaimInSupply), so a
+// multi-class claim never has the wrong physical class silently applied to
+// part of its CPUs.
+//
+// Allocs whose CPUs field fails to parse are logged and skipped; they
+// contribute to neither the returned union nor the per-class grouping.
+func classifyClaimCPUs(uid types.UID, allocs []dra.ResultAlloc) (cpuset.CPUSet, map[string]cpuset.CPUSet) {
+	cpus := cpuset.New()
+	classCPUs := map[string]cpuset.CPUSet{}
+
+	for _, a := range allocs {
+		parsed, err := cpuset.Parse(a.CPUs)
+		if err != nil {
+			log.Warnf("dra: claim %s: failed to parse allocated CPUs %q: %v", uid, a.CPUs, err)
+			continue
+		}
+		cpus = cpus.Union(parsed)
+		if existing, ok := classCPUs[a.ClassName]; ok {
+			classCPUs[a.ClassName] = existing.Union(parsed)
+		} else {
+			classCPUs[a.ClassName] = parsed
+		}
+	}
+
+	return cpus, classCPUs
+}
+
 // claimCPUsFromContainer looks for a CDI device name on c that identifies a
 // live DRA claim, and if found returns that claim's UID, the union of its
-// allocated CPUs, and its cpuClass name. Returns ok=false if c carries no
-// recognizable claim device name, or if the embedded UID has no
-// corresponding entry in plugin.LiveClaimsLocked() (e.g. a foreign/stale CDI
-// device, or a claim that has already been unprepared).
+// allocated CPUs, and those same CPUs grouped by cpuClass name (see
+// classifyClaimCPUs — a single claim can span more than one class). Returns
+// ok=false if c carries no recognizable claim device name, or if the
+// embedded UID has no corresponding entry in plugin.LiveClaimsLocked()
+// (e.g. a foreign/stale CDI device, or a claim that has already been
+// unprepared).
 //
 // Assumes a container is backed by at most one live TA CPU ResourceClaim:
 // allocateClaim/releaseClaim (pools.go) and the AllocateResources/
-// ReleaseResources call sites operate on a single (uid, cpus, className)
+// ReleaseResources call sites operate on a single (uid, cpus, classCPUs)
 // tuple per container, mirroring how a ResourceClaim with
 // AllowMultipleAllocations fans out to *many containers* (handled via the
 // claimContainerRefs refcount), not how one container could consume *many
@@ -1450,11 +1490,11 @@ func matchLiveClaimUID(name string, live map[types.UID][]dra.ResultAlloc) (types
 // pod.spec.resourceClaims plumbing does not forbid), only the first
 // encountered live claim's CPUs are accounted for; any further distinct
 // claim UID is logged and otherwise ignored.
-func claimCPUsFromContainer(c cache.Container, plugin claimLister) (types.UID, cpuset.CPUSet, string, bool) {
+func claimCPUsFromContainer(c cache.Container, plugin claimLister) (types.UID, cpuset.CPUSet, map[string]cpuset.CPUSet, bool) {
 	none := cpuset.New()
 
 	if plugin == nil {
-		return "", none, "", false
+		return "", none, nil, false
 	}
 
 	live := plugin.LiveClaimsLocked()
@@ -1464,7 +1504,7 @@ func claimCPUsFromContainer(c cache.Container, plugin claimLister) (types.UID, c
 		found    bool
 	)
 	cpus := cpuset.New()
-	className := ""
+	var classCPUs map[string]cpuset.CPUSet
 
 	for _, name := range c.GetCDIDeviceNames() {
 		uid, ok := matchLiveClaimUID(name, live)
@@ -1479,19 +1519,7 @@ func claimCPUsFromContainer(c cache.Container, plugin claimLister) (types.UID, c
 			continue
 		}
 
-		claimCPUs := cpuset.New()
-		claimClassName := ""
-		for _, a := range live[uid] {
-			parsed, err := cpuset.Parse(a.CPUs)
-			if err != nil {
-				log.Warnf("dra: claim %s: failed to parse allocated CPUs %q: %v", uid, a.CPUs, err)
-				continue
-			}
-			claimCPUs = claimCPUs.Union(parsed)
-			if claimClassName == "" {
-				claimClassName = a.ClassName
-			}
-		}
+		claimCPUs, claimClassCPUs := classifyClaimCPUs(uid, live[uid])
 		if claimCPUs.IsEmpty() {
 			continue
 		}
@@ -1499,14 +1527,14 @@ func claimCPUsFromContainer(c cache.Container, plugin claimLister) (types.UID, c
 		foundUID = uid
 		found = true
 		cpus = claimCPUs
-		className = claimClassName
+		classCPUs = claimClassCPUs
 	}
 
 	if !found {
-		return "", none, "", false
+		return "", none, nil, false
 	}
 
-	return foundUID, cpus, className, true
+	return foundUID, cpus, classCPUs, true
 }
 
 // poolForCPUs returns the tightest (deepest) *leaf* pool whose statically
@@ -1555,6 +1583,33 @@ func (p *policy) poolForCPUs(cpus cpuset.CPUSet) (Node, error) {
 	return best, nil
 }
 
+// applyClassCPUs applies each (className, subset) pair in classCPUs via
+// cpuClasses.UseClass, one call per class. This is a no-op if p.cpuClasses
+// is nil. Empty class names (an alloc whose device carried no nri/cpuClass
+// attribute — should not happen given upstream validation, but defensively
+// skipped rather than trusted) and empty subsets are skipped. verb is used
+// only for logging ("apply" vs "re-apply").
+//
+// classCPUs groups a single DRA claim's CPUs by cpuClass (see
+// classifyClaimCPUs): a claim's DeviceRequestAllocationResults can resolve
+// to devices on different punits with different classes, so the physical
+// class must be applied per subset — applying one class to the claim's
+// entire unioned CPU set would silently mis-apply it to part of the claim.
+func (p *policy) applyClassCPUs(verb string, uid types.UID, classCPUs map[string]cpuset.CPUSet) {
+	if p.cpuClasses == nil {
+		return
+	}
+	for className, subset := range classCPUs {
+		if className == "" || subset.IsEmpty() {
+			continue
+		}
+		if err := p.cpuClasses.UseClass(className, subset); err != nil {
+			log.Errorf("dra: failed to %s CPU class %q to claim %s CPUs %s: %v",
+				verb, className, uid, subset, err)
+		}
+	}
+}
+
 // allocateClaim marks cpus as claimed by DRA ResourceClaim uid in the
 // tightest pool that fully contains them, evicting and requeueing for
 // reallocation any exclusive grant that overlaps those CPUs.
@@ -1566,7 +1621,7 @@ func (p *policy) poolForCPUs(cpus cpuset.CPUSet) (Node, error) {
 // subsequent calls just bump the per-claim container refcount so that
 // releaseClaim knows to keep the CPUs marked until the last referencing
 // container is released.
-func (p *policy) allocateClaim(uid types.UID, cpus cpuset.CPUSet, className string) error {
+func (p *policy) allocateClaim(uid types.UID, cpus cpuset.CPUSet, classCPUs map[string]cpuset.CPUSet) error {
 	if cpus.IsEmpty() {
 		return policyError("cannot allocate DRA claim %s: empty CPU set", uid)
 	}
@@ -1578,7 +1633,7 @@ func (p *policy) allocateClaim(uid types.UID, cpus cpuset.CPUSet, className stri
 	if p.claimContainerRefs[uid] == 0 {
 		pool, err := p.poolForCPUs(cpus)
 		if err != nil {
-			return policyError("cannot allocate DRA claim %s (class %q, CPUs %s): %v", uid, className, cpus, err)
+			return policyError("cannot allocate DRA claim %s (CPUs %s): %v", uid, cpus, err)
 		}
 
 		evicted, evictedCpusets := p.evictOverlappingGrants(cpus, fmt.Sprintf("claim %s", uid))
@@ -1590,12 +1645,12 @@ func (p *policy) allocateClaim(uid types.UID, cpus cpuset.CPUSet, className stri
 		// excludes the CPUs from regular grants but the hardware is left in
 		// whatever class it was in before — the whole point of associating a
 		// DRA claim with a cpuClass would otherwise have no physical effect.
-		if p.cpuClasses != nil && className != "" {
-			if err := p.cpuClasses.UseClass(className, cpus); err != nil {
-				log.Errorf("dra: failed to apply CPU class %q to claim %s CPUs %s: %v",
-					className, uid, cpus, err)
-			}
-		}
+		// classCPUs groups the claimed CPUs by class (see classifyClaimCPUs):
+		// a single claim can span more than one class (e.g. requests
+		// resolving to devices on different punits), so UseClass is applied
+		// once per (class, subset) pair rather than once for the whole
+		// unioned cpus with a single, possibly-wrong class.
+		p.applyClassCPUs("apply", uid, classCPUs)
 
 		// The claimed CPUs may have been subtracted from the sharable pool
 		// (not just isolated/exclusive), in which case containers already

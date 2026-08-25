@@ -81,12 +81,14 @@ func newDRATestPolicyWithLock(t *testing.T, withLock func(func())) *policy {
 }
 
 // newDRATestPolicyWithCPUClasses is newDRATestPolicy plus a real
-// *cpuclass.Handler (p.cpuClasses), configured with claimClass and
-// sharedClass (used as SharedPoolCpuClass, i.e. the class initialize()'s
-// resetCpuClass and releaseClaim's resetCpuClass reapply to CPUs no longer
-// exclusively held). Lets tests observe cpuClass.UseClass side effects via
-// Handler.ClassForCPU without needing a live SST/PCT backend.
-func newDRATestPolicyWithCPUClasses(t *testing.T, claimClass, sharedClass string) *policy {
+// *cpuclass.Handler (p.cpuClasses), configured with sharedClass (used as
+// SharedPoolCpuClass, i.e. the class initialize()'s resetCpuClass and
+// releaseClaim's resetCpuClass reapply to CPUs no longer exclusively held)
+// plus one or more claimClasses (e.g. distinct classes different
+// ResultAllocs within one DRA claim can resolve to). Lets tests observe
+// cpuClass.UseClass side effects via Handler.ClassForCPU without needing a
+// live SST/PCT backend.
+func newDRATestPolicyWithCPUClasses(t *testing.T, sharedClass string, claimClasses ...string) *policy {
 	t.Helper()
 
 	dir, err := os.MkdirTemp("", "nri-resource-policy-test-sysfs-")
@@ -104,6 +106,11 @@ func newDRATestPolicyWithCPUClasses(t *testing.T, claimClass, sharedClass string
 		t.Fatalf("failed to discover test system: %v", err)
 	}
 
+	cpuClasses := []*cfgapi.CPUClass{{Name: sharedClass}}
+	for _, c := range claimClasses {
+		cpuClasses = append(cpuClasses, &cfgapi.CPUClass{Name: c})
+	}
+
 	policyOptions := &policyapi.BackendOptions{
 		Cache:  &mockCache{},
 		System: sys,
@@ -111,10 +118,7 @@ func newDRATestPolicyWithCPUClasses(t *testing.T, claimClass, sharedClass string
 			ReservedResources: cfgapi.Constraints{
 				cfgapi.CPU: "750m",
 			},
-			CPUClasses: []*cfgapi.CPUClass{
-				{Name: claimClass},
-				{Name: sharedClass},
-			},
+			CPUClasses:         cpuClasses,
 			SharedPoolCpuClass: sharedClass,
 		},
 		// See newDRATestPolicy: Start() requires a non-nil WithLock whenever

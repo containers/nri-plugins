@@ -343,8 +343,8 @@ func (p *policy) AllocateResources(container cache.Container) error {
 	defer p.applyIrqAffinity(container.PrettyName())
 
 	if p.draPlugin != nil {
-		if uid, cpus, className, ok := claimCPUsFromContainer(container, p.draPlugin); ok {
-			if err := p.allocateClaim(uid, cpus, className); err != nil {
+		if uid, cpus, classCPUs, ok := claimCPUsFromContainer(container, p.draPlugin); ok {
+			if err := p.allocateClaim(uid, cpus, classCPUs); err != nil {
 				return policyError("failed to allocate resources for %s: %v",
 					container.PrettyName(), err)
 			}
@@ -962,7 +962,7 @@ func (p *policy) restoreCache() error {
 // allowed CPU's class back to the shared-pool default
 // (resetCpuClass("initialize", p.allowed)), which would otherwise silently
 // strip the SST-CP/EPP/governor settings a live DRA claim depends on.
-func (p *policy) remarkClaimInSupply(uid types.UID, cpus cpuset.CPUSet, className string) error {
+func (p *policy) remarkClaimInSupply(uid types.UID, cpus cpuset.CPUSet, classCPUs map[string]cpuset.CPUSet) error {
 	if cpus.IsEmpty() {
 		return policyError("cannot remark DRA claim %s: empty CPU set", uid)
 	}
@@ -974,12 +974,10 @@ func (p *policy) remarkClaimInSupply(uid types.UID, cpus cpuset.CPUSet, classNam
 
 	pool.FreeSupply().ClaimCPUs(uid, cpus)
 
-	if p.cpuClasses != nil && className != "" {
-		if err := p.cpuClasses.UseClass(className, cpus); err != nil {
-			log.Errorf("dra: failed to re-apply CPU class %q to claim %s CPUs %s: %v",
-				className, uid, cpus, err)
-		}
-	}
+	// classCPUs groups cpus by cpuClass (see classifyClaimCPUs): applied per
+	// subset so a claim spanning more than one class re-applies each class
+	// only to the CPUs that actually belong to it.
+	p.applyClassCPUs("re-apply", uid, classCPUs)
 
 	return nil
 }
@@ -1018,20 +1016,7 @@ func (p *policy) reapplyDRAClaims() {
 
 	remarked := false
 	for uid, allocs := range p.draPlugin.LiveClaimsLocked() {
-		cpus := cpuset.New()
-		className := ""
-		for _, alloc := range allocs {
-			parsed, err := cpuset.Parse(alloc.CPUs)
-			if err != nil {
-				log.Warnf("dra: reapplyDRAClaims: claim %s device %s: failed to parse CPUs %q: %v",
-					uid, alloc.Device, alloc.CPUs, err)
-				continue
-			}
-			cpus = cpus.Union(parsed)
-			if className == "" {
-				className = alloc.ClassName
-			}
-		}
+		cpus, classCPUs := classifyClaimCPUs(uid, allocs)
 
 		if cpus.IsEmpty() {
 			continue
@@ -1039,7 +1024,7 @@ func (p *policy) reapplyDRAClaims() {
 
 		evicted, evictedCpusets := p.evictOverlappingGrants(cpus, fmt.Sprintf("reapplyDRAClaims: claim %s", uid))
 
-		if err := p.remarkClaimInSupply(uid, cpus, className); err != nil {
+		if err := p.remarkClaimInSupply(uid, cpus, classCPUs); err != nil {
 			log.Errorf("dra: reapplyDRAClaims: %v", err)
 			continue
 		}

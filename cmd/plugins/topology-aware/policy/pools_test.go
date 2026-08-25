@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strings"
 	"testing"
 
 	"k8s.io/apimachinery/pkg/types"
@@ -659,15 +660,18 @@ func TestClaimCPUsFromContainer(t *testing.T) {
 		},
 	}
 
-	gotUID, gotCPUs, gotClass, ok := claimCPUsFromContainer(c, lister)
+	gotUID, gotCPUs, gotClassCPUs, ok := claimCPUsFromContainer(c, lister)
 	if !ok {
 		t.Fatalf("claimCPUsFromContainer() ok = false, want true")
 	}
 	if gotUID != uid {
 		t.Errorf("claimCPUsFromContainer() uid = %q, want %q", gotUID, uid)
 	}
-	if gotClass != "gold" {
-		t.Errorf("claimCPUsFromContainer() className = %q, want %q", gotClass, "gold")
+	if want := cpuset.MustParse("0-1"); !gotClassCPUs["gold"].Equals(want) {
+		t.Errorf("claimCPUsFromContainer() classCPUs[gold] = %s, want %s", gotClassCPUs["gold"], want)
+	}
+	if len(gotClassCPUs) != 1 {
+		t.Errorf("claimCPUsFromContainer() classCPUs = %v, want exactly one class", gotClassCPUs)
 	}
 	if want := cpuset.MustParse("0-1"); !gotCPUs.Equals(want) {
 		t.Errorf("claimCPUsFromContainer() cpus = %s, want %s", gotCPUs, want)
@@ -690,15 +694,15 @@ func TestClaimCPUsFromContainerDashedUIDAndDashedDeviceName(t *testing.T) {
 		},
 	}
 
-	gotUID, gotCPUs, gotClass, ok := claimCPUsFromContainer(c, lister)
+	gotUID, gotCPUs, gotClassCPUs, ok := claimCPUsFromContainer(c, lister)
 	if !ok {
 		t.Fatalf("claimCPUsFromContainer() ok = false, want true")
 	}
 	if gotUID != uid {
 		t.Errorf("claimCPUsFromContainer() uid = %q, want %q", gotUID, uid)
 	}
-	if gotClass != "gold" {
-		t.Errorf("claimCPUsFromContainer() className = %q, want %q", gotClass, "gold")
+	if want := cpuset.MustParse("4-5"); !gotClassCPUs["gold"].Equals(want) {
+		t.Errorf("claimCPUsFromContainer() classCPUs[gold] = %s, want %s", gotClassCPUs["gold"], want)
 	}
 	if want := cpuset.MustParse("4-5"); !gotCPUs.Equals(want) {
 		t.Errorf("claimCPUsFromContainer() cpus = %s, want %s", gotCPUs, want)
@@ -707,8 +711,9 @@ func TestClaimCPUsFromContainerDashedUIDAndDashedDeviceName(t *testing.T) {
 
 func TestClaimCPUsFromContainerMultipleAllocs(t *testing.T) {
 	// A single claim can back more than one DeviceRequestAllocationResult
-	// (e.g. multiple requests in one claim); the union of their CPUs and the
-	// first non-empty className must be returned.
+	// (e.g. multiple requests in one claim); the union of their CPUs must be
+	// returned, and (since every alloc here shares the same class) a single
+	// classCPUs entry covering that whole union.
 	uid := types.UID("claim-uid-multi")
 	name0 := cdiClaimDeviceName(uid, "req0", "dev0", 0)
 
@@ -722,12 +727,59 @@ func TestClaimCPUsFromContainerMultipleAllocs(t *testing.T) {
 		},
 	}
 
-	_, gotCPUs, _, ok := claimCPUsFromContainer(c, lister)
+	_, gotCPUs, gotClassCPUs, ok := claimCPUsFromContainer(c, lister)
 	if !ok {
 		t.Fatalf("claimCPUsFromContainer() ok = false, want true")
 	}
 	if want := cpuset.MustParse("0-3"); !gotCPUs.Equals(want) {
 		t.Errorf("claimCPUsFromContainer() cpus = %s, want %s (union of all allocs)", gotCPUs, want)
+	}
+	if want := cpuset.MustParse("0-3"); len(gotClassCPUs) != 1 || !gotClassCPUs["gold"].Equals(want) {
+		t.Errorf("claimCPUsFromContainer() classCPUs = %v, want {gold: %s}", gotClassCPUs, want)
+	}
+}
+
+// TestClaimCPUsFromContainerMultipleClasses covers the MAJOR finding this
+// fix addresses: a single ResourceClaim can legitimately contain
+// DeviceRequestAllocationResults resolving to devices of *different*
+// cpuClasses (the per-punit multi-class-overcommit validation only guards a
+// single punit's classes against each other, it does not forbid a claim's
+// requests from spanning more than one punit/class). claimCPUsFromContainer
+// must group the claimed CPUs by class rather than collapsing to a single
+// className, so callers can apply each class only to the CPUs that actually
+// belong to it.
+func TestClaimCPUsFromContainerMultipleClasses(t *testing.T) {
+	uid := types.UID("claim-uid-multiclass")
+	name0 := cdiClaimDeviceName(uid, "req0", "dev0", 0)
+
+	c := &mockContainer{cdiDeviceNames: []string{name0}}
+	lister := &fakeClaimLister{
+		claims: map[types.UID][]dra.ResultAlloc{
+			uid: {
+				{Request: "req0", Device: "dev0", ClassName: "gold", CPUs: "0-1"},
+				{Request: "req1", Device: "dev1", ClassName: "silver", CPUs: "2-3"},
+			},
+		},
+	}
+
+	gotUID, gotCPUs, gotClassCPUs, ok := claimCPUsFromContainer(c, lister)
+	if !ok {
+		t.Fatalf("claimCPUsFromContainer() ok = false, want true")
+	}
+	if gotUID != uid {
+		t.Errorf("claimCPUsFromContainer() uid = %q, want %q", gotUID, uid)
+	}
+	if want := cpuset.MustParse("0-3"); !gotCPUs.Equals(want) {
+		t.Errorf("claimCPUsFromContainer() cpus = %s, want %s (union across classes)", gotCPUs, want)
+	}
+	if len(gotClassCPUs) != 2 {
+		t.Fatalf("claimCPUsFromContainer() classCPUs = %v, want two distinct classes", gotClassCPUs)
+	}
+	if want := cpuset.MustParse("0-1"); !gotClassCPUs["gold"].Equals(want) {
+		t.Errorf("claimCPUsFromContainer() classCPUs[gold] = %s, want %s", gotClassCPUs["gold"], want)
+	}
+	if want := cpuset.MustParse("2-3"); !gotClassCPUs["silver"].Equals(want) {
+		t.Errorf("claimCPUsFromContainer() classCPUs[silver] = %s, want %s", gotClassCPUs["silver"], want)
 	}
 }
 
@@ -735,12 +787,12 @@ func TestClaimCPUsFromContainerNoCDIDevices(t *testing.T) {
 	c := &mockContainer{}
 	lister := &fakeClaimLister{claims: map[types.UID][]dra.ResultAlloc{}}
 
-	uid, cpus, class, ok := claimCPUsFromContainer(c, lister)
+	uid, cpus, classCPUs, ok := claimCPUsFromContainer(c, lister)
 	if ok {
 		t.Fatalf("claimCPUsFromContainer() ok = true, want false for a container with no CDI devices")
 	}
-	if uid != "" || !cpus.IsEmpty() || class != "" {
-		t.Errorf("claimCPUsFromContainer() = (%q, %s, %q, %v), want zero values", uid, cpus, class, ok)
+	if uid != "" || !cpus.IsEmpty() || classCPUs != nil {
+		t.Errorf("claimCPUsFromContainer() = (%q, %s, %v, %v), want zero values", uid, cpus, classCPUs, ok)
 	}
 }
 
@@ -758,6 +810,13 @@ func TestClaimCPUsFromContainerUnknownClaim(t *testing.T) {
 	if ok {
 		t.Fatalf("claimCPUsFromContainer() ok = true, want false for an unknown/stale claim UID")
 	}
+}
+
+// goldClassCPUs wraps cpus as the single-class classCPUs allocateClaim/
+// remarkClaimInSupply expect, for tests that don't care about the
+// multi-class case (see TestAllocateClaimAppliesPerAllocClass for that).
+func goldClassCPUs(cpus cpuset.CPUSet) map[string]cpuset.CPUSet {
+	return map[string]cpuset.CPUSet{"gold": cpus}
 }
 
 // addTestGrant hands out an exclusive grant for container from pool's
@@ -797,7 +856,7 @@ func TestAllocateClaimMarksTightestPool(t *testing.T) {
 	cpus := cpuset.New(sharable[0], sharable[1])
 
 	uid := types.UID("claim-mark")
-	if err := p.allocateClaim(uid, cpus, "gold"); err != nil {
+	if err := p.allocateClaim(uid, cpus, goldClassCPUs(cpus)); err != nil {
 		t.Fatalf("allocateClaim() failed: %v", err)
 	}
 
@@ -829,7 +888,7 @@ func TestAllocateClaimOutsideAllowedReturnsError(t *testing.T) {
 	// subset of any pool's (including root's) statically assigned range.
 	cpus := cpuset.New(99999)
 
-	if err := p.allocateClaim(types.UID("claim-outside"), cpus, "gold"); err == nil {
+	if err := p.allocateClaim(types.UID("claim-outside"), cpus, goldClassCPUs(cpus)); err == nil {
 		t.Fatalf("allocateClaim() with CPUs outside the allowed set: got nil error, want a descriptive error")
 	}
 }
@@ -858,7 +917,7 @@ func TestAllocateClaimSpanningNoPoolReturnsError(t *testing.T) {
 	}
 	spanning := cpuset.New(cpuA[0], cpuB[0])
 
-	err := p.allocateClaim(types.UID("claim-spanning"), spanning, "gold")
+	err := p.allocateClaim(types.UID("claim-spanning"), spanning, goldClassCPUs(spanning))
 	if err == nil {
 		t.Fatalf("allocateClaim() with CPUs spanning two pools: got nil error, want a descriptive error")
 	}
@@ -880,12 +939,12 @@ func TestAllocateClaimRefcountsMultipleContainers(t *testing.T) {
 	cpus := cpuset.New(sharable[0])
 	uid := types.UID("claim-shared")
 
-	if err := p.allocateClaim(uid, cpus, "gold"); err != nil {
+	if err := p.allocateClaim(uid, cpus, goldClassCPUs(cpus)); err != nil {
 		t.Fatalf("first allocateClaim() failed: %v", err)
 	}
 	afterFirst := leaf.FreeSupply().SharableCPUs()
 
-	if err := p.allocateClaim(uid, cpus, "gold"); err != nil {
+	if err := p.allocateClaim(uid, cpus, goldClassCPUs(cpus)); err != nil {
 		t.Fatalf("second allocateClaim() (second container, same claim) failed: %v", err)
 	}
 	if got := leaf.FreeSupply().SharableCPUs(); !got.Equals(afterFirst) {
@@ -936,7 +995,7 @@ func TestReleaseClaimUnknownUIDNoop(t *testing.T) {
 // stuck in the claim's class for whatever unrelated container the pool
 // hands them to next.
 func TestReleaseClaimResetsCpuClass(t *testing.T) {
-	p := newDRATestPolicyWithCPUClasses(t, "gold", "shared")
+	p := newDRATestPolicyWithCPUClasses(t, "shared", "gold")
 
 	leaf := findPoolNode(t, p, "NUMA node #0")
 	sharable := leaf.FreeSupply().SharableCPUs().List()
@@ -953,7 +1012,7 @@ func TestReleaseClaimResetsCpuClass(t *testing.T) {
 	baseline := p.cpuClasses.ClassForCPU(baselineCPU)
 
 	uid := types.UID("claim-cpuclass-reset")
-	if err := p.allocateClaim(uid, claimed, "gold"); err != nil {
+	if err := p.allocateClaim(uid, claimed, goldClassCPUs(claimed)); err != nil {
 		t.Fatalf("allocateClaim() failed: %v", err)
 	}
 	if got := p.cpuClasses.ClassForCPU(cpu); got == baseline {
@@ -967,6 +1026,56 @@ func TestReleaseClaimResetsCpuClass(t *testing.T) {
 	if got := p.cpuClasses.ClassForCPU(cpu); got != baseline {
 		t.Errorf("claimed CPU %d class = %q after releaseClaim(), want reset back to shared-pool baseline %q",
 			cpu, got, baseline)
+	}
+}
+
+// TestAllocateClaimAppliesPerAllocClass covers the MAJOR finding this fix
+// addresses: a single DRA claim can resolve to more than one cpuClass
+// across its ResultAllocs (see classifyClaimCPUs), and allocateClaim must
+// apply each class only to the CPU subset that actually belongs to it,
+// rather than applying whichever class happened to come first to the
+// claim's entire (unioned) CPU set.
+func TestAllocateClaimAppliesPerAllocClass(t *testing.T) {
+	p := newDRATestPolicyWithCPUClasses(t, "shared", "gold", "silver")
+
+	leaf := findPoolNode(t, p, "NUMA node #0")
+	sharable := leaf.FreeSupply().SharableCPUs().List()
+	if len(sharable) < 2 {
+		t.Fatalf("expected at least 2 sharable CPUs on %q", leaf.Name())
+	}
+	goldCPU := cpuset.New(sharable[0])
+	silverCPU := cpuset.New(sharable[1])
+	claimed := goldCPU.Union(silverCPU)
+
+	uid := types.UID("claim-multiclass")
+	classCPUs := map[string]cpuset.CPUSet{
+		"gold":   goldCPU,
+		"silver": silverCPU,
+	}
+	if err := p.allocateClaim(uid, claimed, classCPUs); err != nil {
+		t.Fatalf("allocateClaim() failed: %v", err)
+	}
+
+	// ClassForCPU may return a synthetic, decorated class name (e.g. with a
+	// per-die suffix) rather than the literal config name — see
+	// TestReleaseClaimResetsCpuClass, which compares against a baseline
+	// instead of a literal string for the same reason. What matters here is
+	// that the gold- and silver-alloc CPUs end up in *different*, class
+	// specific buckets: proof that allocateClaim applied each alloc's own
+	// class to its own CPU subset, instead of the pre-fix behavior of
+	// picking one class (from the first alloc) and applying it to the whole
+	// unioned CPU set.
+	goldGot := p.cpuClasses.ClassForCPU(sharable[0])
+	silverGot := p.cpuClasses.ClassForCPU(sharable[1])
+	if !strings.HasPrefix(goldGot, "gold") {
+		t.Errorf("gold-alloc CPU %d class = %q, want a class derived from %q", sharable[0], goldGot, "gold")
+	}
+	if !strings.HasPrefix(silverGot, "silver") {
+		t.Errorf("silver-alloc CPU %d class = %q, want a class derived from %q", sharable[1], silverGot, "silver")
+	}
+	if goldGot == silverGot {
+		t.Errorf("gold-alloc and silver-alloc CPUs ended up in the same class %q; "+
+			"per-alloc class application did not take effect", goldGot)
 	}
 }
 
@@ -987,7 +1096,7 @@ func TestAllocateClaimEvictsOverlappingExclusiveGrant(t *testing.T) {
 		t.Fatalf("test setup error: victim grant not present before allocateClaim")
 	}
 
-	if err := p.allocateClaim(types.UID("evict-claim"), claimed, "gold"); err != nil {
+	if err := p.allocateClaim(types.UID("evict-claim"), claimed, goldClassCPUs(claimed)); err != nil {
 		t.Fatalf("allocateClaim() failed: %v", err)
 	}
 
