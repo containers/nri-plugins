@@ -199,16 +199,16 @@ values.yaml since the chart declares no `kubeVersion` constraint.)
 **Files:**
 - Modify: `deployment/helm/topology-aware/values.yaml`
 
-- [ ] add `dra: { enabled: false, sharedCounters: false }` under the `config:` block in
+- [x] add `dra: { enabled: false, sharedCounters: false }` under the `config:` block in
       `deployment/helm/topology-aware/values.yaml`, with a short comment pointing at
       `TopologyAwareDRA` (`pkg/apis/config/v1alpha1/resmgr/policy/topologyaware/config.go`) as the
       field's meaning, and noting that `resource.k8s.io/v1` (used by the DeviceClass in Task 4)
       requires Kubernetes 1.34+
-- [ ] verify `helm template deployment/helm/topology-aware` renders `spec.dra.enabled: false` in the
+- [x] verify `helm template deployment/helm/topology-aware` renders `spec.dra.enabled: false` in the
       `TopologyAwarePolicy` CR by default (via `templates/config.yaml`'s `toYaml .Values.config`)
-- [ ] verify `helm template deployment/helm/topology-aware --set config.dra.enabled=true` renders
+- [x] verify `helm template deployment/helm/topology-aware --set config.dra.enabled=true` renders
       `spec.dra.enabled: true`
-- [ ] run `helm lint deployment/helm/topology-aware` — must pass before task 2
+- [x] run `helm lint deployment/helm/topology-aware` — must pass before task 2
 
 ### Task 2: Add DRA RBAC rules to clusterrole.yaml
 
