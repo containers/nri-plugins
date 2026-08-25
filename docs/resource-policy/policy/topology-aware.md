@@ -746,7 +746,7 @@ for `cpuClass`-tagged capacity through `node.status.allocatable`.
 #### Prerequisites
 
 - Kubernetes 1.34+, with the [KEP-5075](https://github.com/kubernetes/enhancements/issues/5075)
-  (`AllowMultipleAllocations` / consumable capacity) alpha feature gate enabled on the
+  (`DRAConsumableCapacity` / consumable capacity) alpha feature gate enabled on the
   API server and kubelet. The `DeviceClass` object below uses the `resource.k8s.io/v1`
   API, which requires Kubernetes 1.34+.
 - Optionally, Kubernetes 1.36+, with the
@@ -785,7 +785,7 @@ shared-counters support is available; leave it `false` otherwise.
 
 Each defined `cpuClass` is published as a DRA device under the
 `nri.topology-aware.cpu` `DeviceClass`, with the class's config attributes (such as
-`nri.pctPriority`) exposed as device attributes. A `ResourceClaim` can select on any
+`nri/pctPriority`) exposed as device attributes. A `ResourceClaim` can select on any
 of these attributes. For example, to request 2 CPUs from a high-priority PCT class:
 
 ```yaml
