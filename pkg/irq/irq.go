@@ -45,6 +45,9 @@ var (
 	// ErrDeniedInterrupt is the error returned for attempts to reference or control
 	// globally disallowed interrupts.
 	ErrDeniedInterrupt = errors.New("denied interrupt")
+	// ErrNoSuchInterrupt is the error returned for attempts to look up a
+	// nonexistent interrupt by number.
+	ErrNoSuchInterrupt = errors.New("no such interrupt")
 )
 
 // SetProcRoot sets the procfs root directory and proc mountpoint. All
@@ -176,6 +179,12 @@ func Interrupts() ([]*Irq, error) {
 	return allowedInterrupts(allowed)
 }
 
+// Interrupt returns the IRQ corresponding to the given interrupt number.
+func Interrupt(num int) (*Irq, error) {
+	irq, err := cache.irqByNum(num, allowed)
+	return irq, err
+}
+
 // allowedInterrupts collects and returns the numbered interrupts
 // listed in /proc/interrupts which can be controlled by this package
 // according to the given allow patterns.
@@ -268,7 +277,10 @@ func (irq *Irq) Match(pattern string) bool {
 	return err == nil && match
 }
 
-func (irq *Irq) isAllowed() bool {
+// IsAllowed returns true if this interrupt may be controlled
+// by the package according to the allow patterns in effect
+// when the Irq was introspected.
+func (irq *Irq) IsAllowed() bool {
 	return !irq.denied
 }
 
@@ -283,7 +295,7 @@ func (irq *Irq) AffinityCpus() (cpuset.CPUSet, error) {
 // While writes are blocked, the affinity is only buffered and write
 // errors are logged instead of being returned.
 func (irq *Irq) SetAffinityCpus(cpus cpuset.CPUSet) error {
-	if !irq.isAllowed() {
+	if !irq.IsAllowed() {
 		return fmt.Errorf("%w: refusing to set affinity of irq %d", ErrDeniedInterrupt, irq.num)
 	}
 	if cpus.IsEmpty() {

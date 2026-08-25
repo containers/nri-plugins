@@ -15,6 +15,7 @@
 package irq
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -77,6 +78,65 @@ func TestInterruptsAndMatch(t *testing.T) {
 		if got := byNum[c.num].Match(c.claim); got != c.want {
 			t.Errorf("irq %d Match(%q) = %v, want %v", c.num, c.claim, got, c.want)
 		}
+	}
+}
+
+func TestInterrupt(t *testing.T) {
+	dir := t.TempDir()
+	SetProcRoot(dir)
+	if err := os.Mkdir(filepath.Join(dir, "proc"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "proc", "interrupts"), []byte(sampleInterrupts), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name        string
+		num         int
+		description string
+		err         error
+	}{
+		{
+			name:        "IRQ 1, i8042",
+			num:         1,
+			description: "IR-IO-APIC 1-edge i8042",
+			err:         nil,
+		},
+		{
+			name:        "IRQ 9, acpi",
+			num:         9,
+			description: "IR-IO-APIC 9-fasteoi acpi",
+			err:         nil,
+		},
+		{
+			name:        "IRQ 16, processor_thermal_device_pci",
+			num:         16,
+			description: "IR-IO-APIC 16-fasteoi i801_smbus, processor_thermal_device_pci",
+			err:         nil,
+		},
+		{
+			name:        "non-existent IRQ 666",
+			num:         666,
+			description: "non-existent IRQ 666",
+			err:         ErrNoSuchInterrupt,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			irq, err := Interrupt(tc.num)
+			switch {
+			case err != nil && tc.err == nil:
+				t.Fatalf("unexpected failure for Interrupt(%d): %v", tc.num, err)
+			case err != nil && !errors.Is(err, tc.err):
+				t.Fatalf("wrong error for Interrupt(%d): %v, expecting %v",
+					tc.num, err, tc.err)
+			case err == nil:
+				if irq.Num() != tc.num || irq.Description() != tc.description {
+					t.Fatalf("Interrupt(%d) = %v, want %d, %q", tc.num,
+						irq, tc.num, tc.description)
+				}
+			}
+		})
 	}
 }
 
