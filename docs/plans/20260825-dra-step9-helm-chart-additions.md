@@ -238,16 +238,36 @@ values.yaml since the chart declares no `kubeVersion` constraint.)
 - [x] compare against `dra-driver-cpu`'s Helm chart and PR #536's daemonset diff
       (`docs/dra/pr-536-analysis.md`) for mount scope/`mountPropagation`/`hostPath` type; record
       any deviation (e.g. mount scope) in this plan before implementing.
-      **Finding** (no `dra-driver-cpu` chart or PR #536 available in this repo/session — comparison
-      done against `docs/dra/pr-536-analysis.md`'s written record instead): PR #536's Helm chart
-      mounted only `/var/lib/kubelet/plugins` and `.../plugins_registry` (line 16 of
-      pr-536-analysis.md), no `/var/run/cdi` mount. This plan's third mount (`/var/run/cdi`) is a
-      deliberate addition beyond that precedent, required because the landed driver code writes CDI
-      specs there (`pkg/resmgr/dra/cdi.go`) — PR #536 wrote CDI specs to a different, non-mounted
-      path in its prototype form. No `mountPropagation` override or non-default `hostPath.type` is
-      recorded in pr-536-analysis.md for the two shared mounts, so all three mounts here use the
-      plan's `DirectoryOrCreate` uniformly, matching the existing `nrisockets`/
-      `resource-policydata` volume style in this same file.
+      **Finding** (corrected — an earlier pass of this note claimed the `dra-driver-cpu` chart was
+      unavailable and compared only against `docs/dra/pr-536-analysis.md`'s written record; the
+      reference chart in fact exists locally at
+      `/home/ed/git/dra-driver-cpu/deployment/helm/dra-driver-cpu` and has now been diffed
+      directly): its `templates/daemonset.yaml` mounts four `hostPath` volumes — `device-plugin`
+      (kubelet plugins dir), `plugin-registry` (kubelet plugins_registry dir), `nri-plugin`
+      (`/var/run/nri`, not applicable here — this chart already mounts the NRI socket via its own
+      `nrisockets` volume elsewhere in the file), and `cdi-dir` (`/var/run/cdi`). None of the four
+      are `readOnly`, matching this chart's three DRA mounts. Only `cdi-dir` sets an explicit
+      `hostPath.type: DirectoryOrCreate`; `device-plugin`/`plugin-registry` set no `type` at all
+      (defaults to `""`, i.e. no existence check) — this chart uses `DirectoryOrCreate` on all
+      three DRA mounts uniformly instead, matching the existing `nrisockets`/`resource-policydata`
+      volume style in this same file; no functional difference, since `DirectoryOrCreate` is a
+      superset (creates the dir if kubelet hasn't yet). No `mountPropagation` override on any
+      mount in either chart. PR #536's Helm chart mounted only `/var/lib/kubelet/plugins` and
+      `.../plugins_registry` (line 16 of pr-536-analysis.md), no `/var/run/cdi` mount. This plan's
+      third mount (`/var/run/cdi`) is a deliberate addition beyond that PR #536 precedent (and
+      matches `dra-driver-cpu`'s `cdi-dir` mount), required because the landed driver code writes
+      CDI specs there (`pkg/resmgr/dra/cdi.go`) — PR #536's driver code already wrote CDI specs to
+      the identical `/var/run/cdi` path (`pkg/resmgr/dra.go`'s `writeCDISpecFile`, per
+      pr-536-analysis.md:12), it just never mounted that host path into the daemonset container,
+      so those writes landed in the container's own ephemeral filesystem rather than the host's.
+      Separately, `dra-driver-cpu`'s `templates/clusterrole.yaml` grants two rules this chart does
+      not: `pods: get/list/watch`, and `resourceclaims/driver` (scoped to `resourceNames:
+      [dra.cpu]`) with verbs `associated-node:patch`/`associated-node:update` (a device-binding-
+      conditions-related subresource). Neither has a call site anywhere in `pkg/resmgr/dra/` or
+      `cmd/plugins/topology-aware/policy/dra*.go` (no `Pods()`/`CoreV1().Pods` call, no
+      binding-conditions code), so — consistent with Task 2's drop-unused-rules rationale for
+      `deviceclasses`/`resourceclaims/status` — this chart does not add them either. No
+      `mountPropagation` or `hostPath.type` deviation with functional impact was found.
 - [x] add gated `volumeMounts` entries for `/var/lib/kubelet/plugins`,
       `/var/lib/kubelet/plugins_registry`, `/var/run/cdi` (identical host/container path, no
       `/host` prefix — see Context note on why) inside the container's `volumeMounts:`, following

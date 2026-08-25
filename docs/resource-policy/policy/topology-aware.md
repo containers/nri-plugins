@@ -746,11 +746,15 @@ for `cpuClass`-tagged capacity through `node.status.allocatable`.
 #### Prerequisites
 
 - Kubernetes 1.34+, with the [KEP-5075](https://github.com/kubernetes/enhancements/issues/5075)
-  (`AllowMultipleAllocations` / consumable capacity) and
+  (`AllowMultipleAllocations` / consumable capacity) alpha feature gate enabled on the
+  API server and kubelet. The `DeviceClass` object below uses the `resource.k8s.io/v1`
+  API, which requires Kubernetes 1.34+.
+- Optionally, Kubernetes 1.36+, with the
   [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517)
-  (`DRADeviceBindingConditions` / node allocatable resources) feature gates enabled on
-  the API server and kubelet. The `DeviceClass` object below uses the
-  `resource.k8s.io/v1` API, which requires these gates.
+  (`DRANodeAllocatableResources` / node allocatable resources) alpha feature gate
+  enabled, so the scheduler accounts for `cpuClass`-tagged capacity through
+  `node.status.allocatable`. Without it, DRA allocation still works but capacity
+  mirroring is skipped (see design.md's "Feature-gate detection").
 - The container runtime must support NRI (as for the rest of this policy).
 
 #### Enabling

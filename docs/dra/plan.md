@@ -261,7 +261,15 @@ additionally confirmed to be a deliberate addition beyond PR #536's precedent (w
 only mounted the two `kubelet/plugins{,_registry}` paths), required because the
 landed driver writes CDI specs there (`pkg/resmgr/dra/cdi.go`); all three mounts land
 at identical host/container paths with no `/host` prefix (corrected from design.md's
-stale `/host/var/run/cdi`) and are read-write, not `readOnly`.
+stale `/host/var/run/cdi`) and are read-write, not `readOnly`. The mounts/RBAC were
+also diffed directly against the `dra-driver-cpu` reference chart (available locally
+at `/home/ed/git/dra-driver-cpu/deployment/helm/dra-driver-cpu`): its `cdi-dir` mount
+matches this chart's `/var/run/cdi` addition, and no `mountPropagation`/`hostPath.type`
+deviation with functional impact was found; its clusterrole additionally grants
+`pods: get/list/watch` and a `resourceclaims/driver` (`associated-node:patch/update`)
+rule that this chart does not — neither has a call site in `pkg/resmgr/dra/` or
+`cmd/plugins/topology-aware/policy/dra*.go`, so they were left out per the same
+drop-unused-rules rationale as `deviceclasses`/`resourceclaims/status`.
 
 ### Step 10 — e2e test
 
