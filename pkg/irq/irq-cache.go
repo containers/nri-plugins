@@ -197,6 +197,25 @@ func (c *irqCache) forEachInterrupt(fn func(*Irq) error, allow []string) error {
 	return nil
 }
 
+// irqByNum returns the interrupt for the given IRQ number.
+func (c *irqCache) irqByNum(num int, allow []string) (*Irq, error) {
+	infos, err := c.interruptInfo()
+	if err != nil {
+		return nil, err
+	}
+
+	info, ok := infos[num]
+	if !ok {
+		return nil, fmt.Errorf("%w: irq %d not found", ErrNoSuchInterrupt, num)
+	}
+
+	return &Irq{
+		num:         info.num,
+		description: info.description,
+		denied:      !isAllowedInterruptBy(info.description, allow),
+	}, nil
+}
+
 // affinityOf returns the CPUs in the affinity of the given interrupt.
 // The affinity is read from procfs only until it is known, and
 // affinities set through the cache are visible before they have been

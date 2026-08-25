@@ -233,7 +233,7 @@ func TestAllowedPatternsCalculatedPerCall(t *testing.T) {
 
 	denied := map[int]bool{}
 	if err := ForEachInterrupt(func(irq *Irq) error {
-		denied[irq.Num()] = !irq.isAllowed()
+		denied[irq.Num()] = !irq.IsAllowed()
 		return nil
 	}); err != nil {
 		t.Fatalf("ForEachInterrupt() failed: %v", err)
