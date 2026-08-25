@@ -16,16 +16,19 @@ package topologyaware
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/containers/nri-plugins/pkg/irq"
+	"github.com/containers/nri-plugins/pkg/topology"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	"sigs.k8s.io/yaml"
 )
 
 type IrqAffinity struct {
-	Claim []string `json:"claim,omitempty"`
-	Mask  []string `json:"mask,omitempty"`
-	Mode  IrqMode  `json:"mode,omitempty"`
+	Claim   []string `json:"claim,omitempty"`
+	Devices []string `json:"devices,omitempty"`
+	Mask    []string `json:"mask,omitempty"`
+	Mode    IrqMode  `json:"mode,omitempty"`
 }
 
 type IrqMode string
@@ -58,6 +61,49 @@ func parseIrqAffinity(raw []byte) (*IrqAffinity, error) {
 	}
 
 	return parsed, nil
+}
+
+func addIrqAffinityForHints(a *IrqAffinity, hints topology.Hints) error {
+	if len(hints) == 0 || a == nil || len(a.Devices) == 0 {
+		return nil
+	}
+
+	if err := irq.ValidateAllowedPatterns(a.Devices); err != nil {
+		return fmt.Errorf("invalid IRQ affinity devices pattern: %w", err)
+	}
+
+	for source, h := range hints {
+		for _, num := range h.IRQs {
+			irq, err := irq.Interrupt(num)
+			switch {
+			case err != nil:
+				log.Errorf("irq: skipping %s-hinted IRQ %d: %v", source, num, err)
+				continue
+			case !irq.IsAllowed():
+				log.Warnf("irq: skipping denied %s-hinted IRQ %d", source, num)
+				continue
+			}
+
+			matched := false
+			for _, p := range a.Devices {
+				if irq.Match(p) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				log.Debugf("irq: skipping unmatched %s-hinted IRQ %d (%q)",
+					source, num, irq.Description())
+				continue
+			}
+
+			log.Infof("irq: claim matching %s-hinted IRQ %d (%q)",
+				source, num, irq.Description())
+			a.Claim = append(a.Claim, strconv.Itoa(irq.Num()))
+		}
+	}
+
+	return nil
 }
 
 func (p *policy) irqCpus(hwIrq *irq.Irq) (preMask, claim, mask cpuset.CPUSet) {

@@ -330,6 +330,10 @@ func irqAffinityPreference(ctr cache.Container) (*IrqAffinity, bool, error) {
 
 	switch {
 	case qos == corev1.PodQOSGuaranteed:
+		err := addIrqAffinityForHints(a, ctr.GetTopologyHints())
+		if err != nil {
+			return nil, scope == cache.ContainerScopedAnnotation, err
+		}
 		return a, scope == cache.ContainerScopedAnnotation, nil
 	case scope == cache.ContainerScopedAnnotation:
 		return nil, true, fmt.Errorf("invalid IRQ affinity, QoS class %v is not Guaranteed", qos)
