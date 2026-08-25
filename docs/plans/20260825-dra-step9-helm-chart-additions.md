@@ -296,27 +296,29 @@ values.yaml since the chart declares no `kubeVersion` constraint.)
 - Modify: `docs/dra/design.md`
 - Modify: `docs/resource-policy/policy/topology-aware.md`
 
-- [ ] update design.md's "Helm chart additions" mount table: change
+- [x] update design.md's "Helm chart additions" mount table: change
       `/var/run/cdi → /host/var/run/cdi` to `/var/run/cdi → /var/run/cdi` (identical path), add a
       one-line note that none of the three DRA mounts go through the `--host-root`/`/host` prefix
       used elsewhere in the daemonset, unlike sysfs/procfs, and drop `deviceclasses`/
       `resourceclaims/status` from the RBAC rule table (or note why they're kept, if Task 2's
       cross-check finds a reason not surfaced during planning)
-- [ ] add a "Dynamic Resource Allocation" section to `docs/resource-policy/policy/topology-aware.md`:
+- [x] add a "Dynamic Resource Allocation" section to `docs/resource-policy/policy/topology-aware.md`:
       how to enable (`--set config.dra.enabled=true`), the KEP-5075/KEP-5517 + Kubernetes 1.34+
       prerequisites, the `nri.topology-aware.cpu` DeviceClass name, and a minimal `ResourceClaim`
       example (reuse the Step 10 snippet from `docs/dra/plan.md`'s Step 10 section)
-- [ ] no `deployment/helm/topology-aware/README.md` change needed for `config.dra.enabled` itself:
+- [x] no `deployment/helm/topology-aware/README.md` change needed for `config.dra.enabled` itself:
       verified neither this chart's nor the balloons chart's README gives `allowPCT` its own row
       (it's an equally impactful boolean, present in topology-aware's own `values.yaml`, and
       absent from both README value tables — mentioned only inline in balloons' `openshift.grant-scc`
       row) — the established convention is that individual `config.*` flags are covered by the
       generic `config` row, not enumerated. `config.dra` follows the same convention.
-- [ ] add a "Landed" line to Step 9 in `docs/dra/plan.md` (commit range, and any implementation
+- [x] add a "Landed" line to Step 9 in `docs/dra/plan.md` (commit range, and any implementation
       deviations from this plan — e.g. if the gating value ended up different from
       `.Values.config.dra.enabled`, or if the RBAC/mount comparisons in Tasks 2-3 surfaced
       additional rules/mounts)
-- [ ] move this plan to `docs/plans/completed/`
+- [x] move this plan to `docs/plans/completed/` — not performed here per harness instruction: the
+      plan file must stay at its current path until all review/finalize phases complete; the
+      orchestrator performs the actual move afterward.
 
 ## Post-Completion
 

@@ -244,6 +244,25 @@ Additional deviations not in the original checklist: the claim-lookup helper (`c
 
 **Risk:** low-medium. Kubelet-plugin socket path mounts have historically been the source of "why doesn't my driver register" bugs; verify against `dra-driver-cpu`'s Helm chart as a known-good reference.
 
+**Landed:** commits `2030c1f9`…`2b046670` on branch `DRA` (see
+[`docs/plans/20260825-dra-step9-helm-chart-additions.md`](../plans/20260825-dra-step9-helm-chart-additions.md)
+for the detailed per-task implementation log). Implementation deviations from this
+plan's original Actions text: gating value is `.Values.config.dra.enabled` (read
+nil-safely as `(.Values.config.dra).enabled` in every gated template, not a
+separate chart-level toggle) rather than a bare `dra.enabled`; the new template file
+is named `deviceclass.yaml`, not `native-cpu-device-class.yaml` (matches this
+chart's existing single-lowercase-word filename convention); per-cpuClass shortcut
+`DeviceClass` generation was not implemented (deferred — see design.md's "Helm chart
+additions" second tier, no concrete consumer yet); RBAC dropped `deviceclasses: get`
+and `resourceclaims/status: patch,update` from design.md's original table — neither
+has a call site in `pkg/resmgr/dra/` or the vendored
+`k8s.io/dynamic-resource-allocation@v0.36.4`; the `/var/run/cdi` mount was
+additionally confirmed to be a deliberate addition beyond PR #536's precedent (which
+only mounted the two `kubelet/plugins{,_registry}` paths), required because the
+landed driver writes CDI specs there (`pkg/resmgr/dra/cdi.go`); all three mounts land
+at identical host/container paths with no `/host` prefix (corrected from design.md's
+stale `/host/var/run/cdi`) and are read-write, not `readOnly`.
+
 ### Step 10 — e2e test
 
 **Rationale.** Prove the full path end-to-end. Follows the pattern of existing `test/e2e/policies.test-suite/topology-aware/n4c16/test*/`.

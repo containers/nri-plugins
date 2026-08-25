@@ -258,23 +258,32 @@ Same as prior draft:
 
 ### Helm chart additions
 
-RBAC:
+RBAC (re-derived from actual call sites in `pkg/resmgr/dra/` and
+`k8s.io/dynamic-resource-allocation@v0.36.4`, landed in Step 9 — this rule set is
+narrower than an earlier draft of this table: the driver never calls `DeviceClasses()`
+or writes `resourceclaims/status`, so those two rules were dropped as unused,
+privilege-escalation-relevant surface):
 ```yaml
 - apiGroups: ["resource.k8s.io"]
   resources: [resourceslices]
   verbs: [list, watch, create, update, delete]
 - apiGroups: ["resource.k8s.io"]
-  resources: [resourceclaims, deviceclasses]
+  resources: [resourceclaims]
   verbs: [get]
-- apiGroups: ["resource.k8s.io"]
-  resources: [resourceclaims/status]
-  verbs: [patch, update]
 ```
 
-Volume mounts (host):
+Volume mounts (host) — all three at **identical host/container paths**, no `/host`
+prefix. Unlike sysfs/procfs/rdt/blkio (which go through `opt.HostRoot`/`--host-root`,
+see `pkg/resmgr/resource-manager.go:80-83`), the DRA driver and the vendored
+`k8s.io/dynamic-resource-allocation/kubeletplugin` library use these as unprefixed
+absolute paths with no host-root offsetting — so the container must see them at the
+same path the host does:
 - `/var/lib/kubelet/plugins` → `/var/lib/kubelet/plugins`
 - `/var/lib/kubelet/plugins_registry` → `/var/lib/kubelet/plugins_registry`
-- `/var/run/cdi` → `/host/var/run/cdi`
+- `/var/run/cdi` → `/var/run/cdi`
+
+All three mounts must be read-write (not `readOnly: true`) — the driver creates the
+plugin/registrar sockets and writes CDI specs under these paths.
 
 `DeviceClass` objects — two levels:
 
