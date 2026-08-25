@@ -276,18 +276,18 @@ values.yaml since the chart declares no `kubeVersion` constraint.)
 
 ### Task 5: Verify acceptance criteria
 
-- [ ] verify all four Helm chart additions from the Overview are present and each individually
+- [x] verify all four Helm chart additions from the Overview are present and each individually
       gated on `(.Values.config.dra).enabled`
-- [ ] verify `helm template deployment/helm/topology-aware` with default values renders no DRA
+- [x] verify `helm template deployment/helm/topology-aware` with default values renders no DRA
       RBAC rules, no DRA mounts, and no `DeviceClass` — i.e. functionally a no-op for existing
       deployments. Note it is not byte-identical to pre-Task-1 output: `spec.dra: {enabled: false,
       sharedCounters: false}` now appears in the rendered `TopologyAwarePolicy` CR (inert, since
       `DRAEnabled()` is false either way). Diff the full default-values render against a
       pre-change checkout to confirm no other whitespace/indentation regression crept into
       `daemonset.yaml`
-- [ ] verify `helm template deployment/helm/topology-aware --set config.dra.enabled=true` renders
+- [x] verify `helm template deployment/helm/topology-aware --set config.dra.enabled=true` renders
       all four additions together in one pass
-- [ ] run `helm lint deployment/helm/*` (matches `.github/workflows/helm-lint.yaml` exactly)
+- [x] run `helm lint deployment/helm/*` (matches `.github/workflows/helm-lint.yaml` exactly)
 
 ### Task 6: [Final] Update documentation and plan.md
 
