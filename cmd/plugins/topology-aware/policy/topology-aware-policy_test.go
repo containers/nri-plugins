@@ -17,6 +17,7 @@ package topologyaware
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 
 	resourceapi "k8s.io/api/resource/v1"
@@ -107,6 +108,15 @@ func (*fakeDRAClaimStore) Load() (map[types.UID]*dra.ClaimState, error) { return
 // hands out for every PickHpCpus call.
 func newTestDRAPlugin(t *testing.T, pick cpuset.CPUSet, deviceName string) *dra.Plugin {
 	t.Helper()
+	return newTestDRAPluginWithLock(t, pick, deviceName, func(f func()) { f() })
+}
+
+// newTestDRAPluginWithLock is newTestDRAPlugin with an injectable WithLock,
+// letting lock-contract tests share a single non-reentrant stub between the
+// DRA plugin's deps.WithLock and the policy's options.WithLock (both are
+// backed by the same resmgr write lock in production).
+func newTestDRAPluginWithLock(t *testing.T, pick cpuset.CPUSet, deviceName string, withLock func(func())) *dra.Plugin {
+	t.Helper()
 
 	className := "gold"
 	device := resourceapi.Device{
@@ -133,7 +143,7 @@ func newTestDRAPlugin(t *testing.T, pick cpuset.CPUSet, deviceName string) *dra.
 		ClaimAllocator:  &fakeDRAClaimAllocator{pick: pick},
 		CDIWriter:       &fakeDRACDIWriter{},
 		ClaimStore:      &fakeDRAClaimStore{},
-		WithLock:        func(f func()) { f() },
+		WithLock:        withLock,
 		Logger:          log,
 	}
 
@@ -373,6 +383,86 @@ func TestStartReappliesDRAClaimsAfterRestoreCache(t *testing.T) {
 	if err := p.Start(); err != nil {
 		t.Fatalf("Start() unexpected error: %v", err)
 	}
+	if got := leaf.FreeSupply().SharableCPUs(); got.Intersection(claimed).Size() != 0 {
+		t.Errorf("claimed CPUs %s not marked once Start() completed: sharable=%s", claimed, got)
+	}
+}
+
+// lockContractStub is a WithLock stand-in that panics if invoked while
+// already "held", i.e. re-entrantly. Mirrors pkg/resmgr/policy's
+// lockContractStub: used here to assert that Start()'s draPlugin.Start(),
+// draPlugin.PublishResources(), and reapplyDRAClaims() calls each acquire
+// the (shared, non-reentrant) resmgr write lock in strict sequence, never
+// nested — the exact bug class of the reapplyDRAClaims/LiveClaimsLocked
+// unsynchronized-access race this test guards against.
+type lockContractStub struct {
+	mu   sync.Mutex
+	held bool
+}
+
+func (s *lockContractStub) run(f func()) {
+	s.mu.Lock()
+	if s.held {
+		s.mu.Unlock()
+		panic("WithLock invoked re-entrantly")
+	}
+	s.held = true
+	s.mu.Unlock()
+
+	defer func() {
+		s.mu.Lock()
+		s.held = false
+		s.mu.Unlock()
+	}()
+
+	f()
+}
+
+// TestStartReapplyDRAClaimsHoldsWriteLockNotReentrant verifies that Start()
+// runs reapplyDRAClaims() (and therefore LiveClaimsLocked(), which reads
+// p.claims with no internal synchronization) under the same non-reentrant
+// WithLock the DRA plugin's own Start()/PublishResources() use — and never
+// nests a second acquisition inside an already-held one, which would
+// deadlock. A single lockContractStub is shared between the policy's
+// options.WithLock and the DRA plugin's deps.WithLock, exactly as production
+// wiring shares one resmgr write lock (m.withWriteLock) between both.
+func TestStartReapplyDRAClaimsHoldsWriteLockNotReentrant(t *testing.T) {
+	stub := &lockContractStub{}
+	p := newDRATestPolicyWithLock(t, stub.run)
+
+	leaf := findPoolNode(t, p, "NUMA node #0")
+	sharable := leaf.FreeSupply().SharableCPUs().List()
+	if len(sharable) < 2 {
+		t.Fatalf("expected at least 2 sharable CPUs on %q", leaf.Name())
+	}
+	claimed := cpuset.New(sharable[0], sharable[1])
+
+	plugin := newTestDRAPluginWithLock(t, claimed, "dev0", stub.run)
+	uid := types.UID("claim-lock-contract-1")
+	_ = seedLiveClaim(t, plugin, uid, "dev0", claimed.Size())
+	p.draPlugin = plugin
+
+	var startErr error
+	panicked := false
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				panicked = true
+			}
+		}()
+		startErr = p.Start()
+	}()
+
+	if panicked {
+		t.Fatalf("Start() panicked: WithLock was invoked re-entrantly")
+	}
+	if startErr != nil {
+		t.Fatalf("Start() unexpected error: %v", startErr)
+	}
+	if stub.held {
+		t.Errorf("resmgr write lock still held after Start() returned")
+	}
+
 	if got := leaf.FreeSupply().SharableCPUs(); got.Intersection(claimed).Size() != 0 {
 		t.Errorf("claimed CPUs %s not marked once Start() completed: sharable=%s", claimed, got)
 	}

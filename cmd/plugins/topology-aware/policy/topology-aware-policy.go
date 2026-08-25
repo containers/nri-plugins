@@ -199,9 +199,15 @@ func (p *policy) Start() error {
 	// Start the DRA plugin (if built by Setup()) before reapplyDRAClaims:
 	// draPlugin.Start(ctx) loads the persisted ClaimStore, which
 	// reapplyDRAClaims reads via LiveClaimsLocked() to re-mark pool
-	// supplies. Neither call is made while holding the resmgr lock —
-	// Start/PublishResources take their own internal WithLock only for the
-	// specific sections that touch shared Handler/claim state.
+	// supplies. Start/PublishResources are not made while holding the
+	// resmgr lock — they take their own internal WithLock only for the
+	// specific sections that touch shared Handler/claim state. However,
+	// once draPlugin.Start(ctx) returns, the kubelet plugin is registered
+	// and may immediately start serving PrepareResourceClaims/
+	// UnprepareResourceClaims RPCs in background goroutines; those mutate
+	// p.claims under deps.WithLock (= the resmgr write lock). reapplyDRAClaims
+	// (via LiveClaimsLocked) reads p.claims and therefore must also run under
+	// that same lock to avoid a concurrent unsynchronized map access.
 	if p.draPlugin != nil {
 		ctx, cancel := context.WithCancel(context.Background())
 		p.draCtx = ctx
@@ -213,11 +219,17 @@ func (p *policy) Start() error {
 		if err := p.draPlugin.PublishResources(ctx); err != nil {
 			log.Errorf("dra: failed to publish DRA resources: %v", err)
 		}
-	}
 
-	// Re-mark any DRA-claimed CPUs in the freshly rebuilt pool supplies.
-	// No-op if DRA is disabled (draPlugin == nil).
-	p.reapplyDRAClaims()
+		// Re-mark any DRA-claimed CPUs in the freshly rebuilt pool
+		// supplies. Must run under the resmgr write lock (see above);
+		// p.options.WithLock is the same closure the DRA plugin itself
+		// uses (dra.Deps.WithLock), and reapplyDRAClaims/its helpers
+		// (evictOverlappingGrants, remarkClaimInSupply, reallocateEvicted)
+		// do not call WithLock themselves, so this cannot deadlock.
+		p.options.WithLock(func() {
+			p.reapplyDRAClaims()
+		})
+	}
 
 	// Turn coldstart forcibly off if we have movable non-DRAM memory.
 	// Note that although this can change dynamically we only check it
@@ -998,8 +1010,13 @@ func (p *policy) remarkClaimInSupply(uid types.UID, cpus cpuset.CPUSet, classNam
 // claimContainerRefs, so it stays consistent with remarkClaimInSupply's
 // marking-only contract.
 //
-// Caller must hold the resmgr write lock (LiveClaimsLocked's contract);
-// callers must not invoke this from inside a WithLock callback.
+// Caller must hold the resmgr write lock (LiveClaimsLocked's contract).
+// Reconfigure() already runs under the caller's lock, so it calls this
+// directly. Start() runs unlocked (see its comment), so it must establish
+// the lock itself via p.options.WithLock(func() { p.reapplyDRAClaims() }) —
+// do not call reapplyDRAClaims from inside a callback that is nested inside
+// an *already held* WithLock/resmgr-lock scope, since the lock is not
+// reentrant and a second acquisition would deadlock.
 func (p *policy) reapplyDRAClaims() {
 	if p.draPlugin == nil {
 		return

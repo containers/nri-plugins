@@ -34,6 +34,17 @@ import (
 // tree-wide propagation depends on.
 func newDRATestPolicy(t *testing.T) *policy {
 	t.Helper()
+	// WithLock must be non-nil: Start() runs reapplyDRAClaims() under
+	// p.options.WithLock whenever p.draPlugin != nil (tests below set
+	// p.draPlugin directly), mirroring the real resmgr write lock.
+	return newDRATestPolicyWithLock(t, func(f func()) { f() })
+}
+
+// newDRATestPolicyWithLock is newDRATestPolicy with an injectable WithLock,
+// letting lock-contract tests (see topology-aware-policy_test.go) observe
+// exactly when Start()/Reconfigure() hold the resmgr write lock.
+func newDRATestPolicyWithLock(t *testing.T, withLock func(func())) *policy {
+	t.Helper()
 
 	dir, err := os.MkdirTemp("", "nri-resource-policy-test-sysfs-")
 	if err != nil {
@@ -58,6 +69,7 @@ func newDRATestPolicy(t *testing.T) *policy {
 				cfgapi.CPU: "750m",
 			},
 		},
+		WithLock: withLock,
 	}
 
 	p := New().(*policy)
@@ -105,6 +117,9 @@ func newDRATestPolicyWithCPUClasses(t *testing.T, claimClass, sharedClass string
 			},
 			SharedPoolCpuClass: sharedClass,
 		},
+		// See newDRATestPolicy: Start() requires a non-nil WithLock whenever
+		// p.draPlugin is set.
+		WithLock: func(f func()) { f() },
 	}
 
 	p := New().(*policy)
