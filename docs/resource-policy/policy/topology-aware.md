@@ -739,7 +739,7 @@ Containers eligible for exclusive CPU allocation can be annotated with IRQ
 tuning to claim selected IRQs, mask selected IRQs, or do both, using the
 `irq-affinity.resource-policy.nri.io` annotation key.
 
-The annotation has 3 fields:
+The annotation has 4 fields:
 **`claim`** (list of strings)
 - Lists IRQs handled by the exclusive CPUs allocated to the container.
 - Each item refers to IRQs either by an exact number, or by a pattern
@@ -747,6 +747,9 @@ The annotation has 3 fields:
   instance "*nvme*".
 - The affinity of a claimed IRQ is set to the union of CPUs of all
   containers that claim it.
+**`devices`** (list of strings)
+- The same as `claim`, but listed IRQs match only devices assigned to
+  the container instead of all devices in the system.
 **`mask`** (list of strings)
 - Lists IRQs which should not be handled by the exclusive CPUs allocated
   to the container.
