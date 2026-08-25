@@ -41,6 +41,14 @@ import (
 // dependency validation) are returned as errors, since those indicate a
 // real misconfiguration rather than a timing issue.
 //
+// buildDRAPlugin is only ever called once, from the initial Setup() call
+// (never from Reconfigure()): p.cfg is nil at construction time (the policy
+// is zero-valued until Setup() runs), so a "detect Reconfigure by checking
+// p.cfg" heuristic here would be unreachable dead code. Flip detection for
+// cfg.DRAEnabled() across a later Reconfigure() therefore lives in
+// Reconfigure() itself, which refuses any such change outright rather than
+// tearing down/rebuilding p.draPlugin (see Reconfigure's own comment).
+//
 // opts.KubeClientFn (see the BackendOptions doc) may return a nil
 // kubernetes.Interface — either because opts.KubeClientFn itself is nil
 // (defensive; should not happen in production wiring) or because the
@@ -119,17 +127,17 @@ func (p *policy) PostReconfigure() error {
 	return p.draPlugin.PublishResources(p.draCtx)
 }
 
-// draClassNameOf returns the "nri/cpuClass" attribute value of a DRA device,
-// or "" if the device carries no such attribute (should not happen for
-// devices built by cpuclass.buildDRADevices, but handled defensively).
+// draClassNameOf returns the cpuclass.AttrCPUClass attribute value of a DRA
+// device, or "" if the device carries no such attribute (should not happen
+// for devices built by cpuclass.buildDRADevices, but handled defensively).
 func draClassNameOf(d resapi.Device) string {
-	if attr, ok := d.Attributes["nri/cpuClass"]; ok && attr.StringValue != nil {
+	if attr, ok := d.Attributes[cpuclass.AttrCPUClass]; ok && attr.StringValue != nil {
 		return *attr.StringValue
 	}
 	return ""
 }
 
-// groupDRADevicesByClass partitions devices by their "nri/cpuClass"
+// groupDRADevicesByClass partitions devices by their cpuclass.AttrCPUClass
 // attribute, sorting each class's devices by name so that two snapshots of
 // the same logical device set compare equal regardless of slice order.
 func groupDRADevicesByClass(devices []resapi.Device) map[string][]resapi.Device {

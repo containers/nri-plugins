@@ -30,6 +30,7 @@ import (
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
 
+	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	"tags.cncf.io/container-device-interface/pkg/parser"
 )
@@ -113,13 +114,13 @@ func (p *Plugin) deviceIndex() (map[string]deviceInfo, error) {
 	idx := make(map[string]deviceInfo, len(devs))
 	for _, d := range devs {
 		info := deviceInfo{}
-		if attr, ok := d.Attributes[resourceapi.QualifiedName("nri/cpuClass")]; ok && attr.StringValue != nil {
+		if attr, ok := d.Attributes[cpuclass.AttrCPUClass]; ok && attr.StringValue != nil {
 			info.ClassName = *attr.StringValue
 		}
-		if attr, ok := d.Attributes[resourceapi.QualifiedName("nri/packageID")]; ok && attr.IntValue != nil {
+		if attr, ok := d.Attributes[cpuclass.AttrPackageID]; ok && attr.IntValue != nil {
 			info.PkgID = int(*attr.IntValue)
 		}
-		if attr, ok := d.Attributes[resourceapi.QualifiedName("nri/punitID")]; ok && attr.IntValue != nil {
+		if attr, ok := d.Attributes[cpuclass.AttrPunitID]; ok && attr.IntValue != nil {
 			info.PunitID = int(*attr.IntValue)
 		}
 		idx[d.Name] = info
@@ -222,7 +223,7 @@ func (p *Plugin) PrepareResourceClaims(_ context.Context, claims []*resourceapi.
 					}
 
 					// Step 6: read CPU count from ConsumedCapacity.
-					q, ok := r.ConsumedCapacity[resourceapi.QualifiedName("nri/cpus")]
+					q, ok := r.ConsumedCapacity[cpuclass.CapacityCPUs]
 					if !ok {
 						p.rollbackPicks(pickedAllocs)
 						return kubeletplugin.PrepareResult{Err: errMissingConsumedCapacity}

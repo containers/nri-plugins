@@ -100,8 +100,8 @@ type policy struct {
 	// nil check.
 	draPlugin *dra.Plugin
 	// draCtx is the context passed to draPlugin.Start()/PublishResources();
-	// stored so PostReconfigure (a later step) can re-call PublishResources
-	// with the same context. nil when draPlugin is nil.
+	// stored so PostReconfigure can re-call PublishResources with the same
+	// context. nil when draPlugin is nil.
 	draCtx context.Context
 	// draCtxCancel cancels draCtx. Called from Stop() to shut the DRA
 	// plugin's background goroutines down. nil when draPlugin is nil.
@@ -164,11 +164,8 @@ func (p *policy) Setup(opts *policyapi.BackendOptions) error {
 	}
 
 	// Build the DRA plugin, if enabled, once at initial Setup() time. There
-	// is no DRAEnabled-flip check here: p.cfg is nil at construction time
-	// (the policy is zero-valued until this call), so "detect Reconfigure
-	// by checking p.cfg" is unreachable dead code. Flip detection belongs
-	// in Reconfigure() (a later step), which refuses a change to
-	// cfg.DRAEnabled() rather than tearing down/rebuilding the plugin here.
+	// is no DRAEnabled-flip check here — see buildDRAPlugin's doc comment
+	// (dra.go) for why that check belongs in Reconfigure() instead.
 	if p.cfg.DRAEnabled() {
 		if err := p.buildDRAPlugin(opts); err != nil {
 			return policyError("failed to initialize %s policy: %w", PolicyName, err)
@@ -656,16 +653,13 @@ func (p *policy) Reconfigure(newCfg any) error {
 	allocations := savedPolicy.allocations.clone()
 
 	// DRA enable/disable flip: buildDRAPlugin only ever runs once, from the
-	// initial Setup() (see its doc comment) — Reconfigure() never tears
-	// down or (re)builds p.draPlugin. A config change that flips
-	// cfg.DRAEnabled() would desync p.draPlugin from the new config's
-	// intent (e.g. "disabled" in the new config but the plugin keeps
-	// running, or "enabled" but no plugin ever gets built), so it is
-	// refused outright, independent of any live claims. This check must be
-	// in Reconfigure(), not Setup(): p.cfg is nil at initial Setup() time
-	// (the policy is zero-valued at construction), making a "detect
-	// Reconfigure by checking p.cfg" heuristic in Setup() unreachable dead
-	// code (see buildDRAPlugin's/Setup()'s comments).
+	// initial Setup() (see its doc comment in dra.go for why this check
+	// cannot live there) — Reconfigure() never tears down or (re)builds
+	// p.draPlugin. A config change that flips cfg.DRAEnabled() would
+	// desync p.draPlugin from the new config's intent (e.g. "disabled" in
+	// the new config but the plugin keeps running, or "enabled" but no
+	// plugin ever gets built), so it is refused outright, independent of
+	// any live claims.
 	if cfg.DRAEnabled() != p.cfg.DRAEnabled() {
 		return policyError("failed to reconfigure: cannot change dra.enabled (%v -> %v) without a restart",
 			p.cfg.DRAEnabled(), cfg.DRAEnabled())

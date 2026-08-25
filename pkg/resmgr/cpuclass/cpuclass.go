@@ -197,6 +197,16 @@ func (h *Handler) IsHPClass(className string) bool {
 // for tests that need to verify a UseClass call actually changed (or
 // restored) a CPU's class, since Handler otherwise exposes no per-CPU class
 // query. Nil-safe.
+//
+// This is a test-only accessor kept on the exported Handler API rather than
+// behind an export_test.go shim: its only callers are cmd/plugins/topology-
+// aware/policy's tests, a different package, and Go test files are never
+// compiled into a package's importable surface across package boundaries —
+// an export_test.go in this package would be invisible there. Duplicating
+// equivalent instrumentation on the caller side (e.g. inspecting SST mock
+// state directly) would require exposing Handler's internal CLOS/class
+// mapping some other way, which is a larger change than this narrow,
+// clearly-documented read accessor.
 func (h *Handler) ClassForCPU(cpu int) string {
 	if h == nil {
 		return ""
