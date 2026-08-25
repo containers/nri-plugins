@@ -215,20 +215,20 @@ values.yaml since the chart declares no `kubeVersion` constraint.)
 **Files:**
 - Modify: `deployment/helm/topology-aware/templates/clusterrole.yaml`
 
-- [ ] cross-check design.md's proposed RBAC rule set against actual call sites in
+- [x] cross-check design.md's proposed RBAC rule set against actual call sites in
       `pkg/resmgr/dra/` and the vendored `k8s.io/dynamic-resource-allocation` — confirm
       `deviceclasses: get` and `resourceclaims/status: patch,update` have no call site and are
       safe to drop (see Context note)
-- [ ] add the two remaining DRA rule blocks (`resourceslices` CRUD; `resourceclaims: get`) to
+- [x] add the two remaining DRA rule blocks (`resourceslices` CRUD; `resourceclaims: get`) to
       `deployment/helm/topology-aware/templates/clusterrole.yaml`, wrapped in
       `{{- if (.Values.config.dra).enabled }} ... {{- end }}` (nil-safe form — see Technical Details)
-- [ ] verify `helm template ... | grep -A2 resourceslices` is absent with default values
-- [ ] verify `helm template ... --set config.dra.enabled=true | grep resourceslices` shows the new
+- [x] verify `helm template ... | grep -A2 resourceslices` is absent with default values
+- [x] verify `helm template ... --set config.dra.enabled=true | grep resourceslices` shows the new
       rules with the correct verbs, and that no `deviceclasses` or `resourceclaims/status` rule is
       present
-- [ ] verify `helm template ... --set config.dra=null` still renders successfully (does not panic
+- [x] verify `helm template ... --set config.dra=null` still renders successfully (does not panic
       the whole chart)
-- [ ] run `helm lint deployment/helm/topology-aware` — must pass before task 3
+- [x] run `helm lint deployment/helm/topology-aware` — must pass before task 3
 
 ### Task 3: Add DRA host mounts to daemonset.yaml
 
