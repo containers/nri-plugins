@@ -142,6 +142,14 @@ spec:
           - name: hostdev
             mountPath: /host/dev
           {{- end }}
+          {{- if (.Values.config.dra).enabled }}
+          - name: kubelet-plugins
+            mountPath: /var/lib/kubelet/plugins
+          - name: kubelet-plugins-registry
+            mountPath: /var/lib/kubelet/plugins_registry
+          - name: cdi-spec-dir
+            mountPath: /var/run/cdi
+          {{- end }}
 
       {{- if .Values.podPriorityClassNodeCritical }}
       priorityClassName: system-node-critical
@@ -175,6 +183,20 @@ spec:
         hostPath:
           path: /dev
           type: Directory
+      {{- end }}
+      {{- if (.Values.config.dra).enabled }}
+      - name: kubelet-plugins
+        hostPath:
+          path: /var/lib/kubelet/plugins
+          type: DirectoryOrCreate
+      - name: kubelet-plugins-registry
+        hostPath:
+          path: /var/lib/kubelet/plugins_registry
+          type: DirectoryOrCreate
+      - name: cdi-spec-dir
+        hostPath:
+          path: /var/run/cdi
+          type: DirectoryOrCreate
       {{- end }}
       {{- if .Values.nri.runtime.patchConfig }}
       - name: containerd-config

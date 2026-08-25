@@ -235,22 +235,32 @@ values.yaml since the chart declares no `kubeVersion` constraint.)
 **Files:**
 - Modify: `deployment/helm/topology-aware/templates/daemonset.yaml`
 
-- [ ] compare against `dra-driver-cpu`'s Helm chart and PR #536's daemonset diff
+- [x] compare against `dra-driver-cpu`'s Helm chart and PR #536's daemonset diff
       (`docs/dra/pr-536-analysis.md`) for mount scope/`mountPropagation`/`hostPath` type; record
-      any deviation (e.g. mount scope) in this plan before implementing
-- [ ] add gated `volumeMounts` entries for `/var/lib/kubelet/plugins`,
+      any deviation (e.g. mount scope) in this plan before implementing.
+      **Finding** (no `dra-driver-cpu` chart or PR #536 available in this repo/session — comparison
+      done against `docs/dra/pr-536-analysis.md`'s written record instead): PR #536's Helm chart
+      mounted only `/var/lib/kubelet/plugins` and `.../plugins_registry` (line 16 of
+      pr-536-analysis.md), no `/var/run/cdi` mount. This plan's third mount (`/var/run/cdi`) is a
+      deliberate addition beyond that precedent, required because the landed driver code writes CDI
+      specs there (`pkg/resmgr/dra/cdi.go`) — PR #536 wrote CDI specs to a different, non-mounted
+      path in its prototype form. No `mountPropagation` override or non-default `hostPath.type` is
+      recorded in pr-536-analysis.md for the two shared mounts, so all three mounts here use the
+      plan's `DirectoryOrCreate` uniformly, matching the existing `nrisockets`/
+      `resource-policydata` volume style in this same file.
+- [x] add gated `volumeMounts` entries for `/var/lib/kubelet/plugins`,
       `/var/lib/kubelet/plugins_registry`, `/var/run/cdi` (identical host/container path, no
       `/host` prefix — see Context note on why) inside the container's `volumeMounts:`, following
       the existing `{{- if .Values.allowPCT }}` block style, gated on `(.Values.config.dra).enabled`
       (nil-safe form)
-- [ ] explicitly do **not** set `readOnly: true` on any of the three (unlike the adjacent
+- [x] explicitly do **not** set `readOnly: true` on any of the three (unlike the adjacent
       `pod-resources-socket`/`nrisockets` mounts) — the driver needs write access for sockets and
       CDI specs
-- [ ] add the matching `volumes:` `hostPath` entries (`type: DirectoryOrCreate`), gated the same way
-- [ ] verify `helm template ...` (default values) has none of the three new mount paths
-- [ ] verify `helm template ... --set config.dra.enabled=true` shows all three mounts at identical
+- [x] add the matching `volumes:` `hostPath` entries (`type: DirectoryOrCreate`), gated the same way
+- [x] verify `helm template ...` (default values) has none of the three new mount paths
+- [x] verify `helm template ... --set config.dra.enabled=true` shows all three mounts at identical
       host/container paths, and none has `readOnly: true`
-- [ ] run `helm lint deployment/helm/topology-aware` — must pass before task 4
+- [x] run `helm lint deployment/helm/topology-aware` — must pass before task 4
 
 ### Task 4: Add base DeviceClass template
 
