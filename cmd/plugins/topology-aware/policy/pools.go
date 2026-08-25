@@ -1581,21 +1581,7 @@ func (p *policy) allocateClaim(uid types.UID, cpus cpuset.CPUSet, className stri
 			return policyError("cannot allocate DRA claim %s (class %q, CPUs %s): %v", uid, className, cpus, err)
 		}
 
-		var evicted []cache.Container
-		evictedCpusets := map[string]string{}
-		for _, g := range p.allocations.grants {
-			if g.ExclusiveCPUs().Intersection(cpus).IsEmpty() {
-				continue
-			}
-			c := g.GetContainer()
-			evicted = append(evicted, c)
-			evictedCpusets[c.GetID()] = c.GetCpusetCpus()
-		}
-
-		for _, c := range evicted {
-			log.Infof("dra: evicting %s to free CPUs %s for claim %s", c.PrettyName(), cpus, uid)
-			p.releasePool(c)
-		}
+		evicted, evictedCpusets := p.evictOverlappingGrants(cpus, fmt.Sprintf("claim %s", uid))
 
 		pool.FreeSupply().ClaimCPUs(uid, cpus)
 
@@ -1621,41 +1607,79 @@ func (p *policy) allocateClaim(uid types.UID, cpus cpuset.CPUSet, className stri
 		// affected here (see updateSharedAllocations).
 		p.updateSharedAllocations(nil)
 
-		if len(evicted) > 0 {
-			if err := p.reallocateResources(evicted, nil); err != nil {
-				log.Errorf("dra: failed to fully reallocate %d container(s) evicted for claim %s: %v",
-					len(evicted), uid, err)
-
-				// Safety net: any evicted container that still has no grant
-				// (reallocatePool failed for it) must not be left pinned to
-				// a cpuset that overlaps the CPUs now exclusively owned by
-				// this DRA claim — that would let two workloads run on the
-				// same physical CPUs simultaneously. Forcibly strip the
-				// claimed CPUs out of its last-known cgroup cpuset.
-				for _, c := range evicted {
-					if _, ok := p.allocations.getGrant(c.GetID()); ok {
-						continue
-					}
-					prev, perr := cpuset.Parse(evictedCpusets[c.GetID()])
-					if perr != nil {
-						log.Errorf("dra: claim %s: cannot safely re-pin %s off claimed CPUs %s: %v",
-							uid, c.PrettyName(), cpus, perr)
-						continue
-					}
-					safe := prev.Difference(cpus)
-					log.Warnf("dra: claim %s: %s could not be reallocated after eviction; "+
-						"forcing cpuset from %s to %s to avoid overlap with claimed CPUs %s",
-						uid, c.PrettyName(), prev, safe, cpus)
-					c.SetCpusetCpus(safe.String())
-				}
-
-				return policyError("dra: claim %s: evicted %d container(s) to free CPUs %s but failed "+
-					"to fully reallocate them: %v", uid, len(evicted), cpus, err)
-			}
+		if err := p.reallocateEvicted(evicted, evictedCpusets, cpus, uid); err != nil {
+			return policyError("dra: claim %s: evicted %d container(s) to free CPUs %s but failed "+
+				"to fully reallocate them: %v", uid, len(evicted), cpus, err)
 		}
 	}
 
 	p.claimContainerRefs[uid]++
+
+	return nil
+}
+
+// evictOverlappingGrants releases the exclusive grant of every container
+// whose ExclusiveCPUs() overlaps cpus, returning the evicted containers and
+// a snapshot of their cgroup cpuset.cpus (as it was right before eviction) —
+// the latter is needed by reallocateEvicted's safety net if reallocation
+// later fails for one of them. reason is used only for logging.
+func (p *policy) evictOverlappingGrants(cpus cpuset.CPUSet, reason string) ([]cache.Container, map[string]string) {
+	var evicted []cache.Container
+	evictedCpusets := map[string]string{}
+	for _, g := range p.allocations.grants {
+		if g.ExclusiveCPUs().Intersection(cpus).IsEmpty() {
+			continue
+		}
+		c := g.GetContainer()
+		evicted = append(evicted, c)
+		evictedCpusets[c.GetID()] = c.GetCpusetCpus()
+	}
+
+	for _, c := range evicted {
+		log.Infof("dra: evicting %s to free CPUs %s for %s", c.PrettyName(), cpus, reason)
+		p.releasePool(c)
+	}
+
+	return evicted, evictedCpusets
+}
+
+// reallocateEvicted attempts to reallocate the containers evicted (by
+// evictOverlappingGrants) to free cpus for DRA claim uid. If reallocation
+// fails for one or more of them, it forcibly strips cpus out of their
+// last-known cgroup cpuset (evictedCpusets, as captured before eviction) as
+// a safety net: an evicted container that ends up with no grant must not be
+// left pinned to a cpuset that overlaps the CPUs a DRA claim now exclusively
+// owns — that would let two workloads run on the same physical CPUs
+// simultaneously. Returns the (possibly partial-reallocation) error from
+// reallocateResources, or nil if evicted is empty or reallocation succeeded.
+func (p *policy) reallocateEvicted(evicted []cache.Container, evictedCpusets map[string]string, cpus cpuset.CPUSet, uid types.UID) error {
+	if len(evicted) == 0 {
+		return nil
+	}
+
+	if err := p.reallocateResources(evicted, nil); err != nil {
+		log.Errorf("dra: failed to fully reallocate %d container(s) evicted for claim %s: %v",
+			len(evicted), uid, err)
+
+		for _, c := range evicted {
+			if _, ok := p.allocations.getGrant(c.GetID()); ok {
+				continue
+			}
+			prev, perr := cpuset.Parse(evictedCpusets[c.GetID()])
+			if perr != nil {
+				log.Errorf("dra: claim %s: cannot safely re-pin %s off claimed CPUs %s: %v",
+					uid, c.PrettyName(), cpus, perr)
+				continue
+			}
+			safe := prev.Difference(cpus)
+			log.Warnf("dra: claim %s: %s could not be reallocated after eviction; "+
+				"forcing cpuset from %s to %s to avoid overlap with claimed CPUs %s",
+				uid, c.PrettyName(), prev, safe, cpus)
+			c.SetCpusetCpus(safe.String())
+		}
+
+		return err
+	}
 
 	return nil
 }
@@ -1684,6 +1708,21 @@ func (p *policy) releaseClaim(uid types.UID, cpus cpuset.CPUSet) error {
 	}
 
 	pool.FreeSupply().UnclaimCPUs(uid)
+
+	// Mirror releasePool's resetCpuClass: allocateClaim applied a physical
+	// cpuClass (SST-CP CLOS, EPP, governor, ...) to these CPUs via
+	// cpuClasses.UseClass. Without resetting it here, the CPUs go back into
+	// the pool's regular exclusive/shared rotation still carrying whatever
+	// class the claim used — silently affecting the next, unrelated
+	// container the pool hands them to, until the next full
+	// Reconfigure/restart resets every allowed CPU's class from scratch.
+	p.resetCpuClass(fmt.Sprintf("dra: release claim %s", uid), cpus)
+
+	// The released CPUs may have been restored to the sharable pool (not
+	// just isolated/exclusive), widening the cpuset available to containers
+	// already running in that pool's shared allocation. Let them reclaim it
+	// — mirrors the same call in allocateClaim/reapplyDRAClaims.
+	p.updateSharedAllocations(nil)
 
 	return nil
 }

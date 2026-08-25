@@ -929,6 +929,47 @@ func TestReleaseClaimUnknownUIDNoop(t *testing.T) {
 	}
 }
 
+// TestReleaseClaimResetsCpuClass verifies that releaseClaim is symmetric
+// with allocateClaim's cpuClasses.UseClass call: releasing a claim must
+// reset the physical cpuClass on the unclaimed CPUs back to the shared-pool
+// baseline (mirroring releasePool's resetCpuClass call), not leave them
+// stuck in the claim's class for whatever unrelated container the pool
+// hands them to next.
+func TestReleaseClaimResetsCpuClass(t *testing.T) {
+	p := newDRATestPolicyWithCPUClasses(t, "gold", "shared")
+
+	leaf := findPoolNode(t, p, "NUMA node #0")
+	sharable := leaf.FreeSupply().SharableCPUs().List()
+	if len(sharable) < 2 {
+		t.Fatalf("expected at least 2 sharable CPUs on %q", leaf.Name())
+	}
+	cpu := sharable[0]
+	claimed := cpuset.New(cpu)
+
+	// A sibling CPU never touched by the claim: its class reflects whatever
+	// initialize() applied via resetCpuClass("initialize", p.allowed) — the
+	// shared-pool baseline every allowed CPU starts in.
+	baselineCPU := sharable[1]
+	baseline := p.cpuClasses.ClassForCPU(baselineCPU)
+
+	uid := types.UID("claim-cpuclass-reset")
+	if err := p.allocateClaim(uid, claimed, "gold"); err != nil {
+		t.Fatalf("allocateClaim() failed: %v", err)
+	}
+	if got := p.cpuClasses.ClassForCPU(cpu); got == baseline {
+		t.Fatalf("test setup error: claimed CPU %d class unchanged (%q) after allocateClaim with class %q",
+			cpu, got, "gold")
+	}
+
+	if err := p.releaseClaim(uid, claimed); err != nil {
+		t.Fatalf("releaseClaim() failed: %v", err)
+	}
+	if got := p.cpuClasses.ClassForCPU(cpu); got != baseline {
+		t.Errorf("claimed CPU %d class = %q after releaseClaim(), want reset back to shared-pool baseline %q",
+			cpu, got, baseline)
+	}
+}
+
 func TestAllocateClaimEvictsOverlappingExclusiveGrant(t *testing.T) {
 	p := newDRATestPolicy(t)
 

@@ -68,6 +68,56 @@ func newDRATestPolicy(t *testing.T) *policy {
 	return p
 }
 
+// newDRATestPolicyWithCPUClasses is newDRATestPolicy plus a real
+// *cpuclass.Handler (p.cpuClasses), configured with claimClass and
+// sharedClass (used as SharedPoolCpuClass, i.e. the class initialize()'s
+// resetCpuClass and releaseClaim's resetCpuClass reapply to CPUs no longer
+// exclusively held). Lets tests observe cpuClass.UseClass side effects via
+// Handler.ClassForCPU without needing a live SST/PCT backend.
+func newDRATestPolicyWithCPUClasses(t *testing.T, claimClass, sharedClass string) *policy {
+	t.Helper()
+
+	dir, err := os.MkdirTemp("", "nri-resource-policy-test-sysfs-")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	t.Cleanup(func() { removeAll(t, dir) })
+
+	if err := testutils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), dir); err != nil {
+		t.Fatalf("failed to uncompress test sysfs data: %v", err)
+	}
+
+	sys, err := system.DiscoverSystemAt(path.Join(dir, "sysfs", "server", "sys"))
+	if err != nil {
+		t.Fatalf("failed to discover test system: %v", err)
+	}
+
+	policyOptions := &policyapi.BackendOptions{
+		Cache:  &mockCache{},
+		System: sys,
+		Config: &cfgapi.Config{
+			ReservedResources: cfgapi.Constraints{
+				cfgapi.CPU: "750m",
+			},
+			CPUClasses: []*cfgapi.CPUClass{
+				{Name: claimClass},
+				{Name: sharedClass},
+			},
+			SharedPoolCpuClass: sharedClass,
+		},
+	}
+
+	p := New().(*policy)
+	if err := p.Setup(policyOptions); err != nil {
+		t.Fatalf("failed to set up test policy: %v", err)
+	}
+	if p.cpuClasses == nil {
+		t.Fatalf("test setup error: p.cpuClasses is nil despite non-empty CPUClasses config")
+	}
+
+	return p
+}
+
 // findPoolNode returns the pool Node with the given name, failing the test if
 // it isn't found.
 func findPoolNode(t *testing.T, p *policy, name string) Node {

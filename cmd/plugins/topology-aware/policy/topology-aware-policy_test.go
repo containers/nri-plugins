@@ -490,3 +490,74 @@ func TestReapplyDRAClaimsNilDRAPluginNoop(t *testing.T) {
 		t.Errorf("reapplyDRAClaims() with nil draPlugin changed pool supply: got %s, want unchanged %s", got, before)
 	}
 }
+
+// TestReapplyDRAClaimsEvictsOverlappingRestoredGrant covers the double-
+// booking gap identified in the DRA step 8 review: reapplyDRAClaims() runs
+// *after* restoreCache()'s/restoreAllocations()'s grant restoration, at a
+// point where Supply.claimRefs has just been wiped by initialize() and not
+// yet re-marked. If grant restoration (verbatim reinstatement, or its
+// allocatePool-based fallback) handed a regular container CPUs that a live
+// DRA claim already owns, that overlap must be detected and evicted here —
+// otherwise two workloads end up pinned to the same physical CPUs until the
+// next restart. addTestGrant stands in for "restoreCache() already
+// reinstated this grant" without needing the full cache/offer machinery.
+func TestReapplyDRAClaimsEvictsOverlappingRestoredGrant(t *testing.T) {
+	p := newDRATestPolicy(t)
+
+	leaf := findPoolNode(t, p, "NUMA node #0")
+	sharable := leaf.FreeSupply().SharableCPUs().List()
+	if len(sharable) < 1 {
+		t.Fatalf("expected at least 1 sharable CPU on %q", leaf.Name())
+	}
+	claimed := cpuset.New(sharable[0])
+
+	// Simulate restoreCache()/restoreAllocations() having already reinstated
+	// (or freshly reallocated) a regular grant that happens to overlap the
+	// CPU a live DRA claim owns — the exact scenario reapplyDRAClaims must
+	// still be able to correct despite running after grant restoration.
+	victim := &mockContainer{returnValueForGetID: "reapply-victim"}
+	addTestGrant(t, p, leaf, victim, claimed)
+	if _, ok := p.allocations.getGrant("reapply-victim"); !ok {
+		t.Fatalf("test setup error: victim grant not present before reapplyDRAClaims")
+	}
+
+	plugin := newTestDRAPlugin(t, claimed, "dev0")
+	uid := types.UID("claim-reapply-evict-1")
+	_ = seedLiveClaim(t, plugin, uid, "dev0", claimed.Size())
+	p.draPlugin = plugin
+
+	p.reapplyDRAClaims()
+
+	// No grant anywhere may still exclusively hold the claimed CPU: either
+	// the victim's original grant was released outright, or it was
+	// reallocated to CPUs that no longer overlap the claim.
+	for _, g := range p.allocations.grants {
+		if g.ExclusiveCPUs().Intersection(claimed).Size() != 0 {
+			t.Errorf("claimed CPU %s still exclusively granted to %s after reapplyDRAClaims",
+				claimed, g.GetContainer().PrettyName())
+		}
+	}
+
+	// And the claimed CPU must not be free for a new regular allocation.
+	free := leaf.FreeSupply()
+	if free.SharableCPUs().Union(free.IsolatedCPUs()).Intersection(claimed).Size() != 0 {
+		t.Errorf("claimed CPU %s still free in %q supply after reapplyDRAClaims", claimed, leaf.Name())
+	}
+
+	// The evicted victim must actually have been reallocated a new grant
+	// (not just released and forgotten) — ample capacity remains on this
+	// test system for reallocatePool to succeed.
+	newGrant, ok := p.allocations.getGrant("reapply-victim")
+	if !ok {
+		t.Fatalf("victim has no grant after reapplyDRAClaims(); eviction must reallocate, not just release")
+	}
+	if newGrant.ExclusiveCPUs().Intersection(claimed).Size() != 0 {
+		t.Errorf("victim's new grant %s still overlaps claimed CPU %s", newGrant.ExclusiveCPUs(), claimed)
+	}
+
+	// reapplyDRAClaims() must not touch claimContainerRefs (marking-only
+	// contract) — even though it evicted/reallocated a container here.
+	if _, exists := p.claimContainerRefs[uid]; exists {
+		t.Errorf("claimContainerRefs unexpectedly populated by reapplyDRAClaims (marking-only contract violated)")
+	}
+}

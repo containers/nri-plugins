@@ -984,6 +984,20 @@ func (p *policy) remarkClaimInSupply(uid types.UID, cpus cpuset.CPUSet, classNam
 // initialize() rebuilds the pool/supply tree from scratch. It is a no-op if
 // DRA is disabled (draPlugin == nil).
 //
+// reapplyDRAClaims runs *after* restoreCache()/restoreAllocations() have
+// already reinstated grants (see Start()/Reconfigure()), at a point where
+// Supply.claimRefs has just been wiped by initialize() and not yet re-marked.
+// reinstateGrants/reallocateResources are therefore unaware of live DRA
+// claims while they run: if grant restoration (verbatim reinstatement, or
+// its allocatePool-based fallback) happens to hand a regular container CPUs
+// that a live claim already owns, that overlap is a real double-booking —
+// two workloads pinned to the same physical CPUs. Before marking each
+// claim's CPUs here, evict and requeue for reallocation any restored grant
+// that overlaps them, exactly like allocateClaim's first-time eviction path
+// (evictOverlappingGrants/reallocateEvicted, pools.go) — this does not touch
+// claimContainerRefs, so it stays consistent with remarkClaimInSupply's
+// marking-only contract.
+//
 // Caller must hold the resmgr write lock (LiveClaimsLocked's contract);
 // callers must not invoke this from inside a WithLock callback.
 func (p *policy) reapplyDRAClaims() {
@@ -1012,11 +1026,18 @@ func (p *policy) reapplyDRAClaims() {
 			continue
 		}
 
+		evicted, evictedCpusets := p.evictOverlappingGrants(cpus, fmt.Sprintf("reapplyDRAClaims: claim %s", uid))
+
 		if err := p.remarkClaimInSupply(uid, cpus, className); err != nil {
 			log.Errorf("dra: reapplyDRAClaims: %v", err)
 			continue
 		}
 		remarked = true
+
+		if err := p.reallocateEvicted(evicted, evictedCpusets, cpus, uid); err != nil {
+			log.Errorf("dra: reapplyDRAClaims: claim %s: evicted %d restored grant(s) overlapping "+
+				"claimed CPUs %s but failed to fully reallocate them: %v", uid, len(evicted), cpus, err)
+		}
 	}
 
 	// Re-marking may have subtracted CPUs from one or more pools' sharable

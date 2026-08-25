@@ -191,6 +191,19 @@ func (h *Handler) IsHPClass(className string) bool {
 	return h.pct.IsHPClass(className)
 }
 
+// ClassForCPU returns the synthetic class name currently assigned to cpu by
+// the most recent UseClass/AssignCPUs call (as tracked in h.cpuClass), or ""
+// if cpu is unmanaged or explicitly assigned to no class. Primarily useful
+// for tests that need to verify a UseClass call actually changed (or
+// restored) a CPU's class, since Handler otherwise exposes no per-CPU class
+// query. Nil-safe.
+func (h *Handler) ClassForCPU(cpu int) string {
+	if h == nil {
+		return ""
+	}
+	return h.cpuClass[cpu]
+}
+
 // Configure (re)applies a configuration spec. Idempotent: may be
 // called repeatedly with changed classes, turbo-domain mode, or
 // allowed set.
