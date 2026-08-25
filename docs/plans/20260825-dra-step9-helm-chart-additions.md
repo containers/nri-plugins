@@ -267,12 +267,12 @@ values.yaml since the chart declares no `kubeVersion` constraint.)
 **Files:**
 - Create: `deployment/helm/topology-aware/templates/deviceclass.yaml`
 
-- [ ] create `deployment/helm/topology-aware/templates/deviceclass.yaml` rendering the base
+- [x] create `deployment/helm/topology-aware/templates/deviceclass.yaml` rendering the base
       `DeviceClass nri.topology-aware.cpu`, gated on `(.Values.config.dra).enabled` (nil-safe form)
-- [ ] verify `helm template ...` (default values) has no `DeviceClass` object
-- [ ] verify `helm template ... --set config.dra.enabled=true` renders the `DeviceClass` with
+- [x] verify `helm template ...` (default values) has no `DeviceClass` object
+- [x] verify `helm template ... --set config.dra.enabled=true` renders the `DeviceClass` with
       `device.driver == "nri.topology-aware.cpu"`
-- [ ] run `helm lint deployment/helm/topology-aware` — must pass before task 5
+- [x] run `helm lint deployment/helm/topology-aware` — must pass before task 5
 
 ### Task 5: Verify acceptance criteria
 
