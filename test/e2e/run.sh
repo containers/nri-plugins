@@ -51,6 +51,21 @@ export k8s_release=${k8s_release:-"latest"}
 k8s_release="${k8s_release#v}"
 export k8s_version=""
 
+# Comma-separated "Gate1=true,Gate2=false" list passed verbatim to
+# kubeadm's kube-apiserver/scheduler --feature-gates extraArgs and to
+# the kubelet's KubeletConfiguration.featureGates. Unset (default):
+# provision.yaml runs its plain "kubeadm init --pod-network-cidr=..."
+# exactly as before, no feature-gate plumbing at all.
+#
+# NOTE for callers enabling DRAConsumableCapacity/DRANodeAllocatableResources
+# (KEP-5075/KEP-5517): also pin k8s_release explicitly to >=1.36, e.g.
+#   k8s_release=1.36 k8s_feature_gates="DRAConsumableCapacity=true,DRANodeAllocatableResources=true" ...
+# DRANodeAllocatableResources is alpha only since Kubernetes 1.36 (the
+# higher of the two gates' floors); do not rely on the "latest" default
+# above without pinning, since "latest" drifting below 1.36 later would
+# silently break a gated run.
+export k8s_feature_gates=${k8s_feature_gates:-}
+
 GH_HELM_REPO="helm/helm"
 export helm_release=${helm_release:-"latest"}
 
@@ -275,6 +290,7 @@ echo "    Kubernetes"
 echo "      - release     = $k8s_release"
 echo "      - version     = $k8s_version"
 echo "      - Helm        = $helm_release"
+echo "      - feature gates = ${k8s_feature_gates:-none}"
 echo "    Runtime         = $k8scri"
 echo "    Output dir      = $OUTPUT_DIR"
 echo "    Test output dir = $TEST_OUTPUT_DIR"
