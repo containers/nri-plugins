@@ -3,67 +3,6 @@ cleanup() {
     helm-terminate
 }
 
-# irq-cpu-ids <irq-number>
-# Read the current affinity for the given interrupt from /proc/irq/$irq/smp_affinity_list.
-irq-cpu-ids() {
-    local pattern=$1
-    local irq="" cpus=""
-
-    irq=$(resolve-irq "$pattern")
-    if [ -z "$irq" ]; then
-        error "Failed to resolve IRQ for pattern: $pattern" >&2
-        return 1
-    fi
-    $SSH -oConnectTimeout=1 node "cat /proc/irq/$irq/smp_affinity_list"
-    if [ $? -ne 0 ]; then
-        error "Failed to read smp_affinity_list for IRQ $irq" >&2
-        return 1
-    fi
-}
-
-# resolve-irq <IRQ number or proc-interrupts-pattern>
-# Returns the IRQ number matching the given interrupt or pattern in /proc/interrupts.
-resolve-irq() {
-    local irq_or_pattern="$1"
-    local irq=""
-
-    irq=$($SSH -oConnectTimeout=1 node "cat /proc/interrupts" | \
-              tr -s ' \t' ' ' | grep "^ *$irq_or_pattern:" | cut -d ':' -f1 | tr -d ' ')
-    if [ -z "$irq" ]; then
-        irq=$($SSH -oConnectTimeout=1 node "cat /proc/interrupts" | \
-              tr -s ' \t' ' ' | grep -E "$irq_or_pattern" | cut -d ':' -f1 | tr -d ' ')
-    fi
-
-    if [ -n "$irq" ]; then
-        if [ "$irq" != "$irq_or_pattern" ]; then
-            echo "IRQ $irq_or_pattern resolved to $irq..." >&2
-        fi
-        echo $irq
-        return 0
-    else
-        echo "IRQ not found for pattern: $irq_or_pattern" >&2
-        return 1
-    fi
-}
-
-# verify-irq-cpus IRQNUM EXPECTED waits until the affinity of the IRQ
-# equals EXPECTED (sorted space-separated CPU ids), or fails after a
-# timeout.
-verify-irq-cpus() {
-    local irq=$1 expected=$2 got tries=20
-    irqnum=$(resolve-irq "$irq")
-    while [ "$tries" -gt 0 ]; do
-        got=$(irq-cpu-ids "$irqnum")
-        if [ "$(expand-cpulist "$got")" == "$(expand-cpulist "$expected")" ]; then
-            echo "IRQ $irqnum affinity is '$got' as expected"
-            return 0
-        fi
-        tries=$((tries - 1))
-        sleep 1
-    done
-    error "IRQ $irqnum affinity: expected CPUs '$expected', got '$got'"
-}
-
 cleanup
 
 DEBUG_LOGGERS="irq"

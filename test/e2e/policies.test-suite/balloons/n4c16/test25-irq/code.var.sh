@@ -1,40 +1,9 @@
 # Test balloons IRQ CPU affinity: irqClaim and irqMode (sink, isolate).
 
-# irq-cpu-ids IRQNUM prints sorted CPU ids in the affinity of the IRQ.
-irq-cpu-ids() {
-    expand-cpulist "$(vm-command-q "cat /proc/irq/$1/smp_affinity_list" | tr -d '[:space:]')"
-}
-
-# set-irq-cpus IRQNUM CPULIST sets the affinity of the IRQ, e.g. "0-15".
-set-irq-cpus() {
-    vm-command "echo $2 > /proc/irq/$1/smp_affinity_list" ||
-        command-error "failed to set affinity of irq $1"
-}
-
-# verify-irq-cpus IRQNUM EXPECTED waits until the affinity of the IRQ
-# equals EXPECTED (sorted space-separated CPU ids), or fails after a
-# timeout.
-verify-irq-cpus() {
-    local irqnum=$1 expected=$2 got tries=20
-    while [ "$tries" -gt 0 ]; do
-        got=$(irq-cpu-ids "$irqnum")
-        if [ "$got" == "$expected" ]; then
-            echo "irq $irqnum affinity is '$got' as expected"
-            return 0
-        fi
-        tries=$((tries - 1))
-        sleep 1
-    done
-    error "irq $irqnum affinity: expected CPUs '$expected', got '$got'"
-}
-
-# Detect ttyS0 and rtc0 is IRQ numbers on vm.
-vm-command "awk '/ ttyS0/{print \$1}' < /proc/interrupts | sed 's/://g' | head -n 1"
-TTYS0_IRQ=$COMMAND_OUTPUT
-vm-command "awk '/ rtc0/{print \$1}' < /proc/interrupts | sed 's/://g' | head -n 1"
-RTC0_IRQ=$COMMAND_OUTPUT
-vm-command "awk '/ acpi/{print \$1}' < /proc/interrupts | sed 's/://g' | head -n 1"
-ACPI_IRQ=$COMMAND_OUTPUT
+# Interrupts used in this test, resolved from /proc/interrupts on demand.
+TTYS0_IRQ=".* ttyS0.*"
+RTC0_IRQ=".* rtc0.*"
+ACPI_IRQ=".* acpi.*"
 
 ALL_CPUS="$(expand-cpulist 0-15)"
 

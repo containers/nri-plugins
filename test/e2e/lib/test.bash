@@ -243,6 +243,66 @@ allowed-cpu-ids() { # script API
 }
 
 ###
+### Interrupts
+###
+
+resolve-irq() { # script API
+    # Usage: resolve-irq IRQ
+    #
+    # Print the number of interrupt IRQ, which is either an interrupt number
+    # or an extended regular expression matching a line in /proc/interrupts,
+    # for instance ".*ttyS0.*". Fail the test if there is no such interrupt.
+    local irq_or_pattern="$1" irq="" interrupts
+
+    interrupts=$(vm-command-q "cat /proc/interrupts" | tr -s ' \t' ' ')
+
+    # Try an interrupt number first, then a pattern.
+    irq=$(grep "^ *$irq_or_pattern:" <<< "$interrupts" | cut -d ':' -f1 | tr -d ' ' | head -n 1)
+    if [ -z "$irq" ]; then
+        irq=$(grep -E "$irq_or_pattern" <<< "$interrupts" | cut -d ':' -f1 | tr -d ' ' | head -n 1)
+    fi
+    # Reject a match which is not an interrupt number. Without this, a pattern
+    # which happens to match the header line, or one of the non-numbered
+    # counters at the end of the file, would resolve to garbage.
+    if ! [[ "$irq" =~ ^[0-9]+$ ]]; then
+        error "no interrupt matching \"$irq_or_pattern\" found in /proc/interrupts"
+    fi
+    if [ "$irq" != "$irq_or_pattern" ]; then
+        echo "interrupt \"$irq_or_pattern\" resolved to irq $irq" >&2
+    fi
+    echo "$irq"
+}
+
+irq-cpu-ids() { # script API
+    # Usage: irq-cpu-ids IRQ
+    #
+    # Print the CPU ids in the affinity of interrupt IRQ, as a sorted list of
+    # space separated ids. IRQ is resolved with resolve-irq.
+    local irq
+    irq=$(resolve-irq "$1") || return 1
+    expand-cpulist "$(vm-command-q "cat /proc/irq/$irq/smp_affinity_list" | tr -d '[:space:]')"
+}
+
+verify-irq-cpus() { # script API
+    # Usage: verify-irq-cpus IRQ EXPECTED [TIMEOUT]
+    #
+    # Wait until the affinity of interrupt IRQ becomes EXPECTED, TIMEOUT
+    # seconds at most, 20 by default. Fail the test otherwise.
+    #
+    # Both the expected and the observed CPU list are normalized, so EXPECTED
+    # can be given in either the compact or the expanded form.
+    local irq expected got tmo=${3:-20}
+
+    irq=$(resolve-irq "$1")
+    expected=$(expand-cpulist "$2")
+
+    retry-until --timeout "$tmo" 'got=$(irq-cpu-ids "$irq"); [ "$got" == "$expected" ]' || {
+        error "irq $irq affinity: expected CPUs '$expected', got '$got'"
+    }
+    echo "irq $irq affinity is '$got' as expected"
+}
+
+###
 ### Extended resources of the node
 ###
 
