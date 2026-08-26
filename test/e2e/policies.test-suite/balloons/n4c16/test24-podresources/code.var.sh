@@ -141,8 +141,8 @@ verify 'disjoint_sets(nodes["pod1c0"], nodes["pod1c1"], nodes["pod1c2"], nodes["
 # Sanity check (cf. test19-pct): the hp-near-tpu balloons use the
 # pct-hp cpuClass, so their CPUs must have been associated to the PCT
 # high-priority CLOS 0.
-plugin-log 'associated cpus .* to CLOS 0' \
-    || command-error "hp-near-tpu balloon CPUs were not associated to PCT HP CLOS 0"
+assert-cpu-clos '.*' 'CLOS 0' \
+    "hp-near-tpu balloon CPUs were not associated to PCT HP CLOS 0"
 
 vm-command "kubectl delete pods --all --now"
 
