@@ -121,27 +121,6 @@ verify-irq-cpus() {
     error "IRQ $irqnum affinity: expected CPUs '$expected', got '$got'"
 }
 
-# wait-pod-waiting-reason <pod> <reason> [<timeout-in-secs>]
-# Wait until the pods waiting reason becomes the given one.
-wait-pod-waiting-reason() {
-    local pod=$1 reason=$2 timeout=${3:-5}
-    local cnt=0
-
-    while true; do
-        vm-command "kubectl get pod $pod -o json | \
-            jq '.status.containerStatuses[].state.waiting.reason'"
-        grep -q $reason <<<$COMMAND_OUTPUT && break
-
-        if [ $cnt -lt $timeout ]; then
-            let cnt=$cnt+1
-            sleep 1
-            continue
-        fi
-
-        error "Failed to wait for CreateContainerError of $pod"
-    done
-}
-
 cleanup
 
 DEBUG_LOGGERS="irq"
@@ -254,14 +233,7 @@ EOF
 ANN0=$ANN0 \
     wait="" CPU=1 CONTCOUNT=1 create besteffort
 
-wait-pod-waiting-reason $pod CreateContainerError
-
-ctr=${pod}c0
-vm-command "kubectl get pods $pod -ojson | \
-    jq '.status.containerStatuses | map(select(.name == \"$ctr\")) | .[0].state'"
-
-grep -q "invalid IRQ affinity, QoS class .* is not Guaranteed" <<< $COMMAND_OUTPUT ||
-    error "Missing QoS-based IRQ affinity denial error for $ctr"
+verify-container-error $pod ${pod}c0 "invalid IRQ affinity, QoS class .* is not Guaranteed"
 
 # Create Burstable pod, try to annotate container for IRQ affinity. Should fail.
 
@@ -274,14 +246,7 @@ EOF
 ANN0=$ANN0 \
     wait="" CPU=1 CONTCOUNT=1 create burstable
 
-wait-pod-waiting-reason $pod CreateContainerError
-
-ctr=${pod}c0
-vm-command "kubectl get pods $pod -ojson | \
-    jq '.status.containerStatuses | map(select(.name == \"$ctr\")) | .[0].state'"
-
-grep -q "invalid IRQ affinity, QoS class .* is not Guaranteed" <<< $COMMAND_OUTPUT ||
-    error "Missing QoS-based IRQ affinity denial error for $ctr"
+verify-container-error $pod ${pod}c0 "invalid IRQ affinity, QoS class .* is not Guaranteed"
 
 unset ANN0
 
@@ -297,14 +262,7 @@ EOF
 ANN0=$ANN0 \
     wait="" CPU=250m CONTCOUNT=1 create guaranteed
 
-wait-pod-waiting-reason $pod CreateContainerError
-
-ctr=${pod}c0
-vm-command "kubectl get pods $pod -ojson | \
-    jq '.status.containerStatuses | map(select(.name == \"$ctr\")) | .[0].state'"
-
-grep -q "IRQ affinity .* invalid without exclusive CPUs" <<< $COMMAND_OUTPUT ||
-    error "Missing shared CPU-based IRQ affinity denial error for $ctr"
+verify-container-error $pod ${pod}c0 "IRQ affinity .* invalid without exclusive CPUs"
 
 unset ANN0
 
@@ -320,14 +278,7 @@ EOF
 ANN0=$ANN0 \
     wait="" CONTCOUNT=1 create guaranteed
 
-wait-pod-waiting-reason $pod CreateContainerError
-
-ctr=${pod}c0
-vm-command "kubectl get pods $pod -ojson | \
-    jq '.status.containerStatuses | map(select(.name == \"$ctr\")) | .[0].state'"
-
-grep -q "invalid IRQ affinity .*: .*" <<< $COMMAND_OUTPUT ||
-    error "Missing unparsable IRQ affinity denial error for $ctr"
+verify-container-error $pod ${pod}c0 "invalid IRQ affinity .*: .*"
 
 unset ANN0
 
@@ -345,14 +296,7 @@ EOF
 ANN0=$ANN0 \
     wait="" CONTCOUNT=1 create guaranteed
 
-wait-pod-waiting-reason $pod CreateContainerError
-
-ctr=${pod}c0
-vm-command "kubectl get pods $pod -ojson | \
-    jq '.status.containerStatuses | map(select(.name == \"$ctr\")) | .[0].state'"
-
-grep -q "invalid IRQ affinity mode .*xyzzy.* (valid modes: .*)" <<< $COMMAND_OUTPUT ||
-    error "Missing invalid mode based IRQ affinity denial error for $ctr"
+verify-container-error $pod ${pod}c0 "invalid IRQ affinity mode .*xyzzy.* (valid modes: .*)"
 
 cleanup
 unset ANN0
@@ -378,14 +322,7 @@ EOF
 ANN0=$ANN0 \
     wait="" CONTCOUNT=1 create guaranteed
 
-wait-pod-waiting-reason $pod CreateContainerError
-
-ctr=${pod}c0
-vm-command "kubectl get pods $pod -ojson | \
-    jq '.status.containerStatuses | map(select(.name == \"$ctr\")) | .[0].state'"
-
-grep -q "denied interrupt: .* denied but matched by user pattern .*" <<< $COMMAND_OUTPUT ||
-    error "Missing IRQ affinity denial error for $ctr"
+verify-container-error $pod ${pod}c0 "denied interrupt: .* denied but matched by user pattern .*"
 
 cleanup
 unset ANN0
@@ -473,18 +410,7 @@ EOF
 ANN0=$ANN0 ANN1=$ANN1 \
     wait="" CONTCOUNT=1 create guaranteed
 
-wait-pod-waiting-reason $pod CreateContainerError
-
-ctr=${pod}c0
-vm-command "kubectl get pods $pod -ojson | \
-    jq '.status.containerStatuses | map(select(.name == \"$ctr\")) | .[0].state'"
-
-grep -q "invalid IRQ affinity devices pattern" <<< $COMMAND_OUTPUT ||
-    error "Missing invalid affinity devices pattern error for $ctr"
-
-
-verify-irq-cpus ".*rtc0.*" $ALLCPUS
-
+verify-container-error $pod ${pod}c0 "invalid IRQ affinity devices pattern"
 
 cleanup
 unset ANN0 ANN1
