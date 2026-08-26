@@ -129,9 +129,9 @@ customize with their own values, along with the default values.
 | `telemetry.prometheus.enabled`         | `true`    | expose a `/metrics` Prometheus endpoint                            |
 | `telemetry.prometheus.listenAddress`   | `":9100"` | address:port for the Prometheus HTTP listener                      |
 | `telemetry.prometheus.scrapeInterval`  | `"15s"`   | recommended scrape interval (set via pod annotation hint)          |
-| `telemetry.prometheus.namespace`       | `""`      | Prometheus metric prefix (empty = `resctrl_`)                      |
+| `telemetry.prometheus.namespace`       | `""`      | Prometheus metric prefix. Leave empty: a non-empty value renames every series and breaks the bundled dashboards (see note below). |
 | `telemetry.otlp.enabled`              | `false`   | push metrics via OTLP                                              |
-| `telemetry.otlp.endpoint`             | `""`      | OTLP receiver endpoint (e.g. `otel-collector:4317`)                |
+| `telemetry.otlp.endpoint`             | `""`      | OTLP receiver endpoint (e.g. `otel-collector-resctrl.monitoring.svc:4317`) |
 | `telemetry.otlp.protocol`             | `grpc`    | `grpc` or `http`                                                   |
 | `telemetry.otlp.interval`             | `15s`     | OTLP export interval                                               |
 | `telemetry.otlp.insecure`             | `true`    | disable TLS for OTLP connection                                    |
@@ -139,6 +139,12 @@ customize with their own values, along with the default values.
 | `telemetry.perfCounters.include`      | `[]`      | glob patterns for counters to include                              |
 | `telemetry.perfCounters.exclude`      | `[]`      | glob patterns for counters to exclude                              |
 | `telemetry.resourceAttributes`        | `{}`      | static OTel resource attributes added to all metrics               |
+
+> **Note:** `telemetry.prometheus.namespace` prefixes every exported metric
+> name with `<namespace>_`. The bundled Grafana dashboards query the unprefixed
+> names (`l3_*`/`perf_*`), so setting a non-empty value renames every series and
+> breaks those dashboards. Leave it empty unless you are supplying your own
+> dashboards that account for the prefix.
 
 ## Prometheus Integration
 
@@ -156,10 +162,11 @@ in your Prometheus configuration with the desired `scrape_interval`.
 
 | Component        | Minimum Version | Notes                                                                 |
 | ---------------- | --------------- | --------------------------------------------------------------------- |
-| Linux kernel     | 7.0+            | Required for AET (`rdt=perf` Kconfig). CMT/MBM works on 5.x+.        |
+| Linux kernel     | 5.x+            | CMT/MBM on 5.x+; AET perf/energy counters need `rdt=perf` (pending upstream). |
 | containerd       | 1.7.0+          | NRI support required.                                                 |
 | CRI-O            | 1.36.0+         | Provides container PIDs via NRI `LinuxContainer.Pid`.                 |
 | Kubernetes       | 1.24+           | DaemonSet and NRI socket conventions.                                 |
+| kube-state-metrics | —             | Required by the bundled Grafana dashboards for `kube_pod_info`.       |
 | CPU              | Intel RDT       | CMT/MBM for bandwidth/LLC counters; AET for energy/perf counters.     |
 
 ### Kernel feature matrix
@@ -167,9 +174,13 @@ in your Prometheus configuration with the desired `scrape_interval`.
 | Counter family                  | Kernel Kconfig                | Available since |
 | ------------------------------- | ----------------------------- | --------------- |
 | `llc_occupancy`, `mbm_*`       | `CONFIG_X86_CPU_RESCTRL`      | 5.x             |
-| `c1_res`, `stalls_*`, `energy_*` | `CONFIG_X86_CPU_RESCTRL` + `rdt=perf` boot param | 7.0 (under review) |
+| `c1_res`, `stalls_*`, `energy_*` | `CONFIG_X86_CPU_RESCTRL` + `rdt=perf` boot param | pending (under review) |
 
-## Optional: OTel Collector sidecar
+> **Note:** `rdt=perf` kernel support is still under review upstream and is not
+> yet part of a released kernel. The "Available since" version for these
+> counters is TBD and will be recorded once the change lands.
+
+## Optional: OTel Collector agent
 
 When using OTLP push mode (`telemetry.otlp.enabled=true`), you may deploy an
 OTel Collector agent to receive, enrich, and fan out the metrics. Reference

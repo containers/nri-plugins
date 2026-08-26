@@ -69,11 +69,6 @@ func main() {
 		}
 	}
 
-	// Start OTel telemetry (Prometheus endpoint + optional OTLP push).
-	if err := p.startTelemetry(context.Background()); err != nil {
-		log.Fatalf("failed to start telemetry: %v", err)
-	}
-
 	opts := []stub.Option{
 		stub.WithOnClose(p.onClose),
 	}
