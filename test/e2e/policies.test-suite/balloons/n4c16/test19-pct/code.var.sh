@@ -89,14 +89,6 @@ wait-assert-log-grew() {
     command-error "$msg"
 }
 
-# wait-pod-gone <podname> [timeout=30]
-wait-pod-gone() {
-    local pod=$1
-    local timeout=${2:-30}
-    vm-run-until --timeout "$timeout" "! kubectl get pod $pod -o name 2>/dev/null | grep -q ." || return 1
-    return 0
-}
-
 # get-ext <resource-name> stores the given extended resource
 # capacity (or the string "missing") in COMMAND_OUTPUT.
 get-ext() {
