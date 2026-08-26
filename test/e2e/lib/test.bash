@@ -159,6 +159,60 @@ expect-launch-failure() { # script API
 }
 
 ###
+### CPU lists
+###
+
+expand-cpulist() { # script API
+    # Usage: expand-cpulist CPULIST
+    #
+    # Print the CPUs in CPULIST as a sorted list of space separated CPU ids:
+    #     expand-cpulist "0-2,5"   prints "0 1 2 5"
+    #
+    # A list which is already in the expanded form is printed as it is, so
+    # this is safe to use for normalizing a list of unknown form.
+    local cpus="$1"
+
+    if [ "${cpus//-/}" == "$cpus" ] && [ "${cpus//,/}" == "$cpus" ]; then
+        echo $cpus
+        return 0
+    fi
+
+    python3 -c '
+import sys
+r = set()
+for part in sys.argv[1].split(","):
+    if not part:
+        continue
+    if "-" in part:
+        a, b = part.split("-")
+        r.update(range(int(a), int(b) + 1))
+    else:
+        r.add(int(part))
+print(" ".join(str(x) for x in sorted(r)))
+' "$cpus"
+}
+
+cpulist-difference() { # script API
+    # Usage: cpulist-difference CPULIST1 CPULIST2
+    #
+    # Print the CPUs which are in CPULIST1 but not in CPULIST2, as a sorted
+    # list of space separated CPU ids:
+    #     cpulist-difference "1 2 3 4" "2 3"   prints "1 4"
+    #
+    # Both lists can be given in either the compact or the expanded form.
+    local ids1="$1" ids2="$2"
+
+    ids1=$(expand-cpulist "$ids1")
+    ids2=$(expand-cpulist "$ids2")
+
+    python3 -c 'import sys
+allc = set(int(x) for x in sys.argv[1].split())
+iso = set(int(x) for x in sys.argv[2].split())
+print(" ".join(str(x) for x in sorted(allc - iso)))
+' "$ids1" "$ids2"
+}
+
+###
 ### Extended resources of the node
 ###
 

@@ -38,30 +38,6 @@ assert-cpu-freq() {
     done
 }
 
-# expand-cpulist "0-2,5" prints "0 1 2 5"
-expand-cpulist() {
-    local cpus="$1"
-
-    if [ "${cpus//-/}" == "$cpus" ] && [ "${cpus//,/}" == "$cpus" ]; then
-        echo $cpus
-        return 0
-    fi
-
-    python3 -c '
-import sys
-r = set()
-for part in sys.argv[1].split(","):
-    if not part:
-        continue
-    if "-" in part:
-        a, b = part.split("-")
-        r.update(range(int(a), int(b) + 1))
-    else:
-        r.add(int(part))
-print(" ".join(str(x) for x in sorted(r)))
-' "$cpus"
-}
-
 OVERRIDE_SYS_CPUFREQ='[{"cpus": "0-15", "base": 2900000, "min": 800000, "max": 3800000}]'
 OVERRIDE_SST='{"supported": true, "clos_count": 4, "packages": [{"id": 0, "cpus": "0-7", "tf_supported": true, "cp_supported": true, "max_hp_cpus": 2}, {"id": 1, "cpus": "8-15", "tf_supported": true, "cp_supported": true, "max_hp_cpus": 2}]}'
 OVERRIDE_SST_STATE_DIR="/tmp/nri-pct-mock"
