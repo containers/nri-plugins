@@ -158,13 +158,13 @@ ALLCPUS=0-15
 # the allocated CPUs.
 
 pod=pod0
-ANN0=$(cat <<'EOF'
-irq-affinity.resource-policy.nri.io/container.pod0c0: |
+ANN0=$(cat <<EOF
+irq-affinity.resource-policy.nri.io/container.${pod}c0: |
       claim: [ "*ttyS0*" ]
 EOF
 )
-ANN1=$(cat <<'EOF'
-irq-affinity.resource-policy.nri.io/container.pod0c1: |
+ANN1=$(cat <<EOF
+irq-affinity.resource-policy.nri.io/container.${pod}c1: |
       claim: [ "*rtc0*" ]
 EOF
 )
@@ -181,18 +181,20 @@ vm-command "kubectl delete pod pod0"
 verify-irq-cpus ".*ttyS0.*" $ALLCPUS
 verify-irq-cpus ".*rtc0.*" $ALLCPUS
 
+unset ANN0 ANN1
+
 # Create pod with 4 containers, 2 eligible for exclusive CPU allocation
 # and 2 others running in shared pools. Annotate the exclusive ones for
 # masked IRQs. Check that allocated CPUs get masked from the IRQs.
 
 pod=pod1
-ANN0=$(cat <<'EOF'
-irq-affinity.resource-policy.nri.io/container.pod1c0: |
+ANN0=$(cat <<EOF
+irq-affinity.resource-policy.nri.io/container.${pod}c0: |
       mask: [ "*ttyS0*" ]
 EOF
 )
-ANN1=$(cat <<'EOF'
-irq-affinity.resource-policy.nri.io/container.pod1c1: |
+ANN1=$(cat <<EOF
+irq-affinity.resource-policy.nri.io/container.${pod}c1: |
       mask: [ "*rtc0*" ]
 EOF
 )
@@ -208,20 +210,22 @@ vm-command "kubectl delete pod pod1"
 verify-irq-cpus ".*ttyS0.*" $ALLCPUS
 verify-irq-cpus ".*rtc0.*" $ALLCPUS
 
+unset ANN0 ANN1
+
 # Create pod with 4 containers, 2 eligible for exclusive CPU allocation
 # and 2 others running in shared pools. Annotate one exclusive ones for
 # and IRQ claim and the other for a masked IRQ. Check that IRQ affinity
 # gets updated accordingly.
 
 pod=pod2
-ANN0=$(cat <<'EOF'
-irq-affinity.resource-policy.nri.io/container.pod2c0: |
+ANN0=$(cat <<EOF
+irq-affinity.resource-policy.nri.io/container.${pod}c0: |
       claim: [ "*ttyS0*" ]
       mask: [ "*" ]
 EOF
 )
-ANN1=$(cat <<'EOF'
-irq-affinity.resource-policy.nri.io/container.pod2c1: |
+ANN1=$(cat <<EOF
+irq-affinity.resource-policy.nri.io/container.${pod}c1: |
       mask: [ "*rtc0*" ]
 EOF
 )
@@ -237,11 +241,13 @@ vm-command "kubectl delete pod pod2"
 verify-irq-cpus ".*ttyS0.*" $ALLCPUS
 verify-irq-cpus ".*rtc0.*" $ALLCPUS
 
+unset ANN0 ANN1
+
 # Create BestEffort pod, try to annotate container for IRQ affinity. Should fail.
 
 pod=pod3
-ANN0=$(cat <<'EOF'
-irq-affinity.resource-policy.nri.io/container.pod3c0: |
+ANN0=$(cat <<EOF
+irq-affinity.resource-policy.nri.io/container.${pod}c0: |
       claim: [ "*ttyS0*" ]
 EOF
 )
@@ -260,8 +266,8 @@ grep -q "invalid IRQ affinity, QoS class .* is not Guaranteed" <<< $COMMAND_OUTP
 # Create Burstable pod, try to annotate container for IRQ affinity. Should fail.
 
 pod=pod4
-ANN0=$(cat <<'EOF'
-irq-affinity.resource-policy.nri.io/container.pod4c0: |
+ANN0=$(cat <<EOF
+irq-affinity.resource-policy.nri.io/container.${pod}c0: |
       claim: [ "*ttyS0*" ]
 EOF
 )
@@ -277,12 +283,14 @@ vm-command "kubectl get pods $pod -ojson | \
 grep -q "invalid IRQ affinity, QoS class .* is not Guaranteed" <<< $COMMAND_OUTPUT ||
     error "Missing QoS-based IRQ affinity denial error for $ctr"
 
+unset ANN0
+
 # Create Guaranteed pod without exclusive CPUs, try to annotate container
 # for IRQ affinity. Should fail.
 
 pod=pod5
-ANN0=$(cat <<'EOF'
-irq-affinity.resource-policy.nri.io/container.pod5c0: |
+ANN0=$(cat <<EOF
+irq-affinity.resource-policy.nri.io/container.${pod}c0: |
       claim: [ "*ttyS0*" ]
 EOF
 )
@@ -298,12 +306,14 @@ vm-command "kubectl get pods $pod -ojson | \
 grep -q "IRQ affinity .* invalid without exclusive CPUs" <<< $COMMAND_OUTPUT ||
     error "Missing shared CPU-based IRQ affinity denial error for $ctr"
 
+unset ANN0
+
 # Create Guaranteed pod with exclusive CPUs but with an unparsable IRQ affinity
 # annotation. Should fail.
 
 pod=pod6
-ANN0=$(cat <<'EOF'
-irq-affinity.resource-policy.nri.io/container.pod6c0: |
+ANN0=$(cat <<EOF
+irq-affinity.resource-policy.nri.io/container.${pod}c0: |
       claim: xyzzy, foobar
 EOF
 )
@@ -319,12 +329,14 @@ vm-command "kubectl get pods $pod -ojson | \
 grep -q "invalid IRQ affinity .*: .*" <<< $COMMAND_OUTPUT ||
     error "Missing unparsable IRQ affinity denial error for $ctr"
 
+unset ANN0
+
 # Create Guaranteed pod with exclusive CPUs but invalid IRQ affinity mode
 # in annotation. Should fail.
 
 pod=pod7
-ANN0=$(cat <<'EOF'
-irq-affinity.resource-policy.nri.io/container.pod7c0: |
+ANN0=$(cat <<EOF
+irq-affinity.resource-policy.nri.io/container.${pod}c0: |
       claim: [ "*ttyS0*" ]
       mask: [ "*rtc0*" ]
       mode: xyzzy
@@ -343,6 +355,7 @@ grep -q "invalid IRQ affinity mode .*xyzzy.* (valid modes: .*)" <<< $COMMAND_OUT
     error "Missing invalid mode based IRQ affinity denial error for $ctr"
 
 cleanup
+unset ANN0
 
 #
 # Restrict interrupts control and verify that it takes effect.
@@ -357,8 +370,8 @@ helm_config=$(COLOCATE_PODS=false \
 
 # Try to exercise control over disallowed ttyS0, too.
 pod=pod8
-ANN0=$(cat <<'EOF'
-irq-affinity.resource-policy.nri.io/container.pod8c0: |
+ANN0=$(cat <<EOF
+irq-affinity.resource-policy.nri.io/container.${pod}c0: |
       claim: [ "*ttyS0*" ]
 EOF
 )
@@ -375,3 +388,4 @@ grep -q "denied interrupt: .* denied but matched by user pattern .*" <<< $COMMAN
     error "Missing IRQ affinity denial error for $ctr"
 
 cleanup
+unset ANN0
