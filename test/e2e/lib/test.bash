@@ -70,6 +70,30 @@ retry-until() { # script API
 }
 
 ###
+### Launching the plugin
+###
+
+expect-launch-failure() { # script API
+    # Usage: expect-launch-failure POLICY [TIMEOUT]
+    #
+    # Expect launching POLICY to fail within TIMEOUT, 5s by default. Fail the
+    # test if the launch succeeds instead.
+    #
+    # Read the configuration from the helm_config variable, just like
+    # helm-launch does. Use this to test that the plugin refuses an invalid
+    # configuration:
+    #     helm_config=$(instantiate broken-config.yaml) expect-launch-failure balloons
+    local policy=$1 timeout=${2:-5s}
+
+    # helm-launch is run in a subshell, because on some failures it calls
+    # error, which would otherwise fail the test we expect to fail.
+    if ( expect_error=1 launch_timeout=$timeout helm-launch "$policy" ); then
+        error "launching $policy succeeded, but was expected to fail"
+    fi
+    echo "launching $policy failed as expected"
+}
+
+###
 ### Cleaning up
 ###
 
