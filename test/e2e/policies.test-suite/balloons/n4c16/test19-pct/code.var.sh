@@ -42,24 +42,6 @@ wait-ext-hp() {
     wait-node-resource "$ext_hp" "$@"
 }
 
-# helm-upgrade <config> performs an in-process reconfiguration by
-# upgrading the running helm release with a new plugin config. Only
-# the policy custom resource changes, so the plugin pod is not
-# restarted and the agent reconfigures in place.
-helm-upgrade() {
-    local cfg=$1
-    host-command "$SCP \"$cfg\" $VM_HOSTNAME:" ||
-        command-error "copying \"$cfg\" to VM failed"
-    vm-command "helm upgrade -n kube-system test ./helm/balloons \
-             --values=$(basename "$cfg") \
-             --set image.name=localhost/balloons \
-             --set image.tag=testing \
-             --set image.pullPolicy=Never \
-             --set resources.cpu=50m \
-             --set resources.memory=256Mi \
-             --set plugin-test.enableAPIs=true" ||
-        command-error "helm upgrade with $cfg failed"
-}
 
 
 ###############################################################################
@@ -192,12 +174,12 @@ wait-ext-hp 4 "HP extended resource not published after (re)launch"
 # pct-hp cpuClass but stops publishing it. The running plugin must
 # reconcile the node and REMOVE the now-unowned resource without a
 # restart.
-helm-upgrade "$TEST_DIR/balloons-pct-nopublish.cfg"
+helm-reconfigure balloons "$TEST_DIR/balloons-pct-nopublish.cfg"
 wait-ext-hp missing "in-process reconfig to a non-publishing config did not remove the HP extended resource"
 
 # In-process reconfiguration back to publishing: the resource must
 # reappear.
-helm-upgrade "$TEST_DIR/balloons-pct-managed.cfg"
+helm-reconfigure balloons "$TEST_DIR/balloons-pct-managed.cfg"
 wait-ext-hp 4 "in-process reconfig back to a publishing config did not re-publish the HP extended resource"
 
 # Tear down the release so the next helm-launch starts from a clean

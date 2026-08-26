@@ -450,8 +450,7 @@ fi
 # changes do not lag one step behind the active config.
 defaultcls_step3=$(enforce-count)
 echo "defaultclass step 3: patching cpuClasses default.maxFreq base -> turbo"
-vm-command "kubectl -n kube-system patch balloonspolicies/default --type=merge -p '{\"spec\":{\"cpuClasses\":[{\"name\":\"default\",\"minFreq\":\"min\",\"maxFreq\":\"turbo\"},{\"name\":\"fast\",\"minFreq\":\"turbo\",\"maxFreq\":\"turbo\"}]}}'" ||
-    command-error "[defaultclass step3] kubectl patch of balloonspolicies/default failed"
+patch-policy-config '{"spec":{"cpuClasses":[{"name":"default","minFreq":"min","maxFreq":"turbo"},{"name":"fast","minFreq":"turbo","maxFreq":"turbo"}]}}'
 wait-enforce-grows "$defaultcls_step3"
 echo "defaultclass step 3: $defaultcls_step3 -> $(enforce-count) enforce writes immediately after CR patch"
 assert-class-written "$defaultcls_step3" "default" "defaultclass step3 default class write after cpuClasses change"
@@ -471,8 +470,7 @@ done
 # applied immediately on every default-class CPU.
 defaultcls_step4=$(enforce-count)
 echo "defaultclass step 4: patching cpuClasses default.maxFreq turbo -> base"
-vm-command "kubectl -n kube-system patch balloonspolicies/default --type=merge -p '{\"spec\":{\"cpuClasses\":[{\"name\":\"default\",\"minFreq\":\"min\",\"maxFreq\":\"base\"},{\"name\":\"fast\",\"minFreq\":\"turbo\",\"maxFreq\":\"turbo\"}]}}'" ||
-    command-error "[defaultclass step4] kubectl patch of balloonspolicies/default failed"
+patch-policy-config '{"spec":{"cpuClasses":[{"name":"default","minFreq":"min","maxFreq":"base"},{"name":"fast","minFreq":"turbo","maxFreq":"turbo"}]}}'
 wait-enforce-grows "$defaultcls_step4"
 echo "defaultclass step 4: $defaultcls_step4 -> $(enforce-count) enforce writes immediately after revert patch"
 assert-class-written "$defaultcls_step4" "default" "defaultclass step4 default class write after cpuClasses revert"
@@ -501,8 +499,7 @@ helm-terminate
 # reserved CPU keeps maxFreq=3800000; under turboDomain=system it drops
 # to base (2900000) because turbo-high (prio=10) wins globally.
 helm_config=$TEST_DIR/balloons-turbo.cfg helm-launch balloons
-vm-command "kubectl -n kube-system patch balloonspolicies/default --type=merge -p '{\"spec\":{\"availableResources\":{\"cpu\":\"cpuset:2,10\"},\"reservedResources\":{\"cpu\":\"1000m\"}}}'" ||
-    command-error "[turboDomain setup] kubectl patch (cpuset:2,10) failed"
+patch-policy-config '{"spec":{"availableResources":{"cpu":"cpuset:2,10"},"reservedResources":{"cpu":"1000m"}}}'
 wait-enforce-grows 0
 td_setup_count=$(enforce-count)
 echo "turboDomain setup: $td_setup_count enforce writes after cpuset patch"
@@ -541,8 +538,7 @@ echo "turboDomain package: cpu $reserved_cpu (default-turbo) at max=3800000 as e
 # default-turbo loses turbo everywhere, so cpu $reserved_cpu must drop
 # to base (2900000) immediately after the CR patch.
 td_sys_before=$(enforce-count)
-vm-command "kubectl -n kube-system patch balloonspolicies/default --type=merge -p '{\"spec\":{\"turboDomain\":\"system\"}}'" ||
-    command-error "[turboDomain system] kubectl patch (turboDomain=system) failed"
+patch-policy-config '{"spec":{"turboDomain":"system"}}'
 wait-enforce-grows "$td_sys_before"
 enforce-lines-since "$td_sys_before"
 sys_lines="$COMMAND_OUTPUT"
@@ -555,8 +551,7 @@ echo "turboDomain system: cpu $reserved_cpu (default-turbo) at max=2900000 as ex
 # Revert to turboDomain=package: cpu $reserved_cpu must climb back to
 # 3800000 immediately on CR patch.
 td_back_before=$(enforce-count)
-vm-command "kubectl -n kube-system patch balloonspolicies/default --type=merge -p '{\"spec\":{\"turboDomain\":\"package\"}}'" ||
-    command-error "[turboDomain back] kubectl patch (turboDomain=package) failed"
+patch-policy-config '{"spec":{"turboDomain":"package"}}'
 wait-enforce-grows "$td_back_before"
 enforce-lines-since "$td_back_before"
 back_lines="$COMMAND_OUTPUT"
