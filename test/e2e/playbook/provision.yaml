@@ -505,7 +505,6 @@
         state: restarted
 
     - name: Write kubeadm --config with feature gates for apiserver/scheduler/kubelet
-      when: k8s_feature_gates != ""
       ansible.builtin.copy:
         dest: /root/kubeadm-config.yaml
         content: |
@@ -528,16 +527,17 @@
           {% for gate in k8s_feature_gates.split(',') %}
             {{ gate.split('=')[0] }}: {{ gate.split('=')[1] }}
           {% endfor %}
+      when: k8s_feature_gates != ""
 
     - name: Initialize the Kubernetes cluster using kubeadm
-      when: k8s_feature_gates == ""
       ansible.builtin.command:
         cmd: kubeadm init --pod-network-cidr="{{ network }}"
+      when: k8s_feature_gates == ""
 
     - name: Initialize the Kubernetes cluster using kubeadm (with feature gates)
-      when: k8s_feature_gates != ""
       ansible.builtin.command:
         cmd: kubeadm init --config /root/kubeadm-config.yaml
+      when: k8s_feature_gates != ""
 
     - name: Setup kubeconfig for vagrant user
       ansible.builtin.command: "{{ item }}"
