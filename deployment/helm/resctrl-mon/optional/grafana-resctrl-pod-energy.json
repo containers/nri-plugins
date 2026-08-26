@@ -22,7 +22,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "Sum of power consumed by all monitored pods (from Intel AET via resctrl)",
       "fieldConfig": {
@@ -82,9 +82,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate({__name__=\"perf.core.energy_joules_total\", \"resctrl.group.source\"=\"pod\"}[$__rate_interval]))",
+          "expr": "sum(rate({__name__=\"perf_core_energy_joules_total\", resctrl_group_source=\"pod\"}[$__rate_interval]))",
           "legendFormat": "Total Pod Power",
           "refId": "A",
           "interval": "5s"
@@ -96,7 +96,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "Energy consumed by all monitored pods in the displayed time window (Wh)",
       "fieldConfig": {
@@ -144,85 +144,15 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(increase({__name__=\"perf.core.energy_joules_total\", \"resctrl.group.source\"=\"pod\"}[$__range])) / 3600",
+          "expr": "sum(increase({__name__=\"perf_core_energy_joules_total\", resctrl_group_source=\"pod\"}[$__range])) / 3600",
           "legendFormat": "Total Energy",
           "refId": "A",
           "interval": "5s"
         }
       ],
       "title": "Total Pod Energy",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "description": "Percentage of total activity attributable to monitored pods (AET activity counters, measured in Farads)",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "#22d66a",
-                "value": null
-              },
-              {
-                "color": "#f0a030",
-                "value": 50
-              },
-              {
-                "color": "#ff5c5c",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "percent"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 8,
-        "x": 16,
-        "y": 1
-      },
-      "id": 3,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "pluginVersion": "10.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum(rate({__name__=\"perf.activity_farads_total\", \"resctrl.group.source\"=\"pod\"}[$__rate_interval])) / sum(rate({__name__=\"perf.activity_farads_total\"}[$__rate_interval])) * 100",
-          "legendFormat": "Pod Activity Share",
-          "refId": "A",
-          "interval": "5s"
-        }
-      ],
-      "title": "Pod Activity Share",
       "type": "stat"
     },
     {
@@ -240,7 +170,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "Power consumption per pod from Intel AET core_energy counters",
       "fieldConfig": {
@@ -321,10 +251,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by (pod) (rate({__name__=\"perf.core.energy_joules_total\", \"resctrl.group.source\"=\"pod\"}[$__rate_interval]) * on(\"k8s.pod.uid\") group_left(pod, namespace) label_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info[$__range])), \"k8s.pod.uid\", \"$1\", \"uid\", \"(.+)\"))",
-          "legendFormat": "{{pod_name}}",
+          "expr": "sum by (pod, namespace) (rate({__name__=\"perf_core_energy_joules_total\", resctrl_group_source=\"pod\"}[$__rate_interval]) * on(k8s_pod_uid) group_left(pod, namespace) label_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info{namespace=~\"$namespace\"}[$__range])), \"k8s_pod_uid\", \"$1\", \"uid\", \"(.+)\"))",
+          "legendFormat": "{{namespace}}/{{pod}}",
           "refId": "A",
           "interval": "5s"
         }
@@ -335,7 +265,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "Total energy (Joules) consumed by each workload over the selected range (donut chart). Pods sharing a common name are summed; pods that started and stopped within the range are included.",
       "fieldConfig": {
@@ -393,10 +323,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by (workload) (increase({__name__=\"perf.core.energy_joules_total\", \"resctrl.group.source\"=\"pod\"}[$__range]) * on(\"k8s.pod.uid\") group_left(workload) label_replace(label_replace(label_replace(label_replace(max by (uid, pod, namespace, created_by_name) (last_over_time(kube_pod_info[$__range])), \"workload\", \"$1\", \"pod\", \"(.+)\"), \"workload\", \"$1\", \"created_by_name\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.+?)-[bcdfghjklmnpqrstvwxz2-9]{6,10}$\"), \"k8s.pod.uid\", \"$1\", \"uid\", \"(.+)\"))",
-          "legendFormat": "{{workload}}",
+          "expr": "sum by (namespace, workload) (increase({__name__=\"perf_core_energy_joules_total\", resctrl_group_source=\"pod\"}[$__range]) * on(k8s_pod_uid) group_left(namespace, workload) label_replace(label_replace(label_replace(label_replace(max by (uid, pod, namespace, created_by_name) (last_over_time(kube_pod_info{namespace=~\"$namespace\"}[$__range])), \"workload\", \"$1\", \"pod\", \"(.+)\"), \"workload\", \"$1\", \"created_by_name\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.+?)-[bcdfghjklmnpqrstvwxz2-9]{6,10}$\"), \"k8s_pod_uid\", \"$1\", \"uid\", \"(.+)\"))",
+          "legendFormat": "{{namespace}}/{{workload}}",
           "refId": "A"
         }
       ],
@@ -418,7 +348,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "Activity rate (F/s) per pod from AET activity counters. Activity is measured in Farads and represents frequency-independent work done.",
       "fieldConfig": {
@@ -499,10 +429,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by (pod) (rate({__name__=\"perf.activity_farads_total\", \"resctrl.group.source\"=\"pod\"}[$__rate_interval]) * on(\"k8s.pod.uid\") group_left(pod, namespace) label_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info[$__range])), \"k8s.pod.uid\", \"$1\", \"uid\", \"(.+)\"))",
-          "legendFormat": "{{pod_name}}",
+          "expr": "sum by (pod, namespace) (rate({__name__=\"perf_activity_farads_total\", resctrl_group_source=\"pod\"}[$__rate_interval]) * on(k8s_pod_uid) group_left(pod, namespace) label_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info{namespace=~\"$namespace\"}[$__range])), \"k8s_pod_uid\", \"$1\", \"uid\", \"(.+)\"))",
+          "legendFormat": "{{namespace}}/{{pod}}",
           "refId": "A",
           "interval": "5s"
         }
@@ -513,7 +443,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "Total activity (Farads) accumulated by each workload over the selected range (donut chart). Activity is frequency-independent work. Pods sharing a common name are summed; pods that started and stopped within the range are included.",
       "fieldConfig": {
@@ -571,10 +501,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by (workload) (increase({__name__=\"perf.activity_farads_total\", \"resctrl.group.source\"=\"pod\"}[$__range]) * on(\"k8s.pod.uid\") group_left(workload) label_replace(label_replace(label_replace(label_replace(max by (uid, pod, namespace, created_by_name) (last_over_time(kube_pod_info[$__range])), \"workload\", \"$1\", \"pod\", \"(.+)\"), \"workload\", \"$1\", \"created_by_name\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.+?)-[bcdfghjklmnpqrstvwxz2-9]{6,10}$\"), \"k8s.pod.uid\", \"$1\", \"uid\", \"(.+)\"))",
-          "legendFormat": "{{workload}}",
+          "expr": "sum by (namespace, workload) (increase({__name__=\"perf_activity_farads_total\", resctrl_group_source=\"pod\"}[$__range]) * on(k8s_pod_uid) group_left(namespace, workload) label_replace(label_replace(label_replace(label_replace(max by (uid, pod, namespace, created_by_name) (last_over_time(kube_pod_info{namespace=~\"$namespace\"}[$__range])), \"workload\", \"$1\", \"pod\", \"(.+)\"), \"workload\", \"$1\", \"created_by_name\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.+?)-[bcdfghjklmnpqrstvwxz2-9]{6,10}$\"), \"k8s_pod_uid\", \"$1\", \"uid\", \"(.+)\"))",
+          "legendFormat": "{{namespace}}/{{workload}}",
           "refId": "A"
         }
       ],
@@ -596,7 +526,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "All monitored pods with their current power draw, activity rate, and cumulative energy",
       "fieldConfig": {
@@ -774,9 +704,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by (pod, namespace) (rate({__name__=\"perf.core.energy_joules_total\", \"resctrl.group.source\"=\"pod\"}[$__rate_interval]) * on(\"k8s.pod.uid\") group_left(pod, namespace) label_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info[$__range])), \"k8s.pod.uid\", \"$1\", \"uid\", \"(.+)\"))",
+          "expr": "sum by (pod, namespace) (rate({__name__=\"perf_core_energy_joules_total\", resctrl_group_source=\"pod\"}[$__rate_interval]) * on(k8s_pod_uid) group_left(pod, namespace) label_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info{namespace=~\"$namespace\"}[$__range])), \"k8s_pod_uid\", \"$1\", \"uid\", \"(.+)\"))",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -786,9 +716,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by (pod, namespace) (rate({__name__=\"perf.activity_farads_total\", \"resctrl.group.source\"=\"pod\"}[$__rate_interval]) * on(\"k8s.pod.uid\") group_left(pod, namespace) label_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info[$__range])), \"k8s.pod.uid\", \"$1\", \"uid\", \"(.+)\"))",
+          "expr": "sum by (pod, namespace) (rate({__name__=\"perf_activity_farads_total\", resctrl_group_source=\"pod\"}[$__rate_interval]) * on(k8s_pod_uid) group_left(pod, namespace) label_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info{namespace=~\"$namespace\"}[$__range])), \"k8s_pod_uid\", \"$1\", \"uid\", \"(.+)\"))",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -798,9 +728,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by (pod, namespace) (increase({__name__=\"perf.core.energy_joules_total\", \"resctrl.group.source\"=\"pod\"}[$__range]) * on(\"k8s.pod.uid\") group_left(pod, namespace) label_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info[$__range])), \"k8s.pod.uid\", \"$1\", \"uid\", \"(.+)\")) / 1000",
+          "expr": "sum by (pod, namespace) (increase({__name__=\"perf_core_energy_joules_total\", resctrl_group_source=\"pod\"}[$__range]) * on(k8s_pod_uid) group_left(pod, namespace) label_replace(max by (uid, pod, namespace) (last_over_time(kube_pod_info{namespace=~\"$namespace\"}[$__range])), \"k8s_pod_uid\", \"$1\", \"uid\", \"(.+)\")) / 1000",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -846,9 +776,9 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Total power per CPU package (domain) including unmonitored background workloads",
+      "description": "Total power per CPU package (domain) across monitored pods (root/system counters are not observed)",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -924,23 +854,23 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by (\"domain.id\") (rate({__name__=\"perf.core.energy_joules_total\"}[$__rate_interval]))",
-          "legendFormat": "{{domain}}",
+          "expr": "sum by (k8s_node_name, domain_id) (rate({__name__=\"perf_core_energy_joules_total\", resctrl_group_source=\"pod\"}[$__rate_interval]))",
+          "legendFormat": "{{k8s_node_name}} / pkg{{domain_id}}",
           "refId": "A",
           "interval": "5s"
         }
       ],
-      "title": "Package Total Power (all workloads)",
+      "title": "Package Power (monitored pods)",
       "type": "timeseries"
     },
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Total activity per package (domain) in F/s \u2014 includes all workloads on the system",
+      "description": "Total activity per package (domain) in F/s \u2014 across monitored pods (root/system counters are not observed)",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1016,15 +946,15 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by (\"domain.id\") (rate({__name__=\"perf.activity_farads_total\"}[$__rate_interval]))",
-          "legendFormat": "{{domain}}",
+          "expr": "sum by (k8s_node_name, domain_id) (rate({__name__=\"perf_activity_farads_total\", resctrl_group_source=\"pod\"}[$__rate_interval]))",
+          "legendFormat": "{{k8s_node_name}} / pkg{{domain_id}}",
           "refId": "A",
           "interval": "5s"
         }
       ],
-      "title": "Package Total Activity",
+      "title": "Package Activity (monitored pods)",
       "type": "timeseries"
     }
   ],
@@ -1057,7 +987,7 @@
         "current": {},
         "datasource": {
           "type": "prometheus",
-          "uid": "prometheus"
+          "uid": "${DS_PROMETHEUS}"
         },
         "definition": "label_values(kube_pod_info, namespace)",
         "hide": 0,

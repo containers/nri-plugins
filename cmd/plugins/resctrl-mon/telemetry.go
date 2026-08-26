@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -66,6 +67,9 @@ func defaultTelemetryConfig() telemetryConfig {
 	var cfg telemetryConfig
 	cfg.Prometheus.Enabled = true
 	cfg.Prometheus.ListenAddress = ":9100"
+	// Match the chart/sample/README default: OTLP uses a plaintext connection
+	// unless the operator explicitly opts into TLS.
+	cfg.OTLP.Insecure = true
 	return cfg
 }
 
@@ -83,8 +87,13 @@ func validateTelemetryConfig(cfg *telemetryConfig) error {
 	if cfg.OTLP.Interval == "" {
 		cfg.OTLP.Interval = "15s"
 	}
-	if _, err := time.ParseDuration(cfg.OTLP.Interval); err != nil {
+	// Reject non-positive intervals: metric.WithInterval silently ignores them
+	// and falls back to 60s, so a valid-looking config would export at the
+	// wrong rate.
+	if interval, err := time.ParseDuration(cfg.OTLP.Interval); err != nil {
 		return fmt.Errorf("telemetry: otlp.interval %q: %w", cfg.OTLP.Interval, err)
+	} else if interval <= 0 {
+		return fmt.Errorf("telemetry: otlp.interval must be positive, got %q", cfg.OTLP.Interval)
 	}
 	if len(cfg.PerfCounters.Include) > 0 && len(cfg.PerfCounters.Exclude) > 0 {
 		return fmt.Errorf("telemetry: perfCounters.include and perfCounters.exclude are mutually exclusive")
@@ -99,8 +108,15 @@ func validateTelemetryConfig(cfg *telemetryConfig) error {
 func newTelemetry(ctx context.Context, cfg telemetryConfig) (*telemetryState, error) {
 	var opts []metric.Option
 
+	// spec.nodeName injected via the DaemonSet's downward API. Emitting it as a
+	// resource attribute gives every sample a stable per-node label on both the
+	// Prometheus pull path (as a constant label, below) and the OTLP push path,
+	// so dashboards can distinguish identically numbered CPU packages on
+	// different nodes.
+	node := os.Getenv("NODE_NAME")
+
 	res, err := resource.New(ctx,
-		resource.WithAttributes(resourceAttrs(cfg.ResourceAttributes)...),
+		resource.WithAttributes(resourceAttrs(cfg.ResourceAttributes, node)...),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("telemetry: failed to create resource: %w", err)
@@ -112,6 +128,13 @@ func newTelemetry(ctx context.Context, cfg telemetryConfig) (*telemetryState, er
 	if cfg.Prometheus.Enabled {
 		reg := prometheus.NewRegistry()
 		peOpts := []promexp.Option{promexp.WithRegisterer(reg)}
+		// The Prometheus exporter surfaces resource attributes only via
+		// target_info unless they are selected as constant labels. Promote the
+		// configured resourceAttributes (and the node name) so they appear on
+		// every l3_*/perf_* sample, matching the OTLP path.
+		if keys := constantLabelKeys(cfg.ResourceAttributes, node); len(keys) > 0 {
+			peOpts = append(peOpts, promexp.WithResourceAsConstantLabels(attribute.NewAllowKeysFilter(keys...)))
+		}
 		if cfg.Prometheus.Namespace != "" {
 			peOpts = append(peOpts, promexp.WithNamespace(cfg.Prometheus.Namespace))
 		}
@@ -133,7 +156,14 @@ func newTelemetry(ctx context.Context, cfg telemetryConfig) (*telemetryState, er
 
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
-		state.server = &http.Server{Addr: cfg.Prometheus.ListenAddress, Handler: mux}
+		// ReadHeaderTimeout bounds slow-header clients so an exposed listener
+		// cannot be held open indefinitely; leave the rest unset so metric
+		// collection is not time-limited.
+		state.server = &http.Server{
+			Addr:              cfg.Prometheus.ListenAddress,
+			Handler:           mux,
+			ReadHeaderTimeout: 5 * time.Second,
+		}
 	}
 
 	if cfg.OTLP.Enabled {
@@ -204,8 +234,9 @@ func newOTLPExporter(ctx context.Context, cfg telemetryConfig) (metric.Exporter,
 	}
 }
 
-// resourceAttrs builds OTel resource attributes from the config map.
-func resourceAttrs(m map[string]string) []attribute.KeyValue {
+// resourceAttrs builds OTel resource attributes from the config map, plus the
+// node name (when set) unless the user overrode it via resourceAttributes.
+func resourceAttrs(m map[string]string, node string) []attribute.KeyValue {
 	attrs := []attribute.KeyValue{
 		semconv.ServiceName("nri-resctrl-mon"),
 	}
@@ -217,10 +248,29 @@ func resourceAttrs(m map[string]string) []attribute.KeyValue {
 		}
 		attrs = append(attrs, attribute.String(k, v))
 	}
+	if _, ok := m["k8s.node.name"]; !ok && node != "" {
+		attrs = append(attrs, attribute.String("k8s.node.name", node))
+	}
 	return attrs
 }
 
+// constantLabelKeys returns the resource-attribute keys to expose as constant
+// labels on the Prometheus pull path: the configured resourceAttributes plus
+// the node name (when set and not user-overridden).
+func constantLabelKeys(m map[string]string, node string) []attribute.Key {
+	keys := make([]attribute.Key, 0, len(m)+1)
+	for k := range m {
+		keys = append(keys, attribute.Key(k))
+	}
+	if _, ok := m["k8s.node.name"]; !ok && node != "" {
+		keys = append(keys, attribute.Key("k8s.node.name"))
+	}
+	return keys
+}
+
 // startTelemetry initializes the MeterProvider and registers metrics instruments.
+// It reads p.config/p.mgr and writes p.telemetry/p.metrics directly, so the
+// caller must hold p.stateMu (write lock); it must not take the lock itself.
 func (p *plugin) startTelemetry(ctx context.Context) error {
 	cfg := p.config.Telemetry
 	if err := validateTelemetryConfig(&cfg); err != nil {
@@ -230,14 +280,16 @@ func (p *plugin) startTelemetry(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	p.telemetry = state
 
 	meter := state.provider.Meter("nri-resctrl-mon")
-	reg, err := setupMetrics(p.mgr, cfg, meter)
+	reg, err := setupMetrics(p.mgr, cfg, p.config.ResctrlPath, meter)
 	if err != nil {
 		state.shutdown(ctx)
 		return fmt.Errorf("metrics registration: %w", err)
 	}
+	// Publish only after registration succeeds; otherwise a failed setupMetrics
+	// would leave p.telemetry non-nil and a later Configure would skip startup.
+	p.telemetry = state
 	p.metrics = reg
 	return nil
 }

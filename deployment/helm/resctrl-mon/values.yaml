@@ -10,10 +10,13 @@ telemetry:
     enabled: true
     listenAddress: ":9100"
     scrapeInterval: "15s"    # recommended scrape interval (annotation hint)
-    namespace: ""            # empty = resctrl_* Prometheus metric names
+    # OTel Prometheus namespace: prefixes every metric name with "<namespace>_".
+    # Leave empty. The bundled Grafana dashboards query the unprefixed names
+    # (l3_*/perf_*); a non-empty value renames every series and breaks them.
+    namespace: ""
   otlp:
     enabled: false
-    endpoint: ""             # e.g. "otel-collector.monitoring.svc:4317"
+    endpoint: ""             # e.g. "otel-collector-resctrl.monitoring.svc:4317"
     protocol: grpc           # grpc | http
     interval: 15s
     insecure: true
