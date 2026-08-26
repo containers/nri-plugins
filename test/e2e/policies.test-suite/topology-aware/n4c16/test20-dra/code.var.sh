@@ -108,36 +108,47 @@ print(",".join(str(a) if a == b else "%d-%d" % (a, b) for a, b in ranges))
 ' "$cpus"
 }
 
-# node-allocatable-cpu-millis stores node.status.allocatable.cpu,
-# normalized to millicores, in COMMAND_OUTPUT. The raw resource.Quantity
-# value returned by the API can be plain cores ("16") or already in
-# millicore form ("16000m") depending on canonicalization, so normalize
-# before comparing -- a fragile string diff of "16" vs "16000m" would
-# never catch a real deduction.
-node-allocatable-cpu-millis() {
-    vm-command "kubectl get nodes -o jsonpath='{.items[0].status.allocatable.cpu}'"
-    local raw="$COMMAND_OUTPUT"
-    if [[ "$raw" == *m ]]; then
-        COMMAND_OUTPUT="${raw%m}"
-    else
-        COMMAND_OUTPUT=$((raw * 1000))
-    fi
-}
-
-# wait-allocatable-cpu-millis <want-millis> <message> [timeout=30] [interval=2]
-# Polls node.status.allocatable.cpu (normalized to millicores) until it
-# equals <want>, or fails with <message> on timeout -- allows for
-# propagation delay between claim allocation and the node status update.
-wait-allocatable-cpu-millis() {
-    local want=$1 msg=$2 timeout=${3:-30} interval=${4:-2} elapsed=0
+# wait-node-allocatable-claim-status <pod> <claim> <container> <cpus> [timeout=30] [interval=2]
+# Polls pod.status.nodeAllocatableResourceClaimStatuses[] until it
+# contains an entry with resourceClaimName == <claim>, <container>
+# listed in .containers, and .resources.cpu == <cpus>, or fails with
+# command-error on timeout.
+#
+# This field -- not node.status.allocatable.cpu -- is KEP-5517's actual
+# persisted signal. node.status.allocatable.cpu is never mutated by
+# DRANodeAllocatableResources: the NodeAllocatableResourceMapping/
+# AllocationMultiplier accounting it introduces is consumed only by the
+# scheduler's DynamicResources Filter/PreBind logic, operating on an
+# in-memory fwk.NodeInfo cache to avoid overcommitting CPU when
+# scheduling *additional* pods (pkg/scheduler/framework/plugins/
+# dynamicresources/nodeallocatabledynamicresources.go in a Kubernetes
+# checkout) -- no kubelet/control-plane code path ever writes that
+# deduction back to the Node API object (`git grep
+# NodeAllocatableResourceMapping -- pkg/kubelet/`: zero hits), since
+# kubelet sets status.allocatable purely from physical
+# capacity/reservations. The scheduler instead writes
+# pod.status.nodeAllocatableResourceClaimStatuses[] at PreBind, matching
+# docs/dra/landscape.md:31. Confirmed shape/field name against the live
+# gated VM via `kubectl explain
+# pod.status.nodeAllocatableResourceClaimStatuses` before wiring this in.
+#
+# Written by the scheduler at bind time, so it may not be present the
+# instant the pod reaches Ready -- poll rather than check once, mirroring
+# assert-cpu-clos's retry pattern above.
+wait-node-allocatable-claim-status() {
+    local pod="$1" claim="$2" ctr="$3" cpus="$4" timeout=${5:-30} interval=${6:-2} elapsed=0
     while [ "$elapsed" -lt "$timeout" ]; do
-        node-allocatable-cpu-millis
-        [ "$COMMAND_OUTPUT" == "$want" ] && return 0
+        vm-command "kubectl get pod $pod -o json | jq -c \
+            '[(.status.nodeAllocatableResourceClaimStatuses // [])[] | \
+              select(.resourceClaimName == \"$claim\" and \
+                     (.containers // [] | index(\"$ctr\")) and \
+                     .resources.cpu == \"$cpus\")] | length'"
+        [ "$COMMAND_OUTPUT" -gt 0 ] 2>/dev/null && return 0
         sleep "$interval"
         elapsed=$((elapsed + interval))
     done
-    node-allocatable-cpu-millis
-    command-error "$msg (expected '$want', got '$COMMAND_OUTPUT')"
+    vm-command "kubectl get pod $pod -o jsonpath='{.status.nodeAllocatableResourceClaimStatuses}'"
+    command-error "pod $pod's status.nodeAllocatableResourceClaimStatuses missing entry {resourceClaimName: $claim, containers: [$ctr], resources.cpu: $cpus} (got: $COMMAND_OUTPUT)"
 }
 
 # wait-resourceslice-devices [timeout]
@@ -270,14 +281,6 @@ vm-put-file --cleanup "$claim_yaml" hp-turbo-cpus-claim.yaml
 vm-command "kubectl apply -f hp-turbo-cpus-claim.yaml" ||
     command-error "failed to create ResourceClaim hp-turbo-cpus"
 
-# Capture the node-allocatable CPU baseline here, in the gap between
-# the claim and the pod -- before the pod exists and consumes the
-# claim. A baseline captured after the pod reaches Ready (as a quick,
-# non-rigorous check during Task 4 did) can't tell a real deduction
-# apart from "never happened", since there's nothing to diff against.
-node-allocatable-cpu-millis
-allocatable_baseline_millis="$COMMAND_OUTPUT"
-
 # The consuming pod. Not routed through create(): create() defaults to
 # wait=Ready, which a ResourceClaim never satisfies on its own (it has
 # no Ready condition), and guaranteed.yaml.in (the shared template
@@ -358,15 +361,12 @@ claimed_cpu_count=$(wc -w <<< "$claimed_cpus")
 # before matching.
 assert-cpu-clos dra-pod0c0 "$(compress-cpulist "$claimed_cpus")" "CLOS 0"
 
-# Allocatable deduction: node.status.allocatable.cpu should be exactly
-# 2 (claimed CPUs) less than the pre-claim baseline, per
-# NodeAllocatableResourceMappings/AllocationMultiplier=1
-# (pkg/resmgr/cpuclass/dra.go:279-285). Poll rather than check once, to
-# allow for propagation delay between claim allocation and the node
-# status update.
-expected_allocatable_millis=$((allocatable_baseline_millis - 2000))
-wait-allocatable-cpu-millis "$expected_allocatable_millis" \
-    "node.status.allocatable.cpu was not deducted by 2 CPUs after claim allocation (baseline was ${allocatable_baseline_millis}m)" \
-    30 2
+# KEP-5517 allocation record: node.status.allocatable.cpu is never
+# mutated by DRANodeAllocatableResources (see
+# wait-node-allocatable-claim-status's comment above for why) -- the
+# actual persisted signal is pod.status.nodeAllocatableResourceClaimStatuses[],
+# written by the scheduler at PreBind. Assert it names the claim, the
+# consuming container, and the claimed CPU count.
+wait-node-allocatable-claim-status dra-pod0 hp-turbo-cpus dra-pod0c0 "$claimed_cpu_count" 30 2
 
 cleanup
