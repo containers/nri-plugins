@@ -741,7 +741,7 @@ Allocation](https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-reso
 Tuning](#class-based-cpu-tuning)) as DRA devices. This lets pods request CPUs with a
 specific `cpuClass` via a `ResourceClaim` instead of (or in addition to) the
 `cpu-class.resource-policy.nri.io` annotation, and lets the scheduler see and account
-for `cpuClass`-tagged capacity through `node.status.allocatable`.
+for `cpuClass`-tagged capacity when fitting pods onto nodes.
 
 #### Prerequisites
 
@@ -752,9 +752,12 @@ for `cpuClass`-tagged capacity through `node.status.allocatable`.
 - Optionally, Kubernetes 1.36+, with the
   [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517)
   (`DRANodeAllocatableResources` / node allocatable resources) alpha feature gate
-  enabled, so the scheduler accounts for `cpuClass`-tagged capacity through
-  `node.status.allocatable`. Without it, DRA allocation still works but capacity
-  mirroring is skipped (see design.md's "Feature-gate detection").
+  enabled, so the scheduler accounts for `cpuClass`-tagged capacity in its own
+  in-memory node-allocatable bookkeeping and records the resolved allocation on
+  `pod.status.nodeAllocatableResourceClaimStatuses[]` at PreBind — **not** on
+  `node.status.allocatable`, which this feature gate never mutates. Without it,
+  DRA allocation still works but capacity mirroring is skipped (see design.md's
+  "Feature-gate detection").
 - The container runtime must support NRI (as for the rest of this policy).
 
 #### Enabling

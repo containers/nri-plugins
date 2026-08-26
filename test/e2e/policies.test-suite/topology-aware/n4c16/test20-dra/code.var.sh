@@ -1,10 +1,13 @@
 # test20-dra: DRA (KEP-5075/KEP-5517) integration for the topology-aware
 # policy. See docs/dra/plan.md's Step 10 for background.
 #
-# This is the initial skeleton (plan Task 3): mock+launch, feature-gate
-# probe, and skip path only. The ResourceClaim/pod manifests and the
-# remaining assertions (CLOS association, env vars, allocatable
-# deduction) are added by later tasks.
+# Full test: launches the plugin with the SST/cpufreq mock and a
+# hp-turbo cpuClass, probes the API server for the KEP-5075/KEP-5517
+# feature gates (skipping cleanly if either is missing), applies a
+# ResourceClaim selecting the HP class by its published nri/pctPriority
+# attribute plus a pod consuming it, and asserts the claimed CPUs'
+# CDI env vars, their CLOS association in the policy log, and the
+# scheduler's pod.status.nodeAllocatableResourceClaimStatuses[] record.
 
 cleanup() {
     vm-command "kubectl delete pods --all --now"
@@ -56,33 +59,10 @@ assert-cpu-clos() {
         "Missing CPU ($cpus) association for $ctr (expected to $clos)"
 }
 
-# expand-cpulist "0-2,5" prints "0 1 2 5"
-expand-cpulist() {
-    local cpus="$1"
-
-    if [ "${cpus//-/}" == "$cpus" ] && [ "${cpus//,/}" == "$cpus" ]; then
-        echo $cpus
-        return 0
-    fi
-
-    python3 -c '
-import sys
-r = set()
-for part in sys.argv[1].split(","):
-    if not part:
-        continue
-    if "-" in part:
-        a, b = part.split("-")
-        r.update(range(int(a), int(b) + 1))
-    else:
-        r.add(int(part))
-print(" ".join(str(x) for x in sorted(r)))
-' "$cpus"
-}
-
-# compress-cpulist "8 9 10 12" prints "8-10,12" -- the inverse of
-# expand-cpulist above, same python3 idiom. Needed because pct.go:786's
-# "associated cpus %s to CLOS %d" log line formats its cpuset with
+# compress-cpulist "8 9 10 12" prints "8-10,12" -- range-collapsing,
+# same python3 idiom as test19-cpuclass's expand-cpulist (its inverse).
+# Needed because pct.go:786's "associated cpus %s to CLOS %d" log line
+# formats its cpuset with
 # cpuset.CPUSet.String(), which collapses contiguous ids into ranges,
 # so individual/comma-joined ids parsed out of NRI_CPU<N> env vars
 # would never match assert-cpu-clos's regex without this.
@@ -218,8 +198,15 @@ wait-resourceslice-devices 30 || {
     error "no devices found in any ResourceSlice within timeout (not a feature-gate issue -- check DRA_ENABLED/CPU_CLASSES/SST mock config)"
 }
 
-if grep -q '"allowMultipleAllocations":true' <<< "$COMMAND_OUTPUT" && \
-   grep -q '"nodeAllocatableResourceMappings":{' <<< "$COMMAND_OUTPUT"; then
+# Require both fields on the *same* device object, not merely present
+# somewhere in the (possibly multi-device) list -- every device this
+# driver publishes gets both fields set unconditionally, so checking
+# them independently across the whole list would loosely pass even if,
+# say, one device kept allowMultipleAllocations while a different
+# device kept nodeAllocatableResourceMappings; that's not what either
+# gate being enabled actually implies.
+if jq -e 'any(.[]; .allowMultipleAllocations == true and (.nodeAllocatableResourceMappings != null))' \
+    >/dev/null 2>&1 <<< "$COMMAND_OUTPUT"; then
     echo "DRA feature gates (KEP-5075/KEP-5517) detected as enabled on the API server; continuing."
 else
     helm-terminate

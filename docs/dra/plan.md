@@ -326,7 +326,11 @@ drop-unused-rules rationale as `deviceclasses`/`resourceclaims/status`.
   `node.status.allocatable.cpu`, which KEP-5517 never mutates (see Step 10's "Landed" line).
 - **Feature-gate precondition — all-or-nothing.** Probe both [KEP-5075](https://github.com/kubernetes/enhancements/issues/5075) and [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517) at test setup; skip the entire test with a clear message if either is missing. KEP-5075 is a hard requirement (the device/claim shape itself depends on `AllowMultipleAllocations`+`RequestPolicy`; without it there's no fallback claim shape). KEP-5517 is only a soft requirement at the plugin level (design.md's "Feature-gate detection": mapping ignored, not fatal) — but the test treats it the same as KEP-5075 for simplicity, rather than conditionally skipping just the `node.status.allocatable.cpu` assertion on clusters with partial gate support.
 
-**Files touched:** `test/e2e/policies.test-suite/topology-aware/n4c16/testXX-dra/code.var.sh`.
+**Files touched:** `test/e2e/policies.test-suite/topology-aware/n4c16/test20-dra/code.var.sh`
+(new); harness changes required to run it: `test/e2e/playbook/provision.yaml`,
+`test/e2e/files/Vagrantfile.in`, `test/e2e/run.sh`, `test/e2e/run_tests.sh` (feature-gate
+plumbing, Task 1), `test/e2e/policies.test-suite/topology-aware/helm-config.yaml.in`
+(`dra.enabled` passthrough, Task 2).
 
 **Verification:** e2e test passes on the [KEP-5075](https://github.com/kubernetes/enhancements/issues/5075)+5517 test cluster. Hardware-independence is limited to the SST/cpufreq mocks — the test still depends on the K8s API server itself exposing the alpha DRA feature gates.
 
@@ -380,6 +384,14 @@ planned (no rename). Implementation deviations from this plan's original Actions
   section and design.md's equivalent passages previously carried the inaccurate
   "deducted from `node.status.allocatable.cpu`" phrasing; this section has now been
   corrected in place.
+- **Coverage gap (accepted, not fixed):** the test only checks KEP-5075/
+  `DRAConsumableCapacity`'s presence via the static `ResourceSlice` field round-trip in
+  the feature-gate probe; it never functionally exercises consumable/shared capacity
+  (the single claim in this test consumes a device's entire capacity, 2 of 2). A
+  regression in multi-claim capacity-sharing on one device wouldn't be caught by this
+  test. Adding a second, concurrent claim against the same device to exercise that path
+  is a real scope expansion (a new test scenario, not a fixup) — left as a follow-up if
+  KEP-5075's sharing behavior needs its own coverage.
 
 ## Cross-cutting
 
