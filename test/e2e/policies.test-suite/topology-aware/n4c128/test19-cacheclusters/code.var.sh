@@ -1,7 +1,6 @@
 
 cleanup() {
     delete-pods --all
-    delete-namespaces highprio lowprio
 }
 
 # fill-l3caches <first> <last> <cpureq>
