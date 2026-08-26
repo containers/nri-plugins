@@ -21,7 +21,7 @@ cleanup() {
 verify-podres-locality() {
     local resource=$1
     shift
-    vm-command "kubectl -n kube-system logs ds/nri-resource-policy-balloons | grep 'pod-resource device \"$resource\"'" >/dev/null \
+    plugin-log "pod-resource device \"$resource\"" > /dev/null \
         || command-error "no device-locality log lines for resource $resource"
     local log="$COMMAND_OUTPUT"
     local ctr
@@ -146,7 +146,7 @@ verify 'disjoint_sets(nodes["pod1c0"], nodes["pod1c1"], nodes["pod1c2"], nodes["
 # Sanity check (cf. test19-pct): the hp-near-tpu balloons use the
 # pct-hp cpuClass, so their CPUs must have been associated to the PCT
 # high-priority CLOS 0.
-vm-command "kubectl -n kube-system logs ds/nri-resource-policy-balloons | grep -E 'associated cpus .* to CLOS 0'" \
+plugin-log 'associated cpus .* to CLOS 0' \
     || command-error "hp-near-tpu balloon CPUs were not associated to PCT HP CLOS 0"
 
 vm-command "kubectl delete pods --all --now"
