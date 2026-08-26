@@ -173,6 +173,11 @@ E2E_LIB_DIR=$(realpath "$TESTS_ROOT_DIR/../lib")
 
 source "$E2E_LIB_DIR"/vm.bash
 
+if vm-box-cache-cleanup-requested; then
+    vm-cleanup-boxes
+    exit 0
+fi
+
 cleanup() {
     rm -rf "$summary_dir"
 }
