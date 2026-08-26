@@ -28,66 +28,8 @@
 
 helm-terminate
 
-# pct-log fetches the latest PCT-related log lines.
-pct-log() {
-    local last_n=${1:-200}
-    vm-command "kubectl -n kube-system logs ds/nri-resource-policy-balloons | grep -E 'pct(:| mock:)' | tail -n $last_n"
-}
-
-# assert-log-contains <regex> <message>
-assert-log-contains() {
-    local pat=$1
-    local msg=$2
-    pct-log 500
-    grep -E -q "$pat" <<< "$COMMAND_OUTPUT" || command-error "$msg (pattern: $pat)"
-}
-
-# assert-log-not-contains <regex> <message>
-assert-log-not-contains() {
-    local pat=$1
-    local msg=$2
-    pct-log 500
-    if grep -E -q "$pat" <<< "$COMMAND_OUTPUT"; then
-        command-error "$msg (unexpected pattern: $pat)"
-    fi
-}
-
-# wait-assert-log-contains <regex> <message> [timeout=5]
-# Polls the pct log every 1s until <regex> matches or <timeout>
-# seconds pass. On timeout, defers to assert-log-contains so the
-# resulting command-error carries the captured log output.
-wait-assert-log-contains() {
-    local pat=$1
-    local msg=$2
-    local timeout=${3:-5}
-    local elapsed=0
-    while [ "$elapsed" -lt "$timeout" ]; do
-        pct-log 500
-        grep -E -q "$pat" <<< "$COMMAND_OUTPUT" && return 0
-        sleep 1
-        elapsed=$((elapsed + 1))
-    done
-    assert-log-contains "$pat" "$msg"
-}
-
-# wait-assert-log-grew <regex> <prev_count> <message> [timeout=5]
-# Like wait-assert-log-contains but for "did a fresh line appear?"
-# cases where the pattern already exists from an earlier phase.
-wait-assert-log-grew() {
-    local pat=$1
-    local prev=$2
-    local msg=$3
-    local timeout=${4:-5}
-    local elapsed=0 cur
-    while [ "$elapsed" -lt "$timeout" ]; do
-        pct-log 500
-        cur=$(grep -c -E "$pat" <<< "$COMMAND_OUTPUT")
-        [ "$cur" -gt "$prev" ] && return 0
-        sleep 1
-        elapsed=$((elapsed + 1))
-    done
-    command-error "$msg"
-}
+# Restrict the log assertions to the PCT-related log lines.
+plugin_log_filter='pct(:| mock:)'
 
 # get-ext <resource-name> stores the given extended resource
 # capacity (or the string "missing") in COMMAND_OUTPUT.
@@ -209,7 +151,7 @@ verify 'packages["pod2c0"] != packages["pod0c0"]'
 # scarce; what matters is that the resize happens AND the new
 # CPUs are programmed to the correct CLOS (the cpuclass-driven
 # behavior under test).
-pct-log 500
+plugin-log-tail 500
 prev_to_clos0=$(grep -c 'to CLOS 0' <<< "$COMMAND_OUTPUT")
 CPUREQ=1 CPULIM=1 MEMREQ=10M MEMLIM=10M \
        EXTREQ="cpuclass.balloons.nri.io/pct-hp: \"1\"" \
@@ -242,14 +184,14 @@ report allowed
 # the idleCpuClass "default-class" has no PCT plan, and managed
 # mode must NOT silently park idle CPUs on the HP CLOS 0 (which
 # would consume limited Priority Core Turbo capacity).
-pct-log 500
+plugin-log-tail 500
 prev_to_clos3=$(grep -c 'to CLOS 3' <<< "$COMMAND_OUTPUT")
 vm-command "kubectl delete pod pod1 --now"
 wait-assert-log-grew 'to CLOS 3' "$prev_to_clos3" "deleting LP pod did not reassociate its CPUs to LP fallback CLOS 3"
 
 # Now delete the rest -- all freed CPUs end up on the LP
 # fallback CLOS 3 for the same reason.
-pct-log 500
+plugin-log-tail 500
 prev_to_clos3=$(grep -c 'to CLOS 3' <<< "$COMMAND_OUTPUT")
 vm-command "kubectl delete pods --all --now"
 wait-assert-log-grew 'to CLOS 3' "$prev_to_clos3" "after deleting remaining pods CPUs were not reassociated to LP fallback CLOS 3"

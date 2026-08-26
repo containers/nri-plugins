@@ -167,8 +167,8 @@ helm-terminate
 
 # Test restricting interrupts control and verify that it takes effect.
 expect_error=1 helm_config=$TEST_DIR/balloons-denied-irq-claim.cfg helm-launch balloons
-vm-run-until --timeout 10 "kubectl -n kube-system logs ds/nri-resource-policy-balloons 2>/dev/null | grep -q 'denied interrupt: .* denied but matched by user pattern .*'" || \
-    command-error "expected error of IRQ claim referencing denied IRQ not reported"
+wait-assert-log-contains 'denied interrupt: .* denied but matched by user pattern .*' \
+    "expected error of IRQ claim referencing denied IRQ not reported" 10
 helm-terminate || true
 
 cleanup

@@ -15,11 +15,9 @@
 helm-terminate
 helm_config=$TEST_DIR/balloons-turbo.cfg helm-launch balloons
 
-# turbo-log fetches the latest turbo recalculation log lines
-turbo-log() {
-    local last_n=${1:-20}
-    vm-command "kubectl -n kube-system logs ds/nri-resource-policy-balloons | grep -E 'turbo:|cpuClass' | tail -n $last_n"
-}
+# Restrict the log assertions to the turbo recalculation log lines.
+plugin_log_filter='turbo:|cpuClass'
+plugin_log_tail_lines=20
 
 # verify-turbo-winner checks that the given class is logged as a turbo winner
 # with the expected maxFreq, within the last N turbo log lines.
@@ -28,7 +26,7 @@ verify-turbo-winner() {
     local expected_max_freq=$2
     local last_n=${3:-20}
     echo "verify turbo winner: class=$class maxFreq=$expected_max_freq"
-    turbo-log $last_n
+    plugin-log-tail $last_n
     grep "class \"$class\"" <<< "$COMMAND_OUTPUT" | grep "winner=true" | tail -n 1 | grep -q "maxFreq=$expected_max_freq" || {
         command-error "expected class $class as turbo winner with maxFreq=$expected_max_freq"
     }
@@ -41,7 +39,7 @@ verify-turbo-loser() {
     local expected_max_freq=$2
     local last_n=${3:-20}
     echo "verify turbo loser: class=$class maxFreq=$expected_max_freq"
-    turbo-log $last_n
+    plugin-log-tail $last_n
     grep "class \"$class\"" <<< "$COMMAND_OUTPUT" | grep "winner=false" | tail -n 1 | grep -q "maxFreq=$expected_max_freq" || {
         command-error "expected class $class as turbo loser with maxFreq=$expected_max_freq"
     }
