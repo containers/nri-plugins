@@ -39,10 +39,6 @@ verify-cstates-no-writes() {
     }
 }
 
-cleanup() {
-    delete-pods --all
-}
-
 echo "verify that all c-states of all available CPUs are enabled"
 verify-cstates "2 3 4 5 6 7 11 12 13" "C1E C2 C4 C8" "" 40
 
