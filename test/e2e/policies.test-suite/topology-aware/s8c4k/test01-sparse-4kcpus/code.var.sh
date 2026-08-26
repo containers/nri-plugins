@@ -50,7 +50,7 @@ fi
 
 # Release all 5 CPUs.
 vm-command 'kubectl delete pod pod0 --now'
-vm-run-until '! kubectl get pod pod0'
+wait-pod-gone pod0
 
 # Only socket #0 has enough CPUs for pod1.
 CONTCOUNT=1 CPUREQ=3100m CPULIM=4000m create burstable
@@ -71,4 +71,4 @@ CPU=5000m create guaranteed
 report allowed
 verify 'len(cpus["pod4c0"]) == 5'
 
-vm-command 'kubectl delete pods --all --now'
+delete-pods --all
