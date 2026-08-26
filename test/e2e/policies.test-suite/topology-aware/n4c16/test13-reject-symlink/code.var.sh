@@ -20,32 +20,22 @@ helm_config=$(instantiate helm-config.yaml)
 helm-launch topology-aware
 helm-terminate topology-aware
 
-# Turn cache into a symlink.
+# Turn cache into a symlink. Restore it whatever happens, otherwise the
+# symlink is left behind for the tests which run after this one.
+trap restore_cache EXIT
 symlink_cache
 
 # Try to re-launch nri-resource-policy, check whether and how it fails.
-(
-  trap 'restore_cache' 0
-  if (expect_error=1 launch_timeout=5s helm-launch topology-aware); then
-      exit 1
-  else
-      vm-command "kubectl -n kube-system logs ds/nri-resource-policy-topology-aware"
-      if ! vm-command "kubectl -n kube-system logs ds/nri-resource-policy-topology-aware | \
-          grep -q 'exists, but is a symbolic link'"; then
-          exit 2
-      else
-          exit 0
-      fi
-  fi
-)
-status=$?
+expect-launch-failure topology-aware
+
+vm-command "kubectl -n kube-system logs ds/nri-resource-policy-topology-aware"
+vm-command "kubectl -n kube-system logs ds/nri-resource-policy-topology-aware | \
+    grep -q 'exists, but is a symbolic link'" ||
+    error "nri-resource-policy failed to start, but looks like for the wrong reason..."
+
+restore_cache
+trap - EXIT
 
 helm-terminate
 
-# Check and report test status.
-case "$status" in
-    1) error "ERROR: nri-resource-policy expected to reject symlinked cache, but it did not.";;
-    2) error "ERROR: nri-resource-policy failed to start, but looks like for the wrong reason...";;
-    0) echo "OK: nri-resource-policy properly rejected symlinked cache"; return 0;;
-    *) error "ERROR: test failed with unexpected status.";;
-esac
+echo "OK: nri-resource-policy properly rejected symlinked cache"

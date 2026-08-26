@@ -65,9 +65,6 @@ cleanup
 # Try starting nri-resource-policy with a configuration where MinBalloons and
 # MaxBalloons of the same balloon type contradict.
 helm-terminate
-( helm_config=${TEST_DIR}/balloons-maxballoons-impossible.cfg launch_timeout=5s helm-launch balloons ) && {
-    error "starting nri-resource-policy succeeded, but was expected to fail due to impossible static balloons"
-}
-echo "starting nri-resource-policy with impossible static balloons configuration failed as expected"
+helm_config=${TEST_DIR}/balloons-maxballoons-impossible.cfg expect-launch-failure balloons
 
 helm-terminate
