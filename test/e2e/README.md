@@ -104,13 +104,31 @@ A test case is a `code.var.sh` file in a
 `run.sh` (run `./run.sh help` to list it), test cases have shared helpers
 available:
 
-- `lib/test.bash` contains helpers that are useful for more than one test case,
-  for instance for waiting for a condition, cleaning up pods and namespaces,
-  inspecting container states, or reading the log of the plugin. Add a helper
-  here if a second test case needs it. `./run.sh help` documents these, too.
+- `lib/test.bash` contains helpers that are useful for more than one test case:
 
-- `TEST-SUITE/POLICY/*.source.sh` files contain policy-specific helpers, for
-  instance `policies.test-suite/balloons/nrt.source.sh`.
+  | group | helpers |
+  | --- | --- |
+  | waiting | `retry-until` |
+  | pods and containers | `container-state`, `wait-container-waiting-reason`, `verify-container-error`, `wait-pod-gone` |
+  | launching the plugin | `relaunch-policy`, `expect-launch-failure` |
+  | cleaning up | `delete-pods`, `create-namespaces`, `delete-namespaces`, `remove-policy-cache`, `kill-test-processes` |
+  | log of the plugin | `plugin-daemonset`, `plugin-log`, `plugin-log-tail`, `assert-log-contains`, `assert-log-not-contains`, `wait-assert-log-contains`, `wait-assert-log-grew`, `assert-cpu-clos`, `assert-cpu-freq` |
+  | metrics | `verify-metrics-has-line`, `verify-metrics-has-no-line` |
+  | node resource topology | `nrt-query`, `nrt-verify-zone-attribute`, `nrt-verify-zone-resource` |
+  | node state | `clear-isolcpus`, `disable-numa`, `enable-numa` |
+  | CPU lists | `expand-cpulist`, `cpulist-difference`, `container-cpus`, `allowed-cpu-ids` |
+  | extended resources | `get-node-resource`, `wait-node-resource` |
+  | interrupts | `resolve-irq`, `irq-cpu-ids`, `verify-irq-cpus` |
+  | scheduling | `verify-sched`, `SCHED_*` |
+
+  Some of them are configured by variables a test case can set, notably
+  `plugin_log_filter`, which restricts the log assertions to the log lines of
+  the subsystem under test.
+
+  Add a helper here once a second test case needs it. Run `./run.sh help` for
+  the documentation of each of them.
+
+- `TEST-SUITE/POLICY/*.source.sh` files contain policy-specific helpers.
 
 `*.source.sh` files are sourced before the test case code, starting from the
 test suite directory and ending in the test case directory, `lib/test.bash`
