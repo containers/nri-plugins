@@ -6,28 +6,6 @@ cleanup() {
 # Restrict the log assertions to the cpuclass-related log lines.
 plugin_log_filter='   *cpuclass   *'
 
-# assert-cpu-clos <container> <cpus> <clos-id>
-# Polls the log until a default timeout to verify that the given CPUs are
-# associated to the given CLOS.
-assert-cpu-clos() {
-    local ctr="$1" cpus="$2" clos="$3"
-    wait-assert-log-contains "associated cpus $cpus to $clos" \
-        "Missing CPU ($cpus) association for $ctr (expected to $clos)"
-}
-
-# assert-cpu-freq <container> <cpus> <clos-id>
-# Polls the log until a default timeout to verify that the given CPU's
-# frequency is reprogrammed according to the given class.
-assert-cpu-freq() {
-    local user="$1" cpus="$2" class="$3"
-    local cpu=""
-
-    for cpu in $(expand-cpulist "$cpus"); do
-        wait-assert-log-contains "enforcing cpu frequency from class .$class@.* on cpu $cpu" \
-             "Missing CPU frequency class $class enforcement on cpu $cpu for $user"
-    done
-}
-
 OVERRIDE_SYS_CPUFREQ='[{"cpus": "0-15", "base": 2900000, "min": 800000, "max": 3800000}]'
 OVERRIDE_SST='{"supported": true, "clos_count": 4, "packages": [{"id": 0, "cpus": "0-7", "tf_supported": true, "cp_supported": true, "max_hp_cpus": 2}, {"id": 1, "cpus": "8-15", "tf_supported": true, "cp_supported": true, "max_hp_cpus": 2}]}'
 OVERRIDE_SST_STATE_DIR="/tmp/nri-pct-mock"
@@ -69,7 +47,7 @@ wait-node-resource cpuclass.resource-policy.nri.io/exclusive 4 \
 #
 
 cpu0=0
-assert-cpu-freq "reserved pool" $cpu0 reserved
+assert-cpu-freq $cpu0 reserved
 
 #
 # Default exclusive CPU class assignment
@@ -82,21 +60,21 @@ CONTCOUNT=4 CPU=1 create guaranteed
 
 pod=pod0
 cpu0=$(container-cpus $pod ${pod}c0)
-assert-cpu-clos ${pod}c0 $cpu0 "CLOS 0"
+assert-cpu-clos $cpu0 "CLOS 0"
 cpu1=$(container-cpus $pod ${pod}c1)
-assert-cpu-clos ${pod}c1 $cpu1 "CLOS 0"
+assert-cpu-clos $cpu1 "CLOS 0"
 cpu2=$(container-cpus $pod ${pod}c2)
-assert-cpu-clos ${pod}c2 $cpu2 "CLOS 0"
+assert-cpu-clos $cpu2 "CLOS 0"
 cpu3=$(container-cpus $pod ${pod}c3)
-assert-cpu-clos ${pod}c3 $cpu3 "CLOS 0"
+assert-cpu-clos $cpu3 "CLOS 0"
 
 # Delete pod. Verify that each released exclusive CPU gets assigned to
 # the shared pool CPU class which is configured with low PCT priority.
 vm-command "kubectl delete pod $pod"
-assert-cpu-clos ${pod}c0 $cpu0 "CLOS 3"
-assert-cpu-clos ${pod}c1 $cpu1 "CLOS 3"
-assert-cpu-clos ${pod}c2 $cpu2 "CLOS 3"
-assert-cpu-clos ${pod}c3 $cpu3 "CLOS 3"
+assert-cpu-clos $cpu0 "CLOS 3"
+assert-cpu-clos $cpu1 "CLOS 3"
+assert-cpu-clos $cpu2 "CLOS 3"
+assert-cpu-clos $cpu3 "CLOS 3"
 
 #
 # Container-specific class assignment
@@ -112,21 +90,21 @@ ANN1="cpu-class.resource-policy.nri.io/container.${pod}c1: class2" \
     CONTCOUNT=4 CPU=2 create guaranteed
 
 cpu0=$(container-cpus $pod ${pod}c0)
-assert-cpu-freq ${pod}c0 $cpu0 class1
+assert-cpu-freq $cpu0 class1
 cpu1=$(container-cpus $pod ${pod}c1)
-assert-cpu-freq ${pod}c1 $cpu1 class2
+assert-cpu-freq $cpu1 class2
 cpu2=$(container-cpus $pod ${pod}c2)
-assert-cpu-clos ${pod}c2 $cpu2 "CLOS 0"
+assert-cpu-clos $cpu2 "CLOS 0"
 cpu3=$(container-cpus $pod ${pod}c3)
-assert-cpu-clos ${pod}c3 $cpu3 "CLOS 0"
+assert-cpu-clos $cpu3 "CLOS 0"
 
 # Delete pod. Verify that each released CPU get assigned to
 # the shared pool CPU class.
 vm-command "kubectl delete pod $pod"
-assert-cpu-clos ${pod}c0 $cpu0 "CLOS 3"
-assert-cpu-clos ${pod}c1 $cpu1 "CLOS 3"
-assert-cpu-clos ${pod}c2 $cpu2 "CLOS 3"
-assert-cpu-clos ${pod}c3 $cpu3 "CLOS 3"
+assert-cpu-clos $cpu0 "CLOS 3"
+assert-cpu-clos $cpu1 "CLOS 3"
+assert-cpu-clos $cpu2 "CLOS 3"
+assert-cpu-clos $cpu3 "CLOS 3"
 
 #
 # Non-eligible container to a CPU class assignment

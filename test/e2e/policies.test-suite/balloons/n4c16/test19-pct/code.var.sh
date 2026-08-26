@@ -67,14 +67,14 @@ CPUREQ=1 CPULIM=1 MEMREQ=10M MEMLIM=10M \
        EXTLIM="cpuclass.balloons.nri.io/pct-hp: \"1\"" \
        POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: pct-hp-bln" CONTCOUNT=1 \
        create balloons-busybox
-wait-assert-log-contains 'associated cpus .* to CLOS 0' "HP pod CPUs not associated to CLOS 0"
+assert-cpu-clos '.*' 'CLOS 0' "HP pod CPUs not associated to CLOS 0"
 report allowed
 
 # Phase 1.3: schedule a pod in the LP balloon.
 CPUREQ=1 CPULIM=1 MEMREQ=10M MEMLIM=10M \
        POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: pct-lp-bln" CONTCOUNT=1 \
        create balloons-busybox
-wait-assert-log-contains 'associated cpus .* to CLOS 3' "LP pod CPUs not associated to CLOS 3"
+assert-cpu-clos '.*' 'CLOS 3' "LP pod CPUs not associated to CLOS 3"
 report allowed
 
 # Phase 1.3b: verify HP-reserve allocation steering. The HP balloon
@@ -141,7 +141,7 @@ verify 'len(cpus["pod3c0"]) == 2'
 CPUREQ=1 CPULIM=1 MEMREQ=10M MEMLIM=10M \
        POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: pct-lp2-bln" CONTCOUNT=1 \
        create balloons-busybox
-wait-assert-log-contains 'associated cpus .* to CLOS 3' "LP2 pod CPUs not associated to CLOS 3"
+assert-cpu-clos '.*' 'CLOS 3' "LP2 pod CPUs not associated to CLOS 3"
 report allowed
 
 # T1.4: per-class idle reassociation. Delete the LP pod (pod1).
@@ -249,7 +249,7 @@ CPUREQ=1 CPULIM=1 MEMREQ=10M MEMLIM=10M \
        POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: assoc-clos1-bln" CONTCOUNT=1 \
        create balloons-busybox
 report allowed
-wait-assert-log-contains 'associated cpus .* to CLOS 1' "CPUs not associated to CLOS 1 in assoc-only mode"
+assert-cpu-clos '.*' 'CLOS 1' "CPUs not associated to CLOS 1 in assoc-only mode"
 
 # Now that a full pod admission has gone through without any PCT
 # startup-time configuration, the negative checks for managed-mode

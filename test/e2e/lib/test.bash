@@ -522,6 +522,28 @@ wait-assert-log-grew() { # script API
         command-error "$msg (pattern: $pattern, expected more than $count lines)"
 }
 
+assert-cpu-clos() { # script API
+    # Usage: assert-cpu-clos CPUS CLOS [MESSAGE] [TIMEOUT]
+    #
+    # Wait until the plugin has associated CPUS to CLOS, for instance
+    # "CLOS 0". CPUS is an extended regular expression matching a CPU list, so
+    # ".*" matches any CPUs.
+    local cpus=$1 clos=$2 msg=${3:-"CPUs '$1' not associated to $2"} tmo=${4:-5}
+    wait-assert-log-contains "associated cpus $cpus to $clos" "$msg" "$tmo"
+}
+
+assert-cpu-freq() { # script API
+    # Usage: assert-cpu-freq CPULIST CLASS [MESSAGE] [TIMEOUT]
+    #
+    # Wait until the plugin has enforced the CPU frequencies of CPU class
+    # CLASS on every CPU in CPULIST.
+    local cpus=$1 class=$2 msg=$3 tmo=${4:-5} cpu
+    for cpu in $(expand-cpulist "$cpus"); do
+        wait-assert-log-contains "enforcing cpu frequency from class .$class@.* on cpu $cpu\$" \
+            "${msg:-CPU frequency class $class not enforced on cpu $cpu}" "$tmo"
+    done
+}
+
 ###
 ### Cleaning up
 ###
