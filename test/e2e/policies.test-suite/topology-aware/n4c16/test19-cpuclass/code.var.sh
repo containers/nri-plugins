@@ -175,10 +175,7 @@ helm_config=$(COLOCATE_PODS=false \
               EXTRA_ENV_OVERRIDE_SST_STATE_DIR="$OVERRIDE_SST_STATE_DIR" \
     instantiate helm-config.yaml) launch_timeout=5s expect_error=1 helm-launch topology-aware
 
-vm-command "kubectl -n kube-system get topologyawarepolicies.config.nri/default -ojson | jq '.status.nodes[].errors'"
-
-grep -q 'unknown reserved CPU class \\"nonexistent\\"' <<<$COMMAND_OUTPUT ||
-    error "Missing reserved pool CPU class validation error in configuration CR"
+verify-config-status-error 'unknown reserved CPU class \\"nonexistent\\"'
 
 RESERVED_CPUCLASS=reserved
 helm-terminate
@@ -197,10 +194,7 @@ helm_config=$(COLOCATE_PODS=false \
               EXTRA_ENV_OVERRIDE_SST_STATE_DIR="$OVERRIDE_SST_STATE_DIR" \
     instantiate helm-config.yaml) launch_timeout=5s expect_error=1 helm-launch topology-aware
 
-vm-command "kubectl -n kube-system get topologyawarepolicies.config.nri/default -ojson | jq '.status.nodes[].errors'"
-
-grep -q 'unknown shared CPU class \\"nonexistent\\"' <<<$COMMAND_OUTPUT ||
-    error "Missing shared pool CPU class validation error in configuration CR"
+verify-config-status-error 'unknown shared CPU class \\"nonexistent\\"'
 
 SHARED_CPUCLASS=shared
 helm-terminate
@@ -219,9 +213,6 @@ helm_config=$(COLOCATE_PODS=false \
               EXTRA_ENV_OVERRIDE_SST_STATE_DIR="$OVERRIDE_SST_STATE_DIR" \
     instantiate helm-config.yaml) launch_timeout=5s expect_error=1 helm-launch topology-aware
 
-vm-command "kubectl -n kube-system get topologyawarepolicies.config.nri/default -ojson | jq '.status.nodes[].errors'"
-
-grep -q 'unknown default exclusive CPU class \\"nonexistent\\"' <<<$COMMAND_OUTPUT ||
-    error "Missing default exclusive CPU class validation error in configuration CR"
+verify-config-status-error 'unknown default exclusive CPU class \\"nonexistent\\"'
 
 cleanup
