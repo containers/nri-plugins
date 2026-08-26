@@ -18,6 +18,11 @@ CACHE_DECAY="${CACHE_DECAY:-$((3 * 24 * 3600))}" # global cached variables valid
 BOX_CACHE_DIR="${BOX_CACHE_DIR:-$CACHE_DIR/boxes}"
 BOX_CACHE_DECAY="${BOX_CACHE_DECAY:-$((30 * 24 * 3600))}" # cached boxes valid for 30 days
 
+# Name prefix of the vagrant boxes of packaged VMs. It has to differ from the
+# name of the distro box, or adding a packaged box would overwrite the distro
+# image which was downloaded for it.
+BOX_NAME_PREFIX="${BOX_NAME_PREFIX:-nri-e2e}"
+
 # Files whose content shapes a provisioned VM. The name of a cached box has a
 # hash of them, so that editing any of them invalidates the cached boxes
 # instead of a later run reusing an image which predates the change.
@@ -180,6 +185,8 @@ vm-box-cache-enabled() {
     # Return success if the box cache is in use. Set e2e_vm_cache to
     #   yes:     use a cached box if there is one, create one if there is not
     #   refresh: ignore any cached box, provision from scratch, then replace it
+    #   cleanup: remove all cached boxes and exit, see vm-cleanup-boxes
+    #            (nuke and drop are synonyms)
     #   no:      do not use or create cached boxes (the default)
     case "${e2e_vm_cache:-no}" in
         yes|1|refresh)
@@ -269,6 +276,69 @@ vm-box-key() {
     echo "${key//[^A-Za-z0-9._-]/-}"
 }
 
+vm-box-name() {
+    # Usage: vm-box-name VMNAME
+    #
+    # Print the name of the vagrant box of the packaged VM of VMNAME.
+    echo "$BOX_NAME_PREFIX/$(vm-box-key "$1")"
+}
+
+vm-box-cache-cleanup-requested() {
+    # Usage: vm-box-cache-cleanup-requested
+    #
+    # Return success if e2e_vm_cache asks for removing the cached boxes.
+    case "${e2e_vm_cache:-no}" in
+        cleanup|nuke|drop)
+            return 0
+            ;;
+    esac
+    return 1
+}
+
+vm-cleanup-boxes() {
+    # Usage: vm-cleanup-boxes
+    #
+    # Remove every cached box, printing each of them as it goes.
+    #
+    # This removes both halves of a cached box: the file in the box cache, and
+    # the copy which vagrant unpacked into its own box directory when a VM was
+    # created from it. Together they take a couple of gigabytes per box.
+    local box name files=0 boxes=0 bytes=0
+
+    for box in "$BOX_CACHE_DIR"/*.box "$BOX_CACHE_DIR"/*.box.tmp.*; do
+        if [ ! -f "$box" ]; then
+            continue
+        fi
+        echo "removing $box ($(du -h "$box" | cut -f1))"
+        bytes=$(( bytes + $(stat -c %s "$box") ))
+        if rm -f "$box"; then
+            files=$(( files + 1 ))
+        else
+            echo "WARNING: failed to remove $box" >&2
+        fi
+    done
+
+    while read -r name _; do
+        case "$name" in
+            "$BOX_NAME_PREFIX"/*)
+                echo "removing vagrant box $name"
+                if vagrant box remove --force "$name" > /dev/null 2>&1; then
+                    boxes=$(( boxes + 1 ))
+                else
+                    echo "WARNING: failed to remove vagrant box $name" >&2
+                fi
+                ;;
+        esac
+    done < <(vagrant box list 2>/dev/null)
+
+    if [ "$files" = 0 ] && [ "$boxes" = 0 ]; then
+        echo "no cached boxes to remove"
+    else
+        echo "removed $files cached box file(s), $(( bytes / (1024 * 1024) )) MB" \
+             "from $BOX_CACHE_DIR, and $boxes vagrant box(es)"
+    fi
+}
+
 vm-cached-box-usable() {
     # Usage: vm-cached-box-usable BOXFILE
     #
@@ -345,7 +415,7 @@ vm-setup() {
         if [ "$e2e_vm_cache" != "refresh" ] && vm-cached-box-usable "$box_file"; then
             echo "using cached provisioned VM $box_file..."
             use_cached_box=1
-            box_name="nri-e2e/$(vm-box-key "$vmname")"
+            box_name="$(vm-box-name "$vmname")"
             distro_img="file://$box_file"
             # The box already has everything the playbook installs, and
             # kubeadm init cannot run a second time. Keep the provisioner out

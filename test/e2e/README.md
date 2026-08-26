@@ -116,6 +116,8 @@ e2e_vm_cache=yes ./run_tests.sh policies.test-suite
 | `no` | do not use or create cached boxes (the default) |
 | `yes` | use a cached box if there is one, otherwise provision and keep the result |
 | `refresh` | ignore any cached box, provision from scratch, then replace it |
+| `cleanup` | remove all cached boxes, printing each of them, and exit without running tests |
+| `nuke`, `drop` | synonyms of `cleanup` |
 
 The boxes live in `$CACHE_DIR/boxes`, next to the tarballs the framework
 already caches, and are named after everything which shapes the guest: the
@@ -138,7 +140,14 @@ Worth knowing:
 
 - Expect a couple of gigabytes per box, and note that vagrant unpacks a box
   into `~/.vagrant.d/boxes` on first use, so the disk cost is roughly twice the
-  file size. Nothing prunes them automatically.
+  file size. Nothing prunes them automatically, so clean up when done:
+
+  ```shell
+  e2e_vm_cache=cleanup ./run_tests.sh policies.test-suite
+  ```
+
+  This removes both halves of every cached box, the file and the copy vagrant
+  unpacked, and leaves the downloaded distro images alone.
 
 - Boxes expire after 30 days (`BOX_CACHE_DECAY`). They contain a cluster whose
   certificates the `kubeadm` defaults give a year to live, so they are not
