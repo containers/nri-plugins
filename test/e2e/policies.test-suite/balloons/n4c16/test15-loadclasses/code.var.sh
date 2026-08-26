@@ -23,7 +23,7 @@ cleanup() {
 CPUREQ="500m" MEMREQ="100M" CPULIM="500m" MEMLIM=""
 POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: l2load" CONTCOUNT=2 create balloons-busybox
 # Print balloons and their cpusets from NRT for debugging.
-vm-command 'kubectl get -n kube-system noderesourcetopologies.topology.node.k8s.io -o json  | jq ".items[].zones[] | select(.type == \"balloon\") | {balloon:.name, cpuset:(.attributes[] | select(.name == \"cpuset\") | .value)}"'
+nrt-query '.zones[] | select(.type == "balloon") | {balloon:.name, cpuset:(.attributes[] | select(.name == "cpuset") | .value)}'
 report allowed
 verify 'len(cpus["pod0c0"]) == 1' \
        'len(cpus["pod0c1"]) == 1' \
