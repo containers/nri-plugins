@@ -8,7 +8,136 @@
 
 cleanup() {
     vm-command "kubectl delete pods --all --now"
+    vm-command "kubectl delete resourceclaims --all --now"
     helm-terminate
+}
+
+# fetch-log fetches the latest log lines matching a given pattern.
+# Copied verbatim from test19-cpuclass/code.var.sh (test-local
+# convention -- already duplicated in balloons/n4c16/test19-pct, not
+# worth extracting to a shared lib for a third copy).
+fetch-log() {
+    local last_n=${1:-200} pattern=${2:-'   *cpuclass   *'}
+    vm-command "kubectl -n kube-system logs ds/nri-resource-policy-topology-aware | grep -E \"$pattern\" | tail -n $last_n"
+}
+
+# assert-log-contains <regex> <message>
+assert-log-contains() {
+    local pat=$1
+    local msg=$2
+    fetch-log 500
+    grep -E -q "$pat" <<< "$COMMAND_OUTPUT" || command-error "$msg (pattern: $pat)"
+}
+
+# wait-assert-log-contains <regex> <message> [timeout=5]
+# Polls the policy log every 1s until <regex> matches or <timeout>
+# seconds pass. On timeout, defers to assert-log-contains so the
+# resulting command-error carries the captured log output.
+wait-assert-log-contains() {
+    local pat=$1
+    local msg=$2
+    local timeout=${3:-5}
+    local elapsed=0
+    while [ "$elapsed" -lt "$timeout" ]; do
+        fetch-log 500
+        grep -E -q "$pat" <<< "$COMMAND_OUTPUT" && return 0
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+    assert-log-contains "$pat" "$msg"
+}
+
+# assert-cpu-clos <container> <cpus> <clos-id>
+# Polls the log until a default timeout to verify that the given CPUs are
+# associated to the given CLOS.
+assert-cpu-clos() {
+    local ctr="$1" cpus="$2" clos="$3"
+    wait-assert-log-contains "associated cpus $cpus to $clos" \
+        "Missing CPU ($cpus) association for $ctr (expected to $clos)"
+}
+
+# expand-cpulist "0-2,5" prints "0 1 2 5"
+expand-cpulist() {
+    local cpus="$1"
+
+    if [ "${cpus//-/}" == "$cpus" ] && [ "${cpus//,/}" == "$cpus" ]; then
+        echo $cpus
+        return 0
+    fi
+
+    python3 -c '
+import sys
+r = set()
+for part in sys.argv[1].split(","):
+    if not part:
+        continue
+    if "-" in part:
+        a, b = part.split("-")
+        r.update(range(int(a), int(b) + 1))
+    else:
+        r.add(int(part))
+print(" ".join(str(x) for x in sorted(r)))
+' "$cpus"
+}
+
+# compress-cpulist "8 9 10 12" prints "8-10,12" -- the inverse of
+# expand-cpulist above, same python3 idiom. Needed because pct.go:786's
+# "associated cpus %s to CLOS %d" log line formats its cpuset with
+# cpuset.CPUSet.String(), which collapses contiguous ids into ranges,
+# so individual/comma-joined ids parsed out of NRI_CPU<N> env vars
+# would never match assert-cpu-clos's regex without this.
+compress-cpulist() {
+    local cpus="$1"
+
+    python3 -c '
+import sys
+ids = sorted(int(x) for x in sys.argv[1].split())
+ranges = []
+start = prev = None
+for i in ids:
+    if start is None:
+        start = prev = i
+    elif i == prev + 1:
+        prev = i
+    else:
+        ranges.append((start, prev))
+        start = prev = i
+if start is not None:
+    ranges.append((start, prev))
+print(",".join(str(a) if a == b else "%d-%d" % (a, b) for a, b in ranges))
+' "$cpus"
+}
+
+# node-allocatable-cpu-millis stores node.status.allocatable.cpu,
+# normalized to millicores, in COMMAND_OUTPUT. The raw resource.Quantity
+# value returned by the API can be plain cores ("16") or already in
+# millicore form ("16000m") depending on canonicalization, so normalize
+# before comparing -- a fragile string diff of "16" vs "16000m" would
+# never catch a real deduction.
+node-allocatable-cpu-millis() {
+    vm-command "kubectl get nodes -o jsonpath='{.items[0].status.allocatable.cpu}'"
+    local raw="$COMMAND_OUTPUT"
+    if [[ "$raw" == *m ]]; then
+        COMMAND_OUTPUT="${raw%m}"
+    else
+        COMMAND_OUTPUT=$((raw * 1000))
+    fi
+}
+
+# wait-allocatable-cpu-millis <want-millis> <message> [timeout=30] [interval=2]
+# Polls node.status.allocatable.cpu (normalized to millicores) until it
+# equals <want>, or fails with <message> on timeout -- allows for
+# propagation delay between claim allocation and the node status update.
+wait-allocatable-cpu-millis() {
+    local want=$1 msg=$2 timeout=${3:-30} interval=${4:-2} elapsed=0
+    while [ "$elapsed" -lt "$timeout" ]; do
+        node-allocatable-cpu-millis
+        [ "$COMMAND_OUTPUT" == "$want" ] && return 0
+        sleep "$interval"
+        elapsed=$((elapsed + interval))
+    done
+    node-allocatable-cpu-millis
+    command-error "$msg (expected '$want', got '$COMMAND_OUTPUT')"
 }
 
 # wait-resourceslice-devices [timeout]
@@ -141,6 +270,14 @@ vm-put-file --cleanup "$claim_yaml" hp-turbo-cpus-claim.yaml
 vm-command "kubectl apply -f hp-turbo-cpus-claim.yaml" ||
     command-error "failed to create ResourceClaim hp-turbo-cpus"
 
+# Capture the node-allocatable CPU baseline here, in the gap between
+# the claim and the pod -- before the pod exists and consumes the
+# claim. A baseline captured after the pod reaches Ready (as a quick,
+# non-rigorous check during Task 4 did) can't tell a real deduction
+# apart from "never happened", since there's nothing to diff against.
+node-allocatable-cpu-millis
+allocatable_baseline_millis="$COMMAND_OUTPUT"
+
 # The consuming pod. Not routed through create(): create() defaults to
 # wait=Ready, which a ResourceClaim never satisfies on its own (it has
 # no Ready condition), and guaranteed.yaml.in (the shared template
@@ -181,3 +318,55 @@ vm-command "kubectl apply -f dra-pod0.yaml" ||
 
 vm-command "kubectl wait --for=condition=Ready pod/dra-pod0 --timeout=60s" ||
     command-error "pod dra-pod0 did not reach Running"
+
+#
+# Task 5: CLOS association, env vars, allocatable deduction, cleanup.
+#
+
+# Env vars: CDI writes NRI_CLASS/NRI_CPU<N> into the OCI spec at
+# container-creation time (pkg/resmgr/dra/cdi.go:93-95); they're never
+# written back to the pod object, so this must be `kubectl exec ... --
+# env`, not an `-o json` read of the pod/container status.
+vm-command "kubectl exec dra-pod0 -c dra-pod0c0 -- env"
+env_output="$COMMAND_OUTPUT"
+
+grep -q '^NRI_CLASS=hp-turbo$' <<< "$env_output" ||
+    command-error "missing/incorrect NRI_CLASS env var in dra-pod0c0 (expected hp-turbo)"
+
+# Parse the claimed CPU ids out of the NRI_CPU<N>=1 env vars -- this,
+# not ctr-cpu-ids/Cpus_allowed_list, is the source of truth for which
+# CPUs were claimed: allocateClaim removes claimed CPUs from pool
+# supply (pools.go:1624-1663) rather than assigning them as the
+# consuming container's own cpuset, so ctr-cpu-ids on dra-pod0c0 would
+# report a disjoint set and never match.
+claimed_cpus=$(grep -oE '^NRI_CPU[0-9]+=1$' <<< "$env_output" | \
+    sed -E 's/^NRI_CPU([0-9]+)=1$/\1/' | sort -n | tr '\n' ' ')
+claimed_cpus="${claimed_cpus% }"
+
+[ -n "$claimed_cpus" ] ||
+    command-error "no NRI_CPU<N>=1 env vars found in dra-pod0c0's environment"
+
+claimed_cpu_count=$(wc -w <<< "$claimed_cpus")
+[ "$claimed_cpu_count" -eq 2 ] ||
+    command-error "expected exactly 2 claimed CPUs via NRI_CPU<N> env vars (claim requested nri/cpus: \"2\"), got $claimed_cpu_count ($claimed_cpus)"
+
+# CLOS association: the pct.go:786 "associated cpus %s to CLOS %d" line
+# -- not the mock's startup-time ConfigureClos line, which would pass
+# even if the claim were never allocated. The log line formats the
+# cpuset with cpuset.CPUSet.String(), which collapses contiguous ids
+# into ranges, so compress the env-derived ids into the same form
+# before matching.
+assert-cpu-clos dra-pod0c0 "$(compress-cpulist "$claimed_cpus")" "CLOS 0"
+
+# Allocatable deduction: node.status.allocatable.cpu should be exactly
+# 2 (claimed CPUs) less than the pre-claim baseline, per
+# NodeAllocatableResourceMappings/AllocationMultiplier=1
+# (pkg/resmgr/cpuclass/dra.go:279-285). Poll rather than check once, to
+# allow for propagation delay between claim allocation and the node
+# status update.
+expected_allocatable_millis=$((allocatable_baseline_millis - 2000))
+wait-allocatable-cpu-millis "$expected_allocatable_millis" \
+    "node.status.allocatable.cpu was not deducted by 2 CPUs after claim allocation (baseline was ${allocatable_baseline_millis}m)" \
+    30 2
+
+cleanup
