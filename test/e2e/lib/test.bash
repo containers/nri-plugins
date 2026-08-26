@@ -227,6 +227,13 @@ nrt-query() { # script API
     vm-command "$nrt_kubectl_get -o json | jq -r '$1'"
 }
 
+nrt-dump() { # script API
+    # Usage: nrt-dump
+    #
+    # Print the node resource topology of the node as YAML, for debugging.
+    vm-command "$nrt_kubectl_get -o yaml"
+}
+
 nrt-verify-zone-attribute() { # script API
     # Usage: nrt-verify-zone-attribute ZONE ATTRIBUTE REGEXP
     #
