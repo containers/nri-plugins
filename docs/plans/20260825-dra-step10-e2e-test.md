@@ -200,10 +200,10 @@ Three-part change:
 **Files:**
 - Modify: `test/e2e/policies.test-suite/topology-aware/helm-config.yaml.in`
 
-- [ ] add a conditional block directly below the existing `$([ -n "$CPU_CLASSES" ] ...)` block, copying its exact formatting (a `$(... && echo "` opener, the field on its own indented line, a closing `")` — real literal newlines inside the double-quoted string, not an escaped `\n` sequence), nested under `config:` (matching `values.yaml`'s `config.dra.enabled`) — no `sharedCounters` field (YAGNI; nothing sets it)
-- [ ] render `instantiate helm-config.yaml` with and without `DRA_ENABLED` set (via the same `eval "echo -e ..."` mechanism `create`/`instantiate` uses) and diff the two outputs to confirm the unset case emits nothing new
-- [ ] run `test19-cpuclass` once against the harness (with `k8s_feature_gates` unset, i.e. the harness's default config) to confirm the template change is a no-op for an existing, unrelated test
-- [ ] run tests — must pass before task 3
+- [x] add a conditional block directly below the existing `$([ -n "$CPU_CLASSES" ] ...)` block, copying its exact formatting (a `$(... && echo "` opener, the field on its own indented line, a closing `")` — real literal newlines inside the double-quoted string, not an escaped `\n` sequence), nested under `config:` (matching `values.yaml`'s `config.dra.enabled`) — no `sharedCounters` field (YAGNI; nothing sets it)
+- [x] render `instantiate helm-config.yaml` with and without `DRA_ENABLED` set (via the same `eval "echo -e ..."` mechanism `create`/`instantiate` uses) and diff the two outputs to confirm the unset case emits nothing new
+- [x] run `test19-cpuclass` once against the harness (with `k8s_feature_gates` unset, i.e. the harness's default config) to confirm the template change is a no-op for an existing, unrelated test
+- [x] run tests — must pass before task 3
 
 ### Task 3: Implement the feature-gate probe and skip path in `code.var.sh`
 
