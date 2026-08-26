@@ -412,6 +412,19 @@ instantiate() { # script API
     echo "$RESULT"
 }
 
+helm-set-args() { # script API
+    # Usage: helm-set-args PLUGIN
+    #
+    # Print the --set arguments which helm-launch and helm-reconfigure give to
+    # helm for PLUGIN.
+    echo "--set image.name=localhost/$1 \
+          --set image.tag=testing \
+          --set image.pullPolicy=Never \
+          --set resources.cpu=50m \
+          --set resources.memory=256Mi \
+          --set plugin-test.enableAPIs=true"
+}
+
 helm-launch() { # script API
     # Usage: helm-launch TARGET
     #
@@ -458,12 +471,7 @@ helm-launch() { # script API
 
     vm-command "helm install $rollback -n kube-system $helm_name ./helm/$plugin \
              --values=`basename ${helm_config}` \
-             --set image.name=localhost/$plugin \
-             --set image.tag=testing \
-             --set image.pullPolicy=Never \
-             --set resources.cpu=50m \
-             --set resources.memory=256Mi \
-             --set plugin-test.enableAPIs=true" ||
+             $(helm-set-args "$plugin")" ||
         error "failed to helm install/start plugin $plugin"
 
     case "$timeout" in
@@ -530,6 +538,33 @@ helm-launch() { # script API
 
     vm-start-log-collection -n kube-system ds/$ds_name -c $ctr_name
     vm-port-forward-enable
+}
+
+helm-reconfigure() { # script API
+    # Usage: helm-reconfigure PLUGIN CONFIG
+    #
+    # Reconfigure a running PLUGIN by upgrading its helm release with the
+    # configuration helm override values in CONFIG. This updates the
+    # configuration custom resource without restarting the plugin, so the
+    # plugin reconfigures itself in place.
+    #
+    # Environment variables:
+    #     helm_name: helm installation name to upgrade
+    #         default: test
+    #
+    # Example:
+    #     helm-reconfigure balloons $TEST_DIR/balloons-other.cfg
+    #
+    local plugin="$1" config="$2"
+    local helm_name="${helm_name:-test}"
+
+    host-command "$SCP \"$config\" $VM_HOSTNAME:" ||
+        command-error "copying \"$config\" to VM failed"
+
+    vm-command "helm upgrade -n kube-system $helm_name ./helm/$plugin \
+             --values=$(basename "$config") \
+             $(helm-set-args "$plugin")" ||
+        command-error "helm upgrade of $plugin with $config failed"
 }
 
 helm-terminate() { # script API
@@ -665,6 +700,21 @@ wait-config-status() { # script API
         vm-command "kubectl get -n kube-system $resource -o jsonpath=\"{.status}\" | jq ."
         error "expected $status configuration status of $resource"
     }
+}
+
+patch-policy-config() { # script API
+    # Usage: patch-policy-config JSON-MERGE-PATCH [RESOURCE]
+    #
+    # Patch the configuration custom resource RESOURCE, which defaults to the
+    # configuration resource of $POLICY, with a JSON merge patch. Fail the test
+    # if patching fails.
+    #
+    # Example:
+    #     patch-policy-config '{"spec":{"turboDomain":"system"}}'
+    local patch="$1" resource="${2:-$(config-resource)}"
+
+    vm-command "kubectl -n kube-system patch $resource --type=merge -p '$patch'" ||
+        command-error "patching $resource failed"
 }
 
 verify-config-status-error() { # script API
