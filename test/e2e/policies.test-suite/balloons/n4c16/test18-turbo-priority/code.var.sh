@@ -12,8 +12,7 @@
 #    *same* turbo-low balloon as pod0) does not produce any new
 #    enforce writes.
 
-helm-terminate
-helm_config=$TEST_DIR/balloons-turbo.cfg helm-launch balloons
+relaunch-policy balloons "$TEST_DIR/balloons-turbo.cfg"
 
 # Restrict the log assertions to the turbo recalculation log lines.
 plugin_log_filter='turbo:|cpuClass'

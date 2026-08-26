@@ -138,6 +138,27 @@ wait-pod-gone() { # script API
 ### Launching the plugin
 ###
 
+relaunch-policy() { # script API
+    # Usage: relaunch-policy POLICY [CONFIG]
+    #
+    # Terminate the plugin if one is running, then launch POLICY with the
+    # configuration helm override values in CONFIG. Without CONFIG, launch it
+    # with the configuration helm-launch uses by default.
+    #
+    # Honour the same environment variables as helm-launch.
+    #
+    # Example:
+    #     relaunch-policy balloons "$TEST_DIR/balloons-reserved.cfg"
+    local policy=$1 config=$2
+
+    helm-terminate
+    if [ -n "$config" ]; then
+        helm_config="$config" helm-launch "$policy"
+    else
+        helm-launch "$policy"
+    fi
+}
+
 expect-launch-failure() { # script API
     # Usage: expect-launch-failure POLICY [TIMEOUT]
     #

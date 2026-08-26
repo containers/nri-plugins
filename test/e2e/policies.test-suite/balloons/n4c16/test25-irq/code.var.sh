@@ -16,8 +16,7 @@ cleanup
 
 # Test irqClaim. CPUs of the claimer balloon handle the claimed
 # IRQs (ttyS0 and rtc0).
-helm-terminate
-helm_config=${TEST_DIR}/balloons-irq-claim.cfg helm-launch balloons
+relaunch-policy balloons "${TEST_DIR}/balloons-irq-claim.cfg"
 
 POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: claimer" CONTCOUNT=1 create balloons-busybox
 report allowed
@@ -31,8 +30,7 @@ verify-irq-cpus "$ACPI_IRQ" "$ALL_CPUS"
 # Test irqMode isolate. CPUs of the isolate balloon are removed from
 # the affinity of unclaimed IRQs. Preset a full affinity so that the
 # removal is observable.
-helm-terminate
-helm_config=${TEST_DIR}/balloons-irq-isolate.cfg helm-launch balloons
+relaunch-policy balloons "${TEST_DIR}/balloons-irq-isolate.cfg"
 cleanup
 
 POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: isolate" CONTCOUNT=1 create balloons-busybox
@@ -51,8 +49,7 @@ verify-irq-cpus "$RTC0_IRQ" "$expected_isolate"
 
 
 # Test irqMode sink. CPUs of the sink balloon handle unclaimed IRQs.
-helm-terminate
-helm_config=${TEST_DIR}/balloons-irq-sink.cfg helm-launch balloons
+relaunch-policy balloons "${TEST_DIR}/balloons-irq-sink.cfg"
 cleanup
 
 # no sink, no claimer present
@@ -84,8 +81,7 @@ verify-irq-cpus "$RTC0_IRQ" "$claimer_cpus"
 verify-irq-cpus "$ACPI_IRQ" "$ALL_CPUS"
 
 # Test irqMode sink. CPUs of the sink balloon handle unclaimed IRQs.
-helm-terminate
-helm_config=${TEST_DIR}/balloons-irq-dedicated-claim.cfg helm-launch balloons
+relaunch-policy balloons "${TEST_DIR}/balloons-irq-dedicated-claim.cfg"
 cleanup
 
 POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: dedicated-claimer" CONTCOUNT=1 create balloons-busybox

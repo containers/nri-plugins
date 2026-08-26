@@ -2,8 +2,7 @@
 # them. Test that CPU allocation avoids overloading any part of the
 # system.
 
-helm-terminate
-helm_config=$TEST_DIR/balloons-loadclasses.cfg helm-launch balloons
+relaunch-policy balloons "$TEST_DIR/balloons-loadclasses.cfg"
 
 cleanup() {
     delete-pods --all

@@ -1,7 +1,6 @@
 disable-numa
 
-helm-terminate
-helm_config=$TEST_DIR/balloons-numa-disabled.cfg helm-launch balloons
+relaunch-policy balloons "$TEST_DIR/balloons-numa-disabled.cfg"
 
 POD_ANNOTATION=(
     "balloon.balloons.resource-policy.nri.io: single-thread-own-core"

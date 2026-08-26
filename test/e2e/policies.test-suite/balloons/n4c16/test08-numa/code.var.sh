@@ -1,5 +1,4 @@
-helm-terminate
-helm_config=${TEST_DIR}/balloons-numa.cfg helm-launch balloons
+relaunch-policy balloons "${TEST_DIR}/balloons-numa.cfg"
 
 # pod0: besteffort, make sure it still gets at least 1 CPU
 CPUREQ="" CPULIM="" MEMREQ="" MEMLIM=""

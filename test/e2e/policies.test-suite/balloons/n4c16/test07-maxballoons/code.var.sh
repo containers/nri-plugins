@@ -4,8 +4,7 @@ cleanup() {
 
 cleanup
 
-helm-terminate
-helm_config=${TEST_DIR}/balloons-maxballoons.cfg helm-launch balloons
+relaunch-policy balloons "${TEST_DIR}/balloons-maxballoons.cfg"
 
 # pod0: allocate 1500/2000 mCPUs of the singleton balloon
 CPUREQ="1500m" CPULIM="1500m"

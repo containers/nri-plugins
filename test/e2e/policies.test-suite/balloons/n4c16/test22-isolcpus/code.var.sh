@@ -13,8 +13,7 @@ cleanup-pods
 
 vm-command "grep isolcpus=0,1 /proc/cmdline" || vm-set-kernel-cmdline-reboot "isolcpus=0,1"
 
-helm-terminate
-helm_config=${TEST_DIR}/balloons-isolcpus.cfg helm-launch balloons
+relaunch-policy balloons "${TEST_DIR}/balloons-isolcpus.cfg"
 create-namespaces "$ns"
 
 # pod0: should run on non-isolated CPUs

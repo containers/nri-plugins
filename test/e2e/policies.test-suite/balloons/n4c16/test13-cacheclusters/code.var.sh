@@ -1,5 +1,4 @@
-helm-terminate
-helm_config=$TEST_DIR/balloons-4cpu-cacheclusters.cfg helm-launch balloons
+relaunch-policy balloons "$TEST_DIR/balloons-4cpu-cacheclusters.cfg"
 
 cleanup() {
     delete-pods --all
@@ -56,8 +55,7 @@ verify 'nodes["pod3c0"] == nodes["pod2c0"] == nodes["pod2c1"] == nodes["pod2c2"]
 
 cleanup
 
-helm-terminate
-helm_config=$TEST_DIR/balloons-2cpu-cacheclusters.cfg helm-launch balloons
+relaunch-policy balloons "$TEST_DIR/balloons-2cpu-cacheclusters.cfg"
 
 # pod4c{0,1,2,3}: one container per free L2 group, this time L2 groups contain only single CPU cores
 CPUREQ="500m" MEMREQ="100M" CPULIM="500m" MEMLIM="100M"

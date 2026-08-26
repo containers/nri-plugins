@@ -1,8 +1,7 @@
 # Test CPU affinity to devices published by device plugins and queried
 # from kubelet's PodResourcesAPI.
 
-helm-terminate
-helm_config=$TEST_DIR/balloons-podresources.cfg helm-launch balloons
+relaunch-policy balloons "$TEST_DIR/balloons-podresources.cfg"
 
 cleanup() {
     vm-command 'pidof fake-device-plugin && kill $(pidof fake-device-plugin) && sleep 1'

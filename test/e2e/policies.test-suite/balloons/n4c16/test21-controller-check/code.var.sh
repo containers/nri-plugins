@@ -1,7 +1,6 @@
 # Test that the nri-resource-policy controllers are called properly
 
-helm-terminate
-helm_config=$TEST_DIR/balloons-config.cfg helm-launch balloons
+relaunch-policy balloons "$TEST_DIR/balloons-config.cfg"
 
 # Check that the test controller starts and gets called in proper places
 vm-run-until --timeout 5 \

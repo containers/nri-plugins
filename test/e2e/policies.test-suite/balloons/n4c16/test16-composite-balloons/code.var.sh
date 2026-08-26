@@ -1,7 +1,6 @@
 # Test balloons that are composed of other balloons.
 
-helm-terminate
-helm_config=$TEST_DIR/balloons-composite.cfg helm-launch balloons
+relaunch-policy balloons "$TEST_DIR/balloons-composite.cfg"
 
 cleanup() {
     delete-pods -n kube-system pod2

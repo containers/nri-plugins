@@ -1,8 +1,7 @@
 # This test verifies that configuration updates via nri-resource-policy-agent
 # are handled properly in the balloons policy.
 
-helm-terminate
-helm_config=$TEST_DIR/initial-balloons-config.cfg helm-launch balloons
+relaunch-policy balloons "$TEST_DIR/initial-balloons-config.cfg"
 
 testns=e2e-balloons-test06
 

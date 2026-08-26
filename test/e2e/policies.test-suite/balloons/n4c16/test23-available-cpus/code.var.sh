@@ -6,8 +6,7 @@ cleanup() {
 cleanup
 create-namespaces reserved
 
-helm-terminate
-helm_config=${TEST_DIR}/balloons-excluded-cpusets.cfg helm-launch balloons
+relaunch-policy balloons "${TEST_DIR}/balloons-excluded-cpusets.cfg"
 
 # pod0: run on reserved CPUs
 CPUREQ="50m" CPULIM="" namespace=kube-system CONTCOUNT=1 create balloons-busybox

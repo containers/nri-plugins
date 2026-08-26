@@ -1,8 +1,7 @@
 # This test verifies that the groupby expression in a balloon type
 # affects grouping containers into balloon instances of that type.
 
-helm-terminate
-helm_config=$TEST_DIR/balloons-groupby.cfg helm-launch balloons
+relaunch-policy balloons "$TEST_DIR/balloons-groupby.cfg"
 
 testns=e2e-balloons-test04
 

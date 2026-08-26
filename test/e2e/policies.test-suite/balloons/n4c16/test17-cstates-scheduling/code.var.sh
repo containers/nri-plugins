@@ -1,7 +1,6 @@
 # Test balloons with certain CPU c-states disabled
 
-helm-terminate
-helm_config=$TEST_DIR/balloons-cstates.cfg helm-launch balloons
+relaunch-policy balloons "$TEST_DIR/balloons-cstates.cfg"
 
 # verify-cstates checks the last writes to "disable" files in the
 # override fs.
