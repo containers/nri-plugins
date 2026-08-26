@@ -266,11 +266,11 @@ Three-part change:
 
 ### Task 7: Update documentation
 
-- [ ] fix `docs/dra/plan.md`'s Step 10 bullet: replace the `ConfigureClos.*ClosID:<hp-clos-id>` assertion example with the correct `associated cpus ... to CLOS N` form (per this plan's Technical Details / Task 5 finding)
-- [ ] update `docs/dra/plan.md`'s Step 10 entry with a "Landed" line (commit range, actual test directory name if different from `test20-dra`, and any implementation deviations — e.g. actual `kubeadm` config schema used in Task 1, actual probe mechanism, actual CLOS id observed)
-- [ ] add a Change log entry to `docs/dra/plan.md` noting Step 10 landed and that it required a harness provisioning change (Task 1) not originally scoped in the plan
-- [ ] note in `docs/dra/plan.md`'s Cross-cutting feature-gate-probes section that the probe implemented here (Task 3) is **test-only**, separate from the still-open production `Plugin.Start` probe gap it already tracks — do not let this step's landing be mistaken for closing that gap
-- [ ] move this plan to `docs/plans/completed/`
+- [x] fix `docs/dra/plan.md`'s Step 10 bullet: replace the `ConfigureClos.*ClosID:<hp-clos-id>` assertion example with the correct `associated cpus ... to CLOS N` form (per this plan's Technical Details / Task 5 finding) — also corrected the same bullet's `node.status.allocatable.cpu` deduction phrasing to `pod.status.nodeAllocatableResourceClaimStatuses[]` (Task 5's architectural finding); additionally fixed the same stale "deducted from `node.status.allocatable.cpu`" phrasing in `docs/dra/design.md` (lines ~52/104/205) for consistency, since it was trivial and mechanical to correct alongside plan.md
+- [x] update `docs/dra/plan.md`'s Step 10 entry with a "Landed" line (commit range `327afdc8`…`b5883bf6`, test directory `test/e2e/policies.test-suite/topology-aware/n4c16/test20-dra/` — unchanged from the plan — and implementation deviations: Task 1's harness provisioning change, Task 3's second `shared` CPU class requirement, Task 3's KEP-5075-vs-5517 gating finding, Task 4's `packageID == 1` selector pin and observed claimed CPUs 8/9, Task 5's corrected CLOS-association and allocatable-deduction assertions)
+- [x] add a Change log entry to `docs/dra/plan.md` noting Step 10 landed and that it required a harness provisioning change (Task 1) not originally scoped in the plan
+- [x] note in `docs/dra/plan.md`'s Cross-cutting feature-gate-probes section that the probe implemented here (Task 3) is **test-only**, separate from the still-open production `Plugin.Start` probe gap it already tracks — do not let this step's landing be mistaken for closing that gap
+- [x] plan move deferred to orchestrator's finalize step
 
 ## Post-Completion
 

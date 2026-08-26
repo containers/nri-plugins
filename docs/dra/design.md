@@ -49,7 +49,10 @@ The natural DRA unit is **(cpuClass × punit)**: one virtual device for each cpu
     capacityKey: "nri/cpus"
     allocationMultiplier: "1"
   ```
-  One requested `cpus` == one CPU deducted from `node.status.allocatable.cpu`, regardless of class.
+  One requested `cpus` == one CPU deducted from the scheduler's in-memory node-allocatable
+  accounting, regardless of class (surfaced on `pod.status.nodeAllocatableResourceClaimStatuses[]`
+  at PreBind — see "Prepare flow" below; this never mutates `node.status.allocatable.cpu` itself,
+  which kubelet sets from physical capacity only).
 - Attributes on the device fall into two groups:
   - **Topology (from punit/system):**
     - `nri/packageID` (int)
@@ -101,7 +104,7 @@ Or purely by class name (relying on a per-class `DeviceClass` shortcut — see t
 
 Model B publishes one device per (class × punit). If two HP classes exist ("hp-perf" and "hp-turbo") both targeting the same punit, each device reports `cpus = GuaranteedHpCpus`. The scheduler treats them as independent capacities and can allocate `2 × GuaranteedHpCpus` HP CPUs on that punit. **Overcommit — turbo-throttled workloads.**
 
-Same structural issue applies to multiple **non-HP** classes on the same punit: the scheduler is misled about non-HP-tier capacity. Node-level `cpu` is still accounted correctly by [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517) (each class's `nri/cpus` maps to `node.allocatable.cpu`), so the *node* is not oversubscribed. But at Prepare time the driver may be asked to pick N non-HP CPUs on a punit that has < N free non-HP CPUs. All fallback choices are bad (fail Prepare / steal HP CPUs / cross the topology boundary). Less on-fire than HP throttling, same class of problem.
+Same structural issue applies to multiple **non-HP** classes on the same punit: the scheduler is misled about non-HP-tier capacity. Node-level `cpu` is still accounted correctly by [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517) (each class's `nri/cpus` maps into the scheduler's in-memory node-allocatable bookkeeping, not `node.status.allocatable.cpu` — see the "Prepare flow" section), so the *node* is not oversubscribed. But at Prepare time the driver may be asked to pick N non-HP CPUs on a punit that has < N free non-HP CPUs. All fallback choices are bad (fail Prepare / steal HP CPUs / cross the topology boundary). Less on-fire than HP throttling, same class of problem.
 
 The constraint is therefore: **any (priority tier, punit) with >1 DRA-published class overcommits its physical pool**. On systems where SST-TF is not supported and there are no punits, the granularity widens to (tier, package); the validation logic is identical.
 
@@ -202,7 +205,7 @@ Renamed from [PR #536](https://github.com/containers/nri-plugins/pull/536)'s `DR
 
 ### Prepare flow (per claim)
 
-1. Scheduler at Filter/Reserve time picks a specific (class × punit) device on this node and computes `consumedCapacity: {nri/cpus: N}`. [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517) deducts N from `node.status.allocatable.cpu`. Under Model C, N is also deducted from the appropriate `sharedCounters` counter.
+1. Scheduler at Filter/Reserve time picks a specific (class × punit) device on this node and computes `consumedCapacity: {nri/cpus: N}`. [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517)'s `NodeAllocatableResourceMapping`/`AllocationMultiplier` accounting deducts N from the scheduler's own in-memory `NodeInfo` cache — **not** from the `Node` API object's `status.allocatable.cpu`, which kubelet sets from physical capacity only and which no scheduler or kubelet code path ever patches for this. Under Model C, N is also deducted from the appropriate `sharedCounters` counter.
 2. Scheduler at PreBind writes `pod.status.nodeAllocatableResourceClaimStatuses`.
 3. Kubelet calls `PrepareResourceClaims(claim)` on the driver.
 4. Driver locks the resmgr and calls `cpuclass.Manager.PickCpus(className, punitID, N)` — selects N CPUs from that punit that fit the class's requirements, updates `hpUsed[punitID]` if HP.

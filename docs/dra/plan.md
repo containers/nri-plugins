@@ -317,9 +317,13 @@ drop-unused-rules rationale as `deviceclasses`/`resourceclaims/status`.
   ```
 - A pod referencing the claim via `resourceClaims` / `resources.claims`.
 - `code.var.sh` assertions: pod scheduled and running; `NRI_CLASS` / `NRI_CPU<N>` env vars
-  present in the container; the claimed CPUs are associated to the HP CLOS in the SST mock log
-  (`wait-assert-log-contains 'ConfigureClos.*ClosID:<hp-clos-id>'`, same style as
-  `test19-cpuclass`); `node.status.allocatable.cpu` deducted by 2 ([KEP-5517](https://github.com/kubernetes/enhancements/issues/5517)).
+  present in the container; the claimed CPUs are associated to the HP CLOS in the policy log
+  (`wait-assert-log-contains 'associated cpus <cpus> to CLOS <hp-clos-id>'`, matching
+  `pct.go`'s `"pct: associated cpus %s to CLOS %d"` line — **not** the mock's startup-time
+  `ConfigureClos` line, which would pass even without a live claim; same style as
+  `test19-cpuclass`'s `assert-cpu-clos`); `pod.status.nodeAllocatableResourceClaimStatuses[]`
+  contains an entry for the claim with `resources.cpu` equal to 2 ([KEP-5517](https://github.com/kubernetes/enhancements/issues/5517)) — **not**
+  `node.status.allocatable.cpu`, which KEP-5517 never mutates (see Step 10's "Landed" line).
 - **Feature-gate precondition — all-or-nothing.** Probe both [KEP-5075](https://github.com/kubernetes/enhancements/issues/5075) and [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517) at test setup; skip the entire test with a clear message if either is missing. KEP-5075 is a hard requirement (the device/claim shape itself depends on `AllowMultipleAllocations`+`RequestPolicy`; without it there's no fallback claim shape). KEP-5517 is only a soft requirement at the plugin level (design.md's "Feature-gate detection": mapping ignored, not fatal) — but the test treats it the same as KEP-5075 for simplicity, rather than conditionally skipping just the `node.status.allocatable.cpu` assertion on clusters with partial gate support.
 
 **Files touched:** `test/e2e/policies.test-suite/topology-aware/n4c16/testXX-dra/code.var.sh`.
@@ -327,6 +331,55 @@ drop-unused-rules rationale as `deviceclasses`/`resourceclaims/status`.
 **Verification:** e2e test passes on the [KEP-5075](https://github.com/kubernetes/enhancements/issues/5075)+5517 test cluster. Hardware-independence is limited to the SST/cpufreq mocks — the test still depends on the K8s API server itself exposing the alpha DRA feature gates.
 
 **Risk:** medium. Depends on cluster support for the DRA feature gates specifically (not on physical PCT/SST-TF hardware, which is mocked); the CI environment may need updating for [KEP-5075](https://github.com/kubernetes/enhancements/issues/5075)/[KEP-5517](https://github.com/kubernetes/enhancements/issues/5517).
+
+**Landed:** commits `327afdc8`…`b5883bf6` on branch `DRA` (see
+[`docs/plans/20260825-dra-step10-e2e-test.md`](../plans/20260825-dra-step10-e2e-test.md)
+for the detailed per-task implementation log), test directory
+`test/e2e/policies.test-suite/topology-aware/n4c16/test20-dra/`, exactly as originally
+planned (no rename). Implementation deviations from this plan's original Actions text:
+- The e2e harness had no way to turn on API-server/scheduler/kubelet feature gates at
+  all before this step — `test/e2e/playbook/provision.yaml`'s `kubeadm init` took no
+  `--config`. Extending it (a `k8s_feature_gates` var threaded through
+  `Vagrantfile.in`'s `ansible.extra_vars`, a generated multi-doc `ClusterConfiguration`
+  + `KubeletConfiguration` on `kubeadm.k8s.io/v1beta4`, list-of-`{name,value}`
+  `extraArgs`, confirmed against the live VM's installed `kubeadm`/`kubelet` v1.36.4)
+  was a harness-provisioning capability not originally scoped by this Step 10
+  description — see the linked plan's Task 1.
+- `Config.Validate()` requires a shared (non-PCT) `shared` CPU class whenever
+  `cpuClasses` is non-empty, so the test's `CPU_CLASSES` needed a second plain
+  `shared` class alongside `hp-turbo`, not just the PCT class alone as the sketch
+  above shows.
+- The feature-gate probe (Technical Details/Task 3 of the linked plan) reads back the
+  driver's own published `ResourceSlice` and checks both `allowMultipleAllocations`
+  (KEP-5075) and `nodeAllocatableResourceMappings` (KEP-5517) survived the round trip.
+  On this test cluster's Kubernetes 1.36, KEP-5075/`DRAConsumableCapacity` is beta and
+  default-`true`, so in practice only KEP-5517/`nodeAllocatableResourceMappings`
+  (alpha, default-`false`) actually gates the probe/skip-path on an ungated cluster —
+  the AND of both fields is still correct, just not both load-bearing here.
+- The `ResourceClaim` selector needed `device.attributes["nri"].packageID == 1`
+  pinned in addition to `pctPriority == "high"`, to avoid colliding with the
+  reserved-pool CPU 0 on package 0 (see the linked plan's Task 4). Actual claimed
+  CPUs observed on the gated VM: 8 and 9 (from package 1's 8-15 range).
+- **The CLOS-association and allocatable-deduction assertions above are corrected
+  from this Step 10 section's original text**, per a finding in the linked plan's
+  Task 5: the `pct_sst_mock.go` `ConfigureClos` line logs at daemon-startup time (CLOS
+  frequency-bound programming), not per-CPU association, and would pass even if the
+  claim were never allocated. The correct, per-allocation line is `pct.go:786`'s
+  `"pct: associated cpus %s to CLOS %d"` (observed: `pct: associated cpus 8-9 to CLOS
+  0`). Separately, `node.status.allocatable.cpu` is **never** mutated by KEP-5517 on
+  any real cluster — confirmed by reading
+  `pkg/scheduler/framework/plugins/dynamicresources/nodeallocatabledynamicresources.go`
+  in Kubernetes source (`NodeAllocatableResourceMapping`/`AllocationMultiplier`
+  accounting is consumed only by the scheduler's in-memory `NodeInfo` cache; zero
+  references under `pkg/kubelet/`) and by direct observation on the gated VM
+  (`node.status.allocatable.cpu` stayed at `16` through a full post-Ready poll). The
+  actual persisted, observable signal is
+  `pod.status.nodeAllocatableResourceClaimStatuses[]`, written by the scheduler at
+  PreBind (observed: `[{"resourceClaimName":"hp-turbo-cpus","containers":["dra-pod0c0"],"resources":{"cpu":"2"}}]`)
+  — matching `docs/dra/landscape.md:31`, which already had this right. This plan
+  section and design.md's equivalent passages previously carried the inaccurate
+  "deducted from `node.status.allocatable.cpu`" phrasing; this section has now been
+  corrected in place.
 
 ## Cross-cutting
 
@@ -337,6 +390,17 @@ Design.md "Feature-gate detection" spec'd probe-at-startup for `AllowMultipleAll
 ⚠️ Feature-gate probes (`AllowMultipleAllocations`, `NodeAllocatableResources`) deferred from Step 6 to a follow-up task. They did not land alongside Step 8 either (Step 8's "Landed" entry above has no probe-related deviation, and no probe code exists anywhere in `pkg/resmgr/dra/` or `cmd/plugins/topology-aware/policy/` — only comments reference the concept). This is a tracked follow-up gap, not a precondition that blocked Step 8: Step 8 does not depend on the probes (its acceptance criteria and e2e scenario mock the SST/cpufreq surface, not `node.status.allocatable.cpu`). Land the probes as their own follow-up task before relying on `NodeAllocatableResources`-dependent capacity fields in a real cluster.
 
 ⚠️ Without the probe, DRA-published capacity fields that require `NodeAllocatableResources` will be silently stripped by the API server — acceptable for the stub phase.
+
+⚠️ Step 10's e2e test (landed — see its "Landed" line above) implements its own feature-gate
+probe (a `ResourceSlice` round-trip read-back checking `allowMultipleAllocations`/
+`nodeAllocatableResourceMappings` survived, with a skip path if either is absent), but that
+probe is **test-only** — it lives in
+`test/e2e/policies.test-suite/topology-aware/n4c16/test20-dra/code.var.sh`, runs after
+`helm-launch`, and exists purely to make the e2e test skip cleanly on an ungated cluster. It
+does **not** close the production gap tracked immediately above: `Plugin.Start` still has no
+probe of its own, and the driver still publishes `AllowMultipleAllocations`/
+`NodeAllocatableResources`-dependent fields unconditionally regardless of what the live API
+server supports. Do not mistake Step 10 landing for this cross-cutting item being resolved.
 
 ### Not part of v1
 
@@ -357,6 +421,20 @@ Splitting this way means the first 5 PRs can land and be reviewed in parallel wi
 
 ## Change log
 
+- **2026-08-26.** Step 10 landed: added "Landed" line with commit range `327afdc8`…`b5883bf6`,
+  test directory `test/e2e/policies.test-suite/topology-aware/n4c16/test20-dra/` (unchanged
+  from the plan), and implementation deviations. Landing required an e2e-harness
+  provisioning change (feature-gate-aware `kubeadm --config` generation in
+  `test/e2e/playbook/provision.yaml`/`Vagrantfile.in`) that was not originally scoped by
+  this Step 10 section — the harness had no way to turn on API-server/scheduler/kubelet
+  feature gates before this. Also corrected this section's CLOS-association assertion
+  example (`ConfigureClos.*ClosID:<hp-clos-id>` → `pct.go`'s per-allocation `"associated
+  cpus %s to CLOS %d"` line) and its allocatable-deduction assertion (`node.status.allocatable.cpu`
+  deducted by 2 → `pod.status.nodeAllocatableResourceClaimStatuses[]`, the field KEP-5517
+  actually mutates) — both were stale/inaccurate, per a finding surfaced while implementing
+  the e2e test. Added a note to the Cross-cutting feature-gate-probes section that Step 10's
+  test-only probe does not close the still-open production `Plugin.Start` probe gap tracked
+  there.
 - **2026-08-24 (code-review fixups).** Reworded the feature-gate-probes cross-cutting note (it previously said the probes "must land before Step 8 lands," which contradicted Step 8's own "Landed" line below — the probes never landed, in Step 8 or anywhere else); the note now says they remain a tracked follow-up gap rather than a blocking precondition Step 8 secretly failed to satisfy. Also fixed several Step 8 implementation bugs found in review: `allocateClaim`/`remarkClaimInSupply` now call `cpuClasses.UseClass` so DRA-claimed CPUs actually get their physical cpuClass (SST-CP/EPP/governor) applied, not just pool-accounting exclusion; `allocateClaim` now propagates eviction-reallocation failures as errors (previously only logged) and force-repins any evicted container that couldn't be reallocated off the newly claimed CPUs; claiming CPUs now also triggers `updateSharedAllocations` so already-running shared/burstable containers get re-pinned off CPUs the claim subtracted from the sharable pool; fixed a missing `defaultPrio` reset on one of `Reconfigure`'s four rollback paths.
 - **2026-08-24 (later).** Step 8 landed: added "Landed" line with commit range `f0834c77`…`6ce104a6` and implementation deviations — no `AllocateClaim`/`ReleaseClaim` on `Backend`; NRI-only call path (no `Deps` Prepare-path closure); claim UID recovered from CDI device names via `parseCDIClaimUID`/`matchLiveClaimUID` (not the `NRI_CLASS`/`NRI_CPU<N>` env-var protocol); `Plugin.LiveClaimsLocked()` added; `Backend.Stop()`/`PostReconfigure()` added to the `Backend`/`Policy` interfaces. See design.md's CDI env-var protocol / NRI enforcement flow sections, corrected accordingly.
 - **2026-08-24 (latest).** Step 10 fleshed out with a concrete scenario: single-file `code.var.sh` test (matching `test19-cpuclass`'s convention, not the earlier sketch's separate static YAML files); reuses `test19-cpuclass`'s `OVERRIDE_SYS_CPUFREQ`/`OVERRIDE_SST`/`OVERRIDE_SST_STATE_DIR` mocks for hardware-independence (no physical PCT/SST-TF silicon needed); `ResourceClaim` selects on the already-landed `nri/pctPriority` attribute only. Feature-gate precondition is all-or-nothing (skip whole test if either KEP-5075 or KEP-5517 is missing), chosen for simplicity over conditionally skipping individual assertions.
