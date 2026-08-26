@@ -878,6 +878,33 @@ vm-set-kernel-cmdline() {
     fi
 }
 
+vm-restart-kubelet() { # script API
+    # Usage: vm-restart-kubelet
+    #
+    # Restart kubelet and wait until the node is ready again.
+    vm-command "systemctl restart kubelet"
+    wait-for-node-ready
+}
+
+vm-set-kernel-cmdline-reboot() { # script API
+    # Usage: [timeout=SECS] vm-set-kernel-cmdline-reboot [CMDLINE]
+    #
+    # Set the kernel command line parameters of the VM to CMDLINE, none by
+    # default, reboot the VM, and wait until the node is ready again. Verify
+    # that CMDLINE took effect, and fail the test if it did not.
+    #
+    # timeout is the time to wait for the VM to reboot, 600 seconds by default.
+    local cmdline="$1"
+
+    vm-set-kernel-cmdline "$cmdline"
+    timeout=${timeout:-600} vm-reboot
+    if [ -n "$cmdline" ]; then
+        vm-command "grep -q -- '$cmdline' /proc/cmdline" ||
+            error "failed to set kernel command line parameters \"$cmdline\""
+    fi
+    vm-restart-kubelet
+}
+
 vm-kernel-pkgs-install() { # script API
     # Usage: vm-kernel-pkgs-install
     #

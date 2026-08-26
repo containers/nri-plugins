@@ -8,16 +8,7 @@ delete-pods -n kube-system pod0 pod1 pod2 pod3 pod4 pod5
 # pinning and cause false negatives from other tests on this VM.
 # This can happen if test08-isolcpus failed and we are re-running
 # the tests from the start.
-vm-command "grep isolcpus /proc/cmdline" && {
-    vm-set-kernel-cmdline ""
-    timeout=120 vm-reboot
-    vm-command "grep isolcpus /proc/cmdline" && {
-	error "failed to clean up isolcpus kernel commandline parameter"
-    }
-    echo "isolcpus removed from kernel commandline"
-    vm-command "systemctl restart kubelet"
-    vm-wait-process --timeout 120 kube-apiserver
-}
+clear-isolcpus
 
 # Do a fresh start
 helm-terminate

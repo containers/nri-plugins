@@ -1,9 +1,4 @@
-vm-command '[ -d /sys/devices/system/node ]' && {
-    vm-kernel-pkgs-install
-    vm-post-reboot-runtime-check balloons
-}
-
-vm-command '[ -d /sys/devices/system/node ]' && error "failed to disable NUMA in kernel"
+disable-numa
 
 helm-terminate
 helm_config=$TEST_DIR/balloons-numa-disabled.cfg helm-launch balloons
@@ -26,5 +21,4 @@ verify "cpus['pod1c0'].isdisjoint({'cpu06', 'cpu07'})" \
        "len(cpus['pod1c1']) == 5" \
        "disjoint_sets(cpus['pod1c0'], cpus['pod1c1'])"
 
-vm-kernel-pkgs-uninstall
-vm-post-reboot-runtime-check balloons
+enable-numa

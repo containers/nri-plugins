@@ -1,14 +1,3 @@
-reboot-node() {
-    timeout=600 vm-reboot
-}
-
-restart-kubelet() {
-    vm-command "systemctl restart kubelet"
-    sleep 5
-    vm-wait-process --timeout 120 kube-apiserver
-    vm-command "cilium status --wait --wait-duration=120s --interactive=false"
-}
-
 cleanup-pods() {
     delete-pods --all
     delete-namespaces "$ns"
@@ -16,27 +5,13 @@ cleanup-pods() {
 
 cleanup() {
     cleanup-pods
-    vm-set-kernel-cmdline ""
-    reboot-node
-    vm-command "grep -v isolcpus /proc/cmdline"
-    if [ $? -ne 0 ]; then
-        error "failed to unset isolcpus kernel commandline parameter"
-    fi
-    restart-kubelet
-    return 0
+    clear-isolcpus
 }
 
 ns=isolcpus
 cleanup-pods
 
-vm-command "grep isolcpus=0,1 /proc/cmdline" || {
-    vm-set-kernel-cmdline "isolcpus=0,1"
-    reboot-node
-    vm-command "grep isolcpus=0,1 /proc/cmdline" || {
-        error "failed to set isolcpus kernel commandline parameter"
-    }
-    restart-kubelet
-}
+vm-command "grep isolcpus=0,1 /proc/cmdline" || vm-set-kernel-cmdline-reboot "isolcpus=0,1"
 
 helm-terminate
 helm_config=${TEST_DIR}/balloons-isolcpus.cfg helm-launch balloons
