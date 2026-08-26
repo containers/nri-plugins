@@ -159,6 +159,37 @@ expect-launch-failure() { # script API
 }
 
 ###
+### Metrics and instrumentation
+###
+
+# The instrumentation HTTP server of the plugin, and its metrics endpoint.
+# The plugin exports these only if its configuration opens the server.
+instrumentation_url="http://localhost:8891"
+verify_metrics_url="$instrumentation_url/metrics"
+
+verify-metrics-has-line() { # script API
+    # Usage: verify-metrics-has-line REGEXP [TIMEOUT]
+    #
+    # Wait until the metrics of the plugin have a line matching REGEXP, an
+    # extended regular expression. Fail the test on timeout, 10s by default.
+    local expected_line="$1"
+    vm-run-until --timeout "${2:-10}" "echo 'waiting for metrics line: $expected_line' >&2; curl --silent --noproxy localhost $verify_metrics_url | grep -E '$expected_line'" || {
+        command-error "expected line '$1' missing from the output"
+    }
+}
+
+verify-metrics-has-no-line() { # script API
+    # Usage: verify-metrics-has-no-line REGEXP [TIMEOUT]
+    #
+    # Wait until the metrics of the plugin have no line matching REGEXP. Fail
+    # the test on timeout, 10s by default.
+    local unexpected_line="$1"
+    vm-run-until --timeout "${2:-10}" "echo 'checking absence of metrics line: $unexpected_line' >&2; ! curl --silent --noproxy localhost $verify_metrics_url | grep -Eq '$unexpected_line'" || {
+        command-error "unexpected line '$1' found from the output"
+    }
+}
+
+###
 ### Node resource topology
 ###
 
