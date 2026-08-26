@@ -1,13 +1,11 @@
 
 cleanup() {
-    vm-command "kubectl delete pods --all --now"
-    vm-command "kubectl delete namespaces highprio lowprio --now --ignore-not-found"
+    delete-pods --all
+    delete-namespaces highprio lowprio
 }
 
 cleanup
-helm-terminate
-
-helm_config=$TEST_DIR/helm-config.yaml helm-launch topology-aware
+relaunch-policy topology-aware "$TEST_DIR/helm-config.yaml"
 
 # Limit burstability of a container to an L3 cache group and verify that
 # it gets confined to an L3 cache group.
