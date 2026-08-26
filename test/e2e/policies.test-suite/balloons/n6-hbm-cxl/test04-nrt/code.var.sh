@@ -7,7 +7,7 @@ cleanup
 helm_config=${TEST_DIR}/balloons-nrt.cfg helm-launch balloons
 
 # Print full NRT yaml for debugging
-vm-command "$nrt_kubectl_get -o yaml"
+nrt-dump
 
 # Verify zones when fullsocket balloons do not include containers.
 nrt-verify-zone-attribute "fullsocket[0]" "cpuset" "[4567]"
@@ -33,7 +33,7 @@ POD_ANNOTATION='cpu.preserve.resource-policy.nri.io/container.pod0c1: "true"
 CONTCOUNT=3 create balloons-busybox
 
 # Print full NRT yaml for debugging
-vm-command "$nrt_kubectl_get -o yaml"
+nrt-dump
 
 # Verify selected zone attributes
 nrt-verify-zone-resource "default/pod0/pod0c0" "cpu" "capacity" "4" # balloon's + shared CPUs
@@ -54,7 +54,7 @@ POD_ANNOTATION=''
 CONTCOUNT=2 create balloons-busybox
 
 # Print full NRT yaml for debugging
-vm-command "$nrt_kubectl_get -o yaml"
+nrt-dump
 
 nrt-verify-zone-resource "default/pod1/pod1c0" "cpu" "capacity" "1500m" # limit < allowed cpus
 nrt-verify-zone-attribute "default/pod1/pod1c0" "cpuset" "0-2" # expected fullsocket[1]
