@@ -6,16 +6,6 @@ cleanup() {
 # Restrict the log assertions to the cpuclass-related log lines.
 plugin_log_filter='   *cpuclass   *'
 
-# ctr-cpu-ids <pod> <container>
-# Inspect the container of the given pod and report the cpuset it is pinned to.
-ctr-cpu-ids() {
-    local pod=$1 ctr=$2
-    local result=""
-    $SSH -oConnectTimeout=1 node \
-         "kubectl exec $pod -c $ctr -- grep Cpus_allowed_list /proc/1/status" | \
-        tr -d '\t ' | cut -d ':' -f 2
-}
-
 # assert-cpu-clos <container> <cpus> <clos-id>
 # Polls the log until a default timeout to verify that the given CPUs are
 # associated to the given CLOS.
@@ -91,13 +81,13 @@ assert-cpu-freq "reserved pool" $cpu0 reserved
 CONTCOUNT=4 CPU=1 create guaranteed
 
 pod=pod0
-cpu0=$(ctr-cpu-ids $pod ${pod}c0)
+cpu0=$(container-cpus $pod ${pod}c0)
 assert-cpu-clos ${pod}c0 $cpu0 "CLOS 0"
-cpu1=$(ctr-cpu-ids $pod ${pod}c1)
+cpu1=$(container-cpus $pod ${pod}c1)
 assert-cpu-clos ${pod}c1 $cpu1 "CLOS 0"
-cpu2=$(ctr-cpu-ids $pod ${pod}c2)
+cpu2=$(container-cpus $pod ${pod}c2)
 assert-cpu-clos ${pod}c2 $cpu2 "CLOS 0"
-cpu3=$(ctr-cpu-ids $pod ${pod}c3)
+cpu3=$(container-cpus $pod ${pod}c3)
 assert-cpu-clos ${pod}c3 $cpu3 "CLOS 0"
 
 # Delete pod. Verify that each released exclusive CPU gets assigned to
@@ -121,13 +111,13 @@ ANN0="cpu-class.resource-policy.nri.io/container.${pod}c0: class1" \
 ANN1="cpu-class.resource-policy.nri.io/container.${pod}c1: class2" \
     CONTCOUNT=4 CPU=2 create guaranteed
 
-cpu0=$(ctr-cpu-ids $pod ${pod}c0)
+cpu0=$(container-cpus $pod ${pod}c0)
 assert-cpu-freq ${pod}c0 $cpu0 class1
-cpu1=$(ctr-cpu-ids $pod ${pod}c1)
+cpu1=$(container-cpus $pod ${pod}c1)
 assert-cpu-freq ${pod}c1 $cpu1 class2
-cpu2=$(ctr-cpu-ids $pod ${pod}c2)
+cpu2=$(container-cpus $pod ${pod}c2)
 assert-cpu-clos ${pod}c2 $cpu2 "CLOS 0"
-cpu3=$(ctr-cpu-ids $pod ${pod}c3)
+cpu3=$(container-cpus $pod ${pod}c3)
 assert-cpu-clos ${pod}c3 $cpu3 "CLOS 0"
 
 # Delete pod. Verify that each released CPU get assigned to

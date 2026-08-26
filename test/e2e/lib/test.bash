@@ -212,6 +212,36 @@ print(" ".join(str(x) for x in sorted(allc - iso)))
 ' "$ids1" "$ids2"
 }
 
+container-cpus() { # script API
+    # Usage: container-cpus POD CONTAINER
+    #
+    # Print the cpuset CONTAINER of POD is currently allowed to run on, as
+    # read from inside the container. The list is in the compact form, for
+    # instance "4-5,12".
+    #
+    # This is the live cpuset. Use allowed-cpu-ids instead to read the cpuset
+    # from the latest snapshot which "report allowed" took.
+    local pod=$1 ctr=$2 status
+
+    status=$(vm-command-q \
+        "kubectl exec $pod -c $ctr -- grep Cpus_allowed_list /proc/1/status") ||
+        error "failed to read the cpuset of container $ctr of pod $pod"
+
+    tr -d '\t ' <<< "$status" | cut -d ':' -f 2
+}
+
+allowed-cpu-ids() { # script API
+    # Usage: allowed-cpu-ids CONTAINER
+    #
+    # Print the CPU ids CONTAINER is allowed to run on, as a sorted list of
+    # space separated ids, for instance "4 5 12".
+    #
+    # This reads the latest snapshot which "report allowed" took, so it needs
+    # a preceding report or verify. Use container-cpus instead to read the
+    # live cpuset from inside the container.
+    pyexec "print(' '.join(str(i) for i in sorted(cpu_ids(cpus['$1']))))"
+}
+
 ###
 ### Extended resources of the node
 ###
