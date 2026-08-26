@@ -243,6 +243,48 @@ allowed-cpu-ids() { # script API
 }
 
 ###
+### Scheduling
+###
+
+# Scheduling policies, as reported in /proc/PID/sched.
+SCHED_OTHER=0
+SCHED_FIFO=1
+SCHED_RR=2
+SCHED_BATCH=3
+SCHED_ISO=4
+SCHED_IDLE=5
+SCHED_DEADLINE=6
+
+verify-sched() { # script API
+    # Usage: expected_policy=POLICY expected_prio=PRIO verify-sched CONTAINER
+    #
+    # Verify the scheduling policy and priority of the process of CONTAINER.
+    # POLICY is one of the SCHED_* constants above. Fail the test unless both
+    # expected values are given, so that a typo in a variable name cannot turn
+    # the verification into a no-op.
+    local podXcY=$1
+
+    vm-command "cat /proc/\$(pgrep -f 'echo $podXcY')/sched | grep -E '^((policy)|(prio))'" ||
+        command-error "cannot get /proc/PID/sched for $podXcY"
+
+    if [ "$expected_policy" != "" ]; then
+        echo "verify scheduling policy of $podXcY is $expected_policy"
+        grep -q -E "policy .* $expected_policy" <<< $COMMAND_OUTPUT ||
+            error "expected policy $expected_policy not found"
+    else
+        error "missing verify-sched expected_policy for $podXcY"
+    fi
+
+    if [ "$expected_prio" != "" ]; then
+        echo "verify scheduling priority of $podXcY is $expected_prio"
+        grep -q -E "prio .* $expected_prio" <<< $COMMAND_OUTPUT ||
+            error "expected priority $expected_prio not found"
+    else
+        error "missing verify-sched expected_prio for $podXcY"
+    fi
+}
+
+###
 ### Interrupts
 ###
 
