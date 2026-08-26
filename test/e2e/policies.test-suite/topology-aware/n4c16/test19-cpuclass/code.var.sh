@@ -119,27 +119,6 @@ print(" ".join(str(x) for x in sorted(r)))
 ' "$cpus"
 }
 
-# wait-pod-waiting-reason <pod> <reason> [<timeout-in-secs>]
-# Wait until the pods waiting reason becomes the given one.
-wait-pod-waiting-reason() {
-    local pod=$1 reason=$2 timeout=${3:-5}
-    local cnt=0
-
-    while true; do
-        vm-command "kubectl get pod $pod -o json | \
-            jq '.status.containerStatuses[].state.waiting.reason'"
-        grep -q $reason <<<$COMMAND_OUTPUT && break
-
-        if [ $cnt -lt $timeout ]; then
-            let cnt=$cnt+1
-            sleep 1
-            continue
-        fi
-
-        error "Failed to wait for CreateContainerError of $pod"
-    done
-}
-
 OVERRIDE_SYS_CPUFREQ='[{"cpus": "0-15", "base": 2900000, "min": 800000, "max": 3800000}]'
 OVERRIDE_SST='{"supported": true, "clos_count": 4, "packages": [{"id": 0, "cpus": "0-7", "tf_supported": true, "cp_supported": true, "max_hp_cpus": 2}, {"id": 1, "cpus": "8-15", "tf_supported": true, "cp_supported": true, "max_hp_cpus": 2}]}'
 OVERRIDE_SST_STATE_DIR="/tmp/nri-pct-mock"
@@ -249,14 +228,7 @@ pod=pod2
 ANN0="cpu-class.resource-policy.nri.io/container.${pod}c0: class1" \
     wait="" CONTCOUNT=1 create burstable
 
-wait-pod-waiting-reason $pod CreateContainerError
-
-ctr=${pod}c0
-vm-command "kubectl get pods $pod -ojson | \
-    jq '.status.containerStatuses | map(select(.name == \"$ctr\")) | .[0].state'"
-
-grep -q "CPU class .* invalid for non-Guaranteed QoS class" <<< $COMMAND_OUTPUT ||
-    error "Missing QoS-based cpuclass denial error for $ctr"
+verify-container-error $pod ${pod}c0 "CPU class .* invalid for non-Guaranteed QoS class"
 
 # BestEffort QoS Class
 
@@ -264,14 +236,7 @@ pod=pod3
 ANN0="cpu-class.resource-policy.nri.io/container.${pod}c0: class1" \
     wait="" CONTCOUNT=1 create besteffort
 
-wait-pod-waiting-reason $pod CreateContainerError
-
-ctr=${pod}c0
-vm-command "kubectl get pods $pod -ojson | \
-    jq '.status.containerStatuses | map(select(.name == \"$ctr\")) | .[0].state'"
-
-grep -q "CPU class .* invalid for non-Guaranteed QoS class" <<< $COMMAND_OUTPUT ||
-    error "Missing QoS-based cpuclass denial error for $ctr"
+verify-container-error $pod ${pod}c0 "CPU class .* invalid for non-Guaranteed QoS class"
 
 # Guaranteed QoS Class Without Exclusive CPU allocation
 
@@ -279,14 +244,7 @@ pod=pod4
 ANN0="cpu-class.resource-policy.nri.io/container.${pod}c0: class1" \
     wait="" CPU=250m CONTCOUNT=1 create guaranteed
 
-wait-pod-waiting-reason $pod CreateContainerError
-
-ctr=${pod}c0
-vm-command "kubectl get pods $pod -ojson | \
-    jq '.status.containerStatuses | map(select(.name == \"$ctr\")) | .[0].state'"
-
-grep -q "CPU class .* invalid without exclusive CPUs" <<< $COMMAND_OUTPUT ||
-    error "Missing QoS-based cpuclass denial error for $ctr"
+verify-container-error $pod ${pod}c0 "CPU class .* invalid without exclusive CPUs"
 
 cleanup
 

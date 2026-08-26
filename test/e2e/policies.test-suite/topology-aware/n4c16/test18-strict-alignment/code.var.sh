@@ -4,21 +4,6 @@ cleanup() {
     delete-namespaces highprio lowprio
 }
 
-wait_for_waiting_status_reason() {
-    local pod=$1 ctridx=$2 status=$3
-    local maxtry=5 retry=0
-
-    while [ $retry -lt $maxtry ]; do
-        echo "Waiting for $pod/ctr$ctridx to enter status $status..."
-        vm-command "kubectl get pod $pod -o jsonpath='{.status.containerStatuses[$ctridx].state}' | \
-                        jq '.waiting.reason'"
-        grep -q $status <<< "$COMMAND_OUTPUT" && return 0
-        let retry=$retry+1
-        sleep 1
-    done
-    return 1
-}
-
 cleanup
 helm-terminate
 helm_config=$(instantiate helm-config.yaml) helm-launch topology-aware
@@ -64,14 +49,7 @@ vm-command "kubectl wait --timeout=5s pod pod3 --for=$PodReadyCond" || {
     error "failed to wait for pod3 to start containerd"
 }
 
-wait_for_waiting_status_reason pod3 0 CreateContainerError || {
-    error "failed to wait for pod3/ctr0 to reach CreateContainerError state"
-}
-
-vm-command "kubectl get pod pod3 -o jsonpath='{.status.containerStatuses[0].state}' | \
-        grep -q \"fail strict hint\"" || {
-    error "pod3c0 unexpectedly passed strict topology hint check"
-}
+verify-container-error pod3 0 "fail strict hint"
 
 # Try to create a container with a strict test hints for NUMA node 2 and
 # required isolated CPUs. This one would fit but there are not isolated
@@ -86,14 +64,7 @@ vm-command "kubectl wait --timeout=5s pod pod4 --for=$PodReadyCond" || {
     error "failed to wait for pod4 to start containerd"
 }
 
-wait_for_waiting_status_reason pod4 0 CreateContainerError || {
-    error "failed to wait for pod4/ctr0 to reach CreateContainerError state"
-}
-
-vm-command "kubectl get pod pod4 -o jsonpath='{.status.containerStatuses[0].state}' | \
-        grep -q \"isolated CPUs\"" || {
-    error "pod4c0 unexpectedly passed strict isolated CPU requirement check"
-}
+verify-container-error pod4 0 "isolated CPUs"
 
 # Create a container with a strict test hint for NUMA node 2 and preference
 # for isolated CPUs. This one should fit and succeed because the unfulfilled
@@ -124,14 +95,7 @@ vm-command "kubectl wait --timeout=5s pod pod6 --for=$PodReadyCond" || {
     error "failed to wait for pod6 to start containerd"
 }
 
-wait_for_waiting_status_reason pod6 0 CreateContainerError || {
-    error "failed to wait for pod6/ctr0 to reach CreateContainerError state"
-}
-
-vm-command "kubectl get pod pod6 -o jsonpath='{.status.containerStatuses[0].state}' | \
-        grep -q \"isolated CPUs\"" || {
-    error "pod6c0 unexpectedly passed strict isolated CPU requirement check"
-}
+verify-container-error pod6 0 "isolated CPUs"
 
 # Now recreate pod5 test but with more complex effective annotation.
 # Create a container with a strict test hint for NUMA node 2 and preference

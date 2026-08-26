@@ -41,6 +41,9 @@ retry-until() { # script API
     # re-read on every attempt:
     #   retry-until --timeout 10 'vm-command "kubectl get pod $pod"'
     #
+    # SNIPPET is evaluated in the scope of this function, so it must not refer
+    # to variables named timeout, interval, message or elapsed.
+    #
     # This is the host side counterpart of vm-run-until.
     local timeout=30 interval=1 message="" elapsed=0
     while [ "${1#--}" != "$1" ]; do
@@ -67,6 +70,57 @@ retry-until() { # script API
     done
     echo "timeout after ${timeout}s${message:+ waiting for: $message}" >&2
     return 1
+}
+
+container-state() { # script API
+    # Usage: container-state POD CONTAINER
+    #
+    # Print the state object of CONTAINER of POD, and store it in
+    # COMMAND_OUTPUT. CONTAINER is a container name, the index of a container
+    # in the pod, or empty for all containers of the pod.
+    local pod=$1 ctr=$2 jqsel
+    if [ -z "$ctr" ]; then
+        jqsel='.[]'
+    elif [[ "$ctr" =~ ^[0-9]+$ ]]; then
+        jqsel=".[$ctr]"
+    else
+        jqsel="map(select(.name == \"$ctr\")) | .[0]"
+    fi
+    vm-command "kubectl get pod $pod -ojson | \
+        jq '.status.containerStatuses | $jqsel | .state'"
+}
+
+wait-container-waiting-reason() { # script API
+    # Usage: wait-container-waiting-reason POD CONTAINER REASON [TIMEOUT]
+    #
+    # Wait until the waiting reason of CONTAINER of POD becomes REASON,
+    # TIMEOUT seconds at most, 5 by default. CONTAINER is passed to
+    # container-state, so it can also be a container index or empty.
+    # Fail the test on timeout.
+    local pod=$1 ctr=$2 reason=$3 timeout=${4:-5}
+    retry-until --timeout "$timeout" \
+        'container-state "$pod" "$ctr" && grep -q "$reason" <<< "$COMMAND_OUTPUT"' || {
+        error "container ${ctr:-*} of pod $pod did not enter the $reason state"
+    }
+}
+
+verify-container-error() { # script API
+    # Usage: verify-container-error POD CONTAINER REGEXP [TIMEOUT]
+    #
+    # Verify that creating CONTAINER of POD failed with an error matching
+    # REGEXP. Wait TIMEOUT seconds, 5 by default, for the container to enter
+    # the CreateContainerError state, then require REGEXP to match its state.
+    #
+    # Create the pod with wait="" to keep the framework from waiting for a
+    # pod which is never going to become ready:
+    #     wait="" CONTCOUNT=1 create guaranteed
+    #     verify-container-error pod0 pod0c0 "invalid IRQ affinity"
+    local pod=$1 ctr=$2 regexp=$3 timeout=${4:-5}
+
+    wait-container-waiting-reason "$pod" "$ctr" CreateContainerError "$timeout"
+    container-state "$pod" "$ctr"
+    grep -q "$regexp" <<< "$COMMAND_OUTPUT" ||
+        error "expected an error matching \"$regexp\" from creating container ${ctr:-*} of pod $pod"
 }
 
 wait-pod-gone() { # script API
