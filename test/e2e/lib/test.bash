@@ -69,6 +69,17 @@ retry-until() { # script API
     return 1
 }
 
+wait-pod-gone() { # script API
+    # Usage: wait-pod-gone POD [TIMEOUT]
+    #
+    # Wait until POD no longer exists, TIMEOUT seconds at most, 30 by default.
+    # Fail the test if the pod is still there after that.
+    local pod=$1 timeout=${2:-30}
+    vm-run-until --timeout "$timeout" "! kubectl get pod $pod -o name 2>/dev/null | grep -q ." || {
+        command-error "pod $pod did not disappear within ${timeout}s"
+    }
+}
+
 ###
 ### Launching the plugin
 ###

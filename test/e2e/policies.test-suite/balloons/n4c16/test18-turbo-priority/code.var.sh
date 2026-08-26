@@ -66,16 +66,6 @@ wait-enforce-grows() {
     }
 }
 
-# wait-pod-gone <podname> [timeout=30]
-# Polls until the named pod no longer exists.
-wait-pod-gone() {
-    local pod=$1
-    local timeout=${2:-30}
-    vm-run-until --timeout "$timeout" "! kubectl get pod $pod -o name 2>/dev/null | grep -q ." || {
-        command-error "pod $pod did not disappear within ${timeout}s"
-    }
-}
-
 # enforce-lines-since prints the enforce log lines added since the given absolute count.
 enforce-lines-since() {
     local from=$1
