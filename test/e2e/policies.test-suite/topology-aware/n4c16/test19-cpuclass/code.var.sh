@@ -3,37 +3,8 @@ cleanup() {
     helm-terminate
 }
 
-# fetch-log fetches the latest log lines matching a given pattern.
-fetch-log() {
-    local last_n=${1:-200} pattern=${2:-'   *cpuclass   *'}
-    vm-command "kubectl -n kube-system logs ds/nri-resource-policy-topology-aware | grep -E \"$pattern\" | tail -n $last_n"
-}
-
-# assert-log-contains <regex> <message>
-assert-log-contains() {
-    local pat=$1
-    local msg=$2
-    fetch-log 500
-    grep -E -q "$pat" <<< "$COMMAND_OUTPUT" || command-error "$msg (pattern: $pat)"
-}
-
-# wait-assert-log-contains <regex> <message> [timeout=5]
-# Polls the policy log every 1s until <regex> matches or <timeout>
-# seconds pass. On timeout, defers to assert-log-contains so the
-# resulting command-error carries the captured log output.
-wait-assert-log-contains() {
-    local pat=$1
-    local msg=$2
-    local timeout=${3:-5}
-    local elapsed=0
-    while [ "$elapsed" -lt "$timeout" ]; do
-        fetch-log 500
-        grep -E -q "$pat" <<< "$COMMAND_OUTPUT" && return 0
-        sleep 1
-        elapsed=$((elapsed + 1))
-    done
-    assert-log-contains "$pat" "$msg"
-}
+# Restrict the log assertions to the cpuclass-related log lines.
+plugin_log_filter='   *cpuclass   *'
 
 # get-ext <resource-name> stores the given extended resource
 # capacity (or the string "missing") in COMMAND_OUTPUT.

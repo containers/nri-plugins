@@ -233,6 +233,66 @@ plugin-log() { # script API
     return "$COMMAND_STATUS"
 }
 
+plugin-log-tail() { # script API
+    # Usage: plugin-log-tail [LINES]
+    #
+    # Print the last LINES lines of the plugin log which match the extended
+    # regular expression in $plugin_log_filter, all lines if the variable is
+    # unset. LINES defaults to $plugin_log_tail_lines, or 500.
+    #
+    # This is what the log assertions below look at. Set plugin_log_filter in
+    # a test to restrict them to the log of the subsystem under test:
+    #     plugin_log_filter='pct(:| mock:)'
+    plugin-log --tail "${1:-${plugin_log_tail_lines:-500}}" "${plugin_log_filter:-}" || :
+}
+
+assert-log-contains() { # script API
+    # Usage: assert-log-contains REGEXP [MESSAGE]
+    #
+    # Fail the test unless REGEXP, an extended regular expression, matches the
+    # plugin log. See plugin-log-tail for which part of the log is inspected.
+    local pattern=$1 msg=${2:-"expected log line missing"}
+    plugin-log-tail
+    grep -E -q "$pattern" <<< "$COMMAND_OUTPUT" || command-error "$msg (pattern: $pattern)"
+}
+
+assert-log-not-contains() { # script API
+    # Usage: assert-log-not-contains REGEXP [MESSAGE]
+    #
+    # Fail the test if REGEXP matches the plugin log.
+    local pattern=$1 msg=${2:-"unexpected log line"}
+    plugin-log-tail
+    if grep -E -q "$pattern" <<< "$COMMAND_OUTPUT"; then
+        command-error "$msg (unexpected pattern: $pattern)"
+    fi
+}
+
+wait-assert-log-contains() { # script API
+    # Usage: wait-assert-log-contains REGEXP [MESSAGE] [TIMEOUT]
+    #
+    # Wait until REGEXP matches the plugin log, TIMEOUT seconds at most, 5 by
+    # default. Fail the test on timeout, reporting the log which was inspected.
+    local pattern=$1 msg=${2:-"expected log line missing"} tmo=${3:-5}
+    retry-until --timeout "$tmo" \
+        'plugin-log-tail; grep -E -q "$pattern" <<< "$COMMAND_OUTPUT"' ||
+        assert-log-contains "$pattern" "$msg"
+}
+
+wait-assert-log-grew() { # script API
+    # Usage: wait-assert-log-grew REGEXP COUNT [MESSAGE] [TIMEOUT]
+    #
+    # Wait until the plugin log has more than COUNT lines matching REGEXP,
+    # TIMEOUT seconds at most, 5 by default. Fail the test on timeout.
+    #
+    # Use this instead of wait-assert-log-contains when REGEXP already matched
+    # something in an earlier phase of the test, and the point is that a new
+    # line shows up.
+    local pattern=$1 count=$2 msg=${3:-"expected new log lines"} tmo=${4:-5}
+    retry-until --timeout "$tmo" \
+        'plugin-log-tail; [ "$(grep -c -E "$pattern" <<< "$COMMAND_OUTPUT")" -gt "$count" ]' ||
+        command-error "$msg (pattern: $pattern, expected more than $count lines)"
+}
+
 ###
 ### Cleaning up
 ###
