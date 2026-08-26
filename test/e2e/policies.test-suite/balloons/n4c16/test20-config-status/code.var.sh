@@ -1,5 +1,4 @@
-helm-terminate
-helm_config=$TEST_DIR/balloons.cfg helm-launch balloons
+relaunch-policy balloons "$TEST_DIR/balloons.cfg"
 
 sleep 1
 

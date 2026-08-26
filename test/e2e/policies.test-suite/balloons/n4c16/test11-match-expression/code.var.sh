@@ -1,8 +1,7 @@
 # Test placing containers with and without annotations to correct balloons
 # reserved and shared CPUs.
 
-helm-terminate
-helm_config=${TEST_DIR}/../../match-config.yaml helm-launch balloons
+relaunch-policy balloons "${TEST_DIR}/../../match-config.yaml"
 
 cleanup() {
     delete-pods --all

@@ -1,5 +1,4 @@
-helm-terminate
-helm_config=${TEST_DIR}/balloons-reserved.cfg helm-launch balloons
+relaunch-policy balloons "${TEST_DIR}/balloons-reserved.cfg"
 
 cleanup() {
     delete-pods -n kube-system pod0 pod3 pod7

@@ -1,5 +1,4 @@
-helm-terminate
-helm_config=${TEST_DIR}/balloons-namespace.cfg helm-launch balloons
+relaunch-policy balloons "${TEST_DIR}/balloons-namespace.cfg"
 
 cleanup() {
     delete-pods --all

@@ -1,5 +1,4 @@
-helm-terminate
-helm_config=${TEST_DIR}/balloons-isolated.cfg helm-launch balloons
+relaunch-policy balloons "${TEST_DIR}/balloons-isolated.cfg"
 
 verify-metrics-has-line 'balloon="isolated-pods\[0\]"'
 verify-metrics-has-line 'balloon="isolated-pods\[1\]"'

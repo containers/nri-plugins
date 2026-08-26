@@ -6,8 +6,7 @@ cleanup
 
 # Launch cri-resmgr with wanted metrics update interval and a
 # configuration that opens the instrumentation http server.
-helm-terminate
-helm_config=${TEST_DIR}/balloons-allocator-opts.cfg helm-launch balloons
+relaunch-policy balloons "${TEST_DIR}/balloons-allocator-opts.cfg"
 
 # pod0 in a 2-CPU balloon
 CPUREQ="100m" MEMREQ="100M" CPULIM="100m" MEMLIM="100M"

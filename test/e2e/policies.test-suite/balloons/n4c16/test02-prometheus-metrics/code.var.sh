@@ -8,8 +8,7 @@ cleanup
 
 # Launch nri-resource-policy with wanted metrics update interval and a
 # configuration that opens the instrumentation http server.
-helm-terminate
-helm_config=${TEST_DIR}/balloons-metrics.cfg  helm-launch balloons
+relaunch-policy balloons "${TEST_DIR}/balloons-metrics.cfg"
 
 verify-metrics-has-line 'balloon="default\[0\]"'
 verify-metrics-has-line 'balloon="reserved\[0\]"'
