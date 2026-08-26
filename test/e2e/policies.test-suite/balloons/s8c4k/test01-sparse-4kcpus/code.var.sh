@@ -1,9 +1,5 @@
-# Prepare virtual machine before installing balloons.
-min_kernel_version=6.14
-vm-command "uname -r"
-if [ "$( ( echo $min_kernel_version; echo $COMMAND_OUTPUT ) | sort --version-sort | tail -n 1 )" == "$min_kernel_version" ]; then
-    error "quest OS runs too old kernel, hot-plugged CPU node topology may not work. Required: $min_kernel_version"
-fi
+# Prepare virtual machine before installing the policy.
+require-kernel-version 6.14 "hot-plugged CPU node topology may not work"
 
 # Hot-plug core 511 of sockets 0, 2 and 7. With 512 cores per socket, those
 # cores are cpu511, cpu1535 and cpu4095.
@@ -20,16 +16,10 @@ vm-cpus-enabled 511 1535 4095 || {
 }
 
 # Wait until kubelet has reported all enabled CPUs in node capacity.
-vm-run-until 'kubectl get node -o jsonpath="{.items[0].status.capacity.cpu}" | grep 6' ||
-    command-error "Unexpected node CPU capacity"
+wait-node-resource cpu 6 "kubelet did not report all enabled CPUs in node capacity"
 
 # Make sure that k8s root cpuset.cpus contains hot-plugged CPUs.
-vm-command "grep . /sys/fs/cgroup/kubepods*/cpuset.cpus"
-if ! ( grep -q 511 <<< $COMMAND_OUTPUT &&
-           grep -q 1535 <<< $COMMAND_OUTPUT &&
-           grep -q 4095 <<< $COMMAND_OUTPUT ); then
-    command-error "kubepods cpuset.cpus does not include expected CPUs"
-fi
+verify-kubepods-cpus 511 1535 4095
 
 # Install balloons
 helm-terminate
