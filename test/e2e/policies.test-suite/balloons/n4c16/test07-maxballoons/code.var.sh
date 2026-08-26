@@ -52,11 +52,11 @@ verify 'cpus["pod4c0"] == cpus["pod3c0"]'
 # pod5: preferring new balloon fails, and fitting to existing dynamictwo balloons fails
 CPUREQ="300m" CPULIM="300m"
 ( POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: dynamictwo" CONTCOUNT=1 wait_t=5s create balloons-busybox ) && {
-    error "creating pod6 succeeded but was expected to fail with balloon allocation error"
+    error "creating pod5 succeeded but was expected to fail with balloon allocation error"
 }
 vm-command "kubectl describe pod pod5"
 if ! grep -q 'no suitable balloon instance available' <<< "$COMMAND_OUTPUT"; then
-    error "could not find 'no suitable balloon instance available' in pod6 description"
+    error "could not find 'no suitable balloon instance available' in pod5 description"
 fi
 vm-command "kubectl delete pod pod5 --now"
 
