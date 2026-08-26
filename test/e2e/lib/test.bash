@@ -159,6 +159,56 @@ expect-launch-failure() { # script API
 }
 
 ###
+### Node state
+###
+
+clear-isolcpus() { # script API
+    # Usage: clear-isolcpus
+    #
+    # Remove isolcpus from the kernel command line of the node, rebooting the
+    # node if it is there. Do nothing if it is not.
+    #
+    # A test which isolates CPUs and does not get to restore the command line,
+    # because it failed, leaves the CPUs isolated. That changes CPU pinning for
+    # every test which runs after it on the same VM. Call this in a test which
+    # needs to be sure that no CPUs are isolated.
+    vm-command "grep isolcpus /proc/cmdline" || return 0
+
+    vm-set-kernel-cmdline-reboot ""
+    vm-command "grep isolcpus /proc/cmdline" &&
+        error "failed to remove isolcpus from the kernel command line"
+
+    echo "isolcpus removed from the kernel command line"
+    return 0
+}
+
+disable-numa() { # script API
+    # Usage: disable-numa [POLICY]
+    #
+    # Boot the node with a kernel which has NUMA support disabled, and make
+    # sure that the container runtime and POLICY, $POLICY by default, are
+    # running afterwards. Do nothing if NUMA is already disabled.
+    vm-command '[ -d /sys/devices/system/node ]' || return 0
+
+    vm-kernel-pkgs-install
+    vm-post-reboot-runtime-check "${1:-$POLICY}"
+
+    vm-command '[ -d /sys/devices/system/node ]' &&
+        error "failed to disable NUMA in the kernel"
+    return 0
+}
+
+enable-numa() { # script API
+    # Usage: enable-numa [POLICY]
+    #
+    # Boot the node back with a kernel which has NUMA support, and make sure
+    # that the container runtime and POLICY, $POLICY by default, are running
+    # afterwards.
+    vm-kernel-pkgs-uninstall
+    vm-post-reboot-runtime-check "${1:-$POLICY}"
+}
+
+###
 ### CPU lists
 ###
 

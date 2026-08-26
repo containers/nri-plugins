@@ -1,9 +1,4 @@
-vm-command '[ -d /sys/devices/system/node ]' && {
-    vm-kernel-pkgs-install
-    vm-post-reboot-runtime-check topology-aware
-}
-
-vm-command '[ -d /sys/devices/system/node ]' && error "failed to disable NUMA in kernel"
+disable-numa
 
 helm-terminate
 helm_config=$(instantiate helm-config.yaml) helm-launch topology-aware
@@ -21,5 +16,4 @@ verify \
 delete-pods --all
 
 helm-terminate
-vm-kernel-pkgs-uninstall
-vm-post-reboot-runtime-check topology-aware
+enable-numa
