@@ -323,9 +323,47 @@ vm-setup() {
     local inventory="$playbook/inventory"
     local vagrantdir="$output_dir"
     local files="$nri_resource_policy_src/test/e2e/files"
-    local distro_name=$(printf '%s\n' "$distro" | sed -e 's/[\/&]/\\&/g')
     local qemu_dir="${qemu_dir:-/usr/share/qemu}"
     local efi_code efi_vars kind
+    local box_name="$distro" box_file="" package_box=""
+    local no_provision="" e2e_no_provision=""
+
+    # Reuse an already provisioned VM if we have one for this topology and for
+    # the versions we are about to install. Otherwise provision as usual and
+    # keep the result for the next run.
+    #
+    # This only concerns a VM which does not exist yet. An output directory
+    # which already has a Vagrantfile keeps the VM and the box it was created
+    # from, so start from a clean output directory to benefit from the cache.
+    if [ ! -f "$vagrantdir/Vagrantfile" ] && vm-box-cache-enabled; then
+        box_file="$BOX_CACHE_DIR/$(vm-box-key "$vmname").box"
+        if [ "$e2e_vm_cache" != "refresh" ] && vm-cached-box-usable "$box_file"; then
+            echo "using cached provisioned VM $box_file..."
+            box_name="nri-e2e/$(vm-box-key "$vmname")"
+            distro_img="file://$box_file"
+            # The box already has everything the playbook installs, and
+            # kubeadm init cannot run a second time. Keep the provisioner out
+            # of the Vagrantfile as well: --no-provision leaves the machine
+            # flagged as not provisioned, so the next vagrant up, whether it
+            # comes from the next test case or from make ssh, would run it.
+            no_provision="--no-provision"
+            e2e_no_provision=1
+        else
+            package_box=1
+        fi
+    elif grep -q "^IMAGE_NAME = \"$BOX_NAME_PREFIX/" "$vagrantdir/Vagrantfile" 2>/dev/null; then
+        # The VM of this output directory was created from a packaged box, so it
+        # is provisioned whatever this run was asked to do. Skip provisioning
+        # here too: vagrant would otherwise run it either on a VM which is
+        # already up, or on one which it is re-importing from that box.
+        echo "the VM of this output directory comes from a packaged box," \
+             "skipping provisioning..."
+        use_cached_box=1
+        no_provision="--no-provision"
+        e2e_no_provision=1
+    fi
+
+    local distro_name=$(printf '%s\n' "$box_name" | sed -e 's/[\/&]/\\&/g')
 
     mkdir -p "$inventory"
     if [ ! -f "$inventory/vagrant.ini" ]; then
@@ -421,14 +459,26 @@ vm-setup() {
 		-e "s/DNS_SEARCH_DOMAIN=\"\"/DNS_SEARCH_DOMAIN=\"$dns_search_domain\"/g" \
 		-e "s/SSH_PORT=/SSH_PORT=$SSH_PORT/g" \
                 -e "s:CACHE_DIR=:CACHE_DIR=\"$CACHE_DIR\":g" \
+                -e "s:E2E_NO_PROVISION=:E2E_NO_PROVISION=$e2e_no_provision:g" \
 		"$files/env.in" > "$vagrantdir/env"
 	else
 	    sed -e "s/DNS_NAMESERVER=\"\"/DNS_NAMESERVER=\"$dns_nameserver\"/g" \
 		-e "s/DNS_SEARCH_DOMAIN=\"\"/DNS_SEARCH_DOMAIN=\"$dns_search_domain\"/g" \
 		-e "s/SSH_PORT=/SSH_PORT=$SSH_PORT/g" \
                 -e "s:CACHE_DIR=:CACHE_DIR=\"$CACHE_DIR\":g" \
+                -e "s:E2E_NO_PROVISION=:E2E_NO_PROVISION=$e2e_no_provision:g" \
 		"$files/env.in" > "$vagrantdir/env"
 	fi
+    fi
+
+    # An env file written before this VM was known to come from a box has no
+    # flag, or a stale one. Keep it in sync, so that a vagrant up which is not
+    # ours, from make up or make ssh, does not provision the VM either.
+    if [ -n "$e2e_no_provision" ] && [ -f "$vagrantdir/env" ] &&
+           ! grep -q '^E2E_NO_PROVISION=1$' "$vagrantdir/env"; then
+        sed -i 's/^E2E_NO_PROVISION=.*$/E2E_NO_PROVISION=1/' "$vagrantdir/env"
+        grep -q '^E2E_NO_PROVISION=1$' "$vagrantdir/env" ||
+            echo "E2E_NO_PROVISION=1" >> "$vagrantdir/env"
     fi
 
     (cd "$vagrantdir";
@@ -437,8 +487,8 @@ vm-setup() {
      make install || error "failed to check/install vagrant plugins"
 
      if [ ! -d .vagrant ]; then
-	 vagrant init ${vagrant_debug:+--debug} --template Vagrantfile $distro || \
-             error "failed to vagrant init $distro"
+	 vagrant init ${vagrant_debug:+--debug} --template Vagrantfile $box_name || \
+             error "failed to vagrant init $box_name"
      fi
 
      # If you want to force provisioning of already provisioned vm,
@@ -454,9 +504,22 @@ vm-setup() {
      fi
 
      if ! (export ANSIBLE_SSH_ARGS="$SSH_PERSIST_OPTS"
-           vagrant up --provider qemu || error "failed to bring up VM"); then
+           vagrant up $no_provision --provider qemu || error "failed to bring up VM"); then
          exit 1
      fi
+
+     # Keep the freshly provisioned VM for the next run. Packaging shuts the
+     # VM down, so bring it back up afterwards. Failing to package is not
+     # fatal: the VM we have is fine, we just do not get to reuse it.
+     if [ -n "$package_box" ]; then
+         vm-package-box "$vagrantdir" "$box_file" || :
+         if ! (export ANSIBLE_SSH_ARGS="$SSH_PERSIST_OPTS"
+               vagrant up --no-provision --provider qemu || \
+                   error "failed to bring the VM back up after packaging it"); then
+             exit 1
+         fi
+     fi
+
      vagrant ssh-config > .ssh-config
      cat >> .ssh-config <<EOF
   ControlMaster auto

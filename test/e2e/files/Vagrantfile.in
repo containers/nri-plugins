@@ -26,6 +26,7 @@ CRIO_SRC = ""
 CONTAINERD_RELEASE = ""
 CONTAINERD_SRC = ""
 CACHE_DIR="#{ENV['CACHE_DIR']}"
+NO_PROVISION = "#{ENV['E2E_NO_PROVISION']}"
 
 if CRI_RUNTIME == "containerd"
   CONTAINERD_RELEASE = "#{ENV['containerd_release']}"
@@ -104,31 +105,38 @@ Vagrant.configure("2") do |config|
     qemu.disk_resize = "#{ENV['VM_DISK_SIZE']}"
   end
 
-  config.vm.provision :ansible do |ansible|
-    ansible.playbook = "#{ENV['nri_resource_policy_src']}/test/e2e/playbook/provision.yaml"
-    ansible.extra_vars = {
-      network: "10.217.0.0/16",
-      hostname: HOSTNAME,
-      dns_nameserver: "#{ENV['DNS_NAMESERVER']}",
-      dns_search_domain: "#{ENV['DNS_SEARCH_DOMAIN']}",
-      https_proxy: "#{ENV['HTTPS_PROXY']}",
-      http_proxy: "#{ENV['HTTP_PROXY']}",
-      no_proxy: "#{ENV['NO_PROXY']}",
-      kernel_getsource: KERNEL_GETSOURCE,
-      kernel_config: KERNEL_CONFIG,
-      k8s_release: K8S_RELEASE,
-      k8s_version: K8S_VERSION,
-      helm_release: HELM_RELEASE,
-      cri_runtime: CRI_RUNTIME,
-      containerd_release: CONTAINERD_RELEASE,
-      containerd_src: CONTAINERD_SRC,
-      crio_release: CRIO_RELEASE,
-      crio_src: CRIO_SRC,
-      cache_dir: CACHE_DIR,
-      cni_plugin: CNI_PLUGIN,
-      cni_release: CNI_RELEASE,
-      nri_resource_policy_src: NRI_RESOURCE_POLICY_SRC,
-      outdir: OUTPUT_DIR,
-    }
+  # A VM created from an already provisioned box must never be provisioned
+  # again: the playbook has already run into that box, and kubeadm init
+  # cannot run a second time. Skipping it on the vagrant up which creates
+  # the VM is not enough, as vagrant then keeps the machine flagged as not
+  # provisioned and runs the provisioner on the next up.
+  if NO_PROVISION != "1"
+    config.vm.provision :ansible do |ansible|
+      ansible.playbook = "#{ENV['nri_resource_policy_src']}/test/e2e/playbook/provision.yaml"
+      ansible.extra_vars = {
+        network: "10.217.0.0/16",
+        hostname: HOSTNAME,
+        dns_nameserver: "#{ENV['DNS_NAMESERVER']}",
+        dns_search_domain: "#{ENV['DNS_SEARCH_DOMAIN']}",
+        https_proxy: "#{ENV['HTTPS_PROXY']}",
+        http_proxy: "#{ENV['HTTP_PROXY']}",
+        no_proxy: "#{ENV['NO_PROXY']}",
+        kernel_getsource: KERNEL_GETSOURCE,
+        kernel_config: KERNEL_CONFIG,
+        k8s_release: K8S_RELEASE,
+        k8s_version: K8S_VERSION,
+        helm_release: HELM_RELEASE,
+        cri_runtime: CRI_RUNTIME,
+        containerd_release: CONTAINERD_RELEASE,
+        containerd_src: CONTAINERD_SRC,
+        crio_release: CRIO_RELEASE,
+        crio_src: CRIO_SRC,
+        cache_dir: CACHE_DIR,
+        cni_plugin: CNI_PLUGIN,
+        cni_release: CNI_RELEASE,
+        nri_resource_policy_src: NRI_RESOURCE_POLICY_SRC,
+        outdir: OUTPUT_DIR,
+      }
+    end
   end
 end
