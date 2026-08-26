@@ -4,6 +4,26 @@ cleanup() {
     delete-namespaces highprio lowprio
 }
 
+# fill-l3caches <first> <last> <cpureq>
+# Create one burstable pod per L3 cache, pod<first> to pod<last>, each of them
+# limited to bursting within its own L3 cache.
+fill-l3caches() {
+    local i
+    for i in $(seq "$1" "$2"); do
+        ANN0="unlimited-burstable.resource-policy.nri.io/container.pod${i}c0: l3cache"
+        CONTCOUNT=1 CPUREQ=$3 CPULIM=0 MEMREQ=50M create burstable
+    done
+}
+
+# verify-l3caches-filled <first> <last>
+# Verify that the containers of pod<first> to pod<last> occupy all 127 usable
+# CPUs of the node in disjoint sets, that is, one full L3 cache each.
+verify-l3caches-filled() {
+    local pods="[cpus[f'pod{i}c0'] for i in range($1, $2 + 1)]"
+    verify "len(set.union(*$pods)) == 127" \
+           "disjoint_sets(*$pods)"
+}
+
 cleanup
 relaunch-policy topology-aware "$TEST_DIR/helm-config.yaml"
 
@@ -108,19 +128,14 @@ cleanup
 # Fill all 16 L3 caches: 15 with high CPU usage (4 CPUs), 1 with low usage (1 CPU).
 # The 17th container should be placed in the least occupied L3 cache.
 # Create 15 pods requesting 4 CPUs each (high occupancy).
-for i in $(seq 10 24); do
-    ANN0="unlimited-burstable.resource-policy.nri.io/container.pod${i}c0: l3cache"
-    CONTCOUNT=1 CPUREQ=4 CPULIM=0 MEMREQ=50M create burstable
-done
+fill-l3caches 10 24 4
 # Create 1 pod requesting only 1 CPU (low occupancy) - this is the least occupied L3.
 ANN0='unlimited-burstable.resource-policy.nri.io/container.pod25c0: l3cache'
 CONTCOUNT=1 CPUREQ=1 CPULIM=0 MEMREQ=50M create burstable
 report allowed
 
 # Verify all 16 L3 caches are occupied and disjoint.
-verify \
-    'len(set.union(*[cpus[f"pod{i}c0"] for i in range(10, 26)])) == 127' \
-    'disjoint_sets(*[cpus[f"pod{i}c0"] for i in range(10, 26)])'
+verify-l3caches-filled 10 25
 
 # Now add the 17th container - it should share the L3 cache with pod25c0
 # (the least occupied one with only 1 CPU used).
@@ -137,16 +152,11 @@ cleanup
 # Fill all 16 L3 caches with 7 CPUs each (leaving only 1 CPU free per cache).
 # The 17th container requesting 3 CPUs cannot fit in any L3 cache and should
 # be promoted to the next topology level (NUMA node).
-for i in $(seq 27 42); do
-    ANN0="unlimited-burstable.resource-policy.nri.io/container.pod${i}c0: l3cache"
-    CONTCOUNT=1 CPUREQ=7 CPULIM=0 MEMREQ=50M create burstable
-done
+fill-l3caches 27 42 7
 report allowed
 
 # Verify all 16 L3 caches are occupied with disjoint CPU sets.
-verify \
-    'len(set.union(*[cpus[f"pod{i}c0"] for i in range(27, 43)])) == 127' \
-    'disjoint_sets(*[cpus[f"pod{i}c0"] for i in range(27, 43)])'
+verify-l3caches-filled 27 42
 
 # Now add the 17th container requesting 3 CPUs - it cannot fit in any L3 cache
 # (each has only 1 CPU free), so it should be promoted to NUMA level.
@@ -169,16 +179,11 @@ cleanup
 # Test guaranteed pod taking exclusive CPUs from L3 cache shared by burstable pod.
 # Fill all 16 L3 caches with burstable pods, then create a guaranteed pod.
 # The guaranteed pod takes exclusive CPUs, reducing the burstable pod's shared CPUs.
-for i in $(seq 45 60); do
-    ANN0="unlimited-burstable.resource-policy.nri.io/container.pod${i}c0: l3cache"
-    CONTCOUNT=1 CPUREQ=2 CPULIM=0 MEMREQ=50M create burstable
-done
+fill-l3caches 45 60 2
 report allowed
 
 # Verify all 16 L3 caches occupied with 8 CPUs each (disjoint).
-verify \
-    'len(set.union(*[cpus[f"pod{i}c0"] for i in range(45, 61)])) == 127' \
-    'disjoint_sets(*[cpus[f"pod{i}c0"] for i in range(45, 61)])'
+verify-l3caches-filled 45 60
 
 # pod45c0 should have 8 CPUs (full L3 cache).
 verify 'len(cpus["pod45c0"]) == 8'
