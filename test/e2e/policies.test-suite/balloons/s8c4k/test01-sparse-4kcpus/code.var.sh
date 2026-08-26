@@ -5,24 +5,18 @@ if [ "$( ( echo $min_kernel_version; echo $COMMAND_OUTPUT ) | sort --version-sor
     error "quest OS runs too old kernel, hot-plugged CPU node topology may not work. Required: $min_kernel_version"
 fi
 
-# Hot-plug CPUs.
-vm-command 'grep 511,1535,4095 /sys/devices/system/cpu/enabled' || {
+# Hot-plug core 511 of sockets 0, 2 and 7. With 512 cores per socket, those
+# cores are cpu511, cpu1535 and cpu4095.
+vm-cpus-enabled 511 1535 4095 || {
     vm-cpu-hotplug 0 511 0
     vm-cpu-hotplug 2 511 0
     vm-cpu-hotplug 7 511 0
 
-    # Wait for the kernel to expose all hot-plugged CPUs in sysfs.
-    vm-run-until '[ -d /sys/devices/system/cpu/cpu511 ] && [ -d /sys/devices/system/cpu/cpu1535 ] && [ -d /sys/devices/system/cpu/cpu4095 ]'
+    vm-wait-cpus 511 1535 4095
+    vm-online-all-cpus
 
-    # Online all CPUs.
-    vm-command 'for cpuX in /sys/devices/system/cpu/cpu[1-9]*; do
-            echo onlining $cpuX
-            ( echo 1 > $cpuX/online && echo Successful: write 1 to $cpuX/online ) || echo Failed: write 1 to $cpuX/online
-        done
-       grep . /sys/devices/system/cpu/cpu[1-9]*/online'
-
-    # Restart kubelet to let it detect new enabled CPUs.
-    vm-command "systemctl restart kubelet"
+    # Restart kubelet to let it detect the new enabled CPUs.
+    vm-restart-kubelet
 }
 
 # Wait until kubelet has reported all enabled CPUs in node capacity.
