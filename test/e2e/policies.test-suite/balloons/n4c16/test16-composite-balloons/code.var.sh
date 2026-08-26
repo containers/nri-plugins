@@ -9,13 +9,10 @@ cleanup() {
 }
 
 verify-nrt() {
-    jqquery="$1"
-    expected="$2"
-    vm-command "kubectl get -n kube-system noderesourcetopologies.topology.node.k8s.io -o json | jq -r '$jqquery'"
-    if [[ -n "$expected" ]]; then
-        if [[ "$expected" != "$COMMAND_OUTPUT" ]]; then
-            command-error "invalid output, expected: '$expected'"
-        fi
+    local jqquery="$1" expected="$2"
+    nrt-query "$jqquery"
+    if [[ -n "$expected" ]] && [[ "$expected" != "$COMMAND_OUTPUT" ]]; then
+        command-error "invalid output, expected: '$expected'"
     fi
 }
 
@@ -28,8 +25,8 @@ verify 'len(cpus["pod0c0"]) == 4' \
        'len(cpus["pod0c1"]) == 4' \
        'nodes["pod0c0"] == nodes["pod0c1"] == {"node0", "node1", "node2", "node3"}'
 
-verify-nrt '.items[0].zones[] | select (.name == "balance-all-nodes[0]")' # no check, print for debugging
-verify-nrt '.items[0].zones[] | select (.name == "balance-all-nodes[0]") .attributes[] | select (.name == "excess cpus") .value' 3000m
+verify-nrt '.zones[] | select (.name == "balance-all-nodes[0]")' # no check, print for debugging
+verify-nrt '.zones[] | select (.name == "balance-all-nodes[0]") .attributes[] | select (.name == "excess cpus") .value' 3000m
 
 # Balance a large workload on all NUMA nodes
 CPUREQ="9" MEMREQ="100M" CPULIM="" MEMLIM=""
@@ -43,7 +40,7 @@ verify 'len(cpus["pod1c0"]) == 12' \
        'len(set.intersection(cpus["pod1c0"], {"cpu12", "cpu13", "cpu14", "cpu15"})) == 3' \
        'len(set.intersection(cpus["pod1c0"], {"cpu06", "cpu07"})) == 1' # cpu06 or cpu07 is reserved
 
-verify-nrt '.items[0].zones[] | select (.name == "balance-all-nodes[0]")' # no check, print for debugging
+verify-nrt '.zones[] | select (.name == "balance-all-nodes[0]")' # no check, print for debugging
 
 CPUREQ="100m" MEMREQ="" CPULIM="100m" MEMLIM=""
 namespace=kube-system create balloons-busybox
@@ -71,7 +68,7 @@ report allowed
 verify 'len(cpus["pod3c0"]) == 2' \
        'len(set.intersection(cpus["pod3c0"], {"cpu08", "cpu09", "cpu10", "cpu11"})) == 1' \
        'len(set.intersection(cpus["pod3c0"], {"cpu12", "cpu13", "cpu14", "cpu15"})) == 1'
-verify-nrt '.items[0].zones[] | select (.name == "balance-pkg1-nodes[0]")' # no check, print for debugging
+verify-nrt '.zones[] | select (.name == "balance-pkg1-nodes[0]")' # no check, print for debugging
 
 CPUREQ="4" MEMREQ="100M" CPULIM="" MEMLIM=""
 POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: balance-pkg1-nodes" CONTCOUNT=1 create balloons-busybox
@@ -80,7 +77,7 @@ verify 'len(cpus["pod4c0"]) == 4' \
        'len(set.intersection(cpus["pod4c0"], {"cpu08", "cpu09", "cpu10", "cpu11"})) == 2' \
        'len(set.intersection(cpus["pod4c0"], {"cpu12", "cpu13", "cpu14", "cpu15"})) == 2' \
        'disjoint_sets(cpus["pod4c0"], cpus["pod3c0"])'
-verify-nrt '.items[0].zones[] | select (.name == "balance-pkg1-nodes[1]")' # no check, print for debugging
+verify-nrt '.zones[] | select (.name == "balance-pkg1-nodes[1]")' # no check, print for debugging
 
 # Remove pods. Now composite balloons balance-pkg1-nodes[0] and
 # balance-pkg1-nodes[1] should be deleted completely (in contrast to

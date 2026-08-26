@@ -159,6 +159,53 @@ expect-launch-failure() { # script API
 }
 
 ###
+### Node resource topology
+###
+
+# The kubectl command which addresses the node resource topology of the node.
+export nrt_kubectl_get="kubectl get noderesourcetopologies.topology.node.k8s.io \$(hostname)"
+
+nrt-query() { # script API
+    # Usage: nrt-query JQ-EXPRESSION
+    #
+    # Print the result of evaluating JQ-EXPRESSION on the node resource
+    # topology of the node, and store it in COMMAND_OUTPUT.
+    #
+    # JQ-EXPRESSION must not contain single quotes.
+    vm-command "$nrt_kubectl_get -o json | jq -r '$1'"
+}
+
+nrt-verify-zone-attribute() { # script API
+    # Usage: nrt-verify-zone-attribute ZONE ATTRIBUTE REGEXP
+    #
+    # Fail the test unless the value of ATTRIBUTE of topology zone ZONE
+    # matches REGEXP.
+    local zone_name=$1
+    local attribute_name=$2
+    local expected_value_re=$3
+    echo ""
+    echo "### Verifying topology zone $zone_name attribute $attribute_name value matches $expected_value_re"
+    nrt-query ".zones[] | select (.name == \"$zone_name\").attributes[] | select(.name == \"$attribute_name\").value"
+    [[ "$COMMAND_OUTPUT" =~ $expected_value_re ]] ||
+        command-error "expected zone $zone_name attribute $attribute_name value $expected_value_re, got: $COMMAND_OUTPUT"
+}
+
+nrt-verify-zone-resource() { # script API
+    # Usage: nrt-verify-zone-resource ZONE RESOURCE FIELD VALUE
+    #
+    # Fail the test unless FIELD of RESOURCE of topology zone ZONE equals VALUE.
+    local zone_name=$1
+    local resource_name=$2
+    local resource_field=$3
+    local expected_value=$4
+    echo ""
+    echo "### Verifying topology zone $zone_name resource $resource_name field $resource_field equals $expected_value"
+    nrt-query ".zones[] | select (.name == \"$zone_name\").resources[] | select(.name == \"$resource_name\").$resource_field"
+    [[ "$COMMAND_OUTPUT" == "$expected_value" ]] ||
+        command-error "expected zone $zone_name resource $resource_name.$resource_field $expected_value, got: $COMMAND_OUTPUT"
+}
+
+###
 ### Node state
 ###
 
