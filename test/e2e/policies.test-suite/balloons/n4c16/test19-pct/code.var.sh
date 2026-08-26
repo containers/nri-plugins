@@ -31,32 +31,15 @@ helm-terminate
 # Restrict the log assertions to the PCT-related log lines.
 plugin_log_filter='pct(:| mock:)'
 
-# get-ext <resource-name> stores the given extended resource
-# capacity (or the string "missing") in COMMAND_OUTPUT.
-get-ext() {
-    local name=$1
-    vm-command "kubectl get nodes -o json | jq -r '.items[] | (.status.capacity[\"$name\"] // \"missing\")'"
-}
+# The extended resource which the pct-hp cpuClass publishes.
+ext_hp="cpuclass.balloons.nri.io/pct-hp"
 
-# get-ext-hp stores the pct-hp extended resource capacity (or the
-# string "missing") in COMMAND_OUTPUT.
 get-ext-hp() {
-    get-ext "cpuclass.balloons.nri.io/pct-hp"
+    get-node-resource "$ext_hp"
 }
 
-# wait-ext-hp <want> <message> [timeout=30] [interval=2]
-# Polls until the pct-hp extended resource equals <want> (a number
-# or the string "missing"), or fails with <message> on timeout.
 wait-ext-hp() {
-    local want=$1 msg=$2 timeout=${3:-30} interval=${4:-2} elapsed=0
-    while [ "$elapsed" -lt "$timeout" ]; do
-        get-ext-hp
-        [ "$COMMAND_OUTPUT" == "$want" ] && return 0
-        sleep "$interval"
-        elapsed=$((elapsed + interval))
-    done
-    get-ext-hp
-    command-error "$msg (expected '$want', got '$COMMAND_OUTPUT')"
+    wait-node-resource "$ext_hp" "$@"
 }
 
 # helm-upgrade <config> performs an in-process reconfiguration by
@@ -246,7 +229,7 @@ get-ext-hp
 vm-command "kubectl patch node $node_name --subresource=status --type merge \
     -p '{\"status\":{\"capacity\":{\"example.com/not-owned\":\"7\"}}}'" ||
     command-error "failed to inject unrelated non-nri.io extended resource"
-get-ext "example.com/not-owned"
+get-node-resource "example.com/not-owned"
 [ "$COMMAND_OUTPUT" == "7" ] || \
     command-error "expected injected non-nri.io extended resource (7) to be visible, got '$COMMAND_OUTPUT'"
 
@@ -260,7 +243,7 @@ wait-ext-hp missing "reconciliation on launch did not remove the orphan HP exten
 
 # The unrelated non-nri.io resource must NOT have been removed: the
 # agent refuses to touch anything outside the *.nri.io/* domain.
-get-ext "example.com/not-owned"
+get-node-resource "example.com/not-owned"
 [ "$COMMAND_OUTPUT" == "7" ] || \
     command-error "reconciliation removed or altered a non-nri.io extended resource (expected '7', got '$COMMAND_OUTPUT')"
 

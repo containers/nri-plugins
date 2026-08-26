@@ -91,15 +91,10 @@ sleep 1
 
 # Wait until both fake device plugins have registered and their
 # devices are Allocatable.
-rounds=0
-while vm-command "kubectl describe node \$(hostname) | grep -E 'Capacity|Alloc|telco.com|tech.com'"; do
-    ( grep -A2 Allocatable <<< "$COMMAND_OUTPUT" | grep -qE 'tech.com/tpu:.*4' ) && \
-        ( grep -A2 Allocatable <<< "$COMMAND_OUTPUT" | grep -qE 'telco.com/nic:.*2' ) && \
-        break
-    rounds=$(( rounds + 1 ))
-    (( rounds > 60 )) && error "waiting for fake-device-plugin resources timed out"
-    sleep 1
-done
+wait-node-resource --allocatable --timeout 60 --interval 1 tech.com/tpu 4 \
+    "fake TPU device plugin did not publish its devices"
+wait-node-resource --allocatable --timeout 60 --interval 1 telco.com/nic 2 \
+    "fake NIC device plugin did not publish its devices"
 
 # burstable containers
 CPUREQ=2 CPULIM=4 MEMREQ=10M MEMLIM=50M \

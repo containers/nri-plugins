@@ -6,34 +6,6 @@ cleanup() {
 # Restrict the log assertions to the cpuclass-related log lines.
 plugin_log_filter='   *cpuclass   *'
 
-# get-ext <resource-name> stores the given extended resource
-# capacity (or the string "missing") in COMMAND_OUTPUT.
-get-ext() {
-    local name=$1
-    vm-command "kubectl get nodes -o json | jq -r '.items[] | (.status.capacity[\"$name\"] // \"missing\")'"
-}
-
-# get-ext-exclusive stores the exclusive CPU class extended resource capacity (or the
-# string "missing") in COMMAND_OUTPUT.
-get-ext-exclusive() {
-    get-ext "cpuclass.resource-policy.nri.io/exclusive"
-}
-
-# wait-ext-exclusive <want> <message> [timeout=30] [interval=2]
-# Polls until the exclusive CPU class extended resource equals <want> (a number
-# or the string "missing"), or fails with <message> on timeout.
-wait-ext-exclusive() {
-    local want=$1 msg=$2 timeout=${3:-30} interval=${4:-2} elapsed=0
-    while [ "$elapsed" -lt "$timeout" ]; do
-        get-ext-exclusive
-        [ "$COMMAND_OUTPUT" == "$want" ] && return 0
-        sleep "$interval"
-        elapsed=$((elapsed + interval))
-    done
-    get-ext-exclusive
-    command-error "$msg (expected '$want', got '$COMMAND_OUTPUT')"
-}
-
 # ctr-cpu-ids <pod> <container>
 # Inspect the container of the given pod and report the cpuset it is pinned to.
 ctr-cpu-ids() {
@@ -123,7 +95,8 @@ wait-assert-log-contains 'PrepareManagedMode done' "managed mode startup missing
 wait-assert-log-contains 'ConfigureClos.*ClosID:0 MinFreq:3800000 MaxFreq:3800000' "HP CLOS 0 not programmed with MinFreq=MaxFreq=turbo (3800000)"
 wait-assert-log-contains 'ConfigureClos.*ClosID:3 MinFreq:800000 MaxFreq:2900000' "LP CLOS 3 not programmed with MinFreq=min (800000) MaxFreq=base (2900000)"
 wait-assert-log-contains 'EnableCP done' "EnableCP missing"
-wait-ext-exclusive 4 "expected 4 PCT HP CPUs published as extended resources"
+wait-node-resource cpuclass.resource-policy.nri.io/exclusive 4 \
+    "expected 4 PCT HP CPUs published as extended resources"
 
 #
 # Reserved pool CPU class assignment

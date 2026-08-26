@@ -159,6 +159,49 @@ expect-launch-failure() { # script API
 }
 
 ###
+### Extended resources of the node
+###
+
+get-node-resource() { # script API
+    # Usage: get-node-resource [--allocatable] NAME
+    #
+    # Print the capacity, or with --allocatable the allocatable amount, of
+    # extended resource NAME on the test node, and store it in COMMAND_OUTPUT.
+    # Print "missing" if the node does not have the resource at all.
+    local field=capacity
+    while [ "${1#--}" != "$1" ]; do
+        case "$1" in
+            --capacity)    field=capacity; shift;;
+            --allocatable) field=allocatable; shift;;
+            *)             error "get-node-resource: unknown option \"$1\"";;
+        esac
+    done
+    vm-command "kubectl get nodes -o json | jq -r '.items[] | (.status.$field[\"$1\"] // \"missing\")'"
+}
+
+wait-node-resource() { # script API
+    # Usage: wait-node-resource [--allocatable] [--timeout SECS] [--interval SECS] NAME VALUE [MESSAGE]
+    #
+    # Wait until extended resource NAME on the test node equals VALUE, which
+    # can also be the string "missing". Give up after SECS seconds, 30 by
+    # default, checking every SECS seconds, 2 by default. Fail the test with
+    # MESSAGE on timeout.
+    local fieldopt="" tmo=30 ival=2
+    while [ "${1#--}" != "$1" ]; do
+        case "$1" in
+            --timeout)  tmo="$2"; shift 2;;
+            --interval) ival="$2"; shift 2;;
+            *)          fieldopt="$1"; shift;;
+        esac
+    done
+    local name=$1 value=$2 msg=${3:-"unexpected amount of $1 on the node"}
+    retry-until --timeout "$tmo" --interval "$ival" \
+        'get-node-resource $fieldopt "$name" && [ "$COMMAND_OUTPUT" == "$value" ]' || {
+        command-error "$msg (expected '$value', got '$COMMAND_OUTPUT')"
+    }
+}
+
+###
 ### Reading the log of the plugin
 ###
 
