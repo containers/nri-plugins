@@ -1,9 +1,7 @@
-helm-terminate
-helm_config=${TEST_DIR}/balloons-memory-types.cfg helm-launch balloons
+relaunch-policy balloons "${TEST_DIR}/balloons-memory-types.cfg"
 
 cleanup() {
-    vm-command "kubectl delete pods --all --now"
-    return 0
+    delete-pods --all
 }
 
 cleanup

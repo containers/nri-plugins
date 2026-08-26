@@ -1,5 +1,5 @@
 cleanup() {
-    vm-command "kubectl delete pods --all --now"
+    delete-pods --all
     helm-terminate
 }
 
