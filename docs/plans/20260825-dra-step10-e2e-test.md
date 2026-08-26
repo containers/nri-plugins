@@ -210,15 +210,17 @@ Three-part change:
 **Files:**
 - Create: `test/e2e/policies.test-suite/topology-aware/n4c16/test20-dra/code.var.sh` (initial skeleton: mock+launch + probe + skip path only; claim/pod and remaining assertions added in Task 4/5)
 
-- [ ] re-verify `test20-dra` is still unused under `n4c16/` (the last-known-free block after `test19-cpuclass` is 20–24, before the suite jumps to `test25-irq`) — re-check for collisions immediately before creating the directory
-- [ ] start `code.var.sh` with a `cleanup` call (delete pods, `helm-terminate`) before the first `helm-launch`, mirroring test19-cpuclass — this plan's tasks iterate repeatedly on the same VM, so a leftover deployment/pod from a prior failed run must not be able to interfere
-- [ ] reuse test19-cpuclass's `OVERRIDE_SYS_CPUFREQ` / `OVERRIDE_SST` / `OVERRIDE_SST_STATE_DIR` mock block verbatim, and launch with `CPU_CLASSES="[ { name: hp-turbo, pctPriority: high, pctMinFreq: turbo, pctMaxFreq: turbo } ]"`, `DEBUG_LOGGERS="agent cpu cpuclass"`, `DRA_ENABLED=true` (Task 2's var), plus the existing `EXTRA_ENV_OVERRIDE_*` vars — the probe below needs real published devices to read back, which requires this full mock+class config up front, not a bare `DRA_ENABLED=true` launch (an empty `CPU_CLASSES` publishes zero devices, per Technical Details)
-- [ ] launch against the distinctly-named VM provisioned with Task 1's gates on (see Task 1's VM lifecycle note)
-- [ ] implement the ResourceSlice round-trip probe (Technical Details, primary candidate): read back the published `ResourceSlice`, check `spec.devices[].allowMultipleAllocations` and `spec.devices[].nodeAllocatableResourceMappings` survived
-- [ ] on missing gate(s): call `helm-terminate`, then `echo "Test verdict: SKIP (KEP-5075/KEP-5517 feature gate missing)"; exit 0`
-- [ ] write a negative-path check: run against the Task 1 ungated VM (default `vm_name`, `k8s_feature_gates` unset) and confirm `test/e2e/run_tests.sh`'s captured `run.sh.output` for this test contains `Test verdict: SKIP` — check the per-test output file directly, not the run summary file, since `run_tests.sh`'s SKIP branch doesn't append to the summary
-- [ ] write a positive-path check: run against the Task 1 gated VM and confirm the probe passes and execution continues past it
-- [ ] run tests — must pass before task 4
+- [x] re-verify `test20-dra` is still unused under `n4c16/` (the last-known-free block after `test19-cpuclass` is 20–24, before the suite jumps to `test25-irq`) — re-check for collisions immediately before creating the directory
+- [x] start `code.var.sh` with a `cleanup` call (delete pods, `helm-terminate`) before the first `helm-launch`, mirroring test19-cpuclass — this plan's tasks iterate repeatedly on the same VM, so a leftover deployment/pod from a prior failed run must not be able to interfere
+- [x] reuse test19-cpuclass's `OVERRIDE_SYS_CPUFREQ` / `OVERRIDE_SST` / `OVERRIDE_SST_STATE_DIR` mock block verbatim, and launch with `CPU_CLASSES="[ { name: hp-turbo, pctPriority: high, pctMinFreq: turbo, pctMaxFreq: turbo } ]"`, `DEBUG_LOGGERS="agent cpu cpuclass"`, `DRA_ENABLED=true` (Task 2's var), plus the existing `EXTRA_ENV_OVERRIDE_*` vars — the probe below needs real published devices to read back, which requires this full mock+class config up front, not a bare `DRA_ENABLED=true` launch (an empty `CPU_CLASSES` publishes zero devices, per Technical Details) — ➕ discovered `Config.Validate()` hard-requires a shared CPU class whenever `cpuClasses` is non-empty (`shared CPU class not specified`), so a second plain (non-PCT) `shared` class plus `SHARED_CPUCLASS=shared` were added; the plan's literal one-class sketch fails `helm-launch` outright without it
+- [x] launch against the distinctly-named VM provisioned with Task 1's gates on (see Task 1's VM lifecycle note)
+- [x] implement the ResourceSlice round-trip probe (Technical Details, primary candidate): read back the published `ResourceSlice`, check `spec.devices[].allowMultipleAllocations` and `spec.devices[].nodeAllocatableResourceMappings` survived
+- [x] on missing gate(s): call `helm-terminate`, then `echo "Test verdict: SKIP (KEP-5075/KEP-5517 feature gate missing)"; exit 0`
+- [x] write a negative-path check: run against the Task 1 ungated VM (default `vm_name`, `k8s_feature_gates` unset) and confirm `test/e2e/run_tests.sh`'s captured `run.sh.output` for this test contains `Test verdict: SKIP` — check the per-test output file directly, not the run summary file, since `run_tests.sh`'s SKIP branch doesn't append to the summary
+- [x] write a positive-path check: run against the Task 1 gated VM and confirm the probe passes and execution continues past it
+- [x] run tests — must pass before task 4
+
+**Change note:** on the ungated VM, `allowMultipleAllocations` actually survived the round trip (`DRAConsumableCapacity`/KEP-5075 is beta and default-`true` on this VM's Kubernetes 1.36, independent of this test's explicit gate list), while `nodeAllocatableResourceMappings` (`DRANodeAllocatableResources`/KEP-5517, alpha, default-`false`) came back `null` — the probe's AND of both fields still correctly triggered SKIP, but this confirms KEP-5517 is doing the actual gating work for this probe in practice, not KEP-5075.
 
 ### Task 4: Add inline `ResourceClaim` + pod manifests to `code.var.sh`
 
