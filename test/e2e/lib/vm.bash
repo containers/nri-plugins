@@ -878,6 +878,48 @@ vm-set-kernel-cmdline() {
     fi
 }
 
+vm-cpus-enabled() { # script API
+    # Usage: vm-cpus-enabled CPU...
+    #
+    # Return success if all the given CPUs are enabled in the VM, that is,
+    # they are either present from the start or have been hot-plugged.
+    #
+    # Example:
+    #   vm-cpus-enabled 511 1535 || vm-cpu-hotplug ...
+    local enabled cpu
+    vm-command "cat /sys/devices/system/cpu/enabled"
+    enabled=$(expand-cpulist "$(tr -d '[:space:]' <<< "$COMMAND_OUTPUT")")
+    for cpu in "$@"; do
+        [[ " $enabled " == *" $cpu "* ]] || return 1
+    done
+    return 0
+}
+
+vm-wait-cpus() { # script API
+    # Usage: vm-wait-cpus CPU...
+    #
+    # Wait until the kernel of the VM has exposed all the given CPUs in sysfs.
+    # Use this after hot-plugging CPUs.
+    local cpu test=""
+    for cpu in "$@"; do
+        test="${test}${test:+ && }[ -d /sys/devices/system/cpu/cpu$cpu ]"
+    done
+    vm-run-until "$test"
+}
+
+vm-online-all-cpus() { # script API
+    # Usage: vm-online-all-cpus
+    #
+    # Bring every offline CPU of the VM online. Print the resulting state of
+    # each CPU. Never fails: a CPU which cannot be onlined is reported but
+    # tolerated, as not all of them can be.
+    vm-command 'for cpuX in /sys/devices/system/cpu/cpu[1-9]*; do
+            echo onlining $cpuX
+            ( echo 1 > $cpuX/online && echo Successful: write 1 to $cpuX/online ) || echo Failed: write 1 to $cpuX/online
+        done
+       grep . /sys/devices/system/cpu/cpu[1-9]*/online'
+}
+
 vm-restart-kubelet() { # script API
     # Usage: vm-restart-kubelet
     #
