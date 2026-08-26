@@ -86,3 +86,98 @@ else
     echo "Test verdict: SKIP (KEP-5075/KEP-5517 feature gate missing)"
     exit 0
 fi
+
+#
+# Claim + pod (Task 4).
+#
+# A ResourceClaim selecting the HP cpuClass by its published
+# nri/pctPriority attribute, additionally pinned to packageID == 1.
+# With test19-cpuclass's mock SST layout (package 0 = CPUs 0-7,
+# package 1 = CPUs 8-15, max_hp_cpus: 2 each) an unconstrained claim
+# could resolve to package 0 and collide with CPU 0, the reserved-pool
+# CPU by convention -- PickHpCpus (pct.go:611-652) doesn't exclude the
+# reserved pool, only already-claimed/held CPUs. Pinning to package 1
+# keeps the claim's 2 CPUs disjoint from the reserved pool, so the
+# CLOS-association assertion (Task 5) isn't flaky.
+#
+# Only "objects create cleanly and the pod reaches Running" is checked
+# here; CLOS-association/env-var/allocatable assertions are Task 5.
+#
+
+# Bypassing create() also bypasses its image pre-pull step -- pull the
+# pod's image explicitly so a freshly created VM doesn't stall/fail on
+# kubectl's own on-demand pull.
+vm-command "crictl -i unix://${k8scri_sock} pull quay.io/prometheus/busybox" ||
+    command-error "failed to pre-pull quay.io/prometheus/busybox"
+
+# Manifests are written to local temp files and copied to the VM with
+# vm-put-file, then kubectl apply'd -- this sidesteps vm-command's
+# double-quoting/escaping entirely (the YAML below needs literal
+# double quotes for its CEL string literals and the "2" capacity
+# request), which proved far less fiddly than embedding a
+# `cat <<EOF | kubectl apply -f -` heredoc inside a double-quoted
+# vm-command argument.
+claim_yaml=$(mktemp)
+cat <<'EOF' > "$claim_yaml"
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  name: hp-turbo-cpus
+spec:
+  devices:
+    requests:
+    - name: cpus
+      exactly:
+        deviceClassName: nri.topology-aware.cpu
+        capacity:
+          requests:
+            nri/cpus: "2"
+        selectors:
+        - cel:
+            expression: |
+              device.attributes["nri"].pctPriority == "high" && device.attributes["nri"].packageID == 1
+EOF
+vm-put-file --cleanup "$claim_yaml" hp-turbo-cpus-claim.yaml
+vm-command "kubectl apply -f hp-turbo-cpus-claim.yaml" ||
+    command-error "failed to create ResourceClaim hp-turbo-cpus"
+
+# The consuming pod. Not routed through create(): create() defaults to
+# wait=Ready, which a ResourceClaim never satisfies on its own (it has
+# no Ready condition), and guaranteed.yaml.in (the shared template
+# create() uses, shared by ~23 other tests) has no
+# resourceClaims/resources.claims support -- not modified here.
+pod_yaml=$(mktemp)
+cat <<'EOF' > "$pod_yaml"
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dra-pod0
+spec:
+  resourceClaims:
+  - name: cpus
+    resourceClaimName: hp-turbo-cpus
+  containers:
+  - name: dra-pod0c0
+    image: quay.io/prometheus/busybox
+    imagePullPolicy: IfNotPresent
+    command:
+      - sh
+      - -c
+      - echo dra-pod0c0 $(sleep inf)
+    resources:
+      claims:
+      - name: cpus
+      requests:
+        cpu: "1"
+        memory: "100M"
+      limits:
+        cpu: "1"
+        memory: "100M"
+  terminationGracePeriodSeconds: 1
+EOF
+vm-put-file --cleanup "$pod_yaml" dra-pod0.yaml
+vm-command "kubectl apply -f dra-pod0.yaml" ||
+    command-error "failed to create pod dra-pod0"
+
+vm-command "kubectl wait --for=condition=Ready pod/dra-pod0 --timeout=60s" ||
+    command-error "pod dra-pod0 did not reach Running"
