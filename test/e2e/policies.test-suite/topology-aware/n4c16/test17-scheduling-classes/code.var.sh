@@ -3,34 +3,6 @@ cleanup() {
     delete-namespaces highprio lowprio
 }
 
-verify-sched() {
-    local podXcY=$1
-    vm-command "cat /proc/\$(pgrep -f 'echo $podXcY')/sched | grep -E '^((policy)|(prio))'" || command-error "cannot get /proc/PID/sched for $podXcY"
-
-    if [ "$expected_policy" != "" ]; then
-        echo "verify scheduling policy of $podXcY is $expected_policy"
-        grep -q -E "policy .* $expected_policy" <<< $COMMAND_OUTPUT ||
-            error "expected policy $expected_policy not found"
-    else
-        error "missing verify-sched expected_policy for $podXcY"
-    fi
-
-    if [ "$expected_prio" != "" ]; then
-        echo "verify scheduling priority of $podXcY is $expected_prio"
-        grep -q -E "prio .* $expected_prio" <<< $COMMAND_OUTPUT ||
-            error "expected priority $expected_prio not found"
-    else
-        error "missing verify-sched expected_prio for $podXcY"
-    fi
-}
-
-SCHED_OTHER=0
-SCHED_FIFO=1
-SCHED_BATCH=3
-SCHED_ISO=4
-SCHED_IDLE=5
-SCHED_DEADLINE=6
-
 SCHEDULING_CLASSES="[
     { name: realtime, policy: fifo,  priority: 42 },
     { name: highprio, policy: fifo,  priority: 10 },
