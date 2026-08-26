@@ -3,13 +3,6 @@
 helm-terminate
 helm_config=$TEST_DIR/balloons-cstates.cfg helm-launch balloons
 
-# cpuids-of-container returns CPU ids a container is allowed to use, e.g. "1 2 4"
-cpuids-of() {
-    local ctr=$1 # e.g. pod0c0
-    # return only cpu ids without zero-fill: replace cpu01 -> 1, cpu11 -> 11
-    pyexec "for cpu in cpus['$ctr']: print(cpu.replace('cpu0','').replace('cpu',''))"
-}
-
 # verify-cstates checks the last writes to "disable" files in the
 # override fs.
 verify-cstates() {
@@ -80,7 +73,7 @@ POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: lowlatency-bln" CONTCOU
 report allowed
 verify 'len(cpus["pod0c0"]) == 1'
 echo "verify that CPUs of low-latency pod0 cannot enter C4 or C8"
-verify-cstates "$(cpuids-of pod0c0)" "C1E C2" "C4 C8" 4
+verify-cstates "$(allowed-cpu-ids pod0c0)" "C1E C2" "C4 C8" 4
 expected_policy=1 expected_prio=$((99 - 42)) verify-sched pod0c0 # expect SCHED_FIFO, prio 56
 
 CPUREQ="3" MEMREQ="100M" CPULIM="" MEMLIM=""
@@ -93,7 +86,7 @@ report allowed
 verify 'cpus["pod0c0"] == cpus["pod1c0"]' \
        'len(cpus["pod0c0"]) == 4'
 echo "verify that CPUs of low-latency pods pod0 and pod1 cannot enter C4 or C8"
-verify-cstates "$(cpuids-of pod1c0)" "C1E C2" "C4 C8" 16
+verify-cstates "$(allowed-cpu-ids pod1c0)" "C1E C2" "C4 C8" 16
 
 expected_policy=5 expected_prio=$((120 + 17)) verify-sched pod1c0 # expect SCHED_IDLE, prio 137
 vm-command "ionice -p \$(pgrep -f 'echo pod1c0')" ||
@@ -103,14 +96,14 @@ expected_ionice="best-effort: prio 6"
     command-error "expected ionice output '$expected_ionice'"
 
 # store CPU ids of maximal cpuset before deleting pods
-max_lowlatency_cpus="$(echo $(cpuids-of pod1c0) )"
+max_lowlatency_cpus="$(echo $(allowed-cpu-ids pod1c0) )"
 
 vm-command 'kubectl delete pod pod1'
 report allowed
 verify 'len(cpus["pod0c0"]) == 1'
 
 # spaces around each id helps ensuring grep " 1 " never matches cpu 11 but always matches cpu 1
-pod0cpus=" $(echo $(cpuids-of pod0c0) ) "
+pod0cpus=" $(echo $(allowed-cpu-ids pod0c0) ) "
 
 echo "verify that c-states of freed CPUs are enabled again after balloon was deflated"
 freed_cpus=""
@@ -120,8 +113,8 @@ done
 echo "verify that all c-states of freed CPUs $freed_cpus (= {$max_lowlatency_cpus} - {$pod0cpus}) are enabled after the balloon got deflated"
 verify-cstates "$freed_cpus" "C1E C2 C4 C8" "" 24
 
-echo "verify that c-states of the remaining CPU $(cpuids-of pod0c0) are still configured for low-latency"
-verify-cstates "$(cpuids-of pod0c0)" "C1E C2" "C4 C8" 16
+echo "verify that c-states of the remaining CPU $(allowed-cpu-ids pod0c0) are still configured for low-latency"
+verify-cstates "$(allowed-cpu-ids pod0c0)" "C1E C2" "C4 C8" 16
 
 vm-command 'kubectl delete pod pod0'
 report allowed

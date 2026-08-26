@@ -1,11 +1,5 @@
 # Test balloons IRQ CPU affinity: irqClaim and irqMode (sink, isolate).
 
-# ctr-cpu-ids podXcY prints sorted CPU ids allowed for the container,
-# e.g. "0 1". Requires a preceding "verify" to refresh the state.
-ctr-cpu-ids() {
-    pyexec "print(' '.join(str(i) for i in sorted(cpu_ids(cpus['$1']))))"
-}
-
 # irq-cpu-ids IRQNUM prints sorted CPU ids in the affinity of the IRQ.
 irq-cpu-ids() {
     expand-cpulist "$(vm-command-q "cat /proc/irq/$1/smp_affinity_list" | tr -d '[:space:]')"
@@ -59,7 +53,7 @@ helm_config=${TEST_DIR}/balloons-irq-claim.cfg helm-launch balloons
 POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: claimer" CONTCOUNT=1 create balloons-busybox
 report allowed
 
-claimer_cpus=$(ctr-cpu-ids pod0c0)
+claimer_cpus=$(allowed-cpu-ids pod0c0)
 echo "claimer CPUs: $claimer_cpus"
 verify-irq-cpus "$TTYS0_IRQ" "$claimer_cpus"
 verify-irq-cpus "$RTC0_IRQ" "$claimer_cpus"
@@ -75,7 +69,7 @@ cleanup
 POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: isolate" CONTCOUNT=1 create balloons-busybox
 report allowed
 
-isolate_cpus=$(ctr-cpu-ids pod1c0)
+isolate_cpus=$(allowed-cpu-ids pod1c0)
 echo "isolate CPUs: $isolate_cpus"
 
 # expected_isolate=$(python3 -c 'import sys
@@ -98,7 +92,7 @@ verify-irq-cpus "$TTYS0_IRQ" "$ALL_CPUS"
 POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: sink" CONTCOUNT=1 create balloons-busybox
 report allowed
 verify
-sink_cpus=$(ctr-cpu-ids pod2c0)
+sink_cpus=$(allowed-cpu-ids pod2c0)
 echo "sink CPUs: $sink_cpus"
 verify-irq-cpus "$TTYS0_IRQ" "$sink_cpus"
 verify-irq-cpus "$RTC0_IRQ" "$sink_cpus"
@@ -106,8 +100,8 @@ verify-irq-cpus "$ACPI_IRQ" "$sink_cpus"
 
 POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: claimer" CONTCOUNT=1 create balloons-busybox
 report allowed
-sink_cpus=$(ctr-cpu-ids pod2c0)
-claimer_cpus=$(ctr-cpu-ids pod3c0)
+sink_cpus=$(allowed-cpu-ids pod2c0)
+claimer_cpus=$(allowed-cpu-ids pod3c0)
 echo "claimer CPUs: $claimer_cpus"
 echo "sink CPUs: $sink_cpus"
 verify-irq-cpus "$TTYS0_IRQ" "$claimer_cpus"
@@ -128,7 +122,7 @@ cleanup
 POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: dedicated-claimer" CONTCOUNT=1 create balloons-busybox
 report allowed
 
-d_claimer_cpus=$(ctr-cpu-ids pod4c0)
+d_claimer_cpus=$(allowed-cpu-ids pod4c0)
 echo "dedicated claimer CPUs: $d_claimer_cpus"
 verify-irq-cpus "$RTC0_IRQ" "$d_claimer_cpus"
 

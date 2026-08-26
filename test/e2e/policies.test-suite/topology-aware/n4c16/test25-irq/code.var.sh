@@ -3,21 +3,6 @@ cleanup() {
     helm-terminate
 }
 
-# ctr-cpu-ids <pod> <container>
-# Inspect the container of the given pod and report the cpuset it is pinned to.
-ctr-cpu-ids() {
-    local pod=$1 ctr=$2
-    local cpus=""
-
-    $SSH -oConnectTimeout=1 node \
-         "kubectl exec $pod -c $ctr -- grep Cpus_allowed_list /proc/1/status" | \
-        tr -d '\t ' | cut -d ':' -f 2
-    if [ $? -ne 0 ]; then
-        error "Failed to get cpuset for container $ctr in pod $pod" >&2
-        return 1
-    fi
-}
-
 # irq-cpu-ids <irq-number>
 # Read the current affinity for the given interrupt from /proc/irq/$irq/smp_affinity_list.
 irq-cpu-ids() {
@@ -109,8 +94,8 @@ EOF
 ANN0=$ANN0 ANN1=$ANN1 \
     CPU=2 CONTCOUNT=4 create guaranteed
 
-verify-irq-cpus ".*ttyS0.*" "$(ctr-cpu-ids $pod ${pod}c0)"
-verify-irq-cpus ".*rtc0.*" "$(ctr-cpu-ids $pod ${pod}c1)"
+verify-irq-cpus ".*ttyS0.*" "$(container-cpus $pod ${pod}c0)"
+verify-irq-cpus ".*rtc0.*" "$(container-cpus $pod ${pod}c1)"
 
 # Delete pod and check that the IRQ affinities are restored to all CPUs.
 delete-pods $pod
@@ -138,8 +123,8 @@ EOF
 ANN0=$ANN0 ANN1=$ANN1 \
     CPU=2 CONTCOUNT=4 create guaranteed
 
-verify-irq-cpus ".*ttyS0.*" "$(cpulist-difference $ALLCPUS $(ctr-cpu-ids $pod ${pod}c0))"
-verify-irq-cpus ".*rtc0.*" "$(cpulist-difference $ALLCPUS $(ctr-cpu-ids $pod ${pod}c1))"
+verify-irq-cpus ".*ttyS0.*" "$(cpulist-difference $ALLCPUS $(container-cpus $pod ${pod}c0))"
+verify-irq-cpus ".*rtc0.*" "$(cpulist-difference $ALLCPUS $(container-cpus $pod ${pod}c1))"
 
 # Delete pod and check that the IRQ affinities are restored to the default (all CPUs).
 delete-pods $pod
@@ -169,8 +154,8 @@ EOF
 ANN0=$ANN0 ANN1=$ANN1 \
     CPU=2 CONTCOUNT=4 create guaranteed
 
-verify-irq-cpus ".*ttyS0.*" $(ctr-cpu-ids $pod ${pod}c0)
-verify-irq-cpus ".*rtc0.*" "$(cpulist-difference "$(cpulist-difference $ALLCPUS $(ctr-cpu-ids $pod ${pod}c0))" $(ctr-cpu-ids $pod ${pod}c1))"
+verify-irq-cpus ".*ttyS0.*" $(container-cpus $pod ${pod}c0)
+verify-irq-cpus ".*rtc0.*" "$(cpulist-difference "$(cpulist-difference $ALLCPUS $(container-cpus $pod ${pod}c0))" $(container-cpus $pod ${pod}c1))"
 
 # Delete pod and check that the IRQ affinities are restored to the default (all CPUs).
 delete-pods $pod
@@ -314,7 +299,7 @@ EOF
 ANN0=$ANN0 ANN1=$ANN1 \
     CONTCOUNT=1 create guaranteed
 
-verify-irq-cpus ".*ttyS0.*" "$(ctr-cpu-ids $pod ${pod}c0)"
+verify-irq-cpus ".*ttyS0.*" "$(container-cpus $pod ${pod}c0)"
 
 delete-pods $pod
 unset ANN0 ANN1
