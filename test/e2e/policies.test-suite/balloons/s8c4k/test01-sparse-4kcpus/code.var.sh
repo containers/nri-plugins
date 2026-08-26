@@ -22,8 +22,7 @@ wait-node-resource cpu 6 "kubelet did not report all enabled CPUs in node capaci
 verify-kubepods-cpus 511 1535 4095
 
 # Install balloons
-helm-terminate
-helm_config=$TEST_DIR/balloons-sparse-4kcpus.cfg helm-launch balloons
+relaunch-policy balloons "$TEST_DIR/balloons-sparse-4kcpus.cfg"
 
 # Verify NRT
 nrt-verify-zone-resource "reserved[0]" "cpu" "capacity" "6"
