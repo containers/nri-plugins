@@ -631,6 +631,55 @@ wait-config-node-status() {
         error "waiting for node $node update in $resource failed"
 }
 
+config-resource() { # script API
+    # Usage: config-resource [POLICY]
+    #
+    # Print the name of the configuration custom resource of POLICY, $POLICY
+    # by default.
+    #
+    # This mirrors the cfgresource defaults of helm-launch.
+    local policy=${1:-$POLICY}
+    case "$policy" in
+        *topology*aware*) echo topologyawarepolicies/default;;
+        *balloons*)       echo balloonspolicies/default;;
+        *)                error "config-resource: unknown policy \"$policy\"";;
+    esac
+}
+
+wait-config-status() { # script API
+    # Usage: wait-config-status STATUS [TIMEOUT] [RESOURCE]
+    #
+    # Wait until the node status of the configuration custom resource RESOURCE
+    # becomes STATUS, that is, Success or Failure. RESOURCE defaults to the
+    # configuration resource of $POLICY and TIMEOUT to 5s.
+    #
+    # Dump the whole status of the resource and fail the test on timeout.
+    local status="$1" timeout="${2:-5s}" resource="${3:-$(config-resource)}"
+    local node jsonpath
+    node="$(get-hostname-for-vm)"
+    jsonpath="{.status.nodes['$node'].status}"
+
+    vm-command "kubectl wait -n kube-system $resource \
+                    --for=jsonpath=\"$jsonpath\"=\"$status\" --timeout=$timeout" || {
+        echo "Unexpected configuration status:"
+        vm-command "kubectl get -n kube-system $resource -o jsonpath=\"{.status}\" | jq ."
+        error "expected $status configuration status of $resource"
+    }
+}
+
+verify-config-status-error() { # script API
+    # Usage: verify-config-status-error REGEXP [RESOURCE]
+    #
+    # Fail the test unless REGEXP matches the errors in the node status of the
+    # configuration custom resource RESOURCE, which defaults to the
+    # configuration resource of $POLICY.
+    local regexp="$1" resource="${2:-$(config-resource)}"
+
+    vm-command "kubectl get -n kube-system $resource -ojson | jq '.status.nodes[].errors'"
+    grep -q "$regexp" <<< "$COMMAND_OUTPUT" ||
+        error "expected an error matching \"$regexp\" in the status of $resource"
+}
+
 declare -a pulled_images_on_vm
 create() { # script API
     # Usage: [VAR=VALUE][n=COUNT] create TEMPLATE_NAME
