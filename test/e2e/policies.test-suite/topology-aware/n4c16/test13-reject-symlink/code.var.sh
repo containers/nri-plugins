@@ -28,9 +28,8 @@ symlink_cache
 # Try to re-launch nri-resource-policy, check whether and how it fails.
 expect-launch-failure topology-aware
 
-vm-command "kubectl -n kube-system logs ds/nri-resource-policy-topology-aware"
-vm-command "kubectl -n kube-system logs ds/nri-resource-policy-topology-aware | \
-    grep -q 'exists, but is a symbolic link'" ||
+plugin-log
+plugin-log 'exists, but is a symbolic link' ||
     error "nri-resource-policy failed to start, but looks like for the wrong reason..."
 
 restore_cache

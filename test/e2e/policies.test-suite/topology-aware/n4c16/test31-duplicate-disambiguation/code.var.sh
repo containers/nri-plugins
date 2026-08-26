@@ -55,7 +55,7 @@ wait-containers-restart() {
 
     while ! [[ "$statuses" == "Running" ]]; do
         sleep 5
-	if vm-command "kubectl logs -n kube-system ds/nri-resource-policy-topology-aware 2>&1 | grep -iE 'remap|keeping|duplicate'"; then
+	if plugin-log --ignore-case 'remap|keeping|duplicate'; then
 	    break
 	fi
         vm-command "kubectl get pods -A --no-headers=true | tr -s '\t' ' '| cut -d ' ' -f4 | sort -u"
@@ -93,26 +93,8 @@ check-no-duplicate-allocations() {
     fi
 }
 
-pull-logs() {
-    local cnt=0
-    while [ $cnt -lt 5 ]; do
-        vm-command "kubectl logs -n kube-system ds/nri-resource-policy-topology-aware 2>&1 | grep -iE 'remap|keeping|duplicate|unable'"
-        if grep -q 'unable to retrieve container logs for' <<< $COMMAND_OUTPUT; then
-            echo "Unable to retrieve policy logs, retrying..."
-            sleep 3
-            let cnt=$ctn+1
-        else
-            return 0
-        fi
-    done
-    return 1
-}
-
 check-logs() {
-    if ! pull-logs; then
-        echo "Failed to pull policy logs..."
-        return 1
-    fi
+    plugin-log --ignore-case 'remap|keeping|duplicate' || :
 
     if ! check-transient-duplicates-present; then
         return 1

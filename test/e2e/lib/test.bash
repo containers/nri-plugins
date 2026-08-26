@@ -159,6 +159,81 @@ expect-launch-failure() { # script API
 }
 
 ###
+### Reading the log of the plugin
+###
+
+plugin-daemonset() { # script API
+    # Usage: plugin-daemonset [PLUGIN]
+    #
+    # Print the name of the DaemonSet of PLUGIN, $POLICY by default.
+    #
+    # This mirrors the daemonset_name defaults of helm-launch.
+    local plugin=${1:-$POLICY}
+    case "$plugin" in
+        *topology*aware*) echo nri-resource-policy-topology-aware;;
+        *balloons*)       echo nri-resource-policy-balloons;;
+        *memory-policy*)  echo nri-memory-policy;;
+        *memtierd*)       echo nri-memtierd;;
+        *)                error "plugin-daemonset: unknown plugin \"$plugin\"";;
+    esac
+}
+
+plugin-log() { # script API
+    # Usage: plugin-log [--plugin PLUGIN] [--tail LINES] [--ignore-case] [PATTERN]
+    #
+    # Print the log of the DaemonSet of PLUGIN, $POLICY by default, and store
+    # it in COMMAND_OUTPUT. If PATTERN is given, print only the lines matching
+    # it as an extended regular expression, case-insensitively if
+    # --ignore-case is given. If LINES is given, print only the last LINES of
+    # the matching lines.
+    #
+    # Return non-zero if PATTERN did not match anything, so that the caller
+    # can report a missing log line:
+    #     plugin-log 'associated cpus .* to CLOS 0' || command-error "no CLOS 0"
+    #
+    # Retry while the log of the plugin is not available. That happens for
+    # instance right after the plugin has restarted.
+
+    # What kubectl says while the log of a container is not readable yet.
+    local unavailable="unable to retrieve container logs for"
+    local plugin=$POLICY lines="" pattern="" grepopts="-E" cmd
+    while [ "${1#--}" != "$1" ]; do
+        case "$1" in
+            --plugin)      plugin="$2"; shift 2;;
+            --tail)        lines="$2"; shift 2;;
+            --ignore-case) grepopts="$grepopts -i"; shift;;
+            --)            shift; break;;
+            *)             error "plugin-log: unknown option \"$1\"";;
+        esac
+    done
+    pattern="$1"
+
+    cmd="kubectl -n kube-system logs ds/$(plugin-daemonset "$plugin") 2>&1"
+    if [ -n "$pattern" ]; then
+        # Keep the transient availability error visible to the retry below.
+        # Filtering it out would leave nothing for the retry to notice, and it
+        # would give up after a single attempt.
+        cmd="$cmd | grep $grepopts -e '$pattern' -e '$unavailable'"
+    fi
+    if [ -n "$lines" ]; then
+        cmd="$cmd | tail -n $lines"
+    fi
+
+    retry-until --timeout 15 --interval 3 \
+        'vm-command "$cmd"; ! grep -q "$unavailable" <<< "$COMMAND_OUTPUT"' || :
+
+    # The log never became readable. Say so rather than reporting the status of
+    # matching the pattern: with the pattern above that status is the status of
+    # matching the availability error itself, that is, success.
+    if grep -q "$unavailable" <<< "$COMMAND_OUTPUT"; then
+        return 1
+    fi
+
+    # Report whether PATTERN matched, not whether the log became available.
+    return "$COMMAND_STATUS"
+}
+
+###
 ### Cleaning up
 ###
 
