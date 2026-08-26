@@ -16,10 +16,10 @@ ANN1="memory-type.resource-policy.nri.io/container.pod0c1: dram" \
     create guaranteed
 
 report allowed
-verify 'mems["pod0c0"] == {dram0, pmem0} if packages["pod0c0"] == {"package0"} else mems["pod0c0"] == {dram1, pmem1}' \
-       'mems["pod0c1"] == {dram0}        if packages["pod0c1"] == {"package0"} else mems["pod0c1"] == {dram1}' \
-       'mems["pod0c2"] == {hbm0}         if packages["pod0c2"] == {"package0"} else mems["pod0c2"] == {hbm1}' \
-       'mems["pod0c3"] == {pmem0}        if packages["pod0c3"] == {"package0"} else mems["pod0c3"] == {pmem1}'
+verify 'local_mems("pod0c0", "dram", "pmem")' \
+       'local_mems("pod0c1", "dram")' \
+       'local_mems("pod0c2", "hbm")' \
+       'local_mems("pod0c3", "pmem")'
 
 # Release memory allocated for pod0c*. If something is left behind in
 # hbm or dram, the next text fails. If not, it will
@@ -35,10 +35,10 @@ ANN0="memory-type.resource-policy.nri.io/container.pod1c0: hbm,dram" \
     create guaranteed
 
 report allowed
-verify 'mems["pod1c0"] == {hbm0, dram0} if packages["pod1c0"] == {"package0"} else mems["pod1c0"] == {hbm1, dram1}' \
-       'mems["pod1c1"] == {hbm0, dram0} if packages["pod1c1"] == {"package0"} else mems["pod1c1"] == {hbm1, dram1}' \
-       'mems["pod1c2"] == {pmem0}       if packages["pod1c2"] == {"package0"} else mems["pod1c2"] == {pmem1}' \
-       'mems["pod1c3"] == {pmem0}       if packages["pod1c3"] == {"package0"} else mems["pod1c3"] == {pmem1}'
+verify 'local_mems("pod1c0", "hbm", "dram")' \
+       'local_mems("pod1c1", "hbm", "dram")' \
+       'local_mems("pod1c2", "pmem")' \
+       'local_mems("pod1c3", "pmem")'
 
 # 2.6G + 2.6G of PMEM is consumed, 1.4G + 1.4G remains. One more 2.0G
 # pmem allocation does not fit into any single PMEM node. libmem will
@@ -56,10 +56,10 @@ ANN0="memory-type.resource-policy.nri.io/container.pod2c0: pmem" \
     create guaranteed
 
 report allowed
-verify 'mems["pod1c0"] == {hbm0, dram0} if packages["pod1c0"] == {"package0"} else mems["pod1c0"] == {hbm1, dram1}' \
-       'mems["pod1c1"] == {hbm0, dram0} if packages["pod1c1"] == {"package0"} else mems["pod1c1"] == {hbm1, dram1}' \
-       'mems["pod1c2"] == {pmem0}       if packages["pod1c2"] == {"package0"} else mems["pod1c2"] == {pmem1}' \
-       'mems["pod1c3"] == {pmem0}       if packages["pod1c3"] == {"package0"} else mems["pod1c3"] == {pmem1}' \
+verify 'local_mems("pod1c0", "hbm", "dram")' \
+       'local_mems("pod1c1", "hbm", "dram")' \
+       'local_mems("pod1c2", "pmem")' \
+       'local_mems("pod1c3", "pmem")' \
        'mems["pod2c0"] == {pmem0, pmem1}'
 
 cleanup
