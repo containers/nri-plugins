@@ -147,6 +147,11 @@ Worth knowing:
 - `vagrant package` needs a recent enough `vagrant-qemu`. With an older one the
   framework says so and provisions from scratch.
 
+- A VM which has just booted from a box has a cluster which is still starting
+  up, so the framework waits for the node and for the cluster DNS before
+  running any test. Raise `CLUSTER_READY_TIMEOUT` (300 seconds by default) if a
+  large topology needs longer.
+
 ## Writing tests
 
 A test case is a `code.var.sh` file in a

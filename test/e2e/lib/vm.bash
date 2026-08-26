@@ -37,6 +37,11 @@ BOX_RECIPE_FILES=(
     files/10-bridge.conf.in
 )
 
+# How long to wait for the cluster in a VM which has just booted to become
+# usable. Booting a large topology and starting the control plane, the CNI
+# plugin and the cluster DNS all happen within this.
+CLUSTER_READY_TIMEOUT="${CLUSTER_READY_TIMEOUT:-300}"
+
 error() {
     (echo ""; echo "error: $1" ) >&2
     exit 1
@@ -325,7 +330,7 @@ vm-setup() {
     local files="$nri_resource_policy_src/test/e2e/files"
     local qemu_dir="${qemu_dir:-/usr/share/qemu}"
     local efi_code efi_vars kind
-    local box_name="$distro" box_file="" package_box=""
+    local box_name="$distro" box_file="" package_box="" use_cached_box=""
     local no_provision="" e2e_no_provision=""
 
     # Reuse an already provisioned VM if we have one for this topology and for
@@ -339,6 +344,7 @@ vm-setup() {
         box_file="$BOX_CACHE_DIR/$(vm-box-key "$vmname").box"
         if [ "$e2e_vm_cache" != "refresh" ] && vm-cached-box-usable "$box_file"; then
             echo "using cached provisioned VM $box_file..."
+            use_cached_box=1
             box_name="nri-e2e/$(vm-box-key "$vmname")"
             distro_img="file://$box_file"
             # The box already has everything the playbook installs, and
@@ -534,6 +540,15 @@ EOF
 
     mkdir -p "$COMMAND_OUTPUT_DIR"
     rm -f "$COMMAND_OUTPUT_DIR"/0*
+
+    # A VM which has just booted from a box, or which was brought back up after
+    # being packaged, has a cluster which is still starting up. Wait for it
+    # before letting the tests run. Both waits need vm-command, so they cannot
+    # happen before the ssh config above is in place.
+    if [ -n "$use_cached_box" ] || [ -n "$package_box" ]; then
+        wait-for-node-ready
+        wait-for-dns-ready
+    fi
 }
 
 vm-play() {
@@ -1366,6 +1381,25 @@ vm-post-reboot-runtime-check() { # script API
     wait-for-node-ready
 
     $k8scri-reimport-image $image_type
+}
+
+wait-for-dns-ready() {
+    # Usage: [timeout=SECS] wait-for-dns-ready
+    #
+    # Wait until the cluster DNS is available, $CLUSTER_READY_TIMEOUT seconds
+    # at most.
+    #
+    # The cluster of a VM which has just booted is still starting up. A test
+    # which creates pods before the DNS is up can fail for reasons which have
+    # nothing to do with what it tests, so wait for it here.
+    #
+    # Note that kubectl wait fails immediately if it cannot reach the API
+    # server, so wait for the node to be ready before calling this.
+    local timeout="${timeout:-$CLUSTER_READY_TIMEOUT}"
+
+    vm-command "kubectl -n kube-system wait deployments/coredns \
+                    --for=condition=Available --timeout=${timeout}s" ||
+        command-error "cluster DNS did not become available in ${timeout}s"
 }
 
 wait-for-node-ready() {
