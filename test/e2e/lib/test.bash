@@ -268,6 +268,46 @@ nrt-verify-zone-resource() { # script API
 ### Node state
 ###
 
+require-kernel-version() { # script API
+    # Usage: require-kernel-version VERSION [REASON]
+    #
+    # Fail the test unless the kernel of the VM is newer than VERSION. REASON
+    # tells why the test needs it. Note that a kernel whose version equals
+    # VERSION counts as too old.
+    #
+    # Example:
+    #   require-kernel-version 6.14 "CPU hot-plug may not work"
+    local required=$1 reason=$2 newest
+
+    vm-command "uname -r"
+    newest=$( ( echo "$required"; echo "$COMMAND_OUTPUT" ) | sort --version-sort | tail -n 1 )
+    if [ "$newest" == "$required" ]; then
+        error "the guest kernel is older than $required${reason:+: $reason}"
+    fi
+}
+
+verify-kubepods-cpus() { # script API
+    # Usage: verify-kubepods-cpus CPU...
+    #
+    # Fail the test unless the cpuset of the kubepods cgroup, that is, the root
+    # cgroup of all pods, contains all the given CPUs.
+    local cpu line cpus=""
+
+    # containerd puts the pods in kubepods, cri-o in kubepods.slice.
+    vm-command "grep . /sys/fs/cgroup/kubepods*/cpuset.cpus"
+
+    # With more than one match grep prefixes the lines with the file name.
+    while read -r line; do
+        [ -n "$line" ] || continue
+        cpus="$cpus $(expand-cpulist "$(sed 's/.*://' <<< "$line" | tr -d '[:space:]')")"
+    done <<< "$COMMAND_OUTPUT"
+
+    for cpu in "$@"; do
+        [[ " $cpus " == *" $cpu "* ]] ||
+            command-error "cpu $cpu is missing from the kubepods cpuset.cpus"
+    done
+}
+
 clear-isolcpus() { # script API
     # Usage: clear-isolcpus
     #
@@ -508,7 +548,9 @@ get-node-resource() { # script API
     # Usage: get-node-resource [--allocatable] NAME
     #
     # Print the capacity, or with --allocatable the allocatable amount, of
-    # extended resource NAME on the test node, and store it in COMMAND_OUTPUT.
+    # resource NAME on the test node, and store it in COMMAND_OUTPUT. NAME is
+    # an extended resource such as cpuclass.balloons.nri.io/pct-hp, or a
+    # standard one such as cpu or memory.
     # Print "missing" if the node does not have the resource at all.
     local field=capacity
     while [ "${1#--}" != "$1" ]; do
@@ -524,8 +566,8 @@ get-node-resource() { # script API
 wait-node-resource() { # script API
     # Usage: wait-node-resource [--allocatable] [--timeout SECS] [--interval SECS] NAME VALUE [MESSAGE]
     #
-    # Wait until extended resource NAME on the test node equals VALUE, which
-    # can also be the string "missing". Give up after SECS seconds, 30 by
+    # Wait until resource NAME on the test node equals VALUE, which can also
+    # be the string "missing". Give up after SECS seconds, 30 by
     # default, checking every SECS seconds, 2 by default. Fail the test with
     # MESSAGE on timeout.
     local fieldopt="" tmo=30 ival=2

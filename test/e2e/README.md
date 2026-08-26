@@ -115,7 +115,7 @@ available:
   | log of the plugin | `plugin-daemonset`, `plugin-log`, `plugin-log-tail`, `assert-log-contains`, `assert-log-not-contains`, `wait-assert-log-contains`, `wait-assert-log-grew`, `assert-cpu-clos`, `assert-cpu-freq` |
   | metrics | `verify-metrics-has-line`, `verify-metrics-has-no-line` |
   | node resource topology | `nrt-query`, `nrt-dump`, `nrt-verify-zone-attribute`, `nrt-verify-zone-resource` |
-  | node state | `clear-isolcpus`, `disable-numa`, `enable-numa` |
+  | node state | `require-kernel-version`, `verify-kubepods-cpus`, `clear-isolcpus`, `disable-numa`, `enable-numa` |
   | CPU lists | `expand-cpulist`, `cpulist-difference`, `container-cpus`, `allowed-cpu-ids` |
   | extended resources | `get-node-resource`, `wait-node-resource` |
   | interrupts | `resolve-irq`, `irq-cpu-ids`, `verify-irq-cpus` |
