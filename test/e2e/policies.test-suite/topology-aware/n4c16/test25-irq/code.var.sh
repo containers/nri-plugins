@@ -61,48 +61,6 @@ resolve-irq() {
     fi
 }
 
-# expand-cpulist "0-2,5" prints "0 1 2 5"
-expand-cpulist() {
-    local cpus="$1"
-
-    if [ "${cpus//-/}" == "$cpus" ] && [ "${cpus//,/}" == "$cpus" ]; then
-        echo $cpus
-        return 0
-    fi
-
-    python3 -c '
-import sys
-r = set()
-for part in sys.argv[1].split(","):
-    if not part:
-        continue
-    if "-" in part:
-        a, b = part.split("-")
-        r.update(range(int(a), int(b) + 1))
-    else:
-        r.add(int(part))
-print(" ".join(str(x) for x in sorted(r)))
-' "$cpus"
-}
-
-# ids-difference "1 2 3 4" "2 3" prints "1 4"
-ids-difference() {
-    local ids1="$1" ids2="$2"
-
-    if [ "${ids1//-/}" != "$ids1" ] || [ "${ids1//,/}" != "$ids1" ]; then
-        ids1=$(expand-cpulist $ids1)
-    fi
-    if [ "${ids2//-/}" != "$ids2" ] || [ "${ids2//,/}" != "$ids2" ]; then
-        ids2=$(expand-cpulist $ids2)
-    fi
-
-    python3 -c 'import sys
-allc = set(int(x) for x in sys.argv[1].split())
-iso = set(int(x) for x in sys.argv[2].split())
-print(" ".join(str(x) for x in sorted(allc - iso)))
-' "$ids1" "$ids2"
-}
-
 # verify-irq-cpus IRQNUM EXPECTED waits until the affinity of the IRQ
 # equals EXPECTED (sorted space-separated CPU ids), or fails after a
 # timeout.
@@ -180,8 +138,8 @@ EOF
 ANN0=$ANN0 ANN1=$ANN1 \
     CPU=2 CONTCOUNT=4 create guaranteed
 
-verify-irq-cpus ".*ttyS0.*" "$(ids-difference $ALLCPUS $(ctr-cpu-ids $pod ${pod}c0))"
-verify-irq-cpus ".*rtc0.*" "$(ids-difference $ALLCPUS $(ctr-cpu-ids $pod ${pod}c1))"
+verify-irq-cpus ".*ttyS0.*" "$(cpulist-difference $ALLCPUS $(ctr-cpu-ids $pod ${pod}c0))"
+verify-irq-cpus ".*rtc0.*" "$(cpulist-difference $ALLCPUS $(ctr-cpu-ids $pod ${pod}c1))"
 
 # Delete pod and check that the IRQ affinities are restored to the default (all CPUs).
 delete-pods $pod
@@ -212,7 +170,7 @@ ANN0=$ANN0 ANN1=$ANN1 \
     CPU=2 CONTCOUNT=4 create guaranteed
 
 verify-irq-cpus ".*ttyS0.*" $(ctr-cpu-ids $pod ${pod}c0)
-verify-irq-cpus ".*rtc0.*" "$(ids-difference "$(ids-difference $ALLCPUS $(ctr-cpu-ids $pod ${pod}c0))" $(ctr-cpu-ids $pod ${pod}c1))"
+verify-irq-cpus ".*rtc0.*" "$(cpulist-difference "$(cpulist-difference $ALLCPUS $(ctr-cpu-ids $pod ${pod}c0))" $(ctr-cpu-ids $pod ${pod}c1))"
 
 # Delete pod and check that the IRQ affinities are restored to the default (all CPUs).
 delete-pods $pod

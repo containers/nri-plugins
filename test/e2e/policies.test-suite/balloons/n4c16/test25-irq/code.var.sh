@@ -1,31 +1,5 @@
 # Test balloons IRQ CPU affinity: irqClaim and irqMode (sink, isolate).
 
-# expand-cpulist "0-2,5" prints "0 1 2 5"
-expand-cpulist() {
-    python3 -c '
-import sys
-r = set()
-for part in sys.argv[1].split(","):
-    if not part:
-        continue
-    if "-" in part:
-        a, b = part.split("-")
-        r.update(range(int(a), int(b) + 1))
-    else:
-        r.add(int(part))
-print(" ".join(str(x) for x in sorted(r)))
-' "$1"
-}
-
-# ids-difference "1 2 3 4" "2 3" prints "1 4"
-ids-difference() {
-    python3 -c 'import sys
-allc = set(int(x) for x in sys.argv[1].split())
-iso = set(int(x) for x in sys.argv[2].split())
-print(" ".join(str(x) for x in sorted(allc - iso)))
-' "$1" "$2"
-}
-
 # ctr-cpu-ids podXcY prints sorted CPU ids allowed for the container,
 # e.g. "0 1". Requires a preceding "verify" to refresh the state.
 ctr-cpu-ids() {
@@ -109,7 +83,7 @@ echo "isolate CPUs: $isolate_cpus"
 # iso = set(int(x) for x in sys.argv[2].split())
 # print(" ".join(str(x) for x in sorted(allc - iso)))
 # ' "$ALL_CPUS" "$isolate_cpus")
-expected_isolate=$(ids-difference "$ALL_CPUS" "$isolate_cpus")
+expected_isolate=$(cpulist-difference "$ALL_CPUS" "$isolate_cpus")
 verify-irq-cpus "$RTC0_IRQ" "$expected_isolate"
 
 
@@ -158,7 +132,7 @@ d_claimer_cpus=$(ctr-cpu-ids pod4c0)
 echo "dedicated claimer CPUs: $d_claimer_cpus"
 verify-irq-cpus "$RTC0_IRQ" "$d_claimer_cpus"
 
-expected_isolate=$(ids-difference "$ALL_CPUS" "$d_claimer_cpus")
+expected_isolate=$(cpulist-difference "$ALL_CPUS" "$d_claimer_cpus")
 verify-irq-cpus "$TTYS0_IRQ" "$expected_isolate"
 verify-irq-cpus "$ACPI_IRQ" "$expected_isolate"
 
