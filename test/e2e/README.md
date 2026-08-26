@@ -97,6 +97,56 @@ Before running E2E tests ensure that you have all the required components locall
     policies.test-suite balloons test10-health-checking : PASS
     ```
 
+## Caching a provisioned VM
+
+Most of the time a test run spends before the first test case goes into
+provisioning the VM: installing Kubernetes, the container runtime, the CNI
+plugin and Helm, and initializing a single-node cluster with `kubeadm`. The
+result only depends on the versions installed, so it can be exported with
+`vagrant package` and reused.
+
+Set `e2e_vm_cache` to opt in:
+
+```shell
+e2e_vm_cache=yes ./run_tests.sh policies.test-suite
+```
+
+| value | meaning |
+| --- | --- |
+| `no` | do not use or create cached boxes (the default) |
+| `yes` | use a cached box if there is one, otherwise provision and keep the result |
+| `refresh` | ignore any cached box, provision from scratch, then replace it |
+
+The boxes live in `$CACHE_DIR/boxes`, next to the tarballs the framework
+already caches, and are named after everything which shapes the guest: the
+topology, the distro, the Kubernetes, runtime, CNI and Helm versions, and a
+hash of the files which provisioning uses, listed in `BOX_RECIPE_FILES` in
+`lib/vm.bash`. Editing any of them therefore invalidates the boxes instead of a
+later run reusing an image which predates the change.
+
+Worth knowing:
+
+- The topology is part of the name. The hostname of the VM is derived from it,
+  and `kubeadm` bakes the hostname into the name of the node, into the
+  certificates and into etcd, so a box only serves the topology it was made
+  for.
+
+- A box is only used when the VM is created for the first time. An output
+  directory which already has a `Vagrantfile` keeps the VM and the box it was
+  created from, so start from a clean output directory to benefit from the
+  cache.
+
+- Expect a couple of gigabytes per box, and note that vagrant unpacks a box
+  into `~/.vagrant.d/boxes` on first use, so the disk cost is roughly twice the
+  file size. Nothing prunes them automatically.
+
+- Boxes expire after 30 days (`BOX_CACHE_DECAY`). They contain a cluster whose
+  certificates the `kubeadm` defaults give a year to live, so they are not
+  meant to be kept around indefinitely.
+
+- `vagrant package` needs a recent enough `vagrant-qemu`. With an older one the
+  framework says so and provisions from scratch.
+
 ## Writing tests
 
 A test case is a `code.var.sh` file in a
