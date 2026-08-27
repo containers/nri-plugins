@@ -169,7 +169,9 @@ echo "    TESTS_TOPOLOGY_FILTER=$TESTS_TOPOLOGY_FILTER"
 echo "    TESTS_TEST_FILTER=$TESTS_TEST_FILTER"
 echo "    skip long tests: $SKIP_LONG_TESTS"
 
-source "$TESTS_ROOT_DIR"/../lib/vm.bash
+E2E_LIB_DIR=$(realpath "$TESTS_ROOT_DIR/../lib")
+
+source "$E2E_LIB_DIR"/vm.bash
 
 cleanup() {
     rm -rf "$summary_dir"
@@ -179,6 +181,11 @@ trap cleanup TERM EXIT QUIT
 
 summary_file="$summary_dir/summary.txt"
 echo -n "" > "$summary_file"
+
+# Shared test helpers are the root of the *.source.sh chain: they are sourced
+# before any test suite, policy, topology or test case level *.source.sh file,
+# so that any of those can override a helper.
+source_libs="source \"$E2E_LIB_DIR/test.bash\""
 
 export-and-source-dir "$TESTS_ROOT_DIR"
 

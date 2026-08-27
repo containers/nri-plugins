@@ -249,7 +249,9 @@ if [ "$1" == "runtime-logs" ]; then
     exit
 fi
 
-script_source="$(< "$0") $(< "$LIB_DIR/vm.bash")"
+# Note: lib/test.bash is read for its documentation only. It is not sourced
+# here, but by the test case itself, see run_tests.sh.
+script_source="$(< "$0") $(< "$LIB_DIR/vm.bash") $(< "$LIB_DIR/test.bash")"
 
 help() { # script API
     # Usage: help [FUNCTION|all]
