@@ -1,4 +1,4 @@
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 helm-terminate
 
 helm_config=$(COLOCATE_PODS=false instantiate helm-config.yaml) helm-launch topology-aware
@@ -30,5 +30,5 @@ CONTCOUNT=4 CPUREQ=250m CPULIM=750m create burstable
 CPU=4 MEM=100M CONTCOUNT=1 create guaranteed
 verify 'disjoint_sets(cpus["pod4c0"],cpus["pod4c1"],cpus["pod4c2"],cpus["pod4c3"],cpus["pod5c0"])'
 
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 helm-terminate

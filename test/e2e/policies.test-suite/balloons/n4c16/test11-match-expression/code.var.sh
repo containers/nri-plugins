@@ -5,8 +5,7 @@ helm-terminate
 helm_config=${TEST_DIR}/../../match-config.yaml helm-launch balloons
 
 cleanup() {
-    vm-command "kubectl delete pods --all --now"
-    return 0
+    delete-pods --all
 }
 
 cleanup

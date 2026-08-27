@@ -68,3 +68,69 @@ retry-until() { # script API
     echo "timeout after ${timeout}s${message:+ waiting for: $message}" >&2
     return 1
 }
+
+###
+### Cleaning up
+###
+
+delete-pods() { # script API
+    # Usage: delete-pods [-n NAMESPACE] {--all | POD...}
+    #
+    # Delete pods immediately, ignoring pods which do not exist. Delete the
+    # pods in NAMESPACE, or in the default namespace if -n is not given.
+    #
+    # Never fails, so this is safe to call both before and after a test.
+    local ns=""
+    if [ "$1" == "-n" ]; then
+        ns="-n $2"
+        shift 2
+    fi
+    if [ $# -eq 0 ]; then
+        error "delete-pods: expected --all or a list of pods"
+    fi
+    vm-command "kubectl delete pods $ns $* --now --ignore-not-found=true" || :
+}
+
+create-namespaces() { # script API
+    # Usage: create-namespaces NAMESPACE...
+    #
+    # Create namespaces unless they already exist. Never fails.
+    local ns
+    for ns in "$@"; do
+        vm-command "kubectl get namespace $ns > /dev/null 2>&1 || kubectl create namespace $ns" || :
+    done
+}
+
+delete-namespaces() { # script API
+    # Usage: delete-namespaces NAMESPACE...
+    #
+    # Delete all pods in the namespaces, then the namespaces themselves.
+    # Namespaces which do not exist are ignored. Never fails.
+    local ns
+    for ns in "$@"; do
+        vm-command "kubectl delete pods -n $ns --all --now --ignore-not-found=true
+                    kubectl delete namespace $ns --now --ignore-not-found=true" || :
+    done
+}
+
+remove-policy-cache() { # script API
+    # Usage: remove-policy-cache
+    #
+    # Remove the cache file of the resource policy from the node. Never fails.
+    #
+    # Use this to prevent the cache of a previously running policy from
+    # affecting the policy which the test launches.
+    vm-command "rm -f /var/lib/nri-resource-policy/cache" || :
+}
+
+kill-test-processes() { # script API
+    # Usage: kill-test-processes
+    #
+    # Kill leftover processes of test containers in the VM. Never fails.
+    #
+    # The patterns match the commands which the pod templates in files/ run.
+    # They use a bracket expression so that they do not match the command
+    # line of the shell which runs pkill.
+    vm-command 'pkill -9 -f "sleep[ ]inf"
+                pkill -9 -f "echo[ ]pod"' || :
+}

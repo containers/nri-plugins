@@ -7,10 +7,8 @@ helm_config=$TEST_DIR/balloons-groupby.cfg helm-launch balloons
 testns=e2e-balloons-test04
 
 cleanup() {
-    vm-command "kubectl delete pods --all --now; \
-        kubectl delete pods -n $testns --all --now; \
-        kubectl delete namespace $testns; \
-        true"
+    delete-pods --all
+    delete-namespaces "$testns"
 }
 
 cleanup
@@ -30,7 +28,7 @@ create balloons-busybox
 
 # pod3c0
 POD_LABEL='balloon-instance: g1'
-vm-command "kubectl create namespace $testns"
+create-namespaces "$testns"
 namespace=$testns create balloons-busybox
 report allowed
 

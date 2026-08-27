@@ -71,7 +71,7 @@ ACPI_IRQ=$COMMAND_OUTPUT
 ALL_CPUS="$(expand-cpulist 0-15)"
 
 cleanup() {
-    vm-command "kubectl delete pods --all --now"
+    delete-pods --all
     vm-command "for f in /proc/irq/*/smp_affinity_list ; do echo 0-15 | tee $f >&/dev/null; done"
 }
 

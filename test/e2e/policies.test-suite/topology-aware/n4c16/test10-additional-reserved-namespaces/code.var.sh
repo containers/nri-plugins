@@ -1,15 +1,15 @@
 # Test that
 # - containers marked in ReservedPoolNamespaces option pinned on Reserved CPUs.
 
-( vm-command "kubectl create namespace reserved-test" ) || true
+create-namespaces reserved-test
 
 # This script will create pods to the reserved and default namespace.
 # Make sure the namespace is clear when starting the test and clean it up
 # if exiting with success. Otherwise leave the pod running for
 # debugging in case of a failure.
 cleanup-test-pods() {
-    ( vm-command "kubectl delete pods pod0 -n kube-system --now" ) || true
-    ( vm-command "kubectl delete pods pod1 --now" ) || true
+    delete-pods -n kube-system pod0
+    delete-pods pod1
 }
 cleanup-test-pods
 
@@ -32,10 +32,10 @@ cleanup-test-pods
 # - containers that are annotated to opt-put that are pinned elsewhere, and
 # - containers that are namespace-assigned and annotated to reserved pools are pinned there
 
-( vm-command "kubectl create namespace foobar" ) || true
+create-namespaces foobar
 
 cleanup-foobar-namespace() {
-    ( vm-command "kubectl delete pods -n foobar --all" ) || true
+    delete-pods -n foobar --all
 }
 cleanup-foobar-namespace
 

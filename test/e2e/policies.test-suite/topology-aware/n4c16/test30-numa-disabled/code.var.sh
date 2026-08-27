@@ -18,7 +18,7 @@ verify \
     'disjoint_sets(cpus["pod0c0"], cpus["pod0c1"])' \
     'disjoint_sets(packages["pod0c0"], packages["pod0c1"])'
 
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 
 helm-terminate
 vm-kernel-pkgs-uninstall

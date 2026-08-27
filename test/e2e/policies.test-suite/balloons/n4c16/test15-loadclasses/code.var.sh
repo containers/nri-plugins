@@ -6,9 +6,9 @@ helm-terminate
 helm_config=$TEST_DIR/balloons-loadclasses.cfg helm-launch balloons
 
 cleanup() {
-    vm-command "kubectl delete pods --all --now"
+    delete-pods --all
     helm-terminate
-    vm-command "rm -f /var/lib/nri-resource-policy/cache" || true
+    remove-policy-cache
 }
 
 # Policy's allocatorTopologyBalancing is false, so CPU allocations are

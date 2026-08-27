@@ -4,16 +4,15 @@ PODS=16
 CONTAINERS=3
 
 setup() {
-    vm-command "kubectl create namespace $TESTNS"
+    create-namespaces "$TESTNS"
     # Disable debug logging, otherwise log rotation may prevent finding remap lines.
     helm_config=$(DEBUG_LOGGERS="none" instantiate helm-config.yaml) helm-launch topology-aware
 }
 
 cleanup() {
-    vm-command "kubectl delete pods -n $TESTNS --all --now || :"
-    vm-command 'pkill -9 -f "sleep inf"'
-    vm-command 'pkill -9 -f "echo pod"'
-    vm-command "kubectl delete namespace $TESTNS --now || :"
+    delete-pods -n "$TESTNS" --all
+    kill-test-processes
+    delete-namespaces "$TESTNS"
     helm-terminate
 }
 

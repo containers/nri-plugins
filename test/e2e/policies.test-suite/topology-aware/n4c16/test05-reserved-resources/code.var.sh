@@ -11,7 +11,7 @@ AVAILABLE_CPU="cpuset:4-7,8-13"
 # if exiting with success. Otherwise leave the pod running for
 # debugging in case of a failure.
 cleanup-kube-system() {
-    ( vm-command "kubectl delete pods pod0 pod1 pod2 pod3 pod4 pod5 -n kube-system --now --ignore-not-found=true" ) || true
+    delete-pods -n kube-system pod0 pod1 pod2 pod3 pod4 pod5
 }
 cleanup-kube-system
 

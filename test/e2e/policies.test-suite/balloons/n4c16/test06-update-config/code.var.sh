@@ -7,17 +7,14 @@ helm_config=$TEST_DIR/initial-balloons-config.cfg helm-launch balloons
 testns=e2e-balloons-test06
 
 cleanup() {
-    vm-command "kubectl delete pods --all --now; \
-        kubectl delete pods -n $testns --all --now; \
-        kubectl delete pods -n btype1ns0 --all --now; \
-        kubectl delete namespace $testns || :; \
-        kubectl delete namespace btype1ns0 || :; \
-	kubectl -n kube-system delete configmap nri-resource-policy-config.default || :"
+    delete-pods --all
+    delete-namespaces "$testns" btype1ns0
+    vm-command "kubectl -n kube-system delete configmap nri-resource-policy-config.default --ignore-not-found=true" || :
     helm-terminate
 
     # Just in case the cache says that the policy is "topology-aware"
     # (from earlier tests) then remove the cache to force "balloons" policy
-    vm-command "rm -f /var/lib/nri-resource-policy/cache" || true
+    remove-policy-cache
 }
 
 apply-configmap() {
@@ -29,8 +26,7 @@ apply-configmap() {
 cleanup
 helm_config=$TEST_DIR/initial-balloons-config.cfg helm-launch balloons
 
-vm-command "kubectl create namespace $testns"
-vm-command "kubectl create namespace btype1ns0"
+create-namespaces "$testns" btype1ns0
 
 AVAILABLE_CPU="cpuset:0,4-15" BTYPE2_NAMESPACE0='"*"' BTYPE1_MAXCPUS='0' apply-configmap
 sleep 3

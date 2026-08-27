@@ -1,6 +1,5 @@
 cleanup() {
-    vm-command "kubectl delete pods --all --now --wait"
-    return 0
+    delete-pods --all
 }
 
 cleanup

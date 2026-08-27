@@ -1,6 +1,6 @@
 cleanup() {
-    vm-command "kubectl delete pods --all --now"
-    vm-command "kubectl delete namespaces highprio lowprio --now --ignore-not-found"
+    delete-pods --all
+    delete-namespaces highprio lowprio
 }
 
 verify-sched() {
@@ -109,7 +109,7 @@ vm-command "kubectl delete pods --all --now"
 #
 
 # First in a namespace with default highprio scheduling class.
-vm-command "kubectl create namespace highprio"
+create-namespaces highprio
 ANN0="scheduling-class.resource-policy.nri.io/container.pod4c0: lowprio" \
         CONTCOUNT=2 namespace=highprio create burstable
 
@@ -120,7 +120,7 @@ verify 'len(cpus["pod4c1"]) != 1'
 expected_policy=$SCHED_FIFO expected_prio=$((99 - 10)) verify-sched pod4c1
 
 # Then in a namespace with default lowprio scheduling class.
-vm-command "kubectl create namespace lowprio"
+create-namespaces lowprio
 ANN0="scheduling-class.resource-policy.nri.io/container.pod5c0: highprio" \
         CONTCOUNT=2 namespace=lowprio create besteffort
 

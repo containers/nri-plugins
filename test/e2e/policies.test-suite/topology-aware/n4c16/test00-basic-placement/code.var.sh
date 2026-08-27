@@ -1,8 +1,8 @@
 # Make sure all the pods in default namespace are cleared so we get a fresh start
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 
 # Remove also any leftover test pods from kube-system
-vm-command "kubectl delete pods pod0 pod1 pod2 pod3 pod4 pod5 --ignore-not-found=true --now -n kube-system"
+delete-pods -n kube-system pod0 pod1 pod2 pod3 pod4 pod5
 
 # Cleanup kernel commandline, otherwise isolcpus will affect CPU
 # pinning and cause false negatives from other tests on this VM.
@@ -97,7 +97,7 @@ vm-command "kubectl delete pods --all --now"
 helm-terminate
 helm_config=$(COLOCATE_NAMESPACES=true instantiate helm-config.yaml) helm-launch topology-aware
 
-vm-command "kubectl create namespace test-ns"
+create-namespaces test-ns
 
 CONTCOUNT=1 CPU=100m namespace=test-ns create guaranteed
 CONTCOUNT=1 CPU=100m namespace=test-ns create guaranteed
@@ -108,8 +108,7 @@ verify \
     'cpus["pod7c0"] == cpus["pod5c0"]' \
     'cpus["pod7c1"] == cpus["pod5c0"]'
 
-vm-command "kubectl delete pods -n test-ns --all --now"
-vm-command "kubectl delete namespace test-ns"
+delete-namespaces test-ns
 
 # Restore default test configuration, restart nri-resource-policy.
 helm-terminate

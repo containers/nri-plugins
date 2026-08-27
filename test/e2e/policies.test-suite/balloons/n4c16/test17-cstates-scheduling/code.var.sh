@@ -66,7 +66,7 @@ verify-cstates-no-writes() {
 }
 
 cleanup() {
-    vm-command "kubectl delete pods --all --now"
+    delete-pods --all
 }
 
 echo "verify that all c-states of all available CPUs are enabled"

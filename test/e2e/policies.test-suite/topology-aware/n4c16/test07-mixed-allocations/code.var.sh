@@ -3,10 +3,10 @@ helm_config=$(instantiate helm-config.yaml) helm-launch topology-aware
 
 cleanup-test-pods() {
     # Make sure all the pods in default namespace are cleared so we get a fresh start
-    vm-command "kubectl delete pods --all --now"
+    delete-pods --all
 
     # Remove also any leftover test pods from kube-system
-    vm-command "kubectl delete pods pod0 pod1 pod2 pod3 pod4 pod5 --ignore-not-found=true --now -n kube-system"
+    delete-pods -n kube-system pod0 pod1 pod2 pod3 pod4 pod5
 }
 
 cleanup-test-pods

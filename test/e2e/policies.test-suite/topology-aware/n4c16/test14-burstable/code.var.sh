@@ -85,6 +85,6 @@ verify \
     'len(nodes["pod8c0"]) == 1' \
     'len(nodes["pod8c1"]) == 2'
 
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 
 helm-terminate

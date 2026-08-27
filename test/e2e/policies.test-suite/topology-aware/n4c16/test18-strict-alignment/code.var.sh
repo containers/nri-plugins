@@ -1,7 +1,7 @@
 
 cleanup() {
-    vm-command "kubectl delete pods --all --now"
-    vm-command "kubectl delete namespaces highprio lowprio --now --ignore-not-found"
+    delete-pods --all
+    delete-namespaces highprio lowprio
 }
 
 wait_for_waiting_status_reason() {
