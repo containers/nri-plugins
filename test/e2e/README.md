@@ -96,3 +96,23 @@ Before running E2E tests ensure that you have all the required components locall
     policies.test-suite balloons test09-isolated : PASS
     policies.test-suite balloons test10-health-checking : PASS
     ```
+
+## Writing tests
+
+A test case is a `code.var.sh` file in a
+`TEST-SUITE/POLICY/TOPOLOGY/TEST/` directory. In addition to the script API of
+`run.sh` (run `./run.sh help` to list it), test cases have shared helpers
+available:
+
+- `lib/test.bash` contains helpers that are useful for more than one test case,
+  for instance for waiting for a condition, cleaning up pods and namespaces,
+  inspecting container states, or reading the log of the plugin. Add a helper
+  here if a second test case needs it. `./run.sh help` documents these, too.
+
+- `TEST-SUITE/POLICY/*.source.sh` files contain policy-specific helpers, for
+  instance `policies.test-suite/balloons/nrt.source.sh`.
+
+`*.source.sh` files are sourced before the test case code, starting from the
+test suite directory and ending in the test case directory, `lib/test.bash`
+being the first one. Therefore a test case, or all test cases of a policy or a
+topology, can override any shared helper simply by redefining it.
