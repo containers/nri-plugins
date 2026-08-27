@@ -6,6 +6,37 @@ export VM_SAVED_PROMPT=""
 CACHE_DIR="${CACHE_DIR:-$HOME/.cache/nri-plugins/e2e}"
 CACHE_DECAY="${CACHE_DECAY:-$((3 * 24 * 3600))}" # global cached variables valid for 3 days
 
+# Cache of "vagrant package"d images of fully provisioned VMs. Reusing one
+# skips installing Kubernetes, the container runtime and the CNI plugin.
+#
+# Expect a box to be a couple of gigabytes, and note that vagrant unpacks it
+# into ~/.vagrant.d/boxes on first use, so the disk cost of a box is roughly
+# twice its file size.
+#
+# The boxes contain a running single-node cluster whose certificates the
+# kubeadm defaults give a year to live, so they must not be kept for too long.
+BOX_CACHE_DIR="${BOX_CACHE_DIR:-$CACHE_DIR/boxes}"
+BOX_CACHE_DECAY="${BOX_CACHE_DECAY:-$((30 * 24 * 3600))}" # cached boxes valid for 30 days
+
+# Files whose content shapes a provisioned VM. The name of a cached box has a
+# hash of them, so that editing any of them invalidates the cached boxes
+# instead of a later run reusing an image which predates the change.
+#
+# The paths are relative to test/e2e. Only what provisioning itself uses
+# belongs here: the playbooks which deploy a plugin and the ones which install
+# a custom kernel run per test run, after a box has been packaged, so they do
+# not affect what is in it.
+#
+# Add a file here when provisioning starts using one.
+BOX_RECIPE_FILES=(
+    playbook/provision.yaml
+    files/Vagrantfile.in
+    files/env.in
+    files/containerd-nri-enable
+    files/crio-nri-enable
+    files/10-bridge.conf.in
+)
+
 error() {
     (echo ""; echo "error: $1" ) >&2
     exit 1
@@ -115,6 +146,171 @@ vm-load-cached-var() {
 
     error "failed to load cached variable $var" 1>&2
     return 1
+}
+
+vm-box-cache-supported() {
+    # Usage: vm-box-cache-supported
+    #
+    # Return success if the installed vagrant-qemu implements "vagrant
+    # package". Older versions declare the action but do not ship the
+    # middlewares it uses, so calling it fails.
+    local version dir
+
+    version=$(vagrant plugin list 2>/dev/null |
+                  sed -n 's/^vagrant-qemu (\([^,)]*\).*/\1/p' | head -n 1)
+    if [ -z "$version" ]; then
+        return 1
+    fi
+    for dir in "$HOME"/.vagrant.d/gems/*/gems/"vagrant-qemu-$version"; do
+        if [ -f "$dir/lib/vagrant-qemu/action/export.rb" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+vm-box-cache-enabled() {
+    # Usage: vm-box-cache-enabled
+    #
+    # Return success if the box cache is in use. Set e2e_vm_cache to
+    #   yes:     use a cached box if there is one, create one if there is not
+    #   refresh: ignore any cached box, provision from scratch, then replace it
+    #   no:      do not use or create cached boxes (the default)
+    case "${e2e_vm_cache:-no}" in
+        yes|1|refresh)
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+
+    if ! vm-box-cache-supported; then
+        echo "WARNING: e2e_vm_cache=$e2e_vm_cache, but the installed" \
+             "vagrant-qemu does not support \"vagrant package\"." \
+             "Provisioning the VM from scratch..." >&2
+        return 1
+    fi
+    if [ -z "$k8s_release" ] || [ -z "$distro" ]; then
+        echo "WARNING: e2e_vm_cache=$e2e_vm_cache, but the versions to" \
+             "install are not resolved yet. Provisioning the VM from scratch..." >&2
+        return 1
+    fi
+
+    # Check the recipe here, where failing aborts the run. The hash of it ends
+    # up in the name of a box through command substitutions, which would
+    # swallow the failure.
+    vm-check-provisioning-recipe
+
+    return 0
+}
+
+vm-check-provisioning-recipe() {
+    # Usage: vm-check-provisioning-recipe
+    #
+    # Fail unless every file in BOX_RECIPE_FILES can be read.
+    #
+    # Hashing an incomplete recipe would name boxes which do not correspond to
+    # it, so a file which has been renamed, moved or removed without updating
+    # BOX_RECIPE_FILES has to be reported rather than quietly skipped.
+    #
+    # Call this outside a command substitution. error only exits the subshell
+    # of one, which is why vm-provisioning-recipe-hash cannot be the only place
+    # which checks.
+    local e2e_dir="$nri_resource_policy_src/test/e2e"
+    local file unreadable=""
+
+    for file in "${BOX_RECIPE_FILES[@]}"; do
+        if [ ! -f "$e2e_dir/$file" ] || [ ! -r "$e2e_dir/$file" ]; then
+            unreadable="$unreadable $file"
+        fi
+    done
+    if [ -n "$unreadable" ]; then
+        error "cannot read provisioning recipe file(s):$unreadable"
+    fi
+}
+
+vm-provisioning-recipe-hash() {
+    # Usage: vm-provisioning-recipe-hash
+    #
+    # Print a hash of the files in BOX_RECIPE_FILES, that is, of everything
+    # which shapes a provisioned VM.
+    local e2e_dir="$nri_resource_policy_src/test/e2e"
+
+    vm-check-provisioning-recipe
+
+    ( cd "$e2e_dir" && cat "${BOX_RECIPE_FILES[@]}" ) | sha256sum | cut -c1-12
+}
+
+vm-box-key() {
+    # Usage: vm-box-key VMNAME
+    #
+    # Print the cache key of the box of a fully provisioned VM.
+    #
+    # VMNAME already covers the topology, the distro and the container runtime,
+    # and the topology has to be part of the key: the hostname of the VM is
+    # derived from it, and kubeadm bakes the hostname into the name of the node,
+    # into the certificates and into etcd.
+    local vmname="$1" cri_release key
+
+    case "$k8scri" in
+        crio) cri_release="$crio_release";;
+        *)    cri_release="$containerd_release";;
+    esac
+
+    key="$vmname-k8s$k8s_release-$k8scri$cri_release"
+    key="$key-cni$cni_plugin$cni_release-helm$helm_release"
+    key="$key-$(vm-provisioning-recipe-hash)"
+
+    echo "${key//[^A-Za-z0-9._-]/-}"
+}
+
+vm-cached-box-usable() {
+    # Usage: vm-cached-box-usable BOXFILE
+    #
+    # Return success if BOXFILE exists and is not too old to be reused.
+    local box="$1"
+
+    if [ ! -f "$box" ]; then
+        return 1
+    fi
+    if [ $(( $(stat -c %Y "$box") + BOX_CACHE_DECAY )) -lt $(date +%s) ]; then
+        echo "cached box $box is more than $(( BOX_CACHE_DECAY / 86400 )) days" \
+             "old, provisioning the VM from scratch..." >&2
+        return 1
+    fi
+    return 0
+}
+
+vm-package-box() {
+    # Usage: vm-package-box VAGRANTDIR BOXFILE
+    #
+    # Export the provisioned VM in VAGRANTDIR into BOXFILE.
+    #
+    # Note that packaging shuts the VM down, so the caller has to bring it back
+    # up. Write to a temporary file first, so that a run which fails or is
+    # interrupted halfway does not leave a truncated box behind for the next
+    # one to use.
+    local vagrantdir="$1" box="$2" tmp="$2.tmp.$$"
+
+    if ! mkdir -p "$(dirname "$box")"; then
+        echo "WARNING: cannot create box cache dir $(dirname "$box")" >&2
+        return 1
+    fi
+
+    echo "packaging the provisioned VM into $box..."
+    if ! ( cd "$vagrantdir" && vagrant package --output "$tmp" ); then
+        rm -f "$tmp"
+        echo "WARNING: failed to package the VM into a box" >&2
+        return 1
+    fi
+    if ! mv "$tmp" "$box"; then
+        rm -f "$tmp"
+        echo "WARNING: failed to move the packaged box to $box" >&2
+        return 1
+    fi
+
+    echo "packaged the provisioned VM into $box ($(du -h "$box" | cut -f1))"
+    return 0
 }
 
 vm-setup() {
