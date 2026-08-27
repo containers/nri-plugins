@@ -5,8 +5,9 @@ helm-terminate
 helm_config=${TEST_DIR}/../../helm-config.yaml helm-launch balloons
 
 cleanup() {
-    vm-command "kubectl delete pods -n kube-system pod0; kubectl delete pods -n three --all --now; kubectl delete pods --all --now; kubectl delete namespace three"
-    return 0
+    delete-pods -n kube-system pod0
+    delete-pods --all
+    delete-namespaces three
 }
 
 cleanup
@@ -36,7 +37,7 @@ verify 'len(cpus["pod2c0"]) == 2' \
 # pod3: fits exactly on a single three-cpu instance. No need to create
 # new balloon even if spreading pods is preferred.
 CPUREQ="1500m" MEMREQ="100M" CPULIM="1500m" MEMLIM="100M"
-vm-command "kubectl create namespace three"
+create-namespaces three
 namespace="three" CONTCOUNT=2 create balloons-busybox
 report allowed
 verify 'cpus["pod3c0"] == cpus["pod3c1"]' \

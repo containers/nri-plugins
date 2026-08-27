@@ -2,24 +2,12 @@ helm-terminate
 helm_config=${TEST_DIR}/balloons-namespace.cfg helm-launch balloons
 
 cleanup() {
-    vm-command \
-        "kubectl delete pods -n e2e-a --all --now
-         kubectl delete pods -n e2e-b --all --now
-         kubectl delete pods -n e2e-c --all --now
-         kubectl delete pods -n e2e-d --all --now
-         kubectl delete pods --all --now
-         kubectl delete namespace e2e-a
-         kubectl delete namespace e2e-b
-         kubectl delete namespace e2e-c
-         kubectl delete namespace e2e-d"
-    return 0
+    delete-pods --all
+    delete-namespaces e2e-a e2e-b e2e-c e2e-d
 }
 cleanup
 
-vm-command "kubectl create namespace e2e-a"
-vm-command "kubectl create namespace e2e-b"
-vm-command "kubectl create namespace e2e-c"
-vm-command "kubectl create namespace e2e-d"
+create-namespaces e2e-a e2e-b e2e-c e2e-d
 
 # pod0: create in the default namespace, both containers go to nsballoon[0]
 CPUREQ=""

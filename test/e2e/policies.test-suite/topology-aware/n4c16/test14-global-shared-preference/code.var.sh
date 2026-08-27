@@ -1,6 +1,6 @@
 cleanup-test-pods() {
     # Make sure all the pods in default namespace are cleared so we get a fresh start
-    vm-command "kubectl delete pods --all --now"
+    delete-pods --all
 }
 
 # restart with a global shared CPU allocation preference

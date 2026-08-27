@@ -1,8 +1,7 @@
 # This test verifies prometheus metrics from the balloons policy.
 
 cleanup() {
-    vm-command "kubectl delete pods --all --now"
-    return 0
+    delete-pods --all
 }
 
 cleanup

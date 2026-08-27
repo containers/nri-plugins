@@ -2,24 +2,14 @@ helm-terminate
 helm_config=${TEST_DIR}/balloons-reserved.cfg helm-launch balloons
 
 cleanup() {
-    vm-command \
-        "kubectl delete pod -n kube-system --now pod0
-         kubectl delete pod -n monitor-mypods --now pod1
-         kubectl delete pod -n system-logs --now pod2
-         kubectl delete pod -n kube-system --now pod3
-         kubectl delete pods --now pod4 pod5 pod6
-         kubectl delete pod -n kube-system --now pod7
-         kubectl delete namespace monitor-mypods
-         kubectl delete namespace system-logs
-         kubectl delete namespace my-exact-name"
-    return 0
+    delete-pods -n kube-system pod0 pod3 pod7
+    delete-pods pod4 pod5 pod6
+    delete-namespaces monitor-mypods system-logs my-exact-name
 }
 
 cleanup
 
-vm-command "kubectl create namespace monitor-mypods"
-vm-command "kubectl create namespace system-logs"
-vm-command "kubectl create namespace my-exact-name"
+create-namespaces monitor-mypods system-logs my-exact-name
 
 # pod0: kube-system
 CPUREQ="100m" MEMREQ="100M" CPULIM="100m" MEMLIM="100M"

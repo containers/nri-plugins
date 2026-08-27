@@ -6,7 +6,7 @@ helm_config=$TEST_DIR/balloons-podresources.cfg helm-launch balloons
 
 cleanup() {
     vm-command 'pidof fake-device-plugin && kill $(pidof fake-device-plugin) && sleep 1'
-    vm-command "kubectl delete pods --all --now" || true
+    delete-pods --all
 }
 
 # verify-podres-locality RESOURCE CONTAINER...
@@ -171,5 +171,4 @@ report allowed
 verify-podres-locality "telco.com/nic" pod3c0
 
 cleanup
-vm-command "kubectl delete pods --all --now"
 helm-terminate

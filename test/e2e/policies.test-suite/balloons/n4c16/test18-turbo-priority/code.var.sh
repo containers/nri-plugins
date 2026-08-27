@@ -578,5 +578,5 @@ if ! grep "on cpu $reserved_cpu\$" <<< "$back_lines" | grep 'default-turbo' | gr
 fi
 echo "turboDomain back to package: cpu $reserved_cpu (default-turbo) at max=3800000 as expected"
 
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 helm-terminate

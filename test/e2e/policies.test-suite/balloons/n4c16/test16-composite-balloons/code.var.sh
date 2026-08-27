@@ -4,7 +4,8 @@ helm-terminate
 helm_config=$TEST_DIR/balloons-composite.cfg helm-launch balloons
 
 cleanup() {
-    vm-command "kubectl delete -n kube-system pod pod2 --now; kubectl delete pods --all --now"
+    delete-pods -n kube-system pod2
+    delete-pods --all
 }
 
 verify-nrt() {

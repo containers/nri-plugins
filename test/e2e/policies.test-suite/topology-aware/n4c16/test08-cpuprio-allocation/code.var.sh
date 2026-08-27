@@ -52,4 +52,4 @@ verify \
     'cpus["pod1c1"] not in [ {"cpu01"}, {"cpu04"}, {"cpu05"} ]' \
     'cpus["pod1c2"] in     [ {"cpu01"}, {"cpu04"}, {"cpu05"} ]' \
 
-vm-command "kubectl delete pods --all --now"
+delete-pods --all

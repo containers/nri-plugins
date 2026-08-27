@@ -2,9 +2,9 @@ helm-terminate
 helm_config=$TEST_DIR/balloons-4cpu-cacheclusters.cfg helm-launch balloons
 
 cleanup() {
-    vm-command "kubectl delete pods --all --now"
+    delete-pods --all
     helm-terminate
-    vm-command "rm -f /var/lib/nri-resource-policy/cache" || true
+    remove-policy-cache
 }
 
 # pod0c{0,1,2}: one container per free L2 group

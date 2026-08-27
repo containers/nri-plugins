@@ -358,7 +358,7 @@ wait-assert-log-contains 'associated cpus .* to CLOS 1' "CPUs not associated to 
 assert-log-not-contains 'PrepareManagedMode done' "PrepareManagedMode unexpectedly called in assoc-only mode"
 assert-log-not-contains 'EnableCP done' "EnableCP unexpectedly called in assoc-only mode"
 
-vm-command "kubectl delete pods --all --now" || true
+delete-pods --all
 helm-terminate
 
 ###############################################################################

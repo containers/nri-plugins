@@ -2,7 +2,7 @@ OTEL_LOGS=/tmp/otel/data/otel-export.out
 
 cleanup() {
     always-cleanup
-    vm-command "kubectl delete pods --all" || :
+    delete-pods --all
     helm-terminate || :
     vm-command "mkdir -p /tmp/otel/data && chmod a+rw /tmp/otel/data"
     vm-command "rm -f $OTEL_LOGS && touch -f $OTEL_LOGS && chmod a+rw $OTEL_LOGS"

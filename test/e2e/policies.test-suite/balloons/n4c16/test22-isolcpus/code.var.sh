@@ -10,8 +10,8 @@ restart-kubelet() {
 }
 
 cleanup-pods() {
-    vm-command "kubectl delete pod --all --now"
-    vm-command "kubectl delete namespace $ns --now"
+    delete-pods --all
+    delete-namespaces "$ns"
 }
 
 cleanup() {
@@ -40,7 +40,7 @@ vm-command "grep isolcpus=0,1 /proc/cmdline" || {
 
 helm-terminate
 helm_config=${TEST_DIR}/balloons-isolcpus.cfg helm-launch balloons
-vm-command "kubectl create namespace $ns"
+create-namespaces "$ns"
 
 # pod0: should run on non-isolated CPUs
 CONTCOUNT=2 namespace="default" create balloons-busybox

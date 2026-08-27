@@ -1,12 +1,10 @@
 cleanup() {
-    vm-command \
-        "kubectl -n kube-system delete pod pod0 --now && \
-         kubectl -n reserved delete pod pod1 --now || true && \
-         kubectl delete ns reserved --now"
+    delete-pods -n kube-system pod0
+    delete-namespaces reserved
 }
 
 cleanup
-vm-command "kubectl create namespace reserved || true"
+create-namespaces reserved
 
 helm-terminate
 helm_config=${TEST_DIR}/balloons-excluded-cpusets.cfg helm-launch balloons

@@ -4,10 +4,7 @@
 # - memory.preserve
 
 cleanup-test-pods() {
-    ( vm-command "kubectl delete pods pod0 --now" ) || true
-    ( vm-command "kubectl delete pods pod1 --now" ) || true
-    ( vm-command "kubectl delete pods pod2 --now" ) || true
-    ( vm-command "kubectl delete pods pod3 --now" ) || true
+    delete-pods pod0 pod1 pod2 pod3
 }
 cleanup-test-pods
 

@@ -1,5 +1,5 @@
 cleanup() {
-    vm-command "kubectl delete pods --all --now"
+    delete-pods --all
     helm-terminate
 }
 
@@ -176,7 +176,7 @@ verify-irq-cpus ".*ttyS0.*" "$(ctr-cpu-ids $pod ${pod}c0)"
 verify-irq-cpus ".*rtc0.*" "$(ctr-cpu-ids $pod ${pod}c1)"
 
 # Delete pod and check that the IRQ affinities are restored to all CPUs.
-vm-command "kubectl delete pod pod0"
+delete-pods $pod
 
 verify-irq-cpus ".*ttyS0.*" $ALLCPUS
 verify-irq-cpus ".*rtc0.*" $ALLCPUS
@@ -205,7 +205,7 @@ verify-irq-cpus ".*ttyS0.*" "$(ids-difference $ALLCPUS $(ctr-cpu-ids $pod ${pod}
 verify-irq-cpus ".*rtc0.*" "$(ids-difference $ALLCPUS $(ctr-cpu-ids $pod ${pod}c1))"
 
 # Delete pod and check that the IRQ affinities are restored to the default (all CPUs).
-vm-command "kubectl delete pod pod1"
+delete-pods $pod
 
 verify-irq-cpus ".*ttyS0.*" $ALLCPUS
 verify-irq-cpus ".*rtc0.*" $ALLCPUS
@@ -236,7 +236,7 @@ verify-irq-cpus ".*ttyS0.*" $(ctr-cpu-ids $pod ${pod}c0)
 verify-irq-cpus ".*rtc0.*" "$(ids-difference "$(ids-difference $ALLCPUS $(ctr-cpu-ids $pod ${pod}c0))" $(ctr-cpu-ids $pod ${pod}c1))"
 
 # Delete pod and check that the IRQ affinities are restored to the default (all CPUs).
-vm-command "kubectl delete pod pod2"
+delete-pods $pod
 
 verify-irq-cpus ".*ttyS0.*" $ALLCPUS
 verify-irq-cpus ".*rtc0.*" $ALLCPUS
@@ -421,7 +421,7 @@ ANN0=$ANN0 ANN1=$ANN1 \
 
 verify-irq-cpus ".*ttyS0.*" "$(ctr-cpu-ids $pod ${pod}c0)"
 
-vm-command "kubectl delete pod $pod"
+delete-pods $pod
 unset ANN0 ANN1
 
 
@@ -448,7 +448,7 @@ ANN0=$ANN0 ANN1=$ANN1 \
 
 verify-irq-cpus ".*rtc0.*" $ALLCPUS
 
-vm-command "kubectl delete pod $pod"
+delete-pods $pod
 unset ANN0 ANN1
 
 # Create Guaranteed pod annotated to take IRQ affinity with an invalid
