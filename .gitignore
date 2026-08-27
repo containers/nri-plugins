@@ -18,6 +18,7 @@ coverage.txt
 /packages
 
 *.stamp
+__pycache__/
 test/e2e/**/output
 
 test/statistics-analysis/output
