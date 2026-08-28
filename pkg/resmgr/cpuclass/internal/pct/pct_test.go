@@ -211,6 +211,7 @@ func newManagedPctForTest(t *testing.T, classes []*policyapi.CPUClass, plans map
 		classPlan:   plans,
 		allowed:     allowed,
 		hpUsed:      map[int]cpuset.CPUSet{},
+		hpDRAUsed:   map[int]cpuset.CPUSet{},
 		hpClasses:   map[string]bool{},
 	}
 	for _, cc := range classes {
@@ -1194,6 +1195,20 @@ func TestPunitNonHPCapacity(t *testing.T) {
 	if got := a2.punitNonHPCapacity(0); got != 0 {
 		t.Errorf("all-HP punit nonHPCapacity = %d, want 0", got)
 	}
+
+	// HP-ineligible punit with non-zero GuaranteedHpCpus: the guard in
+	// punitHPCapacity must zero out the HP deduction so the full CPU count
+	// is reported as non-HP capacity.
+	// punit 0: HP-ineligible, GuaranteedHpCpus=2, CPUs 0-3 → 4 non-HP (not 2)
+	// punit 1: HP-eligible,   GuaranteedHpCpus=2, CPUs 4-7 → 2 non-HP
+	a3 := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2))
+	a3.hpEligiblePunit[0] = false
+	if got := a3.punitNonHPCapacity(0); got != 4 {
+		t.Errorf("HP-ineligible punit nonHPCapacity = %d, want 4", got)
+	}
+	if got := a3.punitNonHPCapacity(1); got != 2 {
+		t.Errorf("HP-eligible punit nonHPCapacity = %d, want 2", got)
+	}
 }
 
 func TestAllocatorPunits(t *testing.T) {
@@ -1369,6 +1384,40 @@ func TestHpDRAUsedIsolation(t *testing.T) {
 		if !inUse.Contains(cpu) {
 			t.Errorf("hpInUseCpus missing DRA-held cpu %d", cpu)
 		}
+	}
+}
+
+// TestIsHPClass covers the exported IsHPClass wrapper: HP class returns true;
+// non-HP class returns false; unknown class returns false; inactive allocator
+// returns false.
+func TestIsHPClass(t *testing.T) {
+	sys := newTwoPackageFakeSys()
+	sst := &fakeSst{supported: true, maxHp: map[int]int{0: 2, 1: 2}}
+	classes := []*policyapi.CPUClass{
+		{Name: "hp", PctPriority: "high"},
+		{Name: "lp", PctPriority: "low"},
+	}
+	a := newManagedPctForTest(t, classes,
+		map[string]*pctClassPlan{"hp": {ClosID: 0}, "lp": {ClosID: 3}},
+		cpuset.MustParse("0-7"), sys, sst)
+
+	// HP class must return true.
+	if !a.IsHPClass("hp") {
+		t.Error("IsHPClass(\"hp\") = false, want true")
+	}
+	// Non-HP class must return false.
+	if a.IsHPClass("lp") {
+		t.Error("IsHPClass(\"lp\") = true, want false")
+	}
+	// Unknown class must return false.
+	if a.IsHPClass("unknown") {
+		t.Error("IsHPClass(\"unknown\") = true, want false")
+	}
+
+	// Inactive allocator must return false.
+	inactiveA := &Allocator{}
+	if inactiveA.IsHPClass("hp") {
+		t.Error("IsHPClass on inactive allocator = true, want false")
 	}
 }
 
