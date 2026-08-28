@@ -134,7 +134,7 @@ wait-node-allocatable-claim-status() {
 # wait-resourceslice-devices [timeout]
 # Polls until the DRA driver's published ResourceSlice(s) report at
 # least one device, storing a compact JSON array of
-# {allowMultipleAllocations, nodeAllocatableResourceMappings} objects
+# {allowMultipleAllocations, nodeAllocatableResources} objects
 # (one per device) in COMMAND_OUTPUT. The driver needs a moment after
 # helm-launch to publish its ResourceSlice, so this can't be a single
 # one-shot check.
@@ -142,7 +142,7 @@ wait-resourceslice-devices() {
     local timeout=${1:-30} elapsed=0
     while [ "$elapsed" -lt "$timeout" ]; do
         vm-command "kubectl get resourceslices -o json | \
-            jq -c '[.items[].spec.devices[] | {allowMultipleAllocations, nodeAllocatableResourceMappings}]'"
+            jq -c '[.items[].spec.devices[] | {allowMultipleAllocations, nodeAllocatableResources}]'"
         if [ -n "$COMMAND_OUTPUT" ] && [ "$COMMAND_OUTPUT" != "[]" ]; then
             return 0
         fi
@@ -184,15 +184,21 @@ helm_config=$(COLOCATE_PODS=false \
 #
 # Feature-gate probe.
 #
-# The driver (pkg/resmgr/cpuclass/dra.go:279-281) sets
-# AllowMultipleAllocations (KEP-5075) and NodeAllocatableResourceMappings
-# (KEP-5517) unconditionally on every device it publishes. If the API
-# server's alpha gates DRAConsumableCapacity/DRANodeAllocatableResources
-# are off, it silently strips both fields on write, so they're absent
-# on read back here. This requires the plugin to already be running
-# (hence it happens after helm-launch, not before), and with the
-# hp-turbo class + SST mock active above so there's at least one real
-# device to read back (an empty CPU_CLASSES publishes zero devices).
+# The driver (pkg/resmgr/cpuclass/dra.go) sets AllowMultipleAllocations
+# (KEP-5075) and NodeAllocatableResources (KEP-5517) unconditionally on
+# every device it publishes. NodeAllocatableResources is the field name
+# from Kubernetes 1.37 onward (k8s.io/api v0.37+) -- it replaced the
+# now-tombstoned NodeAllocatableResourceMappings field (present through
+# 1.36/k8s.io/api v0.36), which this driver no longer even compiles
+# against, so 1.36 clusters will now (correctly) skip this test instead
+# of passing it -- see docs/dra/plan.md's Step 10 "Landed" line for the
+# floor-version bump this implies. If the API server's alpha gates
+# DRAConsumableCapacity/DRANodeAllocatableResources are off, it silently
+# strips both fields on write, so they're absent on read back here.
+# This requires the plugin to already be running (hence it happens
+# after helm-launch, not before), and with the hp-turbo class + SST
+# mock active above so there's at least one real device to read back
+# (an empty CPU_CLASSES publishes zero devices).
 wait-resourceslice-devices 30 || {
     helm-terminate
     error "no devices found in any ResourceSlice within timeout (not a feature-gate issue -- check DRA_ENABLED/CPU_CLASSES/SST mock config)"
@@ -203,9 +209,9 @@ wait-resourceslice-devices 30 || {
 # driver publishes gets both fields set unconditionally, so checking
 # them independently across the whole list would loosely pass even if,
 # say, one device kept allowMultipleAllocations while a different
-# device kept nodeAllocatableResourceMappings; that's not what either
-# gate being enabled actually implies.
-if jq -e 'any(.[]; .allowMultipleAllocations == true and (.nodeAllocatableResourceMappings != null))' \
+# device kept nodeAllocatableResources; that's not what either gate
+# being enabled actually implies.
+if jq -e 'any(.[]; .allowMultipleAllocations == true and (.nodeAllocatableResources != null))' \
     >/dev/null 2>&1 <<< "$COMMAND_OUTPUT"; then
     echo "DRA feature gates (KEP-5075/KEP-5517) detected as enabled on the API server; continuing."
 else

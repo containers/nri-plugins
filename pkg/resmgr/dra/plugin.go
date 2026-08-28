@@ -681,3 +681,10 @@ func (p *Plugin) HandleError(_ context.Context, err error, msg string) {
 		p.deps.Logger.Errorf("%s: %v", msg, err)
 	}
 }
+
+// WatchHealthStatus is not implemented: this driver does not report
+// per-device health, so it returns ErrHealthNotSupported as documented by
+// kubeletplugin.DRAPlugin.
+func (p *Plugin) WatchHealthStatus(_ context.Context, _ chan<- kubeletplugin.DeviceHealthReport) error {
+	return kubeletplugin.ErrHealthNotSupported
+}

@@ -249,9 +249,9 @@ func cpusStep(dev resapi.Device) (int64, bool) {
 
 // checkDeviceShape asserts the shape invariants that every emitted device must
 // satisfy: AllowMultipleAllocations, DeviceCapacity.Value, the full
-// RequestPolicy (Default/Min/Max/Step), and NodeAllocatableResourceMappings
-// content (CapacityKey + AllocationMultiplier). It also verifies topology
-// attributes and the nri/cpuClass attribute.
+// RequestPolicy (Default/Min/Max/Step), and NodeAllocatableResources content
+// (Mapping.CapacityKey + Mapping.CapacityMultiplier). It also verifies
+// topology attributes and the nri/cpuClass attribute.
 //
 // wantPctPriorityPresent controls whether nri/pctPriority is expected to exist
 // (PCT classes) or must be absent (non-PCT classes).
@@ -318,20 +318,22 @@ func checkDeviceShape(t *testing.T, dev resapi.Device, wantCapacity int64,
 		t.Errorf("nri/cpus RequestPolicy.ValidRange.Step = %d, want 1", sv)
 	}
 
-	// NodeAllocatableResourceMappings content.
-	if dev.NodeAllocatableResourceMappings == nil {
-		t.Error("NodeAllocatableResourceMappings is nil")
+	// NodeAllocatableResources content.
+	if dev.NodeAllocatableResources == nil {
+		t.Error("NodeAllocatableResources is nil")
 	} else {
-		m, ok := dev.NodeAllocatableResourceMappings[corev1.ResourceCPU]
+		r, ok := dev.NodeAllocatableResources[corev1.ResourceCPU]
 		if !ok {
-			t.Errorf("NodeAllocatableResourceMappings: missing %q key", corev1.ResourceCPU)
+			t.Errorf("NodeAllocatableResources: missing %q key", corev1.ResourceCPU)
+		} else if r.Mapping == nil {
+			t.Errorf("NodeAllocatableResources[cpu].Mapping is nil")
 		} else {
-			if m.CapacityKey == nil || *m.CapacityKey != "nri/cpus" {
-				t.Errorf("NodeAllocatableResourceMappings[cpu].CapacityKey = %v, want \"nri/cpus\"", m.CapacityKey)
+			if r.Mapping.CapacityKey == nil || *r.Mapping.CapacityKey != "nri/cpus" {
+				t.Errorf("NodeAllocatableResources[cpu].Mapping.CapacityKey = %v, want \"nri/cpus\"", r.Mapping.CapacityKey)
 			}
-			if m.AllocationMultiplier == nil || m.AllocationMultiplier.Value() != 1 {
-				t.Errorf("NodeAllocatableResourceMappings[cpu].AllocationMultiplier = %v, want 1",
-					m.AllocationMultiplier)
+			if r.Mapping.CapacityMultiplier == nil || r.Mapping.CapacityMultiplier.Value() != 1 {
+				t.Errorf("NodeAllocatableResources[cpu].Mapping.CapacityMultiplier = %v, want 1",
+					r.Mapping.CapacityMultiplier)
 			}
 		}
 	}

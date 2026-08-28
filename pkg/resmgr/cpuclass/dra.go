@@ -277,10 +277,12 @@ func buildDRADevices(
 					},
 				},
 				AllowMultipleAllocations: kptr.To(true),
-				NodeAllocatableResourceMappings: map[corev1.ResourceName]resapi.NodeAllocatableResourceMapping{
+				NodeAllocatableResources: map[corev1.ResourceName]resapi.NodeAllocatableResource{
 					corev1.ResourceCPU: {
-						CapacityKey:          kptr.To(CapacityCPUs),
-						AllocationMultiplier: kptr.To(resource.MustParse("1")),
+						Mapping: &resapi.NodeAllocatableMapping{
+							CapacityKey:        kptr.To(CapacityCPUs),
+							CapacityMultiplier: kptr.To(resource.MustParse("1")),
+						},
 					},
 				},
 			}
