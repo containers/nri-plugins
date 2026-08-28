@@ -531,8 +531,9 @@ func (a *Allocator) FreeClassCapacity(className string, held cpuset.CPUSet) int 
 type PunitInfo struct {
 	PkgID         int
 	PunitID       int
-	HPCapacity    int // GuaranteedHpCpus minus non-DRA HP CPUs already in hpUsed, or 0 if the punit is HP-ineligible
-	NonHPCapacity int // allocatable non-HP CPUs (allowed ∩ punit.CPUs − GuaranteedHpCpus)
+	HPCapacity    int    // GuaranteedHpCpus minus non-DRA HP CPUs already in hpUsed, or 0 if the punit is HP-ineligible
+	NonHPCapacity int    // allocatable non-HP CPUs (allowed ∩ punit.CPUs − GuaranteedHpCpus)
+	AllowedCPUs   string // CPUSet string for allowed ∩ punit.CPUs
 }
 
 // Punits returns a snapshot of per-punit DRA-relevant capacity for all
@@ -549,6 +550,29 @@ func (a *Allocator) Punits() []PunitInfo {
 			PunitID:       pu.PunitID,
 			HPCapacity:    a.punitAvailableHPCapacity(i),
 			NonHPCapacity: a.punitNonHPCapacity(i),
+			AllowedCPUs:   pu.CPUs.String(),
+		}
+	}
+	return out
+}
+
+// MaxPunits is like Punits but sets HPCapacity to the full GuaranteedHpCpus
+// (not reduced by hpUsed). Used by Handler.DRADevicesAtMaxCapacity for
+// hardware-change detection in Reconfigure, where comparing workload-adjusted
+// capacities would produce false negatives when hpUsed coincidentally equals
+// the capacity delta.
+func (a *Allocator) MaxPunits() []PunitInfo {
+	if !a.Active() {
+		return nil
+	}
+	out := make([]PunitInfo, len(a.punits))
+	for i, pu := range a.punits {
+		out[i] = PunitInfo{
+			PkgID:         pu.PkgID,
+			PunitID:       pu.PunitID,
+			HPCapacity:    a.punitHPCapacity(i),
+			NonHPCapacity: a.punitNonHPCapacity(i),
+			AllowedCPUs:   pu.CPUs.String(),
 		}
 	}
 	return out

@@ -56,15 +56,17 @@ func TestNewLogr(t *testing.T) {
 // validDeps returns a Deps with all required fields populated.
 func validDeps() Deps {
 	return Deps{
-		KubeClient:      fake.NewClientset(),
-		NodeName:        "test-node",
-		ValidateClasses: func() error { return nil },
-		DeviceLister:    &fixedDeviceLister{},
-		ClaimAllocator:  &noopClaimAllocator{},
-		CDIWriter:       &noopCDIWriter{},
-		ClaimStore:      &noopClaimStore{},
-		WithLock:        func(f func()) { f() },
-		Logger:          log.Default(),
+		KubeClient:         fake.NewClientset(),
+		NodeName:           "test-node",
+		ValidateClasses:    func() error { return nil },
+		ValidateCPUsInPool: func(_ cpuset.CPUSet) error { return nil },
+		DeviceLister:       &fixedDeviceLister{},
+		ClaimAllocator:     &noopClaimAllocator{},
+		CDIWriter:          &noopCDIWriter{},
+		ClaimStore:         &noopClaimStore{},
+		WithLock:           func(f func()) { f() },
+		ClaimUnprepare:     func(_ types.UID, _ []ResultAlloc) {},
+		Logger:             log.Default(),
 	}
 }
 
@@ -107,6 +109,11 @@ func TestNew_Validation(t *testing.T) {
 			name:       "nil ValidateClasses",
 			driverName: "test-driver",
 			mutate:     func(d *Deps) { d.ValidateClasses = nil },
+		},
+		{
+			name:       "nil ValidateCPUsInPool",
+			driverName: "test-driver",
+			mutate:     func(d *Deps) { d.ValidateCPUsInPool = nil },
 		},
 		{
 			name:       "nil DeviceLister",
@@ -528,17 +535,19 @@ func TestPublishResources_Integration(t *testing.T) {
 	)
 
 	deps := Deps{
-		KubeClient:      fakeClient,
-		NodeName:        "test-node",
-		RegistrarDir:    registrarDir,
-		PluginDataDir:   pluginDataDir,
-		ValidateClasses: func() error { return nil },
-		DeviceLister:    &fixedDeviceLister{devices: makeTestDevices(5)},
-		ClaimAllocator:  &noopClaimAllocator{},
-		CDIWriter:       &noopCDIWriter{},
-		ClaimStore:      &noopClaimStore{},
-		WithLock:        func(f func()) { f() },
-		Logger:          log.Default(),
+		KubeClient:         fakeClient,
+		NodeName:           "test-node",
+		RegistrarDir:       registrarDir,
+		PluginDataDir:      pluginDataDir,
+		ValidateClasses:    func() error { return nil },
+		ValidateCPUsInPool: func(_ cpuset.CPUSet) error { return nil },
+		DeviceLister:       &fixedDeviceLister{devices: makeTestDevices(5)},
+		ClaimAllocator:     &noopClaimAllocator{},
+		CDIWriter:          &noopCDIWriter{},
+		ClaimStore:         &noopClaimStore{},
+		WithLock:           func(f func()) { f() },
+		ClaimUnprepare:     func(_ types.UID, _ []ResultAlloc) {},
+		Logger:             log.Default(),
 	}
 
 	const driverName = "test.driver.io"
@@ -1284,10 +1293,8 @@ func TestPrepare_ClaimStoreSaveFailure(t *testing.T) {
 	}
 }
 
-// TestPrepare_MultiResultTwoPunits verifies that a claim with two results
-// spanning different punits is rejected: the topology-aware consumer
-// requires the union of a claim's results to fit a single leaf pool, so the
-// CPU pick for the first result is rolled back and nothing is written.
+// TestPrepare_MultiResultTwoPunits verifies that a claim spanning punit pools
+// is rejected before it can be committed.
 func TestPrepare_MultiResultTwoPunits(t *testing.T) {
 	alloc := &trackingClaimAllocator{pickResult: cpuset.MustParse("0-1"), isHP: true}
 	cdiW := &trackingCDIWriter{}
@@ -1326,17 +1333,65 @@ func TestPrepare_MultiResultTwoPunits(t *testing.T) {
 		t.Fatalf("PrepareResourceClaims() unexpected global error: %v", globalErr)
 	}
 	r := result[uid]
-	if r.Err == nil {
-		t.Fatal("PrepareResult.Err = nil, want multi-punit error")
+	if !errors.Is(r.Err, errMultiPunitNotSupported) {
+		t.Fatalf("PrepareResult.Err = %v, want errMultiPunitNotSupported", r.Err)
 	}
 	if len(r.Devices) != 0 {
 		t.Errorf("PrepareResult.Devices len = %d, want 0", len(r.Devices))
 	}
+	if len(alloc.releases) != 1 {
+		t.Errorf("ReleaseHpCpus called %d times, want 1 rollback", len(alloc.releases))
+	}
 	if len(cdiW.written) != 0 {
 		t.Errorf("WriteClaim called %d times, want 0", len(cdiW.written))
 	}
+	if _, ok := p.claims[uid]; ok {
+		t.Error("claim stored after multi-punit rejection")
+	}
+}
+
+// TestPrepare_ClaimCPUsOutsideAllocationDomain verifies that claim CPU picks
+// are rejected before CDI/state commit when the policy reports they don't
+// fit a single allocation domain (e.g. a punit spanning more than one
+// topology leaf pool).
+func TestPrepare_ClaimCPUsOutsideAllocationDomain(t *testing.T) {
+	validateErr := errors.New("spans multiple leaf pools")
+	alloc := &trackingClaimAllocator{pickResult: cpuset.MustParse("0-3"), isHP: true}
+	cdiW := &trackingCDIWriter{}
+	store := &trackingClaimStore{}
+	deps := validDeps()
+	deps.ClaimAllocator = alloc
+	deps.CDIWriter = cdiW
+	deps.ClaimStore = store
+	deps.DeviceLister = hpDeviceLister(hpDevice("dev0", "gold", 0, 0))
+	deps.ValidateCPUsInPool = func(_ cpuset.CPUSet) error { return validateErr }
+
+	p, err := New("test-driver", deps)
+	if err != nil {
+		t.Fatalf("New() unexpected error: %v", err)
+	}
+
+	uid := types.UID("uid-invalid-domain")
+	claim := makeClaim(uid, "test-driver", "pool0", "dev0", "req0", 4)
+	result, globalErr := p.PrepareResourceClaims(context.Background(), []*resourceapi.ResourceClaim{claim})
+	if globalErr != nil {
+		t.Fatalf("PrepareResourceClaims() unexpected global error: %v", globalErr)
+	}
+	r := result[uid]
+	if !errors.Is(r.Err, validateErr) {
+		t.Fatalf("PrepareResult.Err = %v, want to wrap validateErr", r.Err)
+	}
 	if len(alloc.releases) != 1 {
-		t.Errorf("ReleaseHpCpus called %d times, want 1 (rollback of first pick)", len(alloc.releases))
+		t.Errorf("ReleaseHpCpus called %d times, want 1 rollback", len(alloc.releases))
+	}
+	if len(cdiW.written) != 0 {
+		t.Errorf("WriteClaim called %d times, want 0", len(cdiW.written))
+	}
+	if store.saved != 0 {
+		t.Errorf("ClaimStore.Save called %d times, want 0", store.saved)
+	}
+	if _, ok := p.claims[uid]; ok {
+		t.Error("claim stored after allocation-domain rejection")
 	}
 }
 
@@ -1559,9 +1614,6 @@ func TestUnprepare_KnownClaim(t *testing.T) {
 	} else if perErr != nil {
 		t.Errorf("result[uid] = %v, want nil", perErr)
 	}
-	if len(alloc.releases) != 1 {
-		t.Errorf("ReleaseHpCpus called %d times, want 1", len(alloc.releases))
-	}
 	if len(cdiW.removed) != 1 || cdiW.removed[0] != uid {
 		t.Errorf("RemoveClaim called for %v, want [%v]", cdiW.removed, uid)
 	}
@@ -1600,9 +1652,8 @@ func TestUnprepare_UnknownUID(t *testing.T) {
 	if len(alloc.releases) != 0 {
 		t.Errorf("ReleaseHpCpus called %d times, want 0 for unknown UID", len(alloc.releases))
 	}
-	// Save must still be called once (batch write even with no-ops).
-	if store.saved != 1 {
-		t.Errorf("ClaimStore.Save called %d times, want 1", store.saved)
+	if store.saved != 0 {
+		t.Errorf("ClaimStore.Save called %d times, want 0", store.saved)
 	}
 }
 
@@ -1633,9 +1684,37 @@ func TestUnprepare_CDIRemoveError(t *testing.T) {
 	if _, exists := p.claims[uid]; exists {
 		t.Error("claim still in p.claims after Unprepare despite CDI error")
 	}
-	// ReleaseHpCpus must have been called once — CPU leak on CDI error goes undetected otherwise.
-	if len(alloc.releases) != 1 {
-		t.Errorf("ReleaseHpCpus called %d times, want 1 (must release CPUs even on CDI error)", len(alloc.releases))
+	// ReleaseHpCpus is now called by the ClaimUnprepare callback (policy layer),
+	// not directly by UnprepareResourceClaims, so alloc.releases stays 0 here.
+}
+
+func TestUnprepare_ClaimStoreSaveFailure(t *testing.T) {
+	saveErr := errors.New("claim store save failed")
+	alloc := &trackingClaimAllocator{}
+	cdiW := &trackingCDIWriter{}
+	store := &trackingClaimStore{saveErr: saveErr}
+	uid := types.UID("uid-save-err")
+	claimState := &ClaimState{
+		UID:    string(uid),
+		Allocs: []ResultAlloc{{Device: "dev0", PkgID: 0, PunitID: 0, CPUs: "4-7", ClassName: "gold"}},
+	}
+	p := preparePlugin(t, alloc, cdiW, store, map[types.UID]*ClaimState{uid: claimState})
+
+	result, globalErr := p.UnprepareResourceClaims(context.Background(), []kubeletplugin.NamespacedObject{unprepareObj(uid)})
+	if globalErr != nil {
+		t.Fatalf("UnprepareResourceClaims() unexpected global error: %v", globalErr)
+	}
+	if !errors.Is(result[uid], saveErr) {
+		t.Errorf("result[uid] = %v, want to wrap saveErr", result[uid])
+	}
+	if _, exists := p.claims[uid]; !exists {
+		t.Error("claim removed from memory despite persistence failure")
+	}
+	if len(alloc.releases) != 0 {
+		t.Errorf("ReleaseHpCpus called %d times, want 0 before durable removal", len(alloc.releases))
+	}
+	if len(cdiW.removed) != 0 {
+		t.Errorf("RemoveClaim called %d times, want 0 before durable removal", len(cdiW.removed))
 	}
 }
 
@@ -1695,7 +1774,7 @@ func TestShareIDPtr(t *testing.T) {
 	}
 }
 
-// ---- Task 9: LiveClaimClasses, RestoreClaimsLocked, Start reconciliation ----
+// ---- Task 9: RestoreClaimsLocked, Start reconciliation ----
 
 // startTestCDIWriter supports per-UID ClaimSpecExists state and a fixed
 // ListClaims result for Start reconciliation tests. WriteClaim is a no-op.
@@ -1739,57 +1818,55 @@ func (s *preloadedClaimStore) Save(claims map[types.UID]*ClaimState) error {
 	return nil
 }
 
-// TestLiveClaimClasses_Empty verifies that LiveClaimClasses returns an empty
+// TestLiveClaimsLocked_Empty verifies that LiveClaimsLocked returns an empty
 // map when there are no claims.
-func TestLiveClaimClasses_Empty(t *testing.T) {
+func TestLiveClaimsLocked_Empty(t *testing.T) {
 	p, err := New("test-driver", validDeps())
 	if err != nil {
 		t.Fatalf("New() unexpected error: %v", err)
 	}
-	got := p.LiveClaimClasses()
+	got := p.LiveClaimsLocked()
 	if len(got) != 0 {
-		t.Errorf("LiveClaimClasses() = %v, want empty map", got)
+		t.Errorf("LiveClaimsLocked() = %v, want empty map", got)
 	}
 }
 
-// TestLiveClaimClasses_SameClass verifies that two claims using the same class
-// produce a count of 2.
-func TestLiveClaimClasses_SameClass(t *testing.T) {
+// TestLiveClaimsLocked_Snapshot verifies that LiveClaimsLocked returns a
+// snapshot matching p.claims, and that mutating the returned map/slices does
+// not corrupt the plugin's internal state (caller holds the resmgr lock, but
+// the returned value must still be a defensive copy of the per-claim slice).
+func TestLiveClaimsLocked_Snapshot(t *testing.T) {
 	p, err := New("test-driver", validDeps())
 	if err != nil {
 		t.Fatalf("New() unexpected error: %v", err)
 	}
-	p.claims[types.UID("a")] = &ClaimState{UID: "a", Allocs: []ResultAlloc{{ClassName: "gold"}}}
-	p.claims[types.UID("b")] = &ClaimState{UID: "b", Allocs: []ResultAlloc{{ClassName: "gold"}}}
-
-	got := p.LiveClaimClasses()
-	if got["gold"] != 2 {
-		t.Errorf("LiveClaimClasses()[gold] = %d, want 2", got["gold"])
+	p.claims[types.UID("uid-a")] = &ClaimState{
+		UID:    "uid-a",
+		Allocs: []ResultAlloc{{Device: "dev0", PkgID: 0, PunitID: 0, CPUs: "0-3", ClassName: "gold"}},
 	}
-	if len(got) != 1 {
-		t.Errorf("LiveClaimClasses() len = %d, want 1", len(got))
+	p.claims[types.UID("uid-b")] = &ClaimState{
+		UID: "uid-b",
+		Allocs: []ResultAlloc{
+			{Device: "dev1", PkgID: 0, PunitID: 1, CPUs: "4-5", ClassName: "silver"},
+			{Device: "dev2", PkgID: 0, PunitID: 1, CPUs: "6-7", ClassName: "silver"},
+		},
 	}
-}
 
-// TestLiveClaimClasses_DifferentClasses verifies that two claims using
-// different classes produce two entries in the result map.
-func TestLiveClaimClasses_DifferentClasses(t *testing.T) {
-	p, err := New("test-driver", validDeps())
-	if err != nil {
-		t.Fatalf("New() unexpected error: %v", err)
-	}
-	p.claims[types.UID("a")] = &ClaimState{UID: "a", Allocs: []ResultAlloc{{ClassName: "gold"}}}
-	p.claims[types.UID("b")] = &ClaimState{UID: "b", Allocs: []ResultAlloc{{ClassName: "silver"}}}
-
-	got := p.LiveClaimClasses()
+	got := p.LiveClaimsLocked()
 	if len(got) != 2 {
-		t.Errorf("LiveClaimClasses() len = %d, want 2", len(got))
+		t.Fatalf("LiveClaimsLocked() len = %d, want 2", len(got))
 	}
-	if got["gold"] != 1 {
-		t.Errorf("LiveClaimClasses()[gold] = %d, want 1", got["gold"])
+	if allocs := got[types.UID("uid-a")]; len(allocs) != 1 || allocs[0].ClassName != "gold" {
+		t.Errorf("LiveClaimsLocked()[uid-a] = %+v, want one gold alloc", allocs)
 	}
-	if got["silver"] != 1 {
-		t.Errorf("LiveClaimClasses()[silver] = %d, want 1", got["silver"])
+	if allocs := got[types.UID("uid-b")]; len(allocs) != 2 {
+		t.Errorf("LiveClaimsLocked()[uid-b] len = %d, want 2", len(allocs))
+	}
+
+	// Mutating the returned slice must not affect p.claims (defensive copy).
+	got[types.UID("uid-a")][0].ClassName = "mutated"
+	if p.claims[types.UID("uid-a")].Allocs[0].ClassName != "gold" {
+		t.Errorf("LiveClaimsLocked() leaked internal state: p.claims mutated via returned snapshot")
 	}
 }
 

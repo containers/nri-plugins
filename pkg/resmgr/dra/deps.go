@@ -89,6 +89,10 @@ type ClaimStore interface {
 	Load() (map[types.UID]*ClaimState, error)
 }
 
+// ClaimUnprepare is called after a prepared claim is removed from plugin
+// state, while holding the resmgr lock.
+type ClaimUnprepare func(uid types.UID, allocs []ResultAlloc)
+
 // Deps holds the dependencies a policy binary must supply when constructing
 // a Plugin.
 type Deps struct {
@@ -105,6 +109,12 @@ type Deps struct {
 	// ValidateClasses is a closure that validates the current cpuClass
 	// configuration for DRA compatibility.
 	ValidateClasses func() error
+	// ValidateCPUsInPool is a closure that reports whether cpus can fit
+	// within a single allocation leaf pool of the policy. Returns an error
+	// if the CPUs span multiple leaf pools (or otherwise don't fit within
+	// one), so that a claim which would later fail at container-creation
+	// time is instead rejected at Prepare time. Must not be nil.
+	ValidateCPUsInPool func(cpus cpuset.CPUSet) error
 	// DeviceLister returns the list of DRA devices to publish.
 	DeviceLister DeviceLister
 	// ClaimAllocator provides HP CPU pick/release/account operations.
@@ -113,6 +123,8 @@ type Deps struct {
 	CDIWriter CDIWriter
 	// ClaimStore persists and loads claim state via the resmgr cache.
 	ClaimStore ClaimStore
+	// ClaimUnprepare notifies the policy that a prepared claim was removed.
+	ClaimUnprepare ClaimUnprepare
 	// WithLock executes f while holding the resmgr write lock. All accesses
 	// to Handler state (ValidateClasses, DRADevices, Prepare, Unprepare, and
 	// RestoreClaims) must run inside WithLock.

@@ -396,6 +396,45 @@ var _ = Describe("Container", func() {
 		Expect(ctrs[0].GetDevices()).To(Equal(devices))
 	})
 
+	It("can return its CDI device names", func() {
+		var (
+			names = []string{
+				"nri.topology-aware.cpu/device=claim-abc-req-dev-0",
+				"nri.topology-aware.cpu/device=claim-abc-req-dev-1",
+			}
+			nriPods = []*nri.PodSandbox{
+				makePod(),
+			}
+			nriCtrs = []*nri.Container{
+				makeCtr(
+					WithCtrPodID(nriPods[0].GetId()),
+					WithCtrCDIDevices(names),
+				),
+			}
+		)
+
+		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
+
+		Expect(ctrs[0].GetCDIDeviceNames()).To(Equal(names))
+	})
+
+	It("returns no CDI device names when there are none", func() {
+		var (
+			nriPods = []*nri.PodSandbox{
+				makePod(),
+			}
+			nriCtrs = []*nri.Container{
+				makeCtr(
+					WithCtrPodID(nriPods[0].GetId()),
+				),
+			}
+		)
+
+		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
+
+		Expect(ctrs[0].GetCDIDeviceNames()).To(BeEmpty())
+	})
+
 })
 
 var _ = Describe("Container", func() {
@@ -942,6 +981,22 @@ func WithCtrDevices(devices []*nri.LinuxDevice) CtrOption {
 				Uid:      nri.UInt32(d.Uid),
 				Gid:      nri.UInt32(d.Gid),
 				FileMode: nri.FileMode(d.FileMode),
+			}
+		}
+		return nil
+	}
+}
+
+func WithCtrCDIDevices(names []string) CtrOption {
+	return func(nriCtr *nri.Container) error {
+		if names == nil {
+			nriCtr.CDIDevices = nil
+			return nil
+		}
+		nriCtr.CDIDevices = make([]*nri.CDIDevice, len(names))
+		for i, n := range names {
+			nriCtr.CDIDevices[i] = &nri.CDIDevice{
+				Name: n,
 			}
 		}
 		return nil

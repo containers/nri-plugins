@@ -1224,8 +1224,8 @@ func TestAllocatorPunits(t *testing.T) {
 		t.Fatalf("Punits() len = %d, want 2", len(pi))
 	}
 	want := []PunitInfo{
-		{PkgID: 0, PunitID: 0, HPCapacity: 2, NonHPCapacity: 2},
-		{PkgID: 0, PunitID: 1, HPCapacity: 1, NonHPCapacity: 3},
+		{PkgID: 0, PunitID: 0, HPCapacity: 2, NonHPCapacity: 2, AllowedCPUs: "0-3"},
+		{PkgID: 0, PunitID: 1, HPCapacity: 1, NonHPCapacity: 3, AllowedCPUs: "4-7"},
 	}
 	for i, w := range want {
 		if pi[i] != w {
@@ -1246,8 +1246,8 @@ func TestAllocatorPunits_NonDRAHpUsageReducesCapacity(t *testing.T) {
 
 	pi := a.Punits()
 	want := []PunitInfo{
-		{PkgID: 0, PunitID: 0, HPCapacity: 1, NonHPCapacity: 2},
-		{PkgID: 0, PunitID: 1, HPCapacity: 1, NonHPCapacity: 3},
+		{PkgID: 0, PunitID: 0, HPCapacity: 1, NonHPCapacity: 2, AllowedCPUs: "0-3"},
+		{PkgID: 0, PunitID: 1, HPCapacity: 1, NonHPCapacity: 3, AllowedCPUs: "4-7"},
 	}
 	for i, w := range want {
 		if pi[i] != w {

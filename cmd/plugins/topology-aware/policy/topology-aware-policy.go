@@ -15,17 +15,20 @@
 package topologyaware
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
 	"github.com/containers/nri-plugins/pkg/irq"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/types"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass"
+	"github.com/containers/nri-plugins/pkg/resmgr/dra"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 
@@ -74,6 +77,60 @@ type policy struct {
 	cpuClasses   *cpuclass.Handler         // CPU class handler (cpufreq, SST/PCT, etc.)
 	metrics      *TopologyAwareMetrics     // metrics provided by this policy
 	irqCnt       int                       // last applied [allocations.]irqCnt
+
+	// claimContainerRefs counts, per DRA ResourceClaim UID, how many live
+	// containers currently reference that claim's CPUs (allocateClaim
+	// increments, releaseClaim decrements). The pool supply is marked via
+	// Supply.ClaimCPUs on the first container and unmarked via
+	// Supply.UnclaimCPUs only once the last referencing container is
+	// released — this is what makes a multi-container ResourceClaim
+	// (AllowMultipleAllocations) safe.
+	claimContainerRefs map[types.UID]int
+
+	// tombstonedDRAClaims holds the allocation results for claims that have
+	// been unprepared (UnprepareResourceClaims) while at least one container
+	// was still using them. unprepareDRAClaim defers both the pool unclaim
+	// and the HP-CPU release until the last container drops; releaseClaim
+	// drains this map when the refcount reaches zero.
+	tombstonedDRAClaims map[types.UID][]dra.ResultAlloc
+
+	// claimedCPUsByContainer is, per container ID, the union of every live
+	// DRA claim's CPUs that container consumes (populated/cleared in
+	// AllocateResources/ReleaseResources alongside allocateClaim/
+	// releaseClaim, and repopulated by reapplyDRAClaims after a restart/
+	// Reconfigure). applyGrant/updateSharedAllocations union this in before
+	// pinning a container's cpuset, so a claim consumer's normal grant
+	// (computed independently, without regard to its claimed CPUs) doesn't
+	// end up excluding the CPUs its CDI-injected NRI_CPU<N> env vars claim
+	// it has.
+	claimedCPUsByContainer map[string]cpuset.CPUSet
+
+	// draClaimsByContainer keeps the claims consumed by each container
+	// independently of the plugin's live-claim map, which may lose a claim
+	// during UnprepareResourceClaims before the container is released.
+	draClaimsByContainer map[string][]containerClaim
+
+	// draPlugin is the DRA kubelet plugin instance for this driver, or nil
+	// when DRA is disabled (cfg.DRAEnabled() == false) or Setup() could not
+	// build one (see buildDRAPlugin in dra.go: missing kube client or node
+	// name at Setup() time — an empty cpuClasses configuration no longer
+	// prevents construction; the plugin is built with an empty device set
+	// instead). AllocateResources
+	// and ReleaseResources nil-check this field before passing it anywhere a
+	// claimLister is expected: a nil *dra.Plugin handed to an interface
+	// parameter would produce a non-nil interface wrapping a nil pointer
+	// (the typed-nil trap), so callers must guard on p.draPlugin != nil
+	// themselves rather than relying on claimCPUsFromContainer's internal
+	// nil check.
+	draPlugin *dra.Plugin
+	// draCtxCancel cancels the context draPlugin.Start() was given. Called
+	// from Stop() to shut the DRA plugin's background goroutines down. nil
+	// when draPlugin is nil.
+	draCtxCancel context.CancelFunc
+	// cdiDir is the directory DRA CDI spec files are written to. Empty
+	// means the dra package's default (/var/run/cdi). Overridable so tests
+	// can inject a temporary directory.
+	cdiDir string
 }
 
 var opt = &cfgapi.Config{}
@@ -127,6 +184,15 @@ func (p *policy) Setup(opts *policyapi.BackendOptions) error {
 		return policyError("failed to initialize %s policy: %w", PolicyName, err)
 	}
 
+	// Build the DRA plugin, if enabled, once at initial Setup() time. There
+	// is no DRAEnabled-flip check here — see buildDRAPlugin's doc comment
+	// (dra.go) for why that check belongs in Reconfigure() instead.
+	if p.cfg.DRAEnabled() {
+		if err := p.buildDRAPlugin(opts); err != nil {
+			return policyError("failed to initialize %s policy: %w", PolicyName, err)
+		}
+	}
+
 	log.Infof("***** default CPU priority is %s", defaultPrio)
 
 	return nil
@@ -144,6 +210,46 @@ func (p *policy) Description() string {
 
 // Start prepares this policy for accepting allocation/release requests.
 func (p *policy) Start() error {
+	if err := p.restoreCache(); err != nil {
+		return policyError("failed to start: %v", err)
+	}
+
+	// Start the DRA plugin (if built by Setup()) before reapplyDRAClaims:
+	// draPlugin.Start(ctx) loads the persisted ClaimStore, which
+	// reapplyDRAClaims reads via LiveClaimsLocked() to re-mark pool
+	// supplies. Start/PublishResources are not made while holding the
+	// resmgr lock — they take their own internal WithLock only for the
+	// specific sections that touch shared Handler/claim state. However,
+	// once draPlugin.Start(ctx) returns, the kubelet plugin is registered
+	// and may immediately start serving PrepareResourceClaims/
+	// UnprepareResourceClaims RPCs in background goroutines; those mutate
+	// p.claims under deps.WithLock (= the resmgr write lock). reapplyDRAClaims
+	// (via LiveClaimsLocked) reads p.claims and therefore must also run under
+	// that same lock to avoid a concurrent unsynchronized map access.
+	if p.draPlugin != nil {
+		ctx, cancel := context.WithCancel(context.Background())
+		p.draCtxCancel = cancel
+		if err := p.draPlugin.Start(ctx); err != nil {
+			cancel()
+			return policyError("failed to start DRA plugin: %v", err)
+		}
+		if err := p.draPlugin.PublishResources(ctx); err != nil {
+			cancel()
+			p.draPlugin.Stop()
+			return policyError("failed to publish DRA resources: %v", err)
+		}
+
+		// Re-mark any DRA-claimed CPUs in the freshly rebuilt pool
+		// supplies. Must run under the resmgr write lock (see above);
+		// p.options.WithLock is the same closure the DRA plugin itself
+		// uses (dra.Deps.WithLock), and reapplyDRAClaims/its helpers
+		// (evictOverlappingGrants, remarkClaimInSupply, reallocateEvicted)
+		// do not call WithLock themselves, so this cannot deadlock.
+		p.options.WithLock(func() {
+			p.reapplyDRAClaims()
+		})
+	}
+
 	// Turn coldstart forcibly off if we have movable non-DRAM memory.
 	// Note that although this can change dynamically we only check it
 	// during startup and trust users to either not fiddle with memory
@@ -160,6 +266,20 @@ func (p *policy) Start() error {
 	}
 	p.metrics = m
 
+	return nil
+}
+
+// Stop shuts down this policy: it cancels the DRA plugin's context and
+// stops the DRA plugin (kubeletplugin registration, background helper
+// goroutines), if one was built. A no-op when DRA is disabled
+// (draPlugin == nil) — safe to call regardless of whether Start() ran.
+func (p *policy) Stop() error {
+	if p.draCtxCancel != nil {
+		p.draCtxCancel()
+	}
+	if p.draPlugin != nil {
+		p.draPlugin.Stop()
+	}
 	return nil
 }
 
@@ -243,9 +363,30 @@ func (p *policy) AllocateResources(container cache.Container) error {
 
 	defer p.commitCpuClasses(container.PrettyName())
 	defer p.applyIrqAffinity(container.PrettyName())
+	defer p.triggerDRARepublish()
+
+	var markedClaims []containerClaim
+	if p.draPlugin != nil {
+		for _, cl := range claimCPUsFromContainer(container, p.draPlugin) {
+			if err := p.allocateClaim(cl.UID, cl.CPUs, cl.ClassCPUs); err != nil {
+				p.rollbackClaimMarks(container, markedClaims)
+				return policyError("failed to allocate resources for %s: %v",
+					container.PrettyName(), err)
+			}
+			markedClaims = append(markedClaims, cl)
+		}
+		if len(markedClaims) > 0 {
+			p.setClaimedCPUs(container, markedClaims)
+			if p.draClaimsByContainer == nil {
+				p.draClaimsByContainer = make(map[string][]containerClaim)
+			}
+			p.draClaimsByContainer[container.GetID()] = markedClaims
+		}
+	}
 
 	err := p.allocateResources(container, "")
 	if err != nil {
+		p.rollbackClaimMarks(container, markedClaims)
 		return err
 	}
 
@@ -255,6 +396,41 @@ func (p *policy) AllocateResources(container cache.Container) error {
 	p.metrics.Update()
 
 	return nil
+}
+
+// setClaimedCPUs unions every claim's CPUs in marked and records the result
+// in p.claimedCPUsByContainer, keyed by container's ID. Used by
+// AllocateResources after successfully marking every live claim a container
+// carries, and by reapplyDRAClaims to repopulate the map after a restart/
+// Reconfigure (see its own comment for why that repopulation alone isn't
+// sufficient there).
+func (p *policy) setClaimedCPUs(container cache.Container, marked []containerClaim) {
+	union := cpuset.New()
+	for _, cl := range marked {
+		union = union.Union(cl.CPUs)
+	}
+	if p.claimedCPUsByContainer == nil {
+		p.claimedCPUsByContainer = map[string]cpuset.CPUSet{}
+	}
+	p.claimedCPUsByContainer[container.GetID()] = union
+}
+
+// rollbackClaimMarks releases every claim mark accumulated so far in an
+// AllocateResources call that failed partway through (whether from a later
+// claim's own allocateClaim call or from the subsequent normal pool
+// allocation), so a partial failure never leaks a claimContainerRefs entry
+// (or a stale claimedCPUsByContainer union) for a container that ultimately
+// never got its resources allocated.
+func (p *policy) rollbackClaimMarks(container cache.Container, marked []containerClaim) {
+	for _, cl := range marked {
+		if err := p.releaseClaim(cl.UID, cl.CPUs); err != nil {
+			log.Errorf("dra: rollback: failed to release claim %s: %v", cl.UID, err)
+		}
+	}
+	if len(marked) > 0 {
+		delete(p.draClaimsByContainer, container.GetID())
+		delete(p.claimedCPUsByContainer, container.GetID())
+	}
 }
 
 func (p *policy) allocateResources(container cache.Container, poolHint string) error {
@@ -278,6 +454,21 @@ func (p *policy) ReleaseResources(container cache.Container) error {
 
 	defer p.commitCpuClasses(container.PrettyName())
 	defer p.applyIrqAffinity(container.PrettyName())
+	defer p.triggerDRARepublish()
+
+	if p.draPlugin != nil {
+		claims := p.draClaimsByContainer[container.GetID()]
+		if claims == nil {
+			claims = claimCPUsFromContainer(container, p.draPlugin)
+		}
+		for _, cl := range claims {
+			if err := p.releaseClaim(cl.UID, cl.CPUs); err != nil {
+				log.Errorf("failed to release DRA claim for %s: %v", container.PrettyName(), err)
+			}
+		}
+		delete(p.draClaimsByContainer, container.GetID())
+		delete(p.claimedCPUsByContainer, container.GetID())
+	}
 
 	if grant, found := p.releasePool(container); found {
 		p.updateSharedAllocations(&grant)
@@ -300,6 +491,7 @@ func (p *policy) UpdateResources(container cache.Container) error {
 
 	defer p.commitCpuClasses(container.PrettyName())
 	defer p.applyIrqAffinity(container.PrettyName())
+	defer p.triggerDRARepublish()
 
 	grant, found := p.releasePool(container)
 	if !found {
@@ -537,6 +729,18 @@ func (p *policy) Reconfigure(newCfg any) error {
 	savedPolicy := *p
 	allocations := savedPolicy.allocations.clone()
 
+	// DRA config changes cannot be applied live: buildDRAPlugin only ever
+	// runs once, from the initial Setup() (see its doc comment in dra.go
+	// for why this check cannot live there) — Reconfigure() never tears
+	// down or (re)builds p.draPlugin, so there is no way to safely apply a
+	// dra.enabled flip or a cpuClass attribute change (which could
+	// invalidate a live DRA claim) without a restart. Refuse any config
+	// change outright whenever DRA is (or was) enabled.
+	if cfg.DRAEnabled() || p.cfg.DRAEnabled() {
+		return policyError("failed to reconfigure: DRA config changes require a restart " +
+			"(dra.enabled, cpuClass changes, etc. cannot be applied via live reconfigure)")
+	}
+
 	opt = cfg
 	p.cfg = cfg
 	defaultPrio = cfg.DefaultCPUPriority.Value()
@@ -546,6 +750,8 @@ func (p *policy) Reconfigure(newCfg any) error {
 
 	if err := p.initialize(); err != nil {
 		*p = savedPolicy
+		opt = p.cfg
+		defaultPrio = p.cfg.DefaultCPUPriority.Value()
 		return policyError("failed to reconfigure: %v", err)
 	}
 
@@ -566,6 +772,7 @@ func (p *policy) Reconfigure(newCfg any) error {
 	if err := p.restoreAllocations(&allocations); err != nil {
 		*p = savedPolicy
 		opt = p.cfg
+		defaultPrio = p.cfg.DefaultCPUPriority.Value()
 		return policyError("failed to reconfigure: %v", err)
 	}
 
@@ -737,6 +944,172 @@ func (p *policy) findExistingTopologyLevel(level cfgapi.CPUTopologyLevel) cfgapi
 	}
 
 	return cfgapi.CPUTopologyLevelPackage
+}
+
+func (p *policy) restoreCache() error {
+	allocations := p.newAllocations()
+	if p.cache.GetPolicyEntry(keyAllocations, &allocations) {
+		if err := p.restoreAllocations(&allocations); err != nil {
+			return policyError("failed to restore allocations from cache: %v", err)
+		}
+		p.allocations.Dump(log.Infof, "restored ")
+	}
+	p.saveAllocations()
+
+	return nil
+}
+
+// remarkClaimInSupply marks cpus as claimed by DRA ResourceClaim uid in the
+// tightest pool that fully contains them (tree-wide, via
+// Supply.ClaimCPUs — see resources.go), without touching
+// claimContainerRefs. This is the marking-only counterpart to allocateClaim
+// (pools.go): reapplyDRAClaims uses it to restore Supply.claimRefs after
+// Start()/Reconfigure() rebuild pool/supply state in initialize(), which
+// discards any marks a prior allocateClaim call applied.
+//
+// Using allocateClaim here instead of this marking-only path would
+// double-count in the Reconfigure() case: p.claimContainerRefs is an
+// in-process map that Reconfigure() never resets, so containers backing a
+// live claim are already reflected in it from the AllocateResources call
+// that admitted them.
+//
+// That reasoning does NOT hold across a process restart: claimContainerRefs
+// is a plain in-memory map with no persistence, so it is zero-valued right
+// after Start(), even though containers backed by live claims are already
+// running. The correct refcount is rebuilt indirectly: pkg/resmgr/nri.go's
+// syncWithNRI/Synchronize forces every already-running container through
+// ReleaseResources (a no-op here, since the refcount is already 0) followed
+// by AllocateResources (which calls allocateClaim and increments the
+// refcount) as part of the NRI resync that always follows agent Start().
+// reapplyDRAClaims only has to fix up Supply.claimRefs (pool CPU exclusion)
+// for the window between Start() and that resync; claimContainerRefs catches
+// up once the resync runs. If that syncWithNRI invariant ever changes (e.g.
+// running containers stop being included in both the "allocated" and
+// "released" lists), releaseClaim will silently no-op on the eventual real
+// ReleaseResources (refcount already 0) and the claimed CPUs will leak out
+// of pool capacity permanently, until the next restart.
+//
+// Also re-applies the physical cpuClass (className) to cpus: initialize()
+// (called by both Start() and Reconfigure() before this runs) resets every
+// allowed CPU's class back to the shared-pool default
+// (resetCpuClass("initialize", p.allowed)), which would otherwise silently
+// strip the SST-CP/EPP/governor settings a live DRA claim depends on.
+func (p *policy) remarkClaimInSupply(uid types.UID, cpus cpuset.CPUSet, classCPUs map[string]cpuset.CPUSet) error {
+	if cpus.IsEmpty() {
+		return policyError("cannot remark DRA claim %s: empty CPU set", uid)
+	}
+
+	pool, err := p.poolForCPUs(cpus)
+	if err != nil {
+		return policyError("cannot remark DRA claim %s (CPUs %s): %v", uid, cpus, err)
+	}
+
+	pool.FreeSupply().ClaimCPUs(uid, cpus)
+
+	// classCPUs groups cpus by cpuClass (see classifyClaimCPUs): applied per
+	// subset so a claim spanning more than one class re-applies each class
+	// only to the CPUs that actually belong to it. Best-effort on the
+	// restart/reconfigure reapply path: log but do not fail the remark.
+	if err := p.applyClassCPUs("re-apply", uid, classCPUs); err != nil {
+		log.Errorf("dra: %v", err)
+	}
+
+	return nil
+}
+
+// reapplyDRAClaims re-marks pool supplies for every currently live DRA
+// claim, restoring the Supply.claimRefs bookkeeping that Start()'s
+// restoreCache() and Reconfigure()'s restoreAllocations() lose whenever
+// initialize() rebuilds the pool/supply tree from scratch. It is a no-op if
+// DRA is disabled (draPlugin == nil).
+//
+// reapplyDRAClaims runs *after* restoreCache()/restoreAllocations() have
+// already reinstated grants (see Start()/Reconfigure()), at a point where
+// Supply.claimRefs has just been wiped by initialize() and not yet re-marked.
+// reinstateGrants/reallocateResources are therefore unaware of live DRA
+// claims while they run: if grant restoration (verbatim reinstatement, or
+// its allocatePool-based fallback) happens to hand a regular container CPUs
+// that a live claim already owns, that overlap is a real double-booking —
+// two workloads pinned to the same physical CPUs. Before marking each
+// claim's CPUs here, evict and requeue for reallocation any restored grant
+// that overlaps them, exactly like allocateClaim's first-time eviction path
+// (evictOverlappingGrants/reallocateEvicted, pools.go) — this does not touch
+// claimContainerRefs, so it stays consistent with remarkClaimInSupply's
+// marking-only contract.
+//
+// Caller must hold the resmgr write lock (LiveClaimsLocked's contract).
+// Reconfigure() already runs under the caller's lock, so it calls this
+// directly. Start() runs unlocked (see its comment), so it must establish
+// the lock itself via p.options.WithLock(func() { p.reapplyDRAClaims() }) —
+// do not call reapplyDRAClaims from inside a callback that is nested inside
+// an *already held* WithLock/resmgr-lock scope, since the lock is not
+// reentrant and a second acquisition would deadlock.
+func (p *policy) reapplyDRAClaims() {
+	if p.draPlugin == nil {
+		return
+	}
+
+	remarked := false
+	for uid, allocs := range p.draPlugin.LiveClaimsLocked() {
+		cpus, classCPUs := classifyClaimCPUs(uid, allocs)
+
+		if cpus.IsEmpty() {
+			continue
+		}
+
+		evicted, evictedCpusets := p.evictOverlappingGrants(cpus, fmt.Sprintf("reapplyDRAClaims: claim %s", uid))
+
+		if err := p.remarkClaimInSupply(uid, cpus, classCPUs); err != nil {
+			log.Errorf("dra: reapplyDRAClaims: %v", err)
+			if reallocErr := p.reallocateEvicted(evicted, evictedCpusets, cpuset.New(), uid); reallocErr != nil {
+				log.Errorf("dra: reapplyDRAClaims: failed to restore grants after claim %s could not be remarked: %v", uid, reallocErr)
+			}
+			continue
+		}
+		remarked = true
+
+		if err := p.reallocateEvicted(evicted, evictedCpusets, cpus, uid); err != nil {
+			log.Errorf("dra: reapplyDRAClaims: claim %s: evicted %d restored grant(s) overlapping "+
+				"claimed CPUs %s but failed to fully reallocate them: %v", uid, len(evicted), cpus, err)
+		}
+	}
+
+	// claimedCPUsByContainer is a plain in-memory map with no persistence,
+	// so it is empty here even though pool accounting above is now
+	// correct. A prepared claim with no consumer is explicitly unclaimed
+	// through the DRA plugin's ClaimUnprepare callback, rather than relying
+	// on a later syncWithNRI resync. restoreCache()'s/Reconfigure()'s own
+	// restoreAllocations() call already ran applyGrant for these
+	// containers *before* reapplyDRAClaims was ever reached, without the
+	// union -- their cpusets need an explicit re-pin here, now, not just
+	// the map. Re-resolve every live claim's consuming container(s) and
+	// repopulate the map, then re-pin unconditionally (not gated on
+	// remarked/updateSharedAllocations's shared-portion check below, which
+	// skips exactly the common plain-exclusive-CPU claim consumer case).
+	for _, c := range p.cache.GetContainers() {
+		claims := claimCPUsFromContainer(c, p.draPlugin)
+		if len(claims) == 0 {
+			continue
+		}
+		p.setClaimedCPUs(c, claims)
+
+		if grant, ok := p.allocations.getGrant(c.GetID()); ok {
+			p.applyGrant(grant)
+		} else if opt.PinCPU {
+			union := p.claimedCPUsByContainer[c.GetID()]
+			p.setPreferredCpusetCpus(c, cpuset.New(), union,
+				fmt.Sprintf("  => re-pinning %s to claimed cpuset %s (no regular grant)", c.PrettyName(), union))
+		}
+	}
+
+	// Re-marking may have subtracted CPUs from one or more pools' sharable
+	// capacity; any container already pinned (via applyGrant, from before
+	// the rebuild) to the previous, wider sharable cpuset must be re-pinned
+	// to the now-reduced set so it cannot keep running on CPUs a live DRA
+	// claim exclusively owns.
+	if remarked {
+		p.updateSharedAllocations(nil)
+	}
 }
 
 func (p *policy) checkColdstartOff() {

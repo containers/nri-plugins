@@ -20,6 +20,7 @@ import (
 	"sort"
 
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/client-go/kubernetes"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
@@ -56,6 +57,14 @@ type ConstraintSet map[Domain]Constraint
 type Options struct {
 	// SendEvent is the function for delivering events back to the resource manager.
 	SendEvent SendEventFn
+	// KubeClientFn returns the shared kubernetes client, or a nil interface
+	// if none is available (yet). Evaluated by backends at Setup() time.
+	KubeClientFn func() kubernetes.Interface
+	// NodeName is the kubernetes node name the resource manager runs on.
+	NodeName string
+	// WithLock runs f while holding the resource manager's write lock.
+	// It is not re-entrant: calling WithLock again from within f deadlocks.
+	WithLock func(func())
 }
 
 // BackendOptions describes the options for a policy backend instance
@@ -68,6 +77,14 @@ type BackendOptions struct {
 	SendEvent SendEventFn
 	// Config is the policy-specific configuration.
 	Config any
+	// KubeClientFn returns the shared kubernetes client, or a nil interface
+	// if none is available (yet). Evaluated by backends at Setup() time.
+	KubeClientFn func() kubernetes.Interface
+	// NodeName is the kubernetes node name the resource manager runs on.
+	NodeName string
+	// WithLock runs f while holding the resource manager's write lock.
+	// It is not re-entrant: calling WithLock again from within f deadlocks.
+	WithLock func(func())
 }
 
 // CreateFn is the type for functions used to create a policy instance.
@@ -102,6 +119,8 @@ type Backend interface {
 	Reconfigure(any) error
 	// Start up and sycnhronizes the policy, using the given cache and resource constraints.
 	Start() error
+	// Stop shuts down the policy backend, releasing any resources it holds.
+	Stop() error
 	// Sync synchronizes the policy, allocating/releasing the given containers.
 	Sync([]cache.Container, []cache.Container) error
 	// AllocateResources allocates resources to/for a container.
@@ -140,6 +159,8 @@ type Policy interface {
 	ActivePolicy() string
 	// Start starts up policy, prepare for serving resource management requests.
 	Start(any) error
+	// Stop shuts down the policy, releasing any resources it holds.
+	Stop() error
 	// Reconfigure the policy.
 	Reconfigure(any) error
 	// Sync synchronizes the state of the active policy.
@@ -267,10 +288,13 @@ func (p *policy) Start(cfg any) error {
 	log.Infof("activating '%s' policy...", p.active.Name())
 
 	if err := p.active.Setup(&BackendOptions{
-		Cache:     p.cache,
-		System:    p.system,
-		SendEvent: p.options.SendEvent,
-		Config:    cfg,
+		Cache:        p.cache,
+		System:       p.system,
+		SendEvent:    p.options.SendEvent,
+		Config:       cfg,
+		KubeClientFn: p.options.KubeClientFn,
+		NodeName:     p.options.NodeName,
+		WithLock:     p.options.WithLock,
 	}); err != nil {
 		return err
 	}
@@ -282,6 +306,14 @@ func (p *policy) Start(cfg any) error {
 	p.scollect = scollect
 
 	return p.active.Start()
+}
+
+// Stop shuts down the active policy backend.
+func (p *policy) Stop() error {
+	if p.active == nil {
+		return nil
+	}
+	return p.active.Stop()
 }
 
 // Reconfigure the policy.

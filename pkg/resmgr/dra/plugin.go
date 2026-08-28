@@ -42,7 +42,7 @@ var (
 	errNilAllocation           = errors.New("dra plugin: claim has nil Allocation")
 	errMissingConsumedCapacity = errors.New("dra plugin: ConsumedCapacity[nri/cpus] absent or zero")
 	errNonHPNotSupported       = errors.New("dra plugin: non-HP CPU class not supported (deferred)")
-	errMultiPunitNotSupported  = errors.New("dra plugin: claim spans multiple punits (leaf pools): unsupported")
+	errMultiPunitNotSupported  = errors.New("dra plugin: claim results on multiple punits not supported")
 )
 
 // deviceInfo holds the device attributes looked up from the published device list.
@@ -80,6 +80,9 @@ func New(driverName string, deps Deps) (*Plugin, error) {
 	if deps.ValidateClasses == nil {
 		return nil, fmt.Errorf("dra plugin: ValidateClasses must not be nil")
 	}
+	if deps.ValidateCPUsInPool == nil {
+		return nil, fmt.Errorf("dra plugin: ValidateCPUsInPool must not be nil")
+	}
 	if deps.DeviceLister == nil {
 		return nil, fmt.Errorf("dra plugin: DeviceLister must not be nil")
 	}
@@ -98,12 +101,20 @@ func New(driverName string, deps Deps) (*Plugin, error) {
 	if deps.WithLock == nil {
 		return nil, fmt.Errorf("dra plugin: WithLock must not be nil")
 	}
+	if deps.ClaimUnprepare == nil {
+		return nil, fmt.Errorf("dra plugin: ClaimUnprepare must not be nil")
+	}
 	return &Plugin{
 		driverName:  driverName,
 		deps:        deps,
 		claims:      make(map[types.UID]*ClaimState),
 		republishCh: make(chan struct{}, 1),
 	}, nil
+}
+
+// DriverName returns the plugin's DRA driver name.
+func (p *Plugin) DriverName() string {
+	return p.driverName
 }
 
 // shareIDPtr converts a ShareID string to *types.UID. Returns nil if s is "".
@@ -126,13 +137,13 @@ func (p *Plugin) deviceIndex() (map[string]deviceInfo, error) {
 	idx := make(map[string]deviceInfo, len(devs))
 	for _, d := range devs {
 		info := deviceInfo{}
-		if attr, ok := d.Attributes[resourceapi.QualifiedName("nri/cpuClass")]; ok && attr.StringValue != nil {
+		if attr, ok := d.Attributes[cpuclass.AttrCPUClass]; ok && attr.StringValue != nil {
 			info.ClassName = *attr.StringValue
 		}
-		if attr, ok := d.Attributes[resourceapi.QualifiedName("nri/packageID")]; ok && attr.IntValue != nil {
+		if attr, ok := d.Attributes[cpuclass.AttrPackageID]; ok && attr.IntValue != nil {
 			info.PkgID = int(*attr.IntValue)
 		}
-		if attr, ok := d.Attributes[resourceapi.QualifiedName("nri/punitID")]; ok && attr.IntValue != nil {
+		if attr, ok := d.Attributes[cpuclass.AttrPunitID]; ok && attr.IntValue != nil {
 			info.PunitID = int(*attr.IntValue)
 		}
 		idx[d.Name] = info
@@ -219,6 +230,8 @@ func (p *Plugin) PrepareResourceClaims(_ context.Context, claims []*resourceapi.
 				heldCPUs := p.allClaimedCPUs()
 				var pickedAllocs []ResultAlloc
 				var cdiDevices []CDIDevice
+				claimCPUs := cpuset.New()
+				var punit *deviceInfo
 
 				for i, r := range filtered {
 					attrs, attrOk := devIdx[r.Device]
@@ -231,6 +244,11 @@ func (p *Plugin) PrepareResourceClaims(_ context.Context, claims []*resourceapi.
 						p.rollbackPicks(pickedAllocs)
 						return kubeletplugin.PrepareResult{Err: fmt.Errorf("dra plugin: device %q missing nri/cpuClass attribute", r.Device)}
 					}
+					if punit != nil && (attrs.PkgID != punit.PkgID || attrs.PunitID != punit.PunitID) {
+						p.rollbackPicks(pickedAllocs)
+						return kubeletplugin.PrepareResult{Err: errMultiPunitNotSupported}
+					}
+					punit = &attrs
 
 					// Reject claims whose results span more than one punit —
 					// the topology-aware consumer requires the union of a
@@ -243,7 +261,7 @@ func (p *Plugin) PrepareResourceClaims(_ context.Context, claims []*resourceapi.
 						}
 					}
 
-					q, ok := r.ConsumedCapacity[resourceapi.QualifiedName("nri/cpus")]
+					q, ok := r.ConsumedCapacity[cpuclass.CapacityCPUs]
 					if !ok {
 						p.rollbackPicks(pickedAllocs)
 						return kubeletplugin.PrepareResult{Err: errMissingConsumedCapacity}
@@ -265,6 +283,7 @@ func (p *Plugin) PrepareResourceClaims(_ context.Context, claims []*resourceapi.
 						return kubeletplugin.PrepareResult{Err: fmt.Errorf("dra plugin: PickHpCpus: %w", pickErr)}
 					}
 					heldCPUs = heldCPUs.Union(picked)
+					claimCPUs = claimCPUs.Union(picked)
 
 					// Determine ShareID.
 					shareID := ""
@@ -288,6 +307,14 @@ func (p *Plugin) PrepareResourceClaims(_ context.Context, claims []*resourceapi.
 						ClassName: attrs.ClassName,
 						CPUs:      picked,
 					})
+				}
+
+				// A punit can span multiple leaf pools, so verify the union of
+				// all result CPUs fits within the policy's allocation domain
+				// before committing.
+				if validateErr := p.deps.ValidateCPUsInPool(claimCPUs); validateErr != nil {
+					p.rollbackPicks(pickedAllocs)
+					return kubeletplugin.PrepareResult{Err: fmt.Errorf("dra plugin: claim CPU set %s is outside supported allocation domain: %w", claimCPUs, validateErr)}
 				}
 
 				if writeErr := p.deps.CDIWriter.WriteClaim(uid, cdiDevices); writeErr != nil {
@@ -396,47 +423,34 @@ func (p *Plugin) UnprepareResourceClaims(_ context.Context, claims []kubeletplug
 				perUID[uid] = nil
 				continue
 			}
-			// Release CPUs for each allocation result; parse errors are logged
-			// but do not block CDI removal or claim deletion.
-			for _, alloc := range cs.Allocs {
-				cpus, err := cpuset.Parse(alloc.CPUs)
-				if err != nil {
-					p.deps.Logger.Warnf("dra plugin: UnprepareResourceClaims: claim %s device %s: parse CPUs %q: %v (skipping release)", uid, alloc.Device, alloc.CPUs, err)
-					continue
-				}
-				p.deps.ClaimAllocator.ReleaseHpCpus(alloc.PkgID, alloc.PunitID, cpus)
+			delete(p.claims, uid)
+			if saveErr := p.deps.ClaimStore.Save(p.claims); saveErr != nil {
+				p.claims[uid] = cs
+				perUID[uid] = fmt.Errorf("dra plugin: UnprepareResourceClaims: ClaimStore.Save: %w", saveErr)
+				continue
 			}
+			p.deps.ClaimUnprepare(uid, cs.Allocs)
 			// Remove CDI spec unconditionally; log but do not block deletion.
 			if err := p.deps.CDIWriter.RemoveClaim(uid); err != nil {
 				p.deps.Logger.Warnf("dra plugin: UnprepareResourceClaims: claim %s: RemoveClaim: %v", uid, err)
 			}
-			delete(p.claims, uid)
 			perUID[uid] = nil
-		}
-		// Persist the updated claims map in a single batch write.
-		if saveErr := p.deps.ClaimStore.Save(p.claims); saveErr != nil {
-			p.deps.Logger.Errorf("dra plugin: UnprepareResourceClaims: ClaimStore.Save: %v", saveErr)
 		}
 	})
 	return perUID, nil
 }
 
-// LiveClaimClasses returns a map from className to the number of live claims
-// using that class. Each claim is counted once per distinct class it uses.
-// Caller must hold the resmgr lock (do not call from inside a WithLock
-// callback — the resmgr lock is not reentrant). Used to refuse a Reconfigure
-// that would change class-derived attributes while claims are live.
-func (p *Plugin) LiveClaimClasses() map[string]int {
-	result := make(map[string]int)
-	for _, cs := range p.claims {
-		// Count each claim once per distinct class it uses.
-		seen := make(map[string]bool)
-		for _, alloc := range cs.Allocs {
-			if alloc.ClassName != "" && !seen[alloc.ClassName] {
-				result[alloc.ClassName]++
-				seen[alloc.ClassName] = true
-			}
-		}
+// LiveClaimsLocked returns a snapshot of the currently live claims as
+// map[types.UID][]ResultAlloc. Caller must hold the resmgr lock (do not call
+// from inside a WithLock callback — the resmgr lock is not reentrant). Used
+// by the pool-accounting re-apply path (reapplyDRAClaims) after
+// Start()/Reconfigure() rebuild policy state.
+func (p *Plugin) LiveClaimsLocked() map[types.UID][]ResultAlloc {
+	result := make(map[types.UID][]ResultAlloc, len(p.claims))
+	for uid, cs := range p.claims {
+		allocs := make([]ResultAlloc, len(cs.Allocs))
+		copy(allocs, cs.Allocs)
+		result[uid] = allocs
 	}
 	return result
 }
