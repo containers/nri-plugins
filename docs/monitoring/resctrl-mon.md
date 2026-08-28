@@ -21,7 +21,15 @@ approaches.
    (If the PID is not yet available, `PostStartContainer` retries.)
 6. The runtime starts the container. All child processes inherit the RMID.
 7. Kepler scans the resctrl filesystem and reads monitoring data.
-8. When the last container in a pod stops, the plugin removes the `mon_group`.
+8. The `mon_group` lives for the lifetime of the pod *sandbox*, not the
+   individual container. It is **not** removed when a container stops or
+   restarts, so the pod keeps a stable RMID across container restarts.
+   (Releasing and re-allocating an RMID would hand the replacement container a
+   recycled RMID whose counters still carry the previous tenant's residual,
+   producing a false energy/occupancy spike.)
+9. When the pod sandbox is torn down, the NRI `RemovePodSandbox` hook fires and
+   the plugin removes the `mon_group`. A background reconciler also reaps any
+   orphaned `mon_group` left behind by a missed teardown.
 
 The plugin DaemonSet runs with `hostPID: true` so that it can write
 host-namespace PIDs to the resctrl `tasks` file. Without `hostPID`,
@@ -55,6 +63,27 @@ namespaces: []
 # Pod label selector: only create mon_groups for pods matching these labels.
 # Empty = all pods.
 labelSelector: {}
+
+# Embedded OpenTelemetry exporter. Exposes a Prometheus /metrics endpoint
+# and/or pushes metrics via OTLP.
+telemetry:
+  prometheus:
+    enabled: true
+    listenAddress: ":9100"
+    # Metric-name prefix. Leave empty: a non-empty value renames every series
+    # and breaks the bundled Grafana dashboards (which query l3_*/perf_*).
+    namespace: ""
+  otlp:
+    enabled: false
+    endpoint: ""             # e.g. "otel-collector-resctrl.monitoring.svc:4317"
+    protocol: grpc           # grpc | http
+    interval: 15s            # must be a positive duration
+    insecure: true
+  perfCounters:
+    enabled: false           # gate rdt=perf counters (c1_res, stalls_*, etc.)
+    include: []              # glob patterns for counters to include
+    exclude: []              # glob patterns for counters to exclude
+  resourceAttributes: {}     # static OTel resource attributes on all metrics
 ```
 
 ## Coexistence with Allocation Plugins

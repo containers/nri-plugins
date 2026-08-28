@@ -155,6 +155,36 @@ test: test-gopkgs
 verify: verify-godeps verify-fmt verify-generate verify-build verify-docs
 
 #
+# install targets
+#
+
+# NRI plugin install directory for static plugin discovery. Each plugin's NRI
+# index is taken from the "-idx"/"--idx" flag declared in its own Dockerfile
+# ENTRYPOINT so the per-plugin ordering is preserved. Plugins that declare no
+# static index (e.g. the resource-policy plugins, which are mutually exclusive)
+# are skipped rather than all installed under a single shared default index.
+NRI_PLUGINS_DIR ?= /opt/nri/plugins
+
+# install-plugins: install plugin binaries to NRI_PLUGINS_DIR with the
+# <NN>-<name> prefix required by CRI-O/containerd static plugin discovery.
+install-plugins: build-plugins
+	$(Q)set -e; \
+	echo "Installing plugins to $(NRI_PLUGINS_DIR)..."; \
+	mkdir -p $(NRI_PLUGINS_DIR); \
+	for bin in $(PLUGINS); do \
+	    df=$$(grep -rl "/bin/$$bin\"" cmd/plugins/*/Dockerfile); \
+	    idx=$$(sed -nE 's/.*"--?idx", *"([0-9]+)".*/\1/p' "$$df" 2>/dev/null | head -n1); \
+	    if [ -z "$$idx" ]; then \
+	        echo "  skipping $$bin: no static NRI index (-idx) in its Dockerfile"; \
+	        continue; \
+	    fi; \
+	    name=$${bin#nri-}; \
+	    dst="$(NRI_PLUGINS_DIR)/$$idx-$$name"; \
+	    install -m 755 "$(BIN_PATH)/$$bin" "$$dst"; \
+	    echo "  $$dst"; \
+	done
+
+#
 # build targets
 #
 
