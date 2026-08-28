@@ -16,16 +16,191 @@ limitations under the License.
 
 package dra
 
-import "errors"
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
+
+	"github.com/go-logr/logr"
+	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/dynamic-resource-allocation/kubeletplugin"
+	"k8s.io/dynamic-resource-allocation/resourceslice"
+)
 
 var errNotImplemented = errors.New("dra plugin: not yet implemented")
 
-// Plugin is the DRA kubelet plugin. Its fields and methods are added
-// incrementally in subsequent plan steps.
-type Plugin struct{}
+// Plugin is the DRA kubelet plugin.
+type Plugin struct {
+	mu         sync.Mutex
+	driverName string
+	deps       Deps
+	helper     *kubeletplugin.Helper
+}
 
 // New constructs a Plugin with the given driver name and dependencies.
-// Returns ErrNotImplemented until the implementation is complete.
+// Returns an error if any required dependency is missing.
 func New(driverName string, deps Deps) (*Plugin, error) {
+	if driverName == "" {
+		return nil, fmt.Errorf("dra plugin: driverName must not be empty")
+	}
+	if deps.KubeClient == nil {
+		return nil, fmt.Errorf("dra plugin: KubeClient must not be nil")
+	}
+	if deps.NodeName == "" {
+		return nil, fmt.Errorf("dra plugin: NodeName must not be empty")
+	}
+	if deps.ValidateClasses == nil {
+		return nil, fmt.Errorf("dra plugin: ValidateClasses must not be nil")
+	}
+	if deps.DeviceLister == nil {
+		return nil, fmt.Errorf("dra plugin: DeviceLister must not be nil")
+	}
+	if deps.Logger == nil {
+		return nil, fmt.Errorf("dra plugin: Logger must not be nil")
+	}
+	return &Plugin{driverName: driverName, deps: deps}, nil
+}
+
+// PrepareResourceClaims is a stub that satisfies kubeletplugin.DRAPlugin.
+func (p *Plugin) PrepareResourceClaims(_ context.Context, _ []*resourceapi.ResourceClaim) (map[types.UID]kubeletplugin.PrepareResult, error) {
 	return nil, errNotImplemented
+}
+
+// UnprepareResourceClaims is a stub that satisfies kubeletplugin.DRAPlugin.
+func (p *Plugin) UnprepareResourceClaims(_ context.Context, _ []kubeletplugin.NamespacedObject) (map[types.UID]error, error) {
+	return nil, errNotImplemented
+}
+
+// Start registers this plugin with the kubelet and begins serving DRA
+// requests. It validates cpuClass configuration, creates the plugin data
+// directory, injects a logr.Logger into the context, and calls
+// kubeletplugin.Start. Returns an error if the plugin is already started,
+// if ValidateClasses fails, or if the kubelet plugin cannot be started.
+func (p *Plugin) Start(ctx context.Context) error {
+	p.mu.Lock()
+	alreadyStarted := p.helper != nil
+	p.mu.Unlock()
+	if alreadyStarted {
+		return fmt.Errorf("dra plugin: already started")
+	}
+	if err := p.deps.ValidateClasses(); err != nil {
+		return fmt.Errorf("dra plugin: ValidateClasses failed: %w", err)
+	}
+	// Resolve the plugin data directory default before creating it: an empty
+	// string passed to os.MkdirAll would fail immediately.
+	pluginDataDir := p.deps.PluginDataDir
+	if pluginDataDir == "" {
+		pluginDataDir = filepath.Join(kubeletplugin.KubeletPluginsDir, p.driverName)
+	}
+	if err := os.MkdirAll(pluginDataDir, 0750); err != nil {
+		return fmt.Errorf("dra plugin: create plugin data dir %q: %w", pluginDataDir, err)
+	}
+	ctx = logr.NewContext(ctx, newLogr(p.deps.Logger))
+	opts := []kubeletplugin.Option{
+		kubeletplugin.DriverName(p.driverName),
+		kubeletplugin.KubeClient(p.deps.KubeClient),
+		kubeletplugin.NodeName(p.deps.NodeName),
+		kubeletplugin.PluginDataDirectoryPath(pluginDataDir),
+		kubeletplugin.GRPCVerbosity(-1),
+	}
+	// Only override the registrar directory when explicitly set; passing an
+	// empty string would clobber kubeletplugin's built-in KubeletRegistryDir
+	// default (the option setter stores the value unconditionally).
+	if p.deps.RegistrarDir != "" {
+		opts = append(opts, kubeletplugin.RegistrarDirectoryPath(p.deps.RegistrarDir))
+	}
+	helper, err := kubeletplugin.Start(ctx, p, opts...)
+	if err != nil {
+		return fmt.Errorf("dra plugin: kubeletplugin.Start: %w", err)
+	}
+	p.mu.Lock()
+	p.helper = helper
+	p.mu.Unlock()
+	return nil
+}
+
+// Stop shuts down the kubelet plugin and releases resources. It is
+// idempotent: calling Stop on an already-stopped Plugin is safe.
+func (p *Plugin) Stop() {
+	p.mu.Lock()
+	h := p.helper
+	p.helper = nil
+	p.mu.Unlock()
+	if h != nil {
+		h.Stop()
+	}
+}
+
+// PublishResources validates classes, lists DRA devices, paginates them into
+// ResourceSlice objects and hands the resulting DriverResources to the helper
+// for publishing. Even zero devices produce one empty slice so the pool
+// remains visible.
+func (p *Plugin) PublishResources(ctx context.Context) error {
+	if err := p.deps.ValidateClasses(); err != nil {
+		return fmt.Errorf("dra plugin: ValidateClasses failed: %w", err)
+	}
+	p.mu.Lock()
+	h := p.helper
+	p.mu.Unlock()
+	if h == nil {
+		return fmt.Errorf("dra plugin: PublishResources called before Start")
+	}
+	devices, err := p.deps.DeviceLister.DRADevices(p.driverName)
+	if err != nil {
+		return fmt.Errorf("dra plugin: DRADevices: %w", err)
+	}
+	resources := buildDriverResources(p.deps.NodeName, devices)
+	if err := h.PublishResources(ctx, resources); err != nil {
+		return fmt.Errorf("dra plugin: helper.PublishResources: %w", err)
+	}
+	return nil
+}
+
+// buildDriverResources paginates devices into ResourceSlice objects and
+// returns a DriverResources ready for Helper.PublishResources. The pool name
+// is the node name. At most resourceapi.ResourceSliceMaxDevices devices are
+// placed per slice; even zero devices produce one empty slice.
+func buildDriverResources(nodeName string, devices []resourceapi.Device) resourceslice.DriverResources {
+	maxPerSlice := resourceapi.ResourceSliceMaxDevices
+	var slices []resourceslice.Slice
+	if len(devices) == 0 {
+		slices = []resourceslice.Slice{{}}
+	} else {
+		for i := 0; i < len(devices); i += maxPerSlice {
+			end := i + maxPerSlice
+			if end > len(devices) {
+				end = len(devices)
+			}
+			slices = append(slices, resourceslice.Slice{
+				Devices: devices[i:end],
+			})
+		}
+	}
+	return resourceslice.DriverResources{
+		Pools: map[string]resourceslice.Pool{
+			nodeName: {Slices: slices},
+		},
+	}
+}
+
+// HandleError handles background errors from the kubelet plugin helper.
+// Recoverable errors are logged at Warn level.
+// All other errors are logged at Error level.
+func (p *Plugin) HandleError(_ context.Context, err error, msg string) {
+	if errors.Is(err, kubeletplugin.ErrRecoverable) {
+		p.deps.Logger.Warnf("%s: %v", msg, err)
+	} else {
+		p.deps.Logger.Errorf("%s: %v", msg, err)
+	}
+}
+
+// WatchHealthStatus is not implemented: this driver does not report
+// per-device health, so it returns ErrHealthNotSupported as documented by
+// kubeletplugin.DRAPlugin.
+func (p *Plugin) WatchHealthStatus(_ context.Context, _ chan<- kubeletplugin.DeviceHealthReport) error {
+	return kubeletplugin.ErrHealthNotSupported
 }
