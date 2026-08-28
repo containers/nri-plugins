@@ -19,6 +19,16 @@ import (
 	"fmt"
 )
 
+// CPUClassDRA holds per-cpuClass DRA publication options.
+// +k8s:deepcopy-gen=true
+type CPUClassDRA struct {
+	// Publish controls whether this cpuClass is exposed as a DRA device.
+	// Defaults to true when unset. Set to false to hide this class from
+	// DRA while keeping it usable via the normal nri-plugins config path.
+	// +optional
+	Publish *bool `json:"publish,omitempty"`
+}
+
 // CPUClass specifies CPU frequency, C-state, and turbo attributes
 // for a CPU class.
 // +k8s:deepcopy-gen=true
@@ -99,6 +109,19 @@ type CPUClass struct {
 	// on a single node. Has effect only when the class also carries
 	// PctPriority or SstClosID. Experimental.
 	PublishExtendedResource bool `json:"publishExtendedResource,omitempty"`
+	// DRA holds DRA publication options for this class. Optional; defaults
+	// to publish=true (the class is visible to the DRA driver).
+	// +optional
+	DRA *CPUClassDRA `json:"dra,omitempty"`
+}
+
+// DRAPublish reports whether this cpuClass should be published as a DRA device.
+// Returns true if DRA is nil or DRA.Publish is nil.
+func (cc *CPUClass) DRAPublish() bool {
+	if cc.DRA == nil || cc.DRA.Publish == nil {
+		return true
+	}
+	return *cc.DRA.Publish
 }
 
 func (cc *CPUClass) Validate() error {
