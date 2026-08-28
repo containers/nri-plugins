@@ -161,6 +161,42 @@ Worth knowing:
   running any test. Raise `CLUSTER_READY_TIMEOUT` (300 seconds by default) if a
   large topology needs longer.
 
+## Provisioning a VM again
+
+Provisioning leaves a mark once it has run to the end: `.provisioned` in the
+output directory, and `/etc/nri-e2e-provisioned` in the VM. Runs read the first
+one to decide whether to provision, and the second one to check that a VM which
+came from a cached box really holds a provisioned cluster. Provisioning which was
+interrupted or which failed therefore leaves the VM marked as what it is, and the
+next run provisions it again instead of running tests against a VM with no
+cluster.
+
+A VM which turns out not to be provisioned is provisioned, whether or not it was
+asked for. That covers a VM whose provisioning was interrupted, one from an
+output directory or a cached box older than the marks, and one which was never
+provisioned at all: none of them can run tests, and provisioning fixes all of
+them. `provision` says how much of a say the run has in that:
+
+| value | meaning |
+| --- | --- |
+| unset, `auto` | provision an existing VM if it is not provisioned (the default) |
+| `1`, `yes` | provision it in any case, even if it already is |
+| `no` | leave an existing VM alone, and report it if it is not provisioned |
+
+```shell
+provision=1 ./run_tests.sh policies.test-suite ~/output-directory
+```
+
+A VM which does not exist yet is provisioned when it is created whatever this
+says, since a VM with no cluster is of no use to any test.
+
+The playbook ends in `kubeadm init`, which cannot run on a VM which already has a
+cluster, so a run which is about to provision an existing VM resets it first with
+`kubeadm reset`. This needs the VM to be up; if it is not reachable the framework
+says so and provisions the VM as it is, which fails if the earlier provisioning
+had got as far as installing the cluster. Bring the VM up (`make up` in the output
+directory) before provisioning it again, or start from a clean output directory.
+
 ## Writing tests
 
 A test case is a `code.var.sh` file in a
