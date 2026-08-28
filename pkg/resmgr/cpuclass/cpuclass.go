@@ -143,6 +143,54 @@ func (h *Handler) PctActive() bool {
 	return h != nil && h.pct != nil && h.pct.Active()
 }
 
+// PickHpCpus selects n HP-eligible CPUs from the punit identified by
+// (pkgID, punitID), excluding CPUs in held and those already tracked
+// in hpUsed or hpDRAUsed. Delegates to the PCT allocator. Returns an
+// error when the handler or its PCT allocator is nil, or when the
+// underlying pick fails (inactive allocator, punit not found, or
+// insufficient HP capacity).
+func (h *Handler) PickHpCpus(pkgID, punitID, n int, held cpuset.CPUSet) (cpuset.CPUSet, error) {
+	if h == nil || h.pct == nil {
+		return cpuset.New(), fmt.Errorf("cpuclass: PickHpCpus: pct allocator not initialized")
+	}
+	return h.pct.PickHpCpus(pkgID, punitID, n, held)
+}
+
+// ReleaseHpCpus removes cpus from DRA HP accounting on the punit
+// identified by (pkgID, punitID). Delegates to the PCT allocator.
+// No-op when the handler or its PCT allocator is nil, or when the
+// punit is unknown (idempotent).
+func (h *Handler) ReleaseHpCpus(pkgID, punitID int, cpus cpuset.CPUSet) {
+	if h == nil || h.pct == nil {
+		return
+	}
+	h.pct.ReleaseHpCpus(pkgID, punitID, cpus)
+}
+
+// AccountHpCpus records cpus as DRA HP-held on the punit identified
+// by (pkgID, punitID). Used during restart reconciliation to rebuild
+// HP accounting from persisted claim state without re-allocating CPUs.
+// Delegates to the PCT allocator. Returns an error when the handler
+// or its PCT allocator is nil, or when accounting fails (inactive
+// allocator, punit not found, or HP-ineligible punit).
+func (h *Handler) AccountHpCpus(pkgID, punitID int, cpus cpuset.CPUSet) error {
+	if h == nil || h.pct == nil {
+		return fmt.Errorf("cpuclass: AccountHpCpus: pct allocator not initialized")
+	}
+	return h.pct.AccountHpCpus(pkgID, punitID, cpus)
+}
+
+// IsHPClass reports whether className is currently classified as PCT
+// high priority. Delegates to the PCT allocator. Returns false when
+// the handler or its PCT allocator is nil, or when the allocator is
+// inactive.
+func (h *Handler) IsHPClass(className string) bool {
+	if h == nil || h.pct == nil {
+		return false
+	}
+	return h.pct.IsHPClass(className)
+}
+
 // Configure (re)applies a configuration spec. Idempotent: may be
 // called repeatedly with changed classes, turbo-domain mode, or
 // allowed set.

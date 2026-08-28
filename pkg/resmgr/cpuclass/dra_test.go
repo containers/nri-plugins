@@ -366,23 +366,22 @@ func TestBuildDRADevices(t *testing.T) {
 	isHP := func(name string) bool { return strings.HasPrefix(name, "hp") }
 
 	tests := []struct {
-		name       string
-		driverName string
-		classes    []*policyapi.CPUClass
-		punits     []pct.PunitInfo
-		isHP       func(string) bool
+		name    string
+		classes []*policyapi.CPUClass
+		punits  []pct.PunitInfo
+		isHP    func(string) bool
+		hpOnly  bool
 		// wantCount is the expected number of returned devices.
 		wantCount int
 		// verify is an optional per-result checker.
 		verify func(t *testing.T, devices []resapi.Device)
 	}{
 		{
-			name:       "one HP class + one punit (pkg=0 punit=0)",
-			driverName: "test.driver",
-			classes:    []*policyapi.CPUClass{hpClass("hp")},
-			punits:     []pct.PunitInfo{punit(0, 0, 4, 8)},
-			isHP:       isHP,
-			wantCount:  1,
+			name:      "one HP class + one punit (pkg=0 punit=0)",
+			classes:   []*policyapi.CPUClass{hpClass("hp")},
+			punits:    []pct.PunitInfo{punit(0, 0, 4, 8)},
+			isHP:      isHP,
+			wantCount: 1,
 			verify: func(t *testing.T, devices []resapi.Device) {
 				t.Helper()
 				dev := devices[0]
@@ -657,6 +656,44 @@ func TestBuildDRADevices(t *testing.T) {
 				}
 			},
 		},
+		{
+			// hpOnly=true: mixed HP/non-HP config → only HP devices emitted.
+			// Non-HP DRA is deferred; non-HP classes must be silently filtered.
+			name: "mixed HP/non-HP config with hpOnly=true → only HP devices emitted",
+			classes: []*policyapi.CPUClass{
+				hpClass("hp"),
+				lpClass("lp"),
+				nonPCTClass("default"),
+			},
+			punits:    []pct.PunitInfo{punit(0, 0, 4, 8)},
+			isHP:      isHP,
+			hpOnly:    true,
+			wantCount: 1,
+			verify: func(t *testing.T, devices []resapi.Device) {
+				t.Helper()
+				dev := devices[0]
+				if v, ok := attrStr(dev, "nri/cpuClass"); !ok {
+					t.Error("nri/cpuClass attribute missing")
+				} else if v != "hp" {
+					t.Errorf("nri/cpuClass = %q, want \"hp\"", v)
+				}
+				if !isDNSLabel(dev.Name) {
+					t.Errorf("device name %q is not a valid DNS label", dev.Name)
+				}
+			},
+		},
+		{
+			// hpOnly=false: non-HP classes are included (base behaviour unchanged).
+			name: "mixed HP/non-HP config with hpOnly=false → all published devices emitted",
+			classes: []*policyapi.CPUClass{
+				hpClass("hp"),
+				lpClass("lp"),
+			},
+			punits:    []pct.PunitInfo{punit(0, 0, 4, 8)},
+			isHP:      isHP,
+			hpOnly:    false,
+			wantCount: 2,
+		},
 	}
 
 	for _, tc := range tests {
@@ -665,11 +702,7 @@ func TestBuildDRADevices(t *testing.T) {
 			if isHPFn == nil {
 				isHPFn = func(string) bool { return false }
 			}
-			driverName := tc.driverName
-			if driverName == "" {
-				driverName = "test.driver"
-			}
-			devices := buildDRADevices(driverName, tc.classes, tc.punits, isHPFn)
+			devices := buildDRADevices(tc.classes, tc.punits, isHPFn, tc.hpOnly)
 			if len(devices) != tc.wantCount {
 				t.Fatalf("buildDRADevices() returned %d devices, want %d; devices=%v",
 					len(devices), tc.wantCount, deviceNames(devices))
