@@ -29,13 +29,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 
 	nrtapi "github.com/containers/nri-plugins/pkg/agent/nrtapi"
 	"github.com/containers/nri-plugins/pkg/agent/podresapi"
-	"github.com/containers/nri-plugins/pkg/agent/watch"
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1"
-	k8sclient "k8s.io/client-go/kubernetes"
+	"github.com/containers/nri-plugins/pkg/kubernetes/client"
+	"github.com/containers/nri-plugins/pkg/kubernetes/watch"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
 )
@@ -129,12 +128,11 @@ type Agent struct {
 	kubeConfig string // kubeconfig path
 	configFile string // configuration file to use instead of custom resource
 
-	cfgIf     ConfigInterface      // custom resource access interface
-	httpCli   *http.Client         // shared HTTP client
-	k8sCli    *k8sclient.Clientset // kubernetes client
-	nrtCli    *nrtapi.Client       // NRT custom resources client
-	nrtLock   sync.Mutex           // serialize NRT custom resource updates
-	podResCli *podresapi.Client    // pod resources API client
+	cfgIf     ConfigInterface   // custom resource access interface
+	k8sCli    *client.Client    // wrapped kubernetes client + REST config + HTTP client
+	nrtCli    *nrtapi.Client    // NRT custom resources client
+	nrtLock   sync.Mutex        // serialize NRT custom resource updates
+	podResCli *podresapi.Client // pod resources API client
 
 	notifyFn      NotifyFn        // config resource change notification callback
 	nodeWatch     watch.Interface // kubernetes node watch
@@ -300,12 +298,11 @@ func (a *Agent) configure(newConfig metav1.Object) {
 	switch {
 	case cfg.NodeResourceTopology && a.nrtCli == nil:
 		log.Infof("enabling NRT client")
-		cfg, err := a.getRESTConfig()
-		if err != nil {
-			log.Errorf("failed to setup NRT client: %v", err)
+		if a.k8sCli == nil {
+			log.Errorf("failed to setup NRT client: no kubernetes client")
 			break
 		}
-		cli, err := nrtapi.NewForConfigAndClient(cfg, a.httpCli)
+		cli, err := nrtapi.NewForConfigAndClient(a.k8sCli.RestConfig(), a.k8sCli.HttpClient())
 		if err != nil {
 			log.Errorf("failed to setup NRT client: %v", err)
 			break
@@ -346,30 +343,17 @@ func (a *Agent) setupClients() error {
 		return nil
 	}
 
-	// Create HTTP/REST client and K8s client on initial startup. Any failure
-	// to create these is a failure start up.
-	if a.httpCli == nil {
-		log.Infof("setting up HTTP/REST client...")
-		restCfg, err := a.getRESTConfig()
+	// Create the kubernetes client on initial startup. Any failure is fatal.
+	if a.k8sCli == nil {
+		log.Infof("setting up kubernetes client...")
+		c, err := client.New(client.WithKubeOrInClusterConfig(a.kubeConfig))
 		if err != nil {
-			return err
-		}
-
-		a.httpCli, err = rest.HTTPClientFor(restCfg)
-		if err != nil {
-			return fmt.Errorf("failed to setup kubernetes HTTP client: %w", err)
-		}
-
-		log.Infof("setting up K8s client...")
-		a.k8sCli, err = k8sclient.NewForConfigAndClient(restCfg, a.httpCli)
-		if err != nil {
-			a.cleanupClients()
 			return fmt.Errorf("failed to setup kubernetes client: %w", err)
 		}
+		a.k8sCli = c
 
-		kubeCfg := *restCfg
-		err = a.cfgIf.SetKubeClient(a.httpCli, &kubeCfg)
-		if err != nil {
+		if err := a.cfgIf.SetKubeClient(a.k8sCli.HttpClient(), a.k8sCli.RestConfig()); err != nil {
+			a.cleanupClients()
 			return fmt.Errorf("failed to setup kubernetes config resource client: %w", err)
 		}
 	}
@@ -380,31 +364,38 @@ func (a *Agent) setupClients() error {
 }
 
 func (a *Agent) cleanupClients() {
-	if a.httpCli != nil {
-		a.httpCli.CloseIdleConnections()
-	}
-	a.httpCli = nil
+	a.k8sCli.Close()
 	a.k8sCli = nil
 	a.nrtCli = nil
 }
 
-func (a *Agent) getRESTConfig() (*rest.Config, error) {
-	var (
-		cfg *rest.Config
-		err error
-	)
+// NodeName returns the kubernetes node name this agent is running on.
+func (a *Agent) NodeName() string {
+	return a.nodeName
+}
 
-	if a.kubeConfig == "" {
-		cfg, err = rest.InClusterConfig()
-	} else {
-		cfg, err = clientcmd.BuildConfigFromFlags("", a.kubeConfig)
+// KubeClient returns the shared kubernetes client wrapper. Returns nil
+// before setupClients has run successfully.
+func (a *Agent) KubeClient() *client.Client {
+	return a.k8sCli
+}
+
+// KubeConfig returns the kubeconfig file path this agent was configured
+// with. Returns the empty string when running with in-cluster credentials.
+func (a *Agent) KubeConfig() string {
+	return a.kubeConfig
+}
+
+// RestConfig returns a copy of the REST config used by the shared
+// kubernetes client. Returns nil before setupClients has run
+// successfully. The copy follows rest.CopyConfig semantics — top-level
+// and value-struct fields safe to overwrite; nested map/slice contents
+// share storage with the client's internal config.
+func (a *Agent) RestConfig() *rest.Config {
+	if a.k8sCli == nil {
+		return nil
 	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get kubernetes REST client config: %w", err)
-	}
-
-	return cfg, err
+	return a.k8sCli.RestConfig()
 }
 
 func (a *Agent) setupNodeWatch() error {
