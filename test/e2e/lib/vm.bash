@@ -472,6 +472,35 @@ add e2e_vm_cache=refresh to replace the cached box, or provision=1 to provision
 this VM again."
 }
 
+vm-kubeadm-reset() {
+    # Usage: vm-kubeadm-reset VAGRANTDIR
+    #
+    # Tear down the Kubernetes cluster of the VM of VAGRANTDIR, if it has one.
+    #
+    # Provisioning ends in "kubeadm init", which fails on a VM which already has
+    # a cluster: the ports are taken, the manifests are in place and etcd has
+    # data. So provisioning a VM again has to start by resetting whatever is
+    # there. A VM which is not up, or which never got as far as installing
+    # kubeadm, has nothing to reset.
+    local vagrantdir="$1"
+    local ids=( "$vagrantdir"/.vagrant/machines/*/*/id )
+
+    if [ ! -f "${ids[0]}" ]; then
+        # The VM has not been created yet, so there is no cluster in it either.
+        return 0
+    fi
+
+    echo "resetting the Kubernetes cluster of the VM before provisioning it again..."
+    if ! ( cd "$vagrantdir" && vagrant ssh -c "sudo sh -xc '
+               command -v kubeadm > /dev/null || exit 0
+               kubeadm reset --force || true
+               rm -rf /etc/cni/net.d /root/.kube /home/vagrant/.kube
+               rm -f $VM_PROVISIONED_STAMP'" ); then
+        echo "WARNING: could not reset the cluster of the VM." \
+             "Provisioning it as it is..." >&2
+    fi
+}
+
 vm-setup() {
     local output_dir="$1"
     local vmname="$2"
@@ -675,11 +704,19 @@ vm-setup() {
              error "failed to vagrant init $box_name"
      fi
 
+     # The playbook ends in kubeadm init, which cannot run on a VM which already
+     # has a cluster. A VM which is about to be provisioned and which has been
+     # here before may well have one: an earlier run may have been interrupted
+     # after kubeadm init and before the end of the playbook, or this run may be
+     # provisioning a working VM again on purpose. Either way, reset it first.
+     if [ -z "$no_provision" ]; then
+         vm-kubeadm-reset "$vagrantdir"
+     fi
+
      # If you want to force provisioning of already provisioned vm,
      # then you can set provision=1 when calling e2e test script.
-     # Note that this is not recommended as at least kubeinit
-     # cannot be called second time. But this could be used
-     # if the provisioning failed before kubernetes was setup.
+     # This can be used if the provisioning failed before kubernetes
+     # was setup, or to reinstall the cluster of a VM from scratch.
      if [ ! -z "$provision" ]; then
          if ! (export ANSIBLE_SSH_ARGS="$SSH_PERSIST_OPTS"
 	  vagrant provision ${vagrant_debug:+--debug} || error "failed to provision VM"); then

@@ -161,7 +161,7 @@ Worth knowing:
   running any test. Raise `CLUSTER_READY_TIMEOUT` (300 seconds by default) if a
   large topology needs longer.
 
-## Recording that a VM is provisioned
+## Provisioning a VM again
 
 Provisioning leaves a mark once it has run to the end: `.provisioned` in the
 output directory, and `/etc/nri-e2e-provisioned` in the VM. Runs read the first
@@ -170,6 +170,19 @@ came from a cached box really holds a provisioned cluster. Provisioning which wa
 interrupted or which failed therefore leaves the VM marked as what it is, and the
 next run provisions it again instead of running tests against a VM with no
 cluster.
+
+Set `provision=1` to provision a VM again on purpose:
+
+```shell
+provision=1 ./run_tests.sh policies.test-suite ~/output-directory
+```
+
+The playbook ends in `kubeadm init`, which cannot run on a VM which already has a
+cluster, so a run which is about to provision an existing VM resets it first with
+`kubeadm reset`. This needs the VM to be up; if it is not reachable the framework
+says so and provisions the VM as it is, which fails if the earlier provisioning
+had got as far as installing the cluster. Bring the VM up (`make up` in the output
+directory) before provisioning it again, or start from a clean output directory.
 
 A VM from an output directory or a cached box which predates the marks looks
 unprovisioned, and the framework says so rather than guess. Start from a clean
