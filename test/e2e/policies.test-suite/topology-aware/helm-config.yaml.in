@@ -29,6 +29,10 @@ config:
   $([ -n "$CPU_CLASSES" ] && echo "
   cpuClasses: $CPU_CLASSES
   ")
+  $([ -n "$DRA_ENABLED" ] && echo "
+  dra:
+    enabled: $DRA_ENABLED
+  ")
   $([ -n "$DEFAULT_EXCLUSIVE_CPUCLASS" ] && echo "
   defaultExclusiveCPUClass: $DEFAULT_EXCLUSIVE_CPUCLASS
   ")
