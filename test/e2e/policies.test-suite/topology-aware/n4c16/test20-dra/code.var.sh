@@ -91,26 +91,32 @@ print(",".join(str(a) if a == b else "%d-%d" % (a, b) for a, b in ranges))
 # wait-node-allocatable-claim-status <pod> <claim> <container> <cpus> [timeout=30] [interval=2]
 # Polls pod.status.nodeAllocatableResourceClaimStatuses[] until it
 # contains an entry with resourceClaimName == <claim>, <container>
-# listed in .containers, and .resources.cpu == <cpus>, or fails with
-# command-error on timeout.
+# listed in .containers, and a .mapping[] entry {name: cpu, quantity:
+# <cpus>}, or fails with command-error on timeout.
 #
 # This field -- not node.status.allocatable.cpu -- is KEP-5517's actual
 # persisted signal. node.status.allocatable.cpu is never mutated by
-# DRANodeAllocatableResources: the NodeAllocatableResourceMapping/
-# AllocationMultiplier accounting it introduces is consumed only by the
+# DRANodeAllocatableResources: the NodeAllocatableResources/Mapping/
+# CapacityMultiplier accounting it introduces is consumed only by the
 # scheduler's DynamicResources Filter/PreBind logic, operating on an
 # in-memory fwk.NodeInfo cache to avoid overcommitting CPU when
 # scheduling *additional* pods (pkg/scheduler/framework/plugins/
 # dynamicresources/nodeallocatabledynamicresources.go in a Kubernetes
 # checkout) -- no kubelet/control-plane code path ever writes that
-# deduction back to the Node API object (`git grep
-# NodeAllocatableResourceMapping -- pkg/kubelet/`: zero hits), since
-# kubelet sets status.allocatable purely from physical
-# capacity/reservations. The scheduler instead writes
-# pod.status.nodeAllocatableResourceClaimStatuses[] at PreBind, matching
-# docs/dra/landscape.md:31. Confirmed shape/field name against the live
-# gated VM via `kubectl explain
-# pod.status.nodeAllocatableResourceClaimStatuses` before wiring this in.
+# deduction back to the Node API object, since kubelet sets
+# status.allocatable purely from physical capacity/reservations. The
+# scheduler instead writes pod.status.nodeAllocatableResourceClaimStatuses[]
+# at PreBind, matching docs/dra/landscape.md:31.
+#
+# Shape note: on Kubernetes 1.37 (k8s.io/api v0.37+, this driver's floor
+# -- see docs/dra/plan.md's Step 5 "Landed" line), the per-claim status's
+# `resources map[ResourceName]Quantity` field is ALSO tombstoned, replaced
+# by `mapping []NodeAllocatableMappedResources{name, quantity}` (a second,
+# independent KEP-5517 API break alongside the Device-side
+# NodeAllocatableResourceMappings->NodeAllocatableResources rename).
+# Confirmed shape/field name against the live gated 1.37 VM via `kubectl
+# get pod ... -o jsonpath='{.status.nodeAllocatableResourceClaimStatuses}'`
+# before wiring this in.
 #
 # Written by the scheduler at bind time, so it may not be present the
 # instant the pod reaches Ready -- poll rather than check once, mirroring
@@ -122,13 +128,13 @@ wait-node-allocatable-claim-status() {
             '[(.status.nodeAllocatableResourceClaimStatuses // [])[] | \
               select(.resourceClaimName == \"$claim\" and \
                      (.containers // [] | index(\"$ctr\")) and \
-                     .resources.cpu == \"$cpus\")] | length'"
+                     ((.mapping // []) | any(.name == \"cpu\" and .quantity == \"$cpus\")))] | length'"
         [ "$COMMAND_OUTPUT" -gt 0 ] 2>/dev/null && return 0
         sleep "$interval"
         elapsed=$((elapsed + interval))
     done
     vm-command "kubectl get pod $pod -o jsonpath='{.status.nodeAllocatableResourceClaimStatuses}'"
-    command-error "pod $pod's status.nodeAllocatableResourceClaimStatuses missing entry {resourceClaimName: $claim, containers: [$ctr], resources.cpu: $cpus} (got: $COMMAND_OUTPUT)"
+    command-error "pod $pod's status.nodeAllocatableResourceClaimStatuses missing entry {resourceClaimName: $claim, containers: [$ctr], mapping: [{name: cpu, quantity: $cpus}]} (got: $COMMAND_OUTPUT)"
 }
 
 # wait-resourceslice-devices [timeout]
