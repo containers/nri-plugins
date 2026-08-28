@@ -117,6 +117,8 @@ Approximate PR count: 8–10. Reviewer-friendly sizing; the largest logical unit
 
 **Landed:** commits `63a0df1c`…`db0b8770` on branch `DRA` (see [`docs/plans/20260820-dra-step5-cpuclass-dra-devices.md`](../plans/completed/20260820-dra-step5-cpuclass-dra-devices.md) for the detailed per-task implementation log). **go.mod bump** (`k8s.io/api`, `k8s.io/apimachinery`, `k8s.io/client-go`, `k8s.io/kubelet` → v0.36.3) is part of this step, not Step 6. **Deferred attributes:** `resource.kubernetes.io/numaNode` blocked (needs per-punit CPU list; `pct.PunitInfo` carries `PkgID`/`PunitID`/`HPCapacity`/`NonHPCapacity` but not CPU IDs); frequency attrs (`nri/minFreqKHz`, `nri/maxFreqKHz`, `nri/guaranteedHpFreqKHz`) blocked (symbolic frequency sentinels overflow without resolver — `resolveHWFreq` is unexported in `pct/cpufreq`); `nri/freqGovernor`, `nri/energyPerformancePreference`, `nri/uncoreMinFreqKHz`, `nri/uncoreMaxFreqKHz`, `nri/disabledCstates` deferred by choice (unblocked, plain config reads — additive follow-up).
 
+**Follow-up (2026-08-28): `NodeAllocatableResourceMappings` → `NodeAllocatableResources` field rename, floor moved to Kubernetes 1.37.** Running the Step 10 e2e test against a real Kubernetes 1.37.0 cluster surfaced a genuine forward-compatibility break: `k8s.io/api` v0.37 (Kubernetes 1.37) tombstones `Device.NodeAllocatableResourceMappings` (`CapacityKey`/`AllocationMultiplier`) entirely — it's replaced by `Device.NodeAllocatableResources` (`map[ResourceName]NodeAllocatableResource{Mapping: *NodeAllocatableMapping{CapacityKey, CapacityMultiplier}, Overhead: ...}`), not merely renamed. A binary built against `k8s.io/api` v0.36 sending the old field name gets it silently pruned by a 1.37 API server (unrecognized field), so KEP-5517 support silently no-oped there even with the gate on. Fixed by bumping `k8s.io/api`/`k8s.io/apimachinery`/`k8s.io/client-go`/`k8s.io/kubelet`/`k8s.io/dynamic-resource-allocation` to v0.37.0 and updating `dra.go`'s device construction to the new `NodeAllocatableResources`/`Mapping`/`CapacityMultiplier` shape (`pkg/resmgr/dra/plugin.go` also needed a new `WatchHealthStatus` method to satisfy `kubeletplugin.DRAPlugin`'s v0.37 interface — implemented as `return kubeletplugin.ErrHealthNotSupported`, this driver doesn't do per-device health reporting). **This moves the effective floor from Kubernetes 1.36 to 1.37** — a single compiled binary can only speak one wire-shape for this field, so 1.36 clusters now (correctly) hit the test's skip path instead of passing. Verified live: rebuilt against v0.37.0, re-ran `test20-dra` against a fresh Kubernetes 1.37.0 gated VM — `Test verdict: PASS`, full scheduler `DynamicResources` flow observable at `--v=5` (`nodeallocatabledynamicresources.go`'s `"Patched pod status with NodeAllocatableResourceClaimStatuses"`). The e2e test's own probe (`test20-dra/code.var.sh`) was updated to check `nodeAllocatableResources` instead of the old field name to match.
+
 ### Step 6 — Wire `pkg/resmgr/dra/` to `PublishResources` + Prepare/Unprepare stubs
 
 **Rationale.** With devices constructible (step 5) and a picker (step 4), stand up the actual kubelet plugin. Steps 5–6 could be one PR, but splitting keeps the Kubernetes-facing surface isolated from the domain logic.
@@ -392,6 +394,12 @@ planned (no rename). Implementation deviations from this plan's original Actions
   test. Adding a second, concurrent claim against the same device to exercise that path
   is a real scope expansion (a new test scenario, not a fixup) — left as a follow-up if
   KEP-5075's sharing behavior needs its own coverage.
+- **Follow-up commit `38f69599` (2026-08-28):** running this test against a real
+  Kubernetes 1.37.0 cluster (not just 1.36) surfaced the `NodeAllocatableResourceMappings`
+  → `NodeAllocatableResources` tombstone described in Step 5's "Landed" line — the
+  feature-gate probe's `jq` query here was updated from `nodeAllocatableResourceMappings`
+  to `nodeAllocatableResources` to match. This is also where the floor-version bump to
+  1.37 is actually exercised end-to-end (`Test verdict: PASS` on a fresh 1.37.0 gated VM).
 
 ## Cross-cutting
 
@@ -433,6 +441,18 @@ Splitting this way means the first 5 PRs can land and be reviewed in parallel wi
 
 ## Change log
 
+- **2026-08-28.** Fixed a genuine Kubernetes 1.37 forward-compatibility break surfaced by
+  running Step 10's e2e test against a real 1.37.0 cluster: `k8s.io/api` v0.37 tombstones
+  `Device.NodeAllocatableResourceMappings`, replacing it with the differently-shaped
+  `Device.NodeAllocatableResources` (`Mapping`/`Overhead`). Bumped `k8s.io/api` and
+  siblings to v0.37.0, reworked `dra.go`'s device construction to the new shape, added
+  `Plugin.WatchHealthStatus` (new `kubeletplugin.DRAPlugin` interface method in v0.37,
+  returns `ErrHealthNotSupported`), and updated the e2e test's feature-gate probe to
+  check the new field name. **This moves the effective floor from Kubernetes 1.36 to
+  1.37** — see Step 5's and Step 10's "Landed" lines for the full writeup. Also added a
+  `k8s_log_verbosity` e2e harness var (independent of `k8s_feature_gates`, same
+  threading pattern) to make `--v=N`/`KubeletConfiguration.logging.verbosity` debugging
+  available for future DRA (or any) e2e work.
 - **2026-08-26.** Step 10 landed: added "Landed" line with commit range `327afdc8`…`b5883bf6`,
   test directory `test/e2e/policies.test-suite/topology-aware/n4c16/test20-dra/` (unchanged
   from the plan), and implementation deviations. Landing required an e2e-harness

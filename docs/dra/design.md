@@ -25,7 +25,7 @@ Expose the full nri-plugins `cpuClass` surface (min/max frequency, EPP, freqGove
 ## Assumed baseline
 
 - **[KEP-5075](https://github.com/kubernetes/enhancements/issues/5075) (DRA Consumable Capacity)** — `AllowMultipleAllocations` + `DeviceCapacity.RequestPolicy`. Alpha in Kubernetes v1.34+.
-- **[KEP-5517](https://github.com/kubernetes/enhancements/issues/5517) (DRA Node Allocatable Resources)** — `Device.NodeAllocatableResourceMappings`, scheduler-side node-allocatable accounting, kubelet-side pod-level cgroup inflation. Alpha in v1.36, alpha2 in v1.37.
+- **[KEP-5517](https://github.com/kubernetes/enhancements/issues/5517) (DRA Node Allocatable Resources)** — `Device.NodeAllocatableResources` (`Mapping`/`Overhead` sub-fields), scheduler-side node-allocatable accounting, kubelet-side pod-level cgroup inflation. Alpha in v1.36 as `Device.NodeAllocatableResourceMappings` (`CapacityKey`/`AllocationMultiplier`); that field is tombstoned as of v1.37's alpha2 and replaced by the current shape — a single compiled binary can only speak one wire-shape for this field, so bumping `k8s.io/api` to v0.37+ (as this driver now does) moves the effective floor to Kubernetes 1.37, dropping 1.36 (see `docs/dra/plan.md`'s Step 5/Step 10 "Landed" lines).
 - **[KEP-5941](https://github.com/kubernetes/enhancements/issues/5941) (DRA Shared Consumable Capacity)** — pre-alpha, no upstream code yet. Design has an opt-in path for it (Model C below). Not required for v1.
 - Existing PCT allocator in `pkg/resmgr/cpuclass/internal/pct/` — reused as-is for HP-room accounting, SST-CP/SST-TF programming, and CLOS association.
 - Existing cpuClass application (EPP, governor, uncore freq, disabledCstates) in `pkg/resmgr/cpuclass/` — reused as-is.
@@ -43,11 +43,12 @@ The natural DRA unit is **(cpuClass × punit)**: one virtual device for each cpu
 - The `max` in `RequestPolicy` and the reported capacity value depend on the class's priority tier:
   - **HP class** (`pctPriority: "high"` OR assoc-only class targeting the largest-MaxFreq CLOS): `min(GuaranteedHpCpus, punit.CPUs.Size())`.
   - **Non-HP class**: `punit.CPUs.Size() - GuaranteedHpCpus` (LP/generic room on the punit).
-- `NodeAllocatableResourceMappings` ([KEP-5517](https://github.com/kubernetes/enhancements/issues/5517)):
+- `NodeAllocatableResources` ([KEP-5517](https://github.com/kubernetes/enhancements/issues/5517), v1.37+ shape):
   ```yaml
   cpu:
-    capacityKey: "nri/cpus"
-    allocationMultiplier: "1"
+    mapping:
+      capacityKey: "nri/cpus"
+      capacityMultiplier: "1"
   ```
   One requested `cpus` == one CPU deducted from the scheduler's in-memory node-allocatable
   accounting, regardless of class (surfaced on `pod.status.nodeAllocatableResourceClaimStatuses[]`
@@ -205,7 +206,7 @@ Renamed from [PR #536](https://github.com/containers/nri-plugins/pull/536)'s `DR
 
 ### Prepare flow (per claim)
 
-1. Scheduler at Filter/Reserve time picks a specific (class × punit) device on this node and computes `consumedCapacity: {nri/cpus: N}`. [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517)'s `NodeAllocatableResourceMapping`/`AllocationMultiplier` accounting deducts N from the scheduler's own in-memory `NodeInfo` cache — **not** from the `Node` API object's `status.allocatable.cpu`, which kubelet sets from physical capacity only and which no scheduler or kubelet code path ever patches for this. Under Model C, N is also deducted from the appropriate `sharedCounters` counter.
+1. Scheduler at Filter/Reserve time picks a specific (class × punit) device on this node and computes `consumedCapacity: {nri/cpus: N}`. [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517)'s `NodeAllocatableResources`/`Mapping`/`CapacityMultiplier` accounting deducts N from the scheduler's own in-memory `NodeInfo` cache — **not** from the `Node` API object's `status.allocatable.cpu`, which kubelet sets from physical capacity only and which no scheduler or kubelet code path ever patches for this. Under Model C, N is also deducted from the appropriate `sharedCounters` counter.
 2. Scheduler at PreBind writes `pod.status.nodeAllocatableResourceClaimStatuses`.
 3. Kubelet calls `PrepareResourceClaims(claim)` on the driver.
 4. Driver locks the resmgr and calls `cpuclass.Manager.PickCpus(className, punitID, N)` — selects N CPUs from that punit that fit the class's requirements, updates `hpUsed[punitID]` if HP.
