@@ -1421,6 +1421,63 @@ func TestIsHPClass(t *testing.T) {
 	}
 }
 
+// TestAccountHpCpus covers AccountHpCpus: used during restart reconciliation
+// to rebuild hpDRAUsed from persisted claim state.
+func TestAccountHpCpus(t *testing.T) {
+	// Inactive allocator must return an error.
+	inactiveA := &Allocator{}
+	if err := inactiveA.AccountHpCpus(0, 0, cpuset.MustParse("0")); err == nil {
+		t.Error("AccountHpCpus on inactive allocator: expected error, got nil")
+	}
+
+	// HP-ineligible punit must return an error.
+	aInelig := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2))
+	aInelig.hpEligiblePunit[0] = false
+	if err := aInelig.AccountHpCpus(0, 0, cpuset.MustParse("0")); err == nil {
+		t.Error("AccountHpCpus on HP-ineligible punit: expected error, got nil")
+	}
+
+	// Unknown punit must return an error.
+	aUnknown := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2))
+	if err := aUnknown.AccountHpCpus(99, 99, cpuset.MustParse("0")); err == nil {
+		t.Error("AccountHpCpus unknown punit: expected error, got nil")
+	}
+
+	// Success: account CPUs on an HP-eligible punit.
+	aOK := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2))
+	cpus := cpuset.MustParse("0-1")
+	if err := aOK.AccountHpCpus(0, 0, cpus); err != nil {
+		t.Fatalf("AccountHpCpus success case: %v", err)
+	}
+	if !aOK.hpDRAUsed[0].Equals(cpus) {
+		t.Errorf("hpDRAUsed[0] = %v, want %v", aOK.hpDRAUsed[0], cpus)
+	}
+	// hpUsed must remain untouched.
+	if aOK.hpUsed[0].Size() != 0 {
+		t.Errorf("hpUsed[0] should be untouched after AccountHpCpus, got %v", aOK.hpUsed[0])
+	}
+
+	// Double-account same CPUs is idempotent (union semantics).
+	if err := aOK.AccountHpCpus(0, 0, cpus); err != nil {
+		t.Fatalf("AccountHpCpus idempotent call: %v", err)
+	}
+	if !aOK.hpDRAUsed[0].Equals(cpus) {
+		t.Errorf("hpDRAUsed[0] after double-account = %v, want %v (must be idempotent)", aOK.hpDRAUsed[0], cpus)
+	}
+
+	// Over-capacity: account more CPUs than GuaranteedHpCpus allows.
+	// Must NOT return an error (container may already be running), and
+	// hpDRAUsed must include all accounted CPUs.
+	aOver := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2)) // GuaranteedHpCpus=2
+	overCommit := cpuset.MustParse("0-3")                         // 4 CPUs > GuaranteedHpCpus=2
+	if err := aOver.AccountHpCpus(0, 0, overCommit); err != nil {
+		t.Fatalf("AccountHpCpus over-capacity: expected no error, got %v", err)
+	}
+	if !aOver.hpDRAUsed[0].Equals(overCommit) {
+		t.Errorf("hpDRAUsed[0] = %v, want %v (over-capacity still updates)", aOver.hpDRAUsed[0], overCommit)
+	}
+}
+
 func TestHpReserveRoomWithDRAHolds(t *testing.T) {
 	// Two punits, each with MaxHpCpus=2, GuaranteedHpCpus=2.
 	a := newPickAllocator(t, makePunitsWithGtdHp(2, 2, 2, 2))
