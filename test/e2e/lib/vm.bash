@@ -451,25 +451,106 @@ vm-unmark-provisioned() {
     rm -f "$1/$PROVISIONED_STAMP"
 }
 
-vm-verify-provisioned() {
-    # Usage: vm-verify-provisioned VMNAME
+vm-provisioning-mode() {
+    # Usage: vm-provisioning-mode
     #
-    # Fail unless the VM which is up has been provisioned, that is, unless the
-    # playbook wrote VM_PROVISIONED_STAMP into it.
+    # Print what the provision variable asks of a VM which is already there:
+    #   force: provision it whether it needs it or not (provision=1, provision=yes)
+    #   never: leave it alone even if it is not provisioned (provision=no)
+    #   auto:  provision it if it turns out not to be provisioned (the default)
     #
-    # This is what catches a VM whose provisioning never finished, and a cached
-    # box which was packaged from one.
-    local vmname="$1"
+    # A VM which does not exist yet is provisioned when it is created whatever
+    # this says: a VM with no cluster in it is of no use to any test.
+    case "${provision:-}" in
+        ""|auto)             echo auto;;
+        no|"0"|false|off)    echo never;;
+        *)                   echo force;;
+    esac
+}
 
-    if vm-command-q "[ -f $VM_PROVISIONED_STAMP ]" > /dev/null; then
+vm-carries-provisioning-mark() {
+    # Usage: vm-carries-provisioning-mark
+    #
+    # Return success if the VM which is up carries the mark the playbook writes
+    # when it has run to the end, see VM_PROVISIONED_STAMP.
+    vm-command-q "[ -f $VM_PROVISIONED_STAMP ]" > /dev/null
+}
+
+vm-verify-provisioned() {
+    # Usage: vm-verify-provisioned VAGRANTDIR VMNAME
+    #
+    # Make sure the VM which is up is provisioned, and provision it if it is not.
+    #
+    # A VM without the mark of the playbook is a VM whose provisioning never
+    # finished, one which comes from a box or an output directory older than the
+    # mark, or one which was never provisioned at all. None of those can run
+    # tests, and all of them are fixed by provisioning the VM, so do that rather
+    # than hand the run a VM which does not work. provision=no says to keep hands
+    # off, in which case there is nothing to do but report it.
+    local vagrantdir="$1" vmname="$2"
+
+    if vm-carries-provisioning-mark; then
         return 0
     fi
 
-    error "VM $vmname does not look provisioned: $VM_PROVISIONED_STAMP is missing.
+    if [ "$(vm-provisioning-mode)" == "never" ]; then
+        error "VM $vmname is not provisioned: $VM_PROVISIONED_STAMP is missing.
 Its provisioning either never finished, or the VM comes from a cached box or an
-output directory which predates this check. Start from a clean output directory,
-add e2e_vm_cache=refresh to replace the cached box, or provision=1 to provision
-this VM again."
+output directory which predates this mark. provision=no asks to leave the VM
+alone, so this run cannot fix it. Drop provision=no to have it provisioned, start
+from a clean output directory, or add e2e_vm_cache=refresh to replace the box."
+    fi
+
+    echo "VM $vmname is not provisioned, $VM_PROVISIONED_STAMP is missing." \
+         "Provisioning it..."
+    vm-provision-now "$vagrantdir" "$vmname"
+
+    vm-carries-provisioning-mark ||
+        error "provisioning VM $vmname left no $VM_PROVISIONED_STAMP behind"
+}
+
+vm-provision-now() {
+    # Usage: vm-provision-now VAGRANTDIR VMNAME
+    #
+    # Run the provisioning playbook on the VM of VAGRANTDIR, which is up.
+    local vagrantdir="$1" vmname="$2"
+
+    # The provisioner may have been kept out of the Vagrantfile of this VM, in
+    # which case vagrant has nothing to run. Put it back first.
+    vm-set-no-provision-flag "$vagrantdir" ""
+
+    # The playbook ends in kubeadm init, so whatever cluster the VM has now has
+    # to go.
+    vm-kubeadm-reset "$vagrantdir"
+
+    ( cd "$vagrantdir" &&
+      export ANSIBLE_PIPELINING=True &&
+      export ANSIBLE_SSH_ARGS="$SSH_PERSIST_OPTS" &&
+      vagrant provision ${vagrant_debug:+--debug} ) ||
+        error "failed to provision VM $vmname"
+}
+
+vm-set-no-provision-flag() {
+    # Usage: vm-set-no-provision-flag VAGRANTDIR VALUE
+    #
+    # Set E2E_NO_PROVISION in the env file of VAGRANTDIR, which is what decides
+    # whether the Vagrantfile has the provisioner in it at all.
+    #
+    # An env file written by an earlier run carries the flag of that run, which
+    # may not be what this one does about provisioning. Keep it in sync, both
+    # ways: a vagrant up which is not ours, from make up or make ssh, should
+    # leave a provisioned VM alone, and provisioning needs the provisioner in
+    # the Vagrantfile.
+    local vagrantdir="$1" value="$2"
+
+    if [ ! -f "$vagrantdir/env" ] ||
+           grep -q "^E2E_NO_PROVISION=$value\$" "$vagrantdir/env"; then
+        return 0
+    fi
+
+    sed -i "s/^E2E_NO_PROVISION=.*\$/E2E_NO_PROVISION=$value/" "$vagrantdir/env"
+    grep -q "^E2E_NO_PROVISION=" "$vagrantdir/env" ||
+        echo "E2E_NO_PROVISION=$value" >> "$vagrantdir/env"
 }
 
 vm-kubeadm-reset() {
@@ -515,6 +596,7 @@ vm-setup() {
     local efi_code efi_vars kind
     local box_name="$distro" box_file="" package_box="" use_cached_box=""
     local no_provision="" e2e_no_provision=""
+    local provisioning_mode="$(vm-provisioning-mode)"
 
     # Decide what this run does about provisioning.
     #
@@ -530,7 +612,7 @@ vm-setup() {
     # directory which already has a Vagrantfile keeps the VM and the box it was
     # created from, so start from a clean output directory to benefit from the
     # cache.
-    if [ -n "$provision" ]; then
+    if [ "$provisioning_mode" == "force" ]; then
         # Provisioning was asked for explicitly, so provision whatever is here.
         # Until that succeeds this VM does not count as provisioned.
         vm-unmark-provisioned "$vagrantdir"
@@ -681,18 +763,7 @@ vm-setup() {
 	fi
     fi
 
-    # An env file written by an earlier run carries the flag of that run, which
-    # may not be what this one does about provisioning. Keep it in sync, both
-    # ways: a vagrant up which is not ours, from make up or make ssh, should
-    # leave a provisioned VM alone, and a run which asks for provisioning needs
-    # the provisioner in the Vagrantfile.
-    if [ -f "$vagrantdir/env" ] &&
-           ! grep -q "^E2E_NO_PROVISION=$e2e_no_provision\$" "$vagrantdir/env"; then
-        sed -i "s/^E2E_NO_PROVISION=.*\$/E2E_NO_PROVISION=$e2e_no_provision/" \
-            "$vagrantdir/env"
-        grep -q "^E2E_NO_PROVISION=" "$vagrantdir/env" ||
-            echo "E2E_NO_PROVISION=$e2e_no_provision" >> "$vagrantdir/env"
-    fi
+    vm-set-no-provision-flag "$vagrantdir" "$e2e_no_provision"
 
     (cd "$vagrantdir";
      export ANSIBLE_PIPELINING=True;
@@ -713,11 +784,11 @@ vm-setup() {
          vm-kubeadm-reset "$vagrantdir"
      fi
 
-     # If you want to force provisioning of already provisioned vm,
+     # If you want to force provisioning of an already provisioned vm,
      # then you can set provision=1 when calling e2e test script.
      # This can be used if the provisioning failed before kubernetes
      # was setup, or to reinstall the cluster of a VM from scratch.
-     if [ ! -z "$provision" ]; then
+     if [ "$provisioning_mode" == "force" ]; then
          if ! (export ANSIBLE_SSH_ARGS="$SSH_PERSIST_OPTS"
 	  vagrant provision ${vagrant_debug:+--debug} || error "failed to provision VM"); then
              exit 1
@@ -763,10 +834,10 @@ EOF
     #
     # This needs vm-command, so it cannot happen before the ssh config above is
     # in place. It does come before waiting for the cluster below: a VM which is
-    # not provisioned has no cluster to wait for, and saying that outright beats
+    # not provisioned has no cluster to wait for, and provisioning it now beats
     # timing out on a node which is never going to be ready.
     if ! vm-provisioned "$vagrantdir"; then
-        vm-verify-provisioned "$vmname"
+        vm-verify-provisioned "$vagrantdir" "$vmname"
         vm-mark-provisioned "$vagrantdir" "$vmname" \
             "$(sed -n "s/^IMAGE_NAME = \"\($BOX_NAME_PREFIX\/.*\)\"\$/\1/p" \
                    "$vagrantdir/Vagrantfile" 2>/dev/null)"
