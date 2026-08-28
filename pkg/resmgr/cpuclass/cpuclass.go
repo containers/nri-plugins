@@ -78,6 +78,11 @@ type Handler struct {
 	cpufreq *cpufreq.Allocator
 	pct     *pct.Allocator
 
+	// classes is the last-applied cpuClass list. Updated on every
+	// Configure() call. Used by DRADevices to enumerate published classes.
+	// Caller-owned slice; not deep-copied (consistent with pct.Configure behavior).
+	classes []*policyapi.CPUClass
+
 	// defs maps synthetic class name -> resolved class definition.
 	// Populated by SetClassDef calls from the cpufreq allocator.
 	defs map[string]types.ClassDef
@@ -158,6 +163,10 @@ func (h *Handler) Configure(spec ConfigSpec) error {
 		return fmt.Errorf("cpuclass: pct configure: %w", err)
 	}
 
+	// h.classes is set after all fallible operations so that a partial
+	// Configure failure leaves h.classes consistent with the previously
+	// committed state (not a half-applied new config).
+	h.classes = spec.Classes
 	h.classNames = map[string]struct{}{}
 	for _, cls := range spec.Classes {
 		h.classNames[cls.Name] = struct{}{}
