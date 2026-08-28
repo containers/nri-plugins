@@ -42,6 +42,23 @@ BOX_RECIPE_FILES=(
     files/10-bridge.conf.in
 )
 
+# Where it is recorded that a VM has been provisioned.
+#
+# Provisioning has to leave a mark, because nothing around it says whether it
+# ever ran to the end. A Vagrantfile appears before the VM is even created, and
+# the provisioned flag of vagrant is cleared by the --no-provision of a VM which
+# comes from a box, so a run which was interrupted or which failed while
+# provisioning would otherwise look, to the next one, exactly like a run which
+# got all the way through. That next run then skips provisioning and every test
+# case fails on a VM which has no cluster.
+#
+# There are two marks. The one in the output directory is what a run reads when
+# it decides whether to provision. The one in the VM travels inside the disk
+# image, so a VM created from a packaged box carries it, and a box can be checked
+# rather than taken at its word.
+PROVISIONED_STAMP=".provisioned"
+VM_PROVISIONED_STAMP="/etc/nri-e2e-provisioned"
+
 # How long to wait for the cluster in a VM which has just booted to become
 # usable. Booting a large topology and starting the control plane, the CNI
 # plugin and the cluster DNS all happen within this.
@@ -388,6 +405,73 @@ vm-package-box() {
     return 0
 }
 
+vm-provisioned() {
+    # Usage: vm-provisioned VAGRANTDIR
+    #
+    # Return success if the VM of VAGRANTDIR has been provisioned by a run which
+    # got all the way through, see PROVISIONED_STAMP.
+    [ -f "$1/$PROVISIONED_STAMP" ]
+}
+
+vm-provisioned-from-box() {
+    # Usage: vm-provisioned-from-box VAGRANTDIR
+    #
+    # Return success if the VM of VAGRANTDIR was created from a packaged box
+    # instead of being provisioned in place.
+    grep -q '^box=.' "$1/$PROVISIONED_STAMP" 2>/dev/null
+}
+
+vm-mark-provisioned() {
+    # Usage: vm-mark-provisioned VAGRANTDIR VMNAME [BOXNAME]
+    #
+    # Record that the VM of VAGRANTDIR is provisioned and ready to run tests.
+    # BOXNAME names the packaged box it was created from, if it came from one.
+    local vagrantdir="$1" vmname="$2" box="${3:-}"
+
+    {
+        echo "# Written by vm-setup once this VM was up with everything the"
+        echo "# provisioning playbook installs. Remove this file to have the"
+        echo "# next run provision the VM again."
+        echo "vm=$vmname"
+        echo "box=$box"
+        echo "k8s=$k8s_release"
+        echo "k8scri=$k8scri"
+        echo "cni=$cni_plugin$cni_release"
+        echo "helm=$helm_release"
+        echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    } > "$vagrantdir/$PROVISIONED_STAMP" ||
+        error "cannot record the provisioning of VM $vmname"
+}
+
+vm-unmark-provisioned() {
+    # Usage: vm-unmark-provisioned VAGRANTDIR
+    #
+    # Forget that the VM of VAGRANTDIR is provisioned, for as long as it takes to
+    # provision it again.
+    rm -f "$1/$PROVISIONED_STAMP"
+}
+
+vm-verify-provisioned() {
+    # Usage: vm-verify-provisioned VMNAME
+    #
+    # Fail unless the VM which is up has been provisioned, that is, unless the
+    # playbook wrote VM_PROVISIONED_STAMP into it.
+    #
+    # This is what catches a VM whose provisioning never finished, and a cached
+    # box which was packaged from one.
+    local vmname="$1"
+
+    if vm-command-q "[ -f $VM_PROVISIONED_STAMP ]" > /dev/null; then
+        return 0
+    fi
+
+    error "VM $vmname does not look provisioned: $VM_PROVISIONED_STAMP is missing.
+Its provisioning either never finished, or the VM comes from a cached box or an
+output directory which predates this check. Start from a clean output directory,
+add e2e_vm_cache=refresh to replace the cached box, or provision=1 to provision
+this VM again."
+}
+
 vm-setup() {
     local output_dir="$1"
     local vmname="$2"
@@ -403,35 +487,56 @@ vm-setup() {
     local box_name="$distro" box_file="" package_box="" use_cached_box=""
     local no_provision="" e2e_no_provision=""
 
+    # Decide what this run does about provisioning.
+    #
+    # Skip it for a VM which has already been provisioned, and only for such a
+    # VM. The mark is written once the playbook has run to the end, or once a VM
+    # created from a box has been checked to carry it, see PROVISIONED_STAMP.
+    #
     # Reuse an already provisioned VM if we have one for this topology and for
     # the versions we are about to install. Otherwise provision as usual and
     # keep the result for the next run.
     #
-    # This only concerns a VM which does not exist yet. An output directory
-    # which already has a Vagrantfile keeps the VM and the box it was created
-    # from, so start from a clean output directory to benefit from the cache.
-    if [ ! -f "$vagrantdir/Vagrantfile" ] && vm-box-cache-enabled; then
+    # The box cache only concerns a VM which does not exist yet. An output
+    # directory which already has a Vagrantfile keeps the VM and the box it was
+    # created from, so start from a clean output directory to benefit from the
+    # cache.
+    if [ -n "$provision" ]; then
+        # Provisioning was asked for explicitly, so provision whatever is here.
+        # Until that succeeds this VM does not count as provisioned.
+        vm-unmark-provisioned "$vagrantdir"
+    elif vm-provisioned "$vagrantdir"; then
+        echo "VM $vmname is already provisioned, skipping provisioning..."
+        # Keep the provisioner out of the Vagrantfile too: --no-provision leaves
+        # the machine flagged as not provisioned, so the next vagrant up, whether
+        # it comes from the next test case or from make ssh, would run it.
+        no_provision="--no-provision"
+        e2e_no_provision=1
+        # The cluster of a VM which came from a box starts up when the VM boots,
+        # so it may still be starting, see the wait at the end of this function.
+        if vm-provisioned-from-box "$vagrantdir"; then
+            use_cached_box=1
+        fi
+    elif [ ! -f "$vagrantdir/Vagrantfile" ] && vm-box-cache-enabled; then
         box_file="$BOX_CACHE_DIR/$(vm-box-key "$vmname").box"
         if [ "$e2e_vm_cache" != "refresh" ] && vm-cached-box-usable "$box_file"; then
             echo "using cached provisioned VM $box_file..."
             use_cached_box=1
             box_name="$(vm-box-name "$vmname")"
             distro_img="file://$box_file"
-            # The box already has everything the playbook installs, and
-            # kubeadm init cannot run a second time. Keep the provisioner out
-            # of the Vagrantfile as well: --no-provision leaves the machine
-            # flagged as not provisioned, so the next vagrant up, whether it
-            # comes from the next test case or from make ssh, would run it.
+            # The box already has everything the playbook installs, and kubeadm
+            # init cannot run a second time.
             no_provision="--no-provision"
             e2e_no_provision=1
         else
             package_box=1
         fi
     elif grep -q "^IMAGE_NAME = \"$BOX_NAME_PREFIX/" "$vagrantdir/Vagrantfile" 2>/dev/null; then
-        # The VM of this output directory was created from a packaged box, so it
-        # is provisioned whatever this run was asked to do. Skip provisioning
-        # here too: vagrant would otherwise run it either on a VM which is
-        # already up, or on one which it is re-importing from that box.
+        # The VM of this output directory was created from a packaged box, so its
+        # disk is provisioned however the run which created it ended: a box only
+        # exists because provisioning succeeded before it was packaged. Skip
+        # provisioning here too, vagrant would otherwise run it either on a VM
+        # which is already up, or on one which it is re-importing from that box.
         echo "the VM of this output directory comes from a packaged box," \
              "skipping provisioning..."
         use_cached_box=1
@@ -547,14 +652,17 @@ vm-setup() {
 	fi
     fi
 
-    # An env file written before this VM was known to come from a box has no
-    # flag, or a stale one. Keep it in sync, so that a vagrant up which is not
-    # ours, from make up or make ssh, does not provision the VM either.
-    if [ -n "$e2e_no_provision" ] && [ -f "$vagrantdir/env" ] &&
-           ! grep -q '^E2E_NO_PROVISION=1$' "$vagrantdir/env"; then
-        sed -i 's/^E2E_NO_PROVISION=.*$/E2E_NO_PROVISION=1/' "$vagrantdir/env"
-        grep -q '^E2E_NO_PROVISION=1$' "$vagrantdir/env" ||
-            echo "E2E_NO_PROVISION=1" >> "$vagrantdir/env"
+    # An env file written by an earlier run carries the flag of that run, which
+    # may not be what this one does about provisioning. Keep it in sync, both
+    # ways: a vagrant up which is not ours, from make up or make ssh, should
+    # leave a provisioned VM alone, and a run which asks for provisioning needs
+    # the provisioner in the Vagrantfile.
+    if [ -f "$vagrantdir/env" ] &&
+           ! grep -q "^E2E_NO_PROVISION=$e2e_no_provision\$" "$vagrantdir/env"; then
+        sed -i "s/^E2E_NO_PROVISION=.*\$/E2E_NO_PROVISION=$e2e_no_provision/" \
+            "$vagrantdir/env"
+        grep -q "^E2E_NO_PROVISION=" "$vagrantdir/env" ||
+            echo "E2E_NO_PROVISION=$e2e_no_provision" >> "$vagrantdir/env"
     fi
 
     (cd "$vagrantdir";
@@ -611,10 +719,25 @@ EOF
     mkdir -p "$COMMAND_OUTPUT_DIR"
     rm -f "$COMMAND_OUTPUT_DIR"/0*
 
+    # Record that this VM is provisioned, now that it is up and everything which
+    # provisions it has run. A VM which came from a box was provisioned before it
+    # was packaged, so look for the mark the playbook left inside it rather than
+    # take the box at its word.
+    #
+    # This needs vm-command, so it cannot happen before the ssh config above is
+    # in place. It does come before waiting for the cluster below: a VM which is
+    # not provisioned has no cluster to wait for, and saying that outright beats
+    # timing out on a node which is never going to be ready.
+    if ! vm-provisioned "$vagrantdir"; then
+        vm-verify-provisioned "$vmname"
+        vm-mark-provisioned "$vagrantdir" "$vmname" \
+            "$(sed -n "s/^IMAGE_NAME = \"\($BOX_NAME_PREFIX\/.*\)\"\$/\1/p" \
+                   "$vagrantdir/Vagrantfile" 2>/dev/null)"
+    fi
+
     # A VM which has just booted from a box, or which was brought back up after
     # being packaged, has a cluster which is still starting up. Wait for it
-    # before letting the tests run. Both waits need vm-command, so they cannot
-    # happen before the ssh config above is in place.
+    # before letting the tests run.
     if [ -n "$use_cached_box" ] || [ -n "$package_box" ]; then
         wait-for-node-ready
         wait-for-dns-ready

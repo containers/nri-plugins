@@ -563,3 +563,24 @@
       ansible.builtin.systemd:
         name: kubelet
         enabled: true
+
+    # Keep this last: it is what says that everything above succeeded. The mark
+    # travels with the disk image, so a VM created from a "vagrant package"d box
+    # carries it, and lib/vm.bash can tell a provisioned VM from one whose
+    # provisioning was interrupted instead of guessing, see PROVISIONED_STAMP.
+    - name: Record that provisioning completed
+      ansible.builtin.copy:
+        dest: /etc/nri-e2e-provisioned
+        mode: '0644'
+        content: |
+          # Written by test/e2e/playbook/provision.yaml when it ran to the end.
+          # Removing this file makes the e2e framework provision this VM again.
+          hostname={{ hostname }}
+          k8s={{ k8s_release }}
+          k8s_version={{ k8s_version }}
+          cri={{ cri_runtime }}
+          containerd={{ containerd_release }}
+          crio={{ crio_release }}
+          cni={{ cni_plugin }}{{ cni_release }}
+          helm={{ helm_release }}
+          date={{ ansible_date_time.iso8601 }}
