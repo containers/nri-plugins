@@ -7,6 +7,8 @@
     cri_runtime: "{{ cri_runtime }}"
     k8s_release: "{{ k8s_release }}"
     k8s_version: "{{ k8s_version }}"
+    # Comma-separated "Gate1=true,Gate2=false" list, or empty string.
+    k8s_feature_gates: "{{ k8s_feature_gates }}"
     is_containerd: false
     is_crio: false
     containerd_release: "{{ containerd_release }}"
@@ -501,9 +503,40 @@
         daemon_reload: true
         state: restarted
 
+    - name: Write kubeadm --config with feature gates for apiserver/scheduler/kubelet
+      ansible.builtin.copy:
+        dest: /root/kubeadm-config.yaml
+        content: |
+          apiVersion: kubeadm.k8s.io/v1beta4
+          kind: ClusterConfiguration
+          networking:
+            podSubnet: "{{ network }}"
+          apiServer:
+            extraArgs:
+              - name: feature-gates
+                value: "{{ k8s_feature_gates }}"
+          scheduler:
+            extraArgs:
+              - name: feature-gates
+                value: "{{ k8s_feature_gates }}"
+          ---
+          apiVersion: kubelet.config.k8s.io/v1beta1
+          kind: KubeletConfiguration
+          featureGates:
+          {% for gate in k8s_feature_gates.split(',') if gate.strip() and '=' in gate %}
+            {{ gate.split('=')[0] }}: {{ gate.split('=')[1] }}
+          {% endfor %}
+      when: k8s_feature_gates != ""
+
     - name: Initialize the Kubernetes cluster using kubeadm
       ansible.builtin.command:
         cmd: kubeadm init --pod-network-cidr="{{ network }}"
+      when: k8s_feature_gates == ""
+
+    - name: Initialize the Kubernetes cluster using kubeadm (with feature gates)
+      ansible.builtin.command:
+        cmd: kubeadm init --config /root/kubeadm-config.yaml
+      when: k8s_feature_gates != ""
 
     - name: Setup kubeconfig for vagrant user
       ansible.builtin.command: "{{ item }}"

@@ -741,7 +741,7 @@ Allocation](https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-reso
 Tuning](#class-based-cpu-tuning)) as DRA devices. This lets pods request CPUs with a
 specific `cpuClass` via a `ResourceClaim` instead of (or in addition to) the
 `cpu-class.resource-policy.nri.io` annotation, and lets the scheduler see and account
-for `cpuClass`-tagged capacity through `node.status.allocatable`.
+for `cpuClass`-tagged capacity when fitting pods onto nodes.
 
 #### Prerequisites
 
