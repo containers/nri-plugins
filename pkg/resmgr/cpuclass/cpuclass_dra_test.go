@@ -14,7 +14,7 @@
 
 // Tests for the DRA ClaimAllocator pass-through methods on Handler.
 
-package cpuclass
+package cpuclass_test
 
 import (
 	"testing"
@@ -22,13 +22,14 @@ import (
 	idset "github.com/intel/goresctrl/pkg/utils"
 
 	policyapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
+	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass"
 	"github.com/containers/nri-plugins/pkg/resmgr/dra"
 	"github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 // Compile-time assertion: *Handler must satisfy dra.ClaimAllocator.
-var _ dra.ClaimAllocator = (*Handler)(nil)
+var _ dra.ClaimAllocator = (*cpuclass.Handler)(nil)
 
 // draTestSys is a minimal sysfs.System implementation for DRA pass-through
 // tests. Only CPUIDs is overridden; all other methods are delegated to the
@@ -44,15 +45,15 @@ func (s *draTestSys) CPUIDs() []idset.ID { return nil }
 // allocator using the SST in-memory mock (OVERRIDE_SST). The mock is
 // seeded with one package (ID 0), one punit (ID 0), CPUs 0-7, and
 // GuaranteedHpCpus=4. t.Setenv restores the env after the test.
-func newConfiguredHandler(t *testing.T) *Handler {
+func newConfiguredHandler(t *testing.T) *cpuclass.Handler {
 	t.Helper()
 	t.Setenv("OVERRIDE_SST", `{"supported":true,"clos_count":4,"packages":[{"id":0,"cpus":"0-7","tf_supported":true,"tf_enabled":true,"cp_supported":true,"cp_enabled":false,"punits":[{"id":0,"cpus":"0-7","max_hp_cpus":4,"guaranteed_hp_cpus":4}]}]}`)
 	t.Setenv("OVERRIDE_SST_STATE_DIR", t.TempDir())
-	h, err := New(&draTestSys{})
+	h, err := cpuclass.New(&draTestSys{})
 	if err != nil {
 		t.Fatalf("New() failed: %v", err)
 	}
-	if err := h.Configure(ConfigSpec{
+	if err := h.Configure(cpuclass.ConfigSpec{
 		Classes: []*policyapi.CPUClass{{Name: "hp", PctPriority: "high"}},
 		Allowed: cpuset.MustParse("0-7"),
 	}); err != nil {
@@ -65,16 +66,16 @@ func newConfiguredHandler(t *testing.T) *Handler {
 // SST is reported as unsupported and PCT stays in disabled mode.
 // Configure is called with an HP class to exercise the "SST not
 // supported → PCT disabled" path.
-func newInactiveHandler(t *testing.T) *Handler {
+func newInactiveHandler(t *testing.T) *cpuclass.Handler {
 	t.Helper()
 	// Ensure OVERRIDE_SST is unset (t.Setenv restores original value).
 	t.Setenv("OVERRIDE_SST", "")
-	h, err := New(&draTestSys{})
+	h, err := cpuclass.New(&draTestSys{})
 	if err != nil {
 		t.Fatalf("New() failed: %v", err)
 	}
 	// Configure with a PCT class; SST unsupported → pct stays disabled.
-	_ = h.Configure(ConfigSpec{
+	_ = h.Configure(cpuclass.ConfigSpec{
 		Classes: []*policyapi.CPUClass{{Name: "hp", PctPriority: "high"}},
 		Allowed: cpuset.MustParse("0-7"),
 	})
@@ -86,7 +87,7 @@ func newInactiveHandler(t *testing.T) *Handler {
 // ---------------------------------------------------------------------------
 
 func TestHandlerPickHpCpus_NilHandler(t *testing.T) {
-	var h *Handler
+	var h *cpuclass.Handler
 	_, err := h.PickHpCpus(0, 0, 1, cpuset.New())
 	if err == nil {
 		t.Fatal("expected error from nil handler, got nil")
@@ -94,7 +95,7 @@ func TestHandlerPickHpCpus_NilHandler(t *testing.T) {
 }
 
 func TestHandlerPickHpCpus_NilPct(t *testing.T) {
-	h := &Handler{} // pct is nil
+	h := &cpuclass.Handler{} // pct is nil
 	_, err := h.PickHpCpus(0, 0, 1, cpuset.New())
 	if err == nil {
 		t.Fatal("expected error from nil pct, got nil")
@@ -129,13 +130,13 @@ func TestHandlerPickHpCpus_ActiveDelegates(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandlerReleaseHpCpus_NilHandler(t *testing.T) {
-	var h *Handler
+	var h *cpuclass.Handler
 	// must not panic
 	h.ReleaseHpCpus(0, 0, cpuset.New())
 }
 
 func TestHandlerReleaseHpCpus_NilPct(t *testing.T) {
-	h := &Handler{}
+	h := &cpuclass.Handler{}
 	// must not panic
 	h.ReleaseHpCpus(0, 0, cpuset.New())
 }
@@ -163,14 +164,14 @@ func TestHandlerReleaseHpCpus_ActiveDelegates(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandlerAccountHpCpus_NilHandler(t *testing.T) {
-	var h *Handler
+	var h *cpuclass.Handler
 	if err := h.AccountHpCpus(0, 0, cpuset.New()); err == nil {
 		t.Fatal("expected error from nil handler, got nil")
 	}
 }
 
 func TestHandlerAccountHpCpus_NilPct(t *testing.T) {
-	h := &Handler{}
+	h := &cpuclass.Handler{}
 	if err := h.AccountHpCpus(0, 0, cpuset.New()); err == nil {
 		t.Fatal("expected error from nil pct, got nil")
 	}
@@ -206,14 +207,14 @@ func TestHandlerAccountHpCpus_ActiveDelegates(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandlerIsHPClass_NilHandler(t *testing.T) {
-	var h *Handler
+	var h *cpuclass.Handler
 	if h.IsHPClass("hp") {
 		t.Error("IsHPClass on nil handler: got true, want false")
 	}
 }
 
 func TestHandlerIsHPClass_NilPct(t *testing.T) {
-	h := &Handler{}
+	h := &cpuclass.Handler{}
 	if h.IsHPClass("hp") {
 		t.Error("IsHPClass with nil pct: got true, want false")
 	}

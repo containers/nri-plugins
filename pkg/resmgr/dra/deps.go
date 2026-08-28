@@ -113,6 +113,13 @@ type Deps struct {
 	CDIWriter CDIWriter
 	// ClaimStore persists and loads claim state via the resmgr cache.
 	ClaimStore ClaimStore
+	// SupplyUnclaim removes the pool-supply marking (ClaimCPUs) for uid, if
+	// any, and resets the associated CPU class. Called by
+	// UnprepareResourceClaims so that a claim remarked by reapplyDRAClaims
+	// after a restart does not permanently exclude its CPUs from pool capacity
+	// when unprepare arrives before any container has referenced the claim.
+	// May be nil when no pool-supply integration is needed.
+	SupplyUnclaim func(uid types.UID, cpus cpuset.CPUSet)
 	// WithLock executes f while holding the resmgr write lock. All accesses
 	// to Handler state (ValidateClasses, DRADevices, Prepare, Unprepare, and
 	// RestoreClaims) must run inside WithLock.

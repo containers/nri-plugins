@@ -31,6 +31,7 @@ import (
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
 
+	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	"tags.cncf.io/container-device-interface/pkg/parser"
 )
@@ -40,7 +41,7 @@ var (
 	errNilAllocation           = errors.New("dra plugin: claim has nil Allocation")
 	errMissingConsumedCapacity = errors.New("dra plugin: ConsumedCapacity[nri/cpus] absent or zero")
 	errNonHPNotSupported       = errors.New("dra plugin: non-HP CPU class not supported (deferred)")
-	errMultiPunitNotSupported  = errors.New("dra plugin: claim spans multiple punits (leaf pools): unsupported")
+	errMultiPunitNotSupported  = errors.New("dra plugin: claim results on multiple punits not supported")
 )
 
 // deviceInfo holds the device attributes looked up from the published device list.
@@ -103,6 +104,11 @@ func New(driverName string, deps Deps) (*Plugin, error) {
 	}, nil
 }
 
+// DriverName returns the plugin's DRA driver name.
+func (p *Plugin) DriverName() string {
+	return p.driverName
+}
+
 // shareIDPtr converts a ShareID string to *types.UID. Returns nil if s is "".
 func shareIDPtr(s string) *types.UID {
 	if s == "" {
@@ -123,13 +129,13 @@ func (p *Plugin) deviceIndex() (map[string]deviceInfo, error) {
 	idx := make(map[string]deviceInfo, len(devs))
 	for _, d := range devs {
 		info := deviceInfo{}
-		if attr, ok := d.Attributes[resourceapi.QualifiedName("nri/cpuClass")]; ok && attr.StringValue != nil {
+		if attr, ok := d.Attributes[cpuclass.AttrCPUClass]; ok && attr.StringValue != nil {
 			info.ClassName = *attr.StringValue
 		}
-		if attr, ok := d.Attributes[resourceapi.QualifiedName("nri/packageID")]; ok && attr.IntValue != nil {
+		if attr, ok := d.Attributes[cpuclass.AttrPackageID]; ok && attr.IntValue != nil {
 			info.PkgID = int(*attr.IntValue)
 		}
-		if attr, ok := d.Attributes[resourceapi.QualifiedName("nri/punitID")]; ok && attr.IntValue != nil {
+		if attr, ok := d.Attributes[cpuclass.AttrPunitID]; ok && attr.IntValue != nil {
 			info.PunitID = int(*attr.IntValue)
 		}
 		idx[d.Name] = info
@@ -217,6 +223,7 @@ func (p *Plugin) PrepareResourceClaims(_ context.Context, claims []*resourceapi.
 				heldCPUs := p.allClaimedCPUs()
 				var pickedAllocs []ResultAlloc
 				var cdiDevices []CDIDevice
+				var punit *deviceInfo
 
 				for i, r := range filtered {
 					// Step 5: look up device attrs.
@@ -230,6 +237,11 @@ func (p *Plugin) PrepareResourceClaims(_ context.Context, claims []*resourceapi.
 						p.rollbackPicks(pickedAllocs)
 						return kubeletplugin.PrepareResult{Err: fmt.Errorf("dra plugin: device %q missing nri/cpuClass attribute", r.Device)}
 					}
+					if punit != nil && (attrs.PkgID != punit.PkgID || attrs.PunitID != punit.PunitID) {
+						p.rollbackPicks(pickedAllocs)
+						return kubeletplugin.PrepareResult{Err: errMultiPunitNotSupported}
+					}
+					punit = &attrs
 
 					// Step 5b: reject claims whose results span more than one
 					// punit — the topology-aware consumer requires the union
@@ -243,7 +255,7 @@ func (p *Plugin) PrepareResourceClaims(_ context.Context, claims []*resourceapi.
 					}
 
 					// Step 6: read CPU count from ConsumedCapacity.
-					q, ok := r.ConsumedCapacity[resourceapi.QualifiedName("nri/cpus")]
+					q, ok := r.ConsumedCapacity[cpuclass.CapacityCPUs]
 					if !ok {
 						p.rollbackPicks(pickedAllocs)
 						return kubeletplugin.PrepareResult{Err: errMissingConsumedCapacity}
@@ -401,8 +413,15 @@ func (p *Plugin) UnprepareResourceClaims(_ context.Context, claims []kubeletplug
 				perUID[uid] = nil
 				continue
 			}
+			delete(p.claims, uid)
+			if saveErr := p.deps.ClaimStore.Save(p.claims); saveErr != nil {
+				p.claims[uid] = cs
+				perUID[uid] = fmt.Errorf("dra plugin: UnprepareResourceClaims: ClaimStore.Save: %w", saveErr)
+				continue
+			}
 			// Release CPUs for each allocation result; parse errors are logged
-			// but do not block CDI removal or claim deletion.
+			// but do not block CDI removal or supply unclaim.
+			allCPUs := cpuset.New()
 			for _, alloc := range cs.Allocs {
 				cpus, err := cpuset.Parse(alloc.CPUs)
 				if err != nil {
@@ -410,17 +429,19 @@ func (p *Plugin) UnprepareResourceClaims(_ context.Context, claims []kubeletplug
 					continue
 				}
 				p.deps.ClaimAllocator.ReleaseHpCpus(alloc.PkgID, alloc.PunitID, cpus)
+				allCPUs = allCPUs.Union(cpus)
+			}
+			// Remove any pool-supply marking left by reapplyDRAClaims (the
+			// restart recovery path marks supply without a container refcount,
+			// so releaseClaim would never fire to clean it up).
+			if p.deps.SupplyUnclaim != nil && !allCPUs.IsEmpty() {
+				p.deps.SupplyUnclaim(uid, allCPUs)
 			}
 			// Remove CDI spec unconditionally; log but do not block deletion.
 			if err := p.deps.CDIWriter.RemoveClaim(uid); err != nil {
 				p.deps.Logger.Warnf("dra plugin: UnprepareResourceClaims: claim %s: RemoveClaim: %v", uid, err)
 			}
-			delete(p.claims, uid)
 			perUID[uid] = nil
-		}
-		// Persist the updated claims map in a single batch write.
-		if saveErr := p.deps.ClaimStore.Save(p.claims); saveErr != nil {
-			p.deps.Logger.Errorf("dra plugin: UnprepareResourceClaims: ClaimStore.Save: %v", saveErr)
 		}
 	})
 	return perUID, nil
@@ -443,6 +464,21 @@ func (p *Plugin) LiveClaimClasses() map[string]int {
 				seen[alloc.ClassName] = true
 			}
 		}
+	}
+	return result
+}
+
+// LiveClaimsLocked returns a snapshot of the currently live claims as
+// map[types.UID][]ResultAlloc. Caller must hold the resmgr lock (do not call
+// from inside a WithLock callback — the resmgr lock is not reentrant). Used
+// by the Step 8 pool-accounting re-apply path (reapplyDRAClaims) after
+// Start()/Reconfigure() rebuild policy state.
+func (p *Plugin) LiveClaimsLocked() map[types.UID][]ResultAlloc {
+	result := make(map[types.UID][]ResultAlloc, len(p.claims))
+	for uid, cs := range p.claims {
+		allocs := make([]ResultAlloc, len(cs.Allocs))
+		copy(allocs, cs.Allocs)
+		result[uid] = allocs
 	}
 	return result
 }

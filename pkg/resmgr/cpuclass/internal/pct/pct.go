@@ -554,6 +554,27 @@ func (a *Allocator) Punits() []PunitInfo {
 	return out
 }
 
+// MaxPunits is like Punits but sets HPCapacity to the full GuaranteedHpCpus
+// (not reduced by hpUsed). Used by Handler.DRADevicesAtMaxCapacity for
+// hardware-change detection in Reconfigure, where comparing workload-adjusted
+// capacities would produce false negatives when hpUsed coincidentally equals
+// the capacity delta.
+func (a *Allocator) MaxPunits() []PunitInfo {
+	if !a.Active() {
+		return nil
+	}
+	out := make([]PunitInfo, len(a.punits))
+	for i, pu := range a.punits {
+		out[i] = PunitInfo{
+			PkgID:         pu.PkgID,
+			PunitID:       pu.PunitID,
+			HPCapacity:    a.punitHPCapacity(i),
+			NonHPCapacity: a.punitNonHPCapacity(i),
+		}
+	}
+	return out
+}
+
 // punitIdxByID returns the index in a.punits for the punit identified
 // by (pkgID, punitID), or -1 if not found.
 func (a *Allocator) punitIdxByID(pkgID, punitID int) int {

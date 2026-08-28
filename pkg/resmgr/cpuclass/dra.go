@@ -33,6 +33,22 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/pct"
 )
 
+// DRA device attribute/capacity keys shared with pkg/resmgr/dra (which reads
+// them back out of the published device list) and with the topology-aware
+// policy's Reconfigure device-diff logic (cmd/plugins/topology-aware/policy/dra.go)
+// — defined once here, referenced everywhere else, mirroring the DRADriverName
+// convention.
+const (
+	// AttrCPUClass names the cpuClass a device belongs to.
+	AttrCPUClass resapi.QualifiedName = "nri/cpuClass"
+	// AttrPackageID names the CPU package a device's punit lives on.
+	AttrPackageID resapi.QualifiedName = "nri/packageID"
+	// AttrPunitID names the SST-TF punit a device represents.
+	AttrPunitID resapi.QualifiedName = "nri/punitID"
+	// CapacityCPUs is the capacity key for the number of CPUs a device grants.
+	CapacityCPUs resapi.QualifiedName = "nri/cpus"
+)
+
 // nonAlphaRe matches runs of characters that are not lowercase letters or digits.
 // Used by sanitizeBase to replace them with hyphens.
 var nonAlphaRe = regexp.MustCompile(`[^a-z0-9]+`)
@@ -248,9 +264,9 @@ func buildDRADevices(
 			name := deviceName(base, pu.PkgID, pu.PunitID)
 
 			attrs := map[resapi.QualifiedName]resapi.DeviceAttribute{
-				"nri/packageID": intAttr(int64(pu.PkgID)),
-				"nri/punitID":   intAttr(int64(pu.PunitID)),
-				"nri/cpuClass":  strAttr(cc.Name),
+				AttrPackageID: intAttr(int64(pu.PkgID)),
+				AttrPunitID:   intAttr(int64(pu.PunitID)),
+				AttrCPUClass:  strAttr(cc.Name),
 			}
 			// nri/pctPriority is only emitted for PCT classes (non-empty PctPriority).
 			// Omitting it for non-PCT classes avoids CEL false-positives on "" values.
@@ -263,7 +279,7 @@ func buildDRADevices(
 				Name:       name,
 				Attributes: attrs,
 				Capacity: map[resapi.QualifiedName]resapi.DeviceCapacity{
-					"nri/cpus": {
+					CapacityCPUs: {
 						Value: resource.MustParse(capStr),
 						RequestPolicy: &resapi.CapacityRequestPolicy{
 							Default: kptr.To(resource.MustParse("1")),
@@ -279,7 +295,7 @@ func buildDRADevices(
 				NodeAllocatableResources: map[corev1.ResourceName]resapi.NodeAllocatableResource{
 					corev1.ResourceCPU: {
 						Mapping: &resapi.NodeAllocatableMapping{
-							CapacityKey:        kptr.To(resapi.QualifiedName("nri/cpus")),
+							CapacityKey:        kptr.To(CapacityCPUs),
 							CapacityMultiplier: kptr.To(resource.MustParse("1")),
 						},
 					},
@@ -308,6 +324,22 @@ func (h *Handler) DRADevices(_ string) ([]resapi.Device, error) {
 	// Punits() returns nil when inactive, so len()==0 covers both
 	// the inactive and the "no punits" cases.
 	punits := h.pct.Punits()
+	if len(punits) == 0 {
+		return []resapi.Device{}, nil
+	}
+	return buildDRADevices(h.classes, punits, h.pct.IsHPClass, true), nil
+}
+
+// DRADevicesAtMaxCapacity is like DRADevices but sets HPCapacity to
+// GuaranteedHpCpus (ignoring hpUsed). Used by Reconfigure to snapshot
+// hardware-level capacity for change detection — comparing workload-adjusted
+// capacities would produce false negatives when hpUsed coincidentally equals
+// the capacity delta introduced by a hardware change.
+func (h *Handler) DRADevicesAtMaxCapacity(_ string) ([]resapi.Device, error) {
+	if h == nil || h.pct == nil {
+		return []resapi.Device{}, nil
+	}
+	punits := h.pct.MaxPunits()
 	if len(punits) == 0 {
 		return []resapi.Device{}, nil
 	}

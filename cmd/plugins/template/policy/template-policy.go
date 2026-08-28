@@ -75,6 +75,19 @@ func (p *policy) Start() error {
 	return nil
 }
 
+// Stop shuts down this policy. The template policy holds no resources
+// to release.
+func (p *policy) Stop() error {
+	return nil
+}
+
+// PostReconfigure runs after a successful Reconfigure, once the resource
+// manager's write lock has been released. The template policy has no
+// follow-up work to run there.
+func (p *policy) PostReconfigure() error {
+	return nil
+}
+
 // Reconfigure this policy.
 func (p *policy) Reconfigure(newCfg any) error {
 	cfg, ok := newCfg.(*cfgapi.Config)

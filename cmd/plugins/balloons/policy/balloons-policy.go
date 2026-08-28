@@ -254,6 +254,19 @@ func (p *balloons) Start() error {
 	return nil
 }
 
+// Stop shuts down this policy. The balloons policy holds no resources
+// to release.
+func (p *balloons) Stop() error {
+	return nil
+}
+
+// PostReconfigure runs after a successful Reconfigure, once the resource
+// manager's write lock has been released. The balloons policy has no
+// follow-up work to run there.
+func (p *balloons) PostReconfigure() error {
+	return nil
+}
+
 // Sync synchronizes the active policy state.
 func (p *balloons) Sync(add []cache.Container, del []cache.Container) error {
 	irq.BlockWrites()
