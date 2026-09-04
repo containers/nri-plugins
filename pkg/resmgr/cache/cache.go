@@ -929,7 +929,7 @@ func (cch *cache) GetPolicyEntry(key string, ptr any) bool {
 func marshalEntry(obj any) ([]byte, error) {
 	switch obj := obj.(type) {
 	case cpuset.CPUSet:
-		return []byte("\"" + obj.String() + "\""), nil
+		return json.Marshal(obj.String())
 	case map[string]cpuset.CPUSet:
 		dst := make(map[string]string)
 		for key, cset := range obj {
@@ -946,9 +946,14 @@ func marshalEntry(obj any) ([]byte, error) {
 func unmarshalEntry(data []byte, ptr any) error {
 	switch ptr := ptr.(type) {
 	case *cpuset.CPUSet:
-		cset, err := cpuset.Parse(string(data[1 : len(data)-1]))
+		str := ""
+		err := json.Unmarshal(data, &str)
 		if err != nil {
-			return err
+			return cacheError("failed to unmarshal cpuset.CPUSet: %w", err)
+		}
+		cset, err := cpuset.Parse(str)
+		if err != nil {
+			return cacheError("failed to parse cpuset.CPUSet %q: %w", str, err)
 		}
 		*ptr = cset
 		return nil
