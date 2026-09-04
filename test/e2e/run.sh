@@ -63,6 +63,12 @@ export k8s_version=""
 # as DRANodeAllocatableResources requires Kubernetes 1.37+.
 export k8s_feature_gates=${k8s_feature_gates:-}
 
+# klog verbosity level (e.g. "4") passed to kube-apiserver's, kube-scheduler's,
+# and kube-controller-manager's --v extraArgs, and to the kubelet's
+# KubeletConfiguration.logging.verbosity. Unset (default):
+# no verbosity plumbing, components log at their normal default level.
+export k8s_log_verbosity=${k8s_log_verbosity:-}
+
 GH_HELM_REPO="helm/helm"
 export helm_release=${helm_release:-"latest"}
 
@@ -290,6 +296,7 @@ echo "      - release       = $k8s_release"
 echo "      - version       = $k8s_version"
 echo "      - Helm          = $helm_release"
 echo "      - feature gates = ${k8s_feature_gates:-none}"
+echo "      - log verbosity = ${k8s_log_verbosity:-none}"
 echo "    Runtime         = $k8scri"
 echo "    Output dir      = $OUTPUT_DIR"
 echo "    Test output dir = $TEST_OUTPUT_DIR"
