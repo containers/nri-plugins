@@ -482,6 +482,18 @@ spec:
                       items:
                         type: string
                       type: array
+                    dra:
+                      description: |-
+                        DRA holds DRA publication options for this class. Optional; defaults
+                        to publish=true (the class is visible to the DRA driver).
+                      properties:
+                        publish:
+                          description: |-
+                            Publish controls whether this cpuClass is exposed as a DRA device.
+                            Defaults to true when unset. Set to false to hide this class from
+                            DRA while keeping it usable via the normal nri-plugins config path.
+                          type: boolean
+                      type: object
                     energyPerformancePreference:
                       description: EnergyPerformancePreference for CPUs in this class.
                       minimum: 0
@@ -603,6 +615,25 @@ spec:
                   assigned for excusive use to containers which are not annotated to use
                   any CPU class.
                 type: string
+              dra:
+                description: |-
+                  DRA controls whether the policy runs a DRA (Dynamic Resource Allocation)
+                  kubelet plugin publishing CPU devices derived from the configured
+                  CPUClasses. If unset, DRA integration is disabled.
+                properties:
+                  enabled:
+                    default: false
+                    description: |-
+                      Enabled controls whether the DRA kubelet plugin is started and CPU
+                      devices are published for the configured CPUClasses.
+                    type: boolean
+                  sharedCounters:
+                    default: false
+                    description: |-
+                      SharedCounters is reserved for future use (KEP-5941 shared counters).
+                      Setting this to true is currently rejected by validation; leave it unset or false.
+                    type: boolean
+                type: object
               instrumentation:
                 description: Config provides runtime configuration for instrumentation.
                 properties:

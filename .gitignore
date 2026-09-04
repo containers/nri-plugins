@@ -23,3 +23,11 @@ __pycache__/
 test/e2e/**/output
 
 test/statistics-analysis/output
+*.test
+
+# Extracted sysfs fixture directories used by pkg/sysfs, pkg/resmgr/lib/memory,
+# and pkg/topology tests. These are unpacked from tarballs at test time and
+# should not be tracked.
+pkg/sysfs/testdata/
+pkg/resmgr/lib/memory/testdata/
+pkg/topology/testdata/

@@ -110,7 +110,7 @@ func (p *nriPlugin) start() error {
 }
 
 func (p *nriPlugin) stop() {
-	if p == nil {
+	if p == nil || p.stub == nil {
 		return
 	}
 
@@ -301,6 +301,9 @@ func (p *nriPlugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, con
 	}()
 
 	m := p.resmgr
+
+	m.Lock()
+	defer m.Unlock()
 
 	allocated, released, err := p.syncWithNRI(pods, containers)
 	if err != nil {

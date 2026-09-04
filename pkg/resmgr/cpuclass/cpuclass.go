@@ -78,6 +78,11 @@ type Handler struct {
 	cpufreq *cpufreq.Allocator
 	pct     *pct.Allocator
 
+	// classes is the last-applied cpuClass list. Updated on every
+	// Configure() call. Used by DRADevices to enumerate published classes.
+	// Caller-owned slice; not deep-copied (consistent with pct.Configure behavior).
+	classes []*policyapi.CPUClass
+
 	// defs maps synthetic class name -> resolved class definition.
 	// Populated by SetClassDef calls from the cpufreq allocator.
 	defs map[string]types.ClassDef
@@ -138,6 +143,77 @@ func (h *Handler) PctActive() bool {
 	return h != nil && h.pct != nil && h.pct.Active()
 }
 
+// PickHpCpus selects n HP-eligible CPUs from the punit identified by
+// (pkgID, punitID), excluding CPUs in held and those already tracked
+// in hpUsed or hpDRAUsed. Delegates to the PCT allocator. Returns an
+// error when the handler or its PCT allocator is nil, or when the
+// underlying pick fails (inactive allocator, punit not found, or
+// insufficient HP capacity).
+func (h *Handler) PickHpCpus(pkgID, punitID, n int, held cpuset.CPUSet) (cpuset.CPUSet, error) {
+	if h == nil || h.pct == nil {
+		return cpuset.New(), fmt.Errorf("cpuclass: PickHpCpus: pct allocator not initialized")
+	}
+	return h.pct.PickHpCpus(pkgID, punitID, n, held)
+}
+
+// ReleaseHpCpus removes cpus from DRA HP accounting on the punit
+// identified by (pkgID, punitID). Delegates to the PCT allocator.
+// No-op when the handler or its PCT allocator is nil, or when the
+// punit is unknown (idempotent).
+func (h *Handler) ReleaseHpCpus(pkgID, punitID int, cpus cpuset.CPUSet) {
+	if h == nil || h.pct == nil {
+		return
+	}
+	h.pct.ReleaseHpCpus(pkgID, punitID, cpus)
+}
+
+// AccountHpCpus records cpus as DRA HP-held on the punit identified
+// by (pkgID, punitID). Used during restart reconciliation to rebuild
+// HP accounting from persisted claim state without re-allocating CPUs.
+// Delegates to the PCT allocator. Returns an error when the handler
+// or its PCT allocator is nil, or when accounting fails (inactive
+// allocator, punit not found, or HP-ineligible punit).
+func (h *Handler) AccountHpCpus(pkgID, punitID int, cpus cpuset.CPUSet) error {
+	if h == nil || h.pct == nil {
+		return fmt.Errorf("cpuclass: AccountHpCpus: pct allocator not initialized")
+	}
+	return h.pct.AccountHpCpus(pkgID, punitID, cpus)
+}
+
+// IsHPClass reports whether className is currently classified as PCT
+// high priority. Delegates to the PCT allocator. Returns false when
+// the handler or its PCT allocator is nil, or when the allocator is
+// inactive.
+func (h *Handler) IsHPClass(className string) bool {
+	if h == nil || h.pct == nil {
+		return false
+	}
+	return h.pct.IsHPClass(className)
+}
+
+// ClassForCPU returns the synthetic class name currently assigned to cpu by
+// the most recent UseClass/AssignCPUs call (as tracked in h.cpuClass), or ""
+// if cpu is unmanaged or explicitly assigned to no class. Primarily useful
+// for tests that need to verify a UseClass call actually changed (or
+// restored) a CPU's class, since Handler otherwise exposes no per-CPU class
+// query. Nil-safe.
+//
+// This is a test-only accessor kept on the exported Handler API rather than
+// behind an export_test.go shim: its only callers are cmd/plugins/topology-
+// aware/policy's tests, a different package, and Go test files are never
+// compiled into a package's importable surface across package boundaries —
+// an export_test.go in this package would be invisible there. Duplicating
+// equivalent instrumentation on the caller side (e.g. inspecting SST mock
+// state directly) would require exposing Handler's internal CLOS/class
+// mapping some other way, which is a larger change than this narrow,
+// clearly-documented read accessor.
+func (h *Handler) ClassForCPU(cpu int) string {
+	if h == nil {
+		return ""
+	}
+	return h.cpuClass[cpu]
+}
+
 // Configure (re)applies a configuration spec. Idempotent: may be
 // called repeatedly with changed classes, turbo-domain mode, or
 // allowed set.
@@ -158,6 +234,10 @@ func (h *Handler) Configure(spec ConfigSpec) error {
 		return fmt.Errorf("cpuclass: pct configure: %w", err)
 	}
 
+	// h.classes is set after all fallible operations so that a partial
+	// Configure failure leaves h.classes consistent with the previously
+	// committed state (not a half-applied new config).
+	h.classes = spec.Classes
 	h.classNames = map[string]struct{}{}
 	for _, cls := range spec.Classes {
 		h.classNames[cls.Name] = struct{}{}

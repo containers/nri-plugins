@@ -20,6 +20,8 @@ import (
 	"strconv"
 	"time"
 
+	"k8s.io/apimachinery/pkg/types"
+
 	"github.com/containers/nri-plugins/pkg/agent/podresapi"
 	"github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/topology"
@@ -77,6 +79,14 @@ type Supply interface {
 	AccountAllocateCPU(Grant)
 	// AccountReleaseCPU accounts for (reinserts) released exclusive capacity into the supply.
 	AccountReleaseCPU(Grant)
+	// ClaimCPUs marks cpus as claimed by a DRA ResourceClaim (uid), subtracting
+	// them from isolated/sharable capacity in this supply and, tree-wide, in
+	// every ancestor supply. Idempotent per uid: a second call for the same
+	// uid replaces (does not stack on top of) the previous marking.
+	ClaimCPUs(uid types.UID, cpus cpuset.CPUSet)
+	// UnclaimCPUs reverses a previous ClaimCPUs marking for uid, restoring the
+	// claimed CPUs tree-wide. A no-op if uid is unknown.
+	UnclaimCPUs(uid types.UID)
 	// GetScore calculates how well this supply fits/fulfills the given request.
 	GetScore(Request) Score
 	// AllocatableSharedCPU calculates the allocatable amount of shared CPU of this supply.
@@ -236,6 +246,16 @@ type supply struct {
 	sharable        cpuset.CPUSet // sharable CPUs at this node
 	grantedReserved int           // amount of reserved CPUs allocated
 	grantedShared   int           // amount of shareable CPUs allocated
+
+	// claimRefs tracks, per DRA claim UID, the CPUs subtracted from isolated/
+	// sharable capacity of this supply on behalf of that claim. Marking is
+	// tree-wide: the same UID is (re)marked in every ancestor supply too (see
+	// ClaimCPUs/UnclaimCPUs).
+	claimRefs map[types.UID]cpuset.CPUSet
+
+	// cloned indicates that this supply is a Clone() copy and should not
+	// propagate ClaimCPUs/UnclaimCPUs to real ancestor nodes.
+	cloned bool
 }
 
 var _ Supply = &supply{}
@@ -322,7 +342,15 @@ func (cs *supply) GetNode() Node {
 
 // Clone clones the given CPU supply.
 func (cs *supply) Clone() Supply {
-	return newSupply(cs.node, cs.isolated, cs.reserved, cs.sharable, cs.grantedReserved, cs.grantedShared)
+	clone := newSupply(cs.node, cs.isolated, cs.reserved, cs.sharable, cs.grantedReserved, cs.grantedShared).(*supply)
+	if len(cs.claimRefs) > 0 {
+		clone.claimRefs = make(map[types.UID]cpuset.CPUSet, len(cs.claimRefs))
+		for uid, cpus := range cs.claimRefs {
+			clone.claimRefs[uid] = cpus.Clone()
+		}
+	}
+	clone.cloned = true
+	return clone
 }
 
 // IsolatedCpus returns the isolated CPUSet of this supply.
@@ -385,6 +413,69 @@ func (cs *supply) AccountReleaseCPU(g Grant) {
 	sharable := grantcpus.Intersection(ncs.SharableCPUs())
 	cs.isolated = cs.isolated.Union(isolated)
 	cs.sharable = cs.sharable.Union(sharable)
+}
+
+// ClaimCPUs marks cpus as claimed by a DRA ResourceClaim (uid), subtracting
+// them from isolated/reserved/sharable capacity of this supply, then
+// propagating the same marking up the node.Parent() chain so every ancestor
+// supply also excludes these CPUs from its own isolated/reserved/sharable
+// capacity (tree-wide accounting, mirroring AccountAllocateCPU/
+// AccountReleaseCPU).
+//
+// Reserved CPUs are included because poolForCPUs (pools.go) matches a
+// pool's static range as isolated+reserved+sharable: p.allowed (which is
+// what the DRA CPU-pick allocator's own "allowed" domain is configured
+// from) is not required to exclude p.reserved, so a legitimate DRA pick can
+// land on a CPU that is also part of a pool's reserved partition. Without
+// subtracting it here too, AllocatableReservedCPU would keep advertising
+// that CPU's fractional capacity to ordinary reserved-type grants even
+// though a DRA claim already exclusively owns it — a double-booking gap on
+// the reserved partition mirroring the one this method already closes for
+// isolated/sharable. (Re-pinning any reserved-type container *already*
+// running on that CPU is a separate, pre-existing gap: updateSharedAllocations
+// explicitly skips cpuType == cpuReserved grants; not addressed here.)
+//
+// A second ClaimCPUs call for the same uid replaces (rather than stacks on
+// top of) the previous marking at each level: the old cpuset for uid is first
+// restored, then the new one is subtracted. This makes re-applying claim
+// marks after a policy rebuild (Reconfigure/restart) idempotent.
+func (cs *supply) ClaimCPUs(uid types.UID, cpus cpuset.CPUSet) {
+	if old, ok := cs.claimRefs[uid]; ok {
+		full := cs.node.GetSupply()
+		cs.isolated = cs.isolated.Union(old.Intersection(full.IsolatedCPUs()))
+		cs.reserved = cs.reserved.Union(old.Intersection(full.ReservedCPUs()))
+		cs.sharable = cs.sharable.Union(old.Intersection(full.SharableCPUs()))
+	}
+
+	if cs.claimRefs == nil {
+		cs.claimRefs = make(map[types.UID]cpuset.CPUSet)
+	}
+	cs.claimRefs[uid] = cpus.Clone()
+	cs.isolated = cs.isolated.Difference(cpus)
+	cs.reserved = cs.reserved.Difference(cpus)
+	cs.sharable = cs.sharable.Difference(cpus)
+
+	if parent := cs.node.Parent(); !cs.cloned && !parent.IsNil() {
+		parent.FreeSupply().ClaimCPUs(uid, cpus)
+	}
+}
+
+// UnclaimCPUs reverses a previous ClaimCPUs marking for uid in this supply,
+// restoring the claimed CPUs to isolated/reserved/sharable capacity, then
+// propagates the same reversal up the node.Parent() chain. A no-op (at every
+// level it reaches) for a uid that was never claimed.
+func (cs *supply) UnclaimCPUs(uid types.UID) {
+	if cpus, ok := cs.claimRefs[uid]; ok {
+		delete(cs.claimRefs, uid)
+		full := cs.node.GetSupply()
+		cs.isolated = cs.isolated.Union(cpus.Intersection(full.IsolatedCPUs()))
+		cs.reserved = cs.reserved.Union(cpus.Intersection(full.ReservedCPUs()))
+		cs.sharable = cs.sharable.Union(cpus.Intersection(full.SharableCPUs()))
+	}
+
+	if parent := cs.node.Parent(); !cs.cloned && !parent.IsNil() {
+		parent.FreeSupply().UnclaimCPUs(uid)
+	}
 }
 
 // Allocate allocates a grant from the supply.

@@ -88,8 +88,8 @@ func (m *Main) Run() error {
 	}()
 	defer signal.Stop(sigCh)
 
-	err := m.mgr.Start()
-	return err
+	defer m.mgr.Stop()
+	return m.mgr.Start()
 }
 
 func (m *Main) ResourceManager() resmgr.ResourceManager {

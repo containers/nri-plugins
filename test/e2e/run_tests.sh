@@ -233,8 +233,10 @@ for POLICY_DIR in "$TESTS_ROOT_DIR"/*; do
 
 		policy_name="$(basename $POLICY_DIR)"
 
-		# Create name for the vm.
-		export vm_name=$(vm-create-name "$k8scri" "$(basename "$TOPOLOGY_DIR")" ${distro})
+		# Create name for the vm. A caller-supplied vm_name (e.g. to
+		# keep a gated and an ungated VM from fighting over one
+		# vagrant dir) is preserved rather than clobbered.
+		export vm_name=${vm_name:-$(vm-create-name "$k8scri" "$(basename "$TOPOLOGY_DIR")" ${distro})}
                 export-and-source-dir "$TOPOLOGY_DIR"
 
 		# Create ansible inventory file from a template

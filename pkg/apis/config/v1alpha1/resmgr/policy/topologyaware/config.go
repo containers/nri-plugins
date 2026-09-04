@@ -197,6 +197,27 @@ type Config struct {
 	// +optional
 	// +kubebuilder:default={"*"}
 	ControllableInterrupts []string `json:"controllableInterrupts,omitempty"`
+	// DRA controls whether the policy runs a DRA (Dynamic Resource Allocation)
+	// kubelet plugin publishing CPU devices derived from the configured
+	// CPUClasses. If unset, DRA integration is disabled.
+	// +optional
+	DRA *TopologyAwareDRA `json:"dra,omitempty"`
+}
+
+// TopologyAwareDRA controls the DRA (Dynamic Resource Allocation) kubelet
+// plugin integration for the topology-aware policy.
+// +kubebuilder:object:generate=true
+type TopologyAwareDRA struct {
+	// Enabled controls whether the DRA kubelet plugin is started and CPU
+	// devices are published for the configured CPUClasses.
+	// +kubebuilder:default=false
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+	// SharedCounters is reserved for future use (KEP-5941 shared counters).
+	// Setting this to true is currently rejected by validation; leave it unset or false.
+	// +kubebuilder:default=false
+	// +optional
+	SharedCounters bool `json:"sharedCounters,omitempty"`
 }
 
 var (
@@ -275,6 +296,25 @@ func (c *Config) Validate() error {
 	}
 
 	return errors.Join(errs...)
+}
+
+// DRAEnabled returns whether the DRA kubelet plugin integration is enabled.
+// It is nil-safe: a nil Config.DRA (the default) means disabled.
+func (c *Config) DRAEnabled() bool {
+	if c == nil || c.DRA == nil {
+		return false
+	}
+	return c.DRA.Enabled
+}
+
+// DRASharedCounters returns whether published DRA CPU devices should use
+// shared per-class counters. It is nil-safe: a nil Config.DRA (the default)
+// means false.
+func (c *Config) DRASharedCounters() bool {
+	if c == nil || c.DRA == nil {
+		return false
+	}
+	return c.DRA.SharedCounters
 }
 
 // GetSchedulingClass returns the named class or nil if it is not defined.

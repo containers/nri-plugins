@@ -733,6 +733,90 @@ both on startup and when they are returned to the shared pool from exclusive
 allocation. The CPU assigned for the reserved pool (`kube-system` namespace)
 will get configured according to the `reserved` CPU class.
 
+### Dynamic Resource Allocation
+
+The topology-aware policy can optionally register a Kubernetes [Dynamic Resource
+Allocation](https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/)
+(DRA) kubelet plugin driver that publishes `cpuClasses` (see [Class Based CPU
+Tuning](#class-based-cpu-tuning)) as DRA devices. This lets pods request CPUs with a
+specific `cpuClass` via a `ResourceClaim` instead of (or in addition to) the
+`cpu-class.resource-policy.nri.io` annotation, and lets the scheduler see and account
+for `cpuClass`-tagged capacity when fitting pods onto nodes.
+
+#### Prerequisites
+
+- Kubernetes 1.34+, with the [KEP-5075](https://github.com/kubernetes/enhancements/issues/5075)
+  (`DRAConsumableCapacity` / consumable capacity) alpha feature gate enabled on the
+  API server, kube-scheduler, kube-controller-manager, and kubelet. The `DeviceClass` object below uses the `resource.k8s.io/v1`
+  API, which requires Kubernetes 1.34+.
+- Optionally, Kubernetes 1.37+, with the
+  [KEP-5517](https://github.com/kubernetes/enhancements/issues/5517)
+  (`DRANodeAllocatableResources` / node allocatable resources) alpha feature gate
+  enabled, so the scheduler accounts for `cpuClass`-tagged capacity in its own
+  in-memory node-allocatable bookkeeping and records the resolved allocation on
+  `pod.status.nodeAllocatableResourceClaimStatuses[]` at PreBind — **not** on
+  `node.status.allocatable`, which this feature gate never mutates. Without it,
+  DRA allocation still works but capacity mirroring is skipped.
+- The container runtime must support NRI (as for the rest of this policy).
+
+#### Enabling
+
+DRA support is off by default. Enable it via the Helm chart's `config.dra.enabled`
+value:
+
+```console
+helm install topology-aware deployment/helm/topology-aware \
+  --set config.dra.enabled=true
+```
+
+This does three things:
+- Installs the extra RBAC rules the driver needs (`resourceslices` CRUD,
+  `resourceclaims: get`).
+- Adds the host mounts the driver's kubelet plugin needs
+  (`/var/lib/kubelet/plugins`, `/var/lib/kubelet/plugins_registry`, `/var/run/cdi`).
+- Installs the base `DeviceClass` named `nri.topology-aware.cpu`.
+
+It also sets `spec.dra.enabled: true` in the `TopologyAwarePolicy` CR, which turns on
+the policy's own DRA plugin (kubelet-plugin registration and device publication).
+
+`config.dra.sharedCounters` (also under `config.dra`, default `false`) enables Model C
+publication once the underlying [KEP-5941](https://github.com/kubernetes/enhancements/issues/5941)
+shared-counters support is available; leave it `false` otherwise.
+
+#### Requesting a `cpuClass` via `ResourceClaim`
+
+Each defined `cpuClass` is published as a DRA device under the
+`nri.topology-aware.cpu` `DeviceClass`, with the class's config attributes (such as
+`nri/pctPriority`) exposed as device attributes. **Only high-priority PCT classes
+are currently published this way** — non-HP classes are filtered out at
+publication time, and the driver's `Prepare` rejects claims against them, so
+ordinary configured classes without a high-priority tier will not appear as
+devices. A `ResourceClaim` can select on any of these attributes. For example,
+to request 2 CPUs from a high-priority PCT class:
+
+```yaml
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  name: hp-turbo-cpus
+spec:
+  devices:
+    requests:
+    - name: cpus
+      exactly:
+        deviceClassName: nri.topology-aware.cpu
+        capacity:
+          requests:
+            nri/cpus: "2"
+        selectors:
+        - cel:
+            expression: |
+              device.attributes["nri"].pctPriority == "high"
+```
+
+A pod then references the claim via `resourceClaims` and consumes it in a container's
+`resources.claims`, per the standard Kubernetes DRA pod API.
+
 ### IRQ CPU Affinity Tuning
 
 Containers eligible for exclusive CPU allocation can be annotated with IRQ

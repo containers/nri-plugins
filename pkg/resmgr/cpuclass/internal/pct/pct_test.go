@@ -211,6 +211,7 @@ func newManagedPctForTest(t *testing.T, classes []*policyapi.CPUClass, plans map
 		classPlan:   plans,
 		allowed:     allowed,
 		hpUsed:      map[int]cpuset.CPUSet{},
+		hpDRAUsed:   map[int]cpuset.CPUSet{},
 		hpClasses:   map[string]bool{},
 	}
 	for _, cc := range classes {
@@ -1081,5 +1082,430 @@ func TestFreeClassCapacity_UnknownClassReturnsZero(t *testing.T) {
 		cpuset.MustParse("0-7"), sys, sst)
 	if got := a.FreeClassCapacity("nope", cpuset.New()); got != 0 {
 		t.Errorf("unknown class capacity = %d, want 0", got)
+	}
+}
+
+// makePunitsWithGtdHp returns two punits in the same package, each with the
+// given MaxHpCpus and GuaranteedHpCpus values.
+func makePunitsWithGtdHp(maxHp0, gtdHp0, maxHp1, gtdHp1 int) []pctPunit {
+	return []pctPunit{
+		{PkgID: 0, PunitID: 0, CPUs: cpuset.MustParse("0-3"), MaxHpCpus: maxHp0, GuaranteedHpCpus: gtdHp0},
+		{PkgID: 0, PunitID: 1, CPUs: cpuset.MustParse("4-7"), MaxHpCpus: maxHp1, GuaranteedHpCpus: gtdHp1},
+	}
+}
+
+// newPickAllocator returns an Allocator pre-wired for PickHpCpus / ReleaseHpCpus tests.
+func newPickAllocator(t *testing.T, punits []pctPunit) *Allocator {
+	t.Helper()
+	sys := newTwoPunitFakeSys()
+	sst := &fakeSst{supported: true, punits: punits}
+	classes := []*policyapi.CPUClass{{Name: "hp", PctPriority: "high"}}
+	plans := map[string]*pctClassPlan{"hp": {ClosID: 0}}
+	a := newManagedPctForTest(t, classes, plans, cpuset.MustParse("0-7"), sys, sst)
+	return a
+}
+
+func TestPunitHPCapacity(t *testing.T) {
+	// Active() == false: Allocator with mode == disabled
+	inactiveA := &Allocator{}
+	if got := inactiveA.punitHPCapacity(0); got != 0 {
+		t.Errorf("punitHPCapacity on inactive allocator = %d, want 0", got)
+	}
+
+	a := newPickAllocator(t, makePunitsWithGtdHp(4, 3, 4, 1))
+	tests := []struct {
+		name string
+		idx  int
+		want int
+	}{
+		{"eligible punit 0", 0, 3},
+		{"eligible punit 1", 1, 1},
+		{"out-of-range", 99, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := a.punitHPCapacity(tc.idx)
+			if got != tc.want {
+				t.Errorf("punitHPCapacity(%d) = %d, want %d", tc.idx, got, tc.want)
+			}
+		})
+	}
+	// HP-ineligible punit
+	a.hpEligiblePunit[0] = false
+	if got := a.punitHPCapacity(0); got != 0 {
+		t.Errorf("punitHPCapacity for ineligible punit = %d, want 0", got)
+	}
+}
+
+// TestPunitHPCapacity_CappedByAllowedIntersection verifies that
+// punitHPCapacity caps the raw hardware GuaranteedHpCpus by the punit's
+// actual CPU count after intersecting with the allowed/online set —
+// otherwise it would advertise more DRA capacity than PickHpCpus can
+// supply once some of the punit's CPUs are excluded (e.g. offline or
+// outside the reserved/shared pool).
+func TestPunitHPCapacity_CappedByAllowedIntersection(t *testing.T) {
+	sys := newTwoPunitFakeSys()
+	// Raw punit 0 spans CPUs 0-3 (4 CPUs) with GuaranteedHpCpus=3.
+	// Restricting "allowed" to CPUs 0-1,4-7 leaves punit 0 with only
+	// CPUs 0-1 (2 CPUs) after intersection -- less than its raw
+	// GuaranteedHpCpus of 3.
+	sst := &fakeSst{supported: true, punits: makePunitsWithGtdHp(4, 3, 4, 1)}
+	classes := []*policyapi.CPUClass{{Name: "hp", PctPriority: "high"}}
+	plans := map[string]*pctClassPlan{"hp": {ClosID: 0}}
+	a := newManagedPctForTest(t, classes, plans, cpuset.MustParse("0-1,4-7"), sys, sst)
+
+	if got := a.punitHPCapacity(0); got != 2 {
+		t.Errorf("punitHPCapacity(0) = %d, want 2 (capped by allowed intersection, not raw GuaranteedHpCpus=3)", got)
+	}
+	// Punit 1 is unaffected: its full range (4-7) is within allowed, and
+	// its GuaranteedHpCpus=1 stays under the 4-CPU cap.
+	if got := a.punitHPCapacity(1); got != 1 {
+		t.Errorf("punitHPCapacity(1) = %d, want 1 (unaffected by allowed restriction)", got)
+	}
+}
+
+func TestPunitNonHPCapacity(t *testing.T) {
+	inactiveA := &Allocator{}
+	if got := inactiveA.punitNonHPCapacity(0); got != 0 {
+		t.Errorf("punitNonHPCapacity on inactive allocator = %d, want 0", got)
+	}
+
+	// punit 0: CPUs 0-3 (4 total), GuaranteedHpCpus=3 → 1 non-HP
+	// punit 1: CPUs 4-7 (4 total), GuaranteedHpCpus=0 → 4 non-HP
+	a := newPickAllocator(t, makePunitsWithGtdHp(4, 3, 4, 0))
+	tests := []struct {
+		name string
+		idx  int
+		want int
+	}{
+		{"partial HP", 0, 1},
+		{"all non-HP", 1, 4},
+		{"out-of-range", 99, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := a.punitNonHPCapacity(tc.idx)
+			if got != tc.want {
+				t.Errorf("punitNonHPCapacity(%d) = %d, want %d", tc.idx, got, tc.want)
+			}
+		})
+	}
+	// all CPUs HP-guaranteed → 0 non-HP
+	a2 := newPickAllocator(t, makePunitsWithGtdHp(4, 4, 4, 4))
+	if got := a2.punitNonHPCapacity(0); got != 0 {
+		t.Errorf("all-HP punit nonHPCapacity = %d, want 0", got)
+	}
+
+	// HP-ineligible punit with non-zero GuaranteedHpCpus: the guard in
+	// punitHPCapacity must zero out the HP deduction so the full CPU count
+	// is reported as non-HP capacity.
+	// punit 0: HP-ineligible, GuaranteedHpCpus=2, CPUs 0-3 → 4 non-HP (not 2)
+	// punit 1: HP-eligible,   GuaranteedHpCpus=2, CPUs 4-7 → 2 non-HP
+	a3 := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2))
+	a3.hpEligiblePunit[0] = false
+	if got := a3.punitNonHPCapacity(0); got != 4 {
+		t.Errorf("HP-ineligible punit nonHPCapacity = %d, want 4", got)
+	}
+	if got := a3.punitNonHPCapacity(1); got != 2 {
+		t.Errorf("HP-eligible punit nonHPCapacity = %d, want 2", got)
+	}
+}
+
+func TestAllocatorPunits(t *testing.T) {
+	// Inactive allocator returns nil.
+	inactiveA := &Allocator{}
+	if got := inactiveA.Punits(); got != nil {
+		t.Errorf("Punits() on inactive allocator = %v, want nil", got)
+	}
+
+	a := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 1))
+	pi := a.Punits()
+	if len(pi) != 2 {
+		t.Fatalf("Punits() len = %d, want 2", len(pi))
+	}
+	want := []PunitInfo{
+		{PkgID: 0, PunitID: 0, HPCapacity: 2, NonHPCapacity: 2},
+		{PkgID: 0, PunitID: 1, HPCapacity: 1, NonHPCapacity: 3},
+	}
+	for i, w := range want {
+		if pi[i] != w {
+			t.Errorf("Punits()[%d] = %+v, want %+v", i, pi[i], w)
+		}
+	}
+}
+
+// TestAllocatorPunits_NonDRAHpUsageReducesCapacity verifies that
+// Punits() deducts non-DRA HP CPUs already tracked in hpUsed from the
+// advertised HPCapacity, since Kubernetes only subtracts DRA
+// allocations from the advertised capacity and would otherwise let a
+// claim be placed that PickHpCpus must reject at Prepare time.
+func TestAllocatorPunits_NonDRAHpUsageReducesCapacity(t *testing.T) {
+	a := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 1))
+	// Simulate the NRI path having already claimed 1 HP CPU on punit 0.
+	a.hpUsed[0] = cpuset.MustParse("0")
+
+	pi := a.Punits()
+	want := []PunitInfo{
+		{PkgID: 0, PunitID: 0, HPCapacity: 1, NonHPCapacity: 2},
+		{PkgID: 0, PunitID: 1, HPCapacity: 1, NonHPCapacity: 3},
+	}
+	for i, w := range want {
+		if pi[i] != w {
+			t.Errorf("Punits()[%d] = %+v, want %+v", i, pi[i], w)
+		}
+	}
+}
+
+func TestPickHpCpus(t *testing.T) {
+	// Active()==false
+	inactiveA := &Allocator{}
+	if _, err := inactiveA.PickHpCpus(0, 0, 1, cpuset.New()); err == nil {
+		t.Error("PickHpCpus on inactive allocator: expected error, got nil")
+	}
+
+	a := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2))
+
+	// Success: pick 2 CPUs from punit 0 (PkgID=0, PunitID=0, CPUs 0-3).
+	got, err := a.PickHpCpus(0, 0, 2, cpuset.New())
+	if err != nil {
+		t.Fatalf("PickHpCpus success case: %v", err)
+	}
+	if got.Size() != 2 {
+		t.Errorf("PickHpCpus returned %d CPUs, want 2", got.Size())
+	}
+	// hpDRAUsed updated, hpUsed unchanged.
+	if !a.hpDRAUsed[0].Equals(got) {
+		t.Errorf("hpDRAUsed[0] = %v, want %v", a.hpDRAUsed[0], got)
+	}
+	if a.hpUsed[0].Size() != 0 {
+		t.Errorf("hpUsed[0] should be untouched, got %v", a.hpUsed[0])
+	}
+
+	// Exhaustion: already 2 DRA-held + 0 available for another pick.
+	if _, err := a.PickHpCpus(0, 0, 1, cpuset.New()); err == nil {
+		t.Error("PickHpCpus exhaustion: expected error, got nil")
+	}
+
+	// HP-ineligible punit.
+	a2 := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2))
+	a2.hpEligiblePunit[0] = false
+	if _, err := a2.PickHpCpus(0, 0, 1, cpuset.New()); err == nil {
+		t.Error("PickHpCpus ineligible punit: expected error, got nil")
+	}
+
+	// (PkgID, PunitID) not found.
+	a3 := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2))
+	if _, err := a3.PickHpCpus(99, 99, 1, cpuset.New()); err == nil {
+		t.Error("PickHpCpus not-found: expected error, got nil")
+	}
+
+	// held exclusion: hold CPUs 0,1 → pick of 2 from a 4-CPU punit
+	// must return 2,3 (the remaining ones).
+	a4 := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2))
+	held := cpuset.MustParse("0-1")
+	got4, err := a4.PickHpCpus(0, 0, 2, held)
+	if err != nil {
+		t.Fatalf("PickHpCpus held-exclusion: %v", err)
+	}
+	if got4.Intersection(held).Size() != 0 {
+		t.Errorf("PickHpCpus returned a held CPU: %v", got4)
+	}
+}
+
+func TestReleaseHpCpus(t *testing.T) {
+	a := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2))
+
+	// Pick 2 CPUs then release them.
+	picked, _ := a.PickHpCpus(0, 0, 2, cpuset.New())
+	a.ReleaseHpCpus(0, 0, picked)
+	if a.hpDRAUsed[0].Size() != 0 {
+		t.Errorf("hpDRAUsed[0] after full release = %v, want empty", a.hpDRAUsed[0])
+	}
+	// Map entry deleted.
+	if _, ok := a.hpDRAUsed[0]; ok {
+		t.Error("hpDRAUsed[0] entry should be deleted after full release")
+	}
+
+	// Release CPUs not held — no-op.
+	a.ReleaseHpCpus(0, 0, cpuset.MustParse("0-1"))
+
+	// Out-of-range (not found) — no-op, no panic.
+	a.ReleaseHpCpus(99, 99, cpuset.MustParse("0"))
+
+	// Partial release.
+	picked2, _ := a.PickHpCpus(0, 0, 2, cpuset.New())
+	first := cpuset.New(picked2.UnsortedList()[0])
+	a.ReleaseHpCpus(0, 0, first)
+	if a.hpDRAUsed[0].Size() != 1 {
+		t.Errorf("hpDRAUsed[0] after partial release size = %d, want 1", a.hpDRAUsed[0].Size())
+	}
+}
+
+func TestHpDRAUsedIsolation(t *testing.T) {
+	// Build an allocator with both HP and LP classes to test that UseClass
+	// on DRA-held CPUs does not corrupt the hpDRAUsed/hpUsed separation.
+	sys := newTwoPunitFakeSys()
+	sst := &fakeSst{supported: true, punits: makePunitsWithGtdHp(4, 2, 4, 2)}
+	classes := []*policyapi.CPUClass{
+		{Name: "hp", PctPriority: "high"},
+		{Name: "lp", PctPriority: "low"},
+	}
+	plans := map[string]*pctClassPlan{
+		"hp": {ClosID: 0},
+		"lp": {ClosID: 3},
+	}
+	a := newManagedPctForTest(t, classes, plans, cpuset.MustParse("0-7"), sys, sst)
+
+	// DRA holds 2 CPUs on punit 0; hpUsed[0] is empty.
+	draHeld, err := a.PickHpCpus(0, 0, 2, cpuset.New())
+	if err != nil {
+		t.Fatalf("PickHpCpus: %v", err)
+	}
+	before := a.hpDRAUsed[0].Clone()
+
+	// HP UseClass on DRA-held CPUs — must NOT add them to hpUsed (they are
+	// already accounted in hpDRAUsed; double-counting corrupts Punits capacity).
+	_ = a.UseClass("hp", draHeld)
+	if !a.hpDRAUsed[0].Equals(before) {
+		t.Errorf("hpDRAUsed[0] changed after HP UseClass: got %v, want %v", a.hpDRAUsed[0], before)
+	}
+	if !a.hpUsed[0].IsEmpty() {
+		t.Errorf("hpUsed[0] = %v after HP UseClass on DRA-held CPUs, want empty", a.hpUsed[0])
+	}
+
+	// Non-HP UseClass on overlapping CPUs — must NOT remove them from hpDRAUsed.
+	_ = a.UseClass("lp", draHeld)
+	if !a.hpDRAUsed[0].Equals(before) {
+		t.Errorf("hpDRAUsed[0] changed after non-HP UseClass: got %v, want %v", a.hpDRAUsed[0], before)
+	}
+	// hpInUseCpus must still report the DRA-held CPUs.
+	inUse := a.hpInUseCpus()
+	for _, cpu := range draHeld.UnsortedList() {
+		if !inUse.Contains(cpu) {
+			t.Errorf("hpInUseCpus missing DRA-held cpu %d", cpu)
+		}
+	}
+}
+
+// TestIsHPClass covers the exported IsHPClass wrapper: HP class returns true;
+// non-HP class returns false; unknown class returns false; inactive allocator
+// returns false.
+func TestIsHPClass(t *testing.T) {
+	sys := newTwoPackageFakeSys()
+	sst := &fakeSst{supported: true, maxHp: map[int]int{0: 2, 1: 2}}
+	classes := []*policyapi.CPUClass{
+		{Name: "hp", PctPriority: "high"},
+		{Name: "lp", PctPriority: "low"},
+	}
+	a := newManagedPctForTest(t, classes,
+		map[string]*pctClassPlan{"hp": {ClosID: 0}, "lp": {ClosID: 3}},
+		cpuset.MustParse("0-7"), sys, sst)
+
+	// HP class must return true.
+	if !a.IsHPClass("hp") {
+		t.Error("IsHPClass(\"hp\") = false, want true")
+	}
+	// Non-HP class must return false.
+	if a.IsHPClass("lp") {
+		t.Error("IsHPClass(\"lp\") = true, want false")
+	}
+	// Unknown class must return false.
+	if a.IsHPClass("unknown") {
+		t.Error("IsHPClass(\"unknown\") = true, want false")
+	}
+
+	// Inactive allocator must return false.
+	inactiveA := &Allocator{}
+	if inactiveA.IsHPClass("hp") {
+		t.Error("IsHPClass on inactive allocator = true, want false")
+	}
+}
+
+// TestAccountHpCpus covers AccountHpCpus: used during restart reconciliation
+// to rebuild hpDRAUsed from persisted claim state.
+func TestAccountHpCpus(t *testing.T) {
+	// Inactive allocator must return an error.
+	inactiveA := &Allocator{}
+	if err := inactiveA.AccountHpCpus(0, 0, cpuset.MustParse("0")); err == nil {
+		t.Error("AccountHpCpus on inactive allocator: expected error, got nil")
+	}
+
+	// HP-ineligible punit must return an error.
+	aInelig := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2))
+	aInelig.hpEligiblePunit[0] = false
+	if err := aInelig.AccountHpCpus(0, 0, cpuset.MustParse("0")); err == nil {
+		t.Error("AccountHpCpus on HP-ineligible punit: expected error, got nil")
+	}
+
+	// Unknown punit must return an error.
+	aUnknown := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2))
+	if err := aUnknown.AccountHpCpus(99, 99, cpuset.MustParse("0")); err == nil {
+		t.Error("AccountHpCpus unknown punit: expected error, got nil")
+	}
+
+	// Success: account CPUs on an HP-eligible punit.
+	aOK := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2))
+	cpus := cpuset.MustParse("0-1")
+	if err := aOK.AccountHpCpus(0, 0, cpus); err != nil {
+		t.Fatalf("AccountHpCpus success case: %v", err)
+	}
+	if !aOK.hpDRAUsed[0].Equals(cpus) {
+		t.Errorf("hpDRAUsed[0] = %v, want %v", aOK.hpDRAUsed[0], cpus)
+	}
+	// hpUsed must remain untouched.
+	if aOK.hpUsed[0].Size() != 0 {
+		t.Errorf("hpUsed[0] should be untouched after AccountHpCpus, got %v", aOK.hpUsed[0])
+	}
+
+	// Double-account same CPUs is idempotent (union semantics).
+	if err := aOK.AccountHpCpus(0, 0, cpus); err != nil {
+		t.Fatalf("AccountHpCpus idempotent call: %v", err)
+	}
+	if !aOK.hpDRAUsed[0].Equals(cpus) {
+		t.Errorf("hpDRAUsed[0] after double-account = %v, want %v (must be idempotent)", aOK.hpDRAUsed[0], cpus)
+	}
+
+	// Over-capacity: account more CPUs than GuaranteedHpCpus allows.
+	// Must NOT return an error (container may already be running), and
+	// hpDRAUsed must include all accounted CPUs.
+	aOver := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2)) // GuaranteedHpCpus=2
+	overCommit := cpuset.MustParse("0-3")                         // 4 CPUs > GuaranteedHpCpus=2
+	if err := aOver.AccountHpCpus(0, 0, overCommit); err != nil {
+		t.Fatalf("AccountHpCpus over-capacity: expected no error, got %v", err)
+	}
+	if !aOver.hpDRAUsed[0].Equals(overCommit) {
+		t.Errorf("hpDRAUsed[0] = %v, want %v (over-capacity still updates)", aOver.hpDRAUsed[0], overCommit)
+	}
+}
+
+func TestHpReserveRoomWithDRAHolds(t *testing.T) {
+	// Two punits, each with MaxHpCpus=2, GuaranteedHpCpus=2.
+	a := newPickAllocator(t, makePunitsWithGtdHp(2, 2, 2, 2))
+
+	// Before any holds, room on punit 0 should be 2.
+	// hpReserveCpus returns Tier-A candidate sets; if room>=requested we
+	// get a candidate set back. Requesting 2 CPUs from punit 0 should succeed.
+	free := cpuset.MustParse("0-7")
+	before := a.hpReserveCpus(free, cpuset.New(), 2)
+	if len(before) == 0 {
+		t.Fatal("hpReserveCpus before DRA holds: expected at least one candidate, got none")
+	}
+
+	// DRA picks 1 CPU on punit 0.
+	_, err := a.PickHpCpus(0, 0, 1, cpuset.New())
+	if err != nil {
+		t.Fatalf("PickHpCpus: %v", err)
+	}
+
+	// Now request 2 CPUs from punit 0: room is 1 (2 - 1 DRA hold), so
+	// hpReserveCpus should not return punit 0 as a single-punit Tier-A
+	// candidate for a request of 2. It may return punit 1 (unaffected).
+	after := a.hpReserveCpus(free, cpuset.New(), 2)
+	for _, candidate := range after {
+		// No candidate set should include the DRA-held CPUs as "free" HP room
+		// for a 2-CPU request on punit 0 alone.
+		if candidate.Intersection(cpuset.MustParse("0-3")).Size() > 1 {
+			t.Errorf("hpReserveCpus candidate includes punit 0 CPUs despite DRA hold reducing room to 1")
+		}
 	}
 }

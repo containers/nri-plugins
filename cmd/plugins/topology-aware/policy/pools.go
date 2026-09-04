@@ -18,15 +18,19 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
+	"github.com/containers/nri-plugins/pkg/resmgr/dra"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	idset "github.com/intel/goresctrl/pkg/utils"
+	"tags.cncf.io/container-device-interface/pkg/parser"
 )
 
 // buildPoolsByTopology builds a hierarchical tree of pools based on HW topology.
@@ -257,7 +261,7 @@ func (p *policy) getCpuSupply(node Node, cpus cpuset.CPUSet) (Supply, Supply) {
 
 	log.Infof("    %s CPU: %s", node.Name(), s.DumpCapacity())
 
-	return s, s.Clone()
+	return s, newSupply(node, isolated, reserved, sharable, 0, 0)
 }
 
 func (p *policy) getMemSupply(node Node, cpus cpuset.CPUSet) (dram, pmem, hbm idset.IDSet) {
@@ -513,8 +517,9 @@ func (p *policy) allocatePool(container cache.Container, poolHint string) (Grant
 
 // setPreferredCpusetCpus pins container's CPUs according to what has been
 // allocated for it, taking into account if the container should run
-// with hyperthreads hidden.
-func (p *policy) setPreferredCpusetCpus(container cache.Container, allocated cpuset.CPUSet, info string) {
+// with hyperthreads hidden. CPUs in preserve are always included in the
+// final cpuset regardless of hide-hyperthreads filtering (e.g. DRA claimed CPUs).
+func (p *policy) setPreferredCpusetCpus(container cache.Container, allocated, preserve cpuset.CPUSet, info string) {
 	allow := allocated
 	hidingInfo := ""
 	pod, ok := container.GetPod()
@@ -526,6 +531,7 @@ func (p *policy) setPreferredCpusetCpus(container cache.Container, allocated cpu
 			hidingInfo = " (no hyperthreads to hide)"
 		}
 	}
+	allow = allow.Union(preserve)
 	log.Infof("%s%s", info, hidingInfo)
 	container.SetCpusetCpus(allow.String())
 }
@@ -568,6 +574,13 @@ func (p *policy) applyGrant(grant Grant) {
 		return
 	}
 
+	// Collect CPUs this container holds via a live DRA claim. These are
+	// removed from pool free supply by allocateClaim, but that never
+	// touches the container's cgroup cpuset — this is the only place that
+	// pins them. They are passed as preserve to setPreferredCpusetCpus so
+	// that hide-hyperthreads filtering on the normal grant cannot drop them.
+	claimed := p.claimedCPUsByContainer[container.GetID()]
+
 	mems := libmem.NodeMask(0)
 	if opt.PinMemory {
 		mems = grant.GetMemoryZone()
@@ -575,10 +588,16 @@ func (p *policy) applyGrant(grant Grant) {
 
 	if opt.PinCPU {
 		if cpuType == cpuPreserve {
+			// Skip normal grant pinning. DRA claimed CPUs with cpuPreserve is not yet
+			// defined: the existing cpuset is unknown here so we cannot safely union.
+			if !claimed.IsEmpty() {
+				log.Warnf("  => %s: cpuPreserve active alongside DRA claim %s — claimed CPUs not pinned",
+					container.PrettyName(), claimed)
+			}
 			log.Infof("  => preserving %s cpuset %s", container.PrettyName(), container.GetCpusetCpus())
 		} else {
-			if cpus.Size() > 0 {
-				p.setPreferredCpusetCpus(container, cpus,
+			if cpus.Size() > 0 || !claimed.IsEmpty() {
+				p.setPreferredCpusetCpus(container, cpus, claimed,
 					fmt.Sprintf("  => pinning %s to (%s) cpuset %s",
 						container.PrettyName(), kind, cpus))
 			} else {
@@ -701,12 +720,17 @@ func (p *policy) updateSharedAllocations(grant *Grant) {
 		if opt.PinCPU {
 			shared := other.GetCPUNode().FreeSupply().SharableCPUs()
 			exclusive := other.ExclusiveCPUs()
+			// Pass claimed CPUs as preserve so hide-hyperthreads filtering
+			// on the normal grant cpuset cannot drop them.
+			claimed := p.claimedCPUsByContainer[other.GetContainer().GetID()]
 			if exclusive.IsEmpty() {
-				p.setPreferredCpusetCpus(other.GetContainer(), shared,
+				cpus := shared
+				p.setPreferredCpusetCpus(other.GetContainer(), cpus, claimed,
 					fmt.Sprintf("  => updating %s with shared CPUs of %s: %s...",
-						other, other.GetCPUNode().Name(), shared.String()))
+						other, other.GetCPUNode().Name(), cpus.String()))
 			} else {
-				p.setPreferredCpusetCpus(other.GetContainer(), exclusive.Union(shared),
+				cpus := exclusive.Union(shared)
+				p.setPreferredCpusetCpus(other.GetContainer(), cpus, claimed,
 					fmt.Sprintf("  => updating %s with exclusive+shared CPUs of %s: %s+%s...",
 						other, other.GetCPUNode().Name(), exclusive.String(), shared.String()))
 			}
@@ -1338,4 +1362,446 @@ func combineHintScores(scores map[string]float64) (float64, float64) {
 		}
 	}
 	return combined, filtered
+}
+
+//
+// DRA claim identification and pool accounting.
+//
+
+// cdiClaimDeviceNamePrefix is the fixed prefix of every qualified CDI device
+// name the DRA plugin (pkg/resmgr/dra) generates for this driver: the CDI
+// "device" class is hardcoded there (cdi.go: cdiClass = "device"), and every
+// device name it builds starts with "claim-" (cdi.go: cdiDeviceName). This is
+// duplicated here (rather than imported) because cdiClass and cdiDeviceName
+// are unexported in package dra.
+const cdiClaimDeviceNamePrefix = DRADriverName + "/device=claim-"
+
+// parseCDIClaimUID extracts the DRA ResourceClaim UID from a qualified CDI
+// device name of the form "nri.topology-aware.cpu/device=claim-<uid>-<request>-<device>-<idx>"
+// (see pkg/resmgr/dra/cdi.go's cdiDeviceName), by trimming the trailing
+// "-<request>-<device>-<idx>" three '-'-separated tokens and returning what's
+// left.
+//
+// This is a best-effort fast path, not a lossless inverse of cdiDeviceName:
+// <request> and <device> are themselves sanitized names that may contain
+// '-' (see sanitizeCDIName), so when they do, the split boundary can land in
+// the wrong place and the returned string will include extra trailing
+// tokens that actually belong to <request>/<device>. It is exact whenever
+// <request> and <device> are single tokens (the common case), which is all
+// this function alone can guarantee. claimCPUsFromContainer compensates for
+// the ambiguous case by falling back to matching against the caller's known
+// set of live claim UIDs, which this function has no access to.
+func parseCDIClaimUID(deviceName string) (string, bool) {
+	rest, ok := strings.CutPrefix(deviceName, cdiClaimDeviceNamePrefix)
+	if !ok {
+		return "", false
+	}
+
+	tokens := strings.Split(rest, "-")
+	if len(tokens) < 4 {
+		return "", false
+	}
+
+	uid := strings.Join(tokens[:len(tokens)-3], "-")
+	if uid == "" {
+		return "", false
+	}
+
+	return uid, true
+}
+
+// claimLister is the minimal slice of *dra.Plugin's API that
+// claimCPUsFromContainer needs. Declaring it locally (instead of taking a
+// *dra.Plugin directly) lets tests exercise the CDI-name-to-claim lookup
+// logic with a lightweight fake instead of standing up a full dra.Plugin
+// (kubelet registration, CDI writer, claim store, etc.); *dra.Plugin
+// satisfies this interface, so production call sites are unaffected.
+//
+// Callers must nil-check the concrete *dra.Plugin *before* passing it in
+// here: a nil *dra.Plugin wrapped in a non-nil claimLister interface value
+// would panic inside LiveClaimsLocked (typed-nil trap), same as the
+// KubeClientFn accessor elsewhere in Step 8.
+type claimLister interface {
+	LiveClaimsLocked() map[types.UID][]dra.ResultAlloc
+	DriverName() string
+}
+
+// classifyClaimCPUs parses every alloc's CPUs field and returns the union of
+// all of them plus a grouping of the same CPUs by cpuClass name.
+//
+// A single ResourceClaim can legitimately contain multiple
+// DeviceRequestAllocationResults that resolve to devices of *different*
+// cpuClasses: the per-punit multi-class-overcommit validation
+// (cpuclass.ValidateCPUClassesForDRA) only guards a single punit's classes
+// against each other, it does not forbid a claim's requests from spanning
+// more than one punit (and therefore more than one class). Grouping by
+// class here — instead of collapsing to a single className, as an earlier
+// version of this code did — lets callers apply each class only to the CPUs
+// that actually belong to it (see allocateClaim/remarkClaimInSupply), so a
+// multi-class claim never has the wrong physical class silently applied to
+// part of its CPUs.
+//
+// Allocs whose CPUs field fails to parse are logged and skipped; they
+// contribute to neither the returned union nor the per-class grouping.
+func classifyClaimCPUs(uid types.UID, allocs []dra.ResultAlloc) (cpuset.CPUSet, map[string]cpuset.CPUSet) {
+	cpus := cpuset.New()
+	classCPUs := map[string]cpuset.CPUSet{}
+
+	for _, a := range allocs {
+		parsed, err := cpuset.Parse(a.CPUs)
+		if err != nil {
+			log.Warnf("dra: claim %s: failed to parse allocated CPUs %q: %v", uid, a.CPUs, err)
+			continue
+		}
+		cpus = cpus.Union(parsed)
+		if existing, ok := classCPUs[a.ClassName]; ok {
+			classCPUs[a.ClassName] = existing.Union(parsed)
+		} else {
+			classCPUs[a.ClassName] = parsed
+		}
+	}
+
+	return cpus, classCPUs
+}
+
+// containerClaim describes one live DRA claim's contribution to a
+// container: its UID, the union of its allocated CPUs, and those CPUs
+// grouped by cpuClass name (see classifyClaimCPUs — a single claim can span
+// more than one class).
+type containerClaim struct {
+	UID       types.UID
+	CPUs      cpuset.CPUSet
+	ClassCPUs map[string]cpuset.CPUSet
+}
+
+// claimCPUsFromContainer looks for CDI device names on c that identify live
+// DRA claims and returns one containerClaim per distinct live claim UID
+// found. Returns an empty slice if c carries no recognizable claim device
+// name, or if every embedded UID has no corresponding entry in
+// plugin.LiveClaimsLocked() (e.g. a foreign/stale CDI device, or a claim
+// that has already been unprepared).
+//
+// A container is most commonly backed by a single live TA CPU ResourceClaim,
+// but Kubernetes' general pod.spec.resourceClaims plumbing does not forbid a
+// container from referencing more than one distinct ResourceClaim for this
+// driver (this is orthogonal to a single ResourceClaim with
+// AllowMultipleAllocations fanning out to *many containers*, which is
+// handled by the claimContainerRefs refcount in allocateClaim/releaseClaim).
+// Callers must loop over every entry in the returned slice, not just the
+// first, to avoid leaving a distinct claim's CPUs unaccounted for (and thus
+// double-bookable by a subsequent, unrelated allocation).
+func claimCPUsFromContainer(c cache.Container, plugin claimLister) []containerClaim {
+	if plugin == nil {
+		return nil
+	}
+
+	live := plugin.LiveClaimsLocked()
+
+	var result []containerClaim
+	for _, name := range c.GetCDIDeviceNames() {
+		for uid, allocs := range live {
+			for i, alloc := range allocs {
+				expected := parser.QualifiedName(plugin.DriverName(), "device",
+					dra.CDIDeviceName(uid, alloc.Request, alloc.Device, i))
+				if name != expected {
+					continue
+				}
+				claimCPUs, claimClassCPUs := classifyClaimCPUs(uid, []dra.ResultAlloc{alloc})
+				if claimCPUs.IsEmpty() {
+					continue
+				}
+				for j := range result {
+					if result[j].UID != uid {
+						continue
+					}
+					result[j].CPUs = result[j].CPUs.Union(claimCPUs)
+					for class, cpus := range claimClassCPUs {
+						result[j].ClassCPUs[class] = result[j].ClassCPUs[class].Union(cpus)
+					}
+					goto nextDevice
+				}
+				result = append(result, containerClaim{UID: uid, CPUs: claimCPUs, ClassCPUs: claimClassCPUs})
+				goto nextDevice
+			}
+		}
+	nextDevice:
+	}
+
+	return result
+}
+
+// poolForCPUs returns the tightest (deepest) *leaf* pool whose statically
+// assigned CPU range (GetSupply(), which — unlike FreeSupply() — never
+// changes with allocation or claim accounting) fully contains cpus. Returns
+// an error if no single pool's range is a superset of cpus: either cpus lies
+// (at least partly) outside p.allowed altogether, or it straddles more than
+// one leaf pool (which a legitimate single-punit DRA CPU pick never does).
+//
+// Candidates are restricted to leaf pools (Node.IsLeafNode()) deliberately:
+// every non-leaf ancestor's static range is, by construction, the union of
+// its descendants' ranges, so it is always a superset of any cpus subset of
+// p.allowed — including a cpus set that straddles two *different* leaf
+// pools. Without this restriction, such a straddling cpus set would
+// incorrectly resolve to the lowest common ancestor (worst case, root)
+// instead of being rejected: Supply.ClaimCPUs only walks *up* the
+// node.Parent() chain from whatever pool it's called on, never down into
+// children, so marking the CPUs claimed at the ancestor would fail to
+// exclude them from either leaf's own FreeSupply() — a double-booking gap
+// this restriction closes.
+func (p *policy) poolForCPUs(cpus cpuset.CPUSet) (Node, error) {
+	var (
+		best      Node
+		bestDepth = -1
+	)
+
+	for _, n := range p.pools {
+		if !n.IsLeafNode() {
+			continue
+		}
+		full := n.GetSupply()
+		total := full.IsolatedCPUs().Union(full.ReservedCPUs()).Union(full.SharableCPUs())
+		if !cpus.IsSubsetOf(total) {
+			continue
+		}
+		if n.RootDistance() > bestDepth {
+			best = n
+			bestDepth = n.RootDistance()
+		}
+	}
+
+	if best == nil {
+		return nil, policyError("no single pool contains CPUs %s (outside allowed CPUs, or spanning more than one pool)", cpus)
+	}
+
+	return best, nil
+}
+
+// applyClassCPUs applies each (className, subset) pair in classCPUs via
+// cpuClasses.UseClass, one call per class. This is a no-op if p.cpuClasses
+// is nil. Empty class names (an alloc whose device carried no nri/cpuClass
+// attribute — should not happen given upstream validation, but defensively
+// skipped rather than trusted) and empty subsets are skipped. verb is used
+// only for logging ("apply" vs "re-apply").
+//
+// classCPUs groups a single DRA claim's CPUs by cpuClass (see
+// classifyClaimCPUs): a claim's DeviceRequestAllocationResults can resolve
+// to devices on different punits with different classes, so the physical
+// class must be applied per subset — applying one class to the claim's
+// entire unioned CPU set would silently mis-apply it to part of the claim.
+func (p *policy) applyClassCPUs(verb string, uid types.UID, classCPUs map[string]cpuset.CPUSet) error {
+	if p.cpuClasses == nil {
+		return nil
+	}
+	for className, subset := range classCPUs {
+		if className == "" || subset.IsEmpty() {
+			continue
+		}
+		if err := p.cpuClasses.UseClass(className, subset); err != nil {
+			return fmt.Errorf("dra: failed to %s CPU class %q to claim %s CPUs %s: %w",
+				verb, className, uid, subset, err)
+		}
+	}
+	return nil
+}
+
+// allocateClaim marks cpus as claimed by DRA ResourceClaim uid in the
+// tightest pool that fully contains them, evicting and requeueing for
+// reallocation any exclusive grant that overlaps those CPUs.
+//
+// Safe to call more than once for the same uid: a ResourceClaim with
+// AllowMultipleAllocations can back more than one container, and
+// AllocateResources calls this once per container. The pool marking itself
+// (and any eviction it triggers) is only performed for the first container;
+// subsequent calls just bump the per-claim container refcount so that
+// releaseClaim knows to keep the CPUs marked until the last referencing
+// container is released.
+func (p *policy) allocateClaim(uid types.UID, cpus cpuset.CPUSet, classCPUs map[string]cpuset.CPUSet) error {
+	if cpus.IsEmpty() {
+		return policyError("cannot allocate DRA claim %s: empty CPU set", uid)
+	}
+
+	if p.claimContainerRefs == nil {
+		p.claimContainerRefs = make(map[types.UID]int)
+	}
+
+	if p.claimContainerRefs[uid] == 0 {
+		pool, err := p.poolForCPUs(cpus)
+		if err != nil {
+			return policyError("cannot allocate DRA claim %s (CPUs %s): %v", uid, cpus, err)
+		}
+
+		evicted, evictedCpusets := p.evictOverlappingGrants(cpus, fmt.Sprintf("claim %s", uid))
+
+		pool.FreeSupply().ClaimCPUs(uid, cpus)
+
+		// Apply the physical cpuClass (SST-CP CLOS association, EPP,
+		// governor, ...) to the claimed CPUs. Without this, pool accounting
+		// excludes the CPUs from regular grants but the hardware is left in
+		// whatever class it was in before — the whole point of associating a
+		// DRA claim with a cpuClass would otherwise have no physical effect.
+		// classCPUs groups the claimed CPUs by class (see classifyClaimCPUs):
+		// a single claim can span more than one class (e.g. requests
+		// resolving to devices on different punits), so UseClass is applied
+		// once per (class, subset) pair rather than once for the whole
+		// unioned cpus with a single, possibly-wrong class.
+		if err := p.applyClassCPUs("apply", uid, classCPUs); err != nil {
+			// Roll back the supply mark so pool accounting stays consistent.
+			pool.FreeSupply().UnclaimCPUs(uid)
+			p.resetCpuClass(fmt.Sprintf("dra: rollback claim %s", uid), cpus)
+			if reallocErr := p.reallocateEvicted(evicted, evictedCpusets, cpuset.New(), uid); reallocErr != nil {
+				log.Errorf("dra: claim %s: failed to restore evicted grants during CPU class rollback: %v", uid, reallocErr)
+			}
+			return policyError("dra: claim %s: failed to apply CPU class: %v", uid, err)
+		}
+
+		// The claimed CPUs may have been subtracted from the sharable pool
+		// (not just isolated/exclusive), in which case containers already
+		// pinned (via applyGrant) to the pool's previous, wider sharable
+		// cpuset need to be re-pinned to the now-reduced set — otherwise they
+		// keep running on CPUs the pool considers exclusively owned by this
+		// DRA claim. Run this unconditionally: it is a no-op for containers
+		// whose cpuset does not include any of the reserved-CPU-type grants
+		// affected here (see updateSharedAllocations).
+		p.updateSharedAllocations(nil)
+
+		if err := p.reallocateEvicted(evicted, evictedCpusets, cpus, uid); err != nil {
+			pool.FreeSupply().UnclaimCPUs(uid)
+			p.resetCpuClass(fmt.Sprintf("dra: rollback claim %s", uid), cpus)
+			p.updateSharedAllocations(nil)
+			if reallocErr := p.reallocateEvicted(evicted, evictedCpusets, cpuset.New(), uid); reallocErr != nil {
+				log.Errorf("dra: claim %s: failed to restore evicted grants during rollback: %v", uid, reallocErr)
+			}
+			return policyError("dra: claim %s: evicted %d container(s) to free CPUs %s but failed "+
+				"to fully reallocate them: %v", uid, len(evicted), cpus, err)
+		}
+	}
+
+	p.claimContainerRefs[uid]++
+
+	return nil
+}
+
+// evictOverlappingGrants releases the exclusive grant of every container
+// whose ExclusiveCPUs() overlaps cpus, returning the evicted containers and
+// a snapshot of their cgroup cpuset.cpus (as it was right before eviction) —
+// the latter is needed by reallocateEvicted's safety net if reallocation
+// later fails for one of them. reason is used only for logging.
+func (p *policy) evictOverlappingGrants(cpus cpuset.CPUSet, reason string) ([]cache.Container, map[string]string) {
+	var evicted []cache.Container
+	evictedCpusets := map[string]string{}
+	for _, g := range p.allocations.grants {
+		if g.ExclusiveCPUs().Intersection(cpus).IsEmpty() {
+			continue
+		}
+		c := g.GetContainer()
+		evicted = append(evicted, c)
+		evictedCpusets[c.GetID()] = c.GetCpusetCpus()
+	}
+
+	for _, c := range evicted {
+		log.Infof("dra: evicting %s to free CPUs %s for %s", c.PrettyName(), cpus, reason)
+		p.releasePool(c)
+	}
+
+	return evicted, evictedCpusets
+}
+
+// reallocateEvicted attempts to reallocate the containers evicted (by
+// evictOverlappingGrants) to free cpus for DRA claim uid. If reallocation
+// fails for one or more of them, it forcibly strips cpus out of their
+// last-known cgroup cpuset (evictedCpusets, as captured before eviction) as
+// a safety net: an evicted container that ends up with no grant must not be
+// left pinned to a cpuset that overlaps the CPUs a DRA claim now exclusively
+// owns — that would let two workloads run on the same physical CPUs
+// simultaneously. Returns the (possibly partial-reallocation) error from
+// reallocateResources, or nil if evicted is empty or reallocation succeeded.
+func (p *policy) reallocateEvicted(evicted []cache.Container, evictedCpusets map[string]string, cpus cpuset.CPUSet, uid types.UID) error {
+	if len(evicted) == 0 {
+		return nil
+	}
+
+	if err := p.reallocateResources(evicted, nil); err != nil {
+		log.Errorf("dra: failed to fully reallocate %d container(s) evicted for claim %s: %v",
+			len(evicted), uid, err)
+
+		for _, c := range evicted {
+			if _, ok := p.allocations.getGrant(c.GetID()); ok {
+				continue
+			}
+			prev, perr := cpuset.Parse(evictedCpusets[c.GetID()])
+			if perr != nil {
+				log.Errorf("dra: claim %s: cannot safely re-pin %s off claimed CPUs %s: %v",
+					uid, c.PrettyName(), cpus, perr)
+				continue
+			}
+			safe := prev.Difference(cpus)
+			if safe.IsEmpty() {
+				// The victim's entire previous cpuset is within the claimed CPUs.
+				// An empty cpuset string is treated by NRI as "no restriction", so
+				// we must not call SetCpusetCpus with it — doing so would leave the
+				// container running on the DRA-claimed CPUs. Try to find at least
+				// one non-claimed CPU from the system-wide sharable pool as a
+				// fallback to pin the container to.
+				fallback := p.root.FreeSupply().SharableCPUs()
+				if fallback.IsEmpty() {
+					log.Errorf("dra: claim %s: cannot safely re-pin %s off claimed CPUs %s: "+
+						"previous cpuset %s is entirely claimed and no sharable fallback CPU exists",
+						uid, c.PrettyName(), cpus, prev)
+					continue
+				}
+				safe = cpuset.New(fallback.List()[0])
+			}
+			log.Warnf("dra: claim %s: %s could not be reallocated after eviction; "+
+				"forcing cpuset from %s to %s to avoid overlap with claimed CPUs %s",
+				uid, c.PrettyName(), prev, safe, cpus)
+			c.SetCpusetCpus(safe.String())
+		}
+
+		return err
+	}
+
+	return nil
+}
+
+// releaseClaim decrements the container refcount for DRA claim uid and,
+// once the last referencing container has been released, restores cpus to
+// the pool that had them marked as claimed. A no-op (not an error) for a uid
+// that allocateClaim was never called for, or that has already been fully
+// released — ReleaseResources may run for containers the policy never saw
+// AllocateResources for (e.g. across a restart).
+func (p *policy) releaseClaim(uid types.UID, cpus cpuset.CPUSet) error {
+	if p.claimContainerRefs == nil || p.claimContainerRefs[uid] == 0 {
+		return nil
+	}
+
+	p.claimContainerRefs[uid]--
+	if p.claimContainerRefs[uid] > 0 {
+		return nil
+	}
+
+	delete(p.claimContainerRefs, uid)
+
+	pool, err := p.poolForCPUs(cpus)
+	if err != nil {
+		return policyError("cannot release DRA claim %s (CPUs %s): %v", uid, cpus, err)
+	}
+
+	pool.FreeSupply().UnclaimCPUs(uid)
+
+	// Mirror releasePool's resetCpuClass: allocateClaim applied a physical
+	// cpuClass (SST-CP CLOS, EPP, governor, ...) to these CPUs via
+	// cpuClasses.UseClass. Without resetting it here, the CPUs go back into
+	// the pool's regular exclusive/shared rotation still carrying whatever
+	// class the claim used — silently affecting the next, unrelated
+	// container the pool hands them to, until the next full
+	// Reconfigure/restart resets every allowed CPU's class from scratch.
+	p.resetCpuClass(fmt.Sprintf("dra: release claim %s", uid), cpus)
+
+	// The released CPUs may have been restored to the sharable pool (not
+	// just isolated/exclusive), widening the cpuset available to containers
+	// already running in that pool's shared allocation. Let them reclaim it
+	// — mirrors the same call in allocateClaim/reapplyDRAClaims.
+	p.updateSharedAllocations(nil)
+
+	return nil
 }

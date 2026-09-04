@@ -66,6 +66,14 @@ config:
     prometheusExport: false
     reportPeriod: 60s
     samplingRatePerMillion: 0
+  # DRA (Dynamic Resource Allocation) kubelet plugin integration. See
+  # TopologyAwareDRA in
+  # pkg/apis/config/v1alpha1/resmgr/policy/topologyaware/config.go for what
+  # these fields control. Requires Kubernetes 1.34+ (resource.k8s.io/v1,
+  # used by the DeviceClass this chart installs when enabled=true).
+  dra:
+    enabled: false
+    sharedCounters: false
 
 # configGroupLabel: config.nri/group
 
