@@ -31,6 +31,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
 	"github.com/containers/nri-plugins/pkg/irq"
 	"github.com/containers/nri-plugins/pkg/kubernetes"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass"
@@ -80,6 +81,7 @@ const (
 type balloons struct {
 	options   *policy.BackendOptions // configuration common to all policies
 	bpoptions *BalloonsOptions       // balloons-specific configuration
+	machine   *hardware.Machine      // CPU and memory topology
 	cch       cache.Cache            // nri-resource-policy cache
 	allowed   cpuset.CPUSet          // bounding set of CPUs we're allowed to use
 	reserved  cpuset.CPUSet          // system-/kube-reserved CPUs
@@ -217,11 +219,12 @@ func (p *balloons) Setup(policyOptions *policy.BackendOptions) error {
 	bpoptions = bpoptions.DeepCopy()
 
 	p.options = policyOptions
+	p.machine = policyOptions.Machine
 	p.cch = policyOptions.Cache
 	p.cpuAllocator = cpuallocator.NewCPUAllocator(policyOptions.System)
 
 	log.Infof("setting up %s policy...", PolicyName)
-	p.cpuTree = NewCpuTreeFromSystem(policyOptions.System)
+	p.cpuTree = NewCpuTreeFromMachine(policyOptions.Machine)
 	log.Debugf("CPU topology: %s", p.cpuTree)
 
 	// Handle policy-specific options
@@ -1063,11 +1066,11 @@ func (p *balloons) updateLoadedVirtDev(allocatorOptions *cpuTreeAllocatorOptions
 	switch virtDev.level {
 	case CPUTopologyLevelCore:
 		// add all CPUs from same cores of virtual device CPUs
-		allocatorOptions.virtDevCpusets[virtDevName] = []cpuset.CPUSet{prevCpus.Union(p.cpuTree.system().AllThreadsForCPUs(vdCpus))}
+		allocatorOptions.virtDevCpusets[virtDevName] = []cpuset.CPUSet{prevCpus.Union(toCpuSet(hardware.AllThreads(p.machine, toCpuMask(vdCpus))))}
 	case CPUTopologyLevelL2Cache:
 		// add all CPUs from the same L2 cache of virtual
 		// device CPUs
-		allocatorOptions.virtDevCpusets[virtDevName] = []cpuset.CPUSet{prevCpus.Union(p.cpuTree.system().AllCPUsSharingNthLevelCacheWithCPUs(2, vdCpus))}
+		allocatorOptions.virtDevCpusets[virtDevName] = []cpuset.CPUSet{prevCpus.Union(toCpuSet(hardware.CPUsSharingCache(p.machine, 2, toCpuMask(vdCpus))))}
 	default:
 		log.Errorf("internal error: not implemented load level %q used in virtual device %q", virtDev.level, virtDevName)
 	}
@@ -1223,7 +1226,7 @@ func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool, c cache.Contain
 		preferFarFromDevices:        append([]string(nil), blnDef.PreferFarFromDevices...),
 		virtDevCpusets: map[string][]cpuset.CPUSet{
 			virtDevReservedCpus: {p.reserved},
-			virtDevIsolatedCpus: {p.options.System.Isolated()},
+			virtDevIsolatedCpus: {toCpuSet(p.machine.IsolatedCPUs())},
 			virtDevECores:       {p.cpuAllocator.GetCPUPriorities()[cpuallocator.PriorityLow]},
 			virtDevPCores:       {p.cpuAllocator.GetCPUPriorities()[cpuallocator.PriorityHigh]},
 		},
@@ -1897,16 +1900,16 @@ func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
 		if err != nil {
 			return balloonsError("failed to parse available CPU cpuset '%s': %w", amount, err)
 		}
-		availableCpus = p.options.System.CPUSet().Difference(cset)
+		availableCpus = toCpuSet(p.machine.PresentCPUs()).Difference(cset)
 
 	case cfgapi.AmountQuantity:
 		return balloonsError("can't handle CPU resources given as resource.Quantity (%v)", amount)
 	case cfgapi.AmountAbsent:
 		// Available CPUs not specified, default to system CPUs.
-		availableCpus = p.options.System.CPUSet()
+		availableCpus = toCpuSet(p.machine.PresentCPUs())
 	}
 	// Allocation of only online CPUs is allowed.
-	p.allowed = availableCpus.Intersection(p.options.System.OnlineCPUs())
+	p.allowed = availableCpus.Intersection(toCpuSet(p.machine.OnlineCPUs()))
 
 	setOmittedDefaults(bpoptions)
 
@@ -2293,12 +2296,12 @@ func (p *balloons) containerDeviceCpus(c cache.Container, resourceName string) (
 		// unknown id Node() returns a nil *node wrapped in a non-nil
 		// Node interface. FilterNode without filters is an existence
 		// check.
-		if !p.options.System.FilterNode(numaID) {
+		if !p.machine.MemoryNode(numaID).Valid() {
 			log.Errorf("unknown NUMA node %d in the topology of device %q of container %s",
 				numaID, resourceName, c.PrettyName())
 			continue
 		}
-		cpus = cpus.Union(p.options.System.Node(numaID).CPUSet())
+		cpus = cpus.Union(toCpuSet(p.machine.MemoryNode(numaID).CPUs()))
 	}
 	if cpus.IsEmpty() {
 		return emptyCpuSet, false
@@ -2397,7 +2400,7 @@ func (p *balloons) fillFarFromDevices(blnDefs []*BalloonDef) {
 	// beginning of the list will be more effectively avoided than
 	// devices later in the list.
 	avoidDevs := []string{}
-	if p.options.System.Isolated().Size() != 0 {
+	if p.machine.IsolatedCPUs().Size() != 0 {
 		avoidDevs = append(avoidDevs, virtDevIsolatedCpus)
 	}
 	for _, blnDef := range blnDefs {
@@ -2580,7 +2583,7 @@ func (p *balloons) updatePinning(blns ...*Balloon) {
 			if c, ok := p.cch.LookupContainer(cID); ok {
 				if runWithoutHyperthreads(c, bln) {
 					if cpusNoHt.Size() == 0 {
-						cpusNoHt = p.cpuTree.system().SingleThreadForCPUs(pinnableCpus)
+						cpusNoHt = toCpuSet(hardware.SingleThreadPerCore(p.machine, toCpuMask(pinnableCpus)))
 					}
 					allowedCpus = cpusNoHt
 				} else {
@@ -2617,7 +2620,7 @@ func (p *balloons) shareIdleCpus(addCpus, removeCpus cpuset.CPUSet) []*Balloon {
 			}
 		}
 	}
-	addCpus = addCpus.Difference(p.options.System.Isolated())
+	addCpus = addCpus.Difference(toCpuSet(p.machine.IsolatedCPUs()))
 	if addCpus.Size() > 0 {
 		for blnIdx, bln := range p.balloons {
 			topoLevel := bln.Def.ShareIdleCpusInSame

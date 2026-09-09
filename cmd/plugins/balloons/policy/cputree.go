@@ -21,7 +21,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/containers/nri-plugins/pkg/lib/hardware/system"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	"github.com/containers/nri-plugins/pkg/topology"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
@@ -33,7 +34,6 @@ type cpuTreeNode struct {
 	parent   *cpuTreeNode
 	children []*cpuTreeNode
 	cpus     cpuset.CPUSet // union of CPUs of child nodes
-	sys      system.System
 }
 
 // cpuTreeNodeAttributes contains various attributes of a CPU tree
@@ -78,6 +78,18 @@ type cpuTreeAllocatorOptions struct {
 
 var emptyCpuSet = cpuset.New()
 
+// toCpuSet and toCpuMask convert between the set the hardware package speaks and
+// the one this policy is written in. They are the seam left by moving the policy
+// onto hardware without rewriting its allocation logic; they disappear if the
+// policy ever switches to libcpu sets throughout.
+func toCpuSet(cpus libcpu.CPUSet) cpuset.CPUSet {
+	return cpuset.New(cpus.List()...)
+}
+
+func toCpuMask(cpus cpuset.CPUSet) *libcpu.CpuMask {
+	return libcpu.NewCpuMask(cpus.List()...)
+}
+
 // String returns string representation of a CPU tree node.
 func (t *cpuTreeNode) String() string {
 	if len(t.children) == 0 {
@@ -99,13 +111,6 @@ func (t *cpuTreeNode) PrettyPrint() string {
 		log.Warnf("failed to walk CPU tree: %v", err)
 	}
 	return strings.Join(lines, "\n")
-}
-
-func (t *cpuTreeNode) system() system.System {
-	if t.sys != nil || t.parent == nil {
-		return t.sys
-	}
-	return t.parent.system()
 }
 
 // String returns cpuTreeNodeAttributes as a string.
@@ -261,51 +266,55 @@ func (t *cpuTreeNode) CpuLocations(cpus cpuset.CPUSet) [][]string {
 	return names
 }
 
-// NewCpuTreeFromSystem returns the root node of the topology tree
-// constructed from the given system.
-func NewCpuTreeFromSystem(sys system.System) *cpuTreeNode {
+// NewCpuTreeFromMachine returns the root node of the topology tree constructed
+// from the given machine.
+func NewCpuTreeFromMachine(m *hardware.Machine) *cpuTreeNode {
 	// TODO: split deep nested loops into functions
+	x := m.TopologyIndex()
 	sysTree := NewCpuTree("system")
-	sysTree.sys = sys
 	sysTree.level = CPUTopologyLevelSystem
-	for _, packageID := range sys.PackageIDs() {
+	for _, packageID := range x.PackageIDs() {
 		packageTree := NewCpuTree(fmt.Sprintf("p%d", packageID))
 		packageTree.level = CPUTopologyLevelPackage
-		cpuPackage := sys.Package(packageID)
 		sysTree.AddChild(packageTree)
-		for _, dieID := range cpuPackage.DieIDs() {
-			dieTree := NewCpuTree(fmt.Sprintf("%sd%d", packageTree.name, dieID))
+		for _, dieID := range x.DieIDs(packageID) {
+			dieTree := NewCpuTree(fmt.Sprintf("%sd%d", packageTree.name, dieID.Die))
 			dieTree.level = CPUTopologyLevelDie
 			packageTree.AddChild(dieTree)
-			for _, nodeID := range cpuPackage.DieNodeIDs(dieID) {
+			dieCpus := x.DieCPUs(dieID)
+			for _, nodeID := range slices.Sorted(
+				slices.Values(hardware.MemoryNodesFor(m, dieCpus))) {
 				nodeTree := NewCpuTree(fmt.Sprintf("%sn%d", dieTree.name, nodeID))
 				nodeTree.level = CPUTopologyLevelNuma
 				dieTree.AddChild(nodeTree)
-				node := sys.Node(nodeID)
 
 				// Find all level 2 caches (l2c) shared by CPUs of this node.
-				l2cs := map[*system.Cache]struct{}{}
-				for _, cpuID := range node.CPUSet().List() {
-					for _, cache := range sys.CPU(cpuID).GetCachesByLevel(2) {
-						l2cs[cache] = struct{}{}
+				l2cs := []*hardware.Cache{}
+				for _, cpuID := range m.MemoryNode(nodeID).CPUs().List() {
+					for _, cache := range m.CPU(cpuID).Caches() {
+						if cache.Level() == 2 && !slices.Contains(l2cs, cache) {
+							l2cs = append(l2cs, cache)
+						}
 					}
 				}
+				slices.SortFunc(l2cs, func(a, b *hardware.Cache) int {
+					return a.ID() - b.ID()
+				})
 
-				for cache := range l2cs {
+				for _, cache := range l2cs {
 					l2cTree := NewCpuTree(fmt.Sprintf("%s$%d", nodeTree.name, cache.ID()))
 					l2cTree.level = CPUTopologyLevelL2Cache
 					nodeTree.AddChild(l2cTree)
 
 					threadsSeen := map[int]struct{}{}
-					for _, cpuID := range cache.SharedCPUSet().List() {
+					for _, cpuID := range cache.CPUs().List() {
 						if _, alreadySeen := threadsSeen[cpuID]; alreadySeen {
 							continue
 						}
-						cpu := sys.CPU(cpuID)
 						coreTree := NewCpuTree(fmt.Sprintf("%scpu%d", nodeTree.name, cpuID))
 						coreTree.level = CPUTopologyLevelCore
 						l2cTree.AddChild(coreTree)
-						for _, threadID := range cpu.ThreadCPUSet().List() {
+						for _, threadID := range m.CPU(cpuID).Threads().List() {
 							threadsSeen[threadID] = struct{}{}
 							threadTree := NewCpuTree(fmt.Sprintf("%st%d", coreTree.name, threadID))
 							threadTree.level = CPUTopologyLevelThread
