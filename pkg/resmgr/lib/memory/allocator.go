@@ -21,7 +21,7 @@ import (
 	"slices"
 	"strings"
 
-	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
 )
@@ -70,25 +70,29 @@ const (
 // AllocatorOption is an opaque option for an Allocator.
 type AllocatorOption func(*Allocator) error
 
-// WithSystemNodes is an option to request an allocator to perform
-// automatic NUMA node discovery using the given sysfs instance.
-func WithSystemNodes(sys sysfs.System) AllocatorOption {
+// WithMachineNodes is an option to request an allocator to take its NUMA nodes
+// from an already discovered machine.
+//
+// The node capacities are the ones read during that discovery, rather than being
+// re-read here. They cannot have changed, and a node whose meminfo could not be
+// read at all fails discovery, so there is nothing left to go wrong by the time
+// a Machine exists.
+func WithMachineNodes(m *hardware.Machine) AllocatorOption {
 	return func(a *Allocator) error {
+		if m == nil {
+			return fmt.Errorf("no machine to take memory nodes from")
+		}
+
 		nodes := []*Node{}
 
-		for _, id := range sys.NodeIDs() {
-			sysNode := sys.Node(id)
-			info, err := sysNode.MemoryInfo()
-			if err != nil {
-				return fmt.Errorf("failed to discover system node #%d: %w", id, err)
-			}
-
+		for _, node := range m.MemoryNodes() {
 			var (
-				memType   = TypeForSysfs(sysNode.GetMemoryType())
-				capacity  = int64(info.MemTotal)
-				isNormal  = sysNode.HasNormalMemory()
-				closeCPUs = sysNode.CPUSet()
-				distance  = sysNode.Distance()
+				id        = node.ID()
+				memType   = TypeForKind(node.Kind())
+				capacity  = node.Capacity()
+				isNormal  = node.HasNormalMemory()
+				closeCPUs = cpuset.New(node.CPUs().List()...)
+				distance  = node.Distances()
 			)
 
 			n, err := NewNode(id, memType, capacity, isNormal, closeCPUs, distance)

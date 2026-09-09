@@ -25,6 +25,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	"github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	"github.com/containers/nri-plugins/pkg/metrics"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
@@ -96,10 +97,16 @@ func newServerPolicyWithMetrics(t *testing.T) (*policy, *TopologyAwareMetrics, *
 	if err != nil {
 		t.Fatalf("failed to discover system: %v", err)
 	}
+	machine, err := hardware.Discover(
+		hardware.WithRoot(path.Join(dir, "sysfs", "server")))
+	if err != nil {
+		t.Fatalf("failed to discover machine: %v", err)
+	}
 
 	opts := &policyapi.BackendOptions{
-		Cache:  &mockCache{},
-		System: sys,
+		Cache:   &mockCache{},
+		System:  sys,
+		Machine: machine,
 		Config: &cfgapi.Config{
 			ReservedResources: cfgapi.Constraints{
 				cfgapi.CPU: "750m",

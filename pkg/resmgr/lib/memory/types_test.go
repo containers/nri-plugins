@@ -15,7 +15,7 @@
 package libmem_test
 
 import (
-	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	. "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 
 	"testing"
@@ -26,33 +26,32 @@ import (
 func TestTypes(t *testing.T) {
 	type testCase struct {
 		name    string
-		sysType sysfs.MemoryType
+		kind    hardware.MemoryKind
 		memType Type
 	}
 
 	for _, tc := range []*testCase{
 		{
 			name:    "DRAM",
-			sysType: sysfs.MemoryTypeDRAM,
+			kind:    hardware.MemoryKindDRAM,
 			memType: TypeDRAM,
 		},
 		{
 			name:    "PMEM",
-			sysType: sysfs.MemoryTypePMEM,
+			kind:    hardware.MemoryKindPMEM,
 			memType: TypePMEM,
 		},
 		{
 			name:    "HBM",
-			sysType: sysfs.MemoryTypeHBM,
+			kind:    hardware.MemoryKindHBM,
 			memType: TypeHBM,
 		},
 	} {
-		t.Run(tc.name+" TypeForSysfs", func(t *testing.T) {
-			memType := TypeForSysfs(tc.sysType)
-			require.Equal(t, tc.memType, memType)
+		t.Run(tc.name+" TypeForKind", func(t *testing.T) {
+			require.Equal(t, tc.memType, TypeForKind(tc.kind))
 		})
-		t.Run(tc.name+" Sysfs", func(t *testing.T) {
-			require.Equal(t, tc.sysType, tc.memType.Sysfs())
+		t.Run(tc.name+" Kind", func(t *testing.T) {
+			require.Equal(t, tc.kind, tc.memType.Kind())
 		})
 		t.Run(tc.name+" MustParseType", func(t *testing.T) {
 			require.Equal(t, tc.memType, MustParseType(tc.name))

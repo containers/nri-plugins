@@ -28,6 +28,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/dra"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	"github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	"github.com/containers/nri-plugins/pkg/testutils"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
@@ -138,10 +139,15 @@ func TestPoolCreation(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
+			machine, err := hardware.Discover(hardware.WithRoot(path.Dir(tc.path)))
+			if err != nil {
+				panic(err)
+			}
 
 			policyOptions := &policyapi.BackendOptions{
-				Cache:  &mockCache{},
-				System: sys,
+				Cache:   &mockCache{},
+				System:  sys,
+				Machine: machine,
 				Config: &cfgapi.Config{
 					ReservedResources: cfgapi.Constraints{
 						cfgapi.CPU: "750m",
@@ -263,10 +269,15 @@ func TestWorkloadPlacement(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
+			machine, err := hardware.Discover(hardware.WithRoot(path.Dir(tc.path)))
+			if err != nil {
+				panic(err)
+			}
 
 			policyOptions := &policyapi.BackendOptions{
-				Cache:  &mockCache{},
-				System: sys,
+				Cache:   &mockCache{},
+				System:  sys,
+				Machine: machine,
 				Config: &cfgapi.Config{
 					ReservedResources: cfgapi.Constraints{
 						cfgapi.CPU: "750m",
@@ -523,10 +534,15 @@ func TestAffinities(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
+			machine, err := hardware.Discover(hardware.WithRoot(path.Dir(tc.path)))
+			if err != nil {
+				panic(err)
+			}
 
 			policyOptions := &policyapi.BackendOptions{
-				Cache:  &mockCache{},
-				System: sys,
+				Cache:   &mockCache{},
+				System:  sys,
+				Machine: machine,
 				Config: &cfgapi.Config{
 					ReservedResources: cfgapi.Constraints{
 						cfgapi.CPU: "750m",

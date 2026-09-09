@@ -105,7 +105,10 @@ func TestColdStart(t *testing.T) {
 			}
 			policy.allocations.policy = policy
 			policy.options.SendEvent = sendEvent
-			ma, err := libmem.NewAllocator(libmem.WithSystemNodes(policy.sys))
+			// No nodes: the allocator takes them from a hardware.Machine now,
+			// and the mocked system above cannot stand in for one. Moot while
+			// the test is skipped, which is for the same reason.
+			ma, err := libmem.NewAllocator()
 			if err != nil {
 				panic(err)
 			}

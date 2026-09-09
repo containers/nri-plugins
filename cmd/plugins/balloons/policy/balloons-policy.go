@@ -1963,7 +1963,7 @@ func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
 
 	// Create new memory allocator to clear any allocations with previous configuration.
 	// Other allocators are stateless in that respect.
-	malloc, err := libmem.NewAllocator(libmem.WithSystemNodes(p.options.System))
+	malloc, err := libmem.NewAllocator(libmem.WithMachineNodes(p.machine))
 	if err != nil {
 		return balloonsError("failed to create memory allocator: %w", err)
 	}

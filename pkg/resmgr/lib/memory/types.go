@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"strings"
 
-	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 )
 
 // Type represents known types of memory.
@@ -32,15 +32,21 @@ const (
 )
 
 var (
-	sysToType = map[sysfs.MemoryType]Type{
-		sysfs.MemoryTypeDRAM: TypeDRAM,
-		sysfs.MemoryTypePMEM: TypePMEM,
-		sysfs.MemoryTypeHBM:  TypeHBM,
+	kindToType = map[hardware.MemoryKind]Type{
+		hardware.MemoryKindDRAM: TypeDRAM,
+		hardware.MemoryKindPMEM: TypePMEM,
+		hardware.MemoryKindHBM:  TypeHBM,
+		// A node the hardware package could not classify counts as DRAM. There
+		// is no type here for "do not know", and ordinary memory is the reading
+		// which keeps the node's capacity available to allocations. Spelled out
+		// rather than left to TypeDRAM being the zero value, so that it reads as
+		// a decision.
+		hardware.MemoryKindUnknown: TypeDRAM,
 	}
-	typeToSys = map[Type]sysfs.MemoryType{
-		TypeDRAM: sysfs.MemoryTypeDRAM,
-		TypePMEM: sysfs.MemoryTypePMEM,
-		TypeHBM:  sysfs.MemoryTypeHBM,
+	typeToKind = map[Type]hardware.MemoryKind{
+		TypeDRAM: hardware.MemoryKindDRAM,
+		TypePMEM: hardware.MemoryKindPMEM,
+		TypeHBM:  hardware.MemoryKindHBM,
 	}
 	typeToString = map[Type]string{
 		TypeDRAM: "DRAM",
@@ -54,19 +60,19 @@ var (
 	}
 )
 
-// TypeForSysfs returns the memory type for the given sysfs memory type.
-func TypeForSysfs(sysType sysfs.MemoryType) Type {
-	if t, ok := sysToType[sysType]; ok {
+// TypeForKind returns the memory type for the given hardware memory kind.
+func TypeForKind(kind hardware.MemoryKind) Type {
+	if t, ok := kindToType[kind]; ok {
 		return t
 	}
 
-	panic(fmt.Errorf("unknown sysfs memory type %v", sysType))
+	panic(fmt.Errorf("unknown hardware memory kind %v", kind))
 }
 
-// Sysfs returns the sysfs memory type for the given memory type.
-func (t Type) Sysfs() sysfs.MemoryType {
-	if sysType, ok := typeToSys[t]; ok {
-		return sysType
+// Kind returns the hardware memory kind for the given memory type.
+func (t Type) Kind() hardware.MemoryKind {
+	if kind, ok := typeToKind[t]; ok {
+		return kind
 	}
 
 	panic(fmt.Errorf("unknown libmem memory type %d", t))
@@ -99,7 +105,7 @@ func (t Type) Mask() TypeMask {
 
 // IsValid returns true if the memory type is valid/known.
 func (t Type) IsValid() bool {
-	_, ok := typeToSys[t]
+	_, ok := typeToKind[t]
 	return ok
 }
 
@@ -162,11 +168,12 @@ func NewTypeMask(types ...Type) TypeMask {
 	return m & TypeMaskAll
 }
 
-// NewTypeMaskForSysfs returns a TypeMask containing th given sysfs memory types.
-func NewTypeMaskForSysfs(sysTypes ...sysfs.MemoryType) TypeMask {
+// NewTypeMaskForKinds returns a TypeMask containing the given hardware memory
+// kinds.
+func NewTypeMaskForKinds(kinds ...hardware.MemoryKind) TypeMask {
 	m := TypeMask(0)
-	for _, st := range sysTypes {
-		m |= (1 << TypeForSysfs(st))
+	for _, kind := range kinds {
+		m |= (1 << TypeForKind(kind))
 	}
 	return m & TypeMaskAll
 }
