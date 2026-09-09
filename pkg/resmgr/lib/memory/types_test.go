@@ -15,8 +15,8 @@
 package libmem_test
 
 import (
+	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	. "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
-	"github.com/containers/nri-plugins/pkg/sysfs"
 
 	"testing"
 

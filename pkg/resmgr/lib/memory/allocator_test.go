@@ -20,8 +20,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	. "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
-	"github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 

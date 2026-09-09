@@ -22,7 +22,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/testutils"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 
-	"github.com/containers/nri-plugins/pkg/sysfs"
+	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
 )

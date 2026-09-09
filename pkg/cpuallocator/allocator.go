@@ -21,8 +21,8 @@ import (
 
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 
+	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	logger "github.com/containers/nri-plugins/pkg/log"
-	"github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/utils"
 	"github.com/intel/goresctrl/pkg/sst"
 	idset "github.com/intel/goresctrl/pkg/utils"

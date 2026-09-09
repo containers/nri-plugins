@@ -20,7 +20,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/containers/nri-plugins/pkg/sysfs"
+	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
 )
 
 const (

@@ -20,11 +20,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
-	system "github.com/containers/nri-plugins/pkg/sysfs"
 	idset "github.com/intel/goresctrl/pkg/utils"
 )
 

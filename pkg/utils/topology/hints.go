@@ -15,8 +15,8 @@
 package topology
 
 import (
+	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
-	"github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/topology"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )

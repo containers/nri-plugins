@@ -24,9 +24,9 @@ import (
 
 	"github.com/intel/goresctrl/pkg/utils"
 
+	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/types"
-	"github.com/containers/nri-plugins/pkg/sysfs"
 )
 
 var log = logger.NewLogger("cpuclass")

@@ -30,8 +30,8 @@ import (
 	"github.com/containerd/nri/pkg/api"
 	"github.com/containerd/nri/pkg/stub"
 
+	"github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
-	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
 )

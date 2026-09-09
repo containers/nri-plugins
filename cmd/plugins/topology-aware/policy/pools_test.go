@@ -28,7 +28,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/dra"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 
-	system "github.com/containers/nri-plugins/pkg/sysfs"
+	"github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	"github.com/containers/nri-plugins/pkg/testutils"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )

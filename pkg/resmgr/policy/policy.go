@@ -26,8 +26,8 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	logger "github.com/containers/nri-plugins/pkg/log"
-	system "github.com/containers/nri-plugins/pkg/sysfs"
 	// nrt "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 )
 

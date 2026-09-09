@@ -32,8 +32,8 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 
+	"github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
-	system "github.com/containers/nri-plugins/pkg/sysfs"
 )
 
 const (

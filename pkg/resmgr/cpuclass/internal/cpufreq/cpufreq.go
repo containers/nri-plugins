@@ -24,9 +24,9 @@ import (
 	"slices"
 
 	policyapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
+	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/types"
-	"github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 

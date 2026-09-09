@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/containers/nri-plugins/pkg/sysfs"
+	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
 )
 
 // Type represents known types of memory.

@@ -23,8 +23,8 @@ import (
 	idset "github.com/intel/goresctrl/pkg/utils"
 
 	policyapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
+	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/types"
-	"github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 

@@ -17,7 +17,7 @@ package cpufreq
 import (
 	"fmt"
 
-	"github.com/containers/nri-plugins/pkg/sysfs"
+	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
 )
 
 // platformTurboInfo holds platform-level turbo frequency capabilities

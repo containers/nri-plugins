@@ -23,9 +23,9 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	v1 "k8s.io/api/core/v1"
 
+	"github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	"github.com/containers/nri-plugins/pkg/metrics"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
-	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 

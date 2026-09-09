@@ -23,7 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/containers/nri-plugins/pkg/agent/podresapi"
-	"github.com/containers/nri-plugins/pkg/sysfs"
+	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	"github.com/containers/nri-plugins/pkg/topology"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 
