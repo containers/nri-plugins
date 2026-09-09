@@ -209,8 +209,6 @@ func New() policy.Backend {
 
 // Setup initializes the balloons policy instance.
 func (p *balloons) Setup(policyOptions *policy.BackendOptions) error {
-	var err error
-
 	bpoptions, ok := policyOptions.Config.(*BalloonsOptions)
 	if !ok {
 		return balloonsError("failed to initialize %s policy: config of wrong type %T",
@@ -223,9 +221,7 @@ func (p *balloons) Setup(policyOptions *policy.BackendOptions) error {
 	p.cpuAllocator = cpuallocator.NewCPUAllocator(policyOptions.System)
 
 	log.Infof("setting up %s policy...", PolicyName)
-	if p.cpuTree, err = NewCpuTreeFromSystem(); err != nil {
-		log.Errorf("creating CPU topology tree failed: %s", err)
-	}
+	p.cpuTree = NewCpuTreeFromSystem(policyOptions.System)
 	log.Debugf("CPU topology: %s", p.cpuTree)
 
 	// Handle policy-specific options

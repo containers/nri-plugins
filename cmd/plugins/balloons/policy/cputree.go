@@ -262,12 +262,8 @@ func (t *cpuTreeNode) CpuLocations(cpus cpuset.CPUSet) [][]string {
 }
 
 // NewCpuTreeFromSystem returns the root node of the topology tree
-// constructed from the underlying system.
-func NewCpuTreeFromSystem() (*cpuTreeNode, error) {
-	sys, err := system.DiscoverSystem(system.DiscoverCPUTopology | system.DiscoverCache)
-	if err != nil {
-		return nil, err
-	}
+// constructed from the given system.
+func NewCpuTreeFromSystem(sys system.System) *cpuTreeNode {
 	// TODO: split deep nested loops into functions
 	sysTree := NewCpuTree("system")
 	sysTree.sys = sys
@@ -321,7 +317,7 @@ func NewCpuTreeFromSystem() (*cpuTreeNode, error) {
 			}
 		}
 	}
-	return sysTree, nil
+	return sysTree
 }
 
 // ToAttributedSlice returns a CPU tree node and recursively all its
