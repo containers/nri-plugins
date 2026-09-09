@@ -221,7 +221,7 @@ func (p *balloons) Setup(policyOptions *policy.BackendOptions) error {
 	p.options = policyOptions
 	p.machine = policyOptions.Machine
 	p.cch = policyOptions.Cache
-	p.cpuAllocator = cpuallocator.NewCPUAllocator(policyOptions.System)
+	p.cpuAllocator = cpuallocator.NewCPUAllocator(policyOptions.Machine)
 
 	log.Infof("setting up %s policy...", PolicyName)
 	p.cpuTree = NewCpuTreeFromMachine(policyOptions.Machine)

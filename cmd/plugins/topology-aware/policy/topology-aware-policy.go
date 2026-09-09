@@ -164,7 +164,7 @@ func (p *policy) Setup(opts *policyapi.BackendOptions) error {
 	p.cache = opts.Cache
 	p.sys = opts.System
 	p.options = opts
-	p.cpuAllocator = cpuallocator.NewCPUAllocator(opts.System)
+	p.cpuAllocator = cpuallocator.NewCPUAllocator(opts.Machine)
 	p.memAllocator, err = libmem.NewAllocator(libmem.WithMachineNodes(opts.Machine))
 	if err != nil {
 		return policyError("failed to initialize %s policy: %w", err)

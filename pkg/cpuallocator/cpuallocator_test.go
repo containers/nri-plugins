@@ -22,7 +22,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/testutils"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 
-	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
 )
@@ -40,13 +40,12 @@ func TestAllocatorHelper(t *testing.T) {
 	}
 
 	// Discover mock system from the testdata
-	sys, err := sysfs.DiscoverSystemAt(
-		path.Join(tmpdir, "sysfs", "2-socket-4-node-40-core", "sys"),
-		sysfs.DiscoverCPUTopology, sysfs.DiscoverMemTopology)
+	m, err := hardware.Discover(
+		hardware.WithRoot(path.Join(tmpdir, "sysfs", "2-socket-4-node-40-core")))
 	if err != nil {
 		t.Fatalf("failed to discover mock system: %v", err)
 	}
-	topoCache := newTopologyCache(sys)
+	topoCache := newTopologyCache(m)
 
 	// Fake cpu priorities: 5 cores from pkg #0 as high prio
 	// Package CPUs: #0: [0-19,40-59], #1: [20-39,60-79]
@@ -89,7 +88,7 @@ func TestAllocatorHelper(t *testing.T) {
 	// Run tests
 	for _, tc := range tcs {
 		t.Run(tc.description, func(t *testing.T) {
-			a := newAllocatorHelper(sys, topoCache)
+			a := newAllocatorHelper(m, topoCache)
 			a.from = tc.from
 			a.prefer = tc.prefer
 			a.cnt = tc.cnt
@@ -118,13 +117,12 @@ func TestClusteredAllocation(t *testing.T) {
 	}
 
 	// Discover mock system from the testdata
-	sys, err := sysfs.DiscoverSystemAt(
-		path.Join(tmpdir, "sysfs", "2-socket-4-node-40-core", "sys"),
-		sysfs.DiscoverCPUTopology, sysfs.DiscoverMemTopology)
+	m, err := hardware.Discover(
+		hardware.WithRoot(path.Join(tmpdir, "sysfs", "2-socket-4-node-40-core")))
 	if err != nil {
 		t.Fatalf("failed to discover mock system: %v", err)
 	}
-	topoCache := newTopologyCache(sys)
+	topoCache := newTopologyCache(m)
 
 	// Fake cpu priorities: 5 cores from pkg #0 as high prio
 	// Package CPUs: #0: [0-19,40-59], #1: [20-39,60-79]
@@ -306,7 +304,7 @@ func TestClusteredAllocation(t *testing.T) {
 	// Run tests
 	for _, tc := range tcs {
 		t.Run(tc.description, func(t *testing.T) {
-			a := newAllocatorHelper(sys, topoCache)
+			a := newAllocatorHelper(m, topoCache)
 			a.from = tc.from
 			a.cnt = tc.cnt
 			result := a.allocate()
@@ -334,9 +332,8 @@ func TestClusteredCoreKindAllocation(t *testing.T) {
 	}
 
 	// Discover mock system from the testdata
-	sys, err := sysfs.DiscoverSystemAt(
-		path.Join(tmpdir, "sysfs", "2-socket-4-node-40-core", "sys"),
-		sysfs.DiscoverCPUTopology, sysfs.DiscoverMemTopology)
+	m, err := hardware.Discover(
+		hardware.WithRoot(path.Join(tmpdir, "sysfs", "2-socket-4-node-40-core")))
 	if err != nil {
 		t.Fatalf("failed to discover mock system: %v", err)
 	}
@@ -347,70 +344,70 @@ func TestClusteredCoreKindAllocation(t *testing.T) {
 			die:     0,
 			cluster: 0,
 			cpus:    cpuset.MustParse("0-3"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     0,
 			die:     0,
 			cluster: 1,
 			cpus:    cpuset.MustParse("4-7"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     0,
 			die:     0,
 			cluster: 2,
 			cpus:    cpuset.MustParse("8-11"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     0,
 			die:     0,
 			cluster: 3,
 			cpus:    cpuset.MustParse("12-15"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     0,
 			die:     0,
 			cluster: 4,
 			cpus:    cpuset.MustParse("16-19"),
-			kind:    sysfs.EfficientCore,
+			kind:    hardware.EfficientCore,
 		},
 		{
 			pkg:     0,
 			die:     0,
 			cluster: 5,
 			cpus:    cpuset.MustParse("40-43"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     0,
 			die:     0,
 			cluster: 6,
 			cpus:    cpuset.MustParse("44-47"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     0,
 			die:     0,
 			cluster: 7,
 			cpus:    cpuset.MustParse("48-51"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     0,
 			die:     0,
 			cluster: 8,
 			cpus:    cpuset.MustParse("52-55"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     0,
 			die:     0,
 			cluster: 9,
 			cpus:    cpuset.MustParse("56-59"),
-			kind:    sysfs.EfficientCore,
+			kind:    hardware.EfficientCore,
 		},
 
 		{
@@ -418,70 +415,70 @@ func TestClusteredCoreKindAllocation(t *testing.T) {
 			die:     0,
 			cluster: 0,
 			cpus:    cpuset.MustParse("20,22,24,26"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     1,
 			die:     0,
 			cluster: 1,
 			cpus:    cpuset.MustParse("21,23,25,27"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     1,
 			die:     0,
 			cluster: 2,
 			cpus:    cpuset.MustParse("28-31"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     1,
 			die:     0,
 			cluster: 3,
 			cpus:    cpuset.MustParse("32-35"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     1,
 			die:     0,
 			cluster: 4,
 			cpus:    cpuset.MustParse("36-39"),
-			kind:    sysfs.EfficientCore,
+			kind:    hardware.EfficientCore,
 		},
 		{
 			pkg:     1,
 			die:     0,
 			cluster: 5,
 			cpus:    cpuset.MustParse("60-63"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     1,
 			die:     0,
 			cluster: 6,
 			cpus:    cpuset.MustParse("64-67"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     1,
 			die:     0,
 			cluster: 7,
 			cpus:    cpuset.MustParse("68-71"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     1,
 			die:     0,
 			cluster: 8,
 			cpus:    cpuset.MustParse("72-75"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     1,
 			die:     0,
 			cluster: 9,
 			cpus:    cpuset.MustParse("76-79"),
-			kind:    sysfs.EfficientCore,
+			kind:    hardware.EfficientCore,
 		},
 	}
 
@@ -491,70 +488,70 @@ func TestClusteredCoreKindAllocation(t *testing.T) {
 			die:     0,
 			cluster: 0,
 			cpus:    cpuset.MustParse("0-3"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     0,
 			die:     0,
 			cluster: 1,
 			cpus:    cpuset.MustParse("4-7"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     0,
 			die:     0,
 			cluster: 2,
 			cpus:    cpuset.MustParse("8-11"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     0,
 			die:     0,
 			cluster: 3,
 			cpus:    cpuset.MustParse("12-15"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     0,
 			die:     0,
 			cluster: 4,
 			cpus:    cpuset.MustParse("16-19"),
-			kind:    sysfs.EfficientCore,
+			kind:    hardware.EfficientCore,
 		},
 		{
 			pkg:     0,
 			die:     0,
 			cluster: 5,
 			cpus:    cpuset.MustParse("40-43"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     0,
 			die:     0,
 			cluster: 6,
 			cpus:    cpuset.MustParse("44-47"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     0,
 			die:     0,
 			cluster: 7,
 			cpus:    cpuset.MustParse("48-51"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     0,
 			die:     0,
 			cluster: 8,
 			cpus:    cpuset.MustParse("52-55"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     0,
 			die:     0,
 			cluster: 9,
 			cpus:    cpuset.MustParse("56-59"),
-			kind:    sysfs.EfficientCore,
+			kind:    hardware.EfficientCore,
 		},
 
 		{
@@ -562,77 +559,77 @@ func TestClusteredCoreKindAllocation(t *testing.T) {
 			die:     0,
 			cluster: 0,
 			cpus:    cpuset.MustParse("20,22,24,26"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     1,
 			die:     0,
 			cluster: 1,
 			cpus:    cpuset.MustParse("21,23,25,27"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     1,
 			die:     0,
 			cluster: 2,
 			cpus:    cpuset.MustParse("28-31"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     1,
 			die:     0,
 			cluster: 3,
 			cpus:    cpuset.MustParse("32-35"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     1,
 			die:     0,
 			cluster: 4,
 			cpus:    cpuset.MustParse("36-37"),
-			kind:    sysfs.EfficientCore,
+			kind:    hardware.EfficientCore,
 		},
 		{
 			pkg:     1,
 			die:     0,
 			cluster: 5,
 			cpus:    cpuset.MustParse("38-39"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     1,
 			die:     0,
 			cluster: 6,
 			cpus:    cpuset.MustParse("60-63"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     1,
 			die:     0,
 			cluster: 7,
 			cpus:    cpuset.MustParse("64-67"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     1,
 			die:     0,
 			cluster: 8,
 			cpus:    cpuset.MustParse("68-71"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     1,
 			die:     0,
 			cluster: 9,
 			cpus:    cpuset.MustParse("72-75"),
-			kind:    sysfs.PerformanceCore,
+			kind:    hardware.PerformanceCore,
 		},
 		{
 			pkg:     1,
 			die:     0,
 			cluster: 10,
 			cpus:    cpuset.MustParse("76-79"),
-			kind:    sysfs.EfficientCore,
+			kind:    hardware.EfficientCore,
 		},
 	}
 
@@ -733,9 +730,9 @@ func TestClusteredCoreKindAllocation(t *testing.T) {
 	// Run tests
 	for _, tc := range tcs {
 		t.Run(tc.description, func(t *testing.T) {
-			topoCache := newTopologyCache(sys)
+			topoCache := newTopologyCache(m)
 			topoCache.clusters = tc.clusters
-			a := newAllocatorHelper(sys, topoCache)
+			a := newAllocatorHelper(m, topoCache)
 			a.from = tc.from
 			a.prefer = tc.prefer
 			a.cnt = tc.cnt
