@@ -23,6 +23,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/agent"
 	"github.com/containers/nri-plugins/pkg/healthz"
 	"github.com/containers/nri-plugins/pkg/instrumentation"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/pidfile"
@@ -54,14 +55,15 @@ type resmgr struct {
 	sync.RWMutex
 	agent   *agent.Agent
 	cfg     cfgapi.ResmgrConfig
-	cache   cache.Cache     // cached state
-	policy  policy.Policy   // resource manager policy
-	control control.Control // policy controllers/enforcement
-	events  chan any        // channel for delivering events
-	stop    chan any        // channel for signalling shutdown to goroutines
-	nri     *nriPlugin      // NRI plugins, if we're running as such
-	rdt     *rdtControl     // control for RDT allocation and monitoring
-	blkio   *blkioControl   // control for block I/O prioritization and throttling
+	cache   cache.Cache       // cached state
+	machine *hardware.Machine // CPU and memory topology, discovered once
+	policy  policy.Policy     // resource manager policy
+	control control.Control   // policy controllers/enforcement
+	events  chan any          // channel for delivering events
+	stop    chan any          // channel for signalling shutdown to goroutines
+	nri     *nriPlugin        // NRI plugins, if we're running as such
+	rdt     *rdtControl       // control for RDT allocation and monitoring
+	blkio   *blkioControl     // control for block I/O prioritization and throttling
 	running bool
 }
 
@@ -83,8 +85,20 @@ func NewResourceManager(backend policy.Backend, agt *agent.Agent) (ResourceManag
 		irq.SetProcRoot(opt.HostRoot)
 	}
 
+	// The topology is discovered once here and handed down. Anything which still
+	// wants the pkg/sysfs interface wraps this with sysfs.FromMachine, so there is
+	// one discovery and one view of the hardware however it is reached.
+	machine, err := hardware.Discover(
+		hardware.WithRoot(opt.HostRoot),
+		hardware.WithEnvOverrides(),
+	)
+	if err != nil {
+		return nil, resmgrError("failed to discover hardware topology: %v", err)
+	}
+
 	m := &resmgr{
-		agent: agt,
+		agent:   agt,
+		machine: machine,
 	}
 
 	if err := m.setupCache(); err != nil {
@@ -278,6 +292,7 @@ func (m *resmgr) setupPolicy(backend policy.Backend) error {
 	}
 
 	p, err := policy.NewPolicy(backend, m.cache, &policy.Options{
+		Machine:      m.machine,
 		SendEvent:    m.SendEvent,
 		KubeClientFn: m.kubeClientFn,
 		NodeName:     m.agent.NodeName(),

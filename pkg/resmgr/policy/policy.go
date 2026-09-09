@@ -26,6 +26,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	"github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	// nrt "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
@@ -55,6 +56,8 @@ type ConstraintSet map[Domain]Constraint
 
 // Options describes policy options
 type Options struct {
+	// Machine is the CPU and memory topology, discovered by the resource manager.
+	Machine *hardware.Machine
 	// SendEvent is the function for delivering events back to the resource manager.
 	SendEvent SendEventFn
 	// KubeClientFn returns the shared kubernetes client, or a nil interface
@@ -69,7 +72,10 @@ type Options struct {
 
 // BackendOptions describes the options for a policy backend instance
 type BackendOptions struct {
-	// System provides system/HW/topology information
+	// Machine provides system/HW/topology information.
+	Machine *hardware.Machine
+	// System is Machine behind the pkg/sysfs interface, for backends which have
+	// not been moved over to Machine yet. It goes with the last of them.
 	System system.System
 	// System state/cache
 	Cache cache.Cache
@@ -247,11 +253,12 @@ type ZoneAttribute struct {
 
 // Policy instance/state.
 type policy struct {
-	options  Options          // policy options
-	cache    cache.Cache      // system state cache
-	active   Backend          // our active backend
-	system   system.System    // system/HW/topology info
-	scollect *SystemCollector // system metrics collector
+	options  Options           // policy options
+	cache    cache.Cache       // system state cache
+	active   Backend           // our active backend
+	machine  *hardware.Machine // CPU and memory topology
+	system   system.System     // the same, behind the pkg/sysfs interface
+	scollect *SystemCollector  // system metrics collector
 }
 
 // Out logger instance.
@@ -261,17 +268,17 @@ var log logger.Logger = logger.NewLogger("policy")
 func NewPolicy(backend Backend, cache cache.Cache, o *Options) (Policy, error) {
 	log.Infof("creating '%s' policy...", backend.Name())
 
+	if o.Machine == nil {
+		return nil, policyError("no machine topology given")
+	}
+
 	p := &policy{
 		cache:   cache,
 		options: *o,
 		active:  backend,
+		machine: o.Machine,
+		system:  system.FromMachine(o.Machine),
 	}
-
-	sys, err := system.DiscoverSystem()
-	if err != nil {
-		return nil, policyError("failed to discover system topology: %v", err)
-	}
-	p.system = sys
 
 	return p, nil
 }
@@ -289,6 +296,7 @@ func (p *policy) Start(cfg any) error {
 
 	if err := p.active.Setup(&BackendOptions{
 		Cache:        p.cache,
+		Machine:      p.machine,
 		System:       p.system,
 		SendEvent:    p.options.SendEvent,
 		Config:       cfg,
