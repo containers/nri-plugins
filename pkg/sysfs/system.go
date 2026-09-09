@@ -740,24 +740,40 @@ func (sys *system) CPUSet() cpuset.CPUSet {
 	return CPUSetFromIDSet(idset.NewIDSet(sys.CPUIDs()...))
 }
 
-// Package gets the package with a given package id.
+// Package gets the package with a given package id, or nil if the system has no
+// such package.
 func (sys *system) Package(id idset.ID) CPUPackage {
-	return sys.packages[id]
+	if pkg, ok := sys.packages[id]; ok {
+		return pkg
+	}
+	return nil
 }
 
-// Node gets the node with a given node id.
+// Node gets the node with a given node id, or nil if the system has no such
+// node.
 func (sys *system) Node(id idset.ID) Node {
-	return sys.nodes[id]
+	if node, ok := sys.nodes[id]; ok {
+		return node
+	}
+	return nil
 }
 
-// NodeDistance gets the distance between two NUMA nodes.
+// NodeDistance gets the distance between two NUMA nodes, or -1 if either node
+// is unknown.
 func (sys *system) NodeDistance(from, to idset.ID) int {
-	return sys.nodes[from].DistanceFrom(to)
+	node, ok := sys.nodes[from]
+	if !ok {
+		return -1
+	}
+	return node.DistanceFrom(to)
 }
 
-// CPU gets the CPU with a given CPU id.
+// CPU gets the CPU with a given CPU id, or nil if the system has no such CPU.
 func (sys *system) CPU(id idset.ID) CPU {
-	return sys.cpus[id]
+	if cpu, ok := sys.cpus[id]; ok {
+		return cpu
+	}
+	return nil
 }
 
 // PossibleCPUs gets the maximum set of possible CPUs in the system.
@@ -847,7 +863,11 @@ func (sys *system) SingleThreadForCPUs(cpus cpuset.CPUSet) cpuset.CPUSet {
 		}
 		handled[cpu] = struct{}{}
 		result = append(result, cpu)
-		for _, sibling := range sys.CPU(cpu).ThreadCPUSet().UnsortedList() {
+		c := sys.CPU(cpu)
+		if c == nil {
+			continue
+		}
+		for _, sibling := range c.ThreadCPUSet().UnsortedList() {
 			handled[sibling] = struct{}{}
 		}
 	}
