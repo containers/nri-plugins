@@ -121,3 +121,13 @@ func oneCpuMachine(t *testing.T) *hardware.Machine {
 		{cpus: "0", memKB: 1048576, distance: []int{10}},
 	})
 }
+
+// twoSocketMachine has two packages of two CPUs, with one NUMA node each: cpus
+// 0-1 in package 0 and node 0, cpus 2-3 in package 1 and node 1.
+func twoSocketMachine(t *testing.T) *hardware.Machine {
+	t.Helper()
+	return synthMachine(t, []synthNode{
+		{cpus: "0-1", memKB: 1048576, distance: []int{10, 20}},
+		{cpus: "2-3", memKB: 1048576, distance: []int{20, 10}},
+	})
+}

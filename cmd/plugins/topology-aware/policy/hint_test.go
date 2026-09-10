@@ -159,7 +159,7 @@ func TestHintCpus(t *testing.T) {
 			},
 		},
 		{
-			name: "non-zero Sockets hint and empty system.Package",
+			name: "Sockets hint naming a socket the machine does not have",
 			supply: &supply{
 				node: &node{
 					policy: &policy{
@@ -179,7 +179,7 @@ func TestHintCpus(t *testing.T) {
 			},
 		},
 		{
-			name: "non-zero NUMAs hint and empty system.Node",
+			name: "NUMAs hint naming a node the machine does not have",
 			supply: &supply{
 				node: &node{
 					policy: &policy{
@@ -191,7 +191,33 @@ func TestHintCpus(t *testing.T) {
 				NUMAs: "1",
 			},
 		},
-		// TODO(rojkov): add tests for non-empty system.Package's (can't be done while system.Package is closed struct)
+		{
+			// Two packages of two CPUs, one NUMA node each. A hint naming a
+			// socket resolves to that socket's CPUs, and one naming a NUMA node
+			// to that node's.
+			name: "Sockets hint resolves to the socket's CPUs",
+			supply: &supply{
+				node: &node{
+					policy: &policy{machine: twoSocketMachine(t)},
+				},
+			},
+			hint: topology.Hint{
+				Sockets: "1",
+			},
+			expected: cpuset.New(2, 3),
+		},
+		{
+			name: "NUMAs hint resolves to the node's CPUs",
+			supply: &supply{
+				node: &node{
+					policy: &policy{machine: twoSocketMachine(t)},
+				},
+			},
+			hint: topology.Hint{
+				NUMAs: "0",
+			},
+			expected: cpuset.New(0, 1),
+		},
 		{
 			name:   "non-zero CPUs hint",
 			supply: &supply{},
