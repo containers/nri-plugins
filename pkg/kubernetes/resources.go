@@ -20,7 +20,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
+	"github.com/containers/nri-plugins/pkg/utils"
 )
 
 const (
@@ -196,10 +196,9 @@ func CalculateOomAdjToMemReqEstimates() map[int64]int64 {
 	return adjToReq
 }
 
-// Set memory capacity for OOM adjustment to memory request estimation.
-// Exported to allow testing the estimator code with different memory
-// capacities.
-func SetMemoryCapacity(capacity int64) {
+// setMemoryCapacity sets the memory capacity the OOM adjustment to memory
+// request estimates are calculated against, and recalculates them.
+func setMemoryCapacity(capacity int64) {
 	if capacity == 0 {
 		panic(fmt.Errorf("failed to set memory capacity, invalid capacity 0"))
 	}
@@ -208,10 +207,6 @@ func SetMemoryCapacity(capacity int64) {
 	oomAdjToMemReqEstimates = CalculateOomAdjToMemReqEstimates()
 }
 
-func GetMemoryCapacity() int64 {
-	return memCapacity
-}
-
 func init() {
-	SetMemoryCapacity(sysfs.GetMemoryCapacity())
+	setMemoryCapacity(utils.GetMemoryCapacity())
 }

@@ -17,7 +17,7 @@ package system
 import (
 	"fmt"
 
-	"github.com/containers/nri-plugins/pkg/sysfs"
+	"github.com/containers/nri-plugins/pkg/utils"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	"github.com/containers/nri-plugins/pkg/utils/parse"
 	idset "github.com/intel/goresctrl/pkg/utils"
@@ -264,9 +264,9 @@ func NodeFilterNot(f NodeFilter) NodeFilter {
 //
 // Utilities
 //
-// These have nothing to do with topology. They are repeated here only so that a
-// consumer's import swap is complete; a consumer which wants them and not the
-// topology should take them from where they live instead.
+// These have nothing to do with topology. They live in pkg/utils, and are
+// repeated here only so that a consumer's import swap is complete; a consumer
+// which wants them and not the topology should take them from there directly.
 //
 
 // PickEntryFn picks a given input line apart into an entry of key and value.
@@ -290,5 +290,5 @@ func CPUSetFromIDSet(s idset.IDSet) cpuset.CPUSet {
 // GetMemoryCapacity parses memory capacity from /proc/meminfo (mimicking
 // cAdvisor).
 func GetMemoryCapacity() int64 {
-	return sysfs.GetMemoryCapacity()
+	return utils.GetMemoryCapacity()
 }

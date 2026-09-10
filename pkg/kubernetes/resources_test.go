@@ -12,14 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package kubernetes_test
+package kubernetes
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	. "github.com/containers/nri-plugins/pkg/kubernetes"
 )
 
 func TestCalculateOomAdjToMemReqEstimates(t *testing.T) {
@@ -30,7 +28,7 @@ func TestCalculateOomAdjToMemReqEstimates(t *testing.T) {
 	)
 
 	for capacity := int64(4 * G); capacity <= (1024+512)*G; capacity += 4 * G {
-		SetMemoryCapacity(capacity)
+		setMemoryCapacity(capacity)
 		for adj := int64(MinBurstableOOMScoreAdj); adj <= MaxBurstableOOMScoreAdj; adj++ {
 			req := OomAdjToMemReq(adj, capacity)
 			require.NotNil(t, req,
