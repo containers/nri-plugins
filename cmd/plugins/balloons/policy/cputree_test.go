@@ -16,12 +16,11 @@ package balloons
 
 import (
 	"fmt"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"slices"
 	"sort"
 	"strings"
 	"testing"
-
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 type cpuInTopology struct {
@@ -47,7 +46,7 @@ func (cit cpuInTopology) TopoName(topoLevel string) string {
 	panic("invalid topoLevel")
 }
 
-func (csit cpusInTopology) dumps(nameCpus map[string]cpuset.CPUSet) string {
+func (csit cpusInTopology) dumps(nameCpus map[string]*libcpu.CpuMask) string {
 	lines := []string{}
 	names := make([]string, 0, len(nameCpus))
 	for name := range nameCpus {
@@ -96,7 +95,7 @@ func newCpuTreeFromInt5(pdnct [5]int) (*cpuTreeNode, cpusInTopology) {
 						threadTree := NewCpuTree(fmt.Sprintf("p%dd%dn%dc%02dt%d", packageID, dieID, numaID, coreID, threadID))
 						threadTree.level = CPUTopologyLevelThread
 						coreTree.AddChild(threadTree)
-						threadTree.AddCpus(cpuset.New(cpuID))
+						threadTree.AddCpus(libcpu.NewCpuMask(cpuID))
 						csit[cpuID] = cpuInTopology{
 							packageID, dieID, numaID, coreID, threadID, cpuID,
 							packageTree.name, dieTree.name, numaTree.name, coreTree.name, threadTree.name,
@@ -111,7 +110,7 @@ func newCpuTreeFromInt5(pdnct [5]int) (*cpuTreeNode, cpusInTopology) {
 	return sysTree, csit
 }
 
-func verifyOn(t *testing.T, nameContents string, cpus cpuset.CPUSet, csit cpusInTopology) {
+func verifyOn(t *testing.T, nameContents string, cpus *libcpu.CpuMask, csit cpusInTopology) {
 	for _, cpuID := range cpus.List() {
 		name := csit[cpuID].threadName
 		if !strings.Contains(name, nameContents) {
@@ -120,7 +119,7 @@ func verifyOn(t *testing.T, nameContents string, cpus cpuset.CPUSet, csit cpusIn
 	}
 }
 
-func verifyNotOn(t *testing.T, nameContents string, cpus cpuset.CPUSet, csit cpusInTopology) {
+func verifyNotOn(t *testing.T, nameContents string, cpus *libcpu.CpuMask, csit cpusInTopology) {
 	for _, cpuID := range cpus.List() {
 		name := csit[cpuID].threadName
 		if strings.Contains(name, nameContents) {
@@ -129,7 +128,7 @@ func verifyNotOn(t *testing.T, nameContents string, cpus cpuset.CPUSet, csit cpu
 	}
 }
 
-func doVerifySame(t *testing.T, topoLevel string, cpus cpuset.CPUSet, csit cpusInTopology, inversed bool) {
+func doVerifySame(t *testing.T, topoLevel string, cpus *libcpu.CpuMask, csit cpusInTopology, inversed bool) {
 	seenName := ""
 	seenCpuID := -1
 	for _, cpuID := range cpus.List() {
@@ -159,15 +158,15 @@ func doVerifySame(t *testing.T, topoLevel string, cpus cpuset.CPUSet, csit cpusI
 	}
 }
 
-func verifySame(t *testing.T, topoLevel string, cpus cpuset.CPUSet, csit cpusInTopology) {
+func verifySame(t *testing.T, topoLevel string, cpus *libcpu.CpuMask, csit cpusInTopology) {
 	doVerifySame(t, topoLevel, cpus, csit, false)
 }
 
-func verifyNotSame(t *testing.T, topoLevel string, cpus cpuset.CPUSet, csit cpusInTopology) {
+func verifyNotSame(t *testing.T, topoLevel string, cpus *libcpu.CpuMask, csit cpusInTopology) {
 	doVerifySame(t, topoLevel, cpus, csit, true)
 }
 
-func (csit cpusInTopology) getElements(topoLevel string, cpus cpuset.CPUSet) []string {
+func (csit cpusInTopology) getElements(topoLevel string, cpus *libcpu.CpuMask) []string {
 	elts := []string{}
 	for _, cpuID := range cpus.List() {
 		elts = append(elts, csit[cpuID].TopoName(topoLevel))
@@ -175,7 +174,7 @@ func (csit cpusInTopology) getElements(topoLevel string, cpus cpuset.CPUSet) []s
 	return elts
 }
 
-func (csit cpusInTopology) verifyDisjoint(t *testing.T, topoLevel string, cpusA cpuset.CPUSet, cpusB cpuset.CPUSet) {
+func (csit cpusInTopology) verifyDisjoint(t *testing.T, topoLevel string, cpusA *libcpu.CpuMask, cpusB *libcpu.CpuMask) {
 	eltsA := csit.getElements(topoLevel, cpusA)
 	eltsB := csit.getElements(topoLevel, cpusB)
 	for _, eltA := range eltsA {
@@ -538,20 +537,21 @@ func TestResizeCpus(t *testing.T) {
 				preferFarFromDevices:        tc.allocatorPFfD,
 			})
 			for _, dev := range append(tc.allocatorPCtD, tc.allocatorPFfD...) {
-				treeA.cacheCloseCpuSets[dev] = []cpuset.CPUSet{
-					cpuset.MustParse(dev[len("/sys/cpus:"):]),
+				treeA.cacheCloseCpuSets[dev] = []*libcpu.CpuMask{
+					libcpu.MustParseCpuMask(dev[len("/sys/cpus:"):]),
 				}
 			}
-			currentCpus := cpuset.New()
+			currentCpus := libcpu.NewCpuMask()
 			freeCpus := tree.Cpus()
 			if len(tc.allocations) > 0 {
-				currentCpus = currentCpus.Union(cpuset.New(tc.allocations...))
-				freeCpus = freeCpus.Difference(cpuset.New(tc.allocations...))
+				currentCpus = currentCpus.Union(libcpu.NewCpuMask(tc.allocations...))
+				freeCpus = freeCpus.Difference(libcpu.NewCpuMask(tc.allocations...))
 			}
-			ccidCurrentCpus := map[int]cpuset.CPUSet{0: currentCpus}
-			allocs := map[string]cpuset.CPUSet{"--:allo": currentCpus}
+			ccidCurrentCpus := map[int]*libcpu.CpuMask{0: currentCpus}
+			allocs := map[string]*libcpu.CpuMask{"--:allo": currentCpus}
 			for i, delta := range tc.deltas {
 				if i < len(tc.operateOnCcid) && tc.operateOnCcid[i] > 0 {
+					// A ccid this case has not operated on yet starts empty.
 					currentCpus = ccidCurrentCpus[tc.operateOnCcid[i]]
 				}
 				t.Logf("ResizeCpus(current=%s; free=%s; delta=%d)", currentCpus, freeCpus, delta)
@@ -576,26 +576,26 @@ func TestResizeCpus(t *testing.T) {
 				}
 				if tc.allocate {
 					allocName := fmt.Sprintf("%02d:allo", i+1)
-					allocs[allocName] = cpuset.New()
+					allocs[allocName] = libcpu.NewCpuMask()
 
 					for n, cpuID := range addFrom.List() {
 						if n >= delta {
 							break
 						}
-						freeCpus = freeCpus.Difference(cpuset.New(cpuID))
-						currentCpus = currentCpus.Union(cpuset.New(cpuID))
-						allocs[allocName] = allocs[allocName].Union(cpuset.New(cpuID))
+						freeCpus = freeCpus.Difference(libcpu.NewCpuMask(cpuID))
+						currentCpus = currentCpus.Union(libcpu.NewCpuMask(cpuID))
+						allocs[allocName] = allocs[allocName].Union(libcpu.NewCpuMask(cpuID))
 					}
 					allocName = fmt.Sprintf("%02d:free", i+1)
 					for n, cpuID := range removeFrom.List() {
 						if n >= -delta {
 							break
 						}
-						freeCpus = freeCpus.Union(cpuset.New(cpuID))
+						freeCpus = freeCpus.Union(libcpu.NewCpuMask(cpuID))
 						if i < len(tc.operateOnCcid) && tc.operateOnCcid[i] > 0 {
-							currentCpus = currentCpus.Difference(cpuset.New(cpuID))
+							currentCpus = currentCpus.Difference(libcpu.NewCpuMask(cpuID))
 						}
-						allocs[allocName] = allocs[allocName].Union(cpuset.New(cpuID))
+						allocs[allocName] = allocs[allocName].Union(libcpu.NewCpuMask(cpuID))
 					}
 					if i < len(tc.operateOnCcid) && tc.operateOnCcid[i] > 0 {
 						ccidCurrentCpus[tc.operateOnCcid[i]] = currentCpus
@@ -616,7 +616,7 @@ func TestResizeCpus(t *testing.T) {
 						verifyNotOn(t, tc.expectCurrentNotOn[i], currentCpus, csit)
 					}
 					if i < len(tc.expectAllOnSame) && tc.expectAllOnSame[i] != "" {
-						allCpus := cpuset.New()
+						allCpus := libcpu.NewCpuMask()
 						for _, cpus := range ccidCurrentCpus {
 							allCpus = allCpus.Union(cpus)
 						}
@@ -710,7 +710,7 @@ func TestWalk(t *testing.T) {
 
 func TestCpuLocations(t *testing.T) {
 	tree, _ := newCpuTreeFromInt5([5]int{2, 2, 2, 4, 2})
-	cpus := cpuset.New(0, 1, 3, 4, 16)
+	cpus := libcpu.NewCpuMask(0, 1, 3, 4, 16)
 	systemlocations := tree.CpuLocations(cpus)
 	package1locations := tree.children[1].CpuLocations(cpus)
 	p0d1locations := tree.children[0].children[1].CpuLocations(cpus)

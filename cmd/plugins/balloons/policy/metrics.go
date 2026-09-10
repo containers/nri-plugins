@@ -16,6 +16,7 @@ package balloons
 
 import (
 	"context"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,7 +25,6 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/containers/nri-plugins/pkg/metrics"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 // Metrics defines the balloons-specific metric instruments.
@@ -44,7 +44,7 @@ type BalloonMetrics struct {
 	// Balloon instance metrics
 	PrettyName            string
 	Groups                string
-	Cpus                  cpuset.CPUSet
+	Cpus                  *libcpu.CpuMask
 	CpusCount             int
 	Numas                 []string
 	NumasCount            int
@@ -52,9 +52,9 @@ type BalloonMetrics struct {
 	DiesCount             int
 	Packages              []string
 	PackagesCount         int
-	SharedIdleCpus        cpuset.CPUSet
+	SharedIdleCpus        *libcpu.CpuMask
 	SharedIdleCpusCount   int
-	CpusAllowed           cpuset.CPUSet
+	CpusAllowed           *libcpu.CpuMask
 	CpusAllowedCount      int
 	Mems                  string
 	ContainerNames        string

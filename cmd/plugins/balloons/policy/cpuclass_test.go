@@ -15,6 +15,7 @@
 package balloons
 
 import (
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"strings"
 	"testing"
 
@@ -49,7 +50,7 @@ func countHintDevs(devs []string) int {
 	return n
 }
 
-func countHintMapKeys(m map[string][]cpuset.CPUSet) int {
+func countHintMapKeys(m map[string][]*libcpu.CpuMask) int {
 	n := 0
 	for k := range m {
 		if strings.HasPrefix(k, cpuClassHintDevPrefix) {
@@ -99,7 +100,7 @@ func TestMergeCpuClassHintsNoAccumulation(t *testing.T) {
 	opts := &cpuTreeAllocatorOptions{
 		preferCloseToDevices: []string{"user-dev-A", "user-dev-B"},
 		preferFarFromDevices: []string{"user-far"},
-		virtDevCpusets:       map[string][]cpuset.CPUSet{},
+		virtDevCpusets:       map[string][]*libcpu.CpuMask{},
 	}
 
 	for round := 1; round <= 3; round++ {
@@ -152,7 +153,7 @@ func userDevs(devs []string) []string {
 	return out
 }
 
-func mapKeys(m map[string][]cpuset.CPUSet) []string {
+func mapKeys(m map[string][]*libcpu.CpuMask) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)
