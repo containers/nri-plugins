@@ -17,6 +17,7 @@ package topologyaware
 import (
 	"testing"
 
+	"github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	"github.com/containers/nri-plugins/pkg/topology"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
@@ -163,7 +164,7 @@ func TestHintCpus(t *testing.T) {
 			supply: &supply{
 				node: &node{
 					policy: &policy{
-						sys: &mockSystem{},
+						sys: system.FromMachine(oneCpuMachine(t)),
 					},
 				},
 			},
@@ -183,7 +184,7 @@ func TestHintCpus(t *testing.T) {
 			supply: &supply{
 				node: &node{
 					policy: &policy{
-						sys: &mockSystem{},
+						sys: system.FromMachine(oneCpuMachine(t)),
 					},
 				},
 			},

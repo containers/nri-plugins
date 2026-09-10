@@ -52,7 +52,7 @@ func TestColdStart(t *testing.T) {
 
 	tcases := []struct {
 		name                     string
-		numaNodes                []system.Node
+		numaNodes                []synthNode
 		req                      Request
 		affinities               map[int]int32
 		container                cache.Container
@@ -64,9 +64,11 @@ func TestColdStart(t *testing.T) {
 	}{
 		{
 			name: "three node cold start",
-			numaNodes: []system.Node{
-				&mockSystemNode{id: 0, memFree: 10000, memTotal: 10000, memType: system.MemoryTypeDRAM, distance: []int{1, 5}},
-				&mockSystemNode{id: 1, memFree: 50000, memTotal: 50000, memType: system.MemoryTypePMEM, distance: []int{5, 1}},
+			// node0 has CPUs, so it is ordinary memory. node1 has none and is
+			// larger, which is how a persistent memory node presents itself.
+			numaNodes: []synthNode{
+				{cpus: "0-1", memKB: 10000, distance: []int{10, 50}},
+				{cpus: "", memKB: 50000, distance: []int{50, 10}},
 			},
 			container: &mockContainer{
 				name:                "demo-coldstart-container",
@@ -90,9 +92,7 @@ func TestColdStart(t *testing.T) {
 			t.Skipf("Coldstart tests are disabled (can't mock enough of the system, lacks CPUs)")
 
 			policy := &policy{
-				sys: &mockSystem{
-					nodes: tc.numaNodes,
-				},
+				sys: system.FromMachine(synthMachine(t, tc.numaNodes)),
 				cache: &mockCache{
 					returnValue1ForLookupContainer: tc.container,
 					returnValue2ForLookupContainer: true,
