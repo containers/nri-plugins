@@ -30,7 +30,7 @@ import (
 	"github.com/containerd/nri/pkg/api"
 	"github.com/containerd/nri/pkg/stub"
 
-	"github.com/containers/nri-plugins/pkg/lib/hardware/system"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
@@ -69,8 +69,8 @@ const (
 )
 
 var (
-	sys system.System
-	log *logrus.Logger
+	machine *hardware.Machine
+	log     *logrus.Logger
 
 	verbose     bool
 	veryVerbose bool
@@ -328,14 +328,14 @@ func (policySpec *MemoryPolicySpec) ToLinuxMemoryPolicy(ctr *api.Container) (*Li
 	}
 
 	// Resolve nodes based on the policy specification.
-	ctrCpuset := sys.OnlineCPUs()
+	ctrCpuset := cpuset.New(machine.OnlineCPUs().List()...)
 	if ctrCpus := ctr.GetLinux().GetResources().GetCpu().GetCpus(); ctrCpus != "" {
 		ctrCpuset, err = cpuset.Parse(ctrCpus)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse allowed CPUs %q: %v", ctrCpus, err)
 		}
 	}
-	allowedMemsMask := libmem.NewNodeMask(sys.NodeIDs()...)
+	allowedMemsMask := libmem.NewNodeMask(machine.MemoryNodeIDs()...)
 	ctrMems := ctr.GetLinux().GetResources().GetCpu().GetMems()
 	if ctrMems != "" {
 		if parsedMask, err := libmem.ParseNodeMask(ctrMems); err == nil {
@@ -349,7 +349,7 @@ func (policySpec *MemoryPolicySpec) ToLinuxMemoryPolicy(ctr *api.Container) (*Li
 	switch {
 	// "all" includes all nodes into the mask.
 	case policySpec.Nodes == "all":
-		nodeMask = libmem.NewNodeMask(sys.NodeIDs()...)
+		nodeMask = libmem.NewNodeMask(machine.MemoryNodeIDs()...)
 		log.Tracef("- nodes %q (all)", nodeMask.MemsetString())
 
 	// "allowed-mems" includes only allowed memory nodes into the mask.
@@ -360,21 +360,23 @@ func (policySpec *MemoryPolicySpec) ToLinuxMemoryPolicy(ctr *api.Container) (*Li
 	// "cpu-packages" includes all nodes that are in the same package
 	// as the CPUs in the container's cpuset.
 	case policySpec.Nodes == "cpu-packages":
-		pkgs := sys.IDSetForCPUs(ctrCpuset, func(cpu system.CPU) idset.ID {
+		pkgs := idsForCPUs(ctrCpuset, func(cpu *hardware.CPU) idset.ID {
 			return cpu.PackageID()
 		})
 		nodeMask = libmem.NewNodeMask()
-		for _, nodeId := range sys.NodeIDs() {
-			nodePkgId := sys.Node(nodeId).PackageID()
-			if pkgs.Has(nodePkgId) {
-				nodeMask = nodeMask.Set(nodeId)
+		for _, nodeId := range machine.MemoryNodeIDs() {
+			for _, pkgId := range packagesOfNode(nodeId) {
+				if pkgs.Has(pkgId) {
+					nodeMask = nodeMask.Set(nodeId)
+					break
+				}
 			}
 		}
 		log.Tracef("- nodes: %q (cpu-packages %q)", nodeMask.MemsetString(), pkgs)
 
 	// "cpu-nodes" includes all nodes in the cpuset of the container.
 	case policySpec.Nodes == "cpu-nodes":
-		nodeIds := sys.IDSetForCPUs(ctrCpuset, func(cpu system.CPU) idset.ID {
+		nodeIds := idsForCPUs(ctrCpuset, func(cpu *hardware.CPU) idset.ID {
 			return cpu.NodeID()
 		})
 		nodeMask = libmem.NewNodeMask(nodeIds.Members()...)
@@ -389,12 +391,12 @@ func (policySpec *MemoryPolicySpec) ToLinuxMemoryPolicy(ctr *api.Container) (*Li
 			return nil, fmt.Errorf("failed to parse max-dist %q: %v", maxDist, err)
 		}
 		nodeMask = libmem.NewNodeMask()
-		fromNodes := sys.IDSetForCPUs(ctrCpuset, func(cpu system.CPU) idset.ID {
+		fromNodes := idsForCPUs(ctrCpuset, func(cpu *hardware.CPU) idset.ID {
 			return cpu.NodeID()
 		})
 		for _, fromNode := range fromNodes.Members() {
-			for _, toNode := range sys.NodeIDs() {
-				if sys.NodeDistance(fromNode, toNode) <= maxDistInt {
+			for _, toNode := range machine.MemoryNodeIDs() {
+				if machine.MemoryNode(fromNode).Distance(toNode) <= maxDistInt {
 					nodeMask = nodeMask.Set(toNode)
 				}
 			}
@@ -571,7 +573,7 @@ func main() {
 		}
 	}
 
-	sys, err = system.DiscoverSystem(system.DiscoverCPUTopology)
+	machine, err = hardware.Discover(hardware.WithEnvOverrides())
 	if err != nil {
 		log.Fatalf("failed to discover CPU topology: %v", err)
 	}
