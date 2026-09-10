@@ -19,6 +19,7 @@ import (
 
 	"github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
+	"github.com/containers/nri-plugins/pkg/utils/parse"
 	idset "github.com/intel/goresctrl/pkg/utils"
 )
 
@@ -263,18 +264,17 @@ func NodeFilterNot(f NodeFilter) NodeFilter {
 //
 // Utilities
 //
-// These have nothing to do with topology, they just live in pkg/sysfs. They are
-// repeated here so that a consumer's import swap is complete, and they should
-// end up somewhere under pkg/utils rather than following the topology into
-// hardware.
+// These have nothing to do with topology. They are repeated here only so that a
+// consumer's import swap is complete; a consumer which wants them and not the
+// topology should take them from where they live instead.
 //
 
 // PickEntryFn picks a given input line apart into an entry of key and value.
-type PickEntryFn func(string) (string, string, error)
+type PickEntryFn = parse.PickEntryFn
 
 // ParseFileEntries parses a sysfs files for the given entries.
 func ParseFileEntries(path string, values map[string]any, pickFn PickEntryFn) error {
-	return sysfs.ParseFileEntries(path, values, sysfs.PickEntryFn(pickFn))
+	return parse.FileEntries(path, values, pickFn)
 }
 
 // IDSetFromCPUSet returns an id set corresponding to a cpuset.CPUSet.

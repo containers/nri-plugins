@@ -1,4 +1,4 @@
-// Copyright 2019 Intel Corporation. All Rights Reserved.
+// Copyright 2020 Intel Corporation. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,154 +15,17 @@
 package sysfs
 
 import (
-	"os"
-	"strconv"
-	"strings"
+	"github.com/containers/nri-plugins/pkg/utils/parse"
 )
 
-// unit multipliers
-const (
-	k = (int64(1) << 10)
-	M = (int64(1) << 20)
-	G = (int64(1) << 30)
-	T = (int64(1) << 40)
-)
-
-// unit name to multiplier mapping
-var units = map[string]int64{
-	"k": k, "kB": k,
-	"M": M, "MB": M,
-	"G": G, "GB": G,
-	"T": T, "TB": T,
-}
+// ParseFileEntries and the key/value file parsing behind it have nothing to do
+// with topology; they live in pkg/utils now. These are kept so that this
+// package's interface is unchanged for as long as it is still here.
 
 // PickEntryFn picks a given input line apart into an entry of key and value.
-type PickEntryFn func(string) (string, string, error)
-
-// splitNumericAndUnit splits a string into a numeric and a unit part.
-func splitNumericAndUnit(path string, value string) (string, int64, error) {
-	fields := strings.Fields(value)
-
-	switch len(fields) {
-	case 1:
-		return fields[0], 1, nil
-	case 2:
-		num := fields[0]
-		unit, ok := units[fields[1]]
-		if !ok {
-			return "", -1, sysfsError(path, "failed to parse '%s', invalid unit '%s'",
-				value, num, unit)
-		}
-		return num, unit, nil
-	}
-
-	return "", -1, sysfsError(path, "invalid numeric value %s", value)
-}
-
-// PparseNumberic parses a numeric string into integer of the right size.
-func parseNumeric(path, value string, ptr any) error {
-	var numstr string
-	var num, unit int64
-	var f float64
-	var err error
-
-	if numstr, unit, err = splitNumericAndUnit(path, value); err != nil {
-		return err
-	}
-
-	switch ptr := ptr.(type) {
-	case *int:
-		num, err = strconv.ParseInt(numstr, 0, strconv.IntSize)
-		*ptr = int(num * unit)
-	case *int8:
-		num, err = strconv.ParseInt(numstr, 0, 8)
-		*ptr = int8(num * unit)
-	case *int16:
-		num, err = strconv.ParseInt(numstr, 0, 16)
-		*ptr = int16(num * unit)
-	case *int32:
-		num, err = strconv.ParseInt(numstr, 0, 32)
-		*ptr = int32(num * unit)
-	case *int64:
-		num, err = strconv.ParseInt(numstr, 0, 64)
-		*ptr = int64(num * unit)
-	case *uint:
-		num, err = strconv.ParseInt(numstr, 0, strconv.IntSize)
-		*ptr = uint(num * unit)
-	case *uint8:
-		num, err = strconv.ParseInt(numstr, 0, 8)
-		*ptr = uint8(num * unit)
-	case *uint16:
-		num, err = strconv.ParseInt(numstr, 0, 16)
-		*ptr = uint16(num * unit)
-	case *uint32:
-		num, err = strconv.ParseInt(numstr, 0, 32)
-		*ptr = uint32(num * unit)
-	case *uint64:
-		num, err = strconv.ParseInt(numstr, 0, 64)
-		*ptr = uint64(num * unit)
-	case *float32:
-		f, err = strconv.ParseFloat(numstr, 32)
-		*ptr = float32(f) * float32(unit)
-	case *float64:
-		f, err = strconv.ParseFloat(numstr, 64)
-		*ptr = f * float64(unit)
-
-	default:
-		err = sysfsError(path, "can't parse numeric value '%s' into type %T", value, ptr)
-	}
-
-	return err
-}
+type PickEntryFn = parse.PickEntryFn
 
 // ParseFileEntries parses a sysfs files for the given entries.
 func ParseFileEntries(path string, values map[string]any, pickFn PickEntryFn) error {
-	var err error
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return sysfsError(path, "failed to read file: %v", err)
-	}
-
-	left := len(values)
-	for line := range strings.SplitSeq(string(data), "\n") {
-		key, value, err := pickFn(line)
-		if err != nil {
-			return err
-		}
-
-		ptr, ok := values[key]
-		if !ok {
-			continue
-		}
-
-		switch ptr := ptr.(type) {
-		case *int, *int8, *int32, *int16, *int64, *uint, *uint8, *uint16, *uint32, *uint64:
-			if err = parseNumeric(path, value, ptr); err != nil {
-				return err
-			}
-		case *float32, *float64:
-			if err = parseNumeric(path, value, ptr); err != nil {
-				return err
-			}
-		case *string:
-			*ptr = value
-		case *bool:
-			*ptr, err = strconv.ParseBool(value)
-			if err != nil {
-				return sysfsError(path, "failed to parse line %s, value '%s' for boolean key '%s'",
-					line, value, key)
-			}
-		default:
-			return sysfsError(path, "don't know how to parse key '%s' of type %T", key, ptr)
-
-		}
-
-		left--
-		if left == 0 {
-			break
-		}
-	}
-
-	return nil
+	return parse.FileEntries(path, values, pickFn)
 }

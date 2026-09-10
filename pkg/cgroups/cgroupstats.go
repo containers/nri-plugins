@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"strings"
 
-	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
+	"github.com/containers/nri-plugins/pkg/utils/parse"
 )
 
 // BlkioDeviceBytes contains a single operations line of blkio.throttle.io_service_bytes_recursive file
@@ -476,7 +476,7 @@ func GetGlobalNumaStats() (map[int64]GlobalNumaStats, error) {
 		nodeStat := GlobalNumaStats{}
 
 		numastat := path.Join(dir, "numastat")
-		err = sysfs.ParseFileEntries(numastat,
+		err = parse.FileEntries(numastat,
 			map[string]any{
 				"numa_hit":       &nodeStat.NumaHit,
 				"numa_miss":      &nodeStat.NumaMiss,
