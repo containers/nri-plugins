@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/containers/nri-plugins/pkg/irq"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
@@ -32,7 +33,6 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 
-	"github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 )
 
@@ -61,7 +61,7 @@ type policy struct {
 	options      *policyapi.BackendOptions // options we were created or reconfigured with
 	cfg          *cfgapi.Config
 	cache        cache.Cache               // pod/container cache
-	sys          system.System             // system/HW topology info
+	machine      *hardware.Machine         // CPU and memory topology
 	allowed      cpuset.CPUSet             // bounding set of CPUs we're allowed to use
 	reserved     cpuset.CPUSet             // system-/kube-reserved CPUs
 	reserveCnt   int                       // number of CPUs to reserve if given as resource.Quantity
@@ -162,7 +162,7 @@ func (p *policy) Setup(opts *policyapi.BackendOptions) error {
 
 	p.cfg = cfg
 	p.cache = opts.Cache
-	p.sys = opts.System
+	p.machine = opts.Machine
 	p.options = opts
 	p.cpuAllocator = cpuallocator.NewCPUAllocator(opts.Machine)
 	p.memAllocator, err = libmem.NewAllocator(libmem.WithMachineNodes(opts.Machine))
@@ -810,7 +810,7 @@ func (p *policy) initialize() error {
 	opt.UnlimitedBurstable = p.findExistingTopologyLevel(opt.UnlimitedBurstable)
 
 	if len(opt.CPUClasses) > 0 {
-		cc, err := cpuclass.New(p.options.Machine)
+		cc, err := cpuclass.New(p.machine)
 		if err != nil {
 			return policyError("failed to create CPU class handler: %w", err)
 		}
@@ -855,18 +855,18 @@ func (p *policy) checkConstraints() error {
 		if err != nil {
 			return fmt.Errorf("failed to parse available CPU cpuset '%s': %w", amount, err)
 		}
-		p.allowed = p.sys.CPUSet().Difference(cset)
+		p.allowed = toCpuSet(p.machine.PresentCPUs()).Difference(cset)
 
 	case cfgapi.AmountQuantity:
 		return fmt.Errorf("can't handle CPU resources given as resource.Quantity (%v)", amount)
 	case cfgapi.AmountAbsent:
 		// Available CPUs not specified, default to system CPUs.
-		p.allowed = p.sys.CPUSet()
+		p.allowed = toCpuSet(p.machine.PresentCPUs())
 	}
 	// Allocation of only online CPUs is allowed.
-	p.allowed = p.allowed.Intersection(p.sys.OnlineCPUs())
+	p.allowed = p.allowed.Intersection(toCpuSet(p.machine.OnlineCPUs()))
 
-	p.isolated = p.sys.Isolated().Intersection(p.allowed)
+	p.isolated = toCpuSet(p.machine.IsolatedCPUs()).Intersection(p.allowed)
 
 	amount, kind = p.cfg.ReservedResources.Get(cfgapi.CPU)
 	switch kind {
@@ -1113,9 +1113,9 @@ func (p *policy) reapplyDRAClaims() {
 }
 
 func (p *policy) checkColdstartOff() {
-	for _, id := range p.sys.NodeIDs() {
-		node := p.sys.Node(id)
-		if node.GetMemoryType() == system.MemoryTypePMEM {
+	for _, id := range p.machine.MemoryNodeIDs() {
+		node := p.machine.MemoryNode(id)
+		if node.Kind() == hardware.MemoryKindPMEM {
 			if !node.HasNormalMemory() {
 				coldStartOff = true
 				log.Errorf("coldstart forced off: NUMA node #%d does not have normal memory", id)

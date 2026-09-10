@@ -29,7 +29,6 @@ import (
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 
 	"github.com/containers/nri-plugins/pkg/lib/hardware"
-	"github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	"github.com/containers/nri-plugins/pkg/testutils"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
@@ -135,10 +134,6 @@ func TestPoolCreation(t *testing.T) {
 	}
 	for _, tc := range tcases {
 		t.Run(tc.name, func(t *testing.T) {
-			sys, err := system.DiscoverSystemAt(tc.path)
-			if err != nil {
-				panic(err)
-			}
 			machine, err := hardware.Discover(hardware.WithRoot(path.Dir(tc.path)))
 			if err != nil {
 				panic(err)
@@ -146,7 +141,6 @@ func TestPoolCreation(t *testing.T) {
 
 			policyOptions := &policyapi.BackendOptions{
 				Cache:   &mockCache{},
-				System:  sys,
 				Machine: machine,
 				Config: &cfgapi.Config{
 					ReservedResources: cfgapi.Constraints{
@@ -265,10 +259,6 @@ func TestWorkloadPlacement(t *testing.T) {
 	}
 	for _, tc := range tcases {
 		t.Run(tc.name, func(t *testing.T) {
-			sys, err := system.DiscoverSystemAt(tc.path)
-			if err != nil {
-				panic(err)
-			}
 			machine, err := hardware.Discover(hardware.WithRoot(path.Dir(tc.path)))
 			if err != nil {
 				panic(err)
@@ -276,7 +266,6 @@ func TestWorkloadPlacement(t *testing.T) {
 
 			policyOptions := &policyapi.BackendOptions{
 				Cache:   &mockCache{},
-				System:  sys,
 				Machine: machine,
 				Config: &cfgapi.Config{
 					ReservedResources: cfgapi.Constraints{
@@ -530,10 +519,6 @@ func TestAffinities(t *testing.T) {
 
 	for _, tc := range tcases {
 		t.Run(tc.name, func(t *testing.T) {
-			sys, err := system.DiscoverSystemAt(tc.path)
-			if err != nil {
-				panic(err)
-			}
 			machine, err := hardware.Discover(hardware.WithRoot(path.Dir(tc.path)))
 			if err != nil {
 				panic(err)
@@ -541,7 +526,6 @@ func TestAffinities(t *testing.T) {
 
 			policyOptions := &policyapi.BackendOptions{
 				Cache:   &mockCache{},
-				System:  sys,
 				Machine: machine,
 				Config: &cfgapi.Config{
 					ReservedResources: cfgapi.Constraints{

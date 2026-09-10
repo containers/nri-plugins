@@ -18,7 +18,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/containers/nri-plugins/pkg/lib/hardware/system"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	"github.com/containers/nri-plugins/pkg/topology"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
@@ -55,8 +55,8 @@ func numaHintScore(hint topology.Hint, sysIDs ...idset.ID) float64 {
 }
 
 // Calculate the die node score of the given hint and die.
-func dieHintScore(hint topology.Hint, sysID idset.ID, socket system.CPUPackage) float64 {
-	numaNodes := idset.NewIDSet(socket.DieNodeIDs(sysID)...)
+func dieHintScore(hint topology.Hint, m *hardware.Machine, pkg, die idset.ID) float64 {
+	numaNodes := idset.NewIDSet(dieNodeIDs(m, pkg, die)...)
 
 	for idstr := range strings.SplitSeq(hint.NUMAs, ",") {
 		hID, err := strconv.ParseInt(idstr, 0, 0)
@@ -100,8 +100,8 @@ func (cs *supply) hintCpus(h topology.Hint) cpuset.CPUSet {
 	case h.NUMAs != "":
 		for idstr := range strings.SplitSeq(h.NUMAs, ",") {
 			if id, err := strconv.ParseInt(idstr, 0, 0); err == nil {
-				if node := cs.node.System().Node(idset.ID(id)); node != nil {
-					cpus = cpus.Union(node.CPUSet())
+				if node := cs.node.Machine().MemoryNode(idset.ID(id)); node.Valid() {
+					cpus = cpus.Union(toCpuSet(node.CPUs()))
 				}
 			}
 		}
@@ -109,8 +109,8 @@ func (cs *supply) hintCpus(h topology.Hint) cpuset.CPUSet {
 	case h.Sockets != "":
 		for idstr := range strings.SplitSeq(h.Sockets, ",") {
 			if id, err := strconv.ParseInt(idstr, 0, 0); err == nil {
-				if pkg := cs.node.System().Package(idset.ID(id)); pkg != nil {
-					cpus = cpus.Union(pkg.CPUSet())
+				if pkg := packageZone(cs.node.Machine(), idset.ID(id)); pkg != nil {
+					cpus = cpus.Union(toCpuSet(pkg.CPUs()))
 				}
 			}
 		}

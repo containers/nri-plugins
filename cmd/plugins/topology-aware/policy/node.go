@@ -19,7 +19,6 @@ import (
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	"github.com/containers/nri-plugins/pkg/lib/hardware"
-	"github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	"github.com/containers/nri-plugins/pkg/topology"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
@@ -122,7 +121,6 @@ type Node interface {
 	// Get the height of this node (inverse of depth: tree depth - node depth).
 	NodeHeight() int
 	// System returns the policy sysfs instance.
-	System() system.System
 	Machine() *hardware.Machine
 	// Policy returns the policy back pointer.
 	Policy() *policy
@@ -177,23 +175,23 @@ type nodeself struct {
 
 // socketnode represents a physical CPU package/socket in the system.
 type socketnode struct {
-	node                     // common node data
-	id     idset.ID          // NUMA node socket id
-	syspkg system.CPUPackage // corresponding system.Package
+	node                  // common node data
+	id     idset.ID       // NUMA node socket id
+	syspkg *hardware.Zone // corresponding package zone
 }
 
 // dienode represents a die within a physical CPU package/socket in the system.
 type dienode struct {
-	node                     // common node data
-	id     idset.ID          // die id within socket
-	syspkg system.CPUPackage // corresponding system.Package
+	node                  // common node data
+	id     idset.ID       // die id within socket
+	syspkg *hardware.Zone // corresponding package zone
 }
 
 // numanode represents a NUMA node in the system.
 type numanode struct {
-	node                // common node data
-	id      idset.ID    // NUMA node system id
-	sysnode system.Node // corresponding system.Node
+	node                         // common node data
+	id      idset.ID             // NUMA node system id
+	sysnode *hardware.MemoryNode // corresponding memory node
 }
 
 // l3cachenode represents an L3 cache grouping of CPUs in the system.
@@ -390,14 +388,9 @@ func (n *node) BreadthFirst(fn func(Node) bool) bool {
 	return false
 }
 
-// System returns the policy System instance.
-func (n *node) System() system.System {
-	return n.policy.sys
-}
-
 // Machine returns the policy's machine topology.
 func (n *node) Machine() *hardware.Machine {
-	return n.policy.options.Machine
+	return n.policy.machine
 }
 
 // Policy returns the policy back pointer.
@@ -482,7 +475,7 @@ func (p *policy) NewNumaNode(id idset.ID, parent Node) *numanode {
 	n.self.node = n
 	n.init(p, fmt.Sprintf("NUMA node #%v", id), NumaNode, parent)
 	n.id = id
-	n.sysnode = p.sys.Node(id)
+	n.sysnode = p.machine.MemoryNode(id)
 
 	return n
 }
@@ -522,7 +515,7 @@ func (n *numanode) GetMemset(mtype memoryType) idset.IDSet {
 func (n *numanode) HintScore(hint topology.Hint) float64 {
 	switch {
 	case hint.CPUs != "":
-		return cpuHintScore(hint, n.sysnode.CPUSet())
+		return cpuHintScore(hint, toCpuSet(n.sysnode.CPUs()))
 
 	case hint.NUMAs != "":
 		return numaHintScore(hint, n.id)
@@ -532,7 +525,7 @@ func (n *numanode) HintScore(hint topology.Hint) float64 {
 		score := socketHintScore(hint, n.sysnode.PackageID())
 		if score > 0.0 {
 			// penalize underfit reciprocally (inverse-proportionally) to the socket size
-			score /= float64(len(n.System().Package(pkgID).NodeIDs()))
+			score /= float64(len(packageNodeIDs(n.Machine(), pkgID)))
 		}
 		return score
 	}
@@ -625,7 +618,7 @@ func (p *policy) NewDieNode(id idset.ID, parent Node) *dienode {
 	n.self.node = n
 	n.init(p, fmt.Sprintf("die #%v/%v", pkg.id, id), DieNode, parent)
 	n.id = id
-	n.syspkg = p.sys.Package(pkg.id)
+	n.syspkg = packageZone(p.machine, pkg.id)
 
 	return n
 }
@@ -671,16 +664,16 @@ func (n *dienode) GetMemset(mtype memoryType) idset.IDSet {
 func (n *dienode) HintScore(hint topology.Hint) float64 {
 	switch {
 	case hint.CPUs != "":
-		return cpuHintScore(hint, n.syspkg.CPUSet())
+		return cpuHintScore(hint, toCpuSet(n.syspkg.CPUs()))
 
 	case hint.NUMAs != "":
-		return OverfitPenalty * dieHintScore(hint, n.id, n.syspkg)
+		return OverfitPenalty * dieHintScore(hint, n.Machine(), n.syspkg.ID(), n.id)
 
 	case hint.Sockets != "":
 		score := socketHintScore(hint, n.syspkg.ID())
 		if score > 0.0 {
 			// penalize underfit reciprocally (inverse-proportionally) to the socket size in dies
-			score /= float64(len(n.syspkg.DieNodeIDs(n.id)))
+			score /= float64(len(dieNodeIDs(n.Machine(), n.syspkg.ID(), n.id)))
 		}
 		return score
 	}
@@ -694,7 +687,7 @@ func (p *policy) NewSocketNode(id idset.ID, parent Node) *socketnode {
 	n.self.node = n
 	n.init(p, fmt.Sprintf("socket #%v", id), SocketNode, parent)
 	n.id = id
-	n.syspkg = p.sys.Package(id)
+	n.syspkg = packageZone(p.machine, id)
 
 	return n
 }
@@ -740,10 +733,10 @@ func (n *socketnode) GetMemset(mtype memoryType) idset.IDSet {
 func (n *socketnode) HintScore(hint topology.Hint) float64 {
 	switch {
 	case hint.CPUs != "":
-		return cpuHintScore(hint, n.syspkg.CPUSet())
+		return cpuHintScore(hint, toCpuSet(n.syspkg.CPUs()))
 
 	case hint.NUMAs != "":
-		return OverfitPenalty * numaHintScore(hint, n.syspkg.NodeIDs()...)
+		return OverfitPenalty * numaHintScore(hint, packageNodeIDs(n.Machine(), n.syspkg.ID())...)
 
 	case hint.Sockets != "":
 		return socketHintScore(hint, n.id)
@@ -793,7 +786,7 @@ func (n *virtualnode) HintScore(hint topology.Hint) float64 {
 	// don't bother calculating any scores, the root should always score 1.0
 	switch {
 	case hint.CPUs != "":
-		return cpuHintScore(hint, n.System().CPUSet())
+		return cpuHintScore(hint, toCpuSet(n.Machine().PresentCPUs()))
 
 	case hint.NUMAs != "":
 		return OverfitPenalty * OverfitPenalty

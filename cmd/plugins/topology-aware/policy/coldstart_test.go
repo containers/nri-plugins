@@ -20,7 +20,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
@@ -92,7 +91,7 @@ func TestColdStart(t *testing.T) {
 			t.Skipf("Coldstart tests are disabled (can't mock enough of the system, lacks CPUs)")
 
 			policy := &policy{
-				sys: system.FromMachine(synthMachine(t, tc.numaNodes)),
+				machine: synthMachine(t, tc.numaNodes),
 				cache: &mockCache{
 					returnValue1ForLookupContainer: tc.container,
 					returnValue2ForLookupContainer: true,

@@ -20,12 +20,12 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
-	"github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/dra"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
@@ -91,7 +91,7 @@ func (p *policy) buildRootPool() {
 		vroot *virtualnode
 	)
 
-	if p.sys.SocketCount() > 1 {
+	if len(p.machine.Zones(hardware.LevelPackage)) > 1 {
 		vroot = p.NewVirtualNode("root", nilnode)
 		p.nodes[vroot.Name()] = vroot
 
@@ -100,14 +100,14 @@ func (p *policy) buildRootPool() {
 
 		log.Infof("+ created pool %s", vroot.Name())
 
-		cpus := p.sys.CPUSet()
+		cpus := toCpuSet(p.machine.PresentCPUs())
 		vroot.noderes, vroot.freeres = p.getCpuSupply(vroot, cpus)
 		vroot.mem, vroot.pMem, vroot.hbm = p.getMemSupply(vroot, cpus)
 	} else {
 		log.Infof("- omitted virtual root pool (single socket HW)")
 	}
 
-	for _, socketID := range p.sys.PackageIDs() {
+	for _, socketID := range p.machine.TopologyIndex().PackageIDs() {
 		p.buildSocketPool(socketID, root)
 	}
 }
@@ -123,11 +123,11 @@ func (p *policy) buildSocketPool(socketID idset.ID, root Node) {
 
 	log.Infof("+ created pool %s", socket.Name())
 
-	cpus := p.sys.Package(socketID).CPUSet()
+	cpus := packageCPUs(p.machine, socketID)
 	socket.noderes, socket.freeres = p.getCpuSupply(socket, cpus)
 	socket.mem, socket.pMem, socket.hbm = p.getMemSupply(socket, cpus)
 
-	dieIDs := p.sys.Package(socketID).DieIDs()
+	dieIDs := dieIDs(p.machine, socketID)
 	omitDies := len(dieIDs) <= 1
 	if omitDies {
 		log.Infof("- omitted die pools (only one die)")
@@ -135,7 +135,7 @@ func (p *policy) buildSocketPool(socketID idset.ID, root Node) {
 
 	dieIsCluster := true
 	for _, dieID := range dieIDs {
-		clusterIDs := p.sys.Package(socketID).DieClusterIDs(dieID)
+		clusterIDs := clusterIDs(p.machine, socketID, dieID)
 		if len(clusterIDs) > 1 {
 			dieIsCluster = false
 			break
@@ -151,14 +151,14 @@ func (p *policy) buildSocketPool(socketID idset.ID, root Node) {
 			p.buildDiePool(socketID, dieID, socket)
 		}
 	} else {
-		if nodeIDs := p.sys.Package(socketID).NodeIDs(); len(nodeIDs) > 1 {
+		if nodeIDs := packageNodeIDs(p.machine, socketID); len(nodeIDs) > 1 {
 			for _, nodeID := range nodeIDs {
 				p.buildNumaNodePool(socketID, nodeID, socket)
 			}
 		} else {
 			if l3CacheIDs := p.getL3CacheIDsForCPUs(socketID, cpus); len(l3CacheIDs) > 1 {
 				for _, l3CacheID := range l3CacheIDs {
-					l3CacheCPUs := p.sys.Package(socketID).L3CacheCPUSet(l3CacheID)
+					l3CacheCPUs := l3CacheCPUs(p.machine, socketID, l3CacheID)
 					p.buildL3CachePool(l3CacheID, l3CacheCPUs, socket)
 				}
 			}
@@ -173,11 +173,11 @@ func (p *policy) buildDiePool(socketID, dieID idset.ID, socket Node) {
 
 	log.Infof("+ created pool %s", die.Name())
 
-	cpus := p.sys.Package(socketID).DieCPUSet(dieID)
+	cpus := dieCPUs(p.machine, socketID, dieID)
 	die.noderes, die.freeres = p.getCpuSupply(die, cpus)
 	die.mem, die.pMem, die.hbm = p.getMemSupply(die, cpus)
 
-	nodeIDs := p.sys.Package(socketID).DieNodeIDs(dieID)
+	nodeIDs := dieNodeIDs(p.machine, socketID, dieID)
 	if len(nodeIDs) > 1 {
 		for _, nodeID := range nodeIDs {
 			p.buildNumaNodePool(socketID, nodeID, die)
@@ -185,7 +185,7 @@ func (p *policy) buildDiePool(socketID, dieID idset.ID, socket Node) {
 	} else {
 		if l3CacheIDs := p.getL3CacheIDsForCPUs(socketID, cpus); len(l3CacheIDs) > 1 {
 			for _, l3CacheID := range l3CacheIDs {
-				l3CacheCPUs := p.sys.Package(socketID).L3CacheCPUSet(l3CacheID)
+				l3CacheCPUs := l3CacheCPUs(p.machine, socketID, l3CacheID)
 				p.buildL3CachePool(l3CacheID, l3CacheCPUs, die)
 			}
 		}
@@ -193,7 +193,7 @@ func (p *policy) buildDiePool(socketID, dieID idset.ID, socket Node) {
 }
 
 func (p *policy) buildNumaNodePool(socketID, nodeID idset.ID, parent Node) {
-	if mi, _ := p.sys.Node(nodeID).MemoryInfo(); mi != nil && mi.MemTotal == 0 {
+	if info, err := p.machine.MemoryNode(nodeID).Usage(); err == nil && info.Total == 0 {
 		// Notes:
 		//   We only get called for NUMA nodes with some CPU locality. Then
 		//   if we have no attached memory, we have here a bunch of CPUs for
@@ -211,14 +211,14 @@ func (p *policy) buildNumaNodePool(socketID, nodeID idset.ID, parent Node) {
 
 	log.Infof("+ created pool %s", node.Name())
 
-	cpus := p.sys.Node(nodeID).CPUSet()
+	cpus := toCpuSet(p.machine.MemoryNode(nodeID).CPUs())
 	node.noderes, node.freeres = p.getCpuSupply(node, cpus)
 	node.mem, node.pMem, node.hbm = p.getMemSupply(node, cpus)
 
 	// Check for L3 cache groups within this NUMA node
 	if l3CacheIDs := p.getL3CacheIDsForCPUs(socketID, cpus); len(l3CacheIDs) > 1 {
 		for _, l3CacheID := range l3CacheIDs {
-			l3CacheCPUs := p.sys.Package(socketID).L3CacheCPUSet(l3CacheID)
+			l3CacheCPUs := l3CacheCPUs(p.machine, socketID, l3CacheID)
 			p.buildL3CachePool(l3CacheID, l3CacheCPUs, node)
 		}
 	}
@@ -226,15 +226,15 @@ func (p *policy) buildNumaNodePool(socketID, nodeID idset.ID, parent Node) {
 
 // getL3CacheIDsForCPUs returns L3 cache IDs that are within the given CPU set scope.
 func (p *policy) getL3CacheIDsForCPUs(socketID idset.ID, cpus cpuset.CPUSet) []idset.ID {
-	var l3CacheIDs []idset.ID
-	for _, l3CacheID := range p.sys.Package(socketID).L3CacheIDs() {
-		l3CacheCPUs := p.sys.Package(socketID).L3CacheCPUSet(l3CacheID)
+	var within []idset.ID
+	for _, l3CacheID := range l3CacheIDs(p.machine, socketID) {
+		cacheCPUs := l3CacheCPUs(p.machine, socketID, l3CacheID)
 		// Check if this L3 cache is entirely within the given CPU scope
-		if cpus.Intersection(l3CacheCPUs).Equals(l3CacheCPUs) {
-			l3CacheIDs = append(l3CacheIDs, l3CacheID)
+		if cpus.Intersection(cacheCPUs).Equals(cacheCPUs) {
+			within = append(within, l3CacheID)
 		}
 	}
-	return l3CacheIDs
+	return within
 }
 
 // buildL3CachePool creates an L3 cache pool as a child of the given parent.
@@ -320,9 +320,9 @@ func (p *policy) getMemSupply(node Node, cpus cpuset.CPUSet) (dram, pmem, hbm id
 func (p *policy) getMemsForCpus(cpus cpuset.CPUSet) idset.IDSet {
 	mems := idset.NewIDSet()
 
-	for _, nodeID := range p.sys.NodeIDs() {
-		node := p.sys.Node(nodeID)
-		if !node.CPUSet().Intersection(cpus).IsEmpty() {
+	for _, nodeID := range p.machine.MemoryNodeIDs() {
+		node := p.machine.MemoryNode(nodeID)
+		if node.CPUs().Intersects(toCpuMask(cpus)) {
 			mems.Add(nodeID)
 		}
 	}
@@ -333,23 +333,23 @@ func (p *policy) getMemsForCpus(cpus cpuset.CPUSet) idset.IDSet {
 func (p *policy) getClosestSpecialMem(mems idset.IDSet) idset.IDSet {
 	var (
 		special = idset.NewIDSet()
-		nodeIDs = p.sys.NodeIDs()
+		nodeIDs = p.machine.MemoryNodeIDs()
 
-		pmemNoCPU = []system.NodeFilter{
-			system.NodeOfPMEMType,
-			system.NodeHasMemory,
-			system.NodeHasNoLocalCPUs,
+		pmemNoCPU = []nodeFilter{
+			nodeOfPMEMKind,
+			nodeHasMemory,
+			nodeHasNoLocalCPUs,
 		}
 
-		hbmNoCPU = []system.NodeFilter{
-			system.NodeOfHBMType,
-			system.NodeHasMemory,
-			system.NodeHasNoLocalCPUs,
+		hbmNoCPU = []nodeFilter{
+			nodeOfHBMKind,
+			nodeHasMemory,
+			nodeHasNoLocalCPUs,
 		}
 	)
 
-	for _, id := range p.sys.FilterNodes(nodeIDs, pmemNoCPU...).Members() {
-		closest, _ := p.sys.ClosestNodes(id, system.NodeOfDRAMType, system.NodeHasLocalCPUs)
+	for _, id := range filterNodes(p.machine, nodeIDs, pmemNoCPU...).Members() {
+		closest, _ := closestNodes(p.machine, id, nodeOfDRAMKind, nodeHasLocalCPUs)
 		if len(closest) > 0 {
 			for _, cid := range closest[0].Members() {
 				if mems.Has(cid) {
@@ -359,8 +359,8 @@ func (p *policy) getClosestSpecialMem(mems idset.IDSet) idset.IDSet {
 		}
 	}
 
-	for _, id := range p.sys.FilterNodes(nodeIDs, hbmNoCPU...).Members() {
-		closest, _ := p.sys.ClosestNodes(id, system.NodeOfDRAMType, system.NodeHasLocalCPUs)
+	for _, id := range filterNodes(p.machine, nodeIDs, hbmNoCPU...).Members() {
+		closest, _ := closestNodes(p.machine, id, nodeOfDRAMKind, nodeHasLocalCPUs)
 		if len(closest) > 0 {
 			for _, cid := range closest[0].Members() {
 				if mems.Has(cid) {
@@ -374,21 +374,23 @@ func (p *policy) getClosestSpecialMem(mems idset.IDSet) idset.IDSet {
 }
 
 func (p *policy) getAllMems() idset.IDSet {
-	return p.sys.FilterNodes(p.sys.NodeIDs(), system.NodeHasMemory)
+	return filterNodes(p.machine, p.machine.MemoryNodeIDs(), nodeHasMemory)
 }
 
 func (p *policy) splitMemsByType(ids idset.IDSet) (dram, pmem, hbm idset.IDSet) {
 	dram, pmem, hbm = idset.NewIDSet(), idset.NewIDSet(), idset.NewIDSet()
 
 	for _, id := range ids.Members() {
-		node := p.sys.Node(id)
-		switch node.GetMemoryType() {
-		case system.MemoryTypeDRAM:
-			dram.Add(id)
-		case system.MemoryTypePMEM:
+		node := p.machine.MemoryNode(id)
+		switch node.Kind() {
+		case hardware.MemoryKindPMEM:
 			pmem.Add(id)
-		case system.MemoryTypeHBM:
+		case hardware.MemoryKindHBM:
 			hbm.Add(id)
+		default:
+			// DRAM, and a node the hardware package could not classify: the
+			// pkg/sysfs interface reported those as DRAM too.
+			dram.Add(id)
 		}
 	}
 
@@ -398,10 +400,10 @@ func (p *policy) splitMemsByType(ids idset.IDSet) (dram, pmem, hbm idset.IDSet) 
 // checkHWTopology verifies our otherwise implicit assumptions about the HW.
 func (p *policy) checkHWTopology() error {
 	// NUMA distance matrix should be symmetric.
-	for _, from := range p.sys.NodeIDs() {
-		for _, to := range p.sys.NodeIDs() {
-			d1 := p.sys.NodeDistance(from, to)
-			d2 := p.sys.NodeDistance(to, from)
+	for _, from := range p.machine.MemoryNodeIDs() {
+		for _, to := range p.machine.MemoryNodeIDs() {
+			d1 := p.machine.MemoryNode(from).Distance(to)
+			d2 := p.machine.MemoryNode(to).Distance(from)
 			if d1 != d2 {
 				log.Errorf("asymmetric NUMA distance (#%d, #%d): %d != %d",
 					from, to, d1, d2)
@@ -524,7 +526,7 @@ func (p *policy) setPreferredCpusetCpus(container cache.Container, allocated, pr
 	hidingInfo := ""
 	pod, ok := container.GetPod()
 	if ok && hideHyperthreadsPreference(pod, container) {
-		allow = p.sys.SingleThreadForCPUs(allocated)
+		allow = toCpuSet(hardware.SingleThreadPerCore(p.machine, toCpuMask(allocated)))
 		if allow.Size() != allocated.Size() {
 			hidingInfo = fmt.Sprintf(" (hide %d hyperthreads, remaining cpuset: %s)", allocated.Size()-allow.Size(), allow)
 		} else {
