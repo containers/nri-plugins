@@ -22,19 +22,23 @@
 //
 // # Why it exists
 //
-// It is a migration step, and a proof. pkg/sysfs stays in the tree beside it, so
+// It was a migration step, and it is a proof.
+//
+// The step is done: nothing in this repository reads this interface any more, and
+// the consumers which did were moved onto the hardware package one at a time,
+// each with this in between so that the change was a single import line.
+//
+// The proof is why it is still here. pkg/sysfs stays in the tree beside it, so
 // both implementations are in one build and equivalence_test.go can run every
 // method of both against the same recorded sysfs trees and compare the answers.
 // That is a much stronger statement than a rewritten pkg/sysfs could make, where
-// the only reference left would be in git history.
-//
-// It also splits the work into reviewable pieces. This package plus the hardware
-// package underneath it change no behaviour and no caller, so they can land on
-// their own. Moving consumers off pkg/sysfs, and deleting it, comes after.
+// the only reference left would be in git history. It goes when pkg/sysfs goes,
+// and whatever is worth keeping of it by then has to be recorded some other way
+// first, because the comparison cannot outlive its subject.
 //
 // Nothing new should be built on this package. New code should use
 // [github.com/containers/nri-plugins/pkg/lib/hardware] directly; this is
-// here to be deleted.
+// here to be deleted, and sooner than pkg/sysfs is.
 //
 // # Where it is faithful, and where it cannot be
 //
