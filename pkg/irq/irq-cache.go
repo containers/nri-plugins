@@ -35,7 +35,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 )
 
 // irqInfo is a numbered interrupt as parsed from the interrupts file,
@@ -58,10 +58,10 @@ type irqCache struct {
 	proc string  // procfs mountpoint, all paths are built from this
 	ops  fileOps // file operations to use
 
-	info     map[int]irqInfo       // cached numbered interrupts, nil if not read
-	cpus     map[int]cpuset.CPUSet // affinities read from or set through the cache
-	pending  map[int]cpuset.CPUSet // affinities not yet written to procfs, empty if unblocked
-	readOnly map[int]bool          // interrupts whose affinity cannot be written
+	info     map[int]irqInfo         // cached numbered interrupts, nil if not read
+	cpus     map[int]*libcpu.CpuMask // affinities read from or set through the cache
+	pending  map[int]*libcpu.CpuMask // affinities not yet written to procfs, empty if unblocked
+	readOnly map[int]bool            // interrupts whose affinity cannot be written
 
 	writeBlock int // writes to affinities are only buffered while positive
 }
@@ -78,8 +78,8 @@ func newIrqCache() *irqCache {
 			readFile:  os.ReadFile,
 			writeFile: os.WriteFile,
 		},
-		cpus:     map[int]cpuset.CPUSet{},
-		pending:  map[int]cpuset.CPUSet{},
+		cpus:     map[int]*libcpu.CpuMask{},
+		pending:  map[int]*libcpu.CpuMask{},
 		readOnly: map[int]bool{},
 	}
 }
@@ -220,7 +220,7 @@ func (c *irqCache) irqByNum(num int, allow []string) (*Irq, error) {
 // The affinity is read from procfs only until it is known, and
 // affinities set through the cache are visible before they have been
 // written to procfs.
-func (c *irqCache) affinityOf(num int) (cpuset.CPUSet, error) {
+func (c *irqCache) affinityOf(num int) (*libcpu.CpuMask, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -230,11 +230,11 @@ func (c *irqCache) affinityOf(num int) (cpuset.CPUSet, error) {
 
 	data, err := c.ops.readFile(smpAffinityListPath(c.proc, num))
 	if err != nil {
-		return cpuset.New(), fmt.Errorf("failed to read affinity of irq %d: %w", num, err)
+		return libcpu.NewCpuMask(), fmt.Errorf("failed to read affinity of irq %d: %w", num, err)
 	}
-	cpus, err := cpuset.Parse(strings.TrimSpace(string(data)))
+	cpus, err := libcpu.ParseCpuMask(strings.TrimSpace(string(data)))
 	if err != nil {
-		return cpuset.New(), fmt.Errorf("failed to parse affinity of irq %d: %w", num, err)
+		return libcpu.NewCpuMask(), fmt.Errorf("failed to parse affinity of irq %d: %w", num, err)
 	}
 	c.cpus[num] = cpus
 
@@ -244,7 +244,7 @@ func (c *irqCache) affinityOf(num int) (cpuset.CPUSet, error) {
 // setAffinity sets the CPUs in the affinity of the given interrupt.
 // While writes are blocked, the affinity is only buffered and no error
 // is returned. Otherwise it is written to procfs immediately.
-func (c *irqCache) setAffinity(num int, cpus cpuset.CPUSet) error {
+func (c *irqCache) setAffinity(num int, cpus *libcpu.CpuMask) error {
 	c.mu.Lock()
 	if c.readOnly[num] {
 		// Unwritable, do not even try again.
@@ -347,7 +347,7 @@ func (c *irqCache) reset(procDir string) {
 	defer c.mu.Unlock()
 	c.proc = procDir
 	c.info = nil
-	c.cpus = map[int]cpuset.CPUSet{}
-	c.pending = map[int]cpuset.CPUSet{}
+	c.cpus = map[int]*libcpu.CpuMask{}
+	c.pending = map[int]*libcpu.CpuMask{}
 	c.readOnly = map[int]bool{}
 }

@@ -1029,11 +1029,10 @@ func (p *balloons) applyIrqAffinities() {
 	}
 	for _, hwIrq := range hwIrqs {
 		newCpus := p.allowed
-		affinity, err := hwIrq.AffinityCpus()
+		curCpus, err := hwIrq.AffinityCpus()
 		if err != nil {
 			continue
 		}
-		curCpus := toCpuMask(affinity)
 		switch claimCpus := p.irqClaimCpus(hwIrq); {
 		case !claimCpus.IsEmpty():
 			newCpus = claimCpus
@@ -1050,7 +1049,7 @@ func (p *balloons) applyIrqAffinities() {
 		if curCpus.Equals(newCpus) {
 			continue
 		}
-		if err := hwIrq.SetAffinityCpus(toCpuSet(newCpus)); err != nil {
+		if err := hwIrq.SetAffinityCpus(newCpus); err != nil {
 			log.Debugf("failed to set affinity of %s to %q: %v", hwIrq, newCpus, err)
 		} else {
 			log.Debugf("set affinity of %s to %q", hwIrq, newCpus)

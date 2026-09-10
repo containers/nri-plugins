@@ -156,12 +156,11 @@ func (p *policy) applyIrqAffinity(user string) {
 	}
 
 	for _, hwIrq := range hwIrqs {
-		affinity, err := hwIrq.AffinityCpus()
+		current, err := hwIrq.AffinityCpus()
 		if err != nil {
 			log.Errorf("%s: failed to read affinity: %v", hwIrq.String(), err)
 			continue
 		}
-		current := toCpuMask(affinity)
 
 		preMask, claim, mask := p.irqCpus(hwIrq)
 
@@ -183,7 +182,7 @@ func (p *policy) applyIrqAffinity(user string) {
 			continue
 		}
 
-		if err := hwIrq.SetAffinityCpus(toCpuSet(cpus)); err != nil {
+		if err := hwIrq.SetAffinityCpus(cpus); err != nil {
 			log.Errorf("%s: failed to set affinity to cpus %s (for %s): %v",
 				hwIrq.String(), cpus.String(), user, err)
 		}

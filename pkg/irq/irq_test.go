@@ -20,7 +20,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 )
 
 const sampleInterrupts = `           CPU0       CPU1       CPU2       CPU3
@@ -156,11 +156,11 @@ func TestAffinityReadWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AffinityCpus() failed: %v", err)
 	}
-	if !cpus.Equals(cpuset.MustParse("0-3")) {
+	if !cpus.Equals(libcpu.MustParseCpuMask("0-3")) {
 		t.Errorf("AffinityCpus() = %q, want 0-3", cpus)
 	}
 
-	if err := irq.SetAffinityCpus(cpuset.MustParse("1,3")); err != nil {
+	if err := irq.SetAffinityCpus(libcpu.MustParseCpuMask("1,3")); err != nil {
 		t.Fatalf("SetAffinityCpus() failed: %v", err)
 	}
 	data, err := os.ReadFile(filepath.Join(irqDir, "smp_affinity_list"))
@@ -171,7 +171,7 @@ func TestAffinityReadWrite(t *testing.T) {
 		t.Errorf("written affinity = %q, want 1,3", string(data))
 	}
 
-	if err := irq.SetAffinityCpus(cpuset.New()); err == nil {
+	if err := irq.SetAffinityCpus(libcpu.NewCpuMask()); err == nil {
 		t.Errorf("SetAffinityCpus(empty) should fail")
 	}
 }

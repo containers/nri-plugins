@@ -30,8 +30,8 @@ import (
 	"path/filepath"
 	"strconv"
 
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	logger "github.com/containers/nri-plugins/pkg/log"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 var (
@@ -287,14 +287,14 @@ func (irq *Irq) IsAllowed() bool {
 // AffinityCpus returns the CPUs in the affinity of the interrupt. The
 // returned CPUs are the ones set last through this package, even if
 // they have not reached procfs yet.
-func (irq *Irq) AffinityCpus() (cpuset.CPUSet, error) {
+func (irq *Irq) AffinityCpus() (*libcpu.CpuMask, error) {
 	return cache.affinityOf(irq.num)
 }
 
 // SetAffinityCpus sets the CPUs in the affinity of the interrupt.
 // While writes are blocked, the affinity is only buffered and write
 // errors are logged instead of being returned.
-func (irq *Irq) SetAffinityCpus(cpus cpuset.CPUSet) error {
+func (irq *Irq) SetAffinityCpus(cpus *libcpu.CpuMask) error {
 	if !irq.IsAllowed() {
 		return fmt.Errorf("%w: refusing to set affinity of irq %d", ErrDeniedInterrupt, irq.num)
 	}
