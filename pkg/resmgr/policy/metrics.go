@@ -23,7 +23,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/containers/nri-plugins/pkg/lib/hardware/system"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	"github.com/containers/nri-plugins/pkg/metrics"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
@@ -32,7 +32,7 @@ import (
 type (
 	SystemCollector struct {
 		cache          cache.Cache
-		system         system.System
+		machine        *hardware.Machine
 		Nodes          map[int]*NodeMetric
 		Cpus           map[int]*CpuMetric
 		NodeCapacity   metric.Int64Gauge
@@ -60,10 +60,10 @@ func (p *policy) newSystemCollector() (*SystemCollector, error) {
 	var (
 		meter = metrics.Provider("policy").Meter("system", metrics.WithOmitSubsystem())
 		s     = &SystemCollector{
-			cache:  p.cache,
-			system: p.system,
-			Nodes:  map[int]*NodeMetric{},
-			Cpus:   map[int]*CpuMetric{},
+			cache:   p.cache,
+			machine: p.machine,
+			Nodes:   map[int]*NodeMetric{},
+			Cpus:    map[int]*CpuMetric{},
 		}
 		err error
 	)
@@ -111,9 +111,9 @@ func (p *policy) newSystemCollector() (*SystemCollector, error) {
 		return nil, fmt.Errorf("failed to create cpu.container.count meter: %w", err)
 	}
 
-	for _, id := range s.system.NodeIDs() {
+	for _, id := range s.machine.MemoryNodeIDs() {
 		var (
-			sys        = s.system.Node(id)
+			sys        = s.machine.MemoryNode(id)
 			capa, used = s.getMemInfo(sys)
 			node       = &NodeMetric{
 				Id: sys.ID(),
@@ -131,13 +131,13 @@ func (p *policy) newSystemCollector() (*SystemCollector, error) {
 			node.Capacity,
 			metric.WithAttributes(
 				append(node.IdLabel.ToSlice(),
-					attribute.String("node.type", sys.GetMemoryType().String()),
+					attribute.String("node.type", sys.Kind().String()),
 				)...,
 			),
 		)
 	}
 
-	for _, id := range s.system.CPUIDs() {
+	for _, id := range s.machine.CPUIDs() {
 		cpu := &CpuMetric{
 			Id: id,
 			IdLabel: attribute.NewSet(
@@ -158,7 +158,7 @@ func (s *SystemCollector) Update() {
 	}
 
 	for _, n := range s.Nodes {
-		sys := s.system.Node(n.Id)
+		sys := s.machine.MemoryNode(n.Id)
 		_, used := s.getMemInfo(sys)
 		n.Usage = used
 		n.ContainerCount = 0
@@ -224,10 +224,14 @@ func (s *SystemCollector) Update() {
 	}
 }
 
-func (s *SystemCollector) getMemInfo(n system.Node) (capacity, used int64) {
-	if n != nil {
-		if i, _ := n.MemoryInfo(); i != nil {
-			return int64(i.MemTotal), int64(i.MemUsed)
+// getMemInfo reads a node's memory usage now. The capacity comes from the same
+// read rather than from what discovery recorded, so that a node whose meminfo has
+// become unreadable reports zero for both instead of a capacity it cannot
+// corroborate.
+func (s *SystemCollector) getMemInfo(n *hardware.MemoryNode) (capacity, used int64) {
+	if n.Valid() {
+		if info, err := n.Usage(); err == nil {
+			return info.Total, info.Used
 		}
 	}
 	return 0, 0
