@@ -1227,8 +1227,8 @@ func (p *balloons) newBalloon(blnDef *BalloonDef, confCpus bool, c cache.Contain
 		virtDevCpusets: map[string][]cpuset.CPUSet{
 			virtDevReservedCpus: {p.reserved},
 			virtDevIsolatedCpus: {toCpuSet(p.machine.IsolatedCPUs())},
-			virtDevECores:       {p.cpuAllocator.GetCPUPriorities()[cpuallocator.PriorityLow]},
-			virtDevPCores:       {p.cpuAllocator.GetCPUPriorities()[cpuallocator.PriorityHigh]},
+			virtDevECores:       {toCpuSet(p.cpuAllocator.GetCPUPriorities()[cpuallocator.PriorityLow])},
+			virtDevPCores:       {toCpuSet(p.cpuAllocator.GetCPUPriorities()[cpuallocator.PriorityHigh])},
 		},
 	}
 	// Pod resource hints to container's physical devices (GPUs,
@@ -1294,9 +1294,11 @@ func (p *balloons) deleteBalloon(bln *Balloon) {
 	p.balloons = remainingBalloons
 	p.forgetCpuClass(bln)
 	p.freeCpus = p.freeCpus.Union(bln.Cpus)
-	if _, err := p.cpuAllocator.ReleaseCpus(&bln.Cpus, bln.Cpus.Size(), bln.Def.AllocatorPriority.Value().Option()); err != nil {
+	blnCpus := toCpuMask(bln.Cpus)
+	if _, err := p.cpuAllocator.ReleaseCpus(blnCpus, bln.Cpus.Size(), bln.Def.AllocatorPriority.Value().Option()); err != nil {
 		log.Warnf("failed to release CPUs %q of balloon %s[%d]: %v", bln.Cpus, bln.Def.Name, bln.Instance, err)
 	}
+	bln.Cpus = toCpuSet(blnCpus)
 }
 
 // freeBalloon clears a balloon and deletes it if allowed.
@@ -2540,10 +2542,14 @@ func (p *balloons) resizeBalloon(bln *Balloon, newMilliCpus int) error {
 			return balloonsError("resize/inflate: failed to choose a cpuset for allocating additional %d CPUs: %w", cpuCountDelta, err)
 		}
 		log.Debugf("- allocating %d CPUs from %q", cpuCountDelta, addFromCpus)
-		newCpus, err := p.cpuAllocator.AllocateCpus(&addFromCpus, newCpuCount-oldCpuCount, bln.Def.AllocatorPriority.Value().Option())
+		// The allocator takes the allocated CPUs out of the set it is given.
+		// Nothing here reads what is left of it, only what came back.
+		allocated, err := p.cpuAllocator.AllocateCpus(toCpuMask(addFromCpus),
+			newCpuCount-oldCpuCount, bln.Def.AllocatorPriority.Value().Option())
 		if err != nil {
 			return balloonsError("resize/inflate: allocating %d CPUs for %s failed: %w", cpuCountDelta, bln, err)
 		}
+		newCpus := toCpuSet(allocated)
 		oldBlnCpus := bln.Cpus
 		oldFreeCpus := p.freeCpus
 		p.freeCpus = p.freeCpus.Difference(newCpus)
@@ -2557,10 +2563,12 @@ func (p *balloons) resizeBalloon(bln *Balloon, newMilliCpus int) error {
 			return balloonsError("resize/deflate: failed to choose a cpuset for releasing %d CPUs: %w", -cpuCountDelta, err)
 		}
 		log.Debugf("- releasing %d CPUs from cpuset %q", -cpuCountDelta, removeFromCpus)
-		_, err = p.cpuAllocator.ReleaseCpus(&removeFromCpus, -cpuCountDelta, bln.Def.AllocatorPriority.Value().Option())
+		removeFrom := toCpuMask(removeFromCpus)
+		_, err = p.cpuAllocator.ReleaseCpus(removeFrom, -cpuCountDelta, bln.Def.AllocatorPriority.Value().Option())
 		if err != nil {
 			return balloonsError("resize/deflate: releasing %d CPUs from %s failed: %w", -cpuCountDelta, bln, err)
 		}
+		removeFromCpus = toCpuSet(removeFrom)
 		oldBlnCpus := bln.Cpus
 		oldFreeCpus := p.freeCpus
 		p.freeCpus = p.freeCpus.Union(removeFromCpus)

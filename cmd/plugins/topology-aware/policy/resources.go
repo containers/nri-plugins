@@ -721,7 +721,12 @@ func (cs *supply) Reserve(g Grant, o *libmem.Offer) (map[string]libmem.NodeMask,
 
 // takeCPUs takes up to cnt CPUs from a given CPU set to another.
 func (cs *supply) takeCPUs(from, to *cpuset.CPUSet, cnt int, prio cpuPrio) (cpuset.CPUSet, error) {
-	cset, err := cs.node.Policy().cpuAllocator.AllocateCpus(from, cnt, prio.Option())
+	// The allocator speaks libcpu sets and takes what it allocated out of the
+	// set it is given, so hand it one and copy back what is left either way.
+	fromCpus := toCpuMask(*from)
+	allocated, err := cs.node.Policy().cpuAllocator.AllocateCpus(fromCpus, cnt, prio.Option())
+	cset := toCpuSet(allocated)
+	*from = toCpuSet(fromCpus)
 	if err != nil {
 		return cset, err
 	}
@@ -1177,7 +1182,7 @@ func (cs *supply) GetScore(req Request) Score {
 
 		lpCPUs := toCpuSet(cs.GetNode().Machine().CoreKindCPUs(hardware.EfficientCore))
 		if lpCPUs.Size() == 0 {
-			lpCPUs = p.cpuAllocator.GetCPUPriorities()[lowPrio]
+			lpCPUs = toCpuSet(p.cpuAllocator.GetCPUPriorities()[lowPrio].EmptyIfNil())
 		}
 		lpCPUs = lpCPUs.Intersection(cs.SharableCPUs())
 		lpCnt := lpCPUs.Size()
@@ -1185,13 +1190,13 @@ func (cs *supply) GetScore(req Request) Score {
 
 		hpCPUs := toCpuSet(cs.GetNode().Machine().CoreKindCPUs(hardware.PerformanceCore))
 		if hpCPUs.Size() == 0 {
-			hpCPUs = p.cpuAllocator.GetCPUPriorities()[highPrio]
+			hpCPUs = toCpuSet(p.cpuAllocator.GetCPUPriorities()[highPrio].EmptyIfNil())
 		}
 		hpCPUs = hpCPUs.Intersection(cs.SharableCPUs())
 		hpCnt := hpCPUs.Size()
 		score.prio[highPrio] = hpCnt*1000 - (1000*full + part)
 
-		npCPUs := p.cpuAllocator.GetCPUPriorities()[normalPrio]
+		npCPUs := toCpuSet(p.cpuAllocator.GetCPUPriorities()[normalPrio].EmptyIfNil())
 		npCPUs = npCPUs.Intersection(cs.SharableCPUs())
 		npCnt := npCPUs.Size()
 		score.prio[normalPrio] = npCnt*1000 - (1000*full + part)

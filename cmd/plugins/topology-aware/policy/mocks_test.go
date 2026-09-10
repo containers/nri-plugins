@@ -22,10 +22,10 @@ import (
 	"github.com/containers/nri-plugins/pkg/agent/podresapi"
 	resmgr "github.com/containers/nri-plugins/pkg/apis/resmgr/v1alpha1"
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	"github.com/containers/nri-plugins/pkg/topology"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	v1 "k8s.io/api/core/v1"
 )
 
@@ -486,16 +486,22 @@ func (m *mockCache) WriteFile(string, string, os.FileMode, []byte) error {
 
 type mockCPUAllocator struct{}
 
-func (m *mockCPUAllocator) AllocateCpus(from *cpuset.CPUSet, cnt int, options ...cpuallocator.Option) (cpuset.CPUSet, error) {
-	return cpuset.New(0), nil
+func (m *mockCPUAllocator) AllocateCpus(from *libcpu.CpuMask, cnt int, options ...cpuallocator.Option) (*libcpu.CpuMask, error) {
+	return libcpu.NewCpuMask(0), nil
 }
 
-func (m *mockCPUAllocator) ReleaseCpus(from *cpuset.CPUSet, cnt int, options ...cpuallocator.Option) (cpuset.CPUSet, error) {
-	return cpuset.New(0), nil
+func (m *mockCPUAllocator) ReleaseCpus(from *libcpu.CpuMask, cnt int, options ...cpuallocator.Option) (*libcpu.CpuMask, error) {
+	return libcpu.NewCpuMask(0), nil
 }
 
-func (m *mockCPUAllocator) GetCPUPriorities() map[cpuallocator.CPUPriority]cpuset.CPUSet {
-	return map[cpuallocator.CPUPriority]cpuset.CPUSet{}
+func (m *mockCPUAllocator) GetCPUPriorities() map[cpuallocator.CPUPriority]*libcpu.CpuMask {
+	// An entry per priority, as the real allocator promises. A caller is entitled
+	// to index this without checking.
+	prios := map[cpuallocator.CPUPriority]*libcpu.CpuMask{}
+	for prio := range cpuallocator.NumCPUPriorities {
+		prios[prio] = libcpu.NewCpuMask()
+	}
+	return prios
 }
 
 var (
