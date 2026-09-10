@@ -20,7 +20,12 @@ import (
 	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/instrumentation"
 	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/log"
 	"github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/control"
+	logger "github.com/containers/nri-plugins/pkg/log"
 )
+
+// cfglog is for complaining about the configuration itself, as opposed to about
+// what a policy makes of it.
+var cfglog = logger.NewLogger("config")
 
 // ResmgrConfig provides access to policy-specific and common
 // configuration data. All resource management configuration
@@ -43,6 +48,15 @@ type CommonConfig struct {
 func (c *CommonConfig) Validate() error {
 	if c == nil {
 		return nil
+	}
+
+	// The CPU controller which used to apply these is gone. The balloons policy
+	// still translates them into its own cpuClasses, so this is a warning and not
+	// an error, but nothing translates them for any other policy and there they
+	// have no effect at all.
+	if len(c.Control.CPU.Classes) > 0 {
+		cfglog.Warnf("control.cpu.classes is deprecated: declare the classes in " +
+			"the policy's cpuClasses instead")
 	}
 
 	if err := c.Control.RDT.Validate(); err != nil {

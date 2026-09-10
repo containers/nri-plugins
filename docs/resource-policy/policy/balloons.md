@@ -1076,6 +1076,11 @@ This is deprecated CPU class configuration, use `cpuClasses`
 instead. If a class name is defined in both `cpuClasses` and
 `control.cpu.classes`, the `cpuClasses` definition takes precedence.
 
+Classes defined here are translated into `cpuClasses` entries, which
+is what applies them; the CPU controller which used to do so has been
+removed. Configuring them logs a deprecation warning. Note that no
+other policy translates them, so there they have no effect.
+
 Each CPU class (keyed by name) can define:
 
 - `minFreq` (integer): Minimum CPU frequency in kHz.
