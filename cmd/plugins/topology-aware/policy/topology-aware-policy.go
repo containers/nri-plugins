@@ -810,7 +810,7 @@ func (p *policy) initialize() error {
 	opt.UnlimitedBurstable = p.findExistingTopologyLevel(opt.UnlimitedBurstable)
 
 	if len(opt.CPUClasses) > 0 {
-		cc, err := cpuclass.New(p.options.System)
+		cc, err := cpuclass.New(p.options.Machine)
 		if err != nil {
 			return policyError("failed to create CPU class handler: %w", err)
 		}

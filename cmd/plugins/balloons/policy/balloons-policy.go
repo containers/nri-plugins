@@ -1920,7 +1920,7 @@ func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
 	// Construct the CPU class handler that fronts both cpufreq and
 	// PCT/SST internals.
 	if p.cpuClasses == nil {
-		h, err := cpuclass.New(p.options.System)
+		h, err := cpuclass.New(p.machine)
 		if err != nil {
 			return balloonsError("failed to create CPU class handler: %w", err)
 		}

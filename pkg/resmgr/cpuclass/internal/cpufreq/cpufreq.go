@@ -24,7 +24,7 @@ import (
 	"slices"
 
 	policyapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
-	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/types"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
@@ -43,7 +43,7 @@ type Sink interface {
 
 // Allocator owns the per-turbo-domain class state for cpufreq.
 type Allocator struct {
-	sys         sysfs.System
+	machine     *hardware.Machine
 	sink        Sink
 	classes     []*policyapi.CPUClass
 	classByName map[string]*policyapi.CPUClass
@@ -77,15 +77,15 @@ const (
 // New returns an Allocator that publishes class definitions and
 // per-CPU assignments to sink. The constructor does not push any
 // class definitions; the caller follows up with Configure().
-func New(sys sysfs.System, sink Sink) (*Allocator, error) {
-	if sys == nil {
-		return nil, fmt.Errorf("cpufreq: missing required argument sys")
+func New(m *hardware.Machine, sink Sink) (*Allocator, error) {
+	if m == nil {
+		return nil, fmt.Errorf("cpufreq: missing required argument machine")
 	}
 	if sink == nil {
 		return nil, fmt.Errorf("cpufreq: missing required argument sink")
 	}
 	a := &Allocator{
-		sys:        sys,
+		machine:    m,
 		sink:       sink,
 		activeCpus: map[domainID]map[string]cpuset.CPUSet{},
 		winnerPrio: map[domainID]int{},
@@ -207,12 +207,12 @@ func (a *Allocator) buildCpuDomains() {
 	if mode == "" {
 		mode = turboDomainPackage
 	}
-	for _, cpuID := range a.sys.CPUIDs() {
+	for _, cpuID := range a.machine.CPUIDs() {
 		if a.allowed.Size() > 0 && !a.allowed.Contains(int(cpuID)) {
 			continue
 		}
-		c := a.sys.CPU(cpuID)
-		if c == nil {
+		c := a.machine.CPU(cpuID)
+		if !c.Valid() {
 			continue
 		}
 		var d domainID

@@ -17,7 +17,7 @@
 // Intel Priority Core Turbo state implied by a list of user-facing
 // CPU class definitions.
 //
-// Policies talk to a single *Handler, constructed with New(sys).
+// Policies talk to a single *Handler, constructed with New(machine).
 // Configure(spec) installs (or replaces) the class set; UseClass
 // pins given CPUs to a named class; Commit() flushes deferred
 // per-CPU sysfs writes; Hints() returns placement preferences a
@@ -30,7 +30,7 @@ import (
 	"sort"
 
 	policyapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
-	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/cpufreq"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/cpuidle"
@@ -79,7 +79,7 @@ type ConfigSpec struct {
 // construction and configuration of the per-technology allocators
 // (cpufreq, pct) and writers (cpufreq, cpuidle, uncorefreq).
 type Handler struct {
-	sys     sysfs.System
+	machine *hardware.Machine
 	allowed cpuset.CPUSet
 
 	cpufreq *cpufreq.Allocator
@@ -110,9 +110,9 @@ type Handler struct {
 // New constructs a Handler with both internal allocators (cpufreq
 // and pct) ready in a "no configuration applied" state. Configure
 // must be called before the handler is usable.
-func New(sys sysfs.System) (*Handler, error) {
+func New(m *hardware.Machine) (*Handler, error) {
 	h := &Handler{
-		sys:          sys,
+		machine:      m,
 		defs:         map[string]types.ClassDef{},
 		cpuClass:     map[int]string{},
 		dirtyCPUs:    map[int]bool{},
@@ -120,11 +120,11 @@ func New(sys sysfs.System) (*Handler, error) {
 		idleWriter:   cpuidle.NewWriter(cpuidle.Hooks{}),
 		uncoreWriter: uncorefreq.NewWriter(uncorefreq.Hooks{}),
 	}
-	freq, err := cpufreq.New(sys, h)
+	freq, err := cpufreq.New(m, h)
 	if err != nil {
 		return nil, fmt.Errorf("cpuclass: failed to create cpufreq allocator: %w", err)
 	}
-	pctA, err := pct.NewAllocator(sys)
+	pctA, err := pct.NewAllocator(m)
 	if err != nil {
 		return nil, fmt.Errorf("cpuclass: failed to create pct allocator: %w", err)
 	}
@@ -328,8 +328,8 @@ func (h *Handler) Commit() error {
 			firstErr = err
 		}
 	}
-	dirtyDies := uncorefreq.DiesForCpus(h.sys, h.dirtyCPUs)
-	if err := h.uncoreWriter.Enforce(h.sys, h.defs, h.cpuClass, dirtyDies); err != nil && firstErr == nil {
+	dirtyDies := uncorefreq.DiesForCpus(h.machine, h.dirtyCPUs)
+	if err := h.uncoreWriter.Enforce(h.machine, h.defs, h.cpuClass, dirtyDies); err != nil && firstErr == nil {
 		firstErr = err
 	}
 	h.dirtyCPUs = map[int]bool{}

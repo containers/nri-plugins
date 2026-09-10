@@ -24,7 +24,7 @@ import (
 
 	"github.com/intel/goresctrl/pkg/utils"
 
-	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/types"
 )
@@ -120,13 +120,13 @@ func UnavailableError(className string) error {
 //
 // Returns the first error encountered. Skips silently when the
 // uncore driver is unavailable.
-func (w *Writer) Enforce(sys sysfs.System, defs map[string]types.ClassDef, cpuClass map[int]string, dirtyDies map[DieKey]bool) error {
+func (w *Writer) Enforce(m *hardware.Machine, defs map[string]types.ClassDef, cpuClass map[int]string, dirtyDies map[DieKey]bool) error {
 	if !w.available || len(dirtyDies) == 0 {
 		return nil
 	}
 	var firstErr error
 	for key := range dirtyDies {
-		min, max, minCls, maxCls := effectiveUncoreFreqs(sys, key, defs, cpuClass)
+		min, max, minCls, maxCls := effectiveUncoreFreqs(m, key, defs, cpuClass)
 		if min == 0 && max == 0 {
 			log.Debugf("uncore: pkg/die %d/%d: no limits in effect", key.Pkg, key.Die)
 			continue
@@ -165,12 +165,11 @@ func (w *Writer) Enforce(sys sysfs.System, defs map[string]types.ClassDef, cpuCl
 // effectiveUncoreFreqs computes the effective uncore min and max for
 // a single die. Returns 0,0 when no class with uncore limits is
 // active on the die.
-func effectiveUncoreFreqs(sys sysfs.System, key DieKey, defs map[string]types.ClassDef, cpuClass map[int]string) (minFreq, maxFreq uint, minCls, maxCls string) {
-	pkg := sys.Package(utils.ID(key.Pkg))
-	if pkg == nil {
-		return 0, 0, "", ""
-	}
-	dieCPUs := pkg.DieCPUSet(utils.ID(key.Die))
+func effectiveUncoreFreqs(m *hardware.Machine, key DieKey, defs map[string]types.ClassDef, cpuClass map[int]string) (minFreq, maxFreq uint, minCls, maxCls string) {
+	dieCPUs := m.TopologyIndex().DieCPUs(hardware.DieID{
+		Package: key.Pkg,
+		Die:     key.Die,
+	})
 	seen := map[string]bool{}
 	for _, cpu := range dieCPUs.UnsortedList() {
 		name, ok := cpuClass[cpu]
@@ -199,27 +198,19 @@ func effectiveUncoreFreqs(sys sysfs.System, key DieKey, defs map[string]types.Cl
 
 // DiesForCpus returns the set of (pkg, die) keys that contain at
 // least one cpu from cpus.
-func DiesForCpus(sys sysfs.System, cpus map[int]bool) map[DieKey]bool {
+func DiesForCpus(m *hardware.Machine, cpus map[int]bool) map[DieKey]bool {
 	out := map[DieKey]bool{}
-	if sys == nil {
+	if m == nil {
 		return out
 	}
+	// A CPU knows which die it is on, so there is no need to look for the die
+	// which contains it.
 	for cpu := range cpus {
-		c := sys.CPU(utils.ID(cpu))
-		if c == nil {
+		c := m.CPU(cpu)
+		if !c.Valid() {
 			continue
 		}
-		pkgID := int(c.PackageID())
-		pkg := sys.Package(utils.ID(pkgID))
-		if pkg == nil {
-			continue
-		}
-		for _, die := range pkg.DieIDs() {
-			if pkg.DieCPUSet(die).Contains(cpu) {
-				out[DieKey{Pkg: pkgID, Die: int(die)}] = true
-				break
-			}
-		}
+		out[DieKey{Pkg: c.PackageID(), Die: c.DieID()}] = true
 	}
 	return out
 }

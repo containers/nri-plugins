@@ -17,7 +17,7 @@ package cpufreq
 import (
 	"fmt"
 
-	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 )
 
 // platformTurboInfo holds platform-level turbo frequency capabilities
@@ -28,10 +28,10 @@ type platformTurboInfo struct {
 	minFreqKHz      uint
 }
 
-// discoverPlatformInfo populates a.turboInfo from sysfs. Failure is
+// discoverPlatformInfo populates a.turboInfo from the machine. Failure is
 // non-fatal: symbolic frequencies then resolve to 0.
 func (a *Allocator) discoverPlatformInfo() {
-	info, err := discoverTurboInfo(a.sys)
+	info, err := discoverTurboInfo(a.machine)
 	if err != nil {
 		log.Warnf("cpufreq: cannot discover platform turbo info: %v", err)
 		return
@@ -39,20 +39,20 @@ func (a *Allocator) discoverPlatformInfo() {
 	a.turboInfo = info
 }
 
-// discoverTurboInfo reads platform turbo capabilities from sysfs. It
+// discoverTurboInfo reads platform turbo capabilities from the machine. It
 // uses the first online CPU's frequency range as representative.
-func discoverTurboInfo(sys sysfs.System) (*platformTurboInfo, error) {
-	cpuIDs := sys.CPUIDs()
+func discoverTurboInfo(m *hardware.Machine) (*platformTurboInfo, error) {
+	cpuIDs := m.CPUIDs()
 	if len(cpuIDs) == 0 {
 		return nil, fmt.Errorf("no CPUs found in system topology")
 	}
 	for _, id := range cpuIDs {
-		cpu := sys.CPU(id)
-		if cpu == nil || !cpu.Online() {
+		cpu := m.CPU(id)
+		if !cpu.Valid() || !cpu.Online() {
 			continue
 		}
-		freq := cpu.FrequencyRange()
-		baseFreq := cpu.BaseFrequency()
+		freq := cpu.Freq()
+		baseFreq := freq.Base
 		if freq.Min == 0 && freq.Max == 0 {
 			log.Warnf("cannot detect cpu%d frequency range, skipping platform turbo info", id)
 			continue
