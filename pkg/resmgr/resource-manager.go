@@ -24,7 +24,6 @@ import (
 	"github.com/containers/nri-plugins/pkg/healthz"
 	"github.com/containers/nri-plugins/pkg/instrumentation"
 	"github.com/containers/nri-plugins/pkg/lib/hardware"
-	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/pidfile"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
@@ -80,14 +79,12 @@ func NewResourceManager(backend policy.Backend, agt *agent.Agent) (ResourceManag
 	topology.SetLogger(logger.Get(topologyLogger))
 
 	if opt.HostRoot != "" {
-		sysfs.SetSysRoot(opt.HostRoot)
 		topology.SetSysRoot(opt.HostRoot)
 		irq.SetProcRoot(opt.HostRoot)
 	}
 
-	// The topology is discovered once here and handed down. Anything which still
-	// wants the pkg/sysfs interface wraps this with sysfs.FromMachine, so there is
-	// one discovery and one view of the hardware however it is reached.
+	// The topology is discovered once here and handed down, so that everything
+	// below sees one discovery and one view of the hardware.
 	machine, err := hardware.Discover(
 		hardware.WithRoot(opt.HostRoot),
 		hardware.WithEnvOverrides(),
