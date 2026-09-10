@@ -1086,7 +1086,7 @@ func (cr *request) verifyStrictTopologyHints(g Grant) error {
 	}
 
 	for _, h := range cr.GetContainer().GetTopologyHints() {
-		hint := topoutil.NewHint(g.GetCPUNode().System(), h)
+		hint := topoutil.NewHint(g.GetCPUNode().Machine(), h)
 
 		if g.SharedPortion() > 0 {
 			if cpus := hint.MisalignedCPUSet(g.SharedCPUs()); cpus.Size() > 0 {

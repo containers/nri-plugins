@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	"github.com/containers/nri-plugins/pkg/lib/hardware/system"
 	"github.com/containers/nri-plugins/pkg/topology"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
@@ -122,6 +123,7 @@ type Node interface {
 	NodeHeight() int
 	// System returns the policy sysfs instance.
 	System() system.System
+	Machine() *hardware.Machine
 	// Policy returns the policy back pointer.
 	Policy() *policy
 	// GetSupply returns the full CPU at this node.
@@ -391,6 +393,11 @@ func (n *node) BreadthFirst(fn func(Node) bool) bool {
 // System returns the policy System instance.
 func (n *node) System() system.System {
 	return n.policy.sys
+}
+
+// Machine returns the policy's machine topology.
+func (n *node) Machine() *hardware.Machine {
+	return n.policy.options.Machine
 }
 
 // Policy returns the policy back pointer.

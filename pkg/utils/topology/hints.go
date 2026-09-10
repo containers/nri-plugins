@@ -15,7 +15,8 @@
 package topology
 
 import (
-	sysfs "github.com/containers/nri-plugins/pkg/lib/hardware/system"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	"github.com/containers/nri-plugins/pkg/topology"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
@@ -24,14 +25,14 @@ import (
 type TopologyHint = topology.Hint
 
 type Hint struct {
-	sys  sysfs.System
-	hint *TopologyHint
+	machine *hardware.Machine
+	hint    *TopologyHint
 }
 
-func NewHint(sys sysfs.System, h TopologyHint) *Hint {
+func NewHint(m *hardware.Machine, h TopologyHint) *Hint {
 	return &Hint{
-		sys:  sys,
-		hint: &h,
+		machine: m,
+		hint:    &h,
 	}
 }
 
@@ -43,8 +44,8 @@ func (h *Hint) CPUSetForCPUs() cpuset.CPUSet {
 func (h *Hint) MemsForCPUs() libmem.NodeMask {
 	mems := libmem.NewNodeMask()
 	cset, _ := cpuset.Parse(h.hint.CPUs)
-	for _, id := range h.sys.NodeIDs() {
-		if !h.sys.Node(id).CPUSet().Intersection(cset).IsEmpty() {
+	for _, id := range h.machine.MemoryNodeIDs() {
+		if h.machine.MemoryNode(id).CPUs().Intersects(toCpuMask(cset)) {
 			mems.Set(id)
 		}
 	}
@@ -55,7 +56,7 @@ func (h *Hint) CPUSetForNUMAs() cpuset.CPUSet {
 	cset := cpuset.New()
 	mems, _ := cpuset.Parse(h.hint.NUMAs)
 	for _, id := range mems.UnsortedList() {
-		cset = cset.Union(h.sys.Node(id).CPUSet())
+		cset = cset.Union(toCpuSet(h.machine.MemoryNode(id).CPUs()))
 	}
 	return cset
 }
@@ -85,4 +86,14 @@ func (h *Hint) MisalignedMems(mems libmem.NodeMask) libmem.NodeMask {
 		misaligned = misaligned.Or(mems.AndNot(aligned))
 	}
 	return misaligned
+}
+
+// toCpuSet and toCpuMask convert between the set the hardware package speaks and
+// the one these hints are expressed in.
+func toCpuSet(cpus libcpu.CPUSet) cpuset.CPUSet {
+	return cpuset.New(cpus.List()...)
+}
+
+func toCpuMask(cpus cpuset.CPUSet) *libcpu.CpuMask {
+	return libcpu.NewCpuMask(cpus.List()...)
 }
