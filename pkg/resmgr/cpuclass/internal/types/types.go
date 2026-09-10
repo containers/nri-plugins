@@ -20,7 +20,7 @@
 package types
 
 import (
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 )
 
 // ClassDef is the resolved, platform-aware definition of a CPU class
@@ -68,10 +68,10 @@ type AllocationIntent struct {
 	// ClassName is the cpuClass the upcoming allocation will use.
 	ClassName string
 	// CurrentCpus are the CPUs the caller already owns.
-	CurrentCpus cpuset.CPUSet
+	CurrentCpus *libcpu.CpuMask
 	// FreeCpus are the CPUs the allocation can pick from. Prefer
 	// hints never contain CPUs outside this set.
-	FreeCpus cpuset.CPUSet
+	FreeCpus *libcpu.CpuMask
 	// RequestedCount is the number of CPUs the allocation wants.
 	// A negative count means releasing that many CPUs from
 	// CurrentCpus. Zero is reserved and unspecified.
@@ -85,7 +85,7 @@ type AllocationIntent struct {
 // the first candidate it can and ignore others.
 type CpuPreference struct {
 	Name string
-	Cpus []cpuset.CPUSet
+	Cpus []*libcpu.CpuMask
 }
 
 // AllocationHints carries technology-agnostic placement preferences
@@ -96,6 +96,6 @@ type AllocationHints struct {
 	Avoid  []CpuPreference
 }
 
-// CPUSet aliases cpuset.CPUSet for callers that want to refer to it
-// via this package without re-importing pkg/utils/cpuset.
-type CPUSet = cpuset.CPUSet
+// CPUSet aliases *libcpu.CpuMask for callers that want to refer to it
+// via this package without importing pkg/lib/cpu.
+type CPUSet = *libcpu.CpuMask

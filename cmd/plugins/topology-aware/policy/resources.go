@@ -26,7 +26,6 @@ import (
 	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	"github.com/containers/nri-plugins/pkg/topology"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
 	"github.com/containers/nri-plugins/pkg/kubernetes"
@@ -1198,8 +1197,8 @@ func (cs *supply) GetScore(req Request) Score {
 				score.cpu = cpus
 				hints := p.cpuClasses.Hints(cpuclass.AllocationIntent{
 					ClassName:      cr.cpuClass,
-					CurrentCpus:    cpuset.New(),
-					FreeCpus:       toCpuSet(cpus),
+					CurrentCpus:    libcpu.NewCpuMask(),
+					FreeCpus:       cpus,
 					RequestedCount: cr.full,
 				})
 				score.ccHints = &hints

@@ -21,10 +21,10 @@ import (
 	idset "github.com/intel/goresctrl/pkg/utils"
 
 	policyapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/types"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 var log = logger.NewLogger("cpuclass")
@@ -76,7 +76,7 @@ type Allocator struct {
 	// so we use it here too. This is a hardware-level concept,
 	// not a user-visible "idle".
 	fallbackClos int
-	allowed      cpuset.CPUSet
+	allowed      *libcpu.CpuMask
 	// hpClasses holds the names of cpuClasses currently
 	// classified as high priority. In managed mode this is every
 	// class with pctPriority=high. In assoc-only mode it is
@@ -96,11 +96,11 @@ type Allocator struct {
 	punitByCpu map[int]int
 	// hpUsed[i] is the set of CPUs currently held by HP-class
 	// workloads on punits[i] via the non-DRA (hint-driven) path.
-	hpUsed map[int]cpuset.CPUSet
+	hpUsed map[int]*libcpu.CpuMask
 	// hpDRAUsed[i] is the set of CPUs currently held by DRA claims
 	// on punits[i]. Separate from hpUsed so that clearHpUsage (called
 	// from the non-DRA UseClass path) can never evict DRA holds.
-	hpDRAUsed map[int]cpuset.CPUSet
+	hpDRAUsed map[int]*libcpu.CpuMask
 	// hpEligiblePunit[i] reports whether punits[i] can actually
 	// host HP-class CPUs at top turbo. Populated at Configure().
 	// In managed mode every punit becomes eligible (the plugin
@@ -133,15 +133,15 @@ func NewAllocator(sys Sys) (*Allocator, error) {
 //
 //   - classes: cpuClass definitions to inspect for PCT fields.
 //   - allowed: CPUs the allocator may configure.
-func (a *Allocator) Configure(classes []*policyapi.CPUClass, allowed cpuset.CPUSet) error {
+func (a *Allocator) Configure(classes []*policyapi.CPUClass, allowed *libcpu.CpuMask) error {
 	a.classByName = make(map[string]*policyapi.CPUClass, len(classes))
 	for _, cc := range classes {
 		a.classByName[cc.Name] = cc
 	}
 	a.fallbackClos = pctDefaultHpClos // CLOS 0 == default-after-reset
 	a.allowed = allowed
-	a.hpUsed = map[int]cpuset.CPUSet{}
-	a.hpDRAUsed = map[int]cpuset.CPUSet{}
+	a.hpUsed = map[int]*libcpu.CpuMask{}
+	a.hpDRAUsed = map[int]*libcpu.CpuMask{}
 	a.hpClasses = map[string]bool{}
 	a.hpEligiblePunit = map[int]bool{}
 	a.punits = nil
@@ -489,7 +489,7 @@ func (a *Allocator) Active() bool {
 //
 // Returns 0 for classes that have no PCT plan or when PCT is not
 // active. Negative intermediate counts are clamped to 0.
-func (a *Allocator) FreeClassCapacity(className string, held cpuset.CPUSet) int {
+func (a *Allocator) FreeClassCapacity(className string, held *libcpu.CpuMask) int {
 	if !a.Active() {
 		return 0
 	}
@@ -752,7 +752,7 @@ func (a *Allocator) AccountHpCpus(pkgID, punitID int, cpus cpuset.CPUSet) error 
 // associated to the fallback CLOS. In assoc-only mode such CPUs are
 // left unchanged. CPUs outside the configured Allowed set are silently
 // dropped.
-func (a *Allocator) UseClass(className string, cpus cpuset.CPUSet) error {
+func (a *Allocator) UseClass(className string, cpus *libcpu.CpuMask) error {
 	if !a.Active() {
 		return nil
 	}
@@ -779,7 +779,7 @@ func (a *Allocator) UseClass(className string, cpus cpuset.CPUSet) error {
 // (e.g. outside Allowed at Configure time) are ignored: they
 // cannot affect HP placement and tracking them would only confuse
 // hpInUseCpus.
-func (a *Allocator) trackHpUsage(className string, cpus cpuset.CPUSet) {
+func (a *Allocator) trackHpUsage(className string, cpus *libcpu.CpuMask) {
 	if !a.hpHintsActive() {
 		return
 	}
@@ -796,7 +796,7 @@ func (a *Allocator) trackHpUsage(className string, cpus cpuset.CPUSet) {
 		perPunit[idx] = append(perPunit[idx], cpu)
 	}
 	for idx, list := range perPunit {
-		set := a.hpUsed[idx].Union(cpuset.New(list...))
+		set := a.hpUsed[idx].Union(libcpu.NewCpuMask(list...))
 		if dra := a.hpDRAUsed[idx]; !dra.IsEmpty() {
 			set = set.Difference(dra)
 		}
@@ -805,7 +805,7 @@ func (a *Allocator) trackHpUsage(className string, cpus cpuset.CPUSet) {
 }
 
 // clearHpUsage removes cpus from per-punit HP bookkeeping.
-func (a *Allocator) clearHpUsage(cpus cpuset.CPUSet) {
+func (a *Allocator) clearHpUsage(cpus *libcpu.CpuMask) {
 	if !a.hpHintsActive() {
 		return
 	}
@@ -816,7 +816,7 @@ func (a *Allocator) clearHpUsage(cpus cpuset.CPUSet) {
 	}
 }
 
-func (a *Allocator) associate(cpus cpuset.CPUSet, clos int) error {
+func (a *Allocator) associate(cpus *libcpu.CpuMask, clos int) error {
 	list := cpus.UnsortedList()
 	sort.Ints(list)
 	assocs := make([]pctClosAssoc, 0, len(list))
@@ -885,9 +885,9 @@ func (a *Allocator) hpHintsActive() bool {
 
 // closCpus returns the subset of Allowed CPUs that are currently
 // associated to CLOS closID.
-func (a *Allocator) closCpus(closID int) cpuset.CPUSet {
+func (a *Allocator) closCpus(closID int) *libcpu.CpuMask {
 	if !a.Active() {
-		return cpuset.New()
+		return libcpu.NewCpuMask()
 	}
 	out := []int{}
 	for _, cpu := range a.allowed.UnsortedList() {
@@ -899,7 +899,7 @@ func (a *Allocator) closCpus(closID int) cpuset.CPUSet {
 			out = append(out, cpu)
 		}
 	}
-	return cpuset.New(out...)
+	return libcpu.NewCpuMask(out...)
 }
 
 // hpInUseCpus returns the union of CPUs of every punit currently
@@ -907,11 +907,11 @@ func (a *Allocator) closCpus(closID int) cpuset.CPUSet {
 // HP usage to whole-punit (rather than whole-package) granularity
 // keeps the Avoid hint for non-HP classes from being unnecessarily
 // broad on TPMI-class platforms with multiple punits per package.
-func (a *Allocator) hpInUseCpus() cpuset.CPUSet {
+func (a *Allocator) hpInUseCpus() *libcpu.CpuMask {
 	if !a.hpHintsActive() {
-		return cpuset.New()
+		return libcpu.NewCpuMask()
 	}
-	out := cpuset.New()
+	out := libcpu.NewCpuMask()
 	// Range over punits rather than hpUsed so that DRA-only punits
 	// (present in hpDRAUsed but absent from hpUsed) are not skipped.
 	for idx := range a.punits {
@@ -966,7 +966,7 @@ func (a *Allocator) hpInUseCpus() cpuset.CPUSet {
 //   - requested: number of CPUs the upcoming allocation wants.
 //     0 means "unknown" (initial priming before the count is
 //     known); Tier A is used.
-func (a *Allocator) hpReserveCpus(free cpuset.CPUSet, excludeBln cpuset.CPUSet, requested int) []cpuset.CPUSet {
+func (a *Allocator) hpReserveCpus(free *libcpu.CpuMask, excludeBln *libcpu.CpuMask, requested int) []*libcpu.CpuMask {
 	if !a.hpHintsActive() {
 		return nil
 	}
@@ -978,7 +978,7 @@ func (a *Allocator) hpReserveCpus(free cpuset.CPUSet, excludeBln cpuset.CPUSet, 
 	}
 
 	type punitState struct {
-		free cpuset.CPUSet
+		free *libcpu.CpuMask
 		room int
 	}
 	states := make([]punitState, len(a.punits))
@@ -1036,7 +1036,7 @@ func (a *Allocator) hpReserveCpus(free cpuset.CPUSet, excludeBln cpuset.CPUSet, 
 			}
 			return a.punits[ix].PunitID < a.punits[iy].PunitID
 		})
-		reserve := make([]cpuset.CPUSet, 0, len(tierA))
+		reserve := make([]*libcpu.CpuMask, 0, len(tierA))
 		for _, i := range tierA {
 			reserve = append(reserve, states[i].free)
 			log.Debugf("pct: hpReserveCpus tier=A punit=%d/%d room=%d free=%s",
@@ -1051,7 +1051,7 @@ func (a *Allocator) hpReserveCpus(free cpuset.CPUSet, excludeBln cpuset.CPUSet, 
 	if requested > 0 {
 		type pkgAgg struct {
 			room  int
-			free  cpuset.CPUSet
+			free  *libcpu.CpuMask
 			freeN int
 		}
 		agg := map[int]*pkgAgg{}
@@ -1061,7 +1061,7 @@ func (a *Allocator) hpReserveCpus(free cpuset.CPUSet, excludeBln cpuset.CPUSet, 
 			}
 			e, ok := agg[pu.PkgID]
 			if !ok {
-				e = &pkgAgg{free: cpuset.New()}
+				e = &pkgAgg{free: libcpu.NewCpuMask()}
 				agg[pu.PkgID] = e
 			}
 			e.room += states[i].room
@@ -1086,7 +1086,7 @@ func (a *Allocator) hpReserveCpus(free cpuset.CPUSet, excludeBln cpuset.CPUSet, 
 			return pkgIDs[x] < pkgIDs[y]
 		})
 		if len(pkgIDs) > 0 {
-			reserve := make([]cpuset.CPUSet, 0, len(pkgIDs))
+			reserve := make([]*libcpu.CpuMask, 0, len(pkgIDs))
 			for _, id := range pkgIDs {
 				reserve = append(reserve, agg[id].free)
 				log.Debugf("pct: hpReserveCpus tier=B pkg=%d room=%d free=%s",
@@ -1159,7 +1159,7 @@ func (a *Allocator) Hints(intent types.AllocationIntent) types.AllocationHints {
 		if freeClosCpus.Size() >= intent.RequestedCount {
 			out.Prefer = append(out.Prefer, types.CpuPreference{
 				Name: virtDevSstClosHint(closID),
-				Cpus: []cpuset.CPUSet{freeClosCpus},
+				Cpus: []*libcpu.CpuMask{freeClosCpus},
 			})
 		}
 	}
@@ -1180,7 +1180,7 @@ func (a *Allocator) Hints(intent types.AllocationIntent) types.AllocationHints {
 		if !inUse.IsEmpty() {
 			out.Avoid = append(out.Avoid, types.CpuPreference{
 				Name: virtDevSstHpInUseHint,
-				Cpus: []cpuset.CPUSet{inUse},
+				Cpus: []*libcpu.CpuMask{inUse},
 			})
 		}
 	}

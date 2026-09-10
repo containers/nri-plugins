@@ -148,23 +148,14 @@ type loadClassVirtDev struct {
 }
 
 // toCpuSet and toCpuMask convert between the CPU sets this policy keeps and the
-// ones some of the interfaces it calls still take: the CPU class controller,
-// libmem and the IRQ affinity helpers. Everything the policy does with CPUs in
-// between is done with libcpu masks.
+// two interfaces which still take the k8s ones: libmem's CPUSetAffinity, and the
+// configuration, which parses an operator's cpuset string.
 func toCpuSet(cpus libcpu.CPUSet) cpuset.CPUSet {
 	return cpuset.New(cpus.List()...)
 }
 
 func toCpuMask(cpus cpuset.CPUSet) *libcpu.CpuMask {
 	return libcpu.NewCpuMask(cpus.List()...)
-}
-
-func toCpuMasks(sets []cpuset.CPUSet) []*libcpu.CpuMask {
-	masks := make([]*libcpu.CpuMask, 0, len(sets))
-	for _, cpus := range sets {
-		masks = append(masks, toCpuMask(cpus))
-	}
-	return masks
 }
 
 var log logger.Logger = logger.NewLogger("policy")
@@ -656,7 +647,7 @@ func (p *balloons) GetExtendedResources() map[string]*resource.Quantity {
 			}
 			held = held.Union(bln.Cpus)
 		}
-		free := max(p.cpuClasses.PctFreeClassCapacity(cc.Name, toCpuSet(held)), 0)
+		free := max(p.cpuClasses.PctFreeClassCapacity(cc.Name, held), 0)
 		out["cpuclass.balloons.nri.io/"+cc.Name] = resource.NewQuantity(int64(free), resource.DecimalSI)
 	}
 	return out
@@ -907,7 +898,7 @@ func (p *balloons) resetCpuClass() error {
 		return nil
 	}
 	idle := p.resolveCpuClassName(p.bpoptions.IdleCpuClass)
-	if err := p.cpuClasses.UseClass(idle, toCpuSet(p.allowed)); err != nil {
+	if err := p.cpuClasses.UseClass(idle, p.allowed); err != nil {
 		log.Warnf("failed to reset class of available cpus: %v", err)
 	} else {
 		log.Debugf("reset class of available cpus: %q to idle class %q (reserved: %q)",
@@ -951,7 +942,7 @@ func (p *balloons) useCpuClass(bln *Balloon) error {
 	}
 	cpuClass := p.resolveCpuClassName(bln.Def.CpuClass)
 	log.Debugf("apply CPU class %q on CPUs %q of %q", cpuClass, bln.Cpus, bln.PrettyName())
-	if err := p.cpuClasses.UseClass(cpuClass, toCpuSet(bln.Cpus)); err != nil {
+	if err := p.cpuClasses.UseClass(cpuClass, bln.Cpus); err != nil {
 		log.Warnf("failed to apply class %q on CPUs %q: %v", cpuClass, bln.Cpus, err)
 	}
 	return nil
@@ -965,7 +956,7 @@ func (p *balloons) forgetCpuClass(bln *Balloon) {
 		return
 	}
 	idle := p.resolveCpuClassName(p.bpoptions.IdleCpuClass)
-	if err := p.cpuClasses.UseClass(idle, toCpuSet(bln.Cpus)); err != nil {
+	if err := p.cpuClasses.UseClass(idle, bln.Cpus); err != nil {
 		log.Warnf("failed to forget class of cpus %q (idle class %q): %v", bln.Cpus, idle, err)
 	} else {
 		if len(bln.components) > 0 {
@@ -1685,7 +1676,7 @@ func (p *balloons) Reconfigure(newCfg any) error {
 				if err := p.cpuClasses.Configure(cpuclass.ConfigSpec{
 					Classes:     p.bpoptions.CPUClasses,
 					TurboDomain: p.bpoptions.TurboDomain,
-					Allowed:     toCpuSet(p.allowed),
+					Allowed:     p.allowed,
 				}); err != nil {
 					log.Warnf("failed to reconfigure CPU class handler: %v", err)
 				}
@@ -1973,7 +1964,7 @@ func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
 	if err := p.cpuClasses.Configure(cpuclass.ConfigSpec{
 		Classes:     bpoptions.CPUClasses,
 		TurboDomain: bpoptions.TurboDomain,
-		Allowed:     toCpuSet(p.allowed),
+		Allowed:     p.allowed,
 	}); err != nil {
 		return balloonsError("failed to configure CPU class handler: %w", err)
 	}
@@ -2199,8 +2190,8 @@ func (p *balloons) applyCpuClassHints(opts *cpuTreeAllocatorOptions, cpuClass st
 	}
 	mergeCpuClassHints(opts, p.cpuClasses, cpuclass.AllocationIntent{
 		ClassName:      cpuClass,
-		CurrentCpus:    toCpuSet(currentCpus),
-		FreeCpus:       toCpuSet(p.freeCpus),
+		CurrentCpus:    currentCpus,
+		FreeCpus:       p.freeCpus,
 		RequestedCount: requestedCount,
 	})
 }
@@ -2233,13 +2224,13 @@ func mergeCpuClassHints(opts *cpuTreeAllocatorOptions, provider cpuClassHints, i
 	hints := provider.Hints(intent)
 	for i, pref := range hints.Prefer {
 		name := fmt.Sprintf("%spref_%d_%s", cpuClassHintDevPrefix, i, pref.Name)
-		opts.virtDevCpusets[name] = toCpuMasks(pref.Cpus)
+		opts.virtDevCpusets[name] = pref.Cpus
 		opts.preferCloseToDevices = append(opts.preferCloseToDevices, name)
 		log.Debugf("cpuclass hint: prefer %q -> %v", name, pref.Cpus)
 	}
 	for i, av := range hints.Avoid {
 		name := fmt.Sprintf("%savoid_%d_%s", cpuClassHintDevPrefix, i, av.Name)
-		opts.virtDevCpusets[name] = toCpuMasks(av.Cpus)
+		opts.virtDevCpusets[name] = av.Cpus
 		opts.preferFarFromDevices = append(opts.preferFarFromDevices, name)
 		log.Debugf("cpuclass hint: avoid %q -> %v", name, av.Cpus)
 	}

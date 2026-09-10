@@ -33,7 +33,7 @@ func (p *policy) setReservedPoolCpuClass() {
 	if opt.ReservedPoolCpuClass == "" {
 		return
 	}
-	if err := p.cpuClasses.UseClass(opt.ReservedPoolCpuClass, toCpuSet(p.reserved)); err != nil {
+	if err := p.cpuClasses.UseClass(opt.ReservedPoolCpuClass, p.reserved); err != nil {
 		log.Errorf("failed to set reserved pool CPU class for %s: %v", p.reserved, err)
 	}
 }
@@ -66,7 +66,7 @@ func (p *policy) resetCpuClass(subject string, cpus *libcpu.CpuMask) {
 	if opt.SharedPoolCpuClass == "" {
 		return
 	}
-	if err := p.cpuClasses.UseClass(opt.SharedPoolCpuClass, toCpuSet(cpus)); err != nil {
+	if err := p.cpuClasses.UseClass(opt.SharedPoolCpuClass, cpus); err != nil {
 		log.Errorf("%s: failed to reset CPU class for %s: %v", subject, cpus, err)
 	}
 }

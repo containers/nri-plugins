@@ -24,10 +24,10 @@ import (
 	"slices"
 
 	policyapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/types"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 var log = logger.NewLogger("cpuclass")
@@ -49,14 +49,14 @@ type Allocator struct {
 	classByName map[string]*policyapi.CPUClass
 	turboDomain string
 	turboInfo   *platformTurboInfo
-	allowed     cpuset.CPUSet
+	allowed     *libcpu.CpuMask
 
 	cpuDomain map[int]domainID
 	domains   []domainID
 
 	// activeCpus[d][className] is the set of CPUs in turbo domain d
 	// currently assigned to className.
-	activeCpus map[domainID]map[string]cpuset.CPUSet
+	activeCpus map[domainID]map[string]*libcpu.CpuMask
 
 	// winnerPrio[d] is the highest TurboPriority among classes that
 	// had any active CPUs in domain d the last time
@@ -87,7 +87,7 @@ func New(m *hardware.Machine, sink Sink) (*Allocator, error) {
 	a := &Allocator{
 		machine:    m,
 		sink:       sink,
-		activeCpus: map[domainID]map[string]cpuset.CPUSet{},
+		activeCpus: map[domainID]map[string]*libcpu.CpuMask{},
 		winnerPrio: map[domainID]int{},
 	}
 	a.discoverPlatformInfo()
@@ -97,7 +97,7 @@ func New(m *hardware.Machine, sink Sink) (*Allocator, error) {
 // Configure replaces the CPU class set, turbo domain mode and the
 // set of allowed CPUs. Resets per-domain turbo winners and
 // re-publishes class definitions to the sink.
-func (a *Allocator) Configure(classes []*policyapi.CPUClass, turboDomain string, allowed cpuset.CPUSet) error {
+func (a *Allocator) Configure(classes []*policyapi.CPUClass, turboDomain string, allowed *libcpu.CpuMask) error {
 	a.classes = classes
 	a.classByName = make(map[string]*policyapi.CPUClass, len(classes))
 	for _, cc := range classes {
@@ -112,7 +112,7 @@ func (a *Allocator) Configure(classes []*policyapi.CPUClass, turboDomain string,
 	}
 	a.allowed = allowed
 	a.buildCpuDomains()
-	a.activeCpus = map[domainID]map[string]cpuset.CPUSet{}
+	a.activeCpus = map[domainID]map[string]*libcpu.CpuMask{}
 	a.winnerPrio = map[domainID]int{}
 	a.pushInitialClassDefinitions()
 	return nil
@@ -142,7 +142,7 @@ func (a *Allocator) resolveClassName(name string) string {
 // recalculates the turbo winner of every affected turbo domain, then
 // publishes per-CPU assignments to the sink. CPUs outside the
 // configured Allowed set are silently dropped.
-func (a *Allocator) UseClass(className string, cpus cpuset.CPUSet) error {
+func (a *Allocator) UseClass(className string, cpus *libcpu.CpuMask) error {
 	if a.allowed.Size() > 0 {
 		cpus = cpus.Intersection(a.allowed)
 	}
@@ -155,7 +155,7 @@ func (a *Allocator) UseClass(className string, cpus cpuset.CPUSet) error {
 	if className != "" {
 		for d, dc := range byDomain {
 			if a.activeCpus[d] == nil {
-				a.activeCpus[d] = map[string]cpuset.CPUSet{}
+				a.activeCpus[d] = map[string]*libcpu.CpuMask{}
 			}
 			a.activeCpus[d][className] = a.activeCpus[d][className].Union(dc)
 		}
@@ -172,7 +172,7 @@ func (a *Allocator) UseClass(className string, cpus cpuset.CPUSet) error {
 
 // removeCpusFromAllClasses removes the given CPUs from every active
 // class set, in every turbo domain.
-func (a *Allocator) removeCpusFromAllClasses(cpus cpuset.CPUSet) {
+func (a *Allocator) removeCpusFromAllClasses(cpus *libcpu.CpuMask) {
 	for d, perClass := range a.activeCpus {
 		for name, set := range perClass {
 			newSet := set.Difference(cpus)
@@ -188,14 +188,14 @@ func (a *Allocator) removeCpusFromAllClasses(cpus cpuset.CPUSet) {
 	}
 }
 
-func (a *Allocator) cpusByDomain(cpus cpuset.CPUSet) map[domainID]cpuset.CPUSet {
-	out := map[domainID]cpuset.CPUSet{}
+func (a *Allocator) cpusByDomain(cpus *libcpu.CpuMask) map[domainID]*libcpu.CpuMask {
+	out := map[domainID]*libcpu.CpuMask{}
 	for _, cpu := range cpus.UnsortedList() {
 		d, ok := a.cpuDomain[cpu]
 		if !ok {
 			d = systemDomainID
 		}
-		out[d] = out[d].Union(cpuset.New(cpu))
+		out[d] = out[d].Union(libcpu.NewCpuMask(cpu))
 	}
 	return out
 }

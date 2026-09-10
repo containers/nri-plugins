@@ -22,7 +22,6 @@ import (
 	"github.com/containers/nri-plugins/pkg/irq"
 	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"github.com/containers/nri-plugins/pkg/lib/hardware"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -646,7 +645,7 @@ func (p *policy) GetExtendedResources() map[string]*resource.Quantity {
 			log.Warnf("ignoring publishExtendedResource on non-PCT cpuClass %q", cc.Name)
 			continue
 		}
-		free := max(p.cpuClasses.PctFreeClassCapacity(cc.Name, cpuset.New()), 0)
+		free := max(p.cpuClasses.PctFreeClassCapacity(cc.Name, libcpu.NewCpuMask()), 0)
 		out[CpuClassResourceDomain+"/"+cc.Name] = resource.NewQuantity(int64(free), resource.DecimalSI)
 	}
 	return out
@@ -827,7 +826,7 @@ func (p *policy) initialize() error {
 		if err := p.cpuClasses.Configure(cpuclass.ConfigSpec{
 			Classes:     opt.CPUClasses,
 			TurboDomain: "package",
-			Allowed:     toCpuSet(p.allowed),
+			Allowed:     p.allowed,
 		}); err != nil {
 			return policyError("failed to configure CPU class handler: %w", err)
 		}

@@ -21,12 +21,12 @@ import (
 	"testing"
 	"testing/fstest"
 
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/cpufreq"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/cpuidle"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/types"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/uncorefreq"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 // dieFakeCpu specifies the (pkg, die) location of a single CPU when building a
@@ -52,7 +52,7 @@ func newDieMachine(t *testing.T, cpus map[int]dieFakeCpu) *hardware.Machine {
 	}
 	sort.Ints(ids)
 
-	all := cpuset.New(ids...).String()
+	all := libcpu.NewCpuMask(ids...).String()
 	fsys := fstest.MapFS{
 		"proc/meminfo":                           file("MemTotal: 1048576 kB\n"),
 		"sys/devices/system/cpu/online":          file(all + "\n"),

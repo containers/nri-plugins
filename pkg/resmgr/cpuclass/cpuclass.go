@@ -30,6 +30,7 @@ import (
 	"sort"
 
 	policyapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/cpufreq"
@@ -37,7 +38,6 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/pct"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/types"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/uncorefreq"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 var log = logger.NewLogger("cpuclass")
@@ -72,7 +72,7 @@ type ConfigSpec struct {
 	TurboDomain string
 	// Allowed bounds every cpuclass operation. CPUs outside this
 	// set are silently dropped by Configure, UseClass and Hints.
-	Allowed cpuset.CPUSet
+	Allowed *libcpu.CpuMask
 }
 
 // Handler is the sole cpuclass entry point for policy code. It owns
@@ -80,7 +80,7 @@ type ConfigSpec struct {
 // (cpufreq, pct) and writers (cpufreq, cpuidle, uncorefreq).
 type Handler struct {
 	machine *hardware.Machine
-	allowed cpuset.CPUSet
+	allowed *libcpu.CpuMask
 
 	cpufreq *cpufreq.Allocator
 	pct     *pct.Allocator
@@ -138,7 +138,7 @@ func New(m *hardware.Machine) (*Handler, error) {
 // node, given that 'held' lists CPUs already consumed by some
 // balloon belonging to any other cpuClass. Returns 0 if PCT is
 // inactive or the class has no PCT plan.
-func (h *Handler) PctFreeClassCapacity(className string, held cpuset.CPUSet) int {
+func (h *Handler) PctFreeClassCapacity(className string, held *libcpu.CpuMask) int {
 	if h == nil || h.pct == nil {
 		return 0
 	}
@@ -339,7 +339,7 @@ func (h *Handler) Commit() error {
 // UseClass applies className to the given CPUs across every internal
 // allocator. An empty className means "no class". CPUs outside the
 // configured Allowed set are silently dropped.
-func (h *Handler) UseClass(className string, cpus cpuset.CPUSet) error {
+func (h *Handler) UseClass(className string, cpus *libcpu.CpuMask) error {
 	if err := h.cpufreq.UseClass(className, cpus); err != nil {
 		log.Warnf("cpuclass: cpufreq failed to apply class %q on CPUs %s: %v", className, cpus, err)
 	}
@@ -373,12 +373,12 @@ func (h *Handler) Shutdown() error {
 // candidate set constrained to the given bound. Empty candidate sets
 // are dropped; a preference is dropped only when all of its candidate
 // sets become empty. Candidate order is preserved.
-func intersectHints(hints AllocationHints, bound cpuset.CPUSet) AllocationHints {
+func intersectHints(hints AllocationHints, bound *libcpu.CpuMask) AllocationHints {
 	out := AllocationHints{}
 	clip := func(prefs []CpuPreference) []CpuPreference {
 		var res []CpuPreference
 		for _, p := range prefs {
-			sets := make([]cpuset.CPUSet, 0, len(p.Cpus))
+			sets := make([]*libcpu.CpuMask, 0, len(p.Cpus))
 			for _, c := range p.Cpus {
 				s := c.Intersection(bound)
 				if s.IsEmpty() {

@@ -23,13 +23,8 @@ import (
 	idset "github.com/intel/goresctrl/pkg/utils"
 )
 
-// toCpuSet and toCpuMask convert between the CPU sets this policy keeps and the
-// ones some of the interfaces it calls still take: the CPU class controller, the
-// IRQ affinity helpers, topology hints and libmem.
-func toCpuSet(cpus libcpu.CPUSet) cpuset.CPUSet {
-	return cpuset.New(cpus.List()...)
-}
-
+// toCpuMask converts a set the configuration parsed out of an operator's cpuset
+// string into the ones this policy keeps. It is the last of the seam.
 func toCpuMask(cpus cpuset.CPUSet) *libcpu.CpuMask {
 	return libcpu.NewCpuMask(cpus.List()...)
 }
