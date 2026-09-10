@@ -17,6 +17,7 @@ package topologyaware
 import (
 	"context"
 	"fmt"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"slices"
 	"strings"
 
@@ -25,7 +26,6 @@ import (
 
 	"github.com/containers/nri-plugins/pkg/metrics"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 type TopologyAwareMetrics struct {
@@ -45,9 +45,9 @@ type TopologyAwareMetrics struct {
 
 type Zone struct {
 	Name                 string
-	Cpus                 cpuset.CPUSet
+	Cpus                 *libcpu.CpuMask
 	Mems                 libmem.NodeMask
-	SharedPool           cpuset.CPUSet
+	SharedPool           *libcpu.CpuMask
 	SharedAssigned       int
 	SharedAvailable      int
 	MemCapacity          int64

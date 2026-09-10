@@ -23,9 +23,9 @@ import (
 	idset "github.com/intel/goresctrl/pkg/utils"
 )
 
-// toCpuSet and toCpuMask convert between the set the hardware package speaks and
-// the one this policy is written in. They are the seam left by moving the policy
-// onto hardware without rewriting its pool arithmetic.
+// toCpuSet and toCpuMask convert between the CPU sets this policy keeps and the
+// ones some of the interfaces it calls still take: the CPU class controller, the
+// IRQ affinity helpers, topology hints and libmem.
 func toCpuSet(cpus libcpu.CPUSet) cpuset.CPUSet {
 	return cpuset.New(cpus.List()...)
 }
@@ -55,8 +55,8 @@ func packageZone(m *hardware.Machine, pkg idset.ID) *hardware.Zone {
 }
 
 // packageCPUs returns the CPUs of one package.
-func packageCPUs(m *hardware.Machine, pkg idset.ID) cpuset.CPUSet {
-	return toCpuSet(m.TopologyIndex().PackageCPUs(pkg))
+func packageCPUs(m *hardware.Machine, pkg idset.ID) *libcpu.CpuMask {
+	return m.TopologyIndex().PackageCPUs(pkg)
 }
 
 // packageNodeIDs returns the NUMA nodes whose CPUs are in one package.
@@ -74,11 +74,11 @@ func dieIDs(m *hardware.Machine, pkg idset.ID) []idset.ID {
 }
 
 // dieCPUs returns the CPUs of one die of one package.
-func dieCPUs(m *hardware.Machine, pkg, die idset.ID) cpuset.CPUSet {
-	return toCpuSet(m.TopologyIndex().DieCPUs(hardware.DieID{
+func dieCPUs(m *hardware.Machine, pkg, die idset.ID) *libcpu.CpuMask {
+	return m.TopologyIndex().DieCPUs(hardware.DieID{
 		Package: pkg,
 		Die:     die,
-	}))
+	})
 }
 
 // dieNodeIDs returns the NUMA nodes whose CPUs are on one die of one package.
@@ -115,13 +115,13 @@ func l3CacheIDs(m *hardware.Machine, pkg idset.ID) []idset.ID {
 // l3CacheCPUs returns every CPU sharing one level 3 cache of this package,
 // including any outside the package: a cache shared across packages belongs to
 // both, and the whole of its CPU set is what it groups.
-func l3CacheCPUs(m *hardware.Machine, pkg, cache idset.ID) cpuset.CPUSet {
+func l3CacheCPUs(m *hardware.Machine, pkg, cache idset.ID) *libcpu.CpuMask {
 	for _, z := range l3CacheZones(m, pkg) {
 		if z.ID() == cache {
-			return toCpuSet(z.CPUs())
+			return z.CPUs()
 		}
 	}
-	return cpuset.New()
+	return libcpu.NewCpuMask()
 }
 
 // l3CacheZones returns the level 3 cache zones this package's CPUs use.
@@ -225,18 +225,18 @@ func sortedIDs(ids []idset.ID) []idset.ID {
 // of those nodes, as a cpuset string. An unparsable list yields nothing.
 func nodeHintToCPUs(m *hardware.Machine) func(string) string {
 	return func(nodes string) string {
-		mems, err := cpuset.Parse(nodes)
+		mems, err := cpuset.Parse(nodes) // NUMA nodes, not CPUs
 		if err != nil {
 			return ""
 		}
 
-		cpus := cpuset.New()
+		cpus := libcpu.NewCpuMask()
 		for _, id := range mems.List() {
 			if node := m.MemoryNode(id); node.Valid() {
-				cpus = cpus.Union(toCpuSet(node.CPUs()))
+				cpus = cpus.Union(node.CPUs())
 			}
 		}
 
-		return cpus.Intersection(toCpuSet(m.OnlineCPUs())).String()
+		return cpus.Intersection(m.OnlineCPUs()).String()
 	}
 }

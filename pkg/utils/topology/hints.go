@@ -36,29 +36,33 @@ func NewHint(m *hardware.Machine, h TopologyHint) *Hint {
 	}
 }
 
-func (h *Hint) CPUSetForCPUs() cpuset.CPUSet {
-	cset, _ := cpuset.Parse(h.hint.CPUs)
-	return cset
+func (h *Hint) CPUSetForCPUs() *libcpu.CpuMask {
+	cpus, err := libcpu.ParseCpuMask(h.hint.CPUs)
+	if err != nil {
+		return libcpu.NewCpuMask()
+	}
+	return cpus
 }
 
 func (h *Hint) MemsForCPUs() libmem.NodeMask {
 	mems := libmem.NewNodeMask()
-	cset, _ := cpuset.Parse(h.hint.CPUs)
+	cpus := h.CPUSetForCPUs()
 	for _, id := range h.machine.MemoryNodeIDs() {
-		if h.machine.MemoryNode(id).CPUs().Intersects(toCpuMask(cset)) {
+		if h.machine.MemoryNode(id).CPUs().Intersects(cpus) {
 			mems.Set(id)
 		}
 	}
 	return mems
 }
 
-func (h *Hint) CPUSetForNUMAs() cpuset.CPUSet {
-	cset := cpuset.New()
+func (h *Hint) CPUSetForNUMAs() *libcpu.CpuMask {
+	cpus := libcpu.NewCpuMask()
+	// a NUMA node list, in the same syntax a CPU list uses
 	mems, _ := cpuset.Parse(h.hint.NUMAs)
 	for _, id := range mems.UnsortedList() {
-		cset = cset.Union(toCpuSet(h.machine.MemoryNode(id).CPUs()))
+		cpus = cpus.Union(h.machine.MemoryNode(id).CPUs())
 	}
-	return cset
+	return cpus
 }
 
 func (h *Hint) MemsForNUMAs() libmem.NodeMask {
@@ -66,8 +70,8 @@ func (h *Hint) MemsForNUMAs() libmem.NodeMask {
 	return mems
 }
 
-func (h *Hint) MisalignedCPUSet(cpus cpuset.CPUSet) cpuset.CPUSet {
-	misaligned := cpuset.New()
+func (h *Hint) MisalignedCPUSet(cpus *libcpu.CpuMask) *libcpu.CpuMask {
+	misaligned := libcpu.NewCpuMask()
 	if aligned := h.CPUSetForCPUs(); !aligned.IsEmpty() {
 		misaligned = misaligned.Union(cpus.Difference(aligned))
 	}
@@ -86,14 +90,4 @@ func (h *Hint) MisalignedMems(mems libmem.NodeMask) libmem.NodeMask {
 		misaligned = misaligned.Or(mems.AndNot(aligned))
 	}
 	return misaligned
-}
-
-// toCpuSet and toCpuMask convert between the set the hardware package speaks and
-// the one these hints are expressed in.
-func toCpuSet(cpus libcpu.CPUSet) cpuset.CPUSet {
-	return cpuset.New(cpus.List()...)
-}
-
-func toCpuMask(cpus cpuset.CPUSet) *libcpu.CpuMask {
-	return libcpu.NewCpuMask(cpus.List()...)
 }

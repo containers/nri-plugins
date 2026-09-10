@@ -20,8 +20,8 @@ import (
 	"sort"
 	"strings"
 
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"github.com/containers/nri-plugins/pkg/lib/hardware"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -100,7 +100,7 @@ func (p *policy) buildRootPool() {
 
 		log.Infof("+ created pool %s", vroot.Name())
 
-		cpus := toCpuSet(p.machine.PresentCPUs())
+		cpus := p.machine.PresentCPUs()
 		vroot.noderes, vroot.freeres = p.getCpuSupply(vroot, cpus)
 		vroot.mem, vroot.pMem, vroot.hbm = p.getMemSupply(vroot, cpus)
 	} else {
@@ -211,7 +211,7 @@ func (p *policy) buildNumaNodePool(socketID, nodeID idset.ID, parent Node) {
 
 	log.Infof("+ created pool %s", node.Name())
 
-	cpus := toCpuSet(p.machine.MemoryNode(nodeID).CPUs())
+	cpus := p.machine.MemoryNode(nodeID).CPUs()
 	node.noderes, node.freeres = p.getCpuSupply(node, cpus)
 	node.mem, node.pMem, node.hbm = p.getMemSupply(node, cpus)
 
@@ -225,7 +225,7 @@ func (p *policy) buildNumaNodePool(socketID, nodeID idset.ID, parent Node) {
 }
 
 // getL3CacheIDsForCPUs returns L3 cache IDs that are within the given CPU set scope.
-func (p *policy) getL3CacheIDsForCPUs(socketID idset.ID, cpus cpuset.CPUSet) []idset.ID {
+func (p *policy) getL3CacheIDsForCPUs(socketID idset.ID, cpus *libcpu.CpuMask) []idset.ID {
 	var within []idset.ID
 	for _, l3CacheID := range l3CacheIDs(p.machine, socketID) {
 		cacheCPUs := l3CacheCPUs(p.machine, socketID, l3CacheID)
@@ -238,7 +238,7 @@ func (p *policy) getL3CacheIDsForCPUs(socketID idset.ID, cpus cpuset.CPUSet) []i
 }
 
 // buildL3CachePool creates an L3 cache pool as a child of the given parent.
-func (p *policy) buildL3CachePool(id idset.ID, cpus cpuset.CPUSet, parent Node) {
+func (p *policy) buildL3CachePool(id idset.ID, cpus *libcpu.CpuMask, parent Node) {
 	l3CacheNode := p.NewL3CacheNode(id, cpus, parent)
 	p.nodes[l3CacheNode.Name()] = l3CacheNode
 	l3CacheNode.depth = l3CacheNode.RootDistance()
@@ -249,7 +249,7 @@ func (p *policy) buildL3CachePool(id idset.ID, cpus cpuset.CPUSet, parent Node) 
 	l3CacheNode.mem, l3CacheNode.pMem, l3CacheNode.hbm = p.getMemSupply(l3CacheNode, cpus)
 }
 
-func (p *policy) getCpuSupply(node Node, cpus cpuset.CPUSet) (Supply, Supply) {
+func (p *policy) getCpuSupply(node Node, cpus *libcpu.CpuMask) (Supply, Supply) {
 	var (
 		allowed  = cpus.Intersection(p.allowed)
 		isolated = allowed.Intersection(p.isolated)
@@ -264,7 +264,7 @@ func (p *policy) getCpuSupply(node Node, cpus cpuset.CPUSet) (Supply, Supply) {
 	return s, newSupply(node, isolated, reserved, sharable, 0, 0)
 }
 
-func (p *policy) getMemSupply(node Node, cpus cpuset.CPUSet) (dram, pmem, hbm idset.IDSet) {
+func (p *policy) getMemSupply(node Node, cpus *libcpu.CpuMask) (dram, pmem, hbm idset.IDSet) {
 	if p.root == node {
 		dram, pmem, hbm = p.splitMemsByType(p.getAllMems())
 		if dram.Size() > 0 {
@@ -317,12 +317,12 @@ func (p *policy) getMemSupply(node Node, cpus cpuset.CPUSet) (dram, pmem, hbm id
 	return dram, pmem, hbm
 }
 
-func (p *policy) getMemsForCpus(cpus cpuset.CPUSet) idset.IDSet {
+func (p *policy) getMemsForCpus(cpus *libcpu.CpuMask) idset.IDSet {
 	mems := idset.NewIDSet()
 
 	for _, nodeID := range p.machine.MemoryNodeIDs() {
 		node := p.machine.MemoryNode(nodeID)
-		if node.CPUs().Intersects(toCpuMask(cpus)) {
+		if node.CPUs().Intersects(cpus) {
 			mems.Add(nodeID)
 		}
 	}
@@ -521,12 +521,12 @@ func (p *policy) allocatePool(container cache.Container, poolHint string) (Grant
 // allocated for it, taking into account if the container should run
 // with hyperthreads hidden. CPUs in preserve are always included in the
 // final cpuset regardless of hide-hyperthreads filtering (e.g. DRA claimed CPUs).
-func (p *policy) setPreferredCpusetCpus(container cache.Container, allocated, preserve cpuset.CPUSet, info string) {
+func (p *policy) setPreferredCpusetCpus(container cache.Container, allocated, preserve *libcpu.CpuMask, info string) {
 	allow := allocated
 	hidingInfo := ""
 	pod, ok := container.GetPod()
 	if ok && hideHyperthreadsPreference(pod, container) {
-		allow = toCpuSet(hardware.SingleThreadPerCore(p.machine, toCpuMask(allocated)))
+		allow = hardware.SingleThreadPerCore(p.machine, allocated)
 		if allow.Size() != allocated.Size() {
 			hidingInfo = fmt.Sprintf(" (hide %d hyperthreads, remaining cpuset: %s)", allocated.Size()-allow.Size(), allow)
 		} else {
@@ -549,7 +549,7 @@ func (p *policy) applyGrant(grant Grant) {
 	shared := grant.SharedCPUs()
 	cpuPortion := grant.SharedPortion()
 
-	cpus := cpuset.New()
+	cpus := libcpu.NewCpuMask()
 	kind := ""
 	switch cpuType {
 	case cpuNormal:
@@ -639,7 +639,7 @@ func (p *policy) applyGrant(grant Grant) {
 		container.SetCPUShares(int64(cache.MilliCPUToShares(int64(milliCPU))))
 
 		if exclusive.Size() > 0 && grant.CPUClass() != "" {
-			if err := p.cpuClasses.UseClass(grant.CPUClass(), exclusive); err != nil {
+			if err := p.cpuClasses.UseClass(grant.CPUClass(), toCpuSet(exclusive)); err != nil {
 				log.Errorf("%s: failed to apply CPU class to cpuset %s: %v",
 					container.PrettyName(), exclusive, err)
 			}
@@ -880,9 +880,11 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 
 	if request.FullCPUs() > 0 {
 		log.Debugf("  %s: free %s, CPU class hints: %+v, class hinted %s", node1.Name(),
-			score1.Supply().SharableCPUs(), score1.CpuClassHints(), score1.CpuClassCpus())
+			score1.Supply().SharableCPUs(), score1.CpuClassHints(),
+			score1.CpuClassCpus())
 		log.Debugf("  %s: free %s, CPU class hints: %+v, class hinted %s", node2.Name(),
-			score2.Supply().SharableCPUs(), score2.CpuClassHints(), score2.CpuClassCpus())
+			score2.Supply().SharableCPUs(), score2.CpuClassHints(),
+			score2.CpuClassCpus())
 	}
 
 	//
@@ -1146,12 +1148,12 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 	// for cpuClasses the sole node that can fufill the request wins
 	if score1.CpuClassHints() != nil && score2.CpuClassHints() != nil {
 		offer1, offer2 := score1.CPUOffer(), score2.CPUOffer()
-		hcpus1, hcpus2 := cpuset.New(), cpuset.New()
+		hcpus1, hcpus2 := libcpu.NewCpuMask(), libcpu.NewCpuMask()
 
 		for _, h := range score1.CpuClassHints().Prefer {
 			for _, hinted := range h.Cpus {
-				if offer1.Intersection(hinted).Equals(offer1) {
-					hcpus1 = hinted
+				if offer1.Intersection(toCpuMask(hinted)).Equals(offer1) {
+					hcpus1 = toCpuMask(hinted)
 					break
 				}
 			}
@@ -1161,8 +1163,8 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 		}
 		for _, h := range score2.CpuClassHints().Prefer {
 			for _, hinted := range h.Cpus {
-				if offer2.Intersection(hinted).Equals(offer2) {
-					hcpus2 = hinted
+				if offer2.Intersection(toCpuMask(hinted)).Equals(offer2) {
+					hcpus2 = toCpuMask(hinted)
 					break
 				}
 			}

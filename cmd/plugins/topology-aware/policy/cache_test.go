@@ -16,9 +16,8 @@ package topologyaware
 
 import (
 	"bytes"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"testing"
-
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 func TestToGrant(t *testing.T) {
@@ -104,8 +103,8 @@ func TestAllocationMarshalling(t *testing.T) {
 							node: node{
 								name:    "testnode",
 								kind:    UnknownNode,
-								noderes: newSupply(&node{}, cpuset.New(), cpuset.New(), cpuset.New(), 0, 0),
-								freeres: newSupply(&node{}, cpuset.New(), cpuset.New(), cpuset.New(), 0, 0),
+								noderes: newSupply(&node{}, libcpu.NewCpuMask(), libcpu.NewCpuMask(), libcpu.NewCpuMask(), 0, 0),
+								freeres: newSupply(&node{}, libcpu.NewCpuMask(), libcpu.NewCpuMask(), libcpu.NewCpuMask(), 0, 0),
 							},
 						},
 					},

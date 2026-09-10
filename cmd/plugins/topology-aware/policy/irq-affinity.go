@@ -16,11 +16,11 @@ package topologyaware
 
 import (
 	"fmt"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"strconv"
 
 	"github.com/containers/nri-plugins/pkg/irq"
 	"github.com/containers/nri-plugins/pkg/topology"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	"sigs.k8s.io/yaml"
 )
 
@@ -106,8 +106,8 @@ func addIrqAffinityForHints(a *IrqAffinity, hints topology.Hints) error {
 	return nil
 }
 
-func (p *policy) irqCpus(hwIrq *irq.Irq) (preMask, claim, mask cpuset.CPUSet) {
-	preMask, claim, mask = cpuset.New(), cpuset.New(), cpuset.New()
+func (p *policy) irqCpus(hwIrq *irq.Irq) (preMask, claim, mask *libcpu.CpuMask) {
+	preMask, claim, mask = libcpu.NewCpuMask(), libcpu.NewCpuMask(), libcpu.NewCpuMask()
 	for _, g := range p.allocations.grants {
 		irqs := g.IrqAffinity()
 		switch {
@@ -156,11 +156,12 @@ func (p *policy) applyIrqAffinity(user string) {
 	}
 
 	for _, hwIrq := range hwIrqs {
-		current, err := hwIrq.AffinityCpus()
+		affinity, err := hwIrq.AffinityCpus()
 		if err != nil {
 			log.Errorf("%s: failed to read affinity: %v", hwIrq.String(), err)
 			continue
 		}
+		current := toCpuMask(affinity)
 
 		preMask, claim, mask := p.irqCpus(hwIrq)
 
@@ -182,7 +183,7 @@ func (p *policy) applyIrqAffinity(user string) {
 			continue
 		}
 
-		if err := hwIrq.SetAffinityCpus(cpus); err != nil {
+		if err := hwIrq.SetAffinityCpus(toCpuSet(cpus)); err != nil {
 			log.Errorf("%s: failed to set affinity to cpus %s (for %s): %v",
 				hwIrq.String(), cpus.String(), user, err)
 		}

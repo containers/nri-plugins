@@ -18,15 +18,15 @@ import (
 	"strconv"
 	"strings"
 
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	"github.com/containers/nri-plugins/pkg/topology"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
 )
 
 // Calculate the hint score of the given hint and CPUSet.
-func cpuHintScore(hint topology.Hint, CPUs cpuset.CPUSet) float64 {
-	hCPUs, err := cpuset.Parse(hint.CPUs)
+func cpuHintScore(hint topology.Hint, CPUs *libcpu.CpuMask) float64 {
+	hCPUs, err := libcpu.ParseCpuMask(hint.CPUs)
 	if err != nil {
 		log.Warnf("invalid hint CPUs '%s' from %s", hint.CPUs, hint.Provider)
 		return 0.0
@@ -90,18 +90,18 @@ func socketHintScore(hint topology.Hint, sysID idset.ID) float64 {
 }
 
 // return the cpuset for the CPU, NUMA or socket hints, preferred in this particular order.
-func (cs *supply) hintCpus(h topology.Hint) cpuset.CPUSet {
-	var cpus cpuset.CPUSet
+func (cs *supply) hintCpus(h topology.Hint) *libcpu.CpuMask {
+	cpus := libcpu.NewCpuMask()
 
 	switch {
 	case h.CPUs != "":
-		cpus = cpuset.MustParse(h.CPUs)
+		cpus = libcpu.MustParseCpuMask(h.CPUs)
 
 	case h.NUMAs != "":
 		for idstr := range strings.SplitSeq(h.NUMAs, ",") {
 			if id, err := strconv.ParseInt(idstr, 0, 0); err == nil {
 				if node := cs.node.Machine().MemoryNode(idset.ID(id)); node.Valid() {
-					cpus = cpus.Union(toCpuSet(node.CPUs()))
+					cpus = cpus.Union(node.CPUs())
 				}
 			}
 		}
@@ -110,7 +110,7 @@ func (cs *supply) hintCpus(h topology.Hint) cpuset.CPUSet {
 		for idstr := range strings.SplitSeq(h.Sockets, ",") {
 			if id, err := strconv.ParseInt(idstr, 0, 0); err == nil {
 				if pkg := packageZone(cs.node.Machine(), idset.ID(id)); pkg != nil {
-					cpus = cpus.Union(toCpuSet(pkg.CPUs()))
+					cpus = cpus.Union(pkg.CPUs())
 				}
 			}
 		}

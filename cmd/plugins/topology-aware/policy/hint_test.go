@@ -15,10 +15,10 @@
 package topologyaware
 
 import (
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"testing"
 
 	"github.com/containers/nri-plugins/pkg/topology"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
 )
 
@@ -27,7 +27,7 @@ func TestCpuHintScore(t *testing.T) {
 		name     string
 		expected float64
 		hint     topology.Hint
-		cpus     cpuset.CPUSet
+		cpus     *libcpu.CpuMask
 		disabled bool // TODO(rojkov): remove this field when the code is fixed.
 	}{
 		{
@@ -51,7 +51,7 @@ func TestCpuHintScore(t *testing.T) {
 			hint: topology.Hint{
 				CPUs: "1,2",
 			},
-			cpus:     cpuset.New(1),
+			cpus:     libcpu.NewCpuMask(1),
 			expected: 0.5,
 		},
 	}
@@ -149,7 +149,7 @@ func TestHintCpus(t *testing.T) {
 		name     string
 		supply   *supply
 		hint     topology.Hint
-		expected cpuset.CPUSet
+		expected *libcpu.CpuMask
 	}{
 		{
 			name:   "handle unparsable Sockets gracefully",
@@ -204,7 +204,7 @@ func TestHintCpus(t *testing.T) {
 			hint: topology.Hint{
 				Sockets: "1",
 			},
-			expected: cpuset.New(2, 3),
+			expected: libcpu.NewCpuMask(2, 3),
 		},
 		{
 			name: "NUMAs hint resolves to the node's CPUs",
@@ -216,7 +216,7 @@ func TestHintCpus(t *testing.T) {
 			hint: topology.Hint{
 				NUMAs: "0",
 			},
-			expected: cpuset.New(0, 1),
+			expected: libcpu.NewCpuMask(0, 1),
 		},
 		{
 			name:   "non-zero CPUs hint",
@@ -224,7 +224,7 @@ func TestHintCpus(t *testing.T) {
 			hint: topology.Hint{
 				CPUs: "1",
 			},
-			expected: cpuset.New(1),
+			expected: libcpu.NewCpuMask(1),
 		},
 	}
 	for _, tc := range tcases {

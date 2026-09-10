@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/containers/nri-plugins/pkg/irq"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -62,10 +63,10 @@ type policy struct {
 	cfg          *cfgapi.Config
 	cache        cache.Cache               // pod/container cache
 	machine      *hardware.Machine         // CPU and memory topology
-	allowed      cpuset.CPUSet             // bounding set of CPUs we're allowed to use
-	reserved     cpuset.CPUSet             // system-/kube-reserved CPUs
+	allowed      *libcpu.CpuMask           // bounding set of CPUs we're allowed to use
+	reserved     *libcpu.CpuMask           // system-/kube-reserved CPUs
 	reserveCnt   int                       // number of CPUs to reserve if given as resource.Quantity
-	isolated     cpuset.CPUSet             // (our allowed set of) isolated CPUs
+	isolated     *libcpu.CpuMask           // (our allowed set of) isolated CPUs
 	nodes        map[string]Node           // pool nodes by name
 	pools        []Node                    // pre-populated node slice for scoring, etc...
 	root         Node                      // root of our pool/partition tree
@@ -143,7 +144,14 @@ var coldStartOff bool
 
 // New creates a new uninitialized topology-aware policy instance.
 func New() policyapi.Backend {
-	return &policy{}
+	// The policy's own CPU sets exist from the start, before a configuration
+	// lands: a CpuMask has no usable zero value, and something may ask this for
+	// metrics before, or instead of, configuring it.
+	return &policy{
+		allowed:  libcpu.NewCpuMask(),
+		reserved: libcpu.NewCpuMask(),
+		isolated: libcpu.NewCpuMask(),
+	}
 }
 
 // Setup initializes the topology-aware policy instance.
@@ -819,7 +827,7 @@ func (p *policy) initialize() error {
 		if err := p.cpuClasses.Configure(cpuclass.ConfigSpec{
 			Classes:     opt.CPUClasses,
 			TurboDomain: "package",
-			Allowed:     p.allowed,
+			Allowed:     toCpuSet(p.allowed),
 		}); err != nil {
 			return policyError("failed to configure CPU class handler: %w", err)
 		}
@@ -848,25 +856,25 @@ func (p *policy) checkConstraints() error {
 		if err != nil {
 			return fmt.Errorf("failed to parse available CPU cpuset '%s': %w", amount, err)
 		}
-		p.allowed = cset
+		p.allowed = toCpuMask(cset)
 
 	case cfgapi.AmountExcludeCPUSet:
 		cset, err := amount.ParseCPUSet()
 		if err != nil {
 			return fmt.Errorf("failed to parse available CPU cpuset '%s': %w", amount, err)
 		}
-		p.allowed = toCpuSet(p.machine.PresentCPUs()).Difference(cset)
+		p.allowed = p.machine.PresentCPUs().Difference(toCpuMask(cset))
 
 	case cfgapi.AmountQuantity:
 		return fmt.Errorf("can't handle CPU resources given as resource.Quantity (%v)", amount)
 	case cfgapi.AmountAbsent:
 		// Available CPUs not specified, default to system CPUs.
-		p.allowed = toCpuSet(p.machine.PresentCPUs())
+		p.allowed = p.machine.PresentCPUs()
 	}
 	// Allocation of only online CPUs is allowed.
-	p.allowed = p.allowed.Intersection(toCpuSet(p.machine.OnlineCPUs()))
+	p.allowed = p.allowed.Intersection(p.machine.OnlineCPUs())
 
-	p.isolated = toCpuSet(p.machine.IsolatedCPUs()).Intersection(p.allowed)
+	p.isolated = p.machine.IsolatedCPUs().Intersection(p.allowed)
 
 	amount, kind = p.cfg.ReservedResources.Get(cfgapi.CPU)
 	switch kind {
@@ -879,9 +887,9 @@ func (p *policy) checkConstraints() error {
 			return fmt.Errorf("failed to parse reserved CPU cpuset '%s': %w", amount, err)
 		}
 		if kind == cfgapi.AmountExcludeCPUSet {
-			p.reserved = p.allowed.Difference(cset)
+			p.reserved = p.allowed.Difference(toCpuMask(cset))
 		} else {
-			p.reserved = cset
+			p.reserved = toCpuMask(cset)
 		}
 
 		// check that all reserved CPUs are in the allowed set
@@ -913,12 +921,12 @@ func (p *policy) checkConstraints() error {
 		// Use CpuAllocator to pick reserved CPUs from the allowed ones but
 		// avoiding isolated CPUs. The picked CPUs are not removed from the
 		// allowed set.
-		from := toCpuMask(p.allowed.Difference(p.isolated))
+		from := p.allowed.Difference(p.isolated)
 		cset, err := p.cpuAllocator.AllocateCpus(from, p.reserveCnt, normalPrio.Option())
 		if err != nil {
 			return policyError("cannot reserve %dm CPUs for ReservedResources from AvailableResources: %s", qty.MilliValue(), err)
 		}
-		p.reserved = toCpuSet(cset)
+		p.reserved = cset
 	}
 
 	if p.reserved.IsEmpty() {

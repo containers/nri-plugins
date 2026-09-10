@@ -18,9 +18,9 @@ import (
 	"fmt"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	"github.com/containers/nri-plugins/pkg/topology"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
 )
 
@@ -196,9 +196,9 @@ type numanode struct {
 
 // l3cachenode represents an L3 cache grouping of CPUs in the system.
 type l3cachenode struct {
-	node               // common node data
-	id   idset.ID      // L3 cache id from sysfs
-	cpus cpuset.CPUSet // CPUs in this L3 cache group
+	node                 // common node data
+	id   idset.ID        // L3 cache id from sysfs
+	cpus *libcpu.CpuMask // CPUs in this L3 cache group
 }
 
 // virtualnode represents a virtual node (ATM only the root in a multi-socket system).
@@ -515,7 +515,7 @@ func (n *numanode) GetMemset(mtype memoryType) idset.IDSet {
 func (n *numanode) HintScore(hint topology.Hint) float64 {
 	switch {
 	case hint.CPUs != "":
-		return cpuHintScore(hint, toCpuSet(n.sysnode.CPUs()))
+		return cpuHintScore(hint, n.sysnode.CPUs())
 
 	case hint.NUMAs != "":
 		return numaHintScore(hint, n.id)
@@ -534,7 +534,7 @@ func (n *numanode) HintScore(hint topology.Hint) float64 {
 }
 
 // NewL3CacheNode creates a node for an L3 cache group.
-func (p *policy) NewL3CacheNode(id idset.ID, cpus cpuset.CPUSet, parent Node) *l3cachenode {
+func (p *policy) NewL3CacheNode(id idset.ID, cpus *libcpu.CpuMask, parent Node) *l3cachenode {
 	n := &l3cachenode{}
 	n.self.node = n
 	n.init(p, fmt.Sprintf("%s/L3 cache #%v", parent.Name(), id), L3CacheNode, parent)
@@ -664,7 +664,7 @@ func (n *dienode) GetMemset(mtype memoryType) idset.IDSet {
 func (n *dienode) HintScore(hint topology.Hint) float64 {
 	switch {
 	case hint.CPUs != "":
-		return cpuHintScore(hint, toCpuSet(n.syspkg.CPUs()))
+		return cpuHintScore(hint, n.syspkg.CPUs())
 
 	case hint.NUMAs != "":
 		return OverfitPenalty * dieHintScore(hint, n.Machine(), n.syspkg.ID(), n.id)
@@ -733,7 +733,7 @@ func (n *socketnode) GetMemset(mtype memoryType) idset.IDSet {
 func (n *socketnode) HintScore(hint topology.Hint) float64 {
 	switch {
 	case hint.CPUs != "":
-		return cpuHintScore(hint, toCpuSet(n.syspkg.CPUs()))
+		return cpuHintScore(hint, n.syspkg.CPUs())
 
 	case hint.NUMAs != "":
 		return OverfitPenalty * numaHintScore(hint, packageNodeIDs(n.Machine(), n.syspkg.ID())...)
@@ -786,7 +786,7 @@ func (n *virtualnode) HintScore(hint topology.Hint) float64 {
 	// don't bother calculating any scores, the root should always score 1.0
 	switch {
 	case hint.CPUs != "":
-		return cpuHintScore(hint, toCpuSet(n.Machine().PresentCPUs()))
+		return cpuHintScore(hint, n.Machine().PresentCPUs())
 
 	case hint.NUMAs != "":
 		return OverfitPenalty * OverfitPenalty

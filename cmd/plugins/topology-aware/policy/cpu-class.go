@@ -16,9 +16,9 @@ package topologyaware
 
 import (
 	"fmt"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 func (p *policy) validateCpuClasses() error {
@@ -33,7 +33,7 @@ func (p *policy) setReservedPoolCpuClass() {
 	if opt.ReservedPoolCpuClass == "" {
 		return
 	}
-	if err := p.cpuClasses.UseClass(opt.ReservedPoolCpuClass, p.reserved); err != nil {
+	if err := p.cpuClasses.UseClass(opt.ReservedPoolCpuClass, toCpuSet(p.reserved)); err != nil {
 		log.Errorf("failed to set reserved pool CPU class for %s: %v", p.reserved, err)
 	}
 }
@@ -59,14 +59,14 @@ func (p *policy) resolveCpuClass(ctr cache.Container) (string, bool, error) {
 	return class, isCtrScoped, nil
 }
 
-func (p *policy) resetCpuClass(subject string, cpus cpuset.CPUSet) {
+func (p *policy) resetCpuClass(subject string, cpus *libcpu.CpuMask) {
 	if p.cpuClasses == nil {
 		return
 	}
 	if opt.SharedPoolCpuClass == "" {
 		return
 	}
-	if err := p.cpuClasses.UseClass(opt.SharedPoolCpuClass, cpus); err != nil {
+	if err := p.cpuClasses.UseClass(opt.SharedPoolCpuClass, toCpuSet(cpus)); err != nil {
 		log.Errorf("%s: failed to reset CPU class for %s: %v", subject, cpus, err)
 	}
 }
