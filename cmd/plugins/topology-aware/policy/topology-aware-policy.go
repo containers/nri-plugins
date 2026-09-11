@@ -851,18 +851,18 @@ func (p *policy) checkConstraints() error {
 	amount, kind := p.cfg.AvailableResources.Get(cfgapi.CPU)
 	switch kind {
 	case cfgapi.AmountCPUSet:
-		cset, err := amount.ParseCPUSet()
+		cpus, err := amount.ParseCPUSet()
 		if err != nil {
 			return fmt.Errorf("failed to parse available CPU cpuset '%s': %w", amount, err)
 		}
-		p.allowed = toCpuMask(cset)
+		p.allowed = cpus
 
 	case cfgapi.AmountExcludeCPUSet:
-		cset, err := amount.ParseCPUSet()
+		cpus, err := amount.ParseCPUSet()
 		if err != nil {
 			return fmt.Errorf("failed to parse available CPU cpuset '%s': %w", amount, err)
 		}
-		p.allowed = p.machine.PresentCPUs().Difference(toCpuMask(cset))
+		p.allowed = p.machine.PresentCPUs().Difference(cpus)
 
 	case cfgapi.AmountQuantity:
 		return fmt.Errorf("can't handle CPU resources given as resource.Quantity (%v)", amount)
@@ -881,14 +881,14 @@ func (p *policy) checkConstraints() error {
 		return policyError("cannot start without CPU reservation")
 
 	case cfgapi.AmountCPUSet, cfgapi.AmountExcludeCPUSet:
-		cset, err := amount.ParseCPUSet()
+		cpus, err := amount.ParseCPUSet()
 		if err != nil {
 			return fmt.Errorf("failed to parse reserved CPU cpuset '%s': %w", amount, err)
 		}
 		if kind == cfgapi.AmountExcludeCPUSet {
-			p.reserved = p.allowed.Difference(toCpuMask(cset))
+			p.reserved = p.allowed.Difference(cpus)
 		} else {
-			p.reserved = toCpuMask(cset)
+			p.reserved = cpus
 		}
 
 		// check that all reserved CPUs are in the allowed set

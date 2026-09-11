@@ -147,13 +147,6 @@ type loadClassVirtDev struct {
 	updateOnEveryCpuAllocation bool
 }
 
-// toCpuMask converts a CPU set into the kind this policy keeps. It is needed
-// for the one interface which still hands out a k8s one: the configuration,
-// which parses an operator's cpuset string.
-func toCpuMask(cpus cpuset.CPUSet) *libcpu.CpuMask {
-	return libcpu.NewCpuMask(cpus.List()...)
-}
-
 var log logger.Logger = logger.NewLogger("policy")
 
 // String is a stringer for a balloon.
@@ -1905,17 +1898,17 @@ func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
 	amount, kind := bpoptions.AvailableResources.Get(cfgapi.CPU)
 	switch kind {
 	case cfgapi.AmountCPUSet:
-		cset, err := amount.ParseCPUSet()
+		cpus, err := amount.ParseCPUSet()
 		if err != nil {
 			return balloonsError("failed to parse available CPU cpuset '%s': %w", amount, err)
 		}
-		availableCpus = toCpuMask(cset)
+		availableCpus = cpus
 	case cfgapi.AmountExcludeCPUSet:
-		cset, err := amount.ParseCPUSet()
+		cpus, err := amount.ParseCPUSet()
 		if err != nil {
 			return balloonsError("failed to parse available CPU cpuset '%s': %w", amount, err)
 		}
-		availableCpus = p.machine.PresentCPUs().Difference(toCpuMask(cset))
+		availableCpus = p.machine.PresentCPUs().Difference(cpus)
 
 	case cfgapi.AmountQuantity:
 		return balloonsError("can't handle CPU resources given as resource.Quantity (%v)", amount)
@@ -2082,11 +2075,10 @@ func (p *balloons) fillBuiltinBalloonDefs(bpoptions *BalloonsOptions) (*BalloonD
 		// can still allocate CPUs first. If reserved
 		// balloon's MinCpus is undefined, set it to catch all
 		// (or at most MaxCpu) CPUs in the reserved cpuset.
-		parsed, err := amount.ParseCPUSet()
+		cset, err := amount.ParseCPUSet()
 		if err != nil {
 			return nil, nil, balloonsError("failed to parse reserved CPU cpuset '%s': %v", amount, err)
 		}
-		cset := toCpuMask(parsed)
 		if kind == cfgapi.AmountExcludeCPUSet {
 			cset = p.allowed.Difference(cset)
 		}

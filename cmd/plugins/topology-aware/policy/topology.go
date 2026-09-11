@@ -23,12 +23,6 @@ import (
 	idset "github.com/intel/goresctrl/pkg/utils"
 )
 
-// toCpuMask converts a set the configuration parsed out of an operator's cpuset
-// string into the ones this policy keeps. It is the last of the seam.
-func toCpuMask(cpus cpuset.CPUSet) *libcpu.CpuMask {
-	return libcpu.NewCpuMask(cpus.List()...)
-}
-
 //
 // Packages, dies, clusters and caches
 //
