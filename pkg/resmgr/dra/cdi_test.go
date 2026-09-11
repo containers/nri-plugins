@@ -17,6 +17,7 @@ limitations under the License.
 package dra
 
 import (
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,8 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	"tags.cncf.io/container-device-interface/pkg/parser"
-
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 // TestCDIDeviceName_BasicCase verifies the basic format of a CDI device name.
@@ -108,7 +107,7 @@ func TestWriteClaim_EnvVarsOnDisk(t *testing.T) {
 	}
 
 	uid := types.UID("test-claim-uid-0001")
-	cpus, _ := cpuset.Parse("0,2,4")
+	cpus, _ := libcpu.ParseCpuMask("0,2,4")
 	devices := []CDIDevice{
 		{Name: "claim-test-claim-uid-0001-myreq-punit-0-0-0", ClassName: "gold", CPUs: cpus},
 	}
@@ -165,7 +164,7 @@ func TestRemoveClaim_Removes(t *testing.T) {
 	}
 
 	uid := types.UID("test-uid-remove-0001")
-	cpus, _ := cpuset.Parse("0")
+	cpus, _ := libcpu.ParseCpuMask("0")
 	devs := []CDIDevice{{Name: "claim-test-uid-remove-0001-req-dev-0", ClassName: "silver", CPUs: cpus}}
 	if err := w.WriteClaim(uid, devs); err != nil {
 		t.Fatalf("WriteClaim() unexpected error: %v", err)
@@ -209,7 +208,7 @@ func TestClaimSpecExists_TrueAndFalse(t *testing.T) {
 		t.Error("ClaimSpecExists() = true before WriteClaim, want false")
 	}
 
-	cpus, _ := cpuset.Parse("1")
+	cpus, _ := libcpu.ParseCpuMask("1")
 	devs := []CDIDevice{{Name: "claim-test-uid-exists-0001-req-dev-0", ClassName: "gold", CPUs: cpus}}
 	if err := w.WriteClaim(uid, devs); err != nil {
 		t.Fatalf("WriteClaim() unexpected error: %v", err)
@@ -230,7 +229,7 @@ func TestListClaims_TwoClaims(t *testing.T) {
 
 	uid1 := types.UID("test-uid-list-0001")
 	uid2 := types.UID("test-uid-list-0002")
-	cpus, _ := cpuset.Parse("0")
+	cpus, _ := libcpu.ParseCpuMask("0")
 
 	for _, uid := range []types.UID{uid1, uid2} {
 		devs := []CDIDevice{{Name: "claim-" + string(uid) + "-req-dev-0", ClassName: "gold", CPUs: cpus}}
@@ -274,7 +273,7 @@ func TestListClaims_ForeignSpecSurvives(t *testing.T) {
 
 	// Write a valid claim.
 	uid := types.UID("test-uid-foreign-0001")
-	cpus, _ := cpuset.Parse("0")
+	cpus, _ := libcpu.ParseCpuMask("0")
 	devs := []CDIDevice{{Name: "claim-test-uid-foreign-0001-req-dev-0", ClassName: "gold", CPUs: cpus}}
 	if err := w.WriteClaim(uid, devs); err != nil {
 		t.Fatalf("WriteClaim() unexpected error: %v", err)
@@ -314,7 +313,7 @@ func TestWriteClaim_SameRequestDeviceTwoIdx(t *testing.T) {
 	}
 
 	uid := types.UID("test-uid-shared-0001")
-	cpus, _ := cpuset.Parse("0")
+	cpus, _ := libcpu.ParseCpuMask("0")
 	name0 := CDIDeviceName(uid, "myrequest", "punit-0-0", 0)
 	name1 := CDIDeviceName(uid, "myrequest", "punit-0-0", 1)
 	devs := []CDIDevice{

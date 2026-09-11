@@ -15,6 +15,8 @@
 package topologyaware
 
 import (
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	"os"
 	"path"
 	"testing"
@@ -23,9 +25,7 @@ import (
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
-	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/testutils"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 // newDRATestPolicy builds a real policy (with a real, multi-level node tree:
@@ -56,14 +56,14 @@ func newDRATestPolicyWithLock(t *testing.T, withLock func(func())) *policy {
 		t.Fatalf("failed to uncompress test sysfs data: %v", err)
 	}
 
-	sys, err := system.DiscoverSystemAt(path.Join(dir, "sysfs", "server", "sys"))
+	machine, err := hardware.Discover(hardware.WithRoot(path.Join(dir, "sysfs", "server")))
 	if err != nil {
-		t.Fatalf("failed to discover test system: %v", err)
+		t.Fatalf("failed to discover test machine: %v", err)
 	}
 
 	policyOptions := &policyapi.BackendOptions{
-		Cache:  &mockCache{},
-		System: sys,
+		Cache:   &mockCache{},
+		Machine: machine,
 		Config: &cfgapi.Config{
 			ReservedResources: cfgapi.Constraints{
 				cfgapi.CPU: "750m",
@@ -101,9 +101,9 @@ func newDRATestPolicyWithCPUClasses(t *testing.T, sharedClass string, claimClass
 		t.Fatalf("failed to uncompress test sysfs data: %v", err)
 	}
 
-	sys, err := system.DiscoverSystemAt(path.Join(dir, "sysfs", "server", "sys"))
+	machine, err := hardware.Discover(hardware.WithRoot(path.Join(dir, "sysfs", "server")))
 	if err != nil {
-		t.Fatalf("failed to discover test system: %v", err)
+		t.Fatalf("failed to discover test machine: %v", err)
 	}
 
 	cpuClasses := []*cfgapi.CPUClass{{Name: sharedClass}}
@@ -112,8 +112,8 @@ func newDRATestPolicyWithCPUClasses(t *testing.T, sharedClass string, claimClass
 	}
 
 	policyOptions := &policyapi.BackendOptions{
-		Cache:  &mockCache{},
-		System: sys,
+		Cache:   &mockCache{},
+		Machine: machine,
 		Config: &cfgapi.Config{
 			ReservedResources: cfgapi.Constraints{
 				cfgapi.CPU: "750m",
@@ -177,13 +177,13 @@ func TestSupplyClaimCPUsTreeWide(t *testing.T) {
 	}
 	// Take exactly two CPUs from the leaf's sharable set.
 	claimedList := claimed.List()
-	cpus := cpuset.New(claimedList[0], claimedList[1])
+	cpus := libcpu.NewCpuMask(claimedList[0], claimedList[1])
 
 	uid := types.UID("claim-uid-1")
 
 	leafSharableBefore := leaf.FreeSupply().SharableCPUs()
 	leafAllocatableBefore := leaf.FreeSupply().AllocatableSharedCPU()
-	ancestorSharableBefore := make(map[string]cpuset.CPUSet, len(ancestors))
+	ancestorSharableBefore := make(map[string]*libcpu.CpuMask, len(ancestors))
 	for _, a := range ancestors {
 		ancestorSharableBefore[a.Name()] = a.FreeSupply().SharableCPUs()
 	}
@@ -263,7 +263,7 @@ func TestSupplyClaimCPUsReservedPartition(t *testing.T) {
 	}
 
 	reserved := reservedSupply.ReservedCPUs()
-	cpus := cpuset.New(reserved.List()[0])
+	cpus := libcpu.NewCpuMask(reserved.List()[0])
 	uid := types.UID("claim-uid-reserved")
 
 	reservedAllocatableBefore := reservedSupply.AllocatableReservedCPU()
@@ -309,8 +309,8 @@ func TestSupplyClaimCPUsIdempotentReplace(t *testing.T) {
 	}
 
 	uid := types.UID("claim-uid-replace")
-	cpusA := cpuset.New(sharable[0])
-	cpusB := cpuset.New(sharable[1])
+	cpusA := libcpu.NewCpuMask(sharable[0])
+	cpusB := libcpu.NewCpuMask(sharable[1])
 
 	before := leaf.FreeSupply().SharableCPUs()
 
@@ -350,10 +350,10 @@ func TestSupplyUnclaimCPUsRestores(t *testing.T) {
 	}
 
 	uid := types.UID("claim-uid-unclaim")
-	cpus := cpuset.New(sharable[0])
+	cpus := libcpu.NewCpuMask(sharable[0])
 
 	leafBefore := leaf.FreeSupply().SharableCPUs()
-	ancestorBefore := make(map[string]cpuset.CPUSet, len(ancestors))
+	ancestorBefore := make(map[string]*libcpu.CpuMask, len(ancestors))
 	for _, a := range ancestors {
 		ancestorBefore[a.Name()] = a.FreeSupply().SharableCPUs()
 	}
@@ -401,7 +401,7 @@ func TestSupplyCloneCarriesClaimRefs(t *testing.T) {
 	}
 
 	uid := types.UID("claim-uid-clone")
-	cpus := cpuset.New(sharable[0])
+	cpus := libcpu.NewCpuMask(sharable[0])
 
 	leaf.FreeSupply().ClaimCPUs(uid, cpus)
 
@@ -443,8 +443,8 @@ func TestSupplyClaimCPUsAncestorNotDoubleSubtracted(t *testing.T) {
 			leafA.Name(), leafB.Name(), ancestor.Name(), leafA.Parent().Name(), leafB.Parent().Name())
 	}
 
-	cpusA := cpuset.New(leafA.FreeSupply().SharableCPUs().List()[0])
-	cpusB := cpuset.New(leafB.FreeSupply().SharableCPUs().List()[0])
+	cpusA := libcpu.NewCpuMask(leafA.FreeSupply().SharableCPUs().List()[0])
+	cpusB := libcpu.NewCpuMask(leafB.FreeSupply().SharableCPUs().List()[0])
 	if cpusA.Intersection(cpusB).Size() != 0 {
 		t.Fatalf("test setup error: cpusA and cpusB must be disjoint, got %s and %s", cpusA, cpusB)
 	}

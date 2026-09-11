@@ -16,12 +16,12 @@ package topologyaware
 
 import (
 	"fmt"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"strings"
 	"testing"
 	"testing/fstest"
 
 	"github.com/containers/nri-plugins/pkg/lib/hardware"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 // synthNode describes one NUMA node of a machine to build for a test.
@@ -51,17 +51,17 @@ func synthMachine(t *testing.T, nodes []synthNode) *hardware.Machine {
 	fsys := fstest.MapFS{}
 
 	var (
-		online = cpuset.New()
-		normal = cpuset.New()
+		online = libcpu.NewCpuMask()
+		normal = libcpu.NewCpuMask()
 		pkg    = 0
 	)
 	for id, node := range nodes {
 		dir := fmt.Sprintf("sys/devices/system/node/node%d", id)
 
-		cpus := cpuset.New()
+		cpus := libcpu.NewCpuMask()
 		if node.cpus != "" {
 			var err error
-			if cpus, err = cpuset.Parse(node.cpus); err != nil {
+			if cpus, err = libcpu.ParseCpuMask(node.cpus); err != nil {
 				t.Fatalf("node%d: bad cpulist %q: %v", id, node.cpus, err)
 			}
 		}
@@ -72,7 +72,7 @@ func synthMachine(t *testing.T, nodes []synthNode) *hardware.Machine {
 			fmt.Sprintf("Node %d MemTotal: %d kB\n", id, node.memKB))
 
 		if node.memKB > 0 {
-			normal = normal.Union(cpuset.New(id))
+			normal = normal.Union(libcpu.NewCpuMask(id))
 		}
 
 		dist := make([]string, 0, len(node.distance))

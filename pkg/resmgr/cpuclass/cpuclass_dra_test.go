@@ -17,29 +17,18 @@
 package cpuclass_test
 
 import (
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	"testing"
-
-	idset "github.com/intel/goresctrl/pkg/utils"
+	"testing/fstest"
 
 	policyapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass"
 	"github.com/containers/nri-plugins/pkg/resmgr/dra"
-	"github.com/containers/nri-plugins/pkg/sysfs"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 // Compile-time assertion: *Handler must satisfy dra.ClaimAllocator.
 var _ dra.ClaimAllocator = (*cpuclass.Handler)(nil)
-
-// draTestSys is a minimal sysfs.System implementation for DRA pass-through
-// tests. Only CPUIDs is overridden; all other methods are delegated to the
-// embedded nil interface, which panics if called. In practice, only CPUIDs
-// is invoked during Handler.New() (by cpufreq platform discovery).
-type draTestSys struct {
-	sysfs.System
-}
-
-func (s *draTestSys) CPUIDs() []idset.ID { return nil }
 
 // newConfiguredHandler creates a Handler with an active managed PCT
 // allocator using the SST in-memory mock (OVERRIDE_SST). The mock is
@@ -49,13 +38,13 @@ func newConfiguredHandler(t *testing.T) *cpuclass.Handler {
 	t.Helper()
 	t.Setenv("OVERRIDE_SST", `{"supported":true,"clos_count":4,"packages":[{"id":0,"cpus":"0-7","tf_supported":true,"tf_enabled":true,"cp_supported":true,"cp_enabled":false,"punits":[{"id":0,"cpus":"0-7","max_hp_cpus":4,"guaranteed_hp_cpus":4}]}]}`)
 	t.Setenv("OVERRIDE_SST_STATE_DIR", t.TempDir())
-	h, err := cpuclass.New(&draTestSys{})
+	h, err := cpuclass.New(draTestMachine(t))
 	if err != nil {
 		t.Fatalf("New() failed: %v", err)
 	}
 	if err := h.Configure(cpuclass.ConfigSpec{
 		Classes: []*policyapi.CPUClass{{Name: "hp", PctPriority: "high"}},
-		Allowed: cpuset.MustParse("0-7"),
+		Allowed: libcpu.MustParseCpuMask("0-7"),
 	}); err != nil {
 		t.Fatalf("Configure() failed: %v", err)
 	}
@@ -70,14 +59,14 @@ func newInactiveHandler(t *testing.T) *cpuclass.Handler {
 	t.Helper()
 	// Ensure OVERRIDE_SST is unset (t.Setenv restores original value).
 	t.Setenv("OVERRIDE_SST", "")
-	h, err := cpuclass.New(&draTestSys{})
+	h, err := cpuclass.New(draTestMachine(t))
 	if err != nil {
 		t.Fatalf("New() failed: %v", err)
 	}
 	// Configure with a PCT class; SST unsupported → pct stays disabled.
 	_ = h.Configure(cpuclass.ConfigSpec{
 		Classes: []*policyapi.CPUClass{{Name: "hp", PctPriority: "high"}},
-		Allowed: cpuset.MustParse("0-7"),
+		Allowed: libcpu.MustParseCpuMask("0-7"),
 	})
 	return h
 }
@@ -88,7 +77,7 @@ func newInactiveHandler(t *testing.T) *cpuclass.Handler {
 
 func TestHandlerPickHpCpus_NilHandler(t *testing.T) {
 	var h *cpuclass.Handler
-	_, err := h.PickHpCpus(0, 0, 1, cpuset.New())
+	_, err := h.PickHpCpus(0, 0, 1, libcpu.NewCpuMask())
 	if err == nil {
 		t.Fatal("expected error from nil handler, got nil")
 	}
@@ -96,7 +85,7 @@ func TestHandlerPickHpCpus_NilHandler(t *testing.T) {
 
 func TestHandlerPickHpCpus_NilPct(t *testing.T) {
 	h := &cpuclass.Handler{} // pct is nil
-	_, err := h.PickHpCpus(0, 0, 1, cpuset.New())
+	_, err := h.PickHpCpus(0, 0, 1, libcpu.NewCpuMask())
 	if err == nil {
 		t.Fatal("expected error from nil pct, got nil")
 	}
@@ -104,7 +93,7 @@ func TestHandlerPickHpCpus_NilPct(t *testing.T) {
 
 func TestHandlerPickHpCpus_InactivePct(t *testing.T) {
 	h := newInactiveHandler(t)
-	_, err := h.PickHpCpus(0, 0, 1, cpuset.New())
+	_, err := h.PickHpCpus(0, 0, 1, libcpu.NewCpuMask())
 	if err == nil {
 		t.Fatal("expected error from inactive PCT, got nil")
 	}
@@ -112,7 +101,7 @@ func TestHandlerPickHpCpus_InactivePct(t *testing.T) {
 
 func TestHandlerPickHpCpus_ActiveDelegates(t *testing.T) {
 	h := newConfiguredHandler(t)
-	got, err := h.PickHpCpus(0, 0, 2, cpuset.New())
+	got, err := h.PickHpCpus(0, 0, 2, libcpu.NewCpuMask())
 	if err != nil {
 		t.Fatalf("PickHpCpus(0,0,2) = %v, want nil error", err)
 	}
@@ -120,7 +109,7 @@ func TestHandlerPickHpCpus_ActiveDelegates(t *testing.T) {
 		t.Errorf("PickHpCpus(0,0,2) returned %d CPUs, want 2", got.Size())
 	}
 	// Requesting more than GuaranteedHpCpus (4) must error.
-	if _, err := h.PickHpCpus(0, 0, 5, cpuset.New()); err == nil {
+	if _, err := h.PickHpCpus(0, 0, 5, libcpu.NewCpuMask()); err == nil {
 		t.Error("PickHpCpus(0,0,5) with capacity=4: expected error, got nil")
 	}
 }
@@ -132,25 +121,25 @@ func TestHandlerPickHpCpus_ActiveDelegates(t *testing.T) {
 func TestHandlerReleaseHpCpus_NilHandler(t *testing.T) {
 	var h *cpuclass.Handler
 	// must not panic
-	h.ReleaseHpCpus(0, 0, cpuset.New())
+	h.ReleaseHpCpus(0, 0, libcpu.NewCpuMask())
 }
 
 func TestHandlerReleaseHpCpus_NilPct(t *testing.T) {
 	h := &cpuclass.Handler{}
 	// must not panic
-	h.ReleaseHpCpus(0, 0, cpuset.New())
+	h.ReleaseHpCpus(0, 0, libcpu.NewCpuMask())
 }
 
 func TestHandlerReleaseHpCpus_ActiveDelegates(t *testing.T) {
 	h := newConfiguredHandler(t)
 	// Pick 2 CPUs, then release them.
-	cpus, err := h.PickHpCpus(0, 0, 2, cpuset.New())
+	cpus, err := h.PickHpCpus(0, 0, 2, libcpu.NewCpuMask())
 	if err != nil {
 		t.Fatalf("PickHpCpus setup: %v", err)
 	}
 	h.ReleaseHpCpus(0, 0, cpus)
 	// After release, the full 4-CPU capacity must be available again.
-	got, err := h.PickHpCpus(0, 0, 4, cpuset.New())
+	got, err := h.PickHpCpus(0, 0, 4, libcpu.NewCpuMask())
 	if err != nil {
 		t.Fatalf("PickHpCpus after release: %v", err)
 	}
@@ -165,21 +154,21 @@ func TestHandlerReleaseHpCpus_ActiveDelegates(t *testing.T) {
 
 func TestHandlerAccountHpCpus_NilHandler(t *testing.T) {
 	var h *cpuclass.Handler
-	if err := h.AccountHpCpus(0, 0, cpuset.New()); err == nil {
+	if err := h.AccountHpCpus(0, 0, libcpu.NewCpuMask()); err == nil {
 		t.Fatal("expected error from nil handler, got nil")
 	}
 }
 
 func TestHandlerAccountHpCpus_NilPct(t *testing.T) {
 	h := &cpuclass.Handler{}
-	if err := h.AccountHpCpus(0, 0, cpuset.New()); err == nil {
+	if err := h.AccountHpCpus(0, 0, libcpu.NewCpuMask()); err == nil {
 		t.Fatal("expected error from nil pct, got nil")
 	}
 }
 
 func TestHandlerAccountHpCpus_InactivePct(t *testing.T) {
 	h := newInactiveHandler(t)
-	if err := h.AccountHpCpus(0, 0, cpuset.MustParse("0")); err == nil {
+	if err := h.AccountHpCpus(0, 0, libcpu.MustParseCpuMask("0")); err == nil {
 		t.Fatal("expected error from inactive PCT, got nil")
 	}
 }
@@ -188,7 +177,7 @@ func TestHandlerAccountHpCpus_ActiveDelegates(t *testing.T) {
 	h := newConfiguredHandler(t)
 	// AccountHpCpus simulates restart reconciliation (union semantics,
 	// no allocation): pick 2, release, then re-account.
-	cpus, err := h.PickHpCpus(0, 0, 2, cpuset.New())
+	cpus, err := h.PickHpCpus(0, 0, 2, libcpu.NewCpuMask())
 	if err != nil {
 		t.Fatalf("PickHpCpus setup: %v", err)
 	}
@@ -241,4 +230,29 @@ func TestHandlerIsHPClass_ActiveDelegates(t *testing.T) {
 	if h.IsHPClass("") {
 		t.Error("IsHPClass(\"\") = true, want false")
 	}
+}
+
+// draTestMachine is the smallest machine cpuclass.New will take. These tests
+// drive the PCT allocator through the SST mock, so the machine's shape does not
+// matter; what matters is that it is a real one, since *hardware.Machine is a
+// concrete type and cannot be faked.
+func draTestMachine(t *testing.T) *hardware.Machine {
+	t.Helper()
+
+	file := func(s string) *fstest.MapFile { return &fstest.MapFile{Data: []byte(s)} }
+	fsys := fstest.MapFS{
+		"proc/meminfo":                                             file("MemTotal: 1048576 kB\n"),
+		"sys/devices/system/cpu/online":                            file("0\n"),
+		"sys/devices/system/cpu/present":                           file("0\n"),
+		"sys/devices/system/cpu/possible":                          file("0\n"),
+		"sys/devices/system/cpu/cpu0/topology/physical_package_id": file("0\n"),
+		"sys/devices/system/cpu/cpu0/topology/core_id":             file("0\n"),
+		"sys/devices/system/cpu/cpu0/topology/core_cpus_list":      file("0\n"),
+	}
+
+	m, err := hardware.Discover(hardware.WithFS(fsys))
+	if err != nil {
+		t.Fatalf("failed to discover the test machine: %v", err)
+	}
+	return m
 }

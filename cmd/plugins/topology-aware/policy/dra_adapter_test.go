@@ -15,25 +15,12 @@
 package topologyaware
 
 import (
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"testing"
-
-	idset "github.com/intel/goresctrl/pkg/utils"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass"
-	"github.com/containers/nri-plugins/pkg/sysfs"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
-
-// adapterTestSys is a minimal sysfs.System implementation sufficient for
-// cpuclass.New()/Configure(). Only CPUIDs is overridden; every other method
-// is delegated to the embedded nil interface, which panics if called (and is
-// never called by cpuclass.New/Configure in practice).
-type adapterTestSys struct {
-	sysfs.System
-}
-
-func (s *adapterTestSys) CPUIDs() []idset.ID { return nil }
 
 // newActiveClassHandler builds a *cpuclass.Handler with an active managed
 // PCT allocator (via the goresctrl SST in-memory mock), one HP class named
@@ -44,13 +31,13 @@ func newActiveClassHandler(t *testing.T) *cpuclass.Handler {
 	t.Helper()
 	t.Setenv("OVERRIDE_SST", `{"supported":true,"clos_count":4,"packages":[{"id":0,"cpus":"0-7","tf_supported":true,"tf_enabled":true,"cp_supported":true,"cp_enabled":false,"punits":[{"id":0,"cpus":"0-7","max_hp_cpus":4,"guaranteed_hp_cpus":4}]}]}`)
 	t.Setenv("OVERRIDE_SST_STATE_DIR", t.TempDir())
-	h, err := cpuclass.New(&adapterTestSys{})
+	h, err := cpuclass.New(oneCpuMachine(t))
 	if err != nil {
 		t.Fatalf("cpuclass.New() failed: %v", err)
 	}
 	if err := h.Configure(cpuclass.ConfigSpec{
 		Classes: []*cfgapi.CPUClass{{Name: "hp", PctPriority: "high"}},
-		Allowed: cpuset.MustParse("0-7"),
+		Allowed: libcpu.MustParseCpuMask("0-7"),
 	}); err != nil {
 		t.Fatalf("Configure() failed: %v", err)
 	}
@@ -63,13 +50,13 @@ func newActiveClassHandler(t *testing.T) *cpuclass.Handler {
 func newInactiveClassHandler(t *testing.T) *cpuclass.Handler {
 	t.Helper()
 	t.Setenv("OVERRIDE_SST", "")
-	h, err := cpuclass.New(&adapterTestSys{})
+	h, err := cpuclass.New(oneCpuMachine(t))
 	if err != nil {
 		t.Fatalf("cpuclass.New() failed: %v", err)
 	}
 	_ = h.Configure(cpuclass.ConfigSpec{
 		Classes: []*cfgapi.CPUClass{{Name: "hp", PctPriority: "high"}},
-		Allowed: cpuset.MustParse("0-7"),
+		Allowed: libcpu.MustParseCpuMask("0-7"),
 	})
 	return h
 }
@@ -89,14 +76,14 @@ func TestPolicyDRAAdapterRoutesToCurrentHandler(t *testing.T) {
 	if a.IsHPClass("hp") {
 		t.Error("IsHPClass with nil cpuClasses: got true, want false")
 	}
-	if _, err := a.PickHpCpus(0, 0, 1, cpuset.New()); err == nil {
+	if _, err := a.PickHpCpus(0, 0, 1, libcpu.NewCpuMask()); err == nil {
 		t.Error("PickHpCpus with nil cpuClasses: got nil error, want error")
 	}
 	if devs, err := a.DRADevices(DRADriverName); err != nil || len(devs) != 0 {
 		t.Errorf("DRADevices with nil cpuClasses: got (%v, %v), want (empty, nil)", devs, err)
 	}
-	a.ReleaseHpCpus(0, 0, cpuset.New()) // must not panic
-	if err := a.AccountHpCpus(0, 0, cpuset.New()); err == nil {
+	a.ReleaseHpCpus(0, 0, libcpu.NewCpuMask()) // must not panic
+	if err := a.AccountHpCpus(0, 0, libcpu.NewCpuMask()); err == nil {
 		t.Error("AccountHpCpus with nil cpuClasses: got nil error, want error")
 	}
 
@@ -106,7 +93,7 @@ func TestPolicyDRAAdapterRoutesToCurrentHandler(t *testing.T) {
 	if a.IsHPClass("hp") {
 		t.Error("IsHPClass with inactive handler: got true, want false")
 	}
-	if _, err := a.PickHpCpus(0, 0, 1, cpuset.New()); err == nil {
+	if _, err := a.PickHpCpus(0, 0, 1, libcpu.NewCpuMask()); err == nil {
 		t.Error("PickHpCpus with inactive handler: got nil error, want error")
 	}
 
@@ -117,7 +104,7 @@ func TestPolicyDRAAdapterRoutesToCurrentHandler(t *testing.T) {
 	if !a.IsHPClass("hp") {
 		t.Error("IsHPClass with active handler: got false, want true")
 	}
-	cpus, err := a.PickHpCpus(0, 0, 2, cpuset.New())
+	cpus, err := a.PickHpCpus(0, 0, 2, libcpu.NewCpuMask())
 	if err != nil {
 		t.Fatalf("PickHpCpus with active handler: %v", err)
 	}
@@ -154,9 +141,9 @@ func TestPolicyDRAAdapterNilCpuClassesNoPanic(t *testing.T) {
 		}
 	}()
 
-	_, _ = a.PickHpCpus(0, 0, 1, cpuset.New())
-	a.ReleaseHpCpus(0, 0, cpuset.New())
-	_ = a.AccountHpCpus(0, 0, cpuset.New())
+	_, _ = a.PickHpCpus(0, 0, 1, libcpu.NewCpuMask())
+	a.ReleaseHpCpus(0, 0, libcpu.NewCpuMask())
+	_ = a.AccountHpCpus(0, 0, libcpu.NewCpuMask())
 	_ = a.IsHPClass("hp")
 	_, _ = a.DRADevices(DRADriverName)
 }

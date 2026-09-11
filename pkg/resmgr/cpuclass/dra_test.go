@@ -15,6 +15,7 @@
 package cpuclass
 
 import (
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"regexp"
 	"strings"
 	"testing"
@@ -24,7 +25,6 @@ import (
 
 	policyapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/pct"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 func ptr[T any](v T) *T { return &v }
@@ -788,7 +788,7 @@ func TestDRADevices(t *testing.T) {
 		if err != nil {
 			t.Fatalf("pct.NewAllocator: %v", err)
 		}
-		if err := pctA.Configure(nil, cpuset.New()); err != nil {
+		if err := pctA.Configure(nil, libcpu.NewCpuMask()); err != nil {
 			t.Fatalf("pct.Configure: %v", err)
 		}
 		h := &Handler{pct: pctA}
@@ -813,7 +813,7 @@ func TestDRADevices(t *testing.T) {
 			t.Fatalf("pct.NewAllocator: %v", err)
 		}
 		classes := []*policyapi.CPUClass{{Name: "hp", PctPriority: "high"}}
-		if err := pctA.Configure(classes, cpuset.New()); err != nil {
+		if err := pctA.Configure(classes, libcpu.NewCpuMask()); err != nil {
 			t.Fatalf("pct.Configure: %v", err)
 		}
 		h := &Handler{pct: pctA, classes: nil} // classes not set
@@ -840,7 +840,7 @@ func TestDRADevices(t *testing.T) {
 			t.Fatalf("pct.NewAllocator: %v", err)
 		}
 		classes := []*policyapi.CPUClass{{Name: "hp", PctPriority: "high"}}
-		if err := pctA.Configure(classes, cpuset.New()); err != nil {
+		if err := pctA.Configure(classes, libcpu.NewCpuMask()); err != nil {
 			t.Fatalf("pct.Configure: %v", err)
 		}
 		if !pctA.Active() {

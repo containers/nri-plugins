@@ -17,6 +17,7 @@ package topologyaware
 import (
 	"context"
 	"fmt"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"sync"
 	"testing"
 
@@ -29,7 +30,6 @@ import (
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/dra"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 // test helpers: a minimal real *dra.Plugin seeded with a live
@@ -54,15 +54,15 @@ func (f *fakeDRADeviceLister) DRADevices(_ string) ([]resourceapi.Device, error)
 // package cares about (Supply.ClaimCPUs/UnclaimCPUs) are exercised
 // separately via allocateClaim/releaseClaim, not via this allocator.
 type fakeDRAClaimAllocator struct {
-	pick cpuset.CPUSet
+	pick *libcpu.CpuMask
 }
 
-func (f *fakeDRAClaimAllocator) PickHpCpus(_, _, _ int, _ cpuset.CPUSet) (cpuset.CPUSet, error) {
+func (f *fakeDRAClaimAllocator) PickHpCpus(_, _, _ int, _ *libcpu.CpuMask) (*libcpu.CpuMask, error) {
 	return f.pick, nil
 }
-func (f *fakeDRAClaimAllocator) ReleaseHpCpus(_, _ int, _ cpuset.CPUSet)       {}
-func (f *fakeDRAClaimAllocator) AccountHpCpus(_, _ int, _ cpuset.CPUSet) error { return nil }
-func (f *fakeDRAClaimAllocator) IsHPClass(_ string) bool                       { return true }
+func (f *fakeDRAClaimAllocator) ReleaseHpCpus(_, _ int, _ *libcpu.CpuMask)       {}
+func (f *fakeDRAClaimAllocator) AccountHpCpus(_, _ int, _ *libcpu.CpuMask) error { return nil }
+func (f *fakeDRAClaimAllocator) IsHPClass(_ string) bool                         { return true }
 
 // fakeDRACDIWriter is a dra.CDIWriter that tracks per-UID "written" state
 // in memory instead of touching disk. Stateful (rather than a fixed
@@ -104,7 +104,7 @@ func (*fakeDRAClaimStore) Load() (map[types.UID]*dra.ClaimState, error) { return
 // newTestDRAPlugin builds a real *dra.Plugin backed entirely by fakes, ready
 // for PrepareResourceClaims calls. pick is the CPUSet the fake allocator
 // hands out for every PickHpCpus call.
-func newTestDRAPlugin(t *testing.T, pick cpuset.CPUSet, deviceName string) *dra.Plugin {
+func newTestDRAPlugin(t *testing.T, pick *libcpu.CpuMask, deviceName string) *dra.Plugin {
 	t.Helper()
 	return newTestDRAPluginWithLock(t, pick, deviceName, func(f func()) { f() })
 }
@@ -113,7 +113,7 @@ func newTestDRAPlugin(t *testing.T, pick cpuset.CPUSet, deviceName string) *dra.
 // letting lock-contract tests share a single non-reentrant stub between the
 // DRA plugin's deps.WithLock and the policy's options.WithLock (both are
 // backed by the same resmgr write lock in production).
-func newTestDRAPluginWithLock(t *testing.T, pick cpuset.CPUSet, deviceName string, withLock func(func())) *dra.Plugin {
+func newTestDRAPluginWithLock(t *testing.T, pick *libcpu.CpuMask, deviceName string, withLock func(func())) *dra.Plugin {
 	t.Helper()
 
 	className := "gold"
@@ -132,7 +132,7 @@ func newTestDRAPluginWithLock(t *testing.T, pick cpuset.CPUSet, deviceName strin
 		RegistrarDir:       t.TempDir(),
 		PluginDataDir:      t.TempDir(),
 		ValidateClasses:    func() error { return nil },
-		ValidateCPUsInPool: func(_ cpuset.CPUSet) error { return nil },
+		ValidateCPUsInPool: func(_ *libcpu.CpuMask) error { return nil },
 		DeviceLister:       &fakeDRADeviceLister{devices: []resourceapi.Device{device}},
 		ClaimAllocator:     &fakeDRAClaimAllocator{pick: pick},
 		CDIWriter:          &fakeDRACDIWriter{},
@@ -206,7 +206,7 @@ func TestAllocateResourcesWithTAClaimCallsAllocateClaim(t *testing.T) {
 	if len(sharable) < 2 {
 		t.Fatalf("expected at least 2 sharable CPUs on %q", leaf.Name())
 	}
-	claimed := cpuset.New(sharable[0], sharable[1])
+	claimed := libcpu.NewCpuMask(sharable[0], sharable[1])
 
 	plugin := newTestDRAPlugin(t, claimed, "dev0")
 	uid := types.UID("claim-alloc-1")
@@ -239,7 +239,7 @@ func TestReleaseResourcesWithTAClaimCallsReleaseClaim(t *testing.T) {
 	if len(sharable) < 2 {
 		t.Fatalf("expected at least 2 sharable CPUs on %q", leaf.Name())
 	}
-	claimed := cpuset.New(sharable[0], sharable[1])
+	claimed := libcpu.NewCpuMask(sharable[0], sharable[1])
 
 	plugin := newTestDRAPlugin(t, claimed, "dev0")
 	uid := types.UID("claim-release-1")
@@ -281,7 +281,7 @@ func TestAllocateResourcesRollsBackClaimOnPoolAllocationFailure(t *testing.T) {
 	if len(sharable) < 1 {
 		t.Fatalf("expected at least 1 sharable CPU on %q", leaf.Name())
 	}
-	claimed := cpuset.New(sharable[0])
+	claimed := libcpu.NewCpuMask(sharable[0])
 
 	plugin := newTestDRAPlugin(t, claimed, "dev0")
 	uid := types.UID("claim-rollback-1")
@@ -335,7 +335,7 @@ func TestApplyGrantUnionsClaimedCPUsIntoContainerCpuset(t *testing.T) {
 		t.Fatalf("expected at least 1 sharable CPU on %q", leaf.Name())
 	}
 	claimedCPU := sharable[0]
-	claimed := cpuset.New(claimedCPU)
+	claimed := libcpu.NewCpuMask(claimedCPU)
 
 	plugin := newTestDRAPlugin(t, claimed, "dev0")
 	uid := types.UID("claim-cpuset-union-1")
@@ -355,7 +355,7 @@ func TestApplyGrantUnionsClaimedCPUsIntoContainerCpuset(t *testing.T) {
 		t.Fatalf("AllocateResources() unexpected error: %v", err)
 	}
 
-	gotCpus, err := cpuset.Parse(container.GetCpusetCpus())
+	gotCpus, err := libcpu.ParseCpuMask(container.GetCpusetCpus())
 	if err != nil {
 		t.Fatalf("failed to parse container cpuset %q: %v", container.GetCpusetCpus(), err)
 	}
@@ -387,7 +387,7 @@ func TestAllocateResourcesRollbackClearsClaimedCPUsByContainer(t *testing.T) {
 	if len(sharable) < 1 {
 		t.Fatalf("expected at least 1 sharable CPU on %q", leaf.Name())
 	}
-	claimed := cpuset.New(sharable[0])
+	claimed := libcpu.NewCpuMask(sharable[0])
 
 	plugin := newTestDRAPlugin(t, claimed, "dev0")
 	uid := types.UID("claim-rollback-clear-1")
@@ -429,15 +429,15 @@ func TestApplyGrantEmptyCpusUsesClaimedCPUsInsteadOfBlanking(t *testing.T) {
 	}
 
 	container := &mockContainer{returnValueForGetID: "empty-grant-claim-1"}
-	claimed := cpuset.New(leaf.FreeSupply().SharableCPUs().List()[0])
-	p.claimedCPUsByContainer = map[string]cpuset.CPUSet{
+	claimed := libcpu.NewCpuMask(leaf.FreeSupply().SharableCPUs().List()[0])
+	p.claimedCPUsByContainer = map[string]*libcpu.CpuMask{
 		container.GetID(): claimed,
 	}
 
-	g := newGrant(leaf, container, cpuReserved, "", cpuset.New(), 0, memoryDRAM, nil, 0)
+	g := newGrant(leaf, container, cpuReserved, "", libcpu.NewCpuMask(), 0, memoryDRAM, nil, 0)
 	p.applyGrant(g)
 
-	gotCpus, err := cpuset.Parse(container.GetCpusetCpus())
+	gotCpus, err := libcpu.ParseCpuMask(container.GetCpusetCpus())
 	if err != nil {
 		t.Fatalf("failed to parse container cpuset %q: %v", container.GetCpusetCpus(), err)
 	}
@@ -466,19 +466,19 @@ func TestUpdateSharedAllocationsPreservesClaimedCPUsOnRepin(t *testing.T) {
 
 	containerA := &mockContainer{returnValueForGetID: "shared-alloc-a"}
 	claimACPU := sharable[0]
-	p.claimedCPUsByContainer = map[string]cpuset.CPUSet{
-		containerA.GetID(): cpuset.New(claimACPU),
+	p.claimedCPUsByContainer = map[string]*libcpu.CpuMask{
+		containerA.GetID(): libcpu.NewCpuMask(claimACPU),
 	}
-	grantA := newGrant(leaf, containerA, cpuNormal, "", cpuset.New(), 100, memoryDRAM, nil, 0)
+	grantA := newGrant(leaf, containerA, cpuNormal, "", libcpu.NewCpuMask(), 100, memoryDRAM, nil, 0)
 	p.allocations.addGrant(grantA)
 
 	claimBCPU := sharable[1]
 	uidB := types.UID("claim-shared-repin-b")
-	if err := p.allocateClaim(uidB, cpuset.New(claimBCPU), goldClassCPUs(cpuset.New(claimBCPU))); err != nil {
+	if err := p.allocateClaim(uidB, libcpu.NewCpuMask(claimBCPU), goldClassCPUs(libcpu.NewCpuMask(claimBCPU))); err != nil {
 		t.Fatalf("allocateClaim() failed: %v", err)
 	}
 
-	gotCpus, err := cpuset.Parse(containerA.GetCpusetCpus())
+	gotCpus, err := libcpu.ParseCpuMask(containerA.GetCpusetCpus())
 	if err != nil {
 		t.Fatalf("failed to parse container A's cpuset %q: %v", containerA.GetCpusetCpus(), err)
 	}
@@ -505,10 +505,10 @@ func TestReapplyDRAClaimsRepinsContainerCpusetWithGrant(t *testing.T) {
 	}
 	claimedCPU := sharable[0]
 	grantCPU := sharable[1]
-	claimed := cpuset.New(claimedCPU)
+	claimed := libcpu.NewCpuMask(claimedCPU)
 
 	container := &mockContainer{returnValueForGetID: "reapply-repin-1"}
-	addTestGrant(t, p, leaf, container, cpuset.New(grantCPU))
+	addTestGrant(t, p, leaf, container, libcpu.NewCpuMask(grantCPU))
 
 	plugin := newTestDRAPlugin(t, claimed, "dev0")
 	uid := types.UID("claim-reapply-repin-1")
@@ -524,11 +524,11 @@ func TestReapplyDRAClaimsRepinsContainerCpusetWithGrant(t *testing.T) {
 
 	p.reapplyDRAClaims()
 
-	gotCpus, err := cpuset.Parse(container.GetCpusetCpus())
+	gotCpus, err := libcpu.ParseCpuMask(container.GetCpusetCpus())
 	if err != nil {
 		t.Fatalf("failed to parse container cpuset %q: %v", container.GetCpusetCpus(), err)
 	}
-	want := cpuset.New(claimedCPU, grantCPU)
+	want := libcpu.NewCpuMask(claimedCPU, grantCPU)
 	if !gotCpus.Equals(want) {
 		t.Errorf("container cpuset after reapplyDRAClaims() = %s, want %s (claimed + grant, re-pinned without waiting for the next NRI resync)", gotCpus, want)
 	}
@@ -540,7 +540,7 @@ func TestReapplyDRAClaimsRepinsContainerCpusetWithGrant(t *testing.T) {
 // did before Step 8.
 func TestAllocateResourcesNoCDIDevicesUnaffected(t *testing.T) {
 	p := newDRATestPolicy(t)
-	p.draPlugin = newTestDRAPlugin(t, cpuset.New(), "dev0") // no live claims seeded
+	p.draPlugin = newTestDRAPlugin(t, libcpu.NewCpuMask(), "dev0") // no live claims seeded
 
 	container := &mockContainer{returnValueForGetID: "c1"}
 
@@ -587,7 +587,7 @@ func TestStartMarksLiveDRAClaimsInPoolSupply(t *testing.T) {
 	if len(sharable) < 2 {
 		t.Fatalf("expected at least 2 sharable CPUs on %q", leaf.Name())
 	}
-	claimed := cpuset.New(sharable[0], sharable[1])
+	claimed := libcpu.NewCpuMask(sharable[0], sharable[1])
 
 	plugin := newTestDRAPlugin(t, claimed, "dev0")
 	uid := types.UID("claim-start-1")
@@ -617,7 +617,7 @@ func TestStartReappliesDRAClaimsAfterRestoreCache(t *testing.T) {
 	if len(sharable) < 2 {
 		t.Fatalf("expected at least 2 sharable CPUs on %q", leaf.Name())
 	}
-	claimed := cpuset.New(sharable[0], sharable[1])
+	claimed := libcpu.NewCpuMask(sharable[0], sharable[1])
 
 	plugin := newTestDRAPlugin(t, claimed, "dev0")
 	uid := types.UID("claim-start-order-1")
@@ -687,7 +687,7 @@ func TestStartReapplyDRAClaimsHoldsWriteLockNotReentrant(t *testing.T) {
 	if len(sharable) < 2 {
 		t.Fatalf("expected at least 2 sharable CPUs on %q", leaf.Name())
 	}
-	claimed := cpuset.New(sharable[0], sharable[1])
+	claimed := libcpu.NewCpuMask(sharable[0], sharable[1])
 
 	plugin := newTestDRAPluginWithLock(t, claimed, "dev0", stub.run)
 	uid := types.UID("claim-lock-contract-1")
@@ -739,7 +739,7 @@ func TestClaimContainerRefsRebuiltAfterStartResync(t *testing.T) {
 	if len(sharable) < 2 {
 		t.Fatalf("expected at least 2 sharable CPUs on %q", leaf.Name())
 	}
-	claimed := cpuset.New(sharable[0], sharable[1])
+	claimed := libcpu.NewCpuMask(sharable[0], sharable[1])
 
 	plugin := newTestDRAPlugin(t, claimed, "dev0")
 	uid := types.UID("claim-restart-resync-1")
@@ -809,7 +809,7 @@ func TestReapplyDRAClaimsEvictsOverlappingRestoredGrant(t *testing.T) {
 	if len(sharable) < 1 {
 		t.Fatalf("expected at least 1 sharable CPU on %q", leaf.Name())
 	}
-	claimed := cpuset.New(sharable[0])
+	claimed := libcpu.NewCpuMask(sharable[0])
 
 	// Simulate restoreCache()/restoreAllocations() having already reinstated
 	// (or freshly reallocated) a regular grant that happens to overlap the

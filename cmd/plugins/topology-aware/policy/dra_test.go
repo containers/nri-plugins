@@ -16,6 +16,8 @@ package topologyaware
 
 import (
 	"context"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	"os"
 	"path"
 	"strings"
@@ -27,9 +29,7 @@ import (
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
-	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/testutils"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 // setupDRATestPolicy builds a real *policy from the "server" sysfs test
@@ -57,9 +57,9 @@ func setupDRATestPolicy(
 		t.Fatalf("failed to uncompress test sysfs data: %v", err)
 	}
 
-	sys, err := system.DiscoverSystemAt(path.Join(dir, "sysfs", "server", "sys"))
+	machine, err := hardware.Discover(hardware.WithRoot(path.Join(dir, "sysfs", "server")))
 	if err != nil {
-		t.Fatalf("failed to discover test system: %v", err)
+		t.Fatalf("failed to discover test machine: %v", err)
 	}
 
 	cfg := &cfgapi.Config{
@@ -72,9 +72,9 @@ func setupDRATestPolicy(
 	}
 
 	opts := &policyapi.BackendOptions{
-		Cache:  &mockCache{},
-		System: sys,
-		Config: cfg,
+		Cache:   &mockCache{},
+		Machine: machine,
+		Config:  cfg,
 	}
 	if mutateOpts != nil {
 		mutateOpts(opts)
@@ -266,7 +266,7 @@ func TestSetupDRAEnabledCDIWriterFailureReturnsError(t *testing.T) {
 // dra.Plugin.Stop are documented as idempotent).
 func TestStopCancelsContextAndStopsDRAPlugin(t *testing.T) {
 	p := &policy{}
-	p.draPlugin = newTestDRAPlugin(t, cpuset.New(0), "dev0")
+	p.draPlugin = newTestDRAPlugin(t, libcpu.NewCpuMask(0), "dev0")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	p.draCtxCancel = cancel
@@ -292,7 +292,7 @@ func TestStopCancelsContextAndStopsDRAPlugin(t *testing.T) {
 func newConflictingTierClassHandler(t *testing.T) *cpuclass.Handler {
 	t.Helper()
 	t.Setenv("OVERRIDE_SST", "")
-	h, err := cpuclass.New(&adapterTestSys{})
+	h, err := cpuclass.New(oneCpuMachine(t))
 	if err != nil {
 		t.Fatalf("cpuclass.New() failed: %v", err)
 	}
@@ -302,7 +302,7 @@ func newConflictingTierClassHandler(t *testing.T) *cpuclass.Handler {
 	}
 	if err := h.Configure(cpuclass.ConfigSpec{
 		Classes: classes,
-		Allowed: cpuset.MustParse("0-7"),
+		Allowed: libcpu.MustParseCpuMask("0-7"),
 	}); err != nil {
 		t.Fatalf("Configure() failed: %v", err)
 	}

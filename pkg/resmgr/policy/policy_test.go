@@ -15,9 +15,11 @@
 package policy
 
 import (
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	"path/filepath"
 	"sync"
 	"testing"
+	"testing/fstest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -113,7 +115,7 @@ var _ Backend = &mockBackend{}
 
 func TestPolicyStopForwardsToBackend(t *testing.T) {
 	backend := &mockBackend{}
-	p, err := NewPolicy(backend, newTestCache(t), &Options{})
+	p, err := NewPolicy(backend, newTestCache(t), &Options{Machine: testMachine(t)})
 	require.NoError(t, err)
 
 	require.NoError(t, p.Start(nil))
@@ -141,6 +143,7 @@ func TestPolicyStartForwardsKubeClientFnNodeNameAndWithLock(t *testing.T) {
 	}
 
 	p, err := NewPolicy(backend, newTestCache(t), &Options{
+		Machine:      testMachine(t),
 		KubeClientFn: func() kubernetes.Interface { return wantClient },
 		NodeName:     "node-under-test",
 		WithLock:     withLock,
@@ -165,6 +168,7 @@ func TestPolicyStartForwardsKubeClientFnNodeNameAndWithLock(t *testing.T) {
 func TestPolicyStartKubeClientFnNilWhenNoClient(t *testing.T) {
 	backend := &mockBackend{}
 	p, err := NewPolicy(backend, newTestCache(t), &Options{
+		Machine:      testMachine(t),
 		KubeClientFn: func() kubernetes.Interface { return nil },
 	})
 	require.NoError(t, err)
@@ -220,7 +224,7 @@ func TestLockContractWithLockNotReentrant(t *testing.T) {
 		},
 	}
 
-	p, err := NewPolicy(backend, newTestCache(t), &Options{WithLock: stub.run})
+	p, err := NewPolicy(backend, newTestCache(t), &Options{Machine: testMachine(t), WithLock: stub.run})
 	require.NoError(t, err)
 
 	assert.NotPanics(t, func() {
@@ -246,4 +250,28 @@ func TestLockContractReentrantCallPanics(t *testing.T) {
 // identity comparison in tests; its methods are never called.
 type fakeKubeClient struct {
 	kubernetes.Interface
+}
+
+// testMachine is the smallest machine NewPolicy will accept. These tests check
+// what the policy forwards to its backend, not anything about the hardware, but
+// a *hardware.Machine is concrete and cannot be faked.
+func testMachine(t *testing.T) *hardware.Machine {
+	t.Helper()
+
+	file := func(s string) *fstest.MapFile { return &fstest.MapFile{Data: []byte(s)} }
+	fsys := fstest.MapFS{
+		"proc/meminfo":                                             file("MemTotal: 1048576 kB\n"),
+		"sys/devices/system/cpu/online":                            file("0\n"),
+		"sys/devices/system/cpu/present":                           file("0\n"),
+		"sys/devices/system/cpu/possible":                          file("0\n"),
+		"sys/devices/system/cpu/cpu0/topology/physical_package_id": file("0\n"),
+		"sys/devices/system/cpu/cpu0/topology/core_id":             file("0\n"),
+		"sys/devices/system/cpu/cpu0/topology/core_cpus_list":      file("0\n"),
+	}
+
+	m, err := hardware.Discover(hardware.WithFS(fsys))
+	if err != nil {
+		t.Fatalf("failed to discover the test machine: %v", err)
+	}
+	return m
 }

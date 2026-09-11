@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"runtime"
 	"strings"
 	"sync"
@@ -38,7 +39,6 @@ import (
 
 	"github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	"tags.cncf.io/container-device-interface/pkg/parser"
 )
 
@@ -59,7 +59,7 @@ func validDeps() Deps {
 		KubeClient:         fake.NewClientset(),
 		NodeName:           "test-node",
 		ValidateClasses:    func() error { return nil },
-		ValidateCPUsInPool: func(_ cpuset.CPUSet) error { return nil },
+		ValidateCPUsInPool: func(_ *libcpu.CpuMask) error { return nil },
 		DeviceLister:       &fixedDeviceLister{},
 		ClaimAllocator:     &noopClaimAllocator{},
 		CDIWriter:          &noopCDIWriter{},
@@ -338,13 +338,13 @@ func (e *errorDeviceLister) DRADevices(_ string) ([]resourceapi.Device, error) {
 // noopClaimAllocator is a ClaimAllocator that succeeds without doing anything.
 type noopClaimAllocator struct{}
 
-func (*noopClaimAllocator) PickHpCpus(_, _, _ int, _ cpuset.CPUSet) (cpuset.CPUSet, error) {
-	return cpuset.New(), nil
+func (*noopClaimAllocator) PickHpCpus(_, _, _ int, _ *libcpu.CpuMask) (*libcpu.CpuMask, error) {
+	return libcpu.NewCpuMask(), nil
 }
 
-func (*noopClaimAllocator) ReleaseHpCpus(_, _ int, _ cpuset.CPUSet) {}
+func (*noopClaimAllocator) ReleaseHpCpus(_, _ int, _ *libcpu.CpuMask) {}
 
-func (*noopClaimAllocator) AccountHpCpus(_, _ int, _ cpuset.CPUSet) error { return nil }
+func (*noopClaimAllocator) AccountHpCpus(_, _ int, _ *libcpu.CpuMask) error { return nil }
 
 func (*noopClaimAllocator) IsHPClass(_ string) bool { return false }
 
@@ -540,7 +540,7 @@ func TestPublishResources_Integration(t *testing.T) {
 		RegistrarDir:       registrarDir,
 		PluginDataDir:      pluginDataDir,
 		ValidateClasses:    func() error { return nil },
-		ValidateCPUsInPool: func(_ cpuset.CPUSet) error { return nil },
+		ValidateCPUsInPool: func(_ *libcpu.CpuMask) error { return nil },
 		DeviceLister:       &fixedDeviceLister{devices: makeTestDevices(5)},
 		ClaimAllocator:     &noopClaimAllocator{},
 		CDIWriter:          &noopCDIWriter{},
@@ -594,28 +594,28 @@ func TestPublishResources_Integration(t *testing.T) {
 
 // trackingClaimAllocator tracks PickHpCpus and ReleaseHpCpus calls.
 type trackingClaimAllocator struct {
-	pickResult cpuset.CPUSet
+	pickResult *libcpu.CpuMask
 	pickErr    error
 	isHP       bool
-	picks      []cpuset.CPUSet // CPUSets returned per PickHpCpus call
-	releases   []cpuset.CPUSet // CPUSets released per ReleaseHpCpus call
-	accounts   []cpuset.CPUSet // CPUSets accounted per AccountHpCpus call
+	picks      []*libcpu.CpuMask // CPUSets returned per PickHpCpus call
+	releases   []*libcpu.CpuMask // CPUSets released per ReleaseHpCpus call
+	accounts   []*libcpu.CpuMask // CPUSets accounted per AccountHpCpus call
 	accountErr error
 }
 
-func (a *trackingClaimAllocator) PickHpCpus(_, _, _ int, _ cpuset.CPUSet) (cpuset.CPUSet, error) {
+func (a *trackingClaimAllocator) PickHpCpus(_, _, _ int, _ *libcpu.CpuMask) (*libcpu.CpuMask, error) {
 	if a.pickErr != nil {
-		return cpuset.New(), a.pickErr
+		return libcpu.NewCpuMask(), a.pickErr
 	}
 	a.picks = append(a.picks, a.pickResult)
 	return a.pickResult, nil
 }
 
-func (a *trackingClaimAllocator) ReleaseHpCpus(_, _ int, cpus cpuset.CPUSet) {
+func (a *trackingClaimAllocator) ReleaseHpCpus(_, _ int, cpus *libcpu.CpuMask) {
 	a.releases = append(a.releases, cpus)
 }
 
-func (a *trackingClaimAllocator) AccountHpCpus(_, _ int, cpus cpuset.CPUSet) error {
+func (a *trackingClaimAllocator) AccountHpCpus(_, _ int, cpus *libcpu.CpuMask) error {
 	if a.accountErr != nil {
 		return a.accountErr
 	}
@@ -719,7 +719,7 @@ func makeClaim(uid types.UID, driverName, poolName, deviceName, request string, 
 // TestPrepare_SingleHPSuccess verifies that a single HP claim results in a
 // PrepareResult with one Device and that CPUs are picked and CDI is written.
 func TestPrepare_SingleHPSuccess(t *testing.T) {
-	alloc := &trackingClaimAllocator{pickResult: cpuset.MustParse("0-3"), isHP: true}
+	alloc := &trackingClaimAllocator{pickResult: libcpu.MustParseCpuMask("0-3"), isHP: true}
 	cdiW := &trackingCDIWriter{}
 	store := &trackingClaimStore{}
 	deps := validDeps()
@@ -768,7 +768,7 @@ func TestPrepare_SingleHPSuccess(t *testing.T) {
 // same claim with the CDI spec already present returns the same PrepareResult
 // without re-picking CPUs or re-writing the spec.
 func TestPrepare_Idempotent_SpecPresent(t *testing.T) {
-	alloc := &trackingClaimAllocator{pickResult: cpuset.MustParse("0-3"), isHP: true}
+	alloc := &trackingClaimAllocator{pickResult: libcpu.MustParseCpuMask("0-3"), isHP: true}
 	cdiW := &trackingCDIWriter{}
 	store := &trackingClaimStore{}
 	deps := validDeps()
@@ -830,7 +830,7 @@ func TestPrepare_Idempotent_SpecPresent(t *testing.T) {
 // TestPrepare_Idempotent_SpecMissing verifies that a second Prepare call for the
 // same claim where the CDI spec is missing re-writes the spec without re-picking CPUs.
 func TestPrepare_Idempotent_SpecMissing(t *testing.T) {
-	alloc := &trackingClaimAllocator{pickResult: cpuset.MustParse("0-3"), isHP: true}
+	alloc := &trackingClaimAllocator{pickResult: libcpu.MustParseCpuMask("0-3"), isHP: true}
 	cdiW := &trackingCDIWriter{}
 	store := &trackingClaimStore{}
 	deps := validDeps()
@@ -1079,7 +1079,7 @@ func TestPrepare_NilAttr(t *testing.T) {
 // (for packageID or punitID) is handled gracefully: the field defaults to 0
 // and Prepare succeeds when all other required attrs are present.
 func TestPrepare_NilIntAttr(t *testing.T) {
-	alloc := &trackingClaimAllocator{pickResult: cpuset.MustParse("0-3"), isHP: true}
+	alloc := &trackingClaimAllocator{pickResult: libcpu.MustParseCpuMask("0-3"), isHP: true}
 	deps := validDeps()
 	deps.ClaimAllocator = alloc
 	deps.CDIWriter = &trackingCDIWriter{}
@@ -1210,7 +1210,7 @@ func TestPrepare_PickFailure(t *testing.T) {
 // the picked CPUs and returns a per-claim error.
 func TestPrepare_CDIWriteFailure(t *testing.T) {
 	writeErr := errors.New("CDI write failed")
-	alloc := &trackingClaimAllocator{pickResult: cpuset.MustParse("0-3"), isHP: true}
+	alloc := &trackingClaimAllocator{pickResult: libcpu.MustParseCpuMask("0-3"), isHP: true}
 	cdiW := &trackingCDIWriter{writeErr: writeErr}
 	deps := validDeps()
 	deps.ClaimAllocator = alloc
@@ -1252,7 +1252,7 @@ func TestPrepare_CDIWriteFailure(t *testing.T) {
 // state for a claim whose CDI spec/CPUs are already live.
 func TestPrepare_ClaimStoreSaveFailure(t *testing.T) {
 	saveErr := errors.New("claim store save failed")
-	alloc := &trackingClaimAllocator{pickResult: cpuset.MustParse("0-3"), isHP: true}
+	alloc := &trackingClaimAllocator{pickResult: libcpu.MustParseCpuMask("0-3"), isHP: true}
 	cdiW := &trackingCDIWriter{}
 	store := &trackingClaimStore{saveErr: saveErr}
 	deps := validDeps()
@@ -1296,7 +1296,7 @@ func TestPrepare_ClaimStoreSaveFailure(t *testing.T) {
 // TestPrepare_MultiResultTwoPunits verifies that a claim spanning punit pools
 // is rejected before it can be committed.
 func TestPrepare_MultiResultTwoPunits(t *testing.T) {
-	alloc := &trackingClaimAllocator{pickResult: cpuset.MustParse("0-1"), isHP: true}
+	alloc := &trackingClaimAllocator{pickResult: libcpu.MustParseCpuMask("0-1"), isHP: true}
 	cdiW := &trackingCDIWriter{}
 	deps := validDeps()
 	deps.ClaimAllocator = alloc
@@ -1356,7 +1356,7 @@ func TestPrepare_MultiResultTwoPunits(t *testing.T) {
 // topology leaf pool).
 func TestPrepare_ClaimCPUsOutsideAllocationDomain(t *testing.T) {
 	validateErr := errors.New("spans multiple leaf pools")
-	alloc := &trackingClaimAllocator{pickResult: cpuset.MustParse("0-3"), isHP: true}
+	alloc := &trackingClaimAllocator{pickResult: libcpu.MustParseCpuMask("0-3"), isHP: true}
 	cdiW := &trackingCDIWriter{}
 	store := &trackingClaimStore{}
 	deps := validDeps()
@@ -1364,7 +1364,7 @@ func TestPrepare_ClaimCPUsOutsideAllocationDomain(t *testing.T) {
 	deps.CDIWriter = cdiW
 	deps.ClaimStore = store
 	deps.DeviceLister = hpDeviceLister(hpDevice("dev0", "gold", 0, 0))
-	deps.ValidateCPUsInPool = func(_ cpuset.CPUSet) error { return validateErr }
+	deps.ValidateCPUsInPool = func(_ *libcpu.CpuMask) error { return validateErr }
 
 	p, err := New("test-driver", deps)
 	if err != nil {
@@ -1398,7 +1398,7 @@ func TestPrepare_ClaimCPUsOutsideAllocationDomain(t *testing.T) {
 // TestPrepare_ShareIDNil verifies that a result with a nil ShareID produces a
 // Device with ShareID == nil.
 func TestPrepare_ShareIDNil(t *testing.T) {
-	alloc := &trackingClaimAllocator{pickResult: cpuset.MustParse("0-3"), isHP: true}
+	alloc := &trackingClaimAllocator{pickResult: libcpu.MustParseCpuMask("0-3"), isHP: true}
 	deps := validDeps()
 	deps.ClaimAllocator = alloc
 	deps.DeviceLister = hpDeviceLister(hpDevice("dev0", "gold", 0, 0))
@@ -1423,7 +1423,7 @@ func TestPrepare_ShareIDNil(t *testing.T) {
 // TestPrepare_ShareIDSet verifies that a result with a non-nil ShareID produces a
 // Device with a matching non-nil ShareID.
 func TestPrepare_ShareIDSet(t *testing.T) {
-	alloc := &trackingClaimAllocator{pickResult: cpuset.MustParse("0-3"), isHP: true}
+	alloc := &trackingClaimAllocator{pickResult: libcpu.MustParseCpuMask("0-3"), isHP: true}
 	deps := validDeps()
 	deps.ClaimAllocator = alloc
 	deps.DeviceLister = hpDeviceLister(hpDevice("dev0", "gold", 0, 0))
@@ -1465,7 +1465,7 @@ func TestPrepare_ShareIDSet(t *testing.T) {
 // TestPrepare_AllUIDsInResultMap verifies that every claim UID appears in the
 // result map even when some claims error.
 func TestPrepare_AllUIDsInResultMap(t *testing.T) {
-	alloc := &trackingClaimAllocator{pickResult: cpuset.MustParse("0-3"), isHP: true}
+	alloc := &trackingClaimAllocator{pickResult: libcpu.MustParseCpuMask("0-3"), isHP: true}
 	deps := validDeps()
 	deps.ClaimAllocator = alloc
 	deps.DeviceLister = hpDeviceLister(hpDevice("dev0", "gold", 0, 0))
@@ -1503,7 +1503,7 @@ func TestPrepare_AllUIDsInResultMap(t *testing.T) {
 // (FirstAvailable subrequest format) produces a valid CDI device name and that
 // the spec can be written successfully.
 func TestPrepare_SubrequestSlashInName(t *testing.T) {
-	alloc := &trackingClaimAllocator{pickResult: cpuset.MustParse("0-3"), isHP: true}
+	alloc := &trackingClaimAllocator{pickResult: libcpu.MustParseCpuMask("0-3"), isHP: true}
 	cdiW := &trackingCDIWriter{}
 	deps := validDeps()
 	deps.ClaimAllocator = alloc
@@ -1901,11 +1901,11 @@ func TestRestoreClaimsLocked_RebuildsAccounting(t *testing.T) {
 	}
 	// Verify the union of all accounted CPU sets matches the expected total.
 	// Map iteration order is non-deterministic so we check the union.
-	totalAccounted := cpuset.New()
+	totalAccounted := libcpu.NewCpuMask()
 	for _, cs := range alloc.accounts {
 		totalAccounted = totalAccounted.Union(cs)
 	}
-	wantTotal := cpuset.MustParse("0-7")
+	wantTotal := libcpu.MustParseCpuMask("0-7")
 	if !totalAccounted.Equals(wantTotal) {
 		t.Errorf("AccountHpCpus total CPUs = %v, want %v", totalAccounted, wantTotal)
 	}

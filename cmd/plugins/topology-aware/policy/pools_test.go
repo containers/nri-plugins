@@ -16,6 +16,7 @@ package topologyaware
 
 import (
 	"fmt"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"os"
 	"path"
 	"strings"
@@ -30,7 +31,6 @@ import (
 
 	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	"github.com/containers/nri-plugins/pkg/testutils"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 func findNodeWithName(name string, nodes []Node) Node {
@@ -672,13 +672,13 @@ func TestClaimCPUsFromContainer(t *testing.T) {
 	if got.UID != uid {
 		t.Errorf("claimCPUsFromContainer() uid = %q, want %q", got.UID, uid)
 	}
-	if want := cpuset.MustParse("0-1"); !got.ClassCPUs["gold"].Equals(want) {
+	if want := libcpu.MustParseCpuMask("0-1"); !got.ClassCPUs["gold"].Equals(want) {
 		t.Errorf("claimCPUsFromContainer() classCPUs[gold] = %s, want %s", got.ClassCPUs["gold"], want)
 	}
 	if len(got.ClassCPUs) != 1 {
 		t.Errorf("claimCPUsFromContainer() classCPUs = %v, want exactly one class", got.ClassCPUs)
 	}
-	if want := cpuset.MustParse("0-1"); !got.CPUs.Equals(want) {
+	if want := libcpu.MustParseCpuMask("0-1"); !got.CPUs.Equals(want) {
 		t.Errorf("claimCPUsFromContainer() cpus = %s, want %s", got.CPUs, want)
 	}
 }
@@ -707,10 +707,10 @@ func TestClaimCPUsFromContainerDashedUIDAndDashedDeviceName(t *testing.T) {
 	if got.UID != uid {
 		t.Errorf("claimCPUsFromContainer() uid = %q, want %q", got.UID, uid)
 	}
-	if want := cpuset.MustParse("4-5"); !got.ClassCPUs["gold"].Equals(want) {
+	if want := libcpu.MustParseCpuMask("4-5"); !got.ClassCPUs["gold"].Equals(want) {
 		t.Errorf("claimCPUsFromContainer() classCPUs[gold] = %s, want %s", got.ClassCPUs["gold"], want)
 	}
-	if want := cpuset.MustParse("4-5"); !got.CPUs.Equals(want) {
+	if want := libcpu.MustParseCpuMask("4-5"); !got.CPUs.Equals(want) {
 		t.Errorf("claimCPUsFromContainer() cpus = %s, want %s", got.CPUs, want)
 	}
 }
@@ -738,10 +738,10 @@ func TestClaimCPUsFromContainerUsesOnlyConsumedAllocs(t *testing.T) {
 		t.Fatalf("claimCPUsFromContainer() returned %d claim(s), want 1", len(claims))
 	}
 	got := claims[0]
-	if want := cpuset.MustParse("0-1"); !got.CPUs.Equals(want) {
+	if want := libcpu.MustParseCpuMask("0-1"); !got.CPUs.Equals(want) {
 		t.Errorf("claimCPUsFromContainer() cpus = %s, want %s (only the consumed allocation)", got.CPUs, want)
 	}
-	if want := cpuset.MustParse("0-1"); len(got.ClassCPUs) != 1 || !got.ClassCPUs["gold"].Equals(want) {
+	if want := libcpu.MustParseCpuMask("0-1"); len(got.ClassCPUs) != 1 || !got.ClassCPUs["gold"].Equals(want) {
 		t.Errorf("claimCPUsFromContainer() classCPUs = %v, want {gold: %s}", got.ClassCPUs, want)
 	}
 }
@@ -778,16 +778,16 @@ func TestClaimCPUsFromContainerMultipleClasses(t *testing.T) {
 	if got.UID != uid {
 		t.Errorf("claimCPUsFromContainer() uid = %q, want %q", got.UID, uid)
 	}
-	if want := cpuset.MustParse("0-3"); !got.CPUs.Equals(want) {
+	if want := libcpu.MustParseCpuMask("0-3"); !got.CPUs.Equals(want) {
 		t.Errorf("claimCPUsFromContainer() cpus = %s, want %s (union across classes)", got.CPUs, want)
 	}
 	if len(got.ClassCPUs) != 2 {
 		t.Fatalf("claimCPUsFromContainer() classCPUs = %v, want two distinct classes", got.ClassCPUs)
 	}
-	if want := cpuset.MustParse("0-1"); !got.ClassCPUs["gold"].Equals(want) {
+	if want := libcpu.MustParseCpuMask("0-1"); !got.ClassCPUs["gold"].Equals(want) {
 		t.Errorf("claimCPUsFromContainer() classCPUs[gold] = %s, want %s", got.ClassCPUs["gold"], want)
 	}
-	if want := cpuset.MustParse("2-3"); !got.ClassCPUs["silver"].Equals(want) {
+	if want := libcpu.MustParseCpuMask("2-3"); !got.ClassCPUs["silver"].Equals(want) {
 		t.Errorf("claimCPUsFromContainer() classCPUs[silver] = %s, want %s", got.ClassCPUs["silver"], want)
 	}
 }
@@ -844,10 +844,10 @@ func TestClaimCPUsFromContainerMultipleDistinctClaims(t *testing.T) {
 	for _, cl := range claims {
 		byUID[cl.UID] = cl
 	}
-	if cl, ok := byUID[uid1]; !ok || !cl.CPUs.Equals(cpuset.MustParse("0-1")) {
+	if cl, ok := byUID[uid1]; !ok || !cl.CPUs.Equals(libcpu.MustParseCpuMask("0-1")) {
 		t.Errorf("claim %s CPUs = %v, want 0-1", uid1, cl.CPUs)
 	}
-	if cl, ok := byUID[uid2]; !ok || !cl.CPUs.Equals(cpuset.MustParse("2-3")) {
+	if cl, ok := byUID[uid2]; !ok || !cl.CPUs.Equals(libcpu.MustParseCpuMask("2-3")) {
 		t.Errorf("claim %s CPUs = %v, want 2-3", uid2, cl.CPUs)
 	}
 }
@@ -855,8 +855,8 @@ func TestClaimCPUsFromContainerMultipleDistinctClaims(t *testing.T) {
 // goldClassCPUs wraps cpus as the single-class classCPUs allocateClaim/
 // remarkClaimInSupply expect, for tests that don't care about the
 // multi-class case (see TestAllocateClaimAppliesPerAllocClass for that).
-func goldClassCPUs(cpus cpuset.CPUSet) map[string]cpuset.CPUSet {
-	return map[string]cpuset.CPUSet{"gold": cpus}
+func goldClassCPUs(cpus *libcpu.CpuMask) map[string]*libcpu.CpuMask {
+	return map[string]*libcpu.CpuMask{"gold": cpus}
 }
 
 // addTestGrant hands out an exclusive grant for container from pool's
@@ -867,7 +867,7 @@ func goldClassCPUs(cpus cpuset.CPUSet) map[string]cpuset.CPUSet {
 // code path without going through the full container-annotation-driven
 // request/offer pipeline (which coldstart_test.go notes is impractical to
 // mock with a bare container).
-func addTestGrant(t *testing.T, p *policy, pool Node, container cache.Container, exclusive cpuset.CPUSet) Grant {
+func addTestGrant(t *testing.T, p *policy, pool Node, container cache.Container, exclusive *libcpu.CpuMask) Grant {
 	t.Helper()
 
 	g := newGrant(pool, container, cpuNormal, "", exclusive, 0, memoryDRAM, nil, 0)
@@ -893,7 +893,7 @@ func TestAllocateClaimMarksTightestPool(t *testing.T) {
 	if len(sharable) < 2 {
 		t.Fatalf("expected at least 2 sharable CPUs on %q", leaf.Name())
 	}
-	cpus := cpuset.New(sharable[0], sharable[1])
+	cpus := libcpu.NewCpuMask(sharable[0], sharable[1])
 
 	uid := types.UID("claim-mark")
 	if err := p.allocateClaim(uid, cpus, goldClassCPUs(cpus)); err != nil {
@@ -926,7 +926,7 @@ func TestAllocateClaimOutsideAllowedReturnsError(t *testing.T) {
 
 	// CPU 99999 does not exist on the test system at all, so it can't be a
 	// subset of any pool's (including root's) statically assigned range.
-	cpus := cpuset.New(99999)
+	cpus := libcpu.NewCpuMask(99999)
 
 	if err := p.allocateClaim(types.UID("claim-outside"), cpus, goldClassCPUs(cpus)); err == nil {
 		t.Fatalf("allocateClaim() with CPUs outside the allowed set: got nil error, want a descriptive error")
@@ -955,7 +955,7 @@ func TestAllocateClaimSpanningNoPoolReturnsError(t *testing.T) {
 	if len(cpuA) < 1 || len(cpuB) < 1 {
 		t.Fatalf("expected at least 1 CPU on both %q and %q", leafA.Name(), leafB.Name())
 	}
-	spanning := cpuset.New(cpuA[0], cpuB[0])
+	spanning := libcpu.NewCpuMask(cpuA[0], cpuB[0])
 
 	err := p.allocateClaim(types.UID("claim-spanning"), spanning, goldClassCPUs(spanning))
 	if err == nil {
@@ -976,7 +976,7 @@ func TestAllocateClaimRefcountsMultipleContainers(t *testing.T) {
 	if len(sharable) < 1 {
 		t.Fatalf("expected at least 1 sharable CPU on %q", leaf.Name())
 	}
-	cpus := cpuset.New(sharable[0])
+	cpus := libcpu.NewCpuMask(sharable[0])
 	uid := types.UID("claim-shared")
 
 	if err := p.allocateClaim(uid, cpus, goldClassCPUs(cpus)); err != nil {
@@ -1020,7 +1020,7 @@ func TestReleaseClaimUnknownUIDNoop(t *testing.T) {
 	leaf := findPoolNode(t, p, "NUMA node #0")
 	before := leaf.FreeSupply().SharableCPUs()
 
-	if err := p.releaseClaim(types.UID("never-claimed"), cpuset.New(before.List()[0])); err != nil {
+	if err := p.releaseClaim(types.UID("never-claimed"), libcpu.NewCpuMask(before.List()[0])); err != nil {
 		t.Errorf("releaseClaim() for an unknown uid: got error %v, want nil (idempotent)", err)
 	}
 	if got := leaf.FreeSupply().SharableCPUs(); !got.Equals(before) {
@@ -1043,7 +1043,7 @@ func TestReleaseClaimResetsCpuClass(t *testing.T) {
 		t.Fatalf("expected at least 2 sharable CPUs on %q", leaf.Name())
 	}
 	cpu := sharable[0]
-	claimed := cpuset.New(cpu)
+	claimed := libcpu.NewCpuMask(cpu)
 
 	// A sibling CPU never touched by the claim: its class reflects whatever
 	// initialize() applied via resetCpuClass("initialize", p.allowed) — the
@@ -1083,12 +1083,12 @@ func TestAllocateClaimAppliesPerAllocClass(t *testing.T) {
 	if len(sharable) < 2 {
 		t.Fatalf("expected at least 2 sharable CPUs on %q", leaf.Name())
 	}
-	goldCPU := cpuset.New(sharable[0])
-	silverCPU := cpuset.New(sharable[1])
+	goldCPU := libcpu.NewCpuMask(sharable[0])
+	silverCPU := libcpu.NewCpuMask(sharable[1])
 	claimed := goldCPU.Union(silverCPU)
 
 	uid := types.UID("claim-multiclass")
-	classCPUs := map[string]cpuset.CPUSet{
+	classCPUs := map[string]*libcpu.CpuMask{
 		"gold":   goldCPU,
 		"silver": silverCPU,
 	}
@@ -1127,7 +1127,7 @@ func TestAllocateClaimEvictsOverlappingExclusiveGrant(t *testing.T) {
 	if len(sharable) < 1 {
 		t.Fatalf("expected at least 1 sharable CPU on %q", leaf.Name())
 	}
-	claimed := cpuset.New(sharable[0])
+	claimed := libcpu.NewCpuMask(sharable[0])
 
 	victim := &mockContainer{returnValueForGetID: "victim"}
 	addTestGrant(t, p, leaf, victim, claimed)

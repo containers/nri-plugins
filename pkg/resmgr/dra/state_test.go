@@ -17,6 +17,7 @@ limitations under the License.
 package dra
 
 import (
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"os"
 	"path/filepath"
 	"testing"
@@ -24,7 +25,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 // newTestCache creates a real cache in a temporary directory. The cache rejects
@@ -48,7 +48,7 @@ func newTestCache(t *testing.T) cache.Cache {
 // survives a marshal → unmarshal round-trip without data loss.
 func TestMarshalUnmarshalClaims_RoundTrip(t *testing.T) {
 	uid := types.UID("test-uid-1234")
-	originalCPUs := cpuset.New(0, 1, 2, 3)
+	originalCPUs := libcpu.NewCpuMask(0, 1, 2, 3)
 
 	claims := map[types.UID]*ClaimState{
 		uid: {
@@ -72,7 +72,7 @@ func TestMarshalUnmarshalClaims_RoundTrip(t *testing.T) {
 					ClassName: "hp",
 					PkgID:     0,
 					PunitID:   1,
-					CPUs:      cpuset.New(4, 5).String(),
+					CPUs:      libcpu.NewCpuMask(4, 5).String(),
 				},
 			},
 		},
@@ -100,9 +100,9 @@ func TestMarshalUnmarshalClaims_RoundTrip(t *testing.T) {
 	}
 
 	// Verify CPUs round-trip via cpuset.Parse.
-	parsedCPUs, err := cpuset.Parse(cs.Allocs[0].CPUs)
+	parsedCPUs, err := libcpu.ParseCpuMask(cs.Allocs[0].CPUs)
 	if err != nil {
-		t.Fatalf("cpuset.Parse(%q) error: %v", cs.Allocs[0].CPUs, err)
+		t.Fatalf("libcpu.ParseCpuMask(%q) error: %v", cs.Allocs[0].CPUs, err)
 	}
 	if !parsedCPUs.Equals(originalCPUs) {
 		t.Errorf("CPUs round-trip: got %v, want %v", parsedCPUs, originalCPUs)
@@ -142,7 +142,7 @@ func TestCacheClaimStore_RoundTrip(t *testing.T) {
 	c := newTestCache(t)
 
 	uid := types.UID("claim-abc")
-	originalCPUs := cpuset.New(10, 11, 12, 13)
+	originalCPUs := libcpu.NewCpuMask(10, 11, 12, 13)
 
 	claims := map[types.UID]*ClaimState{
 		uid: {
@@ -183,9 +183,9 @@ func TestCacheClaimStore_RoundTrip(t *testing.T) {
 	}
 
 	// Verify CPUs survive round-trip.
-	parsedCPUs, err := cpuset.Parse(cs.Allocs[0].CPUs)
+	parsedCPUs, err := libcpu.ParseCpuMask(cs.Allocs[0].CPUs)
 	if err != nil {
-		t.Fatalf("cpuset.Parse(%q) error: %v", cs.Allocs[0].CPUs, err)
+		t.Fatalf("libcpu.ParseCpuMask(%q) error: %v", cs.Allocs[0].CPUs, err)
 	}
 	if !parsedCPUs.Equals(originalCPUs) {
 		t.Errorf("CPU round-trip: got %v, want %v", parsedCPUs, originalCPUs)
@@ -225,7 +225,7 @@ func TestCacheClaimStore_LoadReturnsSavedData(t *testing.T) {
 					ClassName: "hp",
 					PkgID:     0,
 					PunitID:   0,
-					CPUs:      cpuset.New(7, 8).String(),
+					CPUs:      libcpu.NewCpuMask(7, 8).String(),
 				},
 			},
 		},
@@ -259,10 +259,10 @@ func TestCacheClaimStore_MultiClaim(t *testing.T) {
 
 	claims := map[types.UID]*ClaimState{
 		uid1: {UID: string(uid1), Allocs: []ResultAlloc{
-			{Request: "r1", Pool: "p", Device: "d1", ClassName: "hp", PkgID: 0, PunitID: 0, CPUs: cpuset.New(0).String()},
+			{Request: "r1", Pool: "p", Device: "d1", ClassName: "hp", PkgID: 0, PunitID: 0, CPUs: libcpu.NewCpuMask(0).String()},
 		}},
 		uid2: {UID: string(uid2), Allocs: []ResultAlloc{
-			{Request: "r2", Pool: "p", Device: "d2", ClassName: "hp", PkgID: 0, PunitID: 1, CPUs: cpuset.New(1).String()},
+			{Request: "r2", Pool: "p", Device: "d2", ClassName: "hp", PkgID: 0, PunitID: 1, CPUs: libcpu.NewCpuMask(1).String()},
 		}},
 	}
 
