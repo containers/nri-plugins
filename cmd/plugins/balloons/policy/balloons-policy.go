@@ -147,13 +147,9 @@ type loadClassVirtDev struct {
 	updateOnEveryCpuAllocation bool
 }
 
-// toCpuSet and toCpuMask convert between the CPU sets this policy keeps and the
-// two interfaces which still take the k8s ones: libmem's CPUSetAffinity, and the
-// configuration, which parses an operator's cpuset string.
-func toCpuSet(cpus libcpu.CPUSet) cpuset.CPUSet {
-	return cpuset.New(cpus.List()...)
-}
-
+// toCpuMask converts a CPU set into the kind this policy keeps. It is needed
+// for the one interface which still hands out a k8s one: the configuration,
+// which parses an operator's cpuset string.
 func toCpuMask(cpus cpuset.CPUSet) *libcpu.CpuMask {
 	return libcpu.NewCpuMask(cpus.List()...)
 }
@@ -2496,7 +2492,7 @@ func memTypeMaskFromStringList(memTypes []string) (libmem.TypeMask, error) {
 // closestMems returns memory node IDs good for pinning containers
 // that run on given CPUs
 func (p *balloons) closestMems(cpus *libcpu.CpuMask) idset.IDSet {
-	return idset.NewIDSet(p.memAllocator.CPUSetAffinity(toCpuSet(cpus)).Slice()...)
+	return idset.NewIDSet(p.memAllocator.CPUSetAffinity(cpus).Slice()...)
 }
 
 // resizeCompositeBalloon changes the CPUs allocated for all sub-components

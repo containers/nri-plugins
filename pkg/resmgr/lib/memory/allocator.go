@@ -21,8 +21,8 @@ import (
 	"slices"
 	"strings"
 
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"github.com/containers/nri-plugins/pkg/lib/hardware"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
 )
 
@@ -91,7 +91,7 @@ func WithMachineNodes(m *hardware.Machine) AllocatorOption {
 				memType   = TypeForKind(node.Kind())
 				capacity  = node.Capacity()
 				isNormal  = node.HasNormalMemory()
-				closeCPUs = cpuset.New(node.CPUs().List()...)
+				closeCPUs = node.CPUs()
 				distance  = node.Distances()
 			)
 
@@ -136,11 +136,11 @@ func (a *Allocator) Masks() *MaskCache {
 	return a.masks
 }
 
-// CPUSetAffinity returns the mask of closest nodes for the given cpuset.
-func (a *Allocator) CPUSetAffinity(cpus cpuset.CPUSet) NodeMask {
+// CPUSetAffinity returns the mask of closest nodes for the given set of CPUs.
+func (a *Allocator) CPUSetAffinity(cpus libcpu.CPUSet) NodeMask {
 	nodes := NodeMask(0)
 	a.ForeachNode(a.masks.nodes.all, func(n *Node) bool {
-		if !cpus.Intersection(n.cpus).IsEmpty() {
+		if n.cpus.Intersects(cpus) {
 			nodes |= n.Mask()
 		}
 		return ForeachMore

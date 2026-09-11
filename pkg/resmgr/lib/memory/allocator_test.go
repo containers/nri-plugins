@@ -20,9 +20,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	. "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 func TestNewAllocatorWithMachineNodes(t *testing.T) {
@@ -178,7 +178,7 @@ func TestCPUSetAffinity(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.affinity, a.CPUSetAffinity(cpuset.New(tc.cpus...)))
+			require.Equal(t, tc.affinity, a.CPUSetAffinity(libcpu.NewCpuMask(tc.cpus...)))
 		})
 	}
 }
@@ -1436,7 +1436,7 @@ func (s *testSetup) nodes(t *testing.T) []*Node {
 		var (
 			capacity  = s.capacities[id]
 			normal    = !s.movability[id]
-			closeCPUs = cpuset.New(s.closeCPUs[id]...)
+			closeCPUs = libcpu.NewCpuMask(s.closeCPUs[id]...)
 			distance  = s.distances[id]
 		)
 

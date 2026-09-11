@@ -23,7 +23,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 )
 
 // Node represents a memory node with some amount and type of attached memory.
@@ -32,7 +32,7 @@ type Node struct {
 	memType  Type
 	capacity int64
 	normal   bool
-	cpus     cpuset.CPUSet
+	cpus     *libcpu.CpuMask
 	distance Distance
 }
 
@@ -43,8 +43,10 @@ type Distance struct {
 	nodes  map[int]NodeMask
 }
 
-// NewNode creates a new node with the given parameters.
-func NewNode(id ID, t Type, capa int64, normal bool, cpus cpuset.CPUSet, d []int) (*Node, error) {
+// NewNode creates a new node with the given parameters. The node takes a
+// sealed copy of the given set of close CPUs, so the caller stays free to
+// modify its own.
+func NewNode(id ID, t Type, capa int64, normal bool, cpus *libcpu.CpuMask, d []int) (*Node, error) {
 	if !t.IsValid() {
 		return nil, fmt.Errorf("%w: unknown type %d", ErrInvalidType, t)
 	}
@@ -58,12 +60,15 @@ func NewNode(id ID, t Type, capa int64, normal bool, cpus cpuset.CPUSet, d []int
 		return nil, err
 	}
 
+	closeCPUs := cpus.Clone()
+	closeCPUs.Seal()
+
 	return &Node{
 		id:       id,
 		memType:  t,
 		capacity: capa,
 		normal:   normal,
-		cpus:     cpus.Clone(),
+		cpus:     closeCPUs,
 		distance: dist,
 	}, nil
 }
@@ -103,8 +108,8 @@ func (n *Node) HasMemory() bool {
 	return n.capacity > 0
 }
 
-// CloseCPUs returns the set of CPUs closest to the node.
-func (n *Node) CloseCPUs() cpuset.CPUSet {
+// CloseCPUs returns the sealed set of CPUs closest to the node.
+func (n *Node) CloseCPUs() *libcpu.CpuMask {
 	return n.cpus
 }
 
