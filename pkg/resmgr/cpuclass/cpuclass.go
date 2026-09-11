@@ -156,9 +156,9 @@ func (h *Handler) PctActive() bool {
 // error when the handler or its PCT allocator is nil, or when the
 // underlying pick fails (inactive allocator, punit not found, or
 // insufficient HP capacity).
-func (h *Handler) PickHpCpus(pkgID, punitID, n int, held cpuset.CPUSet) (cpuset.CPUSet, error) {
+func (h *Handler) PickHpCpus(pkgID, punitID, n int, held *libcpu.CpuMask) (*libcpu.CpuMask, error) {
 	if h == nil || h.pct == nil {
-		return cpuset.New(), fmt.Errorf("cpuclass: PickHpCpus: pct allocator not initialized")
+		return libcpu.NewCpuMask(), fmt.Errorf("cpuclass: PickHpCpus: pct allocator not initialized")
 	}
 	return h.pct.PickHpCpus(pkgID, punitID, n, held)
 }
@@ -167,7 +167,7 @@ func (h *Handler) PickHpCpus(pkgID, punitID, n int, held cpuset.CPUSet) (cpuset.
 // identified by (pkgID, punitID). Delegates to the PCT allocator.
 // No-op when the handler or its PCT allocator is nil, or when the
 // punit is unknown (idempotent).
-func (h *Handler) ReleaseHpCpus(pkgID, punitID int, cpus cpuset.CPUSet) {
+func (h *Handler) ReleaseHpCpus(pkgID, punitID int, cpus *libcpu.CpuMask) {
 	if h == nil || h.pct == nil {
 		return
 	}
@@ -180,7 +180,7 @@ func (h *Handler) ReleaseHpCpus(pkgID, punitID int, cpus cpuset.CPUSet) {
 // Delegates to the PCT allocator. Returns an error when the handler
 // or its PCT allocator is nil, or when accounting fails (inactive
 // allocator, punit not found, or HP-ineligible punit).
-func (h *Handler) AccountHpCpus(pkgID, punitID int, cpus cpuset.CPUSet) error {
+func (h *Handler) AccountHpCpus(pkgID, punitID int, cpus *libcpu.CpuMask) error {
 	if h == nil || h.pct == nil {
 		return fmt.Errorf("cpuclass: AccountHpCpus: pct allocator not initialized: %w", ErrAllocatorInactive)
 	}

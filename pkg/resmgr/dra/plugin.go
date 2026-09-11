@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"os"
 	"path/filepath"
 	"sync"
@@ -33,7 +34,6 @@ import (
 	"k8s.io/dynamic-resource-allocation/resourceslice"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	"tags.cncf.io/container-device-interface/pkg/parser"
 )
 
@@ -153,11 +153,11 @@ func (p *Plugin) deviceIndex() (map[string]deviceInfo, error) {
 
 // allClaimedCPUs returns the union of all CPUs currently tracked in p.claims.
 // Must be called inside deps.WithLock.
-func (p *Plugin) allClaimedCPUs() cpuset.CPUSet {
-	result := cpuset.New()
+func (p *Plugin) allClaimedCPUs() *libcpu.CpuMask {
+	result := libcpu.NewCpuMask()
 	for _, cs := range p.claims {
 		for _, alloc := range cs.Allocs {
-			parsed, err := cpuset.Parse(alloc.CPUs)
+			parsed, err := libcpu.ParseCpuMask(alloc.CPUs)
 			if err == nil {
 				result = result.Union(parsed)
 			}
@@ -230,7 +230,7 @@ func (p *Plugin) PrepareResourceClaims(_ context.Context, claims []*resourceapi.
 				heldCPUs := p.allClaimedCPUs()
 				var pickedAllocs []ResultAlloc
 				var cdiDevices []CDIDevice
-				claimCPUs := cpuset.New()
+				claimCPUs := libcpu.NewCpuMask()
 				var punit *deviceInfo
 
 				for i, r := range filtered {
@@ -357,7 +357,7 @@ func (p *Plugin) cdiDevicesFromClaims(uid types.UID, filtered []resourceapi.Devi
 		}
 		r := filtered[i]
 		name := CDIDeviceName(uid, r.Request, r.Device, i)
-		cpus, err := cpuset.Parse(alloc.CPUs)
+		cpus, err := libcpu.ParseCpuMask(alloc.CPUs)
 		if err != nil {
 			continue
 		}
@@ -374,7 +374,7 @@ func (p *Plugin) cdiDevicesFromClaims(uid types.UID, filtered []resourceapi.Devi
 // encountered an error mid-way through allocation.
 func (p *Plugin) rollbackPicks(allocs []ResultAlloc) {
 	for _, a := range allocs {
-		cs, err := cpuset.Parse(a.CPUs)
+		cs, err := libcpu.ParseCpuMask(a.CPUs)
 		if err != nil {
 			continue
 		}
@@ -466,7 +466,7 @@ func (p *Plugin) RestoreClaimsLocked() error {
 	var errs []error
 	for _, cs := range p.claims {
 		for _, alloc := range cs.Allocs {
-			cpus, err := cpuset.Parse(alloc.CPUs)
+			cpus, err := libcpu.ParseCpuMask(alloc.CPUs)
 			if err != nil {
 				p.deps.Logger.Warnf("dra plugin: RestoreClaimsLocked: claim %s device %s: parse CPUs %q: %v (skipping)", cs.UID, alloc.Device, alloc.CPUs, err)
 				continue
@@ -550,7 +550,7 @@ func (p *Plugin) Start(ctx context.Context) error {
 					startErr = fmt.Errorf("dra plugin: Start: claim %s device %s: cpuClass %q is no longer a valid HP class (removed or renamed); cannot restore claim", uid, alloc.Device, alloc.ClassName)
 					return
 				}
-				cpus, err := cpuset.Parse(alloc.CPUs)
+				cpus, err := libcpu.ParseCpuMask(alloc.CPUs)
 				if err != nil {
 					startErr = fmt.Errorf("dra plugin: Start: claim %s device %s: parse CPUs %q: %w", uid, alloc.Device, alloc.CPUs, err)
 					return

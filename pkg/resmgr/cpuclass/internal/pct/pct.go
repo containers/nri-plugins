@@ -642,16 +642,16 @@ func (a *Allocator) punitNonHPCapacity(idx int) int {
 // so clearHpUsage called from the non-DRA path cannot evict DRA holds).
 // Returns an error when the allocator is inactive, the punit is not
 // found or not HP-eligible, or fewer than n CPUs are available.
-func (a *Allocator) PickHpCpus(pkgID, punitID, n int, held cpuset.CPUSet) (cpuset.CPUSet, error) {
+func (a *Allocator) PickHpCpus(pkgID, punitID, n int, held *libcpu.CpuMask) (*libcpu.CpuMask, error) {
 	if !a.Active() {
-		return cpuset.New(), fmt.Errorf("pct: PickHpCpus: allocator not active")
+		return libcpu.NewCpuMask(), fmt.Errorf("pct: PickHpCpus: allocator not active")
 	}
 	idx := a.punitIdxByID(pkgID, punitID)
 	if idx < 0 {
-		return cpuset.New(), fmt.Errorf("pct: PickHpCpus: punit (pkg=%d, punit=%d) not found", pkgID, punitID)
+		return libcpu.NewCpuMask(), fmt.Errorf("pct: PickHpCpus: punit (pkg=%d, punit=%d) not found", pkgID, punitID)
 	}
 	if !a.hpEligiblePunit[idx] {
-		return cpuset.New(), fmt.Errorf("pct: PickHpCpus: punit (pkg=%d, punit=%d) is not HP-eligible", pkgID, punitID)
+		return libcpu.NewCpuMask(), fmt.Errorf("pct: PickHpCpus: punit (pkg=%d, punit=%d) is not HP-eligible", pkgID, punitID)
 	}
 	pu := a.punits[idx]
 	avail := pu.CPUs
@@ -672,12 +672,12 @@ func (a *Allocator) PickHpCpus(pkgID, punitID, n int, held cpuset.CPUSet) (cpuse
 		if hpRoom < available {
 			available = hpRoom
 		}
-		return cpuset.New(), fmt.Errorf("pct: PickHpCpus: punit (pkg=%d, punit=%d) has %d available HP CPUs (room=%d, free=%d), need %d",
+		return libcpu.NewCpuMask(), fmt.Errorf("pct: PickHpCpus: punit (pkg=%d, punit=%d) has %d available HP CPUs (room=%d, free=%d), need %d",
 			pkgID, punitID, available, hpRoom, avail.Size(), n)
 	}
 	// Sort for deterministic selection; take first n.
 	list := avail.List()
-	picked := cpuset.New(list[:n]...)
+	picked := libcpu.NewCpuMask(list[:n]...)
 	// hpDRAUsed is always non-nil here: Configure() initialises it
 	// unconditionally, and Active() (checked above) is true only after
 	// a successful Configure().
@@ -688,7 +688,7 @@ func (a *Allocator) PickHpCpus(pkgID, punitID, n int, held cpuset.CPUSet) (cpuse
 // ReleaseHpCpus removes cpus from hpDRAUsed[punitIdx] for the punit
 // identified by (pkgID, punitID). Silently ignores unknown punits and
 // CPUs not present in hpDRAUsed (idempotent).
-func (a *Allocator) ReleaseHpCpus(pkgID, punitID int, cpus cpuset.CPUSet) {
+func (a *Allocator) ReleaseHpCpus(pkgID, punitID int, cpus *libcpu.CpuMask) {
 	if !a.Active() {
 		return
 	}
@@ -717,7 +717,7 @@ func (a *Allocator) ReleaseHpCpus(pkgID, punitID int, cpus cpuset.CPUSet) {
 // hpUsed > GuaranteedHpCpus) is permitted — the container may already
 // be running; a warning is logged but no error is returned. Union
 // semantics make repeated calls with the same CPUs idempotent.
-func (a *Allocator) AccountHpCpus(pkgID, punitID int, cpus cpuset.CPUSet) error {
+func (a *Allocator) AccountHpCpus(pkgID, punitID int, cpus *libcpu.CpuMask) error {
 	if !a.Active() {
 		return fmt.Errorf("pct: AccountHpCpus: allocator not active")
 	}

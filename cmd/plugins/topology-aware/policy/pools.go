@@ -591,7 +591,7 @@ func (p *policy) applyGrant(grant Grant) {
 	if opt.PinCPU {
 		if cpuType == cpuPreserve {
 			if !claimed.IsEmpty() {
-				preserved, err := cpuset.Parse(container.GetCpusetCpus())
+				preserved, err := libcpu.ParseCpuMask(container.GetCpusetCpus())
 				if err != nil {
 					log.Errorf("  => failed to parse %s cpuset %q while adding DRA claim %s: %v",
 						container.PrettyName(), container.GetCpusetCpus(), claimed, err)
@@ -1448,12 +1448,12 @@ type claimLister interface {
 //
 // Allocs whose CPUs field fails to parse are logged and skipped; they
 // contribute to neither the returned union nor the per-class grouping.
-func classifyClaimCPUs(uid types.UID, allocs []dra.ResultAlloc) (cpuset.CPUSet, map[string]cpuset.CPUSet) {
-	cpus := cpuset.New()
-	classCPUs := map[string]cpuset.CPUSet{}
+func classifyClaimCPUs(uid types.UID, allocs []dra.ResultAlloc) (*libcpu.CpuMask, map[string]*libcpu.CpuMask) {
+	cpus := libcpu.NewCpuMask()
+	classCPUs := map[string]*libcpu.CpuMask{}
 
 	for _, a := range allocs {
-		parsed, err := cpuset.Parse(a.CPUs)
+		parsed, err := libcpu.ParseCpuMask(a.CPUs)
 		if err != nil {
 			log.Warnf("dra: claim %s: failed to parse allocated CPUs %q: %v", uid, a.CPUs, err)
 			continue
@@ -1475,8 +1475,8 @@ func classifyClaimCPUs(uid types.UID, allocs []dra.ResultAlloc) (cpuset.CPUSet, 
 // more than one class).
 type containerClaim struct {
 	UID       types.UID
-	CPUs      cpuset.CPUSet
-	ClassCPUs map[string]cpuset.CPUSet
+	CPUs      *libcpu.CpuMask
+	ClassCPUs map[string]*libcpu.CpuMask
 }
 
 // claimCPUsFromContainer looks for CDI device names on c that identify live
@@ -1553,7 +1553,7 @@ func claimCPUsFromContainer(c cache.Container, plugin claimLister) []containerCl
 // children, so marking the CPUs claimed at the ancestor would fail to
 // exclude them from either leaf's own FreeSupply() — a double-booking gap
 // this restriction closes.
-func (p *policy) poolForCPUs(cpus cpuset.CPUSet) (Node, error) {
+func (p *policy) poolForCPUs(cpus *libcpu.CpuMask) (Node, error) {
 	var (
 		best      Node
 		bestDepth = -1
@@ -1594,7 +1594,7 @@ func (p *policy) poolForCPUs(cpus cpuset.CPUSet) (Node, error) {
 // physical class must be applied per subset — applying one class to the
 // claim's entire unioned CPU set would silently mis-apply it to part of the
 // claim.
-func (p *policy) applyClassCPUs(verb string, uid types.UID, classCPUs map[string]cpuset.CPUSet) error {
+func (p *policy) applyClassCPUs(verb string, uid types.UID, classCPUs map[string]*libcpu.CpuMask) error {
 	if p.cpuClasses == nil {
 		return nil
 	}
@@ -1621,7 +1621,7 @@ func (p *policy) applyClassCPUs(verb string, uid types.UID, classCPUs map[string
 // subsequent calls just bump the per-claim container refcount so that
 // releaseClaim knows to keep the CPUs marked until the last referencing
 // container is released.
-func (p *policy) allocateClaim(uid types.UID, cpus cpuset.CPUSet, classCPUs map[string]cpuset.CPUSet) error {
+func (p *policy) allocateClaim(uid types.UID, cpus *libcpu.CpuMask, classCPUs map[string]*libcpu.CpuMask) error {
 	if cpus.IsEmpty() {
 		return policyError("cannot allocate DRA claim %s: empty CPU set", uid)
 	}
@@ -1655,7 +1655,7 @@ func (p *policy) allocateClaim(uid types.UID, cpus cpuset.CPUSet, classCPUs map[
 			// Roll back the supply mark so pool accounting stays consistent.
 			pool.FreeSupply().UnclaimCPUs(uid)
 			p.resetCpuClass(fmt.Sprintf("dra: rollback claim %s", uid), cpus)
-			if reallocErr := p.reallocateEvicted(evicted, evictedCpusets, cpuset.New(), uid); reallocErr != nil {
+			if reallocErr := p.reallocateEvicted(evicted, evictedCpusets, libcpu.NewCpuMask(), uid); reallocErr != nil {
 				log.Errorf("dra: claim %s: failed to restore evicted grants during CPU class rollback: %v", uid, reallocErr)
 			}
 			return policyError("dra: claim %s: failed to apply CPU class: %v", uid, err)
@@ -1675,7 +1675,7 @@ func (p *policy) allocateClaim(uid types.UID, cpus cpuset.CPUSet, classCPUs map[
 			pool.FreeSupply().UnclaimCPUs(uid)
 			p.resetCpuClass(fmt.Sprintf("dra: rollback claim %s", uid), cpus)
 			p.updateSharedAllocations(nil)
-			if reallocErr := p.reallocateEvicted(evicted, evictedCpusets, cpuset.New(), uid); reallocErr != nil {
+			if reallocErr := p.reallocateEvicted(evicted, evictedCpusets, libcpu.NewCpuMask(), uid); reallocErr != nil {
 				log.Errorf("dra: claim %s: failed to restore evicted grants during rollback: %v", uid, reallocErr)
 			}
 			return policyError("dra: claim %s: evicted %d container(s) to free CPUs %s but failed "+
@@ -1693,7 +1693,7 @@ func (p *policy) allocateClaim(uid types.UID, cpus cpuset.CPUSet, classCPUs map[
 // a snapshot of their cgroup cpuset.cpus (as it was right before eviction) —
 // the latter is needed by reallocateEvicted's safety net if reallocation
 // later fails for one of them. reason is used only for logging.
-func (p *policy) evictOverlappingGrants(cpus cpuset.CPUSet, reason string) ([]cache.Container, map[string]string) {
+func (p *policy) evictOverlappingGrants(cpus *libcpu.CpuMask, reason string) ([]cache.Container, map[string]string) {
 	var evicted []cache.Container
 	evictedCpusets := map[string]string{}
 	for _, g := range p.allocations.grants {
@@ -1722,7 +1722,7 @@ func (p *policy) evictOverlappingGrants(cpus cpuset.CPUSet, reason string) ([]ca
 // owns — that would let two workloads run on the same physical CPUs
 // simultaneously. Returns the (possibly partial-reallocation) error from
 // reallocateResources, or nil if evicted is empty or reallocation succeeded.
-func (p *policy) reallocateEvicted(evicted []cache.Container, evictedCpusets map[string]string, cpus cpuset.CPUSet, uid types.UID) error {
+func (p *policy) reallocateEvicted(evicted []cache.Container, evictedCpusets map[string]string, cpus *libcpu.CpuMask, uid types.UID) error {
 	if len(evicted) == 0 {
 		return nil
 	}
@@ -1735,7 +1735,7 @@ func (p *policy) reallocateEvicted(evicted []cache.Container, evictedCpusets map
 			if _, ok := p.allocations.getGrant(c.GetID()); ok {
 				continue
 			}
-			prev, perr := cpuset.Parse(evictedCpusets[c.GetID()])
+			prev, perr := libcpu.ParseCpuMask(evictedCpusets[c.GetID()])
 			if perr != nil {
 				log.Errorf("dra: claim %s: cannot safely re-pin %s off claimed CPUs %s: %v",
 					uid, c.PrettyName(), cpus, perr)
@@ -1756,7 +1756,7 @@ func (p *policy) reallocateEvicted(evicted []cache.Container, evictedCpusets map
 						uid, c.PrettyName(), cpus, prev)
 					continue
 				}
-				safe = cpuset.New(fallback.List()[0])
+				safe = libcpu.NewCpuMask(fallback.List()[0])
 			}
 			log.Warnf("dra: claim %s: %s could not be reallocated after eviction; "+
 				"forcing cpuset from %s to %s to avoid overlap with claimed CPUs %s",
@@ -1776,7 +1776,7 @@ func (p *policy) reallocateEvicted(evicted []cache.Container, evictedCpusets map
 // that allocateClaim was never called for, or that has already been fully
 // released — ReleaseResources may run for containers the policy never saw
 // AllocateResources for (e.g. across a restart).
-func (p *policy) releaseClaim(uid types.UID, cpus cpuset.CPUSet) error {
+func (p *policy) releaseClaim(uid types.UID, cpus *libcpu.CpuMask) error {
 	if p.claimContainerRefs == nil || p.claimContainerRefs[uid] == 0 {
 		return nil
 	}
@@ -1851,7 +1851,7 @@ func (p *policy) unprepareDRAClaim(uid types.UID, allocs []dra.ResultAlloc) {
 // skipped (matching UnprepareResourceClaims' own parse-error policy).
 func (p *policy) releaseHpCPUsForAllocs(uid types.UID, allocs []dra.ResultAlloc) {
 	for _, alloc := range allocs {
-		cpus, err := cpuset.Parse(alloc.CPUs)
+		cpus, err := libcpu.ParseCpuMask(alloc.CPUs)
 		if err != nil {
 			log.Warnf("dra: release claim %s device %s: parse CPUs %q: %v (skipping HP release)", uid, alloc.Device, alloc.CPUs, err)
 			continue

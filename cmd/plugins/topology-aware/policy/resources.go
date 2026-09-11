@@ -83,7 +83,7 @@ type Supply interface {
 	// them from isolated/sharable capacity in this supply and, tree-wide, in
 	// every ancestor supply. Idempotent per uid: a second call for the same
 	// uid replaces (does not stack on top of) the previous marking.
-	ClaimCPUs(uid types.UID, cpus cpuset.CPUSet)
+	ClaimCPUs(uid types.UID, cpus *libcpu.CpuMask)
 	// UnclaimCPUs reverses a previous ClaimCPUs marking for uid, restoring the
 	// claimed CPUs tree-wide. A no-op if uid is unknown.
 	UnclaimCPUs(uid types.UID)
@@ -344,7 +344,7 @@ func (cs *supply) GetNode() Node {
 func (cs *supply) Clone() Supply {
 	clone := newSupply(cs.node, cs.isolated, cs.reserved, cs.sharable, cs.grantedReserved, cs.grantedShared).(*supply)
 	if len(cs.claimRefs) > 0 {
-		clone.claimRefs = make(map[types.UID]cpuset.CPUSet, len(cs.claimRefs))
+		clone.claimRefs = make(map[types.UID]*libcpu.CpuMask, len(cs.claimRefs))
 		for uid, cpus := range cs.claimRefs {
 			clone.claimRefs[uid] = cpus.Clone()
 		}
@@ -439,7 +439,7 @@ func (cs *supply) AccountReleaseCPU(g Grant) {
 // top of) the previous marking at each level: the old cpuset for uid is first
 // restored, then the new one is subtracted. This makes re-applying claim
 // marks after a policy rebuild (Reconfigure/restart) idempotent.
-func (cs *supply) ClaimCPUs(uid types.UID, cpus cpuset.CPUSet) {
+func (cs *supply) ClaimCPUs(uid types.UID, cpus *libcpu.CpuMask) {
 	if old, ok := cs.claimRefs[uid]; ok {
 		full := cs.node.GetSupply()
 		cs.isolated = cs.isolated.Union(old.Intersection(full.IsolatedCPUs()))
@@ -448,7 +448,7 @@ func (cs *supply) ClaimCPUs(uid types.UID, cpus cpuset.CPUSet) {
 	}
 
 	if cs.claimRefs == nil {
-		cs.claimRefs = make(map[types.UID]cpuset.CPUSet)
+		cs.claimRefs = make(map[types.UID]*libcpu.CpuMask)
 	}
 	cs.claimRefs[uid] = cpus.Clone()
 	cs.isolated = cs.isolated.Difference(cpus)

@@ -15,10 +15,10 @@
 package topologyaware
 
 import (
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	resourceapi "k8s.io/api/resource/v1"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/dra"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 // DRADriverName is the DRA driver name used to publish and identify CPU
@@ -50,17 +50,17 @@ var (
 )
 
 // PickHpCpus routes to the current p.cpuClasses handler's PickHpCpus.
-func (a *policyDRAAdapter) PickHpCpus(pkgID, punitID, n int, held cpuset.CPUSet) (cpuset.CPUSet, error) {
+func (a *policyDRAAdapter) PickHpCpus(pkgID, punitID, n int, held *libcpu.CpuMask) (*libcpu.CpuMask, error) {
 	return a.p.cpuClasses.PickHpCpus(pkgID, punitID, n, held)
 }
 
 // ReleaseHpCpus routes to the current p.cpuClasses handler's ReleaseHpCpus.
-func (a *policyDRAAdapter) ReleaseHpCpus(pkgID, punitID int, cpus cpuset.CPUSet) {
+func (a *policyDRAAdapter) ReleaseHpCpus(pkgID, punitID int, cpus *libcpu.CpuMask) {
 	a.p.cpuClasses.ReleaseHpCpus(pkgID, punitID, cpus)
 }
 
 // AccountHpCpus routes to the current p.cpuClasses handler's AccountHpCpus.
-func (a *policyDRAAdapter) AccountHpCpus(pkgID, punitID int, cpus cpuset.CPUSet) error {
+func (a *policyDRAAdapter) AccountHpCpus(pkgID, punitID int, cpus *libcpu.CpuMask) error {
 	return a.p.cpuClasses.AccountHpCpus(pkgID, punitID, cpus)
 }
 

@@ -103,7 +103,7 @@ type policy struct {
 	// (computed independently, without regard to its claimed CPUs) doesn't
 	// end up excluding the CPUs its CDI-injected NRI_CPU<N> env vars claim
 	// it has.
-	claimedCPUsByContainer map[string]cpuset.CPUSet
+	claimedCPUsByContainer map[string]*libcpu.CpuMask
 
 	// draClaimsByContainer keeps the claims consumed by each container
 	// independently of the plugin's live-claim map, which may lose a claim
@@ -412,12 +412,12 @@ func (p *policy) AllocateResources(container cache.Container) error {
 // Reconfigure (see its own comment for why that repopulation alone isn't
 // sufficient there).
 func (p *policy) setClaimedCPUs(container cache.Container, marked []containerClaim) {
-	union := cpuset.New()
+	union := libcpu.NewCpuMask()
 	for _, cl := range marked {
 		union = union.Union(cl.CPUs)
 	}
 	if p.claimedCPUsByContainer == nil {
-		p.claimedCPUsByContainer = map[string]cpuset.CPUSet{}
+		p.claimedCPUsByContainer = map[string]*libcpu.CpuMask{}
 	}
 	p.claimedCPUsByContainer[container.GetID()] = union
 }
@@ -1001,7 +1001,7 @@ func (p *policy) restoreCache() error {
 // allowed CPU's class back to the shared-pool default
 // (resetCpuClass("initialize", p.allowed)), which would otherwise silently
 // strip the SST-CP/EPP/governor settings a live DRA claim depends on.
-func (p *policy) remarkClaimInSupply(uid types.UID, cpus cpuset.CPUSet, classCPUs map[string]cpuset.CPUSet) error {
+func (p *policy) remarkClaimInSupply(uid types.UID, cpus *libcpu.CpuMask, classCPUs map[string]*libcpu.CpuMask) error {
 	if cpus.IsEmpty() {
 		return policyError("cannot remark DRA claim %s: empty CPU set", uid)
 	}
@@ -1068,7 +1068,7 @@ func (p *policy) reapplyDRAClaims() {
 
 		if err := p.remarkClaimInSupply(uid, cpus, classCPUs); err != nil {
 			log.Errorf("dra: reapplyDRAClaims: %v", err)
-			if reallocErr := p.reallocateEvicted(evicted, evictedCpusets, cpuset.New(), uid); reallocErr != nil {
+			if reallocErr := p.reallocateEvicted(evicted, evictedCpusets, libcpu.NewCpuMask(), uid); reallocErr != nil {
 				log.Errorf("dra: reapplyDRAClaims: failed to restore grants after claim %s could not be remarked: %v", uid, reallocErr)
 			}
 			continue
@@ -1104,7 +1104,7 @@ func (p *policy) reapplyDRAClaims() {
 			p.applyGrant(grant)
 		} else if opt.PinCPU {
 			union := p.claimedCPUsByContainer[c.GetID()]
-			p.setPreferredCpusetCpus(c, cpuset.New(), union,
+			p.setPreferredCpusetCpus(c, libcpu.NewCpuMask(), union,
 				fmt.Sprintf("  => re-pinning %s to claimed cpuset %s (no regular grant)", c.PrettyName(), union))
 		}
 	}

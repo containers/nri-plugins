@@ -17,12 +17,12 @@ limitations under the License.
 package dra
 
 import (
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/containers/nri-plugins/pkg/log"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 // DeviceLister provides the DRA device list for a given driver name.
@@ -39,7 +39,7 @@ type CDIDevice struct {
 	// ClassName is the nri/cpuClass attribute value for the allocated device.
 	ClassName string
 	// CPUs is the set of CPUs allocated for this device.
-	CPUs cpuset.CPUSet
+	CPUs *libcpu.CpuMask
 }
 
 // ClaimAllocator provides HP CPU pick/release/account operations needed
@@ -49,13 +49,13 @@ type ClaimAllocator interface {
 	// PickHpCpus selects n HP-eligible CPUs from the punit identified by
 	// (pkgID, punitID), excluding CPUs in held and those already tracked
 	// in internal accounting.
-	PickHpCpus(pkgID, punitID, n int, held cpuset.CPUSet) (cpuset.CPUSet, error)
+	PickHpCpus(pkgID, punitID, n int, held *libcpu.CpuMask) (*libcpu.CpuMask, error)
 	// ReleaseHpCpus removes cpus from DRA HP accounting on the given punit.
-	ReleaseHpCpus(pkgID, punitID int, cpus cpuset.CPUSet)
+	ReleaseHpCpus(pkgID, punitID int, cpus *libcpu.CpuMask)
 	// AccountHpCpus records cpus as DRA HP-held on the given punit. Used
 	// during restart reconciliation to rebuild HP accounting without
 	// re-allocating CPUs.
-	AccountHpCpus(pkgID, punitID int, cpus cpuset.CPUSet) error
+	AccountHpCpus(pkgID, punitID int, cpus *libcpu.CpuMask) error
 	// IsHPClass reports whether className is currently classified as PCT
 	// high priority.
 	IsHPClass(className string) bool
@@ -114,7 +114,7 @@ type Deps struct {
 	// if the CPUs span multiple leaf pools (or otherwise don't fit within
 	// one), so that a claim which would later fail at container-creation
 	// time is instead rejected at Prepare time. Must not be nil.
-	ValidateCPUsInPool func(cpus cpuset.CPUSet) error
+	ValidateCPUsInPool func(cpus *libcpu.CpuMask) error
 	// DeviceLister returns the list of DRA devices to publish.
 	DeviceLister DeviceLister
 	// ClaimAllocator provides HP CPU pick/release/account operations.

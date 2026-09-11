@@ -46,7 +46,7 @@ type ResultAlloc struct {
 	PkgID int `json:"PkgID"`
 	// PunitID is the value of the nri/punitID attribute.
 	PunitID int `json:"PunitID"`
-	// CPUs is the cpuset.CPUSet.String() representation of the allocated CPUs.
+	// CPUs is the *libcpu.CpuMask.String() representation of the allocated CPUs.
 	CPUs string `json:"CPUs"`
 }
 

@@ -15,11 +15,11 @@
 package topologyaware
 
 import (
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass"
 	"github.com/containers/nri-plugins/pkg/resmgr/dra"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 // buildDRAPlugin constructs p.draPlugin from the current policy
@@ -81,7 +81,7 @@ func (p *policy) buildDRAPlugin(opts *policyapi.BackendOptions) error {
 		// entire package while leaf pools are NUMA or L3 nodes) is rejected
 		// at Prepare time instead of being persisted and always failing
 		// later when its container is created.
-		ValidateCPUsInPool: func(cpus cpuset.CPUSet) error {
+		ValidateCPUsInPool: func(cpus *libcpu.CpuMask) error {
 			_, err := p.poolForCPUs(cpus)
 			return err
 		},
