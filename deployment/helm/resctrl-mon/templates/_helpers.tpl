@@ -23,4 +23,3 @@ host:port / :port forms all resolve correctly; falls back to 9100.
 {{- define "nri-resctrl-mon.metricsPort" -}}
 {{- regexFind "[0-9]+$" .Values.telemetry.prometheus.listenAddress | default "9100" -}}
 {{- end -}}
-
