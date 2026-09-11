@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -57,7 +58,7 @@ type plugin struct {
 	// lock-ordering hazard between the two.
 	stateMu        sync.RWMutex
 	config         *pluginConfig
-	mgr            *monitor.Manager
+	mgr            resctrlManager
 	stopReconciler chan struct{} // closed to stop the background reconciler
 	telemetry      *telemetryState
 	metrics        *monitor.Registration
@@ -208,7 +209,7 @@ func (p *plugin) setConfig(data []byte) error {
 	// in-memory tracking for every running pod. Build it before mutating state so
 	// a failure here leaves the running configuration fully intact.
 	rootChanged := p.config == nil || cfg.ResctrlPath != p.config.ResctrlPath
-	var newMgr *monitor.Manager
+	var newMgr resctrlManager
 	if rootChanged {
 		var err error
 		newMgr, err = monitor.New(monitor.Options{
@@ -229,9 +230,15 @@ func (p *plugin) setConfig(data []byte) error {
 
 	p.config = &cfg
 
-	// If telemetry is already running, tear it down so it can be rebound to the
-	// (possibly new) manager with the new telemetry settings below.
-	restartTelemetry := p.telemetry != nil
+	// Only rebuild telemetry when it must change: either the manager is being
+	// swapped (a root change, below) so the registration has to rebind to it, or
+	// the telemetry settings themselves changed. A reload that only touches pod
+	// filters must NOT recreate the registration: doing so would discard the
+	// monotonic accumulator in goresctrl/pkg/monitor and re-seed every exported
+	// cumulative counter at the current raw reading, a downward step that PromQL
+	// reads as a counter reset (a false rate()/increase() spike).
+	telemetryChanged := prevConfig == nil || !reflect.DeepEqual(prevConfig.Telemetry, cfg.Telemetry)
+	restartTelemetry := p.telemetry != nil && (telemetryChanged || rootChanged)
 	if restartTelemetry {
 		if p.metrics != nil {
 			_ = p.metrics.Unregister()
@@ -413,7 +420,7 @@ func (p *plugin) startReconcilerLocked() {
 // directories. A failed Remove leaves its key tracked, so Reconcile(List())
 // would treat it as live forever; retrying Remove is what actually frees the
 // RMID once the kernel releases the directory.
-func (p *plugin) reconcile(mgr *monitor.Manager) {
+func (p *plugin) reconcile(mgr resctrlManager) {
 	for _, key := range p.pendingRemovalKeys() {
 		switch err := mgr.Remove(key); {
 		case err == nil, errors.Is(err, monitor.ErrNotTracked):
@@ -480,7 +487,7 @@ func (p *plugin) dropLiveKey(key string) {
 
 // reconcileLiveSet returns the union of the Manager's tracked keys and the live
 // sandbox set for use as the reconcile live list.
-func (p *plugin) reconcileLiveSet(mgr *monitor.Manager) []string {
+func (p *plugin) reconcileLiveSet(mgr resctrlManager) []string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	live := make(map[string]struct{}, len(p.liveKeys))
@@ -672,7 +679,7 @@ func (p *plugin) getConfig() *pluginConfig {
 // getManager returns the current monitor manager. Like getConfig it snapshots
 // the pointer under stateMu so a concurrent root-change reload cannot swap
 // p.mgr while a handler is using it.
-func (p *plugin) getManager() *monitor.Manager {
+func (p *plugin) getManager() resctrlManager {
 	p.stateMu.RLock()
 	defer p.stateMu.RUnlock()
 	return p.mgr

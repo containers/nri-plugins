@@ -50,6 +50,33 @@ func newTestPlugin(resctrlPath string) *plugin {
 	}
 }
 
+// recordingManager wraps a real *monitor.Manager but replaces Reconcile with a
+// recorder. goresctrl's Reconcile reaps orphan mon_groups with rmdir(2), which
+// on tmpfs cannot delete a realistic (tasks-file-bearing) mon_group the way the
+// resctrl kernel does. The plugin's own responsibility is the live set it hands
+// to Reconcile, so these tests capture that set and leave physical reaping to
+// goresctrl's own reconcile tests.
+type recordingManager struct {
+	*monitor.Manager
+	reconciled    bool
+	lastReconcile []string
+}
+
+func (m *recordingManager) Reconcile(live []string) error {
+	m.reconciled = true
+	m.lastReconcile = append([]string(nil), live...)
+	return nil
+}
+
+// newRecordingTestPlugin builds a test plugin whose manager records the live set
+// passed to Reconcile instead of performing filesystem reaping.
+func newRecordingTestPlugin(resctrlPath string) (*plugin, *recordingManager) {
+	p := newTestPlugin(resctrlPath)
+	rec := &recordingManager{Manager: p.mgr.(*monitor.Manager)}
+	p.mgr = rec
+	return p, rec
+}
+
 func makePod(uid, namespace, name string) *api.PodSandbox {
 	return &api.PodSandbox{
 		Id:        "sandbox-" + uid, // CRI sandbox ID != K8s pod UID
@@ -270,7 +297,7 @@ func TestSynchronize_RemovesOrphanMonGroup(t *testing.T) {
 	orphanDir := filepath.Join(tmpDir, "mon_groups", orphanUID)
 	require.NoError(t, os.MkdirAll(orphanDir, 0755))
 
-	p := newTestPlugin(tmpDir)
+	p, rec := newRecordingTestPlugin(tmpDir)
 
 	// Synchronize with a single live pod that is not the orphan.
 	podUID := "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
@@ -280,49 +307,54 @@ func TestSynchronize_RemovesOrphanMonGroup(t *testing.T) {
 	_, err := p.Synchronize(context.Background(), []*api.PodSandbox{pod}, []*api.Container{ctr})
 	require.NoError(t, err)
 
-	// The live pod's mon_group exists...
+	// The live pod's mon_group was created.
 	_, err = os.Stat(filepath.Join(tmpDir, "mon_groups", podUID))
 	assert.NoError(t, err)
 
-	// ...and the orphan was reaped via Reconcile.
-	_, err = os.Stat(orphanDir)
-	assert.True(t, os.IsNotExist(err), "orphan mon_group should have been removed by Reconcile")
+	// Synchronize reconciles with a live set that includes the live pod but not
+	// the orphan, so goresctrl reaps the orphan (the physical rmdir is covered
+	// by goresctrl's own reconcile tests).
+	require.True(t, rec.reconciled, "Synchronize must reconcile")
+	assert.Contains(t, rec.lastReconcile, monitor.CanonicalizePodUID(podUID))
+	assert.NotContains(t, rec.lastReconcile, orphanUID,
+		"orphan must be absent from the live set so Reconcile reaps it")
 }
 
 // TestReconcile_PreservesContainerlessLiveSandbox verifies that a monitored pod
 // sandbox that is alive with no running container (its mon_group survives from
-// a previous run but no EnsureGroup tracks it) is not reaped by the background
-// reconciler, so a restarting container reuses the same RMID.
+// a previous run but no EnsureGroup tracks it) stays in the reconcile live set,
+// so the background reconciler does not reap it and a restarting container
+// reuses the same RMID.
 func TestReconcile_PreservesContainerlessLiveSandbox(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// A container-less sandbox: its mon_group exists on disk but the plugin
-	// never calls EnsureGroup for it, so mgr.List() will not include it.
+	// A container-less sandbox: the plugin never calls EnsureGroup for it, so
+	// mgr.List() omits it and only the live set protects it.
 	sandboxUID := "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
-	sandboxDir := filepath.Join(tmpDir, "mon_groups", sandboxUID)
-	require.NoError(t, os.MkdirAll(sandboxDir, 0755))
+	canon := monitor.CanonicalizePodUID(sandboxUID)
 
-	p := newTestPlugin(tmpDir)
+	p, rec := newRecordingTestPlugin(tmpDir)
 
 	// Synchronize with the live sandbox but no containers.
 	pod := makePod(sandboxUID, "default", "live-pod")
 	_, err := p.Synchronize(context.Background(), []*api.PodSandbox{pod}, nil)
 	require.NoError(t, err)
 
-	// The initial Reconcile(liveKeys) must have kept it.
-	require.DirExists(t, sandboxDir)
-	require.NotContains(t, p.mgr.List(), sandboxUID, "container-less sandbox is not tracked in the Manager")
+	// The initial Reconcile's live set protects the sandbox even though it is
+	// not tracked in the Manager.
+	require.NotContains(t, p.mgr.List(), canon, "container-less sandbox is not tracked in the Manager")
+	assert.Contains(t, rec.lastReconcile, canon)
 
-	// A background reconcile tick must still preserve it (regression: it used to
+	// A background reconcile tick must still protect it (regression: it used to
 	// reconcile against mgr.List() only and reap the group).
 	p.reconcile(p.mgr)
-	assert.DirExists(t, sandboxDir)
+	assert.Contains(t, rec.lastReconcile, canon)
 
-	// Once the sandbox is removed, it stops being protected and is reaped.
+	// Once the sandbox is removed, it drops out of the live set and becomes
+	// reap-able.
 	require.NoError(t, p.RemovePodSandbox(context.Background(), pod))
 	p.reconcile(p.mgr)
-	_, err = os.Stat(sandboxDir)
-	assert.True(t, os.IsNotExist(err), "sandbox mon_group should be reaped after the pod is gone")
+	assert.NotContains(t, rec.lastReconcile, canon, "sandbox should be reap-able after the pod is gone")
 }
 
 func TestReconcile_LiveKeyCanonicalizedAcrossUIDForms(t *testing.T) {
@@ -332,25 +364,23 @@ func TestReconcile_LiveKeyCanonicalizedAcrossUIDForms(t *testing.T) {
 	const compact = "a1b2c3d4e5f67890abcdef1234567890"
 	const dashed = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 
-	// A container-less sandbox on disk under the canonical dashed name.
-	sandboxDir := filepath.Join(tmpDir, "mon_groups", dashed)
-	require.NoError(t, os.MkdirAll(sandboxDir, 0755))
+	p, rec := newRecordingTestPlugin(tmpDir)
 
-	p := newTestPlugin(tmpDir)
-
-	// Synchronize reports the sandbox in compact form.
+	// Synchronize reports the sandbox in compact form; setLiveKeys stores it
+	// under the canonical dashed form, which reconcileLiveSet then emits.
 	pod := makePod(compact, "default", "live-pod")
 	_, err := p.Synchronize(context.Background(), []*api.PodSandbox{pod}, nil)
 	require.NoError(t, err)
-	require.DirExists(t, sandboxDir)
+	p.reconcile(p.mgr)
+	assert.Contains(t, rec.lastReconcile, dashed)
 
 	// Removal reports the equivalent dashed form. dropLiveKey must canonicalize
 	// the key so the entry stored by setLiveKeys is dropped and the group can be
-	// reaped; without canonicalization it would stay protected indefinitely.
+	// reaped; without canonicalization it would stay in the live set forever.
 	require.NoError(t, p.RemovePodSandbox(context.Background(), makePod(dashed, "default", "live-pod")))
 	p.reconcile(p.mgr)
-	_, err = os.Stat(sandboxDir)
-	assert.True(t, os.IsNotExist(err), "mon_group should be reaped once the equivalent dashed UID is removed")
+	assert.NotContains(t, rec.lastReconcile, dashed,
+		"live key must be dropped once the equivalent dashed UID is removed")
 }
 
 func TestSetLiveKeys_PreservesConcurrentRemoval(t *testing.T) {
@@ -568,8 +598,8 @@ func TestCheckRuntimeVersion(t *testing.T) {
 }
 
 // TestSetConfig_ReloadTearsDownTelemetry verifies that a dynamic setConfig
-// reload, after telemetry has started, unregisters the OTel instruments and
-// starts fresh telemetry, rather than leaking the old registration.
+// reload that changes the telemetry settings unregisters the OTel instruments
+// and starts fresh telemetry, rather than leaking the old registration.
 func TestSetConfig_ReloadTearsDownTelemetry(t *testing.T) {
 	groups := map[string]map[string]map[string]string{
 		"11111111-1111-1111-1111-111111111111": {
@@ -589,8 +619,9 @@ func TestSetConfig_ReloadTearsDownTelemetry(t *testing.T) {
 	require.NotNil(t, oldReg)
 	require.NotNil(t, oldTelem)
 
-	// Dynamic reconfiguration (same, immutable root), telemetry still port-less.
-	data := []byte("resctrlPath: " + root1 + "\ntelemetry:\n  prometheus:\n    enabled: false\n")
+	// Dynamic reconfiguration (same, immutable root) that changes a telemetry
+	// setting (adds a resource attribute); telemetry stays port-less.
+	data := []byte("resctrlPath: " + root1 + "\ntelemetry:\n  prometheus:\n    enabled: false\n  resourceAttributes:\n    deployment.environment: test\n")
 	require.NoError(t, p.setConfig(data))
 	t.Cleanup(func() {
 		if p.telemetry != nil {
@@ -606,6 +637,50 @@ func TestSetConfig_ReloadTearsDownTelemetry(t *testing.T) {
 
 	// The old registration was already unregistered; a second call is a no-op.
 	assert.NoError(t, oldReg.Unregister())
+}
+
+// TestSetConfig_ReloadPreservesTelemetryWhenUnchanged verifies that a dynamic
+// setConfig reload that leaves the telemetry settings unchanged (only pod
+// filters change) keeps the existing telemetry and OTel registration. Recreating
+// the registration would discard goresctrl/pkg/monitor's monotonic accumulator
+// and re-seed exported cumulative counters at the current raw reading, which
+// PromQL reads as a counter reset (a false rate()/increase() spike).
+func TestSetConfig_ReloadPreservesTelemetryWhenUnchanged(t *testing.T) {
+	groups := map[string]map[string]map[string]string{
+		"11111111-1111-1111-1111-111111111111": {
+			"mon_L3_00": {"llc_occupancy": "4096"},
+		},
+	}
+	root1 := setupTestResctrl(t, groups)
+
+	p := newTestPlugin(root1)
+	// Disable Prometheus so telemetry starts without binding a port. Normalize
+	// the config the same way setConfig does, so the reload below compares
+	// against a fully-defaulted telemetry config (as a real applied config is).
+	p.config.Telemetry = defaultTelemetryConfig()
+	p.config.Telemetry.Prometheus.Enabled = false
+	require.NoError(t, validateTelemetryConfig(&p.config.Telemetry))
+
+	require.NoError(t, p.startTelemetry(context.Background()))
+	t.Cleanup(func() {
+		if p.telemetry != nil {
+			p.telemetry.shutdown(context.Background())
+		}
+	})
+	oldReg := p.metrics
+	oldTelem := p.telemetry
+	require.NotNil(t, oldReg)
+	require.NotNil(t, oldTelem)
+
+	// Reload with identical telemetry but a changed pod filter.
+	data := []byte("resctrlPath: " + root1 + "\nnamespaces:\n  - production\ntelemetry:\n  prometheus:\n    enabled: false\n")
+	require.NoError(t, p.setConfig(data))
+
+	// The filter change was applied, but telemetry and its registration are the
+	// same instances (accumulator state preserved).
+	assert.Equal(t, []string{"production"}, p.config.Namespaces)
+	assert.Same(t, oldTelem, p.telemetry)
+	assert.Same(t, oldReg, p.metrics)
 }
 
 // TestSetConfig_RejectsRootChange verifies that changing resctrlPath on a

@@ -30,8 +30,21 @@ var coreAETFiles = map[string]bool{
 	"activity":    true,
 }
 
+// resctrlManager is the subset of *monitor.Manager the plugin depends on.
+// Defining it as an interface lets tests substitute a fake whose Reconcile
+// records the live set instead of performing filesystem rmdir, which on tmpfs
+// cannot delete a realistic mon_group the way the resctrl kernel does.
+type resctrlManager interface {
+	EnsureGroup(key, rdtClass string) (*monitor.Group, error)
+	AssignPID(key string, pid int) error
+	Remove(key string) error
+	List() []string
+	Reconcile(live []string) error
+	RegisterOTelInstruments(meter otelmetric.Meter, opts ...monitor.OTelOption) (*monitor.Registration, error)
+}
+
 // setupMetrics registers OTel instruments via the goresctrl adapter.
-func setupMetrics(mgr *monitor.Manager, cfg telemetryConfig, resctrlRoot string, meter otelmetric.Meter) (*monitor.Registration, error) {
+func setupMetrics(mgr resctrlManager, cfg telemetryConfig, resctrlRoot string, meter otelmetric.Meter) (*monitor.Registration, error) {
 	return mgr.RegisterOTelInstruments(meter,
 		monitor.WithFilter(perfCounterFilter(cfg)),
 		monitor.WithAttributes(groupAttributesFor(resctrlRoot)),
