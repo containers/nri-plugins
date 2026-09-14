@@ -33,8 +33,8 @@ import (
 
 	nrtapi "github.com/containers/nri-plugins/pkg/agent/nrtapi"
 	"github.com/containers/nri-plugins/pkg/agent/podresapi"
-	"github.com/containers/nri-plugins/pkg/agent/watch"
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1"
+	"github.com/containers/nri-plugins/pkg/kubernetes/watch"
 	k8sclient "k8s.io/client-go/kubernetes"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
