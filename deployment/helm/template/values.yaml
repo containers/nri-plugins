@@ -72,7 +72,8 @@ config:
 #   VAR1: VAL1
 #   VAR2: VAL2
 
-plugin-test:
+plugin:
+  test:
     enableAPIs: false
 
 resources:

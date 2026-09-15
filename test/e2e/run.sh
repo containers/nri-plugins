@@ -422,7 +422,7 @@ helm-set-args() { # script API
           --set image.pullPolicy=Never \
           --set resources.cpu=50m \
           --set resources.memory=256Mi \
-          --set plugin-test.enableAPIs=true"
+          --set plugin.test.enableAPIs=true"
 }
 
 helm-launch() { # script API

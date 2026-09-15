@@ -74,8 +74,9 @@ config:
 #   VAR1: VAL1
 #   VAR2: VAL2
 
-plugin-test:
-  enableAPIs: false
+plugin:
+  test:
+    enableAPIs: false
 
 resources:
   cpu: 500m
