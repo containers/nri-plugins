@@ -349,7 +349,18 @@ enable-numa() { # script API
     #
     # Boot the node back with a kernel which has NUMA support, and make sure
     # that the container runtime and POLICY, $POLICY by default, are running
-    # afterwards.
+    # afterwards. Do nothing if NUMA is already enabled.
+    #
+    # Set keep_numa_disabled to 1, true or yes to leave the node as it is.
+    vm-command '[ -d /sys/devices/system/node ]' && return 0
+
+    case "${keep_numa_disabled:-no}" in
+        1|true|yes)
+            echo "keep_numa_disabled=$keep_numa_disabled, leaving the node without NUMA..."
+            return 0
+            ;;
+    esac
+
     vm-kernel-pkgs-uninstall
     vm-post-reboot-runtime-check "${1:-$POLICY}"
 }

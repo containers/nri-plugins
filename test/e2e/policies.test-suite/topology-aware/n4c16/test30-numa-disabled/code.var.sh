@@ -1,5 +1,9 @@
 disable-numa
 
+# Boot the node back with a NUMA capable kernel even on errors
+# (unless running with keep_numa_disabled=1).
+trap enable-numa EXIT
+
 helm-terminate
 helm_config=$(instantiate helm-config.yaml) helm-launch topology-aware
 
@@ -16,4 +20,3 @@ verify \
 delete-pods --all
 
 helm-terminate
-enable-numa
