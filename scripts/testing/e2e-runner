@@ -56,6 +56,8 @@ COVERAGE_REPORT_SH="report-coverage.sh"
 COVERAGE_REPORT_DIR="coverage-report"
 # STATUS_TXT: where e2e-report records the verdict of a run
 STATUS_TXT="status.txt"
+# LOG_TXT: the log of a run, the first thing it publishes
+LOG_TXT="e2e-runner.log.txt"
 # ARTIFACTS_TAR: the bulky artifacts of a test case, packed up
 ARTIFACTS_TAR="artifacts.tar.xz"
 # PACKED_ARTIFACTS: which artifacts of a test case are worth packing. The
@@ -561,8 +563,42 @@ pack_test_artifacts() {
     return 0
 }
 
+run_started() {
+    # Usage: run_started NAME DIR
+    #
+    # Print when a run ran, as seconds since the epoch. A run is named after
+    # when it started, but --name takes anything, so fall back to the timestamp
+    # of its directory.
+    local name="$1" dir="$2" when
+
+    if [[ "$name" =~ ([0-9]{4}-[0-9]{2}-[0-9]{2})[-_]?([0-9]{2})-?([0-9]{2})? ]]; then
+        if when=$(date -d "${BASH_REMATCH[1]} ${BASH_REMATCH[2]}:${BASH_REMATCH[3]:-00}" \
+                      +%s 2>/dev/null); then
+            echo "$when"
+            return 0
+        fi
+    fi
+
+    stat -c %Y "$dir" 2>/dev/null
+}
+
+is_run() {
+    # Usage: is_run DIR
+    #
+    # Anything with results in it is a run of ours, whatever --name called it.
+    # A run which was cut short still has our log. Say no to the links, latest
+    # points at a run we look at anyway, and to whatever else is kept here.
+    local dir="$1"
+
+    if [ -L "$dir" ] || [ ! -d "$dir" ]; then
+        return 1
+    fi
+
+    [ -f "$dir/results.json" ] || [ -f "$dir/summary.txt" ] || [ -f "$dir/$LOG_TXT" ]
+}
+
 prune_old_results() {
-    local run stamp when age kept=0
+    local run dir when age kept=0 runs=""
 
     case "$RETENTION_DAYS" in
         ""|0|no|none|forever)
@@ -572,28 +608,32 @@ prune_old_results() {
     esac
 
     info "removing published results older than $RETENTION_DAYS days..."
-    for run in $(ls -1 "$RESULT_ROOT" --sort=time 2>/dev/null); do
-        case $run in
-            [0-9][0-9][0-9][0-9]-*) ;;
-            *) continue
-               ;;
-        esac
+
+    # Order the runs by when they ran, not by when their directory was last
+    # written to: reporting on an old run touches it, which would otherwise
+    # make it look like one of the latest ones to keep.
+    for run in $(ls -1 "$RESULT_ROOT" 2>/dev/null); do
+        dir="$RESULT_ROOT/$run"
+        if ! is_run "$dir"; then
+            continue
+        fi
+        when=$(run_started "$run" "$dir")
+        if [ -z "$when" ]; then
+            error "failed to tell when $run ran, keeping it"
+            continue
+        fi
+        runs="$runs$when $run"$'\n'
+    done
+
+    while read -r when run; do
+        if [ -z "$run" ]; then
+            continue
+        fi
 
         # Keep the latest results regardless of their age, so that a break in
         # running the tests cannot leave us without any results at all.
         kept=$((kept + 1))
         if [ "$kept" -le "$RETENTION_KEEP" ]; then
-            continue
-        fi
-
-        # The name of a run is when it started. Fall back to the timestamp of
-        # the directory for a name we don't recognize.
-        stamp="${run:0:10}"
-        if ! when=$(date -d "$stamp" +%s 2>/dev/null); then
-            when=$(stat -c %Y "$RESULT_ROOT/$run" 2>/dev/null)
-        fi
-        if [ -z "$when" ]; then
-            error "failed to tell how old $run is, keeping it"
             continue
         fi
 
@@ -606,7 +646,7 @@ prune_old_results() {
         if ! rm -rf "$RESULT_ROOT/$run"; then
             error "failed to remove $RESULT_ROOT/$run"
         fi
-    done
+    done <<< "$(sort -rn <<< "$runs")"
 }
 
 #
