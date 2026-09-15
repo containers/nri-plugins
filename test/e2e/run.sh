@@ -422,7 +422,8 @@ helm-set-args() { # script API
           --set image.pullPolicy=Never \
           --set resources.cpu=50m \
           --set resources.memory=256Mi \
-          --set plugin.test.enableAPIs=true"
+          --set plugin.test.enableAPIs=true \
+          --set extraEnv.GOCOVERDIR=$(vm-coverage-gocoverdir)"
 }
 
 helm-launch() { # script API
@@ -468,6 +469,8 @@ helm-launch() { # script API
 
     host-command "$SCP \"$helm_config\" $VM_HOSTNAME:" ||
         command-error "copying \"$helm_config\" to VM failed"
+
+    vm-coverage-prepare
 
     vm-command "helm install $rollback -n kube-system $helm_name ./helm/$plugin \
              --values=`basename ${helm_config}` \
@@ -586,6 +589,13 @@ helm-terminate() { # script API
     if [ "$?" != "0" ]; then
         return 0
     fi
+
+    # Ask the plugin for its coverage data while it is still there to ask. What
+    # it writes to $GOCOVERDIR on its way out is picked up as well, but only if
+    # it gets that far, so this is what makes the coverage of a test which
+    # launches a plugin more than once survive.
+    vm-coverage-snapshot
+
     vm-command "helm uninstall -n kube-system test --wait --timeout 20s"
     vm-port-forward-disable
 }
@@ -1142,6 +1152,8 @@ eval "${yaml_in_defaults}"
 TEST_FAILURES=""
 test_start_secs=$(vm-seconds-now)
 
+vm-coverage-reset
+
 test-user-code
 
 test_span_secs="$(vm-seconds-since $test_start_secs)"
@@ -1151,6 +1163,12 @@ service="${k8scri}" since="$since" vm-pull-journal > "${TEST_OUTPUT_DIR}"/runtim
 # If there are any nri-resource-policy logs in the DUT, copy them back to host.
 host-command "$SCP $VM_HOSTNAME:nri-resource-policy.output.txt \"${TEST_OUTPUT_DIR}/\"" ||
     out "copying \"$nri-resource-policy.output.txt\" from VM failed"
+
+# Dump the coverage data of a plugin which is still running, then copy back
+# everything collected for this test, including what any plugin which already
+# exited wrote to $GOCOVERDIR.
+vm-coverage-snapshot
+vm-coverage-collect "${TEST_OUTPUT_DIR}/coverage"
 
 # Summarize results
 exit_status=0
