@@ -31,7 +31,7 @@ INDEX_HTML = "index.html"
 RUNNER_LOG = "e2e-runner.log.txt"
 STATUS_TXT = "status.txt"
 
-RUN_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}")
+RUN_STAMP = re.compile(r"(\d{4}-\d{2}-\d{2})[-_]?(\d{2})-?(\d{2})?")
 VERDICT = re.compile(r"Test verdict:\s*(\S+)")
 DURATION = re.compile(r"Test duration:\s*([0-9.]+)\s*sec")
 ERROR_LINE = re.compile(r"^error:")
@@ -40,7 +40,7 @@ RUNTIMES = ("containerd", "crio")
 
 # Artifacts of a test case, in the order they help when one fails.
 ARTIFACTS = (
-    ("log", "run.sh.output.txt"),
+    ("test log", "run.sh.output.txt"),
     ("plugin log", "nri-resource-policy.output.txt"),
     ("commands", "commands"),
     ("artifacts", "artifacts.tar.xz"),
@@ -125,8 +125,15 @@ def artifacts(test_dir, rel):
     """Map a label to a link for everything collected for a test case."""
     links = {}
     for label, name in ARTIFACTS:
-        if os.path.exists(os.path.join(test_dir, name)):
-            links[label] = os.path.join(rel, name)
+        path = os.path.join(test_dir, name)
+        if not os.path.exists(path):
+            continue
+        # An empty file is not worth a link: pyexec.output.txt, for one, holds
+        # the output of the last pyexec of a test, which wrote nothing at all
+        # unless it failed.
+        if os.path.isfile(path) and os.path.getsize(path) == 0:
+            continue
+        links[label] = os.path.join(rel, name)
     for name in sorted(os.listdir(test_dir)):
         if name.startswith("runtime.") and name.endswith(".txt"):
             links["runtime log"] = os.path.join(rel, name)
@@ -213,29 +220,57 @@ def scan_coverage(result_dir):
             # The plugin of a policy is the interesting part of its coverage,
             # the rest is the infrastructure it happens to link in.
             plugins = data.get("plugins", {})
-            plugin = plugins.get(policy) or (
-                list(plugins.values())[0] if plugins else None)
-            data["plugin_percent"] = plugin["percent"] if plugin else None
+            name = policy if policy in plugins else (
+                sorted(plugins)[0] if plugins else None)
+            data["plugin"] = name
+            data["plugin_percent"] = plugins[name]["percent"] if name else None
             coverage["policies"][policy] = data
 
     return coverage
 
 
-def started_at(name):
-    """Turn the name of a run into when it started."""
+def started_at(name, result_dir):
+    """Tell when a run started, from its name or from the results themselves.
+
+    A run is usually named after when it started, but not always: --name takes
+    anything. Dig a timestamp out of the name if there is one, and fall back to
+    when the directory was last written to.
+    """
+    found = RUN_STAMP.search(name)
+    if found:
+        day, hour, minute = found.group(1), found.group(2), found.group(3) or "00"
+        try:
+            return datetime.strptime("%s-%s-%s" % (day, hour, minute),
+                                     "%Y-%m-%d-%H-%M").isoformat()
+        except ValueError:
+            pass
+
     try:
-        return datetime.strptime(name[:16], "%Y-%m-%d-%H-%M").isoformat()
-    except ValueError:
+        return datetime.fromtimestamp(
+            os.stat(result_dir).st_mtime).replace(microsecond=0).isoformat()
+    except OSError:
         return None
 
 
 def web_url(remote):
-    """Turn a remote repository into something linkable, if we can."""
+    """Turn a remote repository into something linkable, if we can.
+
+    We are cloned from over https or over ssh, and the ssh remote comes in two
+    spellings, so turn all of them into the address of the same thing on the
+    web. Anything else we cannot link to.
+    """
     remote = remote.strip()
-    if remote.startswith("git@github.com:"):
-        remote = "https://github.com/" + remote[len("git@github.com:"):]
     if remote.endswith(".git"):
         remote = remote[:-len(".git")]
+
+    found = re.match(r"(?:ssh|git)://(?:[^@/]+@)?([^/]+)/(.+)", remote)
+    if found:
+        return "https://%s/%s" % found.groups()
+
+    found = re.match(r"(?:[^@/]+@)([^:/]+):(.+)", remote)
+    if found:
+        return "https://%s/%s" % found.groups()
+
     return remote if remote.startswith("https://") else ""
 
 
@@ -261,7 +296,7 @@ def scan_run(result_dir):
 
     return {
         "name": name,
-        "started": started_at(name),
+        "started": started_at(name, result_dir),
         "verdict": verdict,
         "counts": counts,
         "runtimes": runtimes,
@@ -305,8 +340,8 @@ table { border-collapse: collapse; width: 100%; font-size: 0.9em; }
 th { text-align: left; background: var(--head); position: sticky; top: 0; }
 th, td { padding: 0.35em 0.6em; border-bottom: 1px solid var(--line);
          vertical-align: top; }
-td.num { text-align: right; font-variant-numeric: tabular-nums;
-         white-space: nowrap; }
+.num { text-align: right; font-variant-numeric: tabular-nums;
+       white-space: nowrap; }
 tr:hover td { background: var(--hover); }
 a { color: var(--link); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -358,6 +393,19 @@ def links_html(links):
         link(href, label) for label, href in ordered)
 
 
+def plugin_link(run, policy, plugin):
+    """Link a policy to the source of its plugin, at the tested revision.
+
+    The name of the plugin comes from the paths in the coverage data, so
+    cmd/plugins/<plugin> is a directory which exists in that revision.
+    """
+    web, sha1 = run["git"]["web"], run["git"]["sha1"]
+    if not web or not sha1:
+        return e(policy)
+    return link("%s/tree/%s/cmd/plugins/%s" % (web, sha1, plugin or policy),
+                policy)
+
+
 def source_link(run, test):
     """Link a test case to its source, at the revision which was tested."""
     web, sha1 = run["git"]["web"], run["git"]["sha1"]
@@ -384,7 +432,8 @@ def render_coverage(run):
         rows.append(
             "<tr><td>%s</td><td class=\"num\">%d</td>"
             "<td class=\"num\">%s</td><td class=\"num\">%s</td><td>%s</td></tr>" % (
-                e(policy), data.get("tests", 0),
+                plugin_link(run, policy, data.get("plugin")),
+                data.get("tests", 0),
                 "%.1f%%" % data["plugin_percent"]
                 if data.get("plugin_percent") is not None else "",
                 "%.1f%% (%d/%d)" % (data["percent"], data["covered"],
@@ -405,8 +454,10 @@ def render_coverage(run):
         return ("<h2>Coverage</h2>\n<p>No coverage data was collected. Were the"
                 " plugins built with instrumentation (make COVER=1)?</p>\n")
 
-    return ("<h2>Coverage</h2>\n<table>\n<tr><th>policy</th><th>tests</th>"
-            "<th>plugin logic</th><th>all instrumented packages</th>"
+    return ("<h2>Coverage</h2>\n<table>\n<tr><th>policy</th>"
+            "<th class=\"num\">tests</th>"
+            "<th class=\"num\">plugin logic</th>"
+            "<th class=\"num\">all instrumented packages</th>"
             "<th></th></tr>\n%s\n</table>\n" % "\n".join(rows))
 
 
@@ -458,7 +509,8 @@ def render_tests(run):
         sections.append(
             "<details%s>\n<summary>%s <span class=\"counts\">&mdash; %d/%d"
             " passed</span></summary>\n<table>\n<tr><th>verdict</th>"
-            "<th>test</th><th>duration</th><th></th></tr>\n%s\n</table>\n"
+            "<th>test</th><th class=\"num\">duration</th>"
+            "<th></th></tr>\n%s\n</table>\n"
             "</details>\n" % (
                 "" if passed == len(of_vm) else " open", e(vm), passed,
                 len(of_vm), "\n".join(rows)))
@@ -512,8 +564,9 @@ def render_index(runs):
     """The list of runs, latest first."""
     plugins = sorted({p for run in runs for p in run["coverage"]["policies"]})
 
-    header = ["<th>run</th>", "<th>verdict</th>", "<th>tests</th>"]
-    header += ["<th>%s</th>" % e(p) for p in plugins]
+    header = ["<th>run</th>", "<th>verdict</th>",
+              '<th class="num">tests</th>']
+    header += ['<th class="num">%s</th>' % e(p) for p in plugins]
     header += ["<th>runtime</th>", "<th>version</th>"]
 
     rows = []
@@ -581,25 +634,46 @@ def report_run(result_dir):
     print("%s: %s" % (run["name"], status.strip()))
 
 
+def is_run(dir):
+    """Tell whether a directory holds the results of a run.
+
+    Going by what is in it rather than by what it is called: --name takes
+    anything. A run which was cut short before it collected a single result
+    still has the log of the runner, and belongs in the index just as much.
+    """
+    if os.path.islink(dir) or not os.path.isdir(dir):
+        return False
+    return any(os.path.exists(os.path.join(dir, f))
+               for f in (RESULTS_JSON, "summary.txt", RUNNER_LOG))
+
+
 def report_index(root):
     """Rebuild the index of every run under root."""
     if not os.path.isdir(root):
         sys.exit("e2e-report: no such directory: %s" % root)
 
     runs = []
-    for name in sorted(os.listdir(root), reverse=True):
-        if not RUN_NAME.match(name):
+    for name in sorted(os.listdir(root)):
+        dir = os.path.join(root, name)
+        if not is_run(dir):
             continue
-        results = os.path.join(root, name, RESULTS_JSON)
-        if os.path.exists(results):
-            try:
-                with open(results, encoding="utf-8") as f:
-                    runs.append(json.load(f))
-                continue
-            except (OSError, ValueError):
-                pass
-        # A run from before we wrote results.json, or one we failed to read.
-        runs.append(scan_run(os.path.join(root, name)))
+
+        results = os.path.join(dir, RESULTS_JSON)
+        # A run from before we reported on runs at all, or one which was cut
+        # short: give it a report of its own, so that the index has somewhere
+        # to link to.
+        if not os.path.exists(results) or not os.path.exists(
+                os.path.join(dir, INDEX_HTML)):
+            report_run(dir)
+
+        try:
+            with open(results, encoding="utf-8") as f:
+                runs.append(json.load(f))
+        except (OSError, ValueError):
+            runs.append(scan_run(dir))
+
+    # Latest first, by when they ran rather than by what they are called.
+    runs.sort(key=lambda run: run.get("started") or "", reverse=True)
 
     with open(os.path.join(root, INDEX_HTML), "w", encoding="utf-8") as f:
         f.write(render_index(runs))
