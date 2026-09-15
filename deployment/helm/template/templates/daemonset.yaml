@@ -85,7 +85,7 @@ spec:
           - name: {{ $name }}
             value: {{ $value }}
           {{- end }}
-          {{- if ".Values.plugin-test.enableAPIs" }}
+          {{- if .Values.plugin.test.enableAPIs }}
           - name: ENABLE_TEST_APIS
             value: "1"
           {{- end }}
