@@ -42,6 +42,7 @@ ARTIFACTS = (
     ("log", "run.sh.output.txt"),
     ("plugin log", "nri-resource-policy.output.txt"),
     ("commands", "commands"),
+    ("artifacts", "artifacts.tar.xz"),
     ("pyexec", "pyexec.output.txt"),
     ("verdict", "summary.txt"),
     ("coverage", "coverage"),
