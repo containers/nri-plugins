@@ -243,6 +243,12 @@ prepare_result_dir() {
     fi
     LOG="$log"
 
+    # Say that we are at it, until we know how it went. This is what tells a
+    # run which is still going from one which never got to the end.
+    if ! echo "RUNNING" > "$dir/$STATUS_TXT"; then
+        error "failed to write $dir/$STATUS_TXT"
+    fi
+
     # Log to the file, and to the terminal as well when we have one: a run
     # started by hand is worth watching. Started from cron there is no
     # terminal, and printing anything would have the whole log mailed to
