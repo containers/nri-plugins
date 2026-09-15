@@ -7,6 +7,7 @@ ARG BUILD_VERSION
 ARG BUILD_BUILDID
 ARG DEBUG=0
 ARG NORACE=0
+ARG COVER=0
 ARG SKIP_LICENSES=0
 
 WORKDIR /go/builder
@@ -47,6 +48,7 @@ RUN --mount=type=cache,target=/go/pkg/mod/ \
          V=$DEBUG \
          DEBUG=$DEBUG \
          NORACE=$NORACE \
+         COVER=$COVER \
          BINARIES="" \
          OTHER_IMAGE_TARGETS="" \
          PLUGINS=nri-resource-policy-balloons \
