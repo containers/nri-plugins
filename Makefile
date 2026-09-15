@@ -124,6 +124,20 @@ ifeq ($(DEBUG),1)
   endif
 endif
 
+# Packages to instrument for coverage with COVER=1. We instrument only our
+# own code. pkg/topology needs to be listed extra as it is a module of its
+# own.
+COVER_PKGS ?= github.com/containers/nri-plugins/...,github.com/containers/nri-plugins/pkg/topology/...
+
+# COVER=1 builds resource-management plugins with coverage instrumentation,
+# to collect runtime coverage data. See test/e2e/README.md for how the e2e
+# tests use this. Atomic counters are a must (for coverage.ClearCounters()).
+ifeq ($(COVER),1)
+    COVER_FLAGS := -cover -covermode=atomic -coverpkg=$(COVER_PKGS)
+    COVER_TYPE  := "instrumented "
+    DOCKER_BUILD_COVER := --build-arg COVER=1
+endif
+
 # Documentation-related variables
 SPHINXOPTS    ?= -W
 SPHINXBUILD   = sphinx-build
@@ -161,7 +175,7 @@ verify: verify-godeps verify-fmt verify-generate verify-build verify-docs
 build-plugins: $(foreach bin,$(PLUGINS),$(BIN_PATH)/$(bin))
 
 build-plugins-static:
-	$(MAKE) STATIC=1 DEBUG=$(DEBUG) NORACE=$(NORACE) build-plugins
+	$(MAKE) STATIC=1 DEBUG=$(DEBUG) NORACE=$(NORACE) COVER=$(COVER) build-plugins
 
 build-binaries: $(foreach bin,$(BINARIES),$(BIN_PATH)/$(bin))
 
@@ -205,10 +219,10 @@ clean-cache:
 #
 
 $(BIN_PATH)/nri-resource-policy-%: .static.%.$(STATIC)
-	$(Q)echo "Building $(STATIC_TYPE)$@ (version $(BUILD_VERSION), build $(BUILD_BUILDID))..."; \
+	$(Q)echo "Building $(COVER_TYPE)$(STATIC_TYPE)$@ (version $(BUILD_VERSION), build $(BUILD_BUILDID))..."; \
 	src="./cmd/plugins/$(patsubst nri-resource-policy-%,%,$(notdir $@))"; \
 	mkdir -p $(BIN_PATH); \
-	cd "$$src" && $(GO_BUILD) $(BUILD_TAGS) $(LDFLAGS) $(GCFLAGS) -o $@
+	cd "$$src" && $(GO_BUILD) $(BUILD_TAGS) $(LDFLAGS) $(GCFLAGS) $(COVER_FLAGS) -o $@
 
 $(BIN_PATH)/nri-%: .static.%.$(STATIC)
 	$(Q)echo "Building $(STATIC_TYPE)$@ (version $(BUILD_VERSION), build $(BUILD_BUILDID))..."; \
@@ -247,9 +261,11 @@ image.nri-resource-policy-% \
 image.nri-% \
 image.%:
 	$(Q)mkdir -p $(IMAGE_PATH); \
+	cover=""; \
 	case $@ in \
 	    *.nri-resource-policy-*) \
 		dir=$(patsubst image.nri-resource-policy-%,cmd/plugins/%,$@); \
+		cover="$(DOCKER_BUILD_COVER)"; \
 	        ;; \
 	    *.nri-*) \
 		dir=$(patsubst image.nri-%,cmd/plugins/%,$@); \
@@ -263,6 +279,7 @@ image.%:
 	$(DOCKER_BUILD) . -f "$$dir/Dockerfile" \
 	    --build-arg GO_VERSION=$(GO_VERSION) \
 	    $(DOCKER_BUILD_DEBUG) \
+	    $$cover \
 	    --build-arg IMAGE_VERSION=$(IMAGE_VERSION) \
 	    --build-arg BUILD_VERSION=$(BUILD_VERSION) \
 	    --build-arg BUILD_BUILDID=$(BUILD_BUILDID) \
