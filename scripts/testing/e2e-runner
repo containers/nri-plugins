@@ -27,12 +27,51 @@ PROXIES_SRC=""
 SKIP_WORKTREE="${SKIP_WORKTREE:-}"
 # E2E_TESTS: end-to-end tests to run instead of full test set
 E2E_TESTS="${E2E_TESTS:-}"
+# RETENTION_DAYS: remove published results older than this, 0 to keep them all
+RETENTION_DAYS="${RETENTION_DAYS:-100}"
+# RETENTION_KEEP: never remove this many latest results, however old they are
+RETENTION_KEEP="${RETENTION_KEEP:-3}"
+# KEEP_COVERAGE_DATA: keep the collected coverage data, not just the report
+KEEP_COVERAGE_DATA="${KEEP_COVERAGE_DATA:-}"
+# KEEP_ARTIFACTS: whose bulky artifacts to keep as they are instead of packing
+# them up: the tests which failed (the default), all tests, or none of them
+KEEP_ARTIFACTS="${KEEP_ARTIFACTS:-failed}"
+# K8SCRI: container runtime to test with, empty to alternate by the day
+K8SCRI="${K8SCRI:-}"
+# FULL_BUILD: 1 to build all binaries and images, 0 for the minimal set of
+# them, empty to build everything once a week and the minimal set otherwise
+FULL_BUILD="${FULL_BUILD:-}"
 
 # This script.
 SELF="$0"
 TEST_SUITE_DIR=policies.test-suite
 GIT_SHA1="git.sha1"
 GIT_DESC="git.describe"
+GIT_REMOTE="git.remote"
+# E2E_REPORT: script in scripts/testing which reports on collected results
+E2E_REPORT="e2e-report"
+# COVERAGE_REPORT_SH: script in test/e2e which reports on collected coverage
+COVERAGE_REPORT_SH="report-coverage.sh"
+# COVERAGE_REPORT_DIR: where that script puts the report, within a result dir
+COVERAGE_REPORT_DIR="coverage-report"
+# STATUS_TXT: where e2e-report records the verdict of a run
+STATUS_TXT="status.txt"
+# LOG_TXT: the log of a run, the first thing it publishes
+LOG_TXT="e2e-runner.log.txt"
+# ARTIFACTS_TAR: the bulky artifacts of a test case, packed up
+ARTIFACTS_TAR="artifacts.tar.xz"
+# PACKED_ARTIFACTS: which artifacts of a test case are worth packing. The
+# command transcripts and these logs are all but all of what a run publishes.
+# The pyexec files are what the last python snippet of a test was, what it
+# printed and what it ran on, which is of interest when a test failed.
+PACKED_ARTIFACTS="commands
+                  nri-resource-policy.output.txt
+                  runtime.containerd.log.txt
+                  runtime.crio.log.txt
+                  pyexec.output.txt
+                  pyexec.py
+                  pyexec_state.py
+                  cache"
 
 
 #
@@ -59,7 +98,20 @@ usage() {
     echo "  --results|--out|-o <dir>  top-level directory for publishing results"
     echo "  --name|-n <name>          subdirectory for results of this run"
     echo "  --skip-worktree           skip worktree preparation, assume already done"
-    echo "  --trace|-t|-x)            run with set -x"
+    echo "  --retention-days <days>   remove results older than this, 0 to keep all"
+    echo "                            (default: $RETENTION_DAYS)"
+    echo "  --retention-keep <count>  always keep this many latest results"
+    echo "                            (default: $RETENTION_KEEP)"
+    echo "  --keep-coverage-data      keep collected coverage data, not just the report"
+    echo "  --keep-artifacts <what>   keep the command transcripts and the logs of"
+    echo "                            all|failed|none of the tests as they are, and"
+    echo "                            pack up the rest (default: $KEEP_ARTIFACTS)"
+    echo "  --runtime <runtime>       containerd or crio, by default the two of"
+    echo "                            them on alternating days"
+    echo "  --full-build              build all binaries and images"
+    echo "  --minimal-build           build the plugins the tests need, no more"
+    echo "                            (by default full once a week, minimal otherwise)"
+    echo "  --trace|-t|-x             run with set -x"
     echo "  --help                    show this help"
 
     exit $exit_code
@@ -121,20 +173,29 @@ source_proxies() {
 prepare_worktree() {
     local worktree_dir="$(dirname $CLONED_REPO)/worktree"
 
-    WORKTREE="$worktree_dir/$RESULT_NAME"
+    # Resolve with -m: realpath needs every component but the last to exist,
+    # and it prints nothing if one does not. That left WORKTREE empty on a
+    # host which had never run a test before, and "git worktree add ''" dies
+    # of an internal error rather than telling us what is wrong.
+    WORKTREE="$(realpath -m "$worktree_dir/$RESULT_NAME")"
+    if [ -z "$WORKTREE" ]; then
+        fatal "failed to resolve the worktree of $RESULT_NAME under $worktree_dir"
+    fi
+
     case "$SKIP_WORKTREE" in
         1|true|yes|y)
-            WORKTREE="$(realpath $WORKTREE)"
             must-cd "$WORKTREE"
             return 0
             ;;
     esac
 
+    must-mkdir "$worktree_dir" "worktree"
+
     if [ ! -e "$CLONED_REPO" ]; then
-        if ! git clone "$REMOTE_REPO" "$LOCAL_REPO"; then
+        if ! git clone "$REMOTE_REPO" "$CLONED_REPO"; then
             fatal "failed to clone $REMOTE_REPO to $CLONED_REPO"
         fi
-        must-cd "$LOCAL_REPO"
+        must-cd "$CLONED_REPO"
     else
         must-cd "$CLONED_REPO"
         if ! git remote -v | grep origin | grep -q "$REMOTE_REPO"; then
@@ -145,13 +206,16 @@ prepare_worktree() {
         fi
     fi
 
-    WORKTREE="$(realpath $WORKTREE)"
     info "setting up git worktree $WORKTREE..."
     if ! git worktree add "$WORKTREE" "origin/$TEST_BRANCH"; then
         fatal "failed to add git worktree $WORKTREE"
     fi
 
     if [ -x "$WORKTREE/scripts/testing/e2e-runner" ]; then
+        # The options below are passed on, the rest default from the
+        # environment, so export those to keep them across the re-exec.
+        export RETENTION_DAYS RETENTION_KEEP KEEP_COVERAGE_DATA KEEP_ARTIFACTS
+        export K8SCRI FULL_BUILD
         exec "$WORKTREE/scripts/testing/e2e-runner" \
              --skip-worktree \
              ${PROXIES_SRC:+--source-proxies }${PROXIES_SRC:-} \
@@ -167,8 +231,9 @@ prepare_worktree() {
 }
 
 prepare_result_dir() {
+    # .txt, so that a browser shows the log instead of downloading it.
     local dir="$RESULT_DIR"
-    local log="$dir/${SELF##*/}.log"
+    local log="$dir/${SELF##*/}.log.txt"
 
     info "creating result dir $dir..."
     must-mkdir "$dir" "result"
@@ -178,33 +243,65 @@ prepare_result_dir() {
     fi
     LOG="$log"
 
-    info "Redirecting output to log file $LOG..."
-    if ! exec &>"$LOG"; then
-        fatal "log redirection failed"
+    # Say that we are at it, until we know how it went. This is what tells a
+    # run which is still going from one which never got to the end.
+    if ! echo "RUNNING" > "$dir/$STATUS_TXT"; then
+        error "failed to write $dir/$STATUS_TXT"
+    fi
+
+    # Log to the file, and to the terminal as well when we have one: a run
+    # started by hand is worth watching. Started from cron there is no
+    # terminal, and printing anything would have the whole log mailed to
+    # whoever gets our output.
+    if [ -t 1 ]; then
+        info "Logging to $LOG and here..."
+        if ! exec > >(tee "$LOG") 2>&1; then
+            fatal "failed to log to $LOG"
+        fi
+    else
+        info "Redirecting output to log file $LOG..."
+        if ! exec &>"$LOG"; then
+            fatal "log redirection failed"
+        fi
     fi
 }
 
 run_e2e_tests() {
-    local k8scri=containerd
+    local k8scri="$K8SCRI" full="$FULL_BUILD"
 
-    # test every other day with cri-o
-    if [ $(( $(date +%j) % 2 )) != 0 ]; then
-        k8scri=crio
+    # Unless we were told which runtime to test with, test every other day
+    # with cri-o.
+    if [ -z "$k8scri" ]; then
+        k8scri=containerd
+        if [ $(( $(date +%j) % 2 )) != 0 ]; then
+            k8scri=crio
+        fi
     fi
 
-    # once per week build all binaries and images, otherwise just the bare minimal set
-    if [ $(( $(date +%j) % 7 )) != 0 ]; then
-       export PLUGINS="nri-resource-policy-balloons nri-resource-policy-topology-aware"
-       export BINARIES=""
-       export OTHER_IMAGE_TARGETS=""
+    # Unless we were told either way, build all binaries and images once per
+    # week, and just the bare minimal set otherwise.
+    if [ -z "$full" ]; then
+        full=0
+        if [ $(( $(date +%j) % 7 )) = 0 ]; then
+            full=1
+        fi
     fi
 
-    info "running e2e tests ${E2E_TESTS:-with the default test set}..."
+    if [ "$full" != "1" ]; then
+        info "building the plugins the tests need, no more..."
+        export PLUGINS="nri-resource-policy-balloons nri-resource-policy-topology-aware"
+        export BINARIES=""
+        export OTHER_IMAGE_TARGETS=""
+    else
+        info "building all binaries and images..."
+    fi
+
+    info "running e2e tests ${E2E_TESTS:-with the default test set} on $k8scri..."
     must-cd "$WORKTREE"
     if [ -n "$E2E_TESTS" ]; then
-        make SKIP_LICENSES=1 k8scri=$k8scri $minimal E2E_TESTS="$E2E_TESTS" e2e-tests
+        make SKIP_LICENSES=1 k8scri=$k8scri E2E_TESTS="$E2E_TESTS" e2e-tests
     else
-        make SKIP_LICENSES=1 k8scri=$k8scri $minimal e2e-tests
+        make SKIP_LICENSES=1 k8scri=$k8scri e2e-tests
     fi
 }
 
@@ -221,11 +318,14 @@ cleanup_test_vms() {
 collect_git_info() {
     local describe="$RESULT_DIR/$GIT_DESC"
     local sha1="$RESULT_DIR/$GIT_SHA1"
+    local remote="$RESULT_DIR/$GIT_REMOTE"
 
     info "collecting info about worktree..."
     must-cd "$WORKTREE"
     git describe > "$describe"
     git log -1 --pretty=%H > "$sha1"
+    # For linking the results to the revision and the tests they came from.
+    git config --get remote.origin.url > "$remote" || echo "$REMOTE_REPO" > "$remote"
 }
 
 collect_results() {
@@ -233,11 +333,122 @@ collect_results() {
 
     info "collecting test results..."
     must-cd "$WORKTREE"
+    # Only the results of a VM are ours to collect. The tests leave other
+    # things next to them, the merged coverage report for one, which we
+    # regenerate from the collected data anyway.
     for src in e2e-results/*; do
+        if [ ! -d "$src/$TEST_SUITE_DIR" ]; then
+            info "skipping $src, it has no $TEST_SUITE_DIR..."
+            continue
+        fi
         dst=$RESULT_DIR/${src#e2e-results/}
         must-mkdir "$dst" "result"
         must-mv "$src/$TEST_SUITE_DIR" "$dst"
     done
+}
+
+prune_junk() {
+    local dir="$RESULT_DIR"
+
+    info "removing generated junk from the results..."
+    # Byte compiled python of the snippets the tests run through pyexec. Half
+    # a megabyte of it per run, and of use to nobody.
+    find "$dir" -type d -name __pycache__ -prune -exec rm -rf {} +
+    find "$dir" -type f -name '*.pyc' -delete
+}
+
+generate_coverage_report() {
+    local report="$WORKTREE/test/e2e/$COVERAGE_REPORT_SH"
+    local outdir="$RESULT_DIR/$COVERAGE_REPORT_DIR"
+    local policy dirs suite
+
+    if [ ! -x "$report" ]; then
+        info "no $report, skipping the coverage report..."
+        return 0
+    fi
+
+    # From the worktree: the browsable report embeds the sources of the tested
+    # revision, which go away with the worktree. Never fail the run over the
+    # coverage report, the test results matter more.
+    must-cd "$WORKTREE"
+
+    info "generating coverage report for $RESULT_DIR..."
+    if ! "$report" --output "$outdir" "$RESULT_DIR"; then
+        error "failed to generate coverage report for $RESULT_DIR"
+    fi
+
+    # One report per policy, over every topology it was tested on, so that the
+    # coverage of a plugin can be told from the coverage of everything.
+    for policy in $(policies_tested); do
+        dirs=""
+        for suite in $RESULT_DIR/*/$TEST_SUITE_DIR/$policy; do
+            if [ -d "$suite" ]; then
+                dirs="$dirs $suite"
+            fi
+        done
+        if [ -z "$dirs" ]; then
+            continue
+        fi
+        info "generating coverage report of the $policy tests..."
+        if ! "$report" --output "$outdir/policies/$policy" $dirs; then
+            error "failed to generate coverage report of the $policy tests"
+        fi
+    done
+}
+
+policies_tested() {
+    local suite
+
+    for suite in $RESULT_DIR/*/$TEST_SUITE_DIR/*; do
+        if [ -d "$suite" ]; then
+            echo "${suite##*/}"
+        fi
+    done | sort -u
+}
+
+generate_report() {
+    local report="$WORKTREE/scripts/testing/$E2E_REPORT"
+
+    if [ ! -x "$report" ]; then
+        info "no $report, leaving the results unreported..."
+        return 0
+    fi
+
+    info "reporting on $RESULT_DIR..."
+    if ! "$report" run "$RESULT_DIR"; then
+        error "failed to report on $RESULT_DIR"
+    fi
+
+    info "updating the index of all results in $RESULT_ROOT..."
+    if ! "$report" index "$RESULT_ROOT"; then
+        error "failed to update the index in $RESULT_ROOT"
+    fi
+}
+
+publish_latest() {
+    local link="$RESULT_ROOT/latest"
+
+    # A stable place to look at the newest results. Apache serves it only with
+    # FollowSymLinks, which is the default, but the index lists the runs newest
+    # first in any case.
+    info "pointing $link at $RESULT_NAME..."
+    if ! ln -sfn "$RESULT_NAME" "$link"; then
+        error "failed to point $link at $RESULT_NAME"
+    fi
+}
+
+run_status() {
+    # Print the verdict of the run, as e2e-report recorded it. Nothing to go by
+    # means something went wrong before the tests, which is not a pass.
+    local status="$RESULT_DIR/$STATUS_TXT"
+
+    if [ ! -f "$status" ]; then
+        echo "ERROR"
+        return
+    fi
+
+    read -r verdict _ < "$status"
+    echo "${verdict:-ERROR}"
 }
 
 cleanup_worktree() {
@@ -250,7 +461,7 @@ cleanup_worktree() {
 
 generate_summary() {
     local summary="$RESULT_DIR/summary.txt"
-    local vm dir f test result failed
+    local suite vm dir f test result
 
     info "generating summary $summary..."
     rm -f "$summary"
@@ -259,83 +470,206 @@ generate_summary() {
         return
     fi
 
-    for vm in $RESULT_DIR/n[0-9]*-c*; do
+    # Every collected VM, whatever its topology is called. Matching the names
+    # of the topologies we happen to have would silently leave the results of
+    # a new one out of the summary, and out of the verdict of the whole run.
+    for suite in $RESULT_DIR/*/$TEST_SUITE_DIR; do
+        if [ ! -d "$suite" ]; then
+            continue
+        fi
+        vm="${suite%/$TEST_SUITE_DIR}"
         echo "${vm##*/}:" >> "$summary"
-        for dir in $(find $vm/$TEST_SUITE_DIR -name 'test[0-9]*-*' -type d); do
-            for f in  $dir/*.output; do
-                mv $f $f.txt
+        for dir in $(find $suite -name 'test[0-9]*-*' -type d); do
+            # Serve logs as text, otherwise a browser downloads them instead
+            # of showing them.
+            for f in $dir/*.output $dir/*.log; do
+                if [ -f "$f" ]; then
+                    must-mv "$f" "$f.txt"
+                fi
             done
             test="${dir##*$TEST_SUITE_DIR/}"
             result="- FAIL"
-            if [ -f "$dir/summary.txt" ]; then
-                if grep -q PASS "$dir/summary.txt"; then
-                    result="+ PASS"
-                fi
-            fi
-            if [ "$result" = "FAIL" ]; then
-                failed=true
+            if [ -f "$dir/summary.txt" ] && grep -q PASS "$dir/summary.txt"; then
+                result="+ PASS"
             fi
             echo "  $result $test"
         done | sort >> "$summary"
     done
 }
 
-generate_index() {
-    local index="$RESULT_ROOT/index.html"
-    local run status sha1 desc
+prune_coverage_data() {
+    local profile="$RESULT_DIR/$COVERAGE_REPORT_DIR/coverprofile"
 
-    info "updating index $index..."
-    rm -f "$index"
-    if ! touch "$index"; then
-        error "failed to create $index"
+    case "$KEEP_COVERAGE_DATA" in
+        1|true|yes)
+            info "keeping the coverage data collected for the tests..."
+            return 0
+            ;;
+    esac
+
+    # Without a profile there is nothing to fall back on, so keep the data
+    # whatever we were told: it is the only coverage we have of this run.
+    if [ ! -f "$profile" ]; then
+        info "no coverage profile in $RESULT_DIR, keeping the collected data..."
+        return 0
+    fi
+
+    info "removing the coverage data collected for the tests..."
+    # The bulk of it is the data of each test, over a hundred kilobytes per
+    # test. Keep the report, which includes the data merged over the run, so
+    # that everything but the per test numbers can still be regenerated from
+    # what we publish. Only ever remove data files, and only directories which
+    # removing those leaves empty.
+    find "$RESULT_DIR" -type f \
+         \( -name 'covmeta.*' -o -name 'covcounters.*' \) \
+         -not -path "$RESULT_DIR/$COVERAGE_REPORT_DIR/*" -delete
+    find "$RESULT_DIR" -type d -name coverage -empty -delete
+}
+
+pack_artifacts() {
+    local dir packed=0 before after
+
+    case "$KEEP_ARTIFACTS" in
+        all)
+            info "keeping the artifacts of every test as they are..."
+            return 0
+            ;;
+        failed|none)
+            ;;
+        *)
+            error "unknown KEEP_ARTIFACTS \"$KEEP_ARTIFACTS\", keeping everything"
+            return 0
+            ;;
+    esac
+
+    info "packing the artifacts of the tests..."
+    before=$(du -sk "$RESULT_DIR" | cut -f1)
+
+    for dir in $(find "$RESULT_DIR" -name 'test[0-9]*-*' -type d); do
+        # The artifacts of a test which failed are the ones somebody is going
+        # to read, so leave those alone and browsable.
+        if [ "$KEEP_ARTIFACTS" = "failed" ] &&
+           ! grep -q "Test verdict: PASS" "$dir/summary.txt" 2>/dev/null; then
+            continue
+        fi
+        if pack_test_artifacts "$dir"; then
+            packed=$((packed + 1))
+        fi
+    done
+
+    after=$(du -sk "$RESULT_DIR" | cut -f1)
+    info "packed the artifacts of $packed tests," \
+         "$(( (before - after) / 1024 ))M of $(( before / 1024 ))M saved"
+}
+
+pack_test_artifacts() {
+    local dir="$1" what="" f
+
+    for f in $PACKED_ARTIFACTS; do
+        if [ -e "$dir/$f" ]; then
+            what="$what $f"
+        fi
+    done
+    if [ -z "$what" ]; then
         return 1
     fi
 
-    >>$index cat <<EOF
-    <html>
-      <head><title>NRI Reference Plugins Test Results</title></head>
-      <body>
-EOF
+    if ! tar -cJf "$dir/$ARTIFACTS_TAR" -C "$dir" $what; then
+        error "failed to pack the artifacts of $dir"
+        rm -f "$dir/$ARTIFACTS_TAR"
+        return 1
+    fi
 
-    echo "      <ul>" >> "$index"
-    for run in $(ls -1 $RESULT_ROOT --sort=time); do
-        case $run in
-            [0-9][0-9][0-9][0-9]-*) ;;
-             *) continue
-                ;;
-        esac
-        if [ ! -e "$RESULT_ROOT/$run/summary.txt" ] || grep -q FAIL "$RESULT_ROOT/$run/summary.txt"; then
-            status="FAIL"
-        else
-            status="PASS"
-        fi
-        sha1=$(get_test_entry $run $GIT_SHA1 unknown-sha1)
-        desc=$(get_test_entry $run $GIT_DESC unknown-git-version)
-        echo "        <li>$status <a href=\"$run\">$run (version $desc, $sha1) </a></li>" >> "$index"
-    done
-    echo "      </ul>" >> "$index"
+    # Only ever remove what we know is in the tarball now.
+    ( cd "$dir" && rm -rf $what )
 
-    >>"$index" cat <<EOF
-      </body>
-    </html>
-EOF
+    return 0
 }
 
-get_test_entry() {
-    local run="$1" entry="$2" default="${3:-unknown}"
-    local file="$RESULT_ROOT/$run/$entry" buf
+run_started() {
+    # Usage: run_started NAME DIR
+    #
+    # Print when a run ran, as seconds since the epoch. A run is named after
+    # when it started, but --name takes anything, so fall back to the timestamp
+    # of its directory.
+    local name="$1" dir="$2" when
 
-    if [ ! -e "$file" ]; then
-        echo "$default"
-        return 0
-    fi
-    if ! buf="$(cat $file)"; then
-        echo "$default"
-        return 0
+    if [[ "$name" =~ ([0-9]{4}-[0-9]{2}-[0-9]{2})[-_]?([0-9]{2})-?([0-9]{2})? ]]; then
+        if when=$(date -d "${BASH_REMATCH[1]} ${BASH_REMATCH[2]}:${BASH_REMATCH[3]:-00}" \
+                      +%s 2>/dev/null); then
+            echo "$when"
+            return 0
+        fi
     fi
 
-    echo "$buf"
-    return 0
+    stat -c %Y "$dir" 2>/dev/null
+}
+
+is_run() {
+    # Usage: is_run DIR
+    #
+    # Anything with results in it is a run of ours, whatever --name called it.
+    # A run which was cut short still has our log. Say no to the links, latest
+    # points at a run we look at anyway, and to whatever else is kept here.
+    local dir="$1"
+
+    if [ -L "$dir" ] || [ ! -d "$dir" ]; then
+        return 1
+    fi
+
+    [ -f "$dir/results.json" ] || [ -f "$dir/summary.txt" ] || [ -f "$dir/$LOG_TXT" ]
+}
+
+prune_old_results() {
+    local run dir when age kept=0 runs=""
+
+    case "$RETENTION_DAYS" in
+        ""|0|no|none|forever)
+            info "keeping all published results..."
+            return 0
+            ;;
+    esac
+
+    info "removing published results older than $RETENTION_DAYS days..."
+
+    # Order the runs by when they ran, not by when their directory was last
+    # written to: reporting on an old run touches it, which would otherwise
+    # make it look like one of the latest ones to keep.
+    for run in $(ls -1 "$RESULT_ROOT" 2>/dev/null); do
+        dir="$RESULT_ROOT/$run"
+        if ! is_run "$dir"; then
+            continue
+        fi
+        when=$(run_started "$run" "$dir")
+        if [ -z "$when" ]; then
+            error "failed to tell when $run ran, keeping it"
+            continue
+        fi
+        runs="$runs$when $run"$'\n'
+    done
+
+    while read -r when run; do
+        if [ -z "$run" ]; then
+            continue
+        fi
+
+        # Keep the latest results regardless of their age, so that a break in
+        # running the tests cannot leave us without any results at all.
+        kept=$((kept + 1))
+        if [ "$kept" -le "$RETENTION_KEEP" ]; then
+            continue
+        fi
+
+        age=$(( ($(date +%s) - when) / (24 * 3600) ))
+        if [ "$age" -le "$RETENTION_DAYS" ]; then
+            continue
+        fi
+
+        info "removing $run, $age days old..."
+        if ! rm -rf "$RESULT_ROOT/$run"; then
+            error "failed to remove $RESULT_ROOT/$run"
+        fi
+    done <<< "$(sort -rn <<< "$runs")"
 }
 
 #
@@ -374,6 +708,34 @@ while [  "$#" -gt 0 ] && [ "${1#-}" != "$1" ]; do
             SKIP_WORKTREE=1
             shift
             ;;
+        --retention-days)
+            RETENTION_DAYS="$2"
+            shift 2
+            ;;
+        --retention-keep)
+            RETENTION_KEEP="$2"
+            shift 2
+            ;;
+        --keep-coverage-data)
+            KEEP_COVERAGE_DATA=1
+            shift
+            ;;
+        --keep-artifacts)
+            KEEP_ARTIFACTS="$2"
+            shift 2
+            ;;
+        --runtime|--k8scri)
+            K8SCRI="$2"
+            shift 2
+            ;;
+        --full-build)
+            FULL_BUILD=1
+            shift
+            ;;
+        --minimal-build)
+            FULL_BUILD=0
+            shift
+            ;;
 
         --trace|-t|-x)
             set -x
@@ -392,6 +754,14 @@ done
 E2E_TESTS="$*"
 RESULT_DIR="$RESULT_ROOT/$RESULT_NAME"
 
+case "$K8SCRI" in
+    ""|containerd|crio)
+        ;;
+    *)
+        fatal "unknown runtime \"$K8SCRI\", expecting containerd or crio"
+        ;;
+esac
+
 source_proxies
 prepare_worktree
 prepare_result_dir
@@ -399,7 +769,18 @@ run_e2e_tests
 cleanup_test_vms
 collect_git_info
 collect_results
-cleanup_worktree
+prune_junk
+generate_coverage_report
 generate_summary
-generate_index
+prune_coverage_data
+pack_artifacts
+prune_old_results
+generate_report
+publish_latest
+cleanup_worktree
+
+# Say how the run went, but leave the exit status to mean whether we did our
+# job, not whether the tested system passed. Whoever wants the verdict reads
+# status.txt or results.json.
+info "verdict of $RESULT_NAME: $(run_status)"
 
