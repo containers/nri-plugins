@@ -41,6 +41,7 @@ require (
 	k8s.io/api v0.34.11
 	k8s.io/apimachinery v0.34.11
 	k8s.io/client-go v0.34.11
+	k8s.io/dynamic-resource-allocation v0.34.11
 	k8s.io/klog/v2 v2.140.0
 	k8s.io/kubelet v0.34.11
 	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397
@@ -86,9 +87,12 @@ require (
 	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/tetratelabs/wazero v1.11.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
+	go.etcd.io/etcd/client/pkg/v3 v3.6.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.45.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
+	go.uber.org/zap v1.27.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/mod v0.37.0 // indirect
