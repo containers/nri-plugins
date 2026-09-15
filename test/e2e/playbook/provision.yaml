@@ -59,7 +59,7 @@
       with_items:
         - for swp in `systemctl --type swap | awk '/\.swap/ { print $1 }'`; do systemctl stop "$swp"; systemctl mask "$swp"; done
         - swapoff --all
-      when: ansible_swaptotal_mb > 0
+      when: ansible_facts['swaptotal_mb'] > 0
 
     - name: Add Kubernetes APT repository to sources.list.d
       ansible.builtin.copy:
