@@ -440,6 +440,19 @@ spec:
                         type: boolean
                     type: object
                 type: object
+              dra:
+                description: |-
+                  DRAConfig provides configuration data for the DRA (Dynamic Resource
+                  Allocation) driver. The driver is owned by the resource manager, not by a
+                  policy, so this is common configuration for all policies.
+                properties:
+                  enabled:
+                    description: |-
+                      Enabled registers a DRA driver for this node and publishes the devices
+                      the active policy provides. A policy which provides no devices leaves a
+                      registered driver with no devices, which claims cannot be made against.
+                    type: boolean
+                type: object
               instrumentation:
                 description: Config provides runtime configuration for instrumentation.
                 properties:
