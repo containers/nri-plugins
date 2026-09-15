@@ -15,8 +15,9 @@
 package topology
 
 import (
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
-	"github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/topology"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
@@ -24,40 +25,44 @@ import (
 type TopologyHint = topology.Hint
 
 type Hint struct {
-	sys  sysfs.System
-	hint *TopologyHint
+	machine *hardware.Machine
+	hint    *TopologyHint
 }
 
-func NewHint(sys sysfs.System, h TopologyHint) *Hint {
+func NewHint(m *hardware.Machine, h TopologyHint) *Hint {
 	return &Hint{
-		sys:  sys,
-		hint: &h,
+		machine: m,
+		hint:    &h,
 	}
 }
 
-func (h *Hint) CPUSetForCPUs() cpuset.CPUSet {
-	cset, _ := cpuset.Parse(h.hint.CPUs)
-	return cset
+func (h *Hint) CPUSetForCPUs() *libcpu.CpuMask {
+	cpus, err := libcpu.ParseCpuMask(h.hint.CPUs)
+	if err != nil {
+		return libcpu.NewCpuMask()
+	}
+	return cpus
 }
 
 func (h *Hint) MemsForCPUs() libmem.NodeMask {
 	mems := libmem.NewNodeMask()
-	cset, _ := cpuset.Parse(h.hint.CPUs)
-	for _, id := range h.sys.NodeIDs() {
-		if !h.sys.Node(id).CPUSet().Intersection(cset).IsEmpty() {
+	cpus := h.CPUSetForCPUs()
+	for _, id := range h.machine.MemoryNodeIDs() {
+		if h.machine.MemoryNode(id).CPUs().Intersects(cpus) {
 			mems.Set(id)
 		}
 	}
 	return mems
 }
 
-func (h *Hint) CPUSetForNUMAs() cpuset.CPUSet {
-	cset := cpuset.New()
+func (h *Hint) CPUSetForNUMAs() *libcpu.CpuMask {
+	cpus := libcpu.NewCpuMask()
+	// a NUMA node list, in the same syntax a CPU list uses
 	mems, _ := cpuset.Parse(h.hint.NUMAs)
 	for _, id := range mems.UnsortedList() {
-		cset = cset.Union(h.sys.Node(id).CPUSet())
+		cpus = cpus.Union(h.machine.MemoryNode(id).CPUs())
 	}
-	return cset
+	return cpus
 }
 
 func (h *Hint) MemsForNUMAs() libmem.NodeMask {
@@ -65,8 +70,8 @@ func (h *Hint) MemsForNUMAs() libmem.NodeMask {
 	return mems
 }
 
-func (h *Hint) MisalignedCPUSet(cpus cpuset.CPUSet) cpuset.CPUSet {
-	misaligned := cpuset.New()
+func (h *Hint) MisalignedCPUSet(cpus *libcpu.CpuMask) *libcpu.CpuMask {
+	misaligned := libcpu.NewCpuMask()
 	if aligned := h.CPUSetForCPUs(); !aligned.IsEmpty() {
 		misaligned = misaligned.Union(cpus.Difference(aligned))
 	}

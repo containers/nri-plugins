@@ -51,6 +51,24 @@ export k8s_release=${k8s_release:-"latest"}
 k8s_release="${k8s_release#v}"
 export k8s_version=""
 
+# Comma-separated "Gate1=true,Gate2=false" list passed to
+# kubeadm's kube-apiserver/scheduler --feature-gates extraArgs and to
+# the kubelet's KubeletConfiguration.featureGates. Unset (default):
+# provision.yaml runs its plain "kubeadm init --pod-network-cidr=..."
+# exactly as before, no feature-gate plumbing at all.
+#
+# NOTE for callers enabling DRAConsumableCapacity/DRANodeAllocatableResources
+# (KEP-5075/KEP-5517): also pin k8s_release explicitly to >=1.37, e.g.
+#   k8s_release=1.37 k8s_feature_gates="DRAConsumableCapacity=true,DRANodeAllocatableResources=true" ...
+# as DRANodeAllocatableResources requires Kubernetes 1.37+.
+export k8s_feature_gates=${k8s_feature_gates:-}
+
+# klog verbosity level (e.g. "4") passed to kube-apiserver's, kube-scheduler's,
+# and kube-controller-manager's --v extraArgs, and to the kubelet's
+# KubeletConfiguration.logging.verbosity. Unset (default):
+# no verbosity plumbing, components log at their normal default level.
+export k8s_log_verbosity=${k8s_log_verbosity:-}
+
 GH_HELM_REPO="helm/helm"
 export helm_release=${helm_release:-"latest"}
 
@@ -274,9 +292,11 @@ echo "    EFI boot        = ${efi:-no}"
 echo "    Distro          = $distro"
 echo "    Distro image    = ${distro_img:-vagrant default}"
 echo "    Kubernetes"
-echo "      - release     = $k8s_release"
-echo "      - version     = $k8s_version"
-echo "      - Helm        = $helm_release"
+echo "      - release       = $k8s_release"
+echo "      - version       = $k8s_version"
+echo "      - Helm          = $helm_release"
+echo "      - feature gates = ${k8s_feature_gates:-none}"
+echo "      - log verbosity = ${k8s_log_verbosity:-none}"
 echo "    Runtime         = $k8scri"
 echo "    Output dir      = $OUTPUT_DIR"
 echo "    Test output dir = $TEST_OUTPUT_DIR"

@@ -22,7 +22,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 )
 
 // sstOverrideEnvVar holds JSON seeding the in-memory SST mock.
@@ -260,7 +260,7 @@ func (b *sstMock) Punits() []pctPunit {
 			out = append(out, pctPunit{
 				PkgID:            pkg.ID,
 				PunitID:          0,
-				CPUs:             cpuset.New(cpus...),
+				CPUs:             libcpu.NewCpuMask(cpus...),
 				MaxHpCpus:        pkg.MaxHpCpus,
 				GuaranteedHpCpus: pkg.MaxHpCpus,
 			})
@@ -277,7 +277,7 @@ func (b *sstMock) Punits() []pctPunit {
 			out = append(out, pctPunit{
 				PkgID:            pkg.ID,
 				PunitID:          pu.ID,
-				CPUs:             cpuset.New(cpus...),
+				CPUs:             libcpu.NewCpuMask(cpus...),
 				MaxHpCpus:        pu.MaxHpCpus,
 				GuaranteedHpCpus: gtd,
 			})

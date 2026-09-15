@@ -19,6 +19,8 @@ KERNEL_GETSOURCE = "#{ENV['kernel_getsource']}"
 KERNEL_CONFIG = "#{ENV['kernel_config']}"
 K8S_RELEASE = "#{ENV['k8s_release']}"
 K8S_VERSION = "#{ENV['k8s_version']}"
+K8S_FEATURE_GATES = "#{ENV['k8s_feature_gates']}"
+K8S_LOG_VERBOSITY = "#{ENV['k8s_log_verbosity']}"
 HELM_RELEASE = "#{ENV['helm_release']}"
 CRI_RUNTIME = "#{ENV['k8scri']}"
 CRIO_RELEASE = "1.28.1"
@@ -125,6 +127,8 @@ Vagrant.configure("2") do |config|
         kernel_config: KERNEL_CONFIG,
         k8s_release: K8S_RELEASE,
         k8s_version: K8S_VERSION,
+        k8s_feature_gates: K8S_FEATURE_GATES,
+        k8s_log_verbosity: K8S_LOG_VERBOSITY,
         helm_release: HELM_RELEASE,
         cri_runtime: CRI_RUNTIME,
         containerd_release: CONTAINERD_RELEASE,

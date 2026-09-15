@@ -23,7 +23,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 )
 
 // fakeProc is a fake procfs which counts reads and writes.
@@ -170,7 +170,7 @@ func affinityPath(num int) string {
 // setAffinity sets the affinity of the given interrupt.
 func setAffinity(t *testing.T, num int, cpus string) {
 	t.Helper()
-	if err := (&Irq{num: num}).SetAffinityCpus(cpuset.MustParse(cpus)); err != nil {
+	if err := (&Irq{num: num}).SetAffinityCpus(libcpu.MustParseCpuMask(cpus)); err != nil {
 		t.Fatalf("SetAffinityCpus(%q) on irq %d failed: %v", cpus, num, err)
 	}
 }
@@ -372,7 +372,7 @@ func TestUnblockedWriteIsImmediate(t *testing.T) {
 
 	// Write errors are returned when writes are not blocked.
 	fake.failWrites(errors.New("test write error"))
-	if err := (&Irq{num: 42}).SetAffinityCpus(cpuset.MustParse("2")); err == nil {
+	if err := (&Irq{num: 42}).SetAffinityCpus(libcpu.MustParseCpuMask("2")); err == nil {
 		t.Errorf("SetAffinityCpus() succeeded despite a failing write")
 	}
 }
@@ -425,7 +425,7 @@ func TestFailedWriteForgottenAndRetried(t *testing.T) {
 	if got := getAffinity(t, 42); got != "0-3" {
 		t.Fatalf("AffinityCpus() = %q, want 0-3", got)
 	}
-	if err := (&Irq{num: 42}).SetAffinityCpus(cpuset.MustParse("1,3")); err == nil {
+	if err := (&Irq{num: 42}).SetAffinityCpus(libcpu.MustParseCpuMask("1,3")); err == nil {
 		t.Errorf("SetAffinityCpus() succeeded despite a failing write")
 	}
 	if got := fake.writeCount(path); got != 1 {
@@ -584,7 +584,7 @@ func TestCallbackReentrancy(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			return irq.SetAffinityCpus(cpus.Union(cpuset.MustParse("4")))
+			return irq.SetAffinityCpus(cpus.Union(libcpu.MustParseCpuMask("4")))
 		})
 		if err != nil {
 			t.Fatalf("ForEachInterrupt() failed: %v", err)
@@ -602,11 +602,11 @@ func TestAffinityErrorsNeverWrite(t *testing.T) {
 	fake := setupCache(t)
 	fake.set(affinityPath(42), "0-3")
 
-	if err := (&Irq{num: 42}).SetAffinityCpus(cpuset.New()); err == nil {
+	if err := (&Irq{num: 42}).SetAffinityCpus(libcpu.NewCpuMask()); err == nil {
 		t.Errorf("SetAffinityCpus(empty) should fail")
 	}
 
-	err := (&Irq{num: 42, denied: true}).SetAffinityCpus(cpuset.MustParse("1"))
+	err := (&Irq{num: 42, denied: true}).SetAffinityCpus(libcpu.MustParseCpuMask("1"))
 	if !errors.Is(err, ErrDeniedInterrupt) {
 		t.Errorf("SetAffinityCpus() on a denied irq: %v, want %v", err, ErrDeniedInterrupt)
 	}
@@ -707,7 +707,7 @@ func TestReadWriteAmplification(t *testing.T) {
 			}
 			// Every pass sets a different affinity, just like a policy
 			// which resizes its CPU pools while allocating containers.
-			newCpus := cpuset.MustParse(fmt.Sprintf("%d", pass%4))
+			newCpus := libcpu.MustParseCpuMask(fmt.Sprintf("%d", pass%4))
 			for _, irq := range irqs {
 				if _, err := irq.AffinityCpus(); err != nil {
 					t.Fatalf("pass %d: AffinityCpus() failed: %v", pass, err)

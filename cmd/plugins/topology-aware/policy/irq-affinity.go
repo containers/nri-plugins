@@ -16,11 +16,11 @@ package topologyaware
 
 import (
 	"fmt"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"strconv"
 
 	"github.com/containers/nri-plugins/pkg/irq"
 	"github.com/containers/nri-plugins/pkg/topology"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	"sigs.k8s.io/yaml"
 )
 
@@ -106,8 +106,8 @@ func addIrqAffinityForHints(a *IrqAffinity, hints topology.Hints) error {
 	return nil
 }
 
-func (p *policy) irqCpus(hwIrq *irq.Irq) (preMask, claim, mask cpuset.CPUSet) {
-	preMask, claim, mask = cpuset.New(), cpuset.New(), cpuset.New()
+func (p *policy) irqCpus(hwIrq *irq.Irq) (preMask, claim, mask *libcpu.CpuMask) {
+	preMask, claim, mask = libcpu.NewCpuMask(), libcpu.NewCpuMask(), libcpu.NewCpuMask()
 	for _, g := range p.allocations.grants {
 		irqs := g.IrqAffinity()
 		switch {

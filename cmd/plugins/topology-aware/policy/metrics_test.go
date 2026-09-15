@@ -25,11 +25,11 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	"github.com/containers/nri-plugins/pkg/metrics"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
-	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/testutils"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 // TestMetricsUpdateNilReceiver verifies that Update() on a nil
@@ -92,14 +92,15 @@ func newServerPolicyWithMetrics(t *testing.T) (*policy, *TopologyAwareMetrics, *
 
 	// The "server" sysfs yields a multi-zone topology, which lets us assert
 	// "one exported series per zone".
-	sys, err := system.DiscoverSystemAt(path.Join(dir, "sysfs", "server", "sys"))
+	machine, err := hardware.Discover(
+		hardware.WithRoot(path.Join(dir, "sysfs", "server")))
 	if err != nil {
-		t.Fatalf("failed to discover system: %v", err)
+		t.Fatalf("failed to discover machine: %v", err)
 	}
 
 	opts := &policyapi.BackendOptions{
-		Cache:  &mockCache{},
-		System: sys,
+		Cache:   &mockCache{},
+		Machine: machine,
 		Config: &cfgapi.Config{
 			ReservedResources: cfgapi.Constraints{
 				cfgapi.CPU: "750m",
@@ -272,7 +273,7 @@ func TestSharedPoolMetricsDoNotLeakSeriesOnCpusetChange(t *testing.T) {
 			if len(list) == 0 {
 				continue
 			}
-			s.sharable = s.sharable.Difference(cpuset.New(list[0]))
+			s.sharable = s.sharable.Difference(libcpu.NewCpuMask(list[0]))
 			changed = true
 		}
 		if !changed {

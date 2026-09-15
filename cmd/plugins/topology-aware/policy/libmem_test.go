@@ -21,8 +21,8 @@ import (
 	"testing"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
-	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/testutils"
 )
 
@@ -41,18 +41,18 @@ func setupTestPolicy(t *testing.T) (*policy, string) {
 	}
 
 	sysPath := path.Join(dir, "sysfs", "server", "sys")
-	sys, err := system.DiscoverSystemAt(sysPath)
+	machine, err := hardware.Discover(hardware.WithRoot(path.Dir(sysPath)))
 	if err != nil {
 		if rerr := os.RemoveAll(dir); rerr != nil {
 			t.Logf("failed to remove temp dir %q: %v", dir, rerr)
 		}
-		t.Fatalf("failed to discover system: %v", err)
+		t.Fatalf("failed to discover machine: %v", err)
 	}
 
 	p := New().(*policy)
 	if err := p.Setup(&policyapi.BackendOptions{
-		Cache:  &mockCache{},
-		System: sys,
+		Cache:   &mockCache{},
+		Machine: machine,
 		Config: &cfgapi.Config{
 			ReservedResources: cfgapi.Constraints{cfgapi.CPU: "750m"},
 		},

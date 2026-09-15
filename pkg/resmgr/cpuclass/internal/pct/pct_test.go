@@ -16,90 +16,98 @@ package pct
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"testing"
+	"testing/fstest"
 
 	gosst "github.com/intel/goresctrl/pkg/sst"
 	idset "github.com/intel/goresctrl/pkg/utils"
 
 	policyapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/types"
-	"github.com/containers/nri-plugins/pkg/sysfs"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 var errFakeSstNoClos = errors.New("fakeSst: no CLOS for CPU")
 
-// --- minimal sysfs.System / CPUPackage / CPU fakes ------------------
+// --- minimal Sys fake ----------------------------------------------
 
-// fakePackage implements sysfs.CPUPackage via an embedded nil
-// interface. Methods not overridden here panic if called, which is
-// the desired guardrail in unit tests.
-type fakePackage struct {
-	sysfs.CPUPackage
-	id   idset.ID
-	cpus cpuset.CPUSet
-}
+// fakeSys reports no CPUs. Allocator asks the machine for one online CPU's
+// frequency range and nothing else, so the tests below -- which are about CLOS
+// planning and association -- have no topology to provide. Turbo info then stays
+// nil, which is the same as on a platform whose CPUs expose no frequency data.
+// newMachine builds a machine with the given packages and the CPUs in each, by
+// writing the layout out as the kernel would present it in sysfs and reading it
+// back through real discovery.
+//
+// pct takes a Sys, which is two methods of *hardware.Machine, and a Machine is a
+// concrete type which cannot be faked. So these tests describe the machine they
+// want rather than standing something in for it, and the CPUs pct reads out of
+// one are the CPUs it would read on the real thing.
+func newMachine(t *testing.T, pkgCpus map[int]string, freqs ...map[int][3]uint64) *hardware.Machine {
+	t.Helper()
 
-func (p *fakePackage) ID() idset.ID          { return p.id }
-func (p *fakePackage) CPUSet() cpuset.CPUSet { return p.cpus }
+	file := func(s string) *fstest.MapFile { return &fstest.MapFile{Data: []byte(s)} }
+	fsys := fstest.MapFS{"proc/meminfo": file("MemTotal: 1048576 kB\n")}
 
-// fakeCPU implements sysfs.CPU likewise.
-type fakeCPU struct {
-	sysfs.CPU
-	id  idset.ID
-	pkg idset.ID
-}
+	all := libcpu.NewCpuMask()
+	for pkg, list := range pkgCpus {
+		cpus, err := libcpu.ParseCpuMask(list)
+		if err != nil {
+			t.Fatalf("package %d: bad cpu list %q: %v", pkg, list, err)
+		}
+		all = all.Union(cpus)
+		for _, cpu := range cpus.List() {
+			dir := fmt.Sprintf("sys/devices/system/cpu/cpu%d/topology", cpu)
+			fsys[dir+"/physical_package_id"] = file(fmt.Sprintf("%d\n", pkg))
+			fsys[dir+"/core_id"] = file(fmt.Sprintf("%d\n", cpu))
+			fsys[dir+"/core_cpus_list"] = file(fmt.Sprintf("%d\n", cpu))
 
-func (c *fakeCPU) ID() idset.ID        { return c.id }
-func (c *fakeCPU) PackageID() idset.ID { return c.pkg }
-
-// fakeSys is a minimal Sys implementation built from package
-// CPU maps.
-type fakeSys struct {
-	packageCpus map[idset.ID]cpuset.CPUSet // pkgID -> cpus
-	cpuPkg      map[int]idset.ID           // cpu -> pkgID
-}
-
-func (s *fakeSys) PackageIDs() []idset.ID {
-	ids := make([]idset.ID, 0, len(s.packageCpus))
-	for id := range s.packageCpus {
-		ids = append(ids, id)
+			// base, min and max, as cpufreq would report them
+			for _, f := range freqs {
+				khz, ok := f[cpu]
+				if !ok {
+					continue
+				}
+				cf := fmt.Sprintf("sys/devices/system/cpu/cpu%d/cpufreq", cpu)
+				for name, v := range map[string]uint64{
+					"base_frequency":   khz[0],
+					"cpuinfo_min_freq": khz[1],
+					"cpuinfo_max_freq": khz[2],
+				} {
+					if v != 0 {
+						fsys[cf+"/"+name] = file(fmt.Sprintf("%d\n", v))
+					}
+				}
+			}
+		}
 	}
-	return ids
+
+	list := all.String() + "\n"
+	fsys["sys/devices/system/cpu/online"] = file(list)
+	fsys["sys/devices/system/cpu/present"] = file(list)
+	fsys["sys/devices/system/cpu/possible"] = file(list)
+
+	m, err := hardware.Discover(hardware.WithFS(fsys))
+	if err != nil {
+		t.Fatalf("failed to discover the test machine: %v", err)
+	}
+	return m
 }
 
-func (s *fakeSys) Package(id idset.ID) sysfs.CPUPackage {
-	cpus, ok := s.packageCpus[id]
-	if !ok {
-		return nil
-	}
-	return &fakePackage{id: id, cpus: cpus}
+// newTwoPackageMachine has two packages of four CPUs each.
+func newTwoPackageMachine(t *testing.T) *hardware.Machine {
+	t.Helper()
+	return newMachine(t, map[int]string{0: "0-3", 1: "4-7"})
 }
 
-func (s *fakeSys) CPU(id idset.ID) sysfs.CPU {
-	pkg, ok := s.cpuPkg[int(id)]
-	if !ok {
-		return nil
-	}
-	return &fakeCPU{id: id, pkg: pkg}
-}
-
-func (s *fakeSys) CPUIDs() []idset.ID { return nil }
-
-// newTwoPackageFakeSys returns a fakeSys with two packages of 4 CPUs
-// each: pkg0=0..3, pkg1=4..7.
-func newTwoPackageFakeSys() *fakeSys {
-	return &fakeSys{
-		packageCpus: map[idset.ID]cpuset.CPUSet{
-			0: cpuset.MustParse("0-3"),
-			1: cpuset.MustParse("4-7"),
-		},
-		cpuPkg: map[int]idset.ID{
-			0: 0, 1: 0, 2: 0, 3: 0,
-			4: 1, 5: 1, 6: 1, 7: 1,
-		},
-	}
+// newTwoPunitMachine has two packages of eight CPUs each, for the layouts where
+// each package holds two power units.
+func newTwoPunitMachine(t *testing.T) *hardware.Machine {
+	t.Helper()
+	return newMachine(t, map[int]string{0: "0-7", 1: "8-15"})
 }
 
 // --- minimal sst fake ------------------------------------------------
@@ -110,7 +118,7 @@ type fakeSst struct {
 	supported bool
 	cpuClos   map[int]int // cpu -> CLOS id
 	maxHp     map[int]int // pkgID -> max HP CPUs (missing = "unknown")
-	pkgCpus   map[int]cpuset.CPUSet
+	pkgCpus   map[int]*libcpu.CpuMask
 	// punits, when non-nil, overrides the synthesized one-punit-per-package
 	// Punits() output. Use to exercise multi-punit-per-package layouts.
 	punits []pctPunit
@@ -159,9 +167,9 @@ func (s *fakeSst) Punits() []pctPunit {
 			// Derive a default cpu range matching newTwoPackageFakeSys layout.
 			switch id {
 			case 0:
-				cpus = cpuset.MustParse("0-3")
+				cpus = libcpu.MustParseCpuMask("0-3")
 			case 1:
-				cpus = cpuset.MustParse("4-7")
+				cpus = libcpu.MustParseCpuMask("4-7")
 			}
 		}
 		out = append(out, pctPunit{
@@ -201,7 +209,7 @@ func (s *fakeSst) TFStatus() (map[pctPunitID]bool, error) {
 // --- helpers to construct a hand-wired Allocator -----------------
 
 func newManagedPctForTest(t *testing.T, classes []*policyapi.CPUClass, plans map[string]*pctClassPlan,
-	allowed cpuset.CPUSet, sys *fakeSys, sst *fakeSst) *Allocator {
+	allowed *libcpu.CpuMask, sys Sys, sst *fakeSst) *Allocator {
 	t.Helper()
 	a := &Allocator{
 		sys:         sys,
@@ -210,7 +218,8 @@ func newManagedPctForTest(t *testing.T, classes []*policyapi.CPUClass, plans map
 		classByName: map[string]*policyapi.CPUClass{},
 		classPlan:   plans,
 		allowed:     allowed,
-		hpUsed:      map[int]cpuset.CPUSet{},
+		hpUsed:      map[int]*libcpu.CpuMask{},
+		hpDRAUsed:   map[int]*libcpu.CpuMask{},
 		hpClasses:   map[string]bool{},
 	}
 	for _, cc := range classes {
@@ -274,7 +283,7 @@ func pctTestWirePunits(a *Allocator) {
 // TestPctHintsNoClassNoOp covers the "no plan and not managed-with-HP"
 // branch where hints() must return an empty types.AllocationHints.
 func TestPctHintsNoClassNoOp(t *testing.T) {
-	sys := newTwoPackageFakeSys()
+	sys := newTwoPackageMachine(t)
 	sst := &fakeSst{supported: true}
 
 	// disabled allocator: hints must short-circuit to empty.
@@ -291,7 +300,7 @@ func TestPctHintsNoClassNoOp(t *testing.T) {
 	// "anyHighPriorityClassDefined" gate must be false so no Avoid.
 	a2 := newManagedPctForTest(t, classes,
 		map[string]*pctClassPlan{"lp": {ClosID: 3}},
-		cpuset.MustParse("0-7"), sys, sst)
+		libcpu.MustParseCpuMask("0-7"), sys, sst)
 	got = a2.Hints(types.AllocationIntent{ClassName: "unknown-class", RequestedCount: 1})
 	if len(got.Avoid) != 0 {
 		t.Errorf("no HP class: Avoid=%+v, want empty", got.Avoid)
@@ -302,7 +311,7 @@ func TestPctHintsNoClassNoOp(t *testing.T) {
 // branch in assoc-only mode: hints prefer free CPUs already
 // associated to the class's CLOS, enabling bin packing.
 func TestPctHintsAssocOnlyPreferClosCpus(t *testing.T) {
-	sys := newTwoPackageFakeSys()
+	sys := newTwoPackageMachine(t)
 	sst := &fakeSst{
 		supported: true,
 		// cpus 1, 2 and 3 already on CLOS 1, others on default CLOS 0.
@@ -314,15 +323,15 @@ func TestPctHintsAssocOnlyPreferClosCpus(t *testing.T) {
 		mode:        pctModeAssocOnly,
 		classByName: map[string]*policyapi.CPUClass{"c1": {Name: "c1"}},
 		classPlan:   map[string]*pctClassPlan{"c1": {ClosID: 1}},
-		allowed:     cpuset.MustParse("0-7"),
-		hpUsed:      map[int]cpuset.CPUSet{},
+		allowed:     libcpu.MustParseCpuMask("0-7"),
+		hpUsed:      map[int]*libcpu.CpuMask{},
 	}
 	pctTestWirePunits(a)
 	got := a.Hints(types.AllocationIntent{
 		ClassName: "c1",
 		// cpu 1 is on CLOS 1 but already taken by someone
 		// else, so it must not show up in the hint.
-		FreeCpus:       cpuset.MustParse("2-7"),
+		FreeCpus:       libcpu.MustParseCpuMask("2-7"),
 		RequestedCount: 1,
 	})
 	if len(got.Prefer) != 1 {
@@ -331,7 +340,7 @@ func TestPctHintsAssocOnlyPreferClosCpus(t *testing.T) {
 	if got.Prefer[0].Name != virtDevSstClosHint(1) {
 		t.Errorf("Prefer[0].Name = %q, want %q", got.Prefer[0].Name, virtDevSstClosHint(1))
 	}
-	want := cpuset.MustParse("2-3")
+	want := libcpu.MustParseCpuMask("2-3")
 	if !got.Prefer[0].Cpus[0].Equals(want) {
 		t.Errorf("Prefer[0].Cpus = %v, want %s", got.Prefer[0].Cpus, want)
 	}
@@ -344,7 +353,7 @@ func TestPctHintsAssocOnlyPreferClosCpus(t *testing.T) {
 // branch: hints contain (a) free CPUs already on the HP CLOS for bin
 // packing and (b) the HP-reserve preference (largest-room package).
 func TestPctHintsHighPriorityReserveAndClosCpus(t *testing.T) {
-	sys := newTwoPackageFakeSys()
+	sys := newTwoPackageMachine(t)
 	sst := &fakeSst{
 		supported: true,
 		// cpus 0 and 1 already on CLOS 0 (HP), cpu 0 in use.
@@ -360,17 +369,17 @@ func TestPctHintsHighPriorityReserveAndClosCpus(t *testing.T) {
 			"hp": {Name: "hp", PctPriority: "high"},
 		},
 		classPlan: map[string]*pctClassPlan{"hp": {ClosID: 0}},
-		allowed:   cpuset.MustParse("0-7"),
+		allowed:   libcpu.MustParseCpuMask("0-7"),
 		// pkg0 has 1 HP cpu already used (cpu 0).
-		hpUsed: map[int]cpuset.CPUSet{0: cpuset.MustParse("0")},
+		hpUsed: map[int]*libcpu.CpuMask{0: libcpu.MustParseCpuMask("0")},
 	}
 	pctTestWirePunits(a)
 
 	// Free pool excludes the already-used cpu 0.
-	free := cpuset.MustParse("1-7")
+	free := libcpu.MustParseCpuMask("1-7")
 	got := a.Hints(types.AllocationIntent{
 		ClassName:      "hp",
-		CurrentCpus:    cpuset.New(),
+		CurrentCpus:    libcpu.NewCpuMask(),
 		FreeCpus:       free,
 		RequestedCount: 1,
 	})
@@ -385,7 +394,7 @@ func TestPctHintsHighPriorityReserveAndClosCpus(t *testing.T) {
 	if got.Prefer[0].Name != virtDevSstClosHint(0) {
 		t.Errorf("Prefer[0].Name = %q, want %q", got.Prefer[0].Name, virtDevSstClosHint(0))
 	}
-	wantClos := cpuset.MustParse("1")
+	wantClos := libcpu.MustParseCpuMask("1")
 	if !got.Prefer[0].Cpus[0].Equals(wantClos) {
 		t.Errorf("Prefer[0].Cpus = %v, want %s (cpu 0 on CLOS 0 but not free)",
 			got.Prefer[0].Cpus, wantClos)
@@ -393,7 +402,7 @@ func TestPctHintsHighPriorityReserveAndClosCpus(t *testing.T) {
 	if got.Prefer[1].Name != virtDevSstHpReserveHint {
 		t.Errorf("Prefer[1].Name = %q, want %q", got.Prefer[1].Name, virtDevSstHpReserveHint)
 	}
-	wantReserve := cpuset.MustParse("4-7")
+	wantReserve := libcpu.MustParseCpuMask("4-7")
 	if !got.Prefer[1].Cpus[0].Equals(wantReserve) {
 		t.Errorf("HP reserve = %v, want %s (largest-room package)", got.Prefer[1].Cpus, wantReserve)
 	}
@@ -408,7 +417,7 @@ func TestPctHintsHighPriorityReserveAndClosCpus(t *testing.T) {
 // hosting HP-class CPUs, so non-HP classes do not steal HP turbo
 // budget. THIS BRANCH IS NOT COVERED IN test19 e2e.
 func TestPctHintsManagedNonHpAvoidsHpInUse(t *testing.T) {
-	sys := newTwoPackageFakeSys()
+	sys := newTwoPackageMachine(t)
 	sst := &fakeSst{
 		supported: true,
 		cpuClos:   map[int]int{},
@@ -426,14 +435,14 @@ func TestPctHintsManagedNonHpAvoidsHpInUse(t *testing.T) {
 			"hp": {ClosID: 0},
 			"lp": {ClosID: 3},
 		},
-		allowed: cpuset.MustParse("0-7"),
+		allowed: libcpu.MustParseCpuMask("0-7"),
 		// pkg0 hosts HP cpu 1.
-		hpUsed: map[int]cpuset.CPUSet{0: cpuset.MustParse("1")},
+		hpUsed: map[int]*libcpu.CpuMask{0: libcpu.MustParseCpuMask("1")},
 	}
 	pctTestWirePunits(a)
 	got := a.Hints(types.AllocationIntent{
 		ClassName:      "lp",
-		FreeCpus:       cpuset.MustParse("2-7"),
+		FreeCpus:       libcpu.MustParseCpuMask("2-7"),
 		RequestedCount: 1,
 	})
 
@@ -452,7 +461,7 @@ func TestPctHintsManagedNonHpAvoidsHpInUse(t *testing.T) {
 	if got.Avoid[0].Name != virtDevSstHpInUseHint {
 		t.Errorf("Avoid[0].Name = %q, want %q", got.Avoid[0].Name, virtDevSstHpInUseHint)
 	}
-	wantAvoid := cpuset.MustParse("0-3") // entire pkg0
+	wantAvoid := libcpu.MustParseCpuMask("0-3") // entire pkg0
 	if !got.Avoid[0].Cpus[0].Equals(wantAvoid) {
 		t.Errorf("Avoid[0].Cpus = %v, want %s (pkg0 == HP-in-use package)", got.Avoid[0].Cpus, wantAvoid)
 	}
@@ -463,7 +472,7 @@ func TestPctHintsManagedNonHpAvoidsHpInUse(t *testing.T) {
 // Allowed (via the handler-level intersectHints + pct-internal
 // allowed intersections).
 func TestPctHintsAllowedBoundsResults(t *testing.T) {
-	sys := newTwoPackageFakeSys()
+	sys := newTwoPackageMachine(t)
 	sst := &fakeSst{
 		supported: true,
 		cpuClos:   map[int]int{1: 0, 4: 0}, // HP cpus on both packages
@@ -478,16 +487,16 @@ func TestPctHintsAllowedBoundsResults(t *testing.T) {
 		},
 		classPlan: map[string]*pctClassPlan{"hp": {ClosID: 0}},
 		// allowed restricts to pkg0 only.
-		allowed: cpuset.MustParse("0-3"),
-		hpUsed: map[int]cpuset.CPUSet{
-			0: cpuset.MustParse("0"),
-			1: cpuset.MustParse("4"), // outside allowed
+		allowed: libcpu.MustParseCpuMask("0-3"),
+		hpUsed: map[int]*libcpu.CpuMask{
+			0: libcpu.MustParseCpuMask("0"),
+			1: libcpu.MustParseCpuMask("4"), // outside allowed
 		},
 	}
 	pctTestWirePunits(a)
 	got := a.Hints(types.AllocationIntent{
 		ClassName:      "hp",
-		FreeCpus:       cpuset.MustParse("1-3"),
+		FreeCpus:       libcpu.MustParseCpuMask("1-3"),
 		RequestedCount: 1,
 	})
 	// closCpus walks a.allowed, so cpu 4 is excluded automatically.
@@ -495,13 +504,13 @@ func TestPctHintsAllowedBoundsResults(t *testing.T) {
 	if len(got.Prefer) == 0 {
 		t.Fatalf("Prefer empty, want at least closCpus hint")
 	}
-	if !got.Prefer[0].Cpus[0].Equals(cpuset.MustParse("1")) {
+	if !got.Prefer[0].Cpus[0].Equals(libcpu.MustParseCpuMask("1")) {
 		t.Errorf("Prefer[0].Cpus = %v, want {1} (cpu 4 outside allowed)", got.Prefer[0].Cpus)
 	}
 	// HP reserve must come from a package whose free CPUs are
 	// inside allowed; only pkg0 qualifies.
 	if len(got.Prefer) >= 2 {
-		want := cpuset.MustParse("1-3")
+		want := libcpu.MustParseCpuMask("1-3")
 		if !got.Prefer[1].Cpus[0].Equals(want) {
 			t.Errorf("HP reserve = %v, want %s (pkg0 free cpus inside allowed)", got.Prefer[1].Cpus, want)
 		}
@@ -510,32 +519,14 @@ func TestPctHintsAllowedBoundsResults(t *testing.T) {
 
 // --- Tier A/B/C reservation tests ----------------------------------
 
-// newTwoPunitFakeSys returns a fakeSys whose package layout matches
-// the standard two-punit-per-package fixture below: pkg0 = 0..7
-// (punit-0 = 0..3, punit-1 = 4..7), pkg1 = 8..15 (punit-2 = 8..11,
-// punit-3 = 12..15). The synthesis function does not know about
-// punits, only packages.
-func newTwoPunitFakeSys() *fakeSys {
-	return &fakeSys{
-		packageCpus: map[idset.ID]cpuset.CPUSet{
-			0: cpuset.MustParse("0-7"),
-			1: cpuset.MustParse("8-15"),
-		},
-		cpuPkg: map[int]idset.ID{
-			0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0,
-			8: 1, 9: 1, 10: 1, 11: 1, 12: 1, 13: 1, 14: 1, 15: 1,
-		},
-	}
-}
-
 // makeTwoPunitsPerPkg returns four punits laid out as in
 // newTwoPunitFakeSys, with the given MaxHpCpus per punit.
 func makeTwoPunitsPerPkg(hp0, hp1, hp2, hp3 int) []pctPunit {
 	return []pctPunit{
-		{PkgID: 0, PunitID: 0, CPUs: cpuset.MustParse("0-3"), MaxHpCpus: hp0},
-		{PkgID: 0, PunitID: 1, CPUs: cpuset.MustParse("4-7"), MaxHpCpus: hp1},
-		{PkgID: 1, PunitID: 2, CPUs: cpuset.MustParse("8-11"), MaxHpCpus: hp2},
-		{PkgID: 1, PunitID: 3, CPUs: cpuset.MustParse("12-15"), MaxHpCpus: hp3},
+		{PkgID: 0, PunitID: 0, CPUs: libcpu.MustParseCpuMask("0-3"), MaxHpCpus: hp0},
+		{PkgID: 0, PunitID: 1, CPUs: libcpu.MustParseCpuMask("4-7"), MaxHpCpus: hp1},
+		{PkgID: 1, PunitID: 2, CPUs: libcpu.MustParseCpuMask("8-11"), MaxHpCpus: hp2},
+		{PkgID: 1, PunitID: 3, CPUs: libcpu.MustParseCpuMask("12-15"), MaxHpCpus: hp3},
 	}
 }
 
@@ -543,7 +534,7 @@ func makeTwoPunitsPerPkg(hp0, hp1, hp2, hp3 int) []pctPunit {
 // HP work, punit-1 in the same package has full HP room. A request
 // for 1 HP CPU must steer to punit-1 (Tier A), not to pkg1.
 func TestPctHints_HpRoomTierAPunitWins(t *testing.T) {
-	sys := newTwoPunitFakeSys()
+	sys := newTwoPunitMachine(t)
 	sst := &fakeSst{
 		supported: true,
 		punits:    makeTwoPunitsPerPkg(2, 2, 2, 2),
@@ -554,20 +545,20 @@ func TestPctHints_HpRoomTierAPunitWins(t *testing.T) {
 		mode:        pctModeManaged,
 		classByName: map[string]*policyapi.CPUClass{"hp": {Name: "hp", PctPriority: "high"}},
 		classPlan:   map[string]*pctClassPlan{"hp": {ClosID: 0}},
-		allowed:     cpuset.MustParse("0-15"),
+		allowed:     libcpu.MustParseCpuMask("0-15"),
 		// Punit-0 fully booked with HP (cpus 0,1 take both HP slots).
-		hpUsed: map[int]cpuset.CPUSet{0: cpuset.MustParse("0-1")},
+		hpUsed: map[int]*libcpu.CpuMask{0: libcpu.MustParseCpuMask("0-1")},
 	}
 	pctTestWirePunits(a)
 
 	got := a.Hints(types.AllocationIntent{
 		ClassName:      "hp",
-		FreeCpus:       cpuset.MustParse("2-15"),
+		FreeCpus:       libcpu.MustParseCpuMask("2-15"),
 		RequestedCount: 1,
 	})
 
 	// Find HP reserve hint.
-	var reserve cpuset.CPUSet
+	var reserve *libcpu.CpuMask
 	for _, p := range got.Prefer {
 		if p.Name == virtDevSstHpReserveHint {
 			reserve = p.Cpus[0]
@@ -582,7 +573,7 @@ func TestPctHints_HpRoomTierAPunitWins(t *testing.T) {
 	// Actually both punit-1 (room=2), punit-2 (room=2), punit-3
 	// (room=2) tie; tie-break by free-CPU count (all 4) and then
 	// by iteration order (slice index 1 first). So expect punit-1.
-	want := cpuset.MustParse("4-7")
+	want := libcpu.MustParseCpuMask("4-7")
 	if !reserve.Equals(want) {
 		t.Errorf("Tier A HP reserve = %s, want %s (punit-1)", reserve, want)
 	}
@@ -593,7 +584,7 @@ func TestPctHints_HpRoomTierAPunitWins(t *testing.T) {
 // enough for the request. Pkg1 has only 1 HP slot in total. The
 // Tier-B aggregate must steer to pkg0 (free CPUs of both punits).
 func TestPctHints_HpRoomTierBSamePackage(t *testing.T) {
-	sys := newTwoPunitFakeSys()
+	sys := newTwoPunitMachine(t)
 	sst := &fakeSst{
 		supported: true,
 		punits:    makeTwoPunitsPerPkg(2, 2, 1, 0),
@@ -604,21 +595,21 @@ func TestPctHints_HpRoomTierBSamePackage(t *testing.T) {
 		mode:        pctModeManaged,
 		classByName: map[string]*policyapi.CPUClass{"hp": {Name: "hp", PctPriority: "high"}},
 		classPlan:   map[string]*pctClassPlan{"hp": {ClosID: 0}},
-		allowed:     cpuset.MustParse("0-15"),
+		allowed:     libcpu.MustParseCpuMask("0-15"),
 		// Both pkg0 punits already host 1 HP CPU each, leaving room=1 in each.
-		hpUsed: map[int]cpuset.CPUSet{
-			0: cpuset.MustParse("0"), // punit-0 idx 0
-			1: cpuset.MustParse("4"), // punit-1 idx 1
+		hpUsed: map[int]*libcpu.CpuMask{
+			0: libcpu.MustParseCpuMask("0"), // punit-0 idx 0
+			1: libcpu.MustParseCpuMask("4"), // punit-1 idx 1
 		},
 	}
 	pctTestWirePunits(a)
 
 	got := a.Hints(types.AllocationIntent{
 		ClassName:      "hp",
-		FreeCpus:       cpuset.MustParse("1-3,5-15"),
+		FreeCpus:       libcpu.MustParseCpuMask("1-3,5-15"),
 		RequestedCount: 2,
 	})
-	var reserve cpuset.CPUSet
+	var reserve *libcpu.CpuMask
 	for _, p := range got.Prefer {
 		if p.Name == virtDevSstHpReserveHint {
 			reserve = p.Cpus[0]
@@ -630,7 +621,7 @@ func TestPctHints_HpRoomTierBSamePackage(t *testing.T) {
 	// Tier A is impossible (no single punit has room>=2 in pkg0,
 	// and pkg1 punit-2 has 1 cpu only). Tier B: pkg0 sum-room=2
 	// >= 2, pkg1 sum-room=1 < 2. Reserve = pkg0 free CPUs.
-	want := cpuset.MustParse("1-3,5-7")
+	want := libcpu.MustParseCpuMask("1-3,5-7")
 	if !reserve.Equals(want) {
 		t.Errorf("Tier B HP reserve = %s, want %s (pkg0 union)", reserve, want)
 	}
@@ -641,7 +632,7 @@ func TestPctHints_HpRoomTierBSamePackage(t *testing.T) {
 // allocator must return no HP-reserve hint so the caller falls back
 // to topology-only placement on the same socket.
 func TestPctHints_HpRoomTierCNoCrossPackage(t *testing.T) {
-	sys := newTwoPunitFakeSys()
+	sys := newTwoPunitMachine(t)
 	sst := &fakeSst{
 		supported: true,
 		// pkg0 has 2 HP CPUs total, pkg1 has 2 HP CPUs total.
@@ -653,14 +644,14 @@ func TestPctHints_HpRoomTierCNoCrossPackage(t *testing.T) {
 		mode:        pctModeManaged,
 		classByName: map[string]*policyapi.CPUClass{"hp": {Name: "hp", PctPriority: "high"}},
 		classPlan:   map[string]*pctClassPlan{"hp": {ClosID: 0}},
-		allowed:     cpuset.MustParse("0-15"),
-		hpUsed:      map[int]cpuset.CPUSet{},
+		allowed:     libcpu.MustParseCpuMask("0-15"),
+		hpUsed:      map[int]*libcpu.CpuMask{},
 	}
 	pctTestWirePunits(a)
 
 	got := a.Hints(types.AllocationIntent{
 		ClassName:      "hp",
-		FreeCpus:       cpuset.MustParse("0-15"),
+		FreeCpus:       libcpu.MustParseCpuMask("0-15"),
 		RequestedCount: 3, // > any single package's HP capacity (2)
 	})
 	for _, p := range got.Prefer {
@@ -675,7 +666,7 @@ func TestPctHints_HpRoomTierCNoCrossPackage(t *testing.T) {
 // entire package. This is a regression guard for the punit-keyed
 // rewrite of hpInUseCpus.
 func TestPctHints_HpInUseIsPunitGranular(t *testing.T) {
-	sys := newTwoPunitFakeSys()
+	sys := newTwoPunitMachine(t)
 	sst := &fakeSst{
 		supported: true,
 		punits:    makeTwoPunitsPerPkg(2, 2, 2, 2),
@@ -692,22 +683,22 @@ func TestPctHints_HpInUseIsPunitGranular(t *testing.T) {
 			"hp": {ClosID: 0},
 			"lp": {ClosID: 3},
 		},
-		allowed: cpuset.MustParse("0-15"),
+		allowed: libcpu.MustParseCpuMask("0-15"),
 		// HP work on punit-0 only (pkg0).
-		hpUsed: map[int]cpuset.CPUSet{0: cpuset.MustParse("0")},
+		hpUsed: map[int]*libcpu.CpuMask{0: libcpu.MustParseCpuMask("0")},
 	}
 	pctTestWirePunits(a)
 
 	got := a.Hints(types.AllocationIntent{
 		ClassName:      "lp",
-		FreeCpus:       cpuset.MustParse("1-15"),
+		FreeCpus:       libcpu.MustParseCpuMask("1-15"),
 		RequestedCount: 1,
 	})
 	if len(got.Avoid) != 1 {
 		t.Fatalf("Avoid count = %d, want 1: got=%+v", len(got.Avoid), got.Avoid)
 	}
 	// Must be punit-0 (cpus 0-3) ONLY, not all of pkg0 (0-7).
-	want := cpuset.MustParse("0-3")
+	want := libcpu.MustParseCpuMask("0-3")
 	if !got.Avoid[0].Cpus[0].Equals(want) {
 		t.Errorf("Avoid = %v, want %s (punit-0 only, not full pkg0)", got.Avoid[0].Cpus, want)
 	}
@@ -908,7 +899,7 @@ func TestPctPunitGuaranteedHpCpus_NeitherSupported(t *testing.T) {
 // hpEligiblePunit must be set up by the caller after the helper
 // returns to keep the test intent explicit.
 func newAssocOnlyPctForTest(t *testing.T, classes []*policyapi.CPUClass, plans map[string]*pctClassPlan,
-	allowed cpuset.CPUSet, sys *fakeSys, sst *fakeSst) *Allocator {
+	allowed *libcpu.CpuMask, sys Sys, sst *fakeSst) *Allocator {
 	t.Helper()
 	a := &Allocator{
 		sys:             sys,
@@ -917,7 +908,7 @@ func newAssocOnlyPctForTest(t *testing.T, classes []*policyapi.CPUClass, plans m
 		classByName:     map[string]*policyapi.CPUClass{},
 		classPlan:       plans,
 		allowed:         allowed,
-		hpUsed:          map[int]cpuset.CPUSet{},
+		hpUsed:          map[int]*libcpu.CpuMask{},
 		hpClasses:       map[string]bool{},
 		hpEligiblePunit: map[int]bool{},
 	}
@@ -936,7 +927,7 @@ func newAssocOnlyPctForTest(t *testing.T, classes []*policyapi.CPUClass, plans m
 // -- not zero. (Pre-fix the result was 0 because closCpus(HP CLOS)
 // was empty.)
 func TestFreeClassCapacity_AssocOnlyHpFromFallbackCLOS(t *testing.T) {
-	sys := newTwoPackageFakeSys()
+	sys := newTwoPackageMachine(t)
 	sst := &fakeSst{
 		supported: true,
 		// All CPUs are on CLOS 3 (the LP/fallback CLOS). The HP
@@ -947,8 +938,8 @@ func TestFreeClassCapacity_AssocOnlyHpFromFallbackCLOS(t *testing.T) {
 		},
 		// Two punits (one per package); each guarantees 2 HP CPUs at top turbo.
 		punits: []pctPunit{
-			{PkgID: 0, PunitID: 0, CPUs: cpuset.MustParse("0-3"), GuaranteedHpCpus: 2},
-			{PkgID: 1, PunitID: 0, CPUs: cpuset.MustParse("4-7"), GuaranteedHpCpus: 2},
+			{PkgID: 0, PunitID: 0, CPUs: libcpu.MustParseCpuMask("0-3"), GuaranteedHpCpus: 2},
+			{PkgID: 1, PunitID: 0, CPUs: libcpu.MustParseCpuMask("4-7"), GuaranteedHpCpus: 2},
 		},
 	}
 	classes := []*policyapi.CPUClass{
@@ -957,11 +948,11 @@ func TestFreeClassCapacity_AssocOnlyHpFromFallbackCLOS(t *testing.T) {
 	}
 	a := newAssocOnlyPctForTest(t, classes,
 		map[string]*pctClassPlan{"hp": {ClosID: 0}, "lp": {ClosID: 3}},
-		cpuset.MustParse("0-7"), sys, sst)
+		libcpu.MustParseCpuMask("0-7"), sys, sst)
 	a.hpClasses["hp"] = true // simulate classifyAssocOnlyHP result
 
 	// Held by some non-HP balloon: 2 CPUs (one per punit).
-	held := cpuset.MustParse("3,7")
+	held := libcpu.MustParseCpuMask("3,7")
 
 	gotHp := a.FreeClassCapacity("hp", held)
 	wantHp := 2 + 2 // both punits: min(2, |{0,1,2}|=3)=2 and min(2, |{4,5,6}|=3)=2
@@ -983,24 +974,24 @@ func TestFreeClassCapacity_AssocOnlyHpFromFallbackCLOS(t *testing.T) {
 // GuaranteedHpCpus is non-zero. Prevents over-publishing HP
 // capacity on nodes that cannot actually deliver top turbo.
 func TestFreeClassCapacity_AssocOnlyHpTFDisabledPunitExcluded(t *testing.T) {
-	sys := newTwoPackageFakeSys()
+	sys := newTwoPackageMachine(t)
 	sst := &fakeSst{
 		supported: true,
 		punits: []pctPunit{
-			{PkgID: 0, PunitID: 0, CPUs: cpuset.MustParse("0-3"), GuaranteedHpCpus: 2},
-			{PkgID: 1, PunitID: 0, CPUs: cpuset.MustParse("4-7"), GuaranteedHpCpus: 2},
+			{PkgID: 0, PunitID: 0, CPUs: libcpu.MustParseCpuMask("0-3"), GuaranteedHpCpus: 2},
+			{PkgID: 1, PunitID: 0, CPUs: libcpu.MustParseCpuMask("4-7"), GuaranteedHpCpus: 2},
 		},
 	}
 	a := newAssocOnlyPctForTest(t, []*policyapi.CPUClass{{Name: "hp"}},
 		map[string]*pctClassPlan{"hp": {ClosID: 0}},
-		cpuset.MustParse("0-7"), sys, sst)
+		libcpu.MustParseCpuMask("0-7"), sys, sst)
 	a.hpClasses["hp"] = true
 	// pctTestWirePunits marked both eligible; flip pkg1 punit to
 	// TF-disabled to model the assoc-only "operator did not enable
 	// SST-TF on this punit" case.
 	a.hpEligiblePunit[1] = false
 
-	got := a.FreeClassCapacity("hp", cpuset.New())
+	got := a.FreeClassCapacity("hp", libcpu.NewCpuMask())
 	want := 2 // only pkg0 contributes
 	if got != want {
 		t.Errorf("HP capacity with one TF-disabled punit = %d, want %d", got, want)
@@ -1011,20 +1002,20 @@ func TestFreeClassCapacity_AssocOnlyHpTFDisabledPunitExcluded(t *testing.T) {
 // where no class was classified HP (e.g. no CLOS has a programmed
 // MaxFreq) falls through to the non-HP formula |Allowed \ held|.
 func TestFreeClassCapacity_AssocOnlyNoHpClassification(t *testing.T) {
-	sys := newTwoPackageFakeSys()
+	sys := newTwoPackageMachine(t)
 	sst := &fakeSst{
 		supported: true,
 		punits: []pctPunit{
-			{PkgID: 0, PunitID: 0, CPUs: cpuset.MustParse("0-3"), GuaranteedHpCpus: 2},
-			{PkgID: 1, PunitID: 0, CPUs: cpuset.MustParse("4-7"), GuaranteedHpCpus: 2},
+			{PkgID: 0, PunitID: 0, CPUs: libcpu.MustParseCpuMask("0-3"), GuaranteedHpCpus: 2},
+			{PkgID: 1, PunitID: 0, CPUs: libcpu.MustParseCpuMask("4-7"), GuaranteedHpCpus: 2},
 		},
 	}
 	a := newAssocOnlyPctForTest(t, []*policyapi.CPUClass{{Name: "c1"}},
 		map[string]*pctClassPlan{"c1": {ClosID: 1}},
-		cpuset.MustParse("0-7"), sys, sst)
+		libcpu.MustParseCpuMask("0-7"), sys, sst)
 	// Intentionally no entries in a.hpClasses.
 
-	got := a.FreeClassCapacity("c1", cpuset.MustParse("1,5"))
+	got := a.FreeClassCapacity("c1", libcpu.MustParseCpuMask("1,5"))
 	want := 8 - 2
 	if got != want {
 		t.Errorf("non-HP assoc-only capacity = %d, want %d", got, want)
@@ -1036,12 +1027,12 @@ func TestFreeClassCapacity_AssocOnlyNoHpClassification(t *testing.T) {
 // (PrepareManagedMode enables SST-TF) and the result is the
 // guaranteed-top-turbo sum, capped by per-punit free CPUs.
 func TestFreeClassCapacity_ManagedHpRespectsEligibility(t *testing.T) {
-	sys := newTwoPackageFakeSys()
+	sys := newTwoPackageMachine(t)
 	sst := &fakeSst{
 		supported: true,
 		punits: []pctPunit{
-			{PkgID: 0, PunitID: 0, CPUs: cpuset.MustParse("0-3"), GuaranteedHpCpus: 2},
-			{PkgID: 1, PunitID: 0, CPUs: cpuset.MustParse("4-7"), GuaranteedHpCpus: 2},
+			{PkgID: 0, PunitID: 0, CPUs: libcpu.MustParseCpuMask("0-3"), GuaranteedHpCpus: 2},
+			{PkgID: 1, PunitID: 0, CPUs: libcpu.MustParseCpuMask("4-7"), GuaranteedHpCpus: 2},
 		},
 	}
 	classes := []*policyapi.CPUClass{
@@ -1050,21 +1041,21 @@ func TestFreeClassCapacity_ManagedHpRespectsEligibility(t *testing.T) {
 	}
 	a := newManagedPctForTest(t, classes,
 		map[string]*pctClassPlan{"hp": {ClosID: 0}, "lp": {ClosID: 3}},
-		cpuset.MustParse("0-7"), sys, sst)
+		libcpu.MustParseCpuMask("0-7"), sys, sst)
 
-	gotHp := a.FreeClassCapacity("hp", cpuset.MustParse("3"))
+	gotHp := a.FreeClassCapacity("hp", libcpu.MustParseCpuMask("3"))
 	wantHp := 2 + 2 // pkg0: min(2, 3)=2; pkg1: min(2, 4)=2
 	if gotHp != wantHp {
 		t.Errorf("managed HP capacity = %d, want %d", gotHp, wantHp)
 	}
-	gotLp := a.FreeClassCapacity("lp", cpuset.MustParse("3"))
+	gotLp := a.FreeClassCapacity("lp", libcpu.MustParseCpuMask("3"))
 	wantLp := 8 - 1
 	if gotLp != wantLp {
 		t.Errorf("managed LP capacity = %d, want %d", gotLp, wantLp)
 	}
 
 	// Squeeze pkg0: hold 3 of its 4 CPUs => pkg0 contributes min(2,1)=1.
-	gotHp = a.FreeClassCapacity("hp", cpuset.MustParse("0-2"))
+	gotHp = a.FreeClassCapacity("hp", libcpu.MustParseCpuMask("0-2"))
 	wantHp = 1 + 2
 	if gotHp != wantHp {
 		t.Errorf("managed HP capacity with squeezed pkg0 = %d, want %d", gotHp, wantHp)
@@ -1074,12 +1065,512 @@ func TestFreeClassCapacity_ManagedHpRespectsEligibility(t *testing.T) {
 // TestFreeClassCapacity_UnknownClassReturnsZero: unknown class
 // (no PCT plan) yields 0 regardless of mode.
 func TestFreeClassCapacity_UnknownClassReturnsZero(t *testing.T) {
-	sys := newTwoPackageFakeSys()
+	sys := newTwoPackageMachine(t)
 	sst := &fakeSst{supported: true}
 	a := newManagedPctForTest(t, []*policyapi.CPUClass{{Name: "hp", PctPriority: "high"}},
 		map[string]*pctClassPlan{"hp": {ClosID: 0}},
-		cpuset.MustParse("0-7"), sys, sst)
-	if got := a.FreeClassCapacity("nope", cpuset.New()); got != 0 {
+		libcpu.MustParseCpuMask("0-7"), sys, sst)
+	if got := a.FreeClassCapacity("nope", libcpu.NewCpuMask()); got != 0 {
 		t.Errorf("unknown class capacity = %d, want 0", got)
+	}
+}
+
+// makePunitsWithGtdHp returns two punits in the same package, each with the
+// given MaxHpCpus and GuaranteedHpCpus values.
+func makePunitsWithGtdHp(maxHp0, gtdHp0, maxHp1, gtdHp1 int) []pctPunit {
+	return []pctPunit{
+		{PkgID: 0, PunitID: 0, CPUs: libcpu.MustParseCpuMask("0-3"), MaxHpCpus: maxHp0, GuaranteedHpCpus: gtdHp0},
+		{PkgID: 0, PunitID: 1, CPUs: libcpu.MustParseCpuMask("4-7"), MaxHpCpus: maxHp1, GuaranteedHpCpus: gtdHp1},
+	}
+}
+
+// newPickAllocator returns an Allocator pre-wired for PickHpCpus / ReleaseHpCpus tests.
+func newPickAllocator(t *testing.T, punits []pctPunit) *Allocator {
+	t.Helper()
+	sys := newTwoPunitMachine(t)
+	sst := &fakeSst{supported: true, punits: punits}
+	classes := []*policyapi.CPUClass{{Name: "hp", PctPriority: "high"}}
+	plans := map[string]*pctClassPlan{"hp": {ClosID: 0}}
+	a := newManagedPctForTest(t, classes, plans, libcpu.MustParseCpuMask("0-7"), sys, sst)
+	return a
+}
+
+func TestPunitHPCapacity(t *testing.T) {
+	// Active() == false: Allocator with mode == disabled
+	inactiveA := &Allocator{}
+	if got := inactiveA.punitHPCapacity(0); got != 0 {
+		t.Errorf("punitHPCapacity on inactive allocator = %d, want 0", got)
+	}
+
+	a := newPickAllocator(t, makePunitsWithGtdHp(4, 3, 4, 1))
+	tests := []struct {
+		name string
+		idx  int
+		want int
+	}{
+		{"eligible punit 0", 0, 3},
+		{"eligible punit 1", 1, 1},
+		{"out-of-range", 99, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := a.punitHPCapacity(tc.idx)
+			if got != tc.want {
+				t.Errorf("punitHPCapacity(%d) = %d, want %d", tc.idx, got, tc.want)
+			}
+		})
+	}
+	// HP-ineligible punit
+	a.hpEligiblePunit[0] = false
+	if got := a.punitHPCapacity(0); got != 0 {
+		t.Errorf("punitHPCapacity for ineligible punit = %d, want 0", got)
+	}
+}
+
+// TestPunitHPCapacity_CappedByAllowedIntersection verifies that
+// punitHPCapacity caps the raw hardware GuaranteedHpCpus by the punit's
+// actual CPU count after intersecting with the allowed/online set —
+// otherwise it would advertise more DRA capacity than PickHpCpus can
+// supply once some of the punit's CPUs are excluded (e.g. offline or
+// outside the reserved/shared pool).
+func TestPunitHPCapacity_CappedByAllowedIntersection(t *testing.T) {
+	sys := newTwoPunitMachine(t)
+	// Raw punit 0 spans CPUs 0-3 (4 CPUs) with GuaranteedHpCpus=3.
+	// Restricting "allowed" to CPUs 0-1,4-7 leaves punit 0 with only
+	// CPUs 0-1 (2 CPUs) after intersection -- less than its raw
+	// GuaranteedHpCpus of 3.
+	sst := &fakeSst{supported: true, punits: makePunitsWithGtdHp(4, 3, 4, 1)}
+	classes := []*policyapi.CPUClass{{Name: "hp", PctPriority: "high"}}
+	plans := map[string]*pctClassPlan{"hp": {ClosID: 0}}
+	a := newManagedPctForTest(t, classes, plans, libcpu.MustParseCpuMask("0-1,4-7"), sys, sst)
+
+	if got := a.punitHPCapacity(0); got != 2 {
+		t.Errorf("punitHPCapacity(0) = %d, want 2 (capped by allowed intersection, not raw GuaranteedHpCpus=3)", got)
+	}
+	// Punit 1 is unaffected: its full range (4-7) is within allowed, and
+	// its GuaranteedHpCpus=1 stays under the 4-CPU cap.
+	if got := a.punitHPCapacity(1); got != 1 {
+		t.Errorf("punitHPCapacity(1) = %d, want 1 (unaffected by allowed restriction)", got)
+	}
+}
+
+func TestPunitNonHPCapacity(t *testing.T) {
+	inactiveA := &Allocator{}
+	if got := inactiveA.punitNonHPCapacity(0); got != 0 {
+		t.Errorf("punitNonHPCapacity on inactive allocator = %d, want 0", got)
+	}
+
+	// punit 0: CPUs 0-3 (4 total), GuaranteedHpCpus=3 → 1 non-HP
+	// punit 1: CPUs 4-7 (4 total), GuaranteedHpCpus=0 → 4 non-HP
+	a := newPickAllocator(t, makePunitsWithGtdHp(4, 3, 4, 0))
+	tests := []struct {
+		name string
+		idx  int
+		want int
+	}{
+		{"partial HP", 0, 1},
+		{"all non-HP", 1, 4},
+		{"out-of-range", 99, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := a.punitNonHPCapacity(tc.idx)
+			if got != tc.want {
+				t.Errorf("punitNonHPCapacity(%d) = %d, want %d", tc.idx, got, tc.want)
+			}
+		})
+	}
+	// all CPUs HP-guaranteed → 0 non-HP
+	a2 := newPickAllocator(t, makePunitsWithGtdHp(4, 4, 4, 4))
+	if got := a2.punitNonHPCapacity(0); got != 0 {
+		t.Errorf("all-HP punit nonHPCapacity = %d, want 0", got)
+	}
+
+	// HP-ineligible punit with non-zero GuaranteedHpCpus: the guard in
+	// punitHPCapacity must zero out the HP deduction so the full CPU count
+	// is reported as non-HP capacity.
+	// punit 0: HP-ineligible, GuaranteedHpCpus=2, CPUs 0-3 → 4 non-HP (not 2)
+	// punit 1: HP-eligible,   GuaranteedHpCpus=2, CPUs 4-7 → 2 non-HP
+	a3 := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2))
+	a3.hpEligiblePunit[0] = false
+	if got := a3.punitNonHPCapacity(0); got != 4 {
+		t.Errorf("HP-ineligible punit nonHPCapacity = %d, want 4", got)
+	}
+	if got := a3.punitNonHPCapacity(1); got != 2 {
+		t.Errorf("HP-eligible punit nonHPCapacity = %d, want 2", got)
+	}
+}
+
+func TestAllocatorPunits(t *testing.T) {
+	// Inactive allocator returns nil.
+	inactiveA := &Allocator{}
+	if got := inactiveA.Punits(); got != nil {
+		t.Errorf("Punits() on inactive allocator = %v, want nil", got)
+	}
+
+	a := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 1))
+	pi := a.Punits()
+	if len(pi) != 2 {
+		t.Fatalf("Punits() len = %d, want 2", len(pi))
+	}
+	want := []PunitInfo{
+		{PkgID: 0, PunitID: 0, HPCapacity: 2, NonHPCapacity: 2, AllowedCPUs: "0-3"},
+		{PkgID: 0, PunitID: 1, HPCapacity: 1, NonHPCapacity: 3, AllowedCPUs: "4-7"},
+	}
+	for i, w := range want {
+		if pi[i] != w {
+			t.Errorf("Punits()[%d] = %+v, want %+v", i, pi[i], w)
+		}
+	}
+}
+
+// TestAllocatorPunits_NonDRAHpUsageReducesCapacity verifies that
+// Punits() deducts non-DRA HP CPUs already tracked in hpUsed from the
+// advertised HPCapacity, since Kubernetes only subtracts DRA
+// allocations from the advertised capacity and would otherwise let a
+// claim be placed that PickHpCpus must reject at Prepare time.
+func TestAllocatorPunits_NonDRAHpUsageReducesCapacity(t *testing.T) {
+	a := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 1))
+	// Simulate the NRI path having already claimed 1 HP CPU on punit 0.
+	a.hpUsed[0] = libcpu.MustParseCpuMask("0")
+
+	pi := a.Punits()
+	want := []PunitInfo{
+		{PkgID: 0, PunitID: 0, HPCapacity: 1, NonHPCapacity: 2, AllowedCPUs: "0-3"},
+		{PkgID: 0, PunitID: 1, HPCapacity: 1, NonHPCapacity: 3, AllowedCPUs: "4-7"},
+	}
+	for i, w := range want {
+		if pi[i] != w {
+			t.Errorf("Punits()[%d] = %+v, want %+v", i, pi[i], w)
+		}
+	}
+}
+
+func TestPickHpCpus(t *testing.T) {
+	// Active()==false
+	inactiveA := &Allocator{}
+	if _, err := inactiveA.PickHpCpus(0, 0, 1, libcpu.NewCpuMask()); err == nil {
+		t.Error("PickHpCpus on inactive allocator: expected error, got nil")
+	}
+
+	a := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2))
+
+	// Success: pick 2 CPUs from punit 0 (PkgID=0, PunitID=0, CPUs 0-3).
+	got, err := a.PickHpCpus(0, 0, 2, libcpu.NewCpuMask())
+	if err != nil {
+		t.Fatalf("PickHpCpus success case: %v", err)
+	}
+	if got.Size() != 2 {
+		t.Errorf("PickHpCpus returned %d CPUs, want 2", got.Size())
+	}
+	// hpDRAUsed updated, hpUsed unchanged.
+	if !a.hpDRAUsed[0].Equals(got) {
+		t.Errorf("hpDRAUsed[0] = %v, want %v", a.hpDRAUsed[0], got)
+	}
+	if a.hpUsed[0].Size() != 0 {
+		t.Errorf("hpUsed[0] should be untouched, got %v", a.hpUsed[0])
+	}
+
+	// Exhaustion: already 2 DRA-held + 0 available for another pick.
+	if _, err := a.PickHpCpus(0, 0, 1, libcpu.NewCpuMask()); err == nil {
+		t.Error("PickHpCpus exhaustion: expected error, got nil")
+	}
+
+	// HP-ineligible punit.
+	a2 := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2))
+	a2.hpEligiblePunit[0] = false
+	if _, err := a2.PickHpCpus(0, 0, 1, libcpu.NewCpuMask()); err == nil {
+		t.Error("PickHpCpus ineligible punit: expected error, got nil")
+	}
+
+	// (PkgID, PunitID) not found.
+	a3 := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2))
+	if _, err := a3.PickHpCpus(99, 99, 1, libcpu.NewCpuMask()); err == nil {
+		t.Error("PickHpCpus not-found: expected error, got nil")
+	}
+
+	// held exclusion: hold CPUs 0,1 → pick of 2 from a 4-CPU punit
+	// must return 2,3 (the remaining ones).
+	a4 := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2))
+	held := libcpu.MustParseCpuMask("0-1")
+	got4, err := a4.PickHpCpus(0, 0, 2, held)
+	if err != nil {
+		t.Fatalf("PickHpCpus held-exclusion: %v", err)
+	}
+	if got4.Intersection(held).Size() != 0 {
+		t.Errorf("PickHpCpus returned a held CPU: %v", got4)
+	}
+}
+
+func TestReleaseHpCpus(t *testing.T) {
+	a := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2))
+
+	// Pick 2 CPUs then release them.
+	picked, _ := a.PickHpCpus(0, 0, 2, libcpu.NewCpuMask())
+	a.ReleaseHpCpus(0, 0, picked)
+	if a.hpDRAUsed[0].Size() != 0 {
+		t.Errorf("hpDRAUsed[0] after full release = %v, want empty", a.hpDRAUsed[0])
+	}
+	// Map entry deleted.
+	if _, ok := a.hpDRAUsed[0]; ok {
+		t.Error("hpDRAUsed[0] entry should be deleted after full release")
+	}
+
+	// Release CPUs not held — no-op.
+	a.ReleaseHpCpus(0, 0, libcpu.MustParseCpuMask("0-1"))
+
+	// Out-of-range (not found) — no-op, no panic.
+	a.ReleaseHpCpus(99, 99, libcpu.MustParseCpuMask("0"))
+
+	// Partial release.
+	picked2, _ := a.PickHpCpus(0, 0, 2, libcpu.NewCpuMask())
+	first := libcpu.NewCpuMask(picked2.UnsortedList()[0])
+	a.ReleaseHpCpus(0, 0, first)
+	if a.hpDRAUsed[0].Size() != 1 {
+		t.Errorf("hpDRAUsed[0] after partial release size = %d, want 1", a.hpDRAUsed[0].Size())
+	}
+}
+
+func TestHpDRAUsedIsolation(t *testing.T) {
+	// Build an allocator with both HP and LP classes to test that UseClass
+	// on DRA-held CPUs does not corrupt the hpDRAUsed/hpUsed separation.
+	sys := newTwoPunitMachine(t)
+	sst := &fakeSst{supported: true, punits: makePunitsWithGtdHp(4, 2, 4, 2)}
+	classes := []*policyapi.CPUClass{
+		{Name: "hp", PctPriority: "high"},
+		{Name: "lp", PctPriority: "low"},
+	}
+	plans := map[string]*pctClassPlan{
+		"hp": {ClosID: 0},
+		"lp": {ClosID: 3},
+	}
+	a := newManagedPctForTest(t, classes, plans, libcpu.MustParseCpuMask("0-7"), sys, sst)
+
+	// DRA holds 2 CPUs on punit 0; hpUsed[0] is empty.
+	draHeld, err := a.PickHpCpus(0, 0, 2, libcpu.NewCpuMask())
+	if err != nil {
+		t.Fatalf("PickHpCpus: %v", err)
+	}
+	before := a.hpDRAUsed[0].Clone()
+
+	// HP UseClass on DRA-held CPUs — must NOT add them to hpUsed (they are
+	// already accounted in hpDRAUsed; double-counting corrupts Punits capacity).
+	_ = a.UseClass("hp", draHeld)
+	if !a.hpDRAUsed[0].Equals(before) {
+		t.Errorf("hpDRAUsed[0] changed after HP UseClass: got %v, want %v", a.hpDRAUsed[0], before)
+	}
+	if !a.hpUsed[0].IsEmpty() {
+		t.Errorf("hpUsed[0] = %v after HP UseClass on DRA-held CPUs, want empty", a.hpUsed[0])
+	}
+
+	// Non-HP UseClass on overlapping CPUs — must NOT remove them from hpDRAUsed.
+	_ = a.UseClass("lp", draHeld)
+	if !a.hpDRAUsed[0].Equals(before) {
+		t.Errorf("hpDRAUsed[0] changed after non-HP UseClass: got %v, want %v", a.hpDRAUsed[0], before)
+	}
+	// hpInUseCpus must still report the DRA-held CPUs.
+	inUse := a.hpInUseCpus()
+	for _, cpu := range draHeld.UnsortedList() {
+		if !inUse.Contains(cpu) {
+			t.Errorf("hpInUseCpus missing DRA-held cpu %d", cpu)
+		}
+	}
+}
+
+// TestIsHPClass covers the exported IsHPClass wrapper: HP class returns true;
+// non-HP class returns false; unknown class returns false; inactive allocator
+// returns false.
+func TestIsHPClass(t *testing.T) {
+	sys := newTwoPackageMachine(t)
+	sst := &fakeSst{supported: true, maxHp: map[int]int{0: 2, 1: 2}}
+	classes := []*policyapi.CPUClass{
+		{Name: "hp", PctPriority: "high"},
+		{Name: "lp", PctPriority: "low"},
+	}
+	a := newManagedPctForTest(t, classes,
+		map[string]*pctClassPlan{"hp": {ClosID: 0}, "lp": {ClosID: 3}},
+		libcpu.MustParseCpuMask("0-7"), sys, sst)
+
+	// HP class must return true.
+	if !a.IsHPClass("hp") {
+		t.Error("IsHPClass(\"hp\") = false, want true")
+	}
+	// Non-HP class must return false.
+	if a.IsHPClass("lp") {
+		t.Error("IsHPClass(\"lp\") = true, want false")
+	}
+	// Unknown class must return false.
+	if a.IsHPClass("unknown") {
+		t.Error("IsHPClass(\"unknown\") = true, want false")
+	}
+
+	// Inactive allocator must return false.
+	inactiveA := &Allocator{}
+	if inactiveA.IsHPClass("hp") {
+		t.Error("IsHPClass on inactive allocator = true, want false")
+	}
+}
+
+// TestAccountHpCpus covers AccountHpCpus: used during restart reconciliation
+// to rebuild hpDRAUsed from persisted claim state.
+func TestAccountHpCpus(t *testing.T) {
+	// Inactive allocator must return an error.
+	inactiveA := &Allocator{}
+	if err := inactiveA.AccountHpCpus(0, 0, libcpu.MustParseCpuMask("0")); err == nil {
+		t.Error("AccountHpCpus on inactive allocator: expected error, got nil")
+	}
+
+	// HP-ineligible punit must return an error.
+	aInelig := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2))
+	aInelig.hpEligiblePunit[0] = false
+	if err := aInelig.AccountHpCpus(0, 0, libcpu.MustParseCpuMask("0")); err == nil {
+		t.Error("AccountHpCpus on HP-ineligible punit: expected error, got nil")
+	}
+
+	// Unknown punit must return an error.
+	aUnknown := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2))
+	if err := aUnknown.AccountHpCpus(99, 99, libcpu.MustParseCpuMask("0")); err == nil {
+		t.Error("AccountHpCpus unknown punit: expected error, got nil")
+	}
+
+	// Success: account CPUs on an HP-eligible punit.
+	aOK := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2))
+	cpus := libcpu.MustParseCpuMask("0-1")
+	if err := aOK.AccountHpCpus(0, 0, cpus); err != nil {
+		t.Fatalf("AccountHpCpus success case: %v", err)
+	}
+	if !aOK.hpDRAUsed[0].Equals(cpus) {
+		t.Errorf("hpDRAUsed[0] = %v, want %v", aOK.hpDRAUsed[0], cpus)
+	}
+	// hpUsed must remain untouched.
+	if aOK.hpUsed[0].Size() != 0 {
+		t.Errorf("hpUsed[0] should be untouched after AccountHpCpus, got %v", aOK.hpUsed[0])
+	}
+
+	// Double-account same CPUs is idempotent (union semantics).
+	if err := aOK.AccountHpCpus(0, 0, cpus); err != nil {
+		t.Fatalf("AccountHpCpus idempotent call: %v", err)
+	}
+	if !aOK.hpDRAUsed[0].Equals(cpus) {
+		t.Errorf("hpDRAUsed[0] after double-account = %v, want %v (must be idempotent)", aOK.hpDRAUsed[0], cpus)
+	}
+
+	// Over-capacity: account more CPUs than GuaranteedHpCpus allows.
+	// Must NOT return an error (container may already be running), and
+	// hpDRAUsed must include all accounted CPUs.
+	aOver := newPickAllocator(t, makePunitsWithGtdHp(4, 2, 4, 2)) // GuaranteedHpCpus=2
+	overCommit := libcpu.MustParseCpuMask("0-3")                  // 4 CPUs > GuaranteedHpCpus=2
+	if err := aOver.AccountHpCpus(0, 0, overCommit); err != nil {
+		t.Fatalf("AccountHpCpus over-capacity: expected no error, got %v", err)
+	}
+	if !aOver.hpDRAUsed[0].Equals(overCommit) {
+		t.Errorf("hpDRAUsed[0] = %v, want %v (over-capacity still updates)", aOver.hpDRAUsed[0], overCommit)
+	}
+}
+
+func TestHpReserveRoomWithDRAHolds(t *testing.T) {
+	// Two punits, each with MaxHpCpus=2, GuaranteedHpCpus=2.
+	a := newPickAllocator(t, makePunitsWithGtdHp(2, 2, 2, 2))
+
+	// Before any holds, room on punit 0 should be 2.
+	// hpReserveCpus returns Tier-A candidate sets; if room>=requested we
+	// get a candidate set back. Requesting 2 CPUs from punit 0 should succeed.
+	free := libcpu.MustParseCpuMask("0-7")
+	before := a.hpReserveCpus(free, libcpu.NewCpuMask(), 2)
+	if len(before) == 0 {
+		t.Fatal("hpReserveCpus before DRA holds: expected at least one candidate, got none")
+	}
+
+	// DRA picks 1 CPU on punit 0.
+	_, err := a.PickHpCpus(0, 0, 1, libcpu.NewCpuMask())
+	if err != nil {
+		t.Fatalf("PickHpCpus: %v", err)
+	}
+
+	// Now request 2 CPUs from punit 0: room is 1 (2 - 1 DRA hold), so
+	// hpReserveCpus should not return punit 0 as a single-punit Tier-A
+	// candidate for a request of 2. It may return punit 1 (unaffected).
+	after := a.hpReserveCpus(free, libcpu.NewCpuMask(), 2)
+	for _, candidate := range after {
+		// No candidate set should include the DRA-held CPUs as "free" HP room
+		// for a 2-CPU request on punit 0 alone.
+		if candidate.Intersection(libcpu.MustParseCpuMask("0-3")).Size() > 1 {
+			t.Errorf("hpReserveCpus candidate includes punit 0 CPUs despite DRA hold reducing room to 1")
+		}
+	}
+}
+
+// TestDiscoverTurboInfo covers the one thing pct reads out of the system it is
+// given. Everything else these tests need comes from the Speed Select fake, so
+// this is what makes handing pct a machine worth anything.
+//
+// Its "no CPUs" and "nil CPU" branches are not covered, and cannot be through a
+// machine: discovery refuses to build one without CPUs, and a machine never
+// hands out a nil CPU. Those branches guard against a Sys which is not a
+// machine.
+func TestDiscoverTurboInfo(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		pkgCpus map[int]string
+		freqs   map[int][3]uint64 // cpu -> {base, min, max}, in kHz
+		expect  *turboInfo
+		expErr  bool
+	}{
+		{
+			name:    "CPUs, but cpufreq says nothing",
+			pkgCpus: map[int]string{0: "0-1"},
+			expErr:  true,
+		},
+		{
+			name:    "base, min and max as reported",
+			pkgCpus: map[int]string{0: "0-1"},
+			freqs:   map[int][3]uint64{0: {2400000, 800000, 3600000}},
+			expect: &turboInfo{
+				baseFreqKHz:     2400000,
+				minFreqKHz:      800000,
+				maxTurboFreqKHz: 3600000,
+			},
+		},
+		{
+			// A CPU with no base_frequency file: the max stands in for it,
+			// which is what a machine without Speed Select looks like.
+			name:    "no base frequency falls back to the maximum",
+			pkgCpus: map[int]string{0: "0-1"},
+			freqs:   map[int][3]uint64{0: {0, 800000, 3600000}},
+			expect: &turboInfo{
+				baseFreqKHz:     3600000,
+				minFreqKHz:      800000,
+				maxTurboFreqKHz: 3600000,
+			},
+		},
+		{
+			// The first CPU says nothing, so the second one answers.
+			name:    "the first CPU with frequencies wins",
+			pkgCpus: map[int]string{0: "0-1"},
+			freqs:   map[int][3]uint64{1: {2000000, 1000000, 3000000}},
+			expect: &turboInfo{
+				baseFreqKHz:     2000000,
+				minFreqKHz:      1000000,
+				maxTurboFreqKHz: 3000000,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newMachine(t, tc.pkgCpus, tc.freqs)
+
+			got, err := discoverTurboInfo(m)
+			switch {
+			case tc.expErr && err == nil:
+				t.Fatalf("expected an error, got %+v", got)
+			case !tc.expErr && err != nil:
+				t.Fatalf("unexpected error: %v", err)
+			case tc.expErr:
+				return
+			}
+
+			if *got != *tc.expect {
+				t.Errorf("expected %+v, got %+v", *tc.expect, *got)
+			}
+		})
 	}
 }

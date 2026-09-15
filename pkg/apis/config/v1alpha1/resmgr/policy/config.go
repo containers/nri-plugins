@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	nriapi "github.com/containerd/nri/pkg/api"
@@ -110,12 +110,11 @@ func (c Constraints) Get(d Domain) (Amount, AmountKind) {
 	}
 }
 
-func (amount Amount) ParseCPUSet() (cpuset.CPUSet, error) {
-	cset, err := cpuset.Parse(string(amount))
-	if err != nil {
-		return cset, fmt.Errorf("failed to parse amount '%s' as cpuset: %w", amount, err)
-	}
-	return cset, nil
+// ParseCPUSet parses the amount as a cpuset. The error is returned as it comes,
+// since it names the offending CPU list already, and every caller wraps it with
+// which amount it was reading.
+func (amount Amount) ParseCPUSet() (*libcpu.CpuMask, error) {
+	return libcpu.ParseCpuMask(string(amount))
 }
 
 func (amount Amount) ParseQuantity() (resource.Quantity, error) {

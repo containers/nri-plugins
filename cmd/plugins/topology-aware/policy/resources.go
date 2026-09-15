@@ -20,10 +20,12 @@ import (
 	"strconv"
 	"time"
 
+	"k8s.io/apimachinery/pkg/types"
+
 	"github.com/containers/nri-plugins/pkg/agent/podresapi"
-	"github.com/containers/nri-plugins/pkg/sysfs"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	"github.com/containers/nri-plugins/pkg/topology"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
 	"github.com/containers/nri-plugins/pkg/kubernetes"
@@ -62,11 +64,11 @@ type Supply interface {
 	// Clone creates a copy of this supply.
 	Clone() Supply
 	// IsolatedCPUs returns the isolated cpuset in this supply.
-	IsolatedCPUs() cpuset.CPUSet
+	IsolatedCPUs() *libcpu.CpuMask
 	// ReservedCPUs returns the reserved cpuset in this supply.
-	ReservedCPUs() cpuset.CPUSet
+	ReservedCPUs() *libcpu.CpuMask
 	// SharableCPUs returns the sharable cpuset in this supply.
-	SharableCPUs() cpuset.CPUSet
+	SharableCPUs() *libcpu.CpuMask
 	// GrantedReserved returns the locally granted reserved CPU capacity in this supply.
 	GrantedReserved() int
 	// GrantedShared returns the locally granted shared CPU capacity in this supply.
@@ -77,19 +79,27 @@ type Supply interface {
 	AccountAllocateCPU(Grant)
 	// AccountReleaseCPU accounts for (reinserts) released exclusive capacity into the supply.
 	AccountReleaseCPU(Grant)
+	// ClaimCPUs marks cpus as claimed by a DRA ResourceClaim (uid), subtracting
+	// them from isolated/sharable capacity in this supply and, tree-wide, in
+	// every ancestor supply. Idempotent per uid: a second call for the same
+	// uid replaces (does not stack on top of) the previous marking.
+	ClaimCPUs(uid types.UID, cpus *libcpu.CpuMask)
+	// UnclaimCPUs reverses a previous ClaimCPUs marking for uid, restoring the
+	// claimed CPUs tree-wide. A no-op if uid is unknown.
+	UnclaimCPUs(uid types.UID)
 	// GetScore calculates how well this supply fits/fulfills the given request.
 	GetScore(Request) Score
 	// AllocatableSharedCPU calculates the allocatable amount of shared CPU of this supply.
 	AllocatableSharedCPU(...bool) int
 	// SliceableCPUs calculates the shared cpuset we can slice exclusive CPUs off of.
-	SliceableCPUs() (cpuset.CPUSet, error)
+	SliceableCPUs() (*libcpu.CpuMask, error)
 	// Allocate allocates a grant from the supply.
 	Allocate(Request, *libmem.Offer) (Grant, map[string]libmem.NodeMask, error)
 	// ReleaseCPU releases a previously allocated CPU grant from this supply.
 	ReleaseCPU(Grant)
 
 	// GetCPUOffer returns the exclusive CPUs that would be allocated for the given request.
-	GetCPUOffer(Request) (cpuset.CPUSet, error)
+	GetCPUOffer(Request) (*libcpu.CpuMask, error)
 
 	// Reserve accounts for CPU grants after reloading cached allocations.
 	Reserve(Grant, *libmem.Offer) (map[string]libmem.NodeMask, error)
@@ -159,17 +169,17 @@ type Grant interface {
 	// CPUPortion() == ReservedPortion() + SharedPortion().
 	CPUPortion() int
 	// ExclusiveCPUs returns the exclusively granted non-isolated cpuset.
-	ExclusiveCPUs() cpuset.CPUSet
+	ExclusiveCPUs() *libcpu.CpuMask
 	// ReservedCPUs returns the reserved granted cpuset.
-	ReservedCPUs() cpuset.CPUSet
+	ReservedCPUs() *libcpu.CpuMask
 	// ReservedPortion() returns the amount of CPUs in milli-CPU granted.
 	ReservedPortion() int
 	// SharedCPUs returns the shared granted cpuset.
-	SharedCPUs() cpuset.CPUSet
+	SharedCPUs() *libcpu.CpuMask
 	// SharedPortion returns the amount of CPUs in milli-CPU granted.
 	SharedPortion() int
 	// IsolatedCpus returns the exclusively granted isolated cpuset.
-	IsolatedCPUs() cpuset.CPUSet
+	IsolatedCPUs() *libcpu.CpuMask
 	// MemoryType returns the type(s) of granted memory.
 	MemoryType() memoryType
 	// SetMemoryType sets the memory type for this grant.
@@ -220,22 +230,32 @@ type Score interface {
 	HintScores() map[string]float64
 	PrioCapacity(cpuPrio) int
 	CpuClassHints() *cpuclass.AllocationHints
-	CpuClassCpus() cpuset.CPUSet
+	CpuClassCpus() *libcpu.CpuMask
 
 	MemOffer() *libmem.Offer
-	CPUOffer() cpuset.CPUSet
+	CPUOffer() *libcpu.CpuMask
 
 	String() string
 }
 
 // supply implements our Supply interface.
 type supply struct {
-	node            Node          // node supplying CPUs and memory
-	isolated        cpuset.CPUSet // isolated CPUs at this node
-	reserved        cpuset.CPUSet // reserved CPUs at this node
-	sharable        cpuset.CPUSet // sharable CPUs at this node
-	grantedReserved int           // amount of reserved CPUs allocated
-	grantedShared   int           // amount of shareable CPUs allocated
+	node            Node            // node supplying CPUs and memory
+	isolated        *libcpu.CpuMask // isolated CPUs at this node
+	reserved        *libcpu.CpuMask // reserved CPUs at this node
+	sharable        *libcpu.CpuMask // sharable CPUs at this node
+	grantedReserved int             // amount of reserved CPUs allocated
+	grantedShared   int             // amount of shareable CPUs allocated
+
+	// claimRefs tracks, per DRA claim UID, the CPUs subtracted from isolated/
+	// sharable capacity of this supply on behalf of that claim. Marking is
+	// tree-wide: the same UID is (re)marked in every ancestor supply too (see
+	// ClaimCPUs/UnclaimCPUs).
+	claimRefs map[types.UID]*libcpu.CpuMask
+
+	// cloned indicates that this supply is a Clone() copy and should not
+	// propagate ClaimCPUs/UnclaimCPUs to real ancestor nodes.
+	cloned bool
 }
 
 var _ Supply = &supply{}
@@ -270,7 +290,7 @@ var _ Request = &request{}
 type grant struct {
 	container      cache.Container // container CPU is granted to
 	node           Node            // node CPU is supplied from
-	exclusive      cpuset.CPUSet   // exclusive CPUs
+	exclusive      *libcpu.CpuMask // exclusive CPUs
 	cpuType        cpuType         // type of CPUs (normal, reserved, ...)
 	cpuPortion     int             // milliCPUs granted from CPUs of cpuType
 	memType        memoryType      // requested types of memory
@@ -289,7 +309,7 @@ type score struct {
 	supply    Supply                    // CPU supply (node)
 	req       Request                   // CPU request (container)
 	mem       *libmem.Offer             // possible memory allocation
-	cpu       cpuset.CPUSet             // CPUs offered by this supply for the request
+	cpu       *libcpu.CpuMask           // CPUs offered by this supply for the request
 	isolated  int                       // remaining isolated CPUs
 	reserved  int                       // remaining reserved CPUs
 	shared    int                       // remaining shared capacity
@@ -297,14 +317,14 @@ type score struct {
 	colocated int                       // number of colocated containers
 	hints     map[string]float64        // hint scores
 	ccHints   *cpuclass.AllocationHints // CPU class hints
-	ccCpus    cpuset.CPUSet             // CPU class-hinted CPUs for the offered CPUs
+	ccCpus    *libcpu.CpuMask           // CPU class-hinted CPUs for the offered CPUs
 }
 
 var _ Score = &score{}
 
 // newSupply creates CPU supply for the given node, cpusets and existing grant.
 
-func newSupply(n Node, isolated, reserved, sharable cpuset.CPUSet, grantedReserved int, grantedShared int) Supply {
+func newSupply(n Node, isolated, reserved, sharable *libcpu.CpuMask, grantedReserved int, grantedShared int) Supply {
 	return &supply{
 		node:            n,
 		isolated:        isolated.Clone(),
@@ -322,21 +342,29 @@ func (cs *supply) GetNode() Node {
 
 // Clone clones the given CPU supply.
 func (cs *supply) Clone() Supply {
-	return newSupply(cs.node, cs.isolated, cs.reserved, cs.sharable, cs.grantedReserved, cs.grantedShared)
+	clone := newSupply(cs.node, cs.isolated, cs.reserved, cs.sharable, cs.grantedReserved, cs.grantedShared).(*supply)
+	if len(cs.claimRefs) > 0 {
+		clone.claimRefs = make(map[types.UID]*libcpu.CpuMask, len(cs.claimRefs))
+		for uid, cpus := range cs.claimRefs {
+			clone.claimRefs[uid] = cpus.Clone()
+		}
+	}
+	clone.cloned = true
+	return clone
 }
 
 // IsolatedCpus returns the isolated CPUSet of this supply.
-func (cs *supply) IsolatedCPUs() cpuset.CPUSet {
+func (cs *supply) IsolatedCPUs() *libcpu.CpuMask {
 	return cs.isolated.Clone()
 }
 
 // ReservedCpus returns the reserved CPUSet of this supply.
-func (cs *supply) ReservedCPUs() cpuset.CPUSet {
+func (cs *supply) ReservedCPUs() *libcpu.CpuMask {
 	return cs.reserved.Clone()
 }
 
 // SharableCpus returns the sharable CPUSet of this supply.
-func (cs *supply) SharableCPUs() cpuset.CPUSet {
+func (cs *supply) SharableCPUs() *libcpu.CpuMask {
 	return cs.sharable.Clone()
 }
 
@@ -387,6 +415,69 @@ func (cs *supply) AccountReleaseCPU(g Grant) {
 	cs.sharable = cs.sharable.Union(sharable)
 }
 
+// ClaimCPUs marks cpus as claimed by a DRA ResourceClaim (uid), subtracting
+// them from isolated/reserved/sharable capacity of this supply, then
+// propagating the same marking up the node.Parent() chain so every ancestor
+// supply also excludes these CPUs from its own isolated/reserved/sharable
+// capacity (tree-wide accounting, mirroring AccountAllocateCPU/
+// AccountReleaseCPU).
+//
+// Reserved CPUs are included because poolForCPUs (pools.go) matches a
+// pool's static range as isolated+reserved+sharable: p.allowed (which is
+// what the DRA CPU-pick allocator's own "allowed" domain is configured
+// from) is not required to exclude p.reserved, so a legitimate DRA pick can
+// land on a CPU that is also part of a pool's reserved partition. Without
+// subtracting it here too, AllocatableReservedCPU would keep advertising
+// that CPU's fractional capacity to ordinary reserved-type grants even
+// though a DRA claim already exclusively owns it — a double-booking gap on
+// the reserved partition mirroring the one this method already closes for
+// isolated/sharable. (Re-pinning any reserved-type container *already*
+// running on that CPU is a separate, pre-existing gap: updateSharedAllocations
+// explicitly skips cpuType == cpuReserved grants; not addressed here.)
+//
+// A second ClaimCPUs call for the same uid replaces (rather than stacks on
+// top of) the previous marking at each level: the old cpuset for uid is first
+// restored, then the new one is subtracted. This makes re-applying claim
+// marks after a policy rebuild (Reconfigure/restart) idempotent.
+func (cs *supply) ClaimCPUs(uid types.UID, cpus *libcpu.CpuMask) {
+	if old, ok := cs.claimRefs[uid]; ok {
+		full := cs.node.GetSupply()
+		cs.isolated = cs.isolated.Union(old.Intersection(full.IsolatedCPUs()))
+		cs.reserved = cs.reserved.Union(old.Intersection(full.ReservedCPUs()))
+		cs.sharable = cs.sharable.Union(old.Intersection(full.SharableCPUs()))
+	}
+
+	if cs.claimRefs == nil {
+		cs.claimRefs = make(map[types.UID]*libcpu.CpuMask)
+	}
+	cs.claimRefs[uid] = cpus.Clone()
+	cs.isolated = cs.isolated.Difference(cpus)
+	cs.reserved = cs.reserved.Difference(cpus)
+	cs.sharable = cs.sharable.Difference(cpus)
+
+	if parent := cs.node.Parent(); !cs.cloned && !parent.IsNil() {
+		parent.FreeSupply().ClaimCPUs(uid, cpus)
+	}
+}
+
+// UnclaimCPUs reverses a previous ClaimCPUs marking for uid in this supply,
+// restoring the claimed CPUs to isolated/reserved/sharable capacity, then
+// propagates the same reversal up the node.Parent() chain. A no-op (at every
+// level it reaches) for a uid that was never claimed.
+func (cs *supply) UnclaimCPUs(uid types.UID) {
+	if cpus, ok := cs.claimRefs[uid]; ok {
+		delete(cs.claimRefs, uid)
+		full := cs.node.GetSupply()
+		cs.isolated = cs.isolated.Union(cpus.Intersection(full.IsolatedCPUs()))
+		cs.reserved = cs.reserved.Union(cpus.Intersection(full.ReservedCPUs()))
+		cs.sharable = cs.sharable.Union(cpus.Intersection(full.SharableCPUs()))
+	}
+
+	if parent := cs.node.Parent(); !cs.cloned && !parent.IsNil() {
+		parent.FreeSupply().UnclaimCPUs(uid)
+	}
+}
+
 // Allocate allocates a grant from the supply.
 func (cs *supply) Allocate(r Request, o *libmem.Offer) (Grant, map[string]libmem.NodeMask, error) {
 	if o == nil {
@@ -420,7 +511,7 @@ func (cs *supply) Allocate(r Request, o *libmem.Offer) (Grant, map[string]libmem
 // AllocateCPU allocates CPU for a grant from the supply.
 func (cs *supply) AllocateCPU(r Request) (Grant, error) {
 	var (
-		exclusive cpuset.CPUSet
+		exclusive *libcpu.CpuMask
 		err       error
 	)
 
@@ -470,45 +561,44 @@ func (cs *supply) AllocateCPU(r Request) (Grant, error) {
 	return grant, nil
 }
 
-func (cs *supply) GetCPUOffer(r Request) (cpuset.CPUSet, error) {
+func (cs *supply) GetCPUOffer(r Request) (*libcpu.CpuMask, error) {
 	return cs.pickExclusiveCPUs(r, r.FullCPUs(), true)
 }
 
-func (cs *supply) pickExclusiveCPUs(r Request, cnt int, dryRun bool) (cpuset.CPUSet, error) {
+func (cs *supply) pickExclusiveCPUs(r Request, cnt int, dryRun bool) (*libcpu.CpuMask, error) {
 	var (
 		cr   = r.(*request)
-		none = cpuset.New()
+		none = libcpu.NewCpuMask()
 	)
 
 	switch {
 	case cr.isolate && cs.isolated.Size() >= cnt:
 		var (
-			from = &cs.isolated
-			pick cpuset.CPUSet
+			from = cs.isolated
+			pick *libcpu.CpuMask
 			err  error
 		)
 
 		if dryRun {
-			copy := from.Clone()
-			from = &copy
+			from = from.Clone()
 		}
 
 		if cr.PickByHints() {
 			pick, err = cs.takeCPUsByHints(from, cr.GetContainer().GetTopologyHints(), cnt, cr.CPUPrio())
 		} else {
-			pick, err = cs.takeCPUs(from, nil, cnt, cr.CPUPrio())
+			pick, err = cs.takeCPUs(from, cnt, cr.CPUPrio())
 		}
 		if err != nil {
 			return none, policyError("internal error: "+
 				"%s: can't take %d exclusive isolated CPUs from %s: %v",
-				cs.node.Name(), cnt, *from, err)
+				cs.node.Name(), cnt, from, err)
 		}
 		return pick, nil
 
 	case cs.AllocatableSharedCPU() >= 1000*cnt:
 		var (
 			slice, err = cs.SliceableCPUs()
-			pick       cpuset.CPUSet
+			pick       *libcpu.CpuMask
 		)
 
 		if err != nil {
@@ -520,9 +610,9 @@ func (cs *supply) pickExclusiveCPUs(r Request, cnt int, dryRun bool) (cpuset.CPU
 		log.Debugf("%s: sliceable cpuset is %s", cs.node.Name(), slice)
 
 		if cr.PickByHints() {
-			pick, err = cs.takeCPUsByHints(&slice, cr.GetContainer().GetTopologyHints(), cnt, cr.CPUPrio())
+			pick, err = cs.takeCPUsByHints(slice, cr.GetContainer().GetTopologyHints(), cnt, cr.CPUPrio())
 		} else {
-			pick, err = cs.takeCPUs(&slice, nil, cnt, cr.CPUPrio())
+			pick, err = cs.takeCPUs(slice, cnt, cr.CPUPrio())
 		}
 		if err != nil {
 			return none, policyError("internal error: "+
@@ -628,22 +718,14 @@ func (cs *supply) Reserve(g Grant, o *libmem.Offer) (map[string]libmem.NodeMask,
 	return updates, nil
 }
 
-// takeCPUs takes up to cnt CPUs from a given CPU set to another.
-func (cs *supply) takeCPUs(from, to *cpuset.CPUSet, cnt int, prio cpuPrio) (cpuset.CPUSet, error) {
-	cset, err := cs.node.Policy().cpuAllocator.AllocateCpus(from, cnt, prio.Option())
-	if err != nil {
-		return cset, err
-	}
-
-	if to != nil {
-		*to = to.Union(cset)
-	}
-
-	return cset, err
+// takeCPUs takes up to cnt CPUs out of the given set, which the allocator
+// removes them from.
+func (cs *supply) takeCPUs(from *libcpu.CpuMask, cnt int, prio cpuPrio) (*libcpu.CpuMask, error) {
+	return cs.node.Policy().cpuAllocator.AllocateCpus(from, cnt, prio.Option())
 }
 
 // takeCPUsByHints tries to allocate isolated or exclusive CPUs by topology hints.
-func (cs *supply) takeCPUsByHints(from *cpuset.CPUSet, all topology.Hints, cnt int, prio cpuPrio) (cpuset.CPUSet, error) {
+func (cs *supply) takeCPUsByHints(from *libcpu.CpuMask, all topology.Hints, cnt int, prio cpuPrio) (*libcpu.CpuMask, error) {
 	hints := []*topology.Hint{}
 	for provider, h := range all {
 		if podresapi.IsPodResourceHint(provider) {
@@ -651,7 +733,7 @@ func (cs *supply) takeCPUsByHints(from *cpuset.CPUSet, all topology.Hints, cnt i
 		}
 	}
 	if len(hints) == 0 || len(hints) > cnt {
-		return cs.takeCPUs(from, nil, cnt, prio)
+		return cs.takeCPUs(from, cnt, prio)
 	}
 
 	total := cnt
@@ -660,14 +742,14 @@ func (cs *supply) takeCPUsByHints(from *cpuset.CPUSet, all topology.Hints, cnt i
 		perHint = total / len(hints)
 	}
 
-	free := (*from).Clone()
-	cpus := cpuset.New()
+	free := from.Clone()
+	cpus := libcpu.NewCpuMask()
 	for _, h := range hints {
-		cset := free.Intersection(cpuset.MustParse(h.CPUs))
-		pick, err := cs.takeCPUs(&cset, nil, perHint, prio)
+		cset := free.Intersection(libcpu.MustParseCpuMask(h.CPUs))
+		pick, err := cs.takeCPUs(cset, perHint, prio)
 		if err != nil {
 			log.Errorf("failed to allocate CPUs by topology hints: %v", err)
-			return cs.takeCPUs(from, nil, cnt, prio)
+			return cs.takeCPUs(from, cnt, prio)
 		}
 		cpus = cpus.Union(pick)
 		free = free.Difference(pick)
@@ -675,16 +757,17 @@ func (cs *supply) takeCPUsByHints(from *cpuset.CPUSet, all topology.Hints, cnt i
 	}
 
 	if total > 0 {
-		pick, err := cs.takeCPUs(&free, nil, total, prio)
+		pick, err := cs.takeCPUs(free, total, prio)
 		if err != nil {
 			log.Errorf("failed to allocate CPUs by topology hints: %v", err)
-			return cs.takeCPUs(from, nil, cnt, prio)
+			return cs.takeCPUs(from, cnt, prio)
 		}
 		cpus = cpus.Union(pick)
-		free = free.Difference(pick)
 	}
 
-	*from = free
+	// Everything picked came out of a clone, so take it out of the caller's set
+	// now: what is left is what the clone has.
+	from.Clear(cpus.UnsortedList()...)
 	return cpus, nil
 }
 
@@ -995,7 +1078,7 @@ func (cr *request) verifyStrictTopologyHints(g Grant) error {
 	}
 
 	for _, h := range cr.GetContainer().GetTopologyHints() {
-		hint := topoutil.NewHint(g.GetCPUNode().System(), h)
+		hint := topoutil.NewHint(g.GetCPUNode().Machine(), h)
 
 		if g.SharedPortion() > 0 {
 			if cpus := hint.MisalignedCPUSet(g.SharedCPUs()); cpus.Size() > 0 {
@@ -1084,7 +1167,7 @@ func (cs *supply) GetScore(req Request) Score {
 		// calculate fractional capacity
 		score.shared -= part
 
-		lpCPUs := cs.GetNode().System().CoreKindCPUs(sysfs.EfficientCore)
+		lpCPUs := cs.GetNode().Machine().CoreKindCPUs(hardware.EfficientCore)
 		if lpCPUs.Size() == 0 {
 			lpCPUs = p.cpuAllocator.GetCPUPriorities()[lowPrio]
 		}
@@ -1092,7 +1175,7 @@ func (cs *supply) GetScore(req Request) Score {
 		lpCnt := lpCPUs.Size()
 		score.prio[lowPrio] = lpCnt*1000 - (1000*full + part)
 
-		hpCPUs := cs.GetNode().System().CoreKindCPUs(sysfs.PerformanceCore)
+		hpCPUs := cs.GetNode().Machine().CoreKindCPUs(hardware.PerformanceCore)
 		if hpCPUs.Size() == 0 {
 			hpCPUs = p.cpuAllocator.GetCPUPriorities()[highPrio]
 		}
@@ -1114,7 +1197,7 @@ func (cs *supply) GetScore(req Request) Score {
 				score.cpu = cpus
 				hints := p.cpuClasses.Hints(cpuclass.AllocationIntent{
 					ClassName:      cr.cpuClass,
-					CurrentCpus:    cpuset.New(),
+					CurrentCpus:    libcpu.NewCpuMask(),
 					FreeCpus:       cpus,
 					RequestedCount: cr.full,
 				})
@@ -1132,7 +1215,7 @@ func (cs *supply) GetScore(req Request) Score {
 
 	// calculate real hint scores
 	hints := cr.container.GetTopologyHints()
-	hints.ResolvePartialHints(cs.GetNode().System().NodeHintToCPUs)
+	hints.ResolvePartialHints(nodeHintToCPUs(cs.GetNode().Machine()))
 	score.hints = make(map[string]float64, len(hints))
 
 	for provider, hint := range cr.container.GetTopologyHints() {
@@ -1239,9 +1322,9 @@ func (cs *supply) AllocatableSharedCPU(quiet ...bool) int {
 }
 
 // SliceableCPUs calculates the shared cpuset we can slice exclusive CPUs off of.
-func (cs *supply) SliceableCPUs() (cpuset.CPUSet, error) {
+func (cs *supply) SliceableCPUs() (*libcpu.CpuMask, error) {
 	var (
-		sliceable = cpuset.New()
+		sliceable = libcpu.NewCpuMask()
 		errs      []error
 	)
 
@@ -1268,7 +1351,7 @@ func (cs *supply) SliceableCPUs() (cpuset.CPUSet, error) {
 		// priority preference of any ongoing allocation, trying to slice
 		// CPUs with a matching preference. We don't do that ATM.
 
-		cset, err := cs.takeCPUs(&cpus, nil, free, nonePrio)
+		cset, err := cs.takeCPUs(cpus, free, nonePrio)
 		if err != nil {
 			errs = append(errs, err)
 			return false
@@ -1279,7 +1362,7 @@ func (cs *supply) SliceableCPUs() (cpuset.CPUSet, error) {
 	})
 
 	if len(errs) > 0 {
-		return cpuset.New(), errors.Join(errs...)
+		return libcpu.NewCpuMask(), errors.Join(errs...)
 	}
 
 	return sliceable, nil
@@ -1326,7 +1409,7 @@ func (score *score) CpuClassHints() *cpuclass.AllocationHints {
 	return score.ccHints
 }
 
-func (score *score) CpuClassCpus() cpuset.CPUSet {
+func (score *score) CpuClassCpus() *libcpu.CpuMask {
 	return score.ccCpus
 }
 
@@ -1334,7 +1417,7 @@ func (score *score) MemOffer() *libmem.Offer {
 	return score.mem
 }
 
-func (score *score) CPUOffer() cpuset.CPUSet {
+func (score *score) CPUOffer() *libcpu.CpuMask {
 	return score.cpu
 }
 
@@ -1344,7 +1427,7 @@ func (score *score) String() string {
 }
 
 // newGrant creates a CPU grant from the given node for the container.
-func newGrant(n Node, c cache.Container, cpuType cpuType, cpuCls string, exclusive cpuset.CPUSet, cpuPortion int, mt memoryType, irqs *IrqAffinity, coldstart time.Duration) Grant {
+func newGrant(n Node, c cache.Container, cpuType cpuType, cpuCls string, exclusive *libcpu.CpuMask, cpuPortion int, mt memoryType, irqs *IrqAffinity, coldstart time.Duration) Grant {
 	grant := &grant{
 		node:       n,
 		container:  c,
@@ -1392,9 +1475,11 @@ func (cg *grant) SetColdstart(period time.Duration) {
 // Clone creates a copy of this grant.
 func (cg *grant) Clone() Grant {
 	return &grant{
-		node:       cg.GetCPUNode(),
-		container:  cg.GetContainer(),
-		exclusive:  cg.ExclusiveCPUs(),
+		node:      cg.GetCPUNode(),
+		container: cg.GetContainer(),
+		// the clone's own set: ExclusiveCPUs hands out the mask itself, which
+		// was a copy back when these sets were values
+		exclusive:  cg.ExclusiveCPUs().Clone(),
 		cpuType:    cg.CPUType(),
 		cpuClass:   cg.CPUClass(),
 		cpuPortion: cg.SharedPortion(),
@@ -1456,12 +1541,12 @@ func (cg *grant) CPUPortion() int {
 }
 
 // ExclusiveCPUs returns the non-isolated exclusive CPUSet in this grant.
-func (cg *grant) ExclusiveCPUs() cpuset.CPUSet {
+func (cg *grant) ExclusiveCPUs() *libcpu.CpuMask {
 	return cg.exclusive
 }
 
 // ReservedCPUs returns the reserved CPUSet in the supply of this grant.
-func (cg *grant) ReservedCPUs() cpuset.CPUSet {
+func (cg *grant) ReservedCPUs() *libcpu.CpuMask {
 	return cg.node.GetSupply().ReservedCPUs()
 }
 
@@ -1474,7 +1559,7 @@ func (cg *grant) ReservedPortion() int {
 }
 
 // SharedCPUs returns the shared CPUSet in the supply of this grant.
-func (cg *grant) SharedCPUs() cpuset.CPUSet {
+func (cg *grant) SharedCPUs() *libcpu.CpuMask {
 	return cg.node.FreeSupply().SharableCPUs()
 }
 
@@ -1487,7 +1572,7 @@ func (cg *grant) SharedPortion() int {
 }
 
 // ExclusiveCPUs returns the isolated exclusive CPUSet in this grant.
-func (cg *grant) IsolatedCPUs() cpuset.CPUSet {
+func (cg *grant) IsolatedCPUs() *libcpu.CpuMask {
 	return cg.node.GetSupply().IsolatedCPUs().Intersection(cg.exclusive)
 }
 

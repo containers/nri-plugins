@@ -17,12 +17,12 @@ package topologyaware
 import (
 	"encoding/json"
 	"errors"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"maps"
 	"time"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 const (
@@ -185,7 +185,7 @@ func (ccg *cachedGrant) ToGrant(policy *policy) (Grant, error) {
 		container,
 		ccg.CPUType,
 		ccg.CPUClass,
-		cpuset.MustParse(ccg.Exclusive),
+		libcpu.MustParseCpuMask(ccg.Exclusive),
 		ccg.Part,
 		ccg.MemType,
 		ccg.Irqs,
@@ -209,7 +209,7 @@ func (cg *grant) UnmarshalJSON(data []byte) error {
 		return policyError("failed to restore grant: %v", err)
 	}
 
-	cg.exclusive = cpuset.MustParse(ccg.Exclusive)
+	cg.exclusive = libcpu.MustParseCpuMask(ccg.Exclusive)
 
 	return nil
 }

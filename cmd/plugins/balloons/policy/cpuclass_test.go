@@ -15,11 +15,11 @@
 package balloons
 
 import (
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"strings"
 	"testing"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 // fakeHintProvider returns a scripted sequence of cpuclass.AllocationHints,
@@ -49,7 +49,7 @@ func countHintDevs(devs []string) int {
 	return n
 }
 
-func countHintMapKeys(m map[string][]cpuset.CPUSet) int {
+func countHintMapKeys(m map[string][]*libcpu.CpuMask) int {
 	n := 0
 	for k := range m {
 		if strings.HasPrefix(k, cpuClassHintDevPrefix) {
@@ -65,32 +65,32 @@ func countHintMapKeys(m map[string][]cpuset.CPUSet) int {
 // the hint count reported by the provider on that round, regardless
 // of how many earlier rounds added different hints.
 func TestMergeCpuClassHintsNoAccumulation(t *testing.T) {
-	cpusA := cpuset.MustParse("2-3")
-	cpusB := cpuset.MustParse("4-5")
-	cpusC := cpuset.MustParse("6-7")
-	cpusAvoid := cpuset.MustParse("0-1")
+	cpusA := libcpu.MustParseCpuMask("2-3")
+	cpusB := libcpu.MustParseCpuMask("4-5")
+	cpusC := libcpu.MustParseCpuMask("6-7")
+	cpusAvoid := libcpu.MustParseCpuMask("0-1")
 
 	provider := &fakeHintProvider{
 		script: []cpuclass.AllocationHints{
 			// Round 1: one prefer (A), one avoid.
 			{
-				Prefer: []cpuclass.CpuPreference{{Name: "hp-reserve", Cpus: []cpuset.CPUSet{cpusA}}},
-				Avoid:  []cpuclass.CpuPreference{{Name: "lp-clos", Cpus: []cpuset.CPUSet{cpusAvoid}}},
+				Prefer: []cpuclass.CpuPreference{{Name: "hp-reserve", Cpus: []*libcpu.CpuMask{cpusA}}},
+				Avoid:  []cpuclass.CpuPreference{{Name: "lp-clos", Cpus: []*libcpu.CpuMask{cpusAvoid}}},
 			},
 			// Round 2: two prefers (A, B) - different name at index 1
 			// so the slot-0 name stays stable, slot-1 is new.
 			{
 				Prefer: []cpuclass.CpuPreference{
-					{Name: "hp-reserve", Cpus: []cpuset.CPUSet{cpusA}},
-					{Name: "extra", Cpus: []cpuset.CPUSet{cpusB}},
+					{Name: "hp-reserve", Cpus: []*libcpu.CpuMask{cpusA}},
+					{Name: "extra", Cpus: []*libcpu.CpuMask{cpusB}},
 				},
-				Avoid: []cpuclass.CpuPreference{{Name: "lp-clos", Cpus: []cpuset.CPUSet{cpusAvoid}}},
+				Avoid: []cpuclass.CpuPreference{{Name: "lp-clos", Cpus: []*libcpu.CpuMask{cpusAvoid}}},
 			},
 			// Round 3: name at slot 0 CHANGES to C - without proper
 			// cleanup the stale "__cls_pref_0_hp-reserve" map key from
 			// rounds 1+2 would survive into round 3.
 			{
-				Prefer: []cpuclass.CpuPreference{{Name: "third", Cpus: []cpuset.CPUSet{cpusC}}},
+				Prefer: []cpuclass.CpuPreference{{Name: "third", Cpus: []*libcpu.CpuMask{cpusC}}},
 				Avoid:  nil,
 			},
 		},
@@ -99,7 +99,7 @@ func TestMergeCpuClassHintsNoAccumulation(t *testing.T) {
 	opts := &cpuTreeAllocatorOptions{
 		preferCloseToDevices: []string{"user-dev-A", "user-dev-B"},
 		preferFarFromDevices: []string{"user-far"},
-		virtDevCpusets:       map[string][]cpuset.CPUSet{},
+		virtDevCpusets:       map[string][]*libcpu.CpuMask{},
 	}
 
 	for round := 1; round <= 3; round++ {
@@ -152,7 +152,7 @@ func userDevs(devs []string) []string {
 	return out
 }
 
-func mapKeys(m map[string][]cpuset.CPUSet) []string {
+func mapKeys(m map[string][]*libcpu.CpuMask) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)

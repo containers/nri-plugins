@@ -19,10 +19,9 @@ import (
 	"slices"
 	"sort"
 
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
-
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	logger "github.com/containers/nri-plugins/pkg/log"
-	"github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/utils"
 	"github.com/intel/goresctrl/pkg/sst"
 	idset "github.com/intel/goresctrl/pkg/utils"
@@ -49,21 +48,21 @@ const (
 
 // allocatorHelper encapsulates state for allocating CPUs.
 type allocatorHelper struct {
-	logger.Logger               // allocatorHelper logger instance
-	sys           sysfs.System  // sysfs CPU and topology information
-	topology      topologyCache // cached topology information
-	flags         AllocFlag     // allocation preferences
-	from          cpuset.CPUSet // set of CPUs to allocate from
-	prefer        CPUPriority   // CPU priority to prefer
-	cnt           int           // number of CPUs to allocate
-	result        cpuset.CPUSet // set of CPUs allocated
+	logger.Logger                   // allocatorHelper logger instance
+	machine       *hardware.Machine // CPU and memory topology
+	topology      topologyCache     // cached topology information
+	flags         AllocFlag         // allocation preferences
+	from          *libcpu.CpuMask   // set of CPUs to allocate from
+	prefer        CPUPriority       // CPU priority to prefer
+	cnt           int               // number of CPUs to allocate
+	result        *libcpu.CpuMask   // set of CPUs allocated
 }
 
 // CPUAllocator is an interface for a generic CPU allocator
 type CPUAllocator interface {
-	AllocateCpus(from *cpuset.CPUSet, cnt int, options ...Option) (cpuset.CPUSet, error)
-	ReleaseCpus(from *cpuset.CPUSet, cnt int, options ...Option) (cpuset.CPUSet, error)
-	GetCPUPriorities() map[CPUPriority]cpuset.CPUSet
+	AllocateCpus(from *libcpu.CpuMask, cnt int, options ...Option) (*libcpu.CpuMask, error)
+	ReleaseCpus(from *libcpu.CpuMask, cnt int, options ...Option) (*libcpu.CpuMask, error)
+	GetCPUPriorities() map[CPUPriority]*libcpu.CpuMask
 }
 
 type CPUPriority int
@@ -101,30 +100,29 @@ func WithAllocFlags(flags AllocFlag) Option {
 
 type cpuAllocator struct {
 	logger.Logger
-	sys           sysfs.System  // wrapped sysfs.System instance
-	topologyCache topologyCache // topology lookups
+	machine       *hardware.Machine // CPU and memory topology
+	topologyCache topologyCache     // topology lookups
 }
 
 // topologyCache caches topology lookups
 type topologyCache struct {
-	pkg  map[idset.ID]cpuset.CPUSet
-	node map[idset.ID]cpuset.CPUSet
-	core map[idset.ID]cpuset.CPUSet
-	kind map[sysfs.CoreKind]cpuset.CPUSet
+	pkg  map[idset.ID]*libcpu.CpuMask
+	core map[idset.ID]*libcpu.CpuMask
+	kind map[hardware.CoreKind]*libcpu.CpuMask
 
 	cpuPriorities cpuPriorities // CPU priority mapping
 	clusters      []*cpuCluster // CPU clusters
 	cacheGroups   []*cacheGroup // CPU cache groups
 }
 
-type cpuPriorities [NumCPUPriorities]cpuset.CPUSet
+type cpuPriorities [NumCPUPriorities]*libcpu.CpuMask
 
 type cpuCluster struct {
 	pkg     idset.ID
 	die     idset.ID
 	cluster idset.ID
-	cpus    cpuset.CPUSet
-	kind    sysfs.CoreKind
+	cpus    *libcpu.CpuMask
+	kind    hardware.CoreKind
 }
 
 type cacheGroup struct {
@@ -132,8 +130,8 @@ type cacheGroup struct {
 	pkg  idset.ID
 	die  idset.ID
 	node idset.ID
-	cpus cpuset.CPUSet
-	kind sysfs.CoreKind
+	cpus *libcpu.CpuMask
+	kind hardware.CoreKind
 }
 
 // IDFilter helps filtering Ids.
@@ -146,11 +144,11 @@ type IDSorter func(int, int) bool
 var log = logger.NewLogger(logSource)
 
 // NewCPUAllocator return a new cpuAllocator instance
-func NewCPUAllocator(sys sysfs.System) CPUAllocator {
+func NewCPUAllocator(m *hardware.Machine) CPUAllocator {
 	ca := cpuAllocator{
 		Logger:        log,
-		sys:           sys,
-		topologyCache: newTopologyCache(sys),
+		machine:       m,
+		topologyCache: newTopologyCache(m),
 	}
 
 	return &ca
@@ -172,12 +170,16 @@ func pickIds(idSlice []idset.ID, f IDFilter) []idset.ID {
 }
 
 // newAllocatorHelper creates a new CPU allocatorHelper.
-func newAllocatorHelper(sys sysfs.System, topo topologyCache) *allocatorHelper {
+func newAllocatorHelper(m *hardware.Machine, topo topologyCache) *allocatorHelper {
 	a := &allocatorHelper{
 		Logger:   log,
-		sys:      sys,
+		machine:  m,
 		topology: topo,
 		flags:    AllocDefault,
+		// Both sets are read and unioned into before anything assigns them, so
+		// they exist from the start. A CpuMask has no usable zero value.
+		from:   libcpu.NewCpuMask(),
+		result: libcpu.NewCpuMask(),
 	}
 
 	return a
@@ -187,10 +189,10 @@ func newAllocatorHelper(sys sysfs.System, topo topologyCache) *allocatorHelper {
 func (a *allocatorHelper) takeIdlePackages() {
 	a.Debugf("* takeIdlePackages()...")
 
-	offline := a.sys.Offlined()
+	offline := a.machine.OfflineCPUs()
 
 	// pick idle packages
-	pkgs := pickIds(a.sys.PackageIDs(),
+	pkgs := pickIds(a.machine.TopologyIndex().PackageIDs(),
 		func(id idset.ID) bool {
 			// Consider a package idle if all online preferred CPUs are idle.
 			// In particular, on hybrid core architectures exclude
@@ -234,25 +236,21 @@ func (a *allocatorHelper) takeIdlePackages() {
 	}
 }
 
-var (
-	emptyCPUSet = cpuset.New()
-)
-
 // Allocate full idle CPU clusters.
 func (a *allocatorHelper) takeIdleClusters() {
 	var (
-		offline  = a.sys.OfflineCPUs()
-		pickIdle = func(c *cpuCluster) (bool, cpuset.CPUSet) {
+		offline  = a.machine.OfflineCPUs()
+		pickIdle = func(c *cpuCluster) (bool, *libcpu.CpuMask) {
 			if len(a.topology.kind) > 1 {
 				// we only take E-clusters for low-prio requests
-				if a.prefer != PriorityLow && c.kind == sysfs.EfficientCore {
+				if a.prefer != PriorityLow && c.kind == hardware.EfficientCore {
 					a.Debugf("  - omit %s, CPU preference is %s", c, a.prefer)
-					return false, emptyCPUSet
+					return false, libcpu.EmptyCpuMask
 				}
 				// we only take P-clusters for other than low-prio requests
-				if a.prefer == PriorityLow && c.kind == sysfs.PerformanceCore {
+				if a.prefer == PriorityLow && c.kind == hardware.PerformanceCore {
 					a.Debugf("  - omit %s, CPU preference is %s", c, a.prefer)
-					return false, emptyCPUSet
+					return false, libcpu.EmptyCpuMask
 				}
 			}
 
@@ -261,13 +259,13 @@ func (a *allocatorHelper) takeIdleClusters() {
 			free := cset.Intersection(a.from)
 			if free.IsEmpty() || !free.Equals(cset) {
 				a.Debugf("  - omit %s, %d usable CPUs (%s)", c, free.Size(), free)
-				return false, emptyCPUSet
+				return false, libcpu.EmptyCpuMask
 			}
 
 			a.Debugf("  + pick %s, %d usable CPUs (%s)", c, free.Size(), free)
 			return true, free
 		}
-		preferTightestFit = func(cA, cB *cpuCluster, pkgA, pkgB, dieA, dieB int, csetA, csetB cpuset.CPUSet) (r int) {
+		preferTightestFit = func(cA, cB *cpuCluster, pkgA, pkgB, dieA, dieB int, csetA, csetB *libcpu.CpuMask) (r int) {
 			defer func() {
 				if r < 0 {
 					a.Debugf("  + prefer %s", cA)
@@ -467,18 +465,18 @@ func (a *allocatorHelper) takeCacheGroups() {
 	//       o fragment fewest groups possible (take from small to large, preserve large groups)
 
 	var (
-		offline    = a.sys.OfflineCPUs()
-		pickGroups = func(g *cacheGroup) (pickVerdict, cpuset.CPUSet) {
+		offline    = a.machine.OfflineCPUs()
+		pickGroups = func(g *cacheGroup) (pickVerdict, *libcpu.CpuMask) {
 			if len(a.topology.kind) > 1 {
 				// only take E-groups for low-prio requests, or if we have none other
-				if a.prefer != PriorityLow && g.kind == sysfs.EfficientCore {
+				if a.prefer != PriorityLow && g.kind == hardware.EfficientCore {
 					log.Debugf("  - ignore %s (CPU preference is %s)", g, a.prefer)
-					return pickIgnore, emptyCPUSet
+					return pickIgnore, libcpu.EmptyCpuMask
 				}
 				// only take P-groups for other than low-prio requests, or if we have none other
-				if a.prefer == PriorityLow && g.kind == sysfs.PerformanceCore {
+				if a.prefer == PriorityLow && g.kind == hardware.PerformanceCore {
 					log.Debugf("  - ignore %s (CPU preference is %s)", g, a.prefer)
-					return pickIgnore, emptyCPUSet
+					return pickIgnore, libcpu.EmptyCpuMask
 				}
 			}
 
@@ -488,7 +486,7 @@ func (a *allocatorHelper) takeCacheGroups() {
 			// ignore groups without usable CPUs
 			if free.IsEmpty() {
 				log.Debugf("  - ignore %s (no usable CPUs)", g)
-				return pickIgnore, emptyCPUSet
+				return pickIgnore, libcpu.EmptyCpuMask
 			}
 
 			// prefer fully usable idle groups
@@ -760,7 +758,7 @@ func (a *allocatorHelper) takeCacheGroups() {
 		}
 
 		// partially allocate the rest from this group
-		ta := newAllocatorHelper(a.sys, a.topology)
+		ta := newAllocatorHelper(a.machine, a.topology)
 		ta.prefer = a.prefer
 		ta.flags = AllocIdleCores
 		ta.from = cset
@@ -916,7 +914,7 @@ func (a *allocatorHelper) takeCacheGroups() {
 		g := sorter.usable[grpCnt-1]
 		cset := sorter.cpus[g]
 
-		ta := newAllocatorHelper(a.sys, a.topology)
+		ta := newAllocatorHelper(a.machine, a.topology)
 		ta.prefer = a.prefer
 		ta.flags = AllocIdleCores
 		ta.from = cset
@@ -945,10 +943,10 @@ func (a *allocatorHelper) takeCacheGroups() {
 func (a *allocatorHelper) takeIdleCores() {
 	a.Debugf("* takeIdleCores()...")
 
-	offline := a.sys.Offlined()
+	offline := a.machine.OfflineCPUs()
 
 	// pick (first id for all) idle cores
-	cores := pickIds(a.sys.CPUIDs(),
+	cores := pickIds(a.machine.CPUIDs(),
 		func(id idset.ID) bool {
 			cset := a.topology.core[id].Difference(offline)
 			if cset.IsEmpty() {
@@ -987,10 +985,10 @@ func (a *allocatorHelper) takeIdleCores() {
 
 // Allocate idle CPU hyperthreads.
 func (a *allocatorHelper) takeIdleThreads() {
-	offline := a.sys.Offlined()
+	offline := a.machine.OfflineCPUs()
 
 	// pick all threads with free capacity
-	cores := pickIds(a.sys.CPUIDs(),
+	cores := pickIds(a.machine.CPUIDs(),
 		func(id idset.ID) bool {
 			return a.from.Difference(offline).Contains(int(id))
 		})
@@ -1011,8 +1009,8 @@ func (a *allocatorHelper) takeIdleThreads() {
 		func(i, j int) bool {
 			iCore := cores[i]
 			jCore := cores[j]
-			iPkg := a.sys.CPU(iCore).PackageID()
-			jPkg := a.sys.CPU(jCore).PackageID()
+			iPkg := a.machine.CPU(iCore).PackageID()
+			jPkg := a.machine.CPU(jCore).PackageID()
 
 			iCoreSet := a.topology.core[iCore]
 			jCoreSet := a.topology.core[jCore]
@@ -1033,8 +1031,8 @@ func (a *allocatorHelper) takeIdleThreads() {
 				return iPkg < jPkg
 			}
 
-			iCset := cpuset.New(int(cores[i]))
-			jCset := cpuset.New(int(cores[j]))
+			iCset := libcpu.NewCpuMask(int(cores[i]))
+			jCset := libcpu.NewCpuMask(int(cores[j]))
 			if res := a.topology.cpuPriorities.cmpCPUSet(iCset, jCset, a.prefer, 0); res != 0 {
 				return res > 0
 			}
@@ -1060,7 +1058,7 @@ func (a *allocatorHelper) takeIdleThreads() {
 	for _, id := range cores {
 		cset := a.topology.core[id].Difference(offline)
 		a.Debugf(" => considering thread %v (#%s)...", id, cset)
-		cset = cpuset.New(int(id))
+		cset = libcpu.NewCpuMask(int(id))
 		a.result = a.result.Union(cset)
 		a.from = a.from.Difference(cset)
 		a.cnt -= cset.Size()
@@ -1078,7 +1076,7 @@ func (a *allocatorHelper) takeAny() {
 	cpus := a.from.List()
 
 	if len(cpus) >= a.cnt {
-		cset := cpuset.New(cpus[0:a.cnt]...)
+		cset := libcpu.NewCpuMask(cpus[0:a.cnt]...)
 		a.result = a.result.Union(cset)
 		a.from = a.from.Difference(cset)
 		a.cnt = 0
@@ -1086,8 +1084,8 @@ func (a *allocatorHelper) takeAny() {
 }
 
 // Perform CPU allocation.
-func (a *allocatorHelper) allocate() cpuset.CPUSet {
-	if a.sys != nil {
+func (a *allocatorHelper) allocate() *libcpu.CpuMask {
+	if a.machine != nil {
 		if (a.flags & AllocIdlePackages) != 0 {
 			a.takeIdlePackages()
 		}
@@ -1116,20 +1114,20 @@ func (a *allocatorHelper) allocate() cpuset.CPUSet {
 		return a.result
 	}
 
-	return cpuset.New()
+	return libcpu.NewCpuMask()
 }
 
 type clusterSorter struct {
 	// function to pick or ignore a cluster
-	pick func(*cpuCluster) (bool, cpuset.CPUSet)
+	pick func(*cpuCluster) (bool, *libcpu.CpuMask)
 	// function to sort slice of picked clusters
-	sort func(a, b *cpuCluster, pkgCntA, pkgCntB, dieCntA, dieCntB int, cpusA, cpusB cpuset.CPUSet) int
+	sort func(a, b *cpuCluster, pkgCntA, pkgCntB, dieCntA, dieCntB int, cpusA, cpusB *libcpu.CpuMask) int
 
 	// resulting cluster, available CPU count per package and die, available CPUs per cluster
 	clusters  []*cpuCluster
 	pkgCPUCnt map[idset.ID]int
 	dieCPUCnt map[idset.ID]map[idset.ID]int
-	cpus      map[*cpuCluster]cpuset.CPUSet
+	cpus      map[*cpuCluster]*libcpu.CpuMask
 }
 
 func (a *allocatorHelper) sortCPUClusters(s *clusterSorter) {
@@ -1137,13 +1135,13 @@ func (a *allocatorHelper) sortCPUClusters(s *clusterSorter) {
 		clusters  = []*cpuCluster{}
 		pkgCPUCnt = map[idset.ID]int{}
 		dieCPUCnt = map[idset.ID]map[idset.ID]int{}
-		cpus      = map[*cpuCluster]cpuset.CPUSet{}
+		cpus      = map[*cpuCluster]*libcpu.CpuMask{}
 	)
 
 	a.Debugf("picking suitable clusters")
 
 	for _, c := range a.topology.clusters {
-		var cset cpuset.CPUSet
+		var cset *libcpu.CpuMask
 
 		// pick or ignore cluster, determine usable cluster CPUs
 		if s.pick == nil {
@@ -1208,7 +1206,7 @@ const (
 
 type cacheGroupSorter struct {
 	// function to pick preferred and usable cache groups
-	pick func(*cacheGroup) (pickVerdict, cpuset.CPUSet)
+	pick func(*cacheGroup) (pickVerdict, *libcpu.CpuMask)
 	// functions for sorting picked cache groups
 	sortPrefer func(a, b *cacheGroup, s *cacheGroupSorter) int
 	sortUsable func(a, b *cacheGroup, s *cacheGroupSorter) int
@@ -1224,7 +1222,7 @@ type cacheGroupSorter struct {
 	usableDie map[idset.ID]map[idset.ID]int
 
 	// available CPUs per group
-	cpus map[*cacheGroup]cpuset.CPUSet
+	cpus map[*cacheGroup]*libcpu.CpuMask
 
 	// full and partial groups worth of requested CPUs
 	full int
@@ -1247,7 +1245,7 @@ func (s *cacheGroupSorter) usableDieCPUCount(pkg, die idset.ID) int {
 	return s.usableDie[pkg][die]
 }
 
-func (s *cacheGroupSorter) CPUSet(g *cacheGroup) cpuset.CPUSet {
+func (s *cacheGroupSorter) CPUSet(g *cacheGroup) *libcpu.CpuMask {
 	return s.cpus[g]
 }
 
@@ -1258,7 +1256,7 @@ func (s *cacheGroupSorter) sortCacheGroups(a *allocatorHelper) {
 	s.usable = []*cacheGroup{}
 	s.usablePkg = map[idset.ID]int{}
 	s.usableDie = map[idset.ID]map[idset.ID]int{}
-	s.cpus = map[*cacheGroup]cpuset.CPUSet{}
+	s.cpus = map[*cacheGroup]*libcpu.CpuMask{}
 
 	log.Debugf("picking suitable cache groups")
 
@@ -1350,26 +1348,33 @@ func (s *cacheGroupSorter) sortCacheGroups(a *allocatorHelper) {
 	}
 }
 
-func (ca *cpuAllocator) allocateCpus(from *cpuset.CPUSet, cnt int, options ...Option) (cpuset.CPUSet, error) {
-	var result cpuset.CPUSet
+func (ca *cpuAllocator) allocateCpus(from *libcpu.CpuMask, cnt int, options ...Option) (*libcpu.CpuMask, error) {
+	var result *libcpu.CpuMask
 	var err error
 
 	switch {
 	case from.Size() < cnt:
-		result, err = cpuset.New(), fmt.Errorf("cpuset %s does not have %d CPUs", from, cnt)
+		result, err = libcpu.NewCpuMask(), fmt.Errorf("cpuset %s does not have %d CPUs", from, cnt)
 	case from.Size() == cnt:
-		result, err, *from = from.Clone(), nil, cpuset.New()
+		result, err = from.Clone(), nil
+		take(from, result)
 	default:
-		a := newAllocatorHelper(ca.sys, ca.topologyCache)
+		a := newAllocatorHelper(ca.machine, ca.topologyCache)
 		for _, o := range options {
 			if err := o(a); err != nil {
-				return cpuset.New(), err
+				return libcpu.NewCpuMask(), err
 			}
 		}
 		a.from = from.Clone()
 		a.cnt = cnt
 
-		result, err, *from = a.allocate(), nil, a.from.Clone()
+		result, err = a.allocate(), nil
+
+		// The helper works on a copy, so what it consumed is what its copy no
+		// longer has. Take that out of the caller's set, which is not
+		// necessarily the same as the result: a helper which could not satisfy
+		// the request returns nothing and still leaves its copy short.
+		take(from, from.Difference(a.from))
 
 		a.Debugf("%d cpus from #%v (preferring #%v) => #%v", cnt, from.Union(result), a.prefer, result)
 	}
@@ -1377,26 +1382,35 @@ func (ca *cpuAllocator) allocateCpus(from *cpuset.CPUSet, cnt int, options ...Op
 	return result, err
 }
 
-// AllocateCpus allocates a number of CPUs from the given set.
-func (ca *cpuAllocator) AllocateCpus(from *cpuset.CPUSet, cnt int, options ...Option) (cpuset.CPUSet, error) {
+// take removes cpus from a set in place. The set is the caller's, and taking
+// CPUs out of it is how a caller learns what is left.
+func take(from *libcpu.CpuMask, cpus *libcpu.CpuMask) {
+	from.Clear(cpus.UnsortedList()...)
+}
+
+// AllocateCpus allocates a number of CPUs from the given set, taking the ones it
+// allocated out of it.
+func (ca *cpuAllocator) AllocateCpus(from *libcpu.CpuMask, cnt int, options ...Option) (*libcpu.CpuMask, error) {
 	result, err := ca.allocateCpus(from, cnt, options...)
 	return result, err
 }
 
-// ReleaseCpus releases a number of CPUs from the given set.
-func (ca *cpuAllocator) ReleaseCpus(from *cpuset.CPUSet, cnt int, options ...Option) (cpuset.CPUSet, error) {
+// ReleaseCpus picks a number of CPUs to release from the given set. It leaves
+// those in the set and returns the ones to keep.
+func (ca *cpuAllocator) ReleaseCpus(from *libcpu.CpuMask, cnt int, options ...Option) (*libcpu.CpuMask, error) {
 	oset := from.Clone()
 
 	result, err := ca.allocateCpus(from, from.Size()-cnt, options...)
 
-	ca.Debugf("ReleaseCpus(#%s, %d) => kept: #%s, released: #%s", oset, cnt, from, result)
+	ca.Debugf("ReleaseCpus(#%s, %d) => kept: #%s, released: #%s", oset, cnt, result, from)
 
 	return result, err
 }
 
-// GetCPUPriorities returns the CPUSets for the discovered priorities.
-func (ca *cpuAllocator) GetCPUPriorities() map[CPUPriority]cpuset.CPUSet {
-	prios := make(map[CPUPriority]cpuset.CPUSet)
+// GetCPUPriorities returns the CPUSets for the discovered priorities. Every
+// priority has an entry, and the sets are the caller's own to modify.
+func (ca *cpuAllocator) GetCPUPriorities() map[CPUPriority]*libcpu.CpuMask {
+	prios := make(map[CPUPriority]*libcpu.CpuMask)
 	for prio := range NumCPUPriorities {
 		cset := ca.topologyCache.cpuPriorities[prio]
 		prios[prio] = cset.Clone()
@@ -1404,51 +1418,68 @@ func (ca *cpuAllocator) GetCPUPriorities() map[CPUPriority]cpuset.CPUSet {
 	return prios
 }
 
-func newTopologyCache(sys sysfs.System) topologyCache {
+func newTopologyCache(m *hardware.Machine) topologyCache {
 	c := topologyCache{
-		pkg:  make(map[idset.ID]cpuset.CPUSet),
-		node: make(map[idset.ID]cpuset.CPUSet),
-		core: make(map[idset.ID]cpuset.CPUSet),
+		pkg:  make(map[idset.ID]*libcpu.CpuMask),
+		core: make(map[idset.ID]*libcpu.CpuMask),
 	}
-	if sys != nil {
-		for _, id := range sys.PackageIDs() {
-			c.pkg[id] = sys.Package(id).CPUSet()
+
+	// The machine's own sets, not copies of them: they are sealed, so sharing
+	// them costs nothing and anything which tries to modify one panics rather
+	// than changing what the machine says.
+	if m != nil {
+		x := m.TopologyIndex()
+		for _, id := range x.PackageIDs() {
+			c.pkg[id] = x.PackageCPUs(id)
 		}
-		for _, id := range sys.NodeIDs() {
-			c.node[id] = sys.Node(id).CPUSet()
-		}
-		for _, id := range sys.CPUIDs() {
-			c.core[id] = sys.CPU(id).ThreadCPUSet()
+		for _, id := range m.CPUIDs() {
+			c.core[id] = m.CPU(id).Threads()
 		}
 	}
 
-	c.discoverCPUClusters(sys)
-	c.discoverCacheGroups(sys)
-	c.discoverCPUPriorities(sys)
+	// Every priority has a set, so that a lookup for a priority the machine has
+	// no CPUs at answers with an empty one rather than a nil.
+	for prio := range c.cpuPriorities {
+		c.cpuPriorities[prio] = libcpu.NewCpuMask()
+	}
+
+	c.discoverCPUClusters(m)
+	c.discoverCacheGroups(m)
+	c.discoverCPUPriorities(m)
 
 	return c
 }
 
-func (c *topologyCache) discoverCPUPriorities(sys sysfs.System) {
-	if sys == nil {
+func (c *topologyCache) discoverCPUPriorities(m *hardware.Machine) {
+	if m == nil {
 		return
 	}
 	var prio cpuPriorities
+	for p := range prio {
+		prio[p] = libcpu.NewCpuMask()
+	}
+
+	// Probe Speed Select once for the whole machine rather than per package.
+	pkgIDs := make([]idset.ID, 0, len(c.pkg))
+	for id := range c.pkg {
+		pkgIDs = append(pkgIDs, id)
+	}
+	ss := discoverSpeedSelect(pkgIDs)
 
 	// Discover on per-package basis
 	for id := range c.pkg {
-		cpuPriorities, sstActive := c.discoverSstCPUPriority(sys, id)
+		cpuPriorities, sstActive := c.discoverSstCPUPriority(m, ss, id)
 
 		if !sstActive {
-			cpuPriorities = c.discoverCpufreqPriority(sys, id)
+			cpuPriorities = c.discoverCpufreqPriority(m, id)
 		}
 
-		ecores := c.kind[sysfs.EfficientCore]
-		ocores := sys.OnlineCPUs().Difference(ecores)
+		ecores := c.kind[hardware.EfficientCore]
+		ocores := m.OnlineCPUs().Difference(ecores)
 
 		for p, cpus := range cpuPriorities {
 			source := map[bool]string{true: "sst", false: "cpufreq"}[sstActive]
-			cset := sysfs.CPUSetFromIDSet(idset.NewIDSet(cpus...))
+			cset := libcpu.NewCpuMask(cpus...)
 
 			if p != int(PriorityLow) && ocores.Size() > 0 {
 				cset = cset.Difference(ecores)
@@ -1461,13 +1492,12 @@ func (c *topologyCache) discoverCPUPriorities(sys sysfs.System) {
 	c.cpuPriorities = prio
 }
 
-func (c *topologyCache) discoverSstCPUPriority(sys sysfs.System, pkgID idset.ID) ([NumCPUPriorities][]idset.ID, bool) {
+func (c *topologyCache) discoverSstCPUPriority(m *hardware.Machine, ss *speedSelect, pkgID idset.ID) ([NumCPUPriorities][]idset.ID, bool) {
 	var ret [NumCPUPriorities][]idset.ID
 
 	active := false
 
-	pkg := sys.Package(pkgID)
-	pkgStatus := pkg.SstInfo()
+	pkgStatus := ss.PackageStatus(pkgID)
 	prios := make(map[idset.ID]CPUPriority, c.pkg[pkgID].Size())
 
 	if pkgStatus == nil {
@@ -1493,7 +1523,7 @@ func (c *topologyCache) discoverSstCPUPriority(sys sysfs.System, pkgID idset.ID)
 				id := idset.ID(i)
 				p := PriorityLow
 				// First two CLOSes are prioritized by SST
-				if sys.CPU(id).SstClos() < 2 {
+				if ss.Clos(id) < 2 {
 					p = PriorityHigh
 				}
 				prios[id] = p
@@ -1505,7 +1535,7 @@ func (c *topologyCache) discoverSstCPUPriority(sys sysfs.System, pkgID idset.ID)
 
 			for _, i := range cpuIDs {
 				id := idset.ID(i)
-				clos := sys.CPU(id).SstClos()
+				clos := ss.Clos(id)
 				p := closPrio[clos]
 				if p != PriorityNormal {
 					active = true
@@ -1519,7 +1549,7 @@ func (c *topologyCache) discoverSstCPUPriority(sys sysfs.System, pkgID idset.ID)
 			log.Debugf("package #%d punit #%d: using SST-BF based CPU prioritization", pkgID, punitID)
 			currentPerfLevel := punit.PP.CurrentLevel
 			if plInfos == nil {
-				sstPkg, ok := sys.Sst().Package(pkgID)
+				sstPkg, ok := ss.Package(pkgID)
 				if !ok {
 					log.Debugf("package #%d punit #%d: unable to get package for SST-PP info, skipping", pkgID, punitID)
 					continue
@@ -1599,20 +1629,20 @@ func (c *topologyCache) sstClosPriority(pkgID idset.ID, punitID idset.ID, punit 
 	return closPriority
 }
 
-func (c *topologyCache) discoverCpufreqPriority(sys sysfs.System, pkgID idset.ID) [NumCPUPriorities][]idset.ID {
+func (c *topologyCache) discoverCpufreqPriority(m *hardware.Machine, pkgID idset.ID) [NumCPUPriorities][]idset.ID {
 	var prios [NumCPUPriorities][]idset.ID
 
 	// Group cpus by base frequency, core kind and energy performance profile
 	freqs := map[uint64][]idset.ID{}
-	epps := map[sysfs.EPP][]idset.ID{}
+	epps := map[hardware.EPP][]idset.ID{}
 	cpuIDs := c.pkg[pkgID].List()
 	for _, num := range cpuIDs {
 		id := idset.ID(num)
-		cpu := sys.CPU(id)
-		bf := cpu.BaseFrequency()
+		cpu := m.CPU(id)
+		bf := cpu.Freq().Base
 		freqs[bf] = append(freqs[bf], id)
 
-		epp := cpu.EPP()
+		epp := cpu.Freq().EPP
 		epps[epp] = append(epps[epp], id)
 	}
 
@@ -1627,7 +1657,7 @@ func (c *topologyCache) discoverCpufreqPriority(sys sysfs.System, pkgID idset.ID
 
 	eppList := []int{}
 	for e := range epps {
-		if e != sysfs.EPPUnknown {
+		if e != hardware.EPPUnknown {
 			eppList = append(eppList, int(e))
 		}
 	}
@@ -1636,11 +1666,11 @@ func (c *topologyCache) discoverCpufreqPriority(sys sysfs.System, pkgID idset.ID
 	// Finally, determine priority of each CPU
 	for _, num := range cpuIDs {
 		id := idset.ID(num)
-		cpu := sys.CPU(id)
+		cpu := m.CPU(id)
 		p := PriorityNormal
 
 		if len(freqList) > 1 {
-			bf := cpu.BaseFrequency()
+			bf := cpu.Freq().Base
 
 			// All cpus NOT in the lowest base frequency bin are considered high prio
 			if bf > freqList[0] {
@@ -1653,11 +1683,11 @@ func (c *topologyCache) discoverCpufreqPriority(sys sysfs.System, pkgID idset.ID
 		// All E-cores are unconditionally considered low prio.
 		// All cpus NOT in the lowest performance epp are considered high prio.
 		// NOTE: higher EPP value denotes lower performance preference
-		if cpu.CoreKind() == sysfs.EfficientCore {
+		if cpu.Kind() == hardware.EfficientCore {
 			p = PriorityLow
 		} else {
 			if len(eppList) > 1 {
-				epp := cpu.EPP()
+				epp := cpu.Freq().EPP
 				if int(epp) < eppList[len(eppList)-1] {
 					p = PriorityHigh
 				} else {
@@ -1672,25 +1702,31 @@ func (c *topologyCache) discoverCpufreqPriority(sys sysfs.System, pkgID idset.ID
 	return prios
 }
 
-func (c *topologyCache) discoverCPUClusters(sys sysfs.System) {
-	if sys == nil {
+func (c *topologyCache) discoverCPUClusters(m *hardware.Machine) {
+	if m == nil {
 		return
 	}
 
-	for _, id := range sys.PackageIDs() {
-		pkg := sys.Package(id)
+	x := m.TopologyIndex()
+	for _, id := range x.PackageIDs() {
 		clusters := []*cpuCluster{}
-		for _, die := range pkg.DieIDs() {
-			for _, cl := range pkg.LogicalDieClusterIDs(die) {
-				if cpus := pkg.LogicalDieClusterCPUSet(die, cl); cpus.Size() > 0 {
-					clusters = append(clusters, &cpuCluster{
-						pkg:     id,
-						die:     die,
-						cluster: cl,
-						cpus:    cpus,
-						kind:    sys.CPU(cpus.List()[0]).CoreKind(),
-					})
+		for _, die := range x.DieIDs(id) {
+			// Merged, not omitted: a machine which reports one cluster per core
+			// still gets those CPUs grouped, which is what this allocator has
+			// always seen and what its CPU picks depend on.
+			for _, cpus := range hardware.LogicalClusters(m, die.Package, die.Die,
+				hardware.MergeSingleCoreClusters) {
+				if cpus.Size() == 0 {
+					continue
 				}
+				first := m.CPU(cpus.List()[0])
+				clusters = append(clusters, &cpuCluster{
+					pkg:     id,
+					die:     die.Die,
+					cluster: first.ClusterID(),
+					cpus:    cpus,
+					kind:    first.Kind(),
+				})
 			}
 		}
 		if len(clusters) > 1 {
@@ -1703,32 +1739,39 @@ func (c *topologyCache) discoverCPUClusters(sys sysfs.System) {
 		}
 	}
 
-	c.kind = map[sysfs.CoreKind]cpuset.CPUSet{}
-	for _, kind := range sys.CoreKinds() {
-		c.kind[kind] = sys.CoreKindCPUs(kind)
+	c.kind = map[hardware.CoreKind]*libcpu.CpuMask{}
+	for _, kind := range m.CoreKinds() {
+		c.kind[kind] = m.CoreKindCPUs(kind)
 	}
 }
 
-func (c *topologyCache) pickCacheLevelForGrouping(sys sysfs.System) int {
-	if sys == nil {
+func (c *topologyCache) pickCacheLevelForGrouping(m *hardware.Machine) int {
+	if m == nil {
 		return -1
 	}
 
-	online := sys.OnlineCPUs()
+	x := m.TopologyIndex()
+	online := m.OnlineCPUs()
 	for _, id := range online.List() {
-		cpu := sys.CPU(id)
-		pkg := sys.Package(cpu.PackageID())
-		for n := cpu.CacheCount() - 1; n > 0; n-- {
-			cpus := cpu.GetNthLevelCacheCPUSet(n)
+		cpu := m.CPU(id)
+		var (
+			pkgCPUs = x.PackageCPUs(cpu.PackageID())
+			dieCPUs = x.DieCPUs(hardware.DieID{
+				Package: cpu.PackageID(),
+				Die:     cpu.DieID(),
+			})
+		)
+		for n := len(cpu.Caches()) - 1; n > 0; n-- {
+			cpus := cacheCPUsAtLevel(m, id, n)
 
 			switch {
 			case cpus.Size() == 0 || cpus.Size() == 1:
 				continue
-			case cpus.Equals(cpu.ThreadCPUSet().Intersection(online)):
+			case cpus.Equals(cpu.Threads().Intersection(online)):
 				continue
-			case cpus.Equals(pkg.DieCPUSet(cpu.DieID()).Intersection(online)):
+			case cpus.Equals(dieCPUs.Intersection(online)):
 				continue
-			case cpus.Equals(pkg.CPUSet().Intersection(online)):
+			case cpus.Equals(pkgCPUs.Intersection(online)):
 				continue
 			}
 
@@ -1739,12 +1782,12 @@ func (c *topologyCache) pickCacheLevelForGrouping(sys sysfs.System) int {
 	return -1
 }
 
-func (c *topologyCache) discoverCacheGroups(sys sysfs.System) {
-	if sys == nil {
+func (c *topologyCache) discoverCacheGroups(m *hardware.Machine) {
+	if m == nil {
 		return
 	}
 
-	n := c.pickCacheLevelForGrouping(sys)
+	n := c.pickCacheLevelForGrouping(m)
 	if n < 0 {
 		log.Infof("no cache level provides useful CPU grouping")
 		return
@@ -1752,28 +1795,33 @@ func (c *topologyCache) discoverCacheGroups(sys sysfs.System) {
 
 	log.Infof("picked cache level %d for CPU grouping", n)
 
-	online := sys.OnlineCPUs()
-	for _, id := range sys.PackageIDs() {
-		pkg := sys.Package(id)
+	x := m.TopologyIndex()
+	online := m.OnlineCPUs()
+	for _, id := range x.PackageIDs() {
+		pkgCPUs := x.PackageCPUs(id)
 		groups := []*cacheGroup{}
 		assigned := idset.NewIDSet()
 
-		for _, cpuID := range pkg.CPUSet().Intersection(online).List() {
+		for _, cpuID := range pkgCPUs.Intersection(online).List() {
 			if assigned.Has(cpuID) {
 				continue
 			}
 
-			cpu := sys.CPU(cpuID)
-			cpus := cpu.GetNthLevelCacheCPUSet(n).Intersection(online)
+			cpu := m.CPU(cpuID)
+			cpus := cacheCPUsAtLevel(m, cpuID, n).Intersection(online)
+			dieCPUs := x.DieCPUs(hardware.DieID{
+				Package: cpu.PackageID(),
+				Die:     cpu.DieID(),
+			})
 
 			switch {
 			case cpus.Size() == 0 || cpus.Size() == 1:
 				continue
-			case cpus.Equals(cpu.ThreadCPUSet().Intersection(online)):
+			case cpus.Equals(cpu.Threads().Intersection(online)):
 				continue
-			case cpus.Equals(pkg.DieCPUSet(cpu.DieID()).Intersection(online)):
+			case cpus.Equals(dieCPUs.Intersection(online)):
 				continue
-			case cpus.Equals(pkg.CPUSet().Intersection(online)):
+			case cpus.Equals(pkgCPUs.Intersection(online)):
 				continue
 			}
 
@@ -1782,7 +1830,7 @@ func (c *topologyCache) discoverCacheGroups(sys sysfs.System) {
 				die:  cpu.DieID(),
 				node: cpu.NodeID(),
 				cpus: cpus.Clone(),
-				kind: cpu.CoreKind(), // TODO(klihub): maybe verify all CPUs are the same kind
+				kind: cpu.Kind(), // TODO(klihub): maybe verify all CPUs are the same kind
 			})
 			assigned.Add(cpus.UnsortedList()...)
 		}
@@ -1815,7 +1863,7 @@ func (c *topologyCache) discoverCacheGroups(sys sysfs.System) {
 		g.id = idx
 
 		for _, cpuID := range g.cpus.UnsortedList() {
-			cpu := sys.CPU(cpuID)
+			cpu := m.CPU(cpuID)
 			if cpu.PackageID() != g.pkg {
 				log.Warnf("CPU #%d in cache group #%d has package #%d != #%d",
 					cpuID, g.id, cpu.PackageID(), g.pkg)
@@ -1836,7 +1884,7 @@ func (c *topologyCache) discoverCacheGroups(sys sysfs.System) {
 			}
 		}
 
-		cpu := sys.CPU(g.cpus.List()[0])
+		cpu := m.CPU(g.cpus.List()[0])
 		log.Debugf("cache group #%d: pkg #%d/die #%d/node #%d %s cpus %s",
 			g.id, cpu.PackageID(), cpu.DieID(), cpu.NodeID(), g.kind, g.cpus)
 	}
@@ -1850,7 +1898,7 @@ func (c *topologyCache) discoverCacheGroups(sys sysfs.System) {
 
 	for idx, g := range c.cacheGroups {
 		g.id = idx
-		cpu := sys.CPU(g.cpus.List()[0])
+		cpu := m.CPU(g.cpus.List()[0])
 		log.Debugf("cache group #%d: pkg #%d/die #%d/node #%d %s cpus %s",
 			g.id, cpu.PackageID(), cpu.DieID(), cpu.NodeID(), g.kind, g.cpus)
 	}
@@ -1873,7 +1921,7 @@ func (p CPUPriority) String() string {
 //	> 0 if cpuset A is preferred
 //	< 0 if cpuset B is preferred
 //	0 if cpusets A and B are equal in terms of cpu priority
-func (c *cpuPriorities) cmpCPUSet(csetA, csetB cpuset.CPUSet, prefer CPUPriority, cpuCnt int) int {
+func (c *cpuPriorities) cmpCPUSet(csetA, csetB *libcpu.CpuMask, prefer CPUPriority, cpuCnt int) int {
 	if prefer == PriorityNone {
 		return 0
 	}
@@ -1959,12 +2007,11 @@ func (c *cacheGroup) PackageID() int {
 	return c.pkg
 }
 
-func (c *cacheGroup) DieID(sys sysfs.System) int {
-	cpu := sys.CPU(c.cpus.List()[0])
-	return cpu.DieID()
+func (c *cacheGroup) DieID(m *hardware.Machine) int {
+	return m.CPU(c.cpus.List()[0]).DieID()
 }
 
-func (c *cacheGroup) SmallestCoreID(sys sysfs.System) int {
+func (c *cacheGroup) SmallestCoreID(m *hardware.Machine) int {
 	return c.cpus.List()[0]
 }
 

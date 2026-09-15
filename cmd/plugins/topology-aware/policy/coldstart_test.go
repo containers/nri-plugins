@@ -20,11 +20,11 @@ import (
 	"testing"
 	"time"
 
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
-	system "github.com/containers/nri-plugins/pkg/sysfs"
 	idset "github.com/intel/goresctrl/pkg/utils"
 )
 
@@ -52,7 +52,7 @@ func TestColdStart(t *testing.T) {
 
 	tcases := []struct {
 		name                     string
-		numaNodes                []system.Node
+		numaNodes                []synthNode
 		req                      Request
 		affinities               map[int]int32
 		container                cache.Container
@@ -64,18 +64,23 @@ func TestColdStart(t *testing.T) {
 	}{
 		{
 			name: "three node cold start",
-			numaNodes: []system.Node{
-				&mockSystemNode{id: 0, memFree: 10000, memTotal: 10000, memType: system.MemoryTypeDRAM, distance: []int{1, 5}},
-				&mockSystemNode{id: 1, memFree: 50000, memTotal: 50000, memType: system.MemoryTypePMEM, distance: []int{5, 1}},
+			// node0 has CPUs, so it is ordinary memory. node1 has none and is
+			// larger, which is how a persistent memory node presents itself.
+			numaNodes: []synthNode{
+				{cpus: "0-1", memKB: 10000, distance: []int{10, 50}},
+				{cpus: "", memKB: 50000, distance: []int{50, 10}},
 			},
 			container: &mockContainer{
 				name:                "demo-coldstart-container",
 				returnValueForGetID: "1234",
 				pod: &mockPod{
-					coldStartTimeout:                   1000 * time.Millisecond,
-					returnValue1FotGetResmgrAnnotation: "demo-coldstart-container: pmem,dram",
-					returnValue2FotGetResmgrAnnotation: true,
-					coldStartContainerName:             "demo-coldstart-container",
+					// The policy reads both preferences with
+					// GetEffectiveAnnotation, so they have to be annotations
+					// scoped to this container, in the form it parses them.
+					annotations: map[string]string{
+						preferMemoryTypeKey + "/container.demo-coldstart-container": "pmem,dram",
+						preferColdStartKey + "/container.demo-coldstart-container":  "{ duration: 1s }",
+					},
 				},
 			},
 			expectedColdStartTimeout: 1000 * time.Millisecond,
@@ -87,12 +92,15 @@ func TestColdStart(t *testing.T) {
 	}
 	for _, tc := range tcases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Skipf("Coldstart tests are disabled (can't mock enough of the system, lacks CPUs)")
+			m := synthMachine(t, tc.numaNodes)
 
 			policy := &policy{
-				sys: &mockSystem{
-					nodes: tc.numaNodes,
-				},
+				machine: m,
+				// A configured policy always has these; one built field by
+				// field has to say so, empty being what it had before.
+				allowed:  libcpu.NewCpuMask(),
+				reserved: libcpu.NewCpuMask(),
+				isolated: libcpu.NewCpuMask(),
 				cache: &mockCache{
 					returnValue1ForLookupContainer: tc.container,
 					returnValue2ForLookupContainer: true,
@@ -105,9 +113,9 @@ func TestColdStart(t *testing.T) {
 			}
 			policy.allocations.policy = policy
 			policy.options.SendEvent = sendEvent
-			ma, err := libmem.NewAllocator(libmem.WithSystemNodes(policy.sys))
+			ma, err := libmem.NewAllocator(libmem.WithMachineNodes(m))
 			if err != nil {
-				panic(err)
+				t.Fatalf("failed to create memory allocator: %v", err)
 			}
 			policy.memAllocator = ma
 

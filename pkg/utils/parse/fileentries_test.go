@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sysfs_test
+package parse_test
 
 import (
 	"os"
 	"strings"
 	"testing"
 
-	"github.com/containers/nri-plugins/pkg/sysfs"
+	"github.com/containers/nri-plugins/pkg/utils/parse"
 )
 
 // colonPickFn splits lines of the form "key: value" into key and value.
@@ -49,7 +49,7 @@ func writeTempFile(t *testing.T, content string) string {
 func TestParseFileEntries_Int(t *testing.T) {
 	path := writeTempFile(t, "count: 42\n")
 	var count int
-	if err := sysfs.ParseFileEntries(path, map[string]any{"count": &count}, colonPickFn); err != nil {
+	if err := parse.FileEntries(path, map[string]any{"count": &count}, colonPickFn); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if count != 42 {
@@ -60,7 +60,7 @@ func TestParseFileEntries_Int(t *testing.T) {
 func TestParseFileEntries_IntWithUnit(t *testing.T) {
 	path := writeTempFile(t, "size: 4 kB\n")
 	var size int64
-	if err := sysfs.ParseFileEntries(path, map[string]any{"size": &size}, colonPickFn); err != nil {
+	if err := parse.FileEntries(path, map[string]any{"size": &size}, colonPickFn); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if want := int64(4 * 1024); size != want {
@@ -72,7 +72,7 @@ func TestParseFileEntries_StringAndBool(t *testing.T) {
 	path := writeTempFile(t, "name: hello\nenabled: true\n")
 	var name string
 	var enabled bool
-	err := sysfs.ParseFileEntries(path, map[string]any{
+	err := parse.FileEntries(path, map[string]any{
 		"name":    &name,
 		"enabled": &enabled,
 	}, colonPickFn)
@@ -89,7 +89,7 @@ func TestParseFileEntries_StringAndBool(t *testing.T) {
 
 func TestParseFileEntries_MissingFile(t *testing.T) {
 	var count int
-	err := sysfs.ParseFileEntries("/nonexistent/path/file", map[string]any{"count": &count}, colonPickFn)
+	err := parse.FileEntries("/nonexistent/path/file", map[string]any{"count": &count}, colonPickFn)
 	if err == nil {
 		t.Errorf("expected an error for missing file, got nil")
 	}
@@ -99,7 +99,7 @@ func TestParseFileEntries_MissingFile(t *testing.T) {
 func parseVal(t *testing.T, fieldContent string, dest any) error {
 	t.Helper()
 	path := writeTempFile(t, "v: "+fieldContent+"\n")
-	return sysfs.ParseFileEntries(path, map[string]any{"v": dest}, colonPickFn)
+	return parse.FileEntries(path, map[string]any{"v": dest}, colonPickFn)
 }
 
 // TestParseNumericUnits_Positive tests every recognized unit string against every
@@ -338,8 +338,15 @@ func TestParseNumericUnits_Negative(t *testing.T) {
 		for _, unit := range []string{"KB", "kb", "Kb", "mb", "gb", "tb", "xyz", "MiB", "GiB"} {
 			t.Run(unit, func(t *testing.T) {
 				var v int64
-				if err := parseVal(t, "1 "+unit, &v); err == nil {
+				err := parseVal(t, "1 "+unit, &v)
+				if err == nil {
 					t.Errorf("expected error for unit %q, got nil", unit)
+					return
+				}
+				// and it has to name the unit it did not recognize, rather than
+				// the number in front of it
+				if !strings.Contains(err.Error(), "'"+unit+"'") {
+					t.Errorf("error %q does not name the unit %q", err, unit)
 				}
 			})
 		}

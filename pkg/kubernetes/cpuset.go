@@ -18,67 +18,74 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 )
 
-// ShortCPUSet prints the cpuset as a string, trying to further shorten compared to .String().
-func ShortCPUSet(cset cpuset.CPUSet) string {
-	str, sep := "", ""
-
-	beg, end, step := -1, -1, -1
-	for cpu := range strings.SplitSeq(cset.String(), ",") {
-		if strings.Contains(cpu, "-") {
-			str += sep + cpu
-			sep = ","
-			continue
-		}
-		i, err := strconv.ParseInt(cpu, 10, 0)
-		if err != nil {
-			return cset.String()
-		}
-		id := int(i)
-		if beg < 0 {
-			beg, end = id, id
-			continue
-		}
-		if step < 0 {
-			end = id
-			step = end - beg
-			continue
-		}
-		if id-end == step {
-			end = id
-			continue
-		}
-		str += sep + mkRange(beg, end, step)
-		sep = ","
-		beg, end = id, id
-		step = -1
-	}
-
-	if beg >= 0 {
-		str += sep + mkRange(beg, end, step)
-	}
-
-	return str
+type segment struct {
+	beg, end, step int
 }
 
-func mkRange(beg, end, step int) string {
-	if beg < 0 {
+func (s segment) String() string {
+	if s.beg < 0 {
 		return ""
 	}
-	if beg == end {
-		return strconv.FormatInt(int64(beg), 10)
+	if s.end < 0 {
+		return strconv.FormatInt(int64(s.beg), 10)
+	}
+	if s.step == 1 {
+		return strconv.FormatInt(int64(s.beg), 10) + "-" + strconv.FormatInt(int64(s.end), 10)
+	}
+	return strconv.FormatInt(int64(s.beg), 10) + "-" + strconv.FormatInt(int64(s.end), 10) + ":" + strconv.FormatInt(int64(s.step), 10)
+}
+
+// ShortCPUSet prints the cpuset as a string, trying to further shorten compared to .String().
+func ShortCPUSet(cset libcpu.CPUSet) string {
+	segments := []segment{{beg: -1}}
+	for _, part := range strings.Split(cset.String(), ",") {
+		if part == "" {
+			continue
+		}
+		curr := len(segments) - 1
+		if strings.Contains(part, "-") {
+			parts := strings.SplitN(part, "-", 2)
+			beg, _ := strconv.Atoi(parts[0])
+			end, _ := strconv.Atoi(parts[1])
+			seg := segment{beg: beg, end: end, step: 1}
+			if segments[curr].beg < 0 {
+				segments[curr] = seg
+			} else {
+				segments = append(segments, seg)
+			}
+			segments = append(segments, segment{beg: -1})
+			continue
+		}
+		cpu, _ := strconv.Atoi(part)
+		if segments[curr].beg < 0 {
+			segments[curr] = segment{beg: cpu, end: -1}
+			continue
+		}
+		if segments[curr].end < 0 {
+			segments[curr].end = cpu
+			segments[curr].step = segments[curr].end - segments[curr].beg
+			continue
+		}
+		if cpu-segments[curr].end == segments[curr].step {
+			segments[curr].end = cpu
+			continue
+		}
+		segments = append(segments, segment{beg: cpu, end: -1})
 	}
 
-	b, e := strconv.FormatInt(int64(beg), 10), strconv.FormatInt(int64(end), 10)
-	if step == 1 {
-		return b + "-" + e
+	str := strings.Builder{}
+	sep := ""
+	for _, seg := range segments {
+		part := seg.String()
+		if part == "" {
+			continue
+		}
+		str.WriteString(sep)
+		str.WriteString(part)
+		sep = ","
 	}
-	if beg+step == end {
-		return b + "," + e
-	}
-
-	s := strconv.FormatInt(int64(step), 10)
-	return b + "-" + e + ":" + s
+	return str.String()
 }

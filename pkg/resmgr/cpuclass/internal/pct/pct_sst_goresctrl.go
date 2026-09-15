@@ -21,7 +21,7 @@ import (
 	gosst "github.com/intel/goresctrl/pkg/sst"
 	"github.com/intel/goresctrl/pkg/utils"
 
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 )
 
 // sstGoresctrl is the real-hardware sst backed by
@@ -100,7 +100,7 @@ func discoverPunits(plat *gosst.Platform) []pctPunit {
 		sort.Ints(punitIDs)
 		for _, pid := range punitIDs {
 			pu := st.Punits[utils.ID(pid)]
-			cpus := cpuset.New(pu.CPUs.Members()...)
+			cpus := libcpu.NewCpuMask(pu.CPUs.Members()...)
 			max := 0
 			gtd := 0
 			if pi, ok := info[utils.ID(pid)]; ok {

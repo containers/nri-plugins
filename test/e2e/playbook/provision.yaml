@@ -7,6 +7,12 @@
     cri_runtime: "{{ cri_runtime }}"
     k8s_release: "{{ k8s_release }}"
     k8s_version: "{{ k8s_version }}"
+    # Comma-separated "Gate1=true,Gate2=false" list, or empty string.
+    k8s_feature_gates: "{{ k8s_feature_gates }}"
+    # klog verbosity level (e.g. "4") for apiserver/scheduler/controller-manager/
+    # kubelet, or empty to leave every component at its default verbosity.
+    # Independent of k8s_feature_gates -- either can be set without the other.
+    k8s_log_verbosity: "{{ k8s_log_verbosity }}"
     is_containerd: false
     is_crio: false
     containerd_release: "{{ containerd_release }}"
@@ -501,9 +507,70 @@
         daemon_reload: true
         state: restarted
 
+    - name: Write kubeadm --config with feature gates and/or log verbosity for apiserver/scheduler/controller-manager/kubelet
+      ansible.builtin.copy:
+        dest: /root/kubeadm-config.yaml
+        content: |
+          apiVersion: kubeadm.k8s.io/v1beta4
+          kind: ClusterConfiguration
+          networking:
+            podSubnet: "{{ network }}"
+          apiServer:
+            extraArgs:
+          {% if k8s_feature_gates != "" %}
+              - name: feature-gates
+                value: "{{ k8s_feature_gates }}"
+          {% endif %}
+          {% if k8s_log_verbosity != "" %}
+              - name: v
+                value: "{{ k8s_log_verbosity }}"
+          {% endif %}
+          scheduler:
+            extraArgs:
+          {% if k8s_feature_gates != "" %}
+              - name: feature-gates
+                value: "{{ k8s_feature_gates }}"
+          {% endif %}
+          {% if k8s_log_verbosity != "" %}
+              - name: v
+                value: "{{ k8s_log_verbosity }}"
+          {% endif %}
+          {% if k8s_feature_gates != "" or k8s_log_verbosity != "" %}
+          controllerManager:
+            extraArgs:
+          {% if k8s_feature_gates != "" %}
+              - name: feature-gates
+                value: "{{ k8s_feature_gates }}"
+          {% endif %}
+          {% if k8s_log_verbosity != "" %}
+              - name: v
+                value: "{{ k8s_log_verbosity }}"
+          {% endif %}
+          {% endif %}
+          ---
+          apiVersion: kubelet.config.k8s.io/v1beta1
+          kind: KubeletConfiguration
+          {% if k8s_feature_gates != "" %}
+          featureGates:
+          {% for gate in k8s_feature_gates.split(',') if gate.strip() and '=' in gate %}
+            {{ gate.split('=')[0] }}: {{ gate.split('=')[1] }}
+          {% endfor %}
+          {% endif %}
+          {% if k8s_log_verbosity != "" %}
+          logging:
+            verbosity: {{ k8s_log_verbosity }}
+          {% endif %}
+      when: k8s_feature_gates != "" or k8s_log_verbosity != ""
+
     - name: Initialize the Kubernetes cluster using kubeadm
       ansible.builtin.command:
         cmd: kubeadm init --pod-network-cidr="{{ network }}"
+      when: k8s_feature_gates == "" and k8s_log_verbosity == ""
+
+    - name: Initialize the Kubernetes cluster using kubeadm (with feature gates and/or log verbosity)
+      ansible.builtin.command:
+        cmd: kubeadm init --config /root/kubeadm-config.yaml
+      when: k8s_feature_gates != "" or k8s_log_verbosity != ""
 
     - name: Setup kubeconfig for vagrant user
       ansible.builtin.command: "{{ item }}"

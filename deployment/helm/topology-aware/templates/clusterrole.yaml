@@ -30,3 +30,21 @@ rules:
   - list
   - update
   - delete
+{{- if (.Values.config.dra).enabled }}
+- apiGroups:
+  - resource.k8s.io
+  resources:
+  - resourceslices
+  verbs:
+  - list
+  - watch
+  - create
+  - update
+  - delete
+- apiGroups:
+  - resource.k8s.io
+  resources:
+  - resourceclaims
+  verbs:
+  - get
+{{- end }}

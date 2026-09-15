@@ -21,9 +21,9 @@ import (
 	"sort"
 	"strings"
 
-	system "github.com/containers/nri-plugins/pkg/sysfs"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	"github.com/containers/nri-plugins/pkg/topology"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 // cpuTreeNode is a node in the CPU tree.
@@ -32,8 +32,7 @@ type cpuTreeNode struct {
 	level    CPUTopologyLevel
 	parent   *cpuTreeNode
 	children []*cpuTreeNode
-	cpus     cpuset.CPUSet // union of CPUs of child nodes
-	sys      system.System
+	cpus     *libcpu.CpuMask // union of CPUs of child nodes
 }
 
 // cpuTreeNodeAttributes contains various attributes of a CPU tree
@@ -46,8 +45,8 @@ type cpuTreeNode struct {
 type cpuTreeNodeAttributes struct {
 	t                *cpuTreeNode
 	depth            int
-	currentCpus      cpuset.CPUSet
-	freeCpus         cpuset.CPUSet
+	currentCpus      *libcpu.CpuMask
+	freeCpus         *libcpu.CpuMask
 	currentCpuCount  int
 	currentCpuCounts []int
 	freeCpuCount     int
@@ -59,7 +58,7 @@ type cpuTreeNodeAttributes struct {
 type cpuTreeAllocator struct {
 	options           cpuTreeAllocatorOptions
 	root              *cpuTreeNode
-	cacheCloseCpuSets map[string][]cpuset.CPUSet
+	cacheCloseCpuSets map[string][]*libcpu.CpuMask
 }
 
 // cpuTreeAllocatorOptions contains parameters for the CPU allocator
@@ -72,11 +71,9 @@ type cpuTreeAllocatorOptions struct {
 	preferSpreadOnPhysicalCores bool
 	preferCloseToDevices        []string
 	preferFarFromDevices        []string
-	virtDevCpusets              map[string][]cpuset.CPUSet
-	deviceUpdateOnEveryCpu      func(cpuset.CPUSet)
+	virtDevCpusets              map[string][]*libcpu.CpuMask
+	deviceUpdateOnEveryCpu      func(*libcpu.CpuMask)
 }
-
-var emptyCpuSet = cpuset.New()
 
 // String returns string representation of a CPU tree node.
 func (t *cpuTreeNode) String() string {
@@ -101,13 +98,6 @@ func (t *cpuTreeNode) PrettyPrint() string {
 	return strings.Join(lines, "\n")
 }
 
-func (t *cpuTreeNode) system() system.System {
-	if t.sys != nil || t.parent == nil {
-		return t.sys
-	}
-	return t.parent.system()
-}
-
 // String returns cpuTreeNodeAttributes as a string.
 func (tna cpuTreeNodeAttributes) String() string {
 	return fmt.Sprintf("%s{%d,%v,%d,%d}", tna.t.name, tna.depth,
@@ -119,7 +109,7 @@ func (tna cpuTreeNodeAttributes) String() string {
 func NewCpuTree(name string) *cpuTreeNode {
 	return &cpuTreeNode{
 		name: name,
-		cpus: cpuset.New(),
+		cpus: libcpu.NewCpuMask(),
 	}
 }
 
@@ -167,7 +157,7 @@ func (t *cpuTreeNode) AddChild(child *cpuTreeNode) {
 }
 
 // AddCpus adds CPUs to a CPU tree node and all its parents.
-func (t *cpuTreeNode) AddCpus(cpus cpuset.CPUSet) {
+func (t *cpuTreeNode) AddCpus(cpus *libcpu.CpuMask) {
 	t.cpus = t.cpus.Union(cpus)
 	if t.parent != nil {
 		t.parent.AddCpus(cpus)
@@ -175,7 +165,7 @@ func (t *cpuTreeNode) AddCpus(cpus cpuset.CPUSet) {
 }
 
 // Cpus returns CPUs of a CPU tree node.
-func (t *cpuTreeNode) Cpus() cpuset.CPUSet {
+func (t *cpuTreeNode) Cpus() *libcpu.CpuMask {
 	return t.cpus
 }
 
@@ -245,7 +235,7 @@ func (t *cpuTreeNode) DepthFirstWalk(handler func(*cpuTreeNode) error) error {
 // CpuLocations returns a slice where each element contains names of
 // topology elements over which a set of CPUs spans. Example:
 // systemNode.CpuLocations(cpuset:0,99) = [["system"],["p0", "p1"], ["p0d0", "p1d0"], ...]
-func (t *cpuTreeNode) CpuLocations(cpus cpuset.CPUSet) [][]string {
+func (t *cpuTreeNode) CpuLocations(cpus *libcpu.CpuMask) [][]string {
 	tLeafDepth := t.LeafDepth()
 	names := make([][]string, tLeafDepth+1)
 	if err := t.DepthFirstWalk(func(tn *cpuTreeNode) error {
@@ -261,56 +251,60 @@ func (t *cpuTreeNode) CpuLocations(cpus cpuset.CPUSet) [][]string {
 	return names
 }
 
-// NewCpuTreeFromSystem returns the root node of the topology tree
-// constructed from the given system.
-func NewCpuTreeFromSystem(sys system.System) *cpuTreeNode {
+// NewCpuTreeFromMachine returns the root node of the topology tree constructed
+// from the given machine.
+func NewCpuTreeFromMachine(m *hardware.Machine) *cpuTreeNode {
 	// TODO: split deep nested loops into functions
+	x := m.TopologyIndex()
 	sysTree := NewCpuTree("system")
-	sysTree.sys = sys
 	sysTree.level = CPUTopologyLevelSystem
-	for _, packageID := range sys.PackageIDs() {
+	for _, packageID := range x.PackageIDs() {
 		packageTree := NewCpuTree(fmt.Sprintf("p%d", packageID))
 		packageTree.level = CPUTopologyLevelPackage
-		cpuPackage := sys.Package(packageID)
 		sysTree.AddChild(packageTree)
-		for _, dieID := range cpuPackage.DieIDs() {
-			dieTree := NewCpuTree(fmt.Sprintf("%sd%d", packageTree.name, dieID))
+		for _, dieID := range x.DieIDs(packageID) {
+			dieTree := NewCpuTree(fmt.Sprintf("%sd%d", packageTree.name, dieID.Die))
 			dieTree.level = CPUTopologyLevelDie
 			packageTree.AddChild(dieTree)
-			for _, nodeID := range cpuPackage.DieNodeIDs(dieID) {
+			dieCpus := x.DieCPUs(dieID)
+			for _, nodeID := range slices.Sorted(
+				slices.Values(hardware.MemoryNodesFor(m, dieCpus))) {
 				nodeTree := NewCpuTree(fmt.Sprintf("%sn%d", dieTree.name, nodeID))
 				nodeTree.level = CPUTopologyLevelNuma
 				dieTree.AddChild(nodeTree)
-				node := sys.Node(nodeID)
 
 				// Find all level 2 caches (l2c) shared by CPUs of this node.
-				l2cs := map[*system.Cache]struct{}{}
-				for _, cpuID := range node.CPUSet().List() {
-					for _, cache := range sys.CPU(cpuID).GetCachesByLevel(2) {
-						l2cs[cache] = struct{}{}
+				l2cs := []*hardware.Cache{}
+				for _, cpuID := range m.MemoryNode(nodeID).CPUs().List() {
+					for _, cache := range m.CPU(cpuID).Caches() {
+						if cache.Level() == 2 && !slices.Contains(l2cs, cache) {
+							l2cs = append(l2cs, cache)
+						}
 					}
 				}
+				slices.SortFunc(l2cs, func(a, b *hardware.Cache) int {
+					return a.ID() - b.ID()
+				})
 
-				for cache := range l2cs {
+				for _, cache := range l2cs {
 					l2cTree := NewCpuTree(fmt.Sprintf("%s$%d", nodeTree.name, cache.ID()))
 					l2cTree.level = CPUTopologyLevelL2Cache
 					nodeTree.AddChild(l2cTree)
 
 					threadsSeen := map[int]struct{}{}
-					for _, cpuID := range cache.SharedCPUSet().List() {
+					for _, cpuID := range cache.CPUs().List() {
 						if _, alreadySeen := threadsSeen[cpuID]; alreadySeen {
 							continue
 						}
-						cpu := sys.CPU(cpuID)
 						coreTree := NewCpuTree(fmt.Sprintf("%scpu%d", nodeTree.name, cpuID))
 						coreTree.level = CPUTopologyLevelCore
 						l2cTree.AddChild(coreTree)
-						for _, threadID := range cpu.ThreadCPUSet().List() {
+						for _, threadID := range m.CPU(cpuID).Threads().List() {
 							threadsSeen[threadID] = struct{}{}
 							threadTree := NewCpuTree(fmt.Sprintf("%st%d", coreTree.name, threadID))
 							threadTree.level = CPUTopologyLevelThread
 							coreTree.AddChild(threadTree)
-							threadTree.AddCpus(cpuset.New(threadID))
+							threadTree.AddCpus(libcpu.NewCpuMask(threadID))
 						}
 					}
 				}
@@ -327,7 +321,7 @@ func NewCpuTreeFromSystem(sys system.System) *cpuTreeNode {
 // - freeCpus is the set of CPUs that can be allocated in coming operation
 // - filter(tna) returns false if the node can be ignored
 func (t *cpuTreeNode) ToAttributedSlice(
-	currentCpus, freeCpus cpuset.CPUSet,
+	currentCpus, freeCpus *libcpu.CpuMask,
 	filter func(*cpuTreeNodeAttributes) bool) []cpuTreeNodeAttributes {
 	tnas := []cpuTreeNodeAttributes{}
 	currentCpuCounts := []int{}
@@ -337,7 +331,7 @@ func (t *cpuTreeNode) ToAttributedSlice(
 }
 
 func (t *cpuTreeNode) toAttributedSlice(
-	currentCpus, freeCpus cpuset.CPUSet,
+	currentCpus, freeCpus *libcpu.CpuMask,
 	filter func(*cpuTreeNodeAttributes) bool,
 	tnas *[]cpuTreeNodeAttributes,
 	depth int,
@@ -399,7 +393,7 @@ func (t *cpuTreeNode) SplitLevel(splitLevel CPUTopologyLevel, cpuClassifier func
 		tn.children = make([]*cpuTreeNode, 0, len(classCpus))
 		// Add new child corresponding each class.
 		for class, cpus := range classCpus {
-			cpuMask := cpuset.New(cpus...)
+			cpuMask := libcpu.NewCpuMask(cpus...)
 			newNode := NewCpuTree(fmt.Sprintf("%sclass%d", tn.name, class))
 			tn.AddChild(newNode)
 			newNode.cpus = tn.cpus.Intersection(cpuMask)
@@ -444,7 +438,7 @@ func (t *cpuTreeNode) NewAllocator(options cpuTreeAllocatorOptions) *cpuTreeAllo
 		options: options,
 	}
 	if options.virtDevCpusets == nil {
-		ta.cacheCloseCpuSets = map[string][]cpuset.CPUSet{}
+		ta.cacheCloseCpuSets = map[string][]*libcpu.CpuMask{}
 	} else {
 		ta.cacheCloseCpuSets = options.virtDevCpusets
 	}
@@ -551,7 +545,7 @@ func (ta *cpuTreeAllocator) sorterRelease(tnas []cpuTreeNodeAttributes) func(int
 //     these CPUs.
 //   - removeFromCpus contains CPUs in currentCpus set from which
 //     abs(delta) CPUs can be freed.
-func (ta *cpuTreeAllocator) ResizeCpus(currentCpus, freeCpus cpuset.CPUSet, delta int) (cpuset.CPUSet, cpuset.CPUSet, error) {
+func (ta *cpuTreeAllocator) ResizeCpus(currentCpus, freeCpus *libcpu.CpuMask, delta int) (*libcpu.CpuMask, *libcpu.CpuMask, error) {
 	resizers := []cpuResizerFunc{
 		ta.resizeCpusOnlyIfNecessary,
 		ta.resizeCpusWithDynamicDeviceHints,
@@ -562,9 +556,9 @@ func (ta *cpuTreeAllocator) ResizeCpus(currentCpus, freeCpus cpuset.CPUSet, delt
 	return ta.nextCpuResizer(resizers, currentCpus, freeCpus, delta)
 }
 
-type cpuResizerFunc func(resizers []cpuResizerFunc, currentCpus, freeCpus cpuset.CPUSet, delta int) (cpuset.CPUSet, cpuset.CPUSet, error)
+type cpuResizerFunc func(resizers []cpuResizerFunc, currentCpus, freeCpus *libcpu.CpuMask, delta int) (*libcpu.CpuMask, *libcpu.CpuMask, error)
 
-func (ta *cpuTreeAllocator) nextCpuResizer(resizers []cpuResizerFunc, currentCpus, freeCpus cpuset.CPUSet, delta int) (cpuset.CPUSet, cpuset.CPUSet, error) {
+func (ta *cpuTreeAllocator) nextCpuResizer(resizers []cpuResizerFunc, currentCpus, freeCpus *libcpu.CpuMask, delta int) (*libcpu.CpuMask, *libcpu.CpuMask, error) {
 	if len(resizers) == 0 {
 		return freeCpus, currentCpus, fmt.Errorf("internal error: a CPU resizer consulted next resizer but there was no one left")
 	}
@@ -577,30 +571,30 @@ func (ta *cpuTreeAllocator) nextCpuResizer(resizers []cpuResizerFunc, currentCpu
 // resizeCpusNow does not call next resizer. Instead it keeps all CPU
 // allocations from freeCpus and CPU releases from currentCpus equally
 // good. This is the terminal block of resizers chain.
-func (ta *cpuTreeAllocator) resizeCpusNow(resizers []cpuResizerFunc, currentCpus, freeCpus cpuset.CPUSet, delta int) (cpuset.CPUSet, cpuset.CPUSet, error) {
+func (ta *cpuTreeAllocator) resizeCpusNow(resizers []cpuResizerFunc, currentCpus, freeCpus *libcpu.CpuMask, delta int) (*libcpu.CpuMask, *libcpu.CpuMask, error) {
 	return freeCpus, currentCpus, nil
 }
 
 // resizeCpusOnlyIfNecessary is the fast path for making trivial
 // reservations and to fail if resizing is not possible.
-func (ta *cpuTreeAllocator) resizeCpusOnlyIfNecessary(resizers []cpuResizerFunc, currentCpus, freeCpus cpuset.CPUSet, delta int) (cpuset.CPUSet, cpuset.CPUSet, error) {
+func (ta *cpuTreeAllocator) resizeCpusOnlyIfNecessary(resizers []cpuResizerFunc, currentCpus, freeCpus *libcpu.CpuMask, delta int) (*libcpu.CpuMask, *libcpu.CpuMask, error) {
 	switch {
 	case delta == 0:
 		// Nothing to do.
-		return emptyCpuSet, emptyCpuSet, nil
+		return libcpu.NewCpuMask(), libcpu.NewCpuMask(), nil
 	case delta > 0:
 		if freeCpus.Size() < delta {
-			return freeCpus, emptyCpuSet, fmt.Errorf("not enough free CPUs (%d) to resize current CPU set from %d to %d CPUs", freeCpus.Size(), currentCpus.Size(), currentCpus.Size()+delta)
+			return freeCpus, libcpu.NewCpuMask(), fmt.Errorf("not enough free CPUs (%d) to resize current CPU set from %d to %d CPUs", freeCpus.Size(), currentCpus.Size(), currentCpus.Size()+delta)
 		} else if freeCpus.Size() == delta {
 			// Allocate all the remaining free CPUs.
-			return freeCpus, emptyCpuSet, nil
+			return freeCpus, libcpu.NewCpuMask(), nil
 		}
 	case delta < 0:
 		if currentCpus.Size() < -delta {
-			return emptyCpuSet, currentCpus, fmt.Errorf("not enough current CPUs (%d) to release %d CPUs", currentCpus.Size(), -delta)
+			return libcpu.NewCpuMask(), currentCpus, fmt.Errorf("not enough current CPUs (%d) to release %d CPUs", currentCpus.Size(), -delta)
 		} else if currentCpus.Size() == -delta {
 			// Free all allocated CPUs.
-			return emptyCpuSet, currentCpus, nil
+			return libcpu.NewCpuMask(), currentCpus, nil
 		}
 	}
 	return ta.nextCpuResizer(resizers, currentCpus, freeCpus, delta)
@@ -609,7 +603,7 @@ func (ta *cpuTreeAllocator) resizeCpusOnlyIfNecessary(resizers []cpuResizerFunc,
 // resizeCpusWithDynamicDeviceHints handles allocating CPUs in
 // scenarios where each selected CPU may change the set of CPUs are
 // good to be selected next.
-func (ta *cpuTreeAllocator) resizeCpusWithDynamicDeviceHints(resizers []cpuResizerFunc, currentCpus, freeCpus cpuset.CPUSet, delta int) (cpuset.CPUSet, cpuset.CPUSet, error) {
+func (ta *cpuTreeAllocator) resizeCpusWithDynamicDeviceHints(resizers []cpuResizerFunc, currentCpus, freeCpus *libcpu.CpuMask, delta int) (*libcpu.CpuMask, *libcpu.CpuMask, error) {
 	// If the deviceUpdateOnEveryCpu callback is set, call it
 	// after each CPU allocation to update the state of virtual
 	// devices. If not set or if CPUs are released instead of
@@ -632,14 +626,14 @@ func (ta *cpuTreeAllocator) resizeCpusWithDynamicDeviceHints(resizers []cpuResiz
 	if err != nil || addFrom.Size() < delta {
 		return addFrom, removeFrom, err
 	}
-	addedCpus := cpuset.New()
+	addedCpus := libcpu.NewCpuMask()
 	for {
 		addedCpu := addFrom.List()[0]
-		addedCpus = addedCpus.Union(cpuset.New(addedCpu))
+		addedCpus = addedCpus.Union(libcpu.NewCpuMask(addedCpu))
 		if addedCpus.Size() >= delta {
 			break
 		}
-		currentCpus = currentCpus.Union(cpuset.New(addedCpu))
+		currentCpus = currentCpus.Union(libcpu.NewCpuMask(addedCpu))
 		freeCpus = freeCpus.Difference(currentCpus)
 		ta.options.deviceUpdateOnEveryCpu(currentCpus)
 		addFrom, removeFrom, err = ta.nextCpuResizer(resizers, currentCpus, freeCpus, 1)
@@ -653,11 +647,11 @@ func (ta *cpuTreeAllocator) resizeCpusWithDynamicDeviceHints(resizers []cpuResiz
 // resizeCpusWithDevices prefers allocating CPUs from those freeCpus
 // that are topologically close to preferred devices, and releasing
 // those currentCpus that are not.
-func (ta *cpuTreeAllocator) resizeCpusWithDevices(resizers []cpuResizerFunc, currentCpus, freeCpus cpuset.CPUSet, delta int) (cpuset.CPUSet, cpuset.CPUSet, error) {
+func (ta *cpuTreeAllocator) resizeCpusWithDevices(resizers []cpuResizerFunc, currentCpus, freeCpus *libcpu.CpuMask, delta int) (*libcpu.CpuMask, *libcpu.CpuMask, error) {
 	// allCloseCpuSets contains cpusets in the order of priority.
 	// Applying the first cpusets in it are prioritized over ones
 	// after them.
-	allCloseCpuSets := [][]cpuset.CPUSet{}
+	allCloseCpuSets := [][]*libcpu.CpuMask{}
 	for _, devPath := range ta.options.preferCloseToDevices {
 		if closeCpuSets := ta.topologyHintCpus(devPath); len(closeCpuSets) > 0 {
 			log.Debugf("  - prepare: close to %q, prefer cpusets: %v", devPath, closeCpuSets)
@@ -667,7 +661,7 @@ func (ta *cpuTreeAllocator) resizeCpusWithDevices(resizers []cpuResizerFunc, cur
 	for _, devPath := range ta.options.preferFarFromDevices {
 		for _, farCpuSet := range ta.topologyHintCpus(devPath) {
 			log.Debugf("  - prepare: far from %q, prefer cpusets: %s", devPath, freeCpus.Difference(farCpuSet))
-			allCloseCpuSets = append(allCloseCpuSets, []cpuset.CPUSet{freeCpus.Difference(farCpuSet)})
+			allCloseCpuSets = append(allCloseCpuSets, []*libcpu.CpuMask{freeCpus.Difference(farCpuSet)})
 		}
 	}
 	if len(allCloseCpuSets) == 0 {
@@ -718,13 +712,13 @@ func (ta *cpuTreeAllocator) resizeCpusWithDevices(resizers []cpuResizerFunc, cur
 			return currentCpuHints[leastHintedCpus[i]] < currentCpuHints[leastHintedCpus[j]]
 		})
 		maxHints := currentCpuHints[leastHintedCpus[-delta]]
-		currentToFreeForSure := cpuset.New()
-		currentToFreeMaybe := cpuset.New()
+		currentToFreeForSure := libcpu.NewCpuMask()
+		currentToFreeMaybe := libcpu.NewCpuMask()
 		for i := 0; i < len(leastHintedCpus) && currentCpuHints[leastHintedCpus[i]] <= maxHints; i++ {
 			if currentCpuHints[leastHintedCpus[i]] < maxHints {
-				currentToFreeForSure = currentToFreeForSure.Union(cpuset.New(leastHintedCpus[i]))
+				currentToFreeForSure = currentToFreeForSure.Union(libcpu.NewCpuMask(leastHintedCpus[i]))
 			} else {
-				currentToFreeMaybe = currentToFreeMaybe.Union(cpuset.New(leastHintedCpus[i]))
+				currentToFreeMaybe = currentToFreeMaybe.Union(libcpu.NewCpuMask(leastHintedCpus[i]))
 			}
 		}
 		remainingDelta := delta + currentToFreeForSure.Size()
@@ -738,7 +732,7 @@ func (ta *cpuTreeAllocator) resizeCpusWithDevices(resizers []cpuResizerFunc, cur
 			if currentToFreeForSure.Size() >= -delta {
 				break
 			}
-			currentToFreeForSure = currentToFreeForSure.Union(cpuset.New(cpu))
+			currentToFreeForSure = currentToFreeForSure.Union(libcpu.NewCpuMask(cpu))
 		}
 		return freeCpus, currentToFreeForSure, err
 	}
@@ -746,23 +740,23 @@ func (ta *cpuTreeAllocator) resizeCpusWithDevices(resizers []cpuResizerFunc, cur
 }
 
 // Fetch cached topology hint, return error only once per bad dev
-func (ta *cpuTreeAllocator) topologyHintCpus(dev string) []cpuset.CPUSet {
+func (ta *cpuTreeAllocator) topologyHintCpus(dev string) []*libcpu.CpuMask {
 	if closeCpuSets, ok := ta.cacheCloseCpuSets[dev]; ok {
 		return closeCpuSets
 	}
 	topologyHints, err := topology.NewTopologyHints(dev)
 	if err != nil {
 		log.Errorf("failed to find topology of device %q: %v", dev, err)
-		ta.cacheCloseCpuSets[dev] = []cpuset.CPUSet{}
+		ta.cacheCloseCpuSets[dev] = []*libcpu.CpuMask{}
 	} else {
 		for _, topologyHint := range topologyHints {
-			ta.cacheCloseCpuSets[dev] = append(ta.cacheCloseCpuSets[dev], cpuset.MustParse(topologyHint.CPUs))
+			ta.cacheCloseCpuSets[dev] = append(ta.cacheCloseCpuSets[dev], libcpu.MustParseCpuMask(topologyHint.CPUs))
 		}
 	}
 	return ta.cacheCloseCpuSets[dev]
 }
 
-func (ta *cpuTreeAllocator) resizeCpusOneAtATime(resizers []cpuResizerFunc, currentCpus, freeCpus cpuset.CPUSet, delta int) (cpuset.CPUSet, cpuset.CPUSet, error) {
+func (ta *cpuTreeAllocator) resizeCpusOneAtATime(resizers []cpuResizerFunc, currentCpus, freeCpus *libcpu.CpuMask, delta int) (*libcpu.CpuMask, *libcpu.CpuMask, error) {
 	if delta > 0 {
 		addFromSuperset, removeFromSuperset, err := ta.nextCpuResizer(resizers, currentCpus, freeCpus, delta)
 		if !ta.options.preferSpreadOnPhysicalCores || addFromSuperset.Size() == delta {
@@ -774,7 +768,7 @@ func (ta *cpuTreeAllocator) resizeCpusOneAtATime(resizers []cpuResizerFunc, curr
 		// of these does not result in equally good
 		// result. Therefore, in this case, construct addFrom
 		// set by adding one CPU at a time.
-		addFrom := cpuset.New()
+		addFrom := libcpu.NewCpuMask()
 		for n := range delta {
 			addSingleFrom, _, err := ta.nextCpuResizer(resizers, currentCpus, freeCpus, 1)
 			if err != nil {
@@ -798,8 +792,8 @@ func (ta *cpuTreeAllocator) resizeCpusOneAtATime(resizers []cpuResizerFunc, curr
 	// In multi-CPU removal, remove CPUs one by one instead of
 	// trying to find a single topology element from which all of
 	// them could be removed.
-	removeFrom := cpuset.New()
-	addFrom := cpuset.New()
+	removeFrom := libcpu.NewCpuMask()
+	addFrom := libcpu.NewCpuMask()
 	for n := 0; n < -delta; n++ {
 		_, removeSingleFrom, err := ta.nextCpuResizer(resizers, currentCpus, freeCpus, -1)
 		if err != nil {
@@ -824,7 +818,7 @@ func (ta *cpuTreeAllocator) resizeCpusOneAtATime(resizers []cpuResizerFunc, curr
 	return addFrom, removeFrom, nil
 }
 
-func (ta *cpuTreeAllocator) resizeCpusMaxLocalSet(resizers []cpuResizerFunc, currentCpus, freeCpus cpuset.CPUSet, delta int) (cpuset.CPUSet, cpuset.CPUSet, error) {
+func (ta *cpuTreeAllocator) resizeCpusMaxLocalSet(resizers []cpuResizerFunc, currentCpus, freeCpus *libcpu.CpuMask, delta int) (*libcpu.CpuMask, *libcpu.CpuMask, error) {
 	tnas := ta.root.ToAttributedSlice(currentCpus, freeCpus,
 		func(tna *cpuTreeNodeAttributes) bool {
 			// filter out branches with insufficient cpus

@@ -17,7 +17,7 @@
 // Intel Priority Core Turbo state implied by a list of user-facing
 // CPU class definitions.
 //
-// Policies talk to a single *Handler, constructed with New(sys).
+// Policies talk to a single *Handler, constructed with New(machine).
 // Configure(spec) installs (or replaces) the class set; UseClass
 // pins given CPUs to a named class; Commit() flushes deferred
 // per-CPU sysfs writes; Hints() returns placement preferences a
@@ -25,21 +25,28 @@
 package cpuclass
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 
 	policyapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/cpufreq"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/cpuidle"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/pct"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/types"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass/internal/uncorefreq"
-	"github.com/containers/nri-plugins/pkg/sysfs"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 var log = logger.NewLogger("cpuclass")
+
+// ErrAllocatorInactive is returned by AccountHpCpus when the PCT allocator
+// has not been configured yet. Callers that tolerate a deferred Configure()
+// (e.g. plugin.Start with an inactive allocator) should treat this as a
+// warn-and-continue condition rather than a fatal error.
+var ErrAllocatorInactive = errors.New("cpuclass: pct allocator not active")
 
 // AllocationIntent describes an upcoming CPU allocation for which
 // the caller wants placement preferences.
@@ -65,18 +72,23 @@ type ConfigSpec struct {
 	TurboDomain string
 	// Allowed bounds every cpuclass operation. CPUs outside this
 	// set are silently dropped by Configure, UseClass and Hints.
-	Allowed cpuset.CPUSet
+	Allowed *libcpu.CpuMask
 }
 
 // Handler is the sole cpuclass entry point for policy code. It owns
 // construction and configuration of the per-technology allocators
 // (cpufreq, pct) and writers (cpufreq, cpuidle, uncorefreq).
 type Handler struct {
-	sys     sysfs.System
-	allowed cpuset.CPUSet
+	machine *hardware.Machine
+	allowed *libcpu.CpuMask
 
 	cpufreq *cpufreq.Allocator
 	pct     *pct.Allocator
+
+	// classes is the last-applied cpuClass list. Updated on every
+	// Configure() call. Used by DRADevices to enumerate published classes.
+	// Caller-owned slice; not deep-copied (consistent with pct.Configure behavior).
+	classes []*policyapi.CPUClass
 
 	// defs maps synthetic class name -> resolved class definition.
 	// Populated by SetClassDef calls from the cpufreq allocator.
@@ -98,9 +110,9 @@ type Handler struct {
 // New constructs a Handler with both internal allocators (cpufreq
 // and pct) ready in a "no configuration applied" state. Configure
 // must be called before the handler is usable.
-func New(sys sysfs.System) (*Handler, error) {
+func New(m *hardware.Machine) (*Handler, error) {
 	h := &Handler{
-		sys:          sys,
+		machine:      m,
 		defs:         map[string]types.ClassDef{},
 		cpuClass:     map[int]string{},
 		dirtyCPUs:    map[int]bool{},
@@ -108,11 +120,11 @@ func New(sys sysfs.System) (*Handler, error) {
 		idleWriter:   cpuidle.NewWriter(cpuidle.Hooks{}),
 		uncoreWriter: uncorefreq.NewWriter(uncorefreq.Hooks{}),
 	}
-	freq, err := cpufreq.New(sys, h)
+	freq, err := cpufreq.New(m, h)
 	if err != nil {
 		return nil, fmt.Errorf("cpuclass: failed to create cpufreq allocator: %w", err)
 	}
-	pctA, err := pct.NewAllocator(sys)
+	pctA, err := pct.NewAllocator(m)
 	if err != nil {
 		return nil, fmt.Errorf("cpuclass: failed to create pct allocator: %w", err)
 	}
@@ -126,7 +138,7 @@ func New(sys sysfs.System) (*Handler, error) {
 // node, given that 'held' lists CPUs already consumed by some
 // balloon belonging to any other cpuClass. Returns 0 if PCT is
 // inactive or the class has no PCT plan.
-func (h *Handler) PctFreeClassCapacity(className string, held cpuset.CPUSet) int {
+func (h *Handler) PctFreeClassCapacity(className string, held *libcpu.CpuMask) int {
 	if h == nil || h.pct == nil {
 		return 0
 	}
@@ -136,6 +148,80 @@ func (h *Handler) PctFreeClassCapacity(className string, held cpuset.CPUSet) int
 // PctActive reports whether PCT is in effect on this node.
 func (h *Handler) PctActive() bool {
 	return h != nil && h.pct != nil && h.pct.Active()
+}
+
+// PickHpCpus selects n HP-eligible CPUs from the punit identified by
+// (pkgID, punitID), excluding CPUs in held and those already tracked
+// in hpUsed or hpDRAUsed. Delegates to the PCT allocator. Returns an
+// error when the handler or its PCT allocator is nil, or when the
+// underlying pick fails (inactive allocator, punit not found, or
+// insufficient HP capacity).
+func (h *Handler) PickHpCpus(pkgID, punitID, n int, held *libcpu.CpuMask) (*libcpu.CpuMask, error) {
+	if h == nil || h.pct == nil {
+		return libcpu.NewCpuMask(), fmt.Errorf("cpuclass: PickHpCpus: pct allocator not initialized")
+	}
+	return h.pct.PickHpCpus(pkgID, punitID, n, held)
+}
+
+// ReleaseHpCpus removes cpus from DRA HP accounting on the punit
+// identified by (pkgID, punitID). Delegates to the PCT allocator.
+// No-op when the handler or its PCT allocator is nil, or when the
+// punit is unknown (idempotent).
+func (h *Handler) ReleaseHpCpus(pkgID, punitID int, cpus *libcpu.CpuMask) {
+	if h == nil || h.pct == nil {
+		return
+	}
+	h.pct.ReleaseHpCpus(pkgID, punitID, cpus)
+}
+
+// AccountHpCpus records cpus as DRA HP-held on the punit identified
+// by (pkgID, punitID). Used during restart reconciliation to rebuild
+// HP accounting from persisted claim state without re-allocating CPUs.
+// Delegates to the PCT allocator. Returns an error when the handler
+// or its PCT allocator is nil, or when accounting fails (inactive
+// allocator, punit not found, or HP-ineligible punit).
+func (h *Handler) AccountHpCpus(pkgID, punitID int, cpus *libcpu.CpuMask) error {
+	if h == nil || h.pct == nil {
+		return fmt.Errorf("cpuclass: AccountHpCpus: pct allocator not initialized: %w", ErrAllocatorInactive)
+	}
+	if !h.pct.Active() {
+		return fmt.Errorf("cpuclass: AccountHpCpus: pct allocator not active: %w", ErrAllocatorInactive)
+	}
+	return h.pct.AccountHpCpus(pkgID, punitID, cpus)
+}
+
+// IsHPClass reports whether className is currently classified as PCT
+// high priority. Delegates to the PCT allocator. Returns false when
+// the handler or its PCT allocator is nil, or when the allocator is
+// inactive.
+func (h *Handler) IsHPClass(className string) bool {
+	if h == nil || h.pct == nil {
+		return false
+	}
+	return h.pct.IsHPClass(className)
+}
+
+// ClassForCPU returns the synthetic class name currently assigned to cpu by
+// the most recent UseClass/AssignCPUs call (as tracked in h.cpuClass), or ""
+// if cpu is unmanaged or explicitly assigned to no class. Primarily useful
+// for tests that need to verify a UseClass call actually changed (or
+// restored) a CPU's class, since Handler otherwise exposes no per-CPU class
+// query. Nil-safe.
+//
+// This is a test-only accessor kept on the exported Handler API rather than
+// behind an export_test.go shim: its only callers are cmd/plugins/topology-
+// aware/policy's tests, a different package, and Go test files are never
+// compiled into a package's importable surface across package boundaries —
+// an export_test.go in this package would be invisible there. Duplicating
+// equivalent instrumentation on the caller side (e.g. inspecting SST mock
+// state directly) would require exposing Handler's internal CLOS/class
+// mapping some other way, which is a larger change than this narrow,
+// clearly-documented read accessor.
+func (h *Handler) ClassForCPU(cpu int) string {
+	if h == nil {
+		return ""
+	}
+	return h.cpuClass[cpu]
 }
 
 // Configure (re)applies a configuration spec. Idempotent: may be
@@ -158,6 +244,10 @@ func (h *Handler) Configure(spec ConfigSpec) error {
 		return fmt.Errorf("cpuclass: pct configure: %w", err)
 	}
 
+	// h.classes is set after all fallible operations so that a partial
+	// Configure failure leaves h.classes consistent with the previously
+	// committed state (not a half-applied new config).
+	h.classes = spec.Classes
 	h.classNames = map[string]struct{}{}
 	for _, cls := range spec.Classes {
 		h.classNames[cls.Name] = struct{}{}
@@ -238,8 +328,8 @@ func (h *Handler) Commit() error {
 			firstErr = err
 		}
 	}
-	dirtyDies := uncorefreq.DiesForCpus(h.sys, h.dirtyCPUs)
-	if err := h.uncoreWriter.Enforce(h.sys, h.defs, h.cpuClass, dirtyDies); err != nil && firstErr == nil {
+	dirtyDies := uncorefreq.DiesForCpus(h.machine, h.dirtyCPUs)
+	if err := h.uncoreWriter.Enforce(h.machine, h.defs, h.cpuClass, dirtyDies); err != nil && firstErr == nil {
 		firstErr = err
 	}
 	h.dirtyCPUs = map[int]bool{}
@@ -249,7 +339,7 @@ func (h *Handler) Commit() error {
 // UseClass applies className to the given CPUs across every internal
 // allocator. An empty className means "no class". CPUs outside the
 // configured Allowed set are silently dropped.
-func (h *Handler) UseClass(className string, cpus cpuset.CPUSet) error {
+func (h *Handler) UseClass(className string, cpus *libcpu.CpuMask) error {
 	if err := h.cpufreq.UseClass(className, cpus); err != nil {
 		log.Warnf("cpuclass: cpufreq failed to apply class %q on CPUs %s: %v", className, cpus, err)
 	}
@@ -283,12 +373,12 @@ func (h *Handler) Shutdown() error {
 // candidate set constrained to the given bound. Empty candidate sets
 // are dropped; a preference is dropped only when all of its candidate
 // sets become empty. Candidate order is preserved.
-func intersectHints(hints AllocationHints, bound cpuset.CPUSet) AllocationHints {
+func intersectHints(hints AllocationHints, bound *libcpu.CpuMask) AllocationHints {
 	out := AllocationHints{}
 	clip := func(prefs []CpuPreference) []CpuPreference {
 		var res []CpuPreference
 		for _, p := range prefs {
-			sets := make([]cpuset.CPUSet, 0, len(p.Cpus))
+			sets := make([]*libcpu.CpuMask, 0, len(p.Cpus))
 			for _, c := range p.Cpus {
 				s := c.Intersection(bound)
 				if s.IsEmpty() {

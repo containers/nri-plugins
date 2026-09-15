@@ -20,24 +20,24 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
+	"github.com/containers/nri-plugins/pkg/lib/hardware"
 	. "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
-	"github.com/containers/nri-plugins/pkg/sysfs"
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
-func TestNewAllocatorWithSystemNodes(t *testing.T) {
+func TestNewAllocatorWithMachineNodes(t *testing.T) {
 	var (
 		sysRoot = "./testdata/sample2"
-		sys     sysfs.System
+		m       *hardware.Machine
 		err     error
 		a       *Allocator
 	)
 
-	sys, err = sysfs.DiscoverSystemAt(sysRoot + "/sys")
-	require.Nil(t, err, "sysfs discovery error for "+sysRoot)
-	require.NotNil(t, sys, "sysfs discovery for "+sysRoot)
+	m, err = hardware.Discover(hardware.WithRoot(sysRoot))
+	require.Nil(t, err, "hardware discovery error for "+sysRoot)
+	require.NotNil(t, m, "discovered machine for "+sysRoot)
 
-	a, err = NewAllocator(WithSystemNodes(sys))
+	a, err = NewAllocator(WithMachineNodes(m))
 	require.Nil(t, err, "allocator creation error")
 	require.NotNil(t, a, "created allocator")
 }
@@ -178,7 +178,7 @@ func TestCPUSetAffinity(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.affinity, a.CPUSetAffinity(cpuset.New(tc.cpus...)))
+			require.Equal(t, tc.affinity, a.CPUSetAffinity(libcpu.NewCpuMask(tc.cpus...)))
 		})
 	}
 }
@@ -1436,7 +1436,7 @@ func (s *testSetup) nodes(t *testing.T) []*Node {
 		var (
 			capacity  = s.capacities[id]
 			normal    = !s.movability[id]
-			closeCPUs = cpuset.New(s.closeCPUs[id]...)
+			closeCPUs = libcpu.NewCpuMask(s.closeCPUs[id]...)
 			distance  = s.distances[id]
 		)
 

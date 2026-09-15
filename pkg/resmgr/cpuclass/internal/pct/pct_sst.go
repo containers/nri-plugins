@@ -17,7 +17,7 @@ package pct
 import (
 	"os"
 
-	"github.com/containers/nri-plugins/pkg/utils/cpuset"
+	libcpu "github.com/containers/nri-plugins/pkg/lib/cpu"
 )
 
 // pctClosConfig describes one CLOS configuration that the
@@ -45,7 +45,7 @@ type pctClosAssoc struct {
 type pctPunit struct {
 	PkgID     int
 	PunitID   int
-	CPUs      cpuset.CPUSet
+	CPUs      *libcpu.CpuMask
 	MaxHpCpus int
 	// GuaranteedHpCpus is the count of HP CPUs on this punit that
 	// can simultaneously sustain the highest turbo frequency the

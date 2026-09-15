@@ -1,0 +1,12 @@
+{{- if (.Values.config.dra).enabled }}
+apiVersion: resource.k8s.io/v1
+kind: DeviceClass
+metadata:
+  name: nri.topology-aware.cpu
+  labels:
+    {{- include "nri-plugin.labels" . | nindent 4 }}
+spec:
+  selectors:
+    - cel:
+        expression: device.driver == "nri.topology-aware.cpu"
+{{- end }}

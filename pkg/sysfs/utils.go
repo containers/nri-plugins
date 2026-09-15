@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/containers/nri-plugins/pkg/utils"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
 )
@@ -261,37 +262,9 @@ func CPUSetFromIDSet(s idset.IDSet) cpuset.CPUSet {
 	return cpuset.New(s.Members()...)
 }
 
-// GetMemoryCapacity parses memory capacity from /proc/meminfo (mimicking cAdvisor).
+// GetMemoryCapacity parses memory capacity from /proc/meminfo (mimicking
+// cAdvisor). It lives in pkg/utils now; this is kept so that this package's
+// interface is unchanged for as long as it is still here.
 func GetMemoryCapacity() int64 {
-	var (
-		data []byte
-		err  error
-		capa int64
-	)
-
-	if data, err = os.ReadFile("/proc/meminfo"); err != nil {
-		return -1
-	}
-
-	for line := range strings.SplitSeq(string(data), "\n") {
-		keyval := strings.Split(line, ":")
-		if len(keyval) != 2 || keyval[0] != "MemTotal" {
-			continue
-		}
-
-		valunit := strings.Split(strings.TrimSpace(keyval[1]), " ")
-		if len(valunit) != 2 || valunit[1] != "kB" {
-			return -1
-		}
-
-		capa, err = strconv.ParseInt(valunit[0], 10, 64)
-		if err != nil {
-			return -1
-		}
-
-		capa *= 1024
-		break
-	}
-
-	return capa
+	return utils.GetMemoryCapacity()
 }
