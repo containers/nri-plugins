@@ -131,10 +131,10 @@ prepare_worktree() {
     esac
 
     if [ ! -e "$CLONED_REPO" ]; then
-        if ! git clone "$REMOTE_REPO" "$LOCAL_REPO"; then
+        if ! git clone "$REMOTE_REPO" "$CLONED_REPO"; then
             fatal "failed to clone $REMOTE_REPO to $CLONED_REPO"
         fi
-        must-cd "$LOCAL_REPO"
+        must-cd "$CLONED_REPO"
     else
         must-cd "$CLONED_REPO"
         if ! git remote -v | grep origin | grep -q "$REMOTE_REPO"; then
@@ -167,8 +167,9 @@ prepare_worktree() {
 }
 
 prepare_result_dir() {
+    # .txt, so that a browser shows the log instead of downloading it.
     local dir="$RESULT_DIR"
-    local log="$dir/${SELF##*/}.log"
+    local log="$dir/${SELF##*/}.log.txt"
 
     info "creating result dir $dir..."
     must-mkdir "$dir" "result"
@@ -202,9 +203,9 @@ run_e2e_tests() {
     info "running e2e tests ${E2E_TESTS:-with the default test set}..."
     must-cd "$WORKTREE"
     if [ -n "$E2E_TESTS" ]; then
-        make SKIP_LICENSES=1 k8scri=$k8scri $minimal E2E_TESTS="$E2E_TESTS" e2e-tests
+        make SKIP_LICENSES=1 k8scri=$k8scri E2E_TESTS="$E2E_TESTS" e2e-tests
     else
-        make SKIP_LICENSES=1 k8scri=$k8scri $minimal e2e-tests
+        make SKIP_LICENSES=1 k8scri=$k8scri e2e-tests
     fi
 }
 
@@ -233,7 +234,14 @@ collect_results() {
 
     info "collecting test results..."
     must-cd "$WORKTREE"
+    # Only the results of a VM are ours to collect. The tests leave other
+    # things next to them, the merged coverage report for one, which we
+    # regenerate from the collected data anyway.
     for src in e2e-results/*; do
+        if [ ! -d "$src/$TEST_SUITE_DIR" ]; then
+            info "skipping $src, it has no $TEST_SUITE_DIR..."
+            continue
+        fi
         dst=$RESULT_DIR/${src#e2e-results/}
         must-mkdir "$dst" "result"
         must-mv "$src/$TEST_SUITE_DIR" "$dst"
@@ -250,7 +258,7 @@ cleanup_worktree() {
 
 generate_summary() {
     local summary="$RESULT_DIR/summary.txt"
-    local vm dir f test result failed
+    local suite vm dir f test result
 
     info "generating summary $summary..."
     rm -f "$summary"
@@ -259,21 +267,27 @@ generate_summary() {
         return
     fi
 
-    for vm in $RESULT_DIR/n[0-9]*-c*; do
+    # Every collected VM, whatever its topology is called. Matching the names
+    # of the topologies we happen to have would silently leave the results of
+    # a new one out of the summary, and out of the verdict of the whole run.
+    for suite in $RESULT_DIR/*/$TEST_SUITE_DIR; do
+        if [ ! -d "$suite" ]; then
+            continue
+        fi
+        vm="${suite%/$TEST_SUITE_DIR}"
         echo "${vm##*/}:" >> "$summary"
-        for dir in $(find $vm/$TEST_SUITE_DIR -name 'test[0-9]*-*' -type d); do
-            for f in  $dir/*.output; do
-                mv $f $f.txt
+        for dir in $(find $suite -name 'test[0-9]*-*' -type d); do
+            # Serve logs as text, otherwise a browser downloads them instead
+            # of showing them.
+            for f in $dir/*.output $dir/*.log; do
+                if [ -f "$f" ]; then
+                    must-mv "$f" "$f.txt"
+                fi
             done
             test="${dir##*$TEST_SUITE_DIR/}"
             result="- FAIL"
-            if [ -f "$dir/summary.txt" ]; then
-                if grep -q PASS "$dir/summary.txt"; then
-                    result="+ PASS"
-                fi
-            fi
-            if [ "$result" = "FAIL" ]; then
-                failed=true
+            if [ -f "$dir/summary.txt" ] && grep -q PASS "$dir/summary.txt"; then
+                result="+ PASS"
             fi
             echo "  $result $test"
         done | sort >> "$summary"
