@@ -28,6 +28,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/pidfile"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/control"
+	"github.com/containers/nri-plugins/pkg/resmgr/dra"
 	"github.com/containers/nri-plugins/pkg/resmgr/policy"
 	"github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/topology"
@@ -44,6 +45,8 @@ type ResourceManager interface {
 	Start() error
 	// Stop stops the resource manager.
 	Stop()
+	// RequestShutdown asks the resource manager to shut down gracefully.
+	RequestShutdown(reason string)
 	// SendEvent sends an event to be processed by the resource manager.
 	SendEvent(event any) error
 }
@@ -63,6 +66,7 @@ type resmgr struct {
 	nri     *nriPlugin      // NRI plugins, if we're running as such
 	rdt     *rdtControl     // control for RDT allocation and monitoring
 	blkio   *blkioControl   // control for block I/O prioritization and throttling
+	dra     *dra.Plugin     // DRA kubelet plugin, if DRA is enabled
 	running bool
 }
 
@@ -198,6 +202,14 @@ func (m *resmgr) start(cfg cfgapi.ResmgrConfig) error {
 		return err
 	}
 
+	if err := m.setupDRA(&mCfg.DRA); err != nil {
+		return err
+	}
+
+	if err := m.startDRA(); err != nil {
+		return err
+	}
+
 	if err := m.nri.start(); err != nil {
 		return err
 	}
@@ -226,10 +238,24 @@ func (m *resmgr) start(cfg cfgapi.ResmgrConfig) error {
 func (m *resmgr) Stop() {
 	log.Infof("shutting down...")
 
+	// Stop DRA before taking the lock, not after: stopping it waits for the
+	// kubelet requests in flight, and such a request is holding this lock.
+	m.dra.Stop()
+
 	m.Lock()
 	defer m.Unlock()
 
 	m.nri.stop()
+}
+
+// RequestShutdown asks for a graceful shutdown, for callers which have run into
+// something they cannot recover from. Stopping the agent unwinds our Start() the
+// same way a SIGTERM does, which takes us through Stop() and out. Unlike Stop(),
+// which tears down our own subsystems, this takes the whole process with it.
+func (m *resmgr) RequestShutdown(reason string) {
+	log.Infof("shutting down: %s", reason)
+
+	m.agent.Stop()
 }
 
 // setupCache creates a cache and reloads its last saved state if found.
@@ -325,6 +351,10 @@ func (m *resmgr) updateNodeExtendedResources() {
 func (m *resmgr) reconfigure(cfg cfgapi.ResmgrConfig) error {
 	apply := func(cfg cfgapi.ResmgrConfig) error {
 		mCfg := cfg.CommonConfig()
+
+		if err := m.reconfigureDRA(&mCfg.DRA); err != nil {
+			return err
+		}
 
 		if err := logger.Configure(&mCfg.Log); err != nil {
 			log.Warnf("failed to configure logger: %v", err)

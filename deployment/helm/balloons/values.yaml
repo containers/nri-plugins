@@ -16,6 +16,9 @@ config:
     nodeResourceTopology: true
     podResourceAPI: false
 
+  dra:
+    enabled: false
+
   allocatorTopologyBalancing: true
 
   balloonTypes:
