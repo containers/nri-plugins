@@ -23,6 +23,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/agent"
 	"github.com/containers/nri-plugins/pkg/healthz"
 	"github.com/containers/nri-plugins/pkg/instrumentation"
+	"github.com/containers/nri-plugins/pkg/instrumentation/coverage"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/pidfile"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
@@ -30,6 +31,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/policy"
 	"github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/topology"
+	"github.com/containers/nri-plugins/pkg/utils"
 	"sigs.k8s.io/yaml"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1"
@@ -113,6 +115,7 @@ func NewResourceManager(backend policy.Backend, agt *agent.Agent) (ResourceManag
 	}
 
 	m.setupHealthCheck()
+	m.setupCoverage()
 
 	return m, nil
 }
@@ -267,6 +270,16 @@ func (m *resmgr) setupPolicy(backend policy.Backend) error {
 func (m *resmgr) setupHealthCheck() {
 	mux := instrumentation.HTTPServer().GetMux()
 	healthz.Setup(mux)
+}
+
+// setupCoverage prepares the resource manager for serving coverage data.
+func (m *resmgr) setupCoverage() {
+	if !utils.TestAPIsEnabled() {
+		return
+	}
+
+	mux := instrumentation.HTTPServer().GetMux()
+	coverage.Setup(mux)
 }
 
 // setupControllers sets up the resource controllers.
