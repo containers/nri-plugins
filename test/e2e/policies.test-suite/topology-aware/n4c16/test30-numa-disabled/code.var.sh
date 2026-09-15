@@ -1,5 +1,9 @@
 disable-numa
 
+# Boot the node back with a NUMA capable kernel however this test ends. Every
+# test which runs on this VM afterwards depends on it.
+trap enable-numa EXIT
+
 helm-terminate
 helm_config=$(instantiate helm-config.yaml) helm-launch topology-aware
 
@@ -16,4 +20,3 @@ verify \
 delete-pods --all
 
 helm-terminate
-enable-numa
