@@ -22,3 +22,21 @@ rules:
   - list
   - update
   - delete
+{{- if .Values.config.dra.enabled }}
+- apiGroups:
+  - resource.k8s.io
+  resources:
+  - resourceslices
+  verbs:
+  - create
+  - delete
+  - list
+  - update
+  - watch
+- apiGroups:
+  - resource.k8s.io
+  resources:
+  - resourceclaims
+  verbs:
+  - get
+{{- end }}

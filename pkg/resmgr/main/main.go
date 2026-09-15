@@ -38,13 +38,11 @@ var (
 type Main struct {
 	policy policy.Backend
 	mgr    resmgr.ResourceManager
-	agt    *agent.Agent
 }
 
 func New(agt *agent.Agent, backend policy.Backend) (*Main, error) {
 	m := &Main{
 		policy: backend,
-		agt:    agt,
 	}
 
 	m.setupLoggers()
@@ -68,9 +66,9 @@ func (m *Main) Run() error {
 	}
 	defer m.stopTracing()
 
-	// Install a SIGTERM/SIGINT handler that triggers a graceful
-	// shutdown: stopping the agent makes its event loop return,
-	// which unwinds m.mgr.Start() and lets Run() exit normally.
+	// Install a SIGTERM/SIGINT handler that triggers a graceful shutdown:
+	// requesting one stops the agent, which makes its event loop return,
+	// unwinds m.mgr.Start() and lets Run() exit normally.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
@@ -78,10 +76,7 @@ func (m *Main) Run() error {
 		if !ok {
 			return
 		}
-		log.Infof("received signal %s, shutting down gracefully", sig)
-		if m.agt != nil {
-			m.agt.Stop()
-		}
+		m.mgr.RequestShutdown(fmt.Sprintf("received signal %s", sig))
 	}()
 	defer signal.Stop(sigCh)
 
