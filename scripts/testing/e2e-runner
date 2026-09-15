@@ -244,9 +244,20 @@ prepare_result_dir() {
     fi
     LOG="$log"
 
-    info "Redirecting output to log file $LOG..."
-    if ! exec &>"$LOG"; then
-        fatal "log redirection failed"
+    # Log to the file, and to the terminal as well when we have one: a run
+    # started by hand is worth watching. Started from cron there is no
+    # terminal, and printing anything would have the whole log mailed to
+    # whoever gets our output.
+    if [ -t 1 ]; then
+        info "Logging to $LOG and here..."
+        if ! exec > >(tee "$LOG") 2>&1; then
+            fatal "failed to log to $LOG"
+        fi
+    else
+        info "Redirecting output to log file $LOG..."
+        if ! exec &>"$LOG"; then
+            fatal "log redirection failed"
+        fi
     fi
 }
 
