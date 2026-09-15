@@ -1179,6 +1179,112 @@ vm-stop-log-collection() {
     vm-command "fuser --kill $log_file 2>/dev/null || :"
 }
 
+# We can collect coverage data from the instrumented plugins during e2e
+# tests. The data is dumped by the go runtime during graceful exit, and
+# the plugins can also serve it over HTTP. Set up here the dump directory
+# for the runtime, the URL and command the tests can use to pull data
+# over HTTP and the subdirectory for coverage reports. We keep reports
+# in their own directory, separate from other coverage data.
+
+vm_coverage_dir=/var/lib/nri-resource-policy/coverage
+vm_coverage_url=http://localhost:8891/coverage
+vm_coverage_curl="curl --silent --show-error --fail --noproxy localhost"
+vm_coverage_report_dir=coverage-report
+
+# Print GOCOVERDIR we should launch plugins with.
+vm-coverage-gocoverdir() {
+    echo "$vm_coverage_dir"
+}
+
+# Return success if earlier coverage data should be discarded before running
+# any tests. Refuse anything but 1 and 0, so that an unrecognized value cannot
+# silently leave the data of earlier runs in the report.
+vm-coverage-reset-requested() {
+    case "${reset_coverage:-0}" in
+        1)
+            return 0
+            ;;
+        0)
+            return 1
+            ;;
+    esac
+
+    error "invalid reset_coverage=\"$reset_coverage\", expected 1 or 0"
+}
+
+# Discard all coverage data and the report collected under the given
+# directory if coverage reset was requested.
+vm-coverage-discard-collected() {
+    local dir="$1"
+
+    vm-coverage-reset-requested || return 0
+
+    case "$dir" in
+        ""|/)
+            echo "WARNING: refusing to discard coverage data under \"$dir\""
+            return 0
+            ;;
+    esac
+    [ -d "$dir" ] || return 0
+
+    echo "Discarding all coverage data collected earlier under $dir..."
+
+    find "$dir" -type f \( -path '*/coverage/covmeta.*' \
+                           -o -path '*/coverage/covcounters.*' \) -delete
+    rm -rf "$dir/$vm_coverage_report_dir"
+}
+
+# Discard the coverage data an earlier test left on the VM.
+vm-coverage-reset() {
+    vm-command-q "rm -rf $vm_coverage_dir && mkdir -p $vm_coverage_dir" ||
+        echo "WARNING: failed to reset coverage directory $vm_coverage_dir"
+}
+
+# Prepare for collecting the coverage data of a plugin about to be launched.
+vm-coverage-prepare() {
+    vm-command-q "mkdir -p $vm_coverage_dir" ||
+        echo "WARNING: failed to create coverage directory $vm_coverage_dir"
+}
+
+# Dump the coverage data of the running plugin on the VM.
+vm-coverage-snapshot() {
+    local id
+
+    id=$(vm-command-q "$vm_coverage_curl $vm_coverage_url/id")
+    if [ -z "$id" ]; then
+        # uninstrumented build, test APIs off, or a terminated plugin
+        echo "no coverage data to dump from the plugin"
+        return 0
+    fi
+
+    vm-command-q "cd $vm_coverage_dir && \
+        $vm_coverage_curl -o covmeta.$id $vm_coverage_url/meta && \
+        $vm_coverage_curl -o covcounters.$id.1.\$(date +%s%N) $vm_coverage_url/counters" \
+        >/dev/null ||
+        echo "WARNING: failed to dump coverage data of the plugin"
+}
+
+# Copy the coverage data collected on the VM to the host.
+vm-coverage-collect() {
+    local dir="$1"
+
+    if ! vm-command-q "ls $vm_coverage_dir/covmeta.* >/dev/null 2>&1"; then
+        echo "no coverage data collected on the VM"
+        return 0
+    fi
+
+    # Start from scratch, so that we don't mix in the data of an earlier
+    # run of this test, potentially with a different build of the plugin.
+    rm -rf "$dir"
+    if ! mkdir -p "$dir"; then
+        echo "WARNING: failed to create coverage directory $dir"
+        return 0
+    fi
+
+    host-command "$SCP $VM_HOSTNAME:$vm_coverage_dir/'cov*' \"$dir/\"" ||
+        echo "WARNING: copying coverage data from the VM failed"
+}
+
 vm-seconds-now() {
     vm-command-q "date +%s"
 }

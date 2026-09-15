@@ -436,7 +436,10 @@ ginkgo-subpkgs-tests: ginkgo-test-setup # TODO(klihub): coverage
 	    done; \
 	done
 
-e2e-tests: build images
+# The e2e tests collect coverage data from the plugins they exercise and report
+# the total at the end of the run, so build the plugins with instrumentation.
+e2e-tests:
+	$(Q)$(MAKE) COVER=1 build images
 	mkdir -p $(shell realpath $(E2E_WORKDIR)) && \
 	cd $(shell realpath $(E2E_WORKDIR)) && \
 	    $(E2E_RUN) $(realpath $(E2E_TESTS))
