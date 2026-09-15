@@ -49,6 +49,8 @@ E2E_REPORT="e2e-report"
 COVERAGE_REPORT_SH="report-coverage.sh"
 # COVERAGE_REPORT_DIR: where that script puts the report, within a result dir
 COVERAGE_REPORT_DIR="coverage-report"
+# STATUS_TXT: where e2e-report records the verdict of a run
+STATUS_TXT="status.txt"
 # ARTIFACTS_TAR: the bulky artifacts of a test case, packed up
 ARTIFACTS_TAR="artifacts.tar.xz"
 # PACKED_ARTIFACTS: which artifacts of a test case are worth packing. The
@@ -283,6 +285,16 @@ collect_results() {
     done
 }
 
+prune_junk() {
+    local dir="$RESULT_DIR"
+
+    info "removing generated junk from the results..."
+    # Byte compiled python of the snippets the tests run through pyexec. Half
+    # a megabyte of it per run, and of use to nobody.
+    find "$dir" -type d -name __pycache__ -prune -exec rm -rf {} +
+    find "$dir" -type f -name '*.pyc' -delete
+}
+
 generate_coverage_report() {
     local report="$WORKTREE/test/e2e/$COVERAGE_REPORT_SH"
     local outdir="$RESULT_DIR/$COVERAGE_REPORT_DIR"
@@ -349,6 +361,32 @@ generate_report() {
     if ! "$report" index "$RESULT_ROOT"; then
         error "failed to update the index in $RESULT_ROOT"
     fi
+}
+
+publish_latest() {
+    local link="$RESULT_ROOT/latest"
+
+    # A stable place to look at the newest results. Apache serves it only with
+    # FollowSymLinks, which is the default, but the index lists the runs newest
+    # first in any case.
+    info "pointing $link at $RESULT_NAME..."
+    if ! ln -sfn "$RESULT_NAME" "$link"; then
+        error "failed to point $link at $RESULT_NAME"
+    fi
+}
+
+run_status() {
+    # Print the verdict of the run, as e2e-report recorded it. Nothing to go by
+    # means something went wrong before the tests, which is not a pass.
+    local status="$RESULT_DIR/$STATUS_TXT"
+
+    if [ ! -f "$status" ]; then
+        echo "ERROR"
+        return
+    fi
+
+    read -r verdict _ < "$status"
+    echo "${verdict:-ERROR}"
 }
 
 cleanup_worktree() {
@@ -611,11 +649,18 @@ run_e2e_tests
 cleanup_test_vms
 collect_git_info
 collect_results
+prune_junk
 generate_coverage_report
 generate_summary
 prune_coverage_data
 pack_artifacts
 prune_old_results
 generate_report
+publish_latest
 cleanup_worktree
+
+# Say how the run went, but leave the exit status to mean whether we did our
+# job, not whether the tested system passed. Whoever wants the verdict reads
+# status.txt or results.json.
+info "verdict of $RESULT_NAME: $(run_status)"
 
