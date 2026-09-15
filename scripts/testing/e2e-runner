@@ -27,12 +27,22 @@ PROXIES_SRC=""
 SKIP_WORKTREE="${SKIP_WORKTREE:-}"
 # E2E_TESTS: end-to-end tests to run instead of full test set
 E2E_TESTS="${E2E_TESTS:-}"
+# RETENTION_DAYS: remove published results older than this, 0 to keep them all
+RETENTION_DAYS="${RETENTION_DAYS:-100}"
+# RETENTION_KEEP: never remove this many latest results, however old they are
+RETENTION_KEEP="${RETENTION_KEEP:-3}"
+# KEEP_COVERAGE_DATA: keep the collected coverage data, not just the report
+KEEP_COVERAGE_DATA="${KEEP_COVERAGE_DATA:-}"
 
 # This script.
 SELF="$0"
 TEST_SUITE_DIR=policies.test-suite
 GIT_SHA1="git.sha1"
 GIT_DESC="git.describe"
+# COVERAGE_REPORT_SH: script in test/e2e which reports on collected coverage
+COVERAGE_REPORT_SH="report-coverage.sh"
+# COVERAGE_REPORT_DIR: where that script puts the report, within a result dir
+COVERAGE_REPORT_DIR="coverage-report"
 
 
 #
@@ -59,7 +69,12 @@ usage() {
     echo "  --results|--out|-o <dir>  top-level directory for publishing results"
     echo "  --name|-n <name>          subdirectory for results of this run"
     echo "  --skip-worktree           skip worktree preparation, assume already done"
-    echo "  --trace|-t|-x)            run with set -x"
+    echo "  --retention-days <days>   remove results older than this, 0 to keep all"
+    echo "                            (default: $RETENTION_DAYS)"
+    echo "  --retention-keep <count>  always keep this many latest results"
+    echo "                            (default: $RETENTION_KEEP)"
+    echo "  --keep-coverage-data      keep collected coverage data, not just the report"
+    echo "  --trace|-t|-x             run with set -x"
     echo "  --help                    show this help"
 
     exit $exit_code
@@ -248,6 +263,24 @@ collect_results() {
     done
 }
 
+generate_coverage_report() {
+    local report="$WORKTREE/test/e2e/$COVERAGE_REPORT_SH"
+
+    if [ ! -x "$report" ]; then
+        info "no $report, skipping the coverage report..."
+        return 0
+    fi
+
+    info "generating coverage report for $RESULT_DIR..."
+    # From the worktree: the browsable report embeds the sources of the tested
+    # revision, which go away with the worktree. Never fail the run over the
+    # coverage report, the test results matter more.
+    must-cd "$WORKTREE"
+    if ! "$report" "$RESULT_DIR"; then
+        error "failed to generate coverage report for $RESULT_DIR"
+    fi
+}
+
 cleanup_worktree() {
     info "cleaning up worktree $WORKTREE..."
     must-cd "$CLONED_REPO"
@@ -335,6 +368,83 @@ EOF
 EOF
 }
 
+prune_coverage_data() {
+    local profile="$RESULT_DIR/$COVERAGE_REPORT_DIR/coverprofile"
+
+    case "$KEEP_COVERAGE_DATA" in
+        1|true|yes)
+            info "keeping the coverage data collected for the tests..."
+            return 0
+            ;;
+    esac
+
+    # Without a profile there is nothing to fall back on, so keep the data
+    # whatever we were told: it is the only coverage we have of this run.
+    if [ ! -f "$profile" ]; then
+        info "no coverage profile in $RESULT_DIR, keeping the collected data..."
+        return 0
+    fi
+
+    info "removing the coverage data collected for the tests..."
+    # The bulk of it is the data of each test, over a hundred kilobytes per
+    # test. Keep the report, which includes the data merged over the run, so
+    # that everything but the per test numbers can still be regenerated from
+    # what we publish. Only ever remove data files, and only directories which
+    # removing those leaves empty.
+    find "$RESULT_DIR" -type f \
+         \( -name 'covmeta.*' -o -name 'covcounters.*' \) \
+         -not -path "$RESULT_DIR/$COVERAGE_REPORT_DIR/*" -delete
+    find "$RESULT_DIR" -type d -name coverage -empty -delete
+}
+
+prune_old_results() {
+    local run stamp when age kept=0
+
+    case "$RETENTION_DAYS" in
+        ""|0|no|none|forever)
+            info "keeping all published results..."
+            return 0
+            ;;
+    esac
+
+    info "removing published results older than $RETENTION_DAYS days..."
+    for run in $(ls -1 "$RESULT_ROOT" --sort=time 2>/dev/null); do
+        case $run in
+            [0-9][0-9][0-9][0-9]-*) ;;
+            *) continue
+               ;;
+        esac
+
+        # Keep the latest results regardless of their age, so that a break in
+        # running the tests cannot leave us without any results at all.
+        kept=$((kept + 1))
+        if [ "$kept" -le "$RETENTION_KEEP" ]; then
+            continue
+        fi
+
+        # The name of a run is when it started. Fall back to the timestamp of
+        # the directory for a name we don't recognize.
+        stamp="${run:0:10}"
+        if ! when=$(date -d "$stamp" +%s 2>/dev/null); then
+            when=$(stat -c %Y "$RESULT_ROOT/$run" 2>/dev/null)
+        fi
+        if [ -z "$when" ]; then
+            error "failed to tell how old $run is, keeping it"
+            continue
+        fi
+
+        age=$(( ($(date +%s) - when) / (24 * 3600) ))
+        if [ "$age" -le "$RETENTION_DAYS" ]; then
+            continue
+        fi
+
+        info "removing $run, $age days old..."
+        if ! rm -rf "$RESULT_ROOT/$run"; then
+            error "failed to remove $RESULT_ROOT/$run"
+        fi
+    done
+}
+
 get_test_entry() {
     local run="$1" entry="$2" default="${3:-unknown}"
     local file="$RESULT_ROOT/$run/$entry" buf
@@ -388,6 +498,18 @@ while [  "$#" -gt 0 ] && [ "${1#-}" != "$1" ]; do
             SKIP_WORKTREE=1
             shift
             ;;
+        --retention-days)
+            RETENTION_DAYS="$2"
+            shift 2
+            ;;
+        --retention-keep)
+            RETENTION_KEEP="$2"
+            shift 2
+            ;;
+        --keep-coverage-data)
+            KEEP_COVERAGE_DATA=1
+            shift
+            ;;
 
         --trace|-t|-x)
             set -x
@@ -413,7 +535,10 @@ run_e2e_tests
 cleanup_test_vms
 collect_git_info
 collect_results
+generate_coverage_report
 cleanup_worktree
 generate_summary
+prune_coverage_data
+prune_old_results
 generate_index
 
