@@ -165,14 +165,23 @@ source_proxies() {
 prepare_worktree() {
     local worktree_dir="$(dirname $CLONED_REPO)/worktree"
 
-    WORKTREE="$worktree_dir/$RESULT_NAME"
+    # Resolve with -m: realpath needs every component but the last to exist,
+    # and it prints nothing if one does not. That left WORKTREE empty on a
+    # host which had never run a test before, and "git worktree add ''" dies
+    # of an internal error rather than telling us what is wrong.
+    WORKTREE="$(realpath -m "$worktree_dir/$RESULT_NAME")"
+    if [ -z "$WORKTREE" ]; then
+        fatal "failed to resolve the worktree of $RESULT_NAME under $worktree_dir"
+    fi
+
     case "$SKIP_WORKTREE" in
         1|true|yes|y)
-            WORKTREE="$(realpath $WORKTREE)"
             must-cd "$WORKTREE"
             return 0
             ;;
     esac
+
+    must-mkdir "$worktree_dir" "worktree"
 
     if [ ! -e "$CLONED_REPO" ]; then
         if ! git clone "$REMOTE_REPO" "$CLONED_REPO"; then
@@ -189,7 +198,6 @@ prepare_worktree() {
         fi
     fi
 
-    WORKTREE="$(realpath $WORKTREE)"
     info "setting up git worktree $WORKTREE..."
     if ! git worktree add "$WORKTREE" "origin/$TEST_BRANCH"; then
         fatal "failed to add git worktree $WORKTREE"
