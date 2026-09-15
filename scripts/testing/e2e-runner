@@ -33,6 +33,9 @@ RETENTION_DAYS="${RETENTION_DAYS:-100}"
 RETENTION_KEEP="${RETENTION_KEEP:-3}"
 # KEEP_COVERAGE_DATA: keep the collected coverage data, not just the report
 KEEP_COVERAGE_DATA="${KEEP_COVERAGE_DATA:-}"
+# KEEP_ARTIFACTS: whose bulky artifacts to keep as they are instead of packing
+# them up: the tests which failed (the default), all tests, or none of them
+KEEP_ARTIFACTS="${KEEP_ARTIFACTS:-failed}"
 
 # This script.
 SELF="$0"
@@ -46,6 +49,14 @@ E2E_REPORT="e2e-report"
 COVERAGE_REPORT_SH="report-coverage.sh"
 # COVERAGE_REPORT_DIR: where that script puts the report, within a result dir
 COVERAGE_REPORT_DIR="coverage-report"
+# ARTIFACTS_TAR: the bulky artifacts of a test case, packed up
+ARTIFACTS_TAR="artifacts.tar.xz"
+# PACKED_ARTIFACTS: which artifacts of a test case are worth packing. The
+# command transcripts and these logs are all but all of what a run publishes.
+PACKED_ARTIFACTS="commands
+                  nri-resource-policy.output.txt
+                  runtime.containerd.log.txt
+                  runtime.crio.log.txt"
 
 
 #
@@ -77,6 +88,9 @@ usage() {
     echo "  --retention-keep <count>  always keep this many latest results"
     echo "                            (default: $RETENTION_KEEP)"
     echo "  --keep-coverage-data      keep collected coverage data, not just the report"
+    echo "  --keep-artifacts <what>   keep the command transcripts and the logs of"
+    echo "                            all|failed|none of the tests as they are, and"
+    echo "                            pack up the rest (default: $KEEP_ARTIFACTS)"
     echo "  --trace|-t|-x             run with set -x"
     echo "  --help                    show this help"
 
@@ -408,6 +422,66 @@ prune_coverage_data() {
     find "$RESULT_DIR" -type d -name coverage -empty -delete
 }
 
+pack_artifacts() {
+    local dir packed=0 before after
+
+    case "$KEEP_ARTIFACTS" in
+        all)
+            info "keeping the artifacts of every test as they are..."
+            return 0
+            ;;
+        failed|none)
+            ;;
+        *)
+            error "unknown KEEP_ARTIFACTS \"$KEEP_ARTIFACTS\", keeping everything"
+            return 0
+            ;;
+    esac
+
+    info "packing the artifacts of the tests..."
+    before=$(du -sk "$RESULT_DIR" | cut -f1)
+
+    for dir in $(find "$RESULT_DIR" -name 'test[0-9]*-*' -type d); do
+        # The artifacts of a test which failed are the ones somebody is going
+        # to read, so leave those alone and browsable.
+        if [ "$KEEP_ARTIFACTS" = "failed" ] &&
+           ! grep -q "Test verdict: PASS" "$dir/summary.txt" 2>/dev/null; then
+            continue
+        fi
+        if pack_test_artifacts "$dir"; then
+            packed=$((packed + 1))
+        fi
+    done
+
+    after=$(du -sk "$RESULT_DIR" | cut -f1)
+    info "packed the artifacts of $packed tests," \
+         "$(( (before - after) / 1024 ))M of $(( before / 1024 ))M saved"
+}
+
+pack_test_artifacts() {
+    local dir="$1" what="" f
+
+    for f in $PACKED_ARTIFACTS; do
+        if [ -e "$dir/$f" ]; then
+            what="$what $f"
+        fi
+    done
+    if [ -z "$what" ]; then
+        return 1
+    fi
+
+    if ! tar -cJf "$dir/$ARTIFACTS_TAR" -C "$dir" $what; then
+        error "failed to pack the artifacts of $dir"
+        rm -f "$dir/$ARTIFACTS_TAR"
+        return 1
+    fi
+
+    # Only ever remove what we know is in the tarball now.
+    ( cd "$dir" && rm -rf $what )
+
+    return 0
+}
+
 prune_old_results() {
     local run stamp when age kept=0
 
@@ -504,6 +578,10 @@ while [  "$#" -gt 0 ] && [ "${1#-}" != "$1" ]; do
             KEEP_COVERAGE_DATA=1
             shift
             ;;
+        --keep-artifacts)
+            KEEP_ARTIFACTS="$2"
+            shift 2
+            ;;
 
         --trace|-t|-x)
             set -x
@@ -532,6 +610,7 @@ collect_results
 generate_coverage_report
 generate_summary
 prune_coverage_data
+pack_artifacts
 prune_old_results
 generate_report
 cleanup_worktree
