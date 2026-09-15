@@ -1,5 +1,9 @@
 disable-numa
 
+# Boot the node back with a NUMA capable kernel even on errors
+# (unless running with keep_numa_disabled=1).
+trap enable-numa EXIT
+
 relaunch-policy balloons "$TEST_DIR/balloons-numa-disabled.cfg"
 
 POD_ANNOTATION=(
@@ -19,5 +23,3 @@ verify "cpus['pod1c0'].isdisjoint({'cpu06', 'cpu07'})" \
        "len(cpus['pod1c0']) == 5" \
        "len(cpus['pod1c1']) == 5" \
        "disjoint_sets(cpus['pod1c0'], cpus['pod1c1'])"
-
-enable-numa
