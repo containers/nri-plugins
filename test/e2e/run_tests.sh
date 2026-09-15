@@ -1,8 +1,11 @@
 #!/bin/bash
 
 TESTS_DIR="$1"
+OUTPUT_DIR_ARG="${2:-}"
+OUTPUT_ROOT="${OUTPUT_DIR_ARG:-$(pwd)}"
 SKIP_LONG_TESTS="${skip_long_tests:-yes}"
 RUN_SH="${0%/*}/run.sh"
+REPORT_COVERAGE_SH="${0%/*}/report-coverage.sh"
 
 DEFAULT_DISTRO=${DEFAULT_DISTRO:-"fedora/43"}
 
@@ -11,12 +14,14 @@ allow_var_override=""
 k8scri=${k8scri:="containerd"}
 efi=${efi:-}
 
+reset_coverage=${reset_coverage:-0}
+
 proxy=${proxy:=$https_proxy}
 proxy=${proxy:=$HTTPS_PROXY}
 export proxy
 
 usage() {
-    echo "Usage: [skip_long_tests=no] run_tests.sh TESTS_DIR"
+    echo "Usage: [skip_long_tests=no] run_tests.sh TESTS_DIR [OUTPUT_DIR]"
     echo "TESTS_DIR is expected to be structured as POLICY/TOPOLOGY/TEST with files:"
     echo "POLICY/nri-resource_policy.cfg: configuration of nri-resource_policy"
     echo "POLICY/TOPOLOGY/topology.var.json: contents of the topology variable for run.sh"
@@ -187,6 +192,9 @@ trap cleanup TERM EXIT QUIT
 summary_file="$summary_dir/summary.txt"
 echo -n "" > "$summary_file"
 
+# Discard all old coverage data if asked to.
+vm-coverage-discard-collected "$OUTPUT_ROOT"
+
 # Shared test helpers are the root of the *.source.sh chain: they are sourced
 # before any test suite, policy, topology or test case level *.source.sh file,
 # so that any of those can override a helper.
@@ -240,7 +248,7 @@ for POLICY_DIR in "$TESTS_ROOT_DIR"/*; do
 		# Create ansible inventory file from a template
 		ESCAPED_VM=$(printf '%s\n' "$vm_name" | sed -e 's/[\/]/-/g')
 
-		OUTPUT_DIR=$(realpath ${2:-"`pwd`/$ESCAPED_VM"})
+		OUTPUT_DIR=$(realpath "${OUTPUT_DIR_ARG:-$OUTPUT_ROOT/$ESCAPED_VM}")
 
                 for TEST_DIR in "$TOPOLOGY_DIR"/test*; do
                     if ! [ -d "$TEST_DIR" ]; then
@@ -313,6 +321,13 @@ done
 echo ""
 echo "Tests summary:"
 cat "$summary_file"
+
+# Report the total coverage of the tests, merging the data collected for
+# each individual test. Note that if coverage data was not reset using
+# reset_coverage=1, this includes also data collected during earlier test
+# runs.
+"$REPORT_COVERAGE_SH" "$OUTPUT_ROOT"
+
 if grep -q ERROR "$summary_file" || grep -q FAIL "$summary_file"; then
     exit 1
 fi
