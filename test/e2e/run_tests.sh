@@ -3,6 +3,7 @@
 TESTS_DIR="$1"
 SKIP_LONG_TESTS="${skip_long_tests:-yes}"
 RUN_SH="${0%/*}/run.sh"
+REPORT_COVERAGE_SH="${0%/*}/report-coverage.sh"
 
 DEFAULT_DISTRO=${DEFAULT_DISTRO:-"fedora/43"}
 
@@ -10,6 +11,10 @@ allow_var_override=""
 
 k8scri=${k8scri:="containerd"}
 efi=${efi:-}
+
+# Discard all coverage data collected by earlier runs before running any tests,
+# see vm-coverage-reset-requested in lib/vm.bash.
+reset_coverage=${reset_coverage:-no}
 
 proxy=${proxy:=$https_proxy}
 proxy=${proxy:=$HTTPS_PROXY}
@@ -187,6 +192,11 @@ trap cleanup TERM EXIT QUIT
 summary_file="$summary_dir/summary.txt"
 echo -n "" > "$summary_file"
 
+# Start the run from scratch if asked to. This is done once here, for all the
+# tests, and never per test, as each test only ever overwrites the data of its
+# own earlier run.
+vm-coverage-discard-collected "${2:-$(pwd)}"
+
 # Shared test helpers are the root of the *.source.sh chain: they are sourced
 # before any test suite, policy, topology or test case level *.source.sh file,
 # so that any of those can override a helper.
@@ -313,6 +323,13 @@ done
 echo ""
 echo "Tests summary:"
 cat "$summary_file"
+
+# Report the total coverage of the tests, merging the data collected for each
+# of them. This covers all data found under the output directory, including the
+# data of tests this run did not rerun, unless reset_coverage asked us to start
+# from scratch.
+"$REPORT_COVERAGE_SH" "${2:-$(pwd)}"
+
 if grep -q ERROR "$summary_file" || grep -q FAIL "$summary_file"; then
     exit 1
 fi

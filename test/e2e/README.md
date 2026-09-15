@@ -161,6 +161,93 @@ Worth knowing:
   running any test. Raise `CLUSTER_READY_TIMEOUT` (300 seconds by default) if a
   large topology needs longer.
 
+## Collecting coverage data
+
+The tests can collect the same kind of coverage data from the plugins they
+exercise that `go test -cover` collects from unit tests. This only works for
+the resource-manager-based plugins, in other words balloons, topology-aware
+and template.
+
+Collection is always on, so there is nothing to enable:
+
+```shell
+make e2e-tests
+```
+
+This builds the plugins with coverage instrumentation, runs the tests, and ends
+the run with the coverage of all the tests it ran, on top of the usual test
+summary: the coverage of the logic of each plugin, in other words of the code
+under `cmd/plugins/PLUGIN`, and the total over everything instrumented.
+
+The only thing coverage data needs is instrumented plugins, which `make
+e2e-tests` takes care of. When running the tests directly, build the images
+with `COVER=1` to get anything to report on:
+
+```shell
+make COVER=1 images
+cd test/e2e
+./run_tests.sh policies.test-suite
+```
+
+Without that the tests run just fine, they simply have nothing to collect.
+
+The data of each test case is stored in a `coverage` directory in the output
+directory of that test case, so it also tells which test covers what. The
+report is merged from all of those at the end of the run, and can be
+regenerated, or generated for a subset of the tests, with:
+
+```shell
+./report-coverage.sh [DIR]
+```
+
+DIR defaults to the current directory, and the report is written to
+`DIR/coverage-report`: `coverprofile` in the usual text format for `go tool
+cover`, and `coverage.html` for browsing. Run `go tool cover -func` on the
+profile for the numbers per package and per function. Note that the report
+covers all data found under DIR, so point it at a single policy or topology
+directory for a report on those tests alone.
+
+Worth knowing:
+
+- An instrumented plugin dumps its data when it exits, and serves it on request
+  over its instrumentation HTTP server. The framework uses both: it asks a
+  plugin which is still running at the end of a test for a dump, and picks up
+  what plugins which already exited wrote to `$GOCOVERDIR`. This is why the
+  data survives even when a test kills a plugin instead of terminating it.
+
+- The counters are reset when a plugin is launched, so the data of a test
+  covers what that test does, not what earlier tests did. A plugin which a test
+  leaves running is only terminated by the next test, so its final dump is
+  counted for the latter.
+
+- Data collected earlier is added to, not replaced, which is what makes a total
+  over several partial runs possible. A run which reruns a test replaces the
+  data of that test, but the data of the tests it does not run stays. Start the
+  run from scratch with `reset_coverage`, and the report covers this run alone:
+
+  ```shell
+  reset_coverage=1 ./run_tests.sh policies.test-suite
+  ```
+
+  `1`, `true` and `yes` all enable it. It discards everything collected earlier
+  once, before the first test, so it never throws away the data of the tests of
+  the ongoing run.
+
+- The endpoints, which the framework enables with
+  `--set plugin.test.enableAPIs=true`, are also there for poking at by hand:
+
+  | endpoint | serves |
+  | --- | --- |
+  | `/coverage/id` | the ID of the instrumented binary, which the names of the data files are based on |
+  | `/coverage/meta` | the coverage meta-data, to be saved as `covmeta.<id>` |
+  | `/coverage/counters` | a snapshot of the counters, to be saved as `covcounters.<id>.N.M` |
+  | `/coverage/clear` | resets the counters |
+
+- Only the plugins are instrumented, so the report covers the packages linked
+  into a plugin, and nothing else. Do not read a total percentage over it as
+  the coverage of the repository, and do not compare it to the unit test
+  coverage of `make test`, which measures a different set of packages.
+
 ## Writing tests
 
 A test case is a `code.var.sh` file in a
