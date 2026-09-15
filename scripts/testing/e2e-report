@@ -45,6 +45,9 @@ ARTIFACTS = (
     ("commands", "commands"),
     ("artifacts", "artifacts.tar.xz"),
     ("pyexec", "pyexec.output.txt"),
+    ("pyexec code", "pyexec.py"),
+    ("pyexec state", "pyexec_state.py"),
+    ("plugin cache", "cache"),
     ("verdict", "summary.txt"),
     ("coverage", "coverage"),
 )
