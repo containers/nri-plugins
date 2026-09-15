@@ -39,6 +39,9 @@ SELF="$0"
 TEST_SUITE_DIR=policies.test-suite
 GIT_SHA1="git.sha1"
 GIT_DESC="git.describe"
+GIT_REMOTE="git.remote"
+# E2E_REPORT: script in scripts/testing which reports on collected results
+E2E_REPORT="e2e-report"
 # COVERAGE_REPORT_SH: script in test/e2e which reports on collected coverage
 COVERAGE_REPORT_SH="report-coverage.sh"
 # COVERAGE_REPORT_DIR: where that script puts the report, within a result dir
@@ -237,11 +240,14 @@ cleanup_test_vms() {
 collect_git_info() {
     local describe="$RESULT_DIR/$GIT_DESC"
     local sha1="$RESULT_DIR/$GIT_SHA1"
+    local remote="$RESULT_DIR/$GIT_REMOTE"
 
     info "collecting info about worktree..."
     must-cd "$WORKTREE"
     git describe > "$describe"
     git log -1 --pretty=%H > "$sha1"
+    # For linking the results to the revision and the tests they came from.
+    git config --get remote.origin.url > "$remote" || echo "$REMOTE_REPO" > "$remote"
 }
 
 collect_results() {
@@ -265,19 +271,69 @@ collect_results() {
 
 generate_coverage_report() {
     local report="$WORKTREE/test/e2e/$COVERAGE_REPORT_SH"
+    local outdir="$RESULT_DIR/$COVERAGE_REPORT_DIR"
+    local policy dirs suite
 
     if [ ! -x "$report" ]; then
         info "no $report, skipping the coverage report..."
         return 0
     fi
 
-    info "generating coverage report for $RESULT_DIR..."
     # From the worktree: the browsable report embeds the sources of the tested
     # revision, which go away with the worktree. Never fail the run over the
     # coverage report, the test results matter more.
     must-cd "$WORKTREE"
-    if ! "$report" "$RESULT_DIR"; then
+
+    info "generating coverage report for $RESULT_DIR..."
+    if ! "$report" --output "$outdir" "$RESULT_DIR"; then
         error "failed to generate coverage report for $RESULT_DIR"
+    fi
+
+    # One report per policy, over every topology it was tested on, so that the
+    # coverage of a plugin can be told from the coverage of everything.
+    for policy in $(policies_tested); do
+        dirs=""
+        for suite in $RESULT_DIR/*/$TEST_SUITE_DIR/$policy; do
+            if [ -d "$suite" ]; then
+                dirs="$dirs $suite"
+            fi
+        done
+        if [ -z "$dirs" ]; then
+            continue
+        fi
+        info "generating coverage report of the $policy tests..."
+        if ! "$report" --output "$outdir/policies/$policy" $dirs; then
+            error "failed to generate coverage report of the $policy tests"
+        fi
+    done
+}
+
+policies_tested() {
+    local suite
+
+    for suite in $RESULT_DIR/*/$TEST_SUITE_DIR/*; do
+        if [ -d "$suite" ]; then
+            echo "${suite##*/}"
+        fi
+    done | sort -u
+}
+
+generate_report() {
+    local report="$WORKTREE/scripts/testing/$E2E_REPORT"
+
+    if [ ! -x "$report" ]; then
+        info "no $report, leaving the results unreported..."
+        return 0
+    fi
+
+    info "reporting on $RESULT_DIR..."
+    if ! "$report" run "$RESULT_DIR"; then
+        error "failed to report on $RESULT_DIR"
+    fi
+
+    info "updating the index of all results in $RESULT_ROOT..."
+    if ! "$report" index "$RESULT_ROOT"; then
+        error "failed to update the index in $RESULT_ROOT"
     fi
 }
 
@@ -325,47 +381,6 @@ generate_summary() {
             echo "  $result $test"
         done | sort >> "$summary"
     done
-}
-
-generate_index() {
-    local index="$RESULT_ROOT/index.html"
-    local run status sha1 desc
-
-    info "updating index $index..."
-    rm -f "$index"
-    if ! touch "$index"; then
-        error "failed to create $index"
-        return 1
-    fi
-
-    >>$index cat <<EOF
-    <html>
-      <head><title>NRI Reference Plugins Test Results</title></head>
-      <body>
-EOF
-
-    echo "      <ul>" >> "$index"
-    for run in $(ls -1 $RESULT_ROOT --sort=time); do
-        case $run in
-            [0-9][0-9][0-9][0-9]-*) ;;
-             *) continue
-                ;;
-        esac
-        if [ ! -e "$RESULT_ROOT/$run/summary.txt" ] || grep -q FAIL "$RESULT_ROOT/$run/summary.txt"; then
-            status="FAIL"
-        else
-            status="PASS"
-        fi
-        sha1=$(get_test_entry $run $GIT_SHA1 unknown-sha1)
-        desc=$(get_test_entry $run $GIT_DESC unknown-git-version)
-        echo "        <li>$status <a href=\"$run\">$run (version $desc, $sha1) </a></li>" >> "$index"
-    done
-    echo "      </ul>" >> "$index"
-
-    >>"$index" cat <<EOF
-      </body>
-    </html>
-EOF
 }
 
 prune_coverage_data() {
@@ -445,23 +460,6 @@ prune_old_results() {
     done
 }
 
-get_test_entry() {
-    local run="$1" entry="$2" default="${3:-unknown}"
-    local file="$RESULT_ROOT/$run/$entry" buf
-
-    if [ ! -e "$file" ]; then
-        echo "$default"
-        return 0
-    fi
-    if ! buf="$(cat $file)"; then
-        echo "$default"
-        return 0
-    fi
-
-    echo "$buf"
-    return 0
-}
-
 #
 # main script
 #
@@ -536,9 +534,9 @@ cleanup_test_vms
 collect_git_info
 collect_results
 generate_coverage_report
-cleanup_worktree
 generate_summary
 prune_coverage_data
 prune_old_results
-generate_index
+generate_report
+cleanup_worktree
 
