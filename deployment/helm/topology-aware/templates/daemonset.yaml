@@ -138,6 +138,14 @@ spec:
           - name: pod-resources-socket
             mountPath: /var/lib/kubelet/pod-resources
             readOnly: true
+          {{- if .Values.config.dra.enabled }}
+          # The DRA driver creates its own socket under the kubelet plugin
+          # directory, and its registration socket in the plugin registry.
+          - name: kubelet-plugins
+            mountPath: /var/lib/kubelet/plugins
+          - name: kubelet-plugins-registry
+            mountPath: /var/lib/kubelet/plugins_registry
+          {{- end }}
           {{- if .Values.allowPCT }}
           - name: hostdev
             mountPath: /host/dev
@@ -170,6 +178,16 @@ spec:
         hostPath:
           path: /var/lib/kubelet/pod-resources
           type: DirectoryOrCreate
+      {{- if .Values.config.dra.enabled }}
+      - name: kubelet-plugins
+        hostPath:
+          path: /var/lib/kubelet/plugins
+          type: DirectoryOrCreate
+      - name: kubelet-plugins-registry
+        hostPath:
+          path: /var/lib/kubelet/plugins_registry
+          type: DirectoryOrCreate
+      {{- end }}
       {{- if .Values.allowPCT }}
       - name: hostdev
         hostPath:

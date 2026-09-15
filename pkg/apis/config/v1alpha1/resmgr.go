@@ -43,6 +43,7 @@ type CommonConfig struct {
 	Control         control.Config
 	Log             log.Config
 	Instrumentation instrumentation.Config
+	DRA             DRAConfig
 }
 
 func (c *CommonConfig) Validate() error {

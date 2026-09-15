@@ -48,6 +48,8 @@ type TopologyAwarePolicySpec struct {
 	// +optional
 	// +kubebuilder:default={"nodeResourceTopology": true }
 	Agent AgentConfig `json:"agent,omitempty"`
+	// +optional
+	DRA DRAConfig `json:"dra,omitempty"`
 }
 
 // TopologyAwarePolicyList represents a list of TopologyAwarePolicies.
@@ -82,6 +84,8 @@ type BalloonsPolicySpec struct {
 	// +optional
 	// +kubebuilder:default={"nodeResourceTopology": true }
 	Agent AgentConfig `json:"agent,omitempty"`
+	// +optional
+	DRA DRAConfig `json:"dra,omitempty"`
 }
 
 // BalloonsPolicyList represents a list of BalloonsPolicies.
@@ -116,6 +120,8 @@ type TemplatePolicySpec struct {
 	// +optional
 	// +kubebuilder:default={"nodeResourceTopology": true }
 	Agent AgentConfig `json:"agent,omitempty"`
+	// +optional
+	DRA DRAConfig `json:"dra,omitempty"`
 }
 
 // TemplatePolicyList represents a list of TemplatePolicies.
