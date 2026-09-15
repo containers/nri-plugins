@@ -62,10 +62,16 @@ LOG_TXT="e2e-runner.log.txt"
 ARTIFACTS_TAR="artifacts.tar.xz"
 # PACKED_ARTIFACTS: which artifacts of a test case are worth packing. The
 # command transcripts and these logs are all but all of what a run publishes.
+# The pyexec files are what the last python snippet of a test was, what it
+# printed and what it ran on, which is of interest when a test failed.
 PACKED_ARTIFACTS="commands
                   nri-resource-policy.output.txt
                   runtime.containerd.log.txt
-                  runtime.crio.log.txt"
+                  runtime.crio.log.txt
+                  pyexec.output.txt
+                  pyexec.py
+                  pyexec_state.py
+                  cache"
 
 
 #
