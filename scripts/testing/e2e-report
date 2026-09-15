@@ -1,0 +1,583 @@
+#!/usr/bin/env python3
+
+"""e2e-report - report on the results of e2e test runs
+
+Usage: e2e-report run RESULT_DIR
+       e2e-report index RESULT_ROOT
+
+run   reads the results collected into RESULT_DIR and writes results.json and
+      index.html next to them: the verdict of the run, the failures with the
+      reason of each and links to everything collected for them, the coverage
+      the tests reached, and every test case with its artifacts.
+
+index rebuilds RESULT_ROOT/index.html from the results.json of every run under
+      it, so that the runs, how they went and how their coverage develops are
+      all one click away.
+
+Both read what is there and are safe to rerun on results already reported on.
+"""
+
+import html
+import json
+import os
+import re
+import sys
+from datetime import datetime, timezone
+
+TEST_SUITE_DIR = "policies.test-suite"
+COVERAGE_DIR = "coverage-report"
+RESULTS_JSON = "results.json"
+INDEX_HTML = "index.html"
+RUNNER_LOG = "e2e-runner.log.txt"
+
+RUN_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}")
+VERDICT = re.compile(r"Test verdict:\s*(\S+)")
+DURATION = re.compile(r"Test duration:\s*([0-9.]+)\s*sec")
+ERROR_LINE = re.compile(r"^error:")
+ERROR_BLOCK = re.compile(r"^(command|output|exit status):")
+RUNTIMES = ("containerd", "crio")
+
+# Artifacts of a test case, in the order they help when one fails.
+ARTIFACTS = (
+    ("log", "run.sh.output.txt"),
+    ("plugin log", "nri-resource-policy.output.txt"),
+    ("commands", "commands"),
+    ("pyexec", "pyexec.output.txt"),
+    ("verdict", "summary.txt"),
+    ("coverage", "coverage"),
+)
+
+# A failure reason is for telling failures apart at a glance, not for reading
+# the whole log in.
+REASON_LINES = 8
+REASON_WIDTH = 220
+
+
+def read_text(path):
+    """Return the contents of path, or an empty string if there is none."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def vm_parts(vm):
+    """Split a VM directory name into its topology, distro and runtime.
+
+    The name is TOPOLOGY-DISTRO-RUNTIME, with the slash of the distro replaced
+    by a dash, so the last three dash separated fields are the distro and the
+    runtime. Return the topology as None if the name is not one of ours, rather
+    than guess and link to a test which does not exist.
+    """
+    fields = vm.split("-")
+    if len(fields) < 4 or fields[-1] not in RUNTIMES:
+        return None, None, fields[-1] if fields[-1] in RUNTIMES else None
+    return "-".join(fields[:-3]), "-".join(fields[-3:-1]), fields[-1]
+
+
+def shorten(lines):
+    """Cut a reason down to something which fits in a table cell."""
+    short = []
+    for line in lines[:REASON_LINES]:
+        line = line.rstrip()
+        if len(line) > REASON_WIDTH:
+            line = line[:REASON_WIDTH] + "..."
+        short.append(line)
+    if len(lines) > REASON_LINES:
+        short.append("...")
+    return "\n".join(short)
+
+
+def failure_reason(test_dir):
+    """Dig out why a test case failed, in as few lines as possible."""
+    # What the framework recorded itself: a failed assertion names itself.
+    verified = [
+        line
+        for line in read_text(os.path.join(test_dir, "summary.txt")).splitlines()
+        if line.startswith("verify:")
+    ]
+    if verified:
+        return shorten(verified)
+
+    log = read_text(os.path.join(test_dir, "run.sh.output.txt")).splitlines()
+    if not log:
+        return ""
+
+    # The last error reported, with the command which caused it. command-error
+    # prints the command, its output and its exit status before the error.
+    for i in range(len(log) - 1, -1, -1):
+        if not ERROR_LINE.match(log[i]):
+            continue
+        start = i
+        while start > 0 and ERROR_BLOCK.match(log[start - 1]):
+            start -= 1
+        return shorten(log[start:i + 1])
+
+    # Nothing said why, so the tail of the log is the best we can do.
+    tail = [line for line in log if line.strip()][-REASON_LINES:]
+    return shorten(tail)
+
+
+def artifacts(test_dir, rel):
+    """Map a label to a link for everything collected for a test case."""
+    links = {}
+    for label, name in ARTIFACTS:
+        if os.path.exists(os.path.join(test_dir, name)):
+            links[label] = os.path.join(rel, name)
+    for name in sorted(os.listdir(test_dir)):
+        if name.startswith("runtime.") and name.endswith(".txt"):
+            links["runtime log"] = os.path.join(rel, name)
+    return links
+
+
+def scan_tests(result_dir):
+    """Collect a record of every test case of a run."""
+    tests = []
+
+    for vm in sorted(os.listdir(result_dir)):
+        suite = os.path.join(result_dir, vm, TEST_SUITE_DIR)
+        if not os.path.isdir(suite):
+            continue
+        topology, distro, runtime = vm_parts(vm)
+        for policy in sorted(os.listdir(suite)):
+            policy_dir = os.path.join(suite, policy)
+            if not os.path.isdir(policy_dir):
+                continue
+            for name in sorted(os.listdir(policy_dir)):
+                test_dir = os.path.join(policy_dir, name)
+                if not os.path.isdir(test_dir) or not name.startswith("test"):
+                    continue
+
+                rel = os.path.join(vm, TEST_SUITE_DIR, policy, name)
+                summary = read_text(os.path.join(test_dir, "summary.txt"))
+                found = VERDICT.search(summary)
+                # No verdict at all means the test never got to write one,
+                # which is a different thing from failing an assertion.
+                verdict = found.group(1).upper() if found else "ERROR"
+
+                found = DURATION.search(
+                    read_text(os.path.join(test_dir, "run.sh.output.txt")))
+                duration = float(found.group(1)) if found else None
+
+                tests.append({
+                    "vm": vm,
+                    "topology": topology,
+                    "distro": distro,
+                    "runtime": runtime,
+                    "policy": policy,
+                    "name": name,
+                    "verdict": verdict,
+                    "duration": duration,
+                    "reason": "" if verdict == "PASS" else failure_reason(test_dir),
+                    "path": rel,
+                    "links": artifacts(test_dir, rel),
+                })
+
+    return tests
+
+
+def coverage_of(dir, result_dir):
+    """Read the numbers of one coverage report, with links to it."""
+    summary = os.path.join(dir, "summary.json")
+    try:
+        with open(summary, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+
+    links = {}
+    for label, name in (("report", "coverage.html"), ("profile", "coverprofile")):
+        if os.path.exists(os.path.join(dir, name)):
+            links[label] = os.path.relpath(os.path.join(dir, name), result_dir)
+    data["links"] = links
+
+    return data
+
+
+def scan_coverage(result_dir):
+    """Read the coverage reports of a run, the combined and the per policy."""
+    coverage = {"all": None, "policies": {}}
+
+    combined = os.path.join(result_dir, COVERAGE_DIR)
+    coverage["all"] = coverage_of(combined, result_dir)
+
+    policies = os.path.join(combined, "policies")
+    if os.path.isdir(policies):
+        for policy in sorted(os.listdir(policies)):
+            data = coverage_of(os.path.join(policies, policy), result_dir)
+            if data is None:
+                continue
+            # The plugin of a policy is the interesting part of its coverage,
+            # the rest is the infrastructure it happens to link in.
+            plugins = data.get("plugins", {})
+            plugin = plugins.get(policy) or (
+                list(plugins.values())[0] if plugins else None)
+            data["plugin_percent"] = plugin["percent"] if plugin else None
+            coverage["policies"][policy] = data
+
+    return coverage
+
+
+def started_at(name):
+    """Turn the name of a run into when it started."""
+    try:
+        return datetime.strptime(name[:16], "%Y-%m-%d-%H-%M").isoformat()
+    except ValueError:
+        return None
+
+
+def web_url(remote):
+    """Turn a remote repository into something linkable, if we can."""
+    remote = remote.strip()
+    if remote.startswith("git@github.com:"):
+        remote = "https://github.com/" + remote[len("git@github.com:"):]
+    if remote.endswith(".git"):
+        remote = remote[:-len(".git")]
+    return remote if remote.startswith("https://") else ""
+
+
+def scan_run(result_dir):
+    """Collect everything worth reporting about a single run."""
+    name = os.path.basename(os.path.abspath(result_dir))
+    tests = scan_tests(result_dir)
+
+    counts = {"total": len(tests)}
+    for test in tests:
+        counts[test["verdict"]] = counts.get(test["verdict"], 0) + 1
+
+    if not tests:
+        verdict = "ERROR"
+    elif counts.get("FAIL") or counts.get("ERROR"):
+        verdict = "FAIL"
+    else:
+        verdict = "PASS"
+
+    sha1 = read_text(os.path.join(result_dir, "git.sha1")).strip()
+    remote = read_text(os.path.join(result_dir, "git.remote")).strip()
+    runtimes = sorted({t["runtime"] for t in tests if t["runtime"]})
+
+    return {
+        "name": name,
+        "started": started_at(name),
+        "verdict": verdict,
+        "counts": counts,
+        "runtimes": runtimes,
+        "git": {
+            "describe": read_text(os.path.join(result_dir, "git.describe")).strip(),
+            "sha1": sha1,
+            "remote": remote,
+            "web": web_url(remote),
+        },
+        "coverage": scan_coverage(result_dir),
+        "tests": tests,
+        "log": RUNNER_LOG if os.path.exists(
+            os.path.join(result_dir, RUNNER_LOG)) else None,
+    }
+
+
+#
+# rendering
+#
+
+CSS = """
+body { font-family: system-ui, sans-serif; margin: 2em; color: #222; }
+h1 { font-size: 1.4em; margin-bottom: 0.2em; }
+h2 { font-size: 1.1em; margin-top: 2em; border-bottom: 1px solid #ddd; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9em; }
+th { text-align: left; background: #f4f4f4; position: sticky; top: 0; }
+th, td { padding: 0.3em 0.6em; border-bottom: 1px solid #eee;
+         vertical-align: top; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr:hover td { background: #fafafa; }
+a { color: #0645ad; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.meta { color: #666; margin-bottom: 1.5em; }
+.PASS { color: #157f3d; font-weight: bold; }
+.FAIL, .ERROR { color: #c0392b; font-weight: bold; }
+.SKIP { color: #888; font-weight: bold; }
+pre.reason { margin: 0.3em 0 0 0; padding: 0.4em 0.6em; background: #fbf6f5;
+             border-left: 3px solid #c0392b; overflow-x: auto;
+             font-size: 0.95em; white-space: pre-wrap; }
+.links a { margin-right: 0.7em; white-space: nowrap; }
+.group { background: #f9f9f9; font-weight: bold; }
+"""
+
+
+def e(text):
+    return html.escape(str(text if text is not None else ""))
+
+
+def link(href, text):
+    return '<a href="%s">%s</a>' % (e(href), e(text))
+
+
+def verdict_html(verdict):
+    return '<span class="%s">%s</span>' % (e(verdict), e(verdict))
+
+
+def duration_html(seconds):
+    if seconds is None:
+        return ""
+    if seconds < 60:
+        return "%.0fs" % seconds
+    return "%dm%02ds" % (int(seconds) // 60, int(seconds) % 60)
+
+
+def links_html(links):
+    order = [label for label, _ in ARTIFACTS] + ["runtime log", "source"]
+    ordered = sorted(links.items(), key=lambda kv: (
+        order.index(kv[0]) if kv[0] in order else len(order), kv[0]))
+    return '<span class="links">%s</span>' % "".join(
+        link(href, label) for label, href in ordered)
+
+
+def source_link(run, test):
+    """Link a test case to its source, at the revision which was tested."""
+    web, sha1 = run["git"]["web"], run["git"]["sha1"]
+    if not web or not sha1 or not test["topology"]:
+        return {}
+    return {"source": "%s/blob/%s/test/e2e/%s/%s/%s/%s/code.var.sh" % (
+        web, sha1, TEST_SUITE_DIR, test["policy"], test["topology"],
+        test["name"])}
+
+
+def page(title, body):
+    return ("<!DOCTYPE html>\n<html>\n<head>\n"
+            "<meta charset=\"utf-8\">\n"
+            "<title>%s</title>\n<style>%s</style>\n</head>\n<body>\n%s"
+            "</body>\n</html>\n" % (e(title), CSS, body))
+
+
+def render_coverage(run):
+    """A table of the coverage of each plugin, and of everything."""
+    coverage = run["coverage"]
+    rows = []
+
+    for policy, data in sorted(coverage["policies"].items()):
+        rows.append(
+            "<tr><td>%s</td><td class=\"num\">%d</td>"
+            "<td class=\"num\">%s</td><td class=\"num\">%s</td><td>%s</td></tr>" % (
+                e(policy), data.get("tests", 0),
+                "%.1f%%" % data["plugin_percent"]
+                if data.get("plugin_percent") is not None else "",
+                "%.1f%% (%d/%d)" % (data["percent"], data["covered"],
+                                    data["statements"]),
+                links_html(data.get("links", {}))))
+
+    if coverage["all"]:
+        data = coverage["all"]
+        rows.append(
+            "<tr><td><em>all tests</em></td><td class=\"num\">%d</td>"
+            "<td class=\"num\"></td><td class=\"num\">%s</td><td>%s</td></tr>" % (
+                data.get("tests", 0),
+                "%.1f%% (%d/%d)" % (data["percent"], data["covered"],
+                                    data["statements"]),
+                links_html(data.get("links", {}))))
+
+    if not rows:
+        return ("<h2>Coverage</h2>\n<p>No coverage data was collected. Were the"
+                " plugins built with instrumentation (make COVER=1)?</p>\n")
+
+    return ("<h2>Coverage</h2>\n<table>\n<tr><th>policy</th><th>tests</th>"
+            "<th>plugin logic</th><th>all instrumented packages</th>"
+            "<th></th></tr>\n%s\n</table>\n" % "\n".join(rows))
+
+
+def render_failures(run):
+    """The failures of a run, with the reason and the artifacts of each."""
+    failed = [t for t in run["tests"] if t["verdict"] not in ("PASS", "SKIP")]
+    if not failed:
+        return ""
+
+    rows = []
+    for test in failed:
+        links = dict(test["links"])
+        links.update(source_link(run, test))
+        reason = ('<pre class="reason">%s</pre>' % e(test["reason"])
+                  if test["reason"] else "")
+        rows.append(
+            "<tr><td>%s</td><td>%s / %s / %s</td><td class=\"num\">%s</td>"
+            "<td>%s%s</td></tr>" % (
+                verdict_html(test["verdict"]), e(test["policy"]),
+                e(test["topology"] or test["vm"]), e(test["name"]),
+                duration_html(test["duration"]), links_html(links), reason))
+
+    return ("<h2>Failures (%d)</h2>\n<table>\n%s\n</table>\n"
+            % (len(failed), "\n".join(rows)))
+
+
+def render_tests(run):
+    """Every test case, grouped by the VM it ran on."""
+    if not run["tests"]:
+        return ""
+
+    rows, group = [], None
+    for test in run["tests"]:
+        if test["vm"] != group:
+            group = test["vm"]
+            of_vm = [t for t in run["tests"] if t["vm"] == group]
+            passed = len([t for t in of_vm if t["verdict"] == "PASS"])
+            rows.append(
+                "<tr class=\"group\"><td colspan=\"4\">%s &mdash; %d/%d passed"
+                "</td></tr>" % (e(group), passed, len(of_vm)))
+        links = dict(test["links"])
+        links.update(source_link(run, test))
+        rows.append(
+            "<tr><td>%s</td><td>%s / %s</td><td class=\"num\">%s</td>"
+            "<td>%s</td></tr>" % (
+                verdict_html(test["verdict"]), e(test["policy"]),
+                e(test["name"]), duration_html(test["duration"]),
+                links_html(links)))
+
+    return ("<h2>Test cases (%d)</h2>\n<table>\n<tr><th>verdict</th>"
+            "<th>test</th><th>duration</th><th></th></tr>\n%s\n</table>\n"
+            % (len(run["tests"]), "\n".join(rows)))
+
+
+def render_run(run):
+    """The report of a single run."""
+    counts = run["counts"]
+    title = "e2e results %s: %s" % (run["name"], run["verdict"])
+
+    meta = []
+    if run["git"]["describe"]:
+        version = e(run["git"]["describe"])
+        if run["git"]["web"] and run["git"]["sha1"]:
+            version = link("%s/commit/%s" % (run["git"]["web"],
+                                            run["git"]["sha1"]),
+                           run["git"]["describe"])
+        meta.append(version)
+    if run["runtimes"]:
+        meta.append(e(", ".join(run["runtimes"])))
+    if run["started"]:
+        meta.append("started %s" % e(run["started"].replace("T", " ")))
+    if run["log"]:
+        meta.append(link(run["log"], "runner log"))
+    meta.append(link("..", "all runs"))
+
+    body = ["<h1>e2e results %s &mdash; %s</h1>\n" % (
+        e(run["name"]), verdict_html(run["verdict"]))]
+    body.append('<div class="meta">%s</div>\n' % " &middot; ".join(meta))
+    body.append("<p>%d test cases: %d passed, %d failed, %d errored, %d skipped"
+                ".</p>\n" % (counts.get("total", 0), counts.get("PASS", 0),
+                             counts.get("FAIL", 0), counts.get("ERROR", 0),
+                             counts.get("SKIP", 0)))
+
+    if not run["tests"]:
+        body.append("<p>No test results were collected for this run. See the"
+                    " runner log for what happened.</p>\n")
+
+    body.append(render_failures(run))
+    body.append(render_coverage(run))
+    body.append(render_tests(run))
+
+    return page(title, "".join(body))
+
+
+def render_index(runs):
+    """The list of runs, latest first."""
+    plugins = sorted({p for run in runs for p in run["coverage"]["policies"]})
+
+    header = ["<th>run</th>", "<th>verdict</th>", "<th>tests</th>"]
+    header += ["<th>%s</th>" % e(p) for p in plugins]
+    header += ["<th>runtime</th>", "<th>version</th>"]
+
+    rows = []
+    for run in runs:
+        counts = run["counts"]
+        cells = [
+            "<td>%s</td>" % link("%s/%s" % (run["name"], INDEX_HTML),
+                                 run["name"]),
+            "<td>%s</td>" % verdict_html(run["verdict"]),
+            "<td class=\"num\">%d/%d</td>" % (counts.get("PASS", 0),
+                                              counts.get("total", 0)),
+        ]
+        for plugin in plugins:
+            data = run["coverage"]["policies"].get(plugin)
+            percent = data.get("plugin_percent") if data else None
+            cells.append("<td class=\"num\">%s</td>"
+                         % ("%.1f%%" % percent if percent is not None else ""))
+        cells.append("<td>%s</td>" % e(", ".join(run["runtimes"])))
+        version = e(run["git"]["describe"])
+        if run["git"]["web"] and run["git"]["sha1"]:
+            version = link("%s/commit/%s" % (run["git"]["web"],
+                                             run["git"]["sha1"]),
+                           run["git"]["describe"])
+        cells.append("<td>%s</td>" % version)
+        rows.append("<tr>%s</tr>" % "".join(cells))
+
+    body = ["<h1>NRI reference plugins e2e test results</h1>\n"]
+    if rows:
+        body.append("<table>\n<tr>%s</tr>\n%s\n</table>\n"
+                    % ("".join(header), "\n".join(rows)))
+    else:
+        body.append("<p>No test runs have been published yet.</p>\n")
+
+    return page("NRI reference plugins e2e test results", "".join(body))
+
+
+#
+# commands
+#
+
+def report_run(result_dir):
+    """Write results.json and index.html for one run."""
+    if not os.path.isdir(result_dir):
+        sys.exit("e2e-report: no such directory: %s" % result_dir)
+
+    run = scan_run(result_dir)
+
+    with open(os.path.join(result_dir, RESULTS_JSON), "w",
+              encoding="utf-8") as f:
+        json.dump(run, f, indent=2, sort_keys=True)
+        f.write("\n")
+
+    with open(os.path.join(result_dir, INDEX_HTML), "w",
+              encoding="utf-8") as f:
+        f.write(render_run(run))
+
+    counts = run["counts"]
+    print("%s: %s, %d/%d test cases passed" % (
+        run["name"], run["verdict"], counts.get("PASS", 0),
+        counts.get("total", 0)))
+
+
+def report_index(root):
+    """Rebuild the index of every run under root."""
+    if not os.path.isdir(root):
+        sys.exit("e2e-report: no such directory: %s" % root)
+
+    runs = []
+    for name in sorted(os.listdir(root), reverse=True):
+        if not RUN_NAME.match(name):
+            continue
+        results = os.path.join(root, name, RESULTS_JSON)
+        if os.path.exists(results):
+            try:
+                with open(results, encoding="utf-8") as f:
+                    runs.append(json.load(f))
+                continue
+            except (OSError, ValueError):
+                pass
+        # A run from before we wrote results.json, or one we failed to read.
+        runs.append(scan_run(os.path.join(root, name)))
+
+    with open(os.path.join(root, INDEX_HTML), "w", encoding="utf-8") as f:
+        f.write(render_index(runs))
+
+    print("indexed %d test runs in %s" % (len(runs), root))
+
+
+def main():
+    if len(sys.argv) != 3 or sys.argv[1] not in ("run", "index"):
+        sys.exit(__doc__.strip())
+
+    if sys.argv[1] == "run":
+        report_run(sys.argv[2])
+    else:
+        report_index(sys.argv[2])
+
+
+if __name__ == "__main__":
+    main()
