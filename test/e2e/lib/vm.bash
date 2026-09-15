@@ -1177,6 +1177,153 @@ vm-stop-log-collection() {
     vm-command "fuser --kill $log_file 2>/dev/null || :"
 }
 
+# Collecting coverage data from the plugins. The tests always collect it, and
+# get something to collect when the plugins were built with instrumentation,
+# using make COVER=1, which is what make e2e-tests does. Everything here is
+# best-effort: a plugin without instrumentation simply has nothing to give, and
+# no failure to collect data ever fails a test.
+#
+# The plugin stores its data in a directory under the data directory it mounts
+# from the host anyway, so the data is readily available on the VM, without
+# having to reach into the container. It writes the data there when it exits,
+# and serves it over the instrumentation HTTP server on request, which is how
+# we get the data of a plugin which is still running, or which never gets to
+# exit gracefully.
+vm_coverage_dir=/var/lib/nri-resource-policy/coverage
+vm_coverage_url=http://localhost:8891/coverage
+vm_coverage_curl="curl --silent --show-error --fail --noproxy localhost"
+
+# Where report-coverage.sh puts the report, relative to the output directory.
+# Deliberately not named coverage, unlike the per test data directories, to
+# keep the report and the data it is generated from apart.
+vm_coverage_report_dir=coverage-report
+
+# Print the GOCOVERDIR the plugins are launched with.
+vm-coverage-gocoverdir() {
+    echo "$vm_coverage_dir"
+}
+
+# Return success if all coverage data collected earlier should be discarded
+# before running any tests. Set reset_coverage to
+#   1, true, yes: start from scratch, so that the report covers this run only
+#   anything else: add to the data collected earlier (the default)
+#
+# Without this, the report of a run also covers tests which that run did not
+# rerun, which is what allows collecting a total over several partial runs.
+vm-coverage-reset-requested() {
+    case "${reset_coverage:-no}" in
+        1|true|yes)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
+# Discard all coverage data collected under the given directory, and the report
+# generated from it, if reset_coverage asks for it. Call this once per run,
+# before running any tests, never per test: a test which runs overwrites its own
+# data anyway, and wiping everything between tests would throw away the data of
+# the tests which already ran.
+vm-coverage-discard-collected() {
+    local dir="$1"
+
+    vm-coverage-reset-requested || return 0
+
+    case "$dir" in
+        ""|/)
+            echo "WARNING: refusing to discard coverage data under \"$dir\""
+            return 0
+            ;;
+    esac
+    [ -d "$dir" ] || return 0
+
+    echo "Discarding all coverage data collected earlier under $dir..."
+
+    # Delete the data files, never a directory which merely looks like ours.
+    # The output directory can be anywhere, the source tree included, where a
+    # directory named coverage is just as likely to be a package of ours or the
+    # output of the unit tests.
+    find "$dir" -type f \( -name 'covmeta.*' -o -name 'covcounters.*' \) -delete
+    rm -rf "$dir/$vm_coverage_report_dir"
+}
+
+# Discard the coverage data an earlier test left on the VM, so that what we
+# collect is the data of this test alone. Call this once per test, before it
+# starts.
+vm-coverage-reset() {
+    vm-command-q "rm -rf $vm_coverage_dir && mkdir -p $vm_coverage_dir" ||
+        echo "WARNING: failed to reset coverage directory $vm_coverage_dir"
+}
+
+# Prepare for collecting the coverage data of a plugin about to be launched.
+# The plugin needs the directory to exist, it does not create it. Note that a
+# test can launch and terminate several plugins, all of which dump their data
+# here when they exit, so this must not discard what is already there.
+vm-coverage-prepare() {
+    vm-command-q "mkdir -p $vm_coverage_dir" ||
+        echo "WARNING: failed to create coverage directory $vm_coverage_dir"
+}
+
+# Reset the coverage counters of the running plugin, so that the data we
+# collect covers this test only. Retry while the plugin refuses the connection,
+# as the port-forward we reach it through may need a moment to start passing
+# traffic. Give up at once if the plugin replies, as it then has no coverage
+# data to offer, which is the normal case for an uninstrumented build.
+vm-coverage-clear() {
+    vm-command-q "retry=5; \
+        until $vm_coverage_curl $vm_coverage_url/clear >/dev/null; do \
+            [ \"\$?\" != \"7\" ] && exit 1; \
+            retry=\$(( \$retry - 1 )); \
+            [ \"\$retry\" == \"0\" ] && exit 1; \
+            sleep 1; \
+        done" ||
+        echo "coverage counters not cleared, plugin has no coverage data to offer"
+}
+
+# Dump the coverage data of the running plugin on the VM. Save it under the
+# names go tool covdata expects: the ID the plugin serves is what ties the
+# counters to the meta-data they belong to.
+vm-coverage-snapshot() {
+    local id
+
+    id=$(vm-command-q "$vm_coverage_curl $vm_coverage_url/id")
+    if [ -z "$id" ]; then
+        # Expected if the test terminated the plugin: we then rely on the data
+        # the plugin wrote to $GOCOVERDIR while exiting.
+        echo "no plugin to dump coverage data from"
+        return 0
+    fi
+
+    vm-command-q "cd $vm_coverage_dir && \
+        $vm_coverage_curl -o covmeta.$id $vm_coverage_url/meta && \
+        $vm_coverage_curl -o covcounters.$id.1.\$(date +%s%N) $vm_coverage_url/counters" \
+        >/dev/null ||
+        echo "WARNING: failed to dump coverage data of the plugin"
+}
+
+# Copy the coverage data collected on the VM to the given directory on the
+# host. report-coverage.sh merges the data of all tests into a single report.
+vm-coverage-collect() {
+    local dir="$1"
+
+    if ! vm-command-q "ls $vm_coverage_dir/covmeta.* >/dev/null 2>&1"; then
+        echo "no coverage data collected on the VM"
+        return 0
+    fi
+
+    # Start from scratch, so that we don't mix in the data of an earlier run of
+    # this test, potentially with a different build of the plugin.
+    rm -rf "$dir"
+    if ! mkdir -p "$dir"; then
+        echo "WARNING: failed to create coverage directory $dir"
+        return 0
+    fi
+
+    host-command "$SCP $VM_HOSTNAME:$vm_coverage_dir/'cov*' \"$dir/\"" ||
+        echo "WARNING: copying coverage data from the VM failed"
+}
+
 vm-seconds-now() {
     vm-command-q "date +%s"
 }
