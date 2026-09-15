@@ -38,6 +38,7 @@ func (c *TemplatePolicy) CommonConfig() *CommonConfig {
 		Control:         c.Spec.Control,
 		Log:             c.Spec.Log,
 		Instrumentation: c.Spec.Instrumentation,
+		DRA:             c.Spec.DRA,
 	}
 }
 
