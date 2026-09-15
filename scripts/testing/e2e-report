@@ -671,7 +671,12 @@ def report_index(root):
 
         try:
             with open(results, encoding="utf-8") as f:
-                runs.append(json.load(f))
+                run = json.load(f)
+            # An older version of us did not tell when a run ran, and we order
+            # them by that, so fill it in for those.
+            if not run.get("started"):
+                run["started"] = started_at(run.get("name") or name, dir)
+            runs.append(run)
         except (OSError, ValueError):
             runs.append(scan_run(dir))
 
