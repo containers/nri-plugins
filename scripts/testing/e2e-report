@@ -29,6 +29,7 @@ COVERAGE_DIR = "coverage-report"
 RESULTS_JSON = "results.json"
 INDEX_HTML = "index.html"
 RUNNER_LOG = "e2e-runner.log.txt"
+STATUS_TXT = "status.txt"
 
 RUN_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}")
 VERDICT = re.compile(r"Test verdict:\s*(\S+)")
@@ -282,26 +283,50 @@ def scan_run(result_dir):
 #
 
 CSS = """
-body { font-family: system-ui, sans-serif; margin: 2em; color: #222; }
+:root {
+  --fg: #222; --dim: #666; --bg: #fff; --line: #e6e6e6; --head: #f4f4f4;
+  --hover: #fafafa; --link: #0645ad; --pass: #157f3d; --fail: #c0392b;
+  --skip: #777; --failbg: #fdf3f2;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #ddd; --dim: #9a9a9a; --bg: #1b1b1b; --line: #333; --head: #262626;
+    --hover: #242424; --link: #7aa7ff; --pass: #4cc47c; --fail: #ff7b6b;
+    --skip: #999; --failbg: #2a1f1e;
+  }
+}
+body { font-family: system-ui, sans-serif; margin: 2em auto; max-width: 76em;
+       padding: 0 1em; color: var(--fg); background: var(--bg);
+       line-height: 1.45; }
 h1 { font-size: 1.4em; margin-bottom: 0.2em; }
-h2 { font-size: 1.1em; margin-top: 2em; border-bottom: 1px solid #ddd; }
+h2 { font-size: 1.1em; margin-top: 2em; border-bottom: 1px solid var(--line);
+     padding-bottom: 0.2em; }
 table { border-collapse: collapse; width: 100%; font-size: 0.9em; }
-th { text-align: left; background: #f4f4f4; position: sticky; top: 0; }
-th, td { padding: 0.3em 0.6em; border-bottom: 1px solid #eee;
+th { text-align: left; background: var(--head); position: sticky; top: 0; }
+th, td { padding: 0.35em 0.6em; border-bottom: 1px solid var(--line);
          vertical-align: top; }
-td.num { text-align: right; font-variant-numeric: tabular-nums; }
-tr:hover td { background: #fafafa; }
-a { color: #0645ad; text-decoration: none; }
+td.num { text-align: right; font-variant-numeric: tabular-nums;
+         white-space: nowrap; }
+tr:hover td { background: var(--hover); }
+a { color: var(--link); text-decoration: none; }
 a:hover { text-decoration: underline; }
-.meta { color: #666; margin-bottom: 1.5em; }
-.PASS { color: #157f3d; font-weight: bold; }
-.FAIL, .ERROR { color: #c0392b; font-weight: bold; }
-.SKIP { color: #888; font-weight: bold; }
-pre.reason { margin: 0.3em 0 0 0; padding: 0.4em 0.6em; background: #fbf6f5;
-             border-left: 3px solid #c0392b; overflow-x: auto;
-             font-size: 0.95em; white-space: pre-wrap; }
+.meta { color: var(--dim); margin-bottom: 1.5em; }
+.counts { color: var(--dim); }
+.verdict { display: inline-block; padding: 0 0.45em; border-radius: 0.6em;
+           font-size: 0.85em; font-weight: bold; letter-spacing: 0.02em;
+           border: 1px solid currentColor; }
+.PASS { color: var(--pass); }
+.FAIL, .ERROR { color: var(--fail); }
+.SKIP { color: var(--skip); }
+h1 .verdict { font-size: 0.7em; vertical-align: 0.15em; }
+pre.reason { margin: 0.35em 0 0 0; padding: 0.45em 0.7em;
+             background: var(--failbg); border-left: 3px solid var(--fail);
+             overflow-x: auto; font-size: 0.95em; white-space: pre-wrap; }
 .links a { margin-right: 0.7em; white-space: nowrap; }
-.group { background: #f9f9f9; font-weight: bold; }
+details { margin-top: 0.8em; }
+summary { cursor: pointer; padding: 0.3em 0; font-weight: bold; }
+summary:hover { color: var(--link); }
+summary .counts { font-weight: normal; }
 """
 
 
@@ -314,7 +339,7 @@ def link(href, text):
 
 
 def verdict_html(verdict):
-    return '<span class="%s">%s</span>' % (e(verdict), e(verdict))
+    return '<span class="verdict %s">%s</span>' % (e(verdict), e(verdict))
 
 
 def duration_html(seconds):
@@ -409,31 +434,37 @@ def render_failures(run):
 
 
 def render_tests(run):
-    """Every test case, grouped by the VM it ran on."""
+    """Every test case, in a section per VM which the reader can fold away."""
     if not run["tests"]:
         return ""
 
-    rows, group = [], None
-    for test in run["tests"]:
-        if test["vm"] != group:
-            group = test["vm"]
-            of_vm = [t for t in run["tests"] if t["vm"] == group]
-            passed = len([t for t in of_vm if t["verdict"] == "PASS"])
-            rows.append(
-                "<tr class=\"group\"><td colspan=\"4\">%s &mdash; %d/%d passed"
-                "</td></tr>" % (e(group), passed, len(of_vm)))
-        links = dict(test["links"])
-        links.update(source_link(run, test))
-        rows.append(
-            "<tr><td>%s</td><td>%s / %s</td><td class=\"num\">%s</td>"
-            "<td>%s</td></tr>" % (
-                verdict_html(test["verdict"]), e(test["policy"]),
-                e(test["name"]), duration_html(test["duration"]),
-                links_html(links)))
+    sections = []
+    for vm in sorted({t["vm"] for t in run["tests"]}):
+        of_vm = [t for t in run["tests"] if t["vm"] == vm]
+        passed = len([t for t in of_vm if t["verdict"] == "PASS"])
 
-    return ("<h2>Test cases (%d)</h2>\n<table>\n<tr><th>verdict</th>"
+        rows = []
+        for test in of_vm:
+            links = dict(test["links"])
+            links.update(source_link(run, test))
+            rows.append(
+                "<tr><td>%s</td><td>%s / %s</td><td class=\"num\">%s</td>"
+                "<td>%s</td></tr>" % (
+                    verdict_html(test["verdict"]), e(test["policy"]),
+                    e(test["name"]), duration_html(test["duration"]),
+                    links_html(links)))
+
+        # Fold away what went through, leave open what did not.
+        sections.append(
+            "<details%s>\n<summary>%s <span class=\"counts\">&mdash; %d/%d"
+            " passed</span></summary>\n<table>\n<tr><th>verdict</th>"
             "<th>test</th><th>duration</th><th></th></tr>\n%s\n</table>\n"
-            % (len(run["tests"]), "\n".join(rows)))
+            "</details>\n" % (
+                "" if passed == len(of_vm) else " open", e(vm), passed,
+                len(of_vm), "\n".join(rows)))
+
+    return ("<h2>Test cases (%d)</h2>\n%s" % (len(run["tests"]),
+                                              "".join(sections)))
 
 
 def render_run(run):
@@ -460,10 +491,11 @@ def render_run(run):
     body = ["<h1>e2e results %s &mdash; %s</h1>\n" % (
         e(run["name"]), verdict_html(run["verdict"]))]
     body.append('<div class="meta">%s</div>\n' % " &middot; ".join(meta))
-    body.append("<p>%d test cases: %d passed, %d failed, %d errored, %d skipped"
-                ".</p>\n" % (counts.get("total", 0), counts.get("PASS", 0),
-                             counts.get("FAIL", 0), counts.get("ERROR", 0),
-                             counts.get("SKIP", 0)))
+    body.append('<p class="counts">%d test cases: %d passed, %d failed,'
+                " %d errored, %d skipped.</p>\n" % (
+                    counts.get("total", 0), counts.get("PASS", 0),
+                    counts.get("FAIL", 0), counts.get("ERROR", 0),
+                    counts.get("SKIP", 0)))
 
     if not run["tests"]:
         body.append("<p>No test results were collected for this run. See the"
@@ -539,9 +571,14 @@ def report_run(result_dir):
         f.write(render_run(run))
 
     counts = run["counts"]
-    print("%s: %s, %d/%d test cases passed" % (
-        run["name"], run["verdict"], counts.get("PASS", 0),
-        counts.get("total", 0)))
+    status = "%s %d/%d tests passed\n" % (
+        run["verdict"], counts.get("PASS", 0), counts.get("total", 0))
+
+    # One line for whoever runs the tests to act on without reading json.
+    with open(os.path.join(result_dir, STATUS_TXT), "w", encoding="utf-8") as f:
+        f.write(status)
+
+    print("%s: %s" % (run["name"], status.strip()))
 
 
 def report_index(root):
