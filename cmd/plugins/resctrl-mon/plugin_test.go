@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/containerd/nri/pkg/api"
+	"github.com/intel/goresctrl/pkg/monitor"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -35,11 +36,45 @@ func newTestPlugin(resctrlPath string) *plugin {
 	cfg := &pluginConfig{
 		ResctrlPath: resctrlPath,
 	}
+	mgr, err := monitor.New(monitor.Options{
+		ResctrlRoot:      resctrlPath,
+		KeyValidator:     monitor.PodUIDValidator,
+		KeyCanonicalizer: monitor.CanonicalizePodUID,
+	})
+	if err != nil {
+		panic(err)
+	}
 	return &plugin{
 		config: cfg,
-		state:  newPodState(),
-		rdt:    newResctrlOps(resctrlPath),
+		mgr:    mgr,
 	}
+}
+
+// recordingManager wraps a real *monitor.Manager but replaces Reconcile with a
+// recorder. goresctrl's Reconcile reaps orphan mon_groups with rmdir(2), which
+// on tmpfs cannot delete a realistic (tasks-file-bearing) mon_group the way the
+// resctrl kernel does. The plugin's own responsibility is the live set it hands
+// to Reconcile, so these tests capture that set and leave physical reaping to
+// goresctrl's own reconcile tests.
+type recordingManager struct {
+	*monitor.Manager
+	reconciled    bool
+	lastReconcile []string
+}
+
+func (m *recordingManager) Reconcile(live []string) error {
+	m.reconciled = true
+	m.lastReconcile = append([]string(nil), live...)
+	return nil
+}
+
+// newRecordingTestPlugin builds a test plugin whose manager records the live set
+// passed to Reconcile instead of performing filesystem reaping.
+func newRecordingTestPlugin(resctrlPath string) (*plugin, *recordingManager) {
+	p := newTestPlugin(resctrlPath)
+	rec := &recordingManager{Manager: p.mgr.(*monitor.Manager)}
+	p.mgr = rec
+	return p, rec
 }
 
 func makePod(uid, namespace, name string) *api.PodSandbox {
@@ -129,23 +164,27 @@ func TestPostCreateContainer_FilteredPod(t *testing.T) {
 	require.NoError(t, err)
 
 	// Pod should not be tracked since it's not in the production namespace.
-	assert.Equal(t, 0, p.state.podCount())
+	assert.Equal(t, 0, len(p.mgr.List()))
 }
 
 func TestPostCreateContainer_CreatesMonGroup(t *testing.T) {
 	tmpDir := t.TempDir()
 	p := newTestPlugin(tmpDir)
 
-	pod := makePod("a1b2c3d4-e5f6-7890-abcd-ef1234567890", "default", "test-pod")
-	ctr := makeContainer("c1", "container1", "a1b2c3d4-e5f6-7890-abcd-ef1234567890", 0, "")
+	podUID := "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+	pod := makePod(podUID, "default", "test-pod")
+	ctr := makeContainer("c1", "container1", podUID, 0, "")
 
 	err := p.PostCreateContainer(context.Background(), pod, ctr)
 	require.NoError(t, err)
 
 	// Pod should be tracked.
-	assert.Equal(t, 1, p.state.podCount())
-	monDir := p.state.getMonGroupDir("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
-	assert.Contains(t, monDir, "mon_groups/a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+	assert.Equal(t, 1, len(p.mgr.List()))
+
+	// Mon_group directory should exist, keyed by bare pod UID.
+	monDir := filepath.Join(tmpDir, "mon_groups", podUID)
+	_, err = os.Stat(monDir)
+	assert.NoError(t, err)
 }
 
 func TestPostCreateContainer_WithRDTClass(t *testing.T) {
@@ -153,14 +192,17 @@ func TestPostCreateContainer_WithRDTClass(t *testing.T) {
 	p := newTestPlugin(tmpDir)
 	require.NoError(t, os.Mkdir(filepath.Join(tmpDir, "BestEffort"), 0755))
 
-	pod := makePod("a1b2c3d4-e5f6-7890-abcd-ef1234567890", "default", "test-pod")
-	ctr := makeContainer("c1", "container1", "a1b2c3d4-e5f6-7890-abcd-ef1234567890", 0, "BestEffort")
+	podUID := "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+	pod := makePod(podUID, "default", "test-pod")
+	ctr := makeContainer("c1", "container1", podUID, 0, "BestEffort")
 
 	err := p.PostCreateContainer(context.Background(), pod, ctr)
 	require.NoError(t, err)
 
-	monDir := p.state.getMonGroupDir("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
-	assert.Contains(t, monDir, "BestEffort/mon_groups/a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+	// Mon_group should be under the ctrl_group.
+	monDir := filepath.Join(tmpDir, "BestEffort", "mon_groups", podUID)
+	_, err = os.Stat(monDir)
+	assert.NoError(t, err)
 }
 
 func TestMultiContainerPod(t *testing.T) {
@@ -175,127 +217,25 @@ func TestMultiContainerPod(t *testing.T) {
 	// First container creates the mon_group.
 	err := p.PostCreateContainer(context.Background(), pod, ctr1)
 	require.NoError(t, err)
-	assert.Equal(t, 1, p.state.podCount())
+	assert.Equal(t, 1, len(p.mgr.List()))
 
 	// Second container reuses the same mon_group.
 	err = p.PostCreateContainer(context.Background(), pod, ctr2)
 	require.NoError(t, err)
-	assert.Equal(t, 1, p.state.podCount()) // still one pod
+	assert.Equal(t, 1, len(p.mgr.List())) // still one pod
 
-	// Stopping first container should not remove the mon_group.
-	_, err = p.StopContainer(context.Background(), pod, ctr1)
-	require.NoError(t, err)
-	assert.Equal(t, 1, p.state.podCount())
-	assert.False(t, p.state.podHasNoContainers(podUID))
-
-	// Stopping the last container retains the mon_group (it is released only
-	// when the pod sandbox is removed, so the RMID stays stable across
-	// container restarts).
-	_, err = p.StopContainer(context.Background(), pod, ctr2)
-	require.NoError(t, err)
-	assert.Equal(t, 1, p.state.podCount())
-	assert.True(t, p.state.podHasNoContainers(podUID))
-
-	// Removing the pod sandbox releases the mon_group.
+	// RemovePodSandbox is what actually removes the mon_group; container
+	// stops do not affect it (the plugin no longer handles StopContainer).
 	err = p.RemovePodSandbox(context.Background(), pod)
 	require.NoError(t, err)
-	assert.Equal(t, 0, p.state.podCount())
-}
-
-func TestStopContainer_UnknownPod(t *testing.T) {
-	p := newTestPlugin(t.TempDir())
-
-	pod := makePod("unknown-uid", "default", "unknown-pod")
-	ctr := makeContainer("c1", "container1", "unknown-uid", 1234, "")
-
-	updates, err := p.StopContainer(context.Background(), pod, ctr)
-	require.NoError(t, err)
-	assert.Nil(t, updates)
-}
-
-// TestContainerRestart_RetainsMonGroup verifies that a container restart under
-// the same pod UID (e.g. restartPolicy: Always after a fixed-duration workload
-// exits) keeps the same mon_group directory, so the kernel does not release and
-// reassign the RMID. RMID reassignment would carry residual hardware counter
-// values and surface as a false counter spike.
-func TestContainerRestart_RetainsMonGroup(t *testing.T) {
-	tmpDir := t.TempDir()
-	p := newTestPlugin(tmpDir)
-	podUID := "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
-
-	pod := makePod(podUID, "default", "restart-pod")
-	ctr := makeContainer("c1", "container1", podUID, 0, "")
-
-	// Container starts: mon_group is created.
-	err := p.PostCreateContainer(context.Background(), pod, ctr)
-	require.NoError(t, err)
-	monDir := p.state.getMonGroupDir(podUID)
-	require.NotEmpty(t, monDir)
-	require.DirExists(t, monDir)
-
-	// Container exits (workload timed out). The mon_group must be retained.
-	_, err = p.StopContainer(context.Background(), pod, ctr)
-	require.NoError(t, err)
-	assert.Equal(t, 1, p.state.podCount())
-	assert.DirExists(t, monDir, "mon_group must survive a container restart")
-
-	// kubelet restarts the container under the same pod UID. The same
-	// mon_group directory (and thus RMID) must be reused.
-	err = p.PostCreateContainer(context.Background(), pod, ctr)
-	require.NoError(t, err)
-	assert.Equal(t, monDir, p.state.getMonGroupDir(podUID), "restart must reuse the same mon_group")
-
-	// Pod is finally deleted: mon_group is released.
-	err = p.RemovePodSandbox(context.Background(), pod)
-	require.NoError(t, err)
-	assert.Equal(t, 0, p.state.podCount())
-	assert.NoDirExists(t, monDir)
-}
-
-// TestRemovePodSandbox_UnknownPod verifies that removing a pod we never tracked
-// is a no-op and does not error.
-func TestRemovePodSandbox_UnknownPod(t *testing.T) {
-	p := newTestPlugin(t.TempDir())
-
-	pod := makePod("a1b2c3d4-e5f6-7890-abcd-ef1234567890", "default", "unknown-pod")
-
-	err := p.RemovePodSandbox(context.Background(), pod)
-	require.NoError(t, err)
-	assert.Equal(t, 0, p.state.podCount())
-}
-
-// TestMissingPodUID_NoMonGroup verifies that a sandbox without a valid pod UID
-// is handled as a safe no-op across the full lifecycle: no mon_group is created
-// (mon_groups are keyed by pod UID, not per container), and the stop/remove
-// handlers neither panic nor leak state. This documents that the plugin does
-// not currently fall back to per-container monitoring when the UID is absent.
-func TestMissingPodUID_NoMonGroup(t *testing.T) {
-	p := newTestPlugin(t.TempDir())
-
-	pod := makePod("", "default", "no-uid-pod")
-	ctr := makeContainer("c1", "container1", "", 1234, "")
-
-	// Creation must not create a group and must be non-fatal.
-	require.NoError(t, p.PostCreateContainer(context.Background(), pod, ctr))
-	assert.Equal(t, 0, p.state.podCount())
-
-	// The remaining handlers must be safe no-ops.
-	require.NoError(t, p.StartContainer(context.Background(), pod, ctr))
-	require.NoError(t, p.PostStartContainer(context.Background(), pod, ctr))
-
-	_, err := p.StopContainer(context.Background(), pod, ctr)
-	require.NoError(t, err)
-	assert.Equal(t, 0, p.state.podCount())
-
-	require.NoError(t, p.RemovePodSandbox(context.Background(), pod))
-	assert.Equal(t, 0, p.state.podCount())
+	assert.Equal(t, 0, len(p.mgr.List()))
 }
 
 func TestSetConfig(t *testing.T) {
 	p := newTestPlugin("/tmp/resctrl-test")
 
 	configYAML := []byte(`
-resctrlPath: /tmp/test-resctrl
+resctrlPath: /tmp/resctrl-test
 namespaces:
   - production
   - staging
@@ -305,7 +245,7 @@ labelSelector:
 
 	err := p.setConfig(configYAML)
 	require.NoError(t, err)
-	assert.Equal(t, "/tmp/test-resctrl", p.config.ResctrlPath)
+	assert.Equal(t, "/tmp/resctrl-test", p.config.ResctrlPath)
 	assert.Equal(t, []string{"production", "staging"}, p.config.Namespaces)
 	assert.Equal(t, map[string]string{"monitor": "true"}, p.config.LabelSelector)
 }
@@ -338,25 +278,159 @@ func TestSynchronize_UsesUIDNotSandboxID(t *testing.T) {
 	require.NoError(t, err)
 
 	// The mon_group should be keyed by the K8s pod UID, not the sandbox ID.
-	assert.Equal(t, 1, p.state.podCount())
-	assert.True(t, p.state.hasPod(podUID))
-	assert.False(t, p.state.hasPod(pod.GetId()))
+	tracked := p.mgr.List()
+	assert.Equal(t, 1, len(tracked))
+	assert.Contains(t, tracked, podUID)
 
-	monDir := p.state.getMonGroupDir(podUID)
-	assert.Contains(t, monDir, podUID)
+	// Mon_group directory should exist.
+	monDir := filepath.Join(tmpDir, "mon_groups", podUID)
+	_, err = os.Stat(monDir)
+	assert.NoError(t, err)
 }
 
-func TestEnsureMonGroup_InvalidUID(t *testing.T) {
+func TestSynchronize_RemovesOrphanMonGroup(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// An orphaned mon_group left behind by a previous run, keyed by a
+	// UUID-shaped pod UID that is no longer live.
+	orphanUID := "deadbeef-0000-4000-8000-000000000000"
+	orphanDir := filepath.Join(tmpDir, "mon_groups", orphanUID)
+	require.NoError(t, os.MkdirAll(orphanDir, 0755))
+
+	p, rec := newRecordingTestPlugin(tmpDir)
+
+	// Synchronize with a single live pod that is not the orphan.
+	podUID := "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+	pod := makePod(podUID, "default", "live-pod")
+	ctr := makeContainer("c1", "container1", pod.GetId(), 0, "")
+
+	_, err := p.Synchronize(context.Background(), []*api.PodSandbox{pod}, []*api.Container{ctr})
+	require.NoError(t, err)
+
+	// The live pod's mon_group was created.
+	_, err = os.Stat(filepath.Join(tmpDir, "mon_groups", podUID))
+	assert.NoError(t, err)
+
+	// Synchronize reconciles with a live set that includes the live pod but not
+	// the orphan, so goresctrl reaps the orphan (the physical rmdir is covered
+	// by goresctrl's own reconcile tests).
+	require.True(t, rec.reconciled, "Synchronize must reconcile")
+	assert.Contains(t, rec.lastReconcile, monitor.CanonicalizePodUID(podUID))
+	assert.NotContains(t, rec.lastReconcile, orphanUID,
+		"orphan must be absent from the live set so Reconcile reaps it")
+}
+
+// TestReconcile_PreservesContainerlessLiveSandbox verifies that a monitored pod
+// sandbox that is alive with no running container (its mon_group survives from
+// a previous run but no EnsureGroup tracks it) stays in the reconcile live set,
+// so the background reconciler does not reap it and a restarting container
+// reuses the same RMID.
+func TestReconcile_PreservesContainerlessLiveSandbox(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// A container-less sandbox: the plugin never calls EnsureGroup for it, so
+	// mgr.List() omits it and only the live set protects it.
+	sandboxUID := "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+	canon := monitor.CanonicalizePodUID(sandboxUID)
+
+	p, rec := newRecordingTestPlugin(tmpDir)
+
+	// Synchronize with the live sandbox but no containers.
+	pod := makePod(sandboxUID, "default", "live-pod")
+	_, err := p.Synchronize(context.Background(), []*api.PodSandbox{pod}, nil)
+	require.NoError(t, err)
+
+	// The initial Reconcile's live set protects the sandbox even though it is
+	// not tracked in the Manager.
+	require.NotContains(t, p.mgr.List(), canon, "container-less sandbox is not tracked in the Manager")
+	assert.Contains(t, rec.lastReconcile, canon)
+
+	// A background reconcile tick must still protect it (regression: it used to
+	// reconcile against mgr.List() only and reap the group).
+	p.reconcile(p.mgr)
+	assert.Contains(t, rec.lastReconcile, canon)
+
+	// Once the sandbox is removed, it drops out of the live set and becomes
+	// reap-able.
+	require.NoError(t, p.RemovePodSandbox(context.Background(), pod))
+	p.reconcile(p.mgr)
+	assert.NotContains(t, rec.lastReconcile, canon, "sandbox should be reap-able after the pod is gone")
+}
+
+func TestReconcile_LiveKeyCanonicalizedAcrossUIDForms(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// The same pod UID in the two forms PodUIDValidator accepts.
+	const compact = "a1b2c3d4e5f67890abcdef1234567890"
+	const dashed = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+	p, rec := newRecordingTestPlugin(tmpDir)
+
+	// Synchronize reports the sandbox in compact form; setLiveKeys stores it
+	// under the canonical dashed form, which reconcileLiveSet then emits.
+	pod := makePod(compact, "default", "live-pod")
+	_, err := p.Synchronize(context.Background(), []*api.PodSandbox{pod}, nil)
+	require.NoError(t, err)
+	p.reconcile(p.mgr)
+	assert.Contains(t, rec.lastReconcile, dashed)
+
+	// Removal reports the equivalent dashed form. dropLiveKey must canonicalize
+	// the key so the entry stored by setLiveKeys is dropped and the group can be
+	// reaped; without canonicalization it would stay in the live set forever.
+	require.NoError(t, p.RemovePodSandbox(context.Background(), makePod(dashed, "default", "live-pod")))
+	p.reconcile(p.mgr)
+	assert.NotContains(t, rec.lastReconcile, dashed,
+		"live key must be dropped once the equivalent dashed UID is removed")
+}
+
+func TestSetLiveKeys_PreservesConcurrentRemoval(t *testing.T) {
+	p := newTestPlugin(t.TempDir())
+	const uid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+	// Model a Synchronize pass: open the tombstone window, then a concurrent
+	// RemovePodSandbox drops the key before the pass commits its (older) snapshot.
+	p.beginSync()
+	p.dropLiveKey(uid)
+	p.setLiveKeys([]string{uid})
+
+	p.mu.Lock()
+	_, live := p.liveKeys[uid]
+	p.mu.Unlock()
+	assert.False(t, live, "a removal during the sync pass must not be overwritten by the snapshot")
+}
+
+func TestReconcile_RetriesPendingRemoval(t *testing.T) {
+	tmpDir := t.TempDir()
+	p := newTestPlugin(tmpDir)
+	podUID := "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+	// A tracked group whose earlier Remove is assumed to have failed.
+	_, err := p.mgr.EnsureGroup(podUID, "")
+	require.NoError(t, err)
+	require.Contains(t, p.mgr.List(), podUID)
+	p.markPendingRemoval(podUID)
+
+	// The reconciler must retry Remove (not merely Reconcile, which preserves
+	// tracked keys) and clear the pending entry on success.
+	p.reconcile(p.mgr)
+
+	assert.NotContains(t, p.mgr.List(), podUID)
+	assert.Empty(t, p.pendingRemovalKeys())
+	_, err = os.Stat(filepath.Join(tmpDir, "mon_groups", podUID))
+	assert.True(t, os.IsNotExist(err), "pending mon_group should have been removed on retry")
+}
+
+func TestPostCreateContainer_InvalidUID(t *testing.T) {
 	p := newTestPlugin(t.TempDir())
 
-	err := p.ensureMonGroup("", "c1", "")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid pod UID")
+	// Invalid UID (not a UUID) — EnsureGroup fails due to PodUIDValidator.
+	pod := makePod("not-a-uuid", "default", "bad-pod")
+	ctr := makeContainer("c1", "container1", "not-a-uuid", 0, "")
 
-	err = p.ensureMonGroup("not-a-uuid", "c1", "")
-	assert.Error(t, err)
-
-	assert.Equal(t, 0, p.state.podCount())
+	err := p.PostCreateContainer(context.Background(), pod, ctr)
+	// Non-fatal: returns nil but does not track.
+	require.NoError(t, err)
+	assert.Equal(t, 0, len(p.mgr.List()))
 }
 
 func TestStartContainer_AssignsPID(t *testing.T) {
@@ -371,8 +445,8 @@ func TestStartContainer_AssignsPID(t *testing.T) {
 	err := p.PostCreateContainer(context.Background(), pod, ctr)
 	require.NoError(t, err)
 
-	monDir := p.state.getMonGroupDir(podUID)
-	require.NotEmpty(t, monDir)
+	monDir := filepath.Join(tmpDir, "mon_groups", podUID)
+	require.DirExists(t, monDir)
 
 	// Simulate the kernel creating the tasks file.
 	require.NoError(t, os.WriteFile(filepath.Join(monDir, "tasks"), nil, 0644))
@@ -387,6 +461,38 @@ func TestStartContainer_AssignsPID(t *testing.T) {
 	assert.Equal(t, "42\n", string(data))
 }
 
+// TestStartContainer_OffClassSidecarNotAssigned verifies the core safety
+// invariant: assigning a PID to a pod's mon_group must never move a container
+// into a different resctrl control group. When the pod's mon_group was created
+// under one RDT class, a later container in a different class (e.g. an
+// off-class sidecar) must not have its PID written to that group's tasks file.
+func TestStartContainer_OffClassSidecarNotAssigned(t *testing.T) {
+	tmpDir := t.TempDir()
+	p := newTestPlugin(tmpDir)
+	require.NoError(t, os.Mkdir(filepath.Join(tmpDir, "BestEffort"), 0755))
+
+	podUID := "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+	pod := makePod(podUID, "default", "test-pod")
+
+	// First container establishes the pod's mon_group under BestEffort.
+	app := makeContainer("c1", "app", podUID, 0, "BestEffort")
+	require.NoError(t, p.PostCreateContainer(context.Background(), pod, app))
+
+	monDir := filepath.Join(tmpDir, "BestEffort", "mon_groups", podUID)
+	require.DirExists(t, monDir)
+	require.NoError(t, os.WriteFile(filepath.Join(monDir, "tasks"), nil, 0644))
+
+	// A root-class sidecar in the same pod must not be assigned: writing its
+	// PID here would rewrite its CLOSID into the BestEffort ctrl_group.
+	sidecar := makeContainer("c2", "sidecar", podUID, 77, "")
+	require.NoError(t, p.StartContainer(context.Background(), pod, sidecar))
+	require.NoError(t, p.PostStartContainer(context.Background(), pod, sidecar))
+
+	data, err := os.ReadFile(filepath.Join(monDir, "tasks"))
+	require.NoError(t, err)
+	assert.Empty(t, string(data), "off-class sidecar PID must not be written to the pod mon_group")
+}
+
 func TestStartContainer_PIDZero_FallbackToPostStart(t *testing.T) {
 	tmpDir := t.TempDir()
 	p := newTestPlugin(tmpDir)
@@ -399,8 +505,7 @@ func TestStartContainer_PIDZero_FallbackToPostStart(t *testing.T) {
 	err := p.PostCreateContainer(context.Background(), pod, ctr)
 	require.NoError(t, err)
 
-	monDir := p.state.getMonGroupDir(podUID)
-	require.NotEmpty(t, monDir)
+	monDir := filepath.Join(tmpDir, "mon_groups", podUID)
 	require.NoError(t, os.WriteFile(filepath.Join(monDir, "tasks"), nil, 0644))
 
 	// StartContainer with PID 0 should not fail (just warns).
@@ -429,82 +534,7 @@ func TestStartContainer_FilteredPod(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestCompactUID_EnsureMonGroupStoresCanonical(t *testing.T) {
-	tmpDir := t.TempDir()
-	p := newTestPlugin(tmpDir)
-
-	compactUID := "a1b2c3d4e5f678901234abcdef567890"
-	canonicalUID := "a1b2c3d4-e5f6-7890-1234-abcdef567890"
-
-	pod := makePod(compactUID, "default", "test-pod")
-	ctr := makeContainer("c1", "container1", compactUID, 0, "")
-
-	err := p.PostCreateContainer(context.Background(), pod, ctr)
-	require.NoError(t, err)
-
-	// State must be keyed under the canonical dashed form.
-	assert.True(t, p.state.hasPod(canonicalUID))
-	assert.False(t, p.state.hasPod(compactUID))
-
-	monDir := p.state.getMonGroupDir(canonicalUID)
-	assert.Contains(t, monDir, canonicalUID)
-}
-
-func TestCompactUID_StartContainerFindsMonGroup(t *testing.T) {
-	tmpDir := t.TempDir()
-	p := newTestPlugin(tmpDir)
-
-	compactUID := "a1b2c3d4e5f678901234abcdef567890"
-	canonicalUID := "a1b2c3d4-e5f6-7890-1234-abcdef567890"
-
-	pod := makePod(compactUID, "default", "test-pod")
-	ctr := makeContainer("c1", "container1", compactUID, 0, "")
-
-	// Create mon_group via compact UID.
-	err := p.PostCreateContainer(context.Background(), pod, ctr)
-	require.NoError(t, err)
-
-	monDir := p.state.getMonGroupDir(canonicalUID)
-	require.NotEmpty(t, monDir)
-	require.NoError(t, os.WriteFile(filepath.Join(monDir, "tasks"), nil, 0644))
-
-	// StartContainer also using compact UID must find and write to the same mon_group.
-	ctrWithPid := makeContainer("c1", "container1", compactUID, 77, "")
-	err = p.StartContainer(context.Background(), pod, ctrWithPid)
-	require.NoError(t, err)
-
-	data, err := os.ReadFile(filepath.Join(monDir, "tasks"))
-	require.NoError(t, err)
-	assert.Equal(t, "77\n", string(data))
-}
-
-func TestCompactUID_RemovePodSandboxCleansUp(t *testing.T) {
-	tmpDir := t.TempDir()
-	p := newTestPlugin(tmpDir)
-
-	compactUID := "a1b2c3d4e5f678901234abcdef567890"
-	canonicalUID := "a1b2c3d4-e5f6-7890-1234-abcdef567890"
-
-	pod := makePod(compactUID, "default", "test-pod")
-	ctr := makeContainer("c1", "container1", compactUID, 0, "")
-
-	err := p.PostCreateContainer(context.Background(), pod, ctr)
-	require.NoError(t, err)
-	assert.Equal(t, 1, p.state.podCount())
-
-	// Stopping the last container retains the mon_group.
-	_, err = p.StopContainer(context.Background(), pod, ctr)
-	require.NoError(t, err)
-	assert.Equal(t, 1, p.state.podCount())
-
-	// Removing the pod sandbox (compact UID) must normalize and clean up.
-	err = p.RemovePodSandbox(context.Background(), pod)
-	require.NoError(t, err)
-	assert.Equal(t, 0, p.state.podCount())
-	assert.False(t, p.state.hasPod(canonicalUID))
-}
-
-func TestRemovePodSandbox_RemovesStateOnRmdirFailure(t *testing.T) {
+func TestRemovePodSandbox_RetainsGroupOnRmdirFailure(t *testing.T) {
 	tmpDir := t.TempDir()
 	p := newTestPlugin(tmpDir)
 	podUID := "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
@@ -515,24 +545,19 @@ func TestRemovePodSandbox_RemovesStateOnRmdirFailure(t *testing.T) {
 	// Create the mon_group.
 	err := p.PostCreateContainer(context.Background(), pod, ctr)
 	require.NoError(t, err)
-	assert.Equal(t, 1, p.state.podCount())
+	assert.Equal(t, 1, len(p.mgr.List()))
 
-	monDir := p.state.getMonGroupDir(podUID)
-	require.NotEmpty(t, monDir)
+	monDir := filepath.Join(tmpDir, "mon_groups", podUID)
+	require.DirExists(t, monDir)
 
-	// Put a file inside the mon_group dir so os.Remove fails (dir not empty).
+	// Put a file inside the mon_group dir so os.Remove (rmdir) would fail.
 	require.NoError(t, os.WriteFile(filepath.Join(monDir, "tasks"), nil, 0644))
 
-	// Stopping the last container retains the mon_group.
-	_, err = p.StopContainer(context.Background(), pod, ctr)
-	require.NoError(t, err)
-	assert.Equal(t, 1, p.state.podCount())
-
-	// RemovePodSandbox should still drop the pod from state even if rmdir
-	// fails (the orphaned directory is reaped later by the reconciler).
+	// RemovePodSandbox attempts removal; with a non-empty dir rmdir fails,
+	// so the entry remains in the manager (reconciler will retry later).
 	err = p.RemovePodSandbox(context.Background(), pod)
-	require.NoError(t, err)
-	assert.Equal(t, 0, p.state.podCount())
+	require.NoError(t, err) // handler does not propagate the rmdir error
+	assert.Equal(t, 1, len(p.mgr.List()), "entry retained when rmdir fails; reconciler will clean")
 }
 
 func TestCheckRuntimeVersion(t *testing.T) {
@@ -570,4 +595,135 @@ func TestCheckRuntimeVersion(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSetConfig_ReloadTearsDownTelemetry verifies that a dynamic setConfig
+// reload that changes the telemetry settings unregisters the OTel instruments
+// and starts fresh telemetry, rather than leaking the old registration.
+func TestSetConfig_ReloadTearsDownTelemetry(t *testing.T) {
+	groups := map[string]map[string]map[string]string{
+		"11111111-1111-1111-1111-111111111111": {
+			"mon_L3_00": {"llc_occupancy": "4096"},
+		},
+	}
+	root1 := setupTestResctrl(t, groups)
+
+	p := newTestPlugin(root1)
+	// Disable Prometheus so telemetry starts without binding a port.
+	p.config.Telemetry = defaultTelemetryConfig()
+	p.config.Telemetry.Prometheus.Enabled = false
+
+	require.NoError(t, p.startTelemetry(context.Background()))
+	oldReg := p.metrics
+	oldTelem := p.telemetry
+	require.NotNil(t, oldReg)
+	require.NotNil(t, oldTelem)
+
+	// Dynamic reconfiguration (same, immutable root) that changes a telemetry
+	// setting (adds a resource attribute); telemetry stays port-less.
+	data := []byte("resctrlPath: " + root1 + "\ntelemetry:\n  prometheus:\n    enabled: false\n  resourceAttributes:\n    deployment.environment: test\n")
+	require.NoError(t, p.setConfig(data))
+	t.Cleanup(func() {
+		if p.telemetry != nil {
+			p.telemetry.shutdown(context.Background())
+		}
+	})
+
+	// Telemetry and its registration were replaced, not leaked.
+	require.NotNil(t, p.telemetry)
+	require.NotNil(t, p.metrics)
+	assert.NotSame(t, oldTelem, p.telemetry)
+	assert.NotSame(t, oldReg, p.metrics)
+
+	// The old registration was already unregistered; a second call is a no-op.
+	assert.NoError(t, oldReg.Unregister())
+}
+
+// TestSetConfig_ReloadPreservesTelemetryWhenUnchanged verifies that a dynamic
+// setConfig reload that leaves the telemetry settings unchanged (only pod
+// filters change) keeps the existing telemetry and OTel registration. Recreating
+// the registration would discard goresctrl/pkg/monitor's monotonic accumulator
+// and re-seed exported cumulative counters at the current raw reading, which
+// PromQL reads as a counter reset (a false rate()/increase() spike).
+func TestSetConfig_ReloadPreservesTelemetryWhenUnchanged(t *testing.T) {
+	groups := map[string]map[string]map[string]string{
+		"11111111-1111-1111-1111-111111111111": {
+			"mon_L3_00": {"llc_occupancy": "4096"},
+		},
+	}
+	root1 := setupTestResctrl(t, groups)
+
+	p := newTestPlugin(root1)
+	// Disable Prometheus so telemetry starts without binding a port. Normalize
+	// the config the same way setConfig does, so the reload below compares
+	// against a fully-defaulted telemetry config (as a real applied config is).
+	p.config.Telemetry = defaultTelemetryConfig()
+	p.config.Telemetry.Prometheus.Enabled = false
+	require.NoError(t, validateTelemetryConfig(&p.config.Telemetry))
+
+	require.NoError(t, p.startTelemetry(context.Background()))
+	t.Cleanup(func() {
+		if p.telemetry != nil {
+			p.telemetry.shutdown(context.Background())
+		}
+	})
+	oldReg := p.metrics
+	oldTelem := p.telemetry
+	require.NotNil(t, oldReg)
+	require.NotNil(t, oldTelem)
+
+	// Reload with identical telemetry but a changed pod filter.
+	data := []byte("resctrlPath: " + root1 + "\nnamespaces:\n  - production\ntelemetry:\n  prometheus:\n    enabled: false\n")
+	require.NoError(t, p.setConfig(data))
+
+	// The filter change was applied, but telemetry and its registration are the
+	// same instances (accumulator state preserved).
+	assert.Equal(t, []string{"production"}, p.config.Namespaces)
+	assert.Same(t, oldTelem, p.telemetry)
+	assert.Same(t, oldReg, p.metrics)
+}
+
+// TestSetConfig_RejectsRootChange verifies that changing resctrlPath on a
+// running plugin (telemetry started) is rejected and the original root is
+// retained.
+func TestSetConfig_RejectsRootChange(t *testing.T) {
+	empty := map[string]map[string]map[string]string{}
+	root1 := setupTestResctrl(t, empty)
+	root2 := setupTestResctrl(t, empty)
+
+	p := newTestPlugin(root1)
+	// Bring the plugin up (port-less telemetry) so the immutability guard is
+	// in force.
+	p.config.Telemetry = defaultTelemetryConfig()
+	p.config.Telemetry.Prometheus.Enabled = false
+	require.NoError(t, p.startTelemetry(context.Background()))
+	t.Cleanup(func() {
+		if p.telemetry != nil {
+			p.telemetry.shutdown(context.Background())
+		}
+	})
+
+	err := p.setConfig([]byte("resctrlPath: " + root2 + "\ntelemetry:\n  prometheus:\n    enabled: false\n"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot be changed")
+	assert.Equal(t, root1, p.config.ResctrlPath)
+}
+
+// TestSetConfig_AllowsInitialRootSelection verifies that a non-default
+// resctrlPath supplied before the plugin is running (no telemetry, no
+// reconciler) is accepted and rebuilds the manager, rather than being rejected
+// as a change to a running plugin.
+func TestSetConfig_AllowsInitialRootSelection(t *testing.T) {
+	empty := map[string]map[string]map[string]string{}
+	root1 := setupTestResctrl(t, empty)
+	root2 := setupTestResctrl(t, empty)
+
+	// newPlugin-equivalent initial state: config points at root1, no telemetry
+	// or reconciler running yet.
+	p := newTestPlugin(root1)
+	oldMgr := p.mgr
+
+	require.NoError(t, p.setConfig([]byte("resctrlPath: "+root2+"\n")))
+	assert.Equal(t, root2, p.config.ResctrlPath)
+	assert.NotSame(t, oldMgr, p.mgr, "manager should be rebuilt for the new root")
 }
