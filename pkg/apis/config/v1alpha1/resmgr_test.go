@@ -17,6 +17,8 @@ package v1alpha1
 import (
 	"testing"
 
+	"sigs.k8s.io/yaml"
+
 	cpucfg "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/control/cpu"
 )
 
@@ -48,4 +50,41 @@ func TestCommonConfigValidateLegacyCPUClasses(t *testing.T) {
 			t.Errorf("Validate() on nil = %v, want nil", err)
 		}
 	})
+}
+
+// TestCommonConfigDRA verifies that dra.enabled reaches CommonConfig from every
+// policy's configuration, and that leaving the section out keeps DRA off.
+func TestCommonConfigDRA(t *testing.T) {
+	policies := []struct {
+		name string
+		new  func() ResmgrConfig
+	}{
+		{"topology-aware", func() ResmgrConfig { return &TopologyAwarePolicy{} }},
+		{"balloons", func() ResmgrConfig { return &BalloonsPolicy{} }},
+		{"template", func() ResmgrConfig { return &TemplatePolicy{} }},
+	}
+
+	configs := []struct {
+		name    string
+		spec    string
+		enabled bool
+	}{
+		{"no dra section", "spec: {}", false},
+		{"dra disabled", "spec:\n  dra:\n    enabled: false\n", false},
+		{"dra enabled", "spec:\n  dra:\n    enabled: true\n", true},
+	}
+
+	for _, p := range policies {
+		for _, c := range configs {
+			t.Run(p.name+"/"+c.name, func(t *testing.T) {
+				cfg := p.new()
+				if err := yaml.Unmarshal([]byte(c.spec), cfg); err != nil {
+					t.Fatalf("failed to unmarshal %q: %v", c.spec, err)
+				}
+				if enabled := cfg.CommonConfig().DRA.Enabled; enabled != c.enabled {
+					t.Errorf("dra.enabled is %v, expected %v", enabled, c.enabled)
+				}
+			})
+		}
+	}
 }
