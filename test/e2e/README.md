@@ -202,10 +202,31 @@ regenerated, or generated for a subset of the tests, with:
 
 DIR defaults to the current directory, and the report is written to
 `DIR/coverage-report`: `coverprofile` in the usual text format for `go tool
-cover`, and `coverage.html` for browsing. Run `go tool cover -func` on the
-profile for the numbers per package and per function. Note that the report
-covers all data found under DIR, so point it at a single policy or topology
-directory for a report on those tests alone.
+cover`, `coverage.html` for browsing, and `summary.json` with the numbers in it
+for whoever reports on them further. Run `go tool cover -func` on the profile
+for the numbers per package and per function. Note that the report covers all
+data found under DIR, so point it at a single policy or topology directory for a
+report on those tests alone.
+
+The numbers themselves come from `cmd/e2e-report`, which works them out from the
+profile:
+
+```shell
+go run ./cmd/e2e-report coverage [--tests N] [--summary FILE] PROFILE
+```
+
+The same tool reports on a whole test run, so the coverage of a run and the
+coverage of the tests it consists of are always counted the same way:
+
+```shell
+go run ./cmd/e2e-report run RESULT_DIR
+go run ./cmd/e2e-report index RESULT_ROOT
+```
+
+`run` writes `results.json`, `index.html` and `status.txt` for the results
+collected into RESULT_DIR, and `index` rebuilds the index of every run under
+RESULT_ROOT. This is what `scripts/testing/e2e-runner` publishes the results of
+a nightly run with.
 
 Worth knowing:
 
