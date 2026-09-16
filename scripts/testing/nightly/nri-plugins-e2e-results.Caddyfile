@@ -15,10 +15,27 @@
 #   e2e.example.com {
 #       ...
 #   }
+#
+# A report links the artifacts of every test twice, once to download and once
+# to browse into. Only e2e-report serve reads into a tarball, so those links
+# do not work here; they answer 501 rather than pretend otherwise.
 
 :{$E2E_PORT:8080} {
 	# Where e2e-runner publishes to, its RESULT_ROOT.
 	root * {$E2E_RESULTS:/opt/e2e-test/nri-plugins/results}
+
+	# Results change under URLs which do not: a run's index.html and its
+	# status.txt while it is still going, latest every night. Revalidating
+	# is a 304 with no body, so this costs a round trip, never a download.
+	header Cache-Control "no-cache"
+
+	# What a report's "artifacts (browse)" links point at. Left alone, the
+	# trailing slash on a tarball becomes a permanent redirect to the
+	# tarball itself, and browsers cache those, so a single visit here goes
+	# on downloading archives long after the results moved behind
+	# e2e-report serve. Answer them ourselves instead.
+	@in-tarball path_regexp \.tar\.(xz|zst)/
+	respond @in-tarball "Browsing into tarballs needs e2e-report serve" 501
 
 	# index.html of the root lists the runs, each run has one of its own,
 	# and browsing covers the directories which have none: the commands a

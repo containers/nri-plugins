@@ -319,6 +319,14 @@ func artifactsOf(testDir, rel string) (map[string]string, error) {
 			continue
 		}
 		links[a.label] = filepath.Join(rel, a.name)
+
+		// The artifacts of a test are packed up, and worth browsing as well as
+		// downloading. Only e2e-report serve serves into a tarball, a plain
+		// file server hands it over as it is, so the tarball stays the link
+		// which works either way.
+		if isTarball(a.name) {
+			links[a.label+" (browse)"] = filepath.Join(rel, a.name) + "/"
+		}
 	}
 
 	names, err := readDir(testDir)

@@ -18,7 +18,9 @@ import (
 	"bytes"
 	"cmp"
 	"encoding/json"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 )
@@ -79,6 +81,23 @@ func exists(path string) bool {
 func isDir(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
+}
+
+// dirSize is how much the files under a directory take.
+func dirSize(dir string) (int64, error) {
+	var total int64
+
+	err := filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if info, err := d.Info(); err == nil && info.Mode().IsRegular() {
+			total += info.Size()
+		}
+		return nil
+	})
+
+	return total, err
 }
 
 // writeJSON writes a value as the indented json we publish.

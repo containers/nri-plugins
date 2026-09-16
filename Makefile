@@ -63,6 +63,9 @@ E2E_RUN       := k8scri=$${k8scri:-containerd} $(E2E_DIR)/run_tests.sh
 E2E_TESTS     ?= $(E2E_DIR)/policies.test-suite
 E2E_WORKDIR   ?= $(TOP_DIR)/e2e-results
 
+E2E_REPORT_SRC := ./test/e2e/cmd/e2e-report
+E2E_REPORT     := $(BIN_PATH)/e2e-report
+
 DOCKER       := docker
 DOCKER_BUILD := $(DOCKER) buildx build --load
 
@@ -160,7 +163,7 @@ build: build-plugins build-binaries build-check
 build-static:
 	$(MAKE) STATIC=1 build
 
-clean: clean-plugins clean-binaries
+clean: clean-plugins clean-binaries clean-e2e-report
 
 allclean: clean clean-cache
 
@@ -184,6 +187,13 @@ build-binaries-static:
 
 build-images: images
 
+e2e-report: $(E2E_REPORT)
+
+$(E2E_REPORT): $(wildcard test/e2e/cmd/e2e-report/*.go)
+	$(Q)echo "Building $@..."; \
+	mkdir -p $(BIN_PATH) && \
+	$(GO_BUILD) -o $@ $(E2E_REPORT_SRC)
+
 build-check:
 	$(Q)$(GO_BUILD) -v $(GO_MODULES)
 
@@ -202,6 +212,10 @@ clean-binaries:
 	for i in $(BINARIES); do \
 		rm -f $(BIN_PATH)/$$i; \
 	done
+
+clean-e2e-report:
+	$(Q)echo "Cleaning $(notdir $(E2E_REPORT))"; \
+	rm -f $(E2E_REPORT)
 
 clean-images:
 	$(Q)echo "Cleaning exported images and deployment files."; \
