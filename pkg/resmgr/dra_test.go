@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/containers/nri-plugins/pkg/agent"
@@ -32,6 +33,11 @@ var (
 	draOn  = true
 	draOff = false
 )
+
+// DRADevices makes the test policy one which publishes no devices.
+func (testPolicy) DRADevices() ([]resourceapi.Device, error) {
+	return nil, nil
+}
 
 // newTestAgent returns an agent with the given node name and no kubernetes
 // client, which is what an agent looks like before it is started.
@@ -148,6 +154,7 @@ func TestStopStopsDRABeforeTakingTheLock(t *testing.T) {
 		NodeName:      "test-node",
 		KubeClient:    fake.NewClientset(),
 		Owner:         m,
+		Policy:        testPolicy{},
 		RegistrarDir:  t.TempDir(),
 		PluginDataDir: pluginDir,
 	})

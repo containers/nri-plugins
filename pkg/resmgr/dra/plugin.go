@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 
 	resourceapi "k8s.io/api/resource/v1"
@@ -41,6 +42,7 @@ import (
 	"k8s.io/dynamic-resource-allocation/resourceslice"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
+	"github.com/containers/nri-plugins/pkg/resmgr/policy"
 )
 
 var log = logger.NewLogger("dra")
@@ -65,6 +67,8 @@ type Options struct {
 	// Owner is who we serialize kubelet requests against and ask to shut us
 	// down. Required.
 	Owner Owner
+	// Policy decides which devices this driver publishes. Required.
+	Policy policy.Policy
 	// RegistrarDir is where the plugin registration socket is created.
 	// Empty selects the kubelet's registry directory.
 	RegistrarDir string
@@ -79,6 +83,7 @@ type Plugin struct {
 	nodeName      string
 	kubeClient    kubernetes.Interface
 	owner         Owner
+	policy        policy.Policy
 	registrarDir  string
 	pluginDataDir string
 
@@ -99,6 +104,8 @@ func New(driverName string, opts Options) (*Plugin, error) {
 		return nil, fmt.Errorf("dra: kube client must not be nil")
 	case opts.Owner == nil:
 		return nil, fmt.Errorf("dra: owner must not be nil")
+	case opts.Policy == nil:
+		return nil, fmt.Errorf("dra: policy must not be nil")
 	}
 
 	pluginDataDir := opts.PluginDataDir
@@ -111,6 +118,7 @@ func New(driverName string, opts Options) (*Plugin, error) {
 		nodeName:      opts.NodeName,
 		kubeClient:    opts.KubeClient,
 		owner:         opts.Owner,
+		policy:        opts.Policy,
 		registrarDir:  opts.RegistrarDir,
 		pluginDataDir: pluginDataDir,
 	}, nil
@@ -127,6 +135,14 @@ func (p *Plugin) Start(ctx context.Context) error {
 
 	if err := os.MkdirAll(p.pluginDataDir, 0750); err != nil {
 		return fmt.Errorf("dra: failed to create plugin directory %q: %w", p.pluginDataDir, err)
+	}
+
+	// Ask the policy for its devices before registering: this is also where the
+	// policy validates its DRA configuration, and a policy which cannot say
+	// what it offers must not end up as a registered driver.
+	resources, err := p.driverResources()
+	if err != nil {
+		return err
 	}
 
 	opts := []kubeletplugin.Option{
@@ -148,9 +164,13 @@ func (p *Plugin) Start(ctx context.Context) error {
 		return fmt.Errorf("dra: failed to register driver %q: %w", p.driverName, err)
 	}
 
-	if err := helper.PublishResources(ctx, p.driverResources()); err != nil {
+	// This publishes nothing yet, it starts the controller which does. Actual
+	// publication failures turn up asynchronously in HandleError, which retries
+	// them. Failing here means we could not get as far as trying.
+	if err := helper.PublishResources(ctx, resources); err != nil {
 		helper.Stop()
-		return fmt.Errorf("dra: failed to publish resources for driver %q: %w", p.driverName, err)
+		return fmt.Errorf("dra: failed to start publishing resources for driver %q: %w",
+			p.driverName, err)
 	}
 
 	p.helper = helper
@@ -230,16 +250,40 @@ func (p *Plugin) HandleError(_ context.Context, err error, msg string) {
 	p.owner.RequestShutdown(fmt.Sprintf("dra: %s: %v", msg, err))
 }
 
-// driverResources returns the resources to publish for this driver. Publishing
-// an empty slice, instead of no slice at all, states that the driver is alive
-// and has no devices, which is what this driver has until a policy provides
-// some.
-func (p *Plugin) driverResources() resourceslice.DriverResources {
+// driverResources returns the resources to publish for this driver: the devices
+// of the active policy, in a single pool named after our node. The devices are
+// passed on as the policy described them, attributes and all: what they mean
+// is the policy's business, not ours.
+//
+// A ResourceSlice holds at most ResourceSliceMaxDevices devices and the helper
+// leaves the splitting to us, so the devices are chunked to that limit. An
+// oversized slice would be rejected by the apiserver, and the helper treats
+// that as recoverable and retries it forever, so it would never get published.
+//
+// A policy with no devices gets an empty slice published, not no slice at all.
+// That states that the driver is alive and currently offers nothing, and it
+// replaces whatever we published before, so a policy which stops offering
+// devices does not leave a stale slice behind.
+func (p *Plugin) driverResources() (resourceslice.DriverResources, error) {
+	devices, err := p.policy.DRADevices()
+	if err != nil {
+		return resourceslice.DriverResources{},
+			fmt.Errorf("dra: policy failed to provide DRA devices: %w", err)
+	}
+
+	var published []resourceslice.Slice
+	for chunk := range slices.Chunk(devices, resourceapi.ResourceSliceMaxDevices) {
+		published = append(published, resourceslice.Slice{Devices: chunk})
+	}
+	if published == nil {
+		published = []resourceslice.Slice{{}}
+	}
+
 	return resourceslice.DriverResources{
 		Pools: map[string]resourceslice.Pool{
 			p.nodeName: {
-				Slices: []resourceslice.Slice{{}},
+				Slices: published,
 			},
 		},
-	}
+	}, nil
 }

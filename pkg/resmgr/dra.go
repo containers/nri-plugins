@@ -63,6 +63,7 @@ func (m *resmgr) setupDRA(cfg *cfgapi.DRAConfig) error {
 		NodeName:   nodeName,
 		KubeClient: client,
 		Owner:      m,
+		Policy:     m.policy,
 	})
 	if err != nil {
 		return resmgrError("failed to create DRA plugin: %v", err)

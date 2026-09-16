@@ -17,6 +17,9 @@ package dra
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -25,6 +28,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -32,6 +36,8 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
+
+	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 )
 
 const (
@@ -73,10 +79,31 @@ func (o *testOwner) shutdownRequests() []string {
 	return slices.Clone(o.shutdowns)
 }
 
-// newTestPlugin creates a plugin with sockets under the test's own directories,
-// so no kubelet is needed. A shutdown request fails the test: no test using this
-// is expected to provoke one.
-func newTestPlugin(t *testing.T, client kubernetes.Interface) (*Plugin, *testOwner) {
+// testPolicy is a policy which only implements the DRA methods. Embedding the
+// interface leaves the rest nil, which is fine as long as nothing calls them.
+type testPolicy struct {
+	policyapi.Policy
+
+	devices []resourceapi.Device
+	err     error
+}
+
+func (p *testPolicy) DRADevices() ([]resourceapi.Device, error) {
+	return p.devices, p.err
+}
+
+// testDevices returns n uniquely named devices, for the cases which care about
+// how many devices there are rather than what they say.
+func testDevices(n int) []resourceapi.Device {
+	devices := make([]resourceapi.Device, n)
+	for i := range devices {
+		devices[i] = resourceapi.Device{Name: fmt.Sprintf("cpu-%d", i)}
+	}
+	return devices
+}
+
+// newTestPlugin creates a plugin with sockets under the test's own directories.
+func newTestPlugin(t *testing.T, client kubernetes.Interface, policy policyapi.Policy) (*Plugin, *testOwner) {
 	t.Helper()
 
 	owner := &testOwner{}
@@ -84,6 +111,7 @@ func newTestPlugin(t *testing.T, client kubernetes.Interface) (*Plugin, *testOwn
 		NodeName:      testNodeName,
 		KubeClient:    client,
 		Owner:         owner,
+		Policy:        policy,
 		RegistrarDir:  t.TempDir(),
 		PluginDataDir: t.TempDir(),
 	})
@@ -135,6 +163,7 @@ func TestNew(t *testing.T) {
 		NodeName:   testNodeName,
 		KubeClient: fake.NewClientset(),
 		Owner:      &testOwner{},
+		Policy:     &testPolicy{},
 	}
 
 	for _, tc := range []struct {
@@ -162,6 +191,12 @@ func TestNew(t *testing.T) {
 			name:       "nil kube client",
 			driverName: testDriverName,
 			options:    func(o *Options) { o.KubeClient = nil },
+			fail:       true,
+		},
+		{
+			name:       "nil policy",
+			driverName: testDriverName,
+			options:    func(o *Options) { o.Policy = nil },
 			fail:       true,
 		},
 		{
@@ -198,6 +233,7 @@ func TestNewPluginDataDirDefault(t *testing.T) {
 		NodeName:   testNodeName,
 		KubeClient: fake.NewClientset(),
 		Owner:      &testOwner{},
+		Policy:     &testPolicy{},
 	})
 	if err != nil {
 		t.Fatalf("New() failed: %v", err)
@@ -209,42 +245,59 @@ func TestNewPluginDataDirDefault(t *testing.T) {
 	}
 }
 
-// TestStartPublishesEmptySlice verifies that starting the plugin registers the
-// driver and publishes a single ResourceSlice with no devices, so that a
-// registered driver is visible in the cluster.
-func TestStartPublishesEmptySlice(t *testing.T) {
-	client, published := newTestClient()
-	p, _ := newTestPlugin(t, client)
+// TestStartPublishesPolicyDevices verifies that starting the plugin registers
+// the driver and publishes the devices of the policy. A policy with no devices
+// still gets a slice published, so that a registered driver is visible in the
+// cluster.
+func TestStartPublishesPolicyDevices(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		devices []resourceapi.Device
+	}{
+		{
+			name: "policy without devices",
+		},
+		{
+			name:    "policy with devices",
+			devices: []resourceapi.Device{{Name: "cpu-0"}, {Name: "cpu-1"}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, published := newTestClient()
+			p, _ := newTestPlugin(t, client, &testPolicy{devices: tc.devices})
 
-	if err := p.Start(t.Context()); err != nil {
-		t.Fatalf("Start() failed: %v", err)
-	}
-	defer p.Stop()
+			if err := p.Start(t.Context()); err != nil {
+				t.Fatalf("Start() failed: %v", err)
+			}
+			defer p.Stop()
 
-	// ResourceSlices are created asynchronously by the resourceslice controller.
-	var slices []*resourceapi.ResourceSlice
-	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
-		if slices = published(); len(slices) > 0 {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+			// ResourceSlices are created asynchronously by the resourceslice
+			// controller.
+			var slices []*resourceapi.ResourceSlice
+			for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+				if slices = published(); len(slices) > 0 {
+					break
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
 
-	if len(slices) == 0 {
-		t.Fatal("no ResourceSlice was published")
-	}
-	if driver := slices[0].Spec.Driver; driver != testDriverName {
-		t.Errorf("published ResourceSlice for driver %q, expected %q", driver, testDriverName)
-	}
-	if devices := slices[0].Spec.Devices; len(devices) != 0 {
-		t.Errorf("published ResourceSlice with %d devices, expected none", len(devices))
+			if len(slices) == 0 {
+				t.Fatal("no ResourceSlice was published")
+			}
+			if driver := slices[0].Spec.Driver; driver != testDriverName {
+				t.Errorf("published ResourceSlice for driver %q, expected %q", driver, testDriverName)
+			}
+			if devices := slices[0].Spec.Devices; !reflect.DeepEqual(devices, tc.devices) {
+				t.Errorf("published ResourceSlice with devices %v, expected %v", devices, tc.devices)
+			}
+		})
 	}
 }
 
 // TestStartTwice verifies a started plugin refuses to start again.
 func TestStartTwice(t *testing.T) {
 	client, _ := newTestClient()
-	p, _ := newTestPlugin(t, client)
+	p, _ := newTestPlugin(t, client, &testPolicy{})
 
 	if err := p.Start(t.Context()); err != nil {
 		t.Fatalf("Start() failed: %v", err)
@@ -261,7 +314,7 @@ func TestStartTwice(t *testing.T) {
 // every shutdown path, whether it got as far as starting it or not.
 func TestStopIdempotent(t *testing.T) {
 	client, _ := newTestClient()
-	p, _ := newTestPlugin(t, client)
+	p, _ := newTestPlugin(t, client, &testPolicy{})
 
 	p.Stop() // never started
 
@@ -280,7 +333,7 @@ func TestStopIdempotent(t *testing.T) {
 // configuration change that turns DRA off and on again amounts to.
 func TestStartAfterStop(t *testing.T) {
 	client, _ := newTestClient()
-	p, _ := newTestPlugin(t, client)
+	p, _ := newTestPlugin(t, client, &testPolicy{})
 
 	if err := p.Start(t.Context()); err != nil {
 		t.Fatalf("Start() failed: %v", err)
@@ -312,7 +365,7 @@ func TestPrepareResourceClaims(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			p, owner := newTestPlugin(t, fake.NewClientset())
+			p, owner := newTestPlugin(t, fake.NewClientset(), &testPolicy{})
 
 			result, err := p.PrepareResourceClaims(t.Context(), tc.claims)
 			if err != nil {
@@ -363,7 +416,7 @@ func TestUnprepareResourceClaims(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			p, owner := newTestPlugin(t, fake.NewClientset())
+			p, owner := newTestPlugin(t, fake.NewClientset(), &testPolicy{})
 
 			result, err := p.UnprepareResourceClaims(t.Context(), tc.claims)
 			if err != nil {
@@ -416,6 +469,7 @@ func TestHandleError(t *testing.T) {
 				NodeName:      testNodeName,
 				KubeClient:    fake.NewClientset(),
 				Owner:         owner,
+				Policy:        &testPolicy{},
 				PluginDataDir: t.TempDir(),
 			})
 			if err != nil {
@@ -446,24 +500,128 @@ func TestHandleError(t *testing.T) {
 	}
 }
 
-// TestDriverResources verifies the published resources name a single pool for
-// our node, with one empty slice in it.
+// TestDriverResources verifies the resources to publish name a single pool for
+// our node, holding the devices of the policy exactly as the policy described
+// them, split into slices which each stay within the device limit.
 func TestDriverResources(t *testing.T) {
-	p, _ := newTestPlugin(t, fake.NewClientset())
+	numaNode := int64(0)
 
-	resources := p.driverResources()
+	for _, tc := range []struct {
+		name       string
+		devices    []resourceapi.Device
+		wantSlices int
+	}{
+		{
+			name:       "no devices",
+			wantSlices: 1,
+		},
+		{
+			// The driver must not require attributes, let alone understand
+			// them: what a device offers is the policy's business.
+			name:       "devices without attributes",
+			devices:    []resourceapi.Device{{Name: "cpu-0"}, {Name: "cpu-1"}},
+			wantSlices: 1,
+		},
+		{
+			name: "device with attributes and capacity",
+			devices: []resourceapi.Device{
+				{
+					Name: "numa-0",
+					Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+						"numaNode": {IntValue: &numaNode},
+					},
+					Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
+						"memory": {Value: resource.MustParse("1Gi")},
+					},
+				},
+			},
+			wantSlices: 1,
+		},
+		{
+			name:       "devices exactly filling one slice",
+			devices:    testDevices(resourceapi.ResourceSliceMaxDevices),
+			wantSlices: 1,
+		},
+		{
+			name:       "one device too many for one slice",
+			devices:    testDevices(resourceapi.ResourceSliceMaxDevices + 1),
+			wantSlices: 2,
+		},
+		{
+			name:       "devices spanning three slices",
+			devices:    testDevices(2*resourceapi.ResourceSliceMaxDevices + 7),
+			wantSlices: 3,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, _ := newTestPlugin(t, fake.NewClientset(), &testPolicy{devices: tc.devices})
 
-	if len(resources.Pools) != 1 {
-		t.Fatalf("got %d pools, expected one", len(resources.Pools))
+			resources, err := p.driverResources()
+			if err != nil {
+				t.Fatalf("driverResources() failed: %v", err)
+			}
+
+			if len(resources.Pools) != 1 {
+				t.Fatalf("got %d pools, expected one", len(resources.Pools))
+			}
+			pool, ok := resources.Pools[testNodeName]
+			if !ok {
+				t.Fatalf("no pool for node %q", testNodeName)
+			}
+			if len(pool.Slices) != tc.wantSlices {
+				t.Fatalf("got %d slices, expected %d", len(pool.Slices), tc.wantSlices)
+			}
+
+			// Every slice has to be publishable on its own, and the slices
+			// together have to be the devices the policy handed us, in order.
+			var devices []resourceapi.Device
+			for i, slice := range pool.Slices {
+				if n := len(slice.Devices); n > resourceapi.ResourceSliceMaxDevices {
+					t.Errorf("slice %d holds %d devices, over the %d allowed",
+						i, n, resourceapi.ResourceSliceMaxDevices)
+				}
+				devices = append(devices, slice.Devices...)
+			}
+			if !reflect.DeepEqual(devices, tc.devices) {
+				t.Errorf("got devices %v, expected %v", devices, tc.devices)
+			}
+		})
 	}
-	pool, ok := resources.Pools[testNodeName]
-	if !ok {
-		t.Fatalf("no pool for node %q", testNodeName)
+}
+
+// TestDriverResourcesPolicyError verifies a policy which cannot say what it
+// offers fails us instead of publishing something made up. The policy validates
+// its DRA configuration here, so this is what a misconfiguration looks like.
+func TestDriverResourcesPolicyError(t *testing.T) {
+	failure := errors.New("invalid DRA configuration")
+	p, _ := newTestPlugin(t, fake.NewClientset(), &testPolicy{err: failure})
+
+	if _, err := p.driverResources(); !errors.Is(err, failure) {
+		t.Errorf("driverResources() failed with %v, expected it to wrap %v", err, failure)
 	}
-	if len(pool.Slices) != 1 {
-		t.Fatalf("got %d slices, expected one", len(pool.Slices))
+}
+
+// TestStartFailsOnPolicyError verifies such a policy stops us before the driver
+// is registered: a driver kubelet can send claims to must be able to answer for
+// its devices.
+func TestStartFailsOnPolicyError(t *testing.T) {
+	client, published := newTestClient()
+	failure := errors.New("invalid DRA configuration")
+	p, _ := newTestPlugin(t, client, &testPolicy{err: failure})
+
+	err := p.Start(t.Context())
+	if err == nil {
+		p.Stop()
+		t.Fatal("Start() succeeded, expected an error")
 	}
-	if devices := pool.Slices[0].Devices; len(devices) != 0 {
-		t.Errorf("got %d devices, expected none", len(devices))
+	if !errors.Is(err, failure) {
+		t.Errorf("Start() failed with %v, expected it to wrap %v", err, failure)
+	}
+
+	if _, err := os.Stat(filepath.Join(p.pluginDataDir, "dra.sock")); !os.IsNotExist(err) {
+		t.Error("the plugin socket was created, expected no registered driver")
+	}
+	if slices := published(); len(slices) != 0 {
+		t.Errorf("published %d ResourceSlice(s), expected none", len(slices))
 	}
 }
