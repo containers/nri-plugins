@@ -277,6 +277,66 @@ Worth knowing:
   the coverage of the repository, and do not compare it to the unit test
   coverage of `make test`, which measures a different set of packages.
 
+## Publishing and serving results
+
+A run of the whole suite collects some 120 megabytes, most of it the command
+transcripts and the plugin logs of each test, and most of that the same lines
+over and over. Packed into a single archive it takes a couple of megabytes, so
+nothing has to be thrown away to keep the results of months of nightly runs:
+
+```shell
+go run ./cmd/e2e-report pack RESULT_DIR
+go run ./cmd/e2e-report serve [--address ADDR] RESULT_ROOT
+```
+
+`make e2e-report` builds the tool to `build/bin` for serving results without a
+checkout to run it from; it is not part of any image.
+
+`pack` writes `results.tar.zst` and removes what it packed, leaving behind the
+report, `results.json`, `status.txt`, `summary.txt` and the git information: how
+the run went is readable without unpacking anything. `serve` serves a result
+root over HTTP, the packed runs as if their archives had been extracted where
+they are, so the links of a report work whether the run it belongs to is packed
+or not.
+
+`scripts/testing/nightly/e2e-runner --pack-results` publishes a run this way,
+and keeps the artifacts of every test and the coverage data of each as well:
+with the results packed there is nothing to gain by pruning them. Packing is
+off unless asked for, as a packed run needs the server to browse.
+`tar --zstd -xf` gets the results of a run out without one.
+
+A tarball is served both ways: without a trailing slash it is downloaded, with
+one it is browsed into, and the files in it are served from it as if it had been
+extracted. So the artifacts a test packed up can be read one file at a time
+without downloading them, and the report links to them both ways:
+
+```text
+.../test01-tiny/artifacts.tar.xz              the tarball
+.../test01-tiny/artifacts.tar.xz/             what is in it
+.../test01-tiny/artifacts.tar.xz/commands/    the commands the test ran
+```
+
+The archive of a run browses the same way, and so does a tarball inside another
+one, which is what the artifacts of a test are once the run is packed.
+
+Worth knowing:
+
+- Reading a file from an archive decompresses it up to that file, a few hundred
+  milliseconds for the largest archive of a full run. The listing of an archive
+  is kept, and a tarball inside one is read out whole and kept, so browsing the
+  artifacts of a test unpacks the archive of the run once.
+
+- Reading a `.tar.xz`, which is what the tests pack their artifacts with, takes
+  the `xz` command. Without it the tarball is still served, it just cannot be
+  served into. `.tar.zst`, `.tar.gz` and `.tar` need nothing.
+
+- The server serves what is under the result root and nothing else: it refuses a
+  path which leads out of it, and it serves nothing but the regular files of an
+  archive.
+
+- A packed run keeps the report it was packed with. Reporting on it again would
+  find no results to report on, so `run` refuses, and `index` leaves it alone.
+
 ## Writing tests
 
 A test case is a `code.var.sh` file in a

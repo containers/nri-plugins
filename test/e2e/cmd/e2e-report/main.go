@@ -28,6 +28,14 @@
 // instrumented, and the same numbers as json. This is what report-coverage.sh
 // reports the coverage of a run with.
 //
+// The pack subcommand packs everything a run collected into a single archive,
+// leaving behind what it takes to tell how the run went without unpacking
+// anything. A run costs a tenth of what it costs browsable, and nothing has to
+// be thrown away to get there.
+//
+// The serve subcommand serves published results over HTTP, the packed ones as
+// if their archive had been extracted where it is.
+//
 // All of them read what is there and are safe to rerun on results already
 // reported on.
 package main
@@ -42,10 +50,14 @@ import (
 const usage = `Usage: e2e-report run RESULT_DIR
        e2e-report index RESULT_ROOT
        e2e-report coverage [--tests N] [--summary FILE] PROFILE
+       e2e-report pack RESULT_DIR
+       e2e-report serve [--address ADDR] RESULT_ROOT
 
 run      report on the results collected into RESULT_DIR
 index    rebuild the index of every run under RESULT_ROOT
-coverage report the coverage in the coverage profile PROFILE`
+coverage report the coverage in the coverage profile PROFILE
+pack     pack up what the run in RESULT_DIR collected
+serve    serve the results published under RESULT_ROOT over HTTP`
 
 func main() {
 	if len(os.Args) < 2 {
@@ -60,6 +72,10 @@ func main() {
 		err = indexCmd(os.Args[2:])
 	case "coverage":
 		err = coverageCmd(os.Args[2:])
+	case "pack":
+		err = packCmd(os.Args[2:])
+	case "serve":
+		err = serveCmd(os.Args[2:])
 	default:
 		fail("%s", usage)
 	}
@@ -86,6 +102,31 @@ func indexCmd(args []string) error {
 		return fmt.Errorf("index takes a single result root directory")
 	}
 	return reportIndex(args[0])
+}
+
+func packCmd(args []string) error {
+	if len(args) != 1 {
+		return fmt.Errorf("pack takes a single result directory")
+	}
+
+	dir := args[0]
+	before, err := dirSize(dir)
+	if err != nil {
+		return err
+	}
+
+	if err := packRun(dir); err != nil {
+		return err
+	}
+
+	after, err := dirSize(dir)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("packed %s, %dM of %dM saved\n", filepath.Base(dir),
+		(before-after)/(1024*1024), before/(1024*1024))
+
+	return nil
 }
 
 func coverageCmd(args []string) error {
@@ -119,6 +160,11 @@ func coverageCmd(args []string) error {
 func reportRun(dir string) error {
 	if !isDir(dir) {
 		return fmt.Errorf("no such directory: %s", dir)
+	}
+	// The results are in the archive now, and scanning would find none of
+	// them: the report of a packed run is the one made before it was packed.
+	if isPacked(dir) {
+		return fmt.Errorf("%s is packed, its report is the one it was packed with", dir)
 	}
 
 	run, err := scanRun(dir)
@@ -171,8 +217,8 @@ func reportIndex(root string) error {
 		// short, and one which had collected nothing when we last looked and
 		// may have collected something since: report on it now, which costs
 		// nothing for a run with no results, and gives the index somewhere to
-		// link to.
-		if run == nil || len(run.Tests) == 0 {
+		// link to. A packed run keeps the report it was packed with.
+		if (run == nil || len(run.Tests) == 0) && !isPacked(dir) {
 			if err := reportRun(dir); err != nil {
 				return err
 			}
@@ -180,6 +226,14 @@ func reportIndex(root string) error {
 				if run, err = scanRun(dir); err != nil {
 					return err
 				}
+			}
+		}
+
+		// A packed run which never got a report of its own: index what can be
+		// told from what is left outside its archive.
+		if run == nil {
+			if run, err = scanRun(dir); err != nil {
+				return err
 			}
 		}
 

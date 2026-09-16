@@ -14,6 +14,7 @@ require (
 	github.com/intel/goresctrl v0.13.0
 	github.com/intel/memtierd v0.1.1
 	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.3
+	github.com/klauspost/compress v1.19.1
 	github.com/onsi/ginkgo/v2 v2.32.1
 	github.com/onsi/gomega v1.42.1
 	github.com/pelletier/go-toml/v2 v2.4.3
