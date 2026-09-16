@@ -212,12 +212,12 @@ prepare_worktree() {
         fatal "failed to add git worktree $WORKTREE"
     fi
 
-    if [ -x "$WORKTREE/scripts/testing/e2e-runner" ]; then
+    if [ -x "$WORKTREE/scripts/testing/nightly/e2e-runner" ]; then
         # The options below are passed on, the rest default from the
         # environment, so export those to keep them across the re-exec.
         export RETENTION_DAYS RETENTION_KEEP KEEP_COVERAGE_DATA KEEP_ARTIFACTS
         export K8SCRI FULL_BUILD
-        exec "$WORKTREE/scripts/testing/e2e-runner" \
+        exec "$WORKTREE/scripts/testing/nightly/e2e-runner" \
              --skip-worktree \
              ${PROXIES_SRC:+--source-proxies }${PROXIES_SRC:-} \
              --remote "$REMOTE_REPO" \

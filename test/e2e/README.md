@@ -225,8 +225,8 @@ go run ./cmd/e2e-report index RESULT_ROOT
 
 `run` writes `results.json`, `index.html` and `status.txt` for the results
 collected into RESULT_DIR, and `index` rebuilds the index of every run under
-RESULT_ROOT. This is what `scripts/testing/e2e-runner` publishes the results of
-a nightly run with.
+RESULT_ROOT. This is what `scripts/testing/nightly/e2e-runner` publishes the
+results of a nightly run with.
 
 Worth knowing:
 
