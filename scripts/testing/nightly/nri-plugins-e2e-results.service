@@ -1,0 +1,51 @@
+# Systemd unit for serving the results of the e2e test runs, the ones e2e-runner
+# publishes. This is the way to serve them once runs are packed up, and it works
+# for the ones which are not just as well.
+#
+#   install -m 644 scripts/testing/nightly/nri-plugins-e2e-results.service \
+#       /etc/systemd/system/nri-plugins-e2e-results.service
+#   systemctl daemon-reload
+#   systemctl enable --now nri-plugins-e2e-results
+#
+# The address to listen on and the results to serve come from the environment,
+# so a host is configured without editing this file:
+#
+#   install -m 644 scripts/testing/nightly/nri-plugins-e2e-results.env \
+#       /etc/sysconfig/nri-plugins-e2e-results
+#
+# The defaults below apply when that file is missing, and to every setting it
+# leaves out. With caddy or another server in front of this one for a name and a
+# certificate, keep the address on the loopback interface as it is here. The
+# user and the group are not taken from the environment, systemd does not expand
+# variables there, so use systemctl edit for those.
+#
+# The binary is not part of any image and no release ships it, so build and
+# install it from a checkout:
+#
+#   make e2e-report && install -m 755 build/bin/e2e-report /usr/local/bin/
+
+[Unit]
+Description=NRI plugins e2e test results
+After=network.target
+
+[Service]
+Environment=E2E_ADDRESS=127.0.0.1:8080
+Environment=E2E_RESULTS=/opt/e2e-test/nri-plugins/results
+EnvironmentFile=-/etc/sysconfig/nri-plugins-e2e-results
+ExecStart=/usr/local/bin/e2e-report serve --address ${E2E_ADDRESS} \
+    ${E2E_RESULTS}
+Restart=on-failure
+User=e2e
+Group=e2e
+
+# It only ever reads the results, and needs nothing but xz to read the tarballs
+# of the tests.
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
