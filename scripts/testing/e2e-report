@@ -22,6 +22,7 @@ import json
 import os
 import re
 import sys
+import time
 from datetime import datetime, timezone
 
 TEST_SUITE_DIR = "policies.test-suite"
@@ -56,6 +57,10 @@ ARTIFACTS = (
 # the whole log in.
 REASON_LINES = 8
 REASON_WIDTH = 220
+
+# How long a run which says it is running may go without writing anything
+# to its log before we take it for one which never got to the end.
+STALE_AFTER = 60 * 60
 
 
 def read_text(path):
@@ -277,6 +282,31 @@ def web_url(remote):
     return remote if remote.startswith("https://") else ""
 
 
+def unfinished_verdict(result_dir):
+    """Tell a run which is still going from one which never got to the end.
+
+    A run says it is running as soon as it has somewhere to say it, and says
+    how it went once it knows. So a run with no results at all is either still
+    at it or was cut short, which the log it keeps writing to tells apart.
+    """
+    # The log a run keeps writing to is what tells: whatever anything says, a
+    # log written to a moment ago belongs to a run which is still going.
+    try:
+        if time.time() - os.stat(
+                os.path.join(result_dir, RUNNER_LOG)).st_mtime < STALE_AFTER:
+            return "RUNNING"
+    except OSError:
+        pass
+
+    # It has gone quiet, so it either said it was running and never got to the
+    # end, or it is from before we said anything at all.
+    status = read_text(os.path.join(result_dir, STATUS_TXT)).split()
+    if status and status[0] in ("RUNNING", "ABORTED"):
+        return "ABORTED"
+
+    return "ERROR"
+
+
 def scan_run(result_dir):
     """Collect everything worth reporting about a single run."""
     name = os.path.basename(os.path.abspath(result_dir))
@@ -287,7 +317,7 @@ def scan_run(result_dir):
         counts[test["verdict"]] = counts.get(test["verdict"], 0) + 1
 
     if not tests:
-        verdict = "ERROR"
+        verdict = unfinished_verdict(result_dir)
     elif counts.get("FAIL") or counts.get("ERROR"):
         verdict = "FAIL"
     else:
@@ -354,7 +384,8 @@ a:hover { text-decoration: underline; }
            font-size: 0.85em; font-weight: bold; letter-spacing: 0.02em;
            border: 1px solid currentColor; }
 .PASS { color: var(--pass); }
-.FAIL, .ERROR { color: var(--fail); }
+.FAIL, .ERROR, .ABORTED { color: var(--fail); }
+.RUNNING { color: var(--link); }
 .SKIP { color: var(--skip); }
 h1 .verdict { font-size: 0.7em; vertical-align: 0.15em; }
 pre.reason { margin: 0.35em 0 0 0; padding: 0.45em 0.7em;
@@ -553,11 +584,17 @@ def render_run(run):
                     counts.get("SKIP", 0)))
 
     if not run["tests"]:
-        body.append("<p>No test results were collected for this run. See the"
-                    " runner log for what happened.</p>\n")
+        if run["verdict"] == "RUNNING":
+            body.append("<p>This run is still going, so nothing has been"
+                        " collected of it yet. The runner log tells where it"
+                        " is.</p>\n")
+        else:
+            body.append("<p>No test results were collected for this run. See"
+                        " the runner log for what happened.</p>\n")
 
     body.append(render_failures(run))
-    body.append(render_coverage(run))
+    if run["tests"]:
+        body.append(render_coverage(run))
     body.append(render_tests(run))
 
     return page(title, "".join(body))
@@ -662,23 +699,33 @@ def report_index(root):
             continue
 
         results = os.path.join(dir, RESULTS_JSON)
-        # A run from before we reported on runs at all, or one which was cut
-        # short: give it a report of its own, so that the index has somewhere
-        # to link to.
-        if not os.path.exists(results) or not os.path.exists(
+        run = None
+        if os.path.exists(results) and os.path.exists(
                 os.path.join(dir, INDEX_HTML)):
-            report_run(dir)
+            try:
+                with open(results, encoding="utf-8") as f:
+                    run = json.load(f)
+            except (OSError, ValueError):
+                run = None
 
-        try:
-            with open(results, encoding="utf-8") as f:
-                run = json.load(f)
-            # An older version of us did not tell when a run ran, and we order
-            # them by that, so fill it in for those.
-            if not run.get("started"):
-                run["started"] = started_at(run.get("name") or name, dir)
-            runs.append(run)
-        except (OSError, ValueError):
-            runs.append(scan_run(dir))
+        # A run from before we reported on runs at all, one which was cut
+        # short, and one which had collected nothing when we last looked and
+        # may have collected something since: report on it now, which costs
+        # nothing for a run with no results, and gives the index somewhere to
+        # link to.
+        if run is None or not run.get("tests"):
+            report_run(dir)
+            try:
+                with open(results, encoding="utf-8") as f:
+                    run = json.load(f)
+            except (OSError, ValueError):
+                run = scan_run(dir)
+
+        # An older version of us did not tell when a run ran, and we order them
+        # by that, so fill it in for those.
+        if not run.get("started"):
+            run["started"] = started_at(run.get("name") or name, dir)
+        runs.append(run)
 
     # Latest first, by when they ran rather than by what they are called.
     runs.sort(key=lambda run: run.get("started") or "", reverse=True)
