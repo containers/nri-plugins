@@ -36,6 +36,10 @@ KEEP_COVERAGE_DATA="${KEEP_COVERAGE_DATA:-}"
 # KEEP_ARTIFACTS: whose bulky artifacts to keep as they are instead of packing
 # them up: the tests which failed (the default), all tests, or none of them
 KEEP_ARTIFACTS="${KEEP_ARTIFACTS:-failed}"
+# PACK_RESULTS: pack up everything a run collected, and keep all of it: a run
+# takes a tenth of what it takes browsable, but browsing it takes e2e-report
+# serve. Off unless asked for, so that results stay plain files by default.
+PACK_RESULTS="${PACK_RESULTS:-}"
 # K8SCRI: container runtime to test with, empty to alternate by the day
 K8SCRI="${K8SCRI:-}"
 # FULL_BUILD: 1 to build all binaries and images, 0 for the minimal set of
@@ -106,6 +110,9 @@ usage() {
     echo "  --keep-artifacts <what>   keep the command transcripts and the logs of"
     echo "                            all|failed|none of the tests as they are, and"
     echo "                            pack up the rest (default: $KEEP_ARTIFACTS)"
+    echo "  --pack-results            pack up everything a run collected, and keep"
+    echo "                            all of it (needs e2e-report serve to browse)"
+    echo "  --no-pack-results         publish the results as plain files"
     echo "  --runtime <runtime>       containerd or crio, by default the two of"
     echo "                            them on alternating days"
     echo "  --full-build              build all binaries and images"
@@ -216,7 +223,7 @@ prepare_worktree() {
         # The options below are passed on, the rest default from the
         # environment, so export those to keep them across the re-exec.
         export RETENTION_DAYS RETENTION_KEEP KEEP_COVERAGE_DATA KEEP_ARTIFACTS
-        export K8SCRI FULL_BUILD
+        export K8SCRI FULL_BUILD PACK_RESULTS KEEP_GIVEN
         exec "$WORKTREE/scripts/testing/nightly/e2e-runner" \
              --skip-worktree \
              ${PROXIES_SRC:+--source-proxies }${PROXIES_SRC:-} \
@@ -584,6 +591,31 @@ pack_test_artifacts() {
     return 0
 }
 
+pack_results() {
+    local before after
+
+    case "$PACK_RESULTS" in
+        1|true|yes)
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+
+    if [ ! -d "$WORKTREE/$E2E_REPORT" ]; then
+        info "no $E2E_REPORT in $WORKTREE, leaving the results unpacked..."
+        return 0
+    fi
+
+    # Everything but the report, the results as json and the verdict, which is
+    # what tells how the run went without a server to unpack the archive.
+    must-cd "$WORKTREE"
+    info "packing up the results in $RESULT_DIR..."
+    if ! go run "./$E2E_REPORT" pack "$RESULT_DIR"; then
+        error "failed to pack up the results in $RESULT_DIR"
+    fi
+}
+
 run_started() {
     # Usage: run_started NAME DIR
     #
@@ -676,6 +708,9 @@ prune_old_results() {
 #
 
 HANDOVER_ARGS=""
+# KEEP_GIVEN: which of the keep options were given, so that packing can keep
+# everything without overriding what we were asked to keep.
+KEEP_GIVEN="${KEEP_GIVEN:-}"
 
 while [  "$#" -gt 0 ] && [ "${1#-}" != "$1" ]; do
     case $1 in
@@ -717,11 +752,21 @@ while [  "$#" -gt 0 ] && [ "${1#-}" != "$1" ]; do
             ;;
         --keep-coverage-data)
             KEEP_COVERAGE_DATA=1
+            KEEP_GIVEN="$KEEP_GIVEN coverage"
             shift
             ;;
         --keep-artifacts)
             KEEP_ARTIFACTS="$2"
+            KEEP_GIVEN="$KEEP_GIVEN artifacts"
             shift 2
+            ;;
+        --pack-results)
+            PACK_RESULTS=1
+            shift
+            ;;
+        --no-pack-results)
+            PACK_RESULTS=""
+            shift
             ;;
         --runtime|--k8scri)
             K8SCRI="$2"
@@ -761,6 +806,20 @@ case "$K8SCRI" in
         ;;
 esac
 
+# Packing keeps everything in one archive, and everything is what makes it
+# worth serving: keep the artifacts of every test and the coverage data of each
+# as well, unless we were told what to keep with them.
+case "$PACK_RESULTS" in
+    1|true|yes)
+        if [[ ! "$KEEP_GIVEN" =~ artifacts ]]; then
+            KEEP_ARTIFACTS=all
+        fi
+        if [[ ! "$KEEP_GIVEN" =~ coverage ]]; then
+            KEEP_COVERAGE_DATA=1
+        fi
+        ;;
+esac
+
 source_proxies
 prepare_worktree
 prepare_result_dir
@@ -776,6 +835,7 @@ prune_coverage_data
 pack_artifacts
 prune_old_results
 generate_report
+pack_results
 publish_latest
 cleanup_worktree
 
