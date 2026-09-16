@@ -36,88 +36,26 @@ usage() {
     echo "  -h, --help           show this help"
 }
 
-# Usage: summarize plugins|total|json PROFILE [TESTS]
+# Usage: summarize PROFILE TESTS SUMMARY
 #
 # Print the coverage of the logic of each plugin in PROFILE, in other words of
-# the code under cmd/plugins/PLUGIN, the total over everything instrumented, or
-# both of those as json. Weight all of them by statements, the way go tool
-# cover calculates its percentages. TESTS is the number of test cases the
-# profile covers, reported as is in the json.
+# the code under cmd/plugins/PLUGIN, and the total over everything
+# instrumented, and write the same numbers as json to SUMMARY. TESTS is the
+# number of test cases the profile covers, reported as is in the json.
 #
-# Note that go tool covdata percent cannot report either of these: it only ever
+# The arithmetic is in e2e-report, which reports on a whole run with the same
+# numbers, from a directory of its own so that it runs from any directory.
+#
+# Note that go tool covdata percent cannot report any of this: it only ever
 # reports per package, and it prints a package which has no statements at all,
 # such as one declaring nothing but types, without a percentage and without a
 # line break, running the line of the next package into it.
 summarize() {
-    local what="$1" profile="$2" tests="${3:-0}"
+    local profile="$1" tests="$2" summary="$3"
 
-    awk -v what="$what" -v tests="$tests" '
-        function percent(hits, stmts) {
-            return (stmts > 0) ? 100 * hits / stmts : 0
-        }
-
-        function report(label, hits, stmts) {
-            printf "  %-28s %5.1f%% (%d/%d statements)\n",
-                label, percent(hits, stmts), hits, stmts
-        }
-
-        NR > 1 {
-            split($1, path, ":")
-            hit = ($3 > 0) ? $2 : 0
-
-            total_stmts += $2
-            total_hits += hit
-
-            # Attribute cmd/plugins/PLUGIN/... to the logic of PLUGIN.
-            cnt = split(path[1], part, "/")
-            for (i = 1; i + 2 <= cnt; i++) {
-                if (part[i] == "cmd" && part[i + 1] == "plugins") {
-                    plugin = part[i + 2]
-                    stmts[plugin] += $2
-                    hits[plugin] += hit
-                    break
-                }
-            }
-        }
-
-        END {
-            if (what == "json") {
-                printf "{\n"
-                printf "  \"tests\": %d,\n", tests
-                printf "  \"statements\": %d,\n", total_stmts
-                printf "  \"covered\": %d,\n", total_hits
-                printf "  \"percent\": %.1f,\n", percent(total_hits, total_stmts)
-                printf "  \"plugins\": {"
-                sep = "\n"
-                for (plugin in stmts) {
-                    if (stmts[plugin] <= 0)
-                        continue
-                    printf "%s    \"%s\": {", sep, plugin
-                    printf " \"statements\": %d,", stmts[plugin]
-                    printf " \"covered\": %d,", hits[plugin]
-                    printf " \"percent\": %.1f }", percent(hits[plugin], stmts[plugin])
-                    sep = ",\n"
-                }
-                if (sep != "\n")
-                    printf "\n  "
-                printf "}\n"
-                printf "}\n"
-                exit
-            }
-
-            if (what == "total") {
-                if (total_stmts > 0)
-                    report("all instrumented packages", total_hits, total_stmts)
-                else
-                    print "  nothing instrumented to report on"
-                exit
-            }
-
-            for (plugin in stmts)
-                if (stmts[plugin] > 0)
-                    report("cmd/plugins/" plugin, hits[plugin], stmts[plugin])
-        }
-    ' "$profile"
+    (cd "$(dirname "$0")" &&
+         "$GO_CMD" run ./cmd/e2e-report coverage \
+                   --tests "$tests" --summary "$summary" "$profile")
 }
 
 outdir=""
@@ -206,13 +144,10 @@ fi
 "$GO_CMD" tool cover -html="$profile" -o="$html" ||
     echo "WARNING: failed to generate $html"
 
-summarize json "$profile" "$tests" > "$summary" ||
-    echo "WARNING: failed to write $summary"
-
 echo ""
 echo "Coverage of the e2e tests:"
-summarize plugins "$profile" | LC_ALL=C sort
-summarize total "$profile"
+summarize "$profile" "$tests" "$summary" ||
+    echo "WARNING: failed to summarize $profile"
 
 echo ""
 echo "  per package and function: $GO_CMD tool cover -func=$profile"
