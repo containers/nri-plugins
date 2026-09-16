@@ -48,8 +48,8 @@ TEST_SUITE_DIR=policies.test-suite
 GIT_SHA1="git.sha1"
 GIT_DESC="git.describe"
 GIT_REMOTE="git.remote"
-# E2E_REPORT: script in scripts/testing which reports on collected results
-E2E_REPORT="e2e-report"
+# E2E_REPORT: go package in the worktree which reports on collected results
+E2E_REPORT="test/e2e/cmd/e2e-report"
 # COVERAGE_REPORT_SH: script in test/e2e which reports on collected coverage
 COVERAGE_REPORT_SH="report-coverage.sh"
 # COVERAGE_REPORT_DIR: where that script puts the report, within a result dir
@@ -405,20 +405,22 @@ policies_tested() {
 }
 
 generate_report() {
-    local report="$WORKTREE/scripts/testing/$E2E_REPORT"
-
-    if [ ! -x "$report" ]; then
-        info "no $report, leaving the results unreported..."
+    if [ ! -d "$WORKTREE/$E2E_REPORT" ]; then
+        info "no $E2E_REPORT in $WORKTREE, leaving the results unreported..."
         return 0
     fi
 
+    # From the worktree, so that the report is always made by the revision
+    # which was tested.
+    must-cd "$WORKTREE"
+
     info "reporting on $RESULT_DIR..."
-    if ! "$report" run "$RESULT_DIR"; then
+    if ! go run "./$E2E_REPORT" run "$RESULT_DIR"; then
         error "failed to report on $RESULT_DIR"
     fi
 
     info "updating the index of all results in $RESULT_ROOT..."
-    if ! "$report" index "$RESULT_ROOT"; then
+    if ! go run "./$E2E_REPORT" index "$RESULT_ROOT"; then
         error "failed to update the index in $RESULT_ROOT"
     fi
 }
