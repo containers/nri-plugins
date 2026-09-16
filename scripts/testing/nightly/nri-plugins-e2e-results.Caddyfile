@@ -1,13 +1,13 @@
 # Caddy configuration for serving the results of the e2e test runs, the ones
 # e2e-runner publishes and e2e-report generates the reports of.
 #
-#   caddy run --config scripts/testing/e2e-results.Caddyfile
+#   caddy run --config scripts/testing/nightly/nri-plugins-e2e-results.Caddyfile
 #
 # The results to serve and the port to serve them on can be given in the
 # environment, which is all a test run of the whole thing needs:
 #
-#   E2E_RESULTS=$HOME/e2e-results E2E_PORT=8080 \
-#       caddy run --config scripts/testing/e2e-results.Caddyfile
+#   E2E_RESULTS=$HOME/e2e-results E2E_PORT=8080 caddy run \
+#       --config scripts/testing/nightly/nri-plugins-e2e-results.Caddyfile
 #
 # With a name which resolves from the outside, use that instead of the port
 # and Caddy takes care of the certificates, too:
