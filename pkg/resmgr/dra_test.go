@@ -20,11 +20,13 @@ import (
 	"testing"
 	"time"
 
+	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/containers/nri-plugins/pkg/agent"
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1"
 	"github.com/containers/nri-plugins/pkg/resmgr/dra"
+	"github.com/containers/nri-plugins/pkg/resmgr/policy"
 )
 
 // what an explicitly set dra.enabled points to
@@ -32,6 +34,16 @@ var (
 	draOn  = true
 	draOff = false
 )
+
+// testPolicy is a policy which publishes no DRA devices. Embedding the
+// interface leaves the rest nil, which is fine as long as nothing calls them.
+type testPolicy struct {
+	policy.Policy
+}
+
+func (testPolicy) DRADevices() ([]resourceapi.Device, error) {
+	return nil, nil
+}
 
 // newTestAgent returns an agent with the given node name and no kubernetes
 // client, which is what an agent looks like before it is started.
@@ -148,6 +160,7 @@ func TestStopStopsDRABeforeTakingTheLock(t *testing.T) {
 		NodeName:      "test-node",
 		KubeClient:    fake.NewClientset(),
 		Owner:         m,
+		Policy:        testPolicy{},
 		RegistrarDir:  t.TempDir(),
 		PluginDataDir: pluginDir,
 	})
