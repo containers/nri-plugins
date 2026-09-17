@@ -606,13 +606,17 @@ plugin-daemonset() { # script API
 }
 
 plugin-log() { # script API
-    # Usage: plugin-log [--plugin PLUGIN] [--tail LINES] [--ignore-case] [PATTERN]
+    # Usage: plugin-log [--plugin PLUGIN] [--tail LINES] [--ignore-case] [--previous] [PATTERN]
     #
     # Print the log of the DaemonSet of PLUGIN, $POLICY by default, and store
     # it in COMMAND_OUTPUT. If PATTERN is given, print only the lines matching
     # it as an extended regular expression, case-insensitively if
     # --ignore-case is given. If LINES is given, print only the last LINES of
     # the matching lines.
+    #
+    # With --previous, read the log of the previous instance of the plugin
+    # instead of the running one. Use this to inspect what an instance which
+    # has been restarted printed before it went away.
     #
     # Return non-zero if PATTERN did not match anything, so that the caller
     # can report a missing log line:
@@ -623,19 +627,20 @@ plugin-log() { # script API
 
     # What kubectl says while the log of a container is not readable yet.
     local unavailable="unable to retrieve container logs for"
-    local plugin=$POLICY lines="" pattern="" grepopts="-E" cmd
+    local plugin=$POLICY lines="" pattern="" grepopts="-E" cmd previous=""
     while [ "${1#--}" != "$1" ]; do
         case "$1" in
             --plugin)      plugin="$2"; shift 2;;
             --tail)        lines="$2"; shift 2;;
             --ignore-case) grepopts="$grepopts -i"; shift;;
+            --previous)    previous="--previous"; shift;;
             --)            shift; break;;
             *)             error "plugin-log: unknown option \"$1\"";;
         esac
     done
     pattern="$1"
 
-    cmd="kubectl -n kube-system logs ds/$(plugin-daemonset "$plugin") 2>&1"
+    cmd="kubectl -n kube-system logs $previous ds/$(plugin-daemonset "$plugin") 2>&1"
     if [ -n "$pattern" ]; then
         # Keep the transient availability error visible to the retry below.
         # Filtering it out would leave nothing for the retry to notice, and it
