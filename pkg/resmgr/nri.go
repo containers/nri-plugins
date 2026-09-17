@@ -110,7 +110,8 @@ func (p *nriPlugin) start() error {
 }
 
 func (p *nriPlugin) stop() {
-	if p == nil {
+	if p == nil || p.stub == nil {
+		// We can be stopped before start() created our stub.
 		return
 	}
 

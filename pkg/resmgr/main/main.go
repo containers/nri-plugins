@@ -69,11 +69,8 @@ func (m *Main) Run() error {
 	defer m.stopTracing()
 
 	// Install a SIGTERM/SIGINT handler that triggers a graceful
-	// agent shutdown: this lets us clean up node state (e.g.,
-	// extended resources we published) before the kubelet kills
-	// the container. Closing the agent's stop channel makes its
-	// event loop return, which unwinds m.mgr.Start() and lets
-	// Run() exit normally.
+	// shutdown: stopping the agent makes its event loop return,
+	// which unwinds m.mgr.Start() and lets Run() exit normally.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
@@ -88,8 +85,12 @@ func (m *Main) Run() error {
 	}()
 	defer signal.Stop(sigCh)
 
-	err := m.mgr.Start()
-	return err
+	// Stop the resource manager on the way out, whether we were signalled
+	// or Start() failed, so that we shut our subsystems down in an orderly
+	// manner instead of just disappearing from under them.
+	defer m.mgr.Stop()
+
+	return m.mgr.Start()
 }
 
 func (m *Main) ResourceManager() resmgr.ResourceManager {
