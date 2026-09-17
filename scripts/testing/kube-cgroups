@@ -24,6 +24,10 @@ Examples:
 
   # print read bps and iops throttling of containers in mypod
   kube-cgroups -g /sys/fs/cgroup/blkio -p mypod -f read
+
+  # print every readable cgroup file of every container in mypod. Write-only
+  # files read as empty and are skipped, so this needs no exclusion list.
+  kube-cgroups -p mypod -f .
 EOF
 }
 
@@ -108,7 +112,16 @@ kubectl get pods -A | grep -E "$pod_regexp" | while read -r namespace podname re
                     continue
                 fi
                 filename_nodir="${filename##*/}"
-                grep -q -E "$cgfile_regexp" <<< "$filename_nodir" || continue
+
+                [[ "$filename_nodir" =~ $cgfile_regexp ]] || continue
+
+                lines=()
+                mapfile -t lines < "$filename" 2>/dev/null
+                linecount="${#lines[@]}"
+                if [[ "$linecount" == "0" ]] && [[ "$empty_files" == "0" ]]; then
+                    continue
+                fi
+
                 if [[ -n "$podname" ]]; then
                     echo "$namespace/$podname:"
                     unset podname
@@ -117,22 +130,18 @@ kubectl get pods -A | grep -E "$pod_regexp" | while read -r namespace podname re
                     echo "  $containername:"
                     unset containername
                 }
-                linecount="$(wc -l < "$filename")"
-                if [[ "$linecount" == "0" ]] && [[ "$empty_files" == "0" ]]; then
-                    continue
-                fi
                 if [[ "$full_filename" == "1" ]]; then
                     print_filename="$filename"
                 else
                     print_filename="$filename_nodir"
                 fi
-                if (( "$linecount" <= 1 )); then
+                if (( linecount <= 1 )); then
                     # print contents of a single-line file after filename
-                    echo "    $print_filename: $(< "$filename")"
+                    echo "    $print_filename: ${lines[0]-}"
                 else
                     # print contents of a multiline file indented
                     echo "    $print_filename:"
-                    sed "s/^/      /g" < "$filename"
+                    printf '      %s\n' "${lines[@]}"
                 fi
             done
         done <<< "$(find "$cg_controller_dir" -name "*${containerID}*")"
