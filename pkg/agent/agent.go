@@ -147,9 +147,8 @@ type Agent struct {
 	extResLock sync.Mutex                    // lock accessing the desired state
 	extResWake chan struct{}                 // reconciliation trigger
 
-	stopLock sync.Mutex
+	stopOnce sync.Once
 	stopC    chan struct{}
-	doneC    chan struct{}
 }
 
 // New creates an agent with the given options.
@@ -260,16 +259,13 @@ func (a *Agent) Start(notifyFn NotifyFn) error {
 	}
 }
 
+// Stop asks the agent to stop. It does not wait for the event loop to finish;
+// Start() returns once that has happened.
 func (a *Agent) Stop() {
-	a.stopLock.Lock()
-	defer a.stopLock.Unlock()
-
-	if a.stopC != nil {
+	a.stopOnce.Do(func() {
 		a.clearOwnConfigStatus()
 		close(a.stopC)
-		<-a.doneC
-		a.stopC = nil
-	}
+	})
 }
 
 var (
