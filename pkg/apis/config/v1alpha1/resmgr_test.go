@@ -53,7 +53,8 @@ func TestCommonConfigValidateLegacyCPUClasses(t *testing.T) {
 }
 
 // TestCommonConfigDRA verifies that dra.enabled reaches CommonConfig from every
-// policy's configuration, and that leaving the section out keeps DRA off.
+// policy's configuration, and that leaving it out is distinguishable from
+// setting it to false.
 func TestCommonConfigDRA(t *testing.T) {
 	policies := []struct {
 		name string
@@ -64,14 +65,17 @@ func TestCommonConfigDRA(t *testing.T) {
 		{"template", func() ResmgrConfig { return &TemplatePolicy{} }},
 	}
 
+	enabled, disabled := true, false
+
 	configs := []struct {
 		name    string
 		spec    string
-		enabled bool
+		enabled *bool
 	}{
-		{"no dra section", "spec: {}", false},
-		{"dra disabled", "spec:\n  dra:\n    enabled: false\n", false},
-		{"dra enabled", "spec:\n  dra:\n    enabled: true\n", true},
+		{"no dra section", "spec: {}", nil},
+		{"empty dra section", "spec:\n  dra: {}\n", nil},
+		{"dra disabled", "spec:\n  dra:\n    enabled: false\n", &disabled},
+		{"dra enabled", "spec:\n  dra:\n    enabled: true\n", &enabled},
 	}
 
 	for _, p := range policies {
@@ -81,8 +85,11 @@ func TestCommonConfigDRA(t *testing.T) {
 				if err := yaml.Unmarshal([]byte(c.spec), cfg); err != nil {
 					t.Fatalf("failed to unmarshal %q: %v", c.spec, err)
 				}
-				if enabled := cfg.CommonConfig().DRA.Enabled; enabled != c.enabled {
-					t.Errorf("dra.enabled is %v, expected %v", enabled, c.enabled)
+				switch got := cfg.CommonConfig().DRA.Enabled; {
+				case (got == nil) != (c.enabled == nil):
+					t.Errorf("dra.enabled is %v, expected %v", got, c.enabled)
+				case got != nil && *got != *c.enabled:
+					t.Errorf("dra.enabled is %v, expected %v", *got, *c.enabled)
 				}
 			})
 		}
