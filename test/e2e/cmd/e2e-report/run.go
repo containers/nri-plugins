@@ -98,6 +98,11 @@ type Run struct {
 	Started  *string        `json:"started"`
 	Tests    []*Test        `json:"tests"`
 	Verdict  string         `json:"verdict"`
+
+	// Unreported says the run has no report of its own to link to, which only
+	// a run still going normally is. Never reported itself: it says something
+	// about the run as it is right now, not about how it went.
+	Unreported bool `json:"-"`
 }
 
 // Git tells which revision was tested, and where to find it.

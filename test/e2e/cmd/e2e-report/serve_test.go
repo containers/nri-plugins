@@ -15,6 +15,9 @@
 package main
 
 import (
+	"fmt"
+	"io/fs"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -52,8 +55,19 @@ func get(t *testing.T, root, path string) *httptest.ResponseRecorder {
 
 func request(t *testing.T, root, method, path string) *httptest.ResponseRecorder {
 	t.Helper()
+	return serve(t, root, false, method, path)
+}
 
-	server, err := NewServer(root)
+// getLive asks a server which builds the index of runs for every request.
+func getLive(t *testing.T, root, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	return serve(t, root, true, http.MethodGet, path)
+}
+
+func serve(t *testing.T, root string, live bool, method, path string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	server, err := NewServer(root, live)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +242,7 @@ func TestServeRevalidates(t *testing.T) {
 
 	// Asking about the copy one has is answered, and answered again once the
 	// report has been written anew.
-	server, err := NewServer(root)
+	server, err := NewServer(root, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +272,190 @@ func TestServeRevalidates(t *testing.T) {
 }
 
 func TestServeNoSuchRoot(t *testing.T) {
-	if _, err := NewServer(filepath.Join(t.TempDir(), "nowhere")); err == nil {
+	if _, err := NewServer(filepath.Join(t.TempDir(), "nowhere"), false); err == nil {
 		t.Errorf("serving a directory which is not there did not fail")
+	}
+}
+
+// TestServeLiveIndexSkipsLatest checks that the link at the newest run is not
+// indexed as a run of its own, which would list the same run twice.
+func TestServeLiveIndexSkipsLatest(t *testing.T) {
+	root, name := newRoot(t, false)
+
+	body := getLive(t, root, "/").Body.String()
+
+	if strings.Contains(body, `href="latest/`) {
+		t.Errorf("the link at the latest run is indexed as a run of its own")
+	}
+	if listed := strings.Count(body, `href="`+name+`/`); listed != 1 {
+		t.Errorf("the run is listed %d times, expected once", listed)
+	}
+}
+
+// snapshot records what is under root, so that a caller can tell whether
+// anything about it changed.
+func snapshot(t *testing.T, root string) map[string]string {
+	t.Helper()
+
+	seen := map[string]string{}
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		seen[rel] = fmt.Sprintf("%d bytes, mode %s, %d", info.Size(), info.Mode(),
+			info.ModTime().UnixNano())
+
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return seen
+}
+
+// TestServeLiveIndexWritesNothing checks that building the index reports on
+// nothing. reportIndex writes a report for a run which has none, which is the
+// tempting way to fill in a row; a server must not, and the one behind the
+// systemd unit could not, as it is given the results read-only.
+func TestServeLiveIndexWritesNothing(t *testing.T) {
+	root, _ := newRoot(t, false)
+	newOngoingRun(t, root, "test-2026-09-17-2251")
+
+	before := snapshot(t, root)
+	if got := getLive(t, root, "/"); got.Code != http.StatusOK {
+		t.Fatalf("GET /: %d, expected 200", got.Code)
+	}
+	after := snapshot(t, root)
+
+	if !maps.Equal(before, after) {
+		for name, was := range before {
+			if now, there := after[name]; !there {
+				t.Errorf("%s went away, was %s", name, was)
+			} else if now != was {
+				t.Errorf("%s changed, was %s, is %s", name, was, now)
+			}
+		}
+		for name := range after {
+			if _, there := before[name]; !there {
+				t.Errorf("%s was written", name)
+			}
+		}
+	}
+}
+
+// TestServeLiveIndexPackedLikeUnpacked checks that a packed run is indexed
+// exactly as an unpacked one, so that packing a run cannot be told from the
+// index, let alone break a link in it.
+func TestServeLiveIndexPackedLikeUnpacked(t *testing.T) {
+	looseRoot, _ := newRoot(t, false)
+	packedRoot, _ := newRoot(t, true)
+
+	loose := getLive(t, looseRoot, "/").Body.String()
+	packed := getLive(t, packedRoot, "/").Body.String()
+
+	if loose != packed {
+		t.Errorf("the index of a packed run differs from that of an unpacked one")
+		for i := range min(len(loose), len(packed)) {
+			if loose[i] != packed[i] {
+				t.Errorf("first difference at %d:\n unpacked: %q\n   packed: %q",
+					i, cut(loose, i), cut(packed, i))
+				break
+			}
+		}
+	}
+}
+
+// cut is the neighbourhood of i in s, for telling what differs where.
+func cut(s string, i int) string {
+	return s[max(0, i-40):min(len(s), i+40)]
+}
+
+// TestServeLiveIndexAtIndexHTML checks that the built index answers for the name
+// of the file it stands in for, and not just for the root itself.
+func TestServeLiveIndexAtIndexHTML(t *testing.T) {
+	root, name := newRoot(t, false)
+	if err := os.WriteFile(filepath.Join(root, indexHTML),
+		[]byte("<html>stale</html>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{"/", "/" + indexHTML} {
+		got := getLive(t, root, path)
+		if got.Code != http.StatusOK {
+			t.Errorf("GET %s: %d, expected 200", path, got.Code)
+			continue
+		}
+		if strings.Contains(got.Body.String(), "stale") {
+			t.Errorf("GET %s served the index on disk", path)
+		}
+		if !strings.Contains(got.Body.String(), name) {
+			t.Errorf("GET %s does not name the run %s", path, name)
+		}
+	}
+}
+
+// newOngoingRun adds a run which has no report yet, the way one looks while it
+// is still going: the log of the runner and nothing to link to.
+func newOngoingRun(t *testing.T, root, name string) string {
+	t.Helper()
+
+	dir := filepath.Join(root, name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, runnerLog), []byte("still going\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, statusTxt), []byte("RUNNING\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	return dir
+}
+
+// TestServeLiveIndexOngoingRun checks that a run with no report of its own is
+// listed, and linked to by its directory, since there is no report to open.
+func TestServeLiveIndexOngoingRun(t *testing.T) {
+	root, _ := newRoot(t, false)
+	ongoing := "test-2026-09-17-2251"
+	newOngoingRun(t, root, ongoing)
+
+	body := getLive(t, root, "/").Body.String()
+
+	if !strings.Contains(body, `href="`+ongoing+`/"`) {
+		t.Errorf("an ongoing run is not linked to by its directory: %q", body)
+	}
+	if strings.Contains(body, `href="`+ongoing+`/`+indexHTML+`"`) {
+		t.Errorf("an ongoing run is linked to a report which is not there")
+	}
+}
+
+// TestServeLiveIndex checks that the index of runs is built from the runs found
+// under the root, and not read from the index.html lying next to them.
+func TestServeLiveIndex(t *testing.T) {
+	root, name := newRoot(t, false)
+	stale := filepath.Join(root, indexHTML)
+	if err := os.WriteFile(stale, []byte("<html>stale</html>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := getLive(t, root, "/")
+	if got.Code != http.StatusOK {
+		t.Fatalf("GET / with a live index: %d, expected 200", got.Code)
+	}
+	if strings.Contains(got.Body.String(), "stale") {
+		t.Errorf("the index on disk was served instead of a built one")
+	}
+	if !strings.Contains(got.Body.String(), name) {
+		t.Errorf("the built index does not name the run %s", name)
 	}
 }
