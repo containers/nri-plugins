@@ -27,12 +27,17 @@ import (
 // devices of another kind.
 const draDomain = "nri.io"
 
+// draEnabled resolves the tri-state dra.enabled switch: unset is off.
+func draEnabled(cfg *cfgapi.DRAConfig) bool {
+	return cfg != nil && cfg.Enabled != nil && *cfg.Enabled
+}
+
 // setupDRA creates the DRA plugin, unless DRA is disabled or we lack what the
 // plugin needs. Missing cluster access leaves DRA off with a warning instead
 // of failing startup: a plugin configured from a local file has no kubernetes
 // client at all, and refusing to run at all would be the worse outcome.
 func (m *resmgr) setupDRA(cfg *cfgapi.DRAConfig) error {
-	if !cfg.Enabled {
+	if !draEnabled(cfg) {
 		log.Infof("DRA support is disabled")
 		return nil
 	}
@@ -84,10 +89,13 @@ func (m *resmgr) startDRA() error {
 // directions would have to happen with our lock released, but reconfiguration
 // runs with it held: a kubelet request being served holds the lock, so both
 // starting and stopping the plugin can wait for one.
+//
+// Only the resolved switch matters: unset and false are the same to us.
 func (m *resmgr) reconfigureDRA(cfg *cfgapi.DRAConfig) error {
-	if was := m.cfg.CommonConfig().DRA.Enabled; cfg.Enabled != was {
+	was, now := draEnabled(&m.cfg.CommonConfig().DRA), draEnabled(cfg)
+	if now != was {
 		return resmgrError("cannot change dra.enabled from %v to %v while running, restart required",
-			was, cfg.Enabled)
+			was, now)
 	}
 
 	return nil

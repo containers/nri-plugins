@@ -27,6 +27,12 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/dra"
 )
 
+// what an explicitly set dra.enabled points to
+var (
+	draOn  = true
+	draOff = false
+)
+
 // newTestAgent returns an agent with the given node name and no kubernetes
 // client, which is what an agent looks like before it is started.
 func newTestAgent(t *testing.T, nodeName string) *agent.Agent {
@@ -51,17 +57,21 @@ func TestSetupDRA(t *testing.T) {
 		agent func(*testing.T) *agent.Agent
 	}{
 		{
+			name: "unset",
+			cfg:  cfgapi.DRAConfig{},
+		},
+		{
 			name: "disabled",
-			cfg:  cfgapi.DRAConfig{Enabled: false},
+			cfg:  cfgapi.DRAConfig{Enabled: &draOff},
 		},
 		{
 			name:  "enabled without a node name",
-			cfg:   cfgapi.DRAConfig{Enabled: true},
+			cfg:   cfgapi.DRAConfig{Enabled: &draOn},
 			agent: func(*testing.T) *agent.Agent { return &agent.Agent{} },
 		},
 		{
 			name: "enabled without a kubernetes client",
-			cfg:  cfgapi.DRAConfig{Enabled: true},
+			cfg:  cfgapi.DRAConfig{Enabled: &draOn},
 			agent: func(t *testing.T) *agent.Agent {
 				return newTestAgent(t, "test-node")
 			},
@@ -91,18 +101,24 @@ func TestSetupDRA(t *testing.T) {
 }
 
 // TestReconfigureDRA verifies that turning DRA on or off is refused in a
-// running plugin, and that any other configuration change is let through.
+// running plugin, and that any other configuration change is let through. Unset
+// and false are the same switch, so swapping one for the other is no change.
 func TestReconfigureDRA(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
-		running bool
-		updated bool
+		running *bool
+		updated *bool
 		fail    bool
 	}{
-		{name: "off, still off", running: false, updated: false},
-		{name: "on, still on", running: true, updated: true},
-		{name: "off, turned on", running: false, updated: true, fail: true},
-		{name: "on, turned off", running: true, updated: false, fail: true},
+		{name: "off, still off", running: &draOff, updated: &draOff},
+		{name: "on, still on", running: &draOn, updated: &draOn},
+		{name: "unset, still unset"},
+		{name: "unset, set to off", updated: &draOff},
+		{name: "off, unset", running: &draOff},
+		{name: "off, turned on", running: &draOff, updated: &draOn, fail: true},
+		{name: "on, turned off", running: &draOn, updated: &draOff, fail: true},
+		{name: "unset, turned on", updated: &draOn, fail: true},
+		{name: "on, unset", running: &draOn, fail: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := &cfgapi.TopologyAwarePolicy{}

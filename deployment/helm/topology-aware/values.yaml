@@ -14,8 +14,9 @@ config:
   agent:
     nodeResourceTopology: true
     podResourceAPI: false
-  dra:
-    enabled: false
+  # DRA is off. Set "enabled: true" to register a DRA driver on this node.
+  # There is no need to set it to false.
+  dra: {}
   control:
     rdt:
       enable: false

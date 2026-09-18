@@ -21,6 +21,7 @@ type DRAConfig struct {
 	// Enabled registers a DRA driver for this node and publishes the devices
 	// the active policy provides. A policy which provides no devices leaves a
 	// registered driver with no devices, which claims cannot be made against.
+	// Unset means off.
 	// +optional
-	Enabled bool `json:"enabled,omitempty"`
+	Enabled *bool `json:"enabled,omitempty"`
 }
