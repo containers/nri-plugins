@@ -117,7 +117,17 @@ e2e-report serve --address :8080 /opt/e2e-test/nri-plugins/results
 
 It serves a packed run as if its archive had been extracted, serves into the
 tarballs of the tests as well, and reads nothing but what is under the result
-root. There is a systemd unit for it next to this file:
+root.
+
+`--live-index` builds the list of runs from the runs under the root for every
+request instead of serving the `index.html` there. Use it where the root is not
+indexed by whoever writes to it — a root filled by `rsync`, or one runs are
+pruned from by hand — and the list stays right without anyone running
+`e2e-report index`. It also lists a run which is still going, linking to its
+directory rather than to a report it does not have yet. It writes nothing
+either way, so it is safe for a server given the results read-only.
+
+There is a systemd unit for it next to this file:
 
 ```shell
 install -m 644 scripts/testing/nightly/nri-plugins-e2e-results.service \

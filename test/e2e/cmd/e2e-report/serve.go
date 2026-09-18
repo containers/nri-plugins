@@ -16,6 +16,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -53,15 +54,18 @@ const (
 // their archive had been extracted, and what a test packed up for itself as if
 // it, too, had been extracted where it is.
 type Server struct {
-	root     string
-	dir      *os.Root
-	mutex    sync.Mutex
-	tarballs map[string]*Tarball
-	order    []string
+	root      string
+	dir       *os.Root
+	liveIndex bool
+	mutex     sync.Mutex
+	tarballs  map[string]*Tarball
+	order     []string
 }
 
-// NewServer serves the results published under root.
-func NewServer(root string) (*Server, error) {
+// NewServer serves the results published under root. With liveIndex the index
+// of the runs is built for every request from the runs found under it, instead
+// of being read from the index.html a run left there.
+func NewServer(root string, liveIndex bool) (*Server, error) {
 	resolved, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		return nil, err
@@ -79,7 +83,8 @@ func NewServer(root string) (*Server, error) {
 		return nil, err
 	}
 
-	return &Server{root: resolved, dir: dir, tarballs: map[string]*Tarball{}}, nil
+	return &Server{root: resolved, dir: dir, liveIndex: liveIndex,
+		tarballs: map[string]*Tarball{}}, nil
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -104,6 +109,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if tarball, member, ok := s.tarballFor(clean, slash); ok {
 		s.serveTarball(w, r, tarball, member, clean, slash)
+		return
+	}
+
+	// The index of the runs, under both the names it answers to, before looking
+	// for the file it stands in for: with --live-index there may be none, and
+	// where there is one it is what we are asked not to serve.
+	if s.liveIndex && (name == "." || name == indexHTML) {
+		s.serveLiveIndex(w, r)
 		return
 	}
 
@@ -455,10 +468,38 @@ li { font-family: monospace; }
 </html>
 `))
 
+// serveLiveIndex serves an index of the runs under the root as they are right
+// now, rather than the index.html a run left there, which is stale as soon as
+// the next run publishes. Reading only: reporting on a run is what e2e-report
+// index is for.
+func (s *Server) serveLiveIndex(w http.ResponseWriter, r *http.Request) {
+	runs, err := indexRuns(s.root)
+	if err != nil {
+		log.Printf("indexing the runs in %s: %v", s.root, err)
+		http.Error(w, "cannot index the runs", http.StatusInternalServerError)
+		return
+	}
+
+	page, err := renderPage("index", newIndexPage(runs))
+	if err != nil {
+		log.Printf("rendering the index of %s: %v", s.root, err)
+		http.Error(w, "cannot render the index", http.StatusInternalServerError)
+		return
+	}
+
+	// Built for this request, so there is no stored copy to revalidate against
+	// and no modification time to offer; the reports beside it have both.
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	http.ServeContent(w, r, indexHTML, time.Time{}, bytes.NewReader(page))
+}
+
 // serveCmd serves the published results over HTTP.
 func serveCmd(args []string) error {
 	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
 	address := flags.String("address", ":8080", "address to listen on")
+	liveIndex := flags.Bool("live-index", false,
+		"build the index of runs for each request instead of serving index.html")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -466,7 +507,7 @@ func serveCmd(args []string) error {
 		return fmt.Errorf("serve takes a single result root directory")
 	}
 
-	server, err := NewServer(flags.Arg(0))
+	server, err := NewServer(flags.Arg(0), *liveIndex)
 	if err != nil {
 		return err
 	}

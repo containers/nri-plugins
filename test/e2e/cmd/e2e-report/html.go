@@ -118,12 +118,23 @@ func writeIndexPage(path string, runs []*Run) error {
 }
 
 func writePage(path, name string, data any) error {
-	buf := &bytes.Buffer{}
-	if err := pages.ExecuteTemplate(buf, name, data); err != nil {
+	page, err := renderPage(name, data)
+	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(path, buf.Bytes(), 0o644)
+	return os.WriteFile(path, page, 0o644)
+}
+
+// renderPage renders a page into memory, for a caller serving it rather than
+// writing it out.
+func renderPage(name string, data any) ([]byte, error) {
+	buf := &bytes.Buffer{}
+	if err := pages.ExecuteTemplate(buf, name, data); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
 }
 
 func newRunPage(run *Run) *runPage {
@@ -364,8 +375,15 @@ func newIndexPage(runs []*Run) *indexPage {
 			version.Href = run.Git.Web + "/commit/" + run.Git.SHA1
 		}
 
+		// A run still going has no report to open, so its row points at the
+		// directory and whoever serves it lists what has piled up so far.
+		href := run.Name + "/" + indexHTML
+		if run.Unreported {
+			href = run.Name + "/"
+		}
+
 		row := indexRow{
-			Run:      htmlLink{Text: run.Name, Href: run.Name + "/" + indexHTML},
+			Run:      htmlLink{Text: run.Name, Href: href},
 			Verdict:  run.Verdict,
 			Tests:    fmt.Sprintf("%d/%d", run.Counts["PASS"], run.Counts["total"]),
 			Runtimes: strings.Join(run.Runtimes, ", "),

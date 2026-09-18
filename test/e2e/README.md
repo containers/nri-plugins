@@ -286,7 +286,7 @@ nothing has to be thrown away to keep the results of months of nightly runs:
 
 ```shell
 go run ./cmd/e2e-report pack RESULT_DIR
-go run ./cmd/e2e-report serve [--address ADDR] RESULT_ROOT
+go run ./cmd/e2e-report serve [--address ADDR] [--live-index] RESULT_ROOT
 ```
 
 `make e2e-report` builds the tool to `build/bin` for serving results without a
@@ -297,7 +297,11 @@ report, `results.json`, `status.txt`, `summary.txt` and the git information: how
 the run went is readable without unpacking anything. `serve` serves a result
 root over HTTP, the packed runs as if their archives had been extracted where
 they are, so the links of a report work whether the run it belongs to is packed
-or not.
+or not. With `--live-index` the list of runs is built from the runs found under
+the root for every request, rather than read from the `index.html` there, which
+is what to serve a root `e2e-report index` has never been run on, or one whose
+runs come and go without it. A run still going is listed too, linked to by its
+directory as it has no report yet.
 
 `scripts/testing/nightly/e2e-runner --pack-results` publishes a run this way,
 and keeps the artifacts of every test and the coverage data of each as well:

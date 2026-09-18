@@ -34,7 +34,11 @@
 // be thrown away to get there.
 //
 // The serve subcommand serves published results over HTTP, the packed ones as
-// if their archive had been extracted where it is.
+// if their archive had been extracted where it is. With --live-index it builds
+// the index of the runs for every request from the runs it finds, instead of
+// serving the index.html under the result root, so that a root nothing has
+// indexed, or one which runs have come and gone from since, still lists what is
+// actually there. It writes nothing either way.
 //
 // All of them read what is there and are safe to rerun on results already
 // reported on.
@@ -51,7 +55,7 @@ const usage = `Usage: e2e-report run RESULT_DIR
        e2e-report index RESULT_ROOT
        e2e-report coverage [--tests N] [--summary FILE] PROFILE
        e2e-report pack RESULT_DIR
-       e2e-report serve [--address ADDR] RESULT_ROOT
+       e2e-report serve [--address ADDR] [--live-index] RESULT_ROOT
 
 run      report on the results collected into RESULT_DIR
 index    rebuild the index of every run under RESULT_ROOT
@@ -194,6 +198,50 @@ func reportRun(dir string) error {
 }
 
 // reportIndex rebuilds the index of every run under root.
+// indexRuns collects the runs published under root the way reportIndex does,
+// but writes nothing: a server has no business reporting on a run, and the one
+// behind the systemd unit could not if it tried.
+func indexRuns(root string) ([]*Run, error) {
+	names, err := readDir(root)
+	if err != nil {
+		return nil, err
+	}
+
+	runs := []*Run{}
+	for _, name := range names {
+		dir := filepath.Join(root, name)
+		if !isRun(dir) {
+			continue
+		}
+
+		run := readRun(dir)
+		if run == nil {
+			if run, err = scanRun(dir); err != nil {
+				return nil, err
+			}
+		}
+
+		// A row has to name the directory it links to. That is what a run
+		// called itself for anything the runner published, but the link has
+		// to work even for a run whose report says otherwise.
+		run.Name = name
+		if run.Started == nil {
+			run.Started = startedAt(name, dir)
+		}
+
+		// Link to the report only where there is one to open. A packed run
+		// keeps its own outside the archive, so this tells runs apart by what
+		// is there rather than by whether they are packed.
+		run.Unreported = !exists(filepath.Join(dir, indexHTML))
+
+		runs = append(runs, run)
+	}
+
+	sortRuns(runs)
+
+	return runs, nil
+}
+
 func reportIndex(root string) error {
 	if !isDir(root) {
 		return fmt.Errorf("no such directory: %s", root)
