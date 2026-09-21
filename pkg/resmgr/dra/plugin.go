@@ -72,6 +72,9 @@ type Options struct {
 	// PluginDataDir is where the plugin's own socket is created.
 	// Empty selects the driver's directory under the kubelet plugin directory.
 	PluginDataDir string
+	// CDIDir is where the CDI specs of prepared claims are written.
+	// Empty selects the CDI directory runtimes watch for generated specs.
+	CDIDir string
 }
 
 // Plugin is a DRA kubelet plugin.
@@ -82,6 +85,7 @@ type Plugin struct {
 	owner         Owner
 	registrarDir  string
 	pluginDataDir string
+	cdi           *cdiStore
 
 	mu      sync.Mutex // guards helper and devices, the only mutable state
 	helper  *kubeletplugin.Helper
@@ -108,6 +112,11 @@ func New(driverName string, opts Options) (*Plugin, error) {
 		pluginDataDir = filepath.Join(kubeletplugin.KubeletPluginsDir, driverName)
 	}
 
+	store, err := newCDIStore(driverName, opts.CDIDir)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Plugin{
 		driverName:    driverName,
 		nodeName:      opts.NodeName,
@@ -115,6 +124,7 @@ func New(driverName string, opts Options) (*Plugin, error) {
 		owner:         opts.Owner,
 		registrarDir:  opts.RegistrarDir,
 		pluginDataDir: pluginDataDir,
+		cdi:           store,
 	}, nil
 }
 
