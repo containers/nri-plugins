@@ -62,7 +62,7 @@ wait-assert-log-contains 'EnableCP done' "EnableCP missing"
 wait-ext-hp 4 "expected 4 PCT HP CPUs published as extended resources"
 
 # Phase 1.2: schedule a pod in the HP balloon.
-CPUREQ=1 CPULIM=1 MEMREQ=10M MEMLIM=10M \
+CPUREQ=1 CPULIM=1 MEMREQ=20M MEMLIM=20M \
        EXTREQ="cpuclass.balloons.nri.io/pct-hp: \"1\"" \
        EXTLIM="cpuclass.balloons.nri.io/pct-hp: \"1\"" \
        POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: pct-hp-bln" CONTCOUNT=1 \
@@ -71,7 +71,7 @@ assert-cpu-clos '.*' 'CLOS 0' "HP pod CPUs not associated to CLOS 0"
 report allowed
 
 # Phase 1.3: schedule a pod in the LP balloon.
-CPUREQ=1 CPULIM=1 MEMREQ=10M MEMLIM=10M \
+CPUREQ=1 CPULIM=1 MEMREQ=20M MEMLIM=20M \
        POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: pct-lp-bln" CONTCOUNT=1 \
        create balloons-busybox
 assert-cpu-clos '.*' 'CLOS 3' "LP pod CPUs not associated to CLOS 3"
@@ -95,7 +95,7 @@ verify 'cpus["pod1c0"].issubset({"cpu10","cpu11","cpu12","cpu13"})'
 # HP rooms are: pkg0 = 2-1 = 1; pkg1 = 2-0 = 2. The new HP
 # balloon should land on pkg1 because it has the larger HP room,
 # even though pkg0 also has free CPUs.
-CPUREQ=1 CPULIM=1 MEMREQ=10M MEMLIM=10M \
+CPUREQ=1 CPULIM=1 MEMREQ=20M MEMLIM=20M \
        EXTREQ="cpuclass.balloons.nri.io/pct-hp: \"1\"" \
        EXTLIM="cpuclass.balloons.nri.io/pct-hp: \"1\"" \
        POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: pct-hp2-bln" CONTCOUNT=1 \
@@ -118,7 +118,7 @@ verify 'packages["pod2c0"] != packages["pod0c0"]'
 # behavior under test).
 plugin-log-tail 500
 prev_to_clos0=$(grep -c 'to CLOS 0' <<< "$COMMAND_OUTPUT")
-CPUREQ=1 CPULIM=1 MEMREQ=10M MEMLIM=10M \
+CPUREQ=1 CPULIM=1 MEMREQ=20M MEMLIM=20M \
        EXTREQ="cpuclass.balloons.nri.io/pct-hp: \"1\"" \
        EXTLIM="cpuclass.balloons.nri.io/pct-hp: \"1\"" \
        POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: pct-hp2-bln" CONTCOUNT=1 \
@@ -138,7 +138,7 @@ verify 'len(cpus["pod3c0"]) == 2'
 # placement logic is covered by TestPctHints_*AvoidsHpInUse at
 # the unit level; here we verify it does not break and that a
 # distinct LP cpuClass association still happens correctly.
-CPUREQ=1 CPULIM=1 MEMREQ=10M MEMLIM=10M \
+CPUREQ=1 CPULIM=1 MEMREQ=20M MEMLIM=20M \
        POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: pct-lp2-bln" CONTCOUNT=1 \
        create balloons-busybox
 assert-cpu-clos '.*' 'CLOS 3' "LP2 pod CPUs not associated to CLOS 3"
@@ -245,7 +245,7 @@ helm-terminate
 helm_config=$TEST_DIR/balloons-pct-assoconly.cfg helm-launch balloons
 
 # Schedule a pod targeting the assoc-clos1 balloon.
-CPUREQ=1 CPULIM=1 MEMREQ=10M MEMLIM=10M \
+CPUREQ=1 CPULIM=1 MEMREQ=20M MEMLIM=20M \
        POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: assoc-clos1-bln" CONTCOUNT=1 \
        create balloons-busybox
 report allowed
