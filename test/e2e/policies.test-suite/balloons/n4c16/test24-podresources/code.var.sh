@@ -96,7 +96,7 @@ wait-node-resource --allocatable --timeout 60 --interval 1 telco.com/nic 2 \
     "fake NIC device plugin did not publish its devices"
 
 # burstable containers
-CPUREQ=2 CPULIM=4 MEMREQ=10M MEMLIM=50M \
+CPUREQ=2 CPULIM=4 MEMREQ=20M MEMLIM=50M \
        EXTREQ="telco.com/nic: \"1\"" \
        EXTLIM="telco.com/nic: \"1\"" \
        POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: near-nic" \
@@ -123,7 +123,7 @@ verify 'disjoint_sets(nodes["pod0c0"], nodes["pod0c1"])'
 
 declare -a EXTREQ=( "tech.com/tpu: \"1\"" "cpuclass.balloons.nri.io/pct-hp: \"1\"" )
 declare -a EXTLIM=( "tech.com/tpu: \"1\"" "cpuclass.balloons.nri.io/pct-hp: \"1\"" )
-CPUREQ=1 CPULIM=1 MEMREQ=10M MEMLIM=10M \
+CPUREQ=1 CPULIM=1 MEMREQ=20M MEMLIM=20M \
        POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: hp-near-tpu" \
        CONTCOUNT=4 \
        create balloons-busybox
@@ -148,7 +148,7 @@ vm-command "kubectl delete pods --all --now"
 # Create pods that use both a tpu and a nic. Align pod2 near nic, pod3 near tpu.
 declare -a EXTREQ=( "tech.com/tpu: \"1\"" "telco.com/nic: \"1\"" "cpuclass.balloons.nri.io/pct-hp: \"2\"" )
 declare -a EXTLIM=( "tech.com/tpu: \"1\"" "telco.com/nic: \"1\"" "cpuclass.balloons.nri.io/pct-hp: \"2\"" )
-CPUREQ=2 CPULIM=2 MEMREQ=10M MEMLIM=10M \
+CPUREQ=2 CPULIM=2 MEMREQ=20M MEMLIM=20M \
        POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: hp-near-tpu" \
        CONTCOUNT=1 \
        create balloons-busybox
@@ -157,7 +157,7 @@ verify-podres-locality "tech.com/tpu" pod2c0
 
 declare -a EXTREQ=( "tech.com/tpu: \"1\"" "telco.com/nic: \"1\"" )
 declare -a EXTLIM=( "tech.com/tpu: \"1\"" "telco.com/nic: \"1\"" )
-CPUREQ=1 CPULIM=1 MEMREQ=10M MEMLIM=10M \
+CPUREQ=1 CPULIM=1 MEMREQ=20M MEMLIM=20M \
        POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: near-nic" \
        CONTCOUNT=1 \
        create balloons-busybox
