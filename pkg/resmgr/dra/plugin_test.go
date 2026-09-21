@@ -94,6 +94,7 @@ func newTestPlugin(t *testing.T, client kubernetes.Interface) (*Plugin, *testOwn
 		Owner:         owner,
 		RegistrarDir:  t.TempDir(),
 		PluginDataDir: t.TempDir(),
+		CDIDir:        t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("New() failed: %v", err)
