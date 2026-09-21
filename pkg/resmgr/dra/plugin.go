@@ -243,6 +243,14 @@ func (p *Plugin) UnprepareResourceClaims(_ context.Context, claims []kubeletplug
 	return result, nil
 }
 
+// WatchHealthStatus declines to report device health. Our devices are the
+// node's own CPUs and memory: the kubelet already knows whether the node is
+// healthy, and there is nothing per-device we could tell it that it does not
+// know. Declining makes the kubelet stop asking.
+func (p *Plugin) WatchHealthStatus(_ context.Context, _ chan<- kubeletplugin.DeviceHealthReport) error {
+	return kubeletplugin.ErrHealthNotSupported
+}
+
 // HandleError handles errors the kubeletplugin helper runs into in the
 // background. A failed ResourceSlice publication is recoverable, the helper
 // retries it, so logging it is enough. Anything else is one of the helper's

@@ -319,6 +319,20 @@ func TestStartAfterStop(t *testing.T) {
 	p.Stop()
 }
 
+// TestWatchHealthStatus verifies we decline health reporting in the way the
+// kubelet expects, which is what makes it stop asking.
+func TestWatchHealthStatus(t *testing.T) {
+	p, _ := newTestPlugin(t, fake.NewClientset(), &testPolicy{})
+
+	reports := make(chan kubeletplugin.DeviceHealthReport)
+	err := p.WatchHealthStatus(t.Context(), reports)
+
+	if !errors.Is(err, kubeletplugin.ErrHealthNotSupported) {
+		t.Errorf("WatchHealthStatus() failed with %v, expected %v",
+			err, kubeletplugin.ErrHealthNotSupported)
+	}
+}
+
 // TestPrepareResourceClaims verifies claims are answered with empty results,
 // under the owner's lock.
 func TestPrepareResourceClaims(t *testing.T) {
