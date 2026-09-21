@@ -56,8 +56,13 @@
 
     - name: load nri plugin image when using cri-o
       become: yes
-      shell: "{{ item }}"
-      with_items:
-        - sudo podman image load -i `basename {{ nri_plugin_images.stdout_lines[0] }}`
-        - sudo podman image tag {{ image_ref }} {{ test_image }}
+      shell: |
+        set -e
+        loaded_ref=$(sudo podman image load -i "{{ nri_plugin_images.stdout_lines[0] | basename }}" |
+                         sed -n 's/^Loaded image[^:]*: *//p' | tr ',' '\n' | head -n 1)
+        if [ -z "$loaded_ref" ]; then
+            echo "failed to resolve the reference of the loaded image" >&2
+            exit 1
+        fi
+        sudo podman image tag "$loaded_ref" {{ test_image }}
       when: is_crio
