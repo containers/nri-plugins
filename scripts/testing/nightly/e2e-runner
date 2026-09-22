@@ -45,6 +45,12 @@ K8SCRI="${K8SCRI:-}"
 # FULL_BUILD: 1 to build all binaries and images, 0 for the minimal set of
 # them, empty to build everything once a week and the minimal set otherwise
 FULL_BUILD="${FULL_BUILD:-}"
+# RUN_IF_CHANGED: only test if the remote branch has moved since we last tried,
+# which is what makes it sane to trigger us from cron every few minutes
+RUN_IF_CHANGED="${RUN_IF_CHANGED:-}"
+# FORCE_AFTER: run even with nothing changed once this long has passed since we
+# last tried. Takes 30m, 12h, 3d or a bare number of hours.
+FORCE_AFTER="${FORCE_AFTER:-24h}"
 
 # This script.
 SELF="$0"
@@ -87,6 +93,17 @@ VAGRANT_DIR=".vagrant"
 VAGRANT_TMP="${VAGRANT_HOME:-$HOME/.vagrant.d}/tmp/vagrant-qemu"
 # QEMU_PID: the pid file qemu is started with, within VAGRANT_TMP/<id>
 QEMU_PID="qemu.pid"
+# RUN_STATE: what we last tried to test, in the result root. Which revision,
+# of which branch of which remote, and when we tried.
+RUN_STATE=".e2e-runner.state"
+# RUN_LOCK: what we hold for as long as a run lasts, in the result root. Two
+# runs sharing a result root would share a worktree and fight over the VMs.
+RUN_LOCK=".e2e-runner.lock"
+# RUN_LOCK_FD: the environment variable naming the file descriptor the lock is
+# held on. Exported for the re-exec, which inherits the descriptor and must not
+# lock again: a second flock of the same file from the same process fails, the
+# lock being per open file rather than per process.
+RUN_LOCK_FD="E2E_RUN_LOCK_FD"
 
 
 #
@@ -98,6 +115,7 @@ QEMU_PID="qemu.pid"
 # E2E_REPORT_BIN:    e2e-report, built out of the worktree
 # E2E_REPORT_DIR:    where it was built, ours to remove
 # VMS_LEFT_RUNNING:  test VMs we failed to destroy, if any
+# RE_EXECED:         whether we are the copy the bootstrap re-execed into
 
 RESULT_DIR=""
 LOG=""
@@ -105,6 +123,15 @@ WORKTREE=""
 E2E_REPORT_BIN=""
 E2E_REPORT_DIR=""
 VMS_LEFT_RUNNING=""
+
+# Whether our bootstrap copy re-execed into us, which is what says the lock is
+# already held and the decision to run already made. Read here, before anything
+# of ours sets it, and never from the option we were passed: --skip-worktree is
+# for anyone to give.
+RE_EXECED=""
+if [ -n "${!RUN_LOCK_FD}" ]; then
+    RE_EXECED=1
+fi
 
 usage() {
     local exit_code="${exit_code:-0}"
@@ -132,6 +159,11 @@ usage() {
     echo "  --no-pack-results         publish the results as plain files"
     echo "  --runtime <runtime>       containerd or crio, by default the two of"
     echo "                            them on alternating days"
+    echo "  --run-if-changed          do nothing unless the remote branch has"
+    echo "                            moved since we last tried to test it"
+    echo "  --force-after <time>      with --run-if-changed, test anyway once this"
+    echo "                            long has passed since we last tried"
+    echo "                            (default: $FORCE_AFTER)"
     echo "  --full-build              build all binaries and images"
     echo "  --minimal-build           build the plugins the tests need, no more"
     echo "                            (by default full once a week, minimal otherwise)"
@@ -192,6 +224,207 @@ source_proxies() {
             export $var
         fi
     done
+}
+
+force_after_seconds() {
+    # Usage: force_after_seconds
+    #
+    # Print FORCE_AFTER as seconds, nothing at all if it says never to force,
+    # and fail if it says something we cannot read. A bare number is hours: the
+    # point of forcing is to keep testing something daily.
+    local spec="$FORCE_AFTER"
+
+    case "$spec" in
+        never|none|no|off|"")
+            return 0
+            ;;
+    esac
+
+    if [[ ! "$spec" =~ ^([0-9]+)([smhd]?)$ ]]; then
+        return 1
+    fi
+
+    case "${BASH_REMATCH[2]:-h}" in
+        s) echo "${BASH_REMATCH[1]}" ;;
+        m) echo "$(( ${BASH_REMATCH[1]} * 60 ))" ;;
+        h) echo "$(( ${BASH_REMATCH[1]} * 3600 ))" ;;
+        d) echo "$(( ${BASH_REMATCH[1]} * 24 * 3600 ))" ;;
+    esac
+}
+
+as_time() {
+    # Usage: as_time SECONDS
+    #
+    # Print a number of seconds the way one would say it, so that a message
+    # about --force-after 90m does not report an hour and a half as "1h".
+    local secs="$1"
+
+    if [ "$secs" -lt 3600 ]; then
+        echo "$((secs / 60))m"
+    else
+        echo "$((secs / 3600))h$(( (secs % 3600) / 60 ))m"
+    fi
+}
+
+acquire_run_lock() {
+    # Usage: acquire_run_lock
+    #
+    # Take the lock which says a run is going, for as long as this one lasts.
+    # Two runs sharing a result root would share a worktree, fight over the
+    # test VMs and publish over each other.
+    #
+    # Held on a file descriptor rather than in a pid file, so the kernel drops
+    # it when we go, however we go: there is no such thing as a stale lock here,
+    # and nothing to decide about a pid which may have been given to something
+    # else since.
+    local fd
+
+    if [ -n "$RE_EXECED" ]; then
+        return 0
+    fi
+
+    if ! command -v flock >/dev/null 2>&1; then
+        error "no flock, running without the lock which keeps runs apart..."
+        return 0
+    fi
+
+    must-mkdir "$RESULT_ROOT" "result root"
+
+    if ! exec {fd}>"$RESULT_ROOT/$RUN_LOCK"; then
+        fatal "failed to open the run lock $RESULT_ROOT/$RUN_LOCK"
+    fi
+
+    if ! flock -n "$fd"; then
+        # Polling, so another run going is the normal course of things and not
+        # worth an error: we will look again in a few minutes.
+        if [ -n "$RUN_IF_CHANGED" ]; then
+            info "another run is going, nothing to do..."
+            exit 0
+        fi
+        fatal "another run is going, holding $RESULT_ROOT/$RUN_LOCK"
+    fi
+
+    # The descriptor comes with us across the re-exec, which is why the copy we
+    # exec into must not lock again: flock is per open file, so a second open of
+    # the same lock by the same process would simply fail.
+    export $RUN_LOCK_FD="$fd"
+}
+
+remote_head() {
+    # Usage: remote_head
+    #
+    # Print the revision at the tip of the branch we are to test, asked of the
+    # remote itself: no clone, no fetch, one round trip. Needs whatever proxies
+    # reach the remote, so this runs after they are set up.
+    local head
+
+    if ! head=$(git ls-remote "$REMOTE_REPO" "refs/heads/$TEST_BRANCH" 2>/dev/null); then
+        return 1
+    fi
+
+    # "<sha1><tab><ref>", and nothing at all for a branch which is not there.
+    head="${head%%[[:space:]]*}"
+    if [ -z "$head" ]; then
+        return 1
+    fi
+
+    echo "$head"
+}
+
+run_state() {
+    # Usage: run_state KEY
+    #
+    # Print what we recorded under KEY the last time we tried to test.
+    local key="$1" state="$RESULT_ROOT/$RUN_STATE" line
+
+    if [ ! -r "$state" ]; then
+        return 1
+    fi
+
+    while read -r line; do
+        case "$line" in
+            "$key="*)
+                echo "${line#*=}"
+                return 0
+                ;;
+        esac
+    done < "$state"
+
+    return 1
+}
+
+save_run_state() {
+    # Usage: save_run_state SHA1
+    #
+    # Record what we are about to try to test. What we *tried*, not what came of
+    # it: a run which dies early would otherwise be started again by every poll
+    # from then on, for as long as the branch stayed where it is.
+    local sha1="$1" state="$RESULT_ROOT/$RUN_STATE"
+
+    must-mkdir "$RESULT_ROOT" "result root"
+
+    if ! cat > "$state" <<EOF
+last_attempt=$(date +%s)
+last_sha1=$sha1
+last_remote=$REMOTE_REPO
+last_branch=$TEST_BRANCH
+EOF
+    then
+        error "failed to record what we are testing in $state"
+    fi
+}
+
+decide_to_run() {
+    # Usage: decide_to_run
+    #
+    # Work out whether there is anything to test, and record what we are about
+    # to try. With --run-if-changed, a branch which is where it was the last
+    # time we tried means there is nothing to do, so exit -- which is what makes
+    # it sane to be triggered from cron every few minutes. Unless it has been
+    # long enough to be worth testing again anyway: --force-after.
+    #
+    # The remote is asked either way, so that a run nobody asked to be
+    # conditional still leaves the record straight for the next one which is.
+    local head was elapsed force
+
+    if [ -n "$RE_EXECED" ]; then
+        return 0
+    fi
+
+    if ! head=$(remote_head); then
+        if [ -n "$RUN_IF_CHANGED" ]; then
+            fatal "cannot tell what $TEST_BRANCH of $REMOTE_REPO is at"
+        fi
+        error "cannot tell what $TEST_BRANCH of $REMOTE_REPO is at, testing anyway..."
+        return 0
+    fi
+
+    if [ -n "$RUN_IF_CHANGED" ]; then
+        if ! force=$(force_after_seconds); then
+            fatal "cannot make sense of --force-after \"$FORCE_AFTER\""
+        fi
+
+        was=$(run_state last_sha1)
+
+        # A result root pointed at another branch, or another remote, has
+        # nothing to say about this one: test rather than compare histories
+        # which have nothing to do with each other.
+        if [ "$was" != "$head" ] ||
+           [ "$(run_state last_remote)" != "$REMOTE_REPO" ] ||
+           [ "$(run_state last_branch)" != "$TEST_BRANCH" ]; then
+            info "$TEST_BRANCH is at ${head:0:12}, ${was:+last tried ${was:0:12}, }testing..."
+        else
+            elapsed=$(( $(date +%s) - $(run_state last_attempt || echo 0) ))
+            if [ -n "$force" ] && [ "$elapsed" -ge "$force" ]; then
+                info "nothing new at ${head:0:12}, but $(as_time $elapsed) since the last try, testing anyway..."
+            else
+                info "nothing new at ${head:0:12}, nothing to do..."
+                exit 0
+            fi
+        fi
+    fi
+
+    save_run_state "$head"
 }
 
 prepare_worktree() {
@@ -987,6 +1220,15 @@ while [  "$#" -gt 0 ] && [ "${1#-}" != "$1" ]; do
             K8SCRI="$2"
             shift 2
             ;;
+        --run-if-changed)
+            RUN_IF_CHANGED=1
+            shift
+            ;;
+        --force-after)
+            FORCE_AFTER="$2"
+            shift 2
+            ;;
+
         --full-build)
             FULL_BUILD=1
             shift
@@ -1035,7 +1277,9 @@ case "$PACK_RESULTS" in
         ;;
 esac
 
+acquire_run_lock
 source_proxies
+decide_to_run
 prepare_worktree
 prepare_result_dir
 collect_git_info
