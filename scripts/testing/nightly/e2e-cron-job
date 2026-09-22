@@ -68,6 +68,11 @@ E2E_PACK_RESULTS="${E2E_PACK_RESULTS-1}"
 # E2E_OPTIONS: anything else to pass the runner, as it would be on its command
 # line, for what this script has no setting of its own
 E2E_OPTIONS="${E2E_OPTIONS:-}"
+# E2E_OWN_TOOLING: test the branch with the tooling in the tree this script is
+# installed from, rather than the branch's. The tests and the plugins are still
+# the branch's, so this is how to exercise runner or e2e-report changes against a
+# branch which knows nothing of them.
+E2E_OWN_TOOLING="${E2E_OWN_TOOLING-}"
 # E2E_UPDATE_CLONE: bring the clone up to the branch before running, so that the
 # copy of the runner which parses our options is the branch's too. Off by
 # default: it is a reset --hard of a directory which may be someone's tree.
@@ -148,6 +153,12 @@ esac
 case "$E2E_PACK_RESULTS" in
     1|true|yes|y)
         opts+=(--pack-results)
+        ;;
+esac
+
+case "$E2E_OWN_TOOLING" in
+    1|true|yes|y)
+        opts+=(--own-tooling)
         ;;
 esac
 

@@ -45,6 +45,9 @@ K8SCRI="${K8SCRI:-}"
 # FULL_BUILD: 1 to build all binaries and images, 0 for the minimal set of
 # them, empty to build everything once a week and the minimal set otherwise
 FULL_BUILD="${FULL_BUILD:-}"
+# OWN_TOOLING: run the tests of the branch with the tooling in the tree we were
+# started from rather than the branch's own.
+OWN_TOOLING="${OWN_TOOLING:-}"
 # RUN_IF_CHANGED: only test if the remote branch has moved since we last tried,
 # which is what makes it sane to trigger us from cron every few minutes
 RUN_IF_CHANGED="${RUN_IF_CHANGED:-}"
@@ -116,6 +119,7 @@ RUN_LOCK_FD="E2E_RUN_LOCK_FD"
 # E2E_REPORT_DIR:    where it was built, ours to remove
 # VMS_LEFT_RUNNING:  test VMs we failed to destroy, if any
 # RE_EXECED:         whether we are the copy the bootstrap re-execed into
+# OWN_TREE:          the tree we were started from, for --own-tooling
 
 RESULT_DIR=""
 LOG=""
@@ -132,6 +136,11 @@ RE_EXECED=""
 if [ -n "${!RUN_LOCK_FD}" ]; then
     RE_EXECED=1
 fi
+
+# The tree we were started from, which --own-tooling takes the tooling from:
+# three levels up from scripts/testing/nightly, resolved so that being invoked
+# through a relative path or a symlink makes no difference.
+OWN_TREE="$(realpath -m "$(dirname "$(realpath "$SELF")")/../../..")"
 
 usage() {
     local exit_code="${exit_code:-0}"
@@ -159,6 +168,11 @@ usage() {
     echo "  --no-pack-results         publish the results as plain files"
     echo "  --runtime <runtime>       containerd or crio, by default the two of"
     echo "                            them on alternating days"
+    echo "  --own-tooling             test the branch with the tooling in the"
+    echo "                            tree we were started from, not the"
+    echo "                            branch's: the tests and the plugins are"
+    echo "                            the branch's, the runner and e2e-report"
+    echo "                            stay ours"
     echo "  --run-if-changed          do nothing unless the remote branch has"
     echo "                            moved since we last tried to test it"
     echo "  --force-after <time>      with --run-if-changed, test anyway once this"
@@ -467,6 +481,14 @@ prepare_worktree() {
     info "setting up git worktree $WORKTREE..."
     if ! git worktree add "$WORKTREE" "origin/$TEST_BRANCH"; then
         fatal "failed to add git worktree $WORKTREE"
+    fi
+
+    # Asked to be the runner of this run ourselves, so there is nothing to hand
+    # over to: the worktree is there to supply the tests and the plugins only.
+    if [ -n "$OWN_TOOLING" ]; then
+        info "testing $TEST_BRANCH with our own tooling..."
+        must-cd "$WORKTREE"
+        return 0
     fi
 
     if [ -x "$WORKTREE/scripts/testing/nightly/e2e-runner" ]; then
@@ -823,10 +845,18 @@ policies_tested() {
 }
 
 build_e2e_report() {
-    local dir
+    local dir tree="$WORKTREE"
 
-    if [ ! -d "$WORKTREE/$E2E_REPORT" ]; then
-        info "no $E2E_REPORT in $WORKTREE, leaving the results unreported..."
+    # Reported on by the revision which was tested, so that a report says what
+    # that revision knew to say -- unless the tooling of this run is ours, in
+    # which case the reporting is ours too. Half of the tooling would be worse
+    # than neither: it is the runner which records what the report reads.
+    if [ -n "$OWN_TOOLING" ]; then
+        tree="$OWN_TREE"
+    fi
+
+    if [ ! -d "$tree/$E2E_REPORT" ]; then
+        info "no $E2E_REPORT in $tree, leaving the results unreported..."
         return 0
     fi
 
@@ -836,8 +866,8 @@ build_e2e_report() {
     fi
     E2E_REPORT_DIR="$dir"
 
-    info "building $E2E_REPORT..."
-    must-cd "$WORKTREE"
+    info "building $E2E_REPORT out of $tree..."
+    must-cd "$tree"
     if ! go build -o "$dir/e2e-report" "./$E2E_REPORT"; then
         error "failed to build $E2E_REPORT"
         return 1
@@ -1220,6 +1250,10 @@ while [  "$#" -gt 0 ] && [ "${1#-}" != "$1" ]; do
             K8SCRI="$2"
             shift 2
             ;;
+        --own-tooling)
+            OWN_TOOLING=1
+            shift
+            ;;
         --run-if-changed)
             RUN_IF_CHANGED=1
             shift
@@ -1262,6 +1296,13 @@ case "$K8SCRI" in
         fatal "unknown runtime \"$K8SCRI\", expecting containerd or crio"
         ;;
 esac
+
+# Said up front rather than when we get to it: asking for our tooling from a
+# tree which has none of it is a mistake worth hearing about before a run, not
+# after the tests have been run and there is nothing to report them with.
+if [ -n "$OWN_TOOLING" ] && [ ! -d "$OWN_TREE/$E2E_REPORT" ]; then
+    fatal "no $E2E_REPORT in $OWN_TREE, so there is no tooling of ours to use"
+fi
 
 # Packing keeps everything in one archive, and everything is what makes it
 # worth serving: keep the artifacts of every test and the coverage data of each
