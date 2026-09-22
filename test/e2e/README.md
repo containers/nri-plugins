@@ -303,6 +303,43 @@ is what to serve a root `e2e-report index` has never been run on, or one whose
 runs come and go without it. A run still going is listed too, linked to by its
 directory as it has no report yet.
 
+A log asked for with `?view` is served as a page which reads it, rather than as
+the file it is, and the reports link every log of a test that way: the log of
+the plugin, of the runtime, of the test itself and the output of the last
+`pyexec`. Three things a page can do that a file cannot:
+
+- **Severities are coloured**, as a band across the page behind the lines of
+  one: light red for an error, light yellow for a warning, light grey for
+  debug, and nothing behind everything else. Both of the forms our logs come
+  in are read: `D:`, `I:`, `W:` and `E:` as our logger writes them with the
+  headers skipped, and `level=` as it writes them with the headers and as
+  logrus writes them for the runtimes and for the NRI library, wherever in the
+  line it ends up.
+- **The header of a line is out of the way.** Every line of a runtime's log
+  repeats the date, the host, the unit and its pid, and the level, which the
+  colour says instead. All of it is taken off and hung on an ellipsis at the
+  head of the line, to be read as a tooltip when it is wanted.
+- **A log still being written to keeps up with itself.** Every three seconds the
+  page asks for what has been written past what it has, appends that, and stays
+  at the end unless you have scrolled away from it. `?view&refresh=2s` asks for
+  another interval: anything `time.ParseDuration` reads, held to between a
+  second and an hour, with `refresh=0` for a static view of a log which is still
+  growing. Nothing is followed once a run has stopped writing: a run which was
+  killed says `RUNNING` for good, so a log which has not grown for an hour is a
+  page with nothing left to wait for.
+
+The log itself is untouched under the same URL without the query, plain text to
+the byte, which is both what the page reads it with and what a plain file server
+hands over for the same link. Only `.txt` files are read this way, and a log
+inside an archive is read just as one lying next to it.
+
+The bulky artifacts of a test case are packed into `artifacts.tar.xz` before a
+run is reported on, so the log of the plugin and the log of the runtime are
+linked inside that archive rather than as files. They are linked by name,
+without reading the archive to check: listing one costs a decompression, and 55
+of them would cost that 55 times for links to the logs every test case writes
+anyway.
+
 `scripts/testing/nightly/e2e-runner --pack-results` publishes a run this way,
 and keeps the artifacts of every test and the coverage data of each as well:
 with the results packed there is nothing to gain by pruning them. Packing is

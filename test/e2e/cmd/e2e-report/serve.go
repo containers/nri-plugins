@@ -122,6 +122,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if info, err := s.dir.Stat(name); err == nil {
 		if !info.IsDir() {
+			// Reading a log and looking at one are not the same thing, and
+			// asking for a view of it is what says which.
+			if viewed(r, name) {
+				s.serveFileView(w, r, name, info)
+				return
+			}
 			s.serveFile(w, r, name)
 			return
 		}
@@ -283,6 +289,21 @@ func (s *Server) serveTarball(w http.ResponseWriter, r *http.Request, tarball *T
 			return
 		}
 		defer func() { _ = file.Close() }()
+
+		// The results of a run are packed up once it has ended, so nothing in
+		// here is still being written to and there is nothing to follow.
+		if viewed(r, member) && size <= viewLimit {
+			text, err := io.ReadAll(file)
+			if err != nil {
+				http.Error(w, "failed to read "+member, http.StatusInternalServerError)
+				return
+			}
+			// Named as it was asked for, so that a log has the one title
+			// whether it is read out of an archive or off the disk.
+			s.serveLogView(w, r, within(clean), text, false)
+			return
+		}
+
 		s.serveReader(w, r, file, member, size)
 		return
 	}
@@ -390,6 +411,26 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, name string) 
 	}
 
 	http.ServeContent(w, r, path.Base(name), info.ModTime(), file)
+}
+
+// serveFileView serves a log of a run which is not packed as a page which reads
+// it, followed as it grows while the run is still writing to it.
+func (s *Server) serveFileView(w http.ResponseWriter, r *http.Request, name string,
+	info fs.FileInfo) {
+	// A log too big to make a page of is still a log to read as it is.
+	if info.Size() > viewLimit {
+		s.serveFile(w, r, name)
+		return
+	}
+
+	text, err := fs.ReadFile(s.dir.FS(), name)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	run, _ := split("/" + name)
+	s.serveLogView(w, r, name, text, s.stillRunning(run, info))
 }
 
 // serveReader serves the contents of a member of a tarball. Content type is
