@@ -37,7 +37,7 @@ const (
 // unpacked are the files of a run which are never packed: whatever it takes to
 // tell how the run went without a server to serve the archive.
 var unpacked = []string{resultsJSON, indexHTML, statusTxt, summaryTxt,
-	"git.describe", "git.sha1", "git.remote"}
+	"git.describe", "git.sha1", "git.remote", gitBranch, gitRunner}
 
 // packRun packs everything a run collected into a single archive next to the
 // files it takes to tell how the run went, and removes what it packed.

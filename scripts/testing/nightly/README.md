@@ -187,9 +187,20 @@ running it with `go run`: by the time it packs, the worktree is gone.
                     results.json            the same, machine readable
                     status.txt              PASS 55/55 tests passed
                     summary.txt             a line per test case
-                    git.describe, git.sha1, git.remote
+                    git.describe, git.sha1, git.remote, git.branch
+                    git.runner              the tree the runner came from
                     e2e-runner.log.txt      the log of the run
                     coverage-report/        profile, browsable report, summary
                     <topology-distro-runtime>/policies.test-suite/<policy>/<test>/
                     results.tar.zst         all of the above, with --pack-results
 ```
+
+A run records where it came from as well as how it went: `git.remote` and
+`git.branch` are the repository and the branch it was picked up from,
+`git.describe` and `git.sha1` the revision it tested of them, and `git.runner`
+the tree the runner script itself came from. That last one is normally the
+revision under test, since the runner re-execs itself out of the worktree it
+creates, so a report mentions it only when the two differ, which happens for a
+run driven by hand or with `--skip-worktree`. It is left out altogether when
+there is no telling, as for a runner read straight out of a repository with
+`git show`.

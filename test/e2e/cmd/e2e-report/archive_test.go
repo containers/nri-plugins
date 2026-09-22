@@ -32,6 +32,8 @@ var files = map[string]string{
 	statusTxt:   "PASS 1/1 tests passed\n",
 	summaryTxt:  "vm:\n  + PASS balloons/test01\n",
 	"git.sha1":  "0123456789abcdef\n",
+	gitBranch:   "main\n",
+	gitRunner:   "0123456789abcdef\n",
 	runnerLog:   "the log of the run\n",
 	"vm/" + suiteDir + "/balloons/test01/" + testLog:       "test output\n",
 	"vm/" + suiteDir + "/balloons/test01/commands/0001-vm": "a command\n",
