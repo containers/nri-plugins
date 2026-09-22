@@ -70,20 +70,48 @@ something else.
 
 ## From cron
 
-Nothing here wants root, so this is the crontab of the user which owns the result
-root and can run docker, vagrant and qemu, `crontab -e` as that user:
+`e2e-cron-job` is a simple bash wrapper to help set up a configurable cron job.
+You can use it like this:
 
-```crontab
-PATH=/usr/local/bin:/usr/bin:/bin
+```shell
+env=$HOME/.config/nri-plugins-e2e-cron-job
+install -m 644 -D scripts/testing/nightly/e2e-cron-job.env "$env"
+"${EDITOR:-vi}" "$env"
 
-0 2 * * * /opt/e2e-test/nri-plugins/nri-plugins/scripts/testing/nightly/e2e-runner \
-              --results /opt/e2e-test/nri-plugins/results \
-              >>$HOME/e2e-runner.log 2>&1
+job=$PWD/scripts/testing/nightly/e2e-cron-job
+{
+    crontab -l 2>/dev/null
+    echo 'PATH=/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin'
+    echo "E2E_CRON_ENV=$env"
+    echo "*/5 * * * * $job >>\$HOME/e2e-runner.log 2>&1"
+    echo "2 2 * * * $job --force-after 0 >>\$HOME/e2e-runner.log 2>&1"
+    echo "00 00 * * 0 docker image prune -a -f --filter 'until=168h'"
+} | crontab -
 ```
+
+That sets up cron jobs to
+- poll the repo and kick off a test run if something was merged
+- kick off unconditional nightly test runs
+- clean up old docker images
 
 A drop-in in `/etc/cron.d` works as well, and takes the user to run as in a field
 of its own after the five of the schedule. Name the user there: every example of
 the format says `root`, and this needs none of it.
+
+### The one thing to watch
+
+The copy of `e2e-runner` which parses the options is whichever one you invoke --
+the clone's, when cron runs it out of the clone. The runner re-executes itself
+out of the worktree it makes, so the tests, the framework and the report tool are
+always the branch's, but it cannot re-execute its way out of not understanding an
+option the checked-out copy has never heard of. A clone left on a revision older
+than `--run-if-changed` fails with `unknown command line option`.
+
+Either keep the tree you install `e2e-cron-job` from separate from the clone the
+runner tests in, or set `E2E_UPDATE_CLONE=1`, which fetches and resets the clone
+to the branch before running. That is a `reset --hard` of that directory, which
+is why it is off by default: turn it on only where the clone is nobody's working
+tree.
 
 Once a run has a directory to publish into, everything it prints goes to
 `e2e-runner.log.txt` there, and only what happens before that lands in the log
@@ -96,16 +124,6 @@ revision it fetched.
 On a host behind a proxy, put the proxy variables in a file and point
 `--source-proxies` at it: the runner exports them and passes them into the test
 VMs.
-
-Note that the copy of `e2e-runner` which parses the options is whichever one you
-invoke -- the clone's, when cron runs it out of the clone. The runner
-re-executes itself out of the worktree it makes, so the tests, the framework and
-the report tool are always the branch's, but it cannot re-execute its way out of
-not understanding an option the checked-out copy has never heard of. A clone left
-on a revision older than `--run-if-changed` fails with `unknown command line
-option`.
-
-## Being told how a run went
 
 To be told when a run fails, look at the verdict rather than at the exit status:
 
@@ -188,10 +206,12 @@ pruned and packed the rest away. `--pack-results` publishes all of it in a
 single `results.tar.zst` of some 2.5M instead, keeping the artifacts of every
 test and the coverage data of each:
 
-```crontab
-0 2 * * * /opt/e2e-test/nri-plugins/nri-plugins/scripts/testing/nightly/e2e-runner \
-              --results /opt/e2e-test/nri-plugins/results --pack-results \
-              >>$HOME/e2e-runner.log 2>&1
+`E2E_PACK_RESULTS=1` in the settings file, which is the default there, or
+`--pack-results` on the runner:
+
+```shell
+scripts/testing/nightly/e2e-runner --results /opt/e2e-test/nri-plugins/results \
+    --pack-results
 ```
 
 `results.json`, `status.txt` and `summary.txt` stay where they are, so how a run

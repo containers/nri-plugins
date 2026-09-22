@@ -1,0 +1,163 @@
+#!/bin/bash
+
+# The whole of what a cron job needs to run the e2e tests, so that a crontab
+# line is this script and nothing else:
+#
+#   PATH=/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin
+#   */5 * * * * /path/to/nri-plugins/scripts/testing/nightly/e2e-cron-job
+#
+# Every setting comes from the environment, so a host is configured without
+# editing this file. Install the settings file next to it:
+#
+#   install -m 644 scripts/testing/nightly/e2e-cron-job.env \
+#       /etc/sysconfig/nri-plugins-e2e-cron-job
+#
+# and edit that. What it leaves out defaults below. Anything given on our own
+# command line is passed on to the runner, so a one-off is
+#
+#   e2e-cron-job --no-pack-results --runtime crio
+#
+# Every five minutes is not a typo: with E2E_RUN_IF_CHANGED the runner does
+# nothing unless the branch it tests has moved since it last tried, so polling
+# often is how a merged PR gets tested soon after it lands rather than the
+# following night. A run already going is left alone, and once E2E_FORCE_AFTER
+# has passed with nothing new, the tests run anyway.
+
+set -o pipefail
+
+SELF="$0"
+HERE="$(dirname "$(realpath "$SELF")")"
+
+# ENV_FILE: where a host says what it wants, and the only thing to edit
+ENV_FILE="${E2E_CRON_ENV:-/etc/sysconfig/nri-plugins-e2e-cron-job}"
+
+if [ -r "$ENV_FILE" ]; then
+    # shellcheck disable=SC1090
+    if ! source "$ENV_FILE"; then
+        echo "$SELF: failed to read $ENV_FILE" >&2
+        exit 1
+    fi
+fi
+
+# E2E_REMOTE: repository to test a branch of
+E2E_REMOTE="${E2E_REMOTE:-https://github.com/containers/nri-plugins}"
+# E2E_BRANCH: which branch of it
+E2E_BRANCH="${E2E_BRANCH:-main}"
+# E2E_CLONE: where to keep the clone of it. A clone belongs to one remote: the
+# runner refuses one whose origin is another, so a second remote wants a second
+# directory here.
+E2E_CLONE="${E2E_CLONE:-/opt/e2e-test/nri-plugins/nri-plugins}"
+# E2E_RESULTS: where to publish the results of each run
+E2E_RESULTS="${E2E_RESULTS:-/opt/e2e-test/nri-plugins/results}"
+# E2E_PROXIES: a file setting up proxies in the environment, if this host needs
+# one to reach the remote and pull images
+E2E_PROXIES="${E2E_PROXIES:-}"
+# E2E_RUN_IF_CHANGED: only test when the branch has moved, which is what makes
+# it sane to be triggered every few minutes. Empty, no or 0 to test on every
+# trigger. Defaulted with ${VAR-...} rather than ${VAR:-...}, so that a setting
+# emptied on purpose stays empty instead of coming back as the default.
+E2E_RUN_IF_CHANGED="${E2E_RUN_IF_CHANGED-1}"
+# E2E_FORCE_AFTER: test anyway once this long has passed with nothing new.
+# Defaulted with ${VAR-...} like the switches above, so that an empty value stays
+# empty: the runner reads that as never, and coming back as a day instead would be
+# the opposite of what emptying it asks for.
+E2E_FORCE_AFTER="${E2E_FORCE_AFTER-24h}"
+# E2E_PACK_RESULTS: publish a run as a single archive, keeping everything it
+# collected. Needs e2e-report serve to browse.
+E2E_PACK_RESULTS="${E2E_PACK_RESULTS-1}"
+# E2E_OPTIONS: anything else to pass the runner, as it would be on its command
+# line, for what this script has no setting of its own
+E2E_OPTIONS="${E2E_OPTIONS:-}"
+# E2E_UPDATE_CLONE: bring the clone up to the branch before running, so that the
+# copy of the runner which parses our options is the branch's too. Off by
+# default: it is a reset --hard of a directory which may be someone's tree.
+E2E_UPDATE_CLONE="${E2E_UPDATE_CLONE-}"
+
+update_clone() {
+    # Bring the clone up to the branch we are to test. The runner re-execs itself
+    # out of the worktree it makes, so everything it does after parsing its
+    # options is the branch's code already -- but it cannot re-exec its way out
+    # of not understanding an option the checked-out copy has never heard of.
+    # This is what closes that gap, for whoever wants it closed.
+    #
+    # Safe to do although we may well be running out of this very clone: git
+    # replaces a file rather than writing over it, and the copy of us the shell
+    # is reading stays open and therefore intact. Checked, not assumed.
+    local origin
+
+    # Nothing to update yet. The runner clones it, at the branch, by itself.
+    if [ ! -e "$E2E_CLONE/.git" ]; then
+        return 0
+    fi
+
+    # Fetching needs whatever proxies reach the remote. The runner sets those up
+    # for itself, but we are ahead of it here.
+    if [ -n "$E2E_PROXIES" ] && [ -r "$E2E_PROXIES" ]; then
+        # shellcheck disable=SC1090
+        source "$E2E_PROXIES" || true
+        export http_proxy https_proxy no_proxy HTTP_PROXY HTTPS_PROXY NO_PROXY
+    fi
+
+    # A clone belongs to one remote. Resetting it to some other remote's branch
+    # would be worse than leaving it alone, and the runner says so properly.
+    origin=$(git -C "$E2E_CLONE" remote get-url origin 2>/dev/null)
+    if [ "$origin" != "$E2E_REMOTE" ]; then
+        echo "$SELF: $E2E_CLONE is a clone of ${origin:-nothing} and not of" \
+             "$E2E_REMOTE, leaving it as it is" >&2
+        return 0
+    fi
+
+    # A failure here is not ours to be fatal about: the checkout we have still
+    # runs, and the runner fetches for itself and fails properly if it cannot.
+    if ! git -C "$E2E_CLONE" fetch -q origin; then
+        echo "$SELF: failed to fetch $E2E_REMOTE in $E2E_CLONE," \
+             "running with the clone as it is" >&2
+        return 0
+    fi
+    if ! git -C "$E2E_CLONE" reset -q --hard "origin/$E2E_BRANCH"; then
+        echo "$SELF: failed to put $E2E_CLONE on $E2E_BRANCH," \
+             "running with the clone as it is" >&2
+        return 0
+    fi
+}
+
+case "$E2E_UPDATE_CLONE" in
+    1|true|yes|y)
+        update_clone
+        ;;
+esac
+
+RUNNER="${E2E_RUNNER:-$HERE/e2e-runner}"
+
+if [ ! -x "$RUNNER" ]; then
+    echo "$SELF: no e2e-runner to run at $RUNNER" >&2
+    exit 1
+fi
+
+opts=(--remote "$E2E_REMOTE"
+      --branch "$E2E_BRANCH"
+      --local "$E2E_CLONE"
+      --results "$E2E_RESULTS")
+
+case "$E2E_RUN_IF_CHANGED" in
+    1|true|yes|y)
+        opts+=(--run-if-changed --force-after "$E2E_FORCE_AFTER")
+        ;;
+esac
+
+case "$E2E_PACK_RESULTS" in
+    1|true|yes|y)
+        opts+=(--pack-results)
+        ;;
+esac
+
+if [ -n "$E2E_PROXIES" ]; then
+    opts+=(--source-proxies "$E2E_PROXIES")
+fi
+
+# Unquoted on purpose: a setting of several flags in one value is the point of
+# it, and an empty one has to come to nothing rather than to an empty argument.
+# shellcheck disable=SC2206,SC2086
+opts+=($E2E_OPTIONS)
+
+exec "$RUNNER" "${opts[@]}" "$@"
