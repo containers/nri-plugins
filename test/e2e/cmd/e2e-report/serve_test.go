@@ -459,3 +459,179 @@ func TestServeLiveIndex(t *testing.T) {
 		t.Errorf("the built index does not name the run %s", name)
 	}
 }
+
+// getView asks for a log the way a report links it.
+func getView(t *testing.T, root, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	return get(t, root, path+"?"+viewQuery)
+}
+
+// TestServeFollowsARunningLog checks that the log of a run which is still going
+// is served as a page which comes back for what is written to it after.
+func TestServeFollowsARunningLog(t *testing.T) {
+	root, _ := newRoot(t, false)
+	ongoing := "test-2026-09-17-2251"
+	dir := newOngoingRun(t, root, ongoing)
+	text := readFile(filepath.Join(dir, runnerLog))
+
+	got := getView(t, root, "/"+ongoing+"/"+runnerLog)
+	body := got.Body.String()
+
+	if got.Code != http.StatusOK {
+		t.Fatalf("following a running log: %d, expected 200", got.Code)
+	}
+	if kind := got.Header().Get("Content-Type"); !strings.HasPrefix(kind, "text/html") {
+		t.Errorf("a followed log is served as %q, expected text/html", kind)
+	}
+	if !strings.Contains(body, text) {
+		t.Errorf("the page does not carry the log it follows: %q", body)
+	}
+	if want := fmt.Sprintf(`data-offset="%d"`, len(text)); !strings.Contains(body, want) {
+		t.Errorf("the page does not ask for the rest from %q", want)
+	}
+	every := fmt.Sprintf(`data-every="%d"`, followInterval.Milliseconds())
+	if !strings.Contains(body, every) {
+		t.Errorf("the page does not come back every %v", followInterval)
+	}
+	if !strings.Contains(body, "Range") {
+		t.Errorf("the page does not ask for a range of the log: %q", body)
+	}
+}
+
+// TestServeFollowsNothingWhenFinished checks that the log of a run which has
+// stopped is served as a page with nothing to wait for.
+func TestServeFollowsNothingWhenFinished(t *testing.T) {
+	root, name := newRoot(t, false)
+
+	body := getView(t, root, "/"+name+"/"+runnerLog).Body.String()
+
+	if !strings.Contains(body, `data-every="0"`) {
+		t.Errorf("a finished run's log is followed all the same: %q", body)
+	}
+}
+
+// TestServeFollowsNothingWhenAbandoned checks that a run which says it is
+// running but has not written to its log for an hour is not followed either:
+// a run which was killed says RUNNING for good.
+func TestServeFollowsNothingWhenAbandoned(t *testing.T) {
+	root, _ := newRoot(t, false)
+	abandoned := "test-2026-09-17-2251"
+	dir := newOngoingRun(t, root, abandoned)
+
+	old := time.Now().Add(-2 * staleAfter)
+	if err := os.Chtimes(filepath.Join(dir, runnerLog), old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	body := getView(t, root, "/"+abandoned+"/"+runnerLog).Body.String()
+
+	if !strings.Contains(body, `data-every="0"`) {
+		t.Errorf("an abandoned run's log is followed: %q", body)
+	}
+}
+
+// TestServeFollowLeavesTheLogAlone checks that the log itself is untouched by
+// any of this: it is what the page reads, and what everything else reads.
+func TestServeFollowLeavesTheLogAlone(t *testing.T) {
+	root, _ := newRoot(t, false)
+	ongoing := "test-2026-09-17-2251"
+	dir := newOngoingRun(t, root, ongoing)
+	text := readFile(filepath.Join(dir, runnerLog))
+
+	got := get(t, root, "/"+ongoing+"/"+runnerLog)
+
+	if kind := got.Header().Get("Content-Type"); !strings.HasPrefix(kind, "text/plain") {
+		t.Errorf("the log of a running run is served as %q, expected text/plain", kind)
+	}
+	if got.Body.String() != text {
+		t.Errorf("the log served is not the log: %q", got.Body.String())
+	}
+}
+
+// TestServeViewsOnlyTextFiles checks that asking for a view of something which
+// is not a log is ignored: a page of a report or of a json file would be a page
+// of whatever it happens to look like.
+func TestServeViewsOnlyTextFiles(t *testing.T) {
+	root, name := newRoot(t, false)
+
+	for _, file := range []string{indexHTML, resultsJSON, "vm/" + suiteDir +
+		"/balloons/test01/commands/0001-vm"} {
+		got := getView(t, root, "/"+name+"/"+file)
+		if strings.Contains(got.Body.String(), "data-every=") {
+			t.Errorf("%s is served as a page which reads it", file)
+		}
+		if got.Body.String() != readFile(filepath.Join(root, name, file)) {
+			t.Errorf("%s is not served as it is when a view of it is asked for", file)
+		}
+	}
+}
+
+// TestServeFollowEscapesTheLog checks that a log which reads like markup cannot
+// break out of the page carrying it.
+func TestServeFollowEscapesTheLog(t *testing.T) {
+	root, _ := newRoot(t, false)
+	ongoing := "test-2026-09-17-2251"
+	dir := newOngoingRun(t, root, ongoing)
+
+	nasty := "</pre><script>alert(1)</script><pre>\n"
+	if err := os.WriteFile(filepath.Join(dir, runnerLog), []byte(nasty), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	body := getView(t, root, "/"+ongoing+"/"+runnerLog).Body.String()
+
+	if strings.Contains(body, "<script>alert(1)</script>") {
+		t.Errorf("a log broke out of the page which carries it: %q", body)
+	}
+	if !strings.Contains(body, "alert(1)") {
+		t.Errorf("the log is not in the page at all: %q", body)
+	}
+}
+
+// TestServeFollowRange checks what the page relies on: asking for the bytes
+// past the ones it has answers those bytes, and nothing until there are any.
+func TestServeFollowRange(t *testing.T) {
+	root, _ := newRoot(t, false)
+	ongoing := "test-2026-09-17-2251"
+	dir := newOngoingRun(t, root, ongoing)
+	log := filepath.Join(dir, runnerLog)
+	served := len(readFile(log))
+
+	ranged := func(from int) *httptest.ResponseRecorder {
+		t.Helper()
+		server, err := NewServer(root, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request := httptest.NewRequest(http.MethodGet, "/"+ongoing+"/"+runnerLog, nil)
+		request.Header.Set("Range", fmt.Sprintf("bytes=%d-", from))
+		recorder := httptest.NewRecorder()
+		server.ServeHTTP(recorder, request)
+
+		return recorder
+	}
+
+	if got := ranged(served); got.Code != http.StatusRequestedRangeNotSatisfiable {
+		t.Errorf("a log which has not grown answers %d, expected 416", got.Code)
+	}
+
+	more := "and then some more\n"
+	file, err := os.OpenFile(log, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString(more); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	got := ranged(served)
+	if got.Code != http.StatusPartialContent {
+		t.Fatalf("a log which has grown answers %d, expected 206", got.Code)
+	}
+	if got.Body.String() != more {
+		t.Errorf("the rest of the log is %q, expected %q", got.Body.String(), more)
+	}
+}

@@ -65,18 +65,37 @@ var (
 // name of a VM directory.
 var runtimes = []string{"containerd", "crio"}
 
+// artifactsTar is what the bulky artifacts of a test case are packed into,
+// which happens before a run is reported on: what a report links of them it
+// links inside this.
+const artifactsTar = "artifacts.tar.xz"
+
 // artifacts of a test case, in the order they help when one fails.
-var artifacts = []struct{ label, name string }{
-	{"test log", testLog},
-	{"plugin log", "nri-resource-policy.output.txt"},
-	{"commands", "commands"},
-	{"artifacts", "artifacts.tar.xz"},
-	{"pyexec", "pyexec.output.txt"},
-	{"pyexec code", "pyexec.py"},
-	{"pyexec state", "pyexec_state.py"},
-	{"plugin cache", "cache"},
-	{"verdict", summaryTxt},
-	{"coverage", "coverage"},
+//
+// What is stored of a link is where the thing is, never how it is to be read:
+// the logs among them are marked as such here and linked to be read as a page
+// when a report is rendered, so that a run published by an older version of this
+// tool links them that way too, whenever its report is rendered again.
+//
+// A log which is packed up by the time we report is linked inside the archive,
+// by name and without looking: reading the listing of every test's archive costs
+// a decompression each, and these are the logs a test always writes.
+var artifacts = []struct {
+	label string
+	name  string
+	log   bool
+	inTar bool
+}{
+	{"test log", testLog, true, false},
+	{"plugin log", "nri-resource-policy.output.txt", true, true},
+	{"commands", "commands", false, false},
+	{"artifacts", artifactsTar, false, false},
+	{"pyexec", "pyexec.output.txt", true, false},
+	{"pyexec code", "pyexec.py", false, false},
+	{"pyexec state", "pyexec_state.py", false, false},
+	{"plugin cache", "cache", false, false},
+	{"verdict", summaryTxt, false, false},
+	{"coverage", "coverage", false, false},
 }
 
 const (
@@ -275,7 +294,7 @@ func scanTests(dir string) ([]*Test, error) {
 					reason = failureReason(testDir)
 				}
 
-				links, err := artifactsOf(testDir, rel)
+				links, err := artifactsOf(testDir, rel, runtime)
 				if err != nil {
 					return nil, err
 				}
@@ -320,12 +339,16 @@ func vmParts(vm string) (topology, distro, runtime *string) {
 }
 
 // artifactsOf maps a label to a link for everything collected for a test case.
-func artifactsOf(testDir, rel string) (map[string]string, error) {
+func artifactsOf(testDir, rel string, runtime *string) (map[string]string, error) {
 	links := map[string]string{}
+	packed := exists(filepath.Join(testDir, artifactsTar))
 
 	for _, a := range artifacts {
 		info, err := os.Stat(filepath.Join(testDir, a.name))
 		if err != nil {
+			if a.inTar && packed {
+				links[a.label] = inTarball(rel, a.name)
+			}
 			continue
 		}
 		// An empty file is not worth a link: pyexec.output.txt, for one, holds
@@ -354,8 +377,18 @@ func artifactsOf(testDir, rel string) (map[string]string, error) {
 			links["runtime log"] = filepath.Join(rel, name)
 		}
 	}
+	// Packed up with the rest, and named after the runtime the VM ran, which
+	// is the last field of the name of its directory.
+	if _, ok := links["runtime log"]; !ok && packed && runtime != nil {
+		links["runtime log"] = inTarball(rel, "runtime."+*runtime+".log.txt")
+	}
 
 	return links, nil
+}
+
+// inTarball links a log which was packed up with the artifacts of its test.
+func inTarball(rel, name string) string {
+	return filepath.Join(rel, artifactsTar, name)
 }
 
 // failureReason digs out why a test case failed, in as few lines as possible.

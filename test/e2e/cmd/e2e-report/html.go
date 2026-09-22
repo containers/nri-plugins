@@ -219,7 +219,17 @@ func runMeta(run *Run) []htmlLink {
 		meta = append(meta, runner)
 	}
 	if run.Log != nil {
-		meta = append(meta, htmlLink{Text: "runner log", Href: *run.Log})
+		// The log of a run which is going is worth following as it is written,
+		// which e2e-report serve does when asked. The link keeps working
+		// either way once the run has stopped: served by us it is a page which
+		// has nothing left to wait for, and by a plain file server the log
+		// itself, the query ignored. A run is reported on again when it ends,
+		// so a finished run links its log plainly in any case.
+		href := *run.Log
+		if run.Verdict == "RUNNING" {
+			href += "?" + viewQuery
+		}
+		meta = append(meta, htmlLink{Text: "runner log", Href: href})
 	}
 
 	return append(meta, htmlLink{Text: "all runs", Href: ".."})
@@ -359,12 +369,12 @@ func orderedLinks(links map[string]string, source string) []htmlLink {
 	ordered := make([]htmlLink, 0, len(left))
 	for _, label := range linkOrder() {
 		if href, ok := left[label]; ok {
-			ordered = append(ordered, htmlLink{Text: label, Href: href})
+			ordered = append(ordered, htmlLink{Text: label, Href: viewHref(href)})
 			delete(left, label)
 		}
 	}
 	for _, label := range sortedKeys(left) {
-		ordered = append(ordered, htmlLink{Text: label, Href: left[label]})
+		ordered = append(ordered, htmlLink{Text: label, Href: viewHref(left[label])})
 	}
 
 	return ordered
