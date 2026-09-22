@@ -191,8 +191,10 @@ func newRunPage(run *Run) *runPage {
 func runMeta(run *Run) []htmlLink {
 	meta := []htmlLink{}
 
-	if run.Git.Describe != "" {
-		version := htmlLink{Text: run.Git.Describe}
+	// The revision says what was tested, the branch where it was picked up
+	// from, which is what tells a nightly of main from one of a branch.
+	if text := versionText(run); text != "" {
+		version := htmlLink{Text: text}
 		if run.Git.Web != "" && run.Git.SHA1 != "" {
 			version.Href = run.Git.Web + "/commit/" + run.Git.SHA1
 		}
@@ -206,11 +208,44 @@ func runMeta(run *Run) []htmlLink {
 			Text: "started " + strings.ReplaceAll(*run.Started, "T", " "),
 		})
 	}
+	// Only when the runner was not the tree it tested, which is the odd case:
+	// the runner re-execs itself out of the worktree it creates, so saying so
+	// on every run would be noise.
+	if run.Git.Runner != "" && run.Git.Runner != run.Git.SHA1 {
+		runner := htmlLink{Text: "runner " + shortSHA(run.Git.Runner)}
+		if run.Git.Web != "" {
+			runner.Href = run.Git.Web + "/commit/" + run.Git.Runner
+		}
+		meta = append(meta, runner)
+	}
 	if run.Log != nil {
 		meta = append(meta, htmlLink{Text: "runner log", Href: *run.Log})
 	}
 
 	return append(meta, htmlLink{Text: "all runs", Href: ".."})
+}
+
+// versionText is what a run says of the revision it tested: what it was called,
+// and which branch it came from when there is one recorded.
+func versionText(run *Run) string {
+	if run.Git.Branch == "" {
+		return run.Git.Describe
+	}
+	if run.Git.Describe == "" {
+		return run.Git.Branch
+	}
+
+	return run.Git.Describe + " (" + run.Git.Branch + ")"
+}
+
+// shortSHA is a revision as written where the whole of it would not help. Eight
+// characters, which is what git describe puts in a version.
+func shortSHA(sha1 string) string {
+	if len(sha1) > 8 {
+		return sha1[:8]
+	}
+
+	return sha1
 }
 
 // coverageRows is the coverage of each plugin, and of everything.

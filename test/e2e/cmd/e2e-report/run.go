@@ -37,6 +37,10 @@ const (
 	indexHTML = "index.html"
 	// runnerLog is the log of the runner, the first thing a run publishes.
 	runnerLog = "e2e-runner.log.txt"
+	// gitBranch is which branch of the remote a run tested.
+	gitBranch = "git.branch"
+	// gitRunner is which tree the runner which drove a run came from.
+	gitRunner = "git.runner"
 	// statusTxt is where we record the verdict of a run in a single line.
 	statusTxt = "status.txt"
 	// summaryTxt is what a test case and a whole run record their verdict in.
@@ -107,10 +111,15 @@ type Run struct {
 
 // Git tells which revision was tested, and where to find it.
 type Git struct {
+	Branch   string `json:"branch"`
 	Describe string `json:"describe"`
 	Remote   string `json:"remote"`
-	SHA1     string `json:"sha1"`
-	Web      string `json:"web"`
+	// Runner is the tree the runner itself came from, which is the tree under
+	// test unless a run was driven by a script from somewhere else. Empty when
+	// there was no telling.
+	Runner string `json:"runner"`
+	SHA1   string `json:"sha1"`
+	Web    string `json:"web"`
 }
 
 // Test is a single test case of a run. The topology, distro and runtime are
@@ -191,8 +200,10 @@ func scanRun(dir string) (*Run, error) {
 		Counts:   counts,
 		Coverage: coverage,
 		Git: Git{
+			Branch:   readTrimmed(filepath.Join(dir, gitBranch)),
 			Describe: readTrimmed(filepath.Join(dir, "git.describe")),
 			Remote:   remote,
+			Runner:   readTrimmed(filepath.Join(dir, gitRunner)),
 			SHA1:     readTrimmed(filepath.Join(dir, "git.sha1")),
 			Web:      webURL(remote),
 		},

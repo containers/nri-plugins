@@ -52,6 +52,10 @@ TEST_SUITE_DIR=policies.test-suite
 GIT_SHA1="git.sha1"
 GIT_DESC="git.describe"
 GIT_REMOTE="git.remote"
+# GIT_BRANCH: which branch of the remote was tested
+GIT_BRANCH="git.branch"
+# GIT_RUNNER: which tree this script itself came from, when we can tell
+GIT_RUNNER="git.runner"
 # E2E_REPORT: This generates reports of collected results. We build it
 # somewhere under /tmp so nuking a worktree won't nuke it, too.
 E2E_REPORT="test/e2e/cmd/e2e-report"
@@ -484,6 +488,9 @@ collect_git_info() {
     local describe="$RESULT_DIR/$GIT_DESC"
     local sha1="$RESULT_DIR/$GIT_SHA1"
     local remote="$RESULT_DIR/$GIT_REMOTE"
+    local branch="$RESULT_DIR/$GIT_BRANCH"
+    local runner="$RESULT_DIR/$GIT_RUNNER"
+    local self dir
 
     info "collecting info about worktree..."
     must-cd "$WORKTREE"
@@ -491,6 +498,20 @@ collect_git_info() {
     git log -1 --pretty=%H > "$sha1"
     # For linking the results to the revision and the tests they came from.
     git config --get remote.origin.url > "$remote" || echo "$REMOTE_REPO" > "$remote"
+    # A revision says what was tested, the branch says where it was picked up
+    # from, which is what tells a nightly of main from one of a branch.
+    echo "$TEST_BRANCH" > "$branch"
+
+    # And which tree this script came from, when there is one to tell. Normally
+    # the worktree above, since we re-exec ourselves out of it, but a run driven
+    # by hand or with --skip-worktree can be run by a script from elsewhere.
+    # Only a repository which tracks this very file counts: the script may as
+    # well be sitting in an unrelated one, whose HEAD says nothing about it.
+    self="$(realpath "$SELF" 2>/dev/null)" || return 0
+    dir="$(dirname "$self")"
+    if git -C "$dir" ls-files --error-unmatch "$self" >/dev/null 2>&1; then
+        git -C "$dir" rev-parse HEAD > "$runner" 2>/dev/null || rm -f "$runner"
+    fi
 }
 
 collect_results() {
