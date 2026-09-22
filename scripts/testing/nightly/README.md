@@ -95,19 +95,10 @@ read -r verdict _ < "$RESULT_ROOT/latest/status.txt"
 
 ## Serving the results
 
-The results are static files, so a file server is enough. There is a caddy
-configuration for it next to this file:
-
-```shell
-E2E_RESULTS=/opt/e2e-test/nri-plugins/results E2E_PORT=8080 caddy run \
-    --config scripts/testing/nightly/nri-plugins-e2e-results.Caddyfile
-```
-
-It cannot read into the artifact tarballs of the tests, though, so the
-`artifacts (browse)` link of every test answers 501 there; the one next to it,
-which downloads the tarball, works.
-
-`e2e-report serve` is the other way, and the one to use for packed runs:
+`e2e-report serve` is what serves the results, and the only thing which can: the
+index of the runs and the report of each run are rendered for every request, not
+written out, so there are no pages under the result root for a file server to
+serve.
 
 ```shell
 make e2e-report
@@ -117,15 +108,24 @@ e2e-report serve --address :8080 /opt/e2e-test/nri-plugins/results
 
 It serves a packed run as if its archive had been extracted, serves into the
 tarballs of the tests as well, and reads nothing but what is under the result
-root.
+root. It writes nothing at all, so it is safe for a server given the results
+read-only.
 
-`--live-index` builds the list of runs from the runs under the root for every
-request instead of serving the `index.html` there. Use it where the root is not
-indexed by whoever writes to it — a root filled by `rsync`, or one runs are
-pruned from by hand — and the list stays right without anyone running
-`e2e-report index`. It also lists a run which is still going, linking to its
-directory rather than to a report it does not have yet. It writes nothing
-either way, so it is safe for a server given the results read-only.
+Rendering every page as it is asked for is what keeps the results in step with
+the tool serving them: a run published months ago is shown the way a run
+published today is, without anything being migrated or rewritten, and a run still
+going is listed and reported on from what it has collected so far.
+
+What no amount of rendering can show is something a run never recorded. A run
+pruned by an older runner recorded no link to its plugin log, and only reading its
+results again finds one inside `artifacts.tar.xz`:
+
+```shell
+e2e-report refresh /opt/e2e-test/nri-plugins/results
+```
+
+That reports on every unpacked run under the root again. Packed runs are left
+alone, their results being inside the archive.
 
 There is a systemd unit for it next to this file:
 
@@ -139,18 +139,26 @@ systemctl enable --now nri-plugins-e2e-results
 ```
 
 The address to listen on and the result root come from
-`/etc/sysconfig/nri-plugins-e2e-results`, so a host is configured without
-editing the unit; the user and the group are in the unit itself, as systemd does
-not expand variables there. The `.env` file is optional, and so is every setting
-in it: what it leaves out the unit defaults to. With caddy in front of this
-server for a name and a certificate, keep the address on the loopback interface
-as it comes, and replace the `file_server` of the caddy configuration with
-`reverse_proxy 127.0.0.1:8080`.
+`/etc/sysconfig/nri-plugins-e2e-results`, so a host is configured without editing
+the unit; the user and the group are in the unit itself, as systemd does not
+expand variables there. The `.env` file is optional, and so is every setting in
+it: what it leaves out the unit defaults to.
+
+For a name and a certificate, put caddy in front of it with the configuration
+next to this file, which does nothing but pass everything on:
+
+```shell
+E2E_PORT=8443 E2E_SERVER=127.0.0.1:8080 caddy run \
+    --config scripts/testing/nightly/nri-plugins-e2e-results.Caddyfile
+```
+
+Keep the server's own address on the loopback interface as it comes: that is the
+only place the restriction lives, and caddy binds every interface on purpose.
 
 `make e2e-report` builds it to `build/bin`, and nothing else does: it is not part
 of any image and not one of the binaries a release ships. Build it again when the
 results it serves start coming from a newer revision. `go run
-./test/e2e/cmd/e2e-report serve …` from a checkout works just as well.
+./test/e2e/cmd/e2e-report serve ...` from a checkout works just as well.
 
 ## Packing up a run
 
@@ -165,9 +173,9 @@ test and the coverage data of each:
               >>$HOME/e2e-runner.log 2>&1
 ```
 
-The report, `results.json`, `status.txt` and `summary.txt` stay where they are,
-so how a run went is readable without unpacking anything, but everything else —
-the logs, the command transcripts, the coverage report — is in the archive.
+`results.json`, `status.txt` and `summary.txt` stay where they are, so how a run
+went is readable without unpacking anything and its report renders in full. The
+logs, the command transcripts and the coverage report are all in the archive.
 That takes `e2e-report serve`, so set that up first. `tar --zstd -xf` gets the
 results of a run out without a server.
 
@@ -181,10 +189,9 @@ running it with `go run`: by the time it packs, the worktree is gone.
 ## What a run publishes
 
 ```text
-<result root>/index.html                    every run, newest first
-              latest -> <newest run>
-              <run>/index.html              the report of the run
-                    results.json            the same, machine readable
+<result root>/latest -> <newest run>
+              <run>/results.json            what the run collected, which its
+                                            report is rendered from
                     status.txt              PASS 55/55 tests passed
                     summary.txt             a line per test case
                     git.describe, git.sha1, git.remote, git.branch

@@ -220,13 +220,13 @@ coverage of the tests it consists of are always counted the same way:
 
 ```shell
 go run ./cmd/e2e-report run RESULT_DIR
-go run ./cmd/e2e-report index RESULT_ROOT
 ```
 
-`run` writes `results.json`, `index.html` and `status.txt` for the results
-collected into RESULT_DIR, and `index` rebuilds the index of every run under
-RESULT_ROOT. This is what `scripts/testing/nightly/e2e-runner` publishes the
-results of a nightly run with.
+`run` writes `results.json` and `status.txt` for the results collected into
+RESULT_DIR. This is what `scripts/testing/nightly/e2e-runner` publishes the
+results of a nightly run with. It writes no page: what a run is shown as is
+decided every time it is served, never stored, which is what lets the report of
+a run published months ago improve with the tool serving it.
 
 Worth knowing:
 
@@ -286,22 +286,53 @@ nothing has to be thrown away to keep the results of months of nightly runs:
 
 ```shell
 go run ./cmd/e2e-report pack RESULT_DIR
-go run ./cmd/e2e-report serve [--address ADDR] [--live-index] RESULT_ROOT
+go run ./cmd/e2e-report serve [--address ADDR] RESULT_ROOT
 ```
 
 `make e2e-report` builds the tool to `build/bin` for serving results without a
-checkout to run it from; it is not part of any image.
+checkout to run it from; it is not part of any image. **Serving needs it**: the
+index of the runs and the report of each run are rendered for every request and
+are not files under the root, so a plain file server has no pages to serve.
 
-`pack` writes `results.tar.zst` and removes what it packed, leaving behind the
-report, `results.json`, `status.txt`, `summary.txt` and the git information: how
-the run went is readable without unpacking anything. `serve` serves a result
-root over HTTP, the packed runs as if their archives had been extracted where
-they are, so the links of a report work whether the run it belongs to is packed
-or not. With `--live-index` the list of runs is built from the runs found under
-the root for every request, rather than read from the `index.html` there, which
-is what to serve a root `e2e-report index` has never been run on, or one whose
-runs come and go without it. A run still going is listed too, linked to by its
-directory as it has no report yet.
+`pack` writes `results.tar.zst` and removes what it packed, leaving behind
+`results.json`, `status.txt`, `summary.txt` and the git information: how the run
+went is readable without unpacking anything, and `results.json` is what a report
+is rendered from, so a packed run is reported on as fully as any other. `serve`
+serves a result root over HTTP, the packed runs as if their archives had been
+extracted where they are, so the links of a report work whether the run it
+belongs to is packed or not.
+
+The index of the runs is built from the runs found under the root for every
+request, so a root nothing has ever reported on, and one whose runs come and go,
+both list what is actually there. A run still going is listed too, **and its row
+says which test it has got to**, read from the last prompt in its log, which the
+framework writes with the test in it before every command. The index always asks
+the browser to come back, so it follows a run on its own: every three seconds
+while one is going and its row moves from test to test, every thirty otherwise,
+which is how a run started after the page was opened shows up without anyone
+reloading. `?refresh=2s` there asks for another interval and `?refresh=0` for
+none. The report of such a run says the same test in its note. A run which
+collected no coverage at all, because it predates coverage collection or its
+plugins were not built with `COVER=1`, says `n/a` rather than leaving the
+coverage of a policy blank.
+
+The report of each run is rendered from its `results.json` the same way, which is
+what gives a run published long ago the report this version writes, with nothing
+to migrate and nothing written. That holds for a packed run as well, since its
+`results.json` is outside the archive. A run which recorded nothing of itself, one
+still going above all, is scanned for what it has collected so far instead.
+
+What a report cannot show is something the run never recorded: a run pruned by an
+older runner recorded no link to its plugin log, and only reading the results
+again finds one inside `artifacts.tar.xz`. That is what `refresh` is for:
+
+```shell
+go run ./cmd/e2e-report refresh RESULT_ROOT
+```
+
+It reports on every unpacked run under the root again, bringing the whole root up
+to what is recorded today. A packed run is left alone: its results are inside the
+archive, so there is nothing left to read.
 
 A log asked for with `?view` is served as a page which reads it, rather than as
 the file it is, and the reports link every log of a test that way: the log of

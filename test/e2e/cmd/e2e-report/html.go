@@ -19,12 +19,16 @@ import (
 	"fmt"
 	"html/template"
 	"maps"
-	"os"
 	"strings"
 )
 
 // indexTitle is what the index of all runs is called.
 const indexTitle = "NRI reference plugins e2e test results"
+
+// noCoverage is what a coverage column of the index says for a run which
+// collected no coverage data, where a percentage would go. The report of such a
+// run says it at length; a column this narrow cannot.
+const noCoverage = "n/a"
 
 // htmlLink is a piece of text on a page, linked to somewhere if there is
 // anywhere to link it to.
@@ -101,33 +105,17 @@ type indexPage struct {
 type indexRow struct {
 	Run      htmlLink
 	Verdict  string
+	At       string
 	Tests    string
 	Percents []string
 	Runtimes string
 	Version  htmlLink
 }
 
-// writeRunPage renders the report of a single run.
-func writeRunPage(path string, run *Run) error {
-	return writePage(path, "run", newRunPage(run))
-}
-
-// writeIndexPage renders the list of runs, latest first.
-func writeIndexPage(path string, runs []*Run) error {
-	return writePage(path, "index", newIndexPage(runs))
-}
-
-func writePage(path, name string, data any) error {
-	page, err := renderPage(name, data)
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(path, page, 0o644)
-}
-
-// renderPage renders a page into memory, for a caller serving it rather than
-// writing it out.
+// renderPage renders a page into memory, for the server to answer a request
+// with. Nothing writes a page out: what a run is shown as is decided every time
+// it is served, never stored, so the reports of every run already published
+// improve with the one serving them.
 func renderPage(name string, data any) ([]byte, error) {
 	buf := &bytes.Buffer{}
 	if err := pages.ExecuteTemplate(buf, name, data); err != nil {
@@ -153,7 +141,11 @@ func newRunPage(run *Run) *runPage {
 	if len(run.Tests) == 0 {
 		if run.Verdict == "RUNNING" {
 			page.Note = "This run is still going, so nothing has been" +
-				" collected of it yet. The runner log tells where it is."
+				" collected of it yet."
+			if run.At != "" {
+				page.Note += " It is at " + run.At + "."
+			}
+			page.Note += " The runner log tells where it is."
 		} else {
 			page.Note = "No test results were collected for this run. See the" +
 				" runner log for what happened."
@@ -420,22 +412,23 @@ func newIndexPage(runs []*Run) *indexPage {
 			version.Href = run.Git.Web + "/commit/" + run.Git.SHA1
 		}
 
-		// A run still going has no report to open, so its row points at the
-		// directory and whoever serves it lists what has piled up so far.
-		href := run.Name + "/" + indexHTML
-		if run.Unreported {
-			href = run.Name + "/"
-		}
-
+		// Every run has a report, rendered when it is asked for, so a row can
+		// always point at one: a run still going is reported on from what it
+		// has collected so far, and a packed one from outside its archive.
 		row := indexRow{
-			Run:      htmlLink{Text: run.Name, Href: href},
+			Run:      htmlLink{Text: run.Name, Href: run.Name + "/" + indexHTML},
 			Verdict:  run.Verdict,
+			At:       run.At,
 			Tests:    fmt.Sprintf("%d/%d", run.Counts["PASS"], run.Counts["total"]),
 			Runtimes: strings.Join(run.Runtimes, ", "),
 			Version:  version,
 		}
 		for _, plugin := range page.Plugins {
-			percent := ""
+			// A run from before coverage was collected has none, and neither
+			// has one whose plugins were built without instrumentation. Say so:
+			// an empty cell reads as no coverage reached rather than none
+			// measured, and the two are not the same thing at all.
+			percent := noCoverage
 			if data := run.Coverage.Policies[plugin]; data != nil {
 				if data.PluginPercent != nil {
 					percent = data.PluginPercent.String()
@@ -485,6 +478,9 @@ a { color: var(--link); text-decoration: none; }
 a:hover { text-decoration: underline; }
 .meta { color: var(--dim); margin-bottom: 1.5em; }
 .counts { color: var(--dim); }
+/* Which test a run is in, next to its verdict: worth reading, not worth as much
+   as the verdict itself. */
+.at { color: var(--dim); font-family: monospace; font-size: 0.9em; }
 .verdict { display: inline-block; padding: 0 0.45em; border-radius: 0.6em;
            font-size: 0.85em; font-weight: bold; letter-spacing: 0.02em;
            border: 1px solid currentColor; }
@@ -543,7 +539,7 @@ summary .counts { font-weight: normal; }
 {{- define "index"}}{{template "top" .Title}}<h1>{{.Title}}</h1>
 {{if .Runs}}<table>
 <tr><th>run</th><th>verdict</th><th class="num">tests</th>{{range .Plugins}}<th class="num">{{.}}</th>{{end}}<th>runtime</th><th>version</th></tr>
-{{range .Runs}}<tr><td>{{template "text" .Run}}</td><td>{{template "verdict" .Verdict}}</td><td class="num">{{.Tests}}</td>{{range .Percents}}<td class="num">{{.}}</td>{{end}}<td>{{.Runtimes}}</td><td>{{template "text" .Version}}</td></tr>
+{{range .Runs}}<tr><td>{{template "text" .Run}}</td><td>{{template "verdict" .Verdict}}{{if .At}} <span class="at">{{.At}}</span>{{end}}</td><td class="num">{{.Tests}}</td>{{range .Percents}}<td class="num">{{.}}</td>{{end}}<td>{{.Runtimes}}</td><td>{{template "text" .Version}}</td></tr>
 {{end}}</table>
 {{else}}<p>No test runs have been published yet.</p>
 {{end}}{{template "bottom"}}{{end}}

@@ -17,6 +17,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -93,5 +94,67 @@ func TestArtifactsOfLinksNothingUnpacked(t *testing.T) {
 
 	if len(links) != 0 {
 		t.Errorf("links for a test case which collected nothing: %v", links)
+	}
+}
+
+// prompt is a line of a runner log as the framework writes it: the context in a
+// coloured prompt, then the command it is about to run in the VM.
+func prompt(test, command string) string {
+	return "\x1b[38;5;11mroot@vm " + test + ">\x1b[0m " + command + "\n"
+}
+
+// TestCurrentTest checks which test a run is taken to be in, which is what the
+// last prompt of its log says.
+func TestCurrentTest(t *testing.T) {
+	for what, tc := range map[string]struct{ log, want string }{
+		"one test": {
+			prompt("balloons/test01-basic-placement", "kubectl get pods"),
+			"balloons/test01-basic-placement",
+		},
+		"the last of several": {
+			prompt("balloons/test01-basic-placement", "kubectl get pods") +
+				"some output of it\n" +
+				prompt("topology-aware/test22-isolcpus", "mkdir -p /etc/default") +
+				"more output\n",
+			"topology-aware/test22-isolcpus",
+		},
+		"nothing we recognise": {"just some output\nand more\n", ""},
+		"an empty log":         {"", ""},
+		// A prompt of somebody's own, with no context in it.
+		"no context": {"\x1b[38;5;11mroot@vm>\x1b[0m uname -a\n", ""},
+	} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, runnerLog), []byte(tc.log), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := currentTest(dir); got != tc.want {
+			t.Errorf("%s: %q, expected %q", what, got, tc.want)
+		}
+	}
+
+	// A run with no log at all, which is a run which has not started.
+	if got := currentTest(t.TempDir()); got != "" {
+		t.Errorf("a run with no log is in %q", got)
+	}
+}
+
+// TestCurrentTestBeyondTheTail checks that a test which printed more than the
+// tail we read is still found: the whole log is read rather than reporting
+// nothing.
+func TestCurrentTestBeyondTheTail(t *testing.T) {
+	dir := t.TempDir()
+	log := prompt("balloons/test07-maxballoons", "kubectl logs pod0") +
+		strings.Repeat("a line of output which says nothing\n", 4000)
+
+	if int64(len(log)) <= promptTail {
+		t.Fatalf("the log is %d bytes, which does not exceed the %d byte tail",
+			len(log), promptTail)
+	}
+	if err := os.WriteFile(filepath.Join(dir, runnerLog), []byte(log), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := currentTest(dir); got != "balloons/test07-maxballoons" {
+		t.Errorf("a prompt past the tail was not found: %q", got)
 	}
 }

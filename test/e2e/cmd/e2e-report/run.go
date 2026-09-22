@@ -16,6 +16,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -122,10 +123,10 @@ type Run struct {
 	Tests    []*Test        `json:"tests"`
 	Verdict  string         `json:"verdict"`
 
-	// Unreported says the run has no report of its own to link to, which only
-	// a run still going normally is. Never reported itself: it says something
-	// about the run as it is right now, not about how it went.
-	Unreported bool `json:"-"`
+	// At is the test the run is in, for a run which is still going. Never
+	// reported either, for the same reason: by the time anything reads a report
+	// again the run is somewhere else, or nowhere.
+	At string `json:"-"`
 }
 
 // Git tells which revision was tested, and where to find it.
@@ -577,6 +578,67 @@ func webURL(remote string) string {
 	return ""
 }
 
+// vmPrompt is what the framework writes in front of every command it runs in a
+// VM: vm-set-context makes the prompt "root@vm <policy>/<test>>" and
+// command-start echoes it (test/e2e/lib/vm.bash, test/e2e/lib/command.bash). The
+// colour codes around it are not part of the name, so there is nothing to strip.
+var vmPrompt = regexp.MustCompile(`root@vm ([^>\s][^>]*)>`)
+
+// promptTail is how much of the end of a log is read to find the last prompt in
+// it. A test which prints a great deal can push the prompt further back than
+// this, and then the whole log is read: 2.6M at the end of a run, 20ms, which is
+// worth avoiding per request but not worth being wrong about.
+const promptTail = 64 << 10
+
+// currentTest tells which test a run is in, as the last prompt of its log says.
+// Empty when its log says nothing we recognise -- before the first test, or with
+// a VM_PROMPT of somebody's own.
+//
+// The last prompt and not the last one with a test in it: every test sets the
+// context and each runs in a subshell of its own, so the reset which ends one
+// never reaches the log. Were that to change, an unset context would read as no
+// test rather than as the wrong one.
+func currentTest(dir string) string {
+	log := filepath.Join(dir, runnerLog)
+	if test := lastPrompt(log, promptTail); test != "" {
+		return test
+	}
+
+	return lastPrompt(log, 0)
+}
+
+// lastPrompt is the test in the last prompt of a log, reading only the last tail
+// bytes of it, or all of it when tail is zero.
+func lastPrompt(path string, tail int64) string {
+	file, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = file.Close() }()
+
+	if tail > 0 {
+		if info, err := file.Stat(); err != nil {
+			return ""
+		} else if info.Size() > tail {
+			if _, err := file.Seek(-tail, io.SeekEnd); err != nil {
+				return ""
+			}
+		}
+	}
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return ""
+	}
+
+	found := vmPrompt.FindAllSubmatch(data, -1)
+	if found == nil {
+		return ""
+	}
+
+	return string(found[len(found)-1][1])
+}
+
 // unfinishedVerdict tells a run which is still going from one which never got
 // to the end.
 //
@@ -622,10 +684,6 @@ func isRun(dir string) bool {
 
 // readRun reads back what we reported of a run, if we reported on it at all.
 func readRun(dir string) *Run {
-	if !exists(filepath.Join(dir, indexHTML)) {
-		return nil
-	}
-
 	data, err := os.ReadFile(filepath.Join(dir, resultsJSON))
 	if err != nil {
 		return nil
@@ -637,6 +695,38 @@ func readRun(dir string) *Run {
 	}
 
 	return run
+}
+
+// readRunFor reads the run in dir, as a page of it is built from: what the run
+// recorded, or what it collected where it recorded nothing -- a run still going
+// has recorded nothing yet, and one from before we reported on runs at all never
+// will. Filled in for what older results leave out.
+//
+// Writing nothing, which is the point: a server has no business reporting on a
+// run, and the one behind the systemd unit could not if it tried.
+func readRunFor(dir, name string) (*Run, error) {
+	run := readRun(dir)
+	if run == nil {
+		scanned, err := scanRun(dir)
+		if err != nil {
+			return nil, err
+		}
+		run = scanned
+	}
+
+	// A run which recorded no name of itself goes by its directory.
+	if run.Name == "" {
+		run.Name = name
+	}
+	if run.Started == nil {
+		run.Started = startedAt(name, dir)
+	}
+	// Where a run has got to, which only a run still going has.
+	if run.Verdict == "RUNNING" {
+		run.At = currentTest(dir)
+	}
+
+	return run, nil
 }
 
 // sortRuns orders runs latest first, by when they ran rather than by what they

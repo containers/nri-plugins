@@ -137,7 +137,7 @@ func TestArchiveList(t *testing.T) {
 		dir   string
 		names []string
 	}{
-		{"", []string{coverageDir + "/", runnerLog, "vm/"}},
+		{"", []string{coverageDir + "/", runnerLog, indexHTML, "vm/"}},
 		{"vm", []string{suiteDir + "/"}},
 		{"vm/" + suiteDir + "/balloons/test01", []string{"commands/", testLog, summaryTxt}},
 		{"vm/" + suiteDir + "/balloons/test01/commands", []string{"0001-vm"}},
