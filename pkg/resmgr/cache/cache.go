@@ -345,8 +345,10 @@ type Container interface {
 
 	// GetPendingAdjusmentn clears and returns any pending adjustment for the container.
 	GetPendingAdjustment() *nri.ContainerAdjustment
-	// GetPendingUpdate clears and returns any pending update for the container.
-	GetPendingUpdate() *nri.ContainerUpdate
+	// PeekPendingUpdate returns any pending update for the container without clearing it.
+	PeekPendingUpdate() *nri.ContainerUpdate
+	// ClearPendingUpdate discards any pending update for the container.
+	ClearPendingUpdate()
 
 	// GetAffinity returns the annotated affinity expressions for this container.
 	GetAffinity() ([]*Affinity, error)

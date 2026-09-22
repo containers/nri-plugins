@@ -691,20 +691,26 @@ func (c *container) GetPendingAdjustment() *nri.ContainerAdjustment {
 	return req
 }
 
-func (c *container) GetPendingUpdate() *nri.ContainerUpdate {
+func (c *container) PeekPendingUpdate() *nri.ContainerUpdate {
 	if c.request == nil {
 		return nil
 	}
 
 	req, ok := c.request.(*nri.ContainerUpdate)
 	if !ok {
+		// Drop a request we cannot deliver as an update, the same way returning
+		// one does: keeping it would only repeat this error forever.
 		log.Errorf("%s: queried pending update has mismatching type %T",
 			c.PrettyName(), c.request)
-		req = nil
+		c.request = nil
+		return nil
 	}
 
-	c.request = nil
 	return req
+}
+
+func (c *container) ClearPendingUpdate() {
+	c.request = nil
 }
 
 func (c *container) InsertMount(m *Mount) {
