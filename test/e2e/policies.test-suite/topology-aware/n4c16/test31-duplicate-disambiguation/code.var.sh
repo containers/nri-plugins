@@ -38,7 +38,7 @@ kill-containers() {
                        kill -9 $(pidof containerd)'
 
             ;;
-        cri-o)
+        crio)
             vm-command 'kill -STOP $(pidof crio)
                        pkill -9 -f "sleep inf"
 		       sleep 1
