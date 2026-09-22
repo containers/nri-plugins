@@ -317,9 +317,9 @@ func TestViewHref(t *testing.T) {
 	}
 }
 
-// TestFollowFor checks the interval a page is told to come back at, which a
+// TestRefreshFor checks the interval a page is told to come back at, which a
 // request may ask for and which is held to something sane when it does.
-func TestFollowFor(t *testing.T) {
+func TestRefreshFor(t *testing.T) {
 	for asked, want := range map[string]time.Duration{
 		"":       followInterval,
 		"2s":     2 * time.Second,
@@ -339,7 +339,7 @@ func TestFollowFor(t *testing.T) {
 		if asked != "" {
 			url += "&" + refreshQuery + "=" + asked
 		}
-		got := followFor(httptest.NewRequest(http.MethodGet, url, nil))
+		got := refreshFor(httptest.NewRequest(http.MethodGet, url, nil), followInterval)
 		if got != want {
 			t.Errorf("refresh=%q: %v, expected %v", asked, got, want)
 		}

@@ -625,14 +625,11 @@ generate_report() {
         return 0
     fi
 
+    # Only this run. The index of all of them is built when it is served, so
+    # there is nothing to update in the root.
     info "reporting on $RESULT_DIR..."
     if ! "$E2E_REPORT_BIN" run "$RESULT_DIR"; then
         error "failed to report on $RESULT_DIR"
-    fi
-
-    info "updating the index of all results in $RESULT_ROOT..."
-    if ! "$E2E_REPORT_BIN" index "$RESULT_ROOT"; then
-        error "failed to update the index in $RESULT_ROOT"
     fi
 }
 

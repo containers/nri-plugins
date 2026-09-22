@@ -15,13 +15,15 @@
 // Command e2e-report reports on the results of e2e test runs.
 //
 // The run subcommand reads the results collected into a result directory and
-// writes results.json and index.html next to them: the verdict of the run, the
-// failures with the reason of each and links to everything collected for them,
-// the coverage the tests reached, and every test case with its artifacts.
+// writes results.json next to them: the verdict of the run, the failures with
+// the reason of each and links to everything collected for them, the coverage
+// the tests reached, and every test case with its artifacts. What that is shown
+// as is decided when it is served, so nothing here renders a page.
 //
-// The index subcommand rebuilds the index.html of a result root from the
-// results.json of every run under it, so that the runs, how they went and how
-// their coverage develops are all one click away.
+// The refresh subcommand reports on every unpacked run under a result root
+// again. What a run recorded is what a report can show, so a run published by
+// an older runner records what that runner knew to record, and nothing but
+// reporting on it again brings it up to what we record today.
 //
 // The coverage subcommand reports the coverage in a coverage profile: the
 // coverage of the logic of each plugin, the total over everything
@@ -34,11 +36,11 @@
 // be thrown away to get there.
 //
 // The serve subcommand serves published results over HTTP, the packed ones as
-// if their archive had been extracted where it is. With --live-index it builds
-// the index of the runs for every request from the runs it finds, instead of
-// serving the index.html under the result root, so that a root nothing has
-// indexed, or one which runs have come and gone from since, still lists what is
-// actually there. It writes nothing either way.
+// if their archive had been extracted where it is. The index of the runs and
+// the report of each run are rendered for every request from what the runs
+// recorded, so every run is shown the way this version shows one, whenever it
+// was published and whether or not it has been packed up since. It writes
+// nothing.
 //
 // All of them read what is there and are safe to rerun on results already
 // reported on.
@@ -52,13 +54,13 @@ import (
 )
 
 const usage = `Usage: e2e-report run RESULT_DIR
-       e2e-report index RESULT_ROOT
+       e2e-report refresh RESULT_ROOT
        e2e-report coverage [--tests N] [--summary FILE] PROFILE
        e2e-report pack RESULT_DIR
-       e2e-report serve [--address ADDR] [--live-index] RESULT_ROOT
+       e2e-report serve [--address ADDR] RESULT_ROOT
 
 run      report on the results collected into RESULT_DIR
-index    rebuild the index of every run under RESULT_ROOT
+refresh  report on every unpacked run under RESULT_ROOT again
 coverage report the coverage in the coverage profile PROFILE
 pack     pack up what the run in RESULT_DIR collected
 serve    serve the results published under RESULT_ROOT over HTTP`
@@ -72,8 +74,8 @@ func main() {
 	switch os.Args[1] {
 	case "run":
 		err = runCmd(os.Args[2:])
-	case "index":
-		err = indexCmd(os.Args[2:])
+	case "refresh":
+		err = refreshCmd(os.Args[2:])
 	case "coverage":
 		err = coverageCmd(os.Args[2:])
 	case "pack":
@@ -101,11 +103,12 @@ func runCmd(args []string) error {
 	return reportRun(args[0])
 }
 
-func indexCmd(args []string) error {
+func refreshCmd(args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("index takes a single result root directory")
+		return fmt.Errorf("refresh takes a single result root directory")
 	}
-	return reportIndex(args[0])
+
+	return refreshRuns(args[0])
 }
 
 func packCmd(args []string) error {
@@ -160,7 +163,9 @@ func coverageCmd(args []string) error {
 	return nil
 }
 
-// reportRun writes results.json, index.html and status.txt for one run.
+// reportRun writes results.json and status.txt for one run. What a report shows
+// is decided when one is rendered, which only happens while serving a run, so
+// there is no page to write here.
 func reportRun(dir string) error {
 	if !isDir(dir) {
 		return fmt.Errorf("no such directory: %s", dir)
@@ -179,9 +184,6 @@ func reportRun(dir string) error {
 	if err := writeJSON(filepath.Join(dir, resultsJSON), run); err != nil {
 		return err
 	}
-	if err := writeRunPage(filepath.Join(dir, indexHTML), run); err != nil {
-		return err
-	}
 
 	status := fmt.Sprintf("%s %d/%d tests passed", run.Verdict,
 		run.Counts["PASS"], run.Counts["total"])
@@ -197,52 +199,12 @@ func reportRun(dir string) error {
 	return nil
 }
 
-// reportIndex rebuilds the index of every run under root.
-// indexRuns collects the runs published under root the way reportIndex does,
-// but writes nothing: a server has no business reporting on a run, and the one
-// behind the systemd unit could not if it tried.
-func indexRuns(root string) ([]*Run, error) {
-	names, err := readDir(root)
-	if err != nil {
-		return nil, err
-	}
-
-	runs := []*Run{}
-	for _, name := range names {
-		dir := filepath.Join(root, name)
-		if !isRun(dir) {
-			continue
-		}
-
-		run := readRun(dir)
-		if run == nil {
-			if run, err = scanRun(dir); err != nil {
-				return nil, err
-			}
-		}
-
-		// A row has to name the directory it links to. That is what a run
-		// called itself for anything the runner published, but the link has
-		// to work even for a run whose report says otherwise.
-		run.Name = name
-		if run.Started == nil {
-			run.Started = startedAt(name, dir)
-		}
-
-		// Link to the report only where there is one to open. A packed run
-		// keeps its own outside the archive, so this tells runs apart by what
-		// is there rather than by whether they are packed.
-		run.Unreported = !exists(filepath.Join(dir, indexHTML))
-
-		runs = append(runs, run)
-	}
-
-	sortRuns(runs)
-
-	return runs, nil
-}
-
-func reportIndex(root string) error {
+// refreshRuns reports on every unpacked run under root again. A packed run is
+// left alone: its results are inside the archive, so there is nothing left to
+// scan. Nothing else needs doing for a root -- the index of the runs is built
+// when it is served, and a run which was never reported on at all is scanned
+// then and there.
+func refreshRuns(root string) error {
 	if !isDir(root) {
 		return fmt.Errorf("no such directory: %s", root)
 	}
@@ -252,59 +214,24 @@ func reportIndex(root string) error {
 		return err
 	}
 
-	runs := []*Run{}
+	runs, reported := 0, 0
 	for _, name := range names {
 		dir := filepath.Join(root, name)
 		if !isRun(dir) {
 			continue
 		}
+		runs++
 
-		run := readRun(dir)
-
-		// A run from before we reported on runs at all, one which was cut
-		// short, and one which had collected nothing when we last looked and
-		// may have collected something since: report on it now, which costs
-		// nothing for a run with no results, and gives the index somewhere to
-		// link to. A packed run keeps the report it was packed with.
-		if (run == nil || len(run.Tests) == 0) && !isPacked(dir) {
-			if err := reportRun(dir); err != nil {
-				return err
-			}
-			if run = readRun(dir); run == nil {
-				if run, err = scanRun(dir); err != nil {
-					return err
-				}
-			}
+		if isPacked(dir) {
+			continue
 		}
-
-		// A packed run which never got a report of its own: index what can be
-		// told from what is left outside its archive.
-		if run == nil {
-			if run, err = scanRun(dir); err != nil {
-				return err
-			}
+		if err := reportRun(dir); err != nil {
+			return err
 		}
-
-		// An older version of us did not tell when a run ran, and we order
-		// them by that, so fill it in for those.
-		if run.Started == nil {
-			named := run.Name
-			if named == "" {
-				named = name
-			}
-			run.Started = startedAt(named, dir)
-		}
-
-		runs = append(runs, run)
+		reported++
 	}
 
-	sortRuns(runs)
-
-	if err := writeIndexPage(filepath.Join(root, indexHTML), runs); err != nil {
-		return err
-	}
-
-	fmt.Printf("indexed %d test runs in %s\n", len(runs), root)
+	fmt.Printf("reported on %d of the %d test runs in %s again\n", reported, runs, root)
 
 	return nil
 }

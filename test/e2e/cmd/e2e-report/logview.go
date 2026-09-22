@@ -35,6 +35,11 @@ const (
 	// asked for what has been written to it since. A run takes hours, so this
 	// is about how live a log looks, not about keeping up with it.
 	followInterval = 3 * time.Second
+	// idleInterval is how often the index is worth coming back for with no run
+	// going. The only news it can carry then is a run having started, which
+	// nothing else tells a browser about, so the page has to ask -- but seldom,
+	// a run being minutes of setup before it says anything.
+	idleInterval = 30 * time.Second
 	// followMinimum and followMaximum are what an interval asked for is held
 	// to. The fetch is only what a log has grown by, so the floor is about
 	// somebody asking for milliseconds rather than about the cost of a second.
@@ -236,23 +241,26 @@ func viewableLog(href string) bool {
 	return false
 }
 
-// followFor is how often a page should come back for what has been written to a
-// log since. The default unless the request asks otherwise, held to something
-// sane if it does, and nothing at all for an interval of zero: a log which is
-// still growing is worth reading without it moving too.
+// refreshFor is how often a page should come back for what has changed since.
+// The given default unless the request asks otherwise, held to something sane if
+// it does, and nothing at all for an interval of zero: a page which is still
+// moving is worth reading without it moving too.
+//
+// The default is the caller's because what is worth waiting for differs: a log
+// grows by the line, an index of runs which have all ended by nothing at all.
 //
 // Anything we cannot make sense of falls back to the default rather than
-// answering an error. A mistyped interval should not take the log away.
-func followFor(r *http.Request) time.Duration {
+// answering an error. A mistyped interval should not take the page away.
+func refreshFor(r *http.Request, dflt time.Duration) time.Duration {
 	asked := r.URL.Query().Get(refreshQuery)
 	if asked == "" {
-		return followInterval
+		return dflt
 	}
 
 	every, err := time.ParseDuration(asked)
 	switch {
 	case err != nil || every < 0:
-		return followInterval
+		return dflt
 	case every == 0:
 		return 0
 	case every < followMinimum:
@@ -296,7 +304,7 @@ func (s *Server) serveLogView(w http.ResponseWriter, r *http.Request, name strin
 	text []byte, follow bool) {
 	interval := int64(0)
 	if follow {
-		interval = followFor(r).Milliseconds()
+		interval = refreshFor(r, followInterval).Milliseconds()
 	}
 
 	page := &strings.Builder{}

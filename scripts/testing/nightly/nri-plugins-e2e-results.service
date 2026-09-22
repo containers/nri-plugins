@@ -7,8 +7,8 @@
 #   systemctl daemon-reload
 #   systemctl enable --now nri-plugins-e2e-results
 #
-# The address to listen on and the results to serve come from the environment,
-# so a host is configured without editing this file:
+# The address to listen on and the results to serve come from the environment, so
+# a host is configured without editing this file:
 #
 #   install -m 644 scripts/testing/nightly/nri-plugins-e2e-results.env \
 #       /etc/sysconfig/nri-plugins-e2e-results
@@ -32,8 +32,7 @@ After=network.target
 Environment=E2E_ADDRESS=127.0.0.1:8080
 Environment=E2E_RESULTS=/opt/e2e-test/nri-plugins/results
 EnvironmentFile=-/etc/sysconfig/nri-plugins-e2e-results
-ExecStart=/usr/local/bin/e2e-report serve --address ${E2E_ADDRESS} \
-    ${E2E_RESULTS}
+ExecStart=/usr/local/bin/e2e-report serve --address ${E2E_ADDRESS} ${E2E_RESULTS}
 Restart=on-failure
 User=e2e
 Group=e2e

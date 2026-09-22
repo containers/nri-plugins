@@ -15,6 +15,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -23,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -48,6 +50,11 @@ func newRoot(t *testing.T, packed bool) (string, string) {
 	return root, name
 }
 
+// rendered is in every page the reports are rendered from a template, and in
+// none of the files a run leaves behind, so it tells a rendered report from a
+// stale index.html served as it is.
+const rendered = "<!DOCTYPE html>"
+
 func get(t *testing.T, root, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	return request(t, root, http.MethodGet, path)
@@ -55,19 +62,60 @@ func get(t *testing.T, root, path string) *httptest.ResponseRecorder {
 
 func request(t *testing.T, root, method, path string) *httptest.ResponseRecorder {
 	t.Helper()
-	return serve(t, root, false, method, path)
+	return serve(t, root, method, path)
 }
 
-// getLive asks a server which builds the index of runs for every request.
-func getLive(t *testing.T, root, path string) *httptest.ResponseRecorder {
+// newServer is one server to ask more than once, for what it remembers between
+// requests.
+func newServer(t *testing.T, root string) *Server {
 	t.Helper()
-	return serve(t, root, true, http.MethodGet, path)
+
+	server, err := NewServer(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return server
 }
 
-func serve(t *testing.T, root string, live bool, method, path string) *httptest.ResponseRecorder {
+func ask(t *testing.T, server *Server, path string) string {
 	t.Helper()
 
-	server, err := NewServer(root, live)
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("GET %s: %d, expected 200", path, recorder.Code)
+	}
+
+	return recorder.Body.String()
+}
+
+// rewriteResults puts data in the results.json of a run, leaving its size and
+// its modification time as they were: a change nothing can notice by looking,
+// which is how a test tells a cached answer from a fresh one.
+func rewriteResults(t *testing.T, dir, data string) {
+	t.Helper()
+
+	path := filepath.Join(dir, resultsJSON)
+	was, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if int(was.Size()) != len(data) {
+		t.Fatalf("results.json is %d bytes, the replacement %d", was.Size(), len(data))
+	}
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, was.ModTime(), was.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func serve(t *testing.T, root string, method, path string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	server, err := NewServer(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,6 +131,11 @@ func TestServePacked(t *testing.T) {
 	root, name := newRoot(t, true)
 
 	for file, data := range files {
+		// The report of a run is rendered when it is asked for, so what a run
+		// left under that name is not what answers. TestServeRendersReport.
+		if file == indexHTML {
+			continue
+		}
 		got := get(t, root, "/"+name+"/"+file)
 		if got.Code != http.StatusOK {
 			t.Errorf("GET %s: %d, expected 200", file, got.Code)
@@ -104,6 +157,9 @@ func TestServeUnpacked(t *testing.T) {
 	root, name := newRoot(t, false)
 
 	for file, data := range files {
+		if file == indexHTML {
+			continue
+		}
 		got := get(t, root, "/"+name+"/"+file)
 		if got.Code != http.StatusOK || got.Body.String() != data {
 			t.Errorf("GET %s: %d %q, expected 200 %q", file, got.Code, got.Body, data)
@@ -133,9 +189,9 @@ func TestServeContentType(t *testing.T) {
 func TestServeListing(t *testing.T) {
 	root, name := newRoot(t, true)
 
-	// The index of the run is served for the run itself.
-	if got := get(t, root, "/"+name+"/"); got.Body.String() != files[indexHTML] {
-		t.Errorf("GET /%s/: %q, expected the report", name, got.Body)
+	// The report of the run is rendered for the run itself.
+	if got := get(t, root, "/"+name+"/"); !strings.Contains(got.Body.String(), rendered) {
+		t.Errorf("GET /%s/: %q, expected a rendered report", name, got.Body)
 	}
 
 	got := get(t, root, "/"+name+"/vm/"+suiteDir+"/balloons/test01/")
@@ -225,24 +281,24 @@ func TestServeMethods(t *testing.T) {
 	}
 }
 
-// TestServeRevalidates checks that a browser cannot go on showing the report of
-// a run which has been reported on again since.
+// TestServeRevalidates checks that a browser cannot go on showing a file of a run
+// which has changed since, the log of a run still going above all.
 func TestServeRevalidates(t *testing.T) {
 	root, name := newRoot(t, false)
-	page := "/" + name + "/" + indexHTML
+	page := "/" + name + "/" + runnerLog
 
 	got := get(t, root, page)
 	if cache := got.Header().Get("Cache-Control"); cache != "no-cache" {
-		t.Errorf("Cache-Control of a report: %q, expected no-cache", cache)
+		t.Errorf("Cache-Control of a file: %q, expected no-cache", cache)
 	}
 	stamp := got.Header().Get("Last-Modified")
 	if stamp == "" {
-		t.Fatalf("a report is served without Last-Modified")
+		t.Fatalf("a file is served without Last-Modified")
 	}
 
 	// Asking about the copy one has is answered, and answered again once the
-	// report has been written anew.
-	server, err := NewServer(root, false)
+	// file has been written anew.
+	server, err := NewServer(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,11 +311,11 @@ func TestServeRevalidates(t *testing.T) {
 	}
 
 	if code := ask(); code != http.StatusNotModified {
-		t.Errorf("asking about an unchanged report: %d, expected 304", code)
+		t.Errorf("asking about an unchanged file: %d, expected 304", code)
 	}
 
-	local := filepath.Join(root, name, indexHTML)
-	if err := os.WriteFile(local, []byte("<html>reported again</html>"), 0o644); err != nil {
+	local := filepath.Join(root, name, runnerLog)
+	if err := os.WriteFile(local, []byte("more of the log\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chtimes(local, time.Now().Add(time.Hour), time.Now().Add(time.Hour)); err != nil {
@@ -267,22 +323,181 @@ func TestServeRevalidates(t *testing.T) {
 	}
 
 	if code := ask(); code != http.StatusOK {
-		t.Errorf("asking about a report written anew: %d, expected 200", code)
+		t.Errorf("asking about a file written anew: %d, expected 200", code)
+	}
+}
+
+// TestServeReportIsNeverRevalidated checks that a report is rendered for every
+// request and says so: no modification time to offer, so no browser can be told
+// the copy it has is still good.
+func TestServeReportIsNeverRevalidated(t *testing.T) {
+	root, name := newRoot(t, false)
+
+	got := get(t, root, "/"+name+"/"+indexHTML)
+	if cache := got.Header().Get("Cache-Control"); cache != "no-cache" {
+		t.Errorf("Cache-Control of a report: %q, expected no-cache", cache)
+	}
+	if stamp := got.Header().Get("Last-Modified"); stamp != "" {
+		t.Errorf("a rendered report offers Last-Modified %q", stamp)
 	}
 }
 
 func TestServeNoSuchRoot(t *testing.T) {
-	if _, err := NewServer(filepath.Join(t.TempDir(), "nowhere"), false); err == nil {
+	if _, err := NewServer(filepath.Join(t.TempDir(), "nowhere")); err == nil {
 		t.Errorf("serving a directory which is not there did not fail")
 	}
 }
 
-// TestServeLiveIndexSkipsLatest checks that the link at the newest run is not
+// TestServeIndexCaches checks that the runs are not read again for a root
+// which has not changed. The proof is a change no amount of looking can see:
+// results.json rewritten to the same size, with its modification time put back.
+func TestServeIndexCaches(t *testing.T) {
+	root, name := newRoot(t, false)
+	server := newServer(t, root)
+
+	first := ask(t, server, "/")
+	if strings.Contains(first, ">FAIL<") {
+		t.Fatalf("the run reads FAIL before anything changed it")
+	}
+
+	rewriteResults(t, filepath.Join(root, name), `{"verdict":"FAIL" }`)
+
+	if again := ask(t, server, "/"); again != first {
+		t.Errorf("the runs were read again for a root which had not changed")
+	}
+}
+
+// TestServeIndexNoticesAChangedRun checks that a run reported on again is
+// read again, which is what the cache must not get in the way of.
+func TestServeIndexNoticesAChangedRun(t *testing.T) {
+	root, name := newRoot(t, false)
+	server := newServer(t, root)
+
+	first := ask(t, server, "/")
+
+	results := filepath.Join(root, name, resultsJSON)
+	if err := os.WriteFile(results, []byte(`{"verdict":"FAIL"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	later := time.Now().Add(time.Hour)
+	if err := os.Chtimes(results, later, later); err != nil {
+		t.Fatal(err)
+	}
+
+	again := ask(t, server, "/")
+	if again == first {
+		t.Errorf("a run reported on again was not read again")
+	}
+	if !strings.Contains(again, ">FAIL<") {
+		t.Errorf("the verdict of the run did not change")
+	}
+}
+
+// TestServeIndexNoticesRunsComingAndGoing checks that a run published or
+// pruned since the last request is listed, or stops being.
+func TestServeIndexNoticesRunsComingAndGoing(t *testing.T) {
+	root, name := newRoot(t, false)
+	server := newServer(t, root)
+
+	if body := ask(t, server, "/"); strings.Contains(body, "test-2026-09-18-0210") {
+		t.Fatalf("a run which is not there yet is listed")
+	}
+
+	newOngoingRun(t, root, "test-2026-09-18-0210")
+	if body := ask(t, server, "/"); !strings.Contains(body, "test-2026-09-18-0210") {
+		t.Errorf("a run published since the last request is not listed")
+	}
+
+	if err := os.RemoveAll(filepath.Join(root, name)); err != nil {
+		t.Fatal(err)
+	}
+	if body := ask(t, server, "/"); strings.Contains(body, name) {
+		t.Errorf("a run pruned since the last request is still listed")
+	}
+}
+
+// TestServeIndexNoticesARunGoingOn checks that a run still collecting is
+// read again as it goes, where nothing but its log has changed.
+func TestServeIndexNoticesARunGoingOn(t *testing.T) {
+	root, _ := newRoot(t, false)
+	ongoing := newOngoingRun(t, root, "test-2026-09-18-0210")
+	server := newServer(t, root)
+
+	first := ask(t, server, "/")
+
+	// A test which has finished since, and the log the runner keeps appending.
+	test := filepath.Join(ongoing, "vm", suiteDir, "balloons", "test01")
+	if err := os.MkdirAll(test, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(test, summaryTxt),
+		[]byte("Test verdict: PASS\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	log := filepath.Join(ongoing, runnerLog)
+	if err := os.WriteFile(log, []byte("still going\nand going\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	later := time.Now().Add(time.Hour)
+	if err := os.Chtimes(log, later, later); err != nil {
+		t.Fatal(err)
+	}
+
+	if again := ask(t, server, "/"); again == first {
+		t.Errorf("a run which collected another test since was not read again")
+	}
+}
+
+// TestServeIndexConcurrently checks that the index one server remembers
+// survives being asked for from several requests at once, which is how it is
+// asked for. Worth running under -race.
+func TestServeIndexConcurrently(t *testing.T) {
+	root, name := newRoot(t, false)
+	newOngoingRun(t, root, "test-2026-09-18-0210")
+	server := newServer(t, root)
+
+	// One writer moving a run about under the readers, so that they race a
+	// rebuild and not only each other.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		results := filepath.Join(root, name, resultsJSON)
+		for i := range 20 {
+			stamp := time.Now().Add(time.Duration(i) * time.Minute)
+			_ = os.Chtimes(results, stamp, stamp)
+		}
+	}()
+
+	var waiting sync.WaitGroup
+	for range 8 {
+		waiting.Add(1)
+		go func() {
+			defer waiting.Done()
+			for range 20 {
+				recorder := httptest.NewRecorder()
+				server.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+				if recorder.Code != http.StatusOK {
+					t.Errorf("GET /: %d, expected 200", recorder.Code)
+					return
+				}
+				if !strings.Contains(recorder.Body.String(), name) {
+					t.Errorf("the index does not name %s", name)
+					return
+				}
+			}
+		}()
+	}
+
+	waiting.Wait()
+	<-done
+}
+
+// TestServeIndexSkipsLatest checks that the link at the newest run is not
 // indexed as a run of its own, which would list the same run twice.
-func TestServeLiveIndexSkipsLatest(t *testing.T) {
+func TestServeIndexSkipsLatest(t *testing.T) {
 	root, name := newRoot(t, false)
 
-	body := getLive(t, root, "/").Body.String()
+	body := get(t, root, "/").Body.String()
 
 	if strings.Contains(body, `href="latest/`) {
 		t.Errorf("the link at the latest run is indexed as a run of its own")
@@ -322,16 +537,16 @@ func snapshot(t *testing.T, root string) map[string]string {
 	return seen
 }
 
-// TestServeLiveIndexWritesNothing checks that building the index reports on
-// nothing. reportIndex writes a report for a run which has none, which is the
-// tempting way to fill in a row; a server must not, and the one behind the
-// systemd unit could not, as it is given the results read-only.
-func TestServeLiveIndexWritesNothing(t *testing.T) {
+// TestServeIndexWritesNothing checks that building the index reports on
+// nothing. Reporting on a run which recorded nothing is the tempting way to fill
+// in a row; a server must not, and the one behind the systemd unit could not, as
+// it is given the results read-only.
+func TestServeIndexWritesNothing(t *testing.T) {
 	root, _ := newRoot(t, false)
 	newOngoingRun(t, root, "test-2026-09-17-2251")
 
 	before := snapshot(t, root)
-	if got := getLive(t, root, "/"); got.Code != http.StatusOK {
+	if got := get(t, root, "/"); got.Code != http.StatusOK {
 		t.Fatalf("GET /: %d, expected 200", got.Code)
 	}
 	after := snapshot(t, root)
@@ -352,15 +567,15 @@ func TestServeLiveIndexWritesNothing(t *testing.T) {
 	}
 }
 
-// TestServeLiveIndexPackedLikeUnpacked checks that a packed run is indexed
+// TestServeIndexPackedLikeUnpacked checks that a packed run is indexed
 // exactly as an unpacked one, so that packing a run cannot be told from the
 // index, let alone break a link in it.
-func TestServeLiveIndexPackedLikeUnpacked(t *testing.T) {
+func TestServeIndexPackedLikeUnpacked(t *testing.T) {
 	looseRoot, _ := newRoot(t, false)
 	packedRoot, _ := newRoot(t, true)
 
-	loose := getLive(t, looseRoot, "/").Body.String()
-	packed := getLive(t, packedRoot, "/").Body.String()
+	loose := get(t, looseRoot, "/").Body.String()
+	packed := get(t, packedRoot, "/").Body.String()
 
 	if loose != packed {
 		t.Errorf("the index of a packed run differs from that of an unpacked one")
@@ -379,9 +594,9 @@ func cut(s string, i int) string {
 	return s[max(0, i-40):min(len(s), i+40)]
 }
 
-// TestServeLiveIndexAtIndexHTML checks that the built index answers for the name
+// TestServeIndexAtIndexHTML checks that the built index answers for the name
 // of the file it stands in for, and not just for the root itself.
-func TestServeLiveIndexAtIndexHTML(t *testing.T) {
+func TestServeIndexAtIndexHTML(t *testing.T) {
 	root, name := newRoot(t, false)
 	if err := os.WriteFile(filepath.Join(root, indexHTML),
 		[]byte("<html>stale</html>"), 0o644); err != nil {
@@ -389,7 +604,7 @@ func TestServeLiveIndexAtIndexHTML(t *testing.T) {
 	}
 
 	for _, path := range []string{"/", "/" + indexHTML} {
-		got := getLive(t, root, path)
+		got := get(t, root, path)
 		if got.Code != http.StatusOK {
 			t.Errorf("GET %s: %d, expected 200", path, got.Code)
 			continue
@@ -422,33 +637,36 @@ func newOngoingRun(t *testing.T, root, name string) string {
 	return dir
 }
 
-// TestServeLiveIndexOngoingRun checks that a run with no report of its own is
-// listed, and linked to by its directory, since there is no report to open.
-func TestServeLiveIndexOngoingRun(t *testing.T) {
+// TestServeIndexOngoingRun checks that a run which has recorded nothing of
+// itself yet is listed, linked to its report like any other, and that the report
+// is rendered from what it has collected so far.
+func TestServeIndexOngoingRun(t *testing.T) {
 	root, _ := newRoot(t, false)
 	ongoing := "test-2026-09-17-2251"
 	newOngoingRun(t, root, ongoing)
 
-	body := getLive(t, root, "/").Body.String()
-
-	if !strings.Contains(body, `href="`+ongoing+`/"`) {
-		t.Errorf("an ongoing run is not linked to by its directory: %q", body)
+	body := get(t, root, "/").Body.String()
+	if !strings.Contains(body, `href="`+ongoing+`/`+indexHTML+`"`) {
+		t.Errorf("an ongoing run is not linked to its report: %q", body)
 	}
-	if strings.Contains(body, `href="`+ongoing+`/`+indexHTML+`"`) {
-		t.Errorf("an ongoing run is linked to a report which is not there")
+
+	// And the link opens something, although the run recorded nothing to open.
+	got := get(t, root, "/"+ongoing+"/"+indexHTML)
+	if got.Code != http.StatusOK || !strings.Contains(got.Body.String(), rendered) {
+		t.Errorf("the report of an ongoing run: %d %q", got.Code, got.Body)
 	}
 }
 
-// TestServeLiveIndex checks that the index of runs is built from the runs found
+// TestServeIndex checks that the index of runs is built from the runs found
 // under the root, and not read from the index.html lying next to them.
-func TestServeLiveIndex(t *testing.T) {
+func TestServeIndex(t *testing.T) {
 	root, name := newRoot(t, false)
 	stale := filepath.Join(root, indexHTML)
 	if err := os.WriteFile(stale, []byte("<html>stale</html>"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	got := getLive(t, root, "/")
+	got := get(t, root, "/")
 	if got.Code != http.StatusOK {
 		t.Fatalf("GET / with a live index: %d, expected 200", got.Code)
 	}
@@ -549,12 +767,13 @@ func TestServeFollowLeavesTheLogAlone(t *testing.T) {
 }
 
 // TestServeViewsOnlyTextFiles checks that asking for a view of something which
-// is not a log is ignored: a page of a report or of a json file would be a page
-// of whatever it happens to look like.
+// is not a log is ignored: a page of a json file would be a page of whatever it
+// happens to look like. index.html is not among them -- it names the report of
+// the run, which is rendered whatever is asked of it.
 func TestServeViewsOnlyTextFiles(t *testing.T) {
 	root, name := newRoot(t, false)
 
-	for _, file := range []string{indexHTML, resultsJSON, "vm/" + suiteDir +
+	for _, file := range []string{resultsJSON, "vm/" + suiteDir +
 		"/balloons/test01/commands/0001-vm"} {
 		got := getView(t, root, "/"+name+"/"+file)
 		if strings.Contains(got.Body.String(), "data-every=") {
@@ -599,7 +818,7 @@ func TestServeFollowRange(t *testing.T) {
 
 	ranged := func(from int) *httptest.ResponseRecorder {
 		t.Helper()
-		server, err := NewServer(root, false)
+		server, err := NewServer(root)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -633,5 +852,254 @@ func TestServeFollowRange(t *testing.T) {
 	}
 	if got.Body.String() != more {
 		t.Errorf("the rest of the log is %q, expected %q", got.Body.String(), more)
+	}
+}
+
+// storeRun writes a run's results the way a published run keeps them. No page:
+// nothing writes one any more, and the runs which kept one from an older reporter
+// are what staleReport is for.
+func storeRun(t *testing.T, root, name string, run *Run) string {
+	t.Helper()
+
+	dir := filepath.Join(root, name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for file, content := range map[string]string{
+		resultsJSON: string(data),
+		statusTxt:   run.Verdict + " 1/1 tests passed\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, file), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	return dir
+}
+
+// staleReport leaves a run the index.html an older reporter rendered for it, to
+// check that it is never what answers.
+func staleReport(t *testing.T, dir, html string) {
+	t.Helper()
+
+	if err := os.WriteFile(filepath.Join(dir, indexHTML), []byte(html), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// aRun is a run which recorded one test case with its logs, the links stored as
+// plain paths the way a run records them.
+func aRun(name string) *Run {
+	return &Run{
+		Name:    name,
+		Verdict: "PASS",
+		Counts:  map[string]int{"total": 1, "PASS": 1},
+		Tests: []*Test{{
+			Name:     "test01-basic-placement",
+			Policy:   "balloons",
+			VM:       "n4c16-fedora-43-containerd",
+			Verdict:  "PASS",
+			Topology: ref("n4c16"),
+			Links: map[string]string{
+				"plugin log": "n4c16-fedora-43-containerd/" + suiteDir +
+					"/balloons/test01/nri-resource-policy.output.txt",
+				"verdict": "n4c16-fedora-43-containerd/" + suiteDir +
+					"/balloons/test01/" + summaryTxt,
+			},
+		}},
+	}
+}
+
+// TestServeReportRendersFromTheResults checks that the report of a run is
+// rendered from what the run recorded, so that a report which has improved since
+// the run was published improves with it.
+func TestServeReportRendersFromTheResults(t *testing.T) {
+	root, _ := newRoot(t, false)
+	name := "test-2026-09-20-0200"
+	staleReport(t, storeRun(t, root, name, aRun(name)),
+		"<html>the report as it was rendered then</html>")
+
+	for _, path := range []string{"/" + name + "/", "/" + name + "/" + indexHTML} {
+		body := get(t, root, path).Body.String()
+		if strings.Contains(body, "as it was rendered then") {
+			t.Errorf("GET %s served the stored report: %q", path, cut(body, 200))
+		}
+		if !strings.Contains(body, "test01-basic-placement") {
+			t.Errorf("GET %s did not render what the run recorded: %q", path, cut(body, 200))
+		}
+	}
+}
+
+// TestServeReportLinksLogsToRead checks the point of rendering a report
+// again: a run which recorded its logs as plain paths, before this tool knew to
+// read one as a page, links them to be read all the same.
+func TestServeReportLinksLogsToRead(t *testing.T) {
+	root, _ := newRoot(t, false)
+	name := "test-2026-09-20-0200"
+	storeRun(t, root, name, aRun(name))
+
+	body := get(t, root, "/"+name+"/").Body.String()
+
+	if !strings.Contains(body, "nri-resource-policy.output.txt?"+viewQuery) {
+		t.Errorf("the rendered report does not link the plugin log to read: %q", cut(body, 400))
+	}
+	// Only the logs: the verdict of a test is not a log to colour.
+	if strings.Contains(body, summaryTxt+"?"+viewQuery) {
+		t.Errorf("the rendered report reads the verdict as a log: %q", cut(body, 400))
+	}
+}
+
+// TestServeScansWhatCannotBeRead checks that a run whose results say nothing we
+// understand is scanned instead, the way a run which recorded nothing at all is.
+// There is no stored report to fall back on any more.
+func TestServeScansWhatCannotBeRead(t *testing.T) {
+	root, _ := newRoot(t, false)
+	name := "test-2026-09-20-0200"
+	dir := storeRun(t, root, name, aRun(name))
+	staleReport(t, dir, "<html>all there is</html>")
+
+	// Results which are there but say nothing we understand.
+	if err := os.WriteFile(filepath.Join(dir, resultsJSON), []byte("{{{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := get(t, root, "/"+name+"/")
+	if got.Code != http.StatusOK || !strings.Contains(got.Body.String(), rendered) {
+		t.Errorf("a run whose results cannot be read has no report: %d %q",
+			got.Code, cut(got.Body.String(), 200))
+	}
+	if strings.Contains(got.Body.String(), "all there is") {
+		t.Errorf("the stored report was served after all")
+	}
+}
+
+// TestServeReportOfAPackedRun checks that the report of a packed run is
+// rendered again too. Its results.json is kept outside the archive, so there is
+// no unpacking to do and nothing to write back.
+func TestServeReportOfAPackedRun(t *testing.T) {
+	root, name := newRoot(t, true)
+
+	body := get(t, root, "/"+name+"/").Body.String()
+
+	if body == files[indexHTML] {
+		t.Errorf("the report of a packed run was served as stored, not rendered")
+	}
+	// The name the run recorded of itself, which is what a report is titled by.
+	if !strings.Contains(body, "test-run") {
+		t.Errorf("the report of a packed run was not rendered from its results: %q",
+			cut(body, 200))
+	}
+}
+
+// TestServeReportWritesNothing checks that rendering a report again leaves
+// the run exactly as it was: the results are the run's, not ours.
+func TestServeReportWritesNothing(t *testing.T) {
+	root, _ := newRoot(t, false)
+	name := "test-2026-09-20-0200"
+	storeRun(t, root, name, aRun(name))
+
+	before := snapshot(t, root)
+	for range 3 {
+		get(t, root, "/"+name+"/")
+		get(t, root, "/"+name+"/"+indexHTML)
+	}
+
+	if after := snapshot(t, root); !maps.Equal(before, after) {
+		t.Errorf("serving a rendered report changed the results under %s", root)
+	}
+}
+
+// TestServeIndexSaysWhereARunIs checks that the index of the runs says which
+// test a run which is still going has got to, and tells a browser to come back
+// for it.
+func TestServeIndexSaysWhereARunIs(t *testing.T) {
+	root, _ := newRoot(t, false)
+	ongoing := "test-2026-09-17-2251"
+	dir := newOngoingRun(t, root, ongoing)
+	at := "balloons/test22-isolcpus"
+	log := prompt("balloons/test01-basic-placement", "kubectl get pods") +
+		prompt(at, "mkdir -p /etc/default")
+	if err := os.WriteFile(filepath.Join(dir, runnerLog), []byte(log), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := get(t, root, "/")
+
+	if !strings.Contains(got.Body.String(), at) {
+		t.Errorf("the index does not say where the run is: %q", cut(got.Body.String(), 600))
+	}
+	if every := got.Header().Get("Refresh"); every != "3" {
+		t.Errorf("Refresh of an index with a run going: %q, expected 3", every)
+	}
+}
+
+// TestServeIndexRefreshesSlowlyWhenIdle checks that an index of runs which have
+// all ended still asks a browser to come back, only seldom. A run starting is
+// the one thing no page can be told about, so an index which goes still when the
+// last run ends is one nobody sees the next run start on.
+func TestServeIndexRefreshesSlowlyWhenIdle(t *testing.T) {
+	root, _ := newRoot(t, false)
+
+	if every := get(t, root, "/").Header().Get("Refresh"); every != "30" {
+		t.Errorf("Refresh of an idle index: %q, expected 30", every)
+	}
+
+	newOngoingRun(t, root, "test-2026-09-17-2251")
+
+	if every := get(t, root, "/").Header().Get("Refresh"); every != "3" {
+		t.Errorf("Refresh once a run is going: %q, expected 3", every)
+	}
+	if every := get(t, root, "/?"+refreshQuery+"=15s").Header().Get("Refresh"); every != "15" {
+		t.Errorf("Refresh asked for as 15s: %q", every)
+	}
+	// Asked for as nothing, whether anything is going or not.
+	if every := get(t, root, "/?"+refreshQuery+"=0").Header().Get("Refresh"); every != "" {
+		t.Errorf("refresh=0 still asks for a refresh every %q", every)
+	}
+}
+
+// TestServeIdleIndexTakesTheIntervalAsked checks that the interval can be asked
+// for on an index with nothing going, the idle default being the one a reader
+// watching for a run to start is most likely to want to shorten.
+func TestServeIdleIndexTakesTheIntervalAsked(t *testing.T) {
+	root, _ := newRoot(t, false)
+
+	if every := get(t, root, "/?"+refreshQuery+"=5s").Header().Get("Refresh"); every != "5" {
+		t.Errorf("Refresh of an idle index asked for as 5s: %q", every)
+	}
+	if every := get(t, root, "/?"+refreshQuery+"=0").Header().Get("Refresh"); every != "" {
+		t.Errorf("an idle index asked for as 0 still refreshes every %q", every)
+	}
+}
+
+// TestServeReportSaysWhereARunIs checks that the report of a run which is
+// still going says which test it is in, where it used to say only that the
+// runner log knows.
+func TestServeReportSaysWhereARunIs(t *testing.T) {
+	root, _ := newRoot(t, false)
+	ongoing := "test-2026-09-17-2251"
+	dir := newOngoingRun(t, root, ongoing)
+	at := "topology-aware/test04-nrt"
+	if err := os.WriteFile(filepath.Join(dir, runnerLog),
+		[]byte(prompt(at, "kubectl describe node")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A report to fall back to, so that the live one is what answers.
+	if err := os.WriteFile(filepath.Join(dir, indexHTML), []byte("<html>x</html>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, resultsJSON),
+		[]byte(`{"name":"`+ongoing+`","verdict":"RUNNING","counts":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	body := get(t, root, "/"+ongoing+"/").Body.String()
+
+	if !strings.Contains(body, "It is at "+at+".") {
+		t.Errorf("the report does not say which test the run is in: %q", cut(body, 600))
 	}
 }

@@ -1,12 +1,23 @@
 # Caddy configuration for serving the results of the e2e test runs, the ones
-# e2e-runner publishes and e2e-report generates the reports of.
+# e2e-runner publishes and e2e-report serves the reports of.
 #
 #   caddy run --config scripts/testing/nightly/nri-plugins-e2e-results.Caddyfile
 #
-# The results to serve and the port to serve them on can be given in the
+# Caddy is the front end here and nothing else: it terminates the connection,
+# compresses what goes out and passes everything on. Every page comes from
+# e2e-report serve, which renders the index of the runs and the report of each
+# run from what the runs recorded, reads into the tarball of a packed run, and
+# serves a log as a page which follows it. None of that is a file on disk, so
+# there is nothing here for a file server to serve.
+#
+#   install -m 644 scripts/testing/nightly/nri-plugins-e2e-results.service \
+#       /etc/systemd/system/nri-plugins-e2e-results.service
+#   systemctl daemon-reload && systemctl enable --now nri-plugins-e2e-results
+#
+# The port to listen on and the server to pass to can be given in the
 # environment, which is all a test run of the whole thing needs:
 #
-#   E2E_RESULTS=$HOME/e2e-results E2E_PORT=8080 caddy run \
+#   E2E_PORT=8443 E2E_SERVER=127.0.0.1:8080 caddy run \
 #       --config scripts/testing/nightly/nri-plugins-e2e-results.Caddyfile
 #
 # With a name which resolves from the outside, use that instead of the port
@@ -15,41 +26,20 @@
 #   e2e.example.com {
 #       ...
 #   }
-#
-# A report links the artifacts of every test twice, once to download and once
-# to browse into. Only e2e-report serve reads into a tarball, so those links
-# do not work here; they answer 501 rather than pretend otherwise.
 
-:{$E2E_PORT:8080} {
-	# Where e2e-runner publishes to, its RESULT_ROOT.
-	root * {$E2E_RESULTS:/opt/e2e-test/nri-plugins/results}
-
-	# Results change under URLs which do not: a run's index.html and its
-	# status.txt while it is still going, latest every night. Revalidating
-	# is a 304 with no body, so this costs a round trip, never a download.
-	header Cache-Control "no-cache"
-
-	# What a report's "artifacts (browse)" links point at. Left alone, the
-	# trailing slash on a tarball becomes a permanent redirect to the
-	# tarball itself, and browsers cache those, so a single visit here goes
-	# on downloading archives long after the results moved behind
-	# e2e-report serve. Answer them ourselves instead.
-	@in-tarball path_regexp \.tar\.(xz|zst)/
-	respond @in-tarball "Browsing into tarballs needs e2e-report serve" 501
-
-	# index.html of the root lists the runs, each run has one of its own,
-	# and browsing covers the directories which have none: the commands a
-	# test case ran, for instance.
-	file_server browse
+:{$E2E_PORT:8443} {
+	# Where e2e-report serve listens, its --address, which is E2E_ADDRESS in
+	# the unit. Keep that on the loopback interface: the restriction lives in
+	# that address and nowhere else. A bare port here serves every interface,
+	# on purpose, which is what a front end is for.
+	reverse_proxy {$E2E_SERVER:127.0.0.1:8080}
 
 	# The logs of a run are large and they are text.
 	encode gzip zstd
 
-	# Should we ever publish the logs pre-compressed, this serves foo.txt
-	# from a foo.txt.gz, so that the links of the reports keep working:
-	#file_server {
-	#	precompressed gzip
-	#}
+	# Nothing sets Cache-Control here: the server answers every request with
+	# no-cache itself. Results are worth caching, they just must not be reused
+	# without asking, and no-store would re-download the logs.
 
 	log {
 		# Running as a service, swap this for a file of its own:

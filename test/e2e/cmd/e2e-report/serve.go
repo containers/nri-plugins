@@ -54,18 +54,43 @@ const (
 // their archive had been extracted, and what a test packed up for itself as if
 // it, too, had been extracted where it is.
 type Server struct {
-	root      string
-	dir       *os.Root
-	liveIndex bool
-	mutex     sync.Mutex
-	tarballs  map[string]*Tarball
-	order     []string
+	root     string
+	dir      *os.Root
+	index    indexCache
+	mutex    sync.Mutex
+	tarballs map[string]*Tarball
+	order    []string
 }
 
-// NewServer serves the results published under root. With liveIndex the index
-// of the runs is built for every request from the runs found under it, instead
-// of being read from the index.html a run left there.
-func NewServer(root string, liveIndex bool) (*Server, error) {
+// indexCache is the index of the runs as it was last built, and what the root
+// looked like then. A request which finds nothing changed costs a stat or three
+// per run instead of a read of every report, and one which finds a single run
+// changed pays for that run only.
+//
+// Worth having not for what one page costs, which nobody would notice, but for
+// how often it is asked for: while any run is going the index asks to be fetched
+// again every few seconds, so building it is paid continuously rather than once
+// per visit.
+type indexCache struct {
+	mutex sync.Mutex
+	print string
+	page  []byte
+	// running says whether any run in the page is still going, which decides
+	// whether a browser is asked to come back for it. Cached with the page: a
+	// request answered from the cache has no runs to ask.
+	running bool
+	runs    map[string]cachedRun
+}
+
+// cachedRun is a run we have read, and what the files a row of it comes from
+// looked like when we did.
+type cachedRun struct {
+	print string
+	run   *Run
+}
+
+// NewServer serves the results published under root.
+func NewServer(root string) (*Server, error) {
 	resolved, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		return nil, err
@@ -83,8 +108,7 @@ func NewServer(root string, liveIndex bool) (*Server, error) {
 		return nil, err
 	}
 
-	return &Server{root: resolved, dir: dir, liveIndex: liveIndex,
-		tarballs: map[string]*Tarball{}}, nil
+	return &Server{root: resolved, dir: dir, tarballs: map[string]*Tarball{}}, nil
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -112,11 +136,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The index of the runs, under both the names it answers to, before looking
-	// for the file it stands in for: with --live-index there may be none, and
-	// where there is one it is what we are asked not to serve.
-	if s.liveIndex && (name == "." || name == indexHTML) {
-		s.serveLiveIndex(w, r)
+	// The index of the runs, under both the names it answers to. Nothing writes
+	// one out, so there is never a file here to serve instead.
+	if name == "." || name == indexHTML {
+		s.serveIndex(w, r)
+		return
+	}
+
+	// The report of a run, rendered from what the run recorded, which is what
+	// gives a run published long ago the report this version writes -- for a run
+	// which has been packed up as well, since its results.json is outside the
+	// archive.
+	if run, ok := s.reportedRun(name); ok {
+		s.serveRunReport(w, r, run)
 		return
 	}
 
@@ -129,10 +161,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.serveFile(w, r, name)
-			return
-		}
-		if index := path.Join(name, indexHTML); s.exists(index) {
-			s.serveFile(w, r, index)
 			return
 		}
 		s.serveDir(w, r, clean, name)
@@ -150,12 +178,6 @@ func within(clean string) string {
 	}
 
 	return "."
-}
-
-// exists tells whether a name is there inside the root.
-func (s *Server) exists(name string) bool {
-	_, err := s.dir.Stat(name)
-	return err == nil
 }
 
 // tarballFor tells which tarball a request reaches into and which member of it
@@ -509,27 +531,172 @@ li { font-family: monospace; }
 </html>
 `))
 
-// serveLiveIndex serves an index of the runs under the root as they are right
-// now, rather than the index.html a run left there, which is stale as soon as
-// the next run publishes. Reading only: reporting on a run is what e2e-report
-// index is for.
-func (s *Server) serveLiveIndex(w http.ResponseWriter, r *http.Request) {
-	runs, err := indexRuns(s.root)
+// runPrint is what the files a row of a run comes from look like now: what the
+// run recorded, and the log of the runner, which is all that changes while a run
+// is still collecting. Everything a row says comes from these, so a row cannot
+// go stale without one of them moving.
+func (s *Server) runPrint(name string) string {
+	print := &strings.Builder{}
+
+	print.WriteString(name)
+	for _, file := range []string{resultsJSON, runnerLog} {
+		if info, err := s.dir.Stat(path.Join(name, file)); err == nil {
+			fmt.Fprintf(print, "|%s,%d,%d", file, info.Size(), info.ModTime().UnixNano())
+		} else {
+			fmt.Fprintf(print, "|%s,-", file)
+		}
+	}
+	print.WriteString(";")
+
+	return print.String()
+}
+
+// renderIndex is the index of the runs as they are now, rendered, reusing
+// whatever has not changed since the last time it was asked for.
+func (s *Server) renderIndex() ([]byte, bool, error) {
+	names, err := readDir(s.root)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Every name, not only the runs among them, so that a directory which has
+	// become one since is noticed too.
+	prints, whole := make(map[string]string, len(names)), &strings.Builder{}
+	for _, name := range names {
+		prints[name] = s.runPrint(name)
+		whole.WriteString(prints[name])
+	}
+
+	s.index.mutex.Lock()
+	defer s.index.mutex.Unlock()
+
+	if s.index.page != nil && s.index.print == whole.String() {
+		return s.index.page, s.index.running, nil
+	}
+
+	runs, read := []*Run{}, make(map[string]cachedRun, len(names))
+	for _, name := range names {
+		dir := filepath.Join(s.root, name)
+		if !isRun(dir) {
+			continue
+		}
+
+		// Reading a report is what costs here, so a run whose files have not
+		// moved is taken as it was. Built afresh rather than pruned, so a run
+		// which has been pruned drops out of it by itself.
+		if was, cached := s.index.runs[name]; cached && was.print == prints[name] {
+			runs, read[name] = append(runs, was.run), was
+			continue
+		}
+
+		run, err := readRunFor(dir, name)
+		if err != nil {
+			return nil, false, err
+		}
+
+		// A row has to name the directory it links to. That is what a run called
+		// itself for anything the runner published, but the link has to work even
+		// for a run whose results say otherwise.
+		run.Name = name
+		runs, read[name] = append(runs, run), cachedRun{print: prints[name], run: run}
+	}
+
+	sortRuns(runs)
+
+	page, err := renderPage("index", newIndexPage(runs))
+	if err != nil {
+		return nil, false, err
+	}
+
+	s.index.print, s.index.page, s.index.runs = whole.String(), page, read
+	s.index.running = anyRunning(runs)
+
+	return page, s.index.running, nil
+}
+
+// reportedRun tells which run a request asks for the report of, if that is what
+// it asks for: a run's report is the index.html of its directory, asked for by
+// that name or through the directory itself. There is no such file -- every
+// report is rendered, so what has to be there is the run.
+func (s *Server) reportedRun(name string) (string, bool) {
+	run, rest := split("/" + name)
+	if run == "" || run == "." || (rest != "" && rest != indexHTML) {
+		return "", false
+	}
+	// A run is a single element of a path which has been cleaned, so there is
+	// nothing in it to lead anywhere out of the root.
+	if !isRun(filepath.Join(s.root, run)) {
+		return "", false
+	}
+
+	return run, true
+}
+
+// serveRunReport renders the report of a run from what the run recorded. A run
+// published long ago is shown the way this version shows one, a packed run
+// included: its results.json is outside the archive.
+//
+// Reading only. What a run recorded is what it recorded; only e2e-report run and
+// e2e-report refresh write that, and only from the results of the run itself.
+func (s *Server) serveRunReport(w http.ResponseWriter, r *http.Request, run string) {
+	report, err := readRunFor(filepath.Join(s.root, run), run)
+	if err != nil {
+		log.Printf("failed to read the results of %s: %v", run, err)
+		http.Error(w, "cannot read the results of the run", http.StatusInternalServerError)
+		return
+	}
+
+	page, err := renderPage("run", newRunPage(report))
+	if err != nil {
+		log.Printf("failed to render the report of %s: %v", run, err)
+		http.Error(w, "cannot render the report of the run", http.StatusInternalServerError)
+		return
+	}
+
+	// Rendered for this request, so there is no stored copy to revalidate
+	// against and no modification time to offer.
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	http.ServeContent(w, r, indexHTML, time.Time{}, bytes.NewReader(page))
+}
+
+// anyRunning tells whether any of the runs is still going, which is what makes
+// an index worth refreshing.
+func anyRunning(runs []*Run) bool {
+	for _, run := range runs {
+		if run.Verdict == "RUNNING" {
+			return true
+		}
+	}
+
+	return false
+}
+
+// serveIndex serves an index of the runs under the root as they are right
+// now. Reading only: reporting on a run is what e2e-report run and e2e-report
+// refresh are for.
+func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
+	page, running, err := s.renderIndex()
 	if err != nil {
 		log.Printf("indexing the runs in %s: %v", s.root, err)
 		http.Error(w, "cannot index the runs", http.StatusInternalServerError)
 		return
 	}
 
-	page, err := renderPage("index", newIndexPage(runs))
-	if err != nil {
-		log.Printf("rendering the index of %s: %v", s.root, err)
-		http.Error(w, "cannot render the index", http.StatusInternalServerError)
-		return
+	// A run in progress moves from test to test, so the page is worth coming
+	// back to often. With nothing going it still comes back, only slowly: a run
+	// which starts in the meantime is news no browser learns any other way, and
+	// an index which goes still the moment the last run ends is an index nobody
+	// sees the next one start on.
+	interval := followInterval
+	if !running {
+		interval = idleInterval
+	}
+	if every := refreshFor(r, interval); every > 0 {
+		w.Header().Set("Refresh", strconv.Itoa(int(every.Seconds())))
 	}
 
 	// Built for this request, so there is no stored copy to revalidate against
-	// and no modification time to offer; the reports beside it have both.
+	// and no modification time to offer.
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	http.ServeContent(w, r, indexHTML, time.Time{}, bytes.NewReader(page))
@@ -539,8 +706,6 @@ func (s *Server) serveLiveIndex(w http.ResponseWriter, r *http.Request) {
 func serveCmd(args []string) error {
 	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
 	address := flags.String("address", ":8080", "address to listen on")
-	liveIndex := flags.Bool("live-index", false,
-		"build the index of runs for each request instead of serving index.html")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -548,7 +713,7 @@ func serveCmd(args []string) error {
 		return fmt.Errorf("serve takes a single result root directory")
 	}
 
-	server, err := NewServer(flags.Arg(0), *liveIndex)
+	server, err := NewServer(flags.Arg(0))
 	if err != nil {
 		return err
 	}
