@@ -49,6 +49,8 @@ environment:
 | `PACK_RESULTS` | `--pack-results` | off, see below |
 | `K8SCRI` | `--runtime` | containerd and cri-o on alternating days |
 | `FULL_BUILD` | `--full-build`, `--minimal-build` | everything once a week |
+| `RUN_IF_CHANGED` | `--run-if-changed` | off, test whenever asked |
+| `FORCE_AFTER` | `--force-after` | `24h`, with `--run-if-changed` |
 
 Anything left over on the command line is the test set to run, the whole default
 set if there is none.
@@ -56,6 +58,15 @@ set if there is none.
 The exit status says whether the runner did its job, not whether the tests
 passed: a run whose tests failed is a run which went fine. The verdict is the
 first word of `status.txt` of the run, and `results.json` has the details.
+
+**One run at a time per result root.** A run holds a lock in the root for as
+long as it lasts, because two runs there would share a worktree, fight over the
+test VMs and publish over each other. A second run refuses to start and says so;
+with `--run-if-changed` it says there is nothing to do and exits successfully,
+which is what a poll every few minutes wants. The lock is a file descriptor, so
+the kernel drops it however a run ends -- there is no stale lock to clear after
+a crash, and nothing to reason about a pid which may since have been given to
+something else.
 
 ## From cron
 
@@ -85,6 +96,16 @@ revision it fetched.
 On a host behind a proxy, put the proxy variables in a file and point
 `--source-proxies` at it: the runner exports them and passes them into the test
 VMs.
+
+Note that the copy of `e2e-runner` which parses the options is whichever one you
+invoke -- the clone's, when cron runs it out of the clone. The runner
+re-executes itself out of the worktree it makes, so the tests, the framework and
+the report tool are always the branch's, but it cannot re-execute its way out of
+not understanding an option the checked-out copy has never heard of. A clone left
+on a revision older than `--run-if-changed` fails with `unknown command line
+option`.
+
+## Being told how a run went
 
 To be told when a run fails, look at the verdict rather than at the exit status:
 
