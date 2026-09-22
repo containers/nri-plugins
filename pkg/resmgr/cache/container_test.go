@@ -545,7 +545,7 @@ var _ = Describe("Container", func() {
 
 		ctrs[0].SetCPUShares(int64(shares))
 
-		pending := ctrs[0].GetPendingUpdate()
+		pending := ctrs[0].PeekPendingUpdate()
 		Expect(pending).ToNot(BeNil())
 		value := pending.GetLinux().GetResources().GetCpu().GetShares().GetValue()
 		Expect(value).To(Equal(uint64(shares)))
@@ -569,7 +569,7 @@ var _ = Describe("Container", func() {
 
 		ctrs[0].SetCPUQuota(int64(quota))
 
-		pending := ctrs[0].GetPendingUpdate()
+		pending := ctrs[0].PeekPendingUpdate()
 		Expect(pending).ToNot(BeNil())
 		value := pending.GetLinux().GetResources().GetCpu().GetQuota().GetValue()
 		Expect(value).To(Equal(int64(quota)))
@@ -593,7 +593,7 @@ var _ = Describe("Container", func() {
 
 		ctrs[0].SetCPUPeriod(int64(period))
 
-		pending := ctrs[0].GetPendingUpdate()
+		pending := ctrs[0].PeekPendingUpdate()
 		Expect(pending).ToNot(BeNil())
 		value := pending.GetLinux().GetResources().GetCpu().GetPeriod().GetValue()
 		Expect(value).To(Equal(uint64(period)))
@@ -617,7 +617,7 @@ var _ = Describe("Container", func() {
 
 		ctrs[0].SetCpusetCpus(cpus)
 
-		pending := ctrs[0].GetPendingUpdate()
+		pending := ctrs[0].PeekPendingUpdate()
 		Expect(pending).ToNot(BeNil())
 		value := pending.GetLinux().GetResources().GetCpu().GetCpus()
 		Expect(value).To(Equal(cpus))
@@ -641,7 +641,7 @@ var _ = Describe("Container", func() {
 
 		ctrs[0].SetCpusetMems(mems)
 
-		pending := ctrs[0].GetPendingUpdate()
+		pending := ctrs[0].PeekPendingUpdate()
 		Expect(pending).ToNot(BeNil())
 		value := pending.GetLinux().GetResources().GetCpu().GetMems()
 		Expect(value).To(Equal(mems))
@@ -665,7 +665,7 @@ var _ = Describe("Container", func() {
 
 		ctrs[0].SetMemoryLimit(limit)
 
-		pending := ctrs[0].GetPendingUpdate()
+		pending := ctrs[0].PeekPendingUpdate()
 		Expect(pending).ToNot(BeNil())
 		value := pending.GetLinux().GetResources().GetMemory().GetLimit().GetValue()
 		Expect(value).To(Equal(limit))

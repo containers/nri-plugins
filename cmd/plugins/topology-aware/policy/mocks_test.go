@@ -530,7 +530,10 @@ func (m *mockContainer) SetSchedulingIOPriority(int32) {
 func (m *mockContainer) GetPendingAdjustment() *nri.ContainerAdjustment {
 	panic("unimplemented")
 }
-func (m *mockContainer) GetPendingUpdate() *nri.ContainerUpdate {
+func (m *mockContainer) PeekPendingUpdate() *nri.ContainerUpdate {
+	panic("unimplemented")
+}
+func (m *mockContainer) ClearPendingUpdate() {
 	panic("unimplemented")
 }
 func (m *mockContainer) GetAffinity() ([]*cache.Affinity, error) {

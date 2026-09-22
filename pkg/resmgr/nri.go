@@ -696,10 +696,15 @@ func (p *nriPlugin) RemoveContainer(ctx context.Context, pod *api.PodSandbox, co
 	return nil
 }
 
+// updateContainers pushes the pending container updates to the runtime. Unlike
+// the updates carried by the response to an NRI request, these are only cleared
+// from the containers once the runtime has them: an update lost on the way out
+// is the only record of what the container should look like, so dropping it
+// would leave the container as it is with nothing left to retry it with.
 func (p *nriPlugin) updateContainers() (retErr error) {
 	// Notes: must be called with p.resmgr lock held.
 
-	updates := p.getPendingUpdates(nil)
+	updates := p.peekPendingUpdates(nil)
 
 	event := UpdateContainers
 	p.dump(out, event, updates)
@@ -707,12 +712,58 @@ func (p *nriPlugin) updateContainers() (retErr error) {
 		p.dump(in, event, retErr)
 	}()
 
-	_, err := p.stub.UpdateContainers(updates)
+	failed, err := p.stub.UpdateContainers(updates)
 	if err != nil {
 		return fmt.Errorf("post-config container update failed: %w", err)
 	}
 
+	p.clearPendingUpdates(updates, failed)
+
 	return nil
+}
+
+func (p *nriPlugin) peekPendingUpdates(skip *api.Container) []*api.ContainerUpdate {
+	m := p.resmgr
+	updates := []*api.ContainerUpdate{}
+	for _, c := range m.cache.GetPendingContainers() {
+		if skip != nil && skip.GetId() == c.GetID() {
+			continue
+		}
+
+		if u := c.PeekPendingUpdate(); u != nil {
+			p.setDefaultClasses(c, u)
+			updates = append(updates, u)
+		}
+	}
+
+	return updates
+}
+
+// clearPendingUpdates clears the delivered updates from their containers. The
+// ones the runtime says it could not apply are left pending, for the same
+// reason a failed request leaves all of them pending.
+func (p *nriPlugin) clearPendingUpdates(delivered, failed []*api.ContainerUpdate) {
+	m := p.resmgr
+	for _, u := range delivered {
+		id := u.GetContainerId()
+		if slices.ContainsFunc(failed, func(f *api.ContainerUpdate) bool {
+			return f.GetContainerId() == id
+		}) {
+			nri.Warnf("runtime failed to update container %s, keeping the update pending", id)
+			continue
+		}
+
+		c, ok := m.cache.LookupContainer(id)
+		if !ok {
+			continue
+		}
+
+		c.ClearPendingUpdate()
+		for _, ctrl := range c.GetPending() {
+			c.ClearPending(ctrl)
+		}
+		m.policy.ExportResourceData(c)
+	}
 }
 
 func (p *nriPlugin) getPendingAdjustment(container *api.Container) *api.ContainerAdjustment {
@@ -729,24 +780,14 @@ func (p *nriPlugin) getPendingAdjustment(container *api.Container) *api.Containe
 	return nil
 }
 
+// getPendingUpdates collects the updates to carry in the response to an NRI
+// request, and clears them from their containers as it does so. Nothing tells us
+// whether the runtime applied the updates it was handed this way, so there is no
+// later point to clear them at, and keeping them would repeat them in every
+// response from here on.
 func (p *nriPlugin) getPendingUpdates(skip *api.Container) []*api.ContainerUpdate {
-	m := p.resmgr
-	updates := []*api.ContainerUpdate{}
-	for _, c := range m.cache.GetPendingContainers() {
-		if skip != nil && skip.GetId() == c.GetID() {
-			continue
-		}
-
-		if u := c.GetPendingUpdate(); u != nil {
-			p.setDefaultClasses(c, u)
-			updates = append(updates, u)
-
-			for _, ctrl := range c.GetPending() {
-				c.ClearPending(ctrl)
-			}
-			m.policy.ExportResourceData(c)
-		}
-	}
+	updates := p.peekPendingUpdates(skip)
+	p.clearPendingUpdates(updates, nil)
 
 	return updates
 }
