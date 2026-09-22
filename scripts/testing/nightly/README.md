@@ -49,6 +49,7 @@ environment:
 | `PACK_RESULTS` | `--pack-results` | off, see below |
 | `K8SCRI` | `--runtime` | containerd and cri-o on alternating days |
 | `FULL_BUILD` | `--full-build`, `--minimal-build` | everything once a week |
+| `OWN_TOOLING` | `--own-tooling` | off, the tested revision's tooling runs |
 | `RUN_IF_CHANGED` | `--run-if-changed` | off, test whenever asked |
 | `FORCE_AFTER` | `--force-after` | `24h`, with `--run-if-changed` |
 
@@ -131,6 +132,40 @@ To be told when a run fails, look at the verdict rather than at the exit status:
 read -r verdict _ < "$RESULT_ROOT/latest/status.txt"
 [ "$verdict" = PASS ] || echo "e2e run $verdict, see $RESULT_ROOT/latest/"
 ```
+
+## Testing a branch with your own tooling
+
+A run hands over to the tested revision: it adds the worktree, then re-executes
+the `e2e-runner` it finds there and builds `e2e-report` out of it, so a run is
+driven and reported on by the revision under test. That is what you want when the
+revision is what you are testing.
+
+It is the wrong way round when the *tooling* is what you are testing. Changes to
+the runner or to `e2e-report` have nowhere to be exercised: putting them on a
+branch and testing that branch tests them against whatever else is on it, and
+testing `main` throws them away at the handover. `--own-tooling` keeps them:
+
+```shell
+scripts/testing/nightly/e2e-runner --branch main --own-tooling \
+    --results /opt/e2e-test/nri-plugins/results
+```
+
+The worktree is still added at the branch, and the tests and the plugins are
+still the branch's -- only the tooling is ours. So the line above runs `main`'s
+tests against `main`'s plugins, with the runner and the reporter of the tree it
+was started from. `E2E_OWN_TOOLING=1` in the `e2e-cron-job` settings does the same
+from cron.
+
+Both tools or neither, deliberately: it is the runner which records what a report
+reads, so a run driven by one revision's runner and reported on by another's
+loses whatever the two do not agree about. Asking for it from a tree which has no
+`test/e2e/cmd/e2e-report` in it is refused before the run rather than after the
+tests, when there would be nothing left to report them with.
+
+The alternative is to keep a tooling branch rebased on `main` and test that,
+which works as long as the branch touches nothing outside the tooling --
+`git diff --name-only main..<branch>` says whether it does. `--own-tooling` is
+what saves the rebasing.
 
 ## Serving the results
 
