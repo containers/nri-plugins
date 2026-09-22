@@ -52,7 +52,8 @@ TEST_SUITE_DIR=policies.test-suite
 GIT_SHA1="git.sha1"
 GIT_DESC="git.describe"
 GIT_REMOTE="git.remote"
-# E2E_REPORT: go package in the worktree which reports on collected results
+# E2E_REPORT: This generates reports of collected results. We build it
+# somewhere under /tmp so nuking a worktree won't nuke it, too.
 E2E_REPORT="test/e2e/cmd/e2e-report"
 # COVERAGE_REPORT_SH: script in test/e2e which reports on collected coverage
 COVERAGE_REPORT_SH="report-coverage.sh"
@@ -76,18 +77,30 @@ PACKED_ARTIFACTS="commands
                   pyexec.py
                   pyexec_state.py
                   cache"
+# VAGRANT_DIR: vagrant's VM state directory
+VAGRANT_DIR=".vagrant"
+# VAGRANT_TMP: vagrant-qemu's VM state directory
+VAGRANT_TMP="${VAGRANT_HOME:-$HOME/.vagrant.d}/tmp/vagrant-qemu"
+# QEMU_PID: the pid file qemu is started with, within VAGRANT_TMP/<id>
+QEMU_PID="qemu.pid"
 
 
 #
 # Derived configuration, set up after command line parsing
 #
-# RESULT_DIR: directory for publishing results of this test run
-# WORKTREE:   git worktree for this test run
-# LOG:        log file for this test run
+# RESULT_DIR:        directory for publishing results of this test run
+# WORKTREE:          git worktree for this test run
+# LOG:               log file for this test run
+# E2E_REPORT_BIN:    e2e-report, built out of the worktree
+# E2E_REPORT_DIR:    where it was built, ours to remove
+# VMS_LEFT_RUNNING:  test VMs we failed to destroy, if any
 
 RESULT_DIR=""
 LOG=""
 WORKTREE=""
+E2E_REPORT_BIN=""
+E2E_REPORT_DIR=""
+VMS_LEFT_RUNNING=""
 
 usage() {
     local exit_code="${exit_code:-0}"
@@ -313,14 +326,158 @@ run_e2e_tests() {
     fi
 }
 
+vm_machine_id() {
+    local dir="$1" id
+
+    # The id vagrant gave the VM, which is what its runtime state is keyed by.
+    # One VM per vagrant directory, so the first id we find is the one.
+    for id in "$dir/$VAGRANT_DIR"/machines/*/*/id; do
+        if [ -f "$id" ]; then
+            cat "$id"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+vm_qemu_pid() {
+    local pidfile="$1" pid
+
+    if ! read -r pid 2>/dev/null < "$pidfile"; then
+        return 1
+    fi
+
+    # A pid file which was half written, or emptied by a qemu shutting down as
+    # we read it, must not turn into a "kill 0" further down: that signals
+    # every process in our own process group, this script included.
+    case "$pid" in
+        ""|*[!0-9]*)
+            return 1
+            ;;
+    esac
+    if [ "$pid" -lt 2 ]; then
+        return 1
+    fi
+
+    echo "$pid"
+}
+
+vm_is_qemu_pid() {
+    local pid="$1" pidfile="$2" exe
+
+    # Verify pid file is not stale and a pid potentially reused by some
+    # other process. Needs to be in use by a qemu with -pidfile argument.
+    if [ ! -d "/proc/$pid" ]; then
+        return 1
+    fi
+    if ! grep -qzxF -- "$pidfile" "/proc/$pid/cmdline" 2>/dev/null; then
+        return 1
+    fi
+
+    # Try to verify the process is qemu by checking its exe symlink.
+    # Best effort, failure to read silently skips the check.
+    exe=$(readlink "/proc/$pid/exe" 2>/dev/null) || return 0
+    case "${exe##*/}" in
+        qemu-system-*)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
+kill_test_vm() {
+    local name="$1" pid="$2" pidfile="$3" waited
+
+    if ! kill -0 "$pid" 2>/dev/null; then
+        info "the qemu process of $name is already gone..."
+        return 0
+    fi
+    if ! vm_is_qemu_pid "$pid" "$pidfile"; then
+        error "pid $pid is not $name's qemu process any more, not killing it"
+        return 1
+    fi
+
+    info "killing the qemu process $pid of $name..."
+    if ! kill -9 "$pid" 2>/dev/null; then
+        error "failed to kill the qemu process $pid of $name"
+        return 1
+    fi
+
+    # Not our child, so there is no reaping to wait for: watch the pid go.
+    for waited in 1 2 3 4 5; do
+        if ! kill -0 "$pid" 2>/dev/null; then
+            return 0
+        fi
+        sleep 1
+    done
+
+    error "the qemu process $pid of $name survived SIGKILL"
+
+    return 1
+}
+
+destroy_test_vm() {
+    local dir="$1" name="${1##*/}" id pidfile="" pid=""
+
+    # Resolve the pid while the vagrant directory is still there.
+    # vagrant destroy takes that directory with it.
+    id=$(vm_machine_id "$dir")
+    if [ -n "$id" ]; then
+        pidfile="$VAGRANT_TMP/$id/$QEMU_PID"
+        pid=$(vm_qemu_pid "$pidfile")
+    fi
+
+    # We don't try a graceful shutdown. We first virtual-pull the plug
+    # on the VM using vagrant destroy. If that fails for some reason
+    # leaving the VM qemu process running, we try to butcher it ourselves.
+    info "destroying test VM $name..."
+    if (cd "$dir" && vagrant destroy --force --no-tty); then
+        if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+            return 0
+        fi
+        error "destroyed test VM $name, but qemu process $pid is still running"
+    else
+        error "failed to destroy test VM $name"
+    fi
+
+    if [ -z "$pid" ]; then
+        error "no qemu pid of $name to fall back on, it may still be running"
+        return 1
+    fi
+
+    kill_test_vm "$name" "$pid" "$pidfile"
+}
+
 cleanup_test_vms() {
-    local src
+    local dir vm
 
     info "cleaning up test VMs..."
     must-cd "$WORKTREE"
-    for src in e2e-results/*; do
-        (cd "$src" && vagrant destroy --force)
+
+    # Destroy all test VMs, collecting ones which fail.
+    for dir in e2e-results/*; do
+        if [ ! -d "$dir/$VAGRANT_DIR" ]; then
+            continue
+        fi
+        if ! destroy_test_vm "$dir"; then
+            VMS_LEFT_RUNNING="$VMS_LEFT_RUNNING ${dir##*/}"
+        fi
     done
+
+    if [ -z "$VMS_LEFT_RUNNING" ]; then
+        return 0
+    fi
+
+    # List VMs we failed to destroy.
+    error "test VMs left behind:$VMS_LEFT_RUNNING"
+    error "keeping worktree $WORKTREE for them, to be destroyed by hand with:"
+    for vm in $VMS_LEFT_RUNNING; do
+        error "    (cd $WORKTREE/e2e-results/$vm && vagrant destroy --force)"
+    done
+    error "and the worktree removed afterwards with:"
+    error "    git -C $CLONED_REPO worktree remove --force $WORKTREE"
 }
 
 collect_git_info() {
@@ -411,23 +568,49 @@ policies_tested() {
     done | sort -u
 }
 
-generate_report() {
+build_e2e_report() {
+    local dir
+
     if [ ! -d "$WORKTREE/$E2E_REPORT" ]; then
         info "no $E2E_REPORT in $WORKTREE, leaving the results unreported..."
         return 0
     fi
 
-    # From the worktree, so that the report is always made by the revision
-    # which was tested.
+    if ! dir="$(mktemp -d)"; then
+        error "failed to make a directory to build $E2E_REPORT in"
+        return 1
+    fi
+    E2E_REPORT_DIR="$dir"
+
+    info "building $E2E_REPORT..."
     must-cd "$WORKTREE"
+    if ! go build -o "$dir/e2e-report" "./$E2E_REPORT"; then
+        error "failed to build $E2E_REPORT"
+        return 1
+    fi
+
+    E2E_REPORT_BIN="$dir/e2e-report"
+}
+
+cleanup_e2e_report() {
+    if [ -n "$E2E_REPORT_DIR" ]; then
+        rm -rf "$E2E_REPORT_DIR"
+    fi
+}
+
+generate_report() {
+    if [ -z "$E2E_REPORT_BIN" ]; then
+        info "no $E2E_REPORT to report with, leaving the results unreported..."
+        return 0
+    fi
 
     info "reporting on $RESULT_DIR..."
-    if ! go run "./$E2E_REPORT" run "$RESULT_DIR"; then
+    if ! "$E2E_REPORT_BIN" run "$RESULT_DIR"; then
         error "failed to report on $RESULT_DIR"
     fi
 
     info "updating the index of all results in $RESULT_ROOT..."
-    if ! go run "./$E2E_REPORT" index "$RESULT_ROOT"; then
+    if ! "$E2E_REPORT_BIN" index "$RESULT_ROOT"; then
         error "failed to update the index in $RESULT_ROOT"
     fi
 }
@@ -458,6 +641,15 @@ run_status() {
 }
 
 cleanup_worktree() {
+    # If we failed to destroy some VMs we better not nuke those VM's
+    # .vagrant directories. Otherwise vagrant would lose track of them.
+    # We leave the whole worktree intact in that case, logging the fact
+    # and letting the user sort out what to do with them.
+    if [ -n "$VMS_LEFT_RUNNING" ]; then
+        error "keeping worktree $WORKTREE, VMs left in it:$VMS_LEFT_RUNNING"
+        return 0
+    fi
+
     info "cleaning up worktree $WORKTREE..."
     must-cd "$CLONED_REPO"
     if ! git worktree remove --force "$WORKTREE"; then
@@ -602,16 +794,21 @@ pack_results() {
             ;;
     esac
 
-    if [ ! -d "$WORKTREE/$E2E_REPORT" ]; then
-        info "no $E2E_REPORT in $WORKTREE, leaving the results unpacked..."
+    if [ -z "$E2E_REPORT_BIN" ]; then
+        error "no $E2E_REPORT to pack with, leaving the results unpacked"
         return 0
     fi
 
     # Everything but the report, the results as json and the verdict, which is
     # what tells how the run went without a server to unpack the archive.
-    must-cd "$WORKTREE"
+    #
+    # This is the last thing a run does, because our own log is packed with the
+    # rest and whatever is written to it after that goes nowhere: the file is
+    # gone by then. So everything worth reading is in the log by now, down to
+    # the verdict. The one thing which is not is what packing itself says, the
+    # line below and the sizes the tool reports.
     info "packing up the results in $RESULT_DIR..."
-    if ! go run "./$E2E_REPORT" pack "$RESULT_DIR"; then
+    if ! "$E2E_REPORT_BIN" pack "$RESULT_DIR"; then
         error "failed to pack up the results in $RESULT_DIR"
     fi
 }
@@ -824,6 +1021,7 @@ source_proxies
 prepare_worktree
 prepare_result_dir
 collect_git_info
+build_e2e_report
 generate_report
 run_e2e_tests
 cleanup_test_vms
@@ -835,7 +1033,6 @@ prune_coverage_data
 pack_artifacts
 prune_old_results
 generate_report
-pack_results
 publish_latest
 cleanup_worktree
 
@@ -843,3 +1040,8 @@ cleanup_worktree
 # can be read from status.txt or status.json, not from our
 # exit code.
 info "verdict of $RESULT_NAME: $(run_status)"
+
+# Delay packing things up as late as possible. It packs (and
+# unlinks) the very file we're logging into.
+pack_results
+cleanup_e2e_report

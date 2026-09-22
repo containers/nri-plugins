@@ -171,6 +171,13 @@ the logs, the command transcripts, the coverage report — is in the archive.
 That takes `e2e-report serve`, so set that up first. `tar --zstd -xf` gets the
 results of a run out without a server.
 
+Packing is the last thing a run does, after the verdict, because the log of the
+runner is packed with the rest and anything written to it afterwards would go
+nowhere. So the log in the archive is the whole of it, down to the verdict; the
+only thing missing is what packing itself reports. That is also why the runner
+builds `e2e-report` out of the worktree into a directory of its own rather than
+running it with `go run`: by the time it packs, the worktree is gone.
+
 ## What a run publishes
 
 ```text
