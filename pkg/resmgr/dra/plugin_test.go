@@ -32,6 +32,10 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
+
+	specs "tags.cncf.io/container-device-interface/specs-go"
+
+	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 )
 
 const (
@@ -39,13 +43,17 @@ const (
 	testNodeName   = "test-node"
 )
 
-// testOwner counts how often its lock was taken and records the shutdowns it
-// was asked for. The lock is a real one, so a handler taking it twice deadlocks
-// instead of passing the test.
+// testOwner counts how often its lock was taken and how many claim updates it
+// was asked to commit, and records the shutdowns it was asked for. The lock is a
+// real one, so a handler taking it twice deadlocks instead of passing the test.
 type testOwner struct {
 	sync.Mutex
+	t       *testing.T
 	locks   int
 	unlocks int
+
+	updates   int
+	updateErr error // fails ClaimAllocated and ClaimReleased
 
 	shutdownMu sync.Mutex // the plugin asks from its own goroutines
 	shutdowns  []string
@@ -61,6 +69,22 @@ func (o *testOwner) Unlock() {
 	o.Mutex.Unlock()
 }
 
+func (o *testOwner) ClaimAllocated() error { return o.claimUpdated("ClaimAllocated") }
+func (o *testOwner) ClaimReleased() error  { return o.claimUpdated("ClaimReleased") }
+
+func (o *testOwner) claimUpdated(method string) error {
+	// A claim change must be committed with our lock held. Counting Lock calls
+	// cannot tell that a handler took the lock and gave it back before doing the
+	// work, but TryLock succeeding here proves exactly that.
+	if o.TryLock() {
+		o.Mutex.Unlock()
+		o.t.Errorf("%s() was called without the owner's lock held", method)
+	}
+
+	o.updates++
+	return o.updateErr
+}
+
 func (o *testOwner) RequestShutdown(reason string) {
 	o.shutdownMu.Lock()
 	defer o.shutdownMu.Unlock()
@@ -73,6 +97,65 @@ func (o *testOwner) shutdownRequests() []string {
 	return slices.Clone(o.shutdowns)
 }
 
+// testPolicy is a policy which only implements the DRA methods. Embedding the
+// interface leaves the rest nil, which is fine as long as nothing calls them.
+type testPolicy struct {
+	policyapi.Policy
+
+	// allocated is what the policy accounts for: the results it was asked to
+	// allocate, per claim. claims are the claims it was handed, in order.
+	allocated map[types.UID][]resourceapi.DeviceRequestAllocationResult
+	claims    []*resourceapi.ResourceClaim
+	releases  []types.UID
+
+	// allocateErr fails AllocateClaim, for failUID only if that is set.
+	allocateErr error
+	failUID     types.UID
+	// releaseErr fails ReleaseClaim.
+	releaseErr error
+	// edits, when set, replaces the container edits AllocateClaim returns, for
+	// the cases which care about what a policy hands us.
+	edits func(results []resourceapi.DeviceRequestAllocationResult) []specs.ContainerEdits
+}
+
+func (p *testPolicy) AllocateClaim(claim *resourceapi.ResourceClaim, results []resourceapi.DeviceRequestAllocationResult) ([]specs.ContainerEdits, error) {
+	p.claims = append(p.claims, claim)
+
+	if p.allocateErr != nil && (p.failUID == "" || p.failUID == claim.UID) {
+		return nil, p.allocateErr
+	}
+
+	if p.allocated == nil {
+		p.allocated = map[types.UID][]resourceapi.DeviceRequestAllocationResult{}
+	}
+	p.allocated[claim.UID] = results
+
+	if p.edits != nil {
+		return p.edits(results), nil
+	}
+
+	// One edit per allocated device, saying which device it is so that the test
+	// can tell the edits apart.
+	edits := make([]specs.ContainerEdits, 0, len(results))
+	for _, r := range results {
+		edits = append(edits, specs.ContainerEdits{Env: []string{"NRI_DEVICE=" + r.Device}})
+	}
+
+	return edits, nil
+}
+
+func (p *testPolicy) ReleaseClaim(uid types.UID) error {
+	p.releases = append(p.releases, uid)
+
+	if p.releaseErr != nil {
+		return p.releaseErr
+	}
+
+	delete(p.allocated, uid)
+
+	return nil
+}
+
 // testDevices returns n uniquely named devices, for the cases which care about
 // how many devices there are rather than what they say.
 func testDevices(n int) []resourceapi.Device {
@@ -83,15 +166,18 @@ func testDevices(n int) []resourceapi.Device {
 	return devices
 }
 
-// newTestPlugin creates a plugin with sockets under the test's own directories.
-func newTestPlugin(t *testing.T, client kubernetes.Interface) (*Plugin, *testOwner) {
+// newTestPlugin creates a plugin with sockets under the test's own directories,
+// allowed to serve claims as one whose owner has synchronized with the runtime
+// is. The tests which care about the gate itself close it again.
+func newTestPlugin(t *testing.T, client kubernetes.Interface, policy policyapi.Policy) (*Plugin, *testOwner) {
 	t.Helper()
 
-	owner := &testOwner{}
+	owner := &testOwner{t: t}
 	p, err := New(testDriverName, Options{
 		NodeName:      testNodeName,
 		KubeClient:    client,
 		Owner:         owner,
+		Policy:        policy,
 		RegistrarDir:  t.TempDir(),
 		PluginDataDir: t.TempDir(),
 		CDIDir:        t.TempDir(),
@@ -105,6 +191,8 @@ func newTestPlugin(t *testing.T, client kubernetes.Interface) (*Plugin, *testOwn
 			t.Errorf("unexpected shutdown request(s): %v", asked)
 		}
 	})
+
+	p.AllowClaims()
 
 	return p, owner
 }
@@ -120,7 +208,8 @@ func TestNew(t *testing.T) {
 	valid := Options{
 		NodeName:   testNodeName,
 		KubeClient: fake.NewClientset(),
-		Owner:      &testOwner{},
+		Owner:      &testOwner{t: t},
+		Policy:     &testPolicy{},
 	}
 
 	for _, tc := range []struct {
@@ -148,6 +237,12 @@ func TestNew(t *testing.T) {
 			name:       "nil kube client",
 			driverName: testDriverName,
 			options:    func(o *Options) { o.KubeClient = nil },
+			fail:       true,
+		},
+		{
+			name:       "nil policy",
+			driverName: testDriverName,
+			options:    func(o *Options) { o.Policy = nil },
 			fail:       true,
 		},
 		{
@@ -183,7 +278,8 @@ func TestNewPluginDataDirDefault(t *testing.T) {
 	p, err := New(testDriverName, Options{
 		NodeName:   testNodeName,
 		KubeClient: fake.NewClientset(),
-		Owner:      &testOwner{},
+		Owner:      &testOwner{t: t},
+		Policy:     &testPolicy{},
 	})
 	if err != nil {
 		t.Fatalf("New() failed: %v", err)
@@ -221,7 +317,7 @@ func TestPublish(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			client := newTestClient()
-			p, _ := newTestPlugin(t, client)
+			p, _ := newTestPlugin(t, client, &testPolicy{})
 
 			if !tc.publishLater {
 				if err := p.Publish(tc.devices); err != nil {
@@ -271,7 +367,7 @@ func TestPublish(t *testing.T) {
 // TestStartTwice verifies a started plugin refuses to start again.
 func TestStartTwice(t *testing.T) {
 	client := newTestClient()
-	p, _ := newTestPlugin(t, client)
+	p, _ := newTestPlugin(t, client, &testPolicy{})
 
 	if err := p.Start(t.Context()); err != nil {
 		t.Fatalf("Start() failed: %v", err)
@@ -288,7 +384,7 @@ func TestStartTwice(t *testing.T) {
 // every shutdown path, whether it got as far as starting it or not.
 func TestStopIdempotent(t *testing.T) {
 	client := newTestClient()
-	p, _ := newTestPlugin(t, client)
+	p, _ := newTestPlugin(t, client, &testPolicy{})
 
 	p.Stop() // never started
 
@@ -307,7 +403,7 @@ func TestStopIdempotent(t *testing.T) {
 // configuration change that turns DRA off and on again amounts to.
 func TestStartAfterStop(t *testing.T) {
 	client := newTestClient()
-	p, _ := newTestPlugin(t, client)
+	p, _ := newTestPlugin(t, client, &testPolicy{})
 
 	if err := p.Start(t.Context()); err != nil {
 		t.Fatalf("Start() failed: %v", err)
@@ -332,104 +428,10 @@ func TestWatchHealthStatus(t *testing.T) {
 		t.Errorf("WatchHealthStatus() failed with %v, expected %v",
 			err, kubeletplugin.ErrHealthNotSupported)
 	}
-}
-
-// TestPrepareResourceClaims verifies claims are answered with empty results,
-// under the owner's lock.
-func TestPrepareResourceClaims(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		claims []*resourceapi.ResourceClaim
-	}{
-		{
-			name: "no claims",
-		},
-		{
-			name: "two claims",
-			claims: []*resourceapi.ResourceClaim{
-				{ObjectMeta: metav1.ObjectMeta{Name: "claim-1", UID: types.UID("uid-1")}},
-				{ObjectMeta: metav1.ObjectMeta{Name: "claim-2", UID: types.UID("uid-2")}},
-			},
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			p, owner := newTestPlugin(t, fake.NewClientset())
-
-			result, err := p.PrepareResourceClaims(t.Context(), tc.claims)
-			if err != nil {
-				t.Fatalf("PrepareResourceClaims() failed: %v", err)
-			}
-
-			if len(result) != len(tc.claims) {
-				t.Errorf("got %d results, expected %d", len(result), len(tc.claims))
-			}
-			for _, claim := range tc.claims {
-				prepared, ok := result[claim.UID]
-				if !ok {
-					t.Errorf("claim %s has no result", claim.UID)
-					continue
-				}
-				if prepared.Err != nil {
-					t.Errorf("claim %s failed: %v", claim.UID, prepared.Err)
-				}
-				if len(prepared.Devices) != 0 {
-					t.Errorf("claim %s got %d devices, expected none", claim.UID, len(prepared.Devices))
-				}
-			}
-
-			if owner.locks != 1 || owner.unlocks != 1 {
-				t.Errorf("locked %d times and unlocked %d times, expected once each",
-					owner.locks, owner.unlocks)
-			}
-		})
-	}
-}
-
-// TestUnprepareResourceClaims verifies claims are answered without errors,
-// under the owner's lock.
-func TestUnprepareResourceClaims(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		claims []kubeletplugin.NamespacedObject
-	}{
-		{
-			name: "no claims",
-		},
-		{
-			name: "two claims",
-			claims: []kubeletplugin.NamespacedObject{
-				{UID: types.UID("uid-1")},
-				{UID: types.UID("uid-2")},
-			},
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			p, owner := newTestPlugin(t, fake.NewClientset())
-
-			result, err := p.UnprepareResourceClaims(t.Context(), tc.claims)
-			if err != nil {
-				t.Fatalf("UnprepareResourceClaims() failed: %v", err)
-			}
-
-			if len(result) != len(tc.claims) {
-				t.Errorf("got %d results, expected %d", len(result), len(tc.claims))
-			}
-			for _, claim := range tc.claims {
-				unprepared, ok := result[claim.UID]
-				if !ok {
-					t.Errorf("claim %s has no result", claim.UID)
-					continue
-				}
-				if unprepared != nil {
-					t.Errorf("claim %s failed: %v", claim.UID, unprepared)
-				}
-			}
-
-			if owner.locks != 1 || owner.unlocks != 1 {
-				t.Errorf("locked %d times and unlocked %d times, expected once each",
-					owner.locks, owner.unlocks)
-			}
-		})
+	select {
+	case report := <-reports:
+		t.Errorf("WatchHealthStatus() reported %v, expected nothing", report)
+	default:
 	}
 }
 
@@ -452,11 +454,12 @@ func TestHandleError(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			owner := &testOwner{}
+			owner := &testOwner{t: t}
 			p, err := New(testDriverName, Options{
 				NodeName:      testNodeName,
 				KubeClient:    fake.NewClientset(),
 				Owner:         owner,
+				Policy:        &testPolicy{},
 				PluginDataDir: t.TempDir(),
 			})
 			if err != nil {
@@ -541,7 +544,7 @@ func TestDriverResources(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			p, _ := newTestPlugin(t, fake.NewClientset())
+			p, _ := newTestPlugin(t, fake.NewClientset(), &testPolicy{})
 			if err := p.Publish(tc.devices); err != nil {
 				t.Fatalf("Publish() failed: %v", err)
 			}
@@ -579,7 +582,7 @@ func TestDriverResources(t *testing.T) {
 // TestPublishCopiesDevices verifies the devices are copied, so that a policy
 // changing its own devices afterwards does not change what we publish.
 func TestPublishCopiesDevices(t *testing.T) {
-	p, _ := newTestPlugin(t, fake.NewClientset())
+	p, _ := newTestPlugin(t, fake.NewClientset(), &testPolicy{})
 
 	devices := []resourceapi.Device{{Name: "cpu-0"}}
 	if err := p.Publish(devices); err != nil {
