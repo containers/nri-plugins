@@ -65,6 +65,7 @@ func (m *resmgr) setupDRA(cfg *cfgapi.DRAConfig) error {
 		NodeName:   nodeName,
 		KubeClient: client,
 		Owner:      m,
+		Policy:     m.policy,
 	})
 	if err != nil {
 		return resmgrError("failed to create DRA plugin: %v", err)
@@ -72,6 +73,53 @@ func (m *resmgr) setupDRA(cfg *cfgapi.DRAConfig) error {
 	m.dra = plugin
 
 	return nil
+}
+
+// ClaimAllocated commits the allocation the policy made for a DRA claim. It
+// runs with our lock held, from a kubelet request the DRA plugin is serving.
+// Saving the cache is what makes the policy's claim accounting survive us.
+//
+// The containers using the claim are not running yet, but the ones already
+// running may have to give up resources to them. Any update the runtime did
+// not apply fails the claim: we cannot tell whether that container still uses
+// what the claim is being given, and granting it anyway would share resources
+// the claim is supposed to have to itself.
+func (m *resmgr) ClaimAllocated() error {
+	if err := m.cache.Save(); err != nil {
+		return err
+	}
+
+	return m.pushClaimUpdates()
+}
+
+// ClaimReleased commits the release of a DRA claim, like ClaimAllocated, but
+// failing to update the containers is only a warning here: the updates stay
+// pending for the next push, and until then the released resources just sit
+// idle, which is no reason to hold up the teardown of the pod.
+func (m *resmgr) ClaimReleased() error {
+	if err := m.cache.Save(); err != nil {
+		return err
+	}
+
+	if err := m.pushClaimUpdates(); err != nil {
+		log.Warnf("failed to update containers after releasing a DRA claim: %v", err)
+	}
+
+	return nil
+}
+
+// pushClaimUpdates pushes the container updates the policy made for a claim:
+// unlike an NRI request, a kubelet request has no response to carry them in.
+func (m *resmgr) pushClaimUpdates() error {
+	// A claim the policy had nothing to do for, an unprepare of one it has no
+	// record of for instance, leaves nothing to push. Asking the runtime to
+	// update nothing could still fail, and failing a claim which changed
+	// nothing would hold up the pod it belongs to for no reason.
+	if len(m.cache.GetPendingContainers()) == 0 {
+		return nil
+	}
+
+	return m.nri.updateContainers()
 }
 
 // startDRA starts the DRA plugin, if we have one.

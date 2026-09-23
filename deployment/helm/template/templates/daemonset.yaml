@@ -125,6 +125,9 @@ spec:
             mountPath: /var/lib/kubelet/plugins
           - name: kubelet-plugins-registry
             mountPath: /var/lib/kubelet/plugins_registry
+          # The runtime reads the CDI specs of prepared claims from here.
+          - name: cdi-specs
+            mountPath: /var/run/cdi
           {{- end }}
       {{- if .Values.podPriorityClassNodeCritical }}
       priorityClassName: system-node-critical
@@ -157,6 +160,10 @@ spec:
       - name: kubelet-plugins-registry
         hostPath:
           path: /var/lib/kubelet/plugins_registry
+          type: DirectoryOrCreate
+      - name: cdi-specs
+        hostPath:
+          path: /var/run/cdi
           type: DirectoryOrCreate
       {{- end }}
       {{- if .Values.nri.runtime.patchConfig }}

@@ -169,15 +169,15 @@ func TestUpdateContainersClearsDeliveredUpdates(t *testing.T) {
 
 // TestUpdateContainersRetainsUpdatesTheRuntimeRejected covers the updates which
 // come back in the runtime's answer instead of failing the request: those
-// containers were not updated either, so their updates stay pending just the
-// same.
+// containers were not updated either, so they fail the push and their updates
+// stay pending just the same.
 func TestUpdateContainersRetainsUpdatesTheRuntimeRejected(t *testing.T) {
 	stub := &testStub{}
 	m, ctr := newTestUpdate(t, stub)
 	stub.failed = []*nriapi.ContainerUpdate{{ContainerId: ctr.GetID()}}
 
-	if err := m.nri.updateContainers(); err != nil {
-		t.Fatalf("updateContainers() failed: %v", err)
+	if err := m.nri.updateContainers(); err == nil {
+		t.Error("updateContainers() succeeded with an update the runtime rejected")
 	}
 
 	if ctr.PeekPendingUpdate() == nil {
