@@ -3,13 +3,13 @@ module github.com/containers/nri-plugins
 go 1.26.0
 
 require (
-	github.com/askervin/gofmbt v0.0.0-20260730061456-f663bfa65cdf
 	github.com/containerd/nri v0.12.2
 	github.com/containerd/otelttrpc v0.1.0
 	github.com/containerd/ttrpc v1.2.9
 	github.com/containers/nri-plugins/pkg/topology v0.0.0
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/fsnotify/fsnotify v1.10.1
+	github.com/go-logr/logr v1.4.4
 	github.com/google/uuid v1.6.0
 	github.com/intel/goresctrl v0.13.0
 	github.com/intel/memtierd v0.1.1
@@ -17,6 +17,7 @@ require (
 	github.com/klauspost/compress v1.19.1
 	github.com/onsi/ginkgo/v2 v2.32.1
 	github.com/onsi/gomega v1.42.1
+	github.com/ozhuraki/gofmbt v0.0.0-20260909154336-397d7f3ad038
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/prometheus/client_golang v1.24.1
 	github.com/sirupsen/logrus v1.10.1
@@ -58,7 +59,6 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/emicklei/go-restful/v3 v3.12.2 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
-	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/jsonpointer v0.21.0 // indirect
 	github.com/go-openapi/jsonreference v0.20.2 // indirect
