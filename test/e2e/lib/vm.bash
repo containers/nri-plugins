@@ -262,15 +262,21 @@ vm-box-key() {
     # and the topology has to be part of the key: the hostname of the VM is
     # derived from it, and kubeadm bakes the hostname into the name of the node,
     # into the certificates and into etcd.
-    local vmname="$1" cri_release key
+    local vmname="$1" cri_release gates key
 
     case "$k8scri" in
         crio) cri_release="$crio_release";;
         *)    cri_release="$containerd_release";;
     esac
 
+    # Sorted, so that the same gates given in another order share a box.
+    gates="$(tr ',' '\n' <<< "${k8s_feature_gates//[[:space:]]/}" | sed '/^$/d' | sort | paste -sd, -)"
+
     key="$vmname-k8s$k8s_release-$k8scri$cri_release"
     key="$key-cni$cni_plugin$cni_release-helm$helm_release"
+    if [ -n "$gates" ]; then
+        key="$key-gates$gates"
+    fi
     key="$key-$(vm-provisioning-recipe-hash)"
 
     echo "${key//[^A-Za-z0-9._-]/-}"

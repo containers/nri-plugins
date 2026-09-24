@@ -51,6 +51,13 @@ export k8s_release=${k8s_release:-"latest"}
 k8s_release="${k8s_release#v}"
 export k8s_version=""
 
+# Kubernetes feature gates to enable, as a comma-separated list such as
+# "Gate1=true,Gate2=false", set on the apiserver, scheduler and kubelet.
+# Unset leaves the cluster with its default gates. A gate new in some
+# release needs k8s_release set to at least that release, for instance
+# DRANodeAllocatableResources needs 1.37.
+export k8s_feature_gates=${k8s_feature_gates:-}
+
 GH_HELM_REPO="helm/helm"
 export helm_release=${helm_release:-"latest"}
 
@@ -277,6 +284,7 @@ echo "    Kubernetes"
 echo "      - release     = $k8s_release"
 echo "      - version     = $k8s_version"
 echo "      - Helm        = $helm_release"
+echo "      - gates       = ${k8s_feature_gates:-none}"
 echo "    Runtime         = $k8scri"
 echo "    Output dir      = $OUTPUT_DIR"
 echo "    Test output dir = $TEST_OUTPUT_DIR"
