@@ -241,8 +241,8 @@ for POLICY_DIR in "$TESTS_ROOT_DIR"/*; do
 
 		policy_name="$(basename $POLICY_DIR)"
 
-		# Create name for the vm.
-		export vm_name=$(vm-create-name "$k8scri" "$(basename "$TOPOLOGY_DIR")" ${distro})
+		# Create name for the vm, unless the caller gave one.
+		export vm_name=${vm_name:-$(vm-create-name "$k8scri" "$(basename "$TOPOLOGY_DIR")" ${distro})}
                 export-and-source-dir "$TOPOLOGY_DIR"
 
 		# Create ansible inventory file from a template
