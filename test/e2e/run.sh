@@ -441,7 +441,7 @@ helm-launch() { # script API
     # collection for the plugin.
     #
     # Supported TARGETs:
-    #     topology-aware, balloons: launch the given NRI resource policy plugin on VM.
+    #     topology-aware, balloons, template: launch the given NRI resource policy plugin on VM.
     #
     # Environment variables:
     #     helm_config: configuration helm override values for the plugin
@@ -500,6 +500,10 @@ helm-launch() { # script API
             *balloons*)
                 ds_name=nri-resource-policy-balloons
                 [ -z "$cfgresource" ] && cfgresource=balloonspolicies/default
+                ;;
+            *template*)
+                ds_name=nri-resource-policy-template
+                [ -z "$cfgresource" ] && cfgresource=templatepolicies/default
                 ;;
             *memory-policy*)
                 ds_name=nri-memory-policy
@@ -692,6 +696,7 @@ config-resource() { # script API
     case "$policy" in
         *topology*aware*) echo topologyawarepolicies/default;;
         *balloons*)       echo balloonspolicies/default;;
+        *template*)       echo templatepolicies/default;;
         *)                error "config-resource: unknown policy \"$policy\"";;
     esac
 }
