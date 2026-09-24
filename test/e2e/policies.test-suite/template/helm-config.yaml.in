@@ -1,0 +1,20 @@
+config:
+  $([ -n "${AVAILABLE_CPU}" ] && echo "
+  availableResources:
+    cpu: ${AVAILABLE_CPU}")
+  reservedResources:
+    cpu: ${RESERVED_CPU:-750m}
+  $([ -n "$DRA_ENABLED" ] && echo "
+  dra:
+    enabled: $DRA_ENABLED
+  ")
+  instrumentation:
+    httpEndpoint: ":8891"
+  log:
+    debug:
+      $(for logger in ${DEBUG_LOGGERS:-resource-manager cache policy dra}; do echo "
+      - $logger
+      "; done )
+    source: true
+    klog:
+      skip_headers: true

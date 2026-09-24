@@ -1,0 +1,8 @@
+---
+- hosts: all
+
+- name: deploy template policy plugin
+  ansible.builtin.import_playbook: deploy-policy-plugin.yaml
+  vars:
+    cri_runtime: "{{ cri_runtime }}"
+    plugin_name: "template"
