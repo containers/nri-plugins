@@ -22,10 +22,9 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
-	resourceapi "k8s.io/api/resource/v1"
+	system "github.com/containers/nri-plugins/pkg/sysfs"
+	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/types"
-	specs "tags.cncf.io/container-device-interface/specs-go"
 )
 
 const (
@@ -37,8 +36,11 @@ const (
 
 // policy is our runtime state for this policy.
 type policy struct {
-	cfg   *cfgapi.Config // our runtime configuration
-	cache cache.Cache    // pod/container cache
+	cfg    *cfgapi.Config           // our runtime configuration
+	cache  cache.Cache              // pod/container cache
+	system system.System            // system/HW/topology information
+	owner  policyapi.Owner          // resource manager running us
+	claims map[string]cpuset.CPUSet // CPUs of DRA claims, by claim UID
 }
 
 // Make sure policy implements the policy.Backend interface.
@@ -67,16 +69,19 @@ func (p *policy) Setup(opts *policyapi.BackendOptions) error {
 		return fmt.Errorf("config data of wrong type %T", opts.Config)
 	}
 
-	// We keep no policy data across restarts.
-	opts.Cache.ResetPolicyEntries()
-
 	p.cfg = cfg
 	p.cache = opts.Cache
+	p.system = opts.System
+	p.owner = opts.Owner
 	return nil
 }
 
 // Start prepares this policy for accepting allocation/release requests.
 func (p *policy) Start() error {
+	p.restoreClaims()
+	if err := p.publishDRADevices(); err != nil {
+		return err
+	}
 	log.Infof("started...")
 	return nil
 }
@@ -86,6 +91,12 @@ func (p *policy) Reconfigure(newCfg any) error {
 	cfg, ok := newCfg.(*cfgapi.Config)
 	if !ok {
 		return fmt.Errorf("config data of wrong type %T", newCfg)
+	}
+	// Our CPUs are published as a DRA device once, when we start, so they
+	// must not change while we run.
+	if cfg.AvailableResources[cfgapi.CPU] != p.cfg.AvailableResources[cfgapi.CPU] ||
+		cfg.ReservedResources[cfgapi.CPU] != p.cfg.ReservedResources[cfgapi.CPU] {
+		return fmt.Errorf("changing available or reserved CPUs needs a restart")
 	}
 	p.cfg = cfg
 	return nil
@@ -130,19 +141,6 @@ func (p *policy) GetTopologyZones() []*policyapi.TopologyZone {
 // to publish for this policy. The template policy publishes none.
 func (p *policy) GetExtendedResources() map[string]*resource.Quantity {
 	return nil
-}
-
-// AllocateClaim allocates resources for a claim being prepared.
-func (p *policy) AllocateClaim(
-	*resourceapi.ResourceClaim,
-	[]resourceapi.DeviceRequestAllocationResult,
-) ([]specs.ContainerEdits, error) {
-	return nil, policyapi.ErrNoDRAClaims
-}
-
-// ReleaseClaim releases the resources allocated for the given claim.
-func (p *policy) ReleaseClaim(types.UID) error {
-	return policyapi.ErrNoDRAClaims
 }
 
 // ExportResourceData provides resource data to export for the container.
