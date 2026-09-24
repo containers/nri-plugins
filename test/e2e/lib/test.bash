@@ -610,6 +610,7 @@ plugin-daemonset() { # script API
     case "$plugin" in
         *topology*aware*) echo nri-resource-policy-topology-aware;;
         *balloons*)       echo nri-resource-policy-balloons;;
+        *template*)       echo nri-resource-policy-template;;
         *memory-policy*)  echo nri-memory-policy;;
         *memtierd*)       echo nri-memtierd;;
         *)                error "plugin-daemonset: unknown plugin \"$plugin\"";;
