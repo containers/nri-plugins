@@ -30,7 +30,7 @@ relaunch-policy topology-aware "$TEST_DIR/helm-config.yaml"
 # it gets confined to an L3 cache group.
 ANN0='unlimited-burstable.resource-policy.nri.io/container.pod0c0: l3cache'
 ANN1='unlimited-burstable.resource-policy.nri.io/container.pod0c1: system'
-ANN2='unlimited-burstable.resource-policy.nri.io/container.pod0c2: socket'
+ANN2='unlimited-burstable.resource-policy.nri.io/container.pod0c2: package'
 CONTCOUNT=3 CPUREQ=1500m CPULIM=0 MEMREQ=100M create burstable
 unset ANN0 ANN1 ANN2
 report allowed
