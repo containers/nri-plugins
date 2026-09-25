@@ -216,6 +216,9 @@ func (p *balloons) Setup(policyOptions *policy.BackendOptions) error {
 	}
 	bpoptions = bpoptions.DeepCopy()
 
+	// We keep no policy data across restarts.
+	policyOptions.Cache.ResetPolicyEntries()
+
 	p.options = policyOptions
 	p.cch = policyOptions.Cache
 	p.cpuAllocator = cpuallocator.NewCPUAllocator(policyOptions.System)

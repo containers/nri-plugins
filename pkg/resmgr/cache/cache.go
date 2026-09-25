@@ -479,6 +479,9 @@ type Cache interface {
 
 	// ResetActivePolicy clears the active policy any any policy-specific data from the cache.
 	ResetActivePolicy() error
+	// ResetPolicyEntries resets the policy-specific data in the cache.
+	// It keeps the name of the active policy.
+	ResetPolicyEntries()
 
 	// SetPolicyEntry sets the policy entry for a key.
 	SetPolicyEntry(string, any)
@@ -610,14 +613,19 @@ func (cch *cache) SetActivePolicy(policy string) error {
 
 // ResetActivePolicy clears the active policy any any policy-specific data from the cache.
 func (cch *cache) ResetActivePolicy() error {
+	cch.ResetPolicyEntries()
+	cch.PolicyName = ""
+
+	return cch.Save()
+}
+
+// ResetPolicyEntries resets the policy-specific data in the cache.
+func (cch *cache) ResetPolicyEntries() {
 	log.Warnf("clearing all data for active policy (%q) from cache...",
 		cch.PolicyName)
 
-	cch.PolicyName = ""
 	cch.policyData = make(map[string]any)
 	cch.PolicyJSON = make(map[string]string)
-
-	return cch.Save()
 }
 
 // Insert a pod into the cache.

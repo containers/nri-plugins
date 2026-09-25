@@ -275,8 +275,12 @@ func (m *resmgr) setupCache() error {
 func (m *resmgr) setupPolicy(backend policy.Backend) error {
 	var err error
 
-	if err := m.cache.ResetActivePolicy(); err != nil {
-		log.Warnf("failed to reset active policy: %v", err)
+	// Clear the data of the previous policy. A policy resets its own data
+	// on startup.
+	if m.cache.GetActivePolicy() != backend.Name() {
+		if err := m.cache.ResetActivePolicy(); err != nil {
+			log.Warnf("failed to reset active policy: %v", err)
+		}
 	}
 
 	if err := m.cache.SetActivePolicy(backend.Name()); err != nil {

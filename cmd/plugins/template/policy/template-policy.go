@@ -64,6 +64,9 @@ func (p *policy) Setup(opts *policyapi.BackendOptions) error {
 		return fmt.Errorf("config data of wrong type %T", opts.Config)
 	}
 
+	// We keep no policy data across restarts.
+	opts.Cache.ResetPolicyEntries()
+
 	p.cfg = cfg
 	p.cache = opts.Cache
 	return nil

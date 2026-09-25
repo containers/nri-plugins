@@ -85,6 +85,24 @@ var _ = Describe("Cache", func() {
 		Expect(pod).To(BeNil())
 		Expect(ok).To(BeFalse())
 	})
+
+	It("clears restored policy entries but keeps the active policy", func() {
+		dir := GinkgoT().TempDir()
+
+		c, err := cache.NewCache(cache.Options{CacheDir: dir})
+		Expect(err).To(BeNil())
+		Expect(c.SetActivePolicy("test")).To(Succeed())
+		c.SetPolicyEntry("key", "value")
+		Expect(c.Save()).To(Succeed())
+
+		c, err = cache.NewCache(cache.Options{CacheDir: dir})
+		Expect(err).To(BeNil())
+		c.ResetPolicyEntries()
+
+		var value string
+		Expect(c.GetPolicyEntry("key", &value)).To(BeFalse())
+		Expect(c.GetActivePolicy()).To(Equal("test"))
+	})
 })
 
 func makeCache() cache.Cache {
