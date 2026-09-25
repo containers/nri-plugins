@@ -482,6 +482,17 @@ spec:
                       items:
                         type: string
                       type: array
+                    dra:
+                      description: DRA holds the DRA options of this class.
+                      properties:
+                        publish:
+                          description: |-
+                            Publish controls whether this class is published as DRA
+                            devices when DRA is enabled. Defaults to true. Only
+                            high-priority PCT classes are published, so an explicit
+                            true requires pctPriority "high" or sstClosID.
+                          type: boolean
+                      type: object
                     energyPerformancePreference:
                       description: EnergyPerformancePreference for CPUs in this class.
                       minimum: 0
