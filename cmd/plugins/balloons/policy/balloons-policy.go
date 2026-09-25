@@ -630,12 +630,6 @@ func (p *balloons) GetExtendedResources() map[string]*resource.Quantity {
 	return out
 }
 
-// DRADevices returns the DRA devices to publish for this policy. The balloons
-// policy publishes none.
-func (p *balloons) DRADevices() ([]resourceapi.Device, error) {
-	return nil, nil
-}
-
 // AllocateClaim allocates resources for a claim being prepared.
 func (p *balloons) AllocateClaim(
 	*resourceapi.ResourceClaim,

@@ -59,6 +59,16 @@ type ConstraintSet map[Domain]Constraint
 type Options struct {
 	// SendEvent is the function for delivering events back to the resource manager.
 	SendEvent SendEventFn
+	// Owner is the resource manager running the policy.
+	Owner Owner
+}
+
+// Owner is what a policy can ask of the resource manager running it.
+type Owner interface {
+	// PublishDRADevices publishes the given DRA devices, replacing the ones
+	// published before. A policy calls it whenever its devices change. The
+	// devices are copied, so the policy is free to change them afterwards.
+	PublishDRADevices([]resourceapi.Device) error
 }
 
 // BackendOptions describes the options for a policy backend instance
@@ -69,6 +79,8 @@ type BackendOptions struct {
 	Cache cache.Cache
 	// SendEvent is the function for delivering events up to the resource manager.
 	SendEvent SendEventFn
+	// Owner is the resource manager running the policy.
+	Owner Owner
 	// Config is the policy-specific configuration.
 	Config any
 }
@@ -135,11 +147,6 @@ type Backend interface {
 	// Returning nil or an empty map means the policy owns and
 	// publishes nothing.
 	GetExtendedResources() map[string]*resource.Quantity
-	// DRADevices returns the DRA devices this policy wants published, or nil
-	// if it publishes none. It also validates the policy's DRA-related
-	// configuration, so that a misconfigured policy is caught before any of
-	// its devices can be claimed.
-	DRADevices() ([]resourceapi.Device, error)
 	// AllocateClaim allocates resources for a claim being prepared. results
 	// are the claim's allocation results, already filtered to the devices of
 	// our own driver. The returned container edits correspond to results one
@@ -202,8 +209,6 @@ type Policy interface {
 	// GetExtendedResources returns the node-level extended
 	// resources the active policy manages on the local Node.
 	GetExtendedResources() map[string]*resource.Quantity
-	// DRADevices returns the DRA devices the active policy wants published.
-	DRADevices() ([]resourceapi.Device, error)
 	// AllocateClaim allocates resources for a claim being prepared.
 	AllocateClaim(
 		claim *resourceapi.ResourceClaim,
@@ -320,6 +325,7 @@ func (p *policy) Start(cfg any) error {
 		Cache:     p.cache,
 		System:    p.system,
 		SendEvent: p.options.SendEvent,
+		Owner:     p.options.Owner,
 		Config:    cfg,
 	}); err != nil {
 		return err
@@ -366,11 +372,6 @@ func (p *policy) ReleaseResources(c cache.Container) error {
 func (p *policy) UpdateResources(c cache.Container) error {
 	defer p.scollect.Update()
 	return p.active.UpdateResources(c)
-}
-
-// DRADevices returns the DRA devices the active policy wants published.
-func (p *policy) DRADevices() ([]resourceapi.Device, error) {
-	return p.active.DRADevices()
 }
 
 // AllocateClaim allocates resources for a claim being prepared.

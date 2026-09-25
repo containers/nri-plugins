@@ -132,12 +132,6 @@ func (p *policy) GetExtendedResources() map[string]*resource.Quantity {
 	return nil
 }
 
-// DRADevices returns the DRA devices to publish for this policy. The template
-// policy publishes none.
-func (p *policy) DRADevices() ([]resourceapi.Device, error) {
-	return nil, nil
-}
-
 // AllocateClaim allocates resources for a claim being prepared.
 func (p *policy) AllocateClaim(
 	*resourceapi.ResourceClaim,
