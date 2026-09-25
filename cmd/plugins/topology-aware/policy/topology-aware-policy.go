@@ -103,6 +103,9 @@ func (p *policy) Setup(opts *policyapi.BackendOptions) error {
 	}
 	log.Infof("initial configuration: %+v", cfg)
 
+	// We keep no policy data across restarts.
+	opts.Cache.ResetPolicyEntries()
+
 	p.cfg = cfg
 	p.cache = opts.Cache
 	p.sys = opts.System
