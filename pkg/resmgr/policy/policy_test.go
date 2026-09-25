@@ -28,17 +28,12 @@ import (
 type draBackend struct {
 	Backend
 
-	devices []resourceapi.Device
-	edits   []specs.ContainerEdits
-	err     error
+	edits []specs.ContainerEdits
+	err   error
 
 	claim     *resourceapi.ResourceClaim
 	results   []resourceapi.DeviceRequestAllocationResult
 	releaseID types.UID
-}
-
-func (b *draBackend) DRADevices() ([]resourceapi.Device, error) {
-	return b.devices, b.err
 }
 
 func (b *draBackend) AllocateClaim(
@@ -52,25 +47,6 @@ func (b *draBackend) AllocateClaim(
 func (b *draBackend) ReleaseClaim(uid types.UID) error {
 	b.releaseID = uid
 	return b.err
-}
-
-func TestDRADevices(t *testing.T) {
-	devices := []resourceapi.Device{{Name: "cpu-0"}}
-	backend := &draBackend{devices: devices}
-	p := &policy{active: backend}
-
-	got, err := p.DRADevices()
-	if err != nil {
-		t.Fatalf("DRADevices() failed: %v", err)
-	}
-	if len(got) != 1 || got[0].Name != devices[0].Name {
-		t.Errorf("DRADevices() returned %v, expected %v", got, devices)
-	}
-
-	backend.err = errors.New("misconfigured")
-	if _, err := p.DRADevices(); !errors.Is(err, backend.err) {
-		t.Errorf("DRADevices() returned error %v, expected %v", err, backend.err)
-	}
 }
 
 func TestAllocateClaim(t *testing.T) {

@@ -42,7 +42,6 @@ import (
 	"k8s.io/dynamic-resource-allocation/resourceslice"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
-	"github.com/containers/nri-plugins/pkg/resmgr/policy"
 )
 
 var log = logger.NewLogger("dra")
@@ -67,8 +66,6 @@ type Options struct {
 	// Owner is who we serialize kubelet requests against and ask to shut us
 	// down. Required.
 	Owner Owner
-	// Policy decides which devices this driver publishes. Required.
-	Policy policy.Policy
 	// RegistrarDir is where the plugin registration socket is created.
 	// Empty selects the kubelet's registry directory.
 	RegistrarDir string
@@ -83,12 +80,12 @@ type Plugin struct {
 	nodeName      string
 	kubeClient    kubernetes.Interface
 	owner         Owner
-	policy        policy.Policy
 	registrarDir  string
 	pluginDataDir string
 
-	mu     sync.Mutex // guards helper, the only mutable state
-	helper *kubeletplugin.Helper
+	mu      sync.Mutex // guards helper and devices, the only mutable state
+	helper  *kubeletplugin.Helper
+	devices []resourceapi.Device // the devices published last
 }
 
 var _ kubeletplugin.DRAPlugin = &Plugin{}
@@ -104,8 +101,6 @@ func New(driverName string, opts Options) (*Plugin, error) {
 		return nil, fmt.Errorf("dra: kube client must not be nil")
 	case opts.Owner == nil:
 		return nil, fmt.Errorf("dra: owner must not be nil")
-	case opts.Policy == nil:
-		return nil, fmt.Errorf("dra: policy must not be nil")
 	}
 
 	pluginDataDir := opts.PluginDataDir
@@ -118,7 +113,6 @@ func New(driverName string, opts Options) (*Plugin, error) {
 		nodeName:      opts.NodeName,
 		kubeClient:    opts.KubeClient,
 		owner:         opts.Owner,
-		policy:        opts.Policy,
 		registrarDir:  opts.RegistrarDir,
 		pluginDataDir: pluginDataDir,
 	}, nil
@@ -135,14 +129,6 @@ func (p *Plugin) Start(ctx context.Context) error {
 
 	if err := os.MkdirAll(p.pluginDataDir, 0750); err != nil {
 		return fmt.Errorf("dra: failed to create plugin directory %q: %w", p.pluginDataDir, err)
-	}
-
-	// Ask the policy for its devices before registering: this is also where the
-	// policy validates its DRA configuration, and a policy which cannot say
-	// what it offers must not end up as a registered driver.
-	resources, err := p.driverResources()
-	if err != nil {
-		return err
 	}
 
 	opts := []kubeletplugin.Option{
@@ -167,7 +153,7 @@ func (p *Plugin) Start(ctx context.Context) error {
 	// This publishes nothing yet, it starts the controller which does. Actual
 	// publication failures turn up asynchronously in HandleError, which retries
 	// them. Failing here means we could not get as far as trying.
-	if err := helper.PublishResources(ctx, resources); err != nil {
+	if err := helper.PublishResources(ctx, p.driverResources()); err != nil {
 		helper.Stop()
 		return fmt.Errorf("dra: failed to start publishing resources for driver %q: %w",
 			p.driverName, err)
@@ -197,6 +183,29 @@ func (p *Plugin) Stop() {
 
 	log.Infof("unregistering DRA driver %q...", p.driverName)
 	helper.Stop()
+}
+
+// Publish replaces the published devices with the given ones. Devices published
+// before the plugin is started get published when it starts.
+func (p *Plugin) Publish(devices []resourceapi.Device) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.devices = make([]resourceapi.Device, len(devices))
+	for i := range devices {
+		devices[i].DeepCopyInto(&p.devices[i])
+	}
+
+	if p.helper == nil {
+		return nil
+	}
+
+	// This only hands the devices over to the controller which publishes them.
+	if err := p.helper.PublishResources(context.Background(), p.driverResources()); err != nil {
+		return fmt.Errorf("dra: failed to publish resources for driver %q: %w", p.driverName, err)
+	}
+
+	return nil
 }
 
 // PrepareResourceClaims prepares resources for the given claims.
@@ -251,7 +260,7 @@ func (p *Plugin) HandleError(_ context.Context, err error, msg string) {
 }
 
 // driverResources returns the resources to publish for this driver: the devices
-// of the active policy, in a single pool named after our node. The devices are
+// published last, in a single pool named after our node. The devices are
 // passed on as the policy described them, attributes and all: what they mean
 // is the policy's business, not ours.
 //
@@ -264,15 +273,9 @@ func (p *Plugin) HandleError(_ context.Context, err error, msg string) {
 // That states that the driver is alive and currently offers nothing, and it
 // replaces whatever we published before, so a policy which stops offering
 // devices does not leave a stale slice behind.
-func (p *Plugin) driverResources() (resourceslice.DriverResources, error) {
-	devices, err := p.policy.DRADevices()
-	if err != nil {
-		return resourceslice.DriverResources{},
-			fmt.Errorf("dra: policy failed to provide DRA devices: %w", err)
-	}
-
+func (p *Plugin) driverResources() resourceslice.DriverResources {
 	var published []resourceslice.Slice
-	for chunk := range slices.Chunk(devices, resourceapi.ResourceSliceMaxDevices) {
+	for chunk := range slices.Chunk(p.devices, resourceapi.ResourceSliceMaxDevices) {
 		published = append(published, resourceslice.Slice{Devices: chunk})
 	}
 	if published == nil {
@@ -285,5 +288,5 @@ func (p *Plugin) driverResources() (resourceslice.DriverResources, error) {
 				Slices: published,
 			},
 		},
-	}, nil
+	}
 }

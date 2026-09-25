@@ -17,6 +17,8 @@ package resmgr
 import (
 	"context"
 
+	resourceapi "k8s.io/api/resource/v1"
+
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1"
 	"github.com/containers/nri-plugins/pkg/resmgr/dra"
 )
@@ -63,7 +65,6 @@ func (m *resmgr) setupDRA(cfg *cfgapi.DRAConfig) error {
 		NodeName:   nodeName,
 		KubeClient: client,
 		Owner:      m,
-		Policy:     m.policy,
 	})
 	if err != nil {
 		return resmgrError("failed to create DRA plugin: %v", err)
@@ -84,6 +85,16 @@ func (m *resmgr) startDRA() error {
 	}
 
 	return nil
+}
+
+// PublishDRADevices publishes the DRA devices of the policy, if DRA is enabled.
+// The policy calls it with our lock held, so it must not take the lock.
+func (m *resmgr) PublishDRADevices(devices []resourceapi.Device) error {
+	if m.dra == nil {
+		return nil
+	}
+
+	return m.dra.Publish(devices)
 }
 
 // reconfigureDRA rejects turning DRA on or off in a running plugin. Both

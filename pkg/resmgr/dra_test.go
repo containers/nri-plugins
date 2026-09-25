@@ -34,11 +34,6 @@ var (
 	draOff = false
 )
 
-// DRADevices makes the test policy one which publishes no devices.
-func (testPolicy) DRADevices() ([]resourceapi.Device, error) {
-	return nil, nil
-}
-
 // newTestAgent returns an agent with the given node name and no kubernetes
 // client, which is what an agent looks like before it is started.
 func newTestAgent(t *testing.T, nodeName string) *agent.Agent {
@@ -96,10 +91,14 @@ func TestSetupDRA(t *testing.T) {
 				t.Error("setupDRA() created a plugin, expected none")
 			}
 
-			// Starting and stopping must be no-ops without a plugin: resmgr
-			// runs through both paths whether DRA came up or not.
+			// Starting, publishing and stopping must be no-ops without a
+			// plugin: resmgr and the policy run through these paths whether
+			// DRA came up or not.
 			if err := m.startDRA(); err != nil {
 				t.Errorf("startDRA() without a plugin failed: %v", err)
+			}
+			if err := m.PublishDRADevices([]resourceapi.Device{{Name: "cpu-0"}}); err != nil {
+				t.Errorf("PublishDRADevices() without a plugin failed: %v", err)
 			}
 			m.dra.Stop()
 		})
@@ -154,7 +153,6 @@ func TestStopStopsDRABeforeTakingTheLock(t *testing.T) {
 		NodeName:      "test-node",
 		KubeClient:    fake.NewClientset(),
 		Owner:         m,
-		Policy:        testPolicy{},
 		RegistrarDir:  t.TempDir(),
 		PluginDataDir: pluginDir,
 	})
