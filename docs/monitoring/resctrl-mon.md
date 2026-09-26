@@ -21,7 +21,20 @@ approaches.
    (If the PID is not yet available, `PostStartContainer` retries.)
 6. The runtime starts the container. All child processes inherit the RMID.
 7. Kepler scans the resctrl filesystem and reads monitoring data.
-8. When the last container in a pod stops, the plugin removes the `mon_group`.
+8. The `mon_group` lives for the lifetime of the pod *sandbox*, not the
+   individual container. It is **not** removed when a container stops or
+   restarts, so the pod keeps a stable RMID across container restarts.
+   (Releasing and re-allocating an RMID would hand the replacement container a
+   recycled RMID whose counters still carry the previous tenant's residual,
+   producing a false energy/occupancy spike.)
+9. When the pod's last sandbox is removed, the plugin removes the `mon_group`
+   in the NRI `RemovePodSandbox` hook. Removing an older sandbox of a live pod
+   (kubelet garbage collection after a sandbox is recreated) keeps it. If the
+   teardown is missed (for example while the plugin is disconnected), the next
+   NRI `Synchronize` reaps the stale
+   `mon_group` using the runtime's authoritative pod list. A background
+   reconciler additionally retries removals that failed transiently and clears
+   untracked directories left behind by an earlier plugin process.
 
 The plugin DaemonSet runs with `hostPID: true` so that it can write
 host-namespace PIDs to the resctrl `tasks` file. Without `hostPID`,
@@ -42,7 +55,9 @@ by querying the K8s API using the pod UID extracted from the directory name.
 ## Plugin Configuration
 
 Configuration is loaded from a YAML file specified with the `-config` flag
-or pushed by the container runtime via NRI.
+or pushed by the container runtime via NRI. It is read once at startup; to
+apply a change, restart the plugin (for example
+`kubectl rollout restart daemonset/nri-resctrl-mon -n <namespace>`).
 
 ```yaml
 # Path to the resctrl filesystem. Override for testing.
@@ -55,7 +70,65 @@ namespaces: []
 # Pod label selector: only create mon_groups for pods matching these labels.
 # Empty = all pods.
 labelSelector: {}
+
+# Embedded OpenTelemetry exporter. Exposes a Prometheus /metrics endpoint
+# and/or pushes metrics via OTLP.
+telemetry:
+  prometheus:
+    enabled: true
+    listenAddress: ":9100"
+    # Metric-name prefix. Leave empty: a non-empty value renames every series
+    # and breaks the bundled Grafana dashboards (which query l3_*/perf_*).
+    namespace: ""
+  otlp:
+    enabled: false
+    endpoint: ""             # e.g. "otel-collector-resctrl.monitoring.svc:4317"
+    protocol: grpc           # grpc | http
+    interval: 15s            # must be a positive duration
+    insecure: true
+  perfCounters:
+    enabled: false           # gate rdt=perf counters (c1_res, stalls_*, etc.)
+    include: []              # glob patterns for counters to include
+    exclude: []              # glob patterns for counters to exclude
+  resourceAttributes: {}     # static OTel resource attributes on all metrics
 ```
+
+If telemetry cannot start (for example, its port is in use), the plugin logs
+an error and keeps managing `mon_groups` without it. When the plugin runs in
+the host network namespace (for example, launched by the runtime), the default
+`:9100` collides with node_exporter; set `telemetry.prometheus.listenAddress`
+or disable Prometheus.
+
+## Metrics
+
+The Prometheus endpoint exports these metrics per pod `mon_group` and domain:
+
+| Prometheus name                 | Type    | Unit   | Source file                   |
+| ------------------------------- | ------- | ------ | ----------------------------- |
+| `l3_llc_occupancy_bytes`        | gauge   | bytes  | `mon_L3_*/llc_occupancy`      |
+| `l3_mbm_local_bytes_total`      | counter | bytes  | `mon_L3_*/mbm_local_bytes`    |
+| `l3_mbm_bytes_total`            | counter | bytes  | `mon_L3_*/mbm_total_bytes`    |
+| `perf_core_energy_joules_total` | counter | joules | `mon_PERF_PKG_*/core_energy`  |
+| `perf_activity_farads_total`    | counter | farads | `mon_PERF_PKG_*/activity`     |
+
+Other `mon_PERF_PKG_*` counters (`c1_res`, `stalls_*`, ...) are exported only
+when `telemetry.perfCounters.enabled` is true. Names follow goresctrl's
+[naming rules](https://github.com/intel/goresctrl/blob/main/doc/resctrl-mon.md)
+under the `UnderscoreEscapingWithSuffixes` translation strategy, which the
+plugin pins.
+
+Labels (OTLP uses the dotted attribute names, e.g. `k8s.pod.uid`):
+
+- `domain_id`: domain instance, e.g. `00`.
+- `domain_name`: domain directory, e.g. `mon_L3_00`.
+- `k8s_pod_uid`: the pod UID (the `mon_group` name).
+- `resctrl_control_group`: the parent control group (RDT class); empty for the
+  root group.
+- `resctrl_group_source`: always `pod`.
+- `k8s_node_name`: the node name, from the `NODE_NAME` environment variable.
+- Each key in `telemetry.resourceAttributes`. A key must not map to one of the
+  labels above (for example `k8s.pod.uid` or `domain_id`) or to another key's
+  label; such a configuration is rejected.
 
 ## Coexistence with Allocation Plugins
 
@@ -81,6 +154,33 @@ RMID allocation is delegated entirely to the Linux kernel:
   warning and skips the pod.
 - **Deallocation**: `rmdir` releases the RMID. The kernel handles the
   hardware recycling window.
+
+## Limitations
+
+- **PID assignment moves one task.** Writing a PID to a `tasks` file moves
+  only that thread. Threads and children that already exist stay where they
+  are. Containers that started while the plugin was down (adopted in
+  `Synchronize`), or whose PID is assigned only in `PostStartContainer`, are
+  partly attributed until they restart.
+- **One control group per pod.** A pod's `mon_group` lives under one RDT class.
+  A container in a different class (for example, a sidecar) is not monitored,
+  because assigning it would overwrite its allocation.
+- **Uninstall leaves groups behind.** Removing the plugin leaves the pods'
+  `mon_groups` (and their RMIDs) in place. To release them, run this as root
+  on each node. It removes every UUID-named `mon_group`, including any that
+  another tool owns:
+
+  ```bash
+  find /sys/fs/resctrl -mindepth 2 -maxdepth 3 -type d -regextype posix-extended \
+    -regex '.*/mon_groups/[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}' -exec rmdir {} +
+  ```
+
+- **RMID exhaustion.** When no RMID is free, the plugin logs a warning for each
+  container and the pod is not monitored. Use `namespaces` or `labelSelector`
+  to limit monitoring to the pods that matter.
+- **Ownership.** The plugin reconciles every UUID-named `mon_group`: it keeps
+  the groups of all live pods (including filtered ones) and removes the rest.
+  Other tools must not create UUID-named groups for anything else.
 
 ## Developer's Guide
 
