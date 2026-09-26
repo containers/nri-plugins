@@ -334,7 +334,19 @@ func (p *nriPlugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, con
 	m.updateTopologyZones()
 	m.updateNodeExtendedResources()
 
-	return p.getPendingUpdates(nil), nil
+	updates = p.getPendingUpdates(nil)
+
+	// The policy knows about the running containers now, so DRA claims can be
+	// served. Until this point they are refused: the policy has not seen the
+	// containers already running, so a claim would be allocated against the
+	// resources of a node which looks empty.
+	//
+	// This must be the last thing we do. A claim is served with our lock held,
+	// but this handler is the only one which runs without it, so a claim let in
+	// any earlier would touch the cache while we still are.
+	m.dra.AllowClaims()
+
+	return updates, nil
 }
 
 func (p *nriPlugin) RunPodSandbox(ctx context.Context, pod *api.PodSandbox) (retErr error) {
@@ -701,6 +713,9 @@ func (p *nriPlugin) RemoveContainer(ctx context.Context, pod *api.PodSandbox, co
 // from the containers once the runtime has them: an update lost on the way out
 // is the only record of what the container should look like, so dropping it
 // would leave the container as it is with nothing left to retry it with.
+//
+// Updates the runtime rejects are an error too, although they stay pending for
+// the next push: a caller must not act as if the containers had been updated.
 func (p *nriPlugin) updateContainers() (retErr error) {
 	// Notes: must be called with p.resmgr lock held.
 
@@ -718,6 +733,10 @@ func (p *nriPlugin) updateContainers() (retErr error) {
 	}
 
 	p.clearPendingUpdates(updates, failed)
+
+	if len(failed) > 0 {
+		return fmt.Errorf("runtime failed to update %d container(s)", len(failed))
+	}
 
 	return nil
 }

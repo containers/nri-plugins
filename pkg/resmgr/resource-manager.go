@@ -208,11 +208,20 @@ func (m *resmgr) start(cfg cfgapi.ResmgrConfig) error {
 		return err
 	}
 
-	if err := m.startDRA(); err != nil {
+	if err := m.nri.start(); err != nil {
 		return err
 	}
 
-	if err := m.nri.start(); err != nil {
+	// DRA is started after NRI: a claim the kubelet sends us is allocated by the
+	// policy, and the containers which have to give up resources for it are
+	// updated through NRI, so there is no answering a claim before NRI is up.
+	//
+	// Being up is not enough, though. nri.start() returns once the runtime has
+	// answered Configure, and the containers already running only reach the
+	// policy with the Synchronize which follows, so the plugin refuses claims
+	// until that has completed. Registering the driver here rather than there
+	// keeps startup in one place and publishes our resources right away.
+	if err := m.startDRA(); err != nil {
 		return err
 	}
 

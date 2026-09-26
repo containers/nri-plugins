@@ -34,14 +34,15 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"sync/atomic"
 
 	resourceapi "k8s.io/api/resource/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
+	"github.com/containers/nri-plugins/pkg/resmgr/policy"
 )
 
 var log = logger.NewLogger("dra")
@@ -50,6 +51,13 @@ var log = logger.NewLogger("dra")
 type Owner interface {
 	// The plugin takes the lock for every kubelet request.
 	sync.Locker
+	// ClaimAllocated and ClaimReleased commit an allocation change the policy
+	// just made for a claim. They are called with the lock held, once per
+	// claim, and they are what make the change outlive us and reach the
+	// containers it affects. An error from ClaimAllocated means the claim's
+	// resources may still be in use by other containers.
+	ClaimAllocated() error
+	ClaimReleased() error
 	// RequestShutdown asks the owner to shut down, for errors the plugin cannot
 	// recover from. It runs on the very goroutine whose failure it reports, and
 	// Stop() waits for that goroutine, so it must not stop us from there: it
@@ -66,12 +74,17 @@ type Options struct {
 	// Owner is who we serialize kubelet requests against and ask to shut us
 	// down. Required.
 	Owner Owner
+	// Policy allocates the resources of the claims we prepare. Required.
+	Policy policy.Policy
 	// RegistrarDir is where the plugin registration socket is created.
 	// Empty selects the kubelet's registry directory.
 	RegistrarDir string
 	// PluginDataDir is where the plugin's own socket is created.
 	// Empty selects the driver's directory under the kubelet plugin directory.
 	PluginDataDir string
+	// CDIDir is where the CDI specs of prepared claims are written.
+	// Empty selects the CDI directory runtimes watch for generated specs.
+	CDIDir string
 }
 
 // Plugin is a DRA kubelet plugin.
@@ -80,12 +93,19 @@ type Plugin struct {
 	nodeName      string
 	kubeClient    kubernetes.Interface
 	owner         Owner
+	policy        policy.Policy
 	registrarDir  string
 	pluginDataDir string
+	cdi           *cdiStore
 
-	mu      sync.Mutex // guards helper and devices, the only mutable state
+	mu      sync.Mutex // guards helper and devices
 	helper  *kubeletplugin.Helper
 	devices []resourceapi.Device // the devices published last
+
+	// allowed gates the claim handlers. It is set once, when the owner has
+	// synchronized with the container runtime, and never cleared: losing the
+	// runtime connection takes the whole process down with it.
+	allowed atomic.Bool
 }
 
 var _ kubeletplugin.DRAPlugin = &Plugin{}
@@ -101,6 +121,8 @@ func New(driverName string, opts Options) (*Plugin, error) {
 		return nil, fmt.Errorf("dra: kube client must not be nil")
 	case opts.Owner == nil:
 		return nil, fmt.Errorf("dra: owner must not be nil")
+	case opts.Policy == nil:
+		return nil, fmt.Errorf("dra: policy must not be nil")
 	}
 
 	pluginDataDir := opts.PluginDataDir
@@ -108,13 +130,20 @@ func New(driverName string, opts Options) (*Plugin, error) {
 		pluginDataDir = filepath.Join(kubeletplugin.KubeletPluginsDir, driverName)
 	}
 
+	store, err := newCDIStore(driverName, opts.CDIDir)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Plugin{
 		driverName:    driverName,
 		nodeName:      opts.NodeName,
 		kubeClient:    opts.KubeClient,
 		owner:         opts.Owner,
+		policy:        opts.Policy,
 		registrarDir:  opts.RegistrarDir,
 		pluginDataDir: pluginDataDir,
+		cdi:           store,
 	}, nil
 }
 
@@ -164,6 +193,23 @@ func (p *Plugin) Start(ctx context.Context) error {
 	return nil
 }
 
+// AllowClaims lets the plugin serve claims. The driver is registered with the
+// kubelet as soon as the plugin starts, but a claim must not be allocated while
+// the owner is still synchronizing its own state with the container runtime: the
+// allocation would run concurrently with that synchronization, and a commit made
+// during it does not stick. The owner calls this once it has synchronized.
+//
+// Until then claims are refused with an error, which costs nothing but a retry:
+// the kubelet asks again, and a pod needing a claim cannot start before the
+// containers already running have been synchronized anyway.
+func (p *Plugin) AllowClaims() {
+	if p == nil {
+		return
+	}
+
+	p.allowed.Store(true)
+}
+
 // Stop unregisters the plugin and stops serving kubelet requests. Stop must
 // not be called with the Locker held: a request in flight holds the Locker
 // and Stop waits for it to finish.
@@ -208,39 +254,12 @@ func (p *Plugin) Publish(devices []resourceapi.Device) error {
 	return nil
 }
 
-// PrepareResourceClaims prepares resources for the given claims.
-func (p *Plugin) PrepareResourceClaims(_ context.Context, claims []*resourceapi.ResourceClaim) (map[types.UID]kubeletplugin.PrepareResult, error) {
-	p.owner.Lock()
-	defer p.owner.Unlock()
-
-	if len(claims) > 0 {
-		// This driver publishes no devices yet, so no claim can name it.
-		log.Warnf("asked to prepare %d claim(s) for a driver with no devices", len(claims))
-	}
-
-	result := make(map[types.UID]kubeletplugin.PrepareResult, len(claims))
-	for _, claim := range claims {
-		result[claim.UID] = kubeletplugin.PrepareResult{}
-	}
-
-	return result, nil
-}
-
-// UnprepareResourceClaims releases the resources prepared for the given claims.
-func (p *Plugin) UnprepareResourceClaims(_ context.Context, claims []kubeletplugin.NamespacedObject) (map[types.UID]error, error) {
-	p.owner.Lock()
-	defer p.owner.Unlock()
-
-	if len(claims) > 0 {
-		log.Warnf("asked to unprepare %d claim(s) for a driver with no devices", len(claims))
-	}
-
-	result := make(map[types.UID]error, len(claims))
-	for _, claim := range claims {
-		result[claim.UID] = nil
-	}
-
-	return result, nil
+// WatchHealthStatus declines to report device health. Our devices are the
+// node's own CPUs and memory: the kubelet already knows whether the node is
+// healthy, and there is nothing per-device we could tell it that it does not
+// know. Declining makes the kubelet stop asking.
+func (p *Plugin) WatchHealthStatus(_ context.Context, _ chan<- kubeletplugin.DeviceHealthReport) error {
+	return kubeletplugin.ErrHealthNotSupported
 }
 
 // HandleError handles errors the kubeletplugin helper runs into in the
