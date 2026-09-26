@@ -241,6 +241,19 @@ func (p *plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, contai
 	for _, pod := range pods {
 		p.addSandbox(pod)
 	}
+	// Adopt each monitored pod's existing group under its original class first,
+	// so container order cannot create a duplicate under another class.
+	existing := existingGroupClasses(p.config.ResctrlPath)
+	for _, pod := range pods {
+		uid := monitor.CanonicalizePodUID(pod.GetUid())
+		class, ok := existing[uid]
+		if !ok || !p.shouldMonitorPod(pod) {
+			continue
+		}
+		if _, err := mgr.EnsureGroup(uid, class); err != nil {
+			log.Warnf("Synchronize: failed to adopt mon_group %s under class %q: %v", uid, class, err)
+		}
+	}
 	for _, ctr := range containers {
 		pod, ok := podBySandboxID[ctr.GetPodSandboxId()]
 		if !ok {
@@ -349,6 +362,10 @@ func (p *plugin) startReconciler() {
 // RMID once the kernel releases the directory. The caller must hold opMu.
 func (p *plugin) reconcile(mgr resctrlManager) {
 	for _, key := range p.pendingRemovalKeys() {
+		if _, live := p.sandboxes[monitor.CanonicalizePodUID(key)]; live {
+			p.clearPendingRemoval(key)
+			continue
+		}
 		switch err := mgr.Remove(key); {
 		case err == nil, errors.Is(err, monitor.ErrNotTracked):
 			p.clearPendingRemoval(key)
@@ -377,6 +394,33 @@ func (p *plugin) addSandbox(pod *api.PodSandbox) {
 		p.sandboxes[uid] = make(map[string]struct{})
 	}
 	p.sandboxes[uid][pod.GetId()] = struct{}{}
+}
+
+// existingGroupClasses maps each pod-UID-named mon_group on disk to its parent
+// RDT class ("" for the root group).
+func existingGroupClasses(root string) map[string]string {
+	classes := make(map[string]string)
+	scan := func(class, dir string) {
+		entries, err := os.ReadDir(filepath.Join(dir, "mon_groups"))
+		if err != nil {
+			return
+		}
+		for _, e := range entries {
+			if e.IsDir() && monitor.PodUIDValidator(e.Name()) {
+				classes[monitor.CanonicalizePodUID(e.Name())] = class
+			}
+		}
+	}
+	scan("", root)
+	entries, _ := os.ReadDir(root)
+	for _, e := range entries {
+		switch name := e.Name(); {
+		case !e.IsDir(), name == "info", name == "mon_data", name == "mon_groups":
+		default:
+			scan(name, filepath.Join(root, name))
+		}
+	}
+	return classes
 }
 
 // reconcileLiveSet returns the union of the Manager's tracked keys and the live
