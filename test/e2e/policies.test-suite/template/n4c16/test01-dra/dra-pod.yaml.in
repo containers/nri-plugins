@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${NAME}
+spec:
+  resourceClaims:
+  - name: cpus
+    resourceClaimTemplateName: ${CLAIM}
+  containers:
+  - name: ${NAME}c0
+    image: quay.io/prometheus/busybox
+    imagePullPolicy: IfNotPresent
+    command:
+      - sh
+      - -c
+      - echo ${NAME}c0 \$(sleep inf)
+    resources:
+      claims:
+      - name: cpus
+  terminationGracePeriodSeconds: 1

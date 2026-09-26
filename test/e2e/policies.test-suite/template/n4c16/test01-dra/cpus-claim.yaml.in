@@ -1,0 +1,14 @@
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: ${NAME}
+spec:
+  spec:
+    devices:
+      requests:
+      - name: cpus
+        exactly:
+          deviceClassName: template.nri.io
+          capacity:
+            requests:
+              cpus: '${CPUS}'
