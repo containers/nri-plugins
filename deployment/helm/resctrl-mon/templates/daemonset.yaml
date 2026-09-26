@@ -13,6 +13,13 @@ spec:
     metadata:
       labels:
       {{- include "nri-plugin.labels" . | nindent 8 }}
+      {{- if .Values.telemetry.prometheus.enabled }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ include "nri-resctrl-mon.metricsPort" . }}"
+        prometheus.io/path: "/metrics"
+        prometheus.io/interval: "{{ .Values.telemetry.prometheus.scrapeInterval }}"
+      {{- end }}
     spec:
     {{- with .Values.tolerations }}
       tolerations:
@@ -61,6 +68,17 @@ spec:
             - -v
           image: {{ .Values.image.name }}:{{ .Values.image.tag | default .Chart.AppVersion }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          {{- if .Values.telemetry.prometheus.enabled }}
+          ports:
+            - name: metrics
+              containerPort: {{ include "nri-resctrl-mon.metricsPort" . | int }}
+              protocol: TCP
+          {{- end }}
           resources:
             requests:
               cpu: {{ .Values.resources.cpu }}
