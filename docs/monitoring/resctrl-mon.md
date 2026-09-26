@@ -126,7 +126,9 @@ Labels (OTLP uses the dotted attribute names, e.g. `k8s.pod.uid`):
   root group.
 - `resctrl_group_source`: always `pod`.
 - `k8s_node_name`: the node name, from the `NODE_NAME` environment variable.
-- Each key in `telemetry.resourceAttributes`.
+- Each key in `telemetry.resourceAttributes`. A key must not map to one of the
+  labels above (for example `k8s.pod.uid` or `domain_id`) or to another key's
+  label; such a configuration is rejected.
 
 ## Coexistence with Allocation Plugins
 

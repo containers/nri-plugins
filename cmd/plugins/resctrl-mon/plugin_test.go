@@ -479,6 +479,40 @@ func TestReconcile_RetriesPendingRemoval(t *testing.T) {
 	assert.True(t, os.IsNotExist(err), "pending mon_group should have been removed on retry")
 }
 
+// TestReconcile_KeepsPendingGroupOfLiveSandbox verifies that a failed removal is
+// dropped, not retried, once a live sandbox of the same pod is recorded.
+func TestReconcile_KeepsPendingGroupOfLiveSandbox(t *testing.T) {
+	p := newTestPlugin(t.TempDir())
+	const uid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+	_, err := p.mgr.EnsureGroup(uid, "")
+	require.NoError(t, err)
+	p.markPendingRemoval(uid)
+	p.addSandbox(makePod(uid, "default", "app"))
+
+	p.reconcile(p.mgr)
+	assert.Contains(t, p.mgr.List(), uid)
+	assert.Empty(t, p.pendingRemovalKeys())
+}
+
+// TestSynchronize_AdoptsExistingGroupClass verifies that on restart a pod's
+// existing group keeps its class even when an off-class container is listed
+// first, instead of a duplicate being created under the other class.
+func TestSynchronize_AdoptsExistingGroupClass(t *testing.T) {
+	tmpDir := t.TempDir()
+	p := newTestPlugin(tmpDir)
+	const uid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "BestEffort", "mon_groups", uid), 0o755))
+
+	pod := makePod(uid, "default", "app")
+	sidecar := makeContainer("c1", "sidecar", pod.GetId(), 0, "")
+	app := makeContainer("c2", "app", pod.GetId(), 0, "BestEffort")
+	_, err := p.Synchronize(context.Background(), []*api.PodSandbox{pod}, []*api.Container{sidecar, app})
+	require.NoError(t, err)
+
+	assert.DirExists(t, filepath.Join(tmpDir, "BestEffort", "mon_groups", uid))
+	assert.NoDirExists(t, filepath.Join(tmpDir, "mon_groups", uid))
+}
+
 func TestPostCreateContainer_InvalidUID(t *testing.T) {
 	p := newTestPlugin(t.TempDir())
 
