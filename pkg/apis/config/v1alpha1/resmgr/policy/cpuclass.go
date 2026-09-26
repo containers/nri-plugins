@@ -99,6 +99,29 @@ type CPUClass struct {
 	// on a single node. Has effect only when the class also carries
 	// PctPriority or SstClosID. Experimental.
 	PublishExtendedResource bool `json:"publishExtendedResource,omitempty"`
+	// DRA holds the DRA options of this class.
+	// +optional
+	DRA *CPUClassDRA `json:"dra,omitempty"`
+}
+
+// CPUClassDRA holds the DRA options of a CPU class.
+// +k8s:deepcopy-gen=true
+type CPUClassDRA struct {
+	// Publish controls whether this class is published as DRA
+	// devices when DRA is enabled. Defaults to true. Only
+	// high-priority PCT classes are published, so an explicit
+	// true requires pctPriority "high" or sstClosID.
+	// +optional
+	Publish *bool `json:"publish,omitempty"`
+}
+
+// DRAPublish reports whether this class should be published as DRA
+// devices, if it turns out to be a high-priority class at runtime.
+func (cc *CPUClass) DRAPublish() bool {
+	if cc.DRA == nil || cc.DRA.Publish == nil {
+		return true
+	}
+	return *cc.DRA.Publish
 }
 
 func (cc *CPUClass) Validate() error {
@@ -142,6 +165,14 @@ func (cc *CPUClass) Validate() error {
 	// published.
 	if cc.PublishExtendedResource && cc.PctPriority == "" && cc.SstClosID == nil {
 		return fmt.Errorf("cpuClass %q: publishExtendedResource requires the cpuClass to be a PCT class (set pctPriority or sstClosID)", cc.Name)
+	}
+	// Only high-priority classes are published as DRA devices.
+	// Whether an assoc-only class is one depends on how its CLOS
+	// is programmed, which is known only at runtime, so only a
+	// class which can never be one is rejected here.
+	if cc.DRA != nil && cc.DRA.Publish != nil && *cc.DRA.Publish &&
+		cc.PctPriority != "high" && cc.SstClosID == nil {
+		return fmt.Errorf("cpuClass %q: dra.publish requires a high-priority PCT class (set pctPriority \"high\" or sstClosID)", cc.Name)
 	}
 
 	return nil
