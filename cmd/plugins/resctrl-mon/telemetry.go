@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -132,7 +133,32 @@ func validateTelemetryConfig(cfg *telemetryConfig) error {
 	if cfg.Prometheus.ListenAddress == "" {
 		cfg.Prometheus.ListenAddress = ":9100"
 	}
+	// Resource attributes become constant labels on every sample; a duplicate
+	// label name would fail the whole scrape.
+	labels := map[string]string{"k8s_node_name": "k8s.node.name"}
+	for k := range cfg.ResourceAttributes {
+		name, err := (&otlptranslator.LabelNamer{}).Build(k)
+		if err != nil {
+			return fmt.Errorf("telemetry: resourceAttributes key %q: %w", k, err)
+		}
+		if dataPointLabels[name] || strings.HasPrefix(name, "otel_scope_") {
+			return fmt.Errorf("telemetry: resourceAttributes key %q collides with the metric label %q", k, name)
+		}
+		if prev, ok := labels[name]; ok && prev != k {
+			return fmt.Errorf("telemetry: resourceAttributes keys %q and %q both map to label %q", prev, k, name)
+		}
+		labels[name] = k
+	}
 	return nil
+}
+
+// dataPointLabels are the Prometheus labels every sample already carries.
+var dataPointLabels = map[string]bool{
+	"domain_id":             true,
+	"domain_name":           true,
+	"k8s_pod_uid":           true,
+	"resctrl_control_group": true,
+	"resctrl_group_source":  true,
 }
 
 // newTelemetry creates the MeterProvider with configured exporters.

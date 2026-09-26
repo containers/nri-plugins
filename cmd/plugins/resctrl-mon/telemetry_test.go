@@ -323,6 +323,22 @@ func TestValidateTelemetryConfig(t *testing.T) {
 		cfg.PerfCounters.Exclude = []string{"c1_res"}
 		assert.Error(t, validateTelemetryConfig(&cfg))
 	})
+
+	t.Run("resource attribute label collisions", func(t *testing.T) {
+		for _, attrs := range []map[string]string{
+			{"k8s.pod.uid": "x"},
+			{"domain_id": "x"},
+			{"team.name": "a", "team_name": "b"},
+			{"k8s_node_name": "x"},
+		} {
+			cfg := defaultTelemetryConfig()
+			cfg.ResourceAttributes = attrs
+			assert.Error(t, validateTelemetryConfig(&cfg), "%v", attrs)
+		}
+		cfg := defaultTelemetryConfig()
+		cfg.ResourceAttributes = map[string]string{"k8s.node.name": "n1", "cluster": "c1"}
+		assert.NoError(t, validateTelemetryConfig(&cfg))
+	})
 }
 
 func TestInstrumentNaming(t *testing.T) {
