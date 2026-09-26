@@ -19,7 +19,10 @@ import (
 	"fmt"
 	"sort"
 
+	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/types"
+	specs "tags.cncf.io/container-device-interface/specs-go"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
@@ -56,6 +59,16 @@ type ConstraintSet map[Domain]Constraint
 type Options struct {
 	// SendEvent is the function for delivering events back to the resource manager.
 	SendEvent SendEventFn
+	// Owner is the resource manager running the policy.
+	Owner Owner
+}
+
+// Owner is what a policy can ask of the resource manager running it.
+type Owner interface {
+	// PublishDRADevices publishes the given DRA devices, replacing the ones
+	// published before. A policy calls it whenever its devices change. The
+	// devices are copied, so the policy is free to change them afterwards.
+	PublishDRADevices([]resourceapi.Device) error
 }
 
 // BackendOptions describes the options for a policy backend instance
@@ -66,6 +79,8 @@ type BackendOptions struct {
 	Cache cache.Cache
 	// SendEvent is the function for delivering events up to the resource manager.
 	SendEvent SendEventFn
+	// Owner is the resource manager running the policy.
+	Owner Owner
 	// Config is the policy-specific configuration.
 	Config any
 }
@@ -132,6 +147,39 @@ type Backend interface {
 	// Returning nil or an empty map means the policy owns and
 	// publishes nothing.
 	GetExtendedResources() map[string]*resource.Quantity
+	// AllocateClaim allocates resources for a claim being prepared. results
+	// are the claim's allocation results, already filtered to the devices of
+	// our own driver. The returned container edits correspond to results one
+	// by one, so that edits[i] belongs to results[i].
+	//
+	// Every result must get at least one edit, also for a policy which
+	// enforces the claim by other means: a CDI device with no edits at all
+	// is rejected, which fails the claim on every retry of the kubelet. An
+	// environment variable naming what was allocated will do.
+	//
+	// The policy records whatever it needs to release the claim again later,
+	// keyed by the claim UID, saves those records and reads them back on
+	// startup. Unlike container allocations they cannot be rebuilt from the
+	// running containers: a claim may have no container yet.
+	//
+	// Preparing a claim is not a one-off event: kubelet asks again for a
+	// second pod using the claim, and again after a restart. A claim the
+	// policy has already allocated must therefore allocate nothing further
+	// and return the same edits as the first time.
+	//
+	// The policy is also the last line of defense against handing the same
+	// resources to two different claims, which it can be because it alone
+	// knows what it has already given out. Kubernetes tries hard to prevent
+	// this, but a force-deleted pod can have its replacement's claim prepared
+	// before its own containers are gone.
+	AllocateClaim(
+		claim *resourceapi.ResourceClaim,
+		results []resourceapi.DeviceRequestAllocationResult,
+	) ([]specs.ContainerEdits, error)
+	// ReleaseClaim releases the resources the policy allocated for the claim
+	// with the given UID. Releasing a claim the policy has no record of is
+	// not an error.
+	ReleaseClaim(uid types.UID) error
 }
 
 // Policy is the exposed interface for container resource allocations decision making.
@@ -161,6 +209,13 @@ type Policy interface {
 	// GetExtendedResources returns the node-level extended
 	// resources the active policy manages on the local Node.
 	GetExtendedResources() map[string]*resource.Quantity
+	// AllocateClaim allocates resources for a claim being prepared.
+	AllocateClaim(
+		claim *resourceapi.ResourceClaim,
+		results []resourceapi.DeviceRequestAllocationResult,
+	) ([]specs.ContainerEdits, error)
+	// ReleaseClaim releases the resources allocated for the given claim.
+	ReleaseClaim(uid types.UID) error
 }
 
 // Metrics is the interface we expect policy-specific metrics to implement.
@@ -270,6 +325,7 @@ func (p *policy) Start(cfg any) error {
 		Cache:     p.cache,
 		System:    p.system,
 		SendEvent: p.options.SendEvent,
+		Owner:     p.options.Owner,
 		Config:    cfg,
 	}); err != nil {
 		return err
@@ -316,6 +372,21 @@ func (p *policy) ReleaseResources(c cache.Container) error {
 func (p *policy) UpdateResources(c cache.Container) error {
 	defer p.scollect.Update()
 	return p.active.UpdateResources(c)
+}
+
+// AllocateClaim allocates resources for a claim being prepared.
+func (p *policy) AllocateClaim(
+	claim *resourceapi.ResourceClaim,
+	results []resourceapi.DeviceRequestAllocationResult,
+) ([]specs.ContainerEdits, error) {
+	defer p.scollect.Update()
+	return p.active.AllocateClaim(claim, results)
+}
+
+// ReleaseClaim releases the resources allocated for the given claim.
+func (p *policy) ReleaseClaim(uid types.UID) error {
+	defer p.scollect.Update()
+	return p.active.ReleaseClaim(uid)
 }
 
 // HandleEvent passes on the given event to the active policy.

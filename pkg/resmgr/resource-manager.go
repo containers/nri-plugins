@@ -198,11 +198,13 @@ func (m *resmgr) start(cfg cfgapi.ResmgrConfig) error {
 		return err
 	}
 
-	if err := m.policy.Start(m.cfg.PolicyConfig()); err != nil {
+	// Set up DRA before starting the policy: the policy publishes its devices
+	// when it starts.
+	if err := m.setupDRA(&mCfg.DRA); err != nil {
 		return err
 	}
 
-	if err := m.setupDRA(&mCfg.DRA); err != nil {
+	if err := m.policy.Start(m.cfg.PolicyConfig()); err != nil {
 		return err
 	}
 
@@ -287,7 +289,10 @@ func (m *resmgr) setupPolicy(backend policy.Backend) error {
 		log.Warnf("failed to set active policy: %v", err)
 	}
 
-	p, err := policy.NewPolicy(backend, m.cache, &policy.Options{SendEvent: m.SendEvent})
+	p, err := policy.NewPolicy(backend, m.cache, &policy.Options{
+		SendEvent: m.SendEvent,
+		Owner:     m,
+	})
 	if err != nil {
 		return resmgrError("failed to create policy %s: %v", backend.Name(), err)
 	}

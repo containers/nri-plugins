@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 
 	resourceapi "k8s.io/api/resource/v1"
@@ -82,8 +83,9 @@ type Plugin struct {
 	registrarDir  string
 	pluginDataDir string
 
-	mu     sync.Mutex // guards helper, the only mutable state
-	helper *kubeletplugin.Helper
+	mu      sync.Mutex // guards helper and devices, the only mutable state
+	helper  *kubeletplugin.Helper
+	devices []resourceapi.Device // the devices published last
 }
 
 var _ kubeletplugin.DRAPlugin = &Plugin{}
@@ -148,9 +150,13 @@ func (p *Plugin) Start(ctx context.Context) error {
 		return fmt.Errorf("dra: failed to register driver %q: %w", p.driverName, err)
 	}
 
+	// This publishes nothing yet, it starts the controller which does. Actual
+	// publication failures turn up asynchronously in HandleError, which retries
+	// them. Failing here means we could not get as far as trying.
 	if err := helper.PublishResources(ctx, p.driverResources()); err != nil {
 		helper.Stop()
-		return fmt.Errorf("dra: failed to publish resources for driver %q: %w", p.driverName, err)
+		return fmt.Errorf("dra: failed to start publishing resources for driver %q: %w",
+			p.driverName, err)
 	}
 
 	p.helper = helper
@@ -177,6 +183,29 @@ func (p *Plugin) Stop() {
 
 	log.Infof("unregistering DRA driver %q...", p.driverName)
 	helper.Stop()
+}
+
+// Publish replaces the published devices with the given ones. Devices published
+// before the plugin is started get published when it starts.
+func (p *Plugin) Publish(devices []resourceapi.Device) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.devices = make([]resourceapi.Device, len(devices))
+	for i := range devices {
+		devices[i].DeepCopyInto(&p.devices[i])
+	}
+
+	if p.helper == nil {
+		return nil
+	}
+
+	// This only hands the devices over to the controller which publishes them.
+	if err := p.helper.PublishResources(context.Background(), p.driverResources()); err != nil {
+		return fmt.Errorf("dra: failed to publish resources for driver %q: %w", p.driverName, err)
+	}
+
+	return nil
 }
 
 // PrepareResourceClaims prepares resources for the given claims.
@@ -230,15 +259,33 @@ func (p *Plugin) HandleError(_ context.Context, err error, msg string) {
 	p.owner.RequestShutdown(fmt.Sprintf("dra: %s: %v", msg, err))
 }
 
-// driverResources returns the resources to publish for this driver. Publishing
-// an empty slice, instead of no slice at all, states that the driver is alive
-// and has no devices, which is what this driver has until a policy provides
-// some.
+// driverResources returns the resources to publish for this driver: the devices
+// published last, in a single pool named after our node. The devices are
+// passed on as the policy described them, attributes and all: what they mean
+// is the policy's business, not ours.
+//
+// A ResourceSlice holds at most ResourceSliceMaxDevices devices and the helper
+// leaves the splitting to us, so the devices are chunked to that limit. An
+// oversized slice would be rejected by the apiserver, and the helper treats
+// that as recoverable and retries it forever, so it would never get published.
+//
+// A policy with no devices gets an empty slice published, not no slice at all.
+// That states that the driver is alive and currently offers nothing, and it
+// replaces whatever we published before, so a policy which stops offering
+// devices does not leave a stale slice behind.
 func (p *Plugin) driverResources() resourceslice.DriverResources {
+	var published []resourceslice.Slice
+	for chunk := range slices.Chunk(p.devices, resourceapi.ResourceSliceMaxDevices) {
+		published = append(published, resourceslice.Slice{Devices: chunk})
+	}
+	if published == nil {
+		published = []resourceslice.Slice{{}}
+	}
+
 	return resourceslice.DriverResources{
 		Pools: map[string]resourceslice.Pool{
 			p.nodeName: {
-				Slices: []resourceslice.Slice{{}},
+				Slices: published,
 			},
 		},
 	}

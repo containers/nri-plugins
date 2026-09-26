@@ -22,7 +22,10 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
+	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/types"
+	specs "tags.cncf.io/container-device-interface/specs-go"
 )
 
 const (
@@ -127,6 +130,19 @@ func (p *policy) GetTopologyZones() []*policyapi.TopologyZone {
 // to publish for this policy. The template policy publishes none.
 func (p *policy) GetExtendedResources() map[string]*resource.Quantity {
 	return nil
+}
+
+// AllocateClaim allocates resources for a claim being prepared.
+func (p *policy) AllocateClaim(
+	*resourceapi.ResourceClaim,
+	[]resourceapi.DeviceRequestAllocationResult,
+) ([]specs.ContainerEdits, error) {
+	return nil, policyapi.ErrNoDRAClaims
+}
+
+// ReleaseClaim releases the resources allocated for the given claim.
+func (p *policy) ReleaseClaim(types.UID) error {
+	return policyapi.ErrNoDRAClaims
 }
 
 // ExportResourceData provides resource data to export for the container.

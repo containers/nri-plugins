@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/containers/nri-plugins/pkg/agent"
@@ -90,10 +91,14 @@ func TestSetupDRA(t *testing.T) {
 				t.Error("setupDRA() created a plugin, expected none")
 			}
 
-			// Starting and stopping must be no-ops without a plugin: resmgr
-			// runs through both paths whether DRA came up or not.
+			// Starting, publishing and stopping must be no-ops without a
+			// plugin: resmgr and the policy run through these paths whether
+			// DRA came up or not.
 			if err := m.startDRA(); err != nil {
 				t.Errorf("startDRA() without a plugin failed: %v", err)
+			}
+			if err := m.PublishDRADevices([]resourceapi.Device{{Name: "cpu-0"}}); err != nil {
+				t.Errorf("PublishDRADevices() without a plugin failed: %v", err)
 			}
 			m.dra.Stop()
 		})

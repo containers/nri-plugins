@@ -41,8 +41,11 @@ import (
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
 	corev1 "k8s.io/api/core/v1"
+	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	specs "tags.cncf.io/container-device-interface/specs-go"
 )
 
 const (
@@ -625,6 +628,19 @@ func (p *balloons) GetExtendedResources() map[string]*resource.Quantity {
 		out["cpuclass.balloons.nri.io/"+cc.Name] = resource.NewQuantity(int64(free), resource.DecimalSI)
 	}
 	return out
+}
+
+// AllocateClaim allocates resources for a claim being prepared.
+func (p *balloons) AllocateClaim(
+	*resourceapi.ResourceClaim,
+	[]resourceapi.DeviceRequestAllocationResult,
+) ([]specs.ContainerEdits, error) {
+	return nil, policy.ErrNoDRAClaims
+}
+
+// ReleaseClaim releases the resources allocated for the given claim.
+func (p *balloons) ReleaseClaim(types.UID) error {
+	return policy.ErrNoDRAClaims
 }
 
 // balloonByContainer returns a balloon that contains a container.
