@@ -10,3 +10,28 @@ data:
     resctrlPath: {{ .Values.resctrlPath }}
     namespaces: []
     labelSelector: {}
+    telemetry:
+      prometheus:
+        enabled: {{ .Values.telemetry.prometheus.enabled }}
+        listenAddress: {{ .Values.telemetry.prometheus.listenAddress | quote }}
+        namespace: {{ .Values.telemetry.prometheus.namespace | quote }}
+      otlp:
+        enabled: {{ .Values.telemetry.otlp.enabled }}
+        endpoint: {{ .Values.telemetry.otlp.endpoint | quote }}
+        protocol: {{ .Values.telemetry.otlp.protocol | quote }}
+        interval: {{ .Values.telemetry.otlp.interval | quote }}
+        insecure: {{ .Values.telemetry.otlp.insecure }}
+      perfCounters:
+        enabled: {{ .Values.telemetry.perfCounters.enabled }}
+        {{- with .Values.telemetry.perfCounters.include }}
+        include:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.telemetry.perfCounters.exclude }}
+        exclude:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      {{- with .Values.telemetry.resourceAttributes }}
+      resourceAttributes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
