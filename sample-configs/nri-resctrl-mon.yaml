@@ -1,3 +1,19 @@
 resctrlPath: /sys/fs/resctrl
 namespaces: []
 labelSelector: {}
+telemetry:
+  prometheus:
+    enabled: true
+    listenAddress: ":9100"
+    namespace: ""
+  otlp:
+    enabled: false
+    endpoint: ""
+    protocol: grpc
+    interval: 15s
+    insecure: true
+  perfCounters:
+    enabled: false
+    include: []
+    exclude: []
+  resourceAttributes: {}
