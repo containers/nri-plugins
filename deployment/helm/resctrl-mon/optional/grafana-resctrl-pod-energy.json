@@ -684,7 +684,7 @@
           "fields": [
             "Power (W)",
             "Activity (F/s)",
-            "Energy (kJ)"
+            "Energy (kJ, window)"
           ],
           "reducer": [
             "sum"
