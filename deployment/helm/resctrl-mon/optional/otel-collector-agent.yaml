@@ -1,0 +1,206 @@
+# Optional OTel Collector agent DaemonSet for resctrl-mon OTLP push path.
+#
+# Deploy this alongside nri-resctrl-mon when telemetry.otlp.enabled=true.
+# It receives OTLP from the plugin, enriches with k8sattributes, and
+# fans out to Prometheus and/or other backends.
+#
+# Install the chart with telemetry.prometheus.enabled=false when scraping this
+# collector. Both this DaemonSet and the plugin's own Prometheus exporter carry
+# the same counters and are annotated for prometheus.io/scrape, so leaving both
+# enabled makes pod discovery ingest two copies and the dashboards' unscoped
+# sum() queries double-count. Expose exactly one: the plugin's pull-path
+# exporter OR this collector's exporter.
+#
+# Prerequisites:
+#   - otel-collector-rbac.yaml (ServiceAccount + ClusterRole for pod metadata)
+#
+# Usage:
+#   kubectl apply -f otel-collector-rbac.yaml
+#   kubectl apply -f otel-collector-agent.yaml
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-resctrl-config
+  namespace: monitoring
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      # First in the pipeline so it refuses data before later stages buffer it.
+      memory_limiter:
+        check_interval: 1s
+        limit_percentage: 80
+        spike_limit_percentage: 25
+      # resctrl-mon emits k8s.pod.uid as a data-point attribute. The
+      # k8sattributes pod_association can only match on resource attributes,
+      # so promote it (and any other shared data-point attributes) to the
+      # resource level first with groupbyattrs.
+      groupbyattrs:
+        keys:
+          - k8s.pod.uid
+      k8sattributes:
+        auth_type: serviceAccount
+        # The Service routes only this node's pushes here, so watch only its pods.
+        filter:
+          node_from_env_var: KUBE_NODE_NAME
+        extract:
+          metadata:
+            - k8s.namespace.name
+            - k8s.pod.name
+            - k8s.node.name
+        pod_association:
+          - sources:
+              - from: resource_attribute
+                name: k8s.pod.uid
+      batch:
+        timeout: 10s
+    exporters:
+      prometheus:
+        endpoint: 0.0.0.0:8889
+        resource_to_telemetry_conversion:
+          enabled: true
+    service:
+      pipelines:
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, groupbyattrs, k8sattributes, batch]
+          exporters: [prometheus]
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: otel-collector-resctrl
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: otel-collector-resctrl
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: otel-collector-resctrl
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: otel-collector-resctrl
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8889"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: otel-collector-resctrl
+      containers:
+        - name: collector
+          image: otel/opentelemetry-collector-contrib:0.161.0
+          args: ["--config=/etc/otel/config.yaml"]
+          env:
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+              protocol: TCP
+            - name: otlp-http
+              containerPort: 4318
+              protocol: TCP
+            - name: prom-export
+              containerPort: 8889
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otel
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+      volumes:
+        - name: config
+          configMap:
+            name: otel-collector-resctrl-config
+---
+# Service exposing the OTLP receivers so the plugin can reach the collector at
+# otel-collector-resctrl.monitoring.svc:4317 (gRPC) or :4318 (HTTP). Because the
+# collector runs as a DaemonSet, internalTrafficPolicy: Local pins each node's
+# push stream to that node's own collector. This is required for
+# correctness: the Prometheus exporter is stateful (cumulative counters), so
+# load-balancing a node's exports across several agents would scatter partial,
+# double-counted copies of the same node series. Node-local routing keeps a
+# node's counters on a single agent (and lets k8sattributes watch only the
+# pods on its own node). A node whose collector pod is
+# down drops that node's telemetry until it recovers, which is the intended
+# trade-off for consistency.
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector-resctrl
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: otel-collector-resctrl
+spec:
+  internalTrafficPolicy: Local
+  selector:
+    app.kubernetes.io/name: otel-collector-resctrl
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+      protocol: TCP
+    - name: prom-export
+      port: 8889
+      targetPort: prom-export
+      protocol: TCP
+---
+# Accept OTLP only from resctrl-mon plugin pods and Prometheus scrapes only from
+# the Prometheus namespace. Enforcement requires a NetworkPolicy-capable CNI.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: otel-collector-resctrl
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: otel-collector-resctrl
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: otel-collector-resctrl
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: nri-resctrl-mon
+      ports:
+        - port: 4317
+          protocol: TCP
+        - port: 4318
+          protocol: TCP
+    - from:
+        # Placeholder: set to the namespace your Prometheus runs in.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 8889
+          protocol: TCP
