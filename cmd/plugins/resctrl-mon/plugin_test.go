@@ -85,6 +85,7 @@ func makePod(uid, namespace, name string) *api.PodSandbox {
 		Namespace: namespace,
 		Name:      name,
 		Labels:    map[string]string{},
+		Pid:       1, // live; a dead sandbox reports 0
 	}
 }
 
@@ -456,6 +457,35 @@ func TestRemovePodSandbox_OldSandboxKeepsGroup(t *testing.T) {
 	require.NoError(t, p.RemovePodSandbox(ctx, newPod))
 	assert.Empty(t, p.mgr.List())
 	assert.NoDirExists(t, monDir)
+}
+
+// TestSynchronize_SkipsDeadSandbox is the regression test for a pod that
+// outlived a containerd restart: its dead pre-restart sandbox never gets
+// RemovePodSandbox, so it must not keep the group after the live one is removed.
+func TestSynchronize_SkipsDeadSandbox(t *testing.T) {
+	tmpDir := t.TempDir()
+	p := newTestPlugin(tmpDir)
+	ctx := context.Background()
+	const uid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+	const noInfraUID = "b1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+	dead := makePod(uid, "default", "app")
+	dead.Pid = 0
+	live := makePod(uid, "default", "app")
+	live.Id = "sandbox-attempt-1"
+	noInfra := makePod(noInfraUID, "default", "no-infra")
+	noInfra.Pid = 0
+	ctrs := []*api.Container{
+		makeContainer("c1", "app", live.GetId(), 0, ""),
+		makeContainer("c2", "app", noInfra.GetId(), 0, ""),
+	}
+	_, err := p.Synchronize(ctx, []*api.PodSandbox{dead, live, noInfra}, ctrs)
+	require.NoError(t, err)
+	assert.Contains(t, p.mgr.List(), noInfraUID)
+
+	require.NoError(t, p.RemovePodSandbox(ctx, live))
+	assert.NotContains(t, p.mgr.List(), uid)
+	assert.NoDirExists(t, filepath.Join(tmpDir, "mon_groups", uid))
 }
 
 func TestReconcile_RetriesPendingRemoval(t *testing.T) {
