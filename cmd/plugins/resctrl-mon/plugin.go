@@ -50,10 +50,11 @@ type plugin struct {
 	// The runtime serializes NRI events, sends Synchronize before any other
 	// event, and disconnects a plugin whose handler times out (onClose exits).
 	// opMu makes that explicit and orders the background reconciler against
-	// the handlers. It guards config, mgr, pendingRemoval, and sandboxes.
+	// the handlers. It guards config, mgr, runtime, pendingRemoval, and sandboxes.
 	opMu           sync.Mutex
 	config         *pluginConfig
 	mgr            resctrlManager
+	runtime        string                         // runtime name reported to Configure
 	pendingRemoval map[string]struct{}            // keys whose Remove failed, retried by the reconciler
 	sandboxes      map[string]map[string]struct{} // canonical pod UID -> live sandbox IDs
 
@@ -116,6 +117,7 @@ func (p *plugin) Configure(ctx context.Context, config, runtime, version string)
 		}
 	}()
 	log.Infof("Connected to %s %s...", runtime, version)
+	p.runtime = runtime
 	if err := checkRuntimeVersion(runtime, version); err != nil {
 		return 0, err
 	}
@@ -242,10 +244,12 @@ func (p *plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, contai
 	// Filtered pods are recorded too, so UUID-named groups that other tooling
 	// owns for them are not reaped.
 	p.sandboxes = make(map[string]map[string]struct{}, len(pods))
+	// On containerd pid 0 means the sandbox is not running, and one that died before
+	// a containerd restart never gets RemovePodSandbox. CRI-O reports pid 0 for live
+	// pods without an infra container.
+	skipDead := strings.EqualFold(p.runtime, "containerd")
 	for _, pod := range pods {
-		// containerd never sends RemovePodSandbox for a sandbox that died before its
-		// restart; CRI-O reports pid 0 for live pods without an infra container.
-		if pod.GetPid() == 0 && !hasContainer[pod.GetId()] {
+		if skipDead && pod.GetPid() == 0 && !hasContainer[pod.GetId()] {
 			continue
 		}
 		p.addSandbox(pod)
