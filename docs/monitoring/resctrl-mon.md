@@ -130,7 +130,8 @@ Labels (OTLP uses the dotted attribute names, e.g. `k8s.pod.uid`):
   labels above (for example `k8s.pod.uid` or `domain_id`), to another key's
   label, or to a label that OTLP-to-Prometheus conversion derives: `job` or
   `service_name` (set `service.name` itself to override it), and `instance`
-  when `service.instance.id` is set. Such a configuration is rejected.
+  when `service.instance.id` is set. Names starting with `__` are reserved by
+  Prometheus. Such a configuration is rejected.
 
 ## Coexistence with Allocation Plugins
 

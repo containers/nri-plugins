@@ -148,6 +148,9 @@ func validateTelemetryConfig(cfg *telemetryConfig) error {
 		if err != nil {
 			return fmt.Errorf("telemetry: resourceAttributes key %q: %w", k, err)
 		}
+		if strings.HasPrefix(name, "__") {
+			return fmt.Errorf("telemetry: resourceAttributes key %q maps to reserved Prometheus label %q", k, name)
+		}
 		if dataPointLabels[name] || strings.HasPrefix(name, "otel_scope_") {
 			return fmt.Errorf("telemetry: resourceAttributes key %q collides with the metric label %q", k, name)
 		}

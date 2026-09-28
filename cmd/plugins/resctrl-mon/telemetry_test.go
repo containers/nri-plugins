@@ -333,6 +333,7 @@ func TestValidateTelemetryConfig(t *testing.T) {
 			{"service_name": "x"},
 			{"job": "x"},
 			{"service.instance.id": "a", "instance": "b"},
+			{"__name__": "x"},
 		} {
 			cfg := defaultTelemetryConfig()
 			cfg.ResourceAttributes = attrs
