@@ -230,6 +230,10 @@ func (p *plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, contai
 	for _, pod := range pods {
 		podBySandboxID[pod.GetId()] = pod
 	}
+	hasContainer := make(map[string]bool, len(containers))
+	for _, ctr := range containers {
+		hasContainer[ctr.GetPodSandboxId()] = true
+	}
 
 	// A pod sandbox can be alive with no running container (for example between
 	// container restarts). Record every live sandbox so the reconciler protects
@@ -239,6 +243,11 @@ func (p *plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, contai
 	// owns for them are not reaped.
 	p.sandboxes = make(map[string]map[string]struct{}, len(pods))
 	for _, pod := range pods {
+		// containerd never sends RemovePodSandbox for a sandbox that died before its
+		// restart; CRI-O reports pid 0 for live pods without an infra container.
+		if pod.GetPid() == 0 && !hasContainer[pod.GetId()] {
+			continue
+		}
 		p.addSandbox(pod)
 	}
 	// Adopt each monitored pod's existing group under its original class first,
