@@ -330,13 +330,16 @@ func TestValidateTelemetryConfig(t *testing.T) {
 			{"domain_id": "x"},
 			{"team.name": "a", "team_name": "b"},
 			{"k8s_node_name": "x"},
+			{"service_name": "x"},
+			{"job": "x"},
+			{"service.instance.id": "a", "instance": "b"},
 		} {
 			cfg := defaultTelemetryConfig()
 			cfg.ResourceAttributes = attrs
 			assert.Error(t, validateTelemetryConfig(&cfg), "%v", attrs)
 		}
 		cfg := defaultTelemetryConfig()
-		cfg.ResourceAttributes = map[string]string{"k8s.node.name": "n1", "cluster": "c1"}
+		cfg.ResourceAttributes = map[string]string{"k8s.node.name": "n1", "cluster": "c1", "service.name": "s", "instance": "i"}
 		assert.NoError(t, validateTelemetryConfig(&cfg))
 	})
 }
