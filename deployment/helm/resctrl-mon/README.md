@@ -196,6 +196,10 @@ kubectl apply -f optional/otel-collector-rbac.yaml
 kubectl apply -f optional/otel-collector-agent.yaml
 ```
 
+Before applying, set the two namespace placeholders in the NetworkPolicy (the
+plugin's and Prometheus's), and copy any `tolerations` or `nodeSelector` set for
+the plugin to the collector DaemonSet.
+
 The reference config uses the `k8sattributes` processor to attach pod/namespace
 labels and a Prometheus exporter on port 8889. Customize
 `otel-collector-agent.yaml` to add additional exporters (e.g. `otlphttp` to a

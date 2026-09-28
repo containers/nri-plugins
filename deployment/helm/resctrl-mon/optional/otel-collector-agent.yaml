@@ -93,6 +93,8 @@ spec:
         prometheus.io/port: "8889"
         prometheus.io/path: "/metrics"
     spec:
+      # Copy any tolerations or nodeSelector set for the plugin chart: a plugin node
+      # without a local collector drops its telemetry (internalTrafficPolicy: Local).
       serviceAccountName: otel-collector-resctrl
       containers:
         - name: collector
@@ -171,8 +173,9 @@ spec:
       targetPort: prom-export
       protocol: TCP
 ---
-# Accept OTLP only from resctrl-mon plugin pods and Prometheus scrapes only from
-# the Prometheus namespace. Enforcement requires a NetworkPolicy-capable CNI.
+# Accept OTLP only from resctrl-mon plugin pods in the plugin's namespace and
+# Prometheus scrapes only from the Prometheus namespace. Enforcement requires a
+# NetworkPolicy-capable CNI.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -187,7 +190,10 @@ spec:
   policyTypes: [Ingress]
   ingress:
     - from:
-        - namespaceSelector: {}
+        # Placeholder: set to the namespace resctrl-mon is installed in.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
           podSelector:
             matchLabels:
               app.kubernetes.io/name: nri-resctrl-mon
