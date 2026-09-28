@@ -14,15 +14,97 @@
 
 package topologyaware
 
+// We publish our NUMA nodes as DRA devices with consumable capacity. Once
+// allocation is implemented, a claim will select a node by attribute and ask
+// for a number of CPUs, and we will grant it CPUs of that node. For now,
+// AllocateClaim and ReleaseClaim below are stubs: no claim can be granted yet.
+
 import (
+	"fmt"
+
+	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/dynamic-resource-allocation/deviceattribute"
+	"k8s.io/utils/ptr"
 	specs "tags.cncf.io/container-device-interface/specs-go"
 
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 )
 
-// AllocateClaim allocates resources for a claim being prepared.
+const (
+	// draDeviceFormat names a device after the NUMA node it publishes.
+	draDeviceFormat = "cpudevnuma%03d"
+	// draCapacityCPU is the number of CPUs a claim consumes of a device.
+	draCapacityCPU resourceapi.QualifiedName = "dra.cpu/cpu"
+	// draAttrSocketID is the socket the NUMA node belongs to.
+	draAttrSocketID resourceapi.QualifiedName = "dra.cpu/socketID"
+	// draAttrSMTEnabled tells whether the CPUs have SMT enabled.
+	draAttrSMTEnabled resourceapi.QualifiedName = "dra.cpu/smtEnabled"
+)
+
+// draDevices returns one device per NUMA node. A node's capacity is its share
+// of the CPUs an exclusive grant can draw from, isolated plus sharable,
+// which leaves out the reserved ones.
+func (p *policy) draDevices() []resourceapi.Device {
+	var (
+		supply = p.root.GetSupply()
+		// The sole reserved CPU is allowed to also be isolated, so it can
+		// show up in IsolatedCPUs() too and must be excluded explicitly.
+		grantable = supply.IsolatedCPUs().Union(supply.SharableCPUs()).
+				Difference(supply.ReservedCPUs())
+		smt     = p.sys.MaxThreadCount() > 1
+		devices []resourceapi.Device
+	)
+
+	for _, id := range p.sys.NodeIDs() {
+		node := p.sys.Node(id)
+		cpus := grantable.Intersection(node.CPUSet())
+		if cpus.IsEmpty() {
+			continue
+		}
+
+		one := resource.NewQuantity(1, resource.DecimalSI)
+		devices = append(devices, resourceapi.Device{
+			Name:                     fmt.Sprintf(draDeviceFormat, id),
+			AllowMultipleAllocations: ptr.To(true),
+			Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+				deviceattribute.StandardDeviceAttributeNUMANode: {
+					IntValue: ptr.To(int64(id)),
+				},
+				draAttrSocketID:   {IntValue: ptr.To(int64(node.PackageID()))},
+				draAttrSMTEnabled: {BoolValue: ptr.To(smt)},
+			},
+			Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
+				draCapacityCPU: {
+					Value: *resource.NewQuantity(int64(cpus.Size()), resource.DecimalSI),
+					// Without a request policy a claim asking for no
+					// amount would consume the whole node.
+					RequestPolicy: &resourceapi.CapacityRequestPolicy{
+						Default: one,
+						ValidRange: &resourceapi.CapacityRequestPolicyRange{
+							Min:  one,
+							Step: one,
+						},
+					},
+				},
+			},
+			NodeAllocatableResources: map[v1.ResourceName]resourceapi.NodeAllocatableResource{
+				v1.ResourceCPU: {
+					Mapping: &resourceapi.NodeAllocatableMapping{
+						CapacityKey:        ptr.To(draCapacityCPU),
+						CapacityMultiplier: one,
+					},
+				},
+			},
+		})
+	}
+
+	return devices
+}
+
+// AllocateClaim allocates resources for a claim.
 func (p *policy) AllocateClaim(
 	*resourceapi.ResourceClaim,
 	[]resourceapi.DeviceRequestAllocationResult,

@@ -159,6 +159,10 @@ func (p *policy) Start() error {
 	}
 	p.metrics = m
 
+	if err := p.options.Owner.PublishDRADevices(p.draDevices()); err != nil {
+		return policyError("failed to publish DRA devices: %w", err)
+	}
+
 	return nil
 }
 
@@ -555,6 +559,10 @@ func (p *policy) Reconfigure(newCfg any) error {
 		return err
 	}
 	p.metrics = m
+
+	if err := p.options.Owner.PublishDRADevices(p.draDevices()); err != nil {
+		log.Errorf("failed to publish DRA devices: %v", err)
+	}
 
 	return nil
 }
