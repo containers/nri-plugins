@@ -135,7 +135,14 @@ func validateTelemetryConfig(cfg *telemetryConfig) error {
 	}
 	// Resource attributes become constant labels on every sample; a duplicate
 	// label name would fail the whole scrape.
-	labels := map[string]string{"k8s_node_name": "k8s.node.name"}
+	labels := map[string]string{
+		"k8s_node_name": "k8s.node.name",
+		"service_name":  "service.name",
+		"job":           "service.name",
+	}
+	if _, ok := cfg.ResourceAttributes["service.instance.id"]; ok {
+		labels["instance"] = "service.instance.id"
+	}
 	for k := range cfg.ResourceAttributes {
 		name, err := (&otlptranslator.LabelNamer{}).Build(k)
 		if err != nil {
