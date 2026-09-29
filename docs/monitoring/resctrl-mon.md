@@ -145,8 +145,8 @@ plugin reads the effective RDT class from the NRI container spec and creates
 ```
 
 The container keeps its CLOSID (allocation) and gets a distinct RMID
-(monitoring). If no allocation plugin is active, `mon_groups` are created
-under the root resctrl directory.
+(monitoring). Pods without an RDT class, from an allocation plugin or from the
+runtime's RDT annotations, get `mon_groups` under the root resctrl directory.
 
 ## RMID Management
 
@@ -167,7 +167,23 @@ RMID allocation is delegated entirely to the Linux kernel:
   partly attributed until they restart.
 - **One control group per pod.** A pod's `mon_group` lives under one RDT class.
   A container in a different class (for example, a sidecar) is not monitored,
-  because assigning it would overwrite its allocation.
+  because assigning it would overwrite its allocation. The plugin reads a
+  container's class from its OCI `linux.intelRdt.closID` (NRI
+  `Linux.Rdt.ClosId`), which containerd and CRI-O set from the pod's RDT
+  annotations. The group's class is chosen as follows:
+  - If the pod has the annotation `rdt.resources.beta.kubernetes.io/pod`, the
+    group is under that class. A container that its own annotation
+    (`rdt.resources.beta.kubernetes.io/container.<name>`) puts in another class
+    is not monitored, whichever container is created first.
+  - Otherwise, or when the pod-level class was not applied (for example, an NRI
+    plugin set another class), the first container to be created fixes the
+    class.
+- **The runtime's RDT setup removes groups.** Each time containerd or CRI-O
+  starts with an RDT configuration (`rdt_config_file`), it removes every
+  control group that the configuration does not define and every `mon_group`
+  that has no tasks. Pods with no running task (Completed, in back-off, or
+  killed) lose their `mon_group`, with its RMID and counters, and the plugin
+  does not re-create it. Do not keep hand-made control groups on such a host.
 - **Uninstall leaves groups behind.** Removing the plugin leaves the pods'
   `mon_groups` (and their RMIDs) in place. To release them, run this as root
   on each node. It removes every UUID-named `mon_group`, including any that
