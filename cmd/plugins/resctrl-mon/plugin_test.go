@@ -78,6 +78,24 @@ func newRecordingTestPlugin(resctrlPath string) (*plugin, *recordingManager) {
 	return p, rec
 }
 
+// tasksFileManager creates the tasks file of each new mon_group, as the kernel
+// does, so that AssignPID works on a plain directory tree.
+type tasksFileManager struct {
+	*monitor.Manager
+}
+
+func (m tasksFileManager) EnsureGroup(key, rdtClass string) (*monitor.Group, error) {
+	grp, err := m.Manager.EnsureGroup(key, rdtClass)
+	if err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(filepath.Join(grp.Path(), "tasks"), os.O_RDONLY|os.O_CREATE, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	return grp, f.Close()
+}
+
 func makePod(uid, namespace, name string) *api.PodSandbox {
 	return &api.PodSandbox{
 		Id:        "sandbox-" + uid, // CRI sandbox ID != K8s pod UID
@@ -89,6 +107,7 @@ func makePod(uid, namespace, name string) *api.PodSandbox {
 	}
 }
 
+// makeContainer reports rdtClass in Linux.Rdt.ClosId, as containerd and CRI-O do.
 func makeContainer(id, name, podSandboxID string, pid uint32, rdtClass string) *api.Container {
 	ctr := &api.Container{
 		Id:           id,
@@ -100,7 +119,7 @@ func makeContainer(id, name, podSandboxID string, pid uint32, rdtClass string) *
 		},
 	}
 	if rdtClass != "" {
-		ctr.Linux.Resources.RdtClass = &api.OptionalString{Value: rdtClass}
+		ctr.Linux.Rdt = &api.LinuxRdt{ClosId: &api.OptionalString{Value: rdtClass}}
 	}
 	return ctr
 }
@@ -136,17 +155,138 @@ func TestShouldMonitorPod_LabelFilter(t *testing.T) {
 }
 
 func TestGetRDTClass(t *testing.T) {
-	ctr1 := makeContainer("c1", "container1", "uid-1", 1234, "BestEffort")
-	assert.Equal(t, "BestEffort", getRDTClass(ctr1))
-
-	ctr2 := makeContainer("c2", "container2", "uid-1", 1235, "")
-	assert.Equal(t, "", getRDTClass(ctr2))
-
-	ctr3 := &api.Container{
-		Id:   "c3",
-		Name: "container3",
+	closID := func(v string) *api.LinuxRdt { return &api.LinuxRdt{ClosId: &api.OptionalString{Value: v}} }
+	rdtClass := func(v string) *api.LinuxResources {
+		return &api.LinuxResources{RdtClass: &api.OptionalString{Value: v}}
 	}
-	assert.Equal(t, "", getRDTClass(ctr3))
+	tests := []struct {
+		name      string
+		linux     *api.LinuxContainer
+		wantClass string
+		wantField string
+	}{
+		{"no linux", nil, "", "none"},
+		{"no class", &api.LinuxContainer{Resources: &api.LinuxResources{}}, "", "none"},
+		{"ClosId only", &api.LinuxContainer{Rdt: closID("gold")}, "gold", "Linux.Rdt.ClosId"},
+		{"RdtClass only", &api.LinuxContainer{Resources: rdtClass("gold")}, "gold", "Linux.Resources.RdtClass"},
+		{"ClosId wins", &api.LinuxContainer{Rdt: closID("gold"), Resources: rdtClass("bronze")}, "gold", "Linux.Rdt.ClosId"},
+		{"root class name", &api.LinuxContainer{Rdt: closID("system/default")}, "", "Linux.Rdt.ClosId"},
+		{"OCI root", &api.LinuxContainer{Rdt: closID("/")}, "", "Linux.Rdt.ClosId"},
+		{"RdtClass root class name", &api.LinuxContainer{Resources: rdtClass("system/default")}, "", "Linux.Resources.RdtClass"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			class, field := getRDTClass(&api.Container{Name: "c", Linux: tt.linux})
+			assert.Equal(t, tt.wantClass, class)
+			assert.Equal(t, tt.wantField, field)
+		})
+	}
+}
+
+func TestGroupClass(t *testing.T) {
+	const (
+		podAnn     = "rdt.resources.beta.kubernetes.io/pod"
+		sidecarAnn = "rdt.resources.beta.kubernetes.io/container.sidecar"
+	)
+	tests := []struct {
+		name      string
+		podAnns   map[string]string
+		ctrAnns   map[string]string
+		ctrName   string
+		ctrClass  string
+		wantClass string
+		wantOK    bool
+	}{
+		{"no pod class", nil, nil, "sidecar", "bronze", "bronze", true},
+		{"no pod class, override", map[string]string{sidecarAnn: "bronze"}, nil, "sidecar", "bronze", "bronze", true},
+		{"pod class", map[string]string{podAnn: "gold"}, nil, "app", "gold", "gold", true},
+		{"override to another class", map[string]string{podAnn: "gold", sidecarAnn: "bronze"}, nil, "sidecar", "bronze", "bronze", false},
+		{"override applies to its container only", map[string]string{podAnn: "gold", sidecarAnn: "bronze"}, nil, "app", "gold", "gold", true},
+		{"CRI container override", map[string]string{podAnn: "gold"}, map[string]string{"io.kubernetes.cri.rdt-class": "bronze"}, "sidecar", "bronze", "bronze", false},
+		{"override to root", map[string]string{podAnn: "gold", sidecarAnn: "system/default"}, nil, "sidecar", "", "", false},
+		{"override to the pod class", map[string]string{podAnn: "gold", sidecarAnn: "gold"}, nil, "sidecar", "gold", "gold", true},
+		{"pod class not applied", map[string]string{podAnn: "gold"}, nil, "app", "", "", true},
+		{"override not applied but in the pod class", map[string]string{podAnn: "gold", sidecarAnn: "bronze"}, nil, "sidecar", "gold", "gold", true},
+		{"pod class is root", map[string]string{podAnn: "system/default", sidecarAnn: "bronze"}, nil, "app", "", "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := makePod("a1b2c3d4-e5f6-7890-abcd-ef1234567890", "default", "p")
+			pod.Annotations = tt.podAnns
+			ctr := makeContainer("c1", tt.ctrName, pod.GetId(), 0, tt.ctrClass)
+			ctr.Annotations = tt.ctrAnns
+			class, ok := groupClass(pod, ctr)
+			assert.Equal(t, tt.wantClass, class)
+			assert.Equal(t, tt.wantOK, ok)
+		})
+	}
+}
+
+// setupPodClassTest builds a plugin over a resctrl tree with ctrl groups gold
+// and bronze, and a pod whose pod-level class is gold and whose sidecar is in
+// bronze. The runtime has already placed app (PID 42) in gold and sidecar
+// (PID 77) in bronze.
+func setupPodClassTest(t *testing.T) (p *plugin, root string, pod *api.PodSandbox, app, sidecar *api.Container) {
+	root = t.TempDir()
+	for class, pid := range map[string]string{"gold": "42\n", "bronze": "77\n"} {
+		require.NoError(t, os.Mkdir(filepath.Join(root, class), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(root, class, "tasks"), []byte(pid), 0o644))
+	}
+	p = newTestPlugin(root)
+	p.mgr = tasksFileManager{Manager: p.mgr.(*monitor.Manager)}
+
+	pod = makePod("a1b2c3d4-e5f6-7890-abcd-ef1234567890", "default", "app")
+	pod.Annotations = map[string]string{
+		"rdt.resources.beta.kubernetes.io/pod":               "gold",
+		"rdt.resources.beta.kubernetes.io/container.sidecar": "bronze",
+	}
+	app = makeContainer("c1", "app", pod.GetId(), 42, "gold")
+	sidecar = makeContainer("c2", "sidecar", pod.GetId(), 77, "bronze")
+	return p, root, pod, app, sidecar
+}
+
+// assertPodClassGroup checks that the pod's mon_group is under gold only, holds
+// app's PID and never sidecar's.
+func assertPodClassGroup(t *testing.T, root, uid string) {
+	assert.NoDirExists(t, filepath.Join(root, "mon_groups", uid))
+	assert.NoDirExists(t, filepath.Join(root, "bronze", "mon_groups", uid))
+	data, err := os.ReadFile(filepath.Join(root, "gold", "mon_groups", uid, "tasks"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "42")
+	assert.NotContains(t, string(data), "77")
+}
+
+// TestPodClass_ContainerOrder verifies that the pod-level class gets the pod's
+// mon_group whether the off-class sidecar is created before or after app.
+func TestPodClass_ContainerOrder(t *testing.T) {
+	for _, sidecarFirst := range []bool{true, false} {
+		t.Run(map[bool]string{true: "sidecar first", false: "sidecar last"}[sidecarFirst], func(t *testing.T) {
+			p, root, pod, app, sidecar := setupPodClassTest(t)
+			ctrs := []*api.Container{app, sidecar}
+			if sidecarFirst {
+				ctrs = []*api.Container{sidecar, app}
+			}
+			ctx := context.Background()
+			for _, ctr := range ctrs {
+				created := makeContainer(ctr.GetId(), ctr.GetName(), pod.GetId(), 0, ctr.GetLinux().GetRdt().GetClosId().GetValue())
+				require.NoError(t, p.PostCreateContainer(ctx, pod, created))
+			}
+			for _, ctr := range ctrs {
+				require.NoError(t, p.StartContainer(ctx, pod, ctr))
+				require.NoError(t, p.PostStartContainer(ctx, pod, ctr))
+			}
+			assertPodClassGroup(t, root, pod.GetUid())
+		})
+	}
+}
+
+// TestSynchronize_PodClass verifies the pod-level class rule when the plugin
+// adopts running containers, listed with the off-class sidecar first.
+func TestSynchronize_PodClass(t *testing.T) {
+	p, root, pod, app, sidecar := setupPodClassTest(t)
+	_, err := p.Synchronize(context.Background(), []*api.PodSandbox{pod}, []*api.Container{sidecar, app})
+	require.NoError(t, err)
+	assertPodClassGroup(t, root, pod.GetUid())
 }
 
 func TestPprintCtr(t *testing.T) {

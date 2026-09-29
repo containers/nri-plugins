@@ -30,7 +30,9 @@ import (
 
 	"github.com/containerd/nri/pkg/api"
 	"github.com/containerd/nri/pkg/stub"
+	"github.com/intel/goresctrl/pkg/kubernetes"
 	"github.com/intel/goresctrl/pkg/monitor"
+	"github.com/intel/goresctrl/pkg/rdt"
 )
 
 const (
@@ -277,7 +279,11 @@ func (p *plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, contai
 			continue
 		}
 		podUID := pod.GetUid()
-		rdtClass := getRDTClass(ctr)
+		rdtClass, ok := groupClass(pod, ctr)
+		if !ok {
+			log.Debugf("Synchronize: not monitoring %s: its RDT class differs from the pod's", pprintCtr(pod, ctr))
+			continue
+		}
 
 		// Assigning a PID to a mon_group writes it into the group's tasks file,
 		// which moves the task into the group's parent ctrl_group and rewrites
@@ -492,7 +498,11 @@ func (p *plugin) PostCreateContainer(ctx context.Context, pod *api.PodSandbox, c
 		return nil
 	}
 
-	rdtClass := getRDTClass(ctr)
+	rdtClass, ok := groupClass(pod, ctr)
+	if !ok {
+		log.Infof("PostCreateContainer %s: not monitored, its RDT class differs from the pod's", ctrName)
+		return nil
+	}
 	if _, err := p.mgr.EnsureGroup(podUID, rdtClass); err != nil {
 		log.Warnf("PostCreateContainer %s: failed to create mon_group: %v", ctrName, err)
 		return nil // non-fatal: don't block container creation
@@ -530,7 +540,9 @@ func (p *plugin) StartContainer(ctx context.Context, pod *api.PodSandbox, ctr *a
 		// allocation (the off-class sidecar case), so EnsureGroup here gates the
 		// write and a mismatch skips it rather than reassigning the task.
 		mgr := p.mgr
-		if grp, err := mgr.EnsureGroup(podUID, getRDTClass(ctr)); err != nil {
+		if rdtClass, ok := groupClass(pod, ctr); !ok {
+			log.Debugf("StartContainer %s: not assigning PID %d: its RDT class differs from the pod's", ctrName, pid)
+		} else if grp, err := mgr.EnsureGroup(podUID, rdtClass); err != nil {
 			log.Warnf("StartContainer %s: not assigning PID %d: %v", ctrName, pid, err)
 		} else if err := mgr.AssignPID(podUID, pid); err != nil {
 			log.Warnf("StartContainer %s: failed to assign PID %d: %v", ctrName, pid, err)
@@ -566,7 +578,9 @@ func (p *plugin) PostStartContainer(ctx context.Context, pod *api.PodSandbox, ct
 		// control group when this container's RDT class does not match the
 		// pod's mon_group (the off-class sidecar case).
 		mgr := p.mgr
-		if grp, err := mgr.EnsureGroup(podUID, getRDTClass(ctr)); err != nil {
+		if rdtClass, ok := groupClass(pod, ctr); !ok {
+			log.Debugf("PostStartContainer %s: not assigning PID %d: its RDT class differs from the pod's", ctrName, pid)
+		} else if grp, err := mgr.EnsureGroup(podUID, rdtClass); err != nil {
 			log.Warnf("PostStartContainer %s: not assigning PID %d: %v", ctrName, pid, err)
 		} else if err := mgr.AssignPID(podUID, pid); err != nil {
 			log.Warnf("PostStartContainer %s: failed to assign PID %d: %v", ctrName, pid, err)
@@ -662,16 +676,43 @@ func (p *plugin) shouldMonitorPod(pod *api.PodSandbox) bool {
 	return true
 }
 
-// getRDTClass extracts the RDT class from a container's Linux resources.
-func getRDTClass(ctr *api.Container) string {
-	if linux := ctr.GetLinux(); linux != nil {
-		if res := linux.GetResources(); res != nil {
-			if rdt := res.GetRdtClass(); rdt != nil {
-				return rdt.GetValue()
-			}
-		}
+// getRDTClass returns a container's RDT class and the NRI field it came from.
+// containerd and CRI-O report the class only in Linux.Rdt.ClosId.
+func getRDTClass(ctr *api.Container) (class, field string) {
+	if id := ctr.GetLinux().GetRdt().GetClosId(); id != nil {
+		return rootClassToEmpty(id.GetValue()), "Linux.Rdt.ClosId"
 	}
-	return ""
+	if rc := ctr.GetLinux().GetResources().GetRdtClass(); rc != nil {
+		return rootClassToEmpty(rc.GetValue()), "Linux.Resources.RdtClass"
+	}
+	return "", "none"
+}
+
+// rootClassToEmpty maps the names of the resctrl root group (goresctrl's
+// "system/default", OCI's "/") to "", the root class of pkg/monitor.
+func rootClassToEmpty(class string) string {
+	if class == rdt.RootClassName || class == "/" {
+		return ""
+	}
+	return class
+}
+
+// groupClass returns the RDT class under which ctr joins its pod's mon_group.
+// ok is false when the pod names a pod-level class and the container's own
+// annotation puts it in another class, so the pod-level class gets the group
+// whichever container arrives first. Otherwise, also when the pod-level class
+// was not applied, the first container to arrive fixes the group's class.
+func groupClass(pod *api.PodSandbox, ctr *api.Container) (class string, ok bool) {
+	class, field := getRDTClass(ctr)
+	ok = true
+	if podClass, set := pod.GetAnnotations()[rdt.RdtPodAnnotation]; set && class != rootClassToEmpty(podClass) {
+		// The precedence the runtimes use to resolve a container's class.
+		own, _ := kubernetes.ContainerClassFromAnnotations(rdt.RdtContainerAnnotation, rdt.RdtPodAnnotation,
+			rdt.RdtPodAnnotationContainerPrefix, ctr.GetName(), ctr.GetAnnotations(), pod.GetAnnotations())
+		ok = rootClassToEmpty(own) == rootClassToEmpty(podClass)
+	}
+	log.Debugf("%s: RDT class %q from %s, joins the pod's mon_group: %t", pprintCtr(pod, ctr), class, field, ok)
+	return class, ok
 }
 
 // pprintCtr returns a human-readable container identifier.
