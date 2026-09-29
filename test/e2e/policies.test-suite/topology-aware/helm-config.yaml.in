@@ -41,6 +41,10 @@ config:
   $([ -n "$CONTROLLABLE_INTERRUPTS" ] && echo "
   controllableInterrupts: ${CONTROLLABLE_INTERRUPTS:-\"*\"}
   ")
+  $([ -n "$DRA_ENABLED" ] && echo "
+  dra:
+    enabled: $DRA_ENABLED
+  ")
 
   instrumentation:
     httpEndpoint: ":8891"
