@@ -103,6 +103,21 @@ rate-bounded (resctrl is read at most once per second, however many scrapes
 arrive), but you should still restrict access to the endpoint with a
 NetworkPolicy.
 
+## RDT classes
+
+A pod's `mon_group` is created under the pod's RDT class: the class in the pod
+annotation `rdt.resources.beta.kubernetes.io/pod` if it is set, otherwise the
+class of the pod's first container. Containers in another class, such as a
+sidecar annotated with `rdt.resources.beta.kubernetes.io/container.<name>`,
+are not monitored.
+
+When containerd or CRI-O starts with an RDT configuration (`rdt_config_file`),
+it removes every control group that the configuration does not define and
+every `mon_group` without tasks, so pods with no running task lose their
+`mon_group`. See the
+[plugin documentation](https://github.com/containers/nri-plugins/blob/main/docs/monitoring/resctrl-mon.md#limitations)
+for details.
+
 ## Configuration options
 
 The tables below present an overview of the parameters available for users to
