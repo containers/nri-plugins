@@ -23,3 +23,21 @@ host:port / :port forms all resolve correctly; falls back to 9100.
 {{- define "nri-resctrl-mon.metricsPort" -}}
 {{- regexFind "[0-9]+$" .Values.telemetry.prometheus.listenAddress | default "9100" -}}
 {{- end -}}
+
+{{/*
+AppArmor pod annotation value for Kubernetes < 1.30, which has no
+securityContext.appArmorProfile field. Empty when the field is used instead.
+*/}}
+{{- define "nri-resctrl-mon.appArmorAnnotation" -}}
+{{- with .Values.appArmorProfile -}}
+{{- if semverCompare "<1.30-0" $.Capabilities.KubeVersion.Version -}}
+{{- if eq .type "Unconfined" -}}
+unconfined
+{{- else if eq .type "RuntimeDefault" -}}
+runtime/default
+{{- else if eq .type "Localhost" -}}
+localhost/{{ .localhostProfile }}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}

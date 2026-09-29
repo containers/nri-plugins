@@ -98,6 +98,15 @@ visibility the kernel rejects the write (`ESRCH`). The container also
 requires `SYS_ADMIN` and `DAC_OVERRIDE` capabilities to manage resctrl
 `mon_group` directories.
 
+By default the container runs without an AppArmor profile (`appArmorProfile.type:
+Unconfined`). The runtimes' default profiles, containerd's
+`cri-containerd.apparmor.d` and CRI-O's `crio-default`, deny writes under
+`/sys/fs/[^c]*`, which includes `/sys/fs/resctrl`. Under either profile the
+plugin still becomes Ready, but it logs only `permission denied` warnings and
+tracks no `mon_groups`. On Kubernetes older than 1.30, which lacks the
+`appArmorProfile` field, the chart sets the equivalent pod annotation
+`container.apparmor.security.beta.kubernetes.io/nri-resctrl-mon` instead.
+
 The Prometheus `/metrics` endpoint is unauthenticated. Collection is
 rate-bounded (resctrl is read at most once per second, however many scrapes
 arrive), but you should still restrict access to the endpoint with a
@@ -130,6 +139,7 @@ customize with their own values, along with the default values.
 | `image.pullPolicy`       | Always                                                                                                                        | image pull policy                                    |
 | `resources.cpu`          | 10m                                                                                                                           | cpu resources for the Pod                            |
 | `resources.memory`       | 50Mi                                                                                                                          | memory quota for the Pod                             |
+| `appArmorProfile`        | `{type: Unconfined}`                                                                                                          | AppArmor profile of the plugin container (see [Security](#security)) |
 | `nri.runtime.config.pluginRegistrationTimeout` | ""                                                                                                      | set NRI plugin registration timeout in NRI config of containerd or CRI-O |
 | `nri.runtime.config.pluginRequestTimeout`      | ""                                                                                                      | set NRI plugin request timeout in NRI config of containerd or CRI-O |
 | `nri.runtime.patchConfig` | false                                                                                                                        | patch NRI configuration in containerd or CRI-O       |

@@ -13,12 +13,18 @@ spec:
     metadata:
       labels:
       {{- include "nri-plugin.labels" . | nindent 8 }}
-      {{- if .Values.telemetry.prometheus.enabled }}
+      {{- $appArmorAnnotation := include "nri-resctrl-mon.appArmorAnnotation" . }}
+      {{- if or .Values.telemetry.prometheus.enabled $appArmorAnnotation }}
       annotations:
+        {{- if .Values.telemetry.prometheus.enabled }}
         prometheus.io/scrape: "true"
         prometheus.io/port: "{{ include "nri-resctrl-mon.metricsPort" . }}"
         prometheus.io/path: "/metrics"
         prometheus.io/interval: "{{ .Values.telemetry.prometheus.scrapeInterval }}"
+        {{- end }}
+        {{- with $appArmorAnnotation }}
+        container.apparmor.security.beta.kubernetes.io/nri-resctrl-mon: {{ . }}
+        {{- end }}
       {{- end }}
     spec:
     {{- with .Values.tolerations }}
@@ -91,6 +97,10 @@ spec:
               add:
                 - SYS_ADMIN
                 - DAC_OVERRIDE
+            {{- if and .Values.appArmorProfile (semverCompare ">=1.30-0" .Capabilities.KubeVersion.Version) }}
+            appArmorProfile:
+              {{- toYaml .Values.appArmorProfile | nindent 14 }}
+            {{- end }}
           volumeMounts:
           - name: resctrl-mon-config-vol
             mountPath: /etc/nri/resctrl-mon

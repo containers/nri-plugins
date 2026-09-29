@@ -36,6 +36,13 @@ resources:
   cpu: 10m
   memory: 50Mi
 
+# AppArmor profile of the plugin container. The runtimes' default profiles deny
+# writes to /sys/fs/resctrl, so the plugin runs unconfined by default. Use
+# type: RuntimeDefault to keep the runtime's profile, or type: Localhost with
+# localhostProfile: <name> for a profile loaded on every node.
+appArmorProfile:
+  type: Unconfined
+
 nri:
   plugin:
     index: 90

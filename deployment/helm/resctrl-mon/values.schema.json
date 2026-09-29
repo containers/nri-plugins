@@ -118,6 +118,21 @@
         },
         "podPriorityClassNodeCritical": {
             "type": "boolean"
+        },
+        "appArmorProfile": {
+            "type": "object",
+            "required": [
+                "type"
+            ],
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "enum": ["Unconfined", "RuntimeDefault", "Localhost"]
+                },
+                "localhostProfile": {
+                    "type": "string"
+                }
+            }
         }
     }
 }
