@@ -132,7 +132,35 @@
                 "localhostProfile": {
                     "type": "string"
                 }
-            }
+            },
+            "$comment": "localhostProfile is required with, and only allowed with, type Localhost",
+            "oneOf": [
+                {
+                    "properties": {
+                        "type": {
+                            "enum": ["Localhost"]
+                        },
+                        "localhostProfile": {
+                            "minLength": 1
+                        }
+                    },
+                    "required": [
+                        "localhostProfile"
+                    ]
+                },
+                {
+                    "properties": {
+                        "type": {
+                            "enum": ["Unconfined", "RuntimeDefault"]
+                        }
+                    },
+                    "not": {
+                        "required": [
+                            "localhostProfile"
+                        ]
+                    }
+                }
+            ]
         }
     }
 }
