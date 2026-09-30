@@ -38,6 +38,9 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
 
+// TODO: consider sharing pkg/instrumentation/metrics and its config
+// (pkg/apis/config/v1alpha1/instrumentation) with the other plugins.
+
 // telemetryConfig holds the OTel exporter configuration for the plugin.
 type telemetryConfig struct {
 	Prometheus struct {
