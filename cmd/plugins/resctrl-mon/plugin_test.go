@@ -46,8 +46,9 @@ func newTestPlugin(resctrlPath string) *plugin {
 		panic(err)
 	}
 	return &plugin{
-		config: cfg,
-		mgr:    mgr,
+		config:         cfg,
+		mgr:            mgr,
+		pendingRemoval: make(map[string]bool),
 	}
 }
 
@@ -649,14 +650,14 @@ func TestReconcile_RetriesPendingRemoval(t *testing.T) {
 	_, err := p.mgr.EnsureGroup(podUID, "")
 	require.NoError(t, err)
 	require.Contains(t, p.mgr.List(), podUID)
-	p.markPendingRemoval(podUID)
+	p.pendingRemoval[podUID] = true
 
 	// The reconciler must retry Remove (not merely Reconcile, which preserves
 	// tracked keys) and clear the pending entry on success.
 	p.reconcile(p.mgr)
 
 	assert.NotContains(t, p.mgr.List(), podUID)
-	assert.Empty(t, p.pendingRemovalKeys())
+	assert.Empty(t, p.pendingRemoval)
 	_, err = os.Stat(filepath.Join(tmpDir, "mon_groups", podUID))
 	assert.True(t, os.IsNotExist(err), "pending mon_group should have been removed on retry")
 }
@@ -668,12 +669,12 @@ func TestReconcile_KeepsPendingGroupOfLiveSandbox(t *testing.T) {
 	const uid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 	_, err := p.mgr.EnsureGroup(uid, "")
 	require.NoError(t, err)
-	p.markPendingRemoval(uid)
+	p.pendingRemoval[uid] = true
 	p.addSandbox(makePod(uid, "default", "app"))
 
 	p.reconcile(p.mgr)
 	assert.Contains(t, p.mgr.List(), uid)
-	assert.Empty(t, p.pendingRemovalKeys())
+	assert.Empty(t, p.pendingRemoval)
 }
 
 // TestSynchronize_AdoptsExistingGroupClass verifies that on restart a pod's

@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -57,7 +58,7 @@ type plugin struct {
 	config         *pluginConfig
 	mgr            resctrlManager
 	runtime        string                         // runtime name reported to Configure
-	pendingRemoval map[string]struct{}            // keys whose Remove failed, retried by the reconciler
+	pendingRemoval map[string]bool                // keys whose Remove failed, retried by the reconciler
 	sandboxes      map[string]map[string]struct{} // canonical pod UID -> live sandbox IDs
 
 	// lifeMu guards the state onClose tears down; onClose must not wait on a
@@ -102,8 +103,9 @@ func newPlugin() *plugin {
 		log.Fatalf("failed to create monitor manager: %v", err)
 	}
 	return &plugin{
-		config: cfg,
-		mgr:    mgr,
+		config:         cfg,
+		mgr:            mgr,
+		pendingRemoval: make(map[string]bool),
 	}
 }
 
@@ -322,13 +324,13 @@ func (p *plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, contai
 		}
 		switch err := mgr.Remove(key); {
 		case err == nil:
-			p.clearPendingRemoval(key)
+			delete(p.pendingRemoval, key)
 			log.Infof("Synchronize: reaped stale mon_group %s (missed teardown)", key)
 		case errors.Is(err, monitor.ErrNotTracked):
-			p.clearPendingRemoval(key)
+			delete(p.pendingRemoval, key)
 		default:
 			log.Warnf("Synchronize: failed to reap stale mon_group %s: %v", key, err)
-			p.markPendingRemoval(key)
+			p.pendingRemoval[key] = true
 		}
 	}
 
@@ -380,14 +382,14 @@ func (p *plugin) startReconciler() {
 // would treat it as live forever; retrying Remove is what actually frees the
 // RMID once the kernel releases the directory. The caller must hold opMu.
 func (p *plugin) reconcile(mgr resctrlManager) {
-	for _, key := range p.pendingRemovalKeys() {
+	for key := range p.pendingRemoval {
 		if _, live := p.sandboxes[monitor.CanonicalizePodUID(key)]; live {
-			p.clearPendingRemoval(key)
+			delete(p.pendingRemoval, key)
 			continue
 		}
 		switch err := mgr.Remove(key); {
 		case err == nil, errors.Is(err, monitor.ErrNotTracked):
-			p.clearPendingRemoval(key)
+			delete(p.pendingRemoval, key)
 		default:
 			log.Warnf("reconciler: retry remove %s failed: %v", key, err)
 		}
@@ -442,42 +444,11 @@ func existingGroupClasses(root string) map[string]string {
 	return classes
 }
 
-// reconcileLiveSet returns the union of the Manager's tracked keys and the live
-// pod UIDs for use as the reconcile live list. The caller must hold opMu.
+// reconcileLiveSet returns the Manager's tracked keys plus the live pod UIDs for
+// use as the reconcile live list; Reconcile ignores duplicates. The caller must
+// hold opMu.
 func (p *plugin) reconcileLiveSet(mgr resctrlManager) []string {
-	live := make(map[string]struct{}, len(p.sandboxes))
-	for k := range p.sandboxes {
-		live[k] = struct{}{}
-	}
-	for _, k := range mgr.List() {
-		live[k] = struct{}{}
-	}
-	keys := make([]string, 0, len(live))
-	for k := range live {
-		keys = append(keys, k)
-	}
-	return keys
-}
-
-// markPendingRemoval records a key whose Remove failed so the reconciler
-// retries it. The pendingRemoval helpers assume the caller holds opMu.
-func (p *plugin) markPendingRemoval(key string) {
-	if p.pendingRemoval == nil {
-		p.pendingRemoval = make(map[string]struct{})
-	}
-	p.pendingRemoval[key] = struct{}{}
-}
-
-func (p *plugin) clearPendingRemoval(key string) {
-	delete(p.pendingRemoval, key)
-}
-
-func (p *plugin) pendingRemovalKeys() []string {
-	keys := make([]string, 0, len(p.pendingRemoval))
-	for k := range p.pendingRemoval {
-		keys = append(keys, k)
-	}
-	return keys
+	return slices.AppendSeq(mgr.List(), maps.Keys(p.sandboxes))
 }
 
 // PostCreateContainer is called after the container is created but before
@@ -650,7 +621,7 @@ func (p *plugin) RemovePodSandbox(ctx context.Context, pod *api.PodSandbox) erro
 	default:
 		log.Warnf("RemovePodSandbox %s/%s: failed to remove mon_group (will be retried by reconciler): %v",
 			pod.GetNamespace(), pod.GetName(), err)
-		p.markPendingRemoval(podUID)
+		p.pendingRemoval[podUID] = true
 	}
 	return nil
 }
