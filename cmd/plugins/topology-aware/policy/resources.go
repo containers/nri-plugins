@@ -268,7 +268,7 @@ var _ Request = &request{}
 
 // grant implements our Grant interface.
 type grant struct {
-	container      cache.Container // container CPU is granted to
+	container      cache.Container // container CPU is granted to, nil for a DRA claim
 	node           Node            // node CPU is supplied from
 	exclusive      cpuset.CPUSet   // exclusive CPUs
 	cpuType        cpuType         // type of CPUs (normal, reserved, ...)
@@ -617,6 +617,11 @@ func (cs *supply) Reserve(g Grant, o *libmem.Offer) (map[string]libmem.NodeMask,
 	}
 
 	g.AccountAllocateCPU()
+
+	// A DRA claim takes no memory.
+	if o == nil {
+		return nil, nil
+	}
 
 	zone, updates, err := o.Commit()
 	if err != nil {
@@ -1520,8 +1525,13 @@ func (cg *grant) String() string {
 
 	mem := fmt.Sprintf(", memory: %s (%s)", cg.memZone, prettyMem(cg.memSize))
 
+	owner := "DRA claim"
+	if cg.container != nil {
+		owner = cg.container.PrettyName()
+	}
+
 	return fmt.Sprintf("<grant for %s from %s: %s%s%s%s%s%s%s>",
-		cg.container.PrettyName(), cg.node.Name(), cpuType, cpuClass, isolated, exclusive, reserved, shared, mem)
+		owner, cg.node.Name(), cpuType, cpuClass, isolated, exclusive, reserved, shared, mem)
 }
 
 func (cg *grant) AccountAllocateCPU() {
@@ -1536,6 +1546,9 @@ func (cg *grant) AccountAllocateCPU() {
 
 func (cg *grant) Release() {
 	cg.GetCPUNode().FreeSupply().ReleaseCPU(cg)
+	if cg.container == nil {
+		return
+	}
 	err := cg.node.Policy().releaseMem(cg.container.GetID())
 	if err != nil {
 		log.Errorf("releasing memory for %s failed: %v", cg.container.PrettyName(), err)
