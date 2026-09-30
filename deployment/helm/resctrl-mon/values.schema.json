@@ -119,6 +119,23 @@
         "podPriorityClassNodeCritical": {
             "type": "boolean"
         },
+        "podMonitor": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "interval": {
+                    "type": "string"
+                },
+                "labels": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "appArmorProfile": {
             "type": "object",
             "required": [

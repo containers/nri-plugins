@@ -7,10 +7,9 @@
 #
 # Install the chart with telemetry.prometheus.enabled=false when scraping this
 # collector. Both this DaemonSet and the plugin's own Prometheus exporter carry
-# the same counters and are annotated for prometheus.io/scrape, so leaving both
-# enabled makes pod discovery ingest two copies and the dashboards' unscoped
-# sum() queries double-count. Expose exactly one: the plugin's pull-path
-# exporter OR this collector's exporter.
+# the same counters, so scraping both ingests two copies and the dashboards'
+# unscoped sum() queries double-count. Expose exactly one: the plugin's
+# pull-path exporter OR this collector's exporter.
 #
 # Prerequisites:
 #   - otel-collector-rbac.yaml (ServiceAccount + ClusterRole for pod metadata)
