@@ -10,8 +10,9 @@ telemetry:
     enabled: true
     listenAddress: ":9100"
     # OTel Prometheus namespace: prefixes every metric name with "<namespace>_".
-    # Leave empty. The bundled Grafana dashboards query the unprefixed names
-    # (l3_*/perf_*); a non-empty value renames every series and breaks them.
+    # Leave empty. The sample Grafana dashboards (deployment/samples/resctrl-mon)
+    # query the unprefixed names (l3_*/perf_*); a non-empty value renames every
+    # series and breaks them.
     namespace: ""
   otlp:
     enabled: false

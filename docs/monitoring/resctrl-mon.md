@@ -78,7 +78,7 @@ telemetry:
     enabled: true
     listenAddress: ":9100"
     # Metric-name prefix. Leave empty: a non-empty value renames every series
-    # and breaks the bundled Grafana dashboards (which query l3_*/perf_*).
+    # and breaks the sample Grafana dashboards (which query l3_*/perf_*).
     namespace: ""
   otlp:
     enabled: false
@@ -132,6 +132,36 @@ Labels (OTLP uses the dotted attribute names, e.g. `k8s.pod.uid`):
   `service_name` (set `service.name` itself to override it), and `instance`
   when `service.instance.id` is set. Names starting with `__` are reserved by
   Prometheus. Such a configuration is rejected.
+
+## Samples
+
+[`deployment/samples/resctrl-mon`](https://github.com/containers/nri-plugins/tree/main/deployment/samples/resctrl-mon)
+has files that the Helm chart does not deploy:
+
+- `grafana-resctrl-pod-energy.json`, `grafana-resctrl-perf-counters.json`:
+  Grafana dashboards for the metrics above. They need kube-state-metrics (for
+  `kube_pod_info`) and an empty `telemetry.prometheus.namespace`.
+- `otel-collector-rbac.yaml`, `otel-collector-agent.yaml`: an OTel Collector
+  agent DaemonSet for the OTLP push path (`telemetry.otlp.enabled=true`). It
+  adds pod and namespace labels with the `k8sattributes` processor and exposes
+  the metrics to Prometheus on port 8889. Add exporters (for example
+  `otlphttp`) to send them elsewhere.
+
+Before applying the collector manifests:
+
+- Set the two namespace placeholders in the NetworkPolicy (the plugin's and
+  Prometheus's).
+- Copy any `tolerations` or `nodeSelector` set for the plugin to the collector
+  DaemonSet.
+- Configure TLS on the collector's OTLP receivers, or set
+  `telemetry.otlp.insecure=true`: the receivers do not use TLS.
+- Set `telemetry.prometheus.enabled=false` if Prometheus scrapes the
+  collector; otherwise it ingests every series twice.
+
+```sh
+kubectl apply -f deployment/samples/resctrl-mon/otel-collector-rbac.yaml
+kubectl apply -f deployment/samples/resctrl-mon/otel-collector-agent.yaml
+```
 
 ## Coexistence with Allocation Plugins
 
