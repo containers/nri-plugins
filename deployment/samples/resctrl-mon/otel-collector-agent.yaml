@@ -14,9 +14,9 @@
 # Prerequisites:
 #   - otel-collector-rbac.yaml (ServiceAccount + ClusterRole for pod metadata)
 #
-# Usage:
-#   kubectl apply -f otel-collector-rbac.yaml
-#   kubectl apply -f otel-collector-agent.yaml
+# Usage (from the repository root):
+#   kubectl apply -f deployment/samples/resctrl-mon/otel-collector-rbac.yaml
+#   kubectl apply -f deployment/samples/resctrl-mon/otel-collector-agent.yaml
 ---
 apiVersion: v1
 kind: ConfigMap

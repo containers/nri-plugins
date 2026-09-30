@@ -161,7 +161,7 @@ customize with their own values, along with the default values.
 | -------------------------------------- | --------- | ------------------------------------------------------------------ |
 | `telemetry.prometheus.enabled`         | `true`    | expose a `/metrics` Prometheus endpoint                            |
 | `telemetry.prometheus.listenAddress`   | `":9100"` | address:port for the Prometheus HTTP listener                      |
-| `telemetry.prometheus.namespace`       | `""`      | Prometheus metric prefix. Leave empty: a non-empty value renames every series and breaks the bundled dashboards (see note below). |
+| `telemetry.prometheus.namespace`       | `""`      | Prometheus metric prefix. Leave empty: a non-empty value renames every series and breaks the sample dashboards (see note below). |
 | `telemetry.otlp.enabled`              | `false`   | push metrics via OTLP                                              |
 | `telemetry.otlp.endpoint`             | `""`      | OTLP receiver endpoint (e.g. `otel-collector-resctrl.monitoring.svc:4317`) |
 | `telemetry.otlp.protocol`             | `grpc`    | `grpc` or `http`                                                   |
@@ -173,7 +173,7 @@ customize with their own values, along with the default values.
 | `telemetry.resourceAttributes`        | `{}`      | static OTel resource attributes added to all metrics               |
 
 > **Note:** `telemetry.prometheus.namespace` prefixes every exported metric
-> name with `<namespace>_`. The bundled Grafana dashboards query the unprefixed
+> name with `<namespace>_`. The [sample](#samples) Grafana dashboards query the unprefixed
 > names (`l3_*`/`perf_*`), so setting a non-empty value renames every series and
 > breaks those dashboards. Leave it empty unless you are supplying your own
 > dashboards that account for the prefix.
@@ -221,7 +221,7 @@ scrape_configs:
 | containerd       | 1.7.0+          | NRI support required.                                                 |
 | CRI-O            | 1.36.0+         | Provides container PIDs via NRI `LinuxContainer.Pid`.                 |
 | Kubernetes       | 1.24+           | DaemonSet and NRI socket conventions.                                 |
-| kube-state-metrics | —             | Required by the bundled Grafana dashboards for `kube_pod_info`.       |
+| kube-state-metrics | —             | Required by the sample Grafana dashboards for `kube_pod_info`.        |
 | CPU              | Intel RDT       | CMT/MBM for bandwidth/LLC counters; AET for energy/perf counters.     |
 
 ### Kernel feature matrix
@@ -235,24 +235,10 @@ scrape_configs:
 > yet part of a released kernel. The "Available since" version for these
 > counters is TBD and will be recorded once the change lands.
 
-## Optional: OTel Collector agent
+## Samples
 
-When using OTLP push mode (`telemetry.otlp.enabled=true`), you may deploy an
-OTel Collector agent to receive, enrich, and fan out the metrics. Reference
-manifests are provided in `optional/`:
-
-```sh
-kubectl apply -f optional/otel-collector-rbac.yaml
-kubectl apply -f optional/otel-collector-agent.yaml
-```
-
-Before applying, set the two namespace placeholders in the NetworkPolicy (the
-plugin's and Prometheus's), and copy any `tolerations` or `nodeSelector` set for
-the plugin to the collector DaemonSet. The reference collector's OTLP receivers
-do not use TLS, so either configure TLS on them or install the chart with
-`telemetry.otlp.insecure=true`.
-
-The reference config uses the `k8sattributes` processor to attach pod/namespace
-labels and a Prometheus exporter on port 8889. Customize
-`otel-collector-agent.yaml` to add additional exporters (e.g. `otlphttp` to a
-remote backend).
+[`deployment/samples/resctrl-mon`](https://github.com/containers/nri-plugins/tree/main/deployment/samples/resctrl-mon)
+has Grafana dashboards and reference manifests for an OTel Collector agent
+(for `telemetry.otlp.enabled=true`). The chart does not deploy them. See the
+[plugin documentation](https://github.com/containers/nri-plugins/blob/main/docs/monitoring/resctrl-mon.md#samples)
+for how to use them.
