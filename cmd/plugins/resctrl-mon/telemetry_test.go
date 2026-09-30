@@ -276,6 +276,22 @@ func TestPerfCountersGate(t *testing.T) {
 		assert.Contains(t, allowed, "core_energy") // always allowed (core AET)
 		assert.NotContains(t, allowed, "c6_res")   // not in include list
 	})
+
+	t.Run("exclude list filters", func(t *testing.T) {
+		cfg := defaultTelemetryConfig()
+		cfg.PerfCounters.Enabled = true
+		cfg.PerfCounters.Exclude = []string{"c?_res"}
+		filter := perfCounterFilter(cfg)
+
+		var allowed []string
+		for _, r := range readings {
+			if filter(r) {
+				allowed = append(allowed, r.Name)
+			}
+		}
+		assert.Contains(t, allowed, "unhalted_core_cycles")
+		assert.NotContains(t, allowed, "c6_res")
+	})
 }
 
 func TestControlGroupOf(t *testing.T) {
@@ -325,6 +341,16 @@ func TestValidateTelemetryConfig(t *testing.T) {
 		assert.Error(t, validateTelemetryConfig(&cfg))
 	})
 
+	t.Run("malformed perfCounters pattern", func(t *testing.T) {
+		for _, patterns := range [][]string{{"c6_res", "unhalted_["}, {"stalls_\\"}} {
+			cfg := defaultTelemetryConfig()
+			cfg.PerfCounters.Include = patterns
+			assert.Error(t, validateTelemetryConfig(&cfg), "include %v", patterns)
+			cfg.PerfCounters.Include, cfg.PerfCounters.Exclude = nil, patterns
+			assert.Error(t, validateTelemetryConfig(&cfg), "exclude %v", patterns)
+		}
+	})
+
 	t.Run("resource attribute label collisions", func(t *testing.T) {
 		for _, attrs := range []map[string]string{
 			{"k8s.pod.uid": "x"},
@@ -359,12 +385,4 @@ func TestInstrumentNaming(t *testing.T) {
 		assert.Equal(t, "perf.activity", monitor.InstrumentName("mon_PERF_PKG_00", "activity"))
 		assert.Equal(t, "perf.c1.res", monitor.InstrumentName("mon_PERF_PKG_00", "c1_res"))
 	})
-}
-
-func TestMatchGlob(t *testing.T) {
-	assert.True(t, matchGlob("unhalted_*", "unhalted_core_cycles"))
-	assert.True(t, matchGlob("unhalted_*", "unhalted_ref_cycles"))
-	assert.False(t, matchGlob("unhalted_*", "c6_res"))
-	assert.True(t, matchGlob("c6_res", "c6_res"))
-	assert.True(t, matchGlob("*_bytes", "mbm_local_bytes"))
 }

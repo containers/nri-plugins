@@ -88,8 +88,8 @@ telemetry:
     insecure: false          # true sends OTLP in plaintext (no TLS)
   perfCounters:
     enabled: false           # gate rdt=perf counters (c1_res, stalls_*, etc.)
-    include: []              # glob patterns for counters to include
-    exclude: []              # glob patterns for counters to exclude
+    include: []              # path.Match patterns for counters to include
+    exclude: []              # path.Match patterns for counters to exclude
   resourceAttributes: {}     # static OTel resource attributes on all metrics
 ```
 

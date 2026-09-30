@@ -15,6 +15,7 @@
 package main
 
 import (
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -67,10 +68,11 @@ func perfCounterFilter(cfg telemetryConfig) monitor.FilterFunc {
 		if !cfg.PerfCounters.Enabled {
 			return false
 		}
-		// Apply include/exclude lists if configured.
+		// Apply include/exclude lists if configured. validateTelemetryConfig
+		// rejects malformed patterns, so path.Match cannot fail here.
 		if len(cfg.PerfCounters.Include) > 0 {
 			for _, pattern := range cfg.PerfCounters.Include {
-				if matchGlob(pattern, r.Name) {
+				if ok, _ := path.Match(pattern, r.Name); ok {
 					return true
 				}
 			}
@@ -78,7 +80,7 @@ func perfCounterFilter(cfg telemetryConfig) monitor.FilterFunc {
 		}
 		if len(cfg.PerfCounters.Exclude) > 0 {
 			for _, pattern := range cfg.PerfCounters.Exclude {
-				if matchGlob(pattern, r.Name) {
+				if ok, _ := path.Match(pattern, r.Name); ok {
 					return false
 				}
 			}
@@ -100,34 +102,6 @@ func groupAttributesFor(resctrlRoot string) monitor.AttributeFunc {
 			attribute.String("resctrl.group.source", "pod"),
 		}
 	}
-}
-
-// matchGlob does simple glob matching (only * is supported as wildcard).
-func matchGlob(pattern, name string) bool {
-	if !strings.Contains(pattern, "*") {
-		return pattern == name
-	}
-	parts := strings.Split(pattern, "*")
-	// The name must start with the segment before the first '*' and end with
-	// the segment after the last '*'.
-	if !strings.HasPrefix(name, parts[0]) {
-		return false
-	}
-	name = name[len(parts[0]):]
-	last := parts[len(parts)-1]
-	if !strings.HasSuffix(name, last) {
-		return false
-	}
-	name = name[:len(name)-len(last)]
-	// Any interior segments must appear in order.
-	for _, seg := range parts[1 : len(parts)-1] {
-		i := strings.Index(name, seg)
-		if i < 0 {
-			return false
-		}
-		name = name[i+len(seg):]
-	}
-	return true
 }
 
 // controlGroupOf extracts the CTRL group name from a mon_group path, relative
