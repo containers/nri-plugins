@@ -164,7 +164,7 @@ customize with their own values, along with the default values.
 | `telemetry.otlp.endpoint`             | `""`      | OTLP receiver endpoint (e.g. `otel-collector-resctrl.monitoring.svc:4317`) |
 | `telemetry.otlp.protocol`             | `grpc`    | `grpc` or `http`                                                   |
 | `telemetry.otlp.interval`             | `15s`     | OTLP export interval                                               |
-| `telemetry.otlp.insecure`             | `true`    | disable TLS for OTLP connection                                    |
+| `telemetry.otlp.insecure`             | `false`   | disable TLS for OTLP connection                                    |
 | `telemetry.perfCounters.enabled`      | `false`   | gate `rdt=perf` counters (c1_res, stalls_*, etc.)                  |
 | `telemetry.perfCounters.include`      | `[]`      | glob patterns for counters to include                              |
 | `telemetry.perfCounters.exclude`      | `[]`      | glob patterns for counters to exclude                              |
@@ -223,7 +223,9 @@ kubectl apply -f optional/otel-collector-agent.yaml
 
 Before applying, set the two namespace placeholders in the NetworkPolicy (the
 plugin's and Prometheus's), and copy any `tolerations` or `nodeSelector` set for
-the plugin to the collector DaemonSet.
+the plugin to the collector DaemonSet. The reference collector's OTLP receivers
+do not use TLS, so either configure TLS on them or install the chart with
+`telemetry.otlp.insecure=true`.
 
 The reference config uses the `k8sattributes` processor to attach pod/namespace
 labels and a Prometheus exporter on port 8889. Customize

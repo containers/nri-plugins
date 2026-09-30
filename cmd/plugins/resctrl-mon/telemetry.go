@@ -97,11 +97,10 @@ func defaultTelemetryConfig() telemetryConfig {
 	var cfg telemetryConfig
 	cfg.Prometheus.Enabled = true
 	cfg.Prometheus.ListenAddress = ":9100"
-	// OTLP defaults match the chart and sample config (plaintext unless TLS is
+	// OTLP defaults match the chart and sample config (TLS unless insecure is
 	// opted into).
 	cfg.OTLP.Protocol = "grpc"
 	cfg.OTLP.Interval = "15s"
-	cfg.OTLP.Insecure = true
 	return cfg
 }
 

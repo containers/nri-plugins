@@ -2,7 +2,8 @@
 #
 # Deploy this alongside nri-resctrl-mon when telemetry.otlp.enabled=true.
 # It receives OTLP from the plugin, enriches with k8sattributes, and
-# fans out to Prometheus and/or other backends.
+# fans out to Prometheus and/or other backends. Its OTLP receivers do not use
+# TLS: configure TLS on them or set telemetry.otlp.insecure=true.
 #
 # Install the chart with telemetry.prometheus.enabled=false when scraping this
 # collector. Both this DaemonSet and the plugin's own Prometheus exporter carry
