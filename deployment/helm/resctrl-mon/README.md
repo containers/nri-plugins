@@ -168,8 +168,8 @@ customize with their own values, along with the default values.
 | `telemetry.otlp.interval`             | `15s`     | OTLP export interval                                               |
 | `telemetry.otlp.insecure`             | `false`   | disable TLS for OTLP connection                                    |
 | `telemetry.perfCounters.enabled`      | `false`   | gate `rdt=perf` counters (c1_res, stalls_*, etc.)                  |
-| `telemetry.perfCounters.include`      | `[]`      | glob patterns for counters to include                              |
-| `telemetry.perfCounters.exclude`      | `[]`      | glob patterns for counters to exclude                              |
+| `telemetry.perfCounters.include`      | `[]`      | [`path.Match`](https://pkg.go.dev/path#Match) patterns for counters to include |
+| `telemetry.perfCounters.exclude`      | `[]`      | [`path.Match`](https://pkg.go.dev/path#Match) patterns for counters to exclude |
 | `telemetry.resourceAttributes`        | `{}`      | static OTel resource attributes added to all metrics               |
 
 > **Note:** `telemetry.prometheus.namespace` prefixes every exported metric

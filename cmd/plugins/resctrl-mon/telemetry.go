@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -128,6 +129,13 @@ func validateTelemetryConfig(cfg *telemetryConfig) error {
 	}
 	if len(cfg.PerfCounters.Include) > 0 && len(cfg.PerfCounters.Exclude) > 0 {
 		return fmt.Errorf("telemetry: perfCounters.include and perfCounters.exclude are mutually exclusive")
+	}
+	for _, patterns := range [][]string{cfg.PerfCounters.Include, cfg.PerfCounters.Exclude} {
+		for _, pattern := range patterns {
+			if _, err := path.Match(pattern, ""); err != nil {
+				return fmt.Errorf("telemetry: perfCounters pattern %q: %w", pattern, err)
+			}
+		}
 	}
 	if cfg.Prometheus.ListenAddress == "" {
 		cfg.Prometheus.ListenAddress = ":9100"
