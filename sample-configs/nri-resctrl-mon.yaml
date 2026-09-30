@@ -11,7 +11,7 @@ telemetry:
     endpoint: ""
     protocol: grpc
     interval: 15s
-    insecure: true
+    insecure: false
   perfCounters:
     enabled: false
     include: []

@@ -85,7 +85,7 @@ telemetry:
     endpoint: ""             # e.g. "otel-collector-resctrl.monitoring.svc:4317"
     protocol: grpc           # grpc | http
     interval: 15s            # must be a positive duration
-    insecure: true
+    insecure: false          # true sends OTLP in plaintext (no TLS)
   perfCounters:
     enabled: false           # gate rdt=perf counters (c1_res, stalls_*, etc.)
     include: []              # glob patterns for counters to include

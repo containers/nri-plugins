@@ -301,6 +301,7 @@ func TestValidateTelemetryConfig(t *testing.T) {
 	t.Run("valid defaults", func(t *testing.T) {
 		cfg := defaultTelemetryConfig()
 		assert.NoError(t, validateTelemetryConfig(&cfg))
+		assert.False(t, cfg.OTLP.Insecure, "OTLP must default to TLS")
 	})
 
 	t.Run("otlp enabled requires endpoint", func(t *testing.T) {
