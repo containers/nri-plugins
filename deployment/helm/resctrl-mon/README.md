@@ -151,6 +151,9 @@ customize with their own values, along with the default values.
 | `affinity`               | []                                                                                                                            | specify node affinity                                |
 | `nodeSelector`           | []                                                                                                                            | specify node selector labels                         |
 | `podPriorityClassNodeCritical` | true                                                                                                                    | enable [marking Pod as node critical](https://kubernetes.io/docs/tasks/administer-cluster/guaranteed-scheduling-critical-addon-pods/#marking-pod-as-critical) |
+| `podMonitor.enabled`     | false                                                                                                                         | create a Prometheus Operator PodMonitor for the metrics port (see [Prometheus Integration](#prometheus-integration)) |
+| `podMonitor.interval`    | ""                                                                                                                            | PodMonitor scrape interval; empty uses Prometheus's default |
+| `podMonitor.labels`      | {}                                                                                                                            | extra PodMonitor labels, e.g. to match the Prometheus `podMonitorSelector` |
 
 ### Telemetry options
 
@@ -158,7 +161,6 @@ customize with their own values, along with the default values.
 | -------------------------------------- | --------- | ------------------------------------------------------------------ |
 | `telemetry.prometheus.enabled`         | `true`    | expose a `/metrics` Prometheus endpoint                            |
 | `telemetry.prometheus.listenAddress`   | `":9100"` | address:port for the Prometheus HTTP listener                      |
-| `telemetry.prometheus.scrapeInterval`  | `"15s"`   | recommended scrape interval (set via pod annotation hint)          |
 | `telemetry.prometheus.namespace`       | `""`      | Prometheus metric prefix. Leave empty: a non-empty value renames every series and breaks the bundled dashboards (see note below). |
 | `telemetry.otlp.enabled`              | `false`   | push metrics via OTLP                                              |
 | `telemetry.otlp.endpoint`             | `""`      | OTLP receiver endpoint (e.g. `otel-collector-resctrl.monitoring.svc:4317`) |
@@ -178,15 +180,38 @@ customize with their own values, along with the default values.
 
 ## Prometheus Integration
 
-The DaemonSet pods are annotated with `prometheus.io/scrape: "true"` so that
-standard Prometheus service-discovery configurations will pick them up
-automatically. The `prometheus.io/interval` annotation is set to the
-configured `telemetry.prometheus.scrapeInterval` (default 15s) as a hint,
-but note that most Prometheus deployments do not honor this annotation
-without additional relabel configuration.
+The plugin serves metrics at `/metrics` on the container port named `metrics`.
+The chart does not annotate the pods for Prometheus discovery; configure
+Prometheus to scrape them in one of these ways.
 
-If you need a specific scrape interval, configure a dedicated scrape job
-in your Prometheus configuration with the desired `scrape_interval`.
+With the Prometheus Operator (for example kube-prometheus-stack), set
+`podMonitor.enabled=true` to create a PodMonitor, and set `podMonitor.labels`
+to match the Prometheus `podMonitorSelector` (for kube-prometheus-stack,
+`release: <its release name>`):
+
+```sh
+helm install my-resctrl-mon nri-plugins/nri-resctrl-mon --namespace kube-system \
+  --set podMonitor.enabled=true --set podMonitor.labels.release=kube-prometheus-stack
+```
+
+Without the operator, add a scrape job that keeps the plugin pods' `metrics`
+port. Set the namespace to the one the chart is installed in:
+
+```yaml
+scrape_configs:
+  - job_name: nri-resctrl-mon
+    scrape_interval: 15s
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: [kube-system]
+    relabel_configs:
+      - source_labels:
+          - __meta_kubernetes_pod_label_app_kubernetes_io_name
+          - __meta_kubernetes_pod_container_port_name
+        regex: nri-resctrl-mon;metrics
+        action: keep
+```
 
 ## Runtime Requirements
 

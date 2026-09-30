@@ -9,7 +9,6 @@ telemetry:
   prometheus:
     enabled: true
     listenAddress: ":9100"
-    scrapeInterval: "15s"    # recommended scrape interval (annotation hint)
     # OTel Prometheus namespace: prefixes every metric name with "<namespace>_".
     # Leave empty. The bundled Grafana dashboards query the unprefixed names
     # (l3_*/perf_*); a non-empty value renames every series and breaks them.
@@ -25,6 +24,13 @@ telemetry:
     include: []
     exclude: []
   resourceAttributes: {}     # static OTel resource attributes
+
+# Prometheus Operator PodMonitor for the plugin's metrics port (requires the
+# monitoring.coreos.com CRDs and telemetry.prometheus.enabled).
+podMonitor:
+  enabled: false
+  interval: ""               # scrape interval, e.g. 15s; empty uses Prometheus's default
+  labels: {}                 # e.g. release: <kube-prometheus-stack release>, to match podMonitorSelector
 
 image:
   name: ghcr.io/containers/nri-plugins/nri-resctrl-mon

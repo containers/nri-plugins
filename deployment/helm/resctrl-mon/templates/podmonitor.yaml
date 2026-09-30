@@ -1,0 +1,22 @@
+{{- if and .Values.podMonitor.enabled .Values.telemetry.prometheus.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: nri-resctrl-mon
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nri-plugin.labels" . | nindent 4 }}
+    {{- with .Values.podMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "nri-plugin.selectorLabels" . | nindent 6 }}
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      {{- with .Values.podMonitor.interval }}
+      interval: {{ . }}
+      {{- end }}
+{{- end }}

@@ -13,18 +13,9 @@ spec:
     metadata:
       labels:
       {{- include "nri-plugin.labels" . | nindent 8 }}
-      {{- $appArmorAnnotation := include "nri-resctrl-mon.appArmorAnnotation" . }}
-      {{- if or .Values.telemetry.prometheus.enabled $appArmorAnnotation }}
+      {{- with include "nri-resctrl-mon.appArmorAnnotation" . }}
       annotations:
-        {{- if .Values.telemetry.prometheus.enabled }}
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "{{ include "nri-resctrl-mon.metricsPort" . }}"
-        prometheus.io/path: "/metrics"
-        prometheus.io/interval: "{{ .Values.telemetry.prometheus.scrapeInterval }}"
-        {{- end }}
-        {{- with $appArmorAnnotation }}
         container.apparmor.security.beta.kubernetes.io/nri-resctrl-mon: {{ . }}
-        {{- end }}
       {{- end }}
     spec:
     {{- with .Values.tolerations }}
