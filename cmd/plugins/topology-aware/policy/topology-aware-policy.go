@@ -17,6 +17,8 @@ package topologyaware
 import (
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/containers/nri-plugins/pkg/irq"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
@@ -46,6 +48,7 @@ const (
 type allocations struct {
 	policy *policy          // policy back pointer
 	grants map[string]Grant // container grants by container ID
+	claims map[string]Grant // DRA claim grants by claim UID
 	irqCnt int              // number of grant additions/deletions with IRQ affinity
 }
 
@@ -197,6 +200,11 @@ func (p *policy) checkAllocations(format string, args ...any) {
 		ctr     = map[string]Grant{}
 		dup     = map[string][]Grant{}
 	)
+
+	for uid, g := range p.allocations.claims {
+		log.Debugf("%s %s (%s)", prefix, g, uid)
+		cpuExcl += g.ExclusiveCPUs().Size()
+	}
 
 	for _, g := range p.allocations.grants {
 		log.Debugf("%s %s (%s)", prefix, g, g.GetContainer().GetID())
@@ -533,7 +541,7 @@ func (p *policy) Reconfigure(newCfg any) error {
 		return policyError("failed to reconfigure: %v", err)
 	}
 
-	for _, grant := range allocations.grants {
+	for _, grant := range allocations.all() {
 		if err := grant.RefetchNodes(); err != nil {
 			*p = savedPolicy
 			opt = p.cfg
@@ -739,16 +747,25 @@ func (p *policy) checkColdstartOff() {
 
 // newAllocations returns a new initialized empty set of allocations.
 func (p *policy) newAllocations() allocations {
-	return allocations{policy: p, grants: make(map[string]Grant)}
+	return allocations{policy: p, grants: make(map[string]Grant), claims: make(map[string]Grant)}
 }
 
 // clone creates a copy of the allocation.
 func (a *allocations) clone() allocations {
-	o := allocations{policy: a.policy, grants: make(map[string]Grant), irqCnt: a.irqCnt}
+	o := a.policy.newAllocations()
+	o.irqCnt = a.irqCnt
 	for id, grant := range a.grants {
 		o.grants[id] = grant.Clone()
 	}
+	for uid, grant := range a.claims {
+		o.claims[uid] = grant.Clone()
+	}
 	return o
+}
+
+// all returns the container grants and the claim grants.
+func (a *allocations) all() []Grant {
+	return slices.Concat(slices.Collect(maps.Values(a.grants)), slices.Collect(maps.Values(a.claims)))
 }
 
 func (a *allocations) addGrant(g Grant) {

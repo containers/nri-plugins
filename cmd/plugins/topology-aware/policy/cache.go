@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"maps"
+	"strings"
 	"time"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
@@ -28,6 +29,7 @@ import (
 const (
 	keyAllocations = "allocations"
 	keyConfig      = "config"
+	keyClaimPrefix = "claim:"
 )
 
 func (p *policy) saveAllocations() {
@@ -40,6 +42,14 @@ func (p *policy) saveAllocations() {
 func (p *policy) restoreAllocations(allocations *allocations) error {
 	savedAllocations := allocations.clone()
 	p.allocations = p.newAllocations()
+
+	// Claims go first, so that reinstating the grants neither allocates nor
+	// pins shared containers to claimed CPUs.
+	if err := p.reinstateClaims(allocations.claims); err != nil {
+		p.allocations = savedAllocations
+		p.saveAllocations()
+		return err
+	}
 
 	//
 	// Try to reinstate all grants with the exact same resource assignments
@@ -59,6 +69,17 @@ func (p *policy) restoreAllocations(allocations *allocations) error {
 		}
 	}
 
+	return nil
+}
+
+// reinstateClaims restores the given claim grants.
+func (p *policy) reinstateClaims(claims map[string]Grant) error {
+	for uid, grant := range claims {
+		if _, err := grant.GetCPUNode().FreeSupply().Reserve(grant, nil); err != nil {
+			return policyError("failed to reinstate DRA claim %s: %w", uid, err)
+		}
+		p.allocations.claims[uid] = grant
+	}
 	return nil
 }
 
@@ -154,12 +175,14 @@ type cachedGrant struct {
 
 func newCachedGrant(cg Grant) *cachedGrant {
 	ccg := &cachedGrant{}
-	ccg.PrettyName = cg.GetContainer().PrettyName()
+	if c := cg.GetContainer(); c != nil {
+		ccg.PrettyName = c.PrettyName()
+		ccg.Container = c.GetID()
+	}
 	ccg.Exclusive = cg.ExclusiveCPUs().String()
 	ccg.Part = cg.CPUPortion()
 	ccg.CPUType = cg.CPUType()
 	ccg.CPUClass = cg.CPUClass()
-	ccg.Container = cg.GetContainer().GetID()
 	ccg.Pool = cg.GetCPUNode().Name()
 	ccg.MemoryPool = cg.GetMemoryZone()
 	ccg.MemType = cg.MemoryType()
@@ -175,9 +198,13 @@ func (ccg *cachedGrant) ToGrant(policy *policy) (Grant, error) {
 	if !ok {
 		return nil, policyError("cache error: failed to restore %v, unknown pool/node", *ccg)
 	}
-	container, ok := policy.cache.LookupContainer(ccg.Container)
-	if !ok {
-		return nil, policyError("cache error: failed to restore %v, unknown container", *ccg)
+
+	var container cache.Container
+	if ccg.Container != "" {
+		container, ok = policy.cache.LookupContainer(ccg.Container)
+		if !ok {
+			return nil, policyError("cache error: failed to restore %v, unknown container", *ccg)
+		}
 	}
 
 	g := newGrant(
@@ -219,26 +246,32 @@ func (a *allocations) MarshalJSON() ([]byte, error) {
 	for id, cg := range a.grants {
 		cgrants[id] = newCachedGrant(cg)
 	}
+	for uid, cg := range a.claims {
+		cgrants[keyClaimPrefix+uid] = newCachedGrant(cg)
+	}
 
 	return json.Marshal(cgrants)
 }
 
 func (a *allocations) UnmarshalJSON(data []byte) error {
-	var err error
-
 	cgrants := make(map[string]*cachedGrant)
 	if err := json.Unmarshal(data, &cgrants); err != nil {
 		return policyError("failed to restore allocations: %v", err)
 	}
 
 	a.grants = make(map[string]Grant, 32)
+	a.claims = make(map[string]Grant)
 	for id, ccg := range cgrants {
-		a.grants[id], err = ccg.ToGrant(a.policy)
+		g, err := ccg.ToGrant(a.policy)
 		if err != nil {
 			log.Errorf("removing unresolvable cached grant %v: %v", *ccg, err)
-			delete(a.grants, id)
+			continue
+		}
+		log.Debugf("resolved cache grant: %v", g.String())
+		if uid, ok := strings.CutPrefix(id, keyClaimPrefix); ok {
+			a.claims[uid] = g
 		} else {
-			log.Debugf("resolved cache grant: %v", a.grants[id].String())
+			a.grants[id] = g
 		}
 	}
 
@@ -261,10 +294,15 @@ func (a *allocations) Set(value any) {
 
 	a.grants = make(map[string]Grant, 32)
 	maps.Copy(a.grants, from.grants)
+	a.claims = make(map[string]Grant)
+	maps.Copy(a.claims, from.claims)
 }
 
 func (a *allocations) Dump(logfn func(format string, args ...any), prefix string) {
 	for _, cg := range a.grants {
 		logfn(prefix+"%s", cg)
+	}
+	for uid, cg := range a.claims {
+		logfn(prefix+"%s: %s", uid, cg)
 	}
 }

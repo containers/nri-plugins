@@ -41,7 +41,8 @@ func TestToGrant(t *testing.T) {
 		{
 			name: "known node but failed lookup",
 			cgrant: &cachedGrant{
-				Pool: "node1",
+				Pool:      "node1",
+				Container: "ctr",
 			},
 			policy: &policy{
 				nodes: map[string]Node{
@@ -54,7 +55,8 @@ func TestToGrant(t *testing.T) {
 		{
 			name: "known node",
 			cgrant: &cachedGrant{
-				Pool: "node1",
+				Pool:      "node1",
+				Container: "ctr",
 			},
 			policy: &policy{
 				nodes: map[string]Node{
@@ -63,6 +65,18 @@ func TestToGrant(t *testing.T) {
 				cache: &mockCache{
 					returnValue2ForLookupContainer: true,
 				},
+			},
+		},
+		{
+			name: "DRA claim, no container to look up",
+			cgrant: &cachedGrant{
+				Pool: "node1",
+			},
+			policy: &policy{
+				nodes: map[string]Node{
+					"node1": &node{},
+				},
+				cache: &mockCache{},
 			},
 		},
 	}
