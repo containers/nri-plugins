@@ -505,6 +505,35 @@ func TestAllocateClaimSparesSharedCPUs(t *testing.T) {
 	}
 }
 
+// Claiming sharable CPUs fails if the shared containers left on them would be
+// overcommitted, and leaves nothing claimed. AllocateClaim picks only what the
+// shared containers can spare, so this is checked on claimCPUs directly.
+func TestClaimCPUsSparesSharedCPUs(t *testing.T) {
+	sys := draTestSystem(t)
+	p, _ := draTestPolicy(t, sys, draTestConfig("", draTestReserved(sys)))
+
+	// Leave a little over one sharable CPU's worth of shared capacity.
+	pool := p.poolForCPUs(sys.Node(0).CPUSet())
+	sharable := pool.FreeSupply().SharableCPUs()
+	for i := range sharable.Size() - 1 {
+		allocateShared(t, p, fmt.Sprintf("shared-%d", i), "990m", pool.Name())
+	}
+	free := freeCPUs(p)
+
+	two := cpuset.New(sharable.List()[:2]...)
+	if err := p.claimCPUs(two); err == nil || !strings.Contains(err.Error(), "would overcommit") {
+		t.Fatalf("got error %v claiming CPUs %s, expected an overcommit", err, two)
+	}
+	if got := freeCPUs(p); !got.Equals(free) {
+		t.Errorf("a refused claim left CPUs %s claimed", free.Difference(got))
+	}
+
+	one := cpuset.New(sharable.List()[0])
+	if err := p.claimCPUs(one); err != nil {
+		t.Errorf("failed to claim CPU %s: %v", one, err)
+	}
+}
+
 // A claim for two CPUs gets both threads of one core, not one thread of each
 // of two cores.
 func TestAllocateClaimPicksByTopology(t *testing.T) {
