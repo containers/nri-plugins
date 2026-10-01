@@ -16,16 +16,24 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
+	"syscall"
 	"testing"
 
 	"github.com/containerd/nri/pkg/api"
 	"github.com/intel/goresctrl/pkg/monitor"
 	"github.com/sirupsen/logrus"
+	logtest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/metric/noop"
 )
 
 func init() {
@@ -49,6 +57,9 @@ func newTestPlugin(resctrlPath string) *plugin {
 		config:         cfg,
 		mgr:            mgr,
 		pendingRemoval: make(map[string]bool),
+		pendingCreate:  make(map[string][]retryCtr),
+		errCount:       noop.Int64Counter{},
+		loggedErrnos:   make(map[syscall.Errno]bool),
 	}
 }
 
@@ -95,6 +106,61 @@ func (m tasksFileManager) EnsureGroup(key, rdtClass string) (*monitor.Group, err
 		return nil, err
 	}
 	return grp, f.Close()
+}
+
+// failingManager fails the first fails EnsureGroup calls with err, then
+// behaves like tasksFileManager.
+type failingManager struct {
+	tasksFileManager
+	err   error
+	fails int
+	calls int
+}
+
+func (m *failingManager) EnsureGroup(key, rdtClass string) (*monitor.Group, error) {
+	m.calls++
+	if m.fails > 0 {
+		m.fails--
+		return nil, m.err
+	}
+	return m.tasksFileManager.EnsureGroup(key, rdtClass)
+}
+
+// newFailingTestPlugin builds a test plugin whose first fails EnsureGroup calls
+// return errno the way goresctrl reports a failed mkdir.
+func newFailingTestPlugin(t *testing.T, errno syscall.Errno, fails int) (*plugin, *failingManager) {
+	p := newTestPlugin(t.TempDir())
+	err := error(&os.PathError{Op: "mkdir", Path: "mon_groups/x", Err: errno})
+	if errno == syscall.ENOSPC {
+		err = fmt.Errorf("%w (key x): %w", monitor.ErrNoRMIDs, err)
+	}
+	fm := &failingManager{tasksFileManager: tasksFileManager{p.mgr.(*monitor.Manager)}, err: err, fails: fails}
+	p.mgr = fm
+	return p, fm
+}
+
+// startContainer delivers the create and start hooks of one container.
+func startContainer(t *testing.T, p *plugin, pod *api.PodSandbox, ctr *api.Container) {
+	ctx := context.Background()
+	created := makeContainer(ctr.GetId(), ctr.GetName(), pod.GetId(), 0, "")
+	require.NoError(t, p.PostCreateContainer(ctx, pod, created))
+	require.NoError(t, p.StartContainer(ctx, pod, ctr))
+	require.NoError(t, p.PostStartContainer(ctx, pod, ctr))
+}
+
+// countErrorLogs counts the error-level log entries until the test ends.
+func countErrorLogs(t *testing.T) func() int {
+	hook := logtest.NewLocal(log)
+	t.Cleanup(func() { log.ReplaceHooks(make(logrus.LevelHooks)) })
+	return func() int {
+		n := 0
+		for _, e := range hook.AllEntries() {
+			if e.Level <= logrus.ErrorLevel {
+				n++
+			}
+		}
+		return n
+	}
 }
 
 func makePod(uid, namespace, name string) *api.PodSandbox {
@@ -675,6 +741,107 @@ func TestReconcile_KeepsPendingGroupOfLiveSandbox(t *testing.T) {
 	p.reconcile(p.mgr)
 	assert.Contains(t, p.mgr.List(), uid)
 	assert.Empty(t, p.pendingRemoval)
+}
+
+// TestReconcile_RetriesWhenNoRMIDFree verifies that a started container whose
+// pod found no free RMID is monitored by the reconciler once one is free,
+// without an error-level log.
+func TestReconcile_RetriesWhenNoRMIDFree(t *testing.T) {
+	const uid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+	pid := os.Getpid() // a live process, so the retry is not dropped
+	for _, tt := range []struct {
+		name  string
+		errno syscall.Errno
+		fails int // failing EnsureGroup calls before the first reconcile
+		sync  bool
+	}{
+		{"hooks, ENOSPC", syscall.ENOSPC, 3, false},
+		{"Synchronize, EBUSY", syscall.EBUSY, 1, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			errorLogs := countErrorLogs(t)
+			p, fm := newFailingTestPlugin(t, tt.errno, tt.fails+1)
+			pod := makePod(uid, "default", "app")
+			ctr := makeContainer("c1", "app", pod.GetId(), uint32(pid), "")
+			if tt.sync {
+				_, err := p.Synchronize(context.Background(), []*api.PodSandbox{pod}, []*api.Container{ctr})
+				require.NoError(t, err)
+			} else {
+				startContainer(t, p, pod, ctr)
+			}
+			require.Len(t, p.pendingCreate[uid], 1)
+			require.Equal(t, 1, fm.fails)
+
+			p.reconcile(p.mgr)
+			assert.NotContains(t, p.mgr.List(), uid, "still no free RMID")
+			require.Len(t, p.pendingCreate[uid], 1)
+
+			p.reconcile(p.mgr)
+			assert.Empty(t, p.pendingCreate)
+			data, err := os.ReadFile(filepath.Join(p.config.ResctrlPath, "mon_groups", uid, "tasks"))
+			require.NoError(t, err)
+			assert.Equal(t, strconv.Itoa(pid)+"\n", string(data))
+			assert.Zero(t, errorLogs())
+		})
+	}
+}
+
+// TestReconcile_DropsRetry verifies that a queued container is dropped, without
+// creating a group, once its init has exited (its PID's start time changed) or
+// its pod has been removed.
+func TestReconcile_DropsRetry(t *testing.T) {
+	const uid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+	for _, tt := range []struct {
+		name string
+		drop func(p *plugin, pod *api.PodSandbox)
+	}{
+		{"PID reused", func(p *plugin, _ *api.PodSandbox) { p.pendingCreate[uid][0].startTime++ }},
+		{"pod removed", func(p *plugin, pod *api.PodSandbox) {
+			require.NoError(t, p.RemovePodSandbox(context.Background(), pod))
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			p, fm := newFailingTestPlugin(t, syscall.ENOSPC, 3)
+			pod := makePod(uid, "default", "app")
+			startContainer(t, p, pod, makeContainer("c1", "app", pod.GetId(), uint32(os.Getpid()), ""))
+			require.Len(t, p.pendingCreate[uid], 1)
+
+			tt.drop(p, pod)
+			calls := fm.calls
+			p.reconcile(p.mgr)
+			assert.Equal(t, calls, fm.calls, "no EnsureGroup for a dropped container")
+			assert.Empty(t, p.pendingCreate)
+			assert.NoDirExists(t, filepath.Join(p.config.ResctrlPath, "mon_groups", uid))
+		})
+	}
+}
+
+// TestCountError verifies that failed creations are counted by errno in
+// resctrl_mon_errors_total, that EACCES is logged at error level once and is
+// not retried.
+func TestCountError(t *testing.T) {
+	errorLogs := countErrorLogs(t)
+	p, _ := newFailingTestPlugin(t, syscall.EACCES, 100)
+	p.config.Telemetry = defaultTelemetryConfig()
+	p.config.Telemetry.Prometheus.ListenAddress = "127.0.0.1:0"
+	require.NoError(t, p.startTelemetry(context.Background()))
+	t.Cleanup(func() { p.telemetry.shutdown(context.Background()) })
+
+	for i, uid := range []string{"a1b2c3d4-e5f6-7890-abcd-ef1234567890", "b1b2c3d4-e5f6-7890-abcd-ef1234567890"} {
+		pod := makePod(uid, "default", "app")
+		startContainer(t, p, pod, makeContainer("c", "app", pod.GetId(), uint32(os.Getpid()), ""))
+		assert.Equal(t, 1, errorLogs(), "after pod %d", i)
+	}
+	assert.Empty(t, p.pendingCreate, "EACCES is not retried")
+
+	resp, err := http.Get("http://" + p.telemetry.promListener.Addr().String() + "/metrics")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), "# TYPE resctrl_mon_errors_total counter\n")
+	// 2 pods x (PostCreateContainer, StartContainer, PostStartContainer)
+	assert.Regexp(t, regexp.MustCompile(`(?m)^resctrl_mon_errors_total\{error_type="EACCES"[^}]*\} 6$`), string(body))
 }
 
 // TestSynchronize_AdoptsExistingGroupClass verifies that on restart a pod's
