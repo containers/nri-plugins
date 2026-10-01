@@ -18,8 +18,8 @@ package topologyaware
 // selects a node by attribute and asks for a number of CPUs, and we grant it
 // CPUs of that node, picked by topology from the node's pool the way an
 // exclusive grant is. Claimed CPUs leave the free supply of every pool, so
-// the NRI path cannot hand them out while the claim lives. The claiming
-// container is not pinned to them yet.
+// the NRI path cannot hand them out while the claim lives. A container
+// holding claims runs on their CPUs instead of the shared ones.
 
 import (
 	"fmt"
@@ -33,6 +33,7 @@ import (
 	"k8s.io/utils/ptr"
 	specs "tags.cncf.io/container-device-interface/specs-go"
 
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
@@ -209,6 +210,26 @@ func (p *policy) ReleaseClaim(uid types.UID) error {
 	p.updateSharedAllocations(nil)
 
 	return nil
+}
+
+// containerClaims returns the CPUs of the claims a container holds. It holds
+// a claim if its environment has the variable the claim's edits set, with the
+// value they set. A variable naming a claim we do not hold, or other CPUs
+// than the claim's, gets the container nothing.
+//
+// The environment is what every runtime shows us today. It is set by the pod
+// spec too, so a container knowing a claim's UID and CPUs can run on them
+// without holding it. The CDI devices of a container name its claims and come
+// from the runtime alone, but not all maintained containerd and CRI-O releases
+// report them to NRI yet; once they do, they should replace the environment.
+func (p *policy) containerClaims(c cache.Container) cpuset.CPUSet {
+	cpus := cpuset.New()
+	for uid, claimed := range p.draClaims {
+		if v, ok := c.GetEnv(draEnvPrefix + uid); ok && v == claimed.String() {
+			cpus = cpus.Union(claimed)
+		}
+	}
+	return cpus
 }
 
 // draRequest is what one allocation result asks of us: CPUs of a NUMA node.
