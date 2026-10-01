@@ -23,6 +23,8 @@ package topologyaware
 // memory. Like other grants, it is accounted, kept across a reconfiguration
 // and saved to the cache. The claimed CPUs leave the free supply, so the
 // policy does not hand them out again.
+// A container holding claims runs on their CPUs, and also on its own CPUs
+// if it has a CPU request.
 
 import (
 	"fmt"
@@ -35,6 +37,7 @@ import (
 	"k8s.io/utils/ptr"
 	specs "tags.cncf.io/container-device-interface/specs-go"
 
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
@@ -174,12 +177,40 @@ func (p *policy) ReleaseClaim(uid types.UID) error {
 		return nil
 	}
 
+	// The kubelet unprepares a claim only after all of its containers have
+	// stopped, and their grants went with them, so no grant holds the
+	// claim's CPUs by now.
 	grant.Release()
 	delete(p.allocations.claims, string(uid))
 	p.saveAllocations()
 	p.updateSharedAllocations(nil)
 
 	return nil
+}
+
+// containerClaims returns the CPUs of the claims a container holds. It holds
+// a claim if its environment has the variable the claim's edits set, naming
+// the claim's CPUs. A variable naming a claim we do not hold, or other CPUs
+// than the claim's, gets the container nothing. The value is compared as a
+// cpuset, so it need not be in the form claimEdits wrote it in.
+//
+// The environment is what every runtime shows us today. It is set by the pod
+// spec too, so a container knowing a claim's UID and CPUs can run on them
+// without holding it. The CDI devices of a container name its claims and come
+// from the runtime alone, but not all maintained containerd and CRI-O releases
+// report them to NRI yet; once they do, they should replace the environment.
+func (p *policy) containerClaims(c cache.Container) cpuset.CPUSet {
+	cpus := cpuset.New()
+	for uid, claim := range p.allocations.claims {
+		v, ok := c.GetEnv(draEnvPrefix + uid)
+		if !ok {
+			continue
+		}
+		if held, err := cpuset.Parse(v); err == nil && held.Equals(claim.ExclusiveCPUs()) {
+			cpus = cpus.Union(held)
+		}
+	}
+	return cpus
 }
 
 // draRequest is what one allocation result requests: CPUs of a NUMA node.

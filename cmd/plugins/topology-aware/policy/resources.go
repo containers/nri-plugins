@@ -103,6 +103,8 @@ type Supply interface {
 type Request interface {
 	// GetContainer returns the container requesting CPU capacity.
 	GetContainer() cache.Container
+	// ClaimedCPUs returns the CPUs of the DRA claims the container holds.
+	ClaimedCPUs() cpuset.CPUSet
 	// String returns a printable representation of this request.
 	String() string
 	// CPUType returns the type of requested CPU.
@@ -178,6 +180,10 @@ type Grant interface {
 	SetMemoryZone(libmem.NodeMask)
 	// SetMemorySize sets the amount of memory to allocate.
 	SetMemorySize(int64)
+	// ClaimedCPUs returns the CPUs of the DRA claims the container holds.
+	ClaimedCPUs() cpuset.CPUSet
+	// SetClaimedCPUs sets the CPUs of the DRA claims the container holds.
+	SetClaimedCPUs(cpuset.CPUSet)
 	// IrqAffinity returns the IRQ affinity for this grant.
 	IrqAffinity() *IrqAffinity
 
@@ -255,6 +261,7 @@ type request struct {
 	memType     memoryType      // requested types of memory
 	pickByHints bool            // preference to pick resources by hints
 	irqs        *IrqAffinity    // IRQ affinity for this request
+	claimed     cpuset.CPUSet   // CPUs of the DRA claims the container holds
 
 	// coldStart tells the timeout (in milliseconds) how long to wait until
 	// a DRAM memory controller should be added to a container asking for a
@@ -280,6 +287,7 @@ type grant struct {
 	memZone        libmem.NodeMask // allocated memory zone
 	cpuClass       string          // CPU class to apply to exclusive CPUs
 	irqs           *IrqAffinity    // IRQ affinity for this request
+	claimed        cpuset.CPUSet   // CPUs of the DRA claims the container holds
 }
 
 var _ Grant = &grant{}
@@ -455,6 +463,7 @@ func (cs *supply) AllocateCPU(r Request) (Grant, error) {
 	}
 
 	grant := newGrant(cs.node, cr.GetContainer(), cpuType, cpuClass, exclusive, 0, 0, irqs, 0)
+	grant.SetClaimedCPUs(cr.claimed)
 	grant.AccountAllocateCPU()
 
 	// allocate the shared fraction of CPUs
@@ -821,6 +830,14 @@ func (p *policy) newRequest(container cache.Container, types libmem.TypeMask) (R
 	pod, _ := container.GetPod()
 	full, fraction, cpuLimit, isolate, cpuType, prio := cpuAllocationPreferences(pod, container)
 	req, lim, mtype := memoryAllocationPreference(pod, container)
+
+	// The DRA claims of a container are fixed for its lifetime, so they are
+	// looked up once, here.
+	claimed := cpuset.New()
+	if cpuType != cpuPreserve {
+		claimed = p.containerClaims(container)
+	}
+
 	coldStart := time.Duration(0)
 
 	cpuClass, isCtrScoped, err := p.resolveCpuClass(container)
@@ -884,12 +901,18 @@ func (p *policy) newRequest(container cache.Container, types libmem.TypeMask) (R
 		prio:        prio,
 		pickByHints: pickByHintsPreference(pod, container),
 		irqs:        irqs,
+		claimed:     claimed,
 	}, nil
 }
 
 // GetContainer returns the container requesting CPU.
 func (cr *request) GetContainer() cache.Container {
 	return cr.container
+}
+
+// ClaimedCPUs returns the CPUs of the DRA claims the container holds.
+func (cr *request) ClaimedCPUs() cpuset.CPUSet {
+	return cr.claimed
 }
 
 // String returns aprintable representation of the CPU request.
@@ -1019,6 +1042,13 @@ func (cr *request) verifyStrictTopologyHints(g Grant) error {
 		if excl := g.ExclusiveCPUs(); excl.Size() > 0 {
 			if cpus := hint.MisalignedCPUSet(excl); cpus.Size() > 0 {
 				return policyError("granted exclusive CPUs %q fail strict hint %v",
+					cpus.String(), h)
+			}
+		}
+
+		if claimed := g.ClaimedCPUs(); claimed.Size() > 0 {
+			if cpus := hint.MisalignedCPUSet(claimed); cpus.Size() > 0 {
+				return policyError("claimed CPUs %q fail strict hint %v",
 					cpus.String(), h)
 			}
 		}
@@ -1407,6 +1437,7 @@ func (cg *grant) Clone() Grant {
 		memZone:    cg.GetMemoryZone(),
 		memSize:    cg.GetMemorySize(),
 		coldStart:  cg.ColdStart(),
+		claimed:    cg.ClaimedCPUs(),
 	}
 }
 
@@ -1423,6 +1454,16 @@ func (cg *grant) RefetchNodes() error {
 // GetContainer returns the container this grant is valid for.
 func (cg *grant) GetContainer() cache.Container {
 	return cg.container
+}
+
+// ClaimedCPUs returns the CPUs of the DRA claims the container holds.
+func (cg *grant) ClaimedCPUs() cpuset.CPUSet {
+	return cg.claimed
+}
+
+// SetClaimedCPUs sets the CPUs of the DRA claims the container holds.
+func (cg *grant) SetClaimedCPUs(cpus cpuset.CPUSet) {
+	cg.claimed = cpus
 }
 
 // GetNode returns the Node this grant gets its CPU allocation from.
