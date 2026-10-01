@@ -549,6 +549,8 @@ func (p *policy) Reconfigure(newCfg any) error {
 
 	if err := p.initialize(); err != nil {
 		*p = savedPolicy
+		opt = p.cfg
+		defaultPrio = p.cfg.DefaultCPUPriority.Value()
 		return policyError("failed to reconfigure: %v", err)
 	}
 
@@ -569,6 +571,7 @@ func (p *policy) Reconfigure(newCfg any) error {
 	if err := p.restoreAllocations(&allocations); err != nil {
 		*p = savedPolicy
 		opt = p.cfg
+		defaultPrio = p.cfg.DefaultCPUPriority.Value()
 		return policyError("failed to reconfigure: %v", err)
 	}
 
