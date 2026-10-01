@@ -17,13 +17,17 @@ package topologyaware
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
+	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
+	"github.com/containers/nri-plugins/pkg/topology"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
@@ -264,14 +268,35 @@ func freeCPUs(p *policy) cpuset.CPUSet {
 	return grantableCPUs(p.root.FreeSupply())
 }
 
-// pinnedContainer keeps the cpuset the policy pinned it to last.
+// pinnedContainer keeps the cpuset and CPU shares the policy set last.
 type pinnedContainer struct {
 	mockContainer
-	cpus string
+	env    map[string]string
+	hints  topology.Hints
+	strict bool
+	cpus   string
+	shares int64
+}
+
+func (c *pinnedContainer) GetTopologyHints() topology.Hints {
+	return c.hints
+}
+
+func (c *pinnedContainer) StrictTopologyHints() bool {
+	return c.strict
 }
 
 func (c *pinnedContainer) SetCpusetCpus(cpus string) {
 	c.cpus = cpus
+}
+
+func (c *pinnedContainer) SetCPUShares(shares int64) {
+	c.shares = shares
+}
+
+func (c *pinnedContainer) GetEnv(key string) (string, bool) {
+	v, ok := c.env[key]
+	return v, ok
 }
 
 // allocateShared gives a container a shared grant of cpu, in pool if one is
@@ -594,6 +619,352 @@ func TestReleaseClaim(t *testing.T) {
 	c := allocateClaim(t, p, "c", draTestResult(0, "2"), draTestResult(1, "2"))
 	if !c.Equals(a) {
 		t.Errorf("claim c got CPUs %s, expected the %s claim a released", c, a)
+	}
+}
+
+// A container holding claims runs on their CPUs, and also on its own CPUs if
+// it has a CPU request: exclusive, shared or reserved ones. It keeps its
+// claimed CPUs as other claims come and go. A variable naming other CPUs or a
+// claim we do not hold is ignored.
+func TestPinClaimedCPUs(t *testing.T) {
+	sys := testServerSystem(t)
+
+	// Every case gets a policy of its own holding these claims, a on node 0
+	// and b on node 1.
+	setup := func(t *testing.T) (p *policy, a, b cpuset.CPUSet) {
+		cfg := draTestConfig("", draTestReserved(sys))
+		cfg.PinCPU = true
+		p, _ = draTestPolicy(t, sys, cfg)
+		a = allocateClaim(t, p, "a", draTestResult(0, "2"))
+		b = allocateClaim(t, p, "b", draTestResult(1, "2"))
+		return p, a, b
+	}
+
+	tcs := []struct {
+		name      string
+		namespace string
+		qos       v1.PodQOSClass
+		cpu       string
+		env       func(a, b cpuset.CPUSet) map[string]string
+		claims    []string
+		exclusive int
+		portion   int  // shared or reserved milli-CPU the container gets
+		reserved  bool // the container gets reserved CPUs
+	}{
+		{
+			name: "besteffort",
+			qos:  v1.PodQOSBestEffort,
+			env: func(a, _ cpuset.CPUSet) map[string]string {
+				return map[string]string{draEnvPrefix + "a": a.String()}
+			},
+			claims: []string{"a"},
+		},
+		{
+			name: "shared",
+			qos:  v1.PodQOSBurstable,
+			cpu:  "100m",
+			env: func(a, _ cpuset.CPUSet) map[string]string {
+				return map[string]string{draEnvPrefix + "a": a.String()}
+			},
+			claims:  []string{"a"},
+			portion: 100,
+		},
+		{
+			name:      "reserved",
+			namespace: "kube-system",
+			qos:       v1.PodQOSBurstable,
+			cpu:       "100m",
+			env: func(a, _ cpuset.CPUSet) map[string]string {
+				return map[string]string{draEnvPrefix + "a": a.String()}
+			},
+			claims:   []string{"a"},
+			portion:  100,
+			reserved: true,
+		},
+		{
+			// A reserved container with no CPU request runs on its claims
+			// only, as a besteffort one does.
+			name:      "reserved, no request",
+			namespace: "kube-system",
+			qos:       v1.PodQOSBestEffort,
+			env: func(a, _ cpuset.CPUSet) map[string]string {
+				return map[string]string{draEnvPrefix + "a": a.String()}
+			},
+			claims:   []string{"a"},
+			reserved: true,
+		},
+		{
+			// 1500m gives one exclusive CPU and a 500m shared portion.
+			name: "exclusive and shared",
+			qos:  v1.PodQOSGuaranteed,
+			cpu:  "1500m",
+			env: func(a, _ cpuset.CPUSet) map[string]string {
+				return map[string]string{draEnvPrefix + "a": a.String()}
+			},
+			claims:    []string{"a"},
+			exclusive: 1,
+			portion:   500,
+		},
+		{
+			name: "exclusive",
+			qos:  v1.PodQOSGuaranteed,
+			cpu:  "2",
+			env: func(a, _ cpuset.CPUSet) map[string]string {
+				return map[string]string{draEnvPrefix + "a": a.String()}
+			},
+			claims:    []string{"a"},
+			exclusive: 2,
+		},
+		{
+			name: "two claims",
+			qos:  v1.PodQOSBurstable,
+			cpu:  "100m",
+			env: func(a, b cpuset.CPUSet) map[string]string {
+				return map[string]string{draEnvPrefix + "a": a.String(), draEnvPrefix + "b": b.String()}
+			},
+			claims:  []string{"a", "b"},
+			portion: 100,
+		},
+		{
+			// The same CPUs in another form, listed one by one in reverse.
+			name: "same CPUs, other form",
+			qos:  v1.PodQOSBurstable,
+			cpu:  "100m",
+			env: func(a, _ cpuset.CPUSet) map[string]string {
+				cpus := []string{}
+				for _, cpu := range slices.Backward(a.List()) {
+					cpus = append(cpus, fmt.Sprint(cpu))
+				}
+				return map[string]string{draEnvPrefix + "a": strings.Join(cpus, ",")}
+			},
+			claims:  []string{"a"},
+			portion: 100,
+		},
+		{
+			name: "other CPUs",
+			qos:  v1.PodQOSBurstable,
+			cpu:  "100m",
+			env: func(_, b cpuset.CPUSet) map[string]string {
+				return map[string]string{draEnvPrefix + "a": b.String()}
+			},
+		},
+		{
+			name: "unknown claim",
+			qos:  v1.PodQOSBurstable,
+			cpu:  "100m",
+			env: func(a, _ cpuset.CPUSet) map[string]string {
+				return map[string]string{draEnvPrefix + "x": a.String()}
+			},
+		},
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			p, a, b := setup(t)
+			claimed := cpuset.New()
+			for _, uid := range tc.claims {
+				claimed = claimed.Union(map[string]cpuset.CPUSet{"a": a, "b": b}[uid])
+			}
+
+			c := &pinnedContainer{
+				mockContainer: mockContainer{
+					name:                   tc.name,
+					namespace:              tc.namespace,
+					returnValueForGetID:    tc.name,
+					returnValueForQOSClass: tc.qos,
+				},
+				env: tc.env(a, b),
+			}
+			if tc.cpu != "" {
+				c.returnValueForGetResourceRequirements = v1.ResourceRequirements{
+					Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse(tc.cpu)},
+					Limits:   v1.ResourceList{v1.ResourceCPU: resource.MustParse(tc.cpu)},
+				}
+			}
+			grant, err := p.allocatePool(c, "")
+			if err != nil {
+				t.Fatalf("failed to allocate: %v", err)
+			}
+			p.applyGrant(grant)
+
+			exclusive := grant.ExclusiveCPUs()
+			if exclusive.Size() != tc.exclusive {
+				t.Fatalf("got exclusive CPUs %s, expected %d", exclusive, tc.exclusive)
+			}
+			pinned := cpuset.MustParse(c.cpus)
+			if claimed.IsEmpty() {
+				if pinned.IsEmpty() || !pinned.Intersection(a.Union(b)).IsEmpty() {
+					t.Errorf("pinned to %s, expected shared CPUs, none of %s", pinned, a.Union(b))
+				}
+				return
+			}
+			own := exclusive
+			switch {
+			case tc.portion > 0 && tc.reserved:
+				own = grant.ReservedCPUs()
+			case tc.portion > 0:
+				own = own.Union(grant.SharedCPUs())
+			}
+			if want := own.Union(claimed); !pinned.Equals(want) {
+				t.Errorf("pinned to %s, expected %s", pinned, want)
+			}
+
+			// A container with normal CPUs goes to the pool of its claims,
+			// so its memory comes from there. A container with reserved CPUs
+			// stays in the root pool, where the reserved CPUs are.
+			pool := p.poolForCPUs(claimed)
+			if tc.reserved {
+				pool = p.root
+			}
+			if got := grant.GetCPUNode(); !got.IsSameNode(pool) {
+				t.Errorf("granted from %s, expected %s", got.Name(), pool.Name())
+			}
+			mems := libmem.NewNodeMask(pool.GetMemset(memoryAll).Members()...)
+			if zone := grant.GetMemoryZone(); zone == 0 || zone.And(mems) != zone {
+				t.Errorf("got memory zone %s, expected one within %s", zone, mems)
+			}
+			if portion := grant.CPUPortion(); portion != tc.portion {
+				t.Errorf("granted %dm shared or reserved CPU, expected %dm", portion, tc.portion)
+			}
+			// As for mixed exclusive and shared CPUs, the CPU shares come from
+			// the shared or reserved portion if there is one, otherwise from
+			// all CPUs the container runs on.
+			milliCPU := tc.portion
+			if milliCPU == 0 {
+				milliCPU = 1000 * pinned.Size()
+			}
+			if want := cache.MilliCPUToShares(int64(milliCPU)); c.shares != int64(want) {
+				t.Errorf("got CPU shares %d, expected %d", c.shares, want)
+			}
+
+			// While another claim is held, the container keeps its claimed
+			// CPUs and does not run on the other claim's CPUs. Once that
+			// claim is released, the container is back where it started.
+			// Node 0 has two isolated CPUs, so a claim for four takes some
+			// shared CPUs too.
+			cpus := allocateClaim(t, p, "c", draTestResult(0, "4"))
+			if got := cpuset.MustParse(c.cpus); !claimed.IsSubsetOf(got) || !got.Intersection(cpus).IsEmpty() {
+				t.Errorf("pinned to %s while claim c holds %s, expected all of %s and none of %s",
+					got, cpus, claimed, cpus)
+			}
+			if err := p.ReleaseClaim("c"); err != nil {
+				t.Fatalf("failed to release claim c: %v", err)
+			}
+			if got := cpuset.MustParse(c.cpus); !got.Equals(pinned) {
+				t.Errorf("pinned to %s after claim c came and went, expected %s", got, pinned)
+			}
+		})
+	}
+}
+
+// A besteffort container holding a claim does not run on shared CPUs, so it
+// holds back no shared capacity of its pool: the rest of its node can still
+// be claimed.
+func TestClaimingContainerSparesSharedCPUs(t *testing.T) {
+	sys := testServerSystem(t)
+	cfg := draTestConfig("", draTestReserved(sys))
+	cfg.PinCPU = true
+	p, _ := draTestPolicy(t, sys, cfg)
+
+	a := allocateClaim(t, p, "a", draTestResult(0, "2"))
+	c := &pinnedContainer{
+		mockContainer: mockContainer{
+			name:                   "claimer",
+			returnValueForGetID:    "claimer",
+			returnValueForQOSClass: v1.PodQOSBestEffort,
+		},
+		env: map[string]string{draEnvPrefix + "a": a.String()},
+	}
+	grant, err := p.allocatePool(c, "")
+	if err != nil {
+		t.Fatalf("failed to allocate: %v", err)
+	}
+	p.applyGrant(grant)
+
+	left := freeCPUs(p).Intersection(sys.Node(0).CPUSet()).Size()
+	allocateClaim(t, p, "b", draTestResult(0, fmt.Sprint(left)))
+}
+
+// The claimed CPUs of a container must follow its strict topology hints. The
+// hint names CPUs of node 0. The claim is on node 0 too, so memory passes the
+// hint in both cases. Only the claimed CPUs decide the result.
+func TestClaimStrictTopologyHint(t *testing.T) {
+	sys := testServerSystem(t)
+
+	for _, tc := range []struct {
+		name    string
+		aligned bool
+	}{
+		{name: "aligned claim", aligned: true},
+		{name: "misaligned claim"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := draTestConfig("", draTestReserved(sys))
+			cfg.PinCPU = true
+			p, _ := draTestPolicy(t, sys, cfg)
+
+			a := allocateClaim(t, p, "a", draTestResult(0, "2"))
+			hinted := sys.Node(0).CPUSet()
+			if !tc.aligned {
+				hinted = hinted.Difference(a)
+			}
+			c := &pinnedContainer{
+				mockContainer: mockContainer{
+					name:                   "claimer",
+					returnValueForGetID:    "claimer",
+					returnValueForQOSClass: v1.PodQOSBestEffort,
+				},
+				env:    map[string]string{draEnvPrefix + "a": a.String()},
+				hints:  topology.Hints{"test": {CPUs: hinted.String()}},
+				strict: true,
+			}
+
+			_, err := p.allocatePool(c, "")
+			switch {
+			case tc.aligned && err != nil:
+				t.Errorf("failed to allocate a container whose claim follows its hint: %v", err)
+			case !tc.aligned && (err == nil || !strings.Contains(err.Error(), "claimed CPUs")):
+				t.Errorf("got error %v, expected claimed CPUs %s to fail the strict hint", err, a)
+			}
+		})
+	}
+}
+
+// A container holding a claim stays on it across a reconfiguration.
+func TestReconfigureKeepsClaimer(t *testing.T) {
+	sys := testServerSystem(t)
+	cfg := draTestConfig("", draTestReserved(sys))
+	cfg.PinCPU = true
+	p, _ := draTestPolicy(t, sys, cfg)
+
+	a := allocateClaim(t, p, "a", draTestResult(0, "2"))
+	c := &pinnedContainer{
+		mockContainer: mockContainer{
+			name:                   "claimer",
+			returnValueForGetID:    "claimer",
+			returnValueForQOSClass: v1.PodQOSBestEffort,
+		},
+		env: map[string]string{draEnvPrefix + "a": a.String()},
+	}
+	grant, err := p.allocatePool(c, "")
+	if err != nil {
+		t.Fatalf("failed to allocate: %v", err)
+	}
+	p.applyGrant(grant)
+	if pinned := cpuset.MustParse(c.cpus); !pinned.Equals(a) {
+		t.Fatalf("pinned to %s, expected the claim's %s", pinned, a)
+	}
+
+	cfg = draTestConfig("", draTestReserved(sys))
+	cfg.PinCPU = true
+	cfg.ColocatePods = true
+	if err := p.Reconfigure(cfg); err != nil {
+		t.Fatalf("failed to reconfigure policy: %v", err)
+	}
+	grant, _ = p.allocations.getGrant("claimer")
+	if pinned := cpuset.MustParse(c.cpus); !pinned.Equals(a) || !grant.ClaimedCPUs().Equals(a) {
+		t.Errorf("pinned to %s, holding %s after reconfiguring, expected the claim's %s",
+			pinned, grant.ClaimedCPUs(), a)
 	}
 }
 
