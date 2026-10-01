@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Resctrl-Mon Plugin &mdash; NRI Plugins v0.14.0-133-g9706d379 documentation</title>
+  <title>Resctrl-Mon Plugin &mdash; NRI Plugins v0.14.0-154-gb95a9e4a documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=9e4b70af"></script>
+        <script src="../../../_static/documentation_options.js?v=d829b4a1"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -197,6 +197,31 @@ host-namespace PIDs into resctrl <code class="docutils literal notranslate"><spa
 visibility the kernel rejects the write (<code class="docutils literal notranslate"><span class="pre">ESRCH</span></code>). The container also
 requires <code class="docutils literal notranslate"><span class="pre">SYS_ADMIN</span></code> and <code class="docutils literal notranslate"><span class="pre">DAC_OVERRIDE</span></code> capabilities to manage resctrl
 <code class="docutils literal notranslate"><span class="pre">mon_group</span></code> directories.</p>
+<p>By default the container runs without an AppArmor profile (<code class="docutils literal notranslate"><span class="pre">appArmorProfile.type:</span> <span class="pre">Unconfined</span></code>). The runtimes’ default profiles, containerd’s
+<code class="docutils literal notranslate"><span class="pre">cri-containerd.apparmor.d</span></code> and CRI-O’s <code class="docutils literal notranslate"><span class="pre">crio-default</span></code>, deny writes under
+<code class="docutils literal notranslate"><span class="pre">/sys/fs/[^c]*</span></code>, which includes <code class="docutils literal notranslate"><span class="pre">/sys/fs/resctrl</span></code>. Under either profile the
+plugin still becomes Ready, but it logs only <code class="docutils literal notranslate"><span class="pre">permission</span> <span class="pre">denied</span></code> warnings and
+tracks no <code class="docutils literal notranslate"><span class="pre">mon_groups</span></code>. On Kubernetes older than 1.30, which lacks the
+<code class="docutils literal notranslate"><span class="pre">appArmorProfile</span></code> field, the chart sets the equivalent pod annotation
+<code class="docutils literal notranslate"><span class="pre">container.apparmor.security.beta.kubernetes.io/nri-resctrl-mon</span></code> instead.</p>
+<p>The Prometheus <code class="docutils literal notranslate"><span class="pre">/metrics</span></code> endpoint is unauthenticated. Collection is
+rate-bounded (resctrl is read at most once per second, however many scrapes
+arrive), but you should still restrict access to the endpoint with a
+NetworkPolicy.</p>
+</section>
+<section id="rdt-classes">
+<h2>RDT classes<a class="headerlink" href="#rdt-classes" title="Link to this heading"></a></h2>
+<p>A pod’s <code class="docutils literal notranslate"><span class="pre">mon_group</span></code> is created under the pod’s RDT class: the class in the pod
+annotation <code class="docutils literal notranslate"><span class="pre">rdt.resources.beta.kubernetes.io/pod</span></code> if it is set, otherwise the
+class of the pod’s first container. Containers in another class, such as a
+sidecar annotated with <code class="docutils literal notranslate"><span class="pre">rdt.resources.beta.kubernetes.io/container.&lt;name&gt;</span></code>,
+are not monitored.</p>
+<p>When containerd or CRI-O starts with an RDT configuration (<code class="docutils literal notranslate"><span class="pre">rdt_config_file</span></code>),
+it removes every control group that the configuration does not define and
+every <code class="docutils literal notranslate"><span class="pre">mon_group</span></code> without tasks, so pods with no running task lose their
+<code class="docutils literal notranslate"><span class="pre">mon_group</span></code>. See the
+<a class="reference external" href="https://github.com/containers/nri-plugins/blob/main/docs/monitoring/resctrl-mon.md#limitations">plugin documentation</a>
+for details.</p>
 </section>
 <section id="configuration-options">
 <h2>Configuration options<a class="headerlink" href="#configuration-options" title="Link to this heading"></a></h2>
@@ -230,52 +255,238 @@ customize with their own values, along with the default values.</p>
 <td><p>50Mi</p></td>
 <td><p>memory quota for the Pod</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">nri.runtime.config.pluginRegistrationTimeout</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">appArmorProfile</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">{type:</span> <span class="pre">Unconfined}</span></code></p></td>
+<td><p>AppArmor profile of the plugin container (see <a class="reference internal" href="#security">Security</a>)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">nri.runtime.config.pluginRegistrationTimeout</span></code></p></td>
 <td><p>“”</p></td>
 <td><p>set NRI plugin registration timeout in NRI config of containerd or CRI-O</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">nri.runtime.config.pluginRequestTimeout</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">nri.runtime.config.pluginRequestTimeout</span></code></p></td>
 <td><p>“”</p></td>
 <td><p>set NRI plugin request timeout in NRI config of containerd or CRI-O</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">nri.runtime.patchConfig</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">nri.runtime.patchConfig</span></code></p></td>
 <td><p>false</p></td>
 <td><p>patch NRI configuration in containerd or CRI-O</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">nri.plugin.index</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">nri.plugin.index</span></code></p></td>
 <td><p>90</p></td>
 <td><p>NRI plugin index to register with</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">initContainerImage.name</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">initContainerImage.name</span></code></p></td>
 <td><p><a class="reference external" href="https://ghcr.io/containers/nri-plugins/nri-config-manager">ghcr.io/containers/nri-plugins/nri-config-manager</a></p></td>
 <td><p>init container image name</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">initContainerImage.tag</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">initContainerImage.tag</span></code></p></td>
 <td><p>unstable</p></td>
 <td><p>init container image tag</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">initContainerImage.pullPolicy</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">initContainerImage.pullPolicy</span></code></p></td>
 <td><p>Always</p></td>
 <td><p>init container image pull policy</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">tolerations</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">tolerations</span></code></p></td>
 <td><p>[]</p></td>
 <td><p>specify taint toleration key, operator and effect</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">affinity</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">affinity</span></code></p></td>
 <td><p>[]</p></td>
 <td><p>specify node affinity</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">nodeSelector</span></code></p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">nodeSelector</span></code></p></td>
 <td><p>[]</p></td>
 <td><p>specify node selector labels</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">podPriorityClassNodeCritical</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">podPriorityClassNodeCritical</span></code></p></td>
 <td><p>true</p></td>
 <td><p>enable <a class="reference external" href="https://kubernetes.io/docs/tasks/administer-cluster/guaranteed-scheduling-critical-addon-pods/#marking-pod-as-critical">marking Pod as node critical</a></p></td>
 </tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">podMonitor.enabled</span></code></p></td>
+<td><p>false</p></td>
+<td><p>create a Prometheus Operator PodMonitor for the metrics port (see <a class="reference internal" href="#prometheus-integration">Prometheus Integration</a>)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">podMonitor.interval</span></code></p></td>
+<td><p>“”</p></td>
+<td><p>PodMonitor scrape interval; empty uses Prometheus’s default</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">podMonitor.labels</span></code></p></td>
+<td><p>{}</p></td>
+<td><p>extra PodMonitor labels, e.g. to match the Prometheus <code class="docutils literal notranslate"><span class="pre">podMonitorSelector</span></code></p></td>
+</tr>
 </tbody>
 </table>
+<section id="telemetry-options">
+<h3>Telemetry options<a class="headerlink" href="#telemetry-options" title="Link to this heading"></a></h3>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Name</p></th>
+<th class="head"><p>Default</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">telemetry.prometheus.enabled</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
+<td><p>expose a <code class="docutils literal notranslate"><span class="pre">/metrics</span></code> Prometheus endpoint</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">telemetry.prometheus.listenAddress</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">&quot;:9100&quot;</span></code></p></td>
+<td><p>address:port for the Prometheus HTTP listener</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">telemetry.prometheus.namespace</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">&quot;&quot;</span></code></p></td>
+<td><p>Prometheus metric prefix. Leave empty: a non-empty value renames every series and breaks the sample dashboards (see note below).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">telemetry.otlp.enabled</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
+<td><p>push metrics via OTLP</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">telemetry.otlp.endpoint</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">&quot;&quot;</span></code></p></td>
+<td><p>OTLP receiver endpoint (e.g. <code class="docutils literal notranslate"><span class="pre">otel-collector-resctrl.monitoring.svc:4317</span></code>)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">telemetry.otlp.protocol</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">grpc</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">grpc</span></code> or <code class="docutils literal notranslate"><span class="pre">http</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">telemetry.otlp.interval</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">15s</span></code></p></td>
+<td><p>OTLP export interval</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">telemetry.otlp.insecure</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
+<td><p>disable TLS for OTLP connection</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">telemetry.perfCounters.enabled</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
+<td><p>gate <code class="docutils literal notranslate"><span class="pre">rdt=perf</span></code> counters (c1_res, stalls_*, etc.)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">telemetry.perfCounters.include</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">[]</span></code></p></td>
+<td><p><a class="reference external" href="https://pkg.go.dev/path#Match"><code class="docutils literal notranslate"><span class="pre">path.Match</span></code></a> patterns for counters to include</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">telemetry.perfCounters.exclude</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">[]</span></code></p></td>
+<td><p><a class="reference external" href="https://pkg.go.dev/path#Match"><code class="docutils literal notranslate"><span class="pre">path.Match</span></code></a> patterns for counters to exclude</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">telemetry.resourceAttributes</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">{}</span></code></p></td>
+<td><p>static OTel resource attributes added to all metrics</p></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<div><p><strong>Note:</strong> <code class="docutils literal notranslate"><span class="pre">telemetry.prometheus.namespace</span></code> prefixes every exported metric
+name with <code class="docutils literal notranslate"><span class="pre">&lt;namespace&gt;_</span></code>. The <a class="reference internal" href="#samples">sample</a> Grafana dashboards query the unprefixed
+names (<code class="docutils literal notranslate"><span class="pre">l3_*</span></code>/<code class="docutils literal notranslate"><span class="pre">perf_*</span></code>), so setting a non-empty value renames every series and
+breaks those dashboards. Leave it empty unless you are supplying your own
+dashboards that account for the prefix.</p>
+</div></blockquote>
+</section>
+</section>
+<section id="prometheus-integration">
+<h2>Prometheus Integration<a class="headerlink" href="#prometheus-integration" title="Link to this heading"></a></h2>
+<p>The plugin serves metrics at <code class="docutils literal notranslate"><span class="pre">/metrics</span></code> on the container port named <code class="docutils literal notranslate"><span class="pre">metrics</span></code>.
+The chart does not annotate the pods for Prometheus discovery; configure
+Prometheus to scrape them in one of these ways.</p>
+<p>With the Prometheus Operator (for example kube-prometheus-stack), set
+<code class="docutils literal notranslate"><span class="pre">podMonitor.enabled=true</span></code> to create a PodMonitor, and set <code class="docutils literal notranslate"><span class="pre">podMonitor.labels</span></code>
+to match the Prometheus <code class="docutils literal notranslate"><span class="pre">podMonitorSelector</span></code> (for kube-prometheus-stack,
+<code class="docutils literal notranslate"><span class="pre">release:</span> <span class="pre">&lt;its</span> <span class="pre">release</span> <span class="pre">name&gt;</span></code>):</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>helm<span class="w"> </span>install<span class="w"> </span>my-resctrl-mon<span class="w"> </span>nri-plugins/nri-resctrl-mon<span class="w"> </span>--namespace<span class="w"> </span>kube-system<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--set<span class="w"> </span>podMonitor.enabled<span class="o">=</span><span class="nb">true</span><span class="w"> </span>--set<span class="w"> </span>podMonitor.labels.release<span class="o">=</span>kube-prometheus-stack
+</pre></div>
+</div>
+<p>Without the operator, add a scrape job that keeps the plugin pods’ <code class="docutils literal notranslate"><span class="pre">metrics</span></code>
+port. Set the namespace to the one the chart is installed in:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">scrape_configs</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">job_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nri-resctrl-mon</span>
+<span class="w">    </span><span class="nt">scrape_interval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">15s</span>
+<span class="w">    </span><span class="nt">kubernetes_sd_configs</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">role</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pod</span>
+<span class="w">        </span><span class="nt">namespaces</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">names</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">kube-system</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">relabel_configs</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">source_labels</span><span class="p">:</span>
+<span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">__meta_kubernetes_pod_label_app_kubernetes_io_name</span>
+<span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">__meta_kubernetes_pod_container_port_name</span>
+<span class="w">        </span><span class="nt">regex</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nri-resctrl-mon;metrics</span>
+<span class="w">        </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">keep</span>
+</pre></div>
+</div>
+</section>
+<section id="runtime-requirements">
+<h2>Runtime Requirements<a class="headerlink" href="#runtime-requirements" title="Link to this heading"></a></h2>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Component</p></th>
+<th class="head"><p>Minimum Version</p></th>
+<th class="head"><p>Notes</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Linux kernel</p></td>
+<td><p>5.x+</p></td>
+<td><p>CMT/MBM on 5.x+; AET perf/energy counters need <code class="docutils literal notranslate"><span class="pre">rdt=perf</span></code> (pending upstream).</p></td>
+</tr>
+<tr class="row-odd"><td><p>containerd</p></td>
+<td><p>1.7.0+</p></td>
+<td><p>NRI support required.</p></td>
+</tr>
+<tr class="row-even"><td><p>CRI-O</p></td>
+<td><p>1.36.0+</p></td>
+<td><p>Provides container PIDs via NRI <code class="docutils literal notranslate"><span class="pre">LinuxContainer.Pid</span></code>.</p></td>
+</tr>
+<tr class="row-odd"><td><p>Kubernetes</p></td>
+<td><p>1.24+</p></td>
+<td><p>DaemonSet and NRI socket conventions.</p></td>
+</tr>
+<tr class="row-even"><td><p>kube-state-metrics</p></td>
+<td><p>—</p></td>
+<td><p>Required by the sample Grafana dashboards for <code class="docutils literal notranslate"><span class="pre">kube_pod_info</span></code>.</p></td>
+</tr>
+<tr class="row-odd"><td><p>CPU</p></td>
+<td><p>Intel RDT</p></td>
+<td><p>CMT/MBM for bandwidth/LLC counters; AET for energy/perf counters.</p></td>
+</tr>
+</tbody>
+</table>
+<section id="kernel-feature-matrix">
+<h3>Kernel feature matrix<a class="headerlink" href="#kernel-feature-matrix" title="Link to this heading"></a></h3>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Counter family</p></th>
+<th class="head"><p>Kernel Kconfig</p></th>
+<th class="head"><p>Available since</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">llc_occupancy</span></code>, <code class="docutils literal notranslate"><span class="pre">mbm_*</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">CONFIG_X86_CPU_RESCTRL</span></code></p></td>
+<td><p>5.x</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">c1_res</span></code>, <code class="docutils literal notranslate"><span class="pre">stalls_*</span></code>, <code class="docutils literal notranslate"><span class="pre">energy_*</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">CONFIG_X86_CPU_RESCTRL</span></code> + <code class="docutils literal notranslate"><span class="pre">rdt=perf</span></code> boot param</p></td>
+<td><p>pending (under review)</p></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<div><p><strong>Note:</strong> <code class="docutils literal notranslate"><span class="pre">rdt=perf</span></code> kernel support is still under review upstream and is not
+yet part of a released kernel. The “Available since” version for these
+counters is TBD and will be recorded once the change lands.</p>
+</div></blockquote>
+</section>
+</section>
+<section id="samples">
+<h2>Samples<a class="headerlink" href="#samples" title="Link to this heading"></a></h2>
+<p><a class="reference external" href="https://github.com/containers/nri-plugins/tree/main/deployment/samples/resctrl-mon"><code class="docutils literal notranslate"><span class="pre">deployment/samples/resctrl-mon</span></code></a>
+has Grafana dashboards and reference manifests for an OTel Collector agent
+(for <code class="docutils literal notranslate"><span class="pre">telemetry.otlp.enabled=true</span></code>). The chart does not deploy them. See the
+<a class="reference external" href="https://github.com/containers/nri-plugins/blob/main/docs/monitoring/resctrl-mon.md#samples">plugin documentation</a>
+for how to use them.</p>
 </section>
 </section>
 

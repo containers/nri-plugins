@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Resctrl-Mon NRI Plugin &mdash; NRI Plugins v0.14.0-133-g9706d379 documentation</title>
+  <title>Resctrl-Mon NRI Plugin &mdash; NRI Plugins v0.14.0-154-gb95a9e4a documentation</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../_static/documentation_options.js?v=9e4b70af"></script>
+        <script src="../../_static/documentation_options.js?v=d829b4a1"></script>
         <script src="../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/js/theme.js"></script>
@@ -57,8 +57,11 @@
 <li class="toctree-l3"><a class="reference internal" href="#how-it-works">How It Works</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#mon-group-naming">Mon_Group Naming</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#plugin-configuration">Plugin Configuration</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#metrics">Metrics</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#samples">Samples</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#coexistence-with-allocation-plugins">Coexistence with Allocation Plugins</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#rmid-management">RMID Management</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#limitations">Limitations</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#developer-s-guide">Developer’s Guide</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#build">Build</a></li>
@@ -124,7 +127,20 @@ the appropriate resctrl control group.</p></li>
 (If the PID is not yet available, <code class="docutils literal notranslate"><span class="pre">PostStartContainer</span></code> retries.)</p></li>
 <li><p>The runtime starts the container. All child processes inherit the RMID.</p></li>
 <li><p>Kepler scans the resctrl filesystem and reads monitoring data.</p></li>
-<li><p>When the last container in a pod stops, the plugin removes the <code class="docutils literal notranslate"><span class="pre">mon_group</span></code>.</p></li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">mon_group</span></code> lives for the lifetime of the pod <em>sandbox</em>, not the
+individual container. It is <strong>not</strong> removed when a container stops or
+restarts, so the pod keeps a stable RMID across container restarts.
+(Releasing and re-allocating an RMID would hand the replacement container a
+recycled RMID whose counters still carry the previous tenant’s residual,
+producing a false energy/occupancy spike.)</p></li>
+<li><p>When the pod’s last sandbox is removed, the plugin removes the <code class="docutils literal notranslate"><span class="pre">mon_group</span></code>
+in the NRI <code class="docutils literal notranslate"><span class="pre">RemovePodSandbox</span></code> hook. Removing an older sandbox of a live pod
+(kubelet garbage collection after a sandbox is recreated) keeps it. If the
+teardown is missed (for example while the plugin is disconnected), the next
+NRI <code class="docutils literal notranslate"><span class="pre">Synchronize</span></code> reaps the stale
+<code class="docutils literal notranslate"><span class="pre">mon_group</span></code> using the runtime’s authoritative pod list. A background
+reconciler additionally retries removals that failed transiently and clears
+untracked directories left behind by an earlier plugin process.</p></li>
 </ol>
 <p>The plugin DaemonSet runs with <code class="docutils literal notranslate"><span class="pre">hostPID:</span> <span class="pre">true</span></code> so that it can write
 host-namespace PIDs to the resctrl <code class="docutils literal notranslate"><span class="pre">tasks</span></code> file. Without <code class="docutils literal notranslate"><span class="pre">hostPID</span></code>,
@@ -143,7 +159,9 @@ by querying the K8s API using the pod UID extracted from the directory name.</p>
 <section id="plugin-configuration">
 <h2>Plugin Configuration<a class="headerlink" href="#plugin-configuration" title="Link to this heading"></a></h2>
 <p>Configuration is loaded from a YAML file specified with the <code class="docutils literal notranslate"><span class="pre">-config</span></code> flag
-or pushed by the container runtime via NRI.</p>
+or pushed by the container runtime via NRI. It is read once at startup; to
+apply a change, restart the plugin (for example
+<code class="docutils literal notranslate"><span class="pre">kubectl</span> <span class="pre">rollout</span> <span class="pre">restart</span> <span class="pre">daemonset/nri-resctrl-mon</span> <span class="pre">-n</span> <span class="pre">&lt;namespace&gt;</span></code>).</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1"># Path to the resctrl filesystem. Override for testing.</span>
 <span class="nt">resctrlPath</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/sys/fs/resctrl</span>
 
@@ -154,6 +172,129 @@ or pushed by the container runtime via NRI.</p>
 <span class="c1"># Pod label selector: only create mon_groups for pods matching these labels.</span>
 <span class="c1"># Empty = all pods.</span>
 <span class="nt">labelSelector</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span>
+
+<span class="c1"># Embedded OpenTelemetry exporter. Exposes a Prometheus /metrics endpoint</span>
+<span class="c1"># and/or pushes metrics via OTLP.</span>
+<span class="nt">telemetry</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">prometheus</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">listenAddress</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;:9100&quot;</span>
+<span class="w">    </span><span class="c1"># Metric-name prefix. Leave empty: a non-empty value renames every series</span>
+<span class="w">    </span><span class="c1"># and breaks the sample Grafana dashboards (which query l3_*/perf_*).</span>
+<span class="w">    </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span>
+<span class="w">  </span><span class="nt">otlp</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">    </span><span class="nt">endpoint</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="w">             </span><span class="c1"># e.g. &quot;otel-collector-resctrl.monitoring.svc:4317&quot;</span>
+<span class="w">    </span><span class="nt">protocol</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">grpc</span><span class="w">           </span><span class="c1"># grpc | http</span>
+<span class="w">    </span><span class="nt">interval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">15s</span><span class="w">            </span><span class="c1"># must be a positive duration</span>
+<span class="w">    </span><span class="nt">insecure</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">          </span><span class="c1"># true sends OTLP in plaintext (no TLS)</span>
+<span class="w">  </span><span class="nt">perfCounters</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">           </span><span class="c1"># gate rdt=perf counters (c1_res, stalls_*, etc.)</span>
+<span class="w">    </span><span class="nt">include</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span><span class="w">              </span><span class="c1"># path.Match patterns for counters to include</span>
+<span class="w">    </span><span class="nt">exclude</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span><span class="w">              </span><span class="c1"># path.Match patterns for counters to exclude</span>
+<span class="w">  </span><span class="nt">resourceAttributes</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span><span class="w">     </span><span class="c1"># static OTel resource attributes on all metrics</span>
+</pre></div>
+</div>
+<p>If telemetry cannot start (for example, its port is in use), the plugin logs
+an error and keeps managing <code class="docutils literal notranslate"><span class="pre">mon_groups</span></code> without it. When the plugin runs in
+the host network namespace (for example, launched by the runtime), the default
+<code class="docutils literal notranslate"><span class="pre">:9100</span></code> collides with node_exporter; set <code class="docutils literal notranslate"><span class="pre">telemetry.prometheus.listenAddress</span></code>
+or disable Prometheus.</p>
+</section>
+<section id="metrics">
+<h2>Metrics<a class="headerlink" href="#metrics" title="Link to this heading"></a></h2>
+<p>The Prometheus endpoint exports these metrics per pod <code class="docutils literal notranslate"><span class="pre">mon_group</span></code> and domain:</p>
+<table border="1" class="docutils">
+<thead>
+<tr>
+<th>Prometheus name</th>
+<th>Type</th>
+<th>Unit</th>
+<th>Source file</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>l3_llc_occupancy_bytes</code></td>
+<td>gauge</td>
+<td>bytes</td>
+<td><code>mon_L3_*/llc_occupancy</code></td>
+</tr>
+<tr>
+<td><code>l3_mbm_local_bytes_total</code></td>
+<td>counter</td>
+<td>bytes</td>
+<td><code>mon_L3_*/mbm_local_bytes</code></td>
+</tr>
+<tr>
+<td><code>l3_mbm_bytes_total</code></td>
+<td>counter</td>
+<td>bytes</td>
+<td><code>mon_L3_*/mbm_total_bytes</code></td>
+</tr>
+<tr>
+<td><code>perf_core_energy_joules_total</code></td>
+<td>counter</td>
+<td>joules</td>
+<td><code>mon_PERF_PKG_*/core_energy</code></td>
+</tr>
+<tr>
+<td><code>perf_activity_farads_total</code></td>
+<td>counter</td>
+<td>farads</td>
+<td><code>mon_PERF_PKG_*/activity</code></td>
+</tr>
+</tbody>
+</table>
+<p>Other <code class="docutils literal notranslate"><span class="pre">mon_PERF_PKG_*</span></code> counters (<code class="docutils literal notranslate"><span class="pre">c1_res</span></code>, <code class="docutils literal notranslate"><span class="pre">stalls_*</span></code>, …) are exported only
+when <code class="docutils literal notranslate"><span class="pre">telemetry.perfCounters.enabled</span></code> is true. Names follow goresctrl’s
+<a class="reference external" href="https://github.com/intel/goresctrl/blob/main/doc/resctrl-mon.md">naming rules</a>
+under the <code class="docutils literal notranslate"><span class="pre">UnderscoreEscapingWithSuffixes</span></code> translation strategy, which the
+plugin pins.</p>
+<p>Labels (OTLP uses the dotted attribute names, e.g. <code class="docutils literal notranslate"><span class="pre">k8s.pod.uid</span></code>):</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">domain_id</span></code>: domain instance, e.g. <code class="docutils literal notranslate"><span class="pre">00</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">domain_name</span></code>: domain directory, e.g. <code class="docutils literal notranslate"><span class="pre">mon_L3_00</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">k8s_pod_uid</span></code>: the pod UID (the <code class="docutils literal notranslate"><span class="pre">mon_group</span></code> name).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">resctrl_control_group</span></code>: the parent control group (RDT class); empty for the
+root group.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">resctrl_group_source</span></code>: always <code class="docutils literal notranslate"><span class="pre">pod</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">k8s_node_name</span></code>: the node name, from the <code class="docutils literal notranslate"><span class="pre">NODE_NAME</span></code> environment variable.</p></li>
+<li><p>Each key in <code class="docutils literal notranslate"><span class="pre">telemetry.resourceAttributes</span></code>. A key must not map to one of the
+labels above (for example <code class="docutils literal notranslate"><span class="pre">k8s.pod.uid</span></code> or <code class="docutils literal notranslate"><span class="pre">domain_id</span></code>), to another key’s
+label, or to a label that OTLP-to-Prometheus conversion derives: <code class="docutils literal notranslate"><span class="pre">job</span></code> or
+<code class="docutils literal notranslate"><span class="pre">service_name</span></code> (set <code class="docutils literal notranslate"><span class="pre">service.name</span></code> itself to override it), and <code class="docutils literal notranslate"><span class="pre">instance</span></code>
+when <code class="docutils literal notranslate"><span class="pre">service.instance.id</span></code> is set. Names starting with <code class="docutils literal notranslate"><span class="pre">__</span></code> are reserved by
+Prometheus. Such a configuration is rejected.</p></li>
+</ul>
+</section>
+<section id="samples">
+<h2>Samples<a class="headerlink" href="#samples" title="Link to this heading"></a></h2>
+<p><a class="reference external" href="https://github.com/containers/nri-plugins/tree/main/deployment/samples/resctrl-mon"><code class="docutils literal notranslate"><span class="pre">deployment/samples/resctrl-mon</span></code></a>
+has files that the Helm chart does not deploy:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">grafana-resctrl-pod-energy.json</span></code>, <code class="docutils literal notranslate"><span class="pre">grafana-resctrl-perf-counters.json</span></code>:
+Grafana dashboards for the metrics above. They need kube-state-metrics (for
+<code class="docutils literal notranslate"><span class="pre">kube_pod_info</span></code>) and an empty <code class="docutils literal notranslate"><span class="pre">telemetry.prometheus.namespace</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">otel-collector-rbac.yaml</span></code>, <code class="docutils literal notranslate"><span class="pre">otel-collector-agent.yaml</span></code>: an OTel Collector
+agent DaemonSet for the OTLP push path (<code class="docutils literal notranslate"><span class="pre">telemetry.otlp.enabled=true</span></code>). It
+adds pod and namespace labels with the <code class="docutils literal notranslate"><span class="pre">k8sattributes</span></code> processor and exposes
+the metrics to Prometheus on port 8889. Add exporters (for example
+<code class="docutils literal notranslate"><span class="pre">otlphttp</span></code>) to send them elsewhere.</p></li>
+</ul>
+<p>Before applying the collector manifests:</p>
+<ul class="simple">
+<li><p>Set the two namespace placeholders in the NetworkPolicy (the plugin’s and
+Prometheus’s).</p></li>
+<li><p>Copy any <code class="docutils literal notranslate"><span class="pre">tolerations</span></code> or <code class="docutils literal notranslate"><span class="pre">nodeSelector</span></code> set for the plugin to the collector
+DaemonSet.</p></li>
+<li><p>Configure TLS on the collector’s OTLP receivers, or set
+<code class="docutils literal notranslate"><span class="pre">telemetry.otlp.insecure=true</span></code>: the receivers do not use TLS.</p></li>
+<li><p>Set <code class="docutils literal notranslate"><span class="pre">telemetry.prometheus.enabled=false</span></code> if Prometheus scrapes the
+collector; otherwise it ingests every series twice.</p></li>
+</ul>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>deployment/samples/resctrl-mon/otel-collector-rbac.yaml
+kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>deployment/samples/resctrl-mon/otel-collector-agent.yaml
 </pre></div>
 </div>
 </section>
@@ -167,8 +308,8 @@ plugin reads the effective RDT class from the NRI container spec and creates
 </pre></div>
 </div>
 <p>The container keeps its CLOSID (allocation) and gets a distinct RMID
-(monitoring). If no allocation plugin is active, <code class="docutils literal notranslate"><span class="pre">mon_groups</span></code> are created
-under the root resctrl directory.</p>
+(monitoring). Pods without an RDT class, from an allocation plugin or from the
+runtime’s RDT annotations, get <code class="docutils literal notranslate"><span class="pre">mon_groups</span></code> under the root resctrl directory.</p>
 </section>
 <section id="rmid-management">
 <h2>RMID Management<a class="headerlink" href="#rmid-management" title="Link to this heading"></a></h2>
@@ -179,6 +320,53 @@ none are available, the kernel returns <code class="docutils literal notranslate
 warning and skips the pod.</p></li>
 <li><p><strong>Deallocation</strong>: <code class="docutils literal notranslate"><span class="pre">rmdir</span></code> releases the RMID. The kernel handles the
 hardware recycling window.</p></li>
+</ul>
+</section>
+<section id="limitations">
+<h2>Limitations<a class="headerlink" href="#limitations" title="Link to this heading"></a></h2>
+<ul>
+<li><p><strong>PID assignment moves one task.</strong> Writing a PID to a <code class="docutils literal notranslate"><span class="pre">tasks</span></code> file moves
+only that thread. Threads and children that already exist stay where they
+are. Containers that started while the plugin was down (adopted in
+<code class="docutils literal notranslate"><span class="pre">Synchronize</span></code>), or whose PID is assigned only in <code class="docutils literal notranslate"><span class="pre">PostStartContainer</span></code>, are
+partly attributed until they restart.</p></li>
+<li><p><strong>One control group per pod.</strong> A pod’s <code class="docutils literal notranslate"><span class="pre">mon_group</span></code> lives under one RDT class.
+A container in a different class (for example, a sidecar) is not monitored,
+because assigning it would overwrite its allocation. The plugin reads a
+container’s class from its OCI <code class="docutils literal notranslate"><span class="pre">linux.intelRdt.closID</span></code> (NRI
+<code class="docutils literal notranslate"><span class="pre">Linux.Rdt.ClosId</span></code>), which containerd and CRI-O set from the pod’s RDT
+annotations. The group’s class is chosen as follows:</p>
+<ul class="simple">
+<li><p>If the pod has the annotation <code class="docutils literal notranslate"><span class="pre">rdt.resources.beta.kubernetes.io/pod</span></code>, the
+group is under that class. A container that its own annotation
+(<code class="docutils literal notranslate"><span class="pre">rdt.resources.beta.kubernetes.io/container.&lt;name&gt;</span></code>) puts in another class
+is not monitored, whichever container is created first.</p></li>
+<li><p>Otherwise, or when the pod-level class was not applied (for example, an NRI
+plugin set another class), the first container to be created fixes the
+class.</p></li>
+</ul>
+</li>
+<li><p><strong>The runtime’s RDT setup removes groups.</strong> Each time containerd or CRI-O
+starts with an RDT configuration (<code class="docutils literal notranslate"><span class="pre">rdt_config_file</span></code>), it removes every
+control group that the configuration does not define and every <code class="docutils literal notranslate"><span class="pre">mon_group</span></code>
+that has no tasks. Pods with no running task (Completed, in back-off, or
+killed) lose their <code class="docutils literal notranslate"><span class="pre">mon_group</span></code>, with its RMID and counters, and the plugin
+does not re-create it. Do not keep hand-made control groups on such a host.</p></li>
+<li><p><strong>Uninstall leaves groups behind.</strong> Removing the plugin leaves the pods’
+<code class="docutils literal notranslate"><span class="pre">mon_groups</span></code> (and their RMIDs) in place. To release them, run this as root
+on each node. It removes every UUID-named <code class="docutils literal notranslate"><span class="pre">mon_group</span></code>, including any that
+another tool owns:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>find<span class="w"> </span>/sys/fs/resctrl<span class="w"> </span>-mindepth<span class="w"> </span><span class="m">2</span><span class="w"> </span>-maxdepth<span class="w"> </span><span class="m">3</span><span class="w"> </span>-type<span class="w"> </span>d<span class="w"> </span>-regextype<span class="w"> </span>posix-extended<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-regex<span class="w"> </span><span class="s1">&#39;.*/mon_groups/[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}&#39;</span><span class="w"> </span>-exec<span class="w"> </span>rmdir<span class="w"> </span><span class="o">{}</span><span class="w"> </span>+
+</pre></div>
+</div>
+</li>
+<li><p><strong>RMID exhaustion.</strong> When no RMID is free, the plugin logs a warning for each
+container and the pod is not monitored. Use <code class="docutils literal notranslate"><span class="pre">namespaces</span></code> or <code class="docutils literal notranslate"><span class="pre">labelSelector</span></code>
+to limit monitoring to the pods that matter.</p></li>
+<li><p><strong>Ownership.</strong> The plugin reconciles every UUID-named <code class="docutils literal notranslate"><span class="pre">mon_group</span></code>: it keeps
+the groups of all live pods (including filtered ones) and removes the rest.
+Other tools must not create UUID-named groups for anything else.</p></li>
 </ul>
 </section>
 <section id="developer-s-guide">
