@@ -20,6 +20,7 @@ import (
 
 	"github.com/containers/nri-plugins/pkg/irq"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
+	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
@@ -74,6 +75,7 @@ type policy struct {
 	cpuClasses   *cpuclass.Handler         // CPU class handler (cpufreq, SST/PCT, etc.)
 	metrics      *TopologyAwareMetrics     // metrics provided by this policy
 	irqCnt       int                       // last applied [allocations.]irqCnt
+	draPublished []resourceapi.Device      // DRA devices published last
 }
 
 var opt = &cfgapi.Config{}
@@ -162,6 +164,10 @@ func (p *policy) Start() error {
 		return err
 	}
 	p.metrics = m
+
+	if err := p.publishDRADevices(); err != nil {
+		return policyError("failed to publish DRA devices: %v", err)
+	}
 
 	return nil
 }
@@ -584,6 +590,10 @@ func (p *policy) Reconfigure(newCfg any) error {
 		return err
 	}
 	p.metrics = m
+
+	if err := p.publishDRADevices(); err != nil {
+		return policyError("failed to publish DRA devices: %v", err)
+	}
 
 	return nil
 }
