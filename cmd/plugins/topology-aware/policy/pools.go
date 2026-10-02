@@ -513,8 +513,9 @@ func (p *policy) allocatePool(container cache.Container, poolHint string) (Grant
 
 // setPreferredCpusetCpus pins container's CPUs according to what has been
 // allocated for it, taking into account if the container should run
-// with hyperthreads hidden.
-func (p *policy) setPreferredCpusetCpus(container cache.Container, allocated cpuset.CPUSet, info string) {
+// with hyperthreads hidden. The CPUs of its DRA claims are added as they
+// are, hyperthreads included: they are what the claims asked for.
+func (p *policy) setPreferredCpusetCpus(container cache.Container, allocated, claimed cpuset.CPUSet, info string) {
 	allow := allocated
 	hidingInfo := ""
 	pod, ok := container.GetPod()
@@ -527,7 +528,7 @@ func (p *policy) setPreferredCpusetCpus(container cache.Container, allocated cpu
 		}
 	}
 	log.Infof("%s%s", info, hidingInfo)
-	container.SetCpusetCpus(allow.String())
+	container.SetCpusetCpus(allow.Union(claimed).String())
 }
 
 // Apply the result of allocation to the requesting container.
@@ -576,9 +577,14 @@ func (p *policy) applyGrant(grant Grant) {
 	if opt.PinCPU {
 		if cpuType == cpuPreserve {
 			log.Infof("  => preserving %s cpuset %s", container.PrettyName(), container.GetCpusetCpus())
+		} else if claimed := p.containerClaims(container); !claimed.IsEmpty() {
+			// The claimed CPUs replace the shared or reserved ones.
+			p.setPreferredCpusetCpus(container, exclusive, claimed,
+				fmt.Sprintf("  => pinning %s to (claimed) cpuset %s",
+					container.PrettyName(), exclusive.Union(claimed)))
 		} else {
 			if cpus.Size() > 0 {
-				p.setPreferredCpusetCpus(container, cpus,
+				p.setPreferredCpusetCpus(container, cpus, cpuset.New(),
 					fmt.Sprintf("  => pinning %s to (%s) cpuset %s",
 						container.PrettyName(), kind, cpus))
 			} else {
@@ -698,15 +704,20 @@ func (p *policy) updateSharedAllocations(grant *Grant) {
 			continue
 		}
 
+		if !p.containerClaims(other.GetContainer()).IsEmpty() {
+			log.Infof("  => %s not affected (pinned to its DRA claims)...", other)
+			continue
+		}
+
 		if opt.PinCPU {
 			shared := other.GetCPUNode().FreeSupply().SharableCPUs()
 			exclusive := other.ExclusiveCPUs()
 			if exclusive.IsEmpty() {
-				p.setPreferredCpusetCpus(other.GetContainer(), shared,
+				p.setPreferredCpusetCpus(other.GetContainer(), shared, cpuset.New(),
 					fmt.Sprintf("  => updating %s with shared CPUs of %s: %s...",
 						other, other.GetCPUNode().Name(), shared.String()))
 			} else {
-				p.setPreferredCpusetCpus(other.GetContainer(), exclusive.Union(shared),
+				p.setPreferredCpusetCpus(other.GetContainer(), exclusive.Union(shared), cpuset.New(),
 					fmt.Sprintf("  => updating %s with exclusive+shared CPUs of %s: %s+%s...",
 						other, other.GetCPUNode().Name(), exclusive.String(), shared.String()))
 			}

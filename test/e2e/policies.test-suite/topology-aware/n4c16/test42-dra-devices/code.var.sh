@@ -1,10 +1,10 @@
 # This test verifies that the topology-aware policy publishes one DRA
 # device per NUMA node, with the node's topology as its attributes, and that
-# it gives each claim CPUs of its own, of the node the claim selects.
+# it gives each claim CPUs of its own, of the node the claim selects. Every
+# container holding a claim runs on exactly its claim's CPUs, and no other
+# container runs on them.
 #
-# No DeviceClass ships yet, so the test creates one. The claiming container
-# is not pinned to its claim's CPUs yet, so the test only checks which CPUs
-# the claim got, and that no other container runs on them.
+# No DeviceClass ships yet, so the test creates one.
 
 cleanup() {
     vm-command "kubectl delete pods --all --now --wait" || :
@@ -121,7 +121,8 @@ wait="" create deviceclass
 # A claim for all node 3 can give gets all of its CPUs but the reserved one.
 claim pod0 3 3
 cpus0=$(claimed-cpus pod0)
-verify "cpuset('$cpus0') == cpuset('$(node-cpus 3)') - cpuset('15')"
+verify "cpuset('$cpus0') == cpuset('$(node-cpus 3)') - cpuset('15')" \
+       "cpus['pod0c0'] == cpuset('$cpus0')"
 
 # Two CPUs are the two threads of one core, and a second claim on the same
 # node gets the other core.
@@ -129,10 +130,12 @@ claim pod1 1 2
 cpus1=$(claimed-cpus pod1)
 siblings=$(vm-command-q "cat /sys/devices/system/cpu/cpu${cpus1%%[-,]*}/topology/thread_siblings_list")
 verify "cpuset('$cpus1') == cpuset('$siblings')" \
-       "cpuset('$cpus1') <= cpuset('$(node-cpus 1)')"
+       "cpuset('$cpus1') <= cpuset('$(node-cpus 1)')" \
+       "cpus['pod1c0'] == cpuset('$cpus1')"
 claim pod2 1 2
 cpus2=$(claimed-cpus pod2)
-verify "cpuset('$cpus1') | cpuset('$cpus2') == cpuset('$(node-cpus 1)')"
+verify "cpuset('$cpus1') | cpuset('$cpus2') == cpuset('$(node-cpus 1)')" \
+       "cpus['pod2c0'] == cpuset('$cpus2')"
 
 # No CPUs are left on node 1, so the scheduler must not place a third claim
 # there, until deleting pod1 releases its claim, whose CPUs the third gets.
@@ -144,7 +147,8 @@ vm-command "kubectl delete pod pod1 --now --wait"
 vm-command "kubectl wait --for=condition=Ready pod/pod3 --timeout=120s" ||
     error "pod3 did not start after pod1 released its claim"
 cpus3=$(claimed-cpus pod3)
-verify "cpuset('$cpus3') == cpuset('$cpus1')"
+verify "cpuset('$cpus3') == cpuset('$cpus1')" \
+       "cpus['pod3c0'] == cpuset('$cpus3')"
 
 # A shared container does not run on claimed CPUs. It moves off the CPUs a
 # claim takes of its node, and back once the claim is released.
@@ -156,12 +160,20 @@ shared=$(pyexec 'print(sorted(cpus["pod4c0"]))')
 claim pod5 "$node" 2
 cpus5=$(claimed-cpus pod5)
 verify "cpuset('$cpus5') <= set($shared)" \
+       "cpus['pod5c0'] == cpuset('$cpus5')" \
        "cpus['pod4c0'] == set($shared) - cpuset('$cpus5')"
 vm-command "kubectl delete pod pod5 --now --wait"
 verify "cpus['pod4c0'] == set($shared)"
+
+# Every container holding a claim runs on its CPUs, two as well as one.
+CONTCOUNT=2 claim pod6 0 2
+cpus6=$(claimed-cpus pod6)
+verify "cpus['pod6c0'] == cpuset('$cpus6')" \
+       "cpus['pod6c1'] == cpuset('$cpus6')" \
+       "cpus['pod4c0'].isdisjoint(cpuset('$cpus6'))"
 
 vm-command "kubectl get deviceclasses,resourceslices,resourceclaims -o yaml" || :
 
 cleanup
 
-echo "OK: the topology-aware policy published one DRA device per NUMA node, and gave each claim CPUs of its own"
+echo "OK: the topology-aware policy published one DRA device per NUMA node, gave each claim CPUs of its own, and pinned its containers to them"
