@@ -19,7 +19,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	resourceapi "k8s.io/api/resource/v1"
 )
@@ -69,12 +68,9 @@ func TestColdStart(t *testing.T) {
 		t.Fatalf("expected PMEM before cold start, got %s", typ)
 	}
 
-	// The resource manager holds the lock while the policy handles events.
+	// The resource manager holds the lock while the policy handles StartContainer.
 	owner.Lock()
-	_, err = p.HandleEvent(&events.Policy{
-		Type: events.ContainerStarted,
-		Data: ctr,
-	})
+	err = p.ContainerStarted(ctr)
 	owner.Unlock()
 	if err != nil {
 		t.Fatalf("failed to start container: %v", err)

@@ -26,7 +26,6 @@ import (
 	specs "tags.cncf.io/container-device-interface/specs-go"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
-	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	"github.com/prometheus/client_golang/prometheus"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
@@ -127,9 +126,8 @@ type Backend interface {
 	ReleaseResources(cache.Container) error
 	// UpdateResources updates resource allocations of a container.
 	UpdateResources(cache.Container) error
-	// HandleEvent processes the given event. The returned boolean indicates whether
-	// changes have been made to any of the containers while handling the event.
-	HandleEvent(*events.Policy) (bool, error)
+	// ContainerStarted tells the policy that a container has started.
+	ContainerStarted(cache.Container) error
 	// ExportResourceData provides resource data to export for the container.
 	ExportResourceData(cache.Container) map[string]string
 	// GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
@@ -200,10 +198,8 @@ type Policy interface {
 	ReleaseResources(cache.Container) error
 	// UpdateResources updates resource allocations of a container.
 	UpdateResources(cache.Container) error
-	// HandleEvent passes on the given event to the active policy. The returned boolean
-	// indicates whether changes have been made to any of the containers while handling
-	// the event.
-	HandleEvent(*events.Policy) (bool, error)
+	// ContainerStarted tells the active policy that a container has started.
+	ContainerStarted(cache.Container) error
 	// ExportResourceData exports/updates resource data for the container.
 	ExportResourceData(cache.Container)
 	// GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
@@ -390,9 +386,9 @@ func (p *policy) ReleaseClaim(uid types.UID) error {
 	return p.active.ReleaseClaim(uid)
 }
 
-// HandleEvent passes on the given event to the active policy.
-func (p *policy) HandleEvent(e *events.Policy) (bool, error) {
-	return p.active.HandleEvent(e)
+// ContainerStarted tells the active policy that a container has started.
+func (p *policy) ContainerStarted(c cache.Container) error {
+	return p.active.ContainerStarted(c)
 }
 
 // ExportResourceData exports/updates resource data for the container.

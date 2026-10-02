@@ -20,7 +20,6 @@ import (
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/template"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
-	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
@@ -126,10 +125,10 @@ func (p *policy) UpdateResources(c cache.Container) error {
 	return nil
 }
 
-// HandleEvent handles policy-specific events.
-func (p *policy) HandleEvent(e *events.Policy) (bool, error) {
-	log.Infof("received policy event %s.%s with data %v...", e.Source, e.Type, e.Data)
-	return true, nil
+// ContainerStarted handles the start of a container.
+func (p *policy) ContainerStarted(c cache.Container) error {
+	log.Infof("(not) handling start of container %s...", c.PrettyName())
+	return nil
 }
 
 // GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
