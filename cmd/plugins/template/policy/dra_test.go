@@ -42,6 +42,7 @@ func (testSystem) OnlineCPUs() cpuset.CPUSet { return cpuset.MustParse("0-7") }
 
 // testOwner keeps the DRA devices published last.
 type testOwner struct {
+	policyapi.Owner
 	devices []resourceapi.Device
 }
 
