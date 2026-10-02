@@ -39,9 +39,6 @@ const (
 	// PolicyDescription is a short description of this policy.
 	PolicyDescription = "A policy for prototyping memory tiering."
 
-	// ColdStartDone is the event generated for the end of a container cold start period.
-	ColdStartDone = "cold-start-done"
-
 	// CPU class extended resource domain.
 	CpuClassResourceDomain = "cpuclass.resource-policy.nri.io"
 )
@@ -338,19 +335,6 @@ func (p *policy) HandleEvent(e *events.Policy) (bool, error) {
 		}
 		log.Infof("triggering coldstart period (if necessary) for %s", c.PrettyName())
 		return false, p.triggerColdStart(c)
-	case ColdStartDone:
-		id, ok := e.Data.(string)
-		if !ok {
-			return false, policyError("%s event: expecting container ID Data, got %T",
-				e.Type, e.Data)
-		}
-		c, ok := p.cache.LookupContainer(id)
-		if !ok {
-			// TODO: This is probably a race condition. Should we return nil error here?
-			return false, policyError("%s event: failed to lookup container %s", id)
-		}
-		log.Infof("finishing coldstart period for %s", c.PrettyName())
-		return p.finishColdStart(c)
 	}
 	return false, nil
 }
