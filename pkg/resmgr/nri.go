@@ -24,7 +24,6 @@ import (
 	"github.com/containers/nri-plugins/pkg/instrumentation/tracing"
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
-	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	"sigs.k8s.io/yaml"
 
 	"github.com/containerd/nri/pkg/api"
@@ -564,14 +563,8 @@ func (p *nriPlugin) StartContainer(ctx context.Context, pod *api.PodSandbox, con
 
 	c.UpdateState(cache.ContainerStateRunning)
 
-	e := &events.Policy{
-		Type:   events.ContainerStarted,
-		Source: "resource-manager",
-		Data:   c,
-	}
-
-	if _, err := m.policy.HandleEvent(e); err != nil {
-		nri.Errorf("%s: policy failed to handle event %s: %v", event, e.Type, err)
+	if err := m.policy.ContainerStarted(c); err != nil {
+		nri.Errorf("%s: policy failed to handle start of %s: %v", event, c.PrettyName(), err)
 	}
 
 	if err := p.runPostStartHooks(event, c); err != nil {
