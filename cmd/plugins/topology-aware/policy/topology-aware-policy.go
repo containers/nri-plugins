@@ -73,6 +73,7 @@ type policy struct {
 	cpuAllocator cpuallocator.CPUAllocator // CPU allocator used by the policy
 	memAllocator *libmem.Allocator         // memory allocator user by the policy
 	cpuClasses   *cpuclass.Handler         // CPU class handler (cpufreq, SST/PCT, etc.)
+	draClaims    map[string]cpuset.CPUSet  // CPUs given to DRA claims, by claim UID
 	metrics      *TopologyAwareMetrics     // metrics provided by this policy
 	irqCnt       int                       // last applied [allocations.]irqCnt
 	draPublished []resourceapi.Device      // DRA devices published last
@@ -111,6 +112,7 @@ func (p *policy) Setup(opts *policyapi.BackendOptions) error {
 	p.cfg = cfg
 	p.cache = opts.Cache
 	p.sys = opts.System
+	p.draClaims = map[string]cpuset.CPUSet{}
 	p.options = opts
 	p.cpuAllocator = cpuallocator.NewCPUAllocator(opts.System)
 	p.memAllocator, err = libmem.NewAllocator(libmem.WithSystemNodes(opts.System))
@@ -571,6 +573,15 @@ func (p *policy) Reconfigure(newCfg any) error {
 			defaultPrio = p.cfg.DefaultCPUPriority.Value()
 			return policyError("failed to reconfigure: %v", err)
 		}
+	}
+
+	// Claims go first, so that restoring the grants neither allocates nor
+	// pins shared containers to claimed CPUs.
+	if err := p.reclaimCPUs(); err != nil {
+		*p = savedPolicy
+		opt = p.cfg
+		defaultPrio = p.cfg.DefaultCPUPriority.Value()
+		return policyError("failed to reconfigure: %v", err)
 	}
 
 	log.Warnf("updating existing allocations...")

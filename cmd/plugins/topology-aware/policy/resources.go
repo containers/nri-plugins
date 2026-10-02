@@ -77,6 +77,10 @@ type Supply interface {
 	AccountAllocateCPU(Grant)
 	// AccountReleaseCPU accounts for (reinserts) released exclusive capacity into the supply.
 	AccountReleaseCPU(Grant)
+	// ClaimCPUs takes CPUs given to a DRA claim out of the supply.
+	ClaimCPUs(cpuset.CPUSet)
+	// UnclaimCPUs puts CPUs released by a DRA claim back into the supply.
+	UnclaimCPUs(cpuset.CPUSet)
 	// GetScore calculates how well this supply fits/fulfills the given request.
 	GetScore(Request) Score
 	// AllocatableSharedCPU calculates the allocatable amount of shared CPU of this supply.
@@ -385,6 +389,21 @@ func (cs *supply) AccountReleaseCPU(g Grant) {
 	sharable := grantcpus.Intersection(ncs.SharableCPUs())
 	cs.isolated = cs.isolated.Union(isolated)
 	cs.sharable = cs.sharable.Union(sharable)
+}
+
+// ClaimCPUs takes CPUs given to a DRA claim out of the supply. A CPU the
+// supply never had is left alone, so this can be applied to every pool.
+func (cs *supply) ClaimCPUs(cpus cpuset.CPUSet) {
+	cs.isolated = cs.isolated.Difference(cpus)
+	cs.sharable = cs.sharable.Difference(cpus)
+}
+
+// UnclaimCPUs puts CPUs released by a DRA claim back into the supply, each
+// into the set the node's full supply has it in.
+func (cs *supply) UnclaimCPUs(cpus cpuset.CPUSet) {
+	ncs := cs.node.GetSupply()
+	cs.isolated = cs.isolated.Union(cpus.Intersection(ncs.IsolatedCPUs()))
+	cs.sharable = cs.sharable.Union(cpus.Intersection(ncs.SharableCPUs()))
 }
 
 // Allocate allocates a grant from the supply.
