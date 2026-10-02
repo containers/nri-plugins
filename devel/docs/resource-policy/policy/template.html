@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Template Policy &mdash; NRI Plugins v0.14.0-161-g44cfe11a documentation</title>
+  <title>Template Policy &mdash; NRI Plugins v0.14.0-165-ga9fa7001 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=0df0c594"></script>
+        <script src="../../../_static/documentation_options.js?v=4e150e2a"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -57,7 +57,10 @@
 <li class="toctree-l2 current"><a class="reference internal" href="index.html">Policies</a><ul class="current">
 <li class="toctree-l3"><a class="reference internal" href="topology-aware.html">Topology-Aware Policy</a></li>
 <li class="toctree-l3"><a class="reference internal" href="balloons.html">Balloons Policy</a></li>
-<li class="toctree-l3 current"><a class="current reference internal" href="#">Template Policy</a></li>
+<li class="toctree-l3 current"><a class="current reference internal" href="#">Template Policy</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#dra">DRA</a></li>
+</ul>
+</li>
 <li class="toctree-l3"><a class="reference internal" href="common-functionality.html">Common Functionality</a></li>
 <li class="toctree-l3"><a class="reference internal" href="howto/index.html">How-to guides</a></li>
 </ul>
@@ -100,9 +103,48 @@
              
   <section id="template-policy">
 <h1>Template Policy<a class="headerlink" href="#template-policy" title="Link to this heading"></a></h1>
-<p>The template policy is a wireframe implementation without any real resource
-allocation and assignment logic. It serves as a template and can be used as
-a starting point for creating new policies.</p>
+<p>The template policy is a wireframe implementation. It does not assign
+resources to containers, but it does allocate CPUs to DRA claims, as
+described below. It serves as a template and can be used as a starting
+point for creating new policies.</p>
+<section id="dra">
+<h2>DRA<a class="headerlink" href="#dra" title="Link to this heading"></a></h2>
+<p>The template policy also shows how a policy takes part in Dynamic Resource
+Allocation (DRA). With DRA enabled (<code class="docutils literal notranslate"><span class="pre">config.dra.enabled:</span> <span class="pre">true</span></code> in the Helm
+chart), the policy registers the DRA driver <code class="docutils literal notranslate"><span class="pre">template.nri.io</span></code>, and the chart
+adds a <code class="docutils literal notranslate"><span class="pre">DeviceClass</span></code> of the same name.</p>
+<p>The policy publishes the CPUs it is allowed to use as one device, <code class="docutils literal notranslate"><span class="pre">cpus</span></code>,
+with a <code class="docutils literal notranslate"><span class="pre">dra.cpu/cpu</span></code> capacity of their number. Several claims can share the
+device, each consuming a number of whole CPUs, which needs the Kubernetes
+<code class="docutils literal notranslate"><span class="pre">DRAConsumableCapacity</span></code> feature gate. The allowed CPUs are the online CPUs,
+or those in <code class="docutils literal notranslate"><span class="pre">availableResources.cpu</span></code>, which must then be a cpuset, minus
+<code class="docutils literal notranslate"><span class="pre">reservedResources.cpu</span></code> if that is a cpuset. Changing either needs a restart.
+A claim made before the restart keeps its CPUs until it is released, even
+those no longer allowed, and the policy logs a warning about it.</p>
+<p>A claim asks for a number of CPUs:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">resource.k8s.io/v1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ResourceClaimTemplate</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">two-cpus</span>
+<span class="nt">spec</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">spec</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">devices</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">requests</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cpus</span>
+<span class="w">        </span><span class="nt">exactly</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">deviceClassName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">template.nri.io</span>
+<span class="w">          </span><span class="nt">capacity</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">requests</span><span class="p">:</span>
+<span class="w">              </span><span class="nt">dra.cpu/cpu</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2&quot;</span>
+</pre></div>
+</div>
+<p>A request without an amount gets one CPU.</p>
+<p>The policy picks the CPUs of a claim, lowest IDs first, and tells the
+container which ones it got in an environment variable named after the claim,
+such as <code class="docutils literal notranslate"><span class="pre">DRA_CPUSET_&lt;claim</span> <span class="pre">UID&gt;=2-3</span></code>. It does not pin the container to them,
+nor keep other containers off them: the template policy does not manage
+cpusets.</p>
+</section>
 </section>
 
 
