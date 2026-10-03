@@ -26,7 +26,6 @@ import (
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass"
-	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
@@ -38,9 +37,6 @@ const (
 	PolicyName = "topology-aware"
 	// PolicyDescription is a short description of this policy.
 	PolicyDescription = "A policy for prototyping memory tiering."
-
-	// ColdStartDone is the event generated for the end of a container cold start period.
-	ColdStartDone = "cold-start-done"
 
 	// CPU class extended resource domain.
 	CpuClassResourceDomain = "cpuclass.resource-policy.nri.io"
@@ -325,34 +321,9 @@ func (p *policy) UpdateResources(container cache.Container) error {
 	return nil
 }
 
-// HandleEvent handles policy-specific events.
-func (p *policy) HandleEvent(e *events.Policy) (bool, error) {
-	log.Debugf("received policy event %s.%s with data %v...", e.Source, e.Type, e.Data)
-
-	switch e.Type {
-	case events.ContainerStarted:
-		c, ok := e.Data.(cache.Container)
-		if !ok {
-			return false, policyError("%s event: expecting cache.Container Data, got %T",
-				e.Type, e.Data)
-		}
-		log.Infof("triggering coldstart period (if necessary) for %s", c.PrettyName())
-		return false, p.triggerColdStart(c)
-	case ColdStartDone:
-		id, ok := e.Data.(string)
-		if !ok {
-			return false, policyError("%s event: expecting container ID Data, got %T",
-				e.Type, e.Data)
-		}
-		c, ok := p.cache.LookupContainer(id)
-		if !ok {
-			// TODO: This is probably a race condition. Should we return nil error here?
-			return false, policyError("%s event: failed to lookup container %s", id)
-		}
-		log.Infof("finishing coldstart period for %s", c.PrettyName())
-		return p.finishColdStart(c)
-	}
-	return false, nil
+// ContainerStarted triggers the cold start period of the container, if it has one.
+func (p *policy) ContainerStarted(c cache.Container) error {
+	return p.triggerColdStart(c)
 }
 
 // GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.

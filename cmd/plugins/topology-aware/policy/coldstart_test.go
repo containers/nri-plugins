@@ -15,145 +15,79 @@
 package topologyaware
 
 import (
-	"fmt"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/containers/nri-plugins/pkg/resmgr/cache"
-	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
-	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
-	system "github.com/containers/nri-plugins/pkg/sysfs"
-	idset "github.com/intel/goresctrl/pkg/utils"
+	resourceapi "k8s.io/api/resource/v1"
 )
 
-var globalPolicy *policy
-var mutex sync.Mutex
+// testOwner reports whether UpdateContainers was called with the lock held.
+type testOwner struct {
+	sync.Mutex
+	updated chan bool
+}
 
-func sendEvent(param any) error {
-	// Simulate event synchronization in the upper levels.
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	fmt.Printf("Event received: %v", param)
-	event := param.(*events.Policy)
-	if _, err := globalPolicy.HandleEvent(event); err != nil {
-		log.Warnf("failed to handle test event: %v", err)
+func (o *testOwner) UpdateContainers() error {
+	locked := !o.TryLock()
+	if !locked {
+		o.Unlock()
 	}
+	o.updated <- locked
 	return nil
 }
 
+func (*testOwner) PublishDRADevices([]resourceapi.Device) error { return nil }
+
 func TestColdStart(t *testing.T) {
+	// With cold start the container first gets PMEM only. DRAM is added
+	// when the cold start timer fires.
+	p, dir := setupTestPolicy(t)
+	defer removeAll(t, dir)
 
-	// Idea with cold start is that the workload is first allocated only PMEM node. Only when timer expires
-	// (or some other event is triggered) is the DRAM node added to the memset. This causes the initial
-	// memory allocations to be made from PMEM only.
+	owner := &testOwner{updated: make(chan bool, 1)}
+	p.options.Owner = owner
 
-	tcases := []struct {
-		name                     string
-		numaNodes                []system.Node
-		req                      Request
-		affinities               map[int]int32
-		container                cache.Container
-		expectedColdStartTimeout time.Duration
-		expectedDRAMNodeID       int
-		expectedPMEMNodeID       int
-		expectedDRAMSystemNodeID idset.ID
-		expectedPMEMSystemNodeID idset.ID
-	}{
-		{
-			name: "three node cold start",
-			numaNodes: []system.Node{
-				&mockSystemNode{id: 0, memFree: 10000, memTotal: 10000, memType: system.MemoryTypeDRAM, distance: []int{1, 5}},
-				&mockSystemNode{id: 1, memFree: 50000, memTotal: 50000, memType: system.MemoryTypePMEM, distance: []int{5, 1}},
+	ctr := &mockContainer{
+		name:                "coldstart",
+		returnValueForGetID: "1234",
+		pod: &mockPod{
+			annotations: map[string]string{
+				preferMemoryTypeKey: "dram,pmem",
+				preferColdStartKey:  "duration: 10ms",
 			},
-			container: &mockContainer{
-				name:                "demo-coldstart-container",
-				returnValueForGetID: "1234",
-				pod: &mockPod{
-					coldStartTimeout:                   1000 * time.Millisecond,
-					returnValue1FotGetResmgrAnnotation: "demo-coldstart-container: pmem,dram",
-					returnValue2FotGetResmgrAnnotation: true,
-					coldStartContainerName:             "demo-coldstart-container",
-				},
-			},
-			expectedColdStartTimeout: 1000 * time.Millisecond,
-			expectedDRAMNodeID:       101,
-			expectedDRAMSystemNodeID: 0,
-			expectedPMEMSystemNodeID: 1,
-			expectedPMEMNodeID:       102,
 		},
 	}
-	for _, tc := range tcases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Skipf("Coldstart tests are disabled (can't mock enough of the system, lacks CPUs)")
 
-			policy := &policy{
-				sys: &mockSystem{
-					nodes: tc.numaNodes,
-				},
-				cache: &mockCache{
-					returnValue1ForLookupContainer: tc.container,
-					returnValue2ForLookupContainer: true,
-				},
-				allocations: allocations{
-					grants: make(map[string]Grant, 0),
-				},
-				options:      &policyapi.BackendOptions{},
-				cpuAllocator: &mockCPUAllocator{},
-			}
-			policy.allocations.policy = policy
-			policy.options.SendEvent = sendEvent
-			ma, err := libmem.NewAllocator(libmem.WithSystemNodes(policy.sys))
-			if err != nil {
-				panic(err)
-			}
-			policy.memAllocator = ma
+	g, err := p.allocatePool(ctr, "")
+	if err != nil {
+		t.Fatalf("failed to allocate pool: %v", err)
+	}
+	if typ := p.memZoneType(g.GetMemoryZone()); typ != libmem.TypeMaskPMEM {
+		t.Fatalf("expected PMEM before cold start, got %s", typ)
+	}
 
-			if err := policy.buildPoolsByTopology(); err != nil {
-				t.Errorf("failed to build topology pool")
-			}
+	// The resource manager holds the lock while the policy handles StartContainer.
+	owner.Lock()
+	err = p.ContainerStarted(ctr)
+	owner.Unlock()
+	if err != nil {
+		t.Fatalf("failed to start container: %v", err)
+	}
 
-			grant, err := policy.allocatePool(tc.container, "")
-			if err != nil {
-				panic(err)
-			}
-			if grant.ColdStart() != tc.expectedColdStartTimeout {
-				t.Errorf("Expected coldstart value '%v', but got '%v'", tc.expectedColdStartTimeout, grant.ColdStart())
-			}
+	select {
+	case locked := <-owner.updated:
+		if !locked {
+			t.Errorf("containers updated without the lock held")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("cold start did not finish")
+	}
 
-			policy.allocations.addGrant(grant)
-
-			mems := grant.GetMemoryZone()
-			if mems.Size() != 1 || mems.Slice()[0] != tc.expectedPMEMSystemNodeID {
-				t.Errorf("Expected one memory controller %v, got: %v", tc.expectedPMEMSystemNodeID, mems)
-			}
-
-			// FIXME: should we report only the limited memory types or the granted types
-			// while the cold start is going on?
-			//if grant.MemoryType()&memoryDRAM != 0 {
-			//    t.Errorf("No DRAM was expected before coldstart timer: %v", grant.MemoryType())
-			//}
-
-			globalPolicy = policy
-
-			if err := policy.options.SendEvent(&events.Policy{
-				Type: events.ContainerStarted,
-				Data: tc.container,
-			}); err != nil {
-				log.Warnf("failed to send test event: %v", err)
-			}
-
-			time.Sleep(tc.expectedColdStartTimeout * 2)
-
-			newMems := grant.GetMemoryZone()
-			if newMems.Size() != 2 {
-				t.Errorf("Expected two memory controllers, got %d: %s", newMems.Size(), newMems)
-			}
-			if !newMems.Contains(tc.expectedPMEMSystemNodeID) || !newMems.Contains(tc.expectedDRAMSystemNodeID) {
-				t.Errorf("Didn't get all expected system nodes in mems, got: %v", newMems)
-			}
-		})
+	owner.Lock()
+	defer owner.Unlock()
+	if typ := p.memZoneType(g.GetMemoryZone()); typ != libmem.TypeMaskDRAM|libmem.TypeMaskPMEM {
+		t.Errorf("expected DRAM and PMEM after cold start, got %s", typ)
 	}
 }

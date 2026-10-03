@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
-	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 )
 
@@ -42,14 +41,16 @@ func (p *policy) triggerColdStart(c cache.Container) error {
 	// the timer elapses.
 	duration := coldStart
 	timer := time.AfterFunc(duration, func() {
-		e := &events.Policy{
-			Type:   ColdStartDone,
-			Source: PolicyName,
-			Data:   c.GetID(),
+		owner := p.options.Owner
+		owner.Lock()
+		defer owner.Unlock()
+
+		if err := p.finishColdStart(c); err != nil {
+			log.Errorf("%v", err)
+			return
 		}
-		if err := p.options.SendEvent(e); err != nil {
-			// we should retry this later, the channel is probably full...
-			log.Errorf("Ouch... we'should retry this later.")
+		if err := owner.UpdateContainers(); err != nil {
+			log.Errorf("coldstart: failed to update containers: %v", err)
 		}
 	})
 	g.AddTimer(timer)
@@ -57,11 +58,10 @@ func (p *policy) triggerColdStart(c cache.Container) error {
 }
 
 // finish an ongoing coldstart for the container.
-func (p *policy) finishColdStart(c cache.Container) (bool, error) {
+func (p *policy) finishColdStart(c cache.Container) error {
 	g, ok := p.allocations.getGrant(c.GetID())
 	if !ok {
-		log.Warnf("coldstart: no grant found, nothing to do...")
-		return false, policyError("coldstart: no grant found for %s", c.PrettyName())
+		return policyError("coldstart: no grant found for %s", c.PrettyName())
 	}
 
 	log.Infof("reallocating %s after coldstart", g)
@@ -70,8 +70,9 @@ func (p *policy) finishColdStart(c cache.Container) (bool, error) {
 		log.Errorf("failed to reallocate %s after coldstart: %v", g, err)
 	} else {
 		log.Infof("reallocated %s", g)
+		p.saveAllocations()
 	}
 	g.ClearTimer()
 
-	return true, nil
+	return nil
 }

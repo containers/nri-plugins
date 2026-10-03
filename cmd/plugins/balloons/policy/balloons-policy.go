@@ -34,7 +34,6 @@ import (
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass"
-	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	policy "github.com/containers/nri-plugins/pkg/resmgr/policy"
 	"github.com/containers/nri-plugins/pkg/utils"
@@ -390,10 +389,10 @@ func (p *balloons) UpdateResources(c cache.Container) error {
 	return nil
 }
 
-// HandleEvent handles policy-specific events.
-func (p *balloons) HandleEvent(*events.Policy) (bool, error) {
-	log.Debugf("(not) handling event...")
-	return false, nil
+// ContainerStarted handles the start of a container.
+func (p *balloons) ContainerStarted(c cache.Container) error {
+	log.Debugf("(not) handling start of container %s...", c.PrettyName())
+	return nil
 }
 
 // ExportResourceData provides resource data to export for the container.

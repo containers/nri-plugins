@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"sort"
+	"sync"
 
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -25,7 +26,6 @@ import (
 	specs "tags.cncf.io/container-device-interface/specs-go"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
-	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	"github.com/prometheus/client_golang/prometheus"
 
 	logger "github.com/containers/nri-plugins/pkg/log"
@@ -57,14 +57,20 @@ type ConstraintSet map[Domain]Constraint
 
 // Options describes policy options
 type Options struct {
-	// SendEvent is the function for delivering events back to the resource manager.
-	SendEvent SendEventFn
 	// Owner is the resource manager running the policy.
 	Owner Owner
 }
 
 // Owner is what a policy can ask of the resource manager running it.
 type Owner interface {
+	// The resource manager holds the lock while the policy handles NRI
+	// requests other than Synchronize, DRA claims and reconfiguration.
+	// A policy takes it itself only for work it starts on its own, like
+	// a timer firing.
+	sync.Locker
+	// UpdateContainers pushes the pending container changes to the runtime.
+	// It must be called with the lock held.
+	UpdateContainers() error
 	// PublishDRADevices publishes the given DRA devices, replacing the ones
 	// published before. A policy calls it whenever its devices change. The
 	// devices are copied, so the policy is free to change them afterwards.
@@ -77,8 +83,6 @@ type BackendOptions struct {
 	System system.System
 	// System state/cache
 	Cache cache.Cache
-	// SendEvent is the function for delivering events up to the resource manager.
-	SendEvent SendEventFn
 	// Owner is the resource manager running the policy.
 	Owner Owner
 	// Config is the policy-specific configuration.
@@ -87,9 +91,6 @@ type BackendOptions struct {
 
 // CreateFn is the type for functions used to create a policy instance.
 type CreateFn func(*BackendOptions) Backend
-
-// SendEventFn is the type for a function to send events back to the resource manager.
-type SendEventFn func(any) error
 
 const (
 	// ExportedResources is the basename of the file container resources are exported to.
@@ -125,9 +126,8 @@ type Backend interface {
 	ReleaseResources(cache.Container) error
 	// UpdateResources updates resource allocations of a container.
 	UpdateResources(cache.Container) error
-	// HandleEvent processes the given event. The returned boolean indicates whether
-	// changes have been made to any of the containers while handling the event.
-	HandleEvent(*events.Policy) (bool, error)
+	// ContainerStarted tells the policy that a container has started.
+	ContainerStarted(cache.Container) error
 	// ExportResourceData provides resource data to export for the container.
 	ExportResourceData(cache.Container) map[string]string
 	// GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
@@ -198,10 +198,8 @@ type Policy interface {
 	ReleaseResources(cache.Container) error
 	// UpdateResources updates resource allocations of a container.
 	UpdateResources(cache.Container) error
-	// HandleEvent passes on the given event to the active policy. The returned boolean
-	// indicates whether changes have been made to any of the containers while handling
-	// the event.
-	HandleEvent(*events.Policy) (bool, error)
+	// ContainerStarted tells the active policy that a container has started.
+	ContainerStarted(cache.Container) error
 	// ExportResourceData exports/updates resource data for the container.
 	ExportResourceData(cache.Container)
 	// GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
@@ -322,11 +320,10 @@ func (p *policy) Start(cfg any) error {
 	log.Infof("activating '%s' policy...", p.active.Name())
 
 	if err := p.active.Setup(&BackendOptions{
-		Cache:     p.cache,
-		System:    p.system,
-		SendEvent: p.options.SendEvent,
-		Owner:     p.options.Owner,
-		Config:    cfg,
+		Cache:  p.cache,
+		System: p.system,
+		Owner:  p.options.Owner,
+		Config: cfg,
 	}); err != nil {
 		return err
 	}
@@ -389,9 +386,9 @@ func (p *policy) ReleaseClaim(uid types.UID) error {
 	return p.active.ReleaseClaim(uid)
 }
 
-// HandleEvent passes on the given event to the active policy.
-func (p *policy) HandleEvent(e *events.Policy) (bool, error) {
-	return p.active.HandleEvent(e)
+// ContainerStarted tells the active policy that a container has started.
+func (p *policy) ContainerStarted(c cache.Container) error {
+	return p.active.ContainerStarted(c)
 }
 
 // ExportResourceData exports/updates resource data for the container.

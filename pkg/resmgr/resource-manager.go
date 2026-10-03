@@ -47,8 +47,6 @@ type ResourceManager interface {
 	Stop()
 	// RequestShutdown asks the resource manager to shut down gracefully.
 	RequestShutdown(reason string)
-	// SendEvent sends an event to be processed by the resource manager.
-	SendEvent(event any) error
 }
 
 type Config = cfgapi.CommonConfig
@@ -61,8 +59,6 @@ type resmgr struct {
 	cache   cache.Cache     // cached state
 	policy  policy.Policy   // resource manager policy
 	control control.Control // policy controllers/enforcement
-	events  chan any        // channel for delivering events
-	stop    chan any        // channel for signalling shutdown to goroutines
 	nri     *nriPlugin      // NRI plugins, if we're running as such
 	rdt     *rdtControl     // control for RDT allocation and monitoring
 	blkio   *blkioControl   // control for block I/O prioritization and throttling
@@ -104,10 +100,6 @@ func NewResourceManager(backend policy.Backend, agt *agent.Agent) (ResourceManag
 	m.nri = nrip
 
 	if err := m.setupPolicy(backend); err != nil {
-		return nil, err
-	}
-
-	if err := m.setupEventProcessing(); err != nil {
 		return nil, err
 	}
 
@@ -229,10 +221,6 @@ func (m *resmgr) start(cfg cfgapi.ResmgrConfig) error {
 		return err
 	}
 
-	if err := m.startEventProcessing(); err != nil {
-		return err
-	}
-
 	if err := pidfile.Remove(); err != nil {
 		return resmgrError("failed to remove stale/old PID file: %v", err)
 	}
@@ -299,8 +287,7 @@ func (m *resmgr) setupPolicy(backend policy.Backend) error {
 	}
 
 	p, err := policy.NewPolicy(backend, m.cache, &policy.Options{
-		SendEvent: m.SendEvent,
-		Owner:     m,
+		Owner: m,
 	})
 	if err != nil {
 		return resmgrError("failed to create policy %s: %v", backend.Name(), err)

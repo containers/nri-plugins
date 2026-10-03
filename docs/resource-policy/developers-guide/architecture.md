@@ -62,10 +62,7 @@ for:
 
 ### [Resource Manager](tree:/pkg/resmgr/)
 
-NRI-RP implements an event processing pipeline. In addition to NRI events,
-it processes a set of other events that are not directly related to or the
-result of NRI requests. These events are typically internally generated within
-NRI-RP.
+NRI-RP implements an event processing pipeline for NRI events.
 
 The Resource Manager component of NRI-RP implements the basic control
 flow of the processing pipeline. It passes control to all the
@@ -104,16 +101,6 @@ B. If the request needs to be intercepted for policying, do the following:
   - Relay the response back to the client.
 7. Release the processing pipeline serialization lock.
 
-The high-level control flow of the event processing pipeline is one of the
-following, based on the event type:
-
-- For policy-specific events:
-  1. Engage the processing pipeline lock.
-  2. Call policy event handler.
-  3. Invoke the controller layer for post-policy processing (same as step 5 for
-     requests).
-  4. Release the pipeline lock.
-
 ### [Cache](tree:/pkg/resmgr/cache/)
 
 The cache is a shared internal storage location within NRI-RP. It tracks the
@@ -137,15 +124,14 @@ needs to be changed and then act accordingly.
 Access to the cache needs to be serialized. However, this serialization is
 not provided by the cache itself. Instead, it assumes callers to make sure
 proper protection is in place against concurrent read-write access. The
-request and event processing pipelines in the resource manager use a lock to
-serialize request and event processing and consequently access to the cache.
+processing pipeline in the resource manager uses a lock to serialize request
+and event processing and consequently access to the cache.
 
 If a policy needs to do processing unsolicited by the resource manager, IOW
 processing other than handling the internal policy backend API calls from the
-resource manager, then it should inject a policy event into the resource
-managers event loop. This causes a callback from the resource manager to
-the policy's event handler with the injected event as an argument and with
-the cache properly locked.
+resource manager, then it should do so with the resource manager lock held,
+taking the lock through its owner interface, and ask the resource manager to
+update the containers it changed before releasing the lock.
 
 ### [Generic Policy Layer](blob:/pkg/resmgr/policy/policy.go)
 

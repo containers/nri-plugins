@@ -89,7 +89,7 @@ func (m *resmgr) ClaimAllocated() error {
 		return err
 	}
 
-	return m.pushClaimUpdates()
+	return m.UpdateContainers()
 }
 
 // ClaimReleased commits the release of a DRA claim, like ClaimAllocated, but
@@ -101,16 +101,17 @@ func (m *resmgr) ClaimReleased() error {
 		return err
 	}
 
-	if err := m.pushClaimUpdates(); err != nil {
+	if err := m.UpdateContainers(); err != nil {
 		log.Warnf("failed to update containers after releasing a DRA claim: %v", err)
 	}
 
 	return nil
 }
 
-// pushClaimUpdates pushes the container updates the policy made for a claim:
-// unlike an NRI request, a kubelet request has no response to carry them in.
-func (m *resmgr) pushClaimUpdates() error {
+// UpdateContainers pushes the container updates the policy made outside of
+// an NRI request: a kubelet request for a claim, or a timer of the policy,
+// has no response to carry them in.
+func (m *resmgr) UpdateContainers() error {
 	// A claim the policy had nothing to do for, an unprepare of one it has no
 	// record of for instance, leaves nothing to push. Asking the runtime to
 	// update nothing could still fail, and failing a claim which changed
