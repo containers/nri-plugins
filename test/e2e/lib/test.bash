@@ -449,6 +449,24 @@ allowed-cpu-ids() { # script API
     pyexec "print(' '.join(str(i) for i in sorted(cpu_ids(cpus['$1']))))"
 }
 
+container-mems() { # script API
+    # Usage: container-mems POD CONTAINER
+    #
+    # Print the memory set CONTAINER of POD is currently allowed to run on, as
+    # read from inside the container. The list is in the compact form, for
+    # instance "0-1,3".
+    #
+    # This is the live memory set.
+    local pod=$1 ctr=$2 status
+
+    status=$(vm-command-q \
+        "kubectl exec $pod -c $ctr -- grep Mems_allowed_list /proc/1/status") ||
+        error "failed to read the memory set of container $ctr of pod $pod"
+
+    tr -d '\t ' <<< "$status" | cut -d ':' -f 2
+}
+
+
 ###
 ### Scheduling
 ###
