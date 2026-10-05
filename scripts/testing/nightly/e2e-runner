@@ -569,7 +569,7 @@ run_e2e_tests() {
 
     if [ "$full" != "1" ]; then
         info "building the plugins the tests need, no more..."
-        export PLUGINS="nri-resource-policy-balloons nri-resource-policy-topology-aware"
+        export PLUGINS="nri-resource-policy-balloons nri-resource-policy-topology-aware nri-resource-policy-template"
         export BINARIES=""
         export OTHER_IMAGE_TARGETS=""
     else
