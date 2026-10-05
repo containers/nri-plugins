@@ -1460,62 +1460,81 @@ func (sys *system) discoverNodes() error {
 	sys.Infof("NUMA nodes with (any) memory: %s", memoryNodes.String())
 	sys.Infof("NUMA nodes with normal memory: %s", normalMemNodes.String())
 
-	noMemNodes := onlineNodes.Difference(memoryNodes)
-	dramNodes := cpuNodes.Clone()
-	pmemOrHbmNodes := memoryNodes.Difference(dramNodes)
-
-	dramNodeIds := IDSetFromCPUSet(dramNodes)
-	pmemOrHbmNodeIds := IDSetFromCPUSet(pmemOrHbmNodes)
-
-	infos := make(map[idset.ID]*MemInfo)
-	dramAvg := uint64(0)
-	if len(pmemOrHbmNodeIds) > 0 && len(dramNodeIds) > 0 {
-		dramCnt := uint64(len(dramNodeIds) - noMemNodes.Size())
-		if dramCnt == 0 {
-			return fmt.Errorf("no dram nodes in the system, cannot determine memory types")
-		}
-
-		// There is special memory present in the system.
-
-		// FIXME assumption: if a node only has memory (and no CPUs), it's PMEM or HBM. Otherwise it's DRAM.
-		// Also, we figure out if the memory is HBM or PMEM based on the amount. If the amount of memory is
-		// smaller than the average amount of DRAM per node, it's HBM, otherwise PMEM.
-		dramTotal := uint64(0)
-		for _, node := range sys.nodes {
-			info, err := node.MemoryInfo()
-			if err != nil {
-				return fmt.Errorf("failed to get memory info for node %v: %s", node, err)
-			}
-			infos[node.id] = info
-			if _, ok := dramNodeIds[node.id]; ok {
-				dramTotal += info.MemTotal
-			}
-		}
-		dramAvg = dramTotal / dramCnt
-		if dramAvg == 0 {
-			// FIXME: should be no reason to bail out when memory types are properly determined.
-			return fmt.Errorf("no dram in the system, cannot determine special memory types")
-		}
+	overridden, err := sys.discoverMemTypeFromOverrides()
+	if err != nil {
+		return err
 	}
+	if !overridden {
+		noMemNodes := onlineNodes.Difference(memoryNodes)
+		dramNodes := cpuNodes.Clone()
+		pmemOrHbmNodes := memoryNodes.Difference(dramNodes)
 
-	for _, node := range sys.nodes {
-		if _, ok := pmemOrHbmNodeIds[node.id]; ok {
-			mem, ok := infos[node.id]
-			if !ok {
-				return fmt.Errorf("not able to determine system special memory types")
+		dramNodeIds := IDSetFromCPUSet(dramNodes)
+		pmemOrHbmNodeIds := IDSetFromCPUSet(pmemOrHbmNodes)
+
+		infos := make(map[idset.ID]*MemInfo)
+		dramAvg := uint64(0)
+		if len(pmemOrHbmNodeIds) > 0 && len(dramNodeIds) > 0 {
+			dramCnt := uint64(len(dramNodeIds) - noMemNodes.Size())
+			if dramCnt == 0 {
+				return fmt.Errorf("no dram nodes in the system, cannot determine memory types")
 			}
-			if mem.MemTotal < dramAvg {
-				sys.Infof("node %d has HBM memory", node.id)
-				node.memoryType = MemoryTypeHBM
+
+			// There is special memory present in the system.
+
+			// FIXME assumption: if a node only has memory (and no CPUs), it's PMEM or HBM. Otherwise it's DRAM.
+			// Also, we figure out if the memory is HBM or PMEM based on the amount. If the amount of memory is
+			// smaller than the average amount of DRAM per node, it's HBM, otherwise PMEM.
+			dramTotal := uint64(0)
+			for _, node := range sys.nodes {
+				info, err := node.MemoryInfo()
+				if err != nil {
+					return fmt.Errorf("failed to get memory info for node %v: %s", node, err)
+				}
+				infos[node.id] = info
+				if _, ok := dramNodeIds[node.id]; ok {
+					dramTotal += info.MemTotal
+				}
+			}
+			dramAvg = dramTotal / dramCnt
+			if dramAvg == 0 {
+				// FIXME: should be no reason to bail out when memory types are properly determined.
+				return fmt.Errorf("no dram in the system, cannot determine special memory types")
+			}
+		}
+
+		for _, node := range sys.nodes {
+			if _, ok := pmemOrHbmNodeIds[node.id]; ok {
+				mem, ok := infos[node.id]
+				if !ok {
+					return fmt.Errorf("not able to determine system special memory types")
+				}
+				if mem.MemTotal < dramAvg {
+					sys.Infof("node %d has HBM memory", node.id)
+					node.memoryType = MemoryTypeHBM
+				} else {
+					sys.Infof("node %d has PMEM memory", node.id)
+					node.memoryType = MemoryTypePMEM
+				}
+			} else if _, ok := dramNodeIds[node.id]; ok {
+				sys.Infof("node %d has DRAM memory", node.id)
+				node.memoryType = MemoryTypeDRAM
 			} else {
-				sys.Infof("node %d has PMEM memory", node.id)
-				node.memoryType = MemoryTypePMEM
+				return fmt.Errorf("unknown memory type for node %v (pmem nodes: %s, dram nodes: %s)", node, pmemOrHbmNodes, dramNodes)
 			}
-		} else if _, ok := dramNodeIds[node.id]; ok {
-			sys.Infof("node %d has DRAM memory", node.id)
-			node.memoryType = MemoryTypeDRAM
-		} else {
-			return fmt.Errorf("unknown memory type for node %v (pmem nodes: %s, dram nodes: %s)", node, pmemOrHbmNodes, dramNodes)
+		}
+	} else {
+		for id, t := range memTypeOverrides {
+			if _, ok := sys.nodes[id]; !ok {
+				return fmt.Errorf("memory type override %v present for nonexistent node #%d", t, id)
+			}
+		}
+		for _, node := range sys.nodes {
+			if t, ok := memTypeOverrides[node.id]; ok {
+				node.memoryType = t
+			} else {
+				node.memoryType = MemoryTypeDRAM
+			}
 		}
 	}
 
@@ -1540,6 +1559,61 @@ func (sys *system) discoverNodes() error {
 	}
 
 	return nil
+}
+
+// Discover memory type from overrides in the environment.
+func (sys *system) discoverMemTypeFromOverrides() (bool, error) {
+	if memTypeEnvOverridesJson == "" {
+		return false, nil
+	}
+	if memTypeOverrides != nil {
+		return true, nil
+	}
+
+	sys.Debugf("discovering memory type overrides from %s=%q", memTypeEnvOverridesVar, memTypeEnvOverridesJson)
+
+	meo, err := sys.parseMemTypeOverrides(memTypeEnvOverridesJson)
+	if err != nil {
+		sys.Errorf("failed to discover memory type overrides: %v", err)
+		return false, err
+	}
+	memTypeOverrides = meo
+
+	return true, nil
+}
+
+// Parse memory type overrides from a JSON string.
+func (sys *system) parseMemTypeOverrides(overridesJson string) (map[int]MemoryType, error) {
+	if overridesJson == "" {
+		return nil, nil
+	}
+
+	var (
+		raw        = map[int]string{}
+		overrides  = make(map[int]MemoryType)
+		parseError = func(format string, args ...any) error {
+			return fmt.Errorf("memory type override: "+format, args...)
+		}
+	)
+
+	if err := json.Unmarshal([]byte(overridesJson), &raw); err != nil {
+		return nil, parseError("unmarshaling %q failed: %v", overridesJson, err)
+	}
+
+	for id, memTypeStr := range raw {
+		switch strings.ToUpper(memTypeStr) {
+		case MemoryTypeDRAM.String():
+			overrides[id] = MemoryTypeDRAM
+		case MemoryTypeHBM.String():
+			overrides[id] = MemoryTypeHBM
+		case MemoryTypePMEM.String():
+			overrides[id] = MemoryTypePMEM
+		default:
+			return nil, parseError("unknown memory type %q for node %d", memTypeStr, id)
+		}
+	}
+
+	return overrides, nil
 }
 
 // Discover details of the given NUMA node.
@@ -1771,6 +1845,16 @@ func NodeFilterNot(f NodeFilter) NodeFilter {
 		return !f(n)
 	}
 }
+
+var (
+	// memTypeOverrides allow overriding the size-based heuristic memory type detection.
+	// Type detection does not merge overrides with detected node types. If an override
+	// is set in the environment all node types are set based on the override, with any
+	// missing entries considered to be DRAM.
+	memTypeOverrides        map[int]MemoryType
+	memTypeEnvOverridesVar  = "OVERRIDE_SYS_MEMORY_TYPE"
+	memTypeEnvOverridesJson = os.Getenv(memTypeEnvOverridesVar)
+)
 
 // Discover physical packages (CPU sockets) present in the system.
 func (sys *system) discoverPackages() error {
