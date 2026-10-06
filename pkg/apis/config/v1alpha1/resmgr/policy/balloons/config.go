@@ -330,6 +330,37 @@ type BalloonDef struct {
 	// from the affinity of IRQs that are neither claimed nor
 	// sinked.  +kubebuilder:validation:Enum="";sink;isolate
 	IrqMode string `json:"irqMode,omitempty"`
+	// DRA publishes balloon instances of this type as DRA devices of
+	// the balloons.nri.io driver. Containers get into these balloons
+	// only by requesting the devices through resource claims. The
+	// type needs minBalloons of at least 1 and maxCPUs above 0, and
+	// it cannot have namespaces, matchExpressions or be a component.
+	// +optional
+	DRA *BalloonDRA `json:"dra,omitempty"`
+}
+
+// BalloonDRA contains the DRA parameters of a balloon type.
+// +kubebuilder:object:generate=true
+type BalloonDRA struct {
+	// DeviceName is a template for the names of the DRA devices that
+	// publish the balloon instances. ${balloonType} expands to the
+	// balloon type name and ${instance} to the instance index. The
+	// expanded name must be a DNS label and unique among all DRA
+	// devices of the policy. The default is "${balloonType}-${instance}".
+	// +optional
+	DeviceName string `json:"deviceName,omitempty"`
+	// NodeAllocatable publishes the cpu capacity of the devices as
+	// node allocatable CPU: the scheduler subtracts the CPUs of
+	// allocated claims from the allocatable CPUs of the node, and
+	// the kubelet adds them to the cgroups of the pods using the
+	// claims. This needs the DRANodeAllocatableResources feature
+	// gate. Set to false for balloon types whose CPUs are already
+	// reserved from the kubelet with kubeReserved, systemReserved or
+	// reservedSystemCPUs, so that the CPUs are not subtracted twice.
+	// The default is true.
+	// +kubebuilder:default=true
+	// +optional
+	NodeAllocatable *bool `json:"nodeAllocatable,omitempty"`
 }
 
 // BalloonDefComponent contains a balloon component definition.
