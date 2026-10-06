@@ -157,5 +157,5 @@ func (s *cdiStore) specName(uid types.UID) string {
 // a re-prepare of the same claim, because a claim's allocation never changes
 // once it has been made.
 func cdiDeviceName(uid types.UID, index int) string {
-	return "claim-" + string(uid) + "-" + strconv.Itoa(index)
+	return cdiClaimPrefix + string(uid) + "-" + strconv.Itoa(index)
 }

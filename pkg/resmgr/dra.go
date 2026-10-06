@@ -23,12 +23,6 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/dra"
 )
 
-// draDomain is the DNS domain DRA driver names are formed in. The driver is
-// named after the active policy, because the policy decides which devices get
-// published and what they mean, so a node running another policy publishes
-// devices of another kind.
-const draDomain = "nri.io"
-
 // draEnabled resolves the tri-state dra.enabled switch: unset is off.
 func draEnabled(cfg *cfgapi.DRAConfig) bool {
 	return cfg != nil && cfg.Enabled != nil && *cfg.Enabled
@@ -61,7 +55,7 @@ func (m *resmgr) setupDRA(cfg *cfgapi.DRAConfig) error {
 	// We are the plugin's owner: it takes our lock for every kubelet request,
 	// serializing those against the NRI ones, and asks us to shut down when it
 	// runs into an error it cannot recover from.
-	plugin, err := dra.New(m.policy.ActivePolicy()+"."+draDomain, dra.Options{
+	plugin, err := dra.New(dra.DriverName(m.policy.ActivePolicy()), dra.Options{
 		NodeName:   nodeName,
 		KubeClient: client,
 		Owner:      m,
