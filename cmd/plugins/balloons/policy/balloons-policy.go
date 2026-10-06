@@ -34,6 +34,7 @@ import (
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/cpuclass"
+	"github.com/containers/nri-plugins/pkg/resmgr/dra"
 	"github.com/containers/nri-plugins/pkg/resmgr/events"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	policy "github.com/containers/nri-plugins/pkg/resmgr/policy"
@@ -41,11 +42,8 @@ import (
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
 	corev1 "k8s.io/api/core/v1"
-	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	specs "tags.cncf.io/container-device-interface/specs-go"
 )
 
 const (
@@ -101,6 +99,9 @@ type balloons struct {
 	memAllocator *libmem.Allocator            // memory allocator used by the policy
 	cpuClasses   *cpuclass.Handler            // CPU class handler (cpufreq + SST/PCT internals)
 	loadVirtDev  map[string]*loadClassVirtDev // map LoadClasses to virtual devices
+
+	draDriver string          // name of the DRA driver of this policy
+	draClaims draClaimRecords // prepared DRA claims by claim UID
 }
 
 // Balloon contains attributes of a balloon instance
@@ -219,11 +220,15 @@ func (p *balloons) Setup(policyOptions *policy.BackendOptions) error {
 	}
 	bpoptions = bpoptions.DeepCopy()
 
-	// We keep no policy data across restarts.
+	// We keep no policy data across restarts, except the records of
+	// prepared DRA claims which cannot be rebuilt from containers.
+	p.draDriver = dra.DriverName(PolicyName)
+	p.draClaims = loadDRAClaims(policyOptions.Cache)
 	policyOptions.Cache.ResetPolicyEntries()
 
 	p.options = policyOptions
 	p.cch = policyOptions.Cache
+	p.saveDRAClaims()
 	p.cpuAllocator = cpuallocator.NewCPUAllocator(policyOptions.System)
 
 	log.Infof("setting up %s policy...", PolicyName)
@@ -253,7 +258,7 @@ func (p *balloons) Description() string {
 // Start prepares this policy for accepting allocation/release requests.
 func (p *balloons) Start() error {
 	log.Infof("%s policy started", PolicyName)
-	return nil
+	return p.publishDRADevices()
 }
 
 // Sync synchronizes the active policy state.
@@ -311,6 +316,15 @@ func (p *balloons) AllocateResources(c cache.Container) error {
 		c.PrettyName(),
 		p.containerRequestedMilliCpus(c.GetID()),
 		p.containerLimitedMilliCpus(c.GetID()))
+	if claimUIDs := p.draContainerClaims(c); len(claimUIDs) > 0 {
+		bln, err := p.draBalloonForContainer(c, claimUIDs)
+		if err != nil {
+			return balloonsError("%w", err)
+		}
+		log.Infof("placing DRA container %s of claims %v in balloon %s",
+			c.PrettyName(), claimUIDs, bln.PrettyName())
+		return p.placeContainer(c, bln)
+	}
 	bln, err := p.allocateBalloon(c)
 	if err != nil {
 		return balloonsError("balloon allocation for container %s failed: %w", c.PrettyName(), err)
@@ -318,6 +332,12 @@ func (p *balloons) AllocateResources(c cache.Container) error {
 	if bln == nil {
 		return balloonsError("no suitable balloons found for container %s", c.PrettyName())
 	}
+	return p.placeContainer(c, bln)
+}
+
+// placeContainer inflates a balloon to fit a container if needed and
+// assigns the container to the balloon.
+func (p *balloons) placeContainer(c cache.Container, bln *Balloon) error {
 	// Resize selected balloon to fit the new container, unless it
 	// uses the ReservedResources CPUs, which is a fixed set.
 	reqMilliCpus := p.containerRequestedMilliCpus(c.GetID()) + p.requestedMilliCpus(bln)
@@ -356,9 +376,9 @@ func (p *balloons) ReleaseResources(c cache.Container) error {
 			log.Debugf("%s", p.dumpBalloon(bln))
 		}
 		if bln.ContainerCount() == 0 {
-			// Deflate the balloon completely before
-			// freeing it.
-			if err := p.resizeBalloon(bln, 0); err != nil {
+			// Deflate the balloon before freeing it,
+			// keeping only the CPUs held by DRA claims.
+			if err := p.resizeBalloon(bln, p.requestedMilliCpus(bln)); err != nil {
 				log.Warnf("failed to deflate balloon %s: %v", bln.PrettyName(), err)
 			}
 			log.Debugf("all containers removed, free balloon allocation %s", bln.PrettyName())
@@ -369,6 +389,9 @@ func (p *balloons) ReleaseResources(c cache.Container) error {
 			if err := p.resizeBalloon(bln, max(1, p.requestedMilliCpus(bln))); err != nil {
 				return balloonsError("resizing balloon %s failed: %w", bln.PrettyName(), err)
 			}
+			// The share of a claim that the remaining
+			// containers get may have changed.
+			p.updatePinning(bln)
 		}
 	} else {
 		log.Debugf("ReleaseResources: balloon-less container %s, nothing to release", c.PrettyName())
@@ -630,19 +653,6 @@ func (p *balloons) GetExtendedResources() map[string]*resource.Quantity {
 	return out
 }
 
-// AllocateClaim allocates resources for a claim being prepared.
-func (p *balloons) AllocateClaim(
-	*resourceapi.ResourceClaim,
-	[]resourceapi.DeviceRequestAllocationResult,
-) ([]specs.ContainerEdits, error) {
-	return nil, policy.ErrNoDRAClaims
-}
-
-// ReleaseClaim releases the resources allocated for the given claim.
-func (p *balloons) ReleaseClaim(types.UID) error {
-	return policy.ErrNoDRAClaims
-}
-
 // balloonByContainer returns a balloon that contains a container.
 func (p *balloons) balloonByContainer(c cache.Container) *Balloon {
 	podID := c.GetPodID()
@@ -759,11 +769,18 @@ func (p *balloons) chooseBalloonDef(c cache.Container) (*BalloonDef, error) {
 		if blnDef == nil {
 			return nil, balloonsError("no balloon for annotation %q", blnDefName)
 		}
+		if blnDef.DRA != nil {
+			return nil, balloonsError("balloon type %q is published as DRA devices, request it through a resource claim", blnDefName)
+		}
 		log.Debugf("- annotation %q found, using balloon type %q", balloonKey, blnDefName)
 		return blnDef, nil
 	}
 
 	for _, blnDef := range p.bpoptions.BalloonDefs {
+		// Only DRA containers are placed in DRA balloons.
+		if blnDef.DRA != nil {
+			continue
+		}
 		// Case 2: BalloonDef is defined by a match expression.
 		for _, expr := range blnDef.MatchExpressions {
 			log.Debugf("- checking expression %s of balloon type %q against container %s...",
@@ -811,9 +828,9 @@ func (p *balloons) containerLimitedMilliCpus(contID string) int {
 }
 
 // requestedMilliCpus sums up and returns CPU requests of all
-// containers assigned to a balloon.
+// containers assigned to a balloon and CPUs held by DRA claims in it.
 func (p *balloons) requestedMilliCpus(bln *Balloon) int {
-	cpuRequested := 0
+	cpuRequested := p.draClaimedMilliCpus(bln)
 	for _, cID := range bln.ContainerIDs() {
 		cpuRequested += p.containerRequestedMilliCpus(cID)
 	}
@@ -1700,6 +1717,9 @@ func (p *balloons) Reconfigure(newCfg any) error {
 	if err := p.Sync(p.cch.GetContainers(), p.cch.GetContainers()); err != nil {
 		log.Warnf("failed to sync containers: %v", err)
 	}
+	if err := p.publishDRADevices(); err != nil {
+		log.Warnf("%v", err)
+	}
 	return nil
 }
 
@@ -1887,7 +1907,7 @@ func (p *balloons) validateConfig(bpoptions *BalloonsOptions) error {
 			return err
 		}
 	}
-	return nil
+	return p.validateDRAConfig(bpoptions)
 }
 
 // setConfig takes new balloon configuration into use.
@@ -1991,6 +2011,9 @@ func (p *balloons) setConfig(bpoptions *BalloonsOptions) error {
 		}
 	}
 	p.ifreeCpus = p.freeCpus.Clone()
+	if err := p.applyDRAClaims(); err != nil {
+		return err
+	}
 
 	// Finish balloon instance initialization.
 	log.Infof("%s policy balloons:", PolicyName)
@@ -2599,7 +2622,7 @@ func (p *balloons) updatePinning(blns ...*Balloon) {
 				} else {
 					allowedCpus = pinnableCpus
 				}
-				p.pinCpuMem(c, allowedCpus, bln.Mems, bln.memTypeMask, bln.Def.PinMemory)
+				p.pinCpuMem(c, bln, allowedCpus, bln.Mems, bln.memTypeMask, bln.Def.PinMemory)
 			}
 		}
 	}
@@ -2784,12 +2807,13 @@ func (p *balloons) dismissContainer(c cache.Container, bln *Balloon) {
 }
 
 // pinCpuMem pins container to CPUs and memory nodes if flagged
-func (p *balloons) pinCpuMem(c cache.Container, cpus cpuset.CPUSet, mems idset.IDSet, memTypeMask libmem.TypeMask, blnDefPinMemory *bool) {
+func (p *balloons) pinCpuMem(c cache.Container, bln *Balloon, cpus cpuset.CPUSet, mems idset.IDSet, memTypeMask libmem.TypeMask, blnDefPinMemory *bool) {
 	if p.bpoptions.PinCPU == nil || *p.bpoptions.PinCPU {
 		log.Debugf("  - pinning %s to cpuset: %s", c.PrettyName(), cpus)
 		c.SetCpusetCpus(cpus.String())
-		if reqCpu, ok := c.GetResourceRequirements().Requests[corev1.ResourceCPU]; ok {
-			mCpu := int(reqCpu.MilliValue())
+		reqCpu, hasReq := c.GetResourceRequirements().Requests[corev1.ResourceCPU]
+		if claimedMilliCpus := p.draContainerMilliCpus(c, bln); hasReq || claimedMilliCpus > 0 {
+			mCpu := int(reqCpu.MilliValue()) + claimedMilliCpus
 			c.SetCPUShares(int64(cache.MilliCPUToShares(int64(mCpu))))
 		}
 	}
