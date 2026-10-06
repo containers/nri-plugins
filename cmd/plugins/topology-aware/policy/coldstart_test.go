@@ -43,8 +43,7 @@ func (*testOwner) PublishDRADevices([]resourceapi.Device) error { return nil }
 func TestColdStart(t *testing.T) {
 	// With cold start the container first gets PMEM only. DRAM is added
 	// when the cold start timer fires.
-	p, dir := setupTestPolicy(t)
-	defer removeAll(t, dir)
+	p := setupTestPolicy(t)
 
 	owner := &testOwner{updated: make(chan bool, 1)}
 	p.options.Owner = owner

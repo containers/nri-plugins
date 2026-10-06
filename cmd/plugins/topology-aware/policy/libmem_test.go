@@ -15,61 +15,33 @@
 package topologyaware
 
 import (
-	"os"
-	"path"
 	"strings"
 	"testing"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
-	system "github.com/containers/nri-plugins/pkg/sysfs"
-	"github.com/containers/nri-plugins/pkg/testutils"
 )
 
 // setupTestPolicy creates a policy from the server sysfs testdata.
-func setupTestPolicy(t *testing.T) (*policy, string) {
+func setupTestPolicy(t *testing.T) *policy {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "nri-libmem-test-")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	if err := testutils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), dir); err != nil {
-		if rerr := os.RemoveAll(dir); rerr != nil {
-			t.Logf("failed to remove temp dir %q: %v", dir, rerr)
-		}
-		t.Fatalf("failed to uncompress testdata: %v", err)
-	}
-
-	sysPath := path.Join(dir, "sysfs", "server", "sys")
-	sys, err := system.DiscoverSystemAt(sysPath)
-	if err != nil {
-		if rerr := os.RemoveAll(dir); rerr != nil {
-			t.Logf("failed to remove temp dir %q: %v", dir, rerr)
-		}
-		t.Fatalf("failed to discover system: %v", err)
-	}
-
 	p := New().(*policy)
 	if err := p.Setup(&policyapi.BackendOptions{
 		Cache:  &mockCache{},
-		System: sys,
+		System: testServerSystem(t),
 		Config: &cfgapi.Config{
 			ReservedResources: cfgapi.Constraints{cfgapi.CPU: "750m"},
 		},
 	}); err != nil {
-		if rerr := os.RemoveAll(dir); rerr != nil {
-			t.Logf("failed to remove temp dir %q: %v", dir, rerr)
-		}
 		t.Fatalf("failed to setup policy: %v", err)
 	}
-	return p, dir
+	return p
 }
 
 // TestLibmemGetMemOfferByHintsMemoryPreserve verifies that getMemOfferByHints
 // returns an error immediately when memoryPreserve is requested.
 func TestLibmemGetMemOfferByHintsMemoryPreserve(t *testing.T) {
-	p, dir := setupTestPolicy(t)
-	defer removeAll(t, dir)
+	p := setupTestPolicy(t)
 
 	pool := p.pools[0]
 	req := &request{
@@ -89,8 +61,7 @@ func TestLibmemGetMemOfferByHintsMemoryPreserve(t *testing.T) {
 // TestLibmemGetMemOfferByHintsNoHints verifies that getMemOfferByHints returns an
 // error when the container has no pod resource API topology hints.
 func TestLibmemGetMemOfferByHintsNoHints(t *testing.T) {
-	p, dir := setupTestPolicy(t)
-	defer removeAll(t, dir)
+	p := setupTestPolicy(t)
 
 	// Find a leaf NUMA node with DRAM.
 	var pool Node
@@ -121,8 +92,7 @@ func TestLibmemGetMemOfferByHintsNoHints(t *testing.T) {
 // TestLibmemPoolZoneCapacityAndFree verifies that poolZoneCapacity returns a
 // positive value and that poolZoneFree does not exceed it.
 func TestLibmemPoolZoneCapacityAndFree(t *testing.T) {
-	p, dir := setupTestPolicy(t)
-	defer removeAll(t, dir)
+	p := setupTestPolicy(t)
 
 	var pool Node
 	for _, n := range p.pools {
