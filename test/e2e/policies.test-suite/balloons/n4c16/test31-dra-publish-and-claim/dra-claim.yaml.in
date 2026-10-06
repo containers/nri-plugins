@@ -1,0 +1,27 @@
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: ${NAME}
+spec:
+  spec:
+    devices:
+      requests:
+      - name: cpus
+        exactly:
+          deviceClassName: balloons.nri.io
+          $(if [ -n "$BTYPE" ] || [ -n "$INSTANCE" ]; then echo "
+          selectors:
+          $(if [ -n "$BTYPE" ]; then echo "
+          - cel:
+              expression: 'device.attributes[\"balloons.nri.io\"].balloonType == \"${BTYPE}\"'
+          "; fi)
+          $(if [ -n "$INSTANCE" ]; then echo "
+          - cel:
+              expression: 'device.attributes[\"balloons.nri.io\"].instance == ${INSTANCE}'
+          "; fi)
+          "; fi)
+          $(if [ -n "$CPUS" ]; then echo "
+          capacity:
+            requests:
+              cpu: '${CPUS}'
+          "; fi)

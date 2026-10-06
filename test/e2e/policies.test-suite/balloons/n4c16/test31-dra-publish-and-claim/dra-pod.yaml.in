@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${NAME}
+  $(if [ -n "$POD_ANNOTATION" ]; then echo "
+  annotations:
+    $(for ann in "${POD_ANNOTATION[@]}"; do echo "
+    $ann
+    "; done)
+  "; fi)
+spec:
+  resourceClaims:
+  - name: cpus
+    resourceClaimTemplateName: ${CLAIM}
+  $(if [ -n "$CLAIM2" ]; then echo "
+  - name: cpus2
+    resourceClaimTemplateName: ${CLAIM2}
+  "; fi)
+  containers:
+  $(for contnum in $(seq 0 $(( ${CONTCOUNT:-1} - 1 ))); do echo "
+  - name: ${NAME}c${contnum}
+    image: quay.io/prometheus/busybox
+    imagePullPolicy: IfNotPresent
+    command:
+      - sh
+      - -c
+      - echo ${NAME}c${contnum} \$(sleep inf)
+    resources:
+      $(if [ -n "$CPUREQ" ]; then echo "
+      requests:
+        cpu: ${CPUREQ}
+      "; fi)
+      $(if [ -n "$CPULIM" ]; then echo "
+      limits:
+        cpu: ${CPULIM}
+      "; fi)
+      $(if [[ " $NOCLAIM_CONTAINERS " != *" $contnum "* ]] || [[ " $CLAIM2_CONTAINERS " == *" $contnum "* ]]; then echo "
+      claims:
+      $(if [[ " $NOCLAIM_CONTAINERS " != *" $contnum "* ]]; then echo "
+      - name: cpus
+      "; fi)
+      $(if [ -n "$CLAIM2" ] && [[ " $CLAIM2_CONTAINERS " == *" $contnum "* ]]; then echo "
+      - name: cpus2
+      "; fi)
+      "; fi)
+  "; done)
+  terminationGracePeriodSeconds: 1
