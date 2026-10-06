@@ -52,8 +52,7 @@ func TestReconfigureRefusedKeepsConfig(t *testing.T) {
 
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
-			p, dir := setupTestPolicy(t)
-			defer removeAll(t, dir)
+			p := setupTestPolicy(t)
 
 			if tc.grant {
 				cpus := resource.MustParse(strconv.Itoa(p.root.GetSupply().SharableCPUs().Size()))

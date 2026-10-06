@@ -16,7 +16,6 @@ package topologyaware
 
 import (
 	"fmt"
-	"os"
 	"path"
 	"testing"
 
@@ -36,27 +35,32 @@ func findNodeWithName(name string, nodes []Node) Node {
 	panic("No node found with name " + name)
 }
 
-func removeAll(t *testing.T, path string) {
-	if err := os.RemoveAll(path); err != nil {
-		t.Fatalf("failed to remove %q: %v", path, err)
+// testSysfs uncompresses the test sysfs data into a directory which is
+// removed when the test ends, and returns the directory.
+func testSysfs(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := testutils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), dir); err != nil {
+		t.Fatalf("failed to uncompress test sysfs data: %v", err)
 	}
+	return dir
 }
+
+// testServerSystem discovers the "server" test sysfs.
+func testServerSystem(t *testing.T) system.System {
+	t.Helper()
+	sys, err := system.DiscoverSystemAt(path.Join(testSysfs(t), "sysfs", "server", "sys"))
+	if err != nil {
+		t.Fatalf("failed to discover system: %v", err)
+	}
+	return sys
+}
+
 func TestPoolCreation(t *testing.T) {
 
 	// Test pool creation with "real" sysfs data.
 
-	// Create a temporary directory for the test data.
-	dir, err := os.MkdirTemp("", "nri-resource-policy-test-sysfs-")
-	if err != nil {
-		panic(err)
-	}
-	defer removeAll(t, dir)
-
-	// Uncompress the test data to the directory.
-	err = testutils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), dir)
-	if err != nil {
-		panic(err)
-	}
+	dir := testSysfs(t)
 
 	tcases := []struct {
 		path                    string
@@ -200,18 +204,7 @@ func TestWorkloadPlacement(t *testing.T) {
 	// Do some workloads (containers) and see how they are placed in the
 	// server system.
 
-	// Create a temporary directory for the test data.
-	dir, err := os.MkdirTemp("", "nri-resource-policy-test-sysfs-")
-	if err != nil {
-		panic(err)
-	}
-	defer removeAll(t, dir)
-
-	// Uncompress the test data to the directory.
-	err = testutils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), dir)
-	if err != nil {
-		panic(err)
-	}
+	dir := testSysfs(t)
 
 	tcases := []struct {
 		path                   string
@@ -306,18 +299,7 @@ func TestAffinities(t *testing.T) {
 	// Test how (already pre-calculated) affinities affect workload placement.
 	//
 
-	// Create a temporary directory for the test data.
-	dir, err := os.MkdirTemp("", "nri-resource-policy-test-sysfs-")
-	if err != nil {
-		panic(err)
-	}
-	defer removeAll(t, dir)
-
-	// Uncompress the test data to the directory.
-	err = testutils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), dir)
-	if err != nil {
-		panic(err)
-	}
+	dir := testSysfs(t)
 
 	tcases := []struct {
 		path       string

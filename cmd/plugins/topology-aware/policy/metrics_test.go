@@ -16,8 +16,6 @@ package topologyaware
 
 import (
 	"context"
-	"os"
-	"path"
 	"testing"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -27,8 +25,6 @@ import (
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	"github.com/containers/nri-plugins/pkg/metrics"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
-	system "github.com/containers/nri-plugins/pkg/sysfs"
-	"github.com/containers/nri-plugins/pkg/testutils"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
@@ -80,22 +76,9 @@ var sharedPoolGaugeNames = []string{
 func newServerPolicyWithMetrics(t *testing.T) (*policy, *TopologyAwareMetrics, *sdkmetric.ManualReader) {
 	t.Helper()
 
-	dir, err := os.MkdirTemp("", "nri-resource-policy-test-sysfs-")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	t.Cleanup(func() { removeAll(t, dir) })
-
-	if err := testutils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), dir); err != nil {
-		t.Fatalf("failed to uncompress test sysfs data: %v", err)
-	}
-
 	// The "server" sysfs yields a multi-zone topology, which lets us assert
 	// "one exported series per zone".
-	sys, err := system.DiscoverSystemAt(path.Join(dir, "sysfs", "server", "sys"))
-	if err != nil {
-		t.Fatalf("failed to discover system: %v", err)
-	}
+	sys := testServerSystem(t)
 
 	opts := &policyapi.BackendOptions{
 		Cache:  &mockCache{},
