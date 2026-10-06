@@ -48,6 +48,7 @@ jump directly to the sections below:
   - **[Container Tuning](#container-tuning)**
   - **[CPU Tuning](#cpu-tuning)**
   - **[Built-in Balloon Types](#built-in-balloon-types)**
+  - **[Publishing Balloons as DRA Devices](#publishing-balloons-as-dra-devices)**
   - **[Toggle and Reset Pinning Memory, CPUs, and Containers](#toggle-and-reset-pinning-memory-cpus-and-containers)**
   - **[Visibility, Scheduling, Metrics, Logging, Debugging](#visibility-scheduling-metrics-logging-debugging)**
 - **[Cookbook](#cookbook)**
@@ -290,6 +291,10 @@ then an existing or a new balloon instance of that type.
 4. Implicit [built-in default balloon](#default-balloon) type matches
    any container as a fallback, unless configured otherwise.
 5. If no match, creating the container fails.
+
+Balloon types with the [`dra`](#publishing-balloons-as-dra-devices)
+option are never chosen this way: containers get into them only
+through resource claims.
 
 **`namespaces`** (list of strings)
 - Assigns containers from matching namespaces to this balloon type.
@@ -1252,6 +1257,217 @@ balloonTypes:
   namespaces:
   - "*" # Match all containers not matched in above types
 ```
+
+### Publishing Balloons as DRA Devices
+
+Balloon instances can be published as Dynamic Resource Allocation (DRA)
+devices. Pods then request CPUs of a balloon through resource claims,
+and the Kubernetes scheduler accounts for them.
+
+**Enabling**: set `dra.enabled: true` in the policy configuration
+(`config.dra.enabled: true` in the Helm chart) and add the `dra` option
+to the balloon types to publish. The policy registers the DRA driver
+`balloons.nri.io`, and the Helm chart adds a `DeviceClass` of the same
+name that selects all devices of the driver. Changing `dra.enabled`
+needs a restart.
+
+**`dra`** (object, balloon type)
+- Publishes every instance of the balloon type as a DRA device. The
+  presence of the option, even `dra: {}`, turns publishing on.
+- `deviceName` (string): template of device names. `${balloonType}`
+  expands to the balloon type name and `${instance}` to the instance
+  index (0, 1, ...). The default is `"${balloonType}-${instance}"`.
+  The expanded names must be DNS labels (lowercase alphanumerics and
+  `-`, at most 63 characters) and unique among all published devices.
+- `nodeAllocatable` (boolean): publishes the `cpu` capacity of the
+  devices as node allocatable CPU. The scheduler subtracts the CPUs of
+  allocated claims from the allocatable CPUs of the node, and the
+  kubelet adds them to the cgroups of the pods using the claims. The
+  default is `true`. Set to `false` for balloon types whose CPUs are
+  already reserved from the kubelet, so that they are not subtracted
+  twice. See "Static DRA balloons and node allocatable" below.
+
+A balloon type with `dra`:
+- must have `maxCPUs` > 0. It is the CPU capacity of each device.
+- must have `minBalloons` >= 1. Exactly `minBalloons` instances are
+  created and published; DRA balloons are never created or deleted on
+  demand, so `maxBalloons` has no effect.
+- cannot have `namespaces` or `matchExpressions`, cannot be a
+  component of a composite balloon type, and cannot be the built-in
+  `reserved` or `default` type.
+- can use the other balloon type options, such as `minCPUs`,
+  `cpuClass`, `loads`, `shareIdleCPUsInSame` or `hideHyperthreads`, as
+  usual. With `minCPUs` 0 or unset, an instance holds no CPUs until a
+  claim on it is prepared, and gives them back when its last claim is
+  released. With `minCPUs` equal to `maxCPUs`, the CPUs are allocated
+  when the policy starts. Options that select instances for containers (`groupBy`,
+  `preferNewBalloons`, `preferSpreadingPods`,
+  `preferPerNamespaceBalloon`) have no effect.
+
+Each published device has:
+- attribute `balloonType` (string): the balloon type name.
+- attribute `instance` (int): the balloon instance index.
+- consumable capacity `cpu`: `maxCPUs` of the balloon type. Several
+  claims can share a device as long as their CPUs fit in the capacity.
+- node allocatable mapping of `cpu` to the consumed `cpu` capacity,
+  so that the scheduler subtracts claimed CPUs from the node's
+  allocatable CPUs. Devices of balloon types with
+  `nodeAllocatable: false` have no mapping.
+
+Attribute and capacity names are in the driver's domain. In CEL
+selectors they are `device.attributes["balloons.nri.io"].balloonType`
+and `device.capacity["balloons.nri.io"].cpu`.
+
+```yaml
+dra:
+  enabled: true
+balloonTypes:
+- name: fast
+  minBalloons: 2
+  minCPUs: 1
+  maxCPUs: 4
+  dra:
+    deviceName: "fast-${instance}"
+```
+
+A claim without a CPU amount consumes the whole capacity, which makes
+the balloon instance exclusive to the claim:
+
+```yaml
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: fast-balloon
+spec:
+  spec:
+    devices:
+      requests:
+      - name: balloon
+        exactly:
+          deviceClassName: balloons.nri.io
+          selectors:
+          - cel:
+              expression: device.attributes["balloons.nri.io"].balloonType == "fast"
+```
+
+A claim for two CPUs of a balloon instance that other claims may share:
+
+```yaml
+      requests:
+      - name: balloon
+        exactly:
+          deviceClassName: balloons.nri.io
+          selectors:
+          - cel:
+              expression: device.attributes["balloons.nri.io"].balloonType == "fast"
+          capacity:
+            requests:
+              cpu: "2"
+```
+
+A pod uses the claim in its containers:
+
+```yaml
+spec:
+  resourceClaims:
+  - name: balloon
+    resourceClaimTemplateName: fast-balloon
+  containers:
+  - name: c0
+    resources:
+      claims:
+      - name: balloon
+```
+
+**CPU accounting**: when the kubelet prepares a claim, the policy
+reserves the claimed CPUs in the balloon instance of the device and
+inflates the balloon if needed. Preparing the claim fails if the node
+does not have enough free CPUs; the kubelet retries it. The size of a
+DRA balloon is the sum of the claimed CPUs and the CPU requests of its
+containers, rounded up and limited by `minCPUs` and `maxCPUs`. A
+balloon keeps the CPUs of its claims even when its containers exit, and
+releasing the claim deflates the balloon. Claims survive restarts of
+the policy. A new configuration is rejected if it no longer provides
+the balloon instance of a prepared claim.
+
+**Container placement**:
+- A container that uses a claim of this driver is placed in the
+  balloon of the claimed device and pinned to its CPUs. It gets the
+  environment variable `DRA_BALLOON=<device name>`. CPU shares of the
+  container are set from its CPU request plus the CPUs of its claims.
+- Several containers of a pod may use the same claim. They are placed
+  in the same balloon and the CPUs of the claim are reserved once. For
+  CPU shares, the CPUs of the claim are divided equally between the
+  containers using it: two containers sharing a claim of 4 CPUs and a
+  third container with its own claim of 4 CPUs in the same balloon get
+  CPU shares in ratio 1:1:2.
+- Only such containers are placed in DRA balloons. Containers of the
+  same pod that do not use the claim are placed in regular balloons.
+- Creating a container fails if:
+  - it uses claims on devices of more than one balloon instance
+    ("requests DRA devices of more than one balloon"),
+  - it uses a claim that the policy has not prepared,
+  - its `balloon.balloons.resource-policy.nri.io` pod annotation names
+    a balloon type other than the claimed one ("requests balloon
+    type"),
+  - it is not a DRA container and the annotation names a DRA balloon
+    type ("is published as DRA devices").
+
+**Requirements**:
+- Kubernetes v1.37 or later with the kubelet CPU manager policy `none`.
+- The `DRAConsumableCapacity` feature gate (beta, on by default) for
+  sharing a device by several claims. Without it, a claim always takes
+  a whole device.
+- The `DRANodeAllocatableResources` feature gate (alpha, off by
+  default) on the API server, scheduler and kubelet for node-level CPU
+  accounting of claims. Without it, the scheduler checks only that the
+  claims of a device fit in its capacity, and the mapping is dropped
+  from the published devices, so `nodeAllocatable` has no effect.
+- A container runtime that passes CDI devices to NRI plugins, such as
+  containerd 2.3.0 or later. Without it, containers using claims look
+  like regular containers to the policy and are placed in regular
+  balloons.
+
+**Static DRA balloons and node allocatable**: a DRA balloon with
+`minCPUs` > 0 holds those CPUs from the start of the policy, before any
+claim, and regular containers are never placed in it. The scheduler
+does not know this and may place pods with native CPU requests that the
+policy cannot fit in regular balloons; creating their containers then
+fails. To prevent this, reserve the CPUs of such balloons, and of the
+reserved balloon, from the kubelet with `kubeReserved.cpu`,
+`systemReserved.cpu` or `reservedSystemCPUs`, and set
+`dra.nodeAllocatable: false` on these balloon types so that their
+claims are not subtracted from node allocatable CPU a second time.
+Balloon types with `minCPUs` 0 need neither: they hold no CPUs until
+claimed, and the mapping accounts for the claims.
+
+```yaml
+balloonTypes:
+- name: fixed
+  minBalloons: 2
+  minCPUs: 4
+  maxCPUs: 4
+  dra:
+    deviceName: "fixed-${instance}"
+    nodeAllocatable: false
+```
+
+**Limitations**:
+- Kubernetes computes QoS classes from container resources only, so
+  a pod that requests CPUs only through claims is BestEffort. A small
+  CPU request lifts it out of BestEffort; the request is counted in
+  the balloon size, too.
+- Preparing a claim on a DRA balloon with `minCPUs` below `maxCPUs`
+  can fail on a node that the scheduler considered to have enough
+  CPUs, if CPUs that the kubelet does not reserve are held by other
+  balloons.
+- DRA balloons are static: `minBalloons` instances that are never
+  created or deleted on demand.
+- A DRA balloon with `minCPUs` below `maxCPUs` is inflated when claims
+  are prepared, from the CPUs that are free at that time. When CPU
+  locality matters, set `minCPUs` equal to `maxCPUs` so that the CPUs
+  of the balloon are chosen when the policy starts.
+- Sharing a claim between pods is not supported.
 
 ### Toggle and Reset Pinning Memory, CPUs, and Containers
 
