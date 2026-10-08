@@ -287,6 +287,7 @@ func TestClaimCommitFailedUpdates(t *testing.T) {
 // it on a push with nothing in it would hold up the pod it belongs to.
 func TestClaimCommitPushesOnlyPendingUpdates(t *testing.T) {
 	m := &resmgr{
+		agent:  newTestAgent(t, "test-node"),
 		cache:  newTestCache(t),
 		policy: testPolicy{},
 		cfg:    &cfgapi.TopologyAwarePolicy{},
@@ -319,6 +320,52 @@ func TestClaimCommitPushesOnlyPendingUpdates(t *testing.T) {
 	if len(stub.sent) != 1 {
 		t.Errorf("pushed %d container update(s) for a claim which updated a container, expected 1",
 			len(stub.sent))
+	}
+}
+
+// refreshPolicy counts how often we ask for its extended resources, and has a
+// topology zone, so the refresh also tries to update the NRT CR.
+type refreshPolicy struct {
+	testPolicy
+	refreshes *int
+}
+
+func (p refreshPolicy) GetExtendedResources() map[string]*apiresource.Quantity {
+	*p.refreshes++
+	return nil
+}
+
+func (refreshPolicy) GetTopologyZones() []*policy.TopologyZone {
+	return []*policy.TopologyZone{{Name: "test-zone"}}
+}
+
+// TestClaimCommitRefreshesNodeResources verifies that allocating and releasing
+// a claim both refresh the resources we export for the node, and that a failed
+// refresh does not fail the claim. The test agent has no NRT client, so the NRT
+// CR update always fails here.
+func TestClaimCommitRefreshesNodeResources(t *testing.T) {
+	refreshes := 0
+	m := &resmgr{
+		agent:  newTestAgent(t, "test-node"),
+		cache:  newTestCache(t),
+		policy: refreshPolicy{refreshes: &refreshes},
+		cfg:    &cfgapi.TopologyAwarePolicy{},
+	}
+	m.nri = &nriPlugin{resmgr: m, stub: &testStub{}}
+
+	if err := m.ClaimAllocated(); err != nil {
+		t.Fatalf("ClaimAllocated() failed: %v", err)
+	}
+	if refreshes != 1 {
+		t.Errorf("ClaimAllocated() refreshed node resources %d time(s), expected 1", refreshes)
+	}
+
+	refreshes = 0
+	if err := m.ClaimReleased(); err != nil {
+		t.Fatalf("ClaimReleased() failed: %v", err)
+	}
+	if refreshes != 1 {
+		t.Errorf("ClaimReleased() refreshed node resources %d time(s), expected 1", refreshes)
 	}
 }
 
