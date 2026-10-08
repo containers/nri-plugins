@@ -84,12 +84,23 @@ func (m *resmgr) setupDRA(cfg *cfgapi.DRAConfig) error {
 // not apply fails the claim: we cannot tell whether that container still uses
 // what the claim is being given, and granting it anyway would share resources
 // the claim is supposed to have to itself.
+//
+// The resources we export for the node are refreshed once the containers are
+// updated. A failed refresh is only logged: it does not change what the claim
+// was given. A failed allocation needs no refresh of its own, since it is
+// rolled back through ClaimReleased.
 func (m *resmgr) ClaimAllocated() error {
 	if err := m.cache.Save(); err != nil {
 		return err
 	}
 
-	return m.UpdateContainers()
+	if err := m.UpdateContainers(); err != nil {
+		return err
+	}
+
+	m.updateNodeResources()
+
+	return nil
 }
 
 // ClaimReleased commits the release of a DRA claim, like ClaimAllocated, but
@@ -104,6 +115,8 @@ func (m *resmgr) ClaimReleased() error {
 	if err := m.UpdateContainers(); err != nil {
 		log.Warnf("failed to update containers after releasing a DRA claim: %v", err)
 	}
+
+	m.updateNodeResources()
 
 	return nil
 }

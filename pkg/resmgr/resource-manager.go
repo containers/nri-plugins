@@ -160,8 +160,7 @@ func (m *resmgr) updateConfig(newCfg any) (bool, error) {
 	log.InfoBlock("  <updated config> ", "%s", dump)
 
 	reconfErr := m.reconfigure(cfg)
-	m.updateTopologyZones()
-	m.updateNodeExtendedResources()
+	m.updateNodeResources()
 	return false, reconfErr
 }
 
@@ -341,6 +340,13 @@ func (m *resmgr) startControllers() error {
 	}
 
 	return nil
+}
+
+// updateNodeResources refreshes what we export about the resources of the
+// node, after anything which may have changed the policy's allocations.
+func (m *resmgr) updateNodeResources() {
+	m.updateTopologyZones()
+	m.updateNodeExtendedResources()
 }
 
 // updateTopologyZones updates the 'topology zone' CRDs.
