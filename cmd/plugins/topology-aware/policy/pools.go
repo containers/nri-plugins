@@ -429,7 +429,19 @@ func (p *policy) allocatePool(container cache.Container, poolHint string) (Grant
 		request.SetCPUType(cpuNormal)
 	}
 
-	if request.CPUType() == cpuReserved || request.CPUType() == cpuPreserve {
+	if claimed := request.ClaimedCPUs(); !claimed.IsEmpty() && request.CPUType() == cpuNormal {
+		// A container holding DRA claims goes to the pool of their CPUs,
+		// so that its memory and its own CPUs come from there. A container
+		// with reserved CPUs stays in the root pool below: the claim's pool
+		// usually has no reserved CPUs, and the container would get normal
+		// CPUs instead.
+		pool = p.poolForCPUs(claimed)
+		o, err := p.getMemOffer(pool, request)
+		if err != nil {
+			return nil, policyError("failed to get offer for request %s: %v", request, err)
+		}
+		offer = o
+	} else if request.CPUType() == cpuReserved || request.CPUType() == cpuPreserve {
 		pool = p.root
 		o, err := p.getMemOffer(pool, request)
 		if err != nil {
@@ -513,8 +525,9 @@ func (p *policy) allocatePool(container cache.Container, poolHint string) (Grant
 
 // setPreferredCpusetCpus pins container's CPUs according to what has been
 // allocated for it, taking into account if the container should run
-// with hyperthreads hidden.
-func (p *policy) setPreferredCpusetCpus(container cache.Container, allocated cpuset.CPUSet, info string) {
+// with hyperthreads hidden. The CPUs of its DRA claims are added as they
+// are, hyperthreads included: they are what the claims asked for.
+func (p *policy) setPreferredCpusetCpus(container cache.Container, allocated, claimed cpuset.CPUSet, info string) {
 	allow := allocated
 	hidingInfo := ""
 	pod, ok := container.GetPod()
@@ -527,7 +540,7 @@ func (p *policy) setPreferredCpusetCpus(container cache.Container, allocated cpu
 		}
 	}
 	log.Infof("%s%s", info, hidingInfo)
-	container.SetCpusetCpus(allow.String())
+	container.SetCpusetCpus(allow.Union(claimed).String())
 }
 
 // Apply the result of allocation to the requesting container.
@@ -573,12 +586,26 @@ func (p *policy) applyGrant(grant Grant) {
 		mems = grant.GetMemoryZone()
 	}
 
+	claimed := grant.ClaimedCPUs()
+
 	if opt.PinCPU {
 		if cpuType == cpuPreserve {
 			log.Infof("  => preserving %s cpuset %s", container.PrettyName(), container.GetCpusetCpus())
+		} else if !claimed.IsEmpty() {
+			// The claimed CPUs are added to the container's own CPUs. A
+			// container with no CPU request of its own runs on its claims only.
+			own, label := exclusive, "claimed"
+			if cpuPortion > 0 {
+				own, label = cpus, kind+"+claimed"
+			} else if !exclusive.IsEmpty() {
+				label = "exclusive+claimed"
+			}
+			p.setPreferredCpusetCpus(container, own, claimed,
+				fmt.Sprintf("  => pinning %s to (%s) cpuset %s",
+					container.PrettyName(), label, own.Union(claimed)))
 		} else {
 			if cpus.Size() > 0 {
-				p.setPreferredCpusetCpus(container, cpus,
+				p.setPreferredCpusetCpus(container, cpus, cpuset.New(),
 					fmt.Sprintf("  => pinning %s to (%s) cpuset %s",
 						container.PrettyName(), kind, cpus))
 			} else {
@@ -609,7 +636,7 @@ func (p *policy) applyGrant(grant Grant) {
 		//     as long as that allocation is genuinely system-wide exclusive.
 		milliCPU := cpuPortion
 		if milliCPU == 0 {
-			milliCPU = 1000 * grant.ExclusiveCPUs().Size()
+			milliCPU = 1000 * (grant.ExclusiveCPUs().Size() + claimed.Size())
 		}
 		container.SetCPUShares(int64(cache.MilliCPUToShares(int64(milliCPU))))
 
@@ -698,17 +725,27 @@ func (p *policy) updateSharedAllocations(grant *Grant) {
 			continue
 		}
 
+		if other.SharedPortion() == 0 && !other.ClaimedCPUs().IsEmpty() {
+			log.Infof("  => %s not affected (only claimed CPUs)...", other)
+			continue
+		}
+
 		if opt.PinCPU {
 			shared := other.GetCPUNode().FreeSupply().SharableCPUs()
 			exclusive := other.ExclusiveCPUs()
+			claimed := other.ClaimedCPUs()
+			withClaimed := ""
+			if !claimed.IsEmpty() {
+				withClaimed = ", claimed CPUs " + claimed.String()
+			}
 			if exclusive.IsEmpty() {
-				p.setPreferredCpusetCpus(other.GetContainer(), shared,
-					fmt.Sprintf("  => updating %s with shared CPUs of %s: %s...",
-						other, other.GetCPUNode().Name(), shared.String()))
+				p.setPreferredCpusetCpus(other.GetContainer(), shared, claimed,
+					fmt.Sprintf("  => updating %s with shared CPUs of %s: %s%s...",
+						other, other.GetCPUNode().Name(), shared.String(), withClaimed))
 			} else {
-				p.setPreferredCpusetCpus(other.GetContainer(), exclusive.Union(shared),
-					fmt.Sprintf("  => updating %s with exclusive+shared CPUs of %s: %s+%s...",
-						other, other.GetCPUNode().Name(), exclusive.String(), shared.String()))
+				p.setPreferredCpusetCpus(other.GetContainer(), exclusive.Union(shared), claimed,
+					fmt.Sprintf("  => updating %s with exclusive+shared CPUs of %s: %s+%s%s...",
+						other, other.GetCPUNode().Name(), exclusive.String(), shared.String(), withClaimed))
 			}
 		}
 	}
@@ -786,7 +823,14 @@ func (p *policy) hasZeroCpuReqContainer(pool Node) bool {
 			return false
 		}
 
+		// A container holding DRA claims and no CPU request runs on its claims
+		// only, so it holds back no shared CPU.
+		if !g.ClaimedCPUs().IsEmpty() {
+			return false
+		}
+
 		ctr := g.GetContainer()
+
 		switch ctr.GetQOSClass() {
 		case corev1.PodQOSBestEffort:
 			found = true
