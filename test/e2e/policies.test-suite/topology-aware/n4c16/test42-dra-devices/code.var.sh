@@ -1,6 +1,6 @@
 # This test verifies that the topology-aware policy publishes one DRA
-# device per NUMA node, allocates CPUs to claims and pins containers to
-# the CPUs of their claim.
+# device per NUMA node, allocates CPUs to claims, pins containers to
+# the CPUs of their claim, and updates the NRT CR after claim changes.
 #
 
 cleanup() {
@@ -47,6 +47,13 @@ node-cpus() {
     #
     # Print the CPUs of NUMA node NODE.
     vm-command-q "cat /sys/devices/system/node/node$1/cpulist"
+}
+
+nrt-shared-cpus() {
+    # Usage: nrt-shared-cpus NODE
+    #
+    # Print the shared CPUs the NRT CR lists for NUMA node NODE.
+    vm-command-q "$nrt_kubectl_get -o json | jq -r '.zones[] | select(.name == \"NUMA node #$1\").attributes[] | select(.name == \"shared cpuset\").value'"
 }
 
 cleanup
@@ -171,11 +178,19 @@ verify "cpuset('$cpus5') <= set($shared)" \
        "cpus['pod5c0'] == cpuset('$cpus5')" \
        "node_ids(mems['pod5c0']) == {$node}" \
        "cpus['pod4c0'] == set($shared) - cpuset('$cpus5')"
+retry-until --timeout 30 --message "the NRT CR to drop the CPUs of pod5's claim" \
+    '[ "$(pyexec "print(cpuset(\"$(nrt-shared-cpus $node)\").isdisjoint(cpuset(\"$cpus5\")))")" == True ]' ||
+    error "the NRT CR still lists the CPUs of pod5's claim as shared"
 vm-command "kubectl delete pod pod5 --now --wait"
 # Deleting the pod does not wait for the kubelet to unprepare its claim.
 retry-until --timeout 30 --message "pod4 to get back the CPUs of pod5's claim" \
     '[ "$(report allowed >/dev/null; pyexec "print(cpus[\"pod4c0\"] == set($shared))")" == True ]'
 verify "cpus['pod4c0'] == set($shared)"
+# No container event follows the release, so only the claim path can
+# refresh the NRT CR here.
+retry-until --timeout 30 --message "the NRT CR to list the CPUs of pod5's claim again" \
+    '[ "$(pyexec "print(cpuset(\"$cpus5\") <= cpuset(\"$(nrt-shared-cpus $node)\"))")" == True ]' ||
+    error "the NRT CR does not list the CPUs released by pod5's claim as shared"
 
 # Two containers of one pod share its claim. Both run on the claim's CPUs.
 CONTCOUNT=2 claim pod6 0 2
@@ -200,4 +215,4 @@ vm-command "kubectl get deviceclasses,resourceslices,resourceclaims -o yaml" || 
 
 cleanup
 
-echo "OK: the topology-aware policy published one DRA device per NUMA node, gave each claim CPUs of its own, and pinned containers to their claim's CPUs and to the memory of its node"
+echo "OK: the topology-aware policy published one DRA device per NUMA node, gave each claim CPUs of its own, and pinned containers to their claim's CPUs and to the memory of its node, and the NRT CR followed the claims"
