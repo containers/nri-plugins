@@ -108,6 +108,7 @@ func newTestUpdate(t *testing.T, stub *testStub) (*resmgr, cache.Container) {
 	ctr.SetCPUShares(42)
 
 	m := &resmgr{
+		agent:  newTestAgent(t, "test-node"),
 		cache:  cch,
 		cfg:    &cfgapi.TopologyAwarePolicy{},
 		policy: testPolicy{},
