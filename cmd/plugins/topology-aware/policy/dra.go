@@ -74,17 +74,25 @@ func (p *policy) draDevices() []resourceapi.Device {
 			continue
 		}
 
+		attrs := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+			deviceattribute.StandardDeviceAttributeNUMANode: {
+				IntValue: ptr.To(int64(id)),
+			},
+			draAttrSocketID:   {IntValue: ptr.To(int64(node.PackageID()))},
+			draAttrSMTEnabled: {BoolValue: ptr.To(smt)},
+		}
+		roots := p.sys.Package(node.PackageID()).PCIeRoots()
+		if len(roots) > 0 && p.options.Owner.DRAListAttributesSupported() {
+			attrs[deviceattribute.StandardDeviceAttributePCIeRoot] = resourceapi.DeviceAttribute{
+				StringValues: roots,
+			}
+		}
+
 		one := resource.NewQuantity(1, resource.DecimalSI)
 		devices = append(devices, resourceapi.Device{
 			Name:                     fmt.Sprintf(draDeviceFormat, id),
 			AllowMultipleAllocations: ptr.To(true),
-			Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
-				deviceattribute.StandardDeviceAttributeNUMANode: {
-					IntValue: ptr.To(int64(id)),
-				},
-				draAttrSocketID:   {IntValue: ptr.To(int64(node.PackageID()))},
-				draAttrSMTEnabled: {BoolValue: ptr.To(smt)},
-			},
+			Attributes:               attrs,
 			Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
 				draCapacityCPU: {
 					Value: *resource.NewQuantity(int64(cpus.Size()), resource.DecimalSI),

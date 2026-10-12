@@ -29,6 +29,7 @@ import (
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/topology"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
+	idset "github.com/intel/goresctrl/pkg/utils"
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
@@ -216,6 +217,59 @@ func TestDRADeviceShape(t *testing.T) {
 
 	if !apiequality.Semantic.DeepEqual(owner.devices, expected) {
 		t.Errorf("published devices\n%+v\nexpected\n%+v", owner.devices, expected)
+	}
+}
+
+// pcieSystem adds PCIe roots to the packages of a test system.
+type pcieSystem struct {
+	system.System
+	roots map[idset.ID][]string
+}
+
+func (s *pcieSystem) Package(id idset.ID) system.CPUPackage {
+	return &pciePackage{CPUPackage: s.System.Package(id), roots: s.roots[id]}
+}
+
+type pciePackage struct {
+	system.CPUPackage
+	roots []string
+}
+
+func (p *pciePackage) PCIeRoots() []string { return p.roots }
+
+// TestDRAPCIeRoots checks that devices carry their package's PCIe roots, if
+// any, and only if list attributes are supported.
+func TestDRAPCIeRoots(t *testing.T) {
+	sys := &pcieSystem{
+		System: testServerSystem(t),
+		roots:  map[idset.ID][]string{0: {"pci0000:00", "pci0000:5d"}},
+	}
+	p, owner := draTestPolicy(t, sys, draTestConfig("", "cpuset:0,1"))
+
+	published := func() map[string][]string {
+		roots := map[string][]string{}
+		for _, d := range owner.devices {
+			if attr, ok := d.Attributes[deviceattribute.StandardDeviceAttributePCIeRoot]; ok {
+				roots[d.Name] = attr.StringValues
+			}
+		}
+		return roots
+	}
+
+	if got := published(); len(got) != 0 {
+		t.Errorf("published PCIe roots %v without list attribute support", got)
+	}
+
+	owner.listAttributesSupported = true
+	if err := p.Reconfigure(draTestConfig("", "cpuset:0,1")); err != nil {
+		t.Fatalf("failed to reconfigure policy: %v", err)
+	}
+	expected := map[string][]string{
+		"cpudevnuma000": {"pci0000:00", "pci0000:5d"},
+		"cpudevnuma002": {"pci0000:00", "pci0000:5d"},
+	}
+	if got := published(); !reflect.DeepEqual(got, expected) {
+		t.Errorf("published PCIe roots %v, expected %v", got, expected)
 	}
 }
 
