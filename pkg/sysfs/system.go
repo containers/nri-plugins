@@ -21,6 +21,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -171,6 +172,7 @@ type CPUPackage interface {
 	L3CacheIDs() []idset.ID
 	L3CacheCPUSet(idset.ID) cpuset.CPUSet
 	SstInfo() *sst.PackageStatus
+	PCIeRoots() []string
 }
 
 type cpuPackage struct {
@@ -184,6 +186,7 @@ type cpuPackage struct {
 	logicalClusters map[idset.ID]map[idset.ID]idset.IDSet // clusters with combined hyperthreads
 	l3CacheCPUs     map[idset.ID]idset.IDSet              // CPUs per L3 cache
 	sstInfo         *sst.PackageStatus                    // Speed Select Technology info
+	pcieRoots       []string                              // PCIe root complexes local to this package
 }
 
 // Node represents a NUMA node.
@@ -416,6 +419,7 @@ func (sys *system) Discover(flags DiscoveryFlag) error {
 		if err := sys.discoverPackages(); err != nil {
 			return err
 		}
+		sys.discoverPCIeRoots()
 	}
 
 	if (sys.flags & DiscoverSst) != 0 {
@@ -1856,6 +1860,47 @@ var (
 	memTypeEnvOverridesJson = os.Getenv(memTypeEnvOverridesVar)
 )
 
+// pcieRootNameRe matches the sysfs name of a PCIe root complex, pci<domain>:<bus>.
+var pcieRootNameRe = regexp.MustCompile(`^pci[0-9a-f]{4}:[0-9a-f]{2}$`)
+
+// discoverPCIeRoots gives each package the PCIe roots with local CPUs in it.
+// With sub-NUMA clustering a root reports one zone's CPUs, yet serves the
+// whole socket. Unreadable roots are skipped.
+func (sys *system) discoverPCIeRoots() {
+	for _, pkg := range sys.packages {
+		pkg.pcieRoots = nil
+	}
+
+	entries, _ := filepath.Glob(filepath.Join(sys.path, "devices", "pci*"))
+	for _, entry := range entries {
+		name := filepath.Base(entry)
+		if !pcieRootNameRe.MatchString(name) {
+			continue
+		}
+		bus := filepath.Join(entry, "pci_bus", strings.TrimPrefix(name, "pci"))
+		raw, err := readSysfsRaw(bus, "cpulistaffinity")
+		if err != nil {
+			sys.Debugf("skipping PCIe root %s: %v", name, err)
+			continue
+		}
+		cpus, err := cpuset.Parse(raw)
+		if err != nil {
+			sys.Debugf("skipping PCIe root %s: invalid cpulistaffinity %q: %v", name, raw, err)
+			continue
+		}
+
+		var pkgs []idset.ID
+		for id, pkg := range sys.packages {
+			if !pkg.CPUSet().Intersection(cpus).IsEmpty() {
+				pkg.pcieRoots = append(pkg.pcieRoots, name)
+				pkgs = append(pkgs, id)
+			}
+		}
+		slices.Sort(pkgs)
+		sys.Debugf("PCIe root %s: local CPUs %s, packages %v", name, cpus, pkgs)
+	}
+}
+
 // Discover physical packages (CPU sockets) present in the system.
 func (sys *system) discoverPackages() error {
 	if sys.packages != nil {
@@ -2088,6 +2133,11 @@ func (p *cpuPackage) ID() idset.ID {
 // CPUSet returns the CPUSet for all cores/threads in this package.
 func (p *cpuPackage) CPUSet() cpuset.CPUSet {
 	return CPUSetFromIDSet(p.cpus)
+}
+
+// PCIeRoots returns the sorted sysfs names of the package's PCIe roots.
+func (p *cpuPackage) PCIeRoots() []string {
+	return slices.Clone(p.pcieRoots)
 }
 
 // DieIDs returns the die ids for this package.
