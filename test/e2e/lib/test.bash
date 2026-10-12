@@ -674,6 +674,76 @@ wait-node-resource() { # script API
 }
 
 ###
+### Fake device plugins
+###
+### A fake device plugin can be used to publish devices with a chosen
+### NUMA node affinity. Among other things, we use such plugins to test
+### pod resource API acquired topology hints.
+### See scripts/testing/fake-device-plugin for the configuration format.
+###
+
+install-fake-device-plugin() { # script API
+    # Usage: install-fake-device-plugin
+    #
+    # Build and install the fake device plugin on the node unless
+    # it is already there. The binary is built on the host into the
+    # output directory of the test.
+    #
+    # start-fake-device-plugin calls this, so tests usually use that
+    # directly to install and start a fake device plugin in a single
+    # go.
+    vm-command "command -v fake-device-plugin" && return 0
+
+    local host_plugin="$OUTPUT_DIR/fake-device-plugin"
+
+    [ -f "$host_plugin" ] ||
+        GOARCH=amd64 go build -o "$host_plugin" \
+            "$nri_resource_policy_src/scripts/testing/fake-device-plugin/fake-device-plugin.go" ||
+        error "failed to build $host_plugin"
+
+    vm-put-file "$host_plugin" "/usr/local/bin/fake-device-plugin"
+}
+
+start-fake-device-plugin() { # script API
+    # Usage: start-fake-device-plugin NAME CONFIG
+    #
+    # Write CONFIG, the body of a fake device plugin configuration, to
+    # NAME.yaml on the node and start a fake device plugin on it. Redirect
+    # its output to NAME.output on the node. Install the plugin first if
+    # needed.
+    #
+    # Example, one device on each of two NUMA nodes:
+    #     start-fake-device-plugin fake-tpu 'resourceName: tech.com/tpu
+    #     devices:
+    #     - id: tcomtpu-0-numa0
+    #       numaNodes: [0]
+    #     - id: tcomtpu-1-numa1
+    #       numaNodes: [1]'
+    #
+    # Wait for the devices to show up before using them:
+    #     wait-node-resource --allocatable tech.com/tpu 2
+    local name="$1" config="$2"
+
+    install-fake-device-plugin
+
+    vm-command "cat > $name.yaml <<EOF
+$config
+EOF
+" || command-error "failed to write the $name device plugin configuration"
+
+    vm-command "fake-device-plugin -config $name.yaml >& $name.output &" ||
+        command-error "failed to start the $name device plugin"
+}
+
+stop-fake-device-plugins() { # script API
+    # Usage: stop-fake-device-plugins
+    #
+    # Stop every fake device plugin running on the node. Does nothing if none
+    # is running.
+    vm-command 'pidof fake-device-plugin && kill $(pidof fake-device-plugin) && sleep 1' || :
+}
+
+###
 ### Reading the log of the plugin
 ###
 

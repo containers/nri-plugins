@@ -3,36 +3,12 @@
 # the pod resource API.
 
 cleanup() {
-    vm-command 'pidof fake-device-plugin && kill $(pidof fake-device-plugin) && sleep 1'
+    stop-fake-device-plugins
     delete-pods --all
     helm-terminate || :
 }
 
-start-fake-device-plugin() {
-    # Usage: start-fake-device-plugin NAME CONFIG-BODY
-    #
-    # Write CONFIG-BODY to NAME.yaml on the node and start a fake device
-    # plugin on it.
-    local name="$1" body="$2"
-
-    vm-command "cat > $name.yaml <<EOF
-$body
-EOF
-" || command-error "failed to create $name.yaml"
-    vm-command "fake-device-plugin -config $name.yaml >& $name.output &"
-}
-
-# Install and (re)start the fake device plugins.
 cleanup
-vm-command "command -v fake-device-plugin" || {
-    HOST_DEVICE_PLUGIN=$OUTPUT_DIR/fake-device-plugin
-
-    [ -f "$HOST_DEVICE_PLUGIN" ] || \
-        GOARCH=amd64 go build -o "$HOST_DEVICE_PLUGIN" "${TEST_DIR%%/test/e2e/*}/scripts/testing/fake-device-plugin/fake-device-plugin.go" || \
-        error "failed to build $HOST_DEVICE_PLUGIN"
-
-    vm-put-file "$HOST_DEVICE_PLUGIN" "/usr/local/bin/$(basename "$HOST_DEVICE_PLUGIN")"
-}
 
 # A single FPGA on NUMA node 3: whoever gets it has to run there.
 start-fake-device-plugin fake-fpga 'resourceName: acme.com/fpga
