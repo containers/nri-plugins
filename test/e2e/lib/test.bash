@@ -475,6 +475,56 @@ container-mems() { # script API
     tr -d '\t ' <<< "$status" | cut -d ':' -f 2
 }
 
+wait-cpuset-change() { # script API
+    # Usage: wait-cpuset-change POD CONTAINER CPUSET [MESSAGE] [TIMEOUT]
+    #
+    # Wait until the cpuset of CONTAINER of POD differs from CPUSET, TIMEOUT
+    # seconds at most, 30 by default. Fail the test with MESSAGE on timeout.
+    # CPUSET is in the compact form container-cpus prints.
+    local pod=$1 ctr=$2 cpuset=$3
+    local msg=${4:-"container $ctr of pod $pod kept the cpuset $cpuset"}
+    local tmo=${5:-30}
+
+    retry-until --timeout "$tmo" "[ \"\$(container-cpus $pod $ctr)\" != '$cpuset' ]" ||
+        error "$msg"
+}
+
+
+###
+### Resizing containers
+###
+
+resize-cpu() { # script API
+    # Usage: resize-cpu POD CONTAINER CPU
+    #
+    # Change the CPU request and limit of CONTAINER of POD to CPU in place,
+    # through the resize subresource. The runtime then asks the plugin to
+    # update the container, which is how a policy's UpdateResources is
+    # reached.
+    #
+    # In-place pod resizing is on by default from Kubernetes 1.33. On an older
+    # cluster the whole run needs
+    # k8s_feature_gates=InPlacePodVerticalScaling=true.
+    #
+    # Note: the update is asynchronous and needs to be waited for. For
+    # instance, with
+    #     before=$(container-cpus pod0 pod0c0)
+    #     resize-cpu pod0 pod0c0 2
+    #     wait-cpuset-change pod0 pod0c0 "$before"
+    local pod=$1 ctr=$2 cpu=$3
+
+    vm-command "kubectl patch pod $pod --subresource resize --patch '
+spec:
+  containers:
+  - name: $ctr
+    resources:
+      requests:
+        cpu: $cpu
+      limits:
+        cpu: $cpu
+'" || command-error "failed to resize $ctr of $pod to $cpu CPUs"
+}
+
 
 ###
 ### Scheduling
