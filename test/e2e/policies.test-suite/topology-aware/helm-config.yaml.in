@@ -45,6 +45,10 @@ config:
   dra:
     enabled: $DRA_ENABLED
   ")
+  $([ -n "$POD_RESOURCE_API" ] && echo "
+  agent:
+    podResourceAPI: $POD_RESOURCE_API
+  ")
 
   instrumentation:
     httpEndpoint: ":8891"
