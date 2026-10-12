@@ -35,8 +35,10 @@ import (
 	"slices"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	resourceapi "k8s.io/api/resource/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
@@ -102,6 +104,8 @@ type Plugin struct {
 	helper  *kubeletplugin.Helper
 	devices []resourceapi.Device // the devices published last
 
+	listAttributesSupported bool // probed in New
+
 	// allowed gates the claim handlers. It is set once, when the owner has
 	// synchronized with the container runtime, and never cleared: losing the
 	// runtime connection takes the whole process down with it.
@@ -135,7 +139,7 @@ func New(driverName string, opts Options) (*Plugin, error) {
 		return nil, err
 	}
 
-	return &Plugin{
+	p := &Plugin{
 		driverName:    driverName,
 		nodeName:      opts.NodeName,
 		kubeClient:    opts.KubeClient,
@@ -144,7 +148,10 @@ func New(driverName string, opts Options) (*Plugin, error) {
 		registrarDir:  opts.RegistrarDir,
 		pluginDataDir: pluginDataDir,
 		cdi:           store,
-	}, nil
+	}
+	p.listAttributesSupported = p.probeListAttributes(context.Background())
+
+	return p, nil
 }
 
 // Start registers the plugin with the kubelet and publishes its resources.
@@ -191,6 +198,46 @@ func (p *Plugin) Start(ctx context.Context) error {
 	p.helper = helper
 
 	return nil
+}
+
+// probeListAttributes tells whether the API server accepts list attributes,
+// which need the DRAListTypeAttributes gate. We cannot read the gate, so we
+// dry-run a slice with one. Any failure means no support.
+func (p *Plugin) probeListAttributes(ctx context.Context) bool {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	probe := &resourceapi.ResourceSlice{
+		ObjectMeta: metav1.ObjectMeta{GenerateName: "list-attribute-probe-"},
+		Spec: resourceapi.ResourceSliceSpec{
+			Driver:   p.driverName,
+			NodeName: &p.nodeName,
+			Pool:     resourceapi.ResourcePool{Name: p.nodeName, ResourceSliceCount: 1},
+			Devices: []resourceapi.Device{
+				{
+					Name: "probe",
+					Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+						"probe": {StringValues: []string{"a", "b"}},
+					},
+				},
+			},
+		},
+	}
+
+	_, err := p.kubeClient.ResourceV1().ResourceSlices().Create(ctx, probe,
+		metav1.CreateOptions{DryRun: []string{metav1.DryRunAll}})
+	if err != nil {
+		log.Warnf("leaving out list attributes of devices, the API server does not accept them: %v", err)
+		return false
+	}
+
+	return true
+}
+
+// ListAttributesSupported tells whether the API server accepts device
+// attributes with a list of values. False if DRA is off.
+func (p *Plugin) ListAttributesSupported() bool {
+	return p != nil && p.listAttributesSupported
 }
 
 // AllowClaims lets the plugin serve claims. The driver is registered with the
@@ -280,11 +327,12 @@ func (p *Plugin) HandleError(_ context.Context, err error, msg string) {
 
 // driverResources returns the resources to publish for this driver: the devices
 // published last, in a single pool named after our node. The devices are
-// passed on as the policy described them, attributes and all: what they mean
-// is the policy's business, not ours.
+// passed on as the policy described them: what they mean is the policy's
+// business, not ours.
 //
-// A ResourceSlice holds at most ResourceSliceMaxDevices devices and the helper
-// leaves the splitting to us, so the devices are chunked to that limit. An
+// A ResourceSlice holds at most ResourceSliceMaxDevicesWithAdvancedFeatures
+// devices if any of them uses list attributes, and the helper leaves the
+// splitting to us, so the devices are always chunked to that limit. An
 // oversized slice would be rejected by the apiserver, and the helper treats
 // that as recoverable and retries it forever, so it would never get published.
 //
@@ -294,7 +342,7 @@ func (p *Plugin) HandleError(_ context.Context, err error, msg string) {
 // devices does not leave a stale slice behind.
 func (p *Plugin) driverResources() resourceslice.DriverResources {
 	var published []resourceslice.Slice
-	for chunk := range slices.Chunk(p.devices, resourceapi.ResourceSliceMaxDevices) {
+	for chunk := range slices.Chunk(p.devices, resourceapi.ResourceSliceMaxDevicesWithAdvancedFeatures) {
 		published = append(published, resourceslice.Slice{Devices: chunk})
 	}
 	if published == nil {

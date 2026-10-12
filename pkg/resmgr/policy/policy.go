@@ -75,6 +75,10 @@ type Owner interface {
 	// published before. A policy calls it whenever its devices change. The
 	// devices are copied, so the policy is free to change them afterwards.
 	PublishDRADevices([]resourceapi.Device) error
+	// DRAListAttributesSupported tells whether DRA devices may have
+	// attributes with a list of values. The API server rejects them without
+	// the DRAListTypeAttributes feature gate.
+	DRAListAttributesSupported() bool
 }
 
 // BackendOptions describes the options for a policy backend instance
