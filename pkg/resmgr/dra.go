@@ -144,6 +144,12 @@ func (m *resmgr) PublishDRADevices(devices []resourceapi.Device) error {
 	return m.dra.Publish(devices)
 }
 
+// DRAListAttributesSupported tells the policy whether its DRA devices may have
+// list attributes.
+func (m *resmgr) DRAListAttributesSupported() bool {
+	return m.dra.ListAttributesSupported()
+}
+
 // reconfigureDRA rejects turning DRA on or off in a running plugin. Both
 // directions would have to happen with our lock released, but reconfiguration
 // runs with it held: a kubelet request being served holds the lock, so both

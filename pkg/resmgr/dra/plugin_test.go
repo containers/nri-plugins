@@ -26,11 +26,15 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 
 	specs "tags.cncf.io/container-device-interface/specs-go"
@@ -529,17 +533,17 @@ func TestDriverResources(t *testing.T) {
 		},
 		{
 			name:       "devices exactly filling one slice",
-			devices:    testDevices(resourceapi.ResourceSliceMaxDevices),
+			devices:    testDevices(resourceapi.ResourceSliceMaxDevicesWithAdvancedFeatures),
 			wantSlices: 1,
 		},
 		{
 			name:       "one device too many for one slice",
-			devices:    testDevices(resourceapi.ResourceSliceMaxDevices + 1),
+			devices:    testDevices(resourceapi.ResourceSliceMaxDevicesWithAdvancedFeatures + 1),
 			wantSlices: 2,
 		},
 		{
 			name:       "devices spanning three slices",
-			devices:    testDevices(2*resourceapi.ResourceSliceMaxDevices + 7),
+			devices:    testDevices(2*resourceapi.ResourceSliceMaxDevicesWithAdvancedFeatures + 7),
 			wantSlices: 3,
 		},
 	} {
@@ -566,9 +570,9 @@ func TestDriverResources(t *testing.T) {
 			// together have to be the devices the policy handed us, in order.
 			var devices []resourceapi.Device
 			for i, slice := range pool.Slices {
-				if n := len(slice.Devices); n > resourceapi.ResourceSliceMaxDevices {
+				if n := len(slice.Devices); n > resourceapi.ResourceSliceMaxDevicesWithAdvancedFeatures {
 					t.Errorf("slice %d holds %d devices, over the %d allowed",
-						i, n, resourceapi.ResourceSliceMaxDevices)
+						i, n, resourceapi.ResourceSliceMaxDevicesWithAdvancedFeatures)
 				}
 				devices = append(devices, slice.Devices...)
 			}
@@ -576,6 +580,47 @@ func TestDriverResources(t *testing.T) {
 				t.Errorf("got devices %v, expected %v", devices, tc.devices)
 			}
 		})
+	}
+}
+
+// TestProbeListAttributes checks that New probes for list attributes with a
+// dry run, and that a nil plugin, with DRA off, has no support.
+func TestProbeListAttributes(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{name: "accepted", expected: true},
+		{
+			name: "rejected",
+			err: apierrors.NewInvalid(schema.GroupKind{Group: "resource.k8s.io", Kind: "ResourceSlice"},
+				"probe", nil),
+		},
+		{name: "failed", err: errors.New("connection refused")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := fake.NewClientset()
+			var dryRun bool
+			client.PrependReactor("create", "resourceslices",
+				func(action k8stesting.Action) (bool, runtime.Object, error) {
+					opts := action.(k8stesting.CreateActionImpl).CreateOptions
+					dryRun = slices.Equal(opts.DryRun, []string{metav1.DryRunAll})
+					return true, nil, tc.err
+				})
+
+			p, _ := newTestPlugin(t, client, &testPolicy{})
+			if got := p.ListAttributesSupported(); got != tc.expected {
+				t.Errorf("ListAttributesSupported() = %v, expected %v", got, tc.expected)
+			}
+			if !dryRun {
+				t.Error("the probe was not a dry run")
+			}
+		})
+	}
+
+	if (*Plugin)(nil).ListAttributesSupported() {
+		t.Error("a nil plugin supports list attributes")
 	}
 }
 

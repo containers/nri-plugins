@@ -39,6 +39,7 @@ func (o *testOwner) UpdateContainers() error {
 }
 
 func (*testOwner) PublishDRADevices([]resourceapi.Device) error { return nil }
+func (*testOwner) DRAListAttributesSupported() bool             { return false }
 
 func TestColdStart(t *testing.T) {
 	// With cold start the container first gets PMEM only. DRAM is added
