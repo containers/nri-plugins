@@ -44,6 +44,8 @@ import (
 type draTestOwner struct {
 	sync.Mutex
 	devices []resourceapi.Device
+
+	listAttributesSupported bool
 }
 
 func (*draTestOwner) UpdateContainers() error { return nil }
@@ -52,6 +54,8 @@ func (o *draTestOwner) PublishDRADevices(devices []resourceapi.Device) error {
 	o.devices = devices
 	return nil
 }
+
+func (o *draTestOwner) DRAListAttributesSupported() bool { return o.listAttributesSupported }
 
 // The DRA tests run on the "server" test sysfs: two packages, four NUMA
 // nodes of 28 CPUs each with SMT on, two nodes with memory but no CPUs, and
