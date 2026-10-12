@@ -3,12 +3,12 @@
 # - cpu.preserve
 # - memory.preserve
 
-cleanup-test-pods() {
-    delete-pods pod0 pod1 pod2 pod3
+cleanup() {
+    delete-pods --all
+    helm-terminate
 }
-cleanup-test-pods
 
-helm-terminate
+cleanup
 
 AVAILABLE_CPU="cpuset:8-11"
 RESERVED_CPU="cpuset:10-11"
@@ -53,6 +53,16 @@ verify 'len(cpus["pod3c0"]) == 16' \
        'len(cpus["pod3c3"]) == 1' \
        'len(mems["pod3c3"]) == 1'
 
-cleanup-test-pods
+delete-pods --all
+unset ANNOTATIONS
 
-helm-terminate
+# Exclusive CPUs never come out of the reserved pool: a container which
+# prefers reserved CPUs and asks for whole ones is given shared CPUs in
+# the reserved pool.
+ANNOTATIONS='prefer-reserved-cpus.resource-policy.nri.io/pod: "true"'
+CONTCOUNT=1 CPU=1 MEM=100M create reserved-annotated
+report allowed
+
+verify 'cpus["pod4c0"] == {"cpu10", "cpu11"}'
+
+cleanup
