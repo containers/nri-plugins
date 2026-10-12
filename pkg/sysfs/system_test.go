@@ -17,6 +17,7 @@ package sysfs_test
 import (
 	"os"
 	"path"
+	"slices"
 	"testing"
 
 	"github.com/containers/nri-plugins/pkg/sysfs"
@@ -414,7 +415,7 @@ func discoverSample(t *testing.T, name string) sysfs.System {
 }
 
 func TestAbsentLookupsReturnNil(t *testing.T) {
-	for _, name := range []string{"sample1", "sample2"} {
+	for _, name := range []string{"sample1", "sample2", "sample3"} {
 		t.Run(name, func(t *testing.T) {
 			sys := discoverSample(t, name)
 
@@ -578,5 +579,21 @@ func TestNodeHintToCPUsIgnoresAbsentNodes(t *testing.T) {
 				t.Errorf("NodeHintToCPUs(%q) = %q, want %q", tc.hint, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestRecordedPCIeRoots discovers the PCIe roots of a recorded two-socket
+// machine with sub-NUMA clustering. Each root reports the CPUs of one NUMA
+// node only, and must still be given to the whole package.
+func TestRecordedPCIeRoots(t *testing.T) {
+	sys := discoverSample(t, "sample3")
+
+	for id, want := range map[idset.ID][]string{
+		0: {"pci0000:00", "pci0000:17", "pci0000:3a", "pci0000:5d"},
+		1: {"pci0000:80", "pci0000:85", "pci0000:ae", "pci0000:d7"},
+	} {
+		if got := sys.Package(id).PCIeRoots(); !slices.Equal(got, want) {
+			t.Errorf("package %d: got PCIe roots %v, want %v", id, got, want)
+		}
 	}
 }
