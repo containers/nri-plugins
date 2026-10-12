@@ -4,7 +4,7 @@
 relaunch-policy balloons "$TEST_DIR/balloons-podresources.cfg"
 
 cleanup() {
-    vm-command 'pidof fake-device-plugin && kill $(pidof fake-device-plugin) && sleep 1'
+    stop-fake-device-plugins
     delete-pods --all
 }
 
@@ -48,18 +48,8 @@ verify-podres-locality() {
 
 # Install and (re)start fake-device-plugins
 cleanup
-vm-command "command -v fake-device-plugin" || {
-    HOST_DEVICE_PLUGIN=$OUTPUT_DIR/fake-device-plugin
 
-    [ -f "$HOST_DEVICE_PLUGIN" ] || \
-        GOARCH=amd64 go build -o "$HOST_DEVICE_PLUGIN" "${TEST_DIR%%/test/e2e/*}/scripts/testing/fake-device-plugin/fake-device-plugin.go" || \
-        error "failed to build $HOST_DEVICE_PLUGIN"
-
-    vm-put-file "$HOST_DEVICE_PLUGIN" "/usr/local/bin/$(basename "$HOST_DEVICE_PLUGIN")"
-}
-
-vm-command "cat > fake-tpu.yaml <<EOF
-resourceName: tech.com/tpu
+start-fake-device-plugin fake-tpu 'resourceName: tech.com/tpu
 devices:
 - id: tcomtpu-0-s1-numa3
   numaNodes: [3]
@@ -68,23 +58,14 @@ devices:
 - id: tcomtpu-2-s0-numa0
   numaNodes: [0]
 - id: tcomtpu-3-s1-numa2
-  numaNodes: [2]
-EOF
-" || command-error "failed to create fake-tpu.yaml"
+  numaNodes: [2]'
 
-vm-command "fake-device-plugin -config fake-tpu.yaml >& fake-tpu.output &"
-
-vm-command "cat > fake-nic.yaml <<EOF
-resourceName: telco.com/nic
+start-fake-device-plugin fake-nic 'resourceName: telco.com/nic
 devices:
 - id: telconics0-numas01
   numaNodes: [0,1]
 - id: telconics1-numas23
-  numaNodes: [2,3]
-EOF
-" || command-error "failed to create fake-nic.yaml"
-
-vm-command "fake-device-plugin -config fake-nic.yaml >& fake-nic.output &"
+  numaNodes: [2,3]'
 sleep 1
 
 
