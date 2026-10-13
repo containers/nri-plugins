@@ -331,6 +331,53 @@ The replay ignores the pod changes and the assertions of the block. Every
 container the block creates must be gone at `resume`, a restarted one
 included, otherwise the replay ends there.
 
+### Replaying
+
+`TestE2eishReplay` in `cmd/plugins/POLICY/policy` replays the logs of its
+plugin, on the harness of `pkg/testutils/e2eish`. It
+
+- builds the machine of the logged topology as a synthetic sysfs, the way
+  qemu presents it to the VM, with the `OVERRIDE_SYS_*` variables of the helm
+  values and the changes of `machine` records,
+- launches the policy with the configuration a helm launch gives it: the
+  values of the chart merged with the logged ones, as helm merges them, with
+  the defaults of the CRD applied, and syncs it with the logged pods,
+- creates and deletes pods as logged, through a real cache, with the
+  resources the kubelet would give them, and
+- evaluates the assertion of each `verify` with `python3`, on the variables
+  `verify` sees, computed by the same `lib/topology.py` and
+  `lib/py_allowed.py`.
+
+An assertion must hold in the replay exactly when it held in the e2e test.
+The replay leaves the host alone: CPU classes only log what they would write,
+and no interrupt is controllable.
+
+To replay the logs of a test run:
+
+```shell
+./replay_tests.sh OUTPUT_DIR... [-- GO-TEST-ARG...]
+```
+
+This replays every `run.sh.output` under the given directories, each as a
+subtest named after its test case. `E2EISH_VERBOSE=1` prints the log of the
+policy as it replays, and the log of a failed replay is saved in
+`$E2EISH_LOG_DIR`, by default in a directory of the run under
+`$TMPDIR/e2eish`.
+
+The replay of a log ends, as skipped, at
+
+- an `unsupported` record outside a marked block,
+- a pod with DRA claims, or another object than a pod,
+- a `machine` record while the plugin runs, as the node reboots under it,
+- a pod with IRQ affinity, as the IRQs are those of the host.
+
+An assertion which uses the policy cache, `allocations` or `cache`, is
+skipped, and the replay goes on.
+
+Burstable containers get the memory request the resource manager estimates
+from their OOM score adjustment, at a resolution of 1/1000 of the memory of
+the host running the replay.
+
 ## Publishing and serving results
 
 A run of the whole suite collects some 120 megabytes, most of it the command
