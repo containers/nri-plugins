@@ -1,6 +1,7 @@
 # This test verifies that the topology-aware policy publishes one DRA
 # device per NUMA node, allocates CPUs to claims, pins containers to
-# the CPUs of their claim, and updates the NRT CR after claim changes.
+# the CPUs of their claim, exports those CPUs to the containers, and
+# updates the NRT CR after claim changes.
 #
 
 cleanup() {
@@ -40,6 +41,15 @@ claimed-cpus() {
     #
     # Print the CPUs the claim of POD got, as its container sees them.
     vm-command-q "kubectl exec $1 -- env" | sed -n 's/^DRA_CPUSET_[^=]*=//p'
+}
+
+exported() {
+    # Usage: exported POD VARIABLE
+    #
+    # Print VARIABLE from the resources the policy exports to the container
+    # of POD.
+    vm-command-q "kubectl exec $1 -- cat /.nri-resource-policy/resources.sh" |
+        sed -n "s/^$2=\"\(.*\)\"$/\1/p"
 }
 
 node-cpus() {
@@ -135,6 +145,9 @@ cpus0=$(claimed-cpus pod0)
 verify "cpuset('$cpus0') == cpuset('$(node-cpus 3)') - cpuset('15')" \
        "cpus['pod0c0'] == cpuset('$cpus0')" \
        "node_ids(mems['pod0c0']) == {3}"
+# The container also finds its claimed CPUs among its exported resources.
+[ "$(exported pod0 CLAIMED_CPUS)" == "$cpus0" ] ||
+    error "pod0 exports CLAIMED_CPUS=$(exported pod0 CLAIMED_CPUS), expected $cpus0"
 
 # Two CPUs are the two threads of one core, and a second claim on the same
 # node gets the other core.
@@ -170,6 +183,8 @@ verify "cpuset('$cpus3') == cpuset('$cpus1')" \
 NAME=pod4 create besteffort
 report allowed
 verify "cpus['pod4c0'].isdisjoint(cpuset('$cpus0,$cpus2,$cpus3'))"
+[ -z "$(exported pod4 CLAIMED_CPUS)" ] ||
+    error "pod4 holds no claim but exports CLAIMED_CPUS=$(exported pod4 CLAIMED_CPUS)"
 node=$(pyexec 'print(min(node_ids(nodes["pod4c0"])))')
 shared=$(pyexec 'print(sorted(cpus["pod4c0"]))')
 claim pod5 "$node" 2
@@ -210,9 +225,13 @@ verify "cpuset('$cpus7') <= cpuset('$(node-cpus 2)')" \
        "cpus['pod7c0'] == cpuset('$(node-cpus 2)')" \
        "node_ids(mems['pod7c0']) == {2}" \
        "cpus['pod4c0'].isdisjoint(cpuset('$cpus7'))"
+# Its exported shared CPUs are its own, apart from the claimed ones.
+[ "$(exported pod7 CLAIMED_CPUS)" == "$cpus7" ] ||
+    error "pod7 exports CLAIMED_CPUS=$(exported pod7 CLAIMED_CPUS), expected $cpus7"
+verify "cpuset('$(exported pod7 SHARED_CPUS)') == cpuset('$(node-cpus 2)') - cpuset('$cpus7')"
 
 vm-command "kubectl get deviceclasses,resourceslices,resourceclaims -o yaml" || :
 
 cleanup
 
-echo "OK: the topology-aware policy published one DRA device per NUMA node, gave each claim CPUs of its own, and pinned containers to their claim's CPUs and to the memory of its node, and the NRT CR followed the claims"
+echo "OK: the topology-aware policy published one DRA device per NUMA node, gave each claim CPUs of its own, and pinned containers to their claim's CPUs and to the memory of its node, exported the claimed CPUs to the containers, and the NRT CR followed the claims"
