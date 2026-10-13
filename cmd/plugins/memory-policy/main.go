@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"sigs.k8s.io/yaml"
@@ -30,10 +29,10 @@ import (
 	"github.com/containerd/nri/pkg/api"
 	"github.com/containerd/nri/pkg/stub"
 
+	policyapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
-	idset "github.com/intel/goresctrl/pkg/utils"
 )
 
 type plugin struct {
@@ -47,14 +46,8 @@ type Config struct {
 }
 
 type MemoryPolicyClass struct {
-	Name       string            `json:"name"`
-	PolicySpec *MemoryPolicySpec `json:"policy"`
-}
-
-type MemoryPolicySpec struct {
-	Mode  string   `json:"mode"`
-	Nodes string   `json:"nodes"`
-	Flags []string `json:"flags,omitempty"`
+	Name       string                  `json:"name"`
+	PolicySpec *policyapi.MemoryPolicy `json:"policy"`
 }
 
 type LinuxMemoryPolicy struct {
@@ -74,32 +67,7 @@ var (
 
 	verbose     bool
 	veryVerbose bool
-
-	// When NRI API supports memory policies, we will switch to using
-	// api.MpolMode and api.MpolFlag instead of these maps.
-	MpolMode_value = map[string]int32{
-		"MPOL_DEFAULT":             0,
-		"MPOL_PREFERRED":           1,
-		"MPOL_BIND":                2,
-		"MPOL_INTERLEAVE":          3,
-		"MPOL_LOCAL":               4,
-		"MPOL_PREFERRED_MANY":      5,
-		"MPOL_WEIGHTED_INTERLEAVE": 6,
-	}
-	MpolFlag_value = map[string]int32{
-		"MPOL_F_STATIC_NODES":   0,
-		"MPOL_F_RELATIVE_NODES": 1,
-		"MPOL_F_NUMA_BALANCING": 2,
-	}
 )
-
-func (mpol *MemoryPolicySpec) String() string {
-	if mpol == nil {
-		return "nil"
-	}
-	modeFlags := strings.Join(append([]string{mpol.Mode}, mpol.Flags...), "|")
-	return fmt.Sprintf("%s:%s", modeFlags, mpol.Nodes)
-}
 
 // onClose handles losing connection to container runtime.
 func (p *plugin) onClose() {
@@ -239,13 +207,13 @@ func effectiveAnnotations(pod *api.PodSandbox, ctr *api.Container) map[string]st
 // takePolicyAnnotation() takes the policy annotation from the
 // annotations map. It returns the policy and removes the
 // annotation from the map.
-func takePolicyAnnotation(ann map[string]string) (*MemoryPolicySpec, error) {
+func takePolicyAnnotation(ann map[string]string) (*policyapi.MemoryPolicy, error) {
 	if value, ok := ann["policy"]; ok {
 		delete(ann, "policy")
 		if value == "" {
 			return nil, nil
 		}
-		policy := &MemoryPolicySpec{}
+		policy := &policyapi.MemoryPolicy{}
 		if err := yaml.Unmarshal([]byte(value), policy); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal policy: %w", err)
 		}
@@ -274,7 +242,7 @@ func (p *plugin) takeClassAnnotation(ann map[string]string) (*MemoryPolicyClass,
 }
 
 // getPolicySpec() returns the memory policy for a container.
-func (p *plugin) getPolicySpec(pod *api.PodSandbox, ctr *api.Container) (*MemoryPolicySpec, error) {
+func (p *plugin) getPolicySpec(pod *api.PodSandbox, ctr *api.Container) (*policyapi.MemoryPolicy, error) {
 	effAnn := effectiveAnnotations(pod, ctr)
 
 	policySpec, err := takePolicyAnnotation(effAnn)
@@ -307,24 +275,22 @@ func (p *plugin) getPolicySpec(pod *api.PodSandbox, ctr *api.Container) (*Memory
 	return nil, nil
 }
 
-// ToLinuxMemoryPolicy() converts the memory policy specification into
+// toLinuxMemoryPolicy() converts the memory policy specification into
 // valid mode, nodes and flags. It is responsible for:
 //   - validating the mode and flags. Passing invalid mode or flags into
 //     injected command would be dangerous.
 //   - calculating exact node numbers based on node specification,
 //     container's cpuset and allowed memory nodes.
-func (policySpec *MemoryPolicySpec) ToLinuxMemoryPolicy(ctr *api.Container) (*LinuxMemoryPolicy, error) {
+func toLinuxMemoryPolicy(policySpec *policyapi.MemoryPolicy, ctr *api.Container) (*LinuxMemoryPolicy, error) {
 	var err error
-	var nodeMask libmem.NodeMask
 
 	if policySpec == nil {
 		return nil, nil
 	}
 
-	// Validate mode.
-	_, ok := MpolMode_value[policySpec.Mode]
-	if !ok {
-		return nil, fmt.Errorf("invalid memory policy mode %q", policySpec.Mode)
+	// Validate mode and flags.
+	if _, _, err := policySpec.ToNRI(); err != nil {
+		return nil, err
 	}
 
 	// Resolve nodes based on the policy specification.
@@ -346,100 +312,21 @@ func (policySpec *MemoryPolicySpec) ToLinuxMemoryPolicy(ctr *api.Container) (*Li
 	}
 	log.Tracef("- allowed mems: %s, cpus %s", ctrMems, ctrCpuset)
 
-	switch {
-	// MPOL_DEFAULT and MPOL_LOCAL take no nodes, the kernel refuses any.
-	case policySpec.Mode == "MPOL_DEFAULT" || policySpec.Mode == "MPOL_LOCAL":
-		if policySpec.Nodes != "" {
-			return nil, fmt.Errorf("memory policy mode %s takes no nodes, got %q",
-				policySpec.Mode, policySpec.Nodes)
-		}
-		nodeMask = libmem.NewNodeMask()
-
-	// "all" includes all nodes into the mask.
-	case policySpec.Nodes == "all":
-		nodeMask = libmem.NewNodeMask(sys.NodeIDs()...)
-		log.Tracef("- nodes %q (all)", nodeMask.MemsetString())
-
-	// "allowed-mems", or no nodes at all, includes only allowed memory
-	// nodes into the mask.
-	case policySpec.Nodes == "" || policySpec.Nodes == "allowed-mems":
-		nodeMask = allowedMemsMask
-		log.Tracef("- nodes: %q (allowed-mems)", nodeMask.MemsetString())
-
-	// "cpu-packages" includes all nodes that are in the same package
-	// as the CPUs in the container's cpuset.
-	case policySpec.Nodes == "cpu-packages":
-		pkgs := sys.IDSetForCPUs(ctrCpuset, func(cpu system.CPU) idset.ID {
-			return cpu.PackageID()
-		})
-		nodeMask = libmem.NewNodeMask()
-		for _, nodeId := range sys.NodeIDs() {
-			nodePkgId := sys.Node(nodeId).PackageID()
-			if pkgs.Has(nodePkgId) {
-				nodeMask = nodeMask.Set(nodeId)
-			}
-		}
-		log.Tracef("- nodes: %q (cpu-packages %q)", nodeMask.MemsetString(), pkgs)
-
-	// "cpu-nodes" includes all nodes in the cpuset of the container.
-	case policySpec.Nodes == "cpu-nodes":
-		nodeIds := sys.IDSetForCPUs(ctrCpuset, func(cpu system.CPU) idset.ID {
-			return cpu.NodeID()
-		})
-		nodeMask = libmem.NewNodeMask(nodeIds.Members()...)
-		log.Tracef("- nodes: %q (cpu-nodes)", nodeMask.MemsetString())
-
-	// "max-dist:<int>" includes all nodes that are within the
-	// specified distance from the CPUs in the container's cpuset.
-	case strings.HasPrefix(policySpec.Nodes, "max-dist:"):
-		maxDist := policySpec.Nodes[len("max-dist:"):]
-		maxDistInt, err := strconv.Atoi(maxDist)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse max-dist %q: %v", maxDist, err)
-		}
-		nodeMask = libmem.NewNodeMask()
-		fromNodes := sys.IDSetForCPUs(ctrCpuset, func(cpu system.CPU) idset.ID {
-			return cpu.NodeID()
-		})
-		for _, fromNode := range fromNodes.Members() {
-			for _, toNode := range sys.NodeIDs() {
-				if sys.NodeDistance(fromNode, toNode) <= maxDistInt {
-					nodeMask = nodeMask.Set(toNode)
-				}
-			}
-		}
-		log.Tracef("- nodes %q (max-dist %d from CPU nodes %q)", nodeMask.MemsetString(), maxDistInt, fromNodes)
-
-	// <int>[-<int>][, ...] includes the set of nodes.
-	case policySpec.Nodes[0] >= '0' && policySpec.Nodes[0] <= '9':
-		nodeMask, err = libmem.ParseNodeMask(policySpec.Nodes)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse nodes %q: %v", policySpec.Nodes, err)
-		}
-		log.Tracef("- nodes %q (hardcoded)", nodeMask.MemsetString())
-
-	default:
-		return nil, fmt.Errorf("invalid nodes: %q", policySpec.Nodes)
+	nodeMask, err := libmem.MemoryPolicyNodes(sys, policySpec.Mode, policySpec.Nodes, ctrCpuset, allowedMemsMask)
+	if err != nil {
+		return nil, err
 	}
+	log.Tracef("- nodes %q (%s)", nodeMask.MemsetString(), policySpec.Nodes)
 
 	nodes := nodeMask.MemsetString()
 	if (nodeMask & allowedMemsMask) != nodeMask {
 		log.Debugf("some memory policy nodes (%s) are not allowed (%s)", nodes, allowedMemsMask.MemsetString())
 	}
 
-	// Copy and validate flags.
-	flags := []string{}
-	for _, flag := range policySpec.Flags {
-		if _, ok := MpolFlag_value[flag]; !ok {
-			return nil, fmt.Errorf("invalid memory policy flag %q", flag)
-		}
-		flags = append(flags, flag)
-	}
-
 	linuxMemoryPolicy := &LinuxMemoryPolicy{
 		Mode:  policySpec.Mode,
 		Nodes: nodes,
-		Flags: flags,
+		Flags: policySpec.Flags,
 	}
 
 	return linuxMemoryPolicy, nil
@@ -516,7 +403,7 @@ func (p *plugin) CreateContainer(ctx context.Context, pod *api.PodSandbox, ctr *
 		return nil, nil, nil
 	}
 
-	policy, err := policySpec.ToLinuxMemoryPolicy(ctr)
+	policy, err := toLinuxMemoryPolicy(policySpec, ctr)
 	if err != nil || policy == nil {
 		log.Errorf("CreateContainer %s: failed to convert policy to LinuxMemoryPolicy: %v", ppName, err)
 		return nil, nil, err
