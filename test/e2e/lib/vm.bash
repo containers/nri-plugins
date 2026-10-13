@@ -1,4 +1,5 @@
 source "$(dirname "${BASH_SOURCE[0]}")/command.bash"
+source "$(dirname "${BASH_SOURCE[0]}")/e2eish.bash"
 
 export VM_CONTEXT=""
 export VM_PROMPT=${VM_PROMPT-"\e[38;5;11mroot@vm>\e[0m "}
@@ -673,6 +674,7 @@ vm-command() { # script API
     # Examples:
     #   vm-command "kubectl get pods"
     #   vm-command "whoami | grep myuser" || command-error "user is not myuser"
+    e2eish-mark-command "$1"
     command-start "vm" "$VM_PROMPT" "$1"
     if [ "$2" == "bg" ]; then
         ( $SSH "$VM_HOSTNAME" sudo bash -l <<<"$COMMAND" 2>&1 | command-handle-output ;
@@ -1402,6 +1404,7 @@ vm-set-kernel-cmdline-reboot() { # script API
         vm-command "grep -q -- '$cmdline' /proc/cmdline" ||
             error "failed to set kernel command line parameters \"$cmdline\""
     fi
+    e2eish-mark machine cmdline="$cmdline"
     vm-restart-kubelet
 }
 

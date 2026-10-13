@@ -16,6 +16,9 @@ efi=${efi:-}
 
 reset_coverage=${reset_coverage:-0}
 
+# e2eish=0 leaves the E2EISH replay records out of the test logs.
+export e2eish=${e2eish:-1}
+
 proxy=${proxy:=$https_proxy}
 proxy=${proxy:=$HTTPS_PROXY}
 export proxy
@@ -27,6 +30,7 @@ usage() {
     echo "POLICY/TOPOLOGY/topology.var.json: contents of the topology variable for run.sh"
     echo "POLICY/TOPOLOGY/TEST/code.var.sh: contents of the code var (that is, test script)"
     echo "skip_long_tests=no enables long-running tests (including fuzzing and stress tests)."
+    echo "e2eish=0 leaves the E2EISH replay records out of the test logs."
 }
 
 error() {

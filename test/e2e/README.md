@@ -277,6 +277,50 @@ Worth knowing:
   the coverage of the repository, and do not compare it to the unit test
   coverage of `make test`, which measures a different set of packages.
 
+## Replaying test logs as unit tests
+
+The topology-aware policy can replay the log of an e2e test as a unit test,
+against the policy alone and without a VM. For that, a test prints a record
+of each step which changes or checks the placement of containers.
+
+### Records
+
+A record is a line of `E2EISH ` and a JSON object, with its kind in `op`:
+
+| Record                  | Printed by                                                    | Fields                                                 |
+|-------------------------|---------------------------------------------------------------|--------------------------------------------------------|
+| `launch`                | `helm-launch`                                                 | `topology`, the `topology.var.json`, and `values`, the helm values |
+| `sync`                  | a successful `helm-launch`                                    | `pods`, those the plugin synchronizes with             |
+| `expect-launch-failure` | `expect-launch-failure`                                       |                                                        |
+| `terminate`             | `helm-terminate`                                              |                                                        |
+| `create`                | `create`                                                      | `namespace`, `name` and `object`, the object created   |
+| `delete`                | `kubectl delete` of pods, by any command                      | `namespace`, and `pods` or `all`                       |
+| `consts`                | `verify`, when `py_consts` changed                            | `code`                                                 |
+| `verify`                | `verify`, for each assertion                                  | `result`, `ok` or `fail`, and `expr`                   |
+| `machine`               | `disable-numa`, `enable-numa`, `vm-set-kernel-cmdline-reboot` | `numa` or `cmdline`                                    |
+| `skip`, `resume`        | `e2eish skip`, `e2eish resume`                                | `pods`, and the `reason` of a skip                     |
+| `unsupported`           | a command which kills containers or the plugin, or touches its cache | `command`                                       |
+
+A pod in a record has its metadata, the resources of its containers, its QoS
+class, and the names and IDs of its running containers. YAML goes into a
+record as JSON, converted by `cmd/yaml2json`. `e2eish=0` turns the records
+off.
+
+### Marking a block the replay cannot follow
+
+A step the records cannot express, like killing a container, ends the replay
+of a log. A test can mark such a block, for the replay to go on after it:
+
+```shell
+e2eish skip "restarts pod0c0"
+...
+e2eish resume
+```
+
+The replay ignores the pod changes and the assertions of the block. Every
+container the block creates must be gone at `resume`, a restarted one
+included, otherwise the replay ends there.
+
 ## Publishing and serving results
 
 A run of the whole suite collects some 120 megabytes, most of it the command

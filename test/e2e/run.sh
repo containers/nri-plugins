@@ -34,6 +34,9 @@ qemu_dir="${qemu_dir:-/usr/share/qemu}"
 
 export OUTPUT_DIR=${outdir:-"$SCRIPT_DIR"/output}
 
+# e2eish=0 leaves the E2EISH replay records out of the test log.
+export e2eish=${e2eish:-1}
+
 # Place output of each test under a separate test case directory
 export TEST_OUTPUT_DIR=${test_outdir:-"$OUTPUT_DIR"}
 export COMMAND_OUTPUT_DIR="$TEST_OUTPUT_DIR"/commands
@@ -480,6 +483,7 @@ helm-launch() { # script API
 
     vm-coverage-prepare
 
+    e2eish-mark launch topology:json="$topology" values:yaml="$(< "$helm_config")"
     vm-command "helm install $rollback -n kube-system $helm_name ./helm/$plugin \
              --values=`basename ${helm_config}` \
              $(helm-set-args "$plugin")" ||
@@ -543,6 +547,7 @@ helm-launch() { # script API
                 error "Plugin $plugin configuration failed: $reason"
             fi
         fi
+        e2eish-mark-sync
     else
         if vm-command "kubectl wait -n kube-system ds/${ds_name} --timeout=5s \
                       --for=jsonpath='{.status.numberReady}'=0"; then
@@ -604,6 +609,8 @@ helm-terminate() { # script API
 
     # Pull coverage data from the plugin before stopping it.
     vm-coverage-snapshot
+
+    e2eish-mark terminate
 
     vm-command "helm uninstall -n kube-system test --wait --timeout 20s"
     vm-port-forward-disable
@@ -799,6 +806,8 @@ create() { # script API
             local NAME="${template_kind}$(( ${kind_count[$template_kind]} - 1 ))" # the first pod is pod0
         fi
         eval "echo -e \"$(<"${template_file}")\"" | grep -v '^ *$' > "$TEST_OUTPUT_DIR/$NAME.yaml"
+        e2eish-mark create namespace="${namespace:-default}" name="$NAME" \
+                    object:yaml="$(< "$TEST_OUTPUT_DIR/$NAME.yaml")"
         host-command "$SCP \"$TEST_OUTPUT_DIR/$NAME.yaml\" $VM_HOSTNAME:" || {
             command-error "copying \"$TEST_OUTPUT_DIR/$NAME.yaml\" to VM failed"
         }
@@ -898,65 +907,7 @@ get-py-allowed() {
     py_allowed="
 import re
 allowed=$("$LIB_DIR/topology.py" -t "$topology_dump_file" -r "$res_allowed_file" res_allowed -o json)
-_branch_pod=[(p, d, n, c, t, cpu, pod.rsplit('/', 1)[0])
-             for p in allowed
-             for d in allowed[p]
-             for n in allowed[p][d]
-             for c in allowed[p][d][n]
-             for t in allowed[p][d][n][c]
-             for cpu in allowed[p][d][n][c][t]
-             for pod in allowed[p][d][n][c][t][cpu]]
-# cpu resources allowed for a pod:
-packages, dies, nodes, cores, threads, cpus = {}, {}, {}, {}, {}, {}
-# mem resources allowed for a pod:
-mems = {}
-for p, d, n, c, t, cpu, pod in _branch_pod:
-    if c == 'mem': # this _branch_pod entry is about memory
-        if not pod in mems:
-            mems[pod] = set()
-        # topology.py can print memory nodes as children of cpu-ful nodes
-        # if distance looks like they are behind the same memory controller.
-        # The thread field, however, is the true node who contains the memory.
-        mems[pod].add(t)
-        continue
-    # this _branch_pod entry is about cpu
-    if not pod in packages:
-        packages[pod] = set()
-        dies[pod] = set()
-        nodes[pod] = set()
-        cores[pod] = set()
-        threads[pod] = set()
-        cpus[pod] = set()
-    packages[pod].add(p)
-    dies[pod].add('%s/%s' % (p, d))
-    nodes[pod].add(n)
-    cores[pod].add('%s/%s' % (n, c))
-    threads[pod].add('%s/%s/%s' % (n, c, t))
-    cpus[pod].add(cpu)
-
-def disjoint_sets(*sets):
-    'set.isdisjoint() for n > 1 sets'
-    s = sets[0]
-    for next in sets[1:]:
-        if not s.isdisjoint(next):
-            return False
-        s = s.union(next)
-    return True
-
-def set_ids(str_ids, chars='[a-z]'):
-    num_ids = set()
-    for str_id in str_ids:
-        if '/' in str_id:
-            num_ids.add(tuple(int(re.sub(chars, '', s)) for s in str_id.split('/')))
-        else:
-            num_ids.add(int(re.sub(chars, '', str_id)))
-    return num_ids
-package_ids = lambda i: set_ids(i, '[package]')
-die_ids = lambda i: set_ids(i, '[packagedie]')
-node_ids = lambda i: set_ids(i, '[node]')
-core_ids = lambda i: set_ids(i, '[nodecore]')
-thread_ids = lambda i: set_ids(i, '[nodecorethread]')
-cpu_ids = lambda i: set_ids(i, '[cpu]')
+$(< "$LIB_DIR/py_allowed.py")
 "
 }
 
@@ -1109,6 +1060,7 @@ verify() { # script API
     #          'len(cpus["pod0c0"]) == 4'
     get-py-allowed
     get-py-cache
+    e2eish-mark-consts
     for py_assertion in "$@"; do
         speed=1000 out "### Verifying assertion '$py_assertion'"
         ( speed=1000 pyexec "
@@ -1132,6 +1084,7 @@ except IndexError as e:
     time.sleep(5)
     raise e
 " ) || {
+                e2eish-mark verify result=fail expr="$py_assertion"
                 out "### The assertion FAILED
 ### post-mortem debug help begin ###
 cd $TEST_OUTPUT_DIR
@@ -1146,6 +1099,7 @@ $py_assertion
                     command-exit-if-not-interactive
                 fi
         }
+        e2eish-mark verify result=ok expr="$py_assertion"
         out "### The assertion holds."
     done
     is-hooked on_verify && run-hook on_verify
