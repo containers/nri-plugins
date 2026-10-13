@@ -20,6 +20,7 @@ import (
 	"github.com/containerd/nri/pkg/api"
 	"github.com/sirupsen/logrus"
 
+	policyapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
@@ -49,30 +50,30 @@ func TestToLinuxMemoryPolicyNodes(t *testing.T) {
 
 	cases := []struct {
 		name  string
-		spec  MemoryPolicySpec
+		spec  policyapi.MemoryPolicy
 		mems  string
 		nodes string
 		fail  bool
 	}{
-		{"no nodes means allowed-mems", MemoryPolicySpec{Mode: "MPOL_INTERLEAVE"}, "1", "1", false},
-		{"no nodes, no cpuset.mems", MemoryPolicySpec{Mode: "MPOL_INTERLEAVE"}, "", "0-1", false},
-		{"allowed-mems", MemoryPolicySpec{Mode: "MPOL_BIND", Nodes: "allowed-mems"}, "0", "0", false},
-		{"MPOL_LOCAL takes no nodes", MemoryPolicySpec{Mode: "MPOL_LOCAL"}, "1", "", false},
-		{"MPOL_DEFAULT takes no nodes", MemoryPolicySpec{Mode: "MPOL_DEFAULT"}, "1", "", false},
-		{"MPOL_LOCAL with nodes", MemoryPolicySpec{Mode: "MPOL_LOCAL", Nodes: "0"}, "", "", true},
-		{"MPOL_DEFAULT with nodes", MemoryPolicySpec{Mode: "MPOL_DEFAULT", Nodes: "all"}, "", "", true},
+		{"no nodes means allowed-mems", policyapi.MemoryPolicy{Mode: "MPOL_INTERLEAVE"}, "1", "1", false},
+		{"no nodes, no cpuset.mems", policyapi.MemoryPolicy{Mode: "MPOL_INTERLEAVE"}, "", "0-1", false},
+		{"allowed-mems", policyapi.MemoryPolicy{Mode: "MPOL_BIND", Nodes: "allowed-mems"}, "0", "0", false},
+		{"MPOL_LOCAL takes no nodes", policyapi.MemoryPolicy{Mode: "MPOL_LOCAL"}, "1", "", false},
+		{"MPOL_DEFAULT takes no nodes", policyapi.MemoryPolicy{Mode: "MPOL_DEFAULT"}, "1", "", false},
+		{"MPOL_LOCAL with nodes", policyapi.MemoryPolicy{Mode: "MPOL_LOCAL", Nodes: "0"}, "", "", true},
+		{"MPOL_DEFAULT with nodes", policyapi.MemoryPolicy{Mode: "MPOL_DEFAULT", Nodes: "all"}, "", "", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			policy, err := tc.spec.ToLinuxMemoryPolicy(container(tc.mems))
+			policy, err := toLinuxMemoryPolicy(&tc.spec, container(tc.mems))
 			if tc.fail {
 				if err == nil {
-					t.Errorf("ToLinuxMemoryPolicy succeeded, want an error")
+					t.Errorf("toLinuxMemoryPolicy succeeded, want an error")
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("ToLinuxMemoryPolicy failed: %v", err)
+				t.Fatalf("toLinuxMemoryPolicy failed: %v", err)
 			}
 			if policy.Nodes != tc.nodes {
 				t.Errorf("nodes = %q, want %q", policy.Nodes, tc.nodes)
