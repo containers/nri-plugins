@@ -15,11 +15,14 @@
 package topologyaware
 
 import (
+	"fmt"
 	"maps"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	v1 "k8s.io/api/core/v1"
+	resourceapi "k8s.io/api/resource/v1"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	"github.com/containers/nri-plugins/pkg/utils"
@@ -815,4 +818,93 @@ func TestE2eishN4c16Test20Coldstart(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return maps.Equal(nodeIds(2, 3), e.mems("pod0c1"))
 	}, 5*time.Second, 100*time.Millisecond, "pod0c1 got no DRAM after its cold start")
+}
+
+// TestE2eishN4c16Test42DraDevices is n4c16/test42-dra-devices: the policy
+// publishes a DRA device per NUMA node and gives claims CPUs of their own.
+// The scheduler is left out: each claim gets the device and CPU count it asks
+// for, and the check that pod3 stays unscheduled while node 1 is full is not
+// replayed.
+func TestE2eishN4c16Test42DraDevices(t *testing.T) {
+	e := newE2eish(t, n4c16)
+
+	// cpu15 is reserved, so node 3 has one CPU less to give than the others.
+	e.launch(e2eConfig(func(c *cfgapi.Config) {
+		c.ReservedResources = cfgapi.Constraints{cfgapi.CPU: "cpuset:15"}
+	}))
+
+	devices := map[string]resourceapi.Device{}
+	for _, d := range e.owner.devices {
+		devices[d.Name] = d
+	}
+	require.Len(t, devices, 4)
+	for node := range 4 {
+		name := fmt.Sprintf("cpudevnuma%03d", node)
+		d, ok := devices[name]
+		require.True(t, ok, "no device %s for NUMA node %d", name, node)
+
+		attr := d.Attributes
+		require.Equal(t, int64(node), *attr["resource.kubernetes.io/numaNode"].IntValue, name)
+		require.Equal(t, int64(node/2), *attr["dra.cpu/socketID"].IntValue, name)
+		require.True(t, *attr["dra.cpu/smtEnabled"].BoolValue, name)
+
+		capacity := d.Capacity["dra.cpu/cpu"]
+		cpus := int64(4)
+		if node == 3 {
+			cpus = 3
+		}
+		require.Equal(t, cpus, capacity.Value.Value(), name)
+		policy := capacity.RequestPolicy
+		require.Equal(t, "1/1/1", fmt.Sprintf("%s/%s/%s",
+			policy.Default, policy.ValidRange.Min, policy.ValidRange.Step), name)
+		require.True(t, *d.AllowMultipleAllocations, name)
+
+		mapping := d.NodeAllocatableResources[v1.ResourceCPU].Mapping
+		require.Equal(t, "dra.cpu/cpu x 1", fmt.Sprintf("%s x %s",
+			*mapping.CapacityKey, mapping.CapacityMultiplier), name)
+	}
+
+	nodeCPUs := func(node int) idSet {
+		return cpuIds(e.machine.Node(node).CPUSet().List()...)
+	}
+	without := func(s idSet, cpus idSet) idSet {
+		d := union(s)
+		for n := range cpus {
+			delete(d, n)
+		}
+		return d
+	}
+
+	// pod0 claims 3 CPUs of node 3: all but the reserved cpu15.
+	e.createBestEffort(podSpec{Claim: &claimSpec{Node: 3, CPUs: "3"}})
+	require.Equal(t, without(nodeCPUs(3), cpuIds(15)), e.claimed("pod0"))
+
+	// 2 CPUs are the threads of a core, and a second claim of the node gets
+	// the other core.
+	e.createBestEffort(podSpec{Claim: &claimSpec{Node: 1, CPUs: "2"}})
+	first := e.claims["pod1"].List()[0]
+	require.Equal(t, cpuIds(e.machine.CPU(first).ThreadCPUSet().List()...), e.claimed("pod1"))
+	require.Subset(t, nodeCPUs(1), e.claimed("pod1"))
+	e.createBestEffort(podSpec{Claim: &claimSpec{Node: 1, CPUs: "2"}})
+	require.Equal(t, nodeCPUs(1), union(e.claimed("pod1"), e.claimed("pod2")))
+
+	// Node 1 is full until deleting pod1 releases its claim, whose CPUs
+	// pod3 then gets.
+	cpus1 := e.claimed("pod1")
+	e.deletePods("pod1")
+	e.createBestEffort(podSpec{Claim: &claimSpec{Node: 1, CPUs: "2"}})
+	require.Equal(t, cpus1, e.claimed("pod3"))
+
+	// A shared container moves off the CPUs a claim takes of its node, and
+	// back once the claim is released.
+	e.createBestEffort(podSpec{})
+	requireDisjoint(t, e.cpus("pod4c0"), union(e.claimed("pod0"), e.claimed("pod2"), e.claimed("pod3")))
+	shared := e.cpus("pod4c0")
+	cpus, _ := e.allowed("pod4c0")
+	node := e.machine.CPU(cpus.List()[0]).NodeID()
+	e.createBestEffort(podSpec{Claim: &claimSpec{Node: node, CPUs: "2"}})
+	require.Subset(t, shared, e.claimed("pod5"))
+	require.Equal(t, without(shared, e.claimed("pod5")), e.cpus("pod4c0"))
+	e.deletePods("pod5")
+	require.Equal(t, shared, e.cpus("pod4c0"))
 }

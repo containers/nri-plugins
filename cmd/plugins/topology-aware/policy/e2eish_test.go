@@ -41,6 +41,7 @@ import (
 	nri "github.com/containerd/nri/pkg/api"
 	"github.com/stretchr/testify/require"
 	resapi "k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/types"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	"github.com/containers/nri-plugins/pkg/kubernetes"
@@ -393,6 +394,7 @@ type e2eish struct {
 	ctrs    map[string]cache.Container // live containers by name
 	specs   map[string]ctrSpec         // containers by name, for restarts
 	owner   *draTestOwner              // the DRA devices the policy publishes
+	claims  map[string]cpuset.CPUSet   // claimed CPUs by pod name
 }
 
 // ctrSpec is what a container is created from.
@@ -495,6 +497,7 @@ func (e *e2eish) launch(cfg *cfgapi.Config) {
 	e.cache = cch
 	e.policy = p
 	e.owner = owner
+	e.claims = map[string]cpuset.CPUSet{}
 	e.pods = map[string]cache.Pod{}
 	e.ctrs = map[string]cache.Container{}
 	e.specs = map[string]ctrSpec{}
@@ -535,6 +538,14 @@ type podSpec struct {
 	MemLim      string // burstable, 200M by default, "0" for none
 	Annotations map[string]string
 	WantError   string // if set, the containers must fail with this error
+	Claim       *claimSpec
+}
+
+// claimSpec is a claim of the pod for CPUs of a NUMA node, as the scheduler
+// allocated it.
+type claimSpec struct {
+	Node int
+	CPUs string
 }
 
 // containerResources are the resources of one container of a pod.
@@ -589,6 +600,13 @@ func (e *e2eish) create(qos string, spec podSpec, res containerResources) string
 	e2eLog.Infof("===== create %s %s %+v", cmp.Or(qos, "guaranteed"), name, spec)
 
 	pod := e.insertPod(cmp.Or(spec.Namespace, "default"), name, qos, spec.Annotations)
+
+	// The kubelet prepares the claims of a pod before creating containers.
+	if c := spec.Claim; c != nil {
+		e.owner.Lock()
+		e.claims[name] = allocateClaim(e.t, e.policy, name, draTestResult(c.Node, c.CPUs))
+		e.owner.Unlock()
+	}
 
 	for i := 0; i < spec.IContCount; i++ {
 		c, err := e.createContainer(ctrSpec{pod, qos, res}, fmt.Sprintf("%sc%di", name, i))
@@ -763,6 +781,13 @@ func (e *e2eish) deletePods(names ...string) {
 			e.stopContainer(c)
 		}
 		e.cache.DeletePod(pod.GetID())
+		if _, ok := e.claims[name]; ok {
+			e.owner.Lock()
+			err := e.policy.ReleaseClaim(types.UID(name))
+			e.owner.Unlock()
+			require.NoError(e.t, err, "failed to release claim of %s", name)
+			delete(e.claims, name)
+		}
 		delete(e.pods, name)
 	}
 }
@@ -889,6 +914,15 @@ func (e *e2eish) mems(name string) idSet {
 	set, err := cpuset.Parse(mems)
 	require.NoError(e.t, err, "%s: bad memset %q", name, mems)
 	return nodeIds(set.List()...)
+}
+
+// claimed is the CPUs the claim of a pod got, as its containers see them.
+func (e *e2eish) claimed(pod string) idSet {
+	e.t.Helper()
+
+	cpus, ok := e.claims[pod]
+	require.True(e.t, ok, "pod %s has no claim", pod)
+	return cpuIds(cpus.List()...)
 }
 
 // requireDisjoint is verify 'disjoint_sets(...)'.
