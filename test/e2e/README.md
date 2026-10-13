@@ -361,6 +361,12 @@ Burstable containers get the memory request the resource manager estimates
 from their OOM score adjustment, at a resolution of 1/1000 of the memory of
 the host running the replay.
 
+### Hand-written replays
+
+The `e2eish-TOPOLOGY_test.go` files in `cmd/plugins/topology-aware/policy`
+replay e2e tests by hand, with the same harness, one Go test for each e2e
+test. `E2EISH_VERBOSE` and `E2EISH_LOG_DIR` work for them as well.
+
 ## Publishing and serving results
 
 A run of the whole suite collects some 120 megabytes, most of it the command

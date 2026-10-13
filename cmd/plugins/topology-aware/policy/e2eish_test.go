@@ -343,6 +343,28 @@ func e2eReexec(t *testing.T, env ...string) bool {
 	return true
 }
 
+// e2eConfig is the policy configuration test/e2e/policies.test-suite/
+// topology-aware/helm-config.yaml.in produces with no variables set, with
+// the CRD defaults applied. Options adjust it like the variables do.
+// ControllableInterrupts stays unset, so the test never touches host IRQs.
+func e2eConfig(options ...func(*cfgapi.Config)) *cfgapi.Config {
+	cfg := &cfgapi.Config{
+		ReservedResources:  cfgapi.Constraints{cfgapi.CPU: "750m"},
+		PinCPU:             true,
+		PinMemory:          true,
+		PreferShared:       e2eFalse(),
+		PreferIsolated:     e2eFalse(),
+		DefaultCPUPriority: cfgapi.PriorityNone,
+		UnlimitedBurstable: cfgapi.CPUTopologyLevelPackage,
+	}
+	for _, o := range options {
+		o(cfg)
+	}
+	return cfg
+}
+
+func e2eFalse() *bool { v := false; return &v }
+
 // e2eish is one e2e test run: a machine, and the policy and cache of the
 // currently launched policy.
 type e2eish struct {
@@ -350,9 +372,11 @@ type e2eish struct {
 	machine system.System
 	cache   cache.Cache
 	policy  *policy
+	podCnt  int                        // the e2e pod counter
 	ctrCnt  int                        // makes container IDs unique
 	pods    map[string]cache.Pod       // live pods by name
 	ctrs    map[string]cache.Container // live containers by name
+	specs   map[string]ctrSpec         // containers by name, for restarts
 	owner   *draTestOwner              // the DRA devices the policy publishes
 }
 
@@ -361,6 +385,10 @@ type ctrSpec struct {
 	pod cache.Pod
 	qos string
 	res containerResources
+}
+
+func newE2eish(t *testing.T, topo e2eTopology) *e2eish {
+	return newE2eishWithCaches(t, topo, "")
 }
 
 // newE2eishWithCaches is newE2eish with the OVERRIDE_SYS_CACHES of an e2e
@@ -454,6 +482,7 @@ func (e *e2eish) launch(cfg *cfgapi.Config) {
 	e.owner = owner
 	e.pods = map[string]cache.Pod{}
 	e.ctrs = map[string]cache.Container{}
+	e.specs = map[string]ctrSpec{}
 }
 
 // launchFails is expect-launch-failure.
@@ -473,10 +502,94 @@ func (e *e2eish) launchFails(cfg *cfgapi.Config) {
 	e2eLog.Infof("===== launch failed as expected: %v", err)
 }
 
+// resetCounters is reset counters.
+func (e *e2eish) resetCounters() {
+	e.podCnt = 0
+}
+
+// podSpec has the variables of the e2e pod templates in test/e2e/files.
+// Zero fields take the defaults of test/e2e/run.sh.
+type podSpec struct {
+	Namespace   string
+	ContCount   int    // CONTCOUNT, 1 by default
+	IContCount  int    // ICONTCOUNT
+	CPU, Mem    string // guaranteed, 1 and 100M by default
+	CPUReq      string // burstable, 1 by default
+	CPULim      string // burstable, 2 by default, "0" for none
+	MemReq      string // burstable, 100M by default
+	MemLim      string // burstable, 200M by default, "0" for none
+	Annotations map[string]string
+	WantError   string // if set, the containers must fail with this error
+}
+
 // containerResources are the resources of one container of a pod.
 type containerResources struct {
 	cpuReq, cpuLim int64 // in milli-CPUs, 0 for unset
 	memReq, memLim int64 // in bytes, 0 for unset
+}
+
+func (e *e2eish) quantity(s, def string) *resapi.Quantity {
+	e.t.Helper()
+	if s == "" {
+		s = def
+	}
+	q, err := resapi.ParseQuantity(s)
+	require.NoError(e.t, err, "bad quantity %q", s)
+	return &q
+}
+
+// createGuaranteed is create guaranteed.
+func (e *e2eish) createGuaranteed(spec podSpec) string {
+	e.t.Helper()
+	cpu := e.quantity(spec.CPU, "1").MilliValue()
+	mem := e.quantity(spec.Mem, "100M").Value()
+	return e.create("", spec, containerResources{cpu, cpu, mem, mem})
+}
+
+// createBurstable is create burstable.
+func (e *e2eish) createBurstable(spec podSpec) string {
+	e.t.Helper()
+	return e.create("burstable", spec, containerResources{
+		cpuReq: e.quantity(spec.CPUReq, "1").MilliValue(),
+		cpuLim: e.quantity(spec.CPULim, "2").MilliValue(),
+		memReq: e.quantity(spec.MemReq, "100M").Value(),
+		memLim: e.quantity(spec.MemLim, "200M").Value(),
+	})
+}
+
+// createBestEffort is create besteffort.
+func (e *e2eish) createBestEffort(spec podSpec) string {
+	e.t.Helper()
+	return e.create("besteffort", spec, containerResources{})
+}
+
+// create creates the next pod and starts its containers. Init containers run
+// one at a time to completion first, then the containers start in order. It
+// returns the pod name.
+func (e *e2eish) create(qos string, spec podSpec, res containerResources) string {
+	e.t.Helper()
+
+	name := fmt.Sprintf("pod%d", e.podCnt)
+	e.podCnt++
+	e2eLog.Infof("===== create %s %s %+v", cmp.Or(qos, "guaranteed"), name, spec)
+
+	pod := e.insertPod(cmp.Or(spec.Namespace, "default"), name, qos, spec.Annotations)
+
+	for i := 0; i < spec.IContCount; i++ {
+		c, err := e.createContainer(ctrSpec{pod, qos, res}, fmt.Sprintf("%sc%di", name, i))
+		require.NoError(e.t, err)
+		e.stopContainer(c)
+	}
+	for i := 0; i < max(spec.ContCount, 1); i++ {
+		_, err := e.createContainer(ctrSpec{pod, qos, res}, fmt.Sprintf("%sc%d", name, i))
+		if spec.WantError != "" {
+			require.ErrorContains(e.t, err, spec.WantError)
+		} else {
+			require.NoError(e.t, err)
+		}
+	}
+
+	return name
 }
 
 // insertPod does what the resource manager does for RunPodSandbox. qos is ""
@@ -551,6 +664,7 @@ func (e *e2eish) insertContainer(spec ctrSpec, name string) cache.Container {
 		},
 	}, cache.WithContainerState(cache.ContainerStateCreating))
 	require.NoError(e.t, err, "failed to insert container %s", name)
+	e.specs[name] = spec
 
 	return c
 }
@@ -573,6 +687,38 @@ func (e *e2eish) createContainer(spec ctrSpec, name string) (cache.Container, er
 	e.ctrs[name] = c
 
 	return c, nil
+}
+
+// restartContainer is a container crashing and the kubelet restarting it.
+func (e *e2eish) restartContainer(name string) {
+	e.t.Helper()
+
+	c, ok := e.ctrs[name]
+	require.True(e.t, ok, "no container %s to restart", name)
+	e2eLog.Infof("===== restart %s", name)
+	e.stopContainer(c)
+	_, err := e.createContainer(e.specs[name], name)
+	require.NoError(e.t, err, "failed to restart %s", name)
+}
+
+// exitContainer is a container exiting for good.
+func (e *e2eish) exitContainer(name string) {
+	e.t.Helper()
+
+	c, ok := e.ctrs[name]
+	require.True(e.t, ok, "no container %s to exit", name)
+	e2eLog.Infof("===== exit %s", name)
+	e.stopContainer(c)
+}
+
+// hasGrant tells if the policy has allocations for the running container.
+func (e *e2eish) hasGrant(name string) bool {
+	c, ok := e.ctrs[name]
+	if !ok {
+		return false
+	}
+	_, ok = e.policy.allocations.grants[c.GetID()]
+	return ok
 }
 
 // stopContainer does what the resource manager does for StopContainer and
@@ -606,6 +752,48 @@ func (e *e2eish) deletePods(names ...string) {
 	}
 }
 
+// deleteAllPods is kubectl delete pods --all, in any namespace.
+func (e *e2eish) deleteAllPods() {
+	e.t.Helper()
+
+	names := make([]string, 0, len(e.pods))
+	for name := range e.pods {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	e.deletePods(names...)
+}
+
+// idSet is a set of e2e topology names, like cpu04, node1 or package0.
+type idSet map[string]struct{}
+
+func (s idSet) String() string {
+	names := make([]string, 0, len(s))
+	for n := range s {
+		names = append(names, n)
+	}
+	slices.Sort(names)
+	return "{" + strings.Join(names, ", ") + "}"
+}
+
+// cpuIds gives the set of the given CPUs, like the e2e cpu_ids.
+func cpuIds(ids ...int) idSet {
+	s := idSet{}
+	for _, id := range ids {
+		s[fmt.Sprintf("cpu%02d", id)] = struct{}{}
+	}
+	return s
+}
+
+// nodeIds gives the set of the given nodes, like the e2e node_ids.
+func nodeIds(ids ...int) idSet {
+	s := idSet{}
+	for _, id := range ids {
+		s[fmt.Sprintf("node%d", id)] = struct{}{}
+	}
+	return s
+}
+
 // allowed is report allowed: the CPUs and memory nodes a container may use,
 // as the e2e tests see them in /proc/self/status.
 func (e *e2eish) allowed(name string) (cpuset.CPUSet, string) {
@@ -628,6 +816,92 @@ func (e *e2eish) allowed(name string) (cpuset.CPUSet, string) {
 	return cpus, mems
 }
 
+// topoSet maps the allowed CPUs of a container to e2e topology names.
+func (e *e2eish) topoSet(name string, label func(system.CPU) string) idSet {
+	e.t.Helper()
+
+	cpus, _ := e.allowed(name)
+	s := idSet{}
+	for _, id := range cpus.List() {
+		s[label(e.machine.CPU(id))] = struct{}{}
+	}
+	return s
+}
+
+// cpus is cpus["name"].
+func (e *e2eish) cpus(name string) idSet {
+	return e.topoSet(name, func(c system.CPU) string {
+		return fmt.Sprintf("cpu%02d", c.ID())
+	})
+}
+
+// cores is cores["name"].
+func (e *e2eish) cores(name string) idSet {
+	return e.topoSet(name, func(c system.CPU) string {
+		return fmt.Sprintf("package%d/core%d", c.PackageID(), c.CoreID())
+	})
+}
+
+// nodes is nodes["name"]: the nodes of the allowed CPUs.
+func (e *e2eish) nodes(name string) idSet {
+	return e.topoSet(name, func(c system.CPU) string {
+		return fmt.Sprintf("node%d", c.NodeID())
+	})
+}
+
+// dies is dies["name"].
+func (e *e2eish) dies(name string) idSet {
+	return e.topoSet(name, func(c system.CPU) string {
+		return fmt.Sprintf("package%d/die%d", c.PackageID(), c.DieID())
+	})
+}
+
+// packages is packages["name"].
+func (e *e2eish) packages(name string) idSet {
+	return e.topoSet(name, func(c system.CPU) string {
+		return fmt.Sprintf("package%d", c.PackageID())
+	})
+}
+
+// mems is mems["name"]: the allowed memory nodes.
+func (e *e2eish) mems(name string) idSet {
+	e.t.Helper()
+
+	_, mems := e.allowed(name)
+	if mems == "" {
+		return nodeIds(e.machine.NodeIDs()...)
+	}
+	set, err := cpuset.Parse(mems)
+	require.NoError(e.t, err, "%s: bad memset %q", name, mems)
+	return nodeIds(set.List()...)
+}
+
+// requireDisjoint is verify 'disjoint_sets(...)'.
+func requireDisjoint(t *testing.T, sets ...idSet) {
+	t.Helper()
+
+	seen := map[string]int{}
+	for i, s := range sets {
+		for n := range s {
+			if j, ok := seen[n]; ok {
+				t.Fatalf("sets #%d %s and #%d %s share %s", j, sets[j], i, s, n)
+			}
+			seen[n] = i
+		}
+	}
+}
+
+// union is set.union(...).
+func union(sets ...idSet) idSet {
+	u := idSet{}
+	for _, s := range sets {
+		for n := range s {
+			u[n] = struct{}{}
+		}
+	}
+	return u
+}
+
 // running gives the names of the running containers, sorted.
 func (e *e2eish) running() []string {
 	names := make([]string, 0, len(e.ctrs))
@@ -636,4 +910,20 @@ func (e *e2eish) running() []string {
 	}
 	slices.Sort(names)
 	return names
+}
+
+// unshared is cpus[name] - set.union(cpus of every other container).
+func (e *e2eish) unshared(name string) idSet {
+	e.t.Helper()
+
+	s := e.cpus(name)
+	for _, other := range e.running() {
+		if other == name {
+			continue
+		}
+		for n := range e.cpus(other) {
+			delete(s, n)
+		}
+	}
+	return s
 }
