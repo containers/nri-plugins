@@ -347,13 +347,22 @@ func (policySpec *MemoryPolicySpec) ToLinuxMemoryPolicy(ctr *api.Container) (*Li
 	log.Tracef("- allowed mems: %s, cpus %s", ctrMems, ctrCpuset)
 
 	switch {
+	// MPOL_DEFAULT and MPOL_LOCAL take no nodes, the kernel refuses any.
+	case policySpec.Mode == "MPOL_DEFAULT" || policySpec.Mode == "MPOL_LOCAL":
+		if policySpec.Nodes != "" {
+			return nil, fmt.Errorf("memory policy mode %s takes no nodes, got %q",
+				policySpec.Mode, policySpec.Nodes)
+		}
+		nodeMask = libmem.NewNodeMask()
+
 	// "all" includes all nodes into the mask.
 	case policySpec.Nodes == "all":
 		nodeMask = libmem.NewNodeMask(sys.NodeIDs()...)
 		log.Tracef("- nodes %q (all)", nodeMask.MemsetString())
 
-	// "allowed-mems" includes only allowed memory nodes into the mask.
-	case policySpec.Nodes == "allowed-mems":
+	// "allowed-mems", or no nodes at all, includes only allowed memory
+	// nodes into the mask.
+	case policySpec.Nodes == "" || policySpec.Nodes == "allowed-mems":
 		nodeMask = allowedMemsMask
 		log.Tracef("- nodes: %q (allowed-mems)", nodeMask.MemsetString())
 
