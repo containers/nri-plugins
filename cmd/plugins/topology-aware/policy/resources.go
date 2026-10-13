@@ -1018,8 +1018,10 @@ func (cr *request) verifyStrictTopologyHints(g Grant) error {
 
 		if claimed := g.ClaimedCPUs(); claimed.Size() > 0 {
 			if cpus := hint.MisalignedCPUSet(claimed); cpus.Size() > 0 {
-				return policyError("claimed CPUs %q fail strict hint %v",
-					cpus.String(), h)
+				// Claims are allocated before the container and its
+				// hints are known, so they can't be made to follow them.
+				log.Warnf("%s: claimed CPUs %q fail strict hint %v, allowing them anyway",
+					cr.GetContainer().PrettyName(), cpus.String(), h)
 			}
 		}
 
