@@ -24,7 +24,8 @@ package topologyaware
 // and saved to the cache. The claimed CPUs leave the free supply, so the
 // policy does not hand them out again.
 // A container holding claims runs on their CPUs, and also on its own CPUs
-// if it has a CPU request.
+// if it has a CPU request. A container naming only some requests of a claim
+// runs on the CPUs of those requests.
 
 import (
 	"fmt"
@@ -38,6 +39,7 @@ import (
 	specs "tags.cncf.io/container-device-interface/specs-go"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
+	"github.com/containers/nri-plugins/pkg/resmgr/dra"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
@@ -52,10 +54,17 @@ const (
 	draAttrSocketID resourceapi.QualifiedName = "dra.cpu/socketID"
 	// draAttrSMTEnabled tells whether the CPUs have SMT enabled.
 	draAttrSMTEnabled resourceapi.QualifiedName = "dra.cpu/smtEnabled"
-	// draEnvPrefix is a prefix for environment variables listing the CPUs
-	// assigned to a container by a claim: DRA_CPUSET_<claim UID>=<cpuset>.
-	draEnvPrefix = "DRA_CPUSET_"
 )
+
+// draDriverName is the name of our DRA driver.
+var draDriverName = dra.DriverName(PolicyName)
+
+// claim is a DRA claim we allocated: a grant of all of its CPUs, and the CPUs
+// of each of its allocation results, in the order of the results.
+type claim struct {
+	Grant
+	results []cpuset.CPUSet
+}
 
 // draDevices returns one device per NUMA node. A node's capacity is its share
 // of the CPUs an exclusive grant can draw from, isolated plus sharable,
@@ -137,23 +146,27 @@ func (p *policy) AllocateClaim(
 		return nil, fmt.Errorf("claim %s: %w", uid, err)
 	}
 
-	grant, ok := p.allocations.claims[uid]
+	c, ok := p.allocations.claims[uid]
 	if !ok {
-		grant, err = p.allocateClaim(reqs)
+		c, err = p.allocateClaim(reqs)
 		if err != nil {
 			return nil, fmt.Errorf("claim %s: %w", uid, err)
 		}
-		p.allocations.claims[uid] = grant
+		p.allocations.claims[uid] = c
 		p.saveAllocations()
 		// Shared containers running on the claimed CPUs move off them.
 		p.updateSharedAllocations(nil)
 	}
 
-	if err := checkClaimCPUs(grant.ExclusiveCPUs(), reqs); err != nil {
+	if len(c.results) != len(reqs) {
+		return nil, fmt.Errorf("claim %s holds %d results but has %d", uid, len(c.results), len(reqs))
+	}
+	if err := checkClaimCPUs(c.ExclusiveCPUs(), reqs); err != nil {
 		return nil, fmt.Errorf("claim %s: %w", uid, err)
 	}
 
-	return claimEdits(claim.UID, grant.ExclusiveCPUs(), len(results)), nil
+	// Containers find their CPUs in the resources we export to them.
+	return nil, nil
 }
 
 // checkClaimCPUs verifies that the claim holds the requested number of CPUs
@@ -180,7 +193,7 @@ func checkClaimCPUs(cpus cpuset.CPUSet, reqs []draRequest) error {
 
 // ReleaseClaim releases the claim's CPUs.
 func (p *policy) ReleaseClaim(uid types.UID) error {
-	grant, ok := p.allocations.claims[string(uid)]
+	c, ok := p.allocations.claims[string(uid)]
 	if !ok {
 		return nil
 	}
@@ -188,7 +201,7 @@ func (p *policy) ReleaseClaim(uid types.UID) error {
 	// The kubelet unprepares a claim only after all of its containers have
 	// stopped, and their grants went with them, so no grant holds the
 	// claim's CPUs by now.
-	grant.Release()
+	c.Release()
 	delete(p.allocations.claims, string(uid))
 	p.saveAllocations()
 	p.updateSharedAllocations(nil)
@@ -196,26 +209,20 @@ func (p *policy) ReleaseClaim(uid types.UID) error {
 	return nil
 }
 
-// containerClaims returns the CPUs of the claims a container holds. It holds
-// a claim if its environment has the variable the claim's edits set, naming
-// the claim's CPUs. A variable naming a claim we do not hold, or other CPUs
-// than the claim's, gets the container nothing. The value is compared as a
-// cpuset, so it need not be in the form claimEdits wrote it in.
-//
-// The environment is what every runtime shows us today. It is set by the pod
-// spec too, so a container knowing a claim's UID and CPUs can run on them
-// without holding it. The CDI devices of a container name its claims and come
-// from the runtime alone, but not all maintained containerd and CRI-O releases
-// report them to NRI yet; once they do, they should replace the environment.
+// containerClaims returns the CPUs of the claims a container holds: the
+// CPUs of the allocation results it holds of each claim. A result we do not
+// know of gets the container nothing.
 func (p *policy) containerClaims(c cache.Container) cpuset.CPUSet {
 	cpus := cpuset.New()
-	for uid, claim := range p.allocations.claims {
-		v, ok := c.GetEnv(draEnvPrefix + uid)
+	for uid, indexes := range dra.ContainerClaims(c, draDriverName) {
+		claim, ok := p.allocations.claims[string(uid)]
 		if !ok {
 			continue
 		}
-		if held, err := cpuset.Parse(v); err == nil && held.Equals(claim.ExclusiveCPUs()) {
-			cpus = cpus.Union(held)
+		for _, i := range indexes {
+			if i < len(claim.results) {
+				cpus = cpus.Union(claim.results[i])
+			}
 		}
 	}
 	return cpus
@@ -277,14 +284,16 @@ func (p *policy) draNode(device string) (system.Node, bool) {
 // from what the earlier ones left, so several requests for one node get
 // disjoint CPUs. The grant is reserved from the deepest pool that has
 // all of its CPUs.
-func (p *policy) allocateClaim(reqs []draRequest) (Grant, error) {
+func (p *policy) allocateClaim(reqs []draRequest) (*claim, error) {
 	cpus := cpuset.New()
+	results := make([]cpuset.CPUSet, 0, len(reqs))
 	for _, req := range reqs {
 		picked, err := p.pickNodeCPUs(req.node, req.cpus, cpus)
 		if err != nil {
 			return nil, err
 		}
 		cpus = cpus.Union(picked)
+		results = append(results, picked)
 	}
 
 	pool := p.poolForCPUs(cpus)
@@ -292,7 +301,7 @@ func (p *policy) allocateClaim(reqs []draRequest) (Grant, error) {
 	if _, err := pool.FreeSupply().Reserve(grant, nil); err != nil {
 		return nil, err
 	}
-	return grant, nil
+	return &claim{Grant: grant, results: results}, nil
 }
 
 // pickNodeCPUs picks n free CPUs of a NUMA node. It picks by topology,
@@ -339,15 +348,4 @@ func (p *policy) poolForCPUs(cpus cpuset.CPUSet) Node {
 		}
 	}
 	return pool
-}
-
-// claimEdits returns one edit per result, each setting
-// DRA_CPUSET_<claim UID>=<cpuset> to the claim's CPUs.
-func claimEdits(uid types.UID, cpus cpuset.CPUSet, results int) []specs.ContainerEdits {
-	env := fmt.Sprintf("%s%s=%s", draEnvPrefix, uid, cpus.String())
-	edits := make([]specs.ContainerEdits, results)
-	for i := range edits {
-		edits[i].Env = []string{env}
-	}
-	return edits
 }

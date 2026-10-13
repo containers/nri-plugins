@@ -36,13 +36,6 @@ claim() {
     NAME=$1 create dra-pod
 }
 
-claimed-cpus() {
-    # Usage: claimed-cpus POD
-    #
-    # Print the CPUs the claim of POD got, as its container sees them.
-    vm-command-q "kubectl exec $1 -- env" | sed -n 's/^DRA_CPUSET_[^=]*=//p'
-}
-
 exported() {
     # Usage: exported POD VARIABLE
     #
@@ -50,6 +43,14 @@ exported() {
     # of POD.
     vm-command-q "kubectl exec $1 -- cat /.nri-resource-policy/resources.sh" |
         sed -n "s/^$2=\"\(.*\)\"$/\1/p"
+}
+
+claimed-cpus() {
+    # Usage: claimed-cpus POD
+    #
+    # Print the CPUs the claims of POD got, as the policy exports them to its
+    # container.
+    exported $1 CLAIMED_CPUS
 }
 
 node-cpus() {
@@ -145,9 +146,6 @@ cpus0=$(claimed-cpus pod0)
 verify "cpuset('$cpus0') == cpuset('$(node-cpus 3)') - cpuset('15')" \
        "cpus['pod0c0'] == cpuset('$cpus0')" \
        "node_ids(mems['pod0c0']) == {3}"
-# The container also finds its claimed CPUs among its exported resources.
-[ "$(exported pod0 CLAIMED_CPUS)" == "$cpus0" ] ||
-    error "pod0 exports CLAIMED_CPUS=$(exported pod0 CLAIMED_CPUS), expected $cpus0"
 
 # Two CPUs are the two threads of one core, and a second claim on the same
 # node gets the other core.
@@ -226,8 +224,6 @@ verify "cpuset('$cpus7') <= cpuset('$(node-cpus 2)')" \
        "node_ids(mems['pod7c0']) == {2}" \
        "cpus['pod4c0'].isdisjoint(cpuset('$cpus7'))"
 # Its exported shared CPUs are its own, apart from the claimed ones.
-[ "$(exported pod7 CLAIMED_CPUS)" == "$cpus7" ] ||
-    error "pod7 exports CLAIMED_CPUS=$(exported pod7 CLAIMED_CPUS), expected $cpus7"
 verify "cpuset('$(exported pod7 SHARED_CPUS)') == cpuset('$(node-cpus 2)') - cpuset('$cpus7')"
 
 vm-command "kubectl get deviceclasses,resourceslices,resourceclaims -o yaml" || :
