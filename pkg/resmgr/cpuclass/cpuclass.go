@@ -27,6 +27,7 @@ package cpuclass
 import (
 	"fmt"
 	"sort"
+	"sync/atomic"
 
 	policyapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy"
 	logger "github.com/containers/nri-plugins/pkg/log"
@@ -40,6 +41,18 @@ import (
 )
 
 var log = logger.NewLogger("cpuclass")
+
+// dryRun is what SetDryRun set.
+var dryRun atomic.Bool
+
+// SetDryRun makes the handlers created after it leave the hardware alone.
+// They log the CPU frequency, C-state and uncore settings instead of writing
+// them, have no uncore driver, and see SST only if OVERRIDE_SST mocks it. It
+// is for tests which run a policy on a synthetic machine. It returns the
+// previous setting.
+func SetDryRun(on bool) bool {
+	return dryRun.Swap(on)
+}
 
 // AllocationIntent describes an upcoming CPU allocation for which
 // the caller wants placement preferences.
@@ -99,20 +112,45 @@ type Handler struct {
 // and pct) ready in a "no configuration applied" state. Configure
 // must be called before the handler is usable.
 func New(sys sysfs.System) (*Handler, error) {
+	var (
+		freqHooks   cpufreq.Hooks
+		idleHooks   cpuidle.Hooks
+		uncoreHooks uncorefreq.Hooks
+		dry         = dryRun.Load()
+	)
+	if dry {
+		freqHooks = cpufreq.Hooks{
+			SetMin: func(cpu, kHz int) error { log.Infof("dry run: cpu%d min %d kHz", cpu, kHz); return nil },
+			SetMax: func(cpu, kHz int) error { log.Infof("dry run: cpu%d max %d kHz", cpu, kHz); return nil },
+			SetGov: func(cpu int, gov string) error { log.Infof("dry run: cpu%d governor %s", cpu, gov); return nil },
+		}
+		idleHooks = cpuidle.Hooks{
+			Apply: func(cpus []int, _, disabled []string) error {
+				log.Infof("dry run: cpus %v disable C-states %v", cpus, disabled)
+				return nil
+			},
+		}
+		uncoreHooks = uncorefreq.Hooks{
+			SetMin:    func(pkg, die, kHz int) error { return nil },
+			SetMax:    func(pkg, die, kHz int) error { return nil },
+			Available: func() bool { return false },
+		}
+	}
+
 	h := &Handler{
 		sys:          sys,
 		defs:         map[string]types.ClassDef{},
 		cpuClass:     map[int]string{},
 		dirtyCPUs:    map[int]bool{},
-		freqWriter:   cpufreq.NewWriter(cpufreq.Hooks{}),
-		idleWriter:   cpuidle.NewWriter(cpuidle.Hooks{}),
-		uncoreWriter: uncorefreq.NewWriter(uncorefreq.Hooks{}),
+		freqWriter:   cpufreq.NewWriter(freqHooks),
+		idleWriter:   cpuidle.NewWriter(idleHooks),
+		uncoreWriter: uncorefreq.NewWriter(uncoreHooks),
 	}
 	freq, err := cpufreq.New(sys, h)
 	if err != nil {
 		return nil, fmt.Errorf("cpuclass: failed to create cpufreq allocator: %w", err)
 	}
-	pctA, err := pct.NewAllocator(sys)
+	pctA, err := pct.NewAllocator(sys, dry)
 	if err != nil {
 		return nil, fmt.Errorf("cpuclass: failed to create pct allocator: %w", err)
 	}
