@@ -233,6 +233,8 @@ type Container interface {
 	GetAnnotation(key string, objPtr any) (string, bool)
 	// GetEnv returns the value of a container environment variable.
 	GetEnv(string) (string, bool)
+	// GetEnvList returns the environment of the container, as KEY=VALUE strings.
+	GetEnvList() []string
 	// GetMounts returns all the mounts of the container.
 	GetMounts() []*Mount
 	// GetDevices returns all the linux devices of the container.

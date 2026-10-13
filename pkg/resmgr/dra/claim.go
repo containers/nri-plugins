@@ -21,6 +21,8 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
+
+	specs "tags.cncf.io/container-device-interface/specs-go"
 )
 
 // PrepareResourceClaims prepares the given claims: the policy allocates the
@@ -119,6 +121,11 @@ func (p *Plugin) prepareClaim(claim *resourceapi.ResourceClaim) ([]kubeletplugin
 	edits, err := p.policy.AllocateClaim(claim, results)
 	if err != nil {
 		return nil, fmt.Errorf("dra: policy failed to allocate claim %s: %w", claim.UID, err)
+	}
+	// A policy with nothing to add for the containers returns no edits. Every
+	// device still gets one edit: the variable set to its own name.
+	if len(edits) == 0 {
+		edits = make([]specs.ContainerEdits, len(results))
 	}
 	if len(edits) != len(results) {
 		p.undoClaim(claim.UID, rollback)
