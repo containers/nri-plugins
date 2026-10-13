@@ -73,12 +73,12 @@ func (p *policy) restoreAllocations(allocations *allocations) error {
 }
 
 // reinstateClaims restores the given claim grants.
-func (p *policy) reinstateClaims(claims map[string]Grant) error {
-	for uid, grant := range claims {
-		if _, err := grant.GetCPUNode().FreeSupply().Reserve(grant, nil); err != nil {
+func (p *policy) reinstateClaims(claims map[string]*claim) error {
+	for uid, c := range claims {
+		if _, err := c.GetCPUNode().FreeSupply().Reserve(c.Grant, nil); err != nil {
 			return policyError("failed to reinstate DRA claim %s: %w", uid, err)
 		}
-		p.allocations.claims[uid] = grant
+		p.allocations.claims[uid] = c
 	}
 	return nil
 }
@@ -171,6 +171,8 @@ type cachedGrant struct {
 	MemSize    int64
 	ColdStart  time.Duration
 	Irqs       *IrqAffinity
+	// Results are the CPUs of each allocation result of a DRA claim.
+	Results []string `json:",omitempty"`
 }
 
 func newCachedGrant(cg Grant) *cachedGrant {
@@ -246,8 +248,12 @@ func (a *allocations) MarshalJSON() ([]byte, error) {
 	for id, cg := range a.grants {
 		cgrants[id] = newCachedGrant(cg)
 	}
-	for uid, cg := range a.claims {
-		cgrants[keyClaimPrefix+uid] = newCachedGrant(cg)
+	for uid, c := range a.claims {
+		ccg := newCachedGrant(c.Grant)
+		for _, cpus := range c.results {
+			ccg.Results = append(ccg.Results, cpus.String())
+		}
+		cgrants[keyClaimPrefix+uid] = ccg
 	}
 
 	return json.Marshal(cgrants)
@@ -260,7 +266,7 @@ func (a *allocations) UnmarshalJSON(data []byte) error {
 	}
 
 	a.grants = make(map[string]Grant, 32)
-	a.claims = make(map[string]Grant)
+	a.claims = make(map[string]*claim)
 	for id, ccg := range cgrants {
 		g, err := ccg.ToGrant(a.policy)
 		if err != nil {
@@ -268,11 +274,22 @@ func (a *allocations) UnmarshalJSON(data []byte) error {
 			continue
 		}
 		log.Debugf("resolved cache grant: %v", g.String())
-		if uid, ok := strings.CutPrefix(id, keyClaimPrefix); ok {
-			a.claims[uid] = g
-		} else {
+		uid, ok := strings.CutPrefix(id, keyClaimPrefix)
+		if !ok {
 			a.grants[id] = g
+			continue
 		}
+		c := &claim{Grant: g}
+		for _, value := range ccg.Results {
+			cpus, err := cpuset.Parse(value)
+			if err != nil {
+				log.Errorf("failed to restore the results of DRA claim %s: %v", uid, err)
+				c.results = nil
+				break
+			}
+			c.results = append(c.results, cpus)
+		}
+		a.claims[uid] = c
 	}
 
 	return nil
@@ -294,7 +311,7 @@ func (a *allocations) Set(value any) {
 
 	a.grants = make(map[string]Grant, 32)
 	maps.Copy(a.grants, from.grants)
-	a.claims = make(map[string]Grant)
+	a.claims = make(map[string]*claim)
 	maps.Copy(a.claims, from.claims)
 }
 

@@ -17,7 +17,6 @@ package topologyaware
 import (
 	"fmt"
 	"reflect"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -38,7 +37,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/dynamic-resource-allocation/deviceattribute"
 	"k8s.io/utils/ptr"
-	specs "tags.cncf.io/container-device-interface/specs-go"
 )
 
 // draTestOwner keeps published DRA devices.
@@ -329,11 +327,11 @@ func freeCPUs(p *policy) cpuset.CPUSet {
 // pinnedContainer keeps the cpuset and CPU shares the policy set last.
 type pinnedContainer struct {
 	mockContainer
-	env    map[string]string
-	hints  topology.Hints
-	strict bool
-	cpus   string
-	shares int64
+	devices []string
+	hints   topology.Hints
+	strict  bool
+	cpus    string
+	shares  int64
 }
 
 func (c *pinnedContainer) GetTopologyHints() topology.Hints {
@@ -352,9 +350,18 @@ func (c *pinnedContainer) SetCPUShares(shares int64) {
 	c.shares = shares
 }
 
-func (c *pinnedContainer) GetEnv(key string) (string, bool) {
-	v, ok := c.env[key]
-	return v, ok
+func (c *pinnedContainer) GetCDIDevices() []string {
+	return c.devices
+}
+
+// holds returns the names of the CDI devices our DRA driver writes for the
+// given results of claim uid.
+func holds(uid string, indexes ...int) []string {
+	devices := []string{}
+	for _, i := range indexes {
+		devices = append(devices, fmt.Sprintf("%s/device=claim-%s-%d", draDriverName, uid, i))
+	}
+	return devices
 }
 
 // allocateShared gives a container a shared grant of cpu, in pool if one is
@@ -377,41 +384,18 @@ func allocateShared(t *testing.T, p *policy, id, cpu, pool string) *pinnedContai
 	return c
 }
 
-// allocateClaim allocates a claim, failing the test on error.
+// allocateClaim allocates a claim, failing the test on error, and returns its
+// CPUs.
 func allocateClaim(t *testing.T, p *policy, uid string, results ...resourceapi.DeviceRequestAllocationResult) cpuset.CPUSet {
 	t.Helper()
 	edits, err := p.AllocateClaim(draTestClaim(uid), results)
 	if err != nil {
 		t.Fatalf("failed to allocate claim %s: %v", uid, err)
 	}
-	return claimedCPUs(t, uid, edits, len(results))
-}
-
-// claimedCPUs gets the claimed cpuset out of the edits.
-func claimedCPUs(t *testing.T, uid string, edits []specs.ContainerEdits, results int) cpuset.CPUSet {
-	t.Helper()
-	if len(edits) != results {
-		t.Fatalf("claim %s: got %d edits for %d results", uid, len(edits), results)
+	if edits != nil {
+		t.Fatalf("claim %s got edits %v, expected none", uid, edits)
 	}
-
-	prefix := draEnvPrefix + uid + "="
-	value := ""
-	for i, edit := range edits {
-		if len(edit.Env) != 1 || !strings.HasPrefix(edit.Env[0], prefix) {
-			t.Fatalf("claim %s: edit %d is %v, expected one %s<cpuset> variable", uid, i, edit.Env, prefix)
-		}
-		if v := edit.Env[0][len(prefix):]; value == "" {
-			value = v
-		} else if v != value {
-			t.Fatalf("claim %s: edit %d sets %q, edit 0 set %q", uid, i, v, value)
-		}
-	}
-
-	cpus, err := cpuset.Parse(value)
-	if err != nil {
-		t.Fatalf("claim %s: edits set cpuset %q: %v", uid, value, err)
-	}
-	return cpus
+	return p.allocations.claims[uid].ExclusiveCPUs()
 }
 
 func TestAllocateClaim(t *testing.T) {
@@ -497,7 +481,30 @@ func TestAllocateClaim(t *testing.T) {
 				t.Fatalf("failed to allocate claim: %v", err)
 			}
 
-			cpus := claimedCPUs(t, "a", edits, len(tc.results))
+			if edits != nil {
+				t.Errorf("claim got edits %v, expected none", edits)
+			}
+			claim := p.allocations.claims["a"]
+			cpus := claim.ExclusiveCPUs()
+			// Every result has CPUs of its own, as many as it consumed, all
+			// on the node of its device.
+			if len(claim.results) != len(tc.results) {
+				t.Fatalf("claim has %d results, expected %d", len(claim.results), len(tc.results))
+			}
+			all := cpuset.New()
+			for i, r := range tc.results {
+				node, _ := p.draNode(r.Device)
+				q := r.ConsumedCapacity[draCapacityCPU]
+				if got := claim.results[i]; got.Size() != int(q.Value()) || !got.IsSubsetOf(node.CPUSet()) ||
+					!got.Intersection(all).IsEmpty() {
+					t.Errorf("result %d got CPUs %s, expected %d of node %d, none of %s",
+						i, got, q.Value(), node.ID(), all)
+				}
+				all = all.Union(claim.results[i])
+			}
+			if !all.Equals(cpus) {
+				t.Errorf("results have CPUs %s, the claim %s", all, cpus)
+			}
 			for _, id := range sys.NodeIDs() {
 				want := 0
 				for _, r := range tc.results {
@@ -703,27 +710,23 @@ func TestPinClaimedCPUs(t *testing.T) {
 		namespace string
 		qos       v1.PodQOSClass
 		cpu       string
-		env       func(a, b cpuset.CPUSet) map[string]string
+		devices   []string
 		claims    []string
 		exclusive int
 		portion   int  // shared or reserved milli-CPU the container gets
 		reserved  bool // the container gets reserved CPUs
 	}{
 		{
-			name: "besteffort",
-			qos:  v1.PodQOSBestEffort,
-			env: func(a, _ cpuset.CPUSet) map[string]string {
-				return map[string]string{draEnvPrefix + "a": a.String()}
-			},
-			claims: []string{"a"},
+			name:    "besteffort",
+			qos:     v1.PodQOSBestEffort,
+			devices: holds("a", 0),
+			claims:  []string{"a"},
 		},
 		{
-			name: "shared",
-			qos:  v1.PodQOSBurstable,
-			cpu:  "100m",
-			env: func(a, _ cpuset.CPUSet) map[string]string {
-				return map[string]string{draEnvPrefix + "a": a.String()}
-			},
+			name:    "shared",
+			qos:     v1.PodQOSBurstable,
+			cpu:     "100m",
+			devices: holds("a", 0),
 			claims:  []string{"a"},
 			portion: 100,
 		},
@@ -732,12 +735,10 @@ func TestPinClaimedCPUs(t *testing.T) {
 			namespace: "kube-system",
 			qos:       v1.PodQOSBurstable,
 			cpu:       "100m",
-			env: func(a, _ cpuset.CPUSet) map[string]string {
-				return map[string]string{draEnvPrefix + "a": a.String()}
-			},
-			claims:   []string{"a"},
-			portion:  100,
-			reserved: true,
+			devices:   holds("a", 0),
+			claims:    []string{"a"},
+			portion:   100,
+			reserved:  true,
 		},
 		{
 			// A reserved container with no CPU request runs on its claims
@@ -745,74 +746,48 @@ func TestPinClaimedCPUs(t *testing.T) {
 			name:      "reserved, no request",
 			namespace: "kube-system",
 			qos:       v1.PodQOSBestEffort,
-			env: func(a, _ cpuset.CPUSet) map[string]string {
-				return map[string]string{draEnvPrefix + "a": a.String()}
-			},
-			claims:   []string{"a"},
-			reserved: true,
+			devices:   holds("a", 0),
+			claims:    []string{"a"},
+			reserved:  true,
 		},
 		{
 			// 1500m gives one exclusive CPU and a 500m shared portion.
-			name: "exclusive and shared",
-			qos:  v1.PodQOSGuaranteed,
-			cpu:  "1500m",
-			env: func(a, _ cpuset.CPUSet) map[string]string {
-				return map[string]string{draEnvPrefix + "a": a.String()}
-			},
+			name:      "exclusive and shared",
+			qos:       v1.PodQOSGuaranteed,
+			cpu:       "1500m",
+			devices:   holds("a", 0),
 			claims:    []string{"a"},
 			exclusive: 1,
 			portion:   500,
 		},
 		{
-			name: "exclusive",
-			qos:  v1.PodQOSGuaranteed,
-			cpu:  "2",
-			env: func(a, _ cpuset.CPUSet) map[string]string {
-				return map[string]string{draEnvPrefix + "a": a.String()}
-			},
+			name:      "exclusive",
+			qos:       v1.PodQOSGuaranteed,
+			cpu:       "2",
+			devices:   holds("a", 0),
 			claims:    []string{"a"},
 			exclusive: 2,
 		},
 		{
-			name: "two claims",
-			qos:  v1.PodQOSBurstable,
-			cpu:  "100m",
-			env: func(a, b cpuset.CPUSet) map[string]string {
-				return map[string]string{draEnvPrefix + "a": a.String(), draEnvPrefix + "b": b.String()}
-			},
+			name:    "two claims",
+			qos:     v1.PodQOSBurstable,
+			cpu:     "100m",
+			devices: append(holds("a", 0), holds("b", 0)...),
 			claims:  []string{"a", "b"},
 			portion: 100,
 		},
 		{
-			// The same CPUs in another form, listed one by one in reverse.
-			name: "same CPUs, other form",
-			qos:  v1.PodQOSBurstable,
-			cpu:  "100m",
-			env: func(a, _ cpuset.CPUSet) map[string]string {
-				cpus := []string{}
-				for _, cpu := range slices.Backward(a.List()) {
-					cpus = append(cpus, fmt.Sprint(cpu))
-				}
-				return map[string]string{draEnvPrefix + "a": strings.Join(cpus, ",")}
-			},
-			claims:  []string{"a"},
-			portion: 100,
+			// Claim a has a single result.
+			name:    "unknown result",
+			qos:     v1.PodQOSBurstable,
+			cpu:     "100m",
+			devices: holds("a", 1),
 		},
 		{
-			name: "other CPUs",
-			qos:  v1.PodQOSBurstable,
-			cpu:  "100m",
-			env: func(_, b cpuset.CPUSet) map[string]string {
-				return map[string]string{draEnvPrefix + "a": b.String()}
-			},
-		},
-		{
-			name: "unknown claim",
-			qos:  v1.PodQOSBurstable,
-			cpu:  "100m",
-			env: func(a, _ cpuset.CPUSet) map[string]string {
-				return map[string]string{draEnvPrefix + "x": a.String()}
-			},
+			name:    "unknown claim",
+			qos:     v1.PodQOSBurstable,
+			cpu:     "100m",
+			devices: holds("x", 0),
 		},
 	}
 
@@ -831,7 +806,7 @@ func TestPinClaimedCPUs(t *testing.T) {
 					returnValueForGetID:    tc.name,
 					returnValueForQOSClass: tc.qos,
 				},
-				env: tc.env(a, b),
+				devices: tc.devices,
 			}
 			if tc.cpu != "" {
 				c.returnValueForGetResourceRequirements = v1.ResourceRequirements{
@@ -925,11 +900,11 @@ func TestExportClaimedCPUs(t *testing.T) {
 		name    string
 		qos     v1.PodQOSClass
 		cpu     string
-		env     map[string]string
+		devices []string
 		claimed cpuset.CPUSet
 	}{
-		{"besteffort", v1.PodQOSBestEffort, "", map[string]string{draEnvPrefix + "a": a.String()}, a},
-		{"exclusive", v1.PodQOSGuaranteed, "2", map[string]string{draEnvPrefix + "a": a.String()}, a},
+		{"besteffort", v1.PodQOSBestEffort, "", holds("a", 0), a},
+		{"exclusive", v1.PodQOSGuaranteed, "2", holds("a", 0), a},
 		{"no claim", v1.PodQOSBurstable, "100m", nil, cpuset.New()},
 	}
 
@@ -941,7 +916,7 @@ func TestExportClaimedCPUs(t *testing.T) {
 					returnValueForGetID:    tc.name,
 					returnValueForQOSClass: tc.qos,
 				},
-				env: tc.env,
+				devices: tc.devices,
 			}
 			if tc.cpu != "" {
 				c.returnValueForGetResourceRequirements = v1.ResourceRequirements{
@@ -972,6 +947,75 @@ func TestExportClaimedCPUs(t *testing.T) {
 	}
 }
 
+// A container naming some requests of a claim runs only on the CPUs of those
+// requests, and the policy exports these CPUs to it as its claimed CPUs.
+func TestPinClaimRequests(t *testing.T) {
+	sys := testServerSystem(t)
+	cfg := draTestConfig("", draTestReserved(sys))
+	cfg.PinCPU = true
+	p, _ := draTestPolicy(t, sys, cfg)
+
+	allocateClaim(t, p, "a", draTestResult(0, "2"), draTestResult(1, "2"))
+	results := p.allocations.claims["a"].results
+
+	for _, tc := range []struct {
+		name    string
+		devices []string
+		expect  cpuset.CPUSet
+	}{
+		{"first request", holds("a", 0), results[0]},
+		{"second request", holds("a", 1), results[1]},
+		{"both requests", holds("a", 0, 1), results[0].Union(results[1])},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &pinnedContainer{
+				mockContainer: mockContainer{
+					name:                   tc.name,
+					returnValueForGetID:    tc.name,
+					returnValueForQOSClass: v1.PodQOSBestEffort,
+				},
+				devices: tc.devices,
+			}
+			grant, err := p.allocatePool(c, "")
+			if err != nil {
+				t.Fatalf("failed to allocate: %v", err)
+			}
+			p.applyGrant(grant)
+			p.allocations.addGrant(grant)
+			defer p.releasePool(c)
+
+			if pinned := cpuset.MustParse(c.cpus); !pinned.Equals(tc.expect) {
+				t.Errorf("pinned to %s, expected %s", pinned, tc.expect)
+			}
+			if got := p.ExportResourceData(c)[policyapi.ExportClaimedCPUs]; got != tc.expect.String() {
+				t.Errorf("exported claimed CPUs %q, expected %q", got, tc.expect)
+			}
+		})
+	}
+}
+
+// The CPUs of each result of a claim are saved and restored with the claim.
+func TestClaimResultsSurviveRestore(t *testing.T) {
+	sys := testServerSystem(t)
+	p, _ := draTestPolicy(t, sys, draTestConfig("", draTestReserved(sys)))
+
+	allocateClaim(t, p, "a", draTestResult(0, "2"), draTestResult(1, "3"))
+
+	data, err := p.allocations.MarshalJSON()
+	if err != nil {
+		t.Fatalf("failed to save allocations: %v", err)
+	}
+	restored := p.newAllocations()
+	if err := restored.UnmarshalJSON(data); err != nil {
+		t.Fatalf("failed to restore allocations: %v", err)
+	}
+
+	want, got := p.allocations.claims["a"].results, restored.claims["a"].results
+	if len(got) != len(want) || !got[0].Equals(want[0]) || !got[1].Equals(want[1]) {
+		t.Errorf("restored results %v, expected %v", got, want)
+	}
+}
+
 // A besteffort container holding a claim does not run on shared CPUs, so it
 // holds back no shared capacity of its pool: the rest of its node can still
 // be claimed.
@@ -981,14 +1025,14 @@ func TestClaimingContainerSparesSharedCPUs(t *testing.T) {
 	cfg.PinCPU = true
 	p, _ := draTestPolicy(t, sys, cfg)
 
-	a := allocateClaim(t, p, "a", draTestResult(0, "2"))
+	allocateClaim(t, p, "a", draTestResult(0, "2"))
 	c := &pinnedContainer{
 		mockContainer: mockContainer{
 			name:                   "claimer",
 			returnValueForGetID:    "claimer",
 			returnValueForQOSClass: v1.PodQOSBestEffort,
 		},
-		env: map[string]string{draEnvPrefix + "a": a.String()},
+		devices: holds("a", 0),
 	}
 	grant, err := p.allocatePool(c, "")
 	if err != nil {
@@ -1029,9 +1073,9 @@ func TestClaimStrictTopologyHint(t *testing.T) {
 					returnValueForGetID:    "claimer",
 					returnValueForQOSClass: v1.PodQOSBestEffort,
 				},
-				env:    map[string]string{draEnvPrefix + "a": a.String()},
-				hints:  topology.Hints{"test": {CPUs: hinted.String()}},
-				strict: true,
+				devices: holds("a", 0),
+				hints:   topology.Hints{"test": {CPUs: hinted.String()}},
+				strict:  true,
 			}
 
 			grant, err := p.allocatePool(c, "")
@@ -1059,7 +1103,7 @@ func TestReconfigureKeepsClaimer(t *testing.T) {
 			returnValueForGetID:    "claimer",
 			returnValueForQOSClass: v1.PodQOSBestEffort,
 		},
-		env: map[string]string{draEnvPrefix + "a": a.String()},
+		devices: holds("a", 0),
 	}
 	grant, err := p.allocatePool(c, "")
 	if err != nil {
