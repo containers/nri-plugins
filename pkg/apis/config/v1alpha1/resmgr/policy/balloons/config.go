@@ -67,7 +67,7 @@ const (
 	SchedulingPolicyIdle       = policy.SchedulingPolicyIdle
 	SchedulingPolicyDeadline   = policy.SchedulingPolicyDeadline
 	SchedulingFlagResetOnFork  = policy.SchedulingFlagResetOnFork
-	SchedulingFlagReclaimable  = policy.SchedulingFlagReclaimable
+	SchedulingFlagReclaim      = policy.SchedulingFlagReclaim
 	SchedulingFlagDlOverrun    = policy.SchedulingFlagDlOverrun
 	SchedulingFlagKeepPolicy   = policy.SchedulingFlagKeepPolicy
 	SchedulingFlagKeepParams   = policy.SchedulingFlagKeepParams

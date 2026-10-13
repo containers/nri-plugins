@@ -32,7 +32,6 @@ type SchedulingClass struct {
 	Priority *int `json:"priority,omitempty"`
 	// Flags is a list of Linux scheduling flags to set.
 	// SCHED_FLAG_<ORIG_NAME> translates to <orig-name> etc.
-	// +kubebuilder:validation:Enum=reset-on-fork;reclaim;dl-overrun;keep-policy;keep-params;util-clamp-min;util-clamp-max
 	Flags SchedulingFlags `json:"flags,omitempty"`
 	// Nice is the Linux nice value to use.
 	Nice *int `json:"nice,omitempty"`
