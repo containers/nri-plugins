@@ -322,6 +322,9 @@ type Container interface {
 	SetSchedulingIOClass(nri.IOPrioClass)
 	// SetSchedulingIOPriority sets the I/O priority for the container.
 	SetSchedulingIOPriority(int32)
+	// SetMemoryPolicy sets the memory policy for the container. Like the
+	// scheduling parameters, it can only be set when the container is created.
+	SetMemoryPolicy(mode nri.MpolMode, nodes string, flags ...nri.MpolFlag)
 
 	// GetCPUShares gets the CFS CPU shares of the container.
 	GetCPUShares() int64
