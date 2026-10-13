@@ -365,6 +365,21 @@ func e2eConfig(options ...func(*cfgapi.Config)) *cfgapi.Config {
 
 func e2eFalse() *bool { v := false; return &v }
 
+// e2eCustomConfig is the configuration of a test-specific e2e helm config
+// which only sets pinning on and the reserved CPUs, with the CRD defaults
+// applied.
+func e2eCustomConfig(reserved cfgapi.Amount) *cfgapi.Config {
+	preferIsolated := true
+	return &cfgapi.Config{
+		ReservedResources:  cfgapi.Constraints{cfgapi.CPU: reserved},
+		PinCPU:             true,
+		PinMemory:          true,
+		PreferIsolated:     &preferIsolated,
+		DefaultCPUPriority: cfgapi.PriorityNone,
+		UnlimitedBurstable: cfgapi.CPUTopologyLevelPackage,
+	}
+}
+
 // e2eish is one e2e test run: a machine, and the policy and cache of the
 // currently launched policy.
 type e2eish struct {
