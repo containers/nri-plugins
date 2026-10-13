@@ -105,6 +105,9 @@ const (
 	ExportIsolatedCPUs = "ISOLATED_CPUS"
 	// ExportExclusiveCPUs is the shell variable used to export exclusive container CPUs.
 	ExportExclusiveCPUs = "EXCLUSIVE_CPUS"
+	// ExportClaimedCPUs is the shell variable used to export the CPUs of the DRA
+	// claims of a container.
+	ExportClaimedCPUs = "CLAIMED_CPUS"
 )
 
 // Backend is the policy (decision making logic) interface exposed by implementations.
