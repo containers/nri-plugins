@@ -46,10 +46,10 @@ const (
 
 // allocations is our cache.Cachable for saving resource allocations in the cache.
 type allocations struct {
-	policy *policy          // policy back pointer
-	grants map[string]Grant // container grants by container ID
-	claims map[string]Grant // DRA claim grants by claim UID
-	irqCnt int              // number of grant additions/deletions with IRQ affinity
+	policy *policy           // policy back pointer
+	grants map[string]Grant  // container grants by container ID
+	claims map[string]*claim // DRA claims by claim UID
+	irqCnt int               // number of grant additions/deletions with IRQ affinity
 }
 
 // policy is our runtime state for this policy.
@@ -750,7 +750,7 @@ func (p *policy) checkColdstartOff() {
 
 // newAllocations returns a new initialized empty set of allocations.
 func (p *policy) newAllocations() allocations {
-	return allocations{policy: p, grants: make(map[string]Grant), claims: make(map[string]Grant)}
+	return allocations{policy: p, grants: make(map[string]Grant), claims: make(map[string]*claim)}
 }
 
 // clone creates a copy of the allocation.
@@ -760,15 +760,19 @@ func (a *allocations) clone() allocations {
 	for id, grant := range a.grants {
 		o.grants[id] = grant.Clone()
 	}
-	for uid, grant := range a.claims {
-		o.claims[uid] = grant.Clone()
+	for uid, c := range a.claims {
+		o.claims[uid] = &claim{Grant: c.Clone(), results: slices.Clone(c.results)}
 	}
 	return o
 }
 
 // all returns the container grants and the claim grants.
 func (a *allocations) all() []Grant {
-	return slices.Concat(slices.Collect(maps.Values(a.grants)), slices.Collect(maps.Values(a.claims)))
+	grants := slices.Collect(maps.Values(a.grants))
+	for _, c := range a.claims {
+		grants = append(grants, c.Grant)
+	}
+	return grants
 }
 
 func (a *allocations) addGrant(g Grant) {
