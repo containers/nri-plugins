@@ -188,6 +188,8 @@
               - grubby
               - cloud-utils-growpart
               - btrfs-progs
+              # chrt, which the tests use to read scheduling flags back.
+              - util-linux-core
             state: present
             update_cache: true
         - name: Extra python3 rpm packages for ansible

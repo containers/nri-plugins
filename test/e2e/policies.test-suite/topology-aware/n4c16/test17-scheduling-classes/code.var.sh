@@ -8,7 +8,9 @@ SCHEDULING_CLASSES="[
     { name: highprio, policy: fifo,  priority: 10 },
     { name: default,  policy: other, nice:  0 },
     { name: lowprio,  policy: other, nice: 10 },
-    { name: idle,     policy: idle,  nice: 17, ioClass: be, ioPriority: 6 }]"
+    { name: idle,     policy: idle,  nice: 17, ioClass: be, ioPriority: 6 },
+    { name: deadline, policy: deadline, runtime: 1000, deadline: 100000, period: 100000 },
+    { name: onfork,   policy: other, nice:  5, flags: [ reset-on-fork ] }]"
 NAMESPACE_SCHEDULING_CLASSES="{ highprio: highprio, lowprio: lowprio }"
 PODQOS_SCHEDULING_CLASSES="{ BestEffort: lowprio, Burstable: default, Guaranteed: highprio }"
 
@@ -140,5 +142,40 @@ expected_policy=$SCHED_FIFO expected_prio=$((99 - 42)) verify-sched pod8c0
 
 verify 'len(cpus["pod8c1"]) != 1'
 expected_policy=$SCHED_FIFO expected_prio=$((99 - 10)) verify-sched pod8c1
+
+#
+# Tests for the rest of scheduling class fields.
+#
+
+# Deadline scheduling parameters. Checks that the policy passes the three
+# parameters of the class on.
+ANN0="scheduling-class.resource-policy.nri.io/container.pod9c0: deadline" \
+    wait="" CONTCOUNT=1 create besteffort
+
+plugin_log_filter='scheduling (policy|runtime|deadline|period)'
+wait-assert-log-contains 'scheduling runtime 1000' \
+    "the policy ignored the runtime of the scheduling class" 30
+wait-assert-log-contains 'scheduling deadline 100000' \
+    "the policy ignored the deadline of the scheduling class" 30
+wait-assert-log-contains 'scheduling period 100000' \
+    "the policy ignored the period of the scheduling class" 30
+
+# Scheduling flags. Check that enumerated flags work in the config CR.
+# reset-on-fork is the only flag which can be verified here, so we use
+# that as our canary.
+ANN0="scheduling-class.resource-policy.nri.io/container.pod10c0: onfork" \
+    CONTCOUNT=1 create besteffort
+
+plugin_log_filter='scheduling flags'
+wait-assert-log-contains 'scheduling flags \["reset-on-fork"\]' \
+    "the policy ignored the flags of the scheduling class" 30
+
+expected_policy=$SCHED_OTHER expected_prio=$((120 + 5)) verify-sched pod10c0
+
+# /proc/PID/sched does not expose the flag, so we use chrt for validation.
+vm-command "chrt -p \$(pgrep -f 'echo pod10c0')" ||
+    command-error "cannot get the scheduling policy of pod10c0 with chrt"
+grep -q 'SCHED_OTHER|SCHED_RESET_ON_FORK' <<< "$COMMAND_OUTPUT" ||
+    error "the reset-on-fork flag of scheduling class onfork was not set on pod10c0"
 
 cleanup
