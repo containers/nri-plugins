@@ -915,6 +915,63 @@ func TestPinClaimedCPUs(t *testing.T) {
 	}
 }
 
+// A container exports the CPUs of its claims apart from its own CPUs.
+func TestExportClaimedCPUs(t *testing.T) {
+	sys := testServerSystem(t)
+	p, _ := draTestPolicy(t, sys, draTestConfig("", draTestReserved(sys)))
+	a := allocateClaim(t, p, "a", draTestResult(0, "2"))
+
+	tcs := []struct {
+		name    string
+		qos     v1.PodQOSClass
+		cpu     string
+		env     map[string]string
+		claimed cpuset.CPUSet
+	}{
+		{"besteffort", v1.PodQOSBestEffort, "", map[string]string{draEnvPrefix + "a": a.String()}, a},
+		{"exclusive", v1.PodQOSGuaranteed, "2", map[string]string{draEnvPrefix + "a": a.String()}, a},
+		{"no claim", v1.PodQOSBurstable, "100m", nil, cpuset.New()},
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &pinnedContainer{
+				mockContainer: mockContainer{
+					name:                   tc.name,
+					returnValueForGetID:    tc.name,
+					returnValueForQOSClass: tc.qos,
+				},
+				env: tc.env,
+			}
+			if tc.cpu != "" {
+				c.returnValueForGetResourceRequirements = v1.ResourceRequirements{
+					Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse(tc.cpu)},
+					Limits:   v1.ResourceList{v1.ResourceCPU: resource.MustParse(tc.cpu)},
+				}
+			}
+			grant, err := p.allocatePool(c, "")
+			if err != nil {
+				t.Fatalf("failed to allocate: %v", err)
+			}
+			p.allocations.addGrant(grant)
+
+			data := p.ExportResourceData(c)
+			got, ok := data[policyapi.ExportClaimedCPUs]
+			switch {
+			case tc.claimed.IsEmpty() && ok:
+				t.Errorf("exported %s=%q, expected none", policyapi.ExportClaimedCPUs, got)
+			case !tc.claimed.IsEmpty() && got != tc.claimed.String():
+				t.Errorf("exported %s=%q, expected %q", policyapi.ExportClaimedCPUs, got, tc.claimed)
+			}
+			for _, key := range []string{policyapi.ExportSharedCPUs, policyapi.ExportIsolatedCPUs, policyapi.ExportExclusiveCPUs} {
+				if own, ok := data[key]; ok && !cpuset.MustParse(own).Intersection(tc.claimed).IsEmpty() {
+					t.Errorf("exported %s=%q, which has claimed CPUs %s", key, own, tc.claimed)
+				}
+			}
+		})
+	}
+}
+
 // A besteffort container holding a claim does not run on shared CPUs, so it
 // holds back no shared capacity of its pool: the rest of its node can still
 // be claimed.

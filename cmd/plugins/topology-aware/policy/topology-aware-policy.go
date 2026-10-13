@@ -459,6 +459,9 @@ func (p *policy) ExportResourceData(c cache.Container) map[string]string {
 	if exclusive != "" {
 		data[policyapi.ExportExclusiveCPUs] = exclusive
 	}
+	if claimed := grant.ClaimedCPUs(); !claimed.IsEmpty() {
+		data[policyapi.ExportClaimedCPUs] = claimed.String()
+	}
 
 	mems := grant.GetMemoryZone()
 	dram := mems.And(p.memAllocator.Masks().NodesByTypes(libmem.TypeMaskDRAM))
