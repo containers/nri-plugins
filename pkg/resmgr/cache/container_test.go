@@ -524,6 +524,48 @@ var _ = Describe("Container", func() {
 		value := pending.GetLinux().GetResources().GetMemory().GetLimit().GetValue()
 		Expect(value).To(Equal(limit))
 	})
+
+	It("properly records memory policy adjustment", func() {
+		var (
+			nriPods = []*nri.PodSandbox{
+				makePod(),
+			}
+			nriCtrs = []*nri.Container{
+				makeCtr(WithCtrPodID(nriPods[0].GetId())),
+			}
+		)
+
+		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
+
+		ctrs[0].SetMemoryPolicy(nri.MpolMode_MPOL_INTERLEAVE, "0-1", nri.MpolFlag_MPOL_F_STATIC_NODES)
+
+		pending := ctrs[0].GetPendingAdjustment()
+		Expect(pending).ToNot(BeNil())
+		mpol := pending.GetLinux().GetMemoryPolicy()
+		Expect(mpol.GetMode()).To(Equal(nri.MpolMode_MPOL_INTERLEAVE))
+		Expect(mpol.GetNodes()).To(Equal("0-1"))
+		Expect(mpol.GetFlags()).To(Equal([]nri.MpolFlag{nri.MpolFlag_MPOL_F_STATIC_NODES}))
+	})
+
+	It("refuses to set the memory policy of a running container", func() {
+		var (
+			nriPods = []*nri.PodSandbox{
+				makePod(),
+			}
+			nriCtrs = []*nri.Container{
+				makeCtr(
+					WithCtrPodID(nriPods[0].GetId()),
+					WithCtrState(cache.ContainerStateRunning),
+				),
+			}
+		)
+
+		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
+
+		ctrs[0].SetMemoryPolicy(nri.MpolMode_MPOL_INTERLEAVE, "0-1")
+
+		Expect(ctrs[0].GetPending()).To(BeEmpty())
+	})
 })
 
 var _ = Describe("Container", func() {

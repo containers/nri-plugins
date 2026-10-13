@@ -982,6 +982,17 @@ func (c *container) SetSchedulingIOPriority(value int32) {
 	})
 }
 
+func (c *container) SetMemoryPolicy(mode nri.MpolMode, nodes string, flags ...nri.MpolFlag) {
+	req, ok := c.getPendingRequest().(*nri.ContainerAdjustment)
+	if !ok {
+		log.Errorf("%s: can't set memory policy: incorrect pending request type %T",
+			c.PrettyName(), c.request)
+		return
+	}
+	req.SetLinuxMemoryPolicy(mode, nodes, flags...)
+	c.markPending(NRI)
+}
+
 func (c *container) GetCPUShares() int64 {
 	return int64(c.Ctr.GetLinux().GetResources().GetCpu().GetShares().GetValue())
 }

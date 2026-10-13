@@ -199,6 +199,9 @@ func (m *mockContainer) SetSchedulingPeriod(uint64) {
 func (m *mockContainer) SetSchedulingIOClass(nri.IOPrioClass) {
 	panic("unimplemented")
 }
+func (m *mockContainer) SetMemoryPolicy(nri.MpolMode, string, ...nri.MpolFlag) {
+	panic("unimplemented")
+}
 func (m *mockContainer) SetSchedulingIOPriority(int32) {
 	panic("unimplemented")
 }
