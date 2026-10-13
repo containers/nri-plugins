@@ -133,10 +133,14 @@ type sst interface {
 }
 
 // newSst returns an SST implementation: the in-memory mock when
-// OVERRIDE_SST is set, otherwise the goresctrl-backed one.
-func newSst() (sst, error) {
+// OVERRIDE_SST is set, otherwise the goresctrl-backed one, which in a
+// dry run is the one of a platform without SST.
+func newSst(dryRun bool) (sst, error) {
 	if v := os.Getenv(sstOverrideEnvVar); v != "" {
 		return newSstMock(v)
+	}
+	if dryRun {
+		return &sstGoresctrl{}, nil
 	}
 	return newSstGoresctrl()
 }

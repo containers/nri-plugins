@@ -41,10 +41,12 @@ type DieKey struct {
 // real sysfs. Production use leaves all hooks nil; the writer then
 // talks to the platform via goresctrl. Setting any hook also forces
 // "available" to true so tests can exercise enforce paths on VMs
-// without the intel_uncore_frequency driver.
+// without the intel_uncore_frequency driver, unless Available tells
+// otherwise.
 type Hooks struct {
-	SetMin func(pkg, die, kHz int) error
-	SetMax func(pkg, die, kHz int) error
+	SetMin    func(pkg, die, kHz int) error
+	SetMax    func(pkg, die, kHz int) error
+	Available func() bool
 }
 
 // uncoreWritten records the last successfully written min/max kHz
@@ -69,9 +71,14 @@ type Writer struct {
 // zero-valued Hooks to use real sysfs via goresctrl. The "available"
 // bit is probed once; setting any hook overrides the probe.
 func NewWriter(hooks Hooks) *Writer {
-	available := utils.UncoreFreqAvailable()
-	if hooks.SetMin != nil || hooks.SetMax != nil {
+	var available bool
+	switch {
+	case hooks.Available != nil:
+		available = hooks.Available()
+	case hooks.SetMin != nil || hooks.SetMax != nil:
 		available = true
+	default:
+		available = utils.UncoreFreqAvailable()
 	}
 	return &Writer{
 		hooks:       hooks,

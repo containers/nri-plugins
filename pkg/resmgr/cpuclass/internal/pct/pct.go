@@ -110,9 +110,10 @@ type Allocator struct {
 	hpEligiblePunit map[int]bool
 }
 
-// NewAllocator returns a new PCT allocator in the disabled mode.
-func NewAllocator(sys Sys) (*Allocator, error) {
-	s, err := newSst()
+// NewAllocator returns a new PCT allocator in the disabled mode. In a dry
+// run, it sees SST only if OVERRIDE_SST mocks it.
+func NewAllocator(sys Sys, dryRun bool) (*Allocator, error) {
+	s, err := newSst(dryRun)
 	if err != nil {
 		return nil, err
 	}
