@@ -1629,12 +1629,30 @@ containerd-reimport-image() {
         return 0
     fi
 
-    vm-command "ls *$image_type*-image-*.tar"
-    tarball="$COMMAND_OUTPUT"
+    # Resolve which image to reimport on the host rather than on the node. A
+    # node accumulates one tarball per distinct build deployed to it, so the
+    # name is ambiguous there, and insisting on exactly one of them failed
+    # every reboot once a node had seen a second build. A test which reboots
+    # to change the kernel was then left on that kernel, which breaks every
+    # test which runs after it.
+    #
+    # Take the newest tarball of this image type from build/images which is
+    # also present on the node: a newer build on the host might never have
+    # been deployed here, and only a tarball which is on the node can be
+    # reimported there. 'ls -1t' orders the host builds newest first and
+    # 'grep -f' preserves that order, so the first match is the newest
+    # deployed build, which is the one running on the node.
+    local on_node="" host_builds=""
 
-    if [ "$(echo $tarball | wc -w)" != 1 ]; then
-        command-error "failed to reimport image, one image expected (found: $tarball)"
+    on_node=$(vm-command-q "ls -1 *$image_type*-image-*.tar 2>/dev/null")
+    host_builds=$(cd "$nri_resource_policy_src/build/images" && \
+                      ls -1t *"$image_type"*-image-*.tar 2>/dev/null)
+    tarball=$(grep -Fx -m 1 -f <(echo "$on_node") <<< "$host_builds")
+
+    if [ -z "$tarball" ]; then
+        command-error "failed to reimport image, no $image_type image tarball in build/images and on the node"
     fi
+    echo "reimporting $image_type image $tarball..."
 
    case $tarball in
         *balloons*)
