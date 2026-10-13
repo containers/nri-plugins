@@ -885,9 +885,9 @@ func TestClaimingContainerSparesSharedCPUs(t *testing.T) {
 	allocateClaim(t, p, "b", draTestResult(0, fmt.Sprint(left)))
 }
 
-// The claimed CPUs of a container must follow its strict topology hints. The
-// hint names CPUs of node 0. The claim is on node 0 too, so memory passes the
-// hint in both cases. Only the claimed CPUs decide the result.
+// Claims are allocated before their container and its hints are known, so
+// strict topology hints apply only to the container's own CPUs. A container
+// whose claimed CPUs fail the hint is allocated anyway and keeps the claim.
 func TestClaimStrictTopologyHint(t *testing.T) {
 	sys := testServerSystem(t)
 
@@ -919,12 +919,12 @@ func TestClaimStrictTopologyHint(t *testing.T) {
 				strict: true,
 			}
 
-			_, err := p.allocatePool(c, "")
-			switch {
-			case tc.aligned && err != nil:
-				t.Errorf("failed to allocate a container whose claim follows its hint: %v", err)
-			case !tc.aligned && (err == nil || !strings.Contains(err.Error(), "claimed CPUs")):
-				t.Errorf("got error %v, expected claimed CPUs %s to fail the strict hint", err, a)
+			grant, err := p.allocatePool(c, "")
+			if err != nil {
+				t.Fatalf("failed to allocate: %v", err)
+			}
+			if !grant.ClaimedCPUs().Equals(a) {
+				t.Errorf("holding %s, expected the claim's %s", grant.ClaimedCPUs(), a)
 			}
 		})
 	}
