@@ -148,3 +148,17 @@ report allowed
 verify 'cpus["pod10c0"] == {"cpu00"}'
 
 unset ANN0 ANN1 ANN2
+
+# A hint which names a NUMA node that does not exist. Such a hint cannot be
+# resolved to CPUs, so unlike every hint above it is scored as a set of node
+# ids, and it matches no pool: the container is placed as if it had no hint at
+# all rather than refused.
+ANN0='test.topologyhints.resource-policy.nri.io/container.pod11c0: "{ test: { NUMAs: \"99\" } }"'
+CONTCOUNT=1 CPU=1 MEM=100M create guaranteed
+report allowed
+verify 'len(cpus["pod11c0"]) == 1'
+
+plugin-log 'evaluating topology hint <hints NUMAs:99' > /dev/null ||
+    command-error "the policy resolved a hint for a node which does not exist"
+
+unset ANN0
