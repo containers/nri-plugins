@@ -136,6 +136,9 @@ type Backend interface {
 	// ContainerStarted tells the policy that a container has started.
 	ContainerStarted(cache.Container) error
 	// ExportResourceData provides resource data to export for the container.
+	// It stays up to date, unlike the edits of AllocateClaim, which are fixed
+	// when the container starts. A policy tells a container what its DRA
+	// claims gave it here. dra.ContainerClaims finds those claims.
 	ExportResourceData(cache.Container) map[string]string
 	// GetTopologyZones returns the policy/pool data for 'topology zone' CRDs.
 	GetTopologyZones() []*TopologyZone
@@ -157,12 +160,8 @@ type Backend interface {
 	// AllocateClaim allocates resources for a claim being prepared. results
 	// are the claim's allocation results, already filtered to the devices of
 	// our own driver. The returned container edits correspond to results one
-	// by one, so that edits[i] belongs to results[i].
-	//
-	// Every result must get at least one edit, also for a policy which
-	// enforces the claim by other means: a CDI device with no edits at all
-	// is rejected, which fails the claim on every retry of the kubelet. An
-	// environment variable naming what was allocated will do.
+	// by one, so that edits[i] belongs to results[i]. A policy with nothing to
+	// add for the containers returns no edits at all.
 	//
 	// The policy records whatever it needs to release the claim again later,
 	// keyed by the claim UID, saves those records and reads them back on
