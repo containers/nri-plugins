@@ -11,6 +11,7 @@ SCHEDULING_CLASSES="[
     { name: idle,     policy: idle,  nice: 17, ioClass: be, ioPriority: 6 },
     { name: deadline, policy: deadline, runtime: 1000, deadline: 100000, period: 100000 },
     { name: onfork,   policy: other, nice:  5, flags: [ reset-on-fork ] }]"
+orner cases.)
 NAMESPACE_SCHEDULING_CLASSES="{ highprio: highprio, lowprio: lowprio }"
 PODQOS_SCHEDULING_CLASSES="{ BestEffort: lowprio, Burstable: default, Guaranteed: highprio }"
 
