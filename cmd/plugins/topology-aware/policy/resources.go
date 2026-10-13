@@ -71,8 +71,6 @@ type Supply interface {
 	GrantedReserved() int
 	// GrantedShared returns the locally granted shared CPU capacity in this supply.
 	GrantedShared() int
-	// Cumulate cumulates the given supply into this one.
-	Cumulate(Supply)
 	// AccountAllocateCPU accounts for (removes) allocated exclusive capacity from the supply.
 	AccountAllocateCPU(Grant)
 	// AccountReleaseCPU accounts for (reinserts) released exclusive capacity into the supply.
@@ -113,8 +111,6 @@ type Request interface {
 	SetCPUType(cpuType cpuType)
 	// FullCPUs return the number of full CPUs requested.
 	FullCPUs() int
-	// CPUFraction returns the amount of fractional milli-CPU requested.
-	CPUFraction() int
 	// CPULimit returns the amount of fractional CPU limit.
 	CPULimit() int
 	// Isolate returns whether isolated CPUs are preferred for this request.
@@ -206,12 +202,8 @@ type Grant interface {
 
 // Score represents how well a supply can satisfy a request.
 type Score interface {
-	// Calculate the actual score from the collected parameters.
-	Eval() float64
 	// Supply returns the supply associated with this score.
 	Supply() Supply
-	// Request returns the request associated with this score.
-	Request() Request
 
 	IsolatedCapacity() int
 	ReservedCapacity() int
@@ -350,17 +342,6 @@ func (cs *supply) GrantedShared() int {
 	return cs.grantedShared
 }
 
-// Cumulate more CPU to supply.
-func (cs *supply) Cumulate(more Supply) {
-	mcs := more.(*supply)
-
-	cs.isolated = cs.isolated.Union(mcs.isolated)
-	cs.reserved = cs.reserved.Union(mcs.reserved)
-	cs.sharable = cs.sharable.Union(mcs.sharable)
-	cs.grantedReserved += mcs.grantedReserved
-	cs.grantedShared += mcs.grantedShared
-}
-
 // AccountAllocateCPU accounts for (removes) allocated exclusive capacity from the supply.
 func (cs *supply) AccountAllocateCPU(g Grant) {
 	if cs.node.IsSameNode(g.GetCPUNode()) {
@@ -432,12 +413,6 @@ func (cs *supply) AllocateCPU(r Request) (Grant, error) {
 	cpuType := cr.cpuType
 	cpuClass := cr.cpuClass
 	irqs := cr.irqs
-
-	if cpuType == cpuReserved && full > 0 {
-		log.Warnf("exclusive reserved CPUs not supported, allocating %d full CPUs as fractions", full)
-		fraction += full * 1000
-		full = 0
-	}
 
 	if cpuType == cpuReserved && fraction > 0 && cs.AllocatableReservedCPU() < fraction {
 		log.Warnf("possible misconfiguration of reserved resources:")
@@ -938,11 +913,6 @@ func (cr *request) FullCPUs() int {
 	return cr.full
 }
 
-// CPUFraction returns the amount of fractional milli-CPU requested.
-func (cr *request) CPUFraction() int {
-	return cr.fraction
-}
-
 // CPULimit returns the amount of fractional milli-CPU limit.
 func (cr *request) CPULimit() int {
 	return cr.limit
@@ -1290,17 +1260,8 @@ func (cs *supply) SliceableCPUs() (cpuset.CPUSet, error) {
 	return sliceable, nil
 }
 
-// Eval...
-func (score *score) Eval() float64 {
-	return 1.0
-}
-
 func (score *score) Supply() Supply {
 	return score.supply
-}
-
-func (score *score) Request() Request {
-	return score.req
 }
 
 func (score *score) IsolatedCapacity() int {

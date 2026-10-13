@@ -88,33 +88,3 @@ func socketHintScore(hint topology.Hint, sysID idset.ID) float64 {
 
 	return 0.0
 }
-
-// return the cpuset for the CPU, NUMA or socket hints, preferred in this particular order.
-func (cs *supply) hintCpus(h topology.Hint) cpuset.CPUSet {
-	var cpus cpuset.CPUSet
-
-	switch {
-	case h.CPUs != "":
-		cpus = cpuset.MustParse(h.CPUs)
-
-	case h.NUMAs != "":
-		for idstr := range strings.SplitSeq(h.NUMAs, ",") {
-			if id, err := strconv.ParseInt(idstr, 0, 0); err == nil {
-				if node := cs.node.System().Node(idset.ID(id)); node != nil {
-					cpus = cpus.Union(node.CPUSet())
-				}
-			}
-		}
-
-	case h.Sockets != "":
-		for idstr := range strings.SplitSeq(h.Sockets, ",") {
-			if id, err := strconv.ParseInt(idstr, 0, 0); err == nil {
-				if pkg := cs.node.System().Package(idset.ID(id)); pkg != nil {
-					cpus = cpus.Union(pkg.CPUSet())
-				}
-			}
-		}
-	}
-
-	return cpus
-}

@@ -118,8 +118,6 @@ type Node interface {
 	IsLeafNode() bool
 	// Get the distance of this node from the root node.
 	RootDistance() int
-	// Get the height of this node (inverse of depth: tree depth - node depth).
-	NodeHeight() int
 	// System returns the policy sysfs instance.
 	System() system.System
 	// Policy returns the policy back pointer.
@@ -277,14 +275,6 @@ func (n *node) RootDistance() int {
 		return -1
 	}
 	return n.depth
-}
-
-// NodeHeight returns the hight of this node (tree depth - node depth).
-func (n *node) NodeHeight() int {
-	if n.IsNil() {
-		return -1
-	}
-	return n.policy.depth - n.depth
 }
 
 // Parent returns the parent of this node.
