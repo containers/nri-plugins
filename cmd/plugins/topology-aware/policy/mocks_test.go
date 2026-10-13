@@ -100,6 +100,9 @@ func (m *mockContainer) GetDevices() []*cache.Device {
 func (m *mockContainer) GetCDIDevices() []string {
 	panic("unimplemented")
 }
+func (m *mockContainer) GetEnvList() []string {
+	panic("unimplemented")
+}
 func (m *mockContainer) PrettyName() string {
 	return m.name
 }

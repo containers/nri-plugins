@@ -15,9 +15,13 @@
 package dra
 
 import (
+	"slices"
+	"strconv"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/types"
+
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 
 	"tags.cncf.io/container-device-interface/pkg/parser"
 )
@@ -31,29 +35,73 @@ const draDomain = "nri.io"
 // cdiClaimPrefix starts the name of every CDI device written for a claim.
 const cdiClaimPrefix = "claim-"
 
+// cdiDeviceEnvPrefix starts the environment variable every CDI device we write
+// sets to its own name: DRA_DEVICE_<claim UID>_<index>=<qualified name>. It
+// tells us which devices a container holds on runtimes which do not report
+// them.
+const cdiDeviceEnvPrefix = "DRA_DEVICE_"
+
 // DriverName returns the name of the DRA driver of the named policy.
 func DriverName(policyName string) string {
 	return policyName + "." + draDomain
 }
 
-// ClaimOfCDIDevice returns the driver and the claim UID of a CDI device
-// written for a prepared claim. ok is false for any other device.
-func ClaimOfCDIDevice(qualifiedName string) (driver string, uid types.UID, ok bool) {
+// ClaimOfCDIDevice returns the driver, the claim UID and the index of the
+// allocation result of a CDI device written for a prepared claim. ok is false
+// for any other device.
+func ClaimOfCDIDevice(qualifiedName string) (driver string, uid types.UID, index int, ok bool) {
 	vendor, class, name, err := parser.ParseQualifiedName(qualifiedName)
 	if err != nil || class != cdiClass || !strings.HasPrefix(name, cdiClaimPrefix) {
-		return "", "", false
+		return "", "", 0, false
 	}
 
 	// The name is claim-<uid>-<index>, and a UID may contain '-' itself.
 	rest := strings.TrimPrefix(name, cdiClaimPrefix)
 	sep := strings.LastIndexByte(rest, '-')
 	if sep < 1 {
-		return "", "", false
+		return "", "", 0, false
 	}
-	index := rest[sep+1:]
-	if index == "" || strings.Trim(index, "0123456789") != "" {
-		return "", "", false
+	digits := rest[sep+1:]
+	if digits == "" || strings.Trim(digits, "0123456789") != "" {
+		return "", "", 0, false
+	}
+	index, err = strconv.Atoi(digits)
+	if err != nil {
+		return "", "", 0, false
 	}
 
-	return vendor, types.UID(rest[:sep]), true
+	return vendor, types.UID(rest[:sep]), index, true
+}
+
+// ContainerClaims returns the claims of the given driver a container holds,
+// with the indexes of the allocation results of each claim it holds. A
+// container which names some requests of a claim holds only their results.
+//
+// The CDI devices of the container tell, when the runtime reports them. Other
+// runtimes do not, and then the variables our devices set tell instead. Unlike
+// the CDI devices, these can also be set in the pod spec.
+func ContainerClaims(c cache.Container, driver string) map[types.UID][]int {
+	names := c.GetCDIDevices()
+	if len(names) == 0 {
+		for _, env := range c.GetEnvList() {
+			key, value, ok := strings.Cut(env, "=")
+			if ok && strings.HasPrefix(key, cdiDeviceEnvPrefix) {
+				names = append(names, value)
+			}
+		}
+	}
+
+	claims := map[types.UID][]int{}
+	for _, name := range names {
+		d, uid, index, ok := ClaimOfCDIDevice(name)
+		if !ok || d != driver || slices.Contains(claims[uid], index) {
+			continue
+		}
+		claims[uid] = append(claims[uid], index)
+	}
+	for _, indexes := range claims {
+		slices.Sort(indexes)
+	}
+
+	return claims
 }

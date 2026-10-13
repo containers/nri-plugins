@@ -18,6 +18,7 @@ import (
 	"os"
 	"reflect"
 	"slices"
+	"strconv"
 	"testing"
 
 	"k8s.io/apimachinery/pkg/types"
@@ -27,6 +28,13 @@ import (
 )
 
 const testClaimUID = types.UID("8b9c5a6e-1f2d-4c3b-9a8e-7d6c5b4a3f21")
+
+// deviceEnv is the variable the CDI device of result index of claim uid sets
+// to its own name.
+func deviceEnv(uid types.UID, index int) string {
+	name := testDriverName + "/device=claim-" + string(uid) + "-" + strconv.Itoa(index)
+	return "DRA_DEVICE_" + string(uid) + "_" + strconv.Itoa(index) + "=" + name
+}
 
 // newTestCDIStore creates a store writing to a directory of the test's own.
 func newTestCDIStore(t *testing.T) *cdiStore {
@@ -178,9 +186,13 @@ func TestWriteClaim(t *testing.T) {
 		t.Errorf("spec has no version")
 	}
 
+	// Every device also names itself in the environment.
+	named := slices.Clone(edits)
+	named[0].Env = []string{"NRI_CPUS=2-3", deviceEnv(testClaimUID, 0)}
+	named[1].Env = []string{"NRI_CPUS=4-5", deviceEnv(testClaimUID, 1)}
 	devices := []specs.Device{
-		{Name: "claim-" + string(testClaimUID) + "-0", ContainerEdits: edits[0]},
-		{Name: "claim-" + string(testClaimUID) + "-1", ContainerEdits: edits[1]},
+		{Name: "claim-" + string(testClaimUID) + "-0", ContainerEdits: named[0]},
+		{Name: "claim-" + string(testClaimUID) + "-1", ContainerEdits: named[1]},
 	}
 	if !reflect.DeepEqual(spec.Devices, devices) {
 		t.Errorf("spec devices are\n%+v\nexpected\n%+v", spec.Devices, devices)
@@ -264,7 +276,8 @@ func TestWriteClaimAgain(t *testing.T) {
 	}
 
 	spec := readSpec(t, s, testClaimUID)
-	if len(spec.Devices) != 1 || !slices.Equal(spec.Devices[0].ContainerEdits.Env, []string{"NRI_CPUS=4-5"}) {
+	if len(spec.Devices) != 1 || !slices.Equal(spec.Devices[0].ContainerEdits.Env,
+		[]string{"NRI_CPUS=4-5", deviceEnv(testClaimUID, 0)}) {
 		t.Errorf("spec was not replaced, its devices are %+v", spec.Devices)
 	}
 }

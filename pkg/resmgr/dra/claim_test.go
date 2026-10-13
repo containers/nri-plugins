@@ -18,6 +18,7 @@ import (
 	"errors"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 
 	resourceapi "k8s.io/api/resource/v1"
@@ -177,11 +178,11 @@ func TestPrepareResourceClaims(t *testing.T) {
 	specDevices := []specs.Device{
 		{
 			Name:           "claim-" + string(testClaimUID) + "-0",
-			ContainerEdits: specs.ContainerEdits{Env: []string{"NRI_DEVICE=cpu-0"}},
+			ContainerEdits: specs.ContainerEdits{Env: []string{"NRI_DEVICE=cpu-0", deviceEnv(testClaimUID, 0)}},
 		},
 		{
 			Name:           "claim-" + string(testClaimUID) + "-1",
-			ContainerEdits: specs.ContainerEdits{Env: []string{"NRI_DEVICE=cpu-1"}},
+			ContainerEdits: specs.ContainerEdits{Env: []string{"NRI_DEVICE=cpu-1", deviceEnv(testClaimUID, 1)}},
 		},
 	}
 	if !reflect.DeepEqual(spec.Devices, specDevices) {
@@ -194,6 +195,30 @@ func TestPrepareResourceClaims(t *testing.T) {
 	}
 	if owner.updates != 1 {
 		t.Errorf("committed %d claim update(s), expected one", owner.updates)
+	}
+}
+
+// TestPrepareResourceClaimsNoEdits verifies that a policy with nothing to add for
+// the containers can return no edits: every device still names itself.
+func TestPrepareResourceClaimsNoEdits(t *testing.T) {
+	claim := testClaim(testClaimUID,
+		testResult(testDriverName, "request-0", "cpu-0"),
+		testResult(testDriverName, "request-1", "cpu-1"),
+	)
+	policy := &testPolicy{
+		edits: func([]resourceapi.DeviceRequestAllocationResult) []specs.ContainerEdits { return nil },
+	}
+	p, _ := newTestPlugin(t, fake.NewClientset(), policy)
+
+	if prepared := prepare(t, p, claim); len(prepared.Devices) != 2 {
+		t.Errorf("claim got %d devices, expected 2", len(prepared.Devices))
+	}
+
+	spec := readSpec(t, p.cdi, claim.UID)
+	for i, device := range spec.Devices {
+		if env := []string{deviceEnv(testClaimUID, i)}; !slices.Equal(device.ContainerEdits.Env, env) {
+			t.Errorf("device %d sets %v, expected %v", i, device.ContainerEdits.Env, env)
+		}
 	}
 }
 
@@ -330,18 +355,24 @@ func TestPrepareResourceClaimsRollback(t *testing.T) {
 	}{
 		{
 			// A policy bug: the edits no longer say which device is which.
-			name:  "edits not matching the allocated devices",
-			edits: func([]resourceapi.DeviceRequestAllocationResult) []specs.ContainerEdits { return nil },
+			name: "edits not matching the allocated devices",
+			edits: func(results []resourceapi.DeviceRequestAllocationResult) []specs.ContainerEdits {
+				return make([]specs.ContainerEdits, len(results)+1)
+			},
 		},
 		{
 			name:      "allocation which cannot be committed",
 			updateErr: errors.New("failed to save cache"),
 		},
 		{
-			// A spec with a device granting nothing is rejected by CDI itself.
+			// An environment entry without a value is rejected by CDI itself.
 			name: "edits which cannot be written",
 			edits: func(results []resourceapi.DeviceRequestAllocationResult) []specs.ContainerEdits {
-				return make([]specs.ContainerEdits, len(results))
+				edits := make([]specs.ContainerEdits, len(results))
+				for i := range edits {
+					edits[i].Env = []string{"NRI_DEVICE"}
+				}
+				return edits
 			},
 		},
 	} {
