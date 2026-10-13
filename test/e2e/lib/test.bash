@@ -173,6 +173,7 @@ expect-launch-failure() { # script API
 
     # helm-launch is run in a subshell, because on some failures it calls
     # error, which would otherwise fail the test we expect to fail.
+    e2eish-mark expect-launch-failure
     if ( expect_error=1 launch_timeout=$timeout helm-launch "$policy" ); then
         error "launching $policy succeeded, but was expected to fail"
     fi
@@ -334,13 +335,17 @@ disable-numa() { # script API
     # Boot the node with a kernel which has NUMA support disabled, and make
     # sure that the container runtime and POLICY, $POLICY by default, are
     # running afterwards. Do nothing if NUMA is already disabled.
-    vm-command '[ -d /sys/devices/system/node ]' || return 0
+    vm-command '[ -d /sys/devices/system/node ]' || {
+        e2eish-mark machine numa:json=false
+        return 0
+    }
 
     vm-kernel-pkgs-install
     vm-post-reboot-runtime-check "${1:-$POLICY}"
 
     vm-command '[ -d /sys/devices/system/node ]' &&
         error "failed to disable NUMA in the kernel"
+    e2eish-mark machine numa:json=false
     return 0
 }
 
@@ -352,7 +357,10 @@ enable-numa() { # script API
     # afterwards. Do nothing if NUMA is already enabled.
     #
     # Set keep_numa_disabled to 1, true or yes to leave the node as it is.
-    vm-command '[ -d /sys/devices/system/node ]' && return 0
+    vm-command '[ -d /sys/devices/system/node ]' && {
+        e2eish-mark machine numa:json=true
+        return 0
+    }
 
     case "${keep_numa_disabled:-no}" in
         1|true|yes)
@@ -363,6 +371,7 @@ enable-numa() { # script API
 
     vm-kernel-pkgs-uninstall
     vm-post-reboot-runtime-check "${1:-$POLICY}"
+    e2eish-mark machine numa:json=true
 }
 
 ###
@@ -780,6 +789,27 @@ assert-cpu-freq() { # script API
 ###
 ### Cleaning up
 ###
+
+e2eish() { # script API
+    # Usage: e2eish skip [REASON] | e2eish resume
+    #
+    # Mark a block of the test which the e2eish replay cannot replay, from
+    # skip to resume. The replay skips the pod changes and the verifies of
+    # the block, and goes on after it. Every container the block creates
+    # must be gone at resume, otherwise the replay stops there.
+    case "$1" in
+        skip)
+            shift
+            e2eish-mark-pods skip reason="$*"
+            ;;
+        resume)
+            e2eish-mark-pods resume
+            ;;
+        *)
+            error "e2eish: unknown command \"$1\", expected skip or resume"
+            ;;
+    esac
+}
 
 delete-pods() { # script API
     # Usage: delete-pods [-n NAMESPACE] {--all | POD...}
