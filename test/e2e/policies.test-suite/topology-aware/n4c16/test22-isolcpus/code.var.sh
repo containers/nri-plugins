@@ -52,5 +52,32 @@ vm-command "kubectl wait --timeout=5s pod pod3 --for=$PodReadyCond" || {
 }
 verify-container-error pod3 0 "isolated CPUs"
 
+#
+# Reservations which overlap the isolated CPUs. The pods above are deleted
+# first, because each case relaunches the policy and a new reservation may
+# take away the very CPUs they are running on.
+#
+
+delete-pods --all
+
+# A reservation which mixes an isolated CPU with a normal one is refused: the
+# policy will not run half of its reserved pool on an isolated CPU.
+helm-terminate
+helm_config=$(RESERVED_CPU="cpuset:1,3" instantiate helm-config.yaml) \
+    expect-launch-failure topology-aware
+verify-config-status-error "mixes isolated"
+
+# So is a reservation of more than one isolated CPU.
+helm-terminate
+helm_config=$(RESERVED_CPU="cpuset:1,2" instantiate helm-config.yaml) \
+    expect-launch-failure topology-aware
+verify-config-status-error "multiple isolated CPUs"
+
+# One isolated CPU as the whole reservation is allowed, with a warning.
+helm-terminate
+helm_config=$(RESERVED_CPU="cpuset:1" instantiate helm-config.yaml) helm-launch topology-aware
+plugin-log 'reserved CPU .* is isolated' > /dev/null ||
+    command-error "the policy did not warn about reserving an isolated CPU"
+
 cleanup
 trap - EXIT
