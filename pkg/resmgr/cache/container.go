@@ -465,6 +465,10 @@ func (c *container) GetAnnotation(key string, objPtr any) (string, bool) {
 	return jsonStr, true
 }
 
+func (c *container) GetEnvList() []string {
+	return slices.Clone(c.Ctr.GetEnv())
+}
+
 func (c *container) GetEnv(key string) (string, bool) {
 	for _, env := range c.Ctr.GetEnv() {
 		if idx := strings.IndexRune(env, '='); 0 < idx {
