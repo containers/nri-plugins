@@ -1174,15 +1174,16 @@ spec:
                       description: |-
                         Flags is a list of Linux scheduling flags to set.
                         SCHED_FLAG_<ORIG_NAME> translates to <orig-name> etc.
-                      enum:
-                      - reset-on-fork
-                      - reclaim
-                      - dl-overrun
-                      - keep-policy
-                      - keep-params
-                      - util-clamp-min
-                      - util-clamp-max
                       items:
+                        description: SchedulingFlag is a single Linux scheduling flag.
+                        enum:
+                        - reset-on-fork
+                        - reclaim
+                        - dl-overrun
+                        - keep-policy
+                        - keep-params
+                        - util-clamp-min
+                        - util-clamp-max
                         type: string
                       type: array
                     ioClass:

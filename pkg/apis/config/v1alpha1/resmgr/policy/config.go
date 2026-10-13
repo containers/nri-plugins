@@ -32,9 +32,15 @@ type (
 	CPUTopologyLevel          string
 	ComponentCreationStrategy string
 	SchedulingPolicy          string
-	SchedulingFlag            string
-	SchedulingFlags           []SchedulingFlag
-	IOPriorityClass           string
+	// The enum of scheduling flags belongs to the element type: declared for
+	// the list itself it ends up in the schema of the list, where it rejects
+	// every list of flags. Keep it here, and out of SchedulingClass.Flags.
+
+	// SchedulingFlag is a single Linux scheduling flag.
+	// +kubebuilder:validation:Enum=reset-on-fork;reclaim;dl-overrun;keep-policy;keep-params;util-clamp-min;util-clamp-max
+	SchedulingFlag  string
+	SchedulingFlags []SchedulingFlag
+	IOPriorityClass string
 )
 
 const (
@@ -73,7 +79,7 @@ const (
 	SchedulingPolicyIdle       SchedulingPolicy = "idle"
 	SchedulingPolicyDeadline   SchedulingPolicy = "deadline"
 	SchedulingFlagResetOnFork  SchedulingFlag   = "reset-on-fork"
-	SchedulingFlagReclaimable  SchedulingFlag   = "reclaimable"
+	SchedulingFlagReclaim      SchedulingFlag   = "reclaim"
 	SchedulingFlagDlOverrun    SchedulingFlag   = "dl-overrun"
 	SchedulingFlagKeepPolicy   SchedulingFlag   = "keep-policy"
 	SchedulingFlagKeepParams   SchedulingFlag   = "keep-params"
