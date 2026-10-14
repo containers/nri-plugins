@@ -252,6 +252,7 @@ func replaySegment(t *testing.T, plugin *Plugin, records []*record, seg segment,
 		failLaunch = false
 		skipIDs    map[string]bool // containers running at the skip
 	)
+	s.requirePython = true
 
 	for i, r := range records[:seg.to] {
 		// Before the segment, only the machine and the py_consts matter.
@@ -507,13 +508,14 @@ func libDir() string {
 
 // evalVerify evaluates a verify expression of an e2e test on the replay, with
 // the variables the e2e test computes on the VM and the py_consts code. It
-// tells if the expression held.
-func (h *Harness) evalVerify(expr, consts string) (bool, error) {
+// tells if the expression held, and the state the variables of stateVars
+// had: their names by container.
+func (h *Harness) evalVerify(expr, consts string) (bool, map[string]map[string][]string, error) {
 	h.T.Helper()
 
 	python, err := exec.LookPath("python3")
 	if err != nil {
-		return false, errNoPython
+		return false, nil, errNoPython
 	}
 
 	var (
@@ -528,7 +530,7 @@ func (h *Harness) evalVerify(expr, consts string) (bool, error) {
 	tree, err := exec.Command(python, filepath.Join(lib, "topology.py"),
 		"-t", dump, "-r", allowed, "res_allowed", "-o", "json").Output()
 	if err != nil {
-		return false, fmt.Errorf("topology.py: %w", err)
+		return false, nil, fmt.Errorf("topology.py: %w", err)
 	}
 	glue, err := os.ReadFile(filepath.Join(lib, "py_allowed.py"))
 	require.NoError(h.T, err)
@@ -537,7 +539,9 @@ func (h *Harness) evalVerify(expr, consts string) (bool, error) {
 	code := "import pprint; pp=pprint.pprint\n" +
 		"import re\nallowed=" + strings.TrimSpace(string(tree)) + "\n" +
 		string(glue) + "\n" + consts + "\n" +
-		"import sys\n" +
+		"import sys, json\n" +
+		"print('E2EISH-STATE ' + json.dumps({v: {c: sorted(s) for c, s in globals()[v].items()} for v in " +
+		pyStrings(stateVars) + "}))\n" +
 		"try:\n    assert(" + expr + ")\n" +
 		"except AssertionError:\n    sys.exit(10)\n" +
 		"except NameError as e:\n    print(e)\n    sys.exit(11)\n"
@@ -547,17 +551,33 @@ func (h *Harness) evalVerify(expr, consts string) (bool, error) {
 	cmd := exec.Command(python, program)
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+lib)
 	out, err := cmd.CombinedOutput()
-	var exit *exec.ExitError
+	var (
+		state = map[string]map[string][]string{}
+		last  string
+		exit  *exec.ExitError
+	)
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if data, ok := strings.CutPrefix(line, "E2EISH-STATE "); ok {
+			require.NoError(h.T, json.Unmarshal([]byte(data), &state), "bad python state")
+			continue
+		}
+		last = line
+	}
 	switch {
 	case err == nil:
-		return true, nil
+		return true, state, nil
 	case errors.As(err, &exit) && exit.ExitCode() == 10:
-		return false, nil
+		return false, state, nil
 	case errors.As(err, &exit) && exit.ExitCode() == 11:
-		return false, fmt.Errorf("%w: %s", errNoName, strings.TrimSpace(string(out)))
+		return false, nil, fmt.Errorf("%w: %s", errNoName, last)
 	default:
-		return false, fmt.Errorf("%w: %s", err, out)
+		return false, nil, fmt.Errorf("%w: %s", err, out)
 	}
+}
+
+// pyStrings is a python list of the strings.
+func pyStrings(strs []string) string {
+	return "['" + strings.Join(strs, "', '") + "']"
 }
 
 // topologyDump is what topology.py bash_topology_dump prints on the VM.
