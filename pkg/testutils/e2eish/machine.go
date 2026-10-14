@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -48,6 +49,63 @@ type Group struct {
 
 // Topology is an e2e topology.var.json.
 type Topology []Group
+
+// readTopology reads a topology.var.json.
+func readTopology(path string) (Topology, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var groups []map[string]any
+	if err := json.Unmarshal(data, &groups); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	topo, err := topologyOfGroups(groups)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return topo, nil
+}
+
+// topologyOfGroups is the topology of the groups of a topology.var.json.
+func topologyOfGroups(groups []map[string]any) (Topology, error) {
+	topo := Topology{}
+	for _, g := range groups {
+		group := Group{}
+		for key, value := range g {
+			n, _ := value.(float64)
+			switch key {
+			case "mem":
+				group.Mem, _ = value.(string)
+			case "cores":
+				group.Cores = int(n)
+			case "threads":
+				group.Threads = int(n)
+			case "nodes":
+				group.Nodes = int(n)
+			case "dies":
+				group.Dies = int(n)
+			case "packages":
+				group.Packages = int(n)
+			case "node-dist":
+				dist, _ := value.(map[string]any)
+				group.NodeDist = map[int]int{}
+				for node, d := range dist {
+					id, err := strconv.Atoi(node)
+					if err != nil {
+						return nil, fmt.Errorf("bad node-dist node %q", node)
+					}
+					dd, _ := d.(float64)
+					group.NodeDist[id] = int(dd)
+				}
+			default:
+				return nil, fmt.Errorf("topology key %q is not supported", key)
+			}
+		}
+		topo = append(topo, group)
+	}
+	return topo, nil
+}
 
 // Host is what the e2e VM changes of the machine of its topology.
 type Host struct {
