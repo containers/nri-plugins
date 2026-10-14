@@ -146,6 +146,7 @@ type genFile struct {
 	topology Topology // of the first launch
 	tests    []*genTest
 	consts   *genConsts
+	idWidths map[string]pyWidths // by topology literal
 }
 
 // genConsts are the configs, pods and py_consts of a file, which become
@@ -203,17 +204,19 @@ func numberedNames(prefix string, strs []genString) map[genString]string {
 
 // genTest is the generated test of a log.
 type genTest struct {
-	t        *testing.T
-	plugin   *Plugin
-	file     *genFile
-	name     string
-	host     string            // the VM, named in kube-system pods
-	renames  map[string]string // stable names for kube-system pods
-	segments []*genSegment
-	stopped  string // why the replay ends early
-	verifies int
-	pods     map[string]bool // of the harness, by namespace/name
-	created  int             // pods created in the segment
+	t          *testing.T
+	plugin     *Plugin
+	file       *genFile
+	name       string
+	host       string            // the VM, named in kube-system pods
+	renames    map[string]string // stable names for kube-system pods
+	segments   []*genSegment
+	stopped    string // why the replay ends early
+	verifies   int
+	goVerifies int             // of verifies, those in Go
+	widths     pyWidths        // of the machine last launched on
+	pods       map[string]bool // of the harness, by namespace/name
+	created    int             // pods created in the segment
 }
 
 // genConfig is the helm values of a launch, as JSON. The file renders them
@@ -285,6 +288,7 @@ type genSegment struct {
 }
 
 type genStep struct {
+	kind   string // "py" for VerifyPy, "consts" for Consts, else ""
 	format string
 	args   []any // genString for strings which may become constants
 }
@@ -341,8 +345,12 @@ func (g *genTest) stop(format string, args ...any) {
 }
 
 func (g *genTest) step(format string, args ...any) {
+	g.stepKind("", format, args...)
+}
+
+func (g *genTest) stepKind(kind, format string, args ...any) {
 	seg := g.segments[len(g.segments)-1]
-	seg.steps = append(seg.steps, genStep{format, args})
+	seg.steps = append(seg.steps, genStep{kind, format, args})
 	for _, a := range args {
 		if s, ok := a.(genString); ok {
 			g.file.consts.use(s, g)
@@ -396,6 +404,7 @@ func (g *genTest) generate(records []*record) {
 					method = "LaunchMayFail"
 				}
 				g.step("s.%s(%s%s)", method, g.topology(l.topology), &genConfig{values: g.values(r.Values)})
+				g.widths = g.file.widths(t, l.topology)
 				// A launch which fails keeps the pods. One which may fail
 				// may keep them.
 				if method == "Launch" {
@@ -440,9 +449,16 @@ func (g *genTest) generate(records []*record) {
 				}
 				g.delete(r)
 			case "consts":
-				g.step("s.Consts(%s)", genString{"PyConsts", r.Code})
+				g.stepKind("consts", "s.Consts(%s)", genString{"PyConsts", r.Code})
 			case "verify":
-				g.step("s.VerifyPy(%s)", goString(r.Expr))
+				if stmts, err := translatePy(r.Expr, g.widths); err == nil {
+					for _, st := range stmts {
+						g.step("%s", st)
+					}
+					g.goVerifies++
+				} else {
+					g.stepKind("py", "s.VerifyPy(%s)", goString(r.Expr))
+				}
 				g.verifies++
 			case "skip":
 				g.step("s.Skip(%s)", strconv.Quote(r.Reason))
@@ -499,10 +515,69 @@ func (g *genTest) generate(records []*record) {
 	}
 	g.file.tests = append(g.file.tests, g)
 	if g.stopped != "" {
-		t.Logf("%s, then the replay ends at %s", plural(g.verifies, "assertion"), g.stopped)
+		t.Logf("%s, then the replay ends at %s", g.counts(), g.stopped)
 	} else {
-		t.Logf("%s", plural(g.verifies, "assertion"))
+		t.Logf("%s", g.counts())
 	}
+}
+
+func (g *genTest) counts() string {
+	return fmt.Sprintf("%s (%d Go, %d python)", plural(g.verifies, "assertion"),
+		g.goVerifies, g.verifies-g.goVerifies)
+}
+
+// widths are the id widths of the machine of a topology.
+func (f *genFile) widths(t *testing.T, topo Topology) pyWidths {
+	t.Helper()
+	key := topologyLiteral(topo)
+	if w, ok := f.idWidths[key]; ok {
+		return w
+	}
+	n := newTopoNames(NewMachine(t, topo, Host{}))
+	w := pyWidths{cpu: n.cpuW, node: n.nodeW, pkg: n.pkgW}
+	if f.idWidths == nil {
+		f.idWidths = map[string]pyWidths{}
+	}
+	f.idWidths[key] = w
+	return w
+}
+
+// prunePyConsts drops the py_consts of the segments with no python left.
+func (f *genFile) prunePyConsts() {
+	for _, g := range f.tests {
+		used := false
+		for _, seg := range g.segments {
+			if !slices.ContainsFunc(seg.steps, func(st genStep) bool { return st.kind == "py" }) {
+				seg.steps = slices.DeleteFunc(seg.steps, func(st genStep) bool { return st.kind == "consts" })
+			}
+			used = used || slices.ContainsFunc(seg.steps, func(st genStep) bool { return st.kind == "consts" })
+		}
+		if !used {
+			for s, users := range f.consts.uses {
+				if s.kind == "PyConsts" {
+					delete(users, g)
+				}
+			}
+		}
+	}
+	f.consts.order = slices.DeleteFunc(f.consts.order, func(s genString) bool { return len(f.consts.uses[s]) == 0 })
+}
+
+// usesRequire tells if a test of the file has a require assertion.
+func (f *genFile) usesRequire() bool {
+	for _, g := range f.tests {
+		for _, seg := range g.segments {
+			for _, st := range seg.steps {
+				if st.format != "%s" || len(st.args) != 1 {
+					continue
+				}
+				if code, ok := st.args[0].(string); ok && strings.HasPrefix(code, "require.") {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // topology is the Go expression of a topology, the variable of the file for
@@ -1094,6 +1169,7 @@ func (f *genFile) source(t *testing.T, pkg string) []byte {
 	t.Helper()
 
 	topoVar := "gen" + camel(f.topo)
+	f.prunePyConsts()
 	base := f.configs(t)
 	names := f.consts.names(topoVar)
 
@@ -1105,7 +1181,11 @@ func (f *genFile) source(t *testing.T, pkg string) []byte {
 	fmt.Fprintf(b, "package %s\n\n", pkg)
 	fmt.Fprintf(b, "// The e2e tests of test/e2e/policies.test-suite/%s/%s, from the logs of\n", f.plugin, f.topo)
 	fmt.Fprintf(b, "// a test run. See \"Generating unit tests from test logs\" in\n// test/e2e/README.md.\n\n")
-	fmt.Fprintf(b, "import (\n\t\"testing\"\n\n\tharness %q\n)\n\n", "github.com/containers/nri-plugins/pkg/testutils/e2eish")
+	fmt.Fprintf(b, "import (\n\t\"testing\"\n\n")
+	if f.usesRequire() {
+		fmt.Fprintf(b, "\t\"github.com/stretchr/testify/require\"\n\n")
+	}
+	fmt.Fprintf(b, "\tharness %q\n)\n\n", "github.com/containers/nri-plugins/pkg/testutils/e2eish")
 	fmt.Fprintf(b, "// %s is test/e2e/policies.test-suite/%s/%s/topology.var.json.\n", topoVar, f.plugin, f.topo)
 	fmt.Fprintf(b, "var %s = %s\n\n", topoVar, topologyLiteral(f.topology))
 	if base != "" {

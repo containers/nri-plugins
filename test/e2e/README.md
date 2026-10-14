@@ -389,6 +389,12 @@ the same code the replay runs, up to the first step the replay cannot
 follow. A test with no assertion before such a step is left out.
 `E2EISH_VERBOSE` and `E2EISH_LOG_DIR` work for them as well.
 
+The assertions of the logs become `require` assertions on the state the
+`Script` computes, like `require.Len(t, s.CPUs("pod0c0"), 1)`, as long as
+they are of the simple shapes most are. Others stay python, `s.VerifyPy`,
+and are skipped when there is no `python3`. The replay checks that the
+state of the `Script` is the one python sees, at every assertion.
+
 To generate the tests from the logs of a test run and run them:
 
 ```shell
