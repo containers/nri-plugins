@@ -411,6 +411,33 @@ has only what differs from it. The kube-system pods get names and labels
 which do not change from run to run. Hand-written tests can use the same
 `Script` steps.
 
+### Generating e2e tests from unit tests
+
+It works the other way round as well: an e2eish test can be written first,
+and once it passes, made into an e2e test. A test made with
+`NewE2EScript(t, plugin, "TOPOLOGY/testNN-name")` instead of `NewScript` is
+the source of the e2e test `TOPOLOGY/testNN-name` of the suite of its
+policy. From that line on its body must be straight-line: `Script` steps,
+and the `require` assertions the generated tests use. Statements before it,
+like a skip, are not translated, so they must not set up anything the e2e
+test needs. The doc comment of the test becomes the comment at the top of
+`code.var.sh`. `TestE2eishExample` of topology-aware is an example, skipped
+unless `E2EISH_EXAMPLES=1`.
+
+To write the e2e tests of the tests of a policy which pass:
+
+```shell
+./emit_tests.sh POLICY [-- GO-TEST-ARG...]
+```
+
+A `PodSpec` pod is created from its template. A `CreatePod` pod gets a
+template of its own, with the image of the templates, and its containers
+sleep. The e2e tests see only containers named like `pod0c0`, and so do
+the assertions. A test refuses what it cannot write faithfully, with the line of the
+test. An e2e test with the same files is left alone, so a rerun shows the
+tests whose source changed: they fail until `E2EISH_EMIT_FORCE=1` replaces
+them. Run a generated test on the VM before committing it.
+
 ## Publishing and serving results
 
 A run of the whole suite collects some 120 megabytes, most of it the command
