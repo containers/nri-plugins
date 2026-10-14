@@ -47,3 +47,10 @@ var e2eishPlugin = &harness.Plugin{
 func TestE2eishReplay(t *testing.T) {
 	harness.Replay(t, e2eishPlugin)
 }
+
+// TestE2eishGenerate generates the e2eish-gen-TOPOLOGY_test.go files from the
+// e2e test logs in $E2EISH_GENERATE. See "Generating unit tests from test
+// logs" in test/e2e/README.md.
+func TestE2eishGenerate(t *testing.T) {
+	harness.Generate(t, e2eishPlugin)
+}
