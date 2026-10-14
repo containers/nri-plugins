@@ -47,7 +47,8 @@ type Script struct {
 	// requirePython makes a verify with no python3 skip the test, as a
 	// replay checks nothing else then.
 	requirePython bool
-	pods          int // created, for the names of PodSpecs
+	pods          int        // created, for the names of PodSpecs
+	e2e           *e2eTarget // of NewE2EScript, nil for others
 	verified      int
 	skipped       int
 	reads         int // of the state, by the accessors of the Go assertions
@@ -122,18 +123,21 @@ func (s *Script) unsupported(format string, args ...any) {
 // files merged in order, as helm merges them.
 func (s *Script) Launch(topo Topology, values ...string) {
 	s.t.Helper()
+	s.e2e.launch(topo, values, launchOK)
 	s.launch(topo, s.helmConfig(values), launchOK)
 }
 
 // LaunchMayFail is helm-launch with expect_error=1.
 func (s *Script) LaunchMayFail(topo Topology, values ...string) {
 	s.t.Helper()
+	s.e2e.launch(topo, values, launchMayFail)
 	s.launch(topo, s.helmConfig(values), launchMayFail)
 }
 
 // LaunchFails is expect-launch-failure and the helm-launch after it.
 func (s *Script) LaunchFails(topo Topology, values ...string) {
 	s.t.Helper()
+	s.e2e.launch(topo, values, launchFails)
 	s.launch(topo, s.helmConfig(values), launchFails)
 }
 
@@ -203,6 +207,7 @@ func (s *Script) launch(topo Topology, l *launchConfig, how int) {
 // launch.
 func (s *Script) SetNUMA(enabled bool) {
 	s.t.Helper()
+	s.e2e.setNUMA(enabled)
 	// The node reboots, which restarts a running plugin with no launch.
 	if s.launched {
 		s.unsupported("changing the machine with the plugin running")
@@ -214,6 +219,7 @@ func (s *Script) SetNUMA(enabled bool) {
 // isolcpus is supported.
 func (s *Script) SetCmdline(cmdline string) {
 	s.t.Helper()
+	s.e2e.setCmdline(cmdline)
 	if s.launched {
 		s.unsupported("changing the machine with the plugin running")
 	}
@@ -228,6 +234,7 @@ func (s *Script) SetCmdline(cmdline string) {
 // running in the runtime then.
 func (s *Script) SyncWithRuntimePods(pods ...*Pod) {
 	s.t.Helper()
+	s.e2e.none()
 	require.NotNil(s.t, s.h, "a sync with no policy launched")
 	s.sync(s.syncPods(pods))
 }
@@ -258,6 +265,7 @@ func (s *Script) sync(pods []*syncPod) {
 
 // Terminate is helm-terminate.
 func (s *Script) Terminate() {
+	s.e2e.terminate()
 	s.launched = false
 }
 
@@ -281,10 +289,12 @@ func (s *Script) CreateBestEffort(spec PodSpec) {
 
 func (s *Script) createSpec(spec PodSpec, qos string) {
 	s.t.Helper()
-	if spec.Name == "" {
-		spec.Name = fmt.Sprintf("pod%d", s.pods)
-	}
-	s.CreatePod(spec.Name, spec.pod(qos)...)
+	name := cmp.Or(spec.Name, fmt.Sprintf("pod%d", s.pods))
+	s.e2e.create(spec, qos, name)
+	spec.Name = name
+	pod, err := NewPod(name, spec.pod(qos)...).k8s()
+	require.NoError(s.t, err)
+	s.createPod(pod.Namespace, pod)
 }
 
 // CreatePod is kubectl create of a pod.
@@ -292,6 +302,7 @@ func (s *Script) CreatePod(name string, options ...PodOption) {
 	s.t.Helper()
 	pod, err := NewPod(name, options...).k8s()
 	require.NoError(s.t, err)
+	s.e2e.createPod(pod)
 	s.createPod(pod.Namespace, pod)
 }
 
@@ -322,11 +333,18 @@ func (s *Script) createPod(ns string, p *corev1.Pod) {
 // left alone.
 func (s *Script) DeletePods(ns string, names ...string) {
 	s.t.Helper()
+	s.e2e.deletePods(ns, names)
+	s.deletePods(ns, names...)
+}
+
+func (s *Script) deletePods(ns string, names ...string) {
+	s.t.Helper()
 	if s.h == nil || s.skipping != "" {
 		return
 	}
+	ns = canonicalNamespace(ns)
 	for _, name := range names {
-		if pod, ok := s.h.Pods[name]; ok && pod.GetNamespace() == ns {
+		if pod, ok := s.h.Pods[name]; ok && canonicalNamespace(pod.GetNamespace()) == ns {
 			s.h.DeletePods(name)
 		}
 	}
@@ -335,27 +353,31 @@ func (s *Script) DeletePods(ns string, names ...string) {
 // DeleteAllPodsIn is kubectl delete of all the pods in the namespace.
 func (s *Script) DeleteAllPodsIn(ns string) {
 	s.t.Helper()
+	s.e2e.deleteAll(ns)
 	if s.h == nil || s.skipping != "" {
 		return
 	}
+	ns = canonicalNamespace(ns)
 	var names []string
 	for name, pod := range s.h.Pods {
-		if pod.GetNamespace() == ns {
+		if canonicalNamespace(pod.GetNamespace()) == ns {
 			names = append(names, name)
 		}
 	}
 	slices.Sort(names)
-	s.DeletePods(ns, names...)
+	s.deletePods(ns, names...)
 }
 
 // Consts is the py_consts code for the verify expressions after it.
 func (s *Script) Consts(code string) {
+	s.e2e.consts(code)
 	s.consts = code
 }
 
 // VerifyPy is verify of a python expression which held in the e2e test.
 func (s *Script) VerifyPy(expr string) {
 	s.t.Helper()
+	s.e2e.verifyPy(expr)
 	s.verify(expr, true)
 }
 
@@ -410,6 +432,7 @@ func (s *Script) crossCheck(state map[string]map[string][]string, snap map[strin
 // changes and assertions of the block are ignored.
 func (s *Script) Skip(reason string) {
 	s.t.Helper()
+	s.e2e.refuse("Skip has no e2e form")
 	require.Empty(s.t, s.skipping, "a skip of %q within the skip of %q", reason, s.skipping)
 	Log.Infof("===== skip: %s", reason)
 	s.skipping = reason
@@ -419,6 +442,7 @@ func (s *Script) Skip(reason string) {
 // runtime then. The pods and containers gone since the skip are deleted.
 func (s *Script) ResumeWithRuntimePods(pods ...*Pod) {
 	s.t.Helper()
+	s.e2e.none()
 	s.resume(s.syncPods(pods))
 }
 

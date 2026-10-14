@@ -48,7 +48,7 @@ func NewPod(name string, options ...PodOption) *Pod {
 
 // InNamespace puts a pod in a namespace.
 func InNamespace(ns string) PodOption {
-	return func(p *Pod) { p.namespace = ns }
+	return func(p *Pod) { p.namespace = canonicalNamespace(ns) }
 }
 
 // WithLabels gives a pod labels.
