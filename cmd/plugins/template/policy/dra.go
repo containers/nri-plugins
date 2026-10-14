@@ -20,13 +20,16 @@ package template
 // them are taken, and the policy decides which CPUs a claim gets.
 //
 // The template policy does not manage cpusets, so a claimed CPU is not
-// withheld from other containers.
+// withheld from other containers. A container finds the CPUs of its claims
+// in the resources we export to it.
 
 import (
 	"fmt"
 	"math"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/template"
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
+	"github.com/containers/nri-plugins/pkg/resmgr/dra"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -40,12 +43,12 @@ const (
 	draDevice = "cpus"
 	// draCapacity is the capacity of that device: the number of CPUs.
 	draCapacity resourceapi.QualifiedName = "dra.cpu/cpu"
-	// draEnvPrefix starts the variable telling a container which CPUs its
-	// claim got, DRA_CPUSET_<claim UID>=<cpuset>.
-	draEnvPrefix = "DRA_CPUSET_"
 	// keyClaims is the cache entry claimed CPUs are kept in.
 	keyClaims = "claims"
 )
+
+// draDriverName is the name of our DRA driver.
+var draDriverName = dra.DriverName(PolicyName)
 
 // publishDRADevices publishes our allowed CPUs. A configuration DRA cannot
 // use is only a warning: it must not stop us from running without DRA, and
@@ -88,12 +91,13 @@ func (p *policy) draDevices() ([]resourceapi.Device, error) {
 	}, nil
 }
 
-// AllocateClaim picks CPUs for a claim, as many as its results consumed.
+// AllocateClaim picks CPUs for each result of a claim, as many as it
+// consumed.
 func (p *policy) AllocateClaim(
 	claim *resourceapi.ResourceClaim,
 	results []resourceapi.DeviceRequestAllocationResult,
 ) ([]specs.ContainerEdits, error) {
-	total, err := consumedCPUs(results)
+	counts, err := consumedCPUs(results)
 	if err != nil {
 		return nil, fmt.Errorf("claim %s: %w", claim.UID, err)
 	}
@@ -101,7 +105,7 @@ func (p *policy) AllocateClaim(
 	uid := string(claim.UID)
 	cpus, ok := p.claims[uid]
 	if !ok {
-		cpus, err = p.pickCPUs(total)
+		cpus, err = p.pickCPUs(counts)
 		if err != nil {
 			return nil, fmt.Errorf("claim %s: %w", claim.UID, err)
 		}
@@ -109,12 +113,33 @@ func (p *policy) AllocateClaim(
 		p.cache.SetPolicyEntry(keyClaims, p.claims)
 	}
 
-	if cpus.Size() != total {
-		return nil, fmt.Errorf("claim %s holds %d CPUs but consumed %d",
-			claim.UID, cpus.Size(), total)
+	if len(cpus) != len(counts) {
+		return nil, fmt.Errorf("claim %s holds %d results but has %d", claim.UID, len(cpus), len(counts))
+	}
+	for i, n := range counts {
+		if cpus[i].Size() != n {
+			return nil, fmt.Errorf("claim %s holds %d CPUs for result %d but it consumed %d",
+				claim.UID, cpus[i].Size(), i, n)
+		}
 	}
 
-	return claimEdits(claim.UID, cpus, len(results)), nil
+	// Containers find their CPUs in the resources we export to them.
+	return nil, nil
+}
+
+// containerClaims returns the CPUs of the claims a container holds: the CPUs
+// of the allocation results it holds of each claim.
+func (p *policy) containerClaims(c cache.Container) cpuset.CPUSet {
+	cpus := cpuset.New()
+	for uid, indexes := range dra.ContainerClaims(c, draDriverName) {
+		results := p.claims[string(uid)]
+		for _, i := range indexes {
+			if i < len(results) {
+				cpus = cpus.Union(results[i])
+			}
+		}
+	}
+	return cpus
 }
 
 // ReleaseClaim gives the CPUs of a claim back.
@@ -129,14 +154,15 @@ func (p *policy) ReleaseClaim(uid types.UID) error {
 // were told them when they were created, so it cannot move, and until it is
 // released no other claim may get them. We only warn about it.
 func (p *policy) restoreClaims() {
-	p.claims = map[string]cpuset.CPUSet{}
+	p.claims = map[string][]cpuset.CPUSet{}
 	p.cache.GetPolicyEntry(keyClaims, &p.claims)
 
 	allowed, err := p.allowedCPUs()
 	if err != nil {
 		return
 	}
-	for uid, cpus := range p.claims {
+	for uid, results := range p.claims {
+		cpus := cpuset.New().Union(results...)
 		if !cpus.IsSubsetOf(allowed) {
 			log.Warnf("claim %s keeps CPUs %s, which are not allowed any more",
 				uid, cpus.Difference(allowed))
@@ -173,54 +199,53 @@ func (p *policy) allowedCPUs() (cpuset.CPUSet, error) {
 	return cpus.Intersection(p.system.OnlineCPUs()), nil
 }
 
-// pickCPUs picks n of the CPUs no claim holds.
-func (p *policy) pickCPUs(n int) (cpuset.CPUSet, error) {
+// pickCPUs picks CPUs no claim holds, counts[i] of them for result i.
+func (p *policy) pickCPUs(counts []int) ([]cpuset.CPUSet, error) {
 	free, err := p.allowedCPUs()
 	if err != nil {
-		return cpuset.New(), err
+		return nil, err
 	}
-	for _, cpus := range p.claims {
-		free = free.Difference(cpus)
+	for _, results := range p.claims {
+		free = free.Difference(cpuset.New().Union(results...))
 	}
 
-	if free.Size() < n {
-		return cpuset.New(), fmt.Errorf("%d CPUs requested, only %d free", n, free.Size())
+	total := 0
+	for _, n := range counts {
+		total += n
+	}
+	if free.Size() < total {
+		return nil, fmt.Errorf("%d CPUs requested, only %d free", total, free.Size())
 	}
 
 	// Take the lowest IDs. A policy which knows the topology picks by it.
-	return cpuset.New(free.List()[:n]...), nil
+	ids := free.List()
+	cpus := make([]cpuset.CPUSet, 0, len(counts))
+	for _, n := range counts {
+		cpus = append(cpus, cpuset.New(ids[:n]...))
+		ids = ids[n:]
+	}
+	return cpus, nil
 }
 
-// consumedCPUs returns how many CPUs the results consumed in total.
-func consumedCPUs(results []resourceapi.DeviceRequestAllocationResult) (int, error) {
+// consumedCPUs returns how many CPUs each result consumed.
+func consumedCPUs(results []resourceapi.DeviceRequestAllocationResult) ([]int, error) {
+	counts := make([]int, 0, len(results))
 	total := 0
 	for i, r := range results {
 		q, ok := r.ConsumedCapacity[draCapacity]
 		if !ok {
-			return 0, fmt.Errorf("result %d consumed no %s", i, draCapacity)
+			return nil, fmt.Errorf("result %d consumed no %s", i, draCapacity)
 		}
 		n, ok := q.AsInt64()
 		if !ok || n < 1 {
-			return 0, fmt.Errorf("result %d consumed %s %s, not a positive whole number",
+			return nil, fmt.Errorf("result %d consumed %s %s, not a positive whole number",
 				i, q.String(), draCapacity)
 		}
 		if n > int64(math.MaxInt-total) {
-			return 0, fmt.Errorf("results consumed too many %s", draCapacity)
+			return nil, fmt.Errorf("results consumed too many %s", draCapacity)
 		}
 		total += int(n)
+		counts = append(counts, int(n))
 	}
-	return total, nil
-}
-
-// claimEdits tells a container the CPUs of its claim, one edit per result.
-// Every edit sets the same variable to the same value: a container given
-// several results keeps the value of the last one, as CDI cannot merge the
-// values of a variable, and here they are all the same.
-func claimEdits(uid types.UID, cpus cpuset.CPUSet, results int) []specs.ContainerEdits {
-	env := fmt.Sprintf("%s%s=%s", draEnvPrefix, uid, cpus.String())
-	edits := make([]specs.ContainerEdits, results)
-	for i := range edits {
-		edits[i].Env = []string{env}
-	}
-	return edits
+	return counts, nil
 }

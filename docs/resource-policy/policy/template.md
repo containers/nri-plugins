@@ -42,8 +42,9 @@ spec:
 
 A request without an amount gets one CPU.
 
-The policy picks the CPUs of a claim, lowest IDs first, and tells the
-container which ones it got in an environment variable named after the claim,
-such as `DRA_CPUSET_<claim UID>=2-3`. It does not pin the container to them,
-nor keep other containers off them: the template policy does not manage
-cpusets.
+The policy picks the CPUs of a claim, lowest IDs first. It tells a container
+which ones its claims got in `/.nri-resource-policy/resources.sh`, for
+instance `CLAIMED_CPUS="2-3"`. A container which names only some requests of
+a claim is told the CPUs of those requests. The policy does not pin the
+container to them, nor keep other containers off them: the template policy
+does not manage cpusets.
