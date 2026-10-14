@@ -379,6 +379,32 @@ Burstable containers get the memory request the resource manager estimates
 from their OOM score adjustment, at a resolution of 1/1000 of the memory of
 the host running the replay.
 
+### Generating unit tests from test logs
+
+The `e2eish-gen-TOPOLOGY_test.go` files in `cmd/plugins/POLICY/policy` are
+generated from the logs of a test run, one Go test for each e2e test. They
+need no logs to run, so they run with the other unit tests of the policy.
+Each test runs the steps of its log on a `Script` of `pkg/testutils/e2eish`,
+the same code the replay runs, up to the first step the replay cannot
+follow. A test with no assertion before such a step is left out.
+`E2EISH_VERBOSE` and `E2EISH_LOG_DIR` work for them as well.
+
+To generate the tests from the logs of a test run and run them:
+
+```shell
+./generate_tests.sh OUTPUT_DIR... [-- GO-TEST-ARG...]
+```
+
+The file of each topology with logs is written anew, so `git diff` after a
+run shows where the e2e tests and the unit tests went apart. The generated
+tests keep only what the replay uses of the logs. A pod of the guaranteed,
+burstable or besteffort template is a `PodSpec`, with only what differs from
+the defaults of the template, and other pods are built with `NewPod` and its
+options. The helm values most launches share are a base, and each launch
+has only what differs from it. The kube-system pods get names and labels
+which do not change from run to run. Hand-written tests can use the same
+`Script` steps.
+
 ## Publishing and serving results
 
 A run of the whole suite collects some 120 megabytes, most of it the command
