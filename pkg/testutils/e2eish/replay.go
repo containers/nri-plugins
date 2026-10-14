@@ -413,36 +413,9 @@ func (h *Harness) forgetGone(pods []*syncPod) {
 func parseLaunch(t *testing.T, plugin *Plugin, r *record) *launchRecord {
 	t.Helper()
 
-	topo := Topology{}
-	for _, g := range r.Topology {
-		group := Group{}
-		for key, value := range g {
-			n, _ := value.(float64)
-			switch key {
-			case "mem":
-				group.Mem, _ = value.(string)
-			case "cores":
-				group.Cores = int(n)
-			case "threads":
-				group.Threads = int(n)
-			case "nodes":
-				group.Nodes = int(n)
-			case "dies":
-				group.Dies = int(n)
-			case "packages":
-				group.Packages = int(n)
-			case "node-dist":
-				group.NodeDist = map[int]int{}
-				for node, d := range value.(map[string]any) {
-					id, err := strconv.Atoi(node)
-					require.NoError(t, err, "%s: bad node-dist", r)
-					group.NodeDist[id] = int(d.(float64))
-				}
-			default:
-				t.Skipf("%s: topology key %q is not supported", r, key)
-			}
-		}
-		topo = append(topo, group)
+	topo, err := topologyOfGroups(r.Topology)
+	if err != nil {
+		t.Skipf("%s: %v", r, err)
 	}
 
 	cfg, env, err := plugin.HelmConfig(r.Values)
