@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${NAME}
+spec:
+  resourceClaims:
+  - name: cpus
+    resourceClaimTemplateName: ${NAME}
+  containers:
+  $(contnum=0; for request in first second ""; do echo "
+  - name: ${NAME}c${contnum}
+    image: quay.io/prometheus/busybox
+    imagePullPolicy: IfNotPresent
+    command:
+      - sh
+      - -c
+      - echo ${NAME}c${contnum} \$(sleep inf)
+    resources:
+      claims:
+      - name: cpus
+        $( [ -n "$request" ] && echo "request: $request" )
+  "; contnum=$(( contnum + 1 )); done )
+  terminationGracePeriodSeconds: 1
