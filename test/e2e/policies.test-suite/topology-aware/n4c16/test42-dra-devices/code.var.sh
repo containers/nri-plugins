@@ -1,7 +1,8 @@
 # This test verifies that the topology-aware policy publishes one DRA
 # device per NUMA node, allocates CPUs to claims, pins containers to
-# the CPUs of their claim, exports those CPUs to the containers, and
-# updates the NRT CR after claim changes.
+# the CPUs of their claim, or of the requests of it they name, exports
+# those CPUs to the containers, and updates the NRT CR after claim
+# changes.
 #
 
 cleanup() {
@@ -37,11 +38,11 @@ claim() {
 }
 
 exported() {
-    # Usage: exported POD VARIABLE
+    # Usage: exported POD VARIABLE [CONTAINER]
     #
     # Print VARIABLE from the resources the policy exports to the container
-    # of POD.
-    vm-command-q "kubectl exec $1 -- cat /.nri-resource-policy/resources.sh" |
+    # of POD, or to its container CONTAINER.
+    vm-command-q "kubectl exec $1 ${3:+-c $3} -- cat /.nri-resource-policy/resources.sh" |
         sed -n "s/^$2=\"\(.*\)\"$/\1/p"
 }
 
@@ -226,8 +227,26 @@ verify "cpuset('$cpus7') <= cpuset('$(node-cpus 2)')" \
 # Its exported shared CPUs are its own, apart from the claimed ones.
 verify "cpuset('$(exported pod7 SHARED_CPUS)') == cpuset('$(node-cpus 2)') - cpuset('$cpus7')"
 
+# A container naming one request of a claim runs on the CPUs of that request
+# only, and a container naming no request on the CPUs of all of them. pod8's
+# claim asks for one CPU of node 0 and one of node 2.
+NAME=pod8 NODE_A=0 NODE_B=2 CPUS=1 wait="" create two-requests-claim
+NAME=pod8 create requests-pod
+report allowed
+first=$(exported pod8 CLAIMED_CPUS pod8c0)
+second=$(exported pod8 CLAIMED_CPUS pod8c1)
+verify "len(cpuset('$first')) == 1" \
+       "cpuset('$first') <= cpuset('$(node-cpus 0)')" \
+       "len(cpuset('$second')) == 1" \
+       "cpuset('$second') <= cpuset('$(node-cpus 2)')" \
+       "cpus['pod8c0'] == cpuset('$first')" \
+       "cpus['pod8c1'] == cpuset('$second')" \
+       "cpus['pod8c2'] == cpuset('$first,$second')" \
+       "cpuset('$(exported pod8 CLAIMED_CPUS pod8c2)') == cpuset('$first,$second')" \
+       "cpus['pod4c0'].isdisjoint(cpuset('$first,$second'))"
+
 vm-command "kubectl get deviceclasses,resourceslices,resourceclaims -o yaml" || :
 
 cleanup
 
-echo "OK: the topology-aware policy published one DRA device per NUMA node, gave each claim CPUs of its own, and pinned containers to their claim's CPUs and to the memory of its node, exported the claimed CPUs to the containers, and the NRT CR followed the claims"
+echo "OK: the topology-aware policy published one DRA device per NUMA node, gave each claim CPUs of its own, and pinned containers to their claim's CPUs, or to those of the requests they named, and to the memory of its node, exported the claimed CPUs to the containers, and the NRT CR followed the claims"
