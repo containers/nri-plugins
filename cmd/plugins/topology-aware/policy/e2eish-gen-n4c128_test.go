@@ -25,6 +25,8 @@ package topologyaware
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	harness "github.com/containers/nri-plugins/pkg/testutils/e2eish"
 )
 
@@ -179,30 +181,30 @@ def local_mems(ctr, *types):
          ",".join(sorted(expected)),
          ",".join(sorted(mems[ctr]))))
     return True`)
-	s.VerifyPy(`len(cpus["pod0c0"]) == 8`)
-	s.VerifyPy(`len(cpus["pod0c1"]) == 127`)
-	s.VerifyPy(`len(cpus["pod0c2"]) == 64`)
+	require.Len(t, s.CPUs("pod0c0"), 8)
+	require.Len(t, s.CPUs("pod0c1"), 127)
+	require.Len(t, s.CPUs("pod0c2"), 64)
 	s.DeleteAllPodsIn("default")
 	s.CreateBurstable(harness.PodSpec{
 		CPUReq:      "12",
 		CPULim:      "0",
 		Annotations: map[string]string{"unlimited-burstable.resource-policy.nri.io/container.pod1c0": "l3cache"},
 	})
-	s.VerifyPy(`len(cpus["pod1c0"]) == 31`)
+	require.Len(t, s.CPUs("pod1c0"), 31)
 	s.DeleteAllPodsIn("default")
 	s.CreateBurstable(harness.PodSpec{
 		CPUReq:      "4",
 		CPULim:      "20",
 		Annotations: map[string]string{"unlimited-burstable.resource-policy.nri.io/container.pod2c0": "l3cache"},
 	})
-	s.VerifyPy(`len(cpus["pod2c0"]) == 32`)
+	require.Len(t, s.CPUs("pod2c0"), 32)
 	s.DeleteAllPodsIn("default")
 	s.CreateBurstable(harness.PodSpec{
 		CPUReq:      "4",
 		CPULim:      "8",
 		Annotations: map[string]string{"unlimited-burstable.resource-policy.nri.io/container.pod3c0": "l3cache"},
 	})
-	s.VerifyPy(`len(cpus["pod3c0"]) == 8`)
+	require.Len(t, s.CPUs("pod3c0"), 8)
 	s.DeleteAllPodsIn("default")
 	s.CreateBurstable(harness.PodSpec{
 		ContCount: 2,
@@ -213,9 +215,9 @@ def local_mems(ctr, *types):
 			"unlimited-burstable.resource-policy.nri.io/container.pod4c1": "l3cache",
 		},
 	})
-	s.VerifyPy(`len(cpus["pod4c0"]) == 8`)
-	s.VerifyPy(`len(cpus["pod4c1"]) == 8`)
-	s.VerifyPy(`disjoint_sets(cpus["pod4c0"], cpus["pod4c1"])`)
+	require.Len(t, s.CPUs("pod4c0"), 8)
+	require.Len(t, s.CPUs("pod4c1"), 8)
+	harness.RequireDisjoint(t, s.CPUs("pod4c0"), s.CPUs("pod4c1"))
 	s.DeleteAllPodsIn("default")
 	s.CreateBurstable(harness.PodSpec{
 		ContCount: 2,
@@ -228,9 +230,9 @@ def local_mems(ctr, *types):
 			"unlimited-burstable.resource-policy.nri.io/container.pod5c1": "l3cache",
 		},
 	})
-	s.VerifyPy(`len(cpus["pod5c0"]) == 8`)
-	s.VerifyPy(`len(cpus["pod5c1"]) == 8`)
-	s.VerifyPy(`cpus["pod5c0"] == cpus["pod5c1"]`)
+	require.Len(t, s.CPUs("pod5c0"), 8)
+	require.Len(t, s.CPUs("pod5c1"), 8)
+	require.Equal(t, s.CPUs("pod5c0"), s.CPUs("pod5c1"))
 	s.DeleteAllPodsIn("default")
 	s.CreateBurstable(harness.PodSpec{
 		CPUReq:      "2",
@@ -256,11 +258,11 @@ def local_mems(ctr, *types):
 		MemReq:      "50M",
 		Annotations: map[string]string{"unlimited-burstable.resource-policy.nri.io/container.pod9c0": "l3cache"},
 	})
-	s.VerifyPy(`len(cpus["pod6c0"]) == 8`)
-	s.VerifyPy(`len(cpus["pod7c0"]) == 8`)
-	s.VerifyPy(`len(cpus["pod8c0"]) == 8`)
-	s.VerifyPy(`len(cpus["pod9c0"]) == 8`)
-	s.VerifyPy(`disjoint_sets(cpus["pod6c0"], cpus["pod7c0"], cpus["pod8c0"], cpus["pod9c0"])`)
+	require.Len(t, s.CPUs("pod6c0"), 8)
+	require.Len(t, s.CPUs("pod7c0"), 8)
+	require.Len(t, s.CPUs("pod8c0"), 8)
+	require.Len(t, s.CPUs("pod9c0"), 8)
+	harness.RequireDisjoint(t, s.CPUs("pod6c0"), s.CPUs("pod7c0"), s.CPUs("pod8c0"), s.CPUs("pod9c0"))
 	s.DeleteAllPodsIn("default")
 	s.CreateBurstable(harness.PodSpec{
 		CPUReq:      "4",
@@ -365,7 +367,7 @@ def local_mems(ctr, *types):
 		MemReq:      "50M",
 		Annotations: map[string]string{"unlimited-burstable.resource-policy.nri.io/container.pod26c0": "l3cache"},
 	})
-	s.VerifyPy(`cpus["pod26c0"] == cpus["pod25c0"]`)
+	require.Equal(t, s.CPUs("pod26c0"), s.CPUs("pod25c0"))
 	s.DeleteAllPodsIn("default")
 	s.CreateBurstable(harness.PodSpec{
 		CPUReq:      "7",
@@ -471,14 +473,14 @@ def local_mems(ctr, *types):
 		MemReq:      "50M",
 		Annotations: map[string]string{"unlimited-burstable.resource-policy.nri.io/container.pod43c0": "l3cache"},
 	})
-	s.VerifyPy(`len(cpus["pod43c0"]) == 31`)
+	require.Len(t, s.CPUs("pod43c0"), 31)
 	s.CreateBurstable(harness.PodSpec{
 		CPUReq:      "3",
 		CPULim:      "0",
 		MemReq:      "50M",
 		Annotations: map[string]string{"unlimited-burstable.resource-policy.nri.io/container.pod44c0": "l3cache"},
 	})
-	s.VerifyPy(`len(cpus["pod44c0"]) == 32`)
+	require.Len(t, s.CPUs("pod44c0"), 32)
 	s.DeleteAllPodsIn("default")
 	s.CreateBurstable(harness.PodSpec{
 		CPUReq:      "2",
@@ -578,25 +580,25 @@ def local_mems(ctr, *types):
 	})
 	s.VerifyPy(`len(set.union(*[cpus[f'pod{i}c0'] for i in range(45, 60 + 1)])) == 127`)
 	s.VerifyPy(`disjoint_sets(*[cpus[f'pod{i}c0'] for i in range(45, 60 + 1)])`)
-	s.VerifyPy(`len(cpus["pod45c0"]) == 8`)
+	require.Len(t, s.CPUs("pod45c0"), 8)
 	s.CreateGuaranteed(harness.PodSpec{
 		CPU:         "4",
 		Annotations: map[string]string{"unlimited-burstable.resource-policy.nri.io/container.pod60c0": "l3cache"},
 	})
-	s.VerifyPy(`len(cpus["pod61c0"]) == 4`)
-	s.VerifyPy(`len(cpus["pod45c0"]) == 4`)
-	s.VerifyPy(`disjoint_sets(cpus["pod45c0"], cpus["pod61c0"])`)
+	require.Len(t, s.CPUs("pod61c0"), 4)
+	require.Len(t, s.CPUs("pod45c0"), 4)
+	harness.RequireDisjoint(t, s.CPUs("pod45c0"), s.CPUs("pod61c0"))
 	s.CreateGuaranteed(harness.PodSpec{
 		CPU:         "8",
 		Annotations: map[string]string{"unlimited-burstable.resource-policy.nri.io/container.pod60c0": "l3cache"},
 	})
-	s.VerifyPy(`len(cpus["pod62c0"]) == 8`)
-	s.VerifyPy(`len(cpus["pod50c0"]) == 2`)
-	s.VerifyPy(`len(cpus["pod51c0"]) == 6`)
+	require.Len(t, s.CPUs("pod62c0"), 8)
+	require.Len(t, s.CPUs("pod50c0"), 2)
+	require.Len(t, s.CPUs("pod51c0"), 6)
 	s.DeletePods("default", "pod61", "pod62")
-	s.VerifyPy(`len(cpus["pod45c0"]) == 8`)
-	s.VerifyPy(`len(cpus["pod50c0"]) == 8`)
-	s.VerifyPy(`len(cpus["pod51c0"]) == 8`)
+	require.Len(t, s.CPUs("pod45c0"), 8)
+	require.Len(t, s.CPUs("pod50c0"), 8)
+	require.Len(t, s.CPUs("pod51c0"), 8)
 	s.DeleteAllPodsIn("default")
 	s.Terminate()
 }
