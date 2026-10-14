@@ -36,5 +36,6 @@ if [ -z "$logs" ]; then
 fi
 
 cd "$(dirname "$0")/../.."
-E2EISH_REPLAY="$logs" exec "${GO_CMD:-go}" test ./cmd/plugins/topology-aware/policy/ \
+E2EISH_REPLAY="$logs" exec "${GO_CMD:-go}" test \
+    ./cmd/plugins/topology-aware/policy/ ./cmd/plugins/balloons/policy/ \
     -run "TestE2eishReplay" -count=1 -v "$@"
