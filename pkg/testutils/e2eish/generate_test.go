@@ -188,6 +188,33 @@ func TestDeleteRenamedKubeSystemPod(t *testing.T) {
 	require.Contains(t, strings.Join(stepCalls(g), "\n"), `s.DeletePods("kube-system", "coredns-1")`)
 }
 
+// The id widths follow the NUMA mode of the launch. A machine with NUMA
+// disabled has one node, whatever its topology says, so a node name of the
+// e2e test which names nothing there, like the node00 of a twelve-node
+// machine, has to stay a name literal: as an id it would be padded to the
+// node0 of the replay and compare equal, making an assertion which held in
+// the e2e test fail in the generated one.
+func TestWidthsFollowTheNUMAMode(t *testing.T) {
+	calls := func(numa bool) string {
+		g := genOf(t, []*record{
+			{Op: "machine", NUMA: &numa},
+			{Op: "launch", Values: json.RawMessage(`{}`), Topology: []map[string]any{
+				{"mem": "2G", "cores": float64(1), "nodes": float64(6), "packages": float64(2)}}},
+			verifyOf(`nodes["pod0c0"] != {"node00"}`),
+		})
+		return strings.Join(stepCalls(g), "\n")
+	}
+
+	on := calls(true)
+	require.Contains(t, on, "s.SetNUMA(true)")
+	require.Contains(t, on, "s.NodeIDs(0)", "with NUMA a two-digit node name is an id")
+
+	off := calls(false)
+	require.Contains(t, off, "s.SetNUMA(false)")
+	require.Contains(t, off, `harness.NewSet("node00")`, "without NUMA the name stays a literal")
+	require.NotContains(t, off, "s.NodeIDs(", "and is not compared as an id")
+}
+
 // A log which ends inside a skipped block, as a run aborted in one leaves it,
 // ends the test at the assertion before the block. The skip would otherwise
 // stay in the generated test, which then fails the unmatched-skip check of
