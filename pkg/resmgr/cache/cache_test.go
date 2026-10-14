@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
+	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
 var _ = Describe("Cache", func() {
@@ -102,6 +103,32 @@ var _ = Describe("Cache", func() {
 		var value string
 		Expect(c.GetPolicyEntry("key", &value)).To(BeFalse())
 		Expect(c.GetActivePolicy()).To(Equal("test"))
+	})
+
+	It("saves and restores maps of lists of cpusets as policy entries", func() {
+		dir := GinkgoT().TempDir()
+		saved := map[string][]cpuset.CPUSet{
+			"a": {cpuset.MustParse("0-1"), cpuset.MustParse("4,6")},
+			"b": {cpuset.MustParse("2")},
+		}
+
+		c, err := cache.NewCache(cache.Options{CacheDir: dir})
+		Expect(err).To(BeNil())
+		Expect(c.SetActivePolicy("test")).To(Succeed())
+		c.SetPolicyEntry("claims", saved)
+		Expect(c.Save()).To(Succeed())
+
+		c, err = cache.NewCache(cache.Options{CacheDir: dir})
+		Expect(err).To(BeNil())
+		restored := map[string][]cpuset.CPUSet{}
+		Expect(c.GetPolicyEntry("claims", &restored)).To(BeTrue())
+		Expect(restored).To(HaveLen(2))
+		for key, csets := range saved {
+			Expect(restored[key]).To(HaveLen(len(csets)))
+			for i, cset := range csets {
+				Expect(restored[key][i].Equals(cset)).To(BeTrue())
+			}
+		}
 	})
 })
 

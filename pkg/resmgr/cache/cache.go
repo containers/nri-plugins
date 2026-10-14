@@ -939,7 +939,8 @@ func (cch *cache) GetPolicyEntry(key string, ptr any) bool {
 	return true
 }
 
-// Marshal an opaque policy entry, special-casing cpusets and maps of cpusets.
+// Marshal an opaque policy entry, special-casing cpusets and maps of cpusets
+// or of lists of cpusets.
 func marshalEntry(obj any) ([]byte, error) {
 	switch obj := obj.(type) {
 	case cpuset.CPUSet:
@@ -950,13 +951,22 @@ func marshalEntry(obj any) ([]byte, error) {
 			dst[key] = cset.String()
 		}
 		return json.Marshal(dst)
+	case map[string][]cpuset.CPUSet:
+		dst := make(map[string][]string)
+		for key, csets := range obj {
+			for _, cset := range csets {
+				dst[key] = append(dst[key], cset.String())
+			}
+		}
+		return json.Marshal(dst)
 
 	default:
 		return json.Marshal(obj)
 	}
 }
 
-// Unmarshal an opaque policy entry, special-casing cpusets and maps of cpusets.
+// Unmarshal an opaque policy entry, special-casing cpusets and maps of cpusets
+// or of lists of cpusets.
 func unmarshalEntry(data []byte, ptr any) error {
 	switch ptr := ptr.(type) {
 	case *cpuset.CPUSet:
@@ -990,6 +1000,26 @@ func unmarshalEntry(data []byte, ptr any) error {
 		*ptr = dst
 		return nil
 
+	case *map[string][]cpuset.CPUSet:
+		src := make(map[string][]string)
+		if err := json.Unmarshal(data, &src); err != nil {
+			return cacheError("failed to unmarshal map[string][]cpuset.CPUSet: %v", err)
+		}
+
+		dst := make(map[string][]cpuset.CPUSet)
+		for key, strs := range src {
+			for _, str := range strs {
+				cset, err := cpuset.Parse(str)
+				if err != nil {
+					return cacheError("failed to unmarshal cpuset.CPUSet '%s': %v", str, err)
+				}
+				dst[key] = append(dst[key], cset)
+			}
+		}
+
+		*ptr = dst
+		return nil
+
 	default:
 		err := json.Unmarshal(data, ptr)
 		return err
@@ -1007,6 +1037,8 @@ func (cch *cache) cacheEntry(key string, ptr any) error {
 	case *cpuset.CPUSet:
 		cch.policyData[key] = *ptr
 	case *map[string]cpuset.CPUSet:
+		cch.policyData[key] = *ptr
+	case *map[string][]cpuset.CPUSet:
 		cch.policyData[key] = *ptr
 	case *map[string]string:
 		cch.policyData[key] = *ptr
@@ -1049,6 +1081,8 @@ func (cch *cache) setEntry(key string, ptr, obj any) error {
 		*ptr.(*cpuset.CPUSet) = obj.(cpuset.CPUSet)
 	case *map[string]cpuset.CPUSet:
 		*ptr.(*map[string]cpuset.CPUSet) = obj.(map[string]cpuset.CPUSet)
+	case *map[string][]cpuset.CPUSet:
+		*ptr.(*map[string][]cpuset.CPUSet) = obj.(map[string][]cpuset.CPUSet)
 	case *map[string]string:
 		*ptr.(*map[string]string) = obj.(map[string]string)
 
