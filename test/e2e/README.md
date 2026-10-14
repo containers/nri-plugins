@@ -289,9 +289,10 @@ Worth knowing:
 
 ## Replaying test logs as unit tests
 
-The topology-aware policy can replay the log of an e2e test as a unit test,
-against the policy alone and without a VM. For that, a test prints a record
-of each step which changes or checks the placement of containers.
+The topology-aware and balloons policies can replay the log of an e2e test
+as a unit test, against the policy alone and without a VM. For that, a test
+prints a record of each step which changes or checks the placement of
+containers.
 
 ### Records
 
