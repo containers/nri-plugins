@@ -35,11 +35,11 @@ const (
 
 // policy is our runtime state for this policy.
 type policy struct {
-	cfg    *cfgapi.Config           // our runtime configuration
-	cache  cache.Cache              // pod/container cache
-	system system.System            // system/HW/topology information
-	owner  policyapi.Owner          // resource manager running us
-	claims map[string]cpuset.CPUSet // CPUs of DRA claims, by claim UID
+	cfg    *cfgapi.Config             // our runtime configuration
+	cache  cache.Cache                // pod/container cache
+	system system.System              // system/HW/topology information
+	owner  policyapi.Owner            // resource manager running us
+	claims map[string][]cpuset.CPUSet // CPUs of each result of DRA claims, by claim UID
 }
 
 // Make sure policy implements the policy.Backend interface.
@@ -142,7 +142,12 @@ func (p *policy) GetExtendedResources() map[string]*resource.Quantity {
 	return nil
 }
 
-// ExportResourceData provides resource data to export for the container.
+// ExportResourceData provides resource data to export for the container:
+// the CPUs of the claims it holds.
 func (p *policy) ExportResourceData(c cache.Container) map[string]string {
-	return nil
+	claimed := p.containerClaims(c)
+	if claimed.IsEmpty() {
+		return nil
+	}
+	return map[string]string{policyapi.ExportClaimedCPUs: claimed.String()}
 }

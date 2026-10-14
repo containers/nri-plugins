@@ -20,9 +20,11 @@ device() {
 check-cpus() {
     # Usage: check-cpus POD CPUS
     #
-    # Check that the claim of POD got the cpuset CPUS, as the container sees it.
+    # Check that the claim of POD got the cpuset CPUS, as the policy exports it
+    # to the container.
     local cpus
-    cpus=$(vm-command-q "kubectl exec $1 -- env" | sed -n 's/^DRA_CPUSET_[^=]*=//p')
+    cpus=$(vm-command-q "kubectl exec $1 -- cat /.nri-resource-policy/resources.sh" |
+               sed -n 's/^CLAIMED_CPUS="\(.*\)"$/\1/p')
     [ "$cpus" == "$2" ] ||
         error "$1 got CPUs \"$cpus\", expected \"$2\""
     echo "$1 got CPUs $cpus"
