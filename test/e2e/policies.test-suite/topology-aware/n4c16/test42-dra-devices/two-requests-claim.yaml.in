@@ -1,0 +1,26 @@
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: ${NAME}
+spec:
+  spec:
+    devices:
+      requests:
+      - name: first
+        exactly:
+          deviceClassName: topology-aware.nri.io
+          selectors:
+          - cel:
+              expression: device.attributes[\"resource.kubernetes.io\"].numaNode == ${NODE_A}
+          capacity:
+            requests:
+              dra.cpu/cpu: '${CPUS}'
+      - name: second
+        exactly:
+          deviceClassName: topology-aware.nri.io
+          selectors:
+          - cel:
+              expression: device.attributes[\"resource.kubernetes.io\"].numaNode == ${NODE_B}
+          capacity:
+            requests:
+              dra.cpu/cpu: '${CPUS}'
