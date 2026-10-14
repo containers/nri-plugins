@@ -29,7 +29,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	specs "tags.cncf.io/container-device-interface/specs-go"
 )
 
 // testSystem has CPUs 0-7, all of them online.
@@ -109,28 +108,27 @@ func testClaim(uid types.UID, amounts ...string) (*resourceapi.ResourceClaim, []
 }
 
 // allocate allocates a claim, failing the test on an error.
-func allocate(t *testing.T, p *policy, uid types.UID, amounts ...string) []specs.ContainerEdits {
+// allocate allocates a claim, failing the test on error or on any edits.
+func allocate(t *testing.T, p *policy, uid types.UID, amounts ...string) {
 	t.Helper()
 	edits, err := p.AllocateClaim(testClaim(uid, amounts...))
 	if err != nil {
 		t.Fatalf("failed to allocate claim %s: %v", uid, err)
 	}
-	return edits
-}
-
-// cpuEdits are the edits of a claim holding the given CPUs, one per result.
-func cpuEdits(uid types.UID, results int, cpus string) []specs.ContainerEdits {
-	edits := make([]specs.ContainerEdits, results)
-	for i := range edits {
-		edits[i].Env = []string{fmt.Sprintf("DRA_CPUSET_%s=%s", uid, cpus)}
+	if edits != nil {
+		t.Fatalf("claim %s got edits %v, want none", uid, edits)
 	}
-	return edits
 }
 
-func checkEdits(t *testing.T, got, want []specs.ContainerEdits) {
+// checkClaim checks the CPUs of each result of a claim.
+func checkClaim(t *testing.T, p *policy, uid types.UID, want ...string) {
 	t.Helper()
+	got := []string{}
+	for _, cpus := range p.claims[string(uid)] {
+		got = append(got, cpus.String())
+	}
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got edits %v, want %v", got, want)
+		t.Errorf("claim %s holds CPUs %v, want %v", uid, got, want)
 	}
 }
 
@@ -187,13 +185,18 @@ func TestDRADevices(t *testing.T) {
 func TestAllocateClaim(t *testing.T) {
 	p := testPolicy(t, t.TempDir(), testConfig("", "750m"))
 
-	checkEdits(t, allocate(t, p, "a", "2"), cpuEdits("a", 1, "0-1"))
-	checkEdits(t, allocate(t, p, "b", "1", "2"), cpuEdits("b", 2, "2-4"))
+	allocate(t, p, "a", "2")
+	checkClaim(t, p, "a", "0-1")
+	allocate(t, p, "b", "1", "2")
+	checkClaim(t, p, "b", "2", "3-4")
 
 	// Preparing a claim again allocates nothing further.
-	checkEdits(t, allocate(t, p, "a", "2"), cpuEdits("a", 1, "0-1"))
-	checkEdits(t, allocate(t, p, "b", "1", "2"), cpuEdits("b", 2, "2-4"))
-	checkEdits(t, allocate(t, p, "c", "3"), cpuEdits("c", 1, "5-7"))
+	allocate(t, p, "a", "2")
+	checkClaim(t, p, "a", "0-1")
+	allocate(t, p, "b", "1", "2")
+	checkClaim(t, p, "b", "2", "3-4")
+	allocate(t, p, "c", "3")
+	checkClaim(t, p, "c", "5-7")
 
 	if _, err := p.AllocateClaim(testClaim("d", "1")); err == nil {
 		t.Errorf("allocated a claim with no CPUs left")
@@ -257,7 +260,8 @@ func TestReleaseClaim(t *testing.T) {
 		t.Errorf("failed to release an unknown claim: %v", err)
 	}
 
-	checkEdits(t, allocate(t, p, "c", "3"), cpuEdits("c", 1, "0-1,4"))
+	allocate(t, p, "c", "3")
+	checkClaim(t, p, "c", "0-1,4")
 }
 
 func TestRestoreClaims(t *testing.T) {
@@ -275,8 +279,10 @@ func TestRestoreClaims(t *testing.T) {
 	// Claim b holds CPUs 1-3, not the lowest free ones, so only a restored
 	// claim gets them again.
 	p = testPolicy(t, dir, testConfig("", "750m"))
-	checkEdits(t, allocate(t, p, "b", "1", "2"), cpuEdits("b", 2, "1-3"))
-	checkEdits(t, allocate(t, p, "c", "2"), cpuEdits("c", 1, "0,4"))
+	allocate(t, p, "b", "1", "2")
+	checkClaim(t, p, "b", "1", "2-3")
+	allocate(t, p, "c", "2")
+	checkClaim(t, p, "c", "0,4")
 }
 
 // TestRestoreClaimsNotAllowed verifies that a claim keeps its CPUs across a
@@ -290,8 +296,10 @@ func TestRestoreClaimsNotAllowed(t *testing.T) {
 	}
 
 	p = testPolicy(t, dir, testConfig("cpuset:1-4", "750m"))
-	checkEdits(t, allocate(t, p, "a", "2"), cpuEdits("a", 1, "0-1"))
-	checkEdits(t, allocate(t, p, "b", "2"), cpuEdits("b", 1, "2-3"))
+	allocate(t, p, "a", "2")
+	checkClaim(t, p, "a", "0-1")
+	allocate(t, p, "b", "2")
+	checkClaim(t, p, "b", "2-3")
 }
 
 func TestReconfigure(t *testing.T) {
@@ -305,5 +313,44 @@ func TestReconfigure(t *testing.T) {
 	}
 	if err := p.Reconfigure(testConfig("cpuset:0-3", "1")); err == nil {
 		t.Errorf("changed reserved CPUs at runtime")
+	}
+}
+
+// testContainer holds the given CDI devices.
+type testContainer struct {
+	cache.Container
+	devices []string
+}
+
+func (c *testContainer) GetCDIDevices() []string { return c.devices }
+func (c *testContainer) GetEnvList() []string    { return nil }
+
+// TestExportResourceData verifies that a container is told the CPUs of the
+// claim results it holds, and that a container without a claim is told
+// nothing.
+func TestExportResourceData(t *testing.T) {
+	p := testPolicy(t, t.TempDir(), testConfig("", "750m"))
+	allocate(t, p, "a", "2")
+	allocate(t, p, "b", "1", "2")
+
+	for _, tc := range []struct {
+		name    string
+		devices []string
+		want    map[string]string
+	}{
+		{"one result", []string{"template.nri.io/device=claim-b-1"}, map[string]string{"CLAIMED_CPUS": "3-4"}},
+		{
+			"two claims",
+			[]string{"template.nri.io/device=claim-a-0", "template.nri.io/device=claim-b-0"},
+			map[string]string{"CLAIMED_CPUS": "0-2"},
+		},
+		{"unknown result", []string{"template.nri.io/device=claim-a-1"}, nil},
+		{"no claim", nil, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := p.ExportResourceData(&testContainer{devices: tc.devices}); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("exported %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
