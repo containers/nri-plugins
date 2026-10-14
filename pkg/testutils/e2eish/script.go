@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"testing"
@@ -43,9 +44,13 @@ type Script struct {
 	skipping string
 	at       string // the record being replayed, for messages
 	consts   string
-	pods     int // created, for the names of PodSpecs
-	verified int
-	skipped  int
+	// requirePython makes a verify with no python3 skip the test, as a
+	// replay checks nothing else then.
+	requirePython bool
+	pods          int // created, for the names of PodSpecs
+	verified      int
+	skipped       int
+	reads         int // of the state, by the accessors of the Go assertions
 }
 
 // NewScript returns a script for the plugin. A test with overrides read when
@@ -61,9 +66,39 @@ func NewScript(t *testing.T, plugin *Plugin) *Script {
 		if s.skipping != "" {
 			t.Errorf("the skip of %q has no resume", s.skipping)
 		}
-		t.Logf("%d verified assertions, %d skipped", s.verified, s.skipped)
+		if r := s.verifyReport(); r != "" {
+			t.Log(r)
+		}
 	})
 	return s
+}
+
+// verifyReport tells how many python assertions were verified and skipped,
+// and how many reads of the state the Go assertions made, "" if a test did
+// neither. A require assertion does not go through the Script, so the reads
+// of the accessors are all the Script sees of the Go ones: a run with no
+// python3 verifies no python assertion at all and the reads are what tells
+// that it checked anything.
+func (s *Script) verifyReport() string {
+	r := ""
+	if s.verified+s.skipped > 0 {
+		noun := "assertions"
+		if s.verified == 1 {
+			noun = "assertion"
+		}
+		r = fmt.Sprintf("%d python %s verified, %d skipped", s.verified, noun, s.skipped)
+	}
+	if s.reads > 0 {
+		noun := "reads"
+		if s.reads == 1 {
+			noun = "read"
+		}
+		if r != "" {
+			r += ", "
+		}
+		r += fmt.Sprintf("%d Go state %s", s.reads, noun)
+	}
+	return r
 }
 
 // Harness is the harness of the script, nil before the first launch.
@@ -77,7 +112,10 @@ func (s *Script) unsupported(format string, args ...any) {
 	if s.at != "" {
 		msg = s.at + ": " + msg
 	}
-	s.t.Skipf("%s, after %d verified and %d skipped assertions", msg, s.verified, s.skipped)
+	if r := s.verifyReport(); r != "" {
+		msg += ", after " + r
+	}
+	s.t.Skip(msg)
 }
 
 // Launch is helm-launch of the plugin on the topology, with helm values
@@ -322,8 +360,9 @@ func (s *Script) VerifyPy(expr string) {
 }
 
 // verify checks that the expression holds in the replay exactly when it held
-// in the e2e test. An expression with names the replay does not provide is
-// skipped.
+// in the e2e test, and that the accessors give the state python saw. An
+// expression is skipped with no python3, or with names the replay does not
+// provide.
 func (s *Script) verify(expr string, held bool) {
 	s.t.Helper()
 	if s.skipping != "" {
@@ -331,19 +370,40 @@ func (s *Script) verify(expr string, held bool) {
 		return
 	}
 	require.NotNil(s.t, s.h, "a verify with no policy launched")
-	ok, err := s.h.evalVerify(expr, s.consts)
-	switch {
-	case errors.Is(err, errNoPython):
+	ok, state, snap, err := s.h.evalVerify(expr, s.consts)
+	if errors.Is(err, errNoPython) && s.requirePython {
 		s.unsupported("%v", err)
-	case errors.Is(err, errNoName):
+	}
+	if errors.Is(err, errNoPython) || errors.Is(err, errNoName) {
 		Log.Infof("===== verify %q: skipped, %v", expr, err)
 		s.skipped++
 		return
 	}
 	require.NoError(s.t, err, "failed to evaluate %q", expr)
+	s.crossCheck(state, snap)
 	Log.Infof("===== verify %q: e2e held %v, replay held %v", expr, held, ok)
 	require.Equal(s.t, held, ok, "%q is %v in the replay, %v in the e2e test", expr, ok, held)
 	s.verified++
+}
+
+// crossCheck requires that the accessors give the state python computed, for
+// every container python has one of. Both sides come from the snapshot of the
+// allocations python was given, not from a second read of them: a timer of the
+// policy, like the cold start of topology-aware, can change an allocation
+// while python runs, and the two sides would differ with both of them right.
+func (s *Script) crossCheck(state map[string]map[string][]string, snap map[string]allowed) {
+	s.t.Helper()
+	names := newTopoNames(s.h.Machine)
+	for ctr := range state["cpus"] {
+		a, ok := snap[ctr]
+		require.True(s.t, ok, "%s has a python state but no allocation in the snapshot", ctr)
+		st := names.state(a.cpus, a.mems)
+		for _, v := range stateVars {
+			want := append([]string{}, state[v][ctr]...)
+			got := append([]string{}, slices.Sorted(maps.Keys(st[v]))...)
+			require.Equal(s.t, want, got, "%s[%q] in Go and in python", v, ctr)
+		}
+	}
 }
 
 // Skip starts a block of the e2e test the replay cannot follow. The pod

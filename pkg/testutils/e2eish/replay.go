@@ -252,6 +252,7 @@ func replaySegment(t *testing.T, plugin *Plugin, records []*record, seg segment,
 		failLaunch = false
 		skipIDs    map[string]bool // containers running at the skip
 	)
+	s.requirePython = true
 
 	for i, r := range records[:seg.to] {
 		// Before the segment, only the machine and the py_consts matter.
@@ -507,28 +508,31 @@ func libDir() string {
 
 // evalVerify evaluates a verify expression of an e2e test on the replay, with
 // the variables the e2e test computes on the VM and the py_consts code. It
-// tells if the expression held.
-func (h *Harness) evalVerify(expr, consts string) (bool, error) {
+// tells if the expression held, the state the variables of stateVars had,
+// their names by container, and the snapshot of the allocations it read them
+// from, for the caller to cross-check the state against the same read.
+func (h *Harness) evalVerify(expr, consts string) (bool, map[string]map[string][]string, map[string]allowed, error) {
 	h.T.Helper()
 
 	python, err := exec.LookPath("python3")
 	if err != nil {
-		return false, errNoPython
+		return false, nil, nil, errNoPython
 	}
 
 	var (
-		dir     = h.T.TempDir()
-		lib     = libDir()
-		dump    = filepath.Join(dir, "topology_dump")
-		allowed = filepath.Join(dir, "res_allowed")
+		dir         = h.T.TempDir()
+		lib         = libDir()
+		dump        = filepath.Join(dir, "topology_dump")
+		allowedFile = filepath.Join(dir, "res_allowed")
+		snap        = h.allowedSnapshot()
 	)
 	require.NoError(h.T, os.WriteFile(dump, []byte(h.topologyDump()), 0o644))
-	require.NoError(h.T, os.WriteFile(allowed, []byte(h.resAllowed()), 0o644))
+	require.NoError(h.T, os.WriteFile(allowedFile, []byte(h.resAllowed(snap)), 0o644))
 
 	tree, err := exec.Command(python, filepath.Join(lib, "topology.py"),
-		"-t", dump, "-r", allowed, "res_allowed", "-o", "json").Output()
+		"-t", dump, "-r", allowedFile, "res_allowed", "-o", "json").Output()
 	if err != nil {
-		return false, fmt.Errorf("topology.py: %w", err)
+		return false, nil, nil, fmt.Errorf("topology.py: %w", err)
 	}
 	glue, err := os.ReadFile(filepath.Join(lib, "py_allowed.py"))
 	require.NoError(h.T, err)
@@ -537,7 +541,9 @@ func (h *Harness) evalVerify(expr, consts string) (bool, error) {
 	code := "import pprint; pp=pprint.pprint\n" +
 		"import re\nallowed=" + strings.TrimSpace(string(tree)) + "\n" +
 		string(glue) + "\n" + consts + "\n" +
-		"import sys\n" +
+		"import sys, json\n" +
+		"print('E2EISH-STATE ' + json.dumps({v: {c: sorted(s) for c, s in globals()[v].items()} for v in " +
+		pyStrings(stateVars) + "}))\n" +
 		"try:\n    assert(" + expr + ")\n" +
 		"except AssertionError:\n    sys.exit(10)\n" +
 		"except NameError as e:\n    print(e)\n    sys.exit(11)\n"
@@ -547,17 +553,33 @@ func (h *Harness) evalVerify(expr, consts string) (bool, error) {
 	cmd := exec.Command(python, program)
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+lib)
 	out, err := cmd.CombinedOutput()
-	var exit *exec.ExitError
+	var (
+		state = map[string]map[string][]string{}
+		last  string
+		exit  *exec.ExitError
+	)
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if data, ok := strings.CutPrefix(line, "E2EISH-STATE "); ok {
+			require.NoError(h.T, json.Unmarshal([]byte(data), &state), "bad python state")
+			continue
+		}
+		last = line
+	}
 	switch {
 	case err == nil:
-		return true, nil
+		return true, state, snap, nil
 	case errors.As(err, &exit) && exit.ExitCode() == 10:
-		return false, nil
+		return false, state, snap, nil
 	case errors.As(err, &exit) && exit.ExitCode() == 11:
-		return false, fmt.Errorf("%w: %s", errNoName, strings.TrimSpace(string(out)))
+		return false, nil, nil, fmt.Errorf("%w: %s", errNoName, last)
 	default:
-		return false, fmt.Errorf("%w: %s", err, out)
+		return false, nil, nil, fmt.Errorf("%w: %s", err, out)
 	}
+}
+
+// pyStrings is a python list of the strings.
+func pyStrings(strs []string) string {
+	return "['" + strings.Join(strs, "', '") + "']"
 }
 
 // topologyDump is what topology.py bash_topology_dump prints on the VM.
@@ -582,11 +604,21 @@ func (h *Harness) topologyDump() string {
 	return b.String()
 }
 
-// resAllowed is what topology.py bash_res_allowed prints on the VM for the
-// running test containers: name/pid, and the CPUs and memory nodes allowed.
-func (h *Harness) resAllowed() string {
-	b := &strings.Builder{}
-	for i, name := range h.Running() {
+// allowed is what one read of an allocation gives: the CPUs and the memory
+// nodes a container may use, with the memory nodes of an unset cpuset.mems
+// resolved to all of them, as res_allowed reports them.
+type allowed struct {
+	cpus cpuset.CPUSet
+	mems []int
+}
+
+// allowedSnapshot reads the allocations of the running test containers once.
+// A timer of the policy, like the cold start of topology-aware, can change an
+// allocation at any point of a verify, so python and the Go reconstruction of
+// the state must both work from one read of it, not from two.
+func (h *Harness) allowedSnapshot() map[string]allowed {
+	snap := map[string]allowed{}
+	for _, name := range h.Running() {
 		if !testContainer.MatchString(name) {
 			continue
 		}
@@ -597,7 +629,18 @@ func (h *Harness) resAllowed() string {
 			require.NoError(h.T, err)
 			memIDs = set.List()
 		}
-		fmt.Fprintf(b, "%s/%d c:%s m:%s\n", name, 1000+i, hexMask(cpus.List()), hexMask(memIDs))
+		snap[name] = allowed{cpus: cpus, mems: memIDs}
+	}
+	return snap
+}
+
+// resAllowed is what topology.py bash_res_allowed prints on the VM for the
+// containers of the snapshot: name/pid, and the CPUs and memory nodes allowed.
+func (h *Harness) resAllowed(snap map[string]allowed) string {
+	b := &strings.Builder{}
+	for i, name := range slices.Sorted(maps.Keys(snap)) {
+		a := snap[name]
+		fmt.Fprintf(b, "%s/%d c:%s m:%s\n", name, 1000+i, hexMask(a.cpus.List()), hexMask(a.mems))
 	}
 	return b.String()
 }
