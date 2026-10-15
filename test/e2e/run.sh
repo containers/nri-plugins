@@ -798,6 +798,9 @@ create() { # script API
         else
             local NAME="${template_kind}$(( ${kind_count[$template_kind]} - 1 ))" # the first pod is pod0
         fi
+        if [ "$template_kind" == pod ] && ! [[ "$NAME" =~ ^pod[0-9]+$ ]] && ! [[ " ${named_pods[*]} " == *" $NAME "* ]]; then
+            named_pods+=("$NAME")
+        fi
         eval "echo -e \"$(<"${template_file}")\"" | grep -v '^ *$' > "$TEST_OUTPUT_DIR/$NAME.yaml"
         host-command "$SCP \"$TEST_OUTPUT_DIR/$NAME.yaml\" $VM_HOSTNAME:" || {
             command-error "copying \"$TEST_OUTPUT_DIR/$NAME.yaml\" to VM failed"
@@ -876,6 +879,18 @@ reset() { # script API
     fi
 }
 
+res-allowed-processes() {
+    # Usage: res-allowed-processes
+    #
+    # Print the patterns of the processes of the test containers, one per
+    # line: those of podN, and of the pods created with another NAME.
+    local name
+    echo 'pod[0-9]*c[0-9]*'
+    for name in "${named_pods[@]}"; do
+        echo "${name//./\\.}c[0-9]*"
+    done
+}
+
 get-py-allowed() {
     topology_dump_file="$TEST_OUTPUT_DIR/topology_dump.$VM_HOSTNAME"
     res_allowed_file="$TEST_OUTPUT_DIR/res_allowed.$VM_HOSTNAME"
@@ -886,7 +901,9 @@ get-py-allowed() {
         echo -e "$COMMAND_OUTPUT" > "$topology_dump_file"
     fi
     # Fetch data and update allowed* variables from the virtual machine
-    vm-command "$("$LIB_DIR/topology.py" bash_res_allowed 'pod[0-9]*c[0-9]*')" >/dev/null || {
+    local processes
+    mapfile -t processes < <(res-allowed-processes)
+    vm-command "$("$LIB_DIR/topology.py" bash_res_allowed "${processes[@]}")" >/dev/null || {
         command-error "error fetching res_allowed from $VM_HOSTNAME"
     }
     echo -e "$COMMAND_OUTPUT" > "$res_allowed_file"
@@ -1156,6 +1173,7 @@ $py_assertion
 yaml_in_defaults="CPU=1 MEM=100M ISO=true CPUREQ=1 CPULIM=2 MEMREQ=100M MEMLIM=200M CONTCOUNT=1"
 
 declare -A kind_count # associative arrays for counting created objects, like kind_count[pod]=1
+named_pods=() # pods created with a NAME other than podN, for get-py-allowed
 eval "${yaml_in_defaults}"
 
 # Run test/demo
