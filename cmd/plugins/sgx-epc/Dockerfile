@@ -21,10 +21,6 @@ COPY . .
 
 RUN --mount=type=cache,target=/go/pkg/mod/ \
     --mount=type=cache,target="/root/.cache/go-build" \
-    make install-license-tool
-
-RUN --mount=type=cache,target=/go/pkg/mod/ \
-    --mount=type=cache,target="/root/.cache/go-build" \
     make IMAGE_VERSION=${IMAGE_VERSION} \
          BUILD_VERSION=${BUILD_VERSION} \
          BUILD_BUILDID=${BUILD_BUILDID} \
@@ -34,11 +30,11 @@ RUN --mount=type=cache,target=/go/pkg/mod/ \
          OTHER_IMAGE_TARGETS="" \
          BINARIES="" \
          PLUGINS=nri-sgx-epc \
-         clean build-plugins-static licenses
+         clean build-plugins-static
 
 FROM gcr.io/distroless/static
 
 COPY --from=builder /go/builder/build/bin/nri-sgx-epc /bin/nri-sgx-epc
-COPY --from=builder /go/builder/build/licenses/nri-sgx-epc/ /licenses/nri-sgx-epc/
+COPY build/licenses/nri-sgx-epc/ /licenses/nri-sgx-epc/
 
 ENTRYPOINT ["/bin/nri-sgx-epc", "-idx", "40"]

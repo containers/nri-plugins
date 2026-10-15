@@ -28,10 +28,6 @@ COPY . .
 
 RUN --mount=type=cache,target=/go/pkg/mod/ \
     --mount=type=cache,target="/root/.cache/go-build" \
-    make install-license-tool
-
-RUN --mount=type=cache,target=/go/pkg/mod/ \
-    --mount=type=cache,target="/root/.cache/go-build" \
     make IMAGE_VERSION=${IMAGE_VERSION} \
          BUILD_VERSION=${BUILD_VERSION} \
          BUILD_BUILDID=${BUILD_BUILDID} \
@@ -40,13 +36,13 @@ RUN --mount=type=cache,target=/go/pkg/mod/ \
          OTHER_IMAGE_TARGETS="" \
          BINARIES="" \
          PLUGINS=nri-memtierd \
-         clean build-plugins-static licenses
+         clean build-plugins-static
 
 FROM gcr.io/distroless/static
 ENV PATH=/bin
 
 COPY --from=builder /go/builder/build/bin/nri-memtierd /bin/nri-memtierd
-COPY --from=builder /go/builder/build/licenses/nri-memtierd/ /licenses/nri-memtierd/
+COPY build/licenses/nri-memtierd/ /licenses/nri-memtierd/
 COPY --from=builder /bin/memtierd /bin/memtierd
 
 ENTRYPOINT ["/bin/nri-memtierd", "--idx", "45"]

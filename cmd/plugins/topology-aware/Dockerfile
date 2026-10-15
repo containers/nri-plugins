@@ -30,10 +30,6 @@ COPY . .
 
 RUN --mount=type=cache,target=/go/pkg/mod/ \
     --mount=type=cache,target="/root/.cache/go-build" \
-    make install-license-tool
-
-RUN --mount=type=cache,target=/go/pkg/mod/ \
-    --mount=type=cache,target="/root/.cache/go-build" \
     make IMAGE_VERSION=${IMAGE_VERSION} \
          BUILD_VERSION=${BUILD_VERSION} \
          BUILD_BUILDID=${BUILD_BUILDID} \
@@ -44,7 +40,7 @@ RUN --mount=type=cache,target=/go/pkg/mod/ \
          BINARIES="" \
          OTHER_IMAGE_TARGETS="" \
          PLUGINS=nri-resource-policy-topology-aware \
-         clean build-plugins-static licenses
+         clean build-plugins-static
 
 RUN cpgodir() { \
         mkdir -p $2; \
@@ -62,7 +58,7 @@ RUN cpgodir() { \
 FROM gcr.io/distroless/static
 
 COPY --from=builder /go/builder/build/bin/nri-resource-policy-topology-aware /bin/nri-resource-policy-topology-aware
-COPY --from=builder /go/builder/build/licenses/nri-resource-policy-topology-aware/ /licenses/nri-resource-policy-topology-aware/
+COPY build/licenses/nri-resource-policy-topology-aware/ /licenses/nri-resource-policy-topology-aware/
 COPY --from=builder /debug-extras /
 
 ENTRYPOINT ["/bin/nri-resource-policy-topology-aware"]
