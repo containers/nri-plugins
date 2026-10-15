@@ -101,14 +101,15 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - uses: actions/cache@v4
+      - uses: klihub/go-and-maybe-cache-licenses/actions/check-licenses@main
         with:
-          path: build/cache
-          key: licenses-${{ hashFiles('go.sum') }}
-          restore-keys: licenses-
-      - run: |
-          make pull-license-tool
-          make verify-licenses
+          targets-command: make -s list-license-check-targets
+          allowed-licenses-command: make -s list-allowed-licenses
+          ignore: github.com/containers/nri-plugins/pkg/topology
+          licenses-path: build/licenses
+          report-path: build/licenses/{{ .Name }}/licenses.csv
+          cache-path: build/cache/licenses
+          progress: true
 
   trivy:
     permissions:
