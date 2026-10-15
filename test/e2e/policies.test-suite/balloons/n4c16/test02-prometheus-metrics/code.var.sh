@@ -1,10 +1,6 @@
 # This test verifies prometheus metrics from the balloons policy.
 
-cleanup() {
-    delete-pods --all
-}
-
-cleanup
+cleanup-test
 
 # Launch nri-resource-policy with wanted metrics update interval and a
 # configuration that opens the instrumentation http server.
@@ -85,6 +81,6 @@ report allowed
 verify-metrics-has-line 'balloon="fast-dualcore\[1\]".*pod2c0.* 4'
 verify-metrics-has-line 'balloon="fast-dualcore\[0\]".*pod5c0.* 4'
 
-cleanup
+cleanup-test
 
 helm-terminate

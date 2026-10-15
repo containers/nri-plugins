@@ -1,12 +1,7 @@
-cleanup() {
-    delete-pods --all
-    helm-terminate
-}
-
 OVERRIDE_SYS_MEMORY_TYPE='{"2": "DRAM", "3": "PMEM"}'
 DEBUG_LOGGERS="sysfs"
 
-cleanup
+cleanup-test --helm
 
 helm_config=$(COLOCATE_PODS=false \
               DEBUG_LOGGERS="$DEBUG_LOGGERS" \
@@ -40,4 +35,4 @@ ANN0_COLDSTART='cold-start.resource-policy.nri.io/container.pod2c0: "{ duration:
 
 verify-container-error pod2 pod2c0 "cold start duration .* out of range"
 
-cleanup
+cleanup-test --helm

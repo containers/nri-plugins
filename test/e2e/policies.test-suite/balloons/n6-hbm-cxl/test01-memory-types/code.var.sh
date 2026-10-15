@@ -1,10 +1,6 @@
 relaunch-policy balloons "${TEST_DIR}/balloons-memory-types.cfg"
 
-cleanup() {
-    delete-pods --all
-}
-
-cleanup
+cleanup-test
 
 # pod0: all memory combinations when there is enough memory.
 # CPUREQ + CONTCOUNT causes ballooon inflation after 5 containers.
@@ -34,6 +30,6 @@ verify 'local_mems("pod0c0", "hbm")' \
        'local_mems("pod0c7", "dram")' \
        'mems["pod0c8"] == {dram0,dram1,hbm0,hbm1,pmem0,pmem1}'
 
-cleanup
+cleanup-test
 
 helm-terminate
