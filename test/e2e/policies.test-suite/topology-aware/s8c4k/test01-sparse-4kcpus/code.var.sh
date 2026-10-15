@@ -41,8 +41,7 @@ else
     vm-command 'grep . /sys/fs/cgroup/$(grep . /proc/$(pgrep -f "echo pod0c0")/cgroup | awk -F::/ "{print \$2}")/cpuset.cpus.effective'
     if grep 4095 <<< "$COMMAND_OUTPUT"; then
         echo "RUNC BUG: pod0c0 cannot run on CPU 4095 yet the CPU is in cgroup cpuset.cpus.effective. See: https://github.com/opencontainers/runc/issues/5023"
-        echo "Test verdict: SKIP (buggy runc)"
-        exit 0
+        skip-test "buggy runc"
     else
         error "expected: pod0c0 is allowed to run on CPU 4095"
     fi

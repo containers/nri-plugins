@@ -9,20 +9,12 @@ cleanup() {
     remove-policy-cache
 }
 
-device() {
-    # Usage: device FIELD
-    #
-    # Print FIELD of the device the plugin publishes.
-    vm-command-q "kubectl get resourceslices -o json | jq -r '.items[] |
-                      select(.spec.driver == \"template.nri.io\") | .spec.devices[0].$1'"
-}
-
 check-cpus() {
     # Usage: check-cpus POD CPUS
     #
     # Check that the claim of POD got the cpuset CPUS, as the container sees it.
     local cpus
-    cpus=$(vm-command-q "kubectl exec $1 -- env" | sed -n 's/^DRA_CPUSET_[^=]*=//p')
+    cpus=$(dra-claimed-cpus "$1")
     [ "$cpus" == "$2" ] ||
         error "$1 got CPUs \"$cpus\", expected \"$2\""
     echo "$1 got CPUs $cpus"
@@ -48,18 +40,13 @@ helm_config=$(AVAILABLE_CPU="cpuset:4-7" DRA_ENABLED=true instantiate helm-confi
     helm-launch template
 
 retry-until --timeout 30 --message "the plugin to publish its device" \
-    '[ -n "$(device name)" ]' ||
+    '[ -n "$(dra-devices | jq -r ".[0].name // empty")" ]' ||
     error "the plugin published no device"
 
-# Without DRAConsumableCapacity the API server drops the field which lets
-# claims share the device.
-if [ "$(device allowMultipleAllocations)" != "true" ]; then
-    cleanup
-    echo "Test verdict: SKIP (DRAConsumableCapacity is not enabled)"
-    exit 0
-fi
+dra-consumable-capacity ||
+    { cleanup; skip-test "DRAConsumableCapacity is not enabled"; }
 
-capacity=$(device "capacity[\"dra.cpu/cpu\"].value")
+capacity=$(dra-devices | jq -r '.[0].capacity["dra.cpu/cpu"].value')
 [ "$capacity" == "4" ] ||
     error "the device has a capacity of \"$capacity\" CPUs, expected 4"
 
