@@ -6,14 +6,6 @@ cleanup() {
     helm-terminate || :
 }
 
-slice() {
-    # Usage: slice JQ
-    #
-    # Print JQ of our ResourceSlice.
-    vm-command-q "kubectl get resourceslices -o json | jq -r '.items[] |
-                      select(.spec.driver == \"topology-aware.nri.io\") | $1'"
-}
-
 cleanup
 
 # A dry run tells whether the API server accepts list attributes.
@@ -54,7 +46,7 @@ helm_config=$(DRA_ENABLED=true instantiate helm-config.yaml) \
     helm-launch topology-aware
 
 retry-until --timeout 30 --message "the plugin to publish its devices" \
-    '[ -n "$(slice ".spec.devices[0].name // empty")" ]' ||
+    '[ -n "$(dra-devices | jq -r ".[0].name // empty")" ]' ||
     error "the plugin published no devices"
 
 vm-command "kubectl get resourceslices -o yaml"
@@ -64,13 +56,15 @@ if [ "$list_attributes_supported" == false ]; then
     expected=""
 fi
 
-devices=$(slice '.spec.devices[].name')
-[ -n "$devices" ] || error "the plugin published no devices"
-for device in $devices; do
-    got=$(slice ".spec.devices[] | select(.name == \"$device\") |
-                 .attributes[\"resource.kubernetes.io/pcieRoot\"].strings // [] | join(\",\")")
+devices=$(dra-devices)
+names=$(jq -r '.[].name' <<< "$devices")
+[ -n "$names" ] || error "the plugin published no devices"
+for name in $names; do
+    got=$(jq -r --arg name "$name" '.[] | select(.name == $name) |
+              .attributes["resource.kubernetes.io/pcieRoot"].strings // [] |
+              join(",")' <<< "$devices")
     [ "$got" == "$expected" ] ||
-        error "device $device publishes PCIe roots \"$got\", expected \"$expected\""
+        error "device $name publishes PCIe roots \"$got\", expected \"$expected\""
 done
 
 cleanup

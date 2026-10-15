@@ -628,6 +628,53 @@ wait-node-resource() { # script API
 }
 
 ###
+### Dynamic resource allocation
+###
+
+dra-devices() { # script API
+    # Usage: dra-devices [DRIVER]
+    #
+    # Print the devices which DRIVER, "$POLICY.nri.io" by default, publishes
+    # in its ResourceSlices, as a JSON array. Does not log the command, so
+    # this is safe to call in a retry loop.
+    #
+    # Pick the fields apart with jq on the host, so that checking many fields
+    # of many devices costs a single round trip to the VM.
+    #
+    # Example: wait until the plugin has published its devices:
+    #   retry-until --timeout 30 --message "the plugin to publish its devices" \
+    #       '[ -n "$(dra-devices | jq -r ".[0].name // empty")" ]'
+    vm-command-q "kubectl get resourceslices -o json |
+                      jq '[.items[] | select(.spec.driver == \"${1:-$POLICY.nri.io}\") |
+                           .spec.devices[]]'"
+}
+
+dra-consumable-capacity() { # script API
+    # Usage: dra-consumable-capacity [DRIVER]
+    #
+    # Succeed if the devices of DRIVER, "$POLICY.nri.io" by default, allow
+    # multiple allocations, that is, if several claims can share a device.
+    #
+    # The API server silently drops allowMultipleAllocations unless the
+    # DRAConsumableCapacity feature gate is enabled, so a test which needs
+    # shared devices has to skip itself if this does not hold.
+    #
+    # Example:
+    #   dra-consumable-capacity ||
+    #       { cleanup; skip-test "DRAConsumableCapacity is not enabled"; }
+    [ "$(dra-devices "$1" | jq -r '.[0].allowMultipleAllocations')" == "true" ]
+}
+
+dra-claimed-cpus() { # script API
+    # Usage: dra-claimed-cpus POD
+    #
+    # Print the CPUs which the DRA claim of POD got, as the containers of the
+    # pod see them: the value of the DRA_CPUSET_* variable which the plugin
+    # puts into their environment.
+    vm-command-q "kubectl exec $1 -- env" | sed -n 's/^DRA_CPUSET_[^=]*=//p'
+}
+
+###
 ### Reading the log of the plugin
 ###
 
@@ -841,6 +888,23 @@ assert-cpu-freq() { # script API
         wait-assert-log-contains "enforcing cpu frequency from class .$class@.* on cpu $cpu\$" \
             "${msg:-CPU frequency class $class not enforced on cpu $cpu}" "$tmo"
     done
+}
+
+###
+### Ending the test early
+###
+
+skip-test() { # script API
+    # Usage: skip-test REASON
+    #
+    # Report the test as skipped because of REASON, and end it. Clean up
+    # first: this does not return.
+    #
+    # Use this where the test cannot tell anything about the plugin, because
+    # the cluster or the kernel does not have what it needs. run_tests.sh
+    # picks the verdict up from the output of the test.
+    echo "Test verdict: SKIP ($1)"
+    exit 0
 }
 
 ###

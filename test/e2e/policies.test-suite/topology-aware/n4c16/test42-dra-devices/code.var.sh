@@ -11,20 +11,11 @@ cleanup() {
     helm-terminate || :
 }
 
-slice() {
-    # Usage: slice JQ
-    #
-    # Print JQ of our ResourceSlice.
-    vm-command-q "kubectl get resourceslices -o json | jq -r '.items[] |
-                      select(.spec.driver == \"topology-aware.nri.io\") | $1'"
-}
-
 device() {
     # Usage: device NAME JQ
     #
-    # Print JQ of our device NAME, from the slices last fetched into $slices.
-    jq -r --arg name "$1" '.items[] | select(.spec.driver == "topology-aware.nri.io") |
-                           .spec.devices[] | select(.name == $name) | '"$2" <<< "$slices"
+    # Print JQ of our device NAME, from the devices last fetched into $devices.
+    jq -r --arg name "$1" '.[] | select(.name == $name) | '"$2" <<< "$devices"
 }
 
 claim() {
@@ -34,13 +25,6 @@ claim() {
     # it to start.
     NAME=$1 NODE=$2 CPUS=$3 wait="" create cpus-claim
     NAME=$1 create dra-pod
-}
-
-claimed-cpus() {
-    # Usage: claimed-cpus POD
-    #
-    # Print the CPUs the claim of POD got, as its container sees them.
-    vm-command-q "kubectl exec $1 -- env" | sed -n 's/^DRA_CPUSET_[^=]*=//p'
 }
 
 exported() {
@@ -63,7 +47,8 @@ nrt-shared-cpus() {
     # Usage: nrt-shared-cpus NODE
     #
     # Print the shared CPUs the NRT CR lists for NUMA node NODE.
-    vm-command-q "$nrt_kubectl_get -o json | jq -r '.zones[] | select(.name == \"NUMA node #$1\").attributes[] | select(.name == \"shared cpuset\").value'"
+    nrt-query-q ".zones[] | select(.name == \"NUMA node #$1\").attributes[] |
+                 select(.name == \"shared cpuset\").value"
 }
 
 cleanup
@@ -73,22 +58,17 @@ helm_config=$(RESERVED_CPU="cpuset:15" DRA_ENABLED=true instantiate helm-config.
     helm-launch topology-aware
 
 retry-until --timeout 30 --message "the plugin to publish its devices" \
-    '[ -n "$(slice ".spec.devices[0].name // empty")" ]' ||
+    '[ -n "$(dra-devices | jq -r ".[0].name // empty")" ]' ||
     error "the plugin published no devices"
 
-# Without DRAConsumableCapacity the API server drops allowMultipleAllocations,
-# which lets claims share a device.
-if [ "$(slice ".spec.devices[0].allowMultipleAllocations")" != "true" ]; then
-    cleanup
-    echo "Test verdict: SKIP (DRAConsumableCapacity is not enabled)"
-    exit 0
-fi
+dra-consumable-capacity ||
+    { cleanup; skip-test "DRAConsumableCapacity is not enabled"; }
 
 vm-command "kubectl get resourceslices -o yaml"
 
-slices=$(vm-command-q "kubectl get resourceslices -o json")
+devices=$(dra-devices)
 
-count=$(jq '[.items[] | select(.spec.driver == "topology-aware.nri.io") | .spec.devices[]] | length' <<< "$slices")
+count=$(jq length <<< "$devices")
 [ "$count" == "4" ] ||
     error "published $count devices, expected 4"
 
@@ -141,7 +121,7 @@ wait="" create deviceclass
 # pod0 claims 3 CPUs on node 3. It gets all node CPUs except the reserved
 # CPU 15.
 claim pod0 3 3
-cpus0=$(claimed-cpus pod0)
+cpus0=$(dra-claimed-cpus pod0)
 verify "cpuset('$cpus0') == cpuset('$(node-cpus 3)') - cpuset('15')" \
        "cpus['pod0c0'] == cpuset('$cpus0')" \
        "node_ids(mems['pod0c0']) == {3}"
@@ -152,14 +132,14 @@ verify "cpuset('$cpus0') == cpuset('$(node-cpus 3)') - cpuset('15')" \
 # Two CPUs are the two threads of one core, and a second claim on the same
 # node gets the other core.
 claim pod1 1 2
-cpus1=$(claimed-cpus pod1)
+cpus1=$(dra-claimed-cpus pod1)
 siblings=$(vm-command-q "cat /sys/devices/system/cpu/cpu${cpus1%%[-,]*}/topology/thread_siblings_list")
 verify "cpuset('$cpus1') == cpuset('$siblings')" \
        "cpuset('$cpus1') <= cpuset('$(node-cpus 1)')" \
        "cpus['pod1c0'] == cpuset('$cpus1')" \
        "node_ids(mems['pod1c0']) == {1}"
 claim pod2 1 2
-cpus2=$(claimed-cpus pod2)
+cpus2=$(dra-claimed-cpus pod2)
 verify "cpuset('$cpus1') | cpuset('$cpus2') == cpuset('$(node-cpus 1)')" \
        "cpus['pod2c0'] == cpuset('$cpus2')" \
        "node_ids(mems['pod2c0']) == {1}"
@@ -173,7 +153,7 @@ vm-command "kubectl wait --for=condition=PodScheduled=false pod/pod3 --timeout=6
 delete-pods pod1
 vm-command "kubectl wait --for=condition=Ready pod/pod3 --timeout=120s" ||
     error "pod3 did not start after pod1 released its claim"
-cpus3=$(claimed-cpus pod3)
+cpus3=$(dra-claimed-cpus pod3)
 verify "cpuset('$cpus3') == cpuset('$cpus1')" \
        "cpus['pod3c0'] == cpuset('$cpus3')" \
        "node_ids(mems['pod3c0']) == {1}"
@@ -188,7 +168,7 @@ verify "cpus['pod4c0'].isdisjoint(cpuset('$cpus0,$cpus2,$cpus3'))"
 node=$(pyexec 'print(min(node_ids(nodes["pod4c0"])))')
 shared=$(pyexec 'print(sorted(cpus["pod4c0"]))')
 claim pod5 "$node" 2
-cpus5=$(claimed-cpus pod5)
+cpus5=$(dra-claimed-cpus pod5)
 verify "cpuset('$cpus5') <= set($shared)" \
        "cpus['pod5c0'] == cpuset('$cpus5')" \
        "node_ids(mems['pod5c0']) == {$node}" \
@@ -198,9 +178,7 @@ retry-until --timeout 30 --message "the NRT CR to drop the CPUs of pod5's claim"
     error "the NRT CR still lists the CPUs of pod5's claim as shared"
 delete-pods pod5
 # Deleting the pod does not wait for the kubelet to unprepare its claim.
-retry-until --timeout 30 --message "pod4 to get back the CPUs of pod5's claim" \
-    '[ "$(report allowed >/dev/null; pyexec "print(cpus[\"pod4c0\"] == set($shared))")" == True ]'
-verify "cpus['pod4c0'] == set($shared)"
+wait-verify "cpus['pod4c0'] == set($shared)"
 # No container event follows the release, so only the claim path can
 # refresh the NRT CR here.
 retry-until --timeout 30 --message "the NRT CR to list the CPUs of pod5's claim again" \
@@ -209,7 +187,7 @@ retry-until --timeout 30 --message "the NRT CR to list the CPUs of pod5's claim 
 
 # Two containers of one pod share its claim. Both run on the claim's CPUs.
 CONTCOUNT=2 claim pod6 0 2
-cpus6=$(claimed-cpus pod6)
+cpus6=$(dra-claimed-cpus pod6)
 verify "cpus['pod6c0'] == cpuset('$cpus6')" \
        "cpus['pod6c1'] == cpuset('$cpus6')" \
        "node_ids(mems['pod6c0']) == {0}" \
@@ -220,7 +198,7 @@ verify "cpus['pod6c0'] == cpuset('$cpus6')" \
 # no other claims, so pod7 runs on all its CPUs: the 2 claimed ones and the 2
 # shared ones.
 OWNCPU=100m claim pod7 2 2
-cpus7=$(claimed-cpus pod7)
+cpus7=$(dra-claimed-cpus pod7)
 verify "cpuset('$cpus7') <= cpuset('$(node-cpus 2)')" \
        "cpus['pod7c0'] == cpuset('$(node-cpus 2)')" \
        "node_ids(mems['pod7c0']) == {2}" \
