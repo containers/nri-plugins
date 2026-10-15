@@ -55,8 +55,15 @@ COVERAGE_PATH := $(BUILD_PATH)/coverage
 IMAGE_PATH    := $(BUILD_PATH)/images
 LICENSE_PATH  := $(BUILD_PATH)/licenses
 
-GO_LICENSES_VERSION := v1.6.0
+# Pin license extraction tool version to :main for now.
+GO_LICENSES_MODULE  ?= github.com/klihub/go-and-maybe-cache-licenses
+GO_LICENSES_VERSION ?= main
+GO_LICENSES_IMAGE   ?= ghcr.io/klihub/go-and-maybe-cache-licenses:main
+GO_LICENSES_CACHE   ?= $(BUILD_PATH)/cache/licenses
 SKIP_LICENSES       ?= 0
+
+export GO_LICENSES_IMAGE
+export GO_LICENSES_CACHE
 
 E2E_DIR       := $(TOP_DIR)/test/e2e
 E2E_RUN       := k8scri=$${k8scri:-containerd} $(E2E_DIR)/run_tests.sh
@@ -306,30 +313,26 @@ image.%:
 	$(DOCKER) image save "$${NRI_IMAGE_REPOTAG}" > "$${NRI_IMAGE_TAR}";
 
 .PHONY: licenses
-licenses: $(foreach p,$(PLUGINS),licenses.$(p)) $(foreach p,$(BINARIES),licenses.$(p))
+# Map a shipped binary name to the directory that builds it.
+license-src = $(if $(filter nri-resource-policy-%,$(1)),./cmd/plugins/$(patsubst nri-resource-policy-%,%,$(1)),$(if $(filter nri-%,$(1)),./cmd/plugins/$(patsubst nri-%,%,$(1)),./cmd/$(1)))
+license-targets = $(foreach b,$(1),$(b)=$(call license-src,$(b)))
 
-licenses.nri-resource-policy-% \
-licenses.nri-% \
-licenses.%:
-	$(Q)mkdir -p $(LICENSE_PATH); \
-	case $@ in \
-	    *.nri-resource-policy-*) \
-		dir=$(patsubst licenses.nri-resource-policy-%,./cmd/plugins/%,$@); \
-	        ;; \
-	    *.nri-*) \
-		dir=$(patsubst licenses.nri-%,./cmd/plugins/%,$@); \
-	        ;; \
-	    *.*) \
-		dir=$(patsubst licenses.%,./cmd/%,$@); \
-	        ;; \
-	esac; \
-	bin="$(patsubst licenses.%,%,$@)"; \
-	out="$(LICENSE_PATH)/$$bin"; \
-	if [ "$(SKIP_LICENSES)" = "1" ]; then \
-	    mkdir -p "$$out"; \
+licenses:
+	$(Q)if [ "$(SKIP_LICENSES)" = "1" ]; then \
+	    for b in $(PLUGINS) $(BINARIES); do mkdir -p $(LICENSE_PATH)/$$b; done; \
 	    exit 0; \
 	fi; \
-	./scripts/build/extract-licenses.sh $$dir $$out
+	./scripts/build/extract-licenses.sh $(LICENSE_PATH) \
+	    $(call license-targets,$(PLUGINS) $(BINARIES))
+
+licenses.%:
+	$(Q)bin="$(patsubst licenses.%,%,$@)"; \
+	if [ "$(SKIP_LICENSES)" = "1" ]; then \
+	    mkdir -p "$(LICENSE_PATH)/$$bin"; \
+	    exit 0; \
+	fi; \
+	./scripts/build/extract-licenses.sh $(LICENSE_PATH) \
+	    $(call license-targets,$(patsubst licenses.%,%,$@))
 
 nri-plugins-operator-image:
 	$(Q)mkdir -p $(IMAGE_PATH); \
@@ -533,12 +536,20 @@ verify-licenses: licenses
 install-ginkgo:
 	$(Q)$(GO_INSTALL) -mod=mod github.com/onsi/ginkgo/v2/ginkgo
 
-install-go-licenses:
+install-license-tool:
 	$(Q)if [ "$(SKIP_LICENSES)" = "1" ]; then \
-	    echo "Skipping go-licenses installation as requested."; \
+	    echo "Skipping license tool installation as requested."; \
 	    exit 0; \
 	fi; \
-	$(GO_INSTALL) github.com/google/go-licenses@$(GO_LICENSES_VERSION)
+	$(GO_INSTALL) $(GO_LICENSES_MODULE)@$(GO_LICENSES_VERSION)
+
+.PHONY: pull-license-tool
+pull-license-tool:
+	$(Q)if [ "$(SKIP_LICENSES)" = "1" ]; then \
+	    echo "Skipping license tool image pull as requested."; \
+	    exit 0; \
+	fi; \
+	$(DOCKER) pull -q $(GO_LICENSES_IMAGE)
 
 #
 # Rules for documentation
