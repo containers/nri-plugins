@@ -78,7 +78,7 @@ verify \
     'cpus["pod5c0"].issubset({"cpu08", "cpu09", "cpu10", "cpu11"})' \
     'node_ids(nodes["pod5c0"]) == {2}'
 
-vm-command "kubectl delete pod pod5 --now"
+delete-pods pod5
 
 # Now recreate pod4 test but with more complex effective annotation.
 # Try to create a container with a strict test hints for NUMA node 2 an

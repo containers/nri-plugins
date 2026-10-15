@@ -33,7 +33,7 @@ verify 'len(cores["pod2c0"]) == 2' \
 
 # make room for pod3, because now only node2 should be empty and we
 # would not be able to pack tightly elsewhere.
-vm-command "kubectl delete pods pod0 pod1 pod2 --now"
+delete-pods pod0 pod1 pod2
 
 # pod3: container 0 resizes first from 0 to 1, container 2 from 1 to 2 CPUs,
 # pack tightly
@@ -53,7 +53,7 @@ verify '{"node2"} == nodes["pod4c0"]' \
        'len(cores["pod4c0"]) == 2' \
        'len(cpus["pod4c0"]) == 3'
 
-vm-command "kubectl delete pods pod0 pod1 pod2 --now"
+delete-pods pod0 pod1 pod2
 
 # pod5 in new balloon that will not fit on node2, ignore device hint and allocate from elsewhere
 CPUREQ="2" MEMREQ="100M" CPULIM="6" MEMLIM="100M"

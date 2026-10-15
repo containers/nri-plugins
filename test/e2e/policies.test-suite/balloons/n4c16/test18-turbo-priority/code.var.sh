@@ -252,7 +252,7 @@ assert-step-writes "$step2_before" "step2" 4
 # default-turbo still loses turbo (turbo-low active) -> cpu 10 stays at base.
 # The CPU released by turbo-high-bln must be reconfigured back to default-noturbo.
 step3_before=$(enforce-count)
-vm-command "kubectl delete pod pod2 --now"
+delete-pods pod2
 wait-pod-gone pod2
 wait-enforce-grows "$step3_before"
 report allowed
@@ -272,7 +272,7 @@ assert-step-writes "$step3_before" "step3" 4
 # The balloon still has pod0 -> CPU stays assigned to turbo-low.
 # No writes expected.
 step4_before=$(enforce-count)
-vm-command "kubectl delete pod pod1 --now"
+delete-pods pod1
 wait-pod-gone pod1
 echo "step 4: deleting one container of turbo-low-bln, balloon still in use -- expect no new enforce writes"
 assert-no-new-writes "$step4_before" "step4 partial deflate"
@@ -284,7 +284,7 @@ assert-no-new-writes "$step4_before" "step4 partial deflate"
 #  - released CPU reconfigured to default-noturbo (min + max).
 #  - cpu 10 (default-turbo) max bumped back to 3800000.
 step5_before=$(enforce-count)
-vm-command "kubectl delete pod pod0 --now"
+delete-pods pod0
 wait-pod-gone pod0
 wait-enforce-grows "$step5_before"
 report allowed
@@ -345,7 +345,7 @@ fi
 assert-step-writes "$oldsyntax_step1" "oldsyntax step1" 2
 # Delete pod3, it is annotated to type legacy-bln that will not exists in next config,
 # leading to unspecified behavior.
-vm-command "kubectl delete pods pod3 --now"
+delete-pods pod3
 
 helm-terminate
 
@@ -426,7 +426,7 @@ assert-step-writes "$defaultcls_step1" "defaultclass step1" 2
 # Delete the fast-bln pod: the released CPU must be reconfigured back
 # to the "default" class (not left blank, not stuck in "fast").
 defaultcls_step2=$(enforce-count)
-vm-command "kubectl delete pod pod4 --now"
+delete-pods pod4
 wait-pod-gone pod4
 wait-enforce-grows "$defaultcls_step2"
 report allowed

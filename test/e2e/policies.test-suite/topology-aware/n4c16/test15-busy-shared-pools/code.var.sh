@@ -15,7 +15,7 @@ CONTCOUNT=4 create besteffort
 CPU=4 MEM=100M CONTCOUNT=1 create guaranteed
 verify 'disjoint_sets(cpus["pod0c0"],cpus["pod0c1"],cpus["pod0c2"],cpus["pod0c3"],cpus["pod1c0"])'
 
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 
 # Repeat the same test using Burstable containers that look like BestEffort
 # based on their CPU request alone.
@@ -23,7 +23,7 @@ CONTCOUNT=4 CPUREQ=1m CPULIM=750m create burstable
 CPU=4 MEM=100M CONTCOUNT=1 create guaranteed
 verify 'disjoint_sets(cpus["pod2c0"],cpus["pod2c1"],cpus["pod2c2"],cpus["pod2c3"],cpus["pod3c0"])'
 
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 
 # Repeat the same test using non-zero CPU request Burstable containers.
 CONTCOUNT=4 CPUREQ=250m CPULIM=750m create burstable

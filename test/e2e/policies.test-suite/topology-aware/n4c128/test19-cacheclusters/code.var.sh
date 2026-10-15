@@ -208,7 +208,7 @@ verify \
     'len(cpus["pod51c0"]) == 6'
 
 # Delete the guaranteed pods and verify burstable pods reclaim their CPUs.
-vm-command "kubectl delete pods pod61 pod62 --now"
+delete-pods pod61 pod62
 report allowed
 
 # After guaranteed pods are deleted, burstable pods should grow back to full

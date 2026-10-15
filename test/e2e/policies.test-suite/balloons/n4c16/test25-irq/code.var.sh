@@ -74,7 +74,7 @@ verify-irq-cpus "$TTYS0_IRQ" "$claimer_cpus"
 verify-irq-cpus "$RTC0_IRQ" "$claimer_cpus"
 verify-irq-cpus "$ACPI_IRQ" "$sink_cpus"
 
-vm-command 'kubectl delete pod pod2 --now'
+delete-pods pod2
 # no sink present anymore
 verify-irq-cpus "$TTYS0_IRQ" "$claimer_cpus"
 verify-irq-cpus "$RTC0_IRQ" "$claimer_cpus"

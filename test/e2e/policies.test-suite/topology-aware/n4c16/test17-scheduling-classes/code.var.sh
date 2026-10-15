@@ -77,7 +77,7 @@ expected_policy=$SCHED_OTHER expected_prio=$((120 + 10)) verify-sched pod3c0
 verify 'len(cpus["pod3c1"]) != 1'
 expected_policy=$SCHED_IDLE expected_prio=$((120 + 17)) verify-sched pod3c1
 
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 
 #
 # Tests for namespace default scheduling classes.
@@ -105,7 +105,7 @@ expected_policy=$SCHED_FIFO expected_prio=$((99 - 10)) verify-sched pod5c0
 verify 'len(cpus["pod5c1"]) != 1'
 expected_policy=$SCHED_OTHER expected_prio=$((120 + 10)) verify-sched pod5c1
 
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 
 #
 # Tests for PodQoS default scheduling classes.
