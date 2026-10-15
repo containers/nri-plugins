@@ -143,7 +143,7 @@ verify 'disjoint_sets(nodes["pod1c0"], nodes["pod1c1"], nodes["pod1c2"], nodes["
 assert-cpu-clos '.*' 'CLOS 0' \
     "hp-near-tpu balloon CPUs were not associated to PCT HP CLOS 0"
 
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 
 # Create pods that use both a tpu and a nic. Align pod2 near nic, pod3 near tpu.
 declare -a EXTREQ=( "tech.com/tpu: \"1\"" "telco.com/nic: \"1\"" "cpuclass.balloons.nri.io/pct-hp: \"2\"" )

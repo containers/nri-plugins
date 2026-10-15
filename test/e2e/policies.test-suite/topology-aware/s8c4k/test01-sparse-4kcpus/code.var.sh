@@ -49,7 +49,7 @@ else
 fi
 
 # Release all 5 CPUs.
-vm-command 'kubectl delete pod pod0 --now'
+delete-pods pod0
 wait-pod-gone pod0
 
 # Only socket #0 has enough CPUs for pod1.
@@ -64,7 +64,7 @@ verify 'cpus["pod2c0"] == {"cpu4095"}'
 CONTCOUNT=1 create besteffort
 report allowed
 
-vm-command 'kubectl delete pods pod1 pod2 pod3 --now'
+delete-pods pod1 pod2 pod3
 
 # Verify no CPU leaks, allocate all again.
 CPU=5000m create guaranteed

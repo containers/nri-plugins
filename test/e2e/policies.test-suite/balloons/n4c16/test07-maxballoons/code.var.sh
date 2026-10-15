@@ -24,7 +24,7 @@ vm-command "kubectl describe pod pod2"
 if ! grep -q 'no suitable balloon instance available' <<< "$COMMAND_OUTPUT"; then
     error "could not find 'no suitable balloon instance available' in pod2 description"
 fi
-vm-command "kubectl delete pod pod2 --now"
+delete-pods pod2
 
 # pod2: create dynamically the first dynamictwo balloon
 CPUREQ="800m" CPULIM="800m"
@@ -53,7 +53,7 @@ vm-command "kubectl describe pod pod5"
 if ! grep -q 'no suitable balloon instance available' <<< "$COMMAND_OUTPUT"; then
     error "could not find 'no suitable balloon instance available' in pod5 description"
 fi
-vm-command "kubectl delete pod pod5 --now"
+delete-pods pod5
 
 cleanup-test
 

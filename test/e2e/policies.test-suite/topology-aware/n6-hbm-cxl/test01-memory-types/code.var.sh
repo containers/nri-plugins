@@ -18,7 +18,7 @@ verify 'local_mems("pod0c0", "dram", "pmem")' \
 
 # Release memory allocated for pod0c*. If something is left behind in
 # hbm or dram, the next text fails. If not, it will
-vm-command "kubectl delete pods pod0 --now"
+delete-pods pod0
 
 ANN0="memory-type.resource-policy.nri.io/container.pod1c0: hbm,dram" \
     ANN1="memory-type.resource-policy.nri.io/container.pod1c1: hbm,dram" \

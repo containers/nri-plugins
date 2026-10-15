@@ -17,7 +17,7 @@ verify 'len(cpus["pod1c0"]) == 3' \
        'disjoint_sets(cpus["pod1c0"], cpus["pod0c0"], cpus["pod0c1"], cpus["pod0c2"])'
 
 # pod2c{0,1,2,3} fit two per l2pack balloon, all l2pack balloons should be in the same L2 cache.
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 CPUREQ="500m" MEMREQ="100M" CPULIM="500m" MEMLIM="100M"
 POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: l2pack" CONTCOUNT=4 create balloons-busybox
 report allowed

@@ -65,7 +65,7 @@ assert-cpu-clos $cpu3 "CLOS 0"
 
 # Delete pod. Verify that each released exclusive CPU gets assigned to
 # the shared pool CPU class which is configured with low PCT priority.
-vm-command "kubectl delete pod $pod"
+delete-pods "$pod"
 assert-cpu-clos $cpu0 "CLOS 3"
 assert-cpu-clos $cpu1 "CLOS 3"
 assert-cpu-clos $cpu2 "CLOS 3"
@@ -95,7 +95,7 @@ assert-cpu-clos $cpu3 "CLOS 0"
 
 # Delete pod. Verify that each released CPU get assigned to
 # the shared pool CPU class.
-vm-command "kubectl delete pod $pod"
+delete-pods "$pod"
 assert-cpu-clos $cpu0 "CLOS 3"
 assert-cpu-clos $cpu1 "CLOS 3"
 assert-cpu-clos $cpu2 "CLOS 3"
