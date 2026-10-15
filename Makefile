@@ -56,8 +56,6 @@ IMAGE_PATH    := $(BUILD_PATH)/images
 LICENSE_PATH  := $(BUILD_PATH)/licenses
 
 # Pin license extraction tool version to :main for now.
-GO_LICENSES_MODULE  ?= github.com/klihub/go-and-maybe-cache-licenses
-GO_LICENSES_VERSION ?= main
 GO_LICENSES_IMAGE   ?= ghcr.io/klihub/go-and-maybe-cache-licenses:main
 GO_LICENSES_CACHE   ?= $(BUILD_PATH)/cache/licenses
 SKIP_LICENSES       ?= 0
@@ -280,7 +278,7 @@ images: $(foreach p,$(PLUGINS),image.$(p)) \
 
 image.nri-resource-policy-% \
 image.nri-% \
-image.%:
+image.%: licenses
 	$(Q)mkdir -p $(IMAGE_PATH); \
 	cover=""; \
 	case $@ in \
@@ -535,13 +533,6 @@ verify-licenses: licenses
 
 install-ginkgo:
 	$(Q)$(GO_INSTALL) -mod=mod github.com/onsi/ginkgo/v2/ginkgo
-
-install-license-tool:
-	$(Q)if [ "$(SKIP_LICENSES)" = "1" ]; then \
-	    echo "Skipping license tool installation as requested."; \
-	    exit 0; \
-	fi; \
-	$(GO_INSTALL) $(GO_LICENSES_MODULE)@$(GO_LICENSES_VERSION)
 
 .PHONY: pull-license-tool
 pull-license-tool:

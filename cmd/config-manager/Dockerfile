@@ -21,10 +21,6 @@ COPY . .
 
 RUN --mount=type=cache,target=/go/pkg/mod/ \
     --mount=type=cache,target="/root/.cache/go-build" \
-    make install-license-tool
-
-RUN --mount=type=cache,target=/go/pkg/mod/ \
-    --mount=type=cache,target="/root/.cache/go-build" \
     make IMAGE_VERSION=${IMAGE_VERSION} \
          BUILD_VERSION=${BUILD_VERSION} \
          BUILD_BUILDID=${BUILD_BUILDID} \
@@ -34,11 +30,11 @@ RUN --mount=type=cache,target=/go/pkg/mod/ \
          OTHER_IMAGE_TARGETS="" \
          BINARIES=config-manager \
          PLUGINS="" \
-         clean build-binaries-static licenses
+         clean build-binaries-static
 
 FROM gcr.io/distroless/static
 
 COPY --from=builder /go/builder/build/bin/config-manager /bin/config-manager
-COPY --from=builder /go/builder/build/licenses/config-manager/ /licenses/config-manager/
+COPY build/licenses/config-manager/ /licenses/config-manager/
 
 ENTRYPOINT ["/bin/config-manager"]

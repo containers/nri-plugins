@@ -5,3 +5,6 @@
 # Ignore host build artifacts so they cannot satisfy in-image build targets
 # (e.g. a dynamically linked host binary slipping into a distroless image).
 build/
+
+# Allow pre-extracted licenses in the build context.
+!build/licenses/

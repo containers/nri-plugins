@@ -21,10 +21,6 @@ COPY . .
 
 RUN --mount=type=cache,target=/go/pkg/mod/ \
     --mount=type=cache,target="/root/.cache/go-build" \
-    make install-license-tool
-
-RUN --mount=type=cache,target=/go/pkg/mod/ \
-    --mount=type=cache,target="/root/.cache/go-build" \
     make IMAGE_VERSION=${IMAGE_VERSION} \
          BUILD_VERSION=${BUILD_VERSION} \
          BUILD_BUILDID=${BUILD_BUILDID} \
@@ -34,14 +30,14 @@ RUN --mount=type=cache,target=/go/pkg/mod/ \
          OTHER_IMAGE_TARGETS="" \
          BINARIES=mpolset \
          PLUGINS=nri-memory-policy \
-         clean build-plugins-static build-binaries-static licenses
+         clean build-plugins-static build-binaries-static
 
 FROM gcr.io/distroless/static
 
 COPY --from=builder /go/builder/build/bin/nri-memory-policy /bin/nri-memory-policy
 COPY --from=builder /go/builder/build/bin/mpolset /bin/mpolset
-COPY --from=builder /go/builder/build/licenses/nri-memory-policy/ /licenses/nri-memory-policy/
-COPY --from=builder /go/builder/build/licenses/mpolset/ /licenses/mpolset/
+COPY build/licenses/nri-memory-policy/ /licenses/nri-memory-policy/
+COPY build/licenses/mpolset/ /licenses/mpolset/
 COPY --from=builder /go/builder/sample-configs/nri-memory-policy.yaml /etc/nri/memory-policy/config.yaml
 
 ENTRYPOINT ["/bin/nri-memory-policy", "-idx", "92", "-config", "/etc/nri/memory-policy/config.yaml"]
