@@ -101,8 +101,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - uses: actions/cache@v4
+        with:
+          path: build/cache
+          key: licenses-${{ hashFiles('go.sum') }}
+          restore-keys: licenses-
       - run: |
-          make install-go-licenses
+          make pull-license-tool
           make verify-licenses
 
   trivy:
