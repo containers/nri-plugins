@@ -227,6 +227,19 @@ nrt-query() { # script API
     vm-command "$nrt_kubectl_get -o json | jq -r '$1'"
 }
 
+nrt-query-q() { # script API
+    # Usage: nrt-query-q JQ-EXPRESSION
+    #
+    # Print the result of evaluating JQ-EXPRESSION on the node resource
+    # topology of the node, without logging the command.
+    #
+    # Use this instead of nrt-query inside a retry loop, which would otherwise
+    # log the same command once per attempt.
+    #
+    # JQ-EXPRESSION must not contain single quotes.
+    vm-command-q "$nrt_kubectl_get -o json | jq -r '$1'"
+}
+
 nrt-dump() { # script API
     # Usage: nrt-dump
     #
@@ -755,6 +768,59 @@ wait-assert-log-grew() { # script API
         command-error "$msg (pattern: $pattern, expected more than $count lines)"
 }
 
+# The expression wait-verify is waiting for. A global, so that the snippet
+# retry-until evaluates can reach it without quoting it into it.
+wait_verify_expr=""
+
+wait-verify-poll() {
+    # Refresh the state verify would look at, then evaluate the expression
+    # without asserting it. An expression can raise while the state is still
+    # settling, a container missing from cpus[] for instance, which counts as
+    # not holding yet rather than as an error.
+    get-py-allowed
+    get-py-cache
+    pyexec "
+try:
+    print(bool($wait_verify_expr))
+except Exception:
+    print(False)
+"
+}
+
+wait-verify() { # script API
+    # Usage: wait-verify [--timeout SECS] EXPR...
+    #
+    # Wait until every EXPR is True, SECS seconds at most, 30 by default, then
+    # verify them. Takes the same expressions as verify, and fails the test
+    # the same way if they do not hold in time.
+    #
+    # Use this where the expected state is reached eventually rather than at
+    # once. Deleting a pod, for instance, waits for its object to go but not
+    # for the kubelet to unprepare its DRA claim, so the CPUs the claim held
+    # come back to other containers a moment later.
+    #
+    # Example: wait for a container to get the CPUs of a deleted claim back:
+    #   wait-verify "cpus['pod4c0'] == set($shared)"
+    local timeout=30 expr
+    if [ "$1" == "--timeout" ]; then
+        timeout=$2
+        shift 2
+    fi
+    if [ "$#" == 0 ]; then
+        verify
+        return
+    fi
+    wait_verify_expr=""
+    for expr in "$@"; do
+        wait_verify_expr="${wait_verify_expr:+$wait_verify_expr and }($expr)"
+    done
+    # Poll with pyexec rather than with verify. A verify which does not hold
+    # appends to the test summary and stops the test, and neither is right
+    # before the last attempt. Verifying once at the end reports the outcome.
+    retry-until --timeout "$timeout" '[ "$(wait-verify-poll)" == True ]'
+    verify "$@"
+}
+
 assert-cpu-clos() { # script API
     # Usage: assert-cpu-clos CPUS CLOS [MESSAGE] [TIMEOUT]
     #
@@ -786,6 +852,10 @@ delete-pods() { # script API
     #
     # Delete pods immediately, ignoring pods which do not exist. Delete the
     # pods in NAMESPACE, or in the default namespace if -n is not given.
+    #
+    # Returns once the pods are gone: kubectl delete waits for that by
+    # default. It does not wait for whatever the kubelet does afterwards, such
+    # as unpreparing a DRA claim; use wait-verify for that.
     #
     # Never fails, so this is safe to call both before and after a test.
     local ns=""
