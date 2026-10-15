@@ -2,9 +2,8 @@
 
 SUMMARY="licenses-summary.txt"
 CSVFILE="licenses.csv"
-ERRFILE="go-license-errors"
 IGNORED="--ignore github.com/containers/nri-plugins/pkg/topology"
-VERBOSE=""
+PROGRESS="${PROGRESS:---progress}"
 
 # For dockerized runs pin license extraction tool image to :main.
 # Without docker we fall back to a binary on $PATH.
@@ -33,7 +32,6 @@ GO_LICENSES_CACHE="${GO_LICENSES_CACHE:-$TOP_DIR/build/cache/licenses}"
 # build containers. Used for resolving licenses.
 GO_LICENSES_GOCACHE="${GO_LICENSES_GOCACHE:-$TOP_DIR/build/cache/go-build}"
 OUT_ROOT_ABS=$(readlink -m "$OUT_ROOT")
-ERR="$OUT_ROOT_ABS.$ERRFILE"
 
 names=()
 for target in "${TARGETS[@]}"; do
@@ -83,19 +81,17 @@ else
     REPORT_PATH="$OUT_ROOT_ABS/{{.Name}}/$CSVFILE"
 fi
 
-go_licenses check $IGNORED --target_path '{{.Name}}' "${TARGETS[@]}" 2>"$ERR" && \
-    go_licenses save $IGNORED --save_path "$SAVE_ROOT" --target_path '{{.Name}}' \
-        "${TARGETS[@]}" 2>"$ERR" && \
-        go_licenses report $IGNORED --target_path "$REPORT_PATH" "${TARGETS[@]}" 2>"$ERR"
+go_licenses check $IGNORED $PROGRESS --target_path '{{.Name}}' "${TARGETS[@]}" && \
+    go_licenses save $IGNORED $PROGRESS --save_path "$SAVE_ROOT" \
+        --target_path '{{.Name}}' "${TARGETS[@]}" && \
+        go_licenses report $IGNORED $PROGRESS --target_path "$REPORT_PATH" \
+            "${TARGETS[@]}"
 status="$?"
 
-echo "go-license warnings/errors:"
-cat "$ERR" | sed 's/^/    /g'
 if [ "$status" != "0" ]; then
     echo "License check FAILED, status $status"
     exit $status
 fi
-rm -f "$ERR"
 
 for name in "${names[@]}"; do
     cat "$OUT_ROOT_ABS/$name/$CSVFILE" | sed 's/^.*,//g' | sort -u \
