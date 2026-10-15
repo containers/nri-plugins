@@ -1,13 +1,13 @@
 #!/bin/sh
 
 SUMMARY="licenses-summary.txt"
-ALLOWED=" \
-    Apache-2.0 \
-    BSD-2-Clause \
-    BSD-3-Clause \
-    ISC \
-    MIT \
-"
+# Comes from the Makefile, which holds the one definition of the policy.
+ALLOWED="${LICENSE_ALLOWED}"
+if [ -z "$ALLOWED" ]; then
+    echo "LICENSE_ALLOWED is unset, so nothing would be accepted."
+    echo "Run this through 'make verify-licenses', or set it yourself."
+    exit 1
+fi
 VERBOSE=""
 
 while [ "$#" -gt 0 ]; do

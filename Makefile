@@ -57,6 +57,11 @@ LICENSE_PATH  := $(BUILD_PATH)/licenses
 
 # Pin license extraction tool version to :main for now.
 GO_LICENSES_IMAGE   ?= ghcr.io/klihub/go-and-maybe-cache-licenses:main
+
+# The one definition of which licenses are acceptable. Both the local check
+# and CI read it from here, so the two cannot come to disagree.
+LICENSE_ALLOWED     ?= Apache-2.0 BSD-2-Clause BSD-3-Clause ISC MIT
+export LICENSE_ALLOWED
 GO_LICENSES_CACHE   ?= $(BUILD_PATH)/cache/licenses
 SKIP_LICENSES       ?= 0
 
@@ -314,6 +319,18 @@ image.%: licenses
 # Map a shipped binary name to the directory that builds it.
 license-src = $(if $(filter nri-resource-policy-%,$(1)),./cmd/plugins/$(patsubst nri-resource-policy-%,%,$(1)),$(if $(filter nri-%,$(1)),./cmd/plugins/$(patsubst nri-%,%,$(1)),./cmd/$(1)))
 license-targets = $(foreach b,$(1),$(b)=$(call license-src,$(b)))
+
+# Print the accepted licenses, so CI can ask for them rather than repeating
+# the list.
+.PHONY: list-allowed-licenses
+list-allowed-licenses:
+	$(Q)echo "$(LICENSE_ALLOWED)" | tr -s ' ' ','
+
+# Print the license check targets, so CI can ask for them rather than
+# repeating the list and letting the two definitions drift apart.
+.PHONY: list-license-check-targets
+list-license-check-targets:
+	$(Q)for t in $(call license-targets,$(PLUGINS) $(BINARIES)); do echo "$$t"; done
 
 licenses:
 	$(Q)if [ "$(SKIP_LICENSES)" = "1" ]; then \
