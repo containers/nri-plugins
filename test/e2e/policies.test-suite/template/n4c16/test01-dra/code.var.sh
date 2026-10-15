@@ -61,11 +61,11 @@ check-cpus pod1 "6-7"
 # No CPUs are left, so the scheduler must not place a third claim, until
 # deleting a pod gives its CPUs back.
 NAME=pod2 CLAIM=two-cpus wait="" create dra-pod
-vm-command "kubectl wait --for=condition=PodScheduled=false pod/pod2 --timeout=60s" ||
-    error "pod2 was scheduled with no CPUs left"
+wait-pod-condition --timeout 60 pod2 PodScheduled=false \
+    "pod2 was scheduled with no CPUs left"
 delete-pods pod0
-vm-command "kubectl wait --for=condition=Ready pod/pod2 --timeout=120s" ||
-    error "pod2 did not start after pod0 gave its CPUs back"
+wait-pod-condition --timeout 120 pod2 Ready \
+    "pod2 did not start after pod0 gave its CPUs back"
 check-cpus pod2 "4-5"
 
 # A plugin which forgot its claims would give pod3 the lowest free CPUs, which
