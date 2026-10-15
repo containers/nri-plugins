@@ -16,7 +16,7 @@ out '### Crash and restart pod0c0'
 vm-command "kubectl get pods pod0"
 vm-command "kill -KILL \$(pgrep -f 'echo pod0c0')"
 sleep 1
-vm-command 'kubectl wait --for=condition=Ready pods/pod0'
+wait-pod-condition pod0 Ready "pod0 did not become ready again after the kill"
 vm-run-until --timeout 30 "pgrep -f 'echo pod0c0' > /dev/null 2>&1"
 vm-command "kubectl get pods pod0"
 report allowed

@@ -148,11 +148,11 @@ verify "cpuset('$cpus1') | cpuset('$cpus2') == cpuset('$(node-cpus 1)')" \
 # there, until deleting pod1 releases its claim, whose CPUs the third gets.
 NAME=pod3 NODE=1 CPUS=2 wait="" create cpus-claim
 NAME=pod3 wait="" create dra-pod
-vm-command "kubectl wait --for=condition=PodScheduled=false pod/pod3 --timeout=60s" ||
-    error "pod3 was scheduled with no CPUs left on node 1"
+wait-pod-condition --timeout 60 pod3 PodScheduled=false \
+    "pod3 was scheduled with no CPUs left on node 1"
 delete-pods pod1
-vm-command "kubectl wait --for=condition=Ready pod/pod3 --timeout=120s" ||
-    error "pod3 did not start after pod1 released its claim"
+wait-pod-condition --timeout 120 pod3 Ready \
+    "pod3 did not start after pod1 released its claim"
 cpus3=$(dra-claimed-cpus pod3)
 verify "cpuset('$cpus3') == cpuset('$cpus1')" \
        "cpus['pod3c0'] == cpuset('$cpus3')" \

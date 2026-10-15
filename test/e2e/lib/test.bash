@@ -134,6 +134,31 @@ wait-pod-gone() { # script API
     }
 }
 
+wait-pod-condition() { # script API
+    # Usage: wait-pod-condition [--timeout SECS] POD CONDITION [MESSAGE]
+    #
+    # Wait until POD meets CONDITION, SECS seconds at most, 30 by default.
+    # Fail the test with MESSAGE if it does not.
+    #
+    # CONDITION is what "kubectl wait --for=condition=" takes, so it can also
+    # be negative: PodScheduled=false waits for the pod to stay unscheduled.
+    #
+    # Use this where the pod reaches the condition later than at creation,
+    # which is what the wait and wait_t parameters of create are for.
+    #
+    # Example: wait for a pod which had no CPUs to start once it got some:
+    #   wait-pod-condition --timeout 120 pod2 Ready "pod2 did not get CPUs"
+    local timeout=30
+    if [ "$1" == "--timeout" ]; then
+        timeout=$2
+        shift 2
+    fi
+    local pod=$1 condition=$2
+    vm-command "kubectl wait --timeout=${timeout}s --for=condition=$condition pod/$pod" || {
+        command-error "${3:-pod $pod did not reach condition $condition within ${timeout}s}"
+    }
+}
+
 ###
 ### Launching the plugin
 ###
