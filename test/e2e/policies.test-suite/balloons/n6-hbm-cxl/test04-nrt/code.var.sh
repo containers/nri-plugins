@@ -1,9 +1,4 @@
-cleanup() {
-    delete-pods --all
-    helm-terminate
-}
-
-cleanup
+cleanup-test --helm
 helm_config=${TEST_DIR}/balloons-nrt.cfg helm-launch balloons
 
 # Print full NRT yaml for debugging

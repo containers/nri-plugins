@@ -1,12 +1,7 @@
-cleanup() {
-    delete-pods --all
-    helm-terminate
-}
-
 OVERRIDE_SYS_MEMORY_TYPE='{"2": "DRAM", "3": "PMEM"}'
 DEBUG_LOGGERS="sysfs"
 
-cleanup
+cleanup-test --helm
 
 helm_config=$(COLOCATE_PODS=false \
               DEBUG_LOGGERS="$DEBUG_LOGGERS" \
@@ -26,4 +21,4 @@ mem=$(container-mems $pod ${pod}c1)
 [ "$mem" = "2-3" ] || command-error "expected (DRAM+PMEM) memory 2-3, got $mem"
 echo "final memory attachment OK ($mem)"
 
-cleanup
+cleanup-test --helm

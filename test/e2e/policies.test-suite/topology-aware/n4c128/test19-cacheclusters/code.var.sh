@@ -1,8 +1,3 @@
-
-cleanup() {
-    delete-pods --all
-}
-
 # fill-l3caches <first> <last> <cpureq>
 # Create one burstable pod per L3 cache, pod<first> to pod<last>, each of them
 # limited to bursting within its own L3 cache.
@@ -23,7 +18,7 @@ verify-l3caches-filled() {
            "disjoint_sets(*$pods)"
 }
 
-cleanup
+cleanup-test
 relaunch-policy topology-aware "$TEST_DIR/helm-config.yaml"
 
 # Limit burstability of a container to an L3 cache group and verify that
@@ -39,7 +34,7 @@ verify \
     'len(cpus["pod0c1"]) == 127' \
     'len(cpus["pod0c2"]) == 64'
 
-cleanup
+cleanup-test
 
 # Test that when CPU request exceeds L3 cache capacity, the container
 # is promoted to the next topology level (NUMA node for this topology).
@@ -50,7 +45,7 @@ report allowed
 verify \
     'len(cpus["pod1c0"]) == 31'  # Promoted to NUMA level
 
-cleanup
+cleanup-test
 
 # Test limited burstable: when CPU limit exceeds L3 cache capacity,
 # the container is promoted to NUMA level.
@@ -61,7 +56,7 @@ report allowed
 verify \
     'len(cpus["pod2c0"]) == 32'  # Limit exceeds L3, promoted to NUMA
 
-cleanup
+cleanup-test
 
 # Test limited burstable: when CPU limit fits within L3 cache capacity,
 # the container stays at L3 level.
@@ -71,7 +66,7 @@ report allowed
 verify \
     'len(cpus["pod3c0"]) == 8'  # Limit fits in L3, stays at L3 level
 
-cleanup
+cleanup-test
 
 # Test multi-container pod with L3 cache preferences for each container.
 # Both containers should be confined to different L3 cache groups (8 CPUs each, disjoint).
@@ -85,7 +80,7 @@ verify \
     'len(cpus["pod4c1"]) == 8' \
     'disjoint_sets(cpus["pod4c0"], cpus["pod4c1"])'
 
-cleanup
+cleanup-test
 
 # Test that containers with affinity annotation are placed in the same L3 cache.
 # Both containers have L3 cache preference and affinity to each other.
@@ -100,7 +95,7 @@ verify \
     'len(cpus["pod5c1"]) == 8' \
     'cpus["pod5c0"] == cpus["pod5c1"]'  # Same L3 cache cluster due to affinity
 
-cleanup
+cleanup-test
 
 # Test L3 cache exhaustion and spillover across multiple L3 caches.
 # Create multiple pods with L3 cache preference. Each L3 cache has 8 CPUs.
@@ -121,7 +116,7 @@ verify \
     'len(cpus["pod9c0"]) == 8' \
     'disjoint_sets(cpus["pod6c0"], cpus["pod7c0"], cpus["pod8c0"], cpus["pod9c0"])'
 
-cleanup
+cleanup-test
 
 # Test L3 cache least-occupied selection.
 # Fill all 16 L3 caches: 15 with high CPU usage (4 CPUs), 1 with low usage (1 CPU).
@@ -145,7 +140,7 @@ report allowed
 verify \
     'cpus["pod26c0"] == cpus["pod25c0"]'  # Should share with least occupied L3
 
-cleanup
+cleanup-test
 
 # Test L3 cache overflow when all caches are nearly full.
 # Fill all 16 L3 caches with 7 CPUs each (leaving only 1 CPU free per cache).
@@ -173,7 +168,7 @@ report allowed
 verify \
     'len(cpus["pod44c0"]) == 32'  # Promoted to NUMA1 (32 CPUs, no reserved CPU)
 
-cleanup
+cleanup-test
 
 # Test guaranteed pod taking exclusive CPUs from L3 cache shared by burstable pod.
 # Fill all 16 L3 caches with burstable pods, then create a guaranteed pod.
@@ -223,5 +218,4 @@ verify \
     'len(cpus["pod50c0"]) == 8' \
     'len(cpus["pod51c0"]) == 8'
 
-cleanup
-helm-terminate
+cleanup-test --helm

@@ -1,9 +1,4 @@
-cleanup() {
-    delete-pods --all
-    helm-terminate
-}
-
-cleanup
+cleanup-test --helm
 helm_config=$(instantiate helm-config.yaml) helm-launch topology-aware
 
 # container pod0c0 has no annotations, default: dram, pmem
@@ -62,4 +57,4 @@ verify 'local_mems("pod1c0", "hbm", "dram")' \
        'local_mems("pod1c3", "pmem")' \
        'mems["pod2c0"] == {pmem0, pmem1}'
 
-cleanup
+cleanup-test --helm

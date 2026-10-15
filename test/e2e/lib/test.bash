@@ -891,6 +891,44 @@ delete-namespaces() { # script API
     done
 }
 
+cleanup-test() { # script API
+    # Usage: cleanup-test [--helm] [--cache]
+    #
+    # Delete all pods in the default namespace, so that a test both starts
+    # from and leaves behind a clean node. With --helm, terminate the helm
+    # release, too. With --cache, also remove the policy cache, so that the
+    # policy an earlier test chose cannot affect the one this test launches.
+    #
+    # --cache implies --helm: a running plugin writes its cache back out.
+    #
+    # Never fails, so this is safe to call both before and after a test.
+    # Tests with more to clean up than this call it and add the rest.
+    local helm="" cache=""
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --helm)
+                helm=1
+                ;;
+            --cache)
+                cache=1
+                helm=1
+                ;;
+            *)
+                error "cleanup-test: unknown option '$1'"
+                ;;
+        esac
+        shift
+    done
+    delete-pods --all
+    if [ -n "$helm" ]; then
+        helm-terminate || :
+    fi
+    if [ -n "$cache" ]; then
+        remove-policy-cache
+    fi
+    return 0
+}
+
 remove-policy-cache() { # script API
     # Usage: remove-policy-cache
     #
