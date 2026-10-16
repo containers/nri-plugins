@@ -1,8 +1,3 @@
-cleanup() {
-    cleanup-test
-    delete-namespaces highprio lowprio
-}
-
 SCHEDULING_CLASSES="[
     { name: realtime, policy: fifo,  priority: 42 },
     { name: highprio, policy: fifo,  priority: 10 },
@@ -14,7 +9,7 @@ SCHEDULING_CLASSES="[
 NAMESPACE_SCHEDULING_CLASSES="{ highprio: highprio, lowprio: lowprio }"
 PODQOS_SCHEDULING_CLASSES="{ BestEffort: lowprio, Burstable: default, Guaranteed: highprio }"
 
-cleanup
+cleanup-test
 helm-terminate
 
 helm_config=$(COLOCATE_PODS=false \
@@ -178,4 +173,4 @@ vm-command "chrt -p \$(pgrep -f 'echo pod10c0')" ||
 grep -q 'SCHED_OTHER|SCHED_RESET_ON_FORK' <<< "$COMMAND_OUTPUT" ||
     error "the reset-on-fork flag of scheduling class onfork was not set on pod10c0"
 
-cleanup
+cleanup-test

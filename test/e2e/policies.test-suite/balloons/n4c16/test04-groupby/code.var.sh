@@ -5,12 +5,7 @@ relaunch-policy balloons "$TEST_DIR/balloons-groupby.cfg"
 
 testns=e2e-balloons-test04
 
-cleanup() {
-    cleanup-test
-    delete-namespaces "$testns"
-}
-
-cleanup
+cleanup-test
 
 POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: grouped-by-label"
 # pod0c0
@@ -54,6 +49,6 @@ verify-metrics-has-line 'groups="e2e-balloons-test04-g1"'
 verify-metrics-has-line 'groups="default-g2"'
 verify-metrics-has-line 'groups="default-g1"'
 
-cleanup
+cleanup-test
 
 helm-terminate
