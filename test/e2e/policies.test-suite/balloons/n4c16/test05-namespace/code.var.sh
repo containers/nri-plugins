@@ -1,10 +1,6 @@
 relaunch-policy balloons "${TEST_DIR}/balloons-namespace.cfg"
 
-cleanup() {
-    cleanup-test
-    delete-namespaces e2e-a e2e-b e2e-c e2e-d
-}
-cleanup
+cleanup-test
 
 create-namespaces e2e-a e2e-b e2e-c e2e-d
 
@@ -83,5 +79,5 @@ verify 'cpus["pod6c0"] == cpus["pod7c0"]' \
        'len(cpus["pod7c1"]) > len(cpus["pod7c0"])' \
        'len(cpus["pod7c1"]) == 16'
 
-cleanup
+cleanup-test
 helm-terminate

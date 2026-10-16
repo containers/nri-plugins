@@ -7,7 +7,6 @@ testns=e2e-balloons-test06
 
 cleanup() {
     cleanup-test --helm --cache
-    delete-namespaces "$testns" btype1ns0
     vm-command "kubectl -n kube-system delete configmap nri-resource-policy-config.default --ignore-not-found=true" || :
 }
 

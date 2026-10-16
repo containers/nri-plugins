@@ -1,10 +1,4 @@
-
-cleanup() {
-    cleanup-test
-    delete-namespaces highprio lowprio
-}
-
-cleanup
+cleanup-test
 helm-terminate
 helm_config=$(instantiate helm-config.yaml) helm-launch topology-aware
 

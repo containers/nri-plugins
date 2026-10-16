@@ -50,6 +50,4 @@ verify 'cpus["pod2c0"] == {"cpu10", "cpu11"}'
 verify 'cpus["pod3c0"] == {"cpu08", "cpu09"}'
 verify 'cpus["pod4c0"] == {"cpu10", "cpu11"}'
 
-cleanup-foobar-namespace
-
-helm-terminate
+cleanup-test --helm
