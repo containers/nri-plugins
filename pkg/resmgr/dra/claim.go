@@ -217,3 +217,19 @@ func (p *Plugin) claimResults(claim *resourceapi.ResourceClaim) []resourceapi.De
 
 	return results
 }
+
+// ClaimConfigs returns the device class and claim configs.
+func ClaimConfigs(claim *resourceapi.ResourceClaim, driver string) []resourceapi.DeviceAllocationConfiguration {
+	if claim.Status.Allocation == nil {
+		return nil
+	}
+
+	var configs []resourceapi.DeviceAllocationConfiguration
+	for _, c := range claim.Status.Allocation.Devices.Config {
+		if c.Opaque != nil && c.Opaque.Driver == driver {
+			configs = append(configs, c)
+		}
+	}
+
+	return configs
+}
