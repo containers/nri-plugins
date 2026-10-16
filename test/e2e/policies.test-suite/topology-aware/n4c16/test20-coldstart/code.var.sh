@@ -26,4 +26,18 @@ mem=$(container-mems $pod ${pod}c1)
 [ "$mem" = "2-3" ] || command-error "expected (DRAM+PMEM) memory 2-3, got $mem"
 echo "final memory attachment OK ($mem)"
 
+unset ANN0_MEMTYPE ANN1_COLDSTART
+
+# A cold start preference which does not parse fails the container.
+ANN0_COLDSTART='cold-start.resource-policy.nri.io/container.pod1c0: "duration: {{"' \
+    wait="" CONTCOUNT=1 CPU=1 create guaranteed
+
+verify-container-error pod1 pod1c0 "cold start preference"
+
+# So does one whose duration is out of range.
+ANN0_COLDSTART='cold-start.resource-policy.nri.io/container.pod2c0: "{ duration: 2h }"' \
+    wait="" CONTCOUNT=1 CPU=1 create guaranteed
+
+verify-container-error pod2 pod2c0 "cold start duration .* out of range"
+
 cleanup

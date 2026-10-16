@@ -110,3 +110,55 @@ report allowed
 verify \
     'cpus["pod7c0"].issubset({"cpu08", "cpu09", "cpu10", "cpu11"})' \
     'node_ids(nodes["pod7c0"]) == {2}'
+
+unset ANN0 ANN1 ANN2 ANN3
+
+# A hint which names a socket rather than a NUMA node. A NUMA hint is
+# resolved to the CPUs of that node before the pools are scored, so it
+# is scored as a set of CPUs; a socket hint is not resolved and is scored
+# as a socket, which leaves the container free to land on either node of
+# socket 1.
+ANN0='test.topologyhints.resource-policy.nri.io/container.pod8c0: "{ test: { Sockets: \"1\" } }"'
+CONTCOUNT=1 CPU=1 MEM=100M create guaranteed
+report allowed
+verify \
+    'cpus["pod8c0"].issubset({"cpu08", "cpu09", "cpu10", "cpu11",
+                              "cpu12", "cpu13", "cpu14", "cpu15"})'
+
+unset ANN0
+
+# A strict hint on a container which gets a shared portion of a pool
+# instead of exclusive CPUs: the strict check has to hold for the shared
+# CPUs of the grant, which a fractional CPU request is served from.
+ANN0='strict.topologyhints.resource-policy.nri.io/container.pod9c0: "true"'
+ANN1='test.topologyhints.resource-policy.nri.io/container.pod9c0: "{ test: { NUMAs: \"3\" } }"'
+CONTCOUNT=1 CPU=500m MEM=100M create guaranteed
+report allowed
+verify 'node_ids(nodes["pod9c0"]) == {3}'
+
+unset ANN0 ANN1
+
+# A strict hint on a container in the reserved pool. The reservation is
+# cpu00, on NUMA node 0, so a hint for node 0 holds.
+ANN0='strict.topologyhints.resource-policy.nri.io/container.pod10c0: "true"'
+ANN1='test.topologyhints.resource-policy.nri.io/container.pod10c0: "{ test: { NUMAs: \"0\" } }"'
+ANN2='prefer-reserved-cpus.resource-policy.nri.io/container.pod10c0: "true"'
+CONTCOUNT=1 CPU=50m MEM=100M create guaranteed
+report allowed
+verify 'cpus["pod10c0"] == {"cpu00"}'
+
+unset ANN0 ANN1 ANN2
+
+# A hint which names a NUMA node that does not exist. Such a hint cannot be
+# resolved to CPUs, so unlike every hint above it is scored as a set of node
+# ids, and it matches no pool: the container is placed as if it had no hint at
+# all rather than refused.
+ANN0='test.topologyhints.resource-policy.nri.io/container.pod11c0: "{ test: { NUMAs: \"99\" } }"'
+CONTCOUNT=1 CPU=1 MEM=100M create guaranteed
+report allowed
+verify 'len(cpus["pod11c0"]) == 1'
+
+plugin-log 'evaluating topology hint <hints NUMAs:99' > /dev/null ||
+    command-error "the policy resolved a hint for a node which does not exist"
+
+unset ANN0

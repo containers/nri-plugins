@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${NAME}
+  labels:
+    app: ${NAME}
+  $( [ -n "${!ANN*}" ] && echo "
+  annotations:
+    $(for ann in ${!ANN*}; do [[ "$ann" == ANN[0-9]* ]] && echo "
+    ${!ann}
+    "; done)
+  ")
+spec:
+  containers:
+  $(for contnum in $(seq 1 ${CONTCOUNT}); do echo "
+  - name: ${NAME}c$(( contnum - 1 ))
+    image: quay.io/prometheus/busybox
+    imagePullPolicy: IfNotPresent
+    command:
+      - sh
+      - -c
+      - echo ${NAME}c$(( contnum - 1 )) \$(sleep inf)
+    resources:
+      requests:
+        cpu: ${CPU}
+        memory: '${MEM}'
+        $(for extreq in "${EXTREQ[@]}"; do echo "
+        $extreq
+        "; done)
+      limits:
+        cpu: ${CPU}
+        memory: '${MEM}'
+        $(for extlim in "${EXTLIM[@]}"; do echo "
+        $extlim
+        "; done)
+  "; done )
+  terminationGracePeriodSeconds: 1

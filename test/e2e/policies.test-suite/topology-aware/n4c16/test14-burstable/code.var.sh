@@ -87,4 +87,17 @@ verify \
 
 delete-pods --all
 
+# An annotated topology level which does not name a known one is reported
+# and the global preference (a single NUMA node) is used instead.
+unset ANN0 ANN1
+ANN0='unlimited-burstable.resource-policy.nri.io/container.pod9c0: nosuchlevel'
+CONTCOUNT=1 CPUREQ=2 CPULIM=0 MEMREQ=100M create burstable
+report allowed
+verify 'len(nodes["pod9c0"]) == 1'
+
+plugin-log 'ignoring invalid annotated burstable preference' > /dev/null ||
+    command-error "the policy accepted an invalid burstable topology level"
+
+delete-pods --all
+
 helm-terminate

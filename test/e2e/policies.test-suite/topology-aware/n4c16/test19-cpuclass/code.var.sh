@@ -134,6 +134,14 @@ ANN0="cpu-class.resource-policy.nri.io/container.${pod}c0: class1" \
 
 verify-container-error $pod ${pod}c0 "CPU class .* invalid without exclusive CPUs"
 
+# An undefined CPU class
+
+pod=pod5
+ANN0="cpu-class.resource-policy.nri.io/container.${pod}c0: nosuchclass" \
+    wait="" CPU=1 CONTCOUNT=1 create guaranteed
+
+verify-container-error $pod ${pod}c0 "unknown CPU class"
+
 cleanup
 
 #

@@ -223,5 +223,20 @@ verify \
     'len(cpus["pod50c0"]) == 8' \
     'len(cpus["pod51c0"]) == 8'
 
+# A hint which names a NUMA node that does not exist. Such a hint cannot be
+# resolved to CPUs, so it is scored by node id instead, and an L3 cache pool
+# scores it by the NUMA nodes underneath itself: a level which only this
+# topology has. No pool matches a node which is not there, so the container is
+# placed as if it had no hint at all.
+ANN0='test.topologyhints.resource-policy.nri.io/container.pod63c0: "{ test: { NUMAs: \"99\" } }"'
+NAME=pod63 CONTCOUNT=1 CPU=1 MEM=100M create guaranteed
+report allowed
+verify 'len(cpus["pod63c0"]) == 1'
+
+plugin-log 'evaluating topology hint <hints NUMAs:99' > /dev/null ||
+    command-error "the policy resolved a hint for a node which does not exist"
+
+unset ANN0
+
 cleanup
 helm-terminate

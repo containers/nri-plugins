@@ -294,5 +294,65 @@ ANN0=$ANN0 ANN1=$ANN1 \
 
 verify-container-error $pod ${pod}c0 "invalid IRQ affinity devices pattern"
 
-cleanup
 unset ANN0 ANN1
+
+#
+# Test claim-first mode, and a container with no exclusive CPUs.
+#
+
+cleanup
+unset CONTROLLABLE_INTERRUPTS
+
+helm_config=$(COLOCATE_PODS=false \
+              DEBUG_LOGGERS="$DEBUG_LOGGERS,policy" \
+    instantiate helm-config.yaml) helm-launch topology-aware
+
+# Claim-first mode, with one container claiming an interrupt and another
+# masking every interrupt. In this mode the masking container's CPUs are
+# taken out before the claims are applied rather than after, so the claimed
+# interrupt still lands on the claiming container's CPUs while every other
+# interrupt is kept off the masking container's.
+#
+# Note that the two have to be different containers. One container which
+# both claims and masks the same interrupt gets an empty affinity set in
+# this mode.
+
+pod=pod12
+ANN0=$(cat <<EOF
+irq-affinity.resource-policy.nri.io/container.${pod}c0: |
+      claim: [ "*ttyS0*" ]
+EOF
+)
+ANN1=$(cat <<EOF
+irq-affinity.resource-policy.nri.io/container.${pod}c1: |
+      mode: claim-first
+      mask: [ "*" ]
+EOF
+)
+ANN0=$ANN0 ANN1=$ANN1 CPU=2 CONTCOUNT=2 create guaranteed
+
+verify-irq-cpus ".*ttyS0.*" $(container-cpus $pod ${pod}c0)
+verify-irq-cpus ".*rtc0.*" "$(cpulist-difference $ALLCPUS $(container-cpus $pod ${pod}c1))"
+plugin-log 'pre-masks' > /dev/null ||
+    command-error "claim-first mode did not pre-mask the interrupts"
+
+delete-pods $pod
+verify-irq-cpus ".*ttyS0.*" $ALLCPUS
+unset ANN0 ANN1
+
+# Pod-scoped IRQ annotation for a container running in the shared pool
+# is not rejected, but it has no effect on IRQs either.
+pod=pod13
+ANN0=$(cat <<EOF
+irq-affinity.resource-policy.nri.io/pod: |
+      claim: [ "*rtc0*" ]
+EOF
+)
+ANN0=$ANN0 CPU=500m CONTCOUNT=1 create guaranteed
+
+verify-irq-cpus ".*rtc0.*" $ALLCPUS
+
+delete-pods $pod
+unset ANN0
+
+cleanup

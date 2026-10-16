@@ -53,3 +53,20 @@ verify \
     'cpus["pod1c2"] in     [ {"cpu01"}, {"cpu04"}, {"cpu05"} ]' \
 
 delete-pods --all
+
+# pod2
+# An explicit "default" priority is the same as no annotation at all,
+# and a priority which does not name a known one is reported and ignored
+# rather than failing the container.
+unset ANN0 ANN1 ANN2
+ANN0="prefer-cpu-priority.resource-policy.nri.io/container.pod2c0: default"
+ANN1="prefer-cpu-priority.resource-policy.nri.io/container.pod2c1: nosuchprio"
+CONTCOUNT=2 CPU=1 create guaranteed
+report allowed
+
+plugin-log 'explicit default CPU priority preference' > /dev/null ||
+    command-error "the policy did not read an explicit default CPU priority"
+plugin-log 'invalid CPU priority preference' > /dev/null ||
+    command-error "the policy accepted an invalid CPU priority preference"
+
+delete-pods --all
