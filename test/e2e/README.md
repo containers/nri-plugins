@@ -34,12 +34,22 @@ Before running E2E tests ensure that you have all the required components locall
     ./run_tests.sh policies.test-suite
     ```
 
-    The default test output directory name is generated from the used topology
-    and runtime name and the directory is created under test/e2e.
-    The test output directory can be given as a 2nd parameter to the script.
+    You can name several directories to run the tests of each of them in turn,
+    and the script prints one summary of them all. Each directory is a test
+    suite, or a policy, topology or single test under one, so shell globbing
+    picks out tests conveniently:
 
     ```shell
-    ./run_tests.sh policies.test-suite ~/output-directory
+    ./run_tests.sh policies.test-suite/balloons policies.test-suite/template
+    ./run_tests.sh policies.test-suite/balloons/n4c16/test0[1-5]*
+    ```
+
+    The default test output directory name is generated from the used topology
+    and runtime name and the directory is created under test/e2e.
+    The test output directory can be given with the `-o` option.
+
+    ```shell
+    ./run_tests.sh -o ~/output-directory policies.test-suite
     ```
 
     Note that Vagrant VM is stored into the output directory. If you want to

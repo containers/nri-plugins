@@ -1,8 +1,7 @@
 #!/bin/bash
 
-TESTS_DIR="$1"
-OUTPUT_DIR_ARG="${2:-}"
-OUTPUT_ROOT="${OUTPUT_DIR_ARG:-$(pwd)}"
+tests_dirs=()
+OUTPUT_DIR_ARG=""
 SKIP_LONG_TESTS="${skip_long_tests:-yes}"
 RUN_SH="${0%/*}/run.sh"
 REPORT_COVERAGE_SH="${0%/*}/report-coverage.sh"
@@ -21,11 +20,15 @@ proxy=${proxy:=$HTTPS_PROXY}
 export proxy
 
 usage() {
-    echo "Usage: [skip_long_tests=no] run_tests.sh TESTS_DIR [OUTPUT_DIR]"
-    echo "TESTS_DIR is expected to be structured as POLICY/TOPOLOGY/TEST with files:"
+    echo "Usage: [skip_long_tests=no] run_tests.sh [-o OUTPUT_DIR] TESTS_DIR..."
+    echo "Runs the tests in each TESTS_DIR in turn and prints one summary of them all."
+    echo "Each TESTS_DIR is a test suite root, or a POLICY, POLICY/TOPOLOGY or"
+    echo "POLICY/TOPOLOGY/TEST directory under one. A test suite is structured as"
+    echo "POLICY/TOPOLOGY/TEST with files:"
     echo "POLICY/nri-resource_policy.cfg: configuration of nri-resource_policy"
     echo "POLICY/TOPOLOGY/topology.var.json: contents of the topology variable for run.sh"
     echo "POLICY/TOPOLOGY/TEST/code.var.sh: contents of the code var (that is, test script)"
+    echo "-o OUTPUT_DIR puts the test output under OUTPUT_DIR instead of the current dir."
     echo "skip_long_tests=no enables long-running tests (including fuzzing and stress tests)."
 }
 
@@ -130,50 +133,79 @@ export-and-source-dir() {
     source-source-files "$dir"
 }
 
-case "$TESTS_DIR" in
-    "")
-        usage
-        error "missing TESTS_DIR"
-        ;;
-    "help"|"--help"|"-h")
-        usage
-        exit 0
-        ;;
-esac
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        "help"|"--help"|"-h")
+            usage
+            exit 0
+            ;;
+        "-o")
+            if [ "$#" -lt 2 ]; then
+                usage
+                error "-o requires an output directory"
+            fi
+            OUTPUT_DIR_ARG="$2"
+            shift 2
+            ;;
+        *)
+            tests_dirs+=("$1")
+            shift
+            ;;
+    esac
+done
 
-if ! [ -d "$TESTS_DIR" ]; then
-    error "bad TESTS_DIR: \"$TESTS_DIR\""
+if [ "${#tests_dirs[@]}" -eq 0 ]; then
+    usage
+    error "missing TESTS_DIR"
 fi
 
-# Find TESTS_DIR root by looking for POLICY_DIR/*.cfg. If TESTS_DIR was not the
-# root dir, then execute tests only under TESTS_DIR.
-root_dir_glob="*.test-suite"
-# shellcheck disable=SC2053
-if [[ "$(basename "$TESTS_DIR")" == $root_dir_glob ]]; then
-    TESTS_ROOT_DIR="$TESTS_DIR"
-elif [[ "$(basename "$(realpath "$TESTS_DIR"/..)")" == $root_dir_glob ]]; then
-    TESTS_ROOT_DIR=$(realpath "$TESTS_DIR/..")
-    TESTS_POLICY_FILTER=$(basename "${TESTS_DIR}")
-elif [[ "$(basename "$(realpath "$TESTS_DIR"/../..)")" == $root_dir_glob ]]; then
-    TESTS_ROOT_DIR=$(realpath "$TESTS_DIR/../..")
-    TESTS_POLICY_FILTER=$(basename "$(dirname "${TESTS_DIR}")")
-    TESTS_TOPOLOGY_FILTER=$(basename "${TESTS_DIR}")
-elif [[ "$(basename "$(realpath "$TESTS_DIR"/../../..)")" == $root_dir_glob ]]; then
-    TESTS_ROOT_DIR=$(realpath "$TESTS_DIR/../../..")
-    TESTS_POLICY_FILTER=$(basename "$(dirname "$(dirname "${TESTS_DIR}")")")
-    TESTS_TOPOLOGY_FILTER=$(basename "$(dirname "${TESTS_DIR}")")
-    TESTS_TEST_FILTER=$(basename "${TESTS_DIR}")
-else
-    error "TESTS_DIR=\"$TESTS_DIR\" is invalid tests/policy/topology/test dir: *.cfg not found"
-fi
+OUTPUT_ROOT="${OUTPUT_DIR_ARG:-$(pwd)}"
 
-echo "Running tests matching:"
-echo "    TESTS_ROOT_DIR=$TESTS_ROOT_DIR"
-echo "    TESTS_POLICY_FILTER=$TESTS_POLICY_FILTER"
-echo "    TESTS_TOPOLOGY_FILTER=$TESTS_TOPOLOGY_FILTER"
-echo "    TESTS_TEST_FILTER=$TESTS_TEST_FILTER"
-echo "    skip long tests: $SKIP_LONG_TESTS"
+tests-dir-filters() {
+    # Set TESTS_ROOT_DIR and the policy, topology and test filters from the
+    # test suite root, policy, topology or test directory given.
+    #
+    # Find the root by looking for POLICY_DIR/*.cfg. If the directory was not
+    # the root itself, filter the tests down to the ones under it. Reset the
+    # filters first: this runs once per directory the caller asked for.
+    local TESTS_DIR="$1"
+    local root_dir_glob="*.test-suite"
+    TESTS_POLICY_FILTER=""
+    TESTS_TOPOLOGY_FILTER=""
+    TESTS_TEST_FILTER=""
+    # shellcheck disable=SC2053
+    if [[ "$(basename "$TESTS_DIR")" == $root_dir_glob ]]; then
+        TESTS_ROOT_DIR="$TESTS_DIR"
+    elif [[ "$(basename "$(realpath "$TESTS_DIR"/..)")" == $root_dir_glob ]]; then
+        TESTS_ROOT_DIR=$(realpath "$TESTS_DIR/..")
+        TESTS_POLICY_FILTER=$(basename "${TESTS_DIR}")
+    elif [[ "$(basename "$(realpath "$TESTS_DIR"/../..)")" == $root_dir_glob ]]; then
+        TESTS_ROOT_DIR=$(realpath "$TESTS_DIR/../..")
+        TESTS_POLICY_FILTER=$(basename "$(dirname "${TESTS_DIR}")")
+        TESTS_TOPOLOGY_FILTER=$(basename "${TESTS_DIR}")
+    elif [[ "$(basename "$(realpath "$TESTS_DIR"/../../..)")" == $root_dir_glob ]]; then
+        TESTS_ROOT_DIR=$(realpath "$TESTS_DIR/../../..")
+        TESTS_POLICY_FILTER=$(basename "$(dirname "$(dirname "${TESTS_DIR}")")")
+        TESTS_TOPOLOGY_FILTER=$(basename "$(dirname "${TESTS_DIR}")")
+        TESTS_TEST_FILTER=$(basename "${TESTS_DIR}")
+    else
+        error "TESTS_DIR=\"$TESTS_DIR\" is invalid tests/policy/topology/test dir: *.cfg not found"
+    fi
+}
 
+# Resolve every directory before running anything. A mistyped one has to fail
+# here and not from inside the loop below, where the error would kill only that
+# directory's subshell and leave the run looking like it had succeeded.
+for TESTS_DIR in "${tests_dirs[@]}"; do
+    if ! [ -d "$TESTS_DIR" ]; then
+        error "bad TESTS_DIR: \"$TESTS_DIR\""
+    fi
+    tests-dir-filters "$TESTS_DIR"
+done
+
+# vm.bash and the coverage helpers live in the lib beside the test suites, and
+# every suite in this repo shares it, so take it from the first directory given.
+tests-dir-filters "${tests_dirs[0]}"
 E2E_LIB_DIR=$(realpath "$TESTS_ROOT_DIR/../lib")
 
 source "$E2E_LIB_DIR"/vm.bash
@@ -195,128 +227,152 @@ echo -n "" > "$summary_file"
 # Discard all old coverage data if asked to.
 vm-coverage-discard-collected "$OUTPUT_ROOT"
 
-# Shared test helpers are the root of the *.source.sh chain: they are sourced
-# before any test suite, policy, topology or test case level *.source.sh file,
-# so that any of those can override a helper.
-source_libs="source \"$E2E_LIB_DIR/test.bash\""
+run-tests-in() {
+    # Usage: run-tests-in TESTS_DIR
+    #
+    # Run every test under TESTS_DIR, appending one verdict per test to
+    # $summary_file.
+    tests-dir-filters "$1"
 
-export-and-source-dir "$TESTS_ROOT_DIR"
+    E2E_LIB_DIR=$(realpath "$TESTS_ROOT_DIR/../lib")
 
-TEST_SUITE_NAME="$(basename $TESTS_ROOT_DIR)"
-TEST_PARAMS="$TESTS_ROOT_DIR/.run.sh-parameters"
+    echo "Running tests matching:"
+    echo "    TESTS_ROOT_DIR=$TESTS_ROOT_DIR"
+    echo "    TESTS_POLICY_FILTER=$TESTS_POLICY_FILTER"
+    echo "    TESTS_TOPOLOGY_FILTER=$TESTS_TOPOLOGY_FILTER"
+    echo "    TESTS_TEST_FILTER=$TESTS_TEST_FILTER"
+    echo "    skip long tests: $SKIP_LONG_TESTS"
 
-for POLICY_DIR in "$TESTS_ROOT_DIR"/*; do
-    if ! [ -d "$POLICY_DIR" ]; then
-        continue
-    fi
-    if ! [[ "$(basename "$POLICY_DIR")" =~ .*"$TESTS_POLICY_FILTER".* ]]; then
-        continue
-    fi
-    # Run exports in subshells so that variables exported for previous
-    # tests do not affect any other tests.
-    (
-        for CFG_FILE in "$POLICY_DIR"/*.cfg; do
-            if ! [ -f "$CFG_FILE" ]; then
-                continue
-            fi
-            export nri_resource_policy_cfg=$CFG_FILE
-        done
-        export-and-source-dir "$POLICY_DIR"
-        for TOPOLOGY_DIR in "$POLICY_DIR"/*; do
-            if ! [ -d "$TOPOLOGY_DIR" ]; then
-                continue
-            fi
-            if ! [[ "$(basename "$TOPOLOGY_DIR")" =~ .*"$TESTS_TOPOLOGY_FILTER".* ]]; then
-                continue
-            fi
-            if [ "$(basename "$TOPOLOGY_DIR")" == "vm-files" ]; then
-                continue
-            fi
-            (
-                distro=${distro:=$DEFAULT_DISTRO}
-                export distro
+    # Shared test helpers are the root of the *.source.sh chain: they are sourced
+    # before any test suite, policy, topology or test case level *.source.sh file,
+    # so that any of those can override a helper.
+    source_libs="source \"$E2E_LIB_DIR/test.bash\""
 
-                vagrant_debug=${vagrant_debug:-}
-                export vagrant_debug
+    export-and-source-dir "$TESTS_ROOT_DIR"
 
-		policy_name="$(basename $POLICY_DIR)"
+    TEST_SUITE_NAME="$(basename $TESTS_ROOT_DIR)"
+    TEST_PARAMS="$TESTS_ROOT_DIR/.run.sh-parameters"
 
-		# Create name for the vm, unless the caller gave one.
-		export vm_name=${vm_name:-$(vm-create-name "$k8scri" "$(basename "$TOPOLOGY_DIR")" ${distro})}
-                export-and-source-dir "$TOPOLOGY_DIR"
+    for POLICY_DIR in "$TESTS_ROOT_DIR"/*; do
+        if ! [ -d "$POLICY_DIR" ]; then
+            continue
+        fi
+        if ! [[ "$(basename "$POLICY_DIR")" =~ .*"$TESTS_POLICY_FILTER".* ]]; then
+            continue
+        fi
+        # Run exports in subshells so that variables exported for previous
+        # tests do not affect any other tests.
+        (
+            for CFG_FILE in "$POLICY_DIR"/*.cfg; do
+                if ! [ -f "$CFG_FILE" ]; then
+                    continue
+                fi
+                export nri_resource_policy_cfg=$CFG_FILE
+            done
+            export-and-source-dir "$POLICY_DIR"
+            for TOPOLOGY_DIR in "$POLICY_DIR"/*; do
+                if ! [ -d "$TOPOLOGY_DIR" ]; then
+                    continue
+                fi
+                if ! [[ "$(basename "$TOPOLOGY_DIR")" =~ .*"$TESTS_TOPOLOGY_FILTER".* ]]; then
+                    continue
+                fi
+                if [ "$(basename "$TOPOLOGY_DIR")" == "vm-files" ]; then
+                    continue
+                fi
+                (
+                    distro=${distro:=$DEFAULT_DISTRO}
+                    export distro
 
-		# Create ansible inventory file from a template
-		ESCAPED_VM=$(printf '%s\n' "$vm_name" | sed -e 's/[\/]/-/g')
+                    vagrant_debug=${vagrant_debug:-}
+                    export vagrant_debug
 
-		OUTPUT_DIR=$(realpath "${OUTPUT_DIR_ARG:-$OUTPUT_ROOT/$ESCAPED_VM}")
+                policy_name="$(basename $POLICY_DIR)"
 
-                for TEST_DIR in "$TOPOLOGY_DIR"/test*; do
-                    if ! [ -d "$TEST_DIR" ]; then
-                        continue
-                    fi
-                    if ! [[ "$(basename "$TEST_DIR")" =~ .*"$TESTS_TEST_FILTER".* ]]; then
-                        continue
-                    fi
-                    if [ "$(basename "$TEST_DIR")" == "vm-files" ]; then
-                        continue
-                    fi
+                # Create name for the vm, unless the caller gave one.
+                export vm_name=${vm_name:-$(vm-create-name "$k8scri" "$(basename "$TOPOLOGY_DIR")" ${distro})}
+                    export-and-source-dir "$TOPOLOGY_DIR"
 
-                    if [ "$SKIP_LONG_TESTS" = "yes" ]; then
-                        case $TEST_DIR in
-                            *fuzz*)
-                                echo "SKIP long test $TEST_DIR (skip_long_tests=$SKIP_LONG_TESTS)"
-                                continue
-                                ;;
-                            *long*)
-                                echo "SKIP long test $TEST_DIR (skip_long_tests=$SKIP_LONG_TESTS)"
-                                continue
-                                ;;
-                            *stress*)
-                                echo "SKIP long test $TEST_DIR (skip_long_tests=$SKIP_LONG_TESTS)"
-                                continue
-                                ;;
-                        esac
-                    fi
+                # Create ansible inventory file from a template
+                ESCAPED_VM=$(printf '%s\n' "$vm_name" | sed -e 's/[\/]/-/g')
 
-                    (
-                        export-and-source-dir "$TEST_DIR"
-                        export code="${source_libs}""
-${code}"
-			TEST_NAME=$(basename "$TEST_DIR")
-                        export outdir="$OUTPUT_DIR"
+                OUTPUT_DIR=$(realpath "${OUTPUT_DIR_ARG:-$OUTPUT_ROOT/$ESCAPED_VM}")
 
-			test_outdir="$outdir/$TEST_SUITE_NAME/$policy_name/$(basename "$TEST_DIR")"
-                        vm-set-context "$policy_name/$TEST_NAME"
-                        mkdir -p "$test_outdir"
-                        echo "Run $TEST_NAME"
-
-			test_start_time=$(epochrealtime)
-
-                        policy="$policy_name" test_outdir="$test_outdir" TEST_DIR=$TEST_DIR TOPOLOGY_DIR=$TOPOLOGY_DIR POLICY_DIR=$POLICY_DIR \
-                            "$RUN_SH" test 2>&1 | tee "$test_outdir/run.sh.output"
-
-			test_end_time=$(epochrealtime)
-			test_time=$(echo "$test_end_time - $test_start_time" | bc)
-
-			printf "\nTest duration: $test_time sec\n\n" >> "$test_outdir/run.sh.output"
-
-                        test_name="$policy_name/$(basename "$TOPOLOGY_DIR")/$(basename "$TEST_DIR")"
-                        if grep -q "Test verdict: SKIP" "$test_outdir/run.sh.output"; then
-                            echo "SKIP $test_name$(grep "Test verdict: SKIP" "$test_outdir/run.sh.output" | sed 's/Test verdict: SKIP//g')"
-                        elif grep -q "Test verdict: PASS" "$test_outdir/run.sh.output"; then
-                            echo "PASS $test_name" >> "$summary_file"
-                        elif grep -q "Test verdict: FAIL" "$test_outdir/run.sh.output"; then
-                            echo "FAIL $test_name" >> "$summary_file"
-                        else
-                            echo "ERROR $test_name" >> "$summary_file"
+                    for TEST_DIR in "$TOPOLOGY_DIR"/test*; do
+                        if ! [ -d "$TEST_DIR" ]; then
+                            continue
                         fi
-                        vm-reset-context
-                    )
-                done
-            )
-        done
-    )
+                        if ! [[ "$(basename "$TEST_DIR")" =~ .*"$TESTS_TEST_FILTER".* ]]; then
+                            continue
+                        fi
+                        if [ "$(basename "$TEST_DIR")" == "vm-files" ]; then
+                            continue
+                        fi
+
+                        if [ "$SKIP_LONG_TESTS" = "yes" ]; then
+                            case $TEST_DIR in
+                                *fuzz*)
+                                    echo "SKIP long test $TEST_DIR (skip_long_tests=$SKIP_LONG_TESTS)"
+                                    continue
+                                    ;;
+                                *long*)
+                                    echo "SKIP long test $TEST_DIR (skip_long_tests=$SKIP_LONG_TESTS)"
+                                    continue
+                                    ;;
+                                *stress*)
+                                    echo "SKIP long test $TEST_DIR (skip_long_tests=$SKIP_LONG_TESTS)"
+                                    continue
+                                    ;;
+                            esac
+                        fi
+
+                        (
+                            export-and-source-dir "$TEST_DIR"
+                            export code="${source_libs}""
+    ${code}"
+                        TEST_NAME=$(basename "$TEST_DIR")
+                            export outdir="$OUTPUT_DIR"
+
+                        test_outdir="$outdir/$TEST_SUITE_NAME/$policy_name/$(basename "$TEST_DIR")"
+                            vm-set-context "$policy_name/$TEST_NAME"
+                            mkdir -p "$test_outdir"
+                            echo "Run $TEST_NAME"
+
+                        test_start_time=$(epochrealtime)
+
+                            policy="$policy_name" test_outdir="$test_outdir" TEST_DIR=$TEST_DIR TOPOLOGY_DIR=$TOPOLOGY_DIR POLICY_DIR=$POLICY_DIR \
+                                "$RUN_SH" test 2>&1 | tee "$test_outdir/run.sh.output"
+
+                        test_end_time=$(epochrealtime)
+                        test_time=$(echo "$test_end_time - $test_start_time" | bc)
+
+                        printf "\nTest duration: $test_time sec\n\n" >> "$test_outdir/run.sh.output"
+
+                            test_name="$policy_name/$(basename "$TOPOLOGY_DIR")/$(basename "$TEST_DIR")"
+                            if grep -q "Test verdict: SKIP" "$test_outdir/run.sh.output"; then
+                                echo "SKIP $test_name$(grep "Test verdict: SKIP" "$test_outdir/run.sh.output" | sed 's/Test verdict: SKIP//g')"
+                            elif grep -q "Test verdict: PASS" "$test_outdir/run.sh.output"; then
+                                echo "PASS $test_name" >> "$summary_file"
+                            elif grep -q "Test verdict: FAIL" "$test_outdir/run.sh.output"; then
+                                echo "FAIL $test_name" >> "$summary_file"
+                            else
+                                echo "ERROR $test_name" >> "$summary_file"
+                            fi
+                            vm-reset-context
+                        )
+                    done
+                )
+            done
+        )
+    done
+}
+
+# Run each directory in a subshell of its own, so that the variables and the
+# *.source.sh chain one exports cannot carry over into the next.
+for TESTS_DIR in "${tests_dirs[@]}"; do
+    ( run-tests-in "$TESTS_DIR" )
 done
+
 
 echo ""
 echo "Tests summary:"
