@@ -26,9 +26,16 @@ package topologyaware
 // A container holding claims runs on their CPUs, and also on its own CPUs
 // if it has a CPU request. A container naming only some requests of a claim
 // runs on the CPUs of those requests.
+//
+// A claim or its device class may set a memory policy for the containers
+// holding the claim, in a TopologyAwareClaimConfig. A config applies to the
+// results of the requests it names. A config naming no requests applies to
+// all results.
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
@@ -36,10 +43,13 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/dynamic-resource-allocation/deviceattribute"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/yaml"
 	specs "tags.cncf.io/container-device-interface/specs-go"
 
+	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/dra"
+	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
@@ -54,16 +64,21 @@ const (
 	draAttrSocketID resourceapi.QualifiedName = "dra.cpu/socketID"
 	// draAttrSMTEnabled tells whether the CPUs have SMT enabled.
 	draAttrSMTEnabled resourceapi.QualifiedName = "dra.cpu/smtEnabled"
+	// draConfigAPIVersion and draConfigKind identify our claim configs.
+	draConfigAPIVersion = "config.nri/v1alpha1"
+	draConfigKind       = "TopologyAwareClaimConfig"
 )
 
 // draDriverName is the name of our DRA driver.
 var draDriverName = dra.DriverName(PolicyName)
 
 // claim is a DRA claim we allocated. It has a grant of all of its CPUs, and
-// the CPUs of each of its allocation results, in result order.
+// the CPUs and the memory policy of each of its allocation results, in result
+// order. mpols is nil if no result has a memory policy.
 type claim struct {
 	Grant
 	results []cpuset.CPUSet
+	mpols   []*cfgapi.MemoryPolicy
 }
 
 // draDevices returns one device per NUMA node. A node's capacity is its share
@@ -145,6 +160,10 @@ func (p *policy) AllocateClaim(
 	if err != nil {
 		return nil, fmt.Errorf("claim %s: %w", uid, err)
 	}
+	mpols, err := p.claimMemoryPolicies(results, dra.ClaimConfigs(claim, draDriverName))
+	if err != nil {
+		return nil, fmt.Errorf("claim %s: %w", uid, err)
+	}
 
 	c, ok := p.allocations.claims[uid]
 	if !ok {
@@ -152,6 +171,7 @@ func (p *policy) AllocateClaim(
 		if err != nil {
 			return nil, fmt.Errorf("claim %s: %w", uid, err)
 		}
+		c.mpols = mpols
 		p.allocations.claims[uid] = c
 		p.saveAllocations()
 		// Shared containers running on the claimed CPUs move off them.
@@ -163,6 +183,10 @@ func (p *policy) AllocateClaim(
 	}
 	if err := checkClaimCPUs(c.ExclusiveCPUs(), reqs); err != nil {
 		return nil, fmt.Errorf("claim %s: %w", uid, err)
+	}
+	// The claim's configs do not change after it is allocated.
+	if !slices.EqualFunc(c.mpols, mpols, sameMemoryPolicy) {
+		return nil, fmt.Errorf("claim %s holds memory policies %v, but its configs give %v", uid, c.mpols, mpols)
 	}
 
 	// Containers find their CPUs in the resources we export to them.
@@ -209,22 +233,145 @@ func (p *policy) ReleaseClaim(uid types.UID) error {
 	return nil
 }
 
-// containerClaims returns the CPUs of the claim results a container holds.
-// It ignores results we do not know.
-func (p *policy) containerClaims(c cache.Container) cpuset.CPUSet {
-	cpus := cpuset.New()
+// containerClaims returns the CPUs and the memory policy of the claim results
+// a container holds. It ignores results we do not know, and fails if the
+// results have different memory policies.
+func (p *policy) containerClaims(c cache.Container) (cpuset.CPUSet, *cfgapi.MemoryPolicy, error) {
+	var (
+		cpus = cpuset.New()
+		mpol *cfgapi.MemoryPolicy
+		from types.UID
+	)
 	for uid, indexes := range dra.ContainerClaims(c, draDriverName) {
 		claim, ok := p.allocations.claims[string(uid)]
 		if !ok {
 			continue
 		}
 		for _, i := range indexes {
-			if i < len(claim.results) {
-				cpus = cpus.Union(claim.results[i])
+			if i >= len(claim.results) {
+				continue
+			}
+			cpus = cpus.Union(claim.results[i])
+			if i >= len(claim.mpols) || claim.mpols[i] == nil {
+				continue
+			}
+			if mpol == nil {
+				mpol, from = claim.mpols[i], uid
+			} else if !mpol.DeepEqual(claim.mpols[i]) {
+				return cpuset.New(), nil, fmt.Errorf("memory policy %s of claim %s conflicts with %s of claim %s",
+					claim.mpols[i], uid, mpol, from)
 			}
 		}
 	}
-	return cpus
+	return cpus, mpol, nil
+}
+
+// claimMemoryPolicies returns the memory policies of the claim results, or nil
+// if there are none. A later config overrides an earlier one.
+func (p *policy) claimMemoryPolicies(results []resourceapi.DeviceRequestAllocationResult,
+	configs []resourceapi.DeviceAllocationConfiguration) ([]*cfgapi.MemoryPolicy, error) {
+	var mpols []*cfgapi.MemoryPolicy
+	for i, config := range configs {
+		cfg, err := decodeClaimConfig(config.Opaque.Parameters.Raw)
+		if err != nil {
+			return nil, fmt.Errorf("config %d: %w", i, err)
+		}
+		if cfg.MemoryPolicy == nil {
+			continue
+		}
+		mpol, err := cfg.MemoryPolicy.ToMemoryPolicy()
+		if err != nil {
+			return nil, fmt.Errorf("config %d: %w", i, err)
+		}
+		// The nodes are resolved later, for each container. Resolving them
+		// here with no CPUs only checks the value.
+		nodes, err := libmem.MemoryPolicyNodes(p.sys, mpol.Mode, mpol.Nodes, cpuset.New(), libmem.NewNodeMask())
+		if err != nil {
+			return nil, fmt.Errorf("config %d: %w", i, err)
+		}
+		// Unset nodes mean allowed-mems. We keep the unset form, write node
+		// lists in one form, and sort the flags, so the policies of two
+		// claims compare equal.
+		switch {
+		case mpol.Nodes == "allowed-mems":
+			mpol.Nodes = ""
+		case mpol.Nodes != "" && mpol.Nodes[0] >= '0' && mpol.Nodes[0] <= '9':
+			// The kernel refuses a node list with no memory node of the host.
+			// With relative-nodes the list holds indices, not node IDs.
+			if !slices.Contains(mpol.Flags, "MPOL_F_RELATIVE_NODES") &&
+				nodes.And(libmem.NewNodeMask(p.getAllMems().Members()...)).Size() == 0 {
+				return nil, fmt.Errorf("config %d: memory policy nodes %q has no memory node of this host", i, mpol.Nodes)
+			}
+			mpol.Nodes = nodes.MemsetString()
+		}
+		slices.Sort(mpol.Flags)
+		mpol.Flags = slices.Compact(mpol.Flags)
+		for j, r := range results {
+			if !configApplies(config.Requests, r.Request) {
+				continue
+			}
+			if mpols == nil {
+				mpols = make([]*cfgapi.MemoryPolicy, len(results))
+			}
+			mpols[j] = mpol
+		}
+	}
+	return mpols, nil
+}
+
+// sameMemoryPolicy tells whether two memory policies are the same. Two nil
+// policies are the same.
+func sameMemoryPolicy(a, b *cfgapi.MemoryPolicy) bool {
+	return a == b || a != nil && a.DeepEqual(b)
+}
+
+// decodeClaimConfig decodes the parameters of a claim config.
+func decodeClaimConfig(data []byte) (*cfgapi.TopologyAwareClaimConfig, error) {
+	cfg := &cfgapi.TopologyAwareClaimConfig{}
+	if err := yaml.UnmarshalStrict(data, cfg); err != nil {
+		return nil, err
+	}
+	if cfg.APIVersion != draConfigAPIVersion || cfg.Kind != draConfigKind {
+		return nil, fmt.Errorf("got apiVersion %q and kind %q, expected %q and %q",
+			cfg.APIVersion, cfg.Kind, draConfigAPIVersion, draConfigKind)
+	}
+	return cfg, nil
+}
+
+// configApplies tells whether a config applies to a result of request.
+// requests are the requests the config names. A config naming no requests
+// applies to all results. A config naming a request also applies to its
+// subrequests.
+func configApplies(requests []string, request string) bool {
+	main, _, _ := strings.Cut(request, "/")
+	return len(requests) == 0 || slices.Contains(requests, request) || slices.Contains(requests, main)
+}
+
+// applyMemoryPolicy sets the memory policy of a new container to the policy of
+// its claims, with the nodes resolved for the container's CPUs and memory
+// nodes.
+func (p *policy) applyMemoryPolicy(c cache.Container, mpol *cfgapi.MemoryPolicy, cpus cpuset.CPUSet, mems libmem.NodeMask) {
+	// A container with no cpuset runs on all CPUs, and all nodes are
+	// allowed if its memory is not pinned.
+	if cpus.IsEmpty() {
+		cpus = p.sys.OnlineCPUs()
+	}
+	if mems == libmem.NodeMask(0) {
+		mems = libmem.NewNodeMask(p.sys.NodeIDs()...)
+	}
+	nodes, err := libmem.MemoryPolicyNodes(p.sys, mpol.Mode, mpol.Nodes, cpus, mems)
+	if err != nil {
+		log.Errorf("%s: failed to set memory policy %s: %v", c.PrettyName(), mpol, err)
+		return
+	}
+	mode, flags, err := mpol.ToNRI()
+	if err != nil {
+		log.Errorf("%s: failed to set memory policy %s: %v", c.PrettyName(), mpol, err)
+		return
+	}
+	log.Infof("  => setting memory policy of %s to %s %v, nodes %s",
+		c.PrettyName(), mpol.Mode, mpol.Flags, nodes.MemsetString())
+	c.SetMemoryPolicy(mode, nodes.MemsetString(), flags...)
 }
 
 // draRequest is what one allocation result requests: CPUs of a NUMA node.

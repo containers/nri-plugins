@@ -659,6 +659,25 @@ func (p *policy) applyGrant(grant Grant) {
 		container.SetCpusetMems(mems.MemsetString())
 	}
 
+	// A memory policy can only be set for a new container. Its nodes are
+	// resolved for the CPUs the container runs on: its own CPUs, if any, and
+	// its claimed CPUs. Preserved or unpinned CPUs and preserved memory are
+	// read from the container.
+	if mpol := grant.ClaimedMemoryPolicy(); mpol != nil && container.GetState() == cache.ContainerStateCreating {
+		own := exclusive
+		if cpuPortion > 0 {
+			own = cpus
+		}
+		runsOn := own.Union(claimed)
+		if cpuType == cpuPreserve || !opt.PinCPU {
+			runsOn, _ = cpuset.Parse(container.GetCpusetCpus())
+		}
+		if grant.MemoryType() == memoryPreserve {
+			mems, _ = libmem.ParseNodeMask(container.GetCpusetMems())
+		}
+		p.applyMemoryPolicy(container, mpol, runsOn, mems)
+	}
+
 	sc, err := schedulingClassPreference(container)
 	if err != nil {
 		log.Errorf("%s: cannot set scheduling class: %v", container.PrettyName(), err)
