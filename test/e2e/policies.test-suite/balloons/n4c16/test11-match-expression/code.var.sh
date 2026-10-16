@@ -3,11 +3,7 @@
 
 relaunch-policy balloons "${TEST_DIR}/../../match-config.yaml"
 
-cleanup() {
-    delete-pods --all
-}
-
-cleanup
+cleanup-test
 
 # pod0: run precious workload
 POD_LABEL="app.kubernetes.io/component: precious" CONTCOUNT=1 create balloons-busybox
@@ -28,4 +24,4 @@ verify 'len(cpus["pod2c0"]) == 1' \
        'len(cpus["pod2c2"]) == 16' \
        'len(cpus["pod2c3"]) == 1'
 
-cleanup
+cleanup-test

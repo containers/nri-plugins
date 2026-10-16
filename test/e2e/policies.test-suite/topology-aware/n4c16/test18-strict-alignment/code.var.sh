@@ -1,10 +1,4 @@
-
-cleanup() {
-    delete-pods --all
-    delete-namespaces highprio lowprio
-}
-
-cleanup
+cleanup-test
 helm-terminate
 helm_config=$(instantiate helm-config.yaml) helm-launch topology-aware
 
@@ -42,12 +36,7 @@ verify \
 # strict hint check error.
 ANN0='strict.topologyhints.resource-policy.nri.io/container.pod3c0: "true"'
 ANN1='test.topologyhints.resource-policy.nri.io/container.pod3c0: "{ test: { NUMAs: \"2\" } } }"'
-wait="" CONTCOUNT=1 CPU=3 MEM=100M create guaranteed
-
-PodReadyCond='condition=PodReadyToStartContainers'
-vm-command "kubectl wait --timeout=5s pod pod3 --for=$PodReadyCond" || {
-    error "failed to wait for pod3 to start containerd"
-}
+wait=PodReadyToStartContainers wait_t=5s CONTCOUNT=1 CPU=3 MEM=100M create guaranteed
 
 verify-container-error pod3 0 "fail strict hint"
 
@@ -57,12 +46,7 @@ verify-container-error pod3 0 "fail strict hint"
 ANN0='strict.topologyhints.resource-policy.nri.io/container.pod4c0: "true"'
 ANN1='test.topologyhints.resource-policy.nri.io/container.pod4c0: "{ test: { NUMAs: \"2\" } } }"'
 ANN2='require-isolated-cpus.resource-policy.nri.io/container.pod4c0: "true"'
-wait="" CONTCOUNT=1 CPU=1 MEM=100M create guaranteed
-
-PodReadyCond='condition=PodReadyToStartContainers'
-vm-command "kubectl wait --timeout=5s pod pod4 --for=$PodReadyCond" || {
-    error "failed to wait for pod4 to start containerd"
-}
+wait=PodReadyToStartContainers wait_t=5s CONTCOUNT=1 CPU=1 MEM=100M create guaranteed
 
 verify-container-error pod4 0 "isolated CPUs"
 
@@ -78,7 +62,7 @@ verify \
     'cpus["pod5c0"].issubset({"cpu08", "cpu09", "cpu10", "cpu11"})' \
     'node_ids(nodes["pod5c0"]) == {2}'
 
-vm-command "kubectl delete pod pod5 --now"
+delete-pods pod5
 
 # Now recreate pod4 test but with more complex effective annotation.
 # Try to create a container with a strict test hints for NUMA node 2 an
@@ -88,12 +72,7 @@ ANN0='strict.topologyhints.resource-policy.nri.io/container.pod6c0: "true"'
 ANN1='test.topologyhints.resource-policy.nri.io/container.pod6c0: "{ test: { NUMAs: \"2\" } } }"'
 ANN2='prefer-isolated-cpus.resource-policy.nri.io/pod: "false"'
 ANN3='require-isolated-cpus.resource-policy.nri.io/container.pod6c0: "true"'
-wait="" CONTCOUNT=1 CPU=1 MEM=100M create guaranteed
-
-PodReadyCond='condition=PodReadyToStartContainers'
-vm-command "kubectl wait --timeout=5s pod pod6 --for=$PodReadyCond" || {
-    error "failed to wait for pod6 to start containerd"
-}
+wait=PodReadyToStartContainers wait_t=5s CONTCOUNT=1 CPU=1 MEM=100M create guaranteed
 
 verify-container-error pod6 0 "isolated CPUs"
 

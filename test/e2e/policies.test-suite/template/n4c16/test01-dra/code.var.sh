@@ -3,18 +3,8 @@
 # own, and that it remembers which ones across a restart.
 
 cleanup() {
-    vm-command "kubectl delete pods --all --now --wait" || :
+    cleanup-test --helm --cache
     vm-command "kubectl delete resourceclaimtemplates --all --now" || :
-    helm-terminate || :
-    remove-policy-cache
-}
-
-device() {
-    # Usage: device FIELD
-    #
-    # Print FIELD of the device the plugin publishes.
-    vm-command-q "kubectl get resourceslices -o json | jq -r '.items[] |
-                      select(.spec.driver == \"template.nri.io\") | .spec.devices[0].$1'"
 }
 
 check-cpus() {
@@ -22,7 +12,7 @@ check-cpus() {
     #
     # Check that the claim of POD got the cpuset CPUS, as the container sees it.
     local cpus
-    cpus=$(vm-command-q "kubectl exec $1 -- env" | sed -n 's/^DRA_CPUSET_[^=]*=//p')
+    cpus=$(dra-claimed-cpus "$1")
     [ "$cpus" == "$2" ] ||
         error "$1 got CPUs \"$cpus\", expected \"$2\""
     echo "$1 got CPUs $cpus"
@@ -48,18 +38,13 @@ helm_config=$(AVAILABLE_CPU="cpuset:4-7" DRA_ENABLED=true instantiate helm-confi
     helm-launch template
 
 retry-until --timeout 30 --message "the plugin to publish its device" \
-    '[ -n "$(device name)" ]' ||
+    '[ -n "$(dra-devices | jq -r ".[0].name // empty")" ]' ||
     error "the plugin published no device"
 
-# Without DRAConsumableCapacity the API server drops the field which lets
-# claims share the device.
-if [ "$(device allowMultipleAllocations)" != "true" ]; then
-    cleanup
-    echo "Test verdict: SKIP (DRAConsumableCapacity is not enabled)"
-    exit 0
-fi
+dra-consumable-capacity ||
+    { cleanup; skip-test "DRAConsumableCapacity is not enabled"; }
 
-capacity=$(device "capacity[\"dra.cpu/cpu\"].value")
+capacity=$(dra-devices | jq -r '.[0].capacity["dra.cpu/cpu"].value')
 [ "$capacity" == "4" ] ||
     error "the device has a capacity of \"$capacity\" CPUs, expected 4"
 
@@ -74,17 +59,17 @@ check-cpus pod1 "6-7"
 # No CPUs are left, so the scheduler must not place a third claim, until
 # deleting a pod gives its CPUs back.
 NAME=pod2 CLAIM=two-cpus wait="" create dra-pod
-vm-command "kubectl wait --for=condition=PodScheduled=false pod/pod2 --timeout=60s" ||
-    error "pod2 was scheduled with no CPUs left"
-vm-command "kubectl delete pod pod0 --now --wait"
-vm-command "kubectl wait --for=condition=Ready pod/pod2 --timeout=120s" ||
-    error "pod2 did not start after pod0 gave its CPUs back"
+wait-pod-condition --timeout 60 pod2 PodScheduled=false \
+    "pod2 was scheduled with no CPUs left"
+delete-pods pod0
+wait-pod-condition --timeout 120 pod2 Ready \
+    "pod2 did not start after pod0 gave its CPUs back"
 check-cpus pod2 "4-5"
 
 # A plugin which forgot its claims would give pod3 the lowest free CPUs, which
 # are pod2's.
 restart-plugin
-vm-command "kubectl delete pod pod1 --now --wait"
+delete-pods pod1
 NAME=pod3 CLAIM=two-cpus create dra-pod
 check-cpus pod3 "6-7"
 

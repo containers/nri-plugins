@@ -1,8 +1,3 @@
-cleanup() {
-    delete-pods --all
-    delete-namespaces highprio lowprio
-}
-
 SCHEDULING_CLASSES="[
     { name: realtime, policy: fifo,  priority: 42 },
     { name: highprio, policy: fifo,  priority: 10 },
@@ -14,7 +9,7 @@ SCHEDULING_CLASSES="[
 NAMESPACE_SCHEDULING_CLASSES="{ highprio: highprio, lowprio: lowprio }"
 PODQOS_SCHEDULING_CLASSES="{ BestEffort: lowprio, Burstable: default, Guaranteed: highprio }"
 
-cleanup
+cleanup-test
 helm-terminate
 
 helm_config=$(COLOCATE_PODS=false \
@@ -76,7 +71,7 @@ expected_policy=$SCHED_OTHER expected_prio=$((120 + 10)) verify-sched pod3c0
 verify 'len(cpus["pod3c1"]) != 1'
 expected_policy=$SCHED_IDLE expected_prio=$((120 + 17)) verify-sched pod3c1
 
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 
 #
 # Tests for namespace default scheduling classes.
@@ -104,7 +99,7 @@ expected_policy=$SCHED_FIFO expected_prio=$((99 - 10)) verify-sched pod5c0
 verify 'len(cpus["pod5c1"]) != 1'
 expected_policy=$SCHED_OTHER expected_prio=$((120 + 10)) verify-sched pod5c1
 
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 
 #
 # Tests for PodQoS default scheduling classes.
@@ -178,4 +173,4 @@ vm-command "chrt -p \$(pgrep -f 'echo pod10c0')" ||
 grep -q 'SCHED_OTHER|SCHED_RESET_ON_FORK' <<< "$COMMAND_OUTPUT" ||
     error "the reset-on-fork flag of scheduling class onfork was not set on pod10c0"
 
-cleanup
+cleanup-test

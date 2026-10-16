@@ -5,8 +5,7 @@ relaunch-policy balloons "${TEST_DIR}/../../helm-config.yaml"
 
 cleanup() {
     delete-pods -n kube-system pod0
-    delete-pods --all
-    delete-namespaces three
+    cleanup-test
 }
 
 cleanup

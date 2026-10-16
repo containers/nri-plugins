@@ -4,12 +4,6 @@
 
 relaunch-policy balloons "$TEST_DIR/balloons-loadclasses.cfg"
 
-cleanup() {
-    delete-pods --all
-    helm-terminate
-    remove-policy-cache
-}
-
 # Policy's allocatorTopologyBalancing is false, so CPU allocations are
 # tightly packed rather than evenly spread accross the system.
 
@@ -81,10 +75,10 @@ verify 'len(cores["pod6c0"]) == 4' \
 
 # Verify freeing and recreating virtual devices by deleting and
 # reallocating l2 and avx pods.
-vm-command "kubectl delete pod pod0 pod3 pod4 pod5 pod6 --now"
+delete-pods pod0 pod3 pod4 pod5 pod6
 CPUREQ=4 CPULIM="" MEMREQ="" MEMLIM=""
 POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: l2htload" CONTCOUNT=1 create balloons-busybox
 verify 'len(cpus["pod7c0"]) == 4' \
        'len(cores["pod7c0"]) == 4'
 
-cleanup
+cleanup-test --helm --cache

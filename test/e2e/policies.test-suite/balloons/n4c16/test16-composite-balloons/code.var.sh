@@ -4,7 +4,7 @@ relaunch-policy balloons "$TEST_DIR/balloons-composite.cfg"
 
 cleanup() {
     delete-pods -n kube-system pod2
-    delete-pods --all
+    cleanup-test
 }
 
 verify-nrt() {
@@ -48,7 +48,7 @@ verify 'cpus["pod2c0"].issubset({"cpu06", "cpu07"})' # allow either/both hyperth
 
 # Remove large pod. The size of the balanced-all-nodes[0] should drop from 12 to 4 CPUs.
 # Verify the balance is still there.
-vm-command "kubectl delete pod pod1 --now"
+delete-pods pod1
 report allowed
 verify 'len(cpus["pod0c0"]) == 4' \
        'cpus["pod0c0"] == cpus["pod0c1"]' \
@@ -58,7 +58,8 @@ verify 'len(cpus["pod0c0"]) == 4' \
        'len(set.intersection(cpus["pod0c0"], {"cpu12", "cpu13", "cpu14", "cpu15"})) == 1'
 
 # Delete all pods. balanced-all-nodes[0] should stay, because of MinBalloons:1.
-vm-command "kubectl delete pods --all --now; kubectl delete pod pod2 -n kube-system"
+delete-pods --all
+delete-pods -n kube-system pod2
 
 # Create two pods in separate balance-pkg1-nodes balloons, consuming all 3+3 free CPUs in node3+node4.
 CPUREQ="1" MEMREQ="100M" CPULIM="" MEMLIM=""
@@ -82,7 +83,7 @@ verify-nrt '.zones[] | select (.name == "balance-pkg1-nodes[1]")' # no check, pr
 # balance-pkg1-nodes[1] should be deleted completely (in contrast to
 # previously only downsizing balance-all-nodes), so
 # balance-all-nodes[0] should be able to grow again.
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 
 # Inflate balance-all-nodes[0] to the max.
 CPUREQ="12" MEMREQ="100M" CPULIM="" MEMLIM=""
@@ -117,13 +118,13 @@ create balloons-busybox
 report allowed
 verify 'nodes["pod3c0"] == {"node1"}'
 
-vm-command "kubectl delete pod pod1 --now" # pod1 was running in balloon "node3"
+delete-pods pod1 # pod1 was running in balloon "node3"
 
 create balloons-busybox
 report allowed
 verify 'nodes["pod4c0"] == {"node3"}'
 
-vm-command "kubectl delete pods --all --now" # make sure all nodes have free CPUs
+delete-pods --all # make sure all nodes have free CPUs
 
 POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: new-on-node-1"
 create balloons-busybox

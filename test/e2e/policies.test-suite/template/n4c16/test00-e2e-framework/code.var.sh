@@ -1,13 +1,7 @@
 # This test uses the simplest template policy to verify functionality of the e2e test
 # framework itself.
 
-cleanup() {
-    delete-pods --all
-    helm-terminate
-    remove-policy-cache
-}
-
-cleanup
+cleanup-test --helm --cache
 helm_config=$(DRA_ENABLED='' instantiate helm-config.yaml) \
     helm-launch template
 
@@ -16,4 +10,4 @@ NAME=non-standard-pod-name create besteffort
 verify \
     'len(cpus["non-standard-pod-namec0"]) != 0'
 
-cleanup
+cleanup-test --helm --cache
