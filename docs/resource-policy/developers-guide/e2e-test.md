@@ -23,6 +23,23 @@ cd test/e2e
 [VAR=VALUE...] ./run_tests.sh policies.test-suite[/POLICY[/TOPOLOGY[/testNN-*]]]
 ```
 
+Name several directories to run the tests of each of them in turn. The script
+prints one summary of them all, and exits non-zero if any test failed. Shell
+globbing picks out tests conveniently:
+
+```bash
+cd test/e2e
+[VAR=VALUE...] ./run_tests.sh policies.test-suite/balloons policies.test-suite/template
+[VAR=VALUE...] ./run_tests.sh policies.test-suite/balloons/n4c16/test0[1-5]*
+```
+
+Write the test output under a directory of your own with `-o`:
+
+```bash
+cd test/e2e
+[VAR=VALUE...] ./run_tests.sh -o ~/e2e-output policies.test-suite
+```
+
 Get help on available `VAR=VALUE`'s with `./run.sh help`.
 `run_tests.sh` calls `run.sh` in order to execute selected tests.
 Therefore the same `VAR=VALUE` definitions apply both scripts.
@@ -114,7 +131,8 @@ is constructed from used Linux distribution, container runtime name and
 the used machine topology.
 For example `n4c16-generic-fedora37-containerd` output directory would
 indicate four node and 16 CPU system, running with Fedora 37 and having
-containerd as a container runtime.
+containerd as a container runtime. Pass `-o DIR` to `run_tests.sh` to put the
+output under `DIR` instead of the current directory.
 
 Executed commands with their output, exit status and timestamps are
 saved under the `output/commands` directory.
