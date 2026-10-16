@@ -24,6 +24,7 @@ import (
 // MemoryPolicy is a Linux memory policy for a container. Refer to
 // set_mempolicy(2) for details.
 // +k8s:deepcopy-gen=true
+// +deepequal-gen=true
 type MemoryPolicy struct {
 	// Mode is the memory policy mode: MPOL_DEFAULT, MPOL_PREFERRED,
 	// MPOL_BIND, MPOL_INTERLEAVE, MPOL_LOCAL, MPOL_PREFERRED_MANY or

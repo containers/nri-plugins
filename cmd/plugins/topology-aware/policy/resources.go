@@ -25,6 +25,7 @@ import (
 	"github.com/containers/nri-plugins/pkg/topology"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 
+	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	"github.com/containers/nri-plugins/pkg/cpuallocator"
 	"github.com/containers/nri-plugins/pkg/kubernetes"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
@@ -180,6 +181,11 @@ type Grant interface {
 	ClaimedCPUs() cpuset.CPUSet
 	// SetClaimedCPUs sets the CPUs of the DRA claims the container holds.
 	SetClaimedCPUs(cpuset.CPUSet)
+	// ClaimedMemoryPolicy returns the memory policy of the container's claims,
+	// or nil.
+	ClaimedMemoryPolicy() *cfgapi.MemoryPolicy
+	// SetClaimedMemoryPolicy sets the memory policy of the container's claims.
+	SetClaimedMemoryPolicy(*cfgapi.MemoryPolicy)
 	// IrqAffinity returns the IRQ affinity for this grant.
 	IrqAffinity() *IrqAffinity
 
@@ -255,6 +261,9 @@ type request struct {
 	irqs        *IrqAffinity    // IRQ affinity for this request
 	claimed     cpuset.CPUSet   // CPUs of the DRA claims the container holds
 
+	// mpol is the memory policy of the container's claims.
+	mpol *cfgapi.MemoryPolicy
+
 	// coldStart tells the timeout (in milliseconds) how long to wait until
 	// a DRAM memory controller should be added to a container asking for a
 	// mixed DRAM/PMEM memory allocation. This allows for a "cold start" where
@@ -280,6 +289,9 @@ type grant struct {
 	cpuClass       string          // CPU class to apply to exclusive CPUs
 	irqs           *IrqAffinity    // IRQ affinity for this request
 	claimed        cpuset.CPUSet   // CPUs of the DRA claims the container holds
+
+	// mpol is the memory policy of the container's claims.
+	mpol *cfgapi.MemoryPolicy
 }
 
 var _ Grant = &grant{}
@@ -439,6 +451,7 @@ func (cs *supply) AllocateCPU(r Request) (Grant, error) {
 
 	grant := newGrant(cs.node, cr.GetContainer(), cpuType, cpuClass, exclusive, 0, 0, irqs, 0)
 	grant.SetClaimedCPUs(cr.claimed)
+	grant.SetClaimedMemoryPolicy(cr.mpol)
 	grant.AccountAllocateCPU()
 
 	// allocate the shared fraction of CPUs
@@ -807,10 +820,14 @@ func (p *policy) newRequest(container cache.Container, types libmem.TypeMask) (R
 	req, lim, mtype := memoryAllocationPreference(pod, container)
 
 	// The DRA claims of a container are fixed for its lifetime, so they are
-	// looked up once, here.
-	claimed := cpuset.New()
-	if cpuType != cpuPreserve {
-		claimed = p.containerClaims(container)
+	// looked up once, here. A container keeping its own CPUs is not pinned
+	// to its claims, but it gets their memory policy.
+	claimed, mpol, err := p.containerClaims(container)
+	if err != nil {
+		return nil, err
+	}
+	if cpuType == cpuPreserve {
+		claimed = cpuset.New()
 	}
 
 	coldStart := time.Duration(0)
@@ -877,6 +894,7 @@ func (p *policy) newRequest(container cache.Container, types libmem.TypeMask) (R
 		pickByHints: pickByHintsPreference(pod, container),
 		irqs:        irqs,
 		claimed:     claimed,
+		mpol:        mpol,
 	}, nil
 }
 
@@ -1401,6 +1419,7 @@ func (cg *grant) Clone() Grant {
 		memSize:    cg.GetMemorySize(),
 		coldStart:  cg.ColdStart(),
 		claimed:    cg.ClaimedCPUs(),
+		mpol:       cg.ClaimedMemoryPolicy(),
 	}
 }
 
@@ -1427,6 +1446,17 @@ func (cg *grant) ClaimedCPUs() cpuset.CPUSet {
 // SetClaimedCPUs sets the CPUs of the DRA claims the container holds.
 func (cg *grant) SetClaimedCPUs(cpus cpuset.CPUSet) {
 	cg.claimed = cpus
+}
+
+// ClaimedMemoryPolicy returns the memory policy of the container's claims, or
+// nil.
+func (cg *grant) ClaimedMemoryPolicy() *cfgapi.MemoryPolicy {
+	return cg.mpol
+}
+
+// SetClaimedMemoryPolicy sets the memory policy of the container's claims.
+func (cg *grant) SetClaimedMemoryPolicy(mpol *cfgapi.MemoryPolicy) {
+	cg.mpol = mpol
 }
 
 // GetNode returns the Node this grant gets its CPU allocation from.
