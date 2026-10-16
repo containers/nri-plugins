@@ -350,7 +350,7 @@ run-tests-in() {
 
                             test_name="$policy_name/$(basename "$TOPOLOGY_DIR")/$(basename "$TEST_DIR")"
                             if grep -q "Test verdict: SKIP" "$test_outdir/run.sh.output"; then
-                                echo "SKIP $test_name$(grep "Test verdict: SKIP" "$test_outdir/run.sh.output" | sed 's/Test verdict: SKIP//g')"
+                                echo "SKIP $test_name$(grep -m1 "Test verdict: SKIP" "$test_outdir/run.sh.output" | sed 's/Test verdict: SKIP//g')" >> "$summary_file"
                             elif grep -q "Test verdict: PASS" "$test_outdir/run.sh.output"; then
                                 echo "PASS $test_name" >> "$summary_file"
                             elif grep -q "Test verdict: FAIL" "$test_outdir/run.sh.output"; then
