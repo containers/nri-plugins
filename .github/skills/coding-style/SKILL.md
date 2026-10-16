@@ -14,6 +14,31 @@ description: "Use for generating code and comments to nri-plugins and to e2e tes
   errors, hiding every other finding in the tree. A stale file left behind in
   the working tree is enough to hide what CI will report.
 
+## Commit messages
+
+- Subject line is "area: summary." - lowercase area, trailing period.
+
+- Say what changed, and the one consequence a reader needs. Leave out
+  restatement of the diff, rationale that belongs in a comment beside the
+  code, and closing summaries.
+
+- Names, numbers, paths, flags and error messages are never shortened.
+
+### Length
+
+The default body is three to five lines, and no body at all for a change that
+speaks for itself.
+
+Ask for one of these targets when a change wants a different length. They set
+the length only, never the language: the prose stays plain English either way.
+
+- "caveman length": the shortest body that is still correct, in the spirit of
+  the caveman skill. Every sentence carries something the subject line does
+  not. Usually one or two lines.
+- "subject only": no body.
+- "explain it": as long as the change needs, for one whose reasoning a
+  reviewer cannot get from the diff.
+
 ## Code comments
 
 - Always use plain ASCII characters. Also in documentation.
