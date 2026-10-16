@@ -25,6 +25,8 @@ package balloons
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	harness "github.com/containers/nri-plugins/pkg/testutils/e2eish"
 )
 
@@ -121,33 +123,6 @@ var genN4c16Pods = []*harness.Pod{
 	),
 }
 
-// genN4c16PyConsts is the py_consts code of more than one test.
-const genN4c16PyConsts = `
-# Helpers for the expressions which "verify" evaluates, shared by every policy
-# and topology of this test suite.
-#
-# These run after the state which "report allowed" collects, so they can refer
-# to its variables: cpus, mems, nodes, cores, threads, dies, packages and
-# allocations. See "run.sh help pyexec".
-
-def local_mems(ctr, *types):
-    """Verify that ctr uses exactly the given memory types of its own package.
-
-    The memory_nodes mapping tells which memory node of a package holds which
-    memory type. A topology which has more than one memory type defines it,
-    see for instance n6-hbm-cxl/py_consts.var.py.
-    """
-    package = 0 if packages[ctr] == {"package0"} else 1
-    expected = set(memory_nodes[package][t] for t in types)
-    assert mems[ctr] == expected, (
-        "%s runs in %s, so its %s memory should be %s, but it uses %s" %
-        (ctr,
-         ",".join(sorted(packages[ctr])),
-         ",".join(types),
-         ",".join(sorted(expected)),
-         ",".join(sorted(mems[ctr]))))
-    return True`
-
 // TestE2eishGenN4c16Test01BasicPlacement is n4c16/test01-basic-placement.
 func TestE2eishGenN4c16Test01BasicPlacement(t *testing.T) {
 	const config = `
@@ -221,25 +196,49 @@ config:
 	s.Launch(genN4c16, genN4c16BaseConfig, config)
 	s.SyncWithRuntimePods(genN4c16Pods...)
 	s.CreateBestEffort(harness.PodSpec{Namespace: "kube-system", ContCount: 2})
-	s.Consts(genN4c16PyConsts)
-	s.VerifyPy(`cpus["pod0c0"] == cpus["pod0c1"]`)
-	s.VerifyPy(`len(cpus["pod0c0"]) == 1`)
+	s.Consts(`
+# Helpers for the expressions which "verify" evaluates, shared by every policy
+# and topology of this test suite.
+#
+# These run after the state which "report allowed" collects, so they can refer
+# to its variables: cpus, mems, nodes, cores, threads, dies, packages and
+# allocations. See "run.sh help pyexec".
+
+def local_mems(ctr, *types):
+    """Verify that ctr uses exactly the given memory types of its own package.
+
+    The memory_nodes mapping tells which memory node of a package holds which
+    memory type. A topology which has more than one memory type defines it,
+    see for instance n6-hbm-cxl/py_consts.var.py.
+    """
+    package = 0 if packages[ctr] == {"package0"} else 1
+    expected = set(memory_nodes[package][t] for t in types)
+    assert mems[ctr] == expected, (
+        "%s runs in %s, so its %s memory should be %s, but it uses %s" %
+        (ctr,
+         ",".join(sorted(packages[ctr])),
+         ",".join(types),
+         ",".join(sorted(expected)),
+         ",".join(sorted(mems[ctr]))))
+    return True`)
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod0c1"))
+	require.Len(t, s.CPUs("pod0c0"), 1)
 	s.CreateGuaranteed(harness.PodSpec{
 		ContCount:   2,
 		CPU:         "100m",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "two-cpu"},
 	})
-	s.VerifyPy(`cpus["pod1c0"] == cpus["pod1c1"]`)
-	s.VerifyPy(`len(cpus["pod1c0"]) == 2`)
+	require.Equal(t, s.CPUs("pod1c0"), s.CPUs("pod1c1"))
+	require.Len(t, s.CPUs("pod1c0"), 2)
 	s.CreateGuaranteed(harness.PodSpec{
 		CPU:         "100m",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "two-cpu"},
 	})
-	s.VerifyPy(`len(cpus["pod2c0"]) == 2`)
-	s.VerifyPy(`disjoint_sets(cpus["pod2c0"], cpus["pod1c0"])`)
+	require.Len(t, s.CPUs("pod2c0"), 2)
+	harness.RequireDisjoint(t, s.CPUs("pod2c0"), s.CPUs("pod1c0"))
 	s.CreateGuaranteed(harness.PodSpec{Namespace: "three", ContCount: 2, CPU: "1500m"})
-	s.VerifyPy(`cpus["pod3c0"] == cpus["pod3c1"]`)
-	s.VerifyPy(`len(cpus["pod3c0"]) == 3`)
+	require.Equal(t, s.CPUs("pod3c0"), s.CPUs("pod3c1"))
+	require.Len(t, s.CPUs("pod3c0"), 3)
 	s.DeletePods("kube-system", "pod0")
 	s.DeleteAllPodsIn("default")
 	s.DeleteAllPodsIn("three")
@@ -254,11 +253,11 @@ config:
 			"hide-hyperthreads.resource-policy.nri.io/container.pod4c1": "true",
 		},
 	})
-	s.VerifyPy(`cpus["pod4c1"].issubset(cpus["pod4c0"])`)
-	s.VerifyPy(`disjoint_sets(cpus["pod4c2"], cpus["pod4c0"])`)
-	s.VerifyPy(`len(cpus["pod4c0"]) == 6`)
-	s.VerifyPy(`len(cpus["pod4c1"]) == 3`)
-	s.VerifyPy(`len(cpus["pod4c2"]) == 4`)
+	require.Subset(t, s.CPUs("pod4c0"), s.CPUs("pod4c1"))
+	harness.RequireDisjoint(t, s.CPUs("pod4c2"), s.CPUs("pod4c0"))
+	require.Len(t, s.CPUs("pod4c0"), 6)
+	require.Len(t, s.CPUs("pod4c1"), 3)
+	require.Len(t, s.CPUs("pod4c2"), 4)
 	s.DeleteAllPodsIn("default")
 	s.CreateBurstable(harness.PodSpec{
 		ContCount:   3,
@@ -268,10 +267,10 @@ config:
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "five-cpu"},
 	})
-	s.VerifyPy(`disjoint_sets(cpus["pod5c0"], cpus["pod5c1"], cpus["pod5c2"])`)
-	s.VerifyPy(`len(cpus["pod5c0"]) == 2`)
-	s.VerifyPy(`len(cpus["pod5c1"]) == 2`)
-	s.VerifyPy(`len(cpus["pod5c2"]) == 2`)
+	harness.RequireDisjoint(t, s.CPUs("pod5c0"), s.CPUs("pod5c1"), s.CPUs("pod5c2"))
+	require.Len(t, s.CPUs("pod5c0"), 2)
+	require.Len(t, s.CPUs("pod5c1"), 2)
+	require.Len(t, s.CPUs("pod5c2"), 2)
 	s.CreateBestEffort(harness.PodSpec{
 		ContCount:   4,
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "five-cpu"},
@@ -286,7 +285,7 @@ config:
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "five-cpu"},
 	})
 	s.VerifyPy(`set([len(cpus[ctr]) for ctr in cpus if ctr.startswith("pod7c")]) == {1}`)
-	s.VerifyPy(`disjoint_sets(cpus["pod7c0"], cpus["pod7c1"], cpus["pod7c2"], cpus["pod7c3"])`)
+	harness.RequireDisjoint(t, s.CPUs("pod7c0"), s.CPUs("pod7c1"), s.CPUs("pod7c2"), s.CPUs("pod7c3"))
 	s.VerifyPy(`max([len(cpuset) for pod, cpuset in cpus.items()]) == 2`)
 	s.VerifyPy(`disjoint_sets(
           set.union(*[cpus[ctr] for ctr in cpus if ctr.startswith("pod7c")]),
@@ -337,10 +336,9 @@ config:
 			"hide-hyperthreads.resource-policy.nri.io/container.pod0c1": "false",
 		},
 	})
-	s.Consts(genN4c16PyConsts)
-	s.VerifyPy(`len(cpus["pod0c0"]) == 1`)
-	s.VerifyPy(`len(cpus["pod0c1"]) == 2`)
-	s.VerifyPy(`cpus["pod0c0"].issubset(cpus["pod0c1"])`)
+	require.Len(t, s.CPUs("pod0c0"), 1)
+	require.Len(t, s.CPUs("pod0c1"), 2)
+	require.Subset(t, s.CPUs("pod0c1"), s.CPUs("pod0c0"))
 	s.CreateBurstable(harness.PodSpec{
 		CPUReq:      "200m",
 		CPULim:      "200m",
@@ -418,13 +416,12 @@ config:
 	s.Launch(genN4c16, genN4c16BaseConfig, config)
 	s.SyncWithRuntimePods(genN4c16Pods...)
 	s.CreateGuaranteed(harness.PodSpec{Namespace: "kube-system", CPU: "100m"})
-	s.Consts(genN4c16PyConsts)
-	s.VerifyPy(`cpus["pod0c0"].issubset({"cpu00", "cpu01", "cpu02"})`)
+	require.Subset(t, s.CPUIDs(0, 1, 2), s.CPUs("pod0c0"))
 	s.CreateBurstable(harness.PodSpec{Namespace: "monitor-mypods", ContCount: 2, CPULim: "1", MemReq: "0", MemLim: "0"})
-	s.VerifyPy(`cpus["pod1c0"] == cpus["pod0c0"]`)
-	s.VerifyPy(`cpus["pod1c1"] == cpus["pod0c0"]`)
+	require.Equal(t, s.CPUs("pod1c0"), s.CPUs("pod0c0"))
+	require.Equal(t, s.CPUs("pod1c1"), s.CPUs("pod0c0"))
 	s.CreateBurstable(harness.PodSpec{Namespace: "system-logs", CPULim: "1", MemReq: "0", MemLim: "0"})
-	s.VerifyPy(`cpus["pod2c0"] == cpus["pod0c0"]`)
+	require.Equal(t, s.CPUs("pod2c0"), s.CPUs("pod0c0"))
 	s.CreateBurstable(harness.PodSpec{
 		Namespace:   "kube-system",
 		CPUReq:      "2",
@@ -432,11 +429,11 @@ config:
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "full-core"},
 	})
-	s.VerifyPy(`len(cpus["pod3c0"]) == 2`)
-	s.VerifyPy(`disjoint_sets(cpus["pod0c0"], cpus["pod3c0"])`)
+	require.Len(t, s.CPUs("pod3c0"), 2)
+	harness.RequireDisjoint(t, s.CPUs("pod0c0"), s.CPUs("pod3c0"))
 	s.CreateBurstable(harness.PodSpec{CPUReq: "2500m", CPULim: "2500m", MemReq: "0", MemLim: "0"})
-	s.VerifyPy(`len(cpus["pod4c0"]) == 3`)
-	s.VerifyPy(`disjoint_sets(cpus["pod0c0"], cpus["pod3c0"], cpus["pod4c0"])`)
+	require.Len(t, s.CPUs("pod4c0"), 3)
+	harness.RequireDisjoint(t, s.CPUs("pod0c0"), s.CPUs("pod3c0"), s.CPUs("pod4c0"))
 	s.CreateBurstable(harness.PodSpec{
 		CPUReq:      "2500m",
 		CPULim:      "2500m",
@@ -444,18 +441,18 @@ config:
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "reserved"},
 	})
-	s.VerifyPy(`{"cpu00", "cpu01", "cpu02"}.issubset(cpus["pod5c0"])`)
-	s.VerifyPy(`len(cpus["pod5c0"]) > 4`)
-	s.VerifyPy(`disjoint_sets(cpus["pod5c0"], cpus["pod3c0"], cpus["pod4c0"])`)
+	require.Subset(t, s.CPUs("pod5c0"), s.CPUIDs(0, 1, 2))
+	require.Greater(t, len(s.CPUs("pod5c0")), 4)
+	harness.RequireDisjoint(t, s.CPUs("pod5c0"), s.CPUs("pod3c0"), s.CPUs("pod4c0"))
 	s.DeletePods("kube-system", "pod0", "pod3")
 	s.DeletePods("default", "pod4", "pod5")
 	s.DeleteAllPodsIn("monitor-mypods")
 	s.DeleteAllPodsIn("system-logs")
 	s.CreateBurstable(harness.PodSpec{CPUReq: "999m", CPULim: "999m", MemReq: "0", MemLim: "0"})
-	s.VerifyPy(`len(cpus["pod6c0"]) == 1`)
+	require.Len(t, s.CPUs("pod6c0"), 1)
 	s.CreateGuaranteed(harness.PodSpec{Namespace: "kube-system", CPU: "100m"})
-	s.VerifyPy(`cpus["pod7c0"].issubset({"cpu00", "cpu01", "cpu02"})`)
-	s.VerifyPy(`len(cpus["pod7c0"]) < 3`)
+	require.Subset(t, s.CPUIDs(0, 1, 2), s.CPUs("pod7c0"))
+	require.Less(t, len(s.CPUs("pod7c0")), 3)
 	s.DeletePods("kube-system", "pod7")
 	s.DeletePods("default", "pod6")
 	s.Terminate()
@@ -507,9 +504,8 @@ config:
 		Labels:      map[string]string{"balloon-instance": "g1"},
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "grouped-by-label"},
 	})
-	s.Consts(genN4c16PyConsts)
-	s.VerifyPy(`cpus["pod0c0"] == cpus["pod2c0"]`)
-	s.VerifyPy(`disjoint_sets(cpus["pod0c0"], cpus["pod1c0"], cpus["pod3c0"])`)
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod2c0"))
+	harness.RequireDisjoint(t, s.CPUs("pod0c0"), s.CPUs("pod1c0"), s.CPUs("pod3c0"))
 	s.CreateBurstable(harness.PodSpec{
 		Namespace: "e2e-balloons-test04",
 		Labels:    map[string]string{"balloon-instance": "g1"},
@@ -524,9 +520,9 @@ config:
 		Namespace: "e2e-balloons-test04",
 		Labels:    map[string]string{"balloon-instance": "g1"},
 	})
-	s.VerifyPy(`cpus["pod4c0"] == cpus["pod7c0"]`)
-	s.VerifyPy(`cpus["pod5c0"] == cpus["pod6c0"]`)
-	s.VerifyPy(`disjoint_sets(cpus["pod4c0"], cpus["pod5c0"])`)
+	require.Equal(t, s.CPUs("pod4c0"), s.CPUs("pod7c0"))
+	require.Equal(t, s.CPUs("pod5c0"), s.CPUs("pod6c0"))
+	harness.RequireDisjoint(t, s.CPUs("pod4c0"), s.CPUs("pod5c0"))
 	s.DeleteAllPodsIn("default")
 	s.DeleteAllPodsIn("e2e-balloons-test04")
 	s.Terminate()
@@ -557,33 +553,32 @@ config:
 	s.Launch(genN4c16, genN4c16BaseConfig, config)
 	s.SyncWithRuntimePods(genN4c16Pods...)
 	s.CreateBestEffort(harness.PodSpec{ContCount: 2})
-	s.Consts(genN4c16PyConsts)
-	s.VerifyPy(`cpus["pod0c0"] == cpus["pod0c1"]`)
-	s.VerifyPy(`len(cpus["pod0c0"]) == 2`)
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod0c1"))
+	require.Len(t, s.CPUs("pod0c0"), 2)
 	s.CreateBestEffort(harness.PodSpec{Namespace: "e2e-a", ContCount: 2})
-	s.VerifyPy(`cpus["pod1c0"] == cpus["pod1c1"]`)
-	s.VerifyPy(`len(cpus["pod0c0"]) == 2`)
-	s.VerifyPy(`disjoint_sets(cpus["pod0c0"], cpus["pod1c0"])`)
+	require.Equal(t, s.CPUs("pod1c0"), s.CPUs("pod1c1"))
+	require.Len(t, s.CPUs("pod0c0"), 2)
+	harness.RequireDisjoint(t, s.CPUs("pod0c0"), s.CPUs("pod1c0"))
 	s.CreateGuaranteed(harness.PodSpec{ContCount: 2, CPU: "2"})
-	s.VerifyPy(`cpus["pod2c0"] == cpus["pod2c1"]`)
-	s.VerifyPy(`len(cpus["pod2c0"]) == 4`)
-	s.VerifyPy(`cpus["pod2c0"] == cpus["pod0c0"]`)
-	s.VerifyPy(`cpus["pod2c0"] == cpus["pod0c1"]`)
-	s.VerifyPy(`disjoint_sets(cpus["pod2c0"], cpus["pod1c0"])`)
+	require.Equal(t, s.CPUs("pod2c0"), s.CPUs("pod2c1"))
+	require.Len(t, s.CPUs("pod2c0"), 4)
+	require.Equal(t, s.CPUs("pod2c0"), s.CPUs("pod0c0"))
+	require.Equal(t, s.CPUs("pod2c0"), s.CPUs("pod0c1"))
+	harness.RequireDisjoint(t, s.CPUs("pod2c0"), s.CPUs("pod1c0"))
 	s.CreateGuaranteed(harness.PodSpec{ContCount: 2, CPU: "100m"})
-	s.VerifyPy(`cpus["pod3c0"] == cpus["pod3c1"]`)
-	s.VerifyPy(`len(cpus["pod3c0"]) == 2`)
-	s.VerifyPy(`disjoint_sets(cpus["pod3c0"], cpus["pod2c0"], cpus["pod1c0"])`)
+	require.Equal(t, s.CPUs("pod3c0"), s.CPUs("pod3c1"))
+	require.Len(t, s.CPUs("pod3c0"), 2)
+	harness.RequireDisjoint(t, s.CPUs("pod3c0"), s.CPUs("pod2c0"), s.CPUs("pod1c0"))
 	s.CreateGuaranteed(harness.PodSpec{Namespace: "e2e-b", ContCount: 2, CPU: "2"})
-	s.VerifyPy(`cpus["pod4c0"] == cpus["pod4c1"]`)
-	s.VerifyPy(`len(cpus["pod4c0"]) == 4`)
-	s.VerifyPy(`disjoint_sets(cpus["pod4c0"], cpus["pod3c0"], cpus["pod2c0"], cpus["pod1c0"])`)
+	require.Equal(t, s.CPUs("pod4c0"), s.CPUs("pod4c1"))
+	require.Len(t, s.CPUs("pod4c0"), 4)
+	harness.RequireDisjoint(t, s.CPUs("pod4c0"), s.CPUs("pod3c0"), s.CPUs("pod2c0"), s.CPUs("pod1c0"))
 	s.CreateGuaranteed(harness.PodSpec{Namespace: "e2e-c", ContCount: 2, CPU: "100m"})
-	s.VerifyPy(`cpus["pod5c0"] == cpus["pod5c1"]`)
-	s.VerifyPy(`len(cpus["pod5c0"]) == 2`)
-	s.VerifyPy(`disjoint_sets(cpus["pod5c0"], cpus["pod4c0"], cpus["pod3c0"], cpus["pod2c0"], cpus["pod1c0"])`)
+	require.Equal(t, s.CPUs("pod5c0"), s.CPUs("pod5c1"))
+	require.Len(t, s.CPUs("pod5c0"), 2)
+	harness.RequireDisjoint(t, s.CPUs("pod5c0"), s.CPUs("pod4c0"), s.CPUs("pod3c0"), s.CPUs("pod2c0"), s.CPUs("pod1c0"))
 	s.CreateGuaranteed(harness.PodSpec{Namespace: "e2e-d", ContCount: 2, CPU: "100m"})
-	s.VerifyPy(`cpus["pod6c0"] == cpus["pod6c1"]`)
+	require.Equal(t, s.CPUs("pod6c0"), s.CPUs("pod6c1"))
 	s.CreateGuaranteed(harness.PodSpec{
 		Namespace: "e2e-d",
 		ContCount: 3,
@@ -593,9 +588,9 @@ config:
 			"memory.preserve.resource-policy.nri.io":               "true",
 		},
 	})
-	s.VerifyPy(`cpus["pod6c0"] == cpus["pod7c0"]`)
-	s.VerifyPy(`len(cpus["pod7c1"]) > len(cpus["pod7c0"])`)
-	s.VerifyPy(`len(cpus["pod7c1"]) == 16`)
+	require.Equal(t, s.CPUs("pod6c0"), s.CPUs("pod7c0"))
+	require.Greater(t, len(s.CPUs("pod7c1")), len(s.CPUs("pod7c0")))
+	require.Len(t, s.CPUs("pod7c1"), 16)
 	s.DeleteAllPodsIn("default")
 	s.DeleteAllPodsIn("e2e-a")
 	s.DeleteAllPodsIn("e2e-b")
@@ -688,14 +683,13 @@ config:
 		CPULim:      "1500m",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "singleton"},
 	})
-	s.Consts(genN4c16PyConsts)
-	s.VerifyPy(`len(cpus["pod0c0"]) == 2`)
+	require.Len(t, s.CPUs("pod0c0"), 2)
 	s.CreateBurstable(harness.PodSpec{
 		CPUReq:      "500m",
 		CPULim:      "500m",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "singleton"},
 	})
-	s.VerifyPy(`cpus["pod0c0"] == cpus["pod1c0"]`)
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod1c0"))
 	s.CreateBurstable(harness.PodSpec{
 		CPUReq:      "100m",
 		CPULim:      "100m",
@@ -708,21 +702,21 @@ config:
 		CPULim:      "800m",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "dynamictwo"},
 	})
-	s.VerifyPy(`len(cpus["pod2c0"]) == 1`)
+	require.Len(t, s.CPUs("pod2c0"), 1)
 	s.CreateBurstable(harness.PodSpec{
 		Name:        "pod3",
 		CPUReq:      "600m",
 		CPULim:      "600m",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "dynamictwo"},
 	})
-	s.VerifyPy(`disjoint_sets(cpus["pod2c0"], cpus["pod3c0"])`)
+	harness.RequireDisjoint(t, s.CPUs("pod2c0"), s.CPUs("pod3c0"))
 	s.CreateBurstable(harness.PodSpec{
 		Name:        "pod4",
 		CPUReq:      "300m",
 		CPULim:      "300m",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "dynamictwo"},
 	})
-	s.VerifyPy(`cpus["pod4c0"] == cpus["pod3c0"]`)
+	require.Equal(t, s.CPUs("pod4c0"), s.CPUs("pod3c0"))
 	s.CreateBurstable(harness.PodSpec{
 		Name:        "pod5",
 		CPUReq:      "300m",
@@ -767,61 +761,74 @@ config:
 	s.Launch(genN4c16, genN4c16BaseConfig, config)
 	s.SyncWithRuntimePods(genN4c16Pods...)
 	s.CreateBestEffort(harness.PodSpec{})
-	s.Consts(genN4c16PyConsts)
-	s.VerifyPy(`len(cpus["pod0c0"]) == 1`)
+	require.Len(t, s.CPUs("pod0c0"), 1)
 	s.CreateGuaranteed(harness.PodSpec{Mem: "50M"})
-	s.VerifyPy(`len(cpus["pod0c0"]) == 1`)
-	s.VerifyPy(`len(cpus["pod1c0"]) == 1`)
-	s.VerifyPy(`cpus["pod0c0"] == cpus["pod1c0"]`)
+	require.Len(t, s.CPUs("pod0c0"), 1)
+	require.Len(t, s.CPUs("pod1c0"), 1)
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod1c0"))
 	s.CreateGuaranteed(harness.PodSpec{Mem: "50M"})
-	s.VerifyPy(`len(cpus["pod0c0"]) == 2`)
-	s.VerifyPy(`len(cpus["pod1c0"]) == 2`)
-	s.VerifyPy(`len(cpus["pod2c0"]) == 2`)
-	s.VerifyPy(`cpus["pod0c0"] == cpus["pod1c0"] == cpus["pod2c0"]`)
+	require.Len(t, s.CPUs("pod0c0"), 2)
+	require.Len(t, s.CPUs("pod1c0"), 2)
+	require.Len(t, s.CPUs("pod2c0"), 2)
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod1c0"))
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod2c0"))
 	s.CreateGuaranteed(harness.PodSpec{Mem: "50M"})
-	s.VerifyPy(`len(cpus["pod0c0"]) == 3`)
-	s.VerifyPy(`len(cpus["pod1c0"]) == 3`)
-	s.VerifyPy(`len(cpus["pod2c0"]) == 3`)
-	s.VerifyPy(`len(cpus["pod3c0"]) == 3`)
-	s.VerifyPy(`cpus["pod0c0"] == cpus["pod1c0"] == cpus["pod2c0"] == cpus["pod3c0"]`)
+	require.Len(t, s.CPUs("pod0c0"), 3)
+	require.Len(t, s.CPUs("pod1c0"), 3)
+	require.Len(t, s.CPUs("pod2c0"), 3)
+	require.Len(t, s.CPUs("pod3c0"), 3)
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod1c0"))
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod2c0"))
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod3c0"))
 	s.CreateGuaranteed(harness.PodSpec{Mem: "50M"})
-	s.VerifyPy(`len(cpus["pod0c0"]) == 4`)
-	s.VerifyPy(`len(cpus["pod1c0"]) == 4`)
-	s.VerifyPy(`len(cpus["pod2c0"]) == 4`)
-	s.VerifyPy(`len(cpus["pod3c0"]) == 4`)
-	s.VerifyPy(`len(cpus["pod4c0"]) == 4`)
-	s.VerifyPy(`cpus["pod0c0"] == cpus["pod1c0"] == cpus["pod2c0"] == cpus["pod3c0"] == cpus["pod4c0"]`)
+	require.Len(t, s.CPUs("pod0c0"), 4)
+	require.Len(t, s.CPUs("pod1c0"), 4)
+	require.Len(t, s.CPUs("pod2c0"), 4)
+	require.Len(t, s.CPUs("pod3c0"), 4)
+	require.Len(t, s.CPUs("pod4c0"), 4)
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod1c0"))
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod2c0"))
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod3c0"))
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod4c0"))
 	s.CreateBestEffort(harness.PodSpec{})
-	s.VerifyPy(`len(cpus["pod0c0"]) == 4`)
-	s.VerifyPy(`len(cpus["pod1c0"]) == 4`)
-	s.VerifyPy(`len(cpus["pod2c0"]) == 4`)
-	s.VerifyPy(`len(cpus["pod3c0"]) == 4`)
-	s.VerifyPy(`len(cpus["pod4c0"]) == 4`)
-	s.VerifyPy(`len(cpus["pod5c0"]) == 4`)
-	s.VerifyPy(`cpus["pod0c0"] == cpus["pod1c0"] == cpus["pod2c0"] == cpus["pod3c0"] == cpus["pod4c0"] == cpus["pod5c0"]`)
+	require.Len(t, s.CPUs("pod0c0"), 4)
+	require.Len(t, s.CPUs("pod1c0"), 4)
+	require.Len(t, s.CPUs("pod2c0"), 4)
+	require.Len(t, s.CPUs("pod3c0"), 4)
+	require.Len(t, s.CPUs("pod4c0"), 4)
+	require.Len(t, s.CPUs("pod5c0"), 4)
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod1c0"))
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod2c0"))
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod3c0"))
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod4c0"))
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod5c0"))
 	s.CreateGuaranteed(harness.PodSpec{Mem: "50M"})
-	s.VerifyPy(`len(cpus["pod0c0"]) == 4`)
-	s.VerifyPy(`len(cpus["pod1c0"]) == 4`)
-	s.VerifyPy(`len(cpus["pod2c0"]) == 4`)
-	s.VerifyPy(`len(cpus["pod3c0"]) == 4`)
-	s.VerifyPy(`len(cpus["pod4c0"]) == 4`)
-	s.VerifyPy(`len(cpus["pod5c0"]) == 4`)
-	s.VerifyPy(`len(cpus["pod6c0"]) == 1`)
-	s.VerifyPy(`cpus["pod0c0"] == cpus["pod1c0"] == cpus["pod2c0"] == cpus["pod3c0"] == cpus["pod4c0"]`)
-	s.VerifyPy(`disjoint_sets(cpus["pod0c0"], cpus["pod6c0"])`)
+	require.Len(t, s.CPUs("pod0c0"), 4)
+	require.Len(t, s.CPUs("pod1c0"), 4)
+	require.Len(t, s.CPUs("pod2c0"), 4)
+	require.Len(t, s.CPUs("pod3c0"), 4)
+	require.Len(t, s.CPUs("pod4c0"), 4)
+	require.Len(t, s.CPUs("pod5c0"), 4)
+	require.Len(t, s.CPUs("pod6c0"), 1)
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod1c0"))
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod2c0"))
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod3c0"))
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod4c0"))
+	harness.RequireDisjoint(t, s.CPUs("pod0c0"), s.CPUs("pod6c0"))
 	s.DeletePods("default", "pod1", "pod2", "pod3")
-	s.VerifyPy(`len(cpus["pod0c0"]) == 1`)
-	s.VerifyPy(`len(cpus["pod4c0"]) == 1`)
-	s.VerifyPy(`len(cpus["pod5c0"]) == 1`)
-	s.VerifyPy(`len(cpus["pod6c0"]) == 1`)
-	s.VerifyPy(`cpus["pod0c0"] == cpus["pod4c0"] == cpus["pod5c0"]`)
-	s.VerifyPy(`disjoint_sets(cpus["pod0c0"], cpus["pod6c0"])`)
+	require.Len(t, s.CPUs("pod0c0"), 1)
+	require.Len(t, s.CPUs("pod4c0"), 1)
+	require.Len(t, s.CPUs("pod5c0"), 1)
+	require.Len(t, s.CPUs("pod6c0"), 1)
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod4c0"))
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod5c0"))
+	harness.RequireDisjoint(t, s.CPUs("pod0c0"), s.CPUs("pod6c0"))
 	s.DeletePods("default", "pod4")
-	s.VerifyPy(`len(cpus["pod0c0"]) == 1`)
-	s.VerifyPy(`len(cpus["pod5c0"]) == 1`)
-	s.VerifyPy(`len(cpus["pod6c0"]) == 1`)
-	s.VerifyPy(`cpus["pod0c0"] == cpus["pod5c0"]`)
-	s.VerifyPy(`disjoint_sets(cpus["pod0c0"], cpus["pod6c0"])`)
+	require.Len(t, s.CPUs("pod0c0"), 1)
+	require.Len(t, s.CPUs("pod5c0"), 1)
+	require.Len(t, s.CPUs("pod6c0"), 1)
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod5c0"))
+	harness.RequireDisjoint(t, s.CPUs("pod0c0"), s.CPUs("pod6c0"))
 	s.Terminate()
 }
 
@@ -864,22 +871,21 @@ config:
 		ContCount:   2,
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "isolated-pods"},
 	})
-	s.Consts(genN4c16PyConsts)
-	s.VerifyPy(`len(cpus["pod0c0"]) == 1`)
-	s.VerifyPy(`len(cpus["pod0c1"]) == 1`)
-	s.VerifyPy(`cpus["pod0c0"] == cpus["pod0c1"]`)
+	require.Len(t, s.CPUs("pod0c0"), 1)
+	require.Len(t, s.CPUs("pod0c1"), 1)
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod0c1"))
 	s.CreateGuaranteed(harness.PodSpec{
 		ContCount:   2,
 		CPU:         "600m",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "isolated-pods"},
 	})
-	s.VerifyPy(`len(cpus["pod0c0"]) == 1`)
-	s.VerifyPy(`len(cpus["pod0c1"]) == 1`)
-	s.VerifyPy(`len(cpus["pod1c0"]) == 2`)
-	s.VerifyPy(`len(cpus["pod1c1"]) == 2`)
-	s.VerifyPy(`cpus["pod0c0"] == cpus["pod0c1"]`)
-	s.VerifyPy(`cpus["pod1c0"] == cpus["pod1c1"]`)
-	s.VerifyPy(`disjoint_sets(cpus["pod0c0"], cpus["pod1c0"])`)
+	require.Len(t, s.CPUs("pod0c0"), 1)
+	require.Len(t, s.CPUs("pod0c1"), 1)
+	require.Len(t, s.CPUs("pod1c0"), 2)
+	require.Len(t, s.CPUs("pod1c1"), 2)
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod0c1"))
+	require.Equal(t, s.CPUs("pod1c0"), s.CPUs("pod1c1"))
+	harness.RequireDisjoint(t, s.CPUs("pod0c0"), s.CPUs("pod1c0"))
 	s.CreateBurstable(harness.PodSpec{
 		ContCount:   2,
 		CPUReq:      "100m",
@@ -887,36 +893,36 @@ config:
 		MemLim:      "100M",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "isolated-pods"},
 	})
-	s.VerifyPy(`len(cpus["pod0c0"]) == 1`)
-	s.VerifyPy(`len(cpus["pod0c1"]) == 1`)
-	s.VerifyPy(`len(cpus["pod1c0"]) == 2`)
-	s.VerifyPy(`len(cpus["pod1c1"]) == 2`)
-	s.VerifyPy(`len(cpus["pod2c0"]) == 1`)
-	s.VerifyPy(`len(cpus["pod2c1"]) == 1`)
-	s.VerifyPy(`cpus["pod0c0"] == cpus["pod0c1"]`)
-	s.VerifyPy(`cpus["pod1c0"] == cpus["pod1c1"]`)
-	s.VerifyPy(`cpus["pod2c0"] == cpus["pod2c1"]`)
-	s.VerifyPy(`disjoint_sets(cpus["pod0c0"], cpus["pod1c0"], cpus["pod2c0"])`)
+	require.Len(t, s.CPUs("pod0c0"), 1)
+	require.Len(t, s.CPUs("pod0c1"), 1)
+	require.Len(t, s.CPUs("pod1c0"), 2)
+	require.Len(t, s.CPUs("pod1c1"), 2)
+	require.Len(t, s.CPUs("pod2c0"), 1)
+	require.Len(t, s.CPUs("pod2c1"), 1)
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod0c1"))
+	require.Equal(t, s.CPUs("pod1c0"), s.CPUs("pod1c1"))
+	require.Equal(t, s.CPUs("pod2c0"), s.CPUs("pod2c1"))
+	harness.RequireDisjoint(t, s.CPUs("pod0c0"), s.CPUs("pod1c0"), s.CPUs("pod2c0"))
 	s.CreateBestEffort(harness.PodSpec{
 		ContCount:   4,
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "isolated-ctrs"},
 	})
-	s.VerifyPy(`len(cpus["pod0c0"]) == 1`)
-	s.VerifyPy(`len(cpus["pod0c1"]) == 1`)
-	s.VerifyPy(`len(cpus["pod1c0"]) == 2`)
-	s.VerifyPy(`len(cpus["pod1c1"]) == 2`)
-	s.VerifyPy(`len(cpus["pod2c0"]) == 1`)
-	s.VerifyPy(`len(cpus["pod2c1"]) == 1`)
-	s.VerifyPy(`len(cpus["pod3c0"]) == 1`)
-	s.VerifyPy(`len(cpus["pod3c1"]) == 1`)
-	s.VerifyPy(`len(cpus["pod3c2"]) == 1`)
-	s.VerifyPy(`len(cpus["pod3c3"]) == 1`)
-	s.VerifyPy(`cpus["pod0c0"] == cpus["pod0c1"]`)
-	s.VerifyPy(`cpus["pod1c0"] == cpus["pod1c1"]`)
-	s.VerifyPy(`cpus["pod2c0"] == cpus["pod2c1"]`)
-	s.VerifyPy(`disjoint_sets(cpus["pod0c0"], cpus["pod1c0"], cpus["pod2c0"])`)
-	s.VerifyPy(`disjoint_sets(cpus["pod3c0"], cpus["pod3c1"], cpus["pod3c2"], cpus["pod3c3"])`)
-	s.VerifyPy(`disjoint_sets(cpus["pod0c0"], cpus["pod1c0"], cpus["pod2c0"], cpus["pod3c0"], cpus["pod3c1"], cpus["pod3c2"], cpus["pod3c3"])`)
+	require.Len(t, s.CPUs("pod0c0"), 1)
+	require.Len(t, s.CPUs("pod0c1"), 1)
+	require.Len(t, s.CPUs("pod1c0"), 2)
+	require.Len(t, s.CPUs("pod1c1"), 2)
+	require.Len(t, s.CPUs("pod2c0"), 1)
+	require.Len(t, s.CPUs("pod2c1"), 1)
+	require.Len(t, s.CPUs("pod3c0"), 1)
+	require.Len(t, s.CPUs("pod3c1"), 1)
+	require.Len(t, s.CPUs("pod3c2"), 1)
+	require.Len(t, s.CPUs("pod3c3"), 1)
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod0c1"))
+	require.Equal(t, s.CPUs("pod1c0"), s.CPUs("pod1c1"))
+	require.Equal(t, s.CPUs("pod2c0"), s.CPUs("pod2c1"))
+	harness.RequireDisjoint(t, s.CPUs("pod0c0"), s.CPUs("pod1c0"), s.CPUs("pod2c0"))
+	harness.RequireDisjoint(t, s.CPUs("pod3c0"), s.CPUs("pod3c1"), s.CPUs("pod3c2"), s.CPUs("pod3c3"))
+	harness.RequireDisjoint(t, s.CPUs("pod0c0"), s.CPUs("pod1c0"), s.CPUs("pod2c0"), s.CPUs("pod3c0"), s.CPUs("pod3c1"), s.CPUs("pod3c2"), s.CPUs("pod3c3"))
 	s.Terminate()
 }
 
@@ -968,52 +974,51 @@ config:
 		CPU:         "100m",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "policydefaults"},
 	})
-	s.Consts(genN4c16PyConsts)
-	s.VerifyPy(`len(cores["pod0c0"]) == 2`)
-	s.VerifyPy(`len(cpus["pod0c0"]) == 2`)
-	s.VerifyPy(`"node2" not in nodes["pod0c0"]`)
+	require.Len(t, s.Cores("pod0c0"), 2)
+	require.Len(t, s.CPUs("pod0c0"), 2)
+	require.NotContains(t, s.Nodes("pod0c0"), "node2")
 	s.CreateGuaranteed(harness.PodSpec{
 		CPU:         "100m",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "topo1cores0"},
 	})
-	s.VerifyPy(`len(cores["pod1c0"]) == 1`)
-	s.VerifyPy(`len(cpus["pod1c0"]) == 2`)
-	s.VerifyPy(`"node2" not in nodes["pod1c0"]`)
+	require.Len(t, s.Cores("pod1c0"), 1)
+	require.Len(t, s.CPUs("pod1c0"), 2)
+	require.NotContains(t, s.Nodes("pod1c0"), "node2")
 	s.CreateGuaranteed(harness.PodSpec{
 		ContCount:   2,
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "topo1cores1"},
 	})
-	s.VerifyPy(`len(cores["pod2c0"]) == 2`)
-	s.VerifyPy(`len(cpus["pod2c0"]) == 2`)
-	s.VerifyPy(`cpus["pod2c0"] == cpus["pod2c1"]`)
-	s.VerifyPy(`"node2" not in nodes["pod2c0"]`)
+	require.Len(t, s.Cores("pod2c0"), 2)
+	require.Len(t, s.CPUs("pod2c0"), 2)
+	require.Equal(t, s.CPUs("pod2c0"), s.CPUs("pod2c1"))
+	require.NotContains(t, s.Nodes("pod2c0"), "node2")
 	s.DeletePods("default", "pod0", "pod1", "pod2")
 	s.CreateGuaranteed(harness.PodSpec{
 		ContCount:   2,
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "topo0cores0"},
 	})
-	s.VerifyPy(`len(cores["pod3c0"]) == 1`)
-	s.VerifyPy(`len(cpus["pod3c0"]) == 2`)
-	s.VerifyPy(`cpus["pod3c0"] == cpus["pod3c1"]`)
-	s.VerifyPy(`"node2" not in nodes["pod3c0"]`)
+	require.Len(t, s.Cores("pod3c0"), 1)
+	require.Len(t, s.CPUs("pod3c0"), 2)
+	require.Equal(t, s.CPUs("pod3c0"), s.CPUs("pod3c1"))
+	require.NotContains(t, s.Nodes("pod3c0"), "node2")
 	s.CreateBurstable(harness.PodSpec{
 		CPUReq:      "3",
 		CPULim:      "6",
 		MemLim:      "100M",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "device-node2"},
 	})
-	s.VerifyPy(`{"node2"} == nodes["pod4c0"]`)
-	s.VerifyPy(`len(cores["pod4c0"]) == 2`)
-	s.VerifyPy(`len(cpus["pod4c0"]) == 3`)
+	require.Equal(t, s.NodeIDs(2), s.Nodes("pod4c0"))
+	require.Len(t, s.Cores("pod4c0"), 2)
+	require.Len(t, s.CPUs("pod4c0"), 3)
 	s.CreateBurstable(harness.PodSpec{
 		CPUReq:      "2",
 		CPULim:      "6",
 		MemLim:      "100M",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "device-node2"},
 	})
-	s.VerifyPy(`"node2" not in nodes["pod5c0"]`)
-	s.VerifyPy(`len(cores["pod5c0"]) == 2`)
-	s.VerifyPy(`len(cpus["pod5c0"]) == 2`)
+	require.NotContains(t, s.Nodes("pod5c0"), "node2")
+	require.Len(t, s.Cores("pod5c0"), 2)
+	require.Len(t, s.CPUs("pod5c0"), 2)
 	s.DeleteAllPodsIn("default")
 	s.Terminate()
 }
@@ -1063,15 +1068,14 @@ config:
 	s.CreateBurstable(harness.PodSpec{
 		Labels: map[string]string{"app.kubernetes.io/component": "precious"},
 	})
-	s.Consts(genN4c16PyConsts)
-	s.VerifyPy(`len(cpus["pod0c0"]) == 2`)
+	require.Len(t, s.CPUs("pod0c0"), 2)
 	s.CreateBurstable(harness.PodSpec{})
-	s.VerifyPy(`len(cpus["pod1c0"]) == 1`)
+	require.Len(t, s.CPUs("pod1c0"), 1)
 	s.CreateBurstable(harness.PodSpec{ContCount: 4})
-	s.VerifyPy(`len(cpus["pod2c0"]) == 1`)
-	s.VerifyPy(`len(cpus["pod2c1"]) == 16`)
-	s.VerifyPy(`len(cpus["pod2c2"]) == 16`)
-	s.VerifyPy(`len(cpus["pod2c3"]) == 1`)
+	require.Len(t, s.CPUs("pod2c0"), 1)
+	require.Len(t, s.CPUs("pod2c1"), 16)
+	require.Len(t, s.CPUs("pod2c2"), 16)
+	require.Len(t, s.CPUs("pod2c3"), 1)
 	s.DeleteAllPodsIn("default")
 }
 
@@ -1148,45 +1152,49 @@ extraEnv:
 		CPU:         "1500m",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "l2burst"},
 	})
-	s.Consts(genN4c16PyConsts)
-	s.VerifyPy(`len(cpus["pod0c0"]) == 4`)
-	s.VerifyPy(`len(cpus["pod0c0"]) == 4`)
-	s.VerifyPy(`len(cpus["pod0c1"]) == 4`)
-	s.VerifyPy(`disjoint_sets(nodes["pod0c0"], nodes["pod0c1"], nodes["pod0c2"])`)
+	require.Len(t, s.CPUs("pod0c0"), 4)
+	require.Len(t, s.CPUs("pod0c0"), 4)
+	require.Len(t, s.CPUs("pod0c1"), 4)
+	harness.RequireDisjoint(t, s.Nodes("pod0c0"), s.Nodes("pod0c1"), s.Nodes("pod0c2"))
 	s.CreateGuaranteed(harness.PodSpec{
 		CPU:         "2",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "l2burst"},
 	})
-	s.VerifyPy(`len(cpus["pod1c0"]) == 3`)
-	s.VerifyPy(`disjoint_sets(cpus["pod1c0"], cpus["pod0c0"], cpus["pod0c1"], cpus["pod0c2"])`)
+	require.Len(t, s.CPUs("pod1c0"), 3)
+	harness.RequireDisjoint(t, s.CPUs("pod1c0"), s.CPUs("pod0c0"), s.CPUs("pod0c1"), s.CPUs("pod0c2"))
 	s.DeleteAllPodsIn("default")
 	s.CreateGuaranteed(harness.PodSpec{
 		ContCount:   4,
 		CPU:         "500m",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "l2pack"},
 	})
-	s.VerifyPy(`len(cpus["pod2c0"]) == 2`)
-	s.VerifyPy(`len(cpus["pod2c1"]) == 2`)
-	s.VerifyPy(`len(cpus["pod2c2"]) == 2`)
-	s.VerifyPy(`len(cpus["pod2c3"]) == 2`)
-	s.VerifyPy(`len(set.intersection(cpus["pod2c0"], cpus["pod2c1"], cpus["pod2c2"], cpus["pod2c3"])) == 1`)
-	s.VerifyPy(`len(set.union(cpus["pod2c0"], cpus["pod2c1"], cpus["pod2c2"], cpus["pod2c3"])) == 3`)
-	s.VerifyPy(`nodes["pod2c0"] == nodes["pod2c1"] == nodes["pod2c2"] == nodes["pod2c3"]`)
+	require.Len(t, s.CPUs("pod2c0"), 2)
+	require.Len(t, s.CPUs("pod2c1"), 2)
+	require.Len(t, s.CPUs("pod2c2"), 2)
+	require.Len(t, s.CPUs("pod2c3"), 2)
+	require.Len(t, harness.Intersection(s.CPUs("pod2c0"), s.CPUs("pod2c1"), s.CPUs("pod2c2"), s.CPUs("pod2c3")), 1)
+	require.Len(t, harness.Union(s.CPUs("pod2c0"), s.CPUs("pod2c1"), s.CPUs("pod2c2"), s.CPUs("pod2c3")), 3)
+	require.Equal(t, s.Nodes("pod2c0"), s.Nodes("pod2c1"))
+	require.Equal(t, s.Nodes("pod2c0"), s.Nodes("pod2c2"))
+	require.Equal(t, s.Nodes("pod2c0"), s.Nodes("pod2c3"))
 	s.CreateGuaranteed(harness.PodSpec{
 		CPU:         "500m",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "reserved"},
 	})
-	s.VerifyPy(`nodes["pod3c0"] == nodes["pod2c0"] == nodes["pod2c1"] == nodes["pod2c2"] == nodes["pod2c3"]`)
-	s.VerifyPy(`len(cpus["pod3c0"]) == 2`)
-	s.VerifyPy(`len(cpus["pod2c0"]) == 1`)
-	s.VerifyPy(`len(cpus["pod2c1"]) == 1`)
-	s.VerifyPy(`len(cpus["pod2c2"]) == 1`)
-	s.VerifyPy(`len(cpus["pod2c3"]) == 1`)
-	s.VerifyPy(`disjoint_sets(cpus["pod3c0"], cpus["pod2c0"])`)
-	s.VerifyPy(`disjoint_sets(cpus["pod3c0"], cpus["pod2c1"])`)
-	s.VerifyPy(`disjoint_sets(cpus["pod3c0"], cpus["pod2c2"])`)
-	s.VerifyPy(`disjoint_sets(cpus["pod3c0"], cpus["pod2c3"])`)
-	s.VerifyPy(`len(set.union(cpus["pod3c0"], cpus["pod2c0"], cpus["pod2c1"], cpus["pod2c2"], cpus["pod2c3"])) == 4`)
+	require.Equal(t, s.Nodes("pod3c0"), s.Nodes("pod2c0"))
+	require.Equal(t, s.Nodes("pod3c0"), s.Nodes("pod2c1"))
+	require.Equal(t, s.Nodes("pod3c0"), s.Nodes("pod2c2"))
+	require.Equal(t, s.Nodes("pod3c0"), s.Nodes("pod2c3"))
+	require.Len(t, s.CPUs("pod3c0"), 2)
+	require.Len(t, s.CPUs("pod2c0"), 1)
+	require.Len(t, s.CPUs("pod2c1"), 1)
+	require.Len(t, s.CPUs("pod2c2"), 1)
+	require.Len(t, s.CPUs("pod2c3"), 1)
+	harness.RequireDisjoint(t, s.CPUs("pod3c0"), s.CPUs("pod2c0"))
+	harness.RequireDisjoint(t, s.CPUs("pod3c0"), s.CPUs("pod2c1"))
+	harness.RequireDisjoint(t, s.CPUs("pod3c0"), s.CPUs("pod2c2"))
+	harness.RequireDisjoint(t, s.CPUs("pod3c0"), s.CPUs("pod2c3"))
+	require.Len(t, harness.Union(s.CPUs("pod3c0"), s.CPUs("pod2c0"), s.CPUs("pod2c1"), s.CPUs("pod2c2"), s.CPUs("pod2c3")), 4)
 	s.DeleteAllPodsIn("default")
 	s.Terminate()
 	s.Launch(genN4c16, genN4c16BaseConfig, config2)
@@ -1196,21 +1204,21 @@ extraEnv:
 		CPU:         "500m",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "l2burst"},
 	})
-	s.VerifyPy(`len(cpus["pod4c0"]) == 2`)
-	s.VerifyPy(`len(cpus["pod4c1"]) == 2`)
-	s.VerifyPy(`len(cpus["pod4c2"]) == 2`)
-	s.VerifyPy(`len(cpus["pod4c3"]) == 2`)
-	s.VerifyPy(`disjoint_sets(cpus["pod4c0"], cpus["pod4c1"], cpus["pod4c2"], cpus["pod4c3"])`)
-	s.VerifyPy(`disjoint_sets(nodes["pod4c0"], nodes["pod4c1"], nodes["pod4c2"], nodes["pod4c3"])`)
+	require.Len(t, s.CPUs("pod4c0"), 2)
+	require.Len(t, s.CPUs("pod4c1"), 2)
+	require.Len(t, s.CPUs("pod4c2"), 2)
+	require.Len(t, s.CPUs("pod4c3"), 2)
+	harness.RequireDisjoint(t, s.CPUs("pod4c0"), s.CPUs("pod4c1"), s.CPUs("pod4c2"), s.CPUs("pod4c3"))
+	harness.RequireDisjoint(t, s.Nodes("pod4c0"), s.Nodes("pod4c1"), s.Nodes("pod4c2"), s.Nodes("pod4c3"))
 	s.CreateGuaranteed(harness.PodSpec{
 		ContCount:   3,
 		CPU:         "500m",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "l2burst"},
 	})
-	s.VerifyPy(`len(cpus["pod5c0"]) == 2`)
-	s.VerifyPy(`len(cpus["pod5c1"]) == 2`)
-	s.VerifyPy(`len(cpus["pod5c2"]) == 2`)
-	s.VerifyPy(`disjoint_sets(cpus["pod5c0"], cpus["pod5c1"], cpus["pod5c2"], cpus["pod4c0"], cpus["pod4c1"], cpus["pod4c2"], cpus["pod4c3"])`)
+	require.Len(t, s.CPUs("pod5c0"), 2)
+	require.Len(t, s.CPUs("pod5c1"), 2)
+	require.Len(t, s.CPUs("pod5c2"), 2)
+	harness.RequireDisjoint(t, s.CPUs("pod5c0"), s.CPUs("pod5c1"), s.CPUs("pod5c2"), s.CPUs("pod4c0"), s.CPUs("pod4c1"), s.CPUs("pod4c2"), s.CPUs("pod4c3"))
 	s.DeleteAllPodsIn("default")
 	s.Terminate()
 }
@@ -1271,55 +1279,54 @@ extraEnv:
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "l2load"},
 	})
-	s.Consts(genN4c16PyConsts)
-	s.VerifyPy(`len(cpus["pod0c0"]) == 1`)
-	s.VerifyPy(`len(cpus["pod0c1"]) == 1`)
-	s.VerifyPy(`disjoint_sets(nodes["pod0c0"], nodes["pod0c1"])`)
-	s.VerifyPy(`packages["pod0c0"] == packages["pod0c1"]`)
+	require.Len(t, s.CPUs("pod0c0"), 1)
+	require.Len(t, s.CPUs("pod0c1"), 1)
+	harness.RequireDisjoint(t, s.Nodes("pod0c0"), s.Nodes("pod0c1"))
+	require.Equal(t, s.Packages("pod0c0"), s.Packages("pod0c1"))
 	s.CreateBurstable(harness.PodSpec{
 		CPULim:      "1",
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "noload"},
 	})
-	s.VerifyPy(`packages["pod1c0"] == packages["pod0c0"]`)
+	require.Equal(t, s.Packages("pod1c0"), s.Packages("pod0c0"))
 	s.CreateBurstable(harness.PodSpec{
 		CPULim:      "1",
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "noload"},
 	})
-	s.VerifyPy(`packages["pod2c0"] != packages["pod1c0"]`)
+	require.NotEqual(t, s.Packages("pod2c0"), s.Packages("pod1c0"))
 	s.CreateBurstable(harness.PodSpec{
 		CPUReq:      "100m",
 		CPULim:      "200m",
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "l2htload"},
 	})
-	s.VerifyPy(`len(cpus["pod3c0"]) == 1`)
-	s.VerifyPy(`nodes["pod3c0"] == nodes["pod2c0"]`)
+	require.Len(t, s.CPUs("pod3c0"), 1)
+	require.Equal(t, s.Nodes("pod3c0"), s.Nodes("pod2c0"))
 	s.CreateBurstable(harness.PodSpec{
 		CPUReq:      "100m",
 		CPULim:      "200m",
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "l2htload"},
 	})
-	s.VerifyPy(`len(cpus["pod4c0"]) == 1`)
-	s.VerifyPy(`disjoint_sets(nodes["pod3c0"], nodes["pod4c0"])`)
+	require.Len(t, s.CPUs("pod4c0"), 1)
+	harness.RequireDisjoint(t, s.Nodes("pod3c0"), s.Nodes("pod4c0"))
 	s.CreateGuaranteed(harness.PodSpec{
 		ContCount:   2,
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "pre-reserved-avx"},
 	})
-	s.VerifyPy(`len(cores["pod5c0"]) == 2`)
-	s.VerifyPy(`len(cpus["pod5c0"]) == 2`)
-	s.VerifyPy(`cpus["pod5c0"] == cpus["pod5c1"]`)
+	require.Len(t, s.Cores("pod5c0"), 2)
+	require.Len(t, s.CPUs("pod5c0"), 2)
+	require.Equal(t, s.CPUs("pod5c0"), s.CPUs("pod5c1"))
 	s.CreateGuaranteed(harness.PodSpec{
 		ContCount:   2,
 		CPU:         "2",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "pre-reserved-avx"},
 	})
-	s.VerifyPy(`len(cores["pod6c0"]) == 4`)
-	s.VerifyPy(`len(cpus["pod6c0"]) == 4`)
-	s.VerifyPy(`cpus["pod6c0"] == cpus["pod6c1"]`)
-	s.VerifyPy(`disjoint_sets(cores["pod6c0"], cores["pod5c0"])`)
+	require.Len(t, s.Cores("pod6c0"), 4)
+	require.Len(t, s.CPUs("pod6c0"), 4)
+	require.Equal(t, s.CPUs("pod6c0"), s.CPUs("pod6c1"))
+	harness.RequireDisjoint(t, s.Cores("pod6c0"), s.Cores("pod5c0"))
 	s.DeletePods("default", "pod0", "pod3", "pod4", "pod5", "pod6")
 	s.CreateBurstable(harness.PodSpec{
 		CPUReq:      "4",
@@ -1328,8 +1335,8 @@ extraEnv:
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "l2htload"},
 	})
-	s.VerifyPy(`len(cpus["pod7c0"]) == 4`)
-	s.VerifyPy(`len(cores["pod7c0"]) == 4`)
+	require.Len(t, s.CPUs("pod7c0"), 4)
+	require.Len(t, s.Cores("pod7c0"), 4)
 	s.DeleteAllPodsIn("default")
 	s.Terminate()
 }
@@ -1411,32 +1418,33 @@ config:
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "balance-all-nodes"},
 	})
-	s.Consts(genN4c16PyConsts)
-	s.VerifyPy(`len(cpus["pod0c0"]) == 4`)
-	s.VerifyPy(`len(cpus["pod0c1"]) == 4`)
-	s.VerifyPy(`nodes["pod0c0"] == nodes["pod0c1"] == {"node0", "node1", "node2", "node3"}`)
+	require.Len(t, s.CPUs("pod0c0"), 4)
+	require.Len(t, s.CPUs("pod0c1"), 4)
+	require.Equal(t, s.Nodes("pod0c0"), s.Nodes("pod0c1"))
+	require.Equal(t, s.Nodes("pod0c0"), s.NodeIDs(0, 1, 2, 3))
 	s.CreateBurstable(harness.PodSpec{
 		CPUReq:      "9",
 		CPULim:      "0",
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "balance-all-nodes"},
 	})
-	s.VerifyPy(`len(cpus["pod1c0"]) == 12`)
-	s.VerifyPy(`cpus["pod0c0"] == cpus["pod0c1"] == cpus["pod1c0"]`)
-	s.VerifyPy(`len(set.intersection(cpus["pod1c0"], {"cpu00", "cpu01", "cpu02", "cpu03"})) == 3`)
-	s.VerifyPy(`len(set.intersection(cpus["pod1c0"], {"cpu04", "cpu05", "cpu06", "cpu07"})) == 3`)
-	s.VerifyPy(`len(set.intersection(cpus["pod1c0"], {"cpu08", "cpu09", "cpu10", "cpu11"})) == 3`)
-	s.VerifyPy(`len(set.intersection(cpus["pod1c0"], {"cpu12", "cpu13", "cpu14", "cpu15"})) == 3`)
-	s.VerifyPy(`len(set.intersection(cpus["pod1c0"], {"cpu06", "cpu07"})) == 1`)
+	require.Len(t, s.CPUs("pod1c0"), 12)
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod0c1"))
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod1c0"))
+	require.Len(t, harness.Intersection(s.CPUs("pod1c0"), s.CPUIDs(0, 1, 2, 3)), 3)
+	require.Len(t, harness.Intersection(s.CPUs("pod1c0"), s.CPUIDs(4, 5, 6, 7)), 3)
+	require.Len(t, harness.Intersection(s.CPUs("pod1c0"), s.CPUIDs(8, 9, 10, 11)), 3)
+	require.Len(t, harness.Intersection(s.CPUs("pod1c0"), s.CPUIDs(12, 13, 14, 15)), 3)
+	require.Len(t, harness.Intersection(s.CPUs("pod1c0"), s.CPUIDs(6, 7)), 1)
 	s.CreateBurstable(harness.PodSpec{Namespace: "kube-system", CPUReq: "100m", CPULim: "100m", MemReq: "0", MemLim: "0"})
-	s.VerifyPy(`cpus["pod2c0"].issubset({"cpu06", "cpu07"})`)
+	require.Subset(t, s.CPUIDs(6, 7), s.CPUs("pod2c0"))
 	s.DeletePods("default", "pod1")
-	s.VerifyPy(`len(cpus["pod0c0"]) == 4`)
-	s.VerifyPy(`cpus["pod0c0"] == cpus["pod0c1"]`)
-	s.VerifyPy(`len(set.intersection(cpus["pod0c0"], {"cpu00", "cpu01", "cpu02", "cpu03"})) == 1`)
-	s.VerifyPy(`len(set.intersection(cpus["pod0c0"], {"cpu04", "cpu05", "cpu06", "cpu07"})) == 1`)
-	s.VerifyPy(`len(set.intersection(cpus["pod0c0"], {"cpu08", "cpu09", "cpu10", "cpu11"})) == 1`)
-	s.VerifyPy(`len(set.intersection(cpus["pod0c0"], {"cpu12", "cpu13", "cpu14", "cpu15"})) == 1`)
+	require.Len(t, s.CPUs("pod0c0"), 4)
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod0c1"))
+	require.Len(t, harness.Intersection(s.CPUs("pod0c0"), s.CPUIDs(0, 1, 2, 3)), 1)
+	require.Len(t, harness.Intersection(s.CPUs("pod0c0"), s.CPUIDs(4, 5, 6, 7)), 1)
+	require.Len(t, harness.Intersection(s.CPUs("pod0c0"), s.CPUIDs(8, 9, 10, 11)), 1)
+	require.Len(t, harness.Intersection(s.CPUs("pod0c0"), s.CPUIDs(12, 13, 14, 15)), 1)
 	s.DeleteAllPodsIn("default")
 	s.DeletePods("kube-system", "pod2")
 	s.CreateBurstable(harness.PodSpec{
@@ -1444,19 +1452,19 @@ config:
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "balance-pkg1-nodes"},
 	})
-	s.VerifyPy(`len(cpus["pod3c0"]) == 2`)
-	s.VerifyPy(`len(set.intersection(cpus["pod3c0"], {"cpu08", "cpu09", "cpu10", "cpu11"})) == 1`)
-	s.VerifyPy(`len(set.intersection(cpus["pod3c0"], {"cpu12", "cpu13", "cpu14", "cpu15"})) == 1`)
+	require.Len(t, s.CPUs("pod3c0"), 2)
+	require.Len(t, harness.Intersection(s.CPUs("pod3c0"), s.CPUIDs(8, 9, 10, 11)), 1)
+	require.Len(t, harness.Intersection(s.CPUs("pod3c0"), s.CPUIDs(12, 13, 14, 15)), 1)
 	s.CreateBurstable(harness.PodSpec{
 		CPUReq:      "4",
 		CPULim:      "0",
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "balance-pkg1-nodes"},
 	})
-	s.VerifyPy(`len(cpus["pod4c0"]) == 4`)
-	s.VerifyPy(`len(set.intersection(cpus["pod4c0"], {"cpu08", "cpu09", "cpu10", "cpu11"})) == 2`)
-	s.VerifyPy(`len(set.intersection(cpus["pod4c0"], {"cpu12", "cpu13", "cpu14", "cpu15"})) == 2`)
-	s.VerifyPy(`disjoint_sets(cpus["pod4c0"], cpus["pod3c0"])`)
+	require.Len(t, s.CPUs("pod4c0"), 4)
+	require.Len(t, harness.Intersection(s.CPUs("pod4c0"), s.CPUIDs(8, 9, 10, 11)), 2)
+	require.Len(t, harness.Intersection(s.CPUs("pod4c0"), s.CPUIDs(12, 13, 14, 15)), 2)
+	harness.RequireDisjoint(t, s.CPUs("pod4c0"), s.CPUs("pod3c0"))
 	s.DeleteAllPodsIn("default")
 	s.CreateBurstable(harness.PodSpec{
 		CPUReq:      "12",
@@ -1464,11 +1472,11 @@ config:
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "balance-all-nodes"},
 	})
-	s.VerifyPy(`len(cpus["pod5c0"]) == 12`)
-	s.VerifyPy(`len(set.intersection(cpus["pod5c0"], {"cpu00", "cpu01", "cpu02", "cpu03"})) == 3`)
-	s.VerifyPy(`len(set.intersection(cpus["pod5c0"], {"cpu04", "cpu05", "cpu06", "cpu07"})) == 3`)
-	s.VerifyPy(`len(set.intersection(cpus["pod5c0"], {"cpu08", "cpu09", "cpu10", "cpu11"})) == 3`)
-	s.VerifyPy(`len(set.intersection(cpus["pod5c0"], {"cpu12", "cpu13", "cpu14", "cpu15"})) == 3`)
+	require.Len(t, s.CPUs("pod5c0"), 12)
+	require.Len(t, harness.Intersection(s.CPUs("pod5c0"), s.CPUIDs(0, 1, 2, 3)), 3)
+	require.Len(t, harness.Intersection(s.CPUs("pod5c0"), s.CPUIDs(4, 5, 6, 7)), 3)
+	require.Len(t, harness.Intersection(s.CPUs("pod5c0"), s.CPUIDs(8, 9, 10, 11)), 3)
+	require.Len(t, harness.Intersection(s.CPUs("pod5c0"), s.CPUIDs(12, 13, 14, 15)), 3)
 	s.DeleteAllPodsIn("default")
 	s.CreateBurstable(harness.PodSpec{
 		Name:        "pod0",
@@ -1476,28 +1484,28 @@ config:
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "nodes2301"},
 	})
-	s.VerifyPy(`nodes["pod0c0"] == {"node2"}`)
+	require.Equal(t, s.NodeIDs(2), s.Nodes("pod0c0"))
 	s.CreateBurstable(harness.PodSpec{
 		Name:        "pod1",
 		CPULim:      "0",
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "nodes2301"},
 	})
-	s.VerifyPy(`nodes["pod1c0"] == {"node3"}`)
+	require.Equal(t, s.NodeIDs(3), s.Nodes("pod1c0"))
 	s.CreateBurstable(harness.PodSpec{
 		Name:        "pod2",
 		CPULim:      "0",
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "nodes2301"},
 	})
-	s.VerifyPy(`nodes["pod2c0"] == {"node0"}`)
+	require.Equal(t, s.NodeIDs(0), s.Nodes("pod2c0"))
 	s.CreateBurstable(harness.PodSpec{
 		Name:        "pod3",
 		CPULim:      "0",
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "nodes2301"},
 	})
-	s.VerifyPy(`nodes["pod3c0"] == {"node1"}`)
+	require.Equal(t, s.NodeIDs(1), s.Nodes("pod3c0"))
 	s.DeletePods("default", "pod1")
 	s.CreateBurstable(harness.PodSpec{
 		Name:        "pod4",
@@ -1505,7 +1513,7 @@ config:
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "nodes2301"},
 	})
-	s.VerifyPy(`nodes["pod4c0"] == {"node3"}`)
+	require.Equal(t, s.NodeIDs(3), s.Nodes("pod4c0"))
 	s.DeleteAllPodsIn("default")
 	s.CreateBurstable(harness.PodSpec{
 		Name:        "pod5",
@@ -1513,28 +1521,28 @@ config:
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "new-on-node-1"},
 	})
-	s.VerifyPy(`nodes["pod5c0"] == {"node1"}`)
+	require.Equal(t, s.NodeIDs(1), s.Nodes("pod5c0"))
 	s.CreateBurstable(harness.PodSpec{
 		Name:        "pod6",
 		CPULim:      "0",
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "balance-both-nodes-on-either-pkg"},
 	})
-	s.VerifyPy(`nodes["pod6c0"] == {"node2", "node3"}`)
+	require.Equal(t, s.NodeIDs(2, 3), s.Nodes("pod6c0"))
 	s.CreateBurstable(harness.PodSpec{
 		Name:        "pod7",
 		CPULim:      "0",
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "balance-both-nodes-on-either-pkg"},
 	})
-	s.VerifyPy(`nodes["pod7c0"] == {"node0", "node1"}`)
+	require.Equal(t, s.NodeIDs(0, 1), s.Nodes("pod7c0"))
 	s.CreateBurstable(harness.PodSpec{
 		Name:        "pod8",
 		CPULim:      "0",
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "balance-both-nodes-on-either-pkg"},
 	})
-	s.VerifyPy(`nodes["pod8c0"] == {"node2", "node3"}`)
+	require.Equal(t, s.NodeIDs(2, 3), s.Nodes("pod8c0"))
 	s.DeleteAllPodsIn("default")
 }
 
@@ -1593,8 +1601,7 @@ extraEnv:
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "lowlatency-bln"},
 	})
-	s.Consts(genN4c16PyConsts)
-	s.VerifyPy(`len(cpus["pod0c0"]) == 1`)
+	require.Len(t, s.CPUs("pod0c0"), 1)
 	s.CreateBurstable(harness.PodSpec{
 		CPUReq: "3",
 		CPULim: "0",
@@ -1604,10 +1611,10 @@ extraEnv:
 			"scheduling-class.resource-policy.nri.io": "run-when-free",
 		},
 	})
-	s.VerifyPy(`cpus["pod0c0"] == cpus["pod1c0"]`)
-	s.VerifyPy(`len(cpus["pod0c0"]) == 4`)
+	require.Equal(t, s.CPUs("pod0c0"), s.CPUs("pod1c0"))
+	require.Len(t, s.CPUs("pod0c0"), 4)
 	s.DeletePods("default", "pod1")
-	s.VerifyPy(`len(cpus["pod0c0"]) == 1`)
+	require.Len(t, s.CPUs("pod0c0"), 1)
 	s.DeletePods("default", "pod0")
 }
 
@@ -1732,8 +1739,7 @@ extraEnv:
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "turbo-low-bln"},
 	})
-	s.Consts(genN4c16PyConsts)
-	s.VerifyPy(`len(cpus["pod0c0"]) == 1`)
+	require.Len(t, s.CPUs("pod0c0"), 1)
 	s.CreateBurstable(harness.PodSpec{
 		CPUReq:      "100m",
 		CPULim:      "100m",
@@ -1747,7 +1753,7 @@ extraEnv:
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "turbo-high-bln"},
 	})
-	s.VerifyPy(`len(cpus["pod2c0"]) == 1`)
+	require.Len(t, s.CPUs("pod2c0"), 1)
 	s.DeletePods("default", "pod2")
 	s.DeletePods("default", "pod1")
 	s.DeletePods("default", "pod0")
@@ -1760,7 +1766,7 @@ extraEnv:
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "legacy-bln"},
 	})
-	s.VerifyPy(`len(cpus["pod3c0"]) == 1`)
+	require.Len(t, s.CPUs("pod3c0"), 1)
 	s.DeletePods("default", "pod3")
 	s.Terminate()
 	s.Launch(genN4c16, genN4c16BaseConfig, config3)
@@ -1771,7 +1777,7 @@ extraEnv:
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "fast-bln"},
 	})
-	s.VerifyPy(`len(cpus["pod4c0"]) == 1`)
+	require.Len(t, s.CPUs("pod4c0"), 1)
 	s.DeletePods("default", "pod4")
 	s.Terminate()
 	s.Launch(genN4c16, genN4c16BaseConfig, config1)
@@ -1782,7 +1788,7 @@ extraEnv:
 		MemLim:      "0",
 		Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "turbo-high-bln"},
 	})
-	s.VerifyPy(`len(cpus["pod5c0"]) == 1`)
+	require.Len(t, s.CPUs("pod5c0"), 1)
 	s.DeleteAllPodsIn("default")
 	s.Terminate()
 }
@@ -1969,10 +1975,9 @@ config:
 			Mem:         "20M",
 			Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "pct-lp-bln"},
 		})
-		s.Consts(genN4c16PyConsts)
-		s.VerifyPy(`packages["pod0c0"] != packages["pod1c0"]`)
-		s.VerifyPy(`cpus["pod0c0"].issubset({"cpu02","cpu03","cpu04","cpu05","cpu06","cpu07"})`)
-		s.VerifyPy(`cpus["pod1c0"].issubset({"cpu10","cpu11","cpu12","cpu13"})`)
+		require.NotEqual(t, s.Packages("pod0c0"), s.Packages("pod1c0"))
+		require.Subset(t, s.CPUIDs(2, 3, 4, 5, 6, 7), s.CPUs("pod0c0"))
+		require.Subset(t, s.CPUIDs(10, 11, 12, 13), s.CPUs("pod1c0"))
 		s.CreatePod("pod2",
 			harness.WithLabels(map[string]string{"app": "pod2"}),
 			harness.WithAnnotations(map[string]string{"balloon.balloons.resource-policy.nri.io": "pct-hp2-bln"}),
@@ -1980,8 +1985,8 @@ config:
 				harness.NewContainer("pod2c0", harness.WithRequests("1", "20M"), harness.WithLimits("1", "20M"), harness.WithExtendedResource("cpuclass.balloons.nri.io/pct-hp", "1")),
 			),
 		)
-		s.VerifyPy(`cpus["pod2c0"].issubset({"cpu10","cpu11","cpu12","cpu13"})`)
-		s.VerifyPy(`packages["pod2c0"] != packages["pod0c0"]`)
+		require.Subset(t, s.CPUIDs(10, 11, 12, 13), s.CPUs("pod2c0"))
+		require.NotEqual(t, s.Packages("pod2c0"), s.Packages("pod0c0"))
 		s.CreatePod("pod3",
 			harness.WithLabels(map[string]string{"app": "pod3"}),
 			harness.WithAnnotations(map[string]string{"balloon.balloons.resource-policy.nri.io": "pct-hp2-bln"}),
@@ -1989,8 +1994,8 @@ config:
 				harness.NewContainer("pod3c0", harness.WithRequests("1", "20M"), harness.WithLimits("1", "20M"), harness.WithExtendedResource("cpuclass.balloons.nri.io/pct-hp", "1")),
 			),
 		)
-		s.VerifyPy(`cpus["pod2c0"] == cpus["pod3c0"]`)
-		s.VerifyPy(`len(cpus["pod3c0"]) == 2`)
+		require.Equal(t, s.CPUs("pod2c0"), s.CPUs("pod3c0"))
+		require.Len(t, s.CPUs("pod3c0"), 2)
 		s.CreateGuaranteed(harness.PodSpec{
 			Mem:         "20M",
 			Annotations: map[string]string{"balloon.balloons.resource-policy.nri.io": "pct-lp2-bln"},
@@ -2015,7 +2020,6 @@ config:
 	})
 	t.Run("segment1", func(t *testing.T) {
 		s := harness.NewScript(t, e2eishPlugin)
-		s.Consts(genN4c16PyConsts)
 		s.LaunchMayFail(genN4c16, genN4c16BaseConfig, config4)
 		s.Terminate()
 	})
@@ -2098,11 +2102,10 @@ config:
 	s.Launch(genN4c16, genN4c16BaseConfig, config)
 	s.SyncWithRuntimePods(genN4c16Pods...)
 	s.CreateBurstable(harness.PodSpec{ContCount: 2})
-	s.Consts(genN4c16PyConsts)
-	s.VerifyPy(`set.union(cpus['pod0c0'], cpus['pod0c1']).isdisjoint({'cpu00', 'cpu01'})`)
+	harness.RequireDisjoint(t, harness.Union(s.CPUs("pod0c0"), s.CPUs("pod0c1")), s.CPUIDs(0, 1))
 	s.CreateBurstable(harness.PodSpec{Namespace: "isolcpus", ContCount: 2})
-	s.VerifyPy(`cpus['pod1c0'] == {'cpu00', 'cpu01'}`)
-	s.VerifyPy(`cpus['pod1c1'] == {'cpu00', 'cpu01'}`)
+	require.Equal(t, s.CPUIDs(0, 1), s.CPUs("pod1c0"))
+	require.Equal(t, s.CPUIDs(0, 1), s.CPUs("pod1c1"))
 	s.DeleteAllPodsIn("default")
 	s.DeleteAllPodsIn("isolcpus")
 
@@ -2234,10 +2237,9 @@ config:
 		),
 	)
 	s.CreateBurstable(harness.PodSpec{Namespace: "kube-system", CPUReq: "50m", CPULim: "0", MemLim: "0"})
-	s.Consts(genN4c16PyConsts)
-	s.VerifyPy(`cpus["pod0c0"].issubset({"cpu02", "cpu03"})`)
+	require.Subset(t, s.CPUIDs(2, 3), s.CPUs("pod0c0"))
 	s.CreateBurstable(harness.PodSpec{Namespace: "reserved", CPUReq: "50m", CPULim: "0", MemLim: "0"})
-	s.VerifyPy(`cpus["pod1c0"].issubset({"cpu02", "cpu03"})`)
+	require.Subset(t, s.CPUIDs(2, 3), s.CPUs("pod1c0"))
 	s.DeletePods("kube-system", "pod0")
 	s.DeleteAllPodsIn("reserved")
 }
