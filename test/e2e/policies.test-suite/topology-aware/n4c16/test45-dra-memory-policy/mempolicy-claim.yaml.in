@@ -1,0 +1,34 @@
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: ${NAME}
+spec:
+  spec:
+    devices:
+      requests:
+      - name: first
+        exactly:
+          deviceClassName: topology-aware.nri.io
+          selectors:
+          - cel:
+              expression: device.attributes[\"resource.kubernetes.io\"].numaNode == 0
+          capacity:
+            requests:
+              dra.cpu/cpu: '1'
+      - name: second
+        exactly:
+          deviceClassName: topology-aware.nri.io
+          selectors:
+          - cel:
+              expression: device.attributes[\"resource.kubernetes.io\"].numaNode == 1
+          capacity:
+            requests:
+              dra.cpu/cpu: '1'
+      config:
+      - opaque:
+          driver: topology-aware.nri.io
+          parameters:
+            apiVersion: config.nri/v1alpha1
+            kind: TopologyAwareClaimConfig
+            memoryPolicy:
+              mode: ${MODE}
