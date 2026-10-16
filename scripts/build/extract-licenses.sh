@@ -55,11 +55,29 @@ if [ "$GO_LICENSES_DOCKER" = 1 ]; then
     fi
     mkdir -p "$GO_LICENSES_CACHE" "$GO_LICENSES_GOCACHE"
 
+    # The docker command is a podman shim on some distributions, and
+    # it wants different flags here. Rootless podman maps the invoking
+    # user to root inside the container, so --user would run us as a
+    # subuid which owns none of the mounts; --userns=keep-id keeps our
+    # own ids instead. Under docker, and under podman as root, --user
+    # is what maps us correctly.
+    container_user=(--user "$(id -u):$(id -g)")
+    if docker --version 2>/dev/null | grep -qi podman &&
+       [ "$(docker info --format '{{.Host.Security.Rootless}}' 2>/dev/null)" = "true" ]; then
+        container_user=(--userns=keep-id)
+    fi
+
     # Mount the module cache writable so missing modules can be fetched.
-    # HOME and GOCACHE must be writable for the mapped user.
+    # HOME and GOCACHE must be writable for the mapped user. Use -w to
+    # set the working directory, as the targets are all relative paths.
+    # Also pass label=disable so we can get access to the bind-mounted
+    # directories even if SELinux is enabled and enforcing. The option
+    # should be ignored and have no effect if SELinux is disabled.
     go_licenses() {
         docker run --rm \
-            --user "$(id -u):$(id -g)" \
+            "${container_user[@]}" \
+            --security-opt label=disable \
+            -w /work \
             -v "$TOP_DIR":/work:ro \
             -v "$GOMODCACHE":/go/pkg/mod \
             -v "$GO_LICENSES_CACHE":/cache \
