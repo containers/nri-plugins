@@ -5,10 +5,9 @@
 #
 
 cleanup() {
-    delete-pods --all
+    cleanup-test --helm
     vm-command "kubectl delete resourceclaimtemplates --all --now" || :
     vm-command "kubectl delete deviceclass topology-aware.nri.io --ignore-not-found" || :
-    helm-terminate || :
 }
 
 device() {

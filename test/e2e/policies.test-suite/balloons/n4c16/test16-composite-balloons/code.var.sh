@@ -4,7 +4,7 @@ relaunch-policy balloons "$TEST_DIR/balloons-composite.cfg"
 
 cleanup() {
     delete-pods -n kube-system pod2
-    delete-pods --all
+    cleanup-test
 }
 
 verify-nrt() {

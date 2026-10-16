@@ -8,7 +8,7 @@ ACPI_IRQ=".* acpi.*"
 ALL_CPUS="$(expand-cpulist 0-15)"
 
 cleanup() {
-    delete-pods --all
+    cleanup-test
     vm-command "for f in /proc/irq/*/smp_affinity_list ; do echo 0-15 | tee $f >&/dev/null; done"
 }
 
