@@ -97,6 +97,11 @@ func (p *policy) AllocateClaim(
 	claim *resourceapi.ResourceClaim,
 	results []resourceapi.DeviceRequestAllocationResult,
 ) ([]specs.ContainerEdits, error) {
+	if configs := dra.ClaimConfigs(claim, draDriverName); len(configs) != 0 {
+		return nil, fmt.Errorf("claim %s: has %d config(s), but the %s policy takes none",
+			claim.UID, len(configs), PolicyName)
+	}
+
 	counts, err := consumedCPUs(results)
 	if err != nil {
 		return nil, fmt.Errorf("claim %s: %w", claim.UID, err)

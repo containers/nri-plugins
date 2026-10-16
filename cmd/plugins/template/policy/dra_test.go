@@ -248,6 +248,31 @@ func TestAllocateClaimErrors(t *testing.T) {
 	}
 }
 
+// TestAllocateClaimConfigs checks that a claim with a config is refused,
+// since the template policy has no options a config can set.
+func TestAllocateClaimConfigs(t *testing.T) {
+	p := testPolicy(t, t.TempDir(), testConfig("", "750m"))
+
+	claim, results := testClaim("a", "1")
+	claim.Status.Allocation = &resourceapi.AllocationResult{
+		Devices: resourceapi.DeviceAllocationResult{
+			Results: results,
+			Config: []resourceapi.DeviceAllocationConfiguration{{
+				Source: resourceapi.AllocationConfigSourceClaim,
+				DeviceConfiguration: resourceapi.DeviceConfiguration{
+					Opaque: &resourceapi.OpaqueDeviceConfiguration{Driver: draDriverName},
+				},
+			}},
+		},
+	}
+	if _, err := p.AllocateClaim(claim, results); err == nil {
+		t.Fatalf("allocated a claim with a config")
+	}
+	if len(p.claims) != 0 {
+		t.Errorf("refused claim left CPUs claimed: %v", p.claims)
+	}
+}
+
 func TestReleaseClaim(t *testing.T) {
 	p := testPolicy(t, t.TempDir(), testConfig("", "750m"))
 

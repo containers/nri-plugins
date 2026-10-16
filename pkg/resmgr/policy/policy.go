@@ -163,6 +163,9 @@ type Backend interface {
 	// by one, so that edits[i] belongs to results[i]. A policy with nothing to
 	// add for the containers returns no edits at all.
 	//
+	// A policy which takes no claim configs refuses a claim that has some. A
+	// policy gets the configs of a claim with dra.ClaimConfigs.
+	//
 	// The policy records whatever it needs to release the claim again later,
 	// keyed by the claim UID, saves those records and reads them back on
 	// startup. Unlike container allocations they cannot be rebuilt from the
