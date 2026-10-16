@@ -21,6 +21,7 @@ import (
 	"sync"
 	"testing"
 
+	nri "github.com/containerd/nri/pkg/api"
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
@@ -34,6 +35,7 @@ import (
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/dynamic-resource-allocation/deviceattribute"
 	"k8s.io/utils/ptr"
@@ -324,7 +326,8 @@ func freeCPUs(p *policy) cpuset.CPUSet {
 	return grantableCPUs(p.root.FreeSupply())
 }
 
-// pinnedContainer keeps the cpuset and CPU shares the policy set last.
+// pinnedContainer records the cpuset, the CPU shares and the memory policy
+// that our policy sets on it. A later call replaces an earlier one.
 type pinnedContainer struct {
 	mockContainer
 	devices []string
@@ -332,6 +335,16 @@ type pinnedContainer struct {
 	strict  bool
 	cpus    string
 	shares  int64
+	state   cache.ContainerState
+	mpol    string
+}
+
+func (c *pinnedContainer) GetState() cache.ContainerState {
+	return c.state
+}
+
+func (c *pinnedContainer) SetMemoryPolicy(mode nri.MpolMode, nodes string, flags ...nri.MpolFlag) {
+	c.mpol = fmt.Sprintf("%s:%s%v", mode, nodes, flags)
 }
 
 func (c *pinnedContainer) GetTopologyHints() topology.Hints {
@@ -1211,5 +1224,429 @@ func TestReconfigureKeepsClaims(t *testing.T) {
 	}
 	if again := allocateClaim(t, p, "a", draTestResult(0, "2")); !again.Equals(a) {
 		t.Errorf("claim a has CPUs %s after a refused reconfiguration, expected %s", again, a)
+	}
+}
+
+// draTestMemoryPolicy is a claim config with a memory policy of the given
+// mode and nodes, for the given requests.
+func draTestMemoryPolicy(source resourceapi.AllocationConfigSource, mode, nodes string, requests ...string) resourceapi.DeviceAllocationConfiguration {
+	return draTestClaimConfig(source, fmt.Sprintf(
+		`{"apiVersion":"config.nri/v1alpha1","kind":"TopologyAwareClaimConfig","memoryPolicy":{"mode":%q,"nodes":%q}}`,
+		mode, nodes), requests...)
+}
+
+// draTestClaimConfig is a claim config with the given parameters.
+func draTestClaimConfig(source resourceapi.AllocationConfigSource, params string, requests ...string) resourceapi.DeviceAllocationConfiguration {
+	return resourceapi.DeviceAllocationConfiguration{
+		Source:   source,
+		Requests: requests,
+		DeviceConfiguration: resourceapi.DeviceConfiguration{
+			Opaque: &resourceapi.OpaqueDeviceConfiguration{
+				Driver:     draDriverName,
+				Parameters: runtime.RawExtension{Raw: []byte(params)},
+			},
+		},
+	}
+}
+
+// draTestClaimWithConfigs is a claim with the given configs.
+func draTestClaimWithConfigs(uid string, configs ...resourceapi.DeviceAllocationConfiguration) *resourceapi.ResourceClaim {
+	claim := draTestClaim(uid)
+	claim.Status.Allocation = &resourceapi.AllocationResult{
+		Devices: resourceapi.DeviceAllocationResult{Config: configs},
+	}
+	return claim
+}
+
+// draTestRequest is draTestResult for the named request.
+func draTestRequest(request string, node int, cpus string) resourceapi.DeviceRequestAllocationResult {
+	r := draTestResult(node, cpus)
+	r.Request = request
+	return r
+}
+
+// Test that each claim result gets the memory policy of the configs for its
+// request, and that a later config overrides an earlier one.
+func TestClaimMemoryPolicies(t *testing.T) {
+	const (
+		class = resourceapi.AllocationConfigSourceClass
+		own   = resourceapi.AllocationConfigSourceClaim
+	)
+	sys := testServerSystem(t)
+	p, _ := draTestPolicy(t, sys, draTestConfig("", draTestReserved(sys)))
+	interleave := &cfgapi.MemoryPolicy{Mode: "MPOL_INTERLEAVE", Nodes: "cpu-nodes"}
+	bind := &cfgapi.MemoryPolicy{Mode: "MPOL_BIND", Nodes: "0"}
+	results := []resourceapi.DeviceRequestAllocationResult{
+		draTestRequest("a", 0, "1"),
+		draTestRequest("b/small", 1, "1"),
+	}
+
+	for _, tc := range []struct {
+		name    string
+		configs []resourceapi.DeviceAllocationConfiguration
+		expect  []*cfgapi.MemoryPolicy
+	}{
+		{"no configs", nil, nil},
+		{
+			"no memory policy",
+			[]resourceapi.DeviceAllocationConfiguration{
+				draTestClaimConfig(own, `{"apiVersion":"config.nri/v1alpha1","kind":"TopologyAwareClaimConfig"}`),
+			},
+			nil,
+		},
+		{
+			"all requests",
+			[]resourceapi.DeviceAllocationConfiguration{draTestMemoryPolicy(own, "interleave", "cpu-nodes")},
+			[]*cfgapi.MemoryPolicy{interleave, interleave},
+		},
+		{
+			"claim replaces class",
+			[]resourceapi.DeviceAllocationConfiguration{
+				draTestMemoryPolicy(class, "interleave", "cpu-nodes"),
+				draTestMemoryPolicy(own, "bind", "0"),
+			},
+			[]*cfgapi.MemoryPolicy{bind, bind},
+		},
+		{
+			"one request",
+			[]resourceapi.DeviceAllocationConfiguration{draTestMemoryPolicy(own, "bind", "0", "a")},
+			[]*cfgapi.MemoryPolicy{bind, nil},
+		},
+		{
+			"main request of a subrequest",
+			[]resourceapi.DeviceAllocationConfiguration{
+				draTestMemoryPolicy(class, "interleave", "cpu-nodes"),
+				draTestMemoryPolicy(own, "bind", "0", "b"),
+			},
+			[]*cfgapi.MemoryPolicy{interleave, bind},
+		},
+		{
+			"subrequest",
+			[]resourceapi.DeviceAllocationConfiguration{draTestMemoryPolicy(own, "bind", "0", "b/small")},
+			[]*cfgapi.MemoryPolicy{nil, bind},
+		},
+		{
+			"another subrequest",
+			[]resourceapi.DeviceAllocationConfiguration{draTestMemoryPolicy(own, "bind", "0", "b/large")},
+			nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := p.AllocateClaim(draTestClaimWithConfigs(tc.name, tc.configs...), results); err != nil {
+				t.Fatalf("failed to allocate claim: %v", err)
+			}
+			if got := p.allocations.claims[tc.name].mpols; !reflect.DeepEqual(got, tc.expect) {
+				t.Errorf("got memory policies %v, expected %v", got, tc.expect)
+			}
+		})
+	}
+}
+
+// Test that a claim with a bad config is refused and allocates nothing.
+func TestClaimConfigRefused(t *testing.T) {
+	const own = resourceapi.AllocationConfigSourceClaim
+	sys := testServerSystem(t)
+	p, _ := draTestPolicy(t, sys, draTestConfig("", draTestReserved(sys)))
+	free := freeCPUs(p)
+
+	for _, tc := range []struct {
+		name   string
+		config resourceapi.DeviceAllocationConfiguration
+		errMsg string
+	}{
+		{
+			"no kind",
+			draTestClaimConfig(own, `{"memoryPolicy":{"mode":"interleave"}}`),
+			`got apiVersion "" and kind ""`,
+		},
+		{
+			"another kind",
+			draTestClaimConfig(own, `{"apiVersion":"config.nri/v1alpha1","kind":"BalloonsClaimConfig"}`),
+			`kind "BalloonsClaimConfig"`,
+		},
+		{
+			"another version",
+			draTestClaimConfig(own, `{"apiVersion":"config.nri/v1","kind":"TopologyAwareClaimConfig"}`),
+			`apiVersion "config.nri/v1"`,
+		},
+		{
+			"unknown field",
+			draTestClaimConfig(own, `{"apiVersion":"config.nri/v1alpha1","kind":"TopologyAwareClaimConfig","cpuClass":"hp"}`),
+			`unknown field "cpuClass"`,
+		},
+		{
+			"not JSON",
+			draTestClaimConfig(own, `{`),
+			"config 1:",
+		},
+		{
+			"unknown mode",
+			draTestMemoryPolicy(own, "spread", ""),
+			`unknown "spread"`,
+		},
+		{
+			"MPOL_ mode",
+			draTestMemoryPolicy(own, "MPOL_BIND", "0"),
+			`use "bind" in claims`,
+		},
+		{
+			"bad nodes",
+			draTestMemoryPolicy(own, "bind", "max-dist:far"),
+			`invalid memory policy nodes "max-dist:far"`,
+		},
+		{
+			"nodes for local",
+			draTestMemoryPolicy(own, "local", "0"),
+			"takes no nodes",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			claim := draTestClaimWithConfigs("c", draTestMemoryPolicy(own, "interleave", ""), tc.config)
+			_, err := p.AllocateClaim(claim, []resourceapi.DeviceRequestAllocationResult{draTestResult(0, "2")})
+			if err == nil || !strings.Contains(err.Error(), "claim c: config 1:") || !strings.Contains(err.Error(), tc.errMsg) {
+				t.Fatalf("got error %v, expected one for config 1 with %q", err, tc.errMsg)
+			}
+			if len(p.allocations.claims) != 0 || !freeCPUs(p).Equals(free) {
+				t.Errorf("refused claim allocated CPUs")
+			}
+		})
+	}
+}
+
+// Test that preparing a claim again gives the same memory policies, and that
+// the claim's configs cannot change after it is allocated.
+func TestClaimMemoryPolicyAgain(t *testing.T) {
+	sys := testServerSystem(t)
+	p, _ := draTestPolicy(t, sys, draTestConfig("", draTestReserved(sys)))
+	results := []resourceapi.DeviceRequestAllocationResult{draTestResult(0, "2")}
+	own := resourceapi.AllocationConfigSourceClaim
+
+	claim := draTestClaimWithConfigs("a", draTestMemoryPolicy(own, "interleave", ""))
+	for range 2 {
+		if _, err := p.AllocateClaim(claim, results); err != nil {
+			t.Fatalf("failed to allocate claim: %v", err)
+		}
+	}
+
+	for _, changed := range []*resourceapi.ResourceClaim{
+		draTestClaimWithConfigs("a", draTestMemoryPolicy(own, "bind", "")),
+		draTestClaim("a"),
+	} {
+		_, err := p.AllocateClaim(changed, results)
+		if err == nil || !strings.Contains(err.Error(), "but its configs give") {
+			t.Errorf("got error %v for changed configs, expected a refusal", err)
+		}
+	}
+}
+
+// Test that the memory policies of a claim are saved and restored with it.
+func TestClaimMemoryPoliciesSurviveRestore(t *testing.T) {
+	sys := testServerSystem(t)
+	p, _ := draTestPolicy(t, sys, draTestConfig("", draTestReserved(sys)))
+
+	claim := draTestClaimWithConfigs("a",
+		draTestMemoryPolicy(resourceapi.AllocationConfigSourceClaim, "interleave", "cpu-nodes", "b"))
+	if _, err := p.AllocateClaim(claim, []resourceapi.DeviceRequestAllocationResult{
+		draTestRequest("a", 0, "1"), draTestRequest("b", 1, "1"),
+	}); err != nil {
+		t.Fatalf("failed to allocate claim: %v", err)
+	}
+	allocateClaim(t, p, "none", draTestResult(0, "1"))
+
+	data, err := p.allocations.MarshalJSON()
+	if err != nil {
+		t.Fatalf("failed to save allocations: %v", err)
+	}
+	restored := p.newAllocations()
+	if err := restored.UnmarshalJSON(data); err != nil {
+		t.Fatalf("failed to restore allocations: %v", err)
+	}
+
+	for _, uid := range []string{"a", "none"} {
+		if want, got := p.allocations.claims[uid].mpols, restored.claims[uid].mpols; !reflect.DeepEqual(got, want) {
+			t.Errorf("claim %s: restored memory policies %v, expected %v", uid, got, want)
+		}
+	}
+}
+
+// Test that a new container gets the memory policy of its claims, with the
+// nodes resolved for its CPUs and memory.
+func TestApplyClaimMemoryPolicy(t *testing.T) {
+	own := resourceapi.AllocationConfigSourceClaim
+	sys := testServerSystem(t)
+	results := []resourceapi.DeviceRequestAllocationResult{
+		draTestRequest("a", 0, "2"), draTestRequest("b", 1, "2"),
+	}
+
+	cases := []struct {
+		name      string
+		pinMemory bool
+		configs   []resourceapi.DeviceAllocationConfiguration
+		holds     []int
+		state     cache.ContainerState
+		expect    string
+		errMsg    string
+	}{
+		{
+			name:    "nodes of the claimed CPUs",
+			configs: []resourceapi.DeviceAllocationConfiguration{draTestMemoryPolicy(own, "interleave", "cpu-nodes")},
+			holds:   []int{0, 1},
+			expect:  "MPOL_INTERLEAVE:0-1[]",
+		},
+		{
+			name:    "one request",
+			configs: []resourceapi.DeviceAllocationConfiguration{draTestMemoryPolicy(own, "interleave", "cpu-nodes")},
+			holds:   []int{1},
+			expect:  "MPOL_INTERLEAVE:1[]",
+		},
+		{
+			name: "flags",
+			configs: []resourceapi.DeviceAllocationConfiguration{draTestClaimConfig(own,
+				`{"apiVersion":"config.nri/v1alpha1","kind":"TopologyAwareClaimConfig",`+
+					`"memoryPolicy":{"mode":"bind","nodes":"2-3","flags":["static-nodes"]}}`)},
+			holds:  []int{0},
+			expect: "MPOL_BIND:2-3[MPOL_F_STATIC_NODES]",
+		},
+		{
+			name:    "local",
+			configs: []resourceapi.DeviceAllocationConfiguration{draTestMemoryPolicy(own, "local", "")},
+			holds:   []int{0},
+			expect:  "MPOL_LOCAL:[]",
+		},
+		{
+			name:    "all memory without pinning",
+			configs: []resourceapi.DeviceAllocationConfiguration{draTestMemoryPolicy(own, "interleave", "allowed-mems")},
+			holds:   []int{0},
+			expect:  "MPOL_INTERLEAVE:0-5[]",
+		},
+		{
+			name:      "pinned memory",
+			pinMemory: true,
+			configs:   []resourceapi.DeviceAllocationConfiguration{draTestMemoryPolicy(own, "interleave", "")},
+			holds:     []int{0},
+			expect:    "pinned",
+		},
+		{
+			name:    "request without a policy",
+			configs: []resourceapi.DeviceAllocationConfiguration{draTestMemoryPolicy(own, "bind", "0", "a")},
+			holds:   []int{0, 1},
+			expect:  "MPOL_BIND:0[]",
+		},
+		{
+			name: "conflicting requests",
+			configs: []resourceapi.DeviceAllocationConfiguration{
+				draTestMemoryPolicy(own, "bind", "0", "a"),
+				draTestMemoryPolicy(own, "bind", "1", "b"),
+			},
+			holds:  []int{0, 1},
+			errMsg: "conflicts with",
+		},
+		{
+			name:  "no memory policy",
+			holds: []int{0, 1},
+		},
+		{
+			name:    "running container",
+			configs: []resourceapi.DeviceAllocationConfiguration{draTestMemoryPolicy(own, "interleave", "")},
+			holds:   []int{0},
+			state:   cache.ContainerStateRunning,
+		},
+	}
+
+	// Policy options are global, so we create one policy for each PinMemory
+	// value and run its cases on it.
+	for _, pinMemory := range []bool{false, true} {
+		cfg := draTestConfig("", draTestReserved(sys))
+		cfg.PinCPU = true
+		cfg.PinMemory = pinMemory
+		p, _ := draTestPolicy(t, sys, cfg)
+
+		for _, tc := range cases {
+			if tc.pinMemory != pinMemory {
+				continue
+			}
+			t.Run(tc.name, func(t *testing.T) {
+				uid := strings.ReplaceAll(tc.name, " ", "-")
+				if _, err := p.AllocateClaim(draTestClaimWithConfigs(uid, tc.configs...), results); err != nil {
+					t.Fatalf("failed to allocate claim: %v", err)
+				}
+
+				state := tc.state
+				if state == 0 {
+					state = cache.ContainerStateCreating
+				}
+				c := &pinnedContainer{
+					mockContainer: mockContainer{
+						name:                   tc.name,
+						returnValueForGetID:    tc.name,
+						returnValueForQOSClass: v1.PodQOSBestEffort,
+					},
+					devices: holds(uid, tc.holds...),
+					state:   state,
+				}
+				grant, err := p.allocatePool(c, "")
+				if tc.errMsg != "" {
+					if err == nil || !strings.Contains(err.Error(), tc.errMsg) {
+						t.Fatalf("got error %v, expected %q", err, tc.errMsg)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatalf("failed to allocate: %v", err)
+				}
+				p.applyGrant(grant)
+
+				expect := tc.expect
+				if expect == "pinned" {
+					expect = "MPOL_INTERLEAVE:" + grant.GetMemoryZone().MemsetString() + "[]"
+				}
+				if c.mpol != expect {
+					t.Errorf("got memory policy %q, expected %q", c.mpol, expect)
+				}
+			})
+		}
+	}
+}
+
+// Test that a container holding claims with different memory policies is
+// refused.
+func TestConflictingClaimMemoryPolicies(t *testing.T) {
+	sys := testServerSystem(t)
+	p, _ := draTestPolicy(t, sys, draTestConfig("", draTestReserved(sys)))
+	own := resourceapi.AllocationConfigSourceClaim
+	results := []resourceapi.DeviceRequestAllocationResult{draTestResult(0, "1")}
+
+	for uid, mode := range map[string]string{"a": "interleave", "b": "bind", "c": "interleave"} {
+		if _, err := p.AllocateClaim(draTestClaimWithConfigs(uid, draTestMemoryPolicy(own, mode, "")), results); err != nil {
+			t.Fatalf("failed to allocate claim %s: %v", uid, err)
+		}
+	}
+
+	for _, tc := range []struct {
+		name    string
+		devices []string
+		errMsg  string
+	}{
+		{"same policies", append(holds("a", 0), holds("c", 0)...), ""},
+		{"different policies", append(holds("a", 0), holds("b", 0)...), "conflicts with"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &pinnedContainer{
+				mockContainer: mockContainer{
+					name:                   tc.name,
+					returnValueForGetID:    tc.name,
+					returnValueForQOSClass: v1.PodQOSBestEffort,
+				},
+				devices: tc.devices,
+				state:   cache.ContainerStateCreating,
+			}
+			_, err := p.allocatePool(c, "")
+			if tc.errMsg == "" && err != nil {
+				t.Errorf("failed to allocate: %v", err)
+			}
+			if tc.errMsg != "" && (err == nil || !strings.Contains(err.Error(), tc.errMsg)) {
+				t.Errorf("got error %v, expected %q", err, tc.errMsg)
+			}
+		})
 	}
 }

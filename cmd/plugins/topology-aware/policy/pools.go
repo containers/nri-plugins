@@ -659,6 +659,16 @@ func (p *policy) applyGrant(grant Grant) {
 		container.SetCpusetMems(mems.MemsetString())
 	}
 
+	// A memory policy can only be set for a new container. Its nodes are
+	// resolved for the container's own CPUs, if any, and its claimed CPUs.
+	if mpol := grant.ClaimedMemoryPolicy(); mpol != nil && container.GetState() == cache.ContainerStateCreating {
+		own := exclusive
+		if cpuPortion > 0 {
+			own = cpus
+		}
+		p.applyMemoryPolicy(container, mpol, own.Union(claimed), mems)
+	}
+
 	sc, err := schedulingClassPreference(container)
 	if err != nil {
 		log.Errorf("%s: cannot set scheduling class: %v", container.PrettyName(), err)

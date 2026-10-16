@@ -33,6 +33,7 @@ type (
 	CPUTopologyLevel = policy.CPUTopologyLevel
 	SchedulingClass  = policy.SchedulingClass
 	CPUClass         = policy.CPUClass
+	MemoryPolicy     = policy.MemoryPolicy
 )
 
 const (
