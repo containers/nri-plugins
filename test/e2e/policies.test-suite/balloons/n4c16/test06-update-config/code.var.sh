@@ -6,14 +6,9 @@ relaunch-policy balloons "$TEST_DIR/initial-balloons-config.cfg"
 testns=e2e-balloons-test06
 
 cleanup() {
-    delete-pods --all
+    cleanup-test --helm --cache
     delete-namespaces "$testns" btype1ns0
     vm-command "kubectl -n kube-system delete configmap nri-resource-policy-config.default --ignore-not-found=true" || :
-    helm-terminate
-
-    # Just in case the cache says that the policy is "topology-aware"
-    # (from earlier tests) then remove the cache to force "balloons" policy
-    remove-policy-cache
 }
 
 apply-configmap() {

@@ -1,7 +1,7 @@
 relaunch-policy balloons "${TEST_DIR}/balloons-namespace.cfg"
 
 cleanup() {
-    delete-pods --all
+    cleanup-test
     delete-namespaces e2e-a e2e-b e2e-c e2e-d
 }
 cleanup

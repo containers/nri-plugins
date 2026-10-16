@@ -1,6 +1,6 @@
 
 cleanup() {
-    delete-pods --all
+    cleanup-test
     delete-namespaces highprio lowprio
 }
 

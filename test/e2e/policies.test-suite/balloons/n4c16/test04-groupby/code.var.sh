@@ -6,7 +6,7 @@ relaunch-policy balloons "$TEST_DIR/balloons-groupby.cfg"
 testns=e2e-balloons-test04
 
 cleanup() {
-    delete-pods --all
+    cleanup-test
     delete-namespaces "$testns"
 }
 

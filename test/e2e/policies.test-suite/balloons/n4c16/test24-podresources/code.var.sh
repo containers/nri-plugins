@@ -5,7 +5,7 @@ relaunch-policy balloons "$TEST_DIR/balloons-podresources.cfg"
 
 cleanup() {
     vm-command 'pidof fake-device-plugin && kill $(pidof fake-device-plugin) && sleep 1'
-    delete-pods --all
+    cleanup-test
 }
 
 # verify-podres-locality RESOURCE CONTAINER...

@@ -3,10 +3,8 @@
 # own, and that it remembers which ones across a restart.
 
 cleanup() {
-    delete-pods --all
+    cleanup-test --helm --cache
     vm-command "kubectl delete resourceclaimtemplates --all --now" || :
-    helm-terminate || :
-    remove-policy-cache
 }
 
 check-cpus() {
