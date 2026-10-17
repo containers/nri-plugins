@@ -24,6 +24,7 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
@@ -220,6 +221,44 @@ func TestPrepareResourceClaimsNoEdits(t *testing.T) {
 		if env := []string{deviceEnv(testClaimUID, i)}; !slices.Equal(device.ContainerEdits.Env, env) {
 			t.Errorf("device %d sets %v, expected %v", i, device.ContainerEdits.Env, env)
 		}
+	}
+}
+
+// TestClaimConfigs checks the claim configs ClaimConfigs returns.
+func TestClaimConfigs(t *testing.T) {
+	config := func(source resourceapi.AllocationConfigSource, driver, params string) resourceapi.DeviceAllocationConfiguration {
+		return resourceapi.DeviceAllocationConfiguration{
+			Source: source,
+			DeviceConfiguration: resourceapi.DeviceConfiguration{
+				Opaque: &resourceapi.OpaqueDeviceConfiguration{
+					Driver:     driver,
+					Parameters: runtime.RawExtension{Raw: []byte(params)},
+				},
+			},
+		}
+	}
+	ours := []resourceapi.DeviceAllocationConfiguration{
+		config(resourceapi.AllocationConfigSourceClass, testDriverName, `{"a":1}`),
+		config(resourceapi.AllocationConfigSourceClaim, testDriverName, `{"a":2}`),
+	}
+
+	claim := testClaim(testClaimUID, testResult(testDriverName, "request-0", "cpu-0"))
+	claim.Status.Allocation.Devices.Config = []resourceapi.DeviceAllocationConfiguration{
+		config(resourceapi.AllocationConfigSourceClass, otherDriverName, `{"b":1}`),
+		ours[0],
+		{Source: resourceapi.AllocationConfigSourceClaim},
+		ours[1],
+		config(resourceapi.AllocationConfigSourceClaim, otherDriverName, `{"b":2}`),
+	}
+	if got := ClaimConfigs(claim, testDriverName); !reflect.DeepEqual(got, ours) {
+		t.Errorf("got configs\n%+v\nexpected\n%+v", got, ours)
+	}
+
+	if got := ClaimConfigs(testClaim(testClaimUID), testDriverName); got != nil {
+		t.Errorf("got configs %+v for a claim without any", got)
+	}
+	if got := ClaimConfigs(&resourceapi.ResourceClaim{}, testDriverName); got != nil {
+		t.Errorf("got configs %+v for an unallocated claim", got)
 	}
 }
 

@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
@@ -173,6 +174,8 @@ type cachedGrant struct {
 	Irqs       *IrqAffinity
 	// Results are the CPUs of each allocation result of a DRA claim.
 	Results []string `json:",omitempty"`
+	// MemoryPolicies are the memory policies of the claim results.
+	MemoryPolicies []*cfgapi.MemoryPolicy `json:",omitempty"`
 }
 
 func newCachedGrant(cg Grant) *cachedGrant {
@@ -253,6 +256,7 @@ func (a *allocations) MarshalJSON() ([]byte, error) {
 		for _, cpus := range c.results {
 			ccg.Results = append(ccg.Results, cpus.String())
 		}
+		ccg.MemoryPolicies = c.mpols
 		cgrants[keyClaimPrefix+uid] = ccg
 	}
 
@@ -279,7 +283,7 @@ func (a *allocations) UnmarshalJSON(data []byte) error {
 			a.grants[id] = g
 			continue
 		}
-		c := &claim{Grant: g}
+		c := &claim{Grant: g, mpols: ccg.MemoryPolicies}
 		for _, value := range ccg.Results {
 			cpus, err := cpuset.Parse(value)
 			if err != nil {

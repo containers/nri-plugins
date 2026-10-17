@@ -160,6 +160,9 @@ type Backend interface {
 	// by one, so that edits[i] belongs to results[i]. A policy with nothing to
 	// add for the containers returns no edits at all.
 	//
+	// A policy which takes no claim configs refuses a claim that has some. A
+	// policy gets the configs of a claim with dra.ClaimConfigs.
+	//
 	// A policy finds the claims a container holds, and their results, with
 	// dra.ContainerClaims. To tell a container what it got, use
 	// ExportResourceData rather than edits: the exported data stays up to

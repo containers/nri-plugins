@@ -1,0 +1,8 @@
+apiVersion: resource.k8s.io/v1
+kind: DeviceClass
+metadata:
+  name: topology-aware.nri.io
+spec:
+  selectors:
+  - cel:
+      expression: device.driver == \"topology-aware.nri.io\"
