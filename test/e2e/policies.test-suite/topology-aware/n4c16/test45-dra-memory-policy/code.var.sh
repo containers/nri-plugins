@@ -7,7 +7,6 @@
 cleanup() {
     vm-command "kubectl delete pods --all --now --wait" || :
     vm-command "kubectl delete resourceclaimtemplates --all --now" || :
-    vm-command "kubectl delete deviceclass topology-aware.nri.io --ignore-not-found" || :
     helm-terminate || :
 }
 
@@ -42,8 +41,6 @@ if [ "$(slice ".spec.devices[0].allowMultipleAllocations")" != "true" ]; then
     echo "Test verdict: SKIP (DRAConsumableCapacity is not enabled)"
     exit 0
 fi
-
-wait="" create deviceclass
 
 # pod0's claim asks for one CPU of node 0 and one of node 1, both in package
 # 0. Its config interleaves memory on the nodes the containers may use.

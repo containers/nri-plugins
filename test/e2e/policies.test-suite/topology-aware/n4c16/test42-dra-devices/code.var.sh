@@ -8,7 +8,6 @@
 cleanup() {
     vm-command "kubectl delete pods --all --now --wait" || :
     vm-command "kubectl delete resourceclaimtemplates --all --now" || :
-    vm-command "kubectl delete deviceclass topology-aware.nri.io --ignore-not-found" || :
     helm-terminate || :
 }
 
@@ -136,8 +135,6 @@ for node in 0 1 2 3; do
 
     echo "$name: numaNode $numa, socketID $socket, smtEnabled $smt, $cpus CPUs"
 done
-
-wait="" create deviceclass
 
 # pod0 claims 3 CPUs on node 3. It gets all node CPUs except the reserved
 # CPU 15.
