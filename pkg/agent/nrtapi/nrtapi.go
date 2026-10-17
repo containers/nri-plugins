@@ -24,8 +24,11 @@ import (
 	client "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/typed/topology/v1alpha2"
 )
 
-// Clientset is the client for accessing node resource topology custom resources.
+// Client is the client for accessing node resource topology custom resources.
 type Client = client.TopologyV1alpha2Client
+
+// Interface is the interface of Client, for fakes in tests.
+type Interface = client.TopologyV1alpha2Interface
 
 // NewForConfigAndClient creates a new Clientset for the given config and http client.
 func NewForConfigAndClient(c *rest.Config, httpCli *http.Client) (*Client, error) {
