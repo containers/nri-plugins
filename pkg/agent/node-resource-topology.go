@@ -17,7 +17,9 @@ package agent
 import (
 	"context"
 	"fmt"
+	"time"
 
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -25,41 +27,47 @@ import (
 	nrt "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 )
 
-// UpdateNrtCR updates the node's node resource topology CR using the given data.
+// nrtState is the desired content of the node resource topology CR.
+type nrtState struct {
+	policy string
+	zones  []*policyapi.TopologyZone
+}
+
+// UpdateNrtCR records the given data as the desired state of the node's
+// node resource topology CR and wakes the reconciler to write it.
+//
+// A newer request replaces older ones. The reconciler writes the latest
+// snapshot only, so bursts coalesce and an old snapshot never overwrites a
+// new one.
 func (a *Agent) UpdateNrtCR(policy string, zones []*policyapi.TopologyZone) error {
 	if a.hasLocalConfig() {
 		return nil
 	}
 
-	if a.nrtCli == nil {
-		return fmt.Errorf("no node resource topology client, can't update CR")
-	}
+	a.nrtLock.Lock()
+	a.nrtWant = &nrtState{policy: policy, zones: zones}
+	a.nrtLock.Unlock()
 
-	log.Infof("updating node resource topology CR")
-
-	// To minimize the risk of an NRI request timeout (and the plugin getting
-	// kicked out) we do the update asynchronously. We can rework this to use
-	// a single goroutine that reads update requests from a channel to mimic
-	// the rest if necessary.
-	// XXX TODO(klihub): We can't/don't propagate update errors now back
-	//     to the caller. We could do that (using a channel) if necessary...
-	go func() {
-		if err := a.updateNrtCR(policy, zones); err != nil {
-			log.Errorf("failed to update topology CR: %v", err)
-		}
-	}()
-
+	wakeUp(a.nrtWake)
 	return nil
 }
 
-// updateNrtCR updates the node's node resource topology CR using the given data.
-func (a *Agent) updateNrtCR(policy string, zones []*policyapi.TopologyZone) error {
+// reconcileNrtCR writes the most recently requested desired state to the
+// node's node resource topology CR. It does nothing without an NRT client
+// or without a desired state.
+func (a *Agent) reconcileNrtCR() error {
 	a.nrtLock.Lock()
-	defer a.nrtLock.Unlock()
+	cli, want := a.nrtCli, a.nrtWant
+	a.nrtLock.Unlock()
+	if cli == nil || want == nil {
+		return nil
+	}
 
-	cli := a.nrtCli.NodeResourceTopologies()
-	ctx := context.Background()
-	cr, err := cli.Get(ctx, a.nodeName, metav1.GetOptions{})
+	nrtCli := cli.NodeResourceTopologies()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cr, err := nrtCli.Get(ctx, a.nodeName, metav1.GetOptions{})
 	if err != nil {
 		cr = nil
 		if !errors.IsNotFound(err) {
@@ -67,24 +75,30 @@ func (a *Agent) updateNrtCR(policy string, zones []*policyapi.TopologyZone) erro
 		}
 	}
 
+	attributes := nrt.AttributeList{
+		nrt.AttributeInfo{
+			Name:  "TopologyPolicy",
+			Value: want.policy,
+		},
+	}
+	zones := zonesToNrt(want.zones)
+
 	// XXX TODO Deletion should be handled differently:
 	//   1. add expiration timestamp to nrt.NodeResourceTopology
 	//   2. GC CRs that are past their expiration time (for instance by NFD)
-	//   3. make sure we refresh our CR (either here or preferably/easier
-	//      by triggering in resmgr an updateTopologyZones() during longer
-	//      periods of inactivity)
 	// update CR if one exists
 	if cr != nil {
-		cr.Attributes = nrt.AttributeList{
-			nrt.AttributeInfo{
-				Name:  "TopologyPolicy",
-				Value: policy,
-			},
+		// A periodic resync only writes when the CR differs.
+		if equality.Semantic.DeepEqual(cr.Attributes, attributes) && equality.Semantic.DeepEqual(cr.Zones, zones) {
+			return nil
 		}
 
-		cr.Zones = zonesToNrt(zones)
+		log.Infof("updating node resource topology CR")
 
-		_, err = cli.Update(ctx, cr, metav1.UpdateOptions{})
+		cr.Attributes = attributes
+		cr.Zones = zones
+
+		_, err = nrtCli.Update(ctx, cr, metav1.UpdateOptions{})
 		if err != nil {
 			return fmt.Errorf("failed to update node resource topology CR: %w", err)
 		}
@@ -93,21 +107,17 @@ func (a *Agent) updateNrtCR(policy string, zones []*policyapi.TopologyZone) erro
 	}
 
 	// or create a new one
+	log.Infof("creating node resource topology CR")
+
 	cr = &nrt.NodeResourceTopology{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: a.nodeName,
 		},
-
-		Attributes: nrt.AttributeList{
-			nrt.AttributeInfo{
-				Name:  "TopologyPolicy",
-				Value: policy,
-			},
-		},
-		Zones: zonesToNrt(zones),
+		Attributes: attributes,
+		Zones:      zones,
 	}
 
-	_, err = cli.Create(ctx, cr, metav1.CreateOptions{})
+	_, err = nrtCli.Create(ctx, cr, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to create node resource topology CR: %w", err)
 	}

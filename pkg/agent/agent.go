@@ -130,8 +130,10 @@ type Agent struct {
 
 	cfgIf     ConfigInterface   // custom resource access interface
 	k8sCli    *client.Client    // wrapped kubernetes client + REST config + HTTP client
-	nrtCli    *nrtapi.Client    // NRT custom resources client
-	nrtLock   sync.Mutex        // serialize NRT custom resource updates
+	nrtCli    nrtapi.Interface  // NRT custom resources client
+	nrtLock   sync.Mutex        // lock accessing the NRT client and desired state
+	nrtWant   *nrtState         // NRT custom resource desired state
+	nrtWake   chan struct{}     // NRT reconciliation trigger
 	podResCli *podresapi.Client // pod resources API client
 
 	notifyFn      NotifyFn        // config resource change notification callback
@@ -165,6 +167,7 @@ func New(cfgIf ConfigInterface, options ...Option) (*Agent, error) {
 		groupLabel: defaultGroupLabel,
 		cfgIf:      cfgIf,
 		extResWake: make(chan struct{}, 1),
+		nrtWake:    make(chan struct{}, 1),
 		stopC:      make(chan struct{}),
 	}
 
@@ -205,7 +208,8 @@ func (a *Agent) Start(notifyFn NotifyFn) error {
 		return w.ResultChan()
 	}
 
-	go a.reconcileExtendedResourcesLoop()
+	go a.reconcileLoop("extended resources", a.extResWake, a.reconcileNodeExtendedResources)
+	go a.reconcileLoop("node resource topology CR", a.nrtWake, a.reconcileNrtCR)
 
 	for {
 		select {
@@ -259,6 +263,62 @@ func (a *Agent) Start(notifyFn NotifyFn) error {
 	}
 }
 
+// resyncInterval bounds how often a reconciler re-checks the cluster
+// against the desired state without an explicit request. It retries
+// transient API failures and heals external drift.
+var resyncInterval = 30 * time.Second
+
+// retrySyncInterval is time between reconciliation rounds when the
+// previous round failed. Avoids flooding the API server.
+var retrySyncInterval = 5 * time.Second
+
+// wakeUp wakes a reconciler, unless a wakeup is already pending.
+func wakeUp(wake chan struct{}) {
+	select {
+	case wake <- struct{}{}:
+	default:
+	}
+}
+
+// reconcileLoop drives some cluster state towards the most recently
+// requested desired state with the given reconcile function, on every
+// wakeup and periodically, until the agent stops.
+func (a *Agent) reconcileLoop(what string, wake <-chan struct{}, reconcile func() error) {
+	// One goroutine runs the loop, so reconciles never overlap and an
+	// older state is never written after a newer one. The periodic run
+	// retries a failed write and heals changes made by someone else.
+	timer := time.NewTimer(resyncInterval)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-a.stopC:
+			return
+		case <-wake:
+		case <-timer.C:
+		}
+
+		// We are about to reconcile, so cancel any pending timer
+		// fire and recompute the next deadline from now below. This
+		// drains the channel if the timer already fired but we were
+		// woken by something else, keeping the single-fire invariant.
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+
+		nextInterval := resyncInterval
+		if err := reconcile(); err != nil {
+			log.Errorf("failed to reconcile %s: %v", what, err)
+			nextInterval = retrySyncInterval
+		}
+
+		timer.Reset(nextInterval)
+	}
+}
+
 // Stop asks the agent to stop. It does not wait for the event loop to finish;
 // Start() returns once that has happened.
 func (a *Agent) Stop() {
@@ -291,6 +351,7 @@ func (a *Agent) configure(newConfig metav1.Object) {
 	cfg := getAgentConfig(newConfig)
 
 	// Failure to create a client is not a fatal error.
+	a.nrtLock.Lock()
 	switch {
 	case cfg.NodeResourceTopology && a.nrtCli == nil:
 		log.Infof("enabling NRT client")
@@ -309,6 +370,7 @@ func (a *Agent) configure(newConfig metav1.Object) {
 		log.Infof("disabling NRT client")
 		a.nrtCli = nil
 	}
+	a.nrtLock.Unlock()
 
 	// Reconfigure pod resource client, both on initial startup and reconfiguration.
 	// Failure to create a client is not a fatal error.

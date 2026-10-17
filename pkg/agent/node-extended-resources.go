@@ -29,15 +29,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-// extResResyncInterval bounds how often the reconciler re-checks
-// the Node against the desired state without an explicit request.
-// It retries transient API failures and heals external drift.
-const extResResyncInterval = 30 * time.Second
-
-// extResRetrySyncInterval is time between reconciliation rounds
-// when previous round failed. Avoids flooding the API server.
-const extResRetrySyncInterval = 5 * time.Second
-
 // nriExtendedResourceGlob restricts which extended resources this
 // agent is ever allowed to publish or remove. Regardless of what a
 // policy claims to own or wants to publish, only resources whose
@@ -94,67 +85,23 @@ func (a *Agent) UpdateNodeExtendedResources(resources map[string]*resource.Quant
 	a.extResWant = snapshot
 	a.extResLock.Unlock()
 
-	// Coalescing wakeup: if a signal is already pending, the
-	// reconciler will pick up the latest desired state anyway.
-	select {
-	case a.extResWake <- struct{}{}:
-	default:
-	}
+	wakeUp(a.extResWake)
 	return nil
-}
-
-// reconcileExtendedResourcesLoop is the single long-lived worker
-// that drives the Node's status.capacity towards the most recently
-// requested desired state. Running as a single goroutine, it
-// guarantees in-order, non-overlapping reconciles (no last-writer
-// race) and at most one in-flight GET+PATCH. It reconciles on every
-// wakeup and periodically, so transient API failures and external
-// drift are corrected even without new requests.
-func (a *Agent) reconcileExtendedResourcesLoop() {
-	timer := time.NewTimer(extResResyncInterval)
-	defer timer.Stop()
-
-	for {
-		select {
-		case <-a.stopC:
-			return
-		case <-a.extResWake:
-		case <-timer.C:
-		}
-
-		// We are about to reconcile, so cancel any pending timer
-		// fire and recompute the next deadline from now below. This
-		// drains the channel if the timer already fired but we were
-		// woken by something else, keeping the single-fire invariant.
-		if !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
-			}
-		}
-
-		nextInterval := extResResyncInterval
-
-		a.extResLock.Lock()
-		resources := a.extResWant
-		a.extResLock.Unlock()
-		if len(resources) > 0 {
-			// Only touch the API server when there is a desired
-			// state to reconcile towards.
-			if err := a.reconcileNodeExtendedResources(); err != nil {
-				log.Errorf("failed to reconcile extended resources: %v", err)
-				nextInterval = extResRetrySyncInterval
-			}
-		}
-
-		timer.Reset(nextInterval)
-	}
 }
 
 // reconcileNodeExtendedResources computes and applies the JSON
 // patch that brings Node.status.capacity in line with the most
 // recently requested desired state.
 func (a *Agent) reconcileNodeExtendedResources() error {
+	// Only touch the API server when there is a desired state to
+	// reconcile towards.
+	a.extResLock.Lock()
+	want := len(a.extResWant)
+	a.extResLock.Unlock()
+	if want == 0 {
+		return nil
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	node, err := a.k8sCli.CoreV1().Nodes().Get(ctx, a.nodeName, metav1.GetOptions{})
