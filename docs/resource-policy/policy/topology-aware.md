@@ -122,6 +122,8 @@ The `topology-aware` policy has the following features:
   - Support for DRAM, PMEM (such as Intel® Optane™ memory), and [HBM](https://en.wikipedia.org/wiki/High_Bandwidth_Memory)
 - **Cold start support**
   - Pin workload exclusively to PMEM for an initial warm-up period
+- **Dynamic Resource Allocation (DRA)**
+  - Publish NUMA nodes as DRA devices and allocate CPUs to claims
 
 ### Organization of this document
 
@@ -129,6 +131,7 @@ This document is organized as follows:
 
 - **Installation and configuration** describes installation and basic configuration
 - **Configuration options** covers detailed configuration options
+- **Dynamic Resource Allocation** describes CPU allocation to DRA claims
 - **Cookbook** provides recipes for common use cases
 - **Troubleshooting** offers troubleshooting guidance
 
@@ -1420,6 +1423,182 @@ metadata:
 <!-- Links -->
 [configuration]: ../configuration.md
 
+
+## Dynamic Resource Allocation (DRA)
+
+The topology-aware policy can allocate CPUs to Kubernetes
+[Dynamic Resource Allocation](https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/)
+(DRA) claims. With DRA enabled (`config.dra.enabled: true` in the Helm
+chart), the plugin registers the DRA driver `topology-aware.nri.io`, and the
+chart adds a `DeviceClass` of the same name. A pod claims CPUs of a NUMA node
+with a `ResourceClaim`. The scheduler picks a node with enough capacity, and
+the policy runs the containers of the pod on the claimed CPUs.
+
+### Requirements
+
+- Kubernetes 1.34 or later, with the `DRAConsumableCapacity` feature gate
+  enabled. The gate is on by default from Kubernetes 1.36. It lets several
+  claims share a device, each consuming a number of CPUs. Without it, no claim
+  can be prepared.
+- The `DRANodeAllocatableResources` feature gate (alpha) is optional. With it,
+  the scheduler counts claimed CPUs against the `cpu` resource of the node, so
+  claims and CPU requests together cannot overcommit the node. Without it,
+  allocation works, but the scheduler does not count claimed CPUs against the
+  `cpu` of the node.
+- The `DRAListTypeAttributes` feature gate (alpha) is optional. The plugin
+  checks at start whether the API server accepts list attributes, and
+  publishes the `pcieRoot` attribute only then.
+
+### Devices
+
+The policy publishes one device per NUMA node, named `cpudevnuma000`,
+`cpudevnuma001` and so on. The capacity `dra.cpu/cpu` of a device is the
+number of CPUs of the node, excluding the reserved CPUs. The capacity does not
+change when containers or claims use the CPUs. The devices have these
+attributes:
+
+| Attribute | Type | Value |
+|---|---|---|
+| `resource.kubernetes.io/numaNode` | int | the ID of the NUMA node |
+| `dra.cpu/socketID` | int | the ID of the socket the node belongs to |
+| `dra.cpu/smtEnabled` | bool | whether the CPUs have hyperthreading enabled |
+| `resource.kubernetes.io/pcieRoot` | list of strings | the PCIe roots of the socket, with `DRAListTypeAttributes` only |
+
+A request consumes a number of whole CPUs of one device. A request without an
+amount gets one CPU. The policy picks the CPUs by topology: two CPUs are the
+two threads of one core when possible.
+
+### Claims
+
+A claim selects a NUMA node with its `numaNode` attribute, or leaves the
+choice to the scheduler. This claim asks for three CPUs of NUMA node 1:
+
+```yaml
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: three-cpus
+spec:
+  spec:
+    devices:
+      requests:
+      - name: cpus
+        exactly:
+          deviceClassName: topology-aware.nri.io
+          selectors:
+          - cel:
+              expression: device.attributes["resource.kubernetes.io"].numaNode == 1
+          capacity:
+            requests:
+              dra.cpu/cpu: "3"
+```
+
+A request gets CPUs of one NUMA node. A claim which needs CPUs of several
+nodes has one request per node. The constraints of a claim work as for any
+DRA device, for instance `matchAttribute: dra.cpu/socketID` keeps the
+requests of a claim in one socket.
+
+The policy allocates the CPUs of a claim when the kubelet prepares it, from
+the free CPUs of the node. If the node has too few free CPUs, preparing fails,
+and the pod events say why. The claimed CPUs stay allocated until the claim is
+released, and no other container runs on them.
+
+### Containers
+
+A container which holds a claim runs on the CPUs of the claim. A container
+with a CPU request of its own runs on both its own CPUs and the claimed ones.
+A container which names only some requests of a claim runs on the CPUs of
+those requests. The memory of the container comes from the NUMA nodes of its
+CPUs, as for any other container.
+
+The policy tells a container which CPUs its claims got in
+`/.nri-resource-policy/resources.sh`, for instance `CLAIMED_CPUS="2-3"`.
+
+### Memory Policy of a Claim
+
+A claim, or its device class, can set the Linux memory policy of the
+containers holding the claim. The policy is given in a
+`TopologyAwareClaimConfig` in the opaque configuration of the claim. This
+claim takes one CPU of NUMA node 0 and one of NUMA node 1, and interleaves
+the memory of its containers over the two nodes:
+
+```yaml
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: interleaved
+spec:
+  spec:
+    devices:
+      requests:
+      - name: first
+        exactly:
+          deviceClassName: topology-aware.nri.io
+          selectors:
+          - cel:
+              expression: device.attributes["resource.kubernetes.io"].numaNode == 0
+      - name: second
+        exactly:
+          deviceClassName: topology-aware.nri.io
+          selectors:
+          - cel:
+              expression: device.attributes["resource.kubernetes.io"].numaNode == 1
+      config:
+      - opaque:
+          driver: topology-aware.nri.io
+          parameters:
+            apiVersion: config.nri/v1alpha1
+            kind: TopologyAwareClaimConfig
+            memoryPolicy:
+              mode: interleave
+```
+
+The `memoryPolicy` has these fields:
+
+- `mode`: `default`, `preferred`, `bind`, `interleave`, `local`,
+  `preferred-many` or `weighted-interleave`.
+- `nodes`: the memory nodes of the policy. `all` means all nodes,
+  `allowed-mems` the memory nodes of the container, `cpu-nodes` the nodes of
+  the CPUs of the container, `cpu-packages` all nodes in the sockets of those
+  CPUs, `max-dist:<distance>` the nodes within the distance of `cpu-nodes`,
+  and a list such as `0,2-3` those nodes. Unset means `allowed-mems`.
+- `flags`: `static-nodes`, `relative-nodes` or `numa-balancing`.
+  `numa-balancing` works only with `bind` and `preferred-many`, and `local`
+  takes neither `static-nodes` nor `relative-nodes`.
+
+The mode, the nodes and the flags are the same as in the
+`policy.memory-policy.nri.io` annotation of the memory-policy plugin, with
+short names instead of the `MPOL_` names: `interleave` stands for
+`MPOL_INTERLEAVE`, and `static-nodes` for `MPOL_F_STATIC_NODES`. The memory-policy plugin and a claim both set the
+memory policy of a container. Use one or the other for a container.
+
+The nodes are resolved for each container, from the CPUs it runs on and the
+memory nodes it is allowed to use. If the memory of the container is not
+pinned (`pinMemory: false`), all nodes are allowed. A container which names
+only some requests of a claim gets the nodes of those requests. A config with
+a `requests` list applies to the containers holding those requests only, so
+the requests of a claim can have different memory policies. A container which
+holds requests with different memory policies is refused.
+
+The memory policy is set when the container is created. If the policy later
+changes the memory nodes of the container, the kernel remaps the nodes of the
+memory policy onto the new nodes, but it does not add nodes. A memory policy
+for nodes 0-1 stays on two nodes when the memory nodes grow to 0-3.
+
+A claim with a bad configuration fails to prepare, and the pod events say
+why.
+
+### Known Limitations
+
+- The plugin forgets its claims when it restarts. Containers which hold a
+  claim are placed again without it, so they lose the claimed CPUs, and new
+  containers can get those CPUs.
+- The CDI spec files of claims which ended while the plugin was not running
+  are left behind.
+- The capacity of a device is the total of the node, not its free CPUs.
+  Containers with CPU requests take CPUs from the same supply, and the
+  scheduler does not see that, so a claim can be placed on a node with too
+  few free CPUs and fail to prepare.
 
 ## Cookbook
 
