@@ -157,12 +157,13 @@ type Backend interface {
 	// AllocateClaim allocates resources for a claim being prepared. results
 	// are the claim's allocation results, already filtered to the devices of
 	// our own driver. The returned container edits correspond to results one
-	// by one, so that edits[i] belongs to results[i].
+	// by one, so that edits[i] belongs to results[i]. A policy with nothing to
+	// add for the containers returns no edits at all.
 	//
-	// Every result must get at least one edit, also for a policy which
-	// enforces the claim by other means: a CDI device with no edits at all
-	// is rejected, which fails the claim on every retry of the kubelet. An
-	// environment variable naming what was allocated will do.
+	// A policy finds the claims a container holds, and their results, with
+	// dra.ContainerClaims. To tell a container what it got, use
+	// ExportResourceData rather than edits: the exported data stays up to
+	// date, while edits are fixed when the container starts.
 	//
 	// The policy records whatever it needs to release the claim again later,
 	// keyed by the claim UID, saves those records and reads them back on

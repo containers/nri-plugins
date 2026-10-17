@@ -20,6 +20,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 
 	"k8s.io/apimachinery/pkg/types"
@@ -72,6 +73,7 @@ func newCDIStore(driverName, dir string) (*cdiStore, error) {
 
 // WriteClaim writes the CDI spec of a prepared claim. Each of the given edits
 // becomes one CDI device of the claim's spec, in the order they were given.
+// Every device also sets DRA_DEVICE_<claim UID>_<index> to its own name.
 // The spec is written atomically, replacing an existing one for the same claim.
 //
 // It returns the qualified names of the devices written, positionally matching
@@ -94,8 +96,11 @@ func (s *cdiStore) WriteClaim(uid types.UID, edits []specs.ContainerEdits) ([]st
 
 	for i, e := range edits {
 		name := cdiDeviceName(uid, i)
+		qualified := parser.QualifiedName(s.vendor, cdiClass, name)
+		env := cdiDeviceEnv(uid, i) + "=" + qualified
+		e.Env = append(slices.Clone(e.Env), env)
 		spec.Devices = append(spec.Devices, specs.Device{Name: name, ContainerEdits: e})
-		names = append(names, parser.QualifiedName(s.vendor, cdiClass, name))
+		names = append(names, qualified)
 	}
 
 	// Only once the spec is complete, Kind included: which version it needs
@@ -157,5 +162,5 @@ func (s *cdiStore) specName(uid types.UID) string {
 // a re-prepare of the same claim, because a claim's allocation never changes
 // once it has been made.
 func cdiDeviceName(uid types.UID, index int) string {
-	return "claim-" + string(uid) + "-" + strconv.Itoa(index)
+	return cdiClaimPrefix + string(uid) + "-" + strconv.Itoa(index)
 }

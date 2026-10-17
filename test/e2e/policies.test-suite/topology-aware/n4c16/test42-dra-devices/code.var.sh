@@ -1,7 +1,8 @@
 # This test verifies that the topology-aware policy publishes one DRA
-# device per NUMA node, allocates CPUs to claims, pins containers to
-# the CPUs of their claim, exports those CPUs to the containers, and
-# updates the NRT CR after claim changes.
+# device per NUMA node, allocates CPUs to claims, and updates the NRT CR
+# after claim changes. It also checks that a container runs on the CPUs
+# of its claim, or of the claim requests it names, and that the policy
+# exports those CPUs to it.
 #
 
 cleanup() {
@@ -36,20 +37,20 @@ claim() {
     NAME=$1 create dra-pod
 }
 
+exported() {
+    # Usage: exported POD VARIABLE [CONTAINER]
+    #
+    # Print VARIABLE from the resources the policy exports to the container
+    # of POD, or to its container CONTAINER.
+    vm-command-q "kubectl exec $1 ${3:+-c $3} -- cat /.nri-resource-policy/resources.sh" |
+        sed -n "s/^$2=\"\(.*\)\"$/\1/p"
+}
+
 claimed-cpus() {
     # Usage: claimed-cpus POD
     #
-    # Print the CPUs the claim of POD got, as its container sees them.
-    vm-command-q "kubectl exec $1 -- env" | sed -n 's/^DRA_CPUSET_[^=]*=//p'
-}
-
-exported() {
-    # Usage: exported POD VARIABLE
-    #
-    # Print VARIABLE from the resources the policy exports to the container
-    # of POD.
-    vm-command-q "kubectl exec $1 -- cat /.nri-resource-policy/resources.sh" |
-        sed -n "s/^$2=\"\(.*\)\"$/\1/p"
+    # Print the claimed CPUs the policy exports to the container of POD.
+    exported $1 CLAIMED_CPUS
 }
 
 node-cpus() {
@@ -145,9 +146,6 @@ cpus0=$(claimed-cpus pod0)
 verify "cpuset('$cpus0') == cpuset('$(node-cpus 3)') - cpuset('15')" \
        "cpus['pod0c0'] == cpuset('$cpus0')" \
        "node_ids(mems['pod0c0']) == {3}"
-# The container also finds its claimed CPUs among its exported resources.
-[ "$(exported pod0 CLAIMED_CPUS)" == "$cpus0" ] ||
-    error "pod0 exports CLAIMED_CPUS=$(exported pod0 CLAIMED_CPUS), expected $cpus0"
 
 # Two CPUs are the two threads of one core, and a second claim on the same
 # node gets the other core.
@@ -226,12 +224,28 @@ verify "cpuset('$cpus7') <= cpuset('$(node-cpus 2)')" \
        "node_ids(mems['pod7c0']) == {2}" \
        "cpus['pod4c0'].isdisjoint(cpuset('$cpus7'))"
 # Its exported shared CPUs are its own, apart from the claimed ones.
-[ "$(exported pod7 CLAIMED_CPUS)" == "$cpus7" ] ||
-    error "pod7 exports CLAIMED_CPUS=$(exported pod7 CLAIMED_CPUS), expected $cpus7"
 verify "cpuset('$(exported pod7 SHARED_CPUS)') == cpuset('$(node-cpus 2)') - cpuset('$cpus7')"
+
+# A container naming one request of a claim runs only on the CPUs of that
+# request. A container naming no request runs on the CPUs of all requests.
+# pod8's claim asks for one CPU of node 0 and one of node 2.
+NAME=pod8 NODE_A=0 NODE_B=2 CPUS=1 wait="" create two-requests-claim
+NAME=pod8 create requests-pod
+report allowed
+first=$(exported pod8 CLAIMED_CPUS pod8c0)
+second=$(exported pod8 CLAIMED_CPUS pod8c1)
+verify "len(cpuset('$first')) == 1" \
+       "cpuset('$first') <= cpuset('$(node-cpus 0)')" \
+       "len(cpuset('$second')) == 1" \
+       "cpuset('$second') <= cpuset('$(node-cpus 2)')" \
+       "cpus['pod8c0'] == cpuset('$first')" \
+       "cpus['pod8c1'] == cpuset('$second')" \
+       "cpus['pod8c2'] == cpuset('$first,$second')" \
+       "cpuset('$(exported pod8 CLAIMED_CPUS pod8c2)') == cpuset('$first,$second')" \
+       "cpus['pod4c0'].isdisjoint(cpuset('$first,$second'))"
 
 vm-command "kubectl get deviceclasses,resourceslices,resourceclaims -o yaml" || :
 
 cleanup
 
-echo "OK: the topology-aware policy published one DRA device per NUMA node, gave each claim CPUs of its own, and pinned containers to their claim's CPUs and to the memory of its node, exported the claimed CPUs to the containers, and the NRT CR followed the claims"
+echo "OK: the topology-aware policy published one DRA device per NUMA node, gave each claim CPUs of its own, and pinned containers to their claim's CPUs, or to those of the requests they named, and to the memory of its node, exported the claimed CPUs to the containers, and the NRT CR followed the claims"

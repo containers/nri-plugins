@@ -233,10 +233,14 @@ type Container interface {
 	GetAnnotation(key string, objPtr any) (string, bool)
 	// GetEnv returns the value of a container environment variable.
 	GetEnv(string) (string, bool)
+	// GetEnvList returns the environment of the container, as KEY=VALUE strings.
+	GetEnvList() []string
 	// GetMounts returns all the mounts of the container.
 	GetMounts() []*Mount
 	// GetDevices returns all the linux devices of the container.
 	GetDevices() []*Device
+	// GetCDIDevices returns the qualified names of the CDI devices of the container.
+	GetCDIDevices() []string
 
 	// PrettyName returns the user-friendly $namespace/$pod/$container for the container.
 	PrettyName() string
@@ -935,7 +939,8 @@ func (cch *cache) GetPolicyEntry(key string, ptr any) bool {
 	return true
 }
 
-// Marshal an opaque policy entry, special-casing cpusets and maps of cpusets.
+// Marshal an opaque policy entry, special-casing cpusets and maps of cpusets
+// or of lists of cpusets.
 func marshalEntry(obj any) ([]byte, error) {
 	switch obj := obj.(type) {
 	case cpuset.CPUSet:
@@ -946,13 +951,24 @@ func marshalEntry(obj any) ([]byte, error) {
 			dst[key] = cset.String()
 		}
 		return json.Marshal(dst)
+	case map[string][]cpuset.CPUSet:
+		dst := make(map[string][]string)
+		for key, csets := range obj {
+			strs := make([]string, 0, len(csets))
+			for _, cset := range csets {
+				strs = append(strs, cset.String())
+			}
+			dst[key] = strs
+		}
+		return json.Marshal(dst)
 
 	default:
 		return json.Marshal(obj)
 	}
 }
 
-// Unmarshal an opaque policy entry, special-casing cpusets and maps of cpusets.
+// Unmarshal an opaque policy entry, special-casing cpusets and maps of cpusets
+// or of lists of cpusets.
 func unmarshalEntry(data []byte, ptr any) error {
 	switch ptr := ptr.(type) {
 	case *cpuset.CPUSet:
@@ -986,6 +1002,28 @@ func unmarshalEntry(data []byte, ptr any) error {
 		*ptr = dst
 		return nil
 
+	case *map[string][]cpuset.CPUSet:
+		src := make(map[string][]string)
+		if err := json.Unmarshal(data, &src); err != nil {
+			return cacheError("failed to unmarshal map[string][]cpuset.CPUSet: %v", err)
+		}
+
+		dst := make(map[string][]cpuset.CPUSet)
+		for key, strs := range src {
+			csets := make([]cpuset.CPUSet, 0, len(strs))
+			for _, str := range strs {
+				cset, err := cpuset.Parse(str)
+				if err != nil {
+					return cacheError("failed to unmarshal cpuset.CPUSet '%s': %v", str, err)
+				}
+				csets = append(csets, cset)
+			}
+			dst[key] = csets
+		}
+
+		*ptr = dst
+		return nil
+
 	default:
 		err := json.Unmarshal(data, ptr)
 		return err
@@ -1003,6 +1041,8 @@ func (cch *cache) cacheEntry(key string, ptr any) error {
 	case *cpuset.CPUSet:
 		cch.policyData[key] = *ptr
 	case *map[string]cpuset.CPUSet:
+		cch.policyData[key] = *ptr
+	case *map[string][]cpuset.CPUSet:
 		cch.policyData[key] = *ptr
 	case *map[string]string:
 		cch.policyData[key] = *ptr
@@ -1045,6 +1085,8 @@ func (cch *cache) setEntry(key string, ptr, obj any) error {
 		*ptr.(*cpuset.CPUSet) = obj.(cpuset.CPUSet)
 	case *map[string]cpuset.CPUSet:
 		*ptr.(*map[string]cpuset.CPUSet) = obj.(map[string]cpuset.CPUSet)
+	case *map[string][]cpuset.CPUSet:
+		*ptr.(*map[string][]cpuset.CPUSet) = obj.(map[string][]cpuset.CPUSet)
 	case *map[string]string:
 		*ptr.(*map[string]string) = obj.(map[string]string)
 

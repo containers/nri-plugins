@@ -97,6 +97,12 @@ func (m *mockContainer) GetMounts() []*cache.Mount {
 func (m *mockContainer) GetDevices() []*cache.Device {
 	panic("unimplemented")
 }
+func (m *mockContainer) GetCDIDevices() []string {
+	return nil
+}
+func (m *mockContainer) GetEnvList() []string {
+	return nil
+}
 func (m *mockContainer) PrettyName() string {
 	return m.name
 }
