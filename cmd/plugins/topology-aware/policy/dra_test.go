@@ -1353,7 +1353,31 @@ func TestRestoreClaimsRefused(t *testing.T) {
 				_, err := draRestart(t, dir, sys, cfg)
 				return err
 			},
-			err: "can't reserve",
+			err: "because they are reserved",
+		},
+		{
+			// An isolated CPU may be reserved if it is the only one.
+			name: "claimed isolated CPU reserved",
+			restart: func(t *testing.T, dir string, a cpuset.CPUSet) error {
+				isolated := a.Intersection(sys.IsolatedCPUs())
+				if isolated.IsEmpty() {
+					t.Fatalf("claim a holds no isolated CPUs: %s", a)
+				}
+				cfg := draTestConfig("", "cpuset:"+cpuset.New(isolated.List()[0]).String())
+				_, err := draRestart(t, dir, sys, cfg)
+				return err
+			},
+			err: "because they are reserved",
+		},
+		{
+			name: "claimed CPUs not available",
+			restart: func(t *testing.T, dir string, a cpuset.CPUSet) error {
+				available := sys.CPUSet().Difference(cpuset.New(a.List()[0]))
+				cfg := draTestConfig("cpuset:"+available.String(), draTestReserved(sys))
+				_, err := draRestart(t, dir, sys, cfg)
+				return err
+			},
+			err: "can't reserve exclusive CPUs",
 		},
 		{
 			name: "pool gone",
@@ -1383,7 +1407,8 @@ func TestRestoreClaimsRefused(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to set up policy: %v", err)
 			}
-			a := allocateClaim(t, p, "a", draTestResult(0, "2"))
+			// Claim all of node 0, its isolated CPUs too.
+			a := allocateClaim(t, p, "a", draTestResult(0, fmt.Sprint(sys.Node(0).CPUSet().Size())))
 
 			err = tc.restart(t, dir, a)
 			if err == nil || !strings.Contains(err.Error(), "DRA claim a") || !strings.Contains(err.Error(), tc.err) {
