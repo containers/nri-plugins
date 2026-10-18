@@ -452,6 +452,40 @@ func (p *policy) allocateClaim(reqs []draRequest) (*claim, error) {
 	return &claim{Grant: grant, results: results}, nil
 }
 
+// moveClaim gives a saved claim other CPUs of the NUMA nodes of its results,
+// as many as each result had. The returned error starts with why, the reason
+// the claim cannot keep its CPUs.
+func (p *policy) moveClaim(uid string, c *claim, why error) error {
+	if len(c.results) == 0 {
+		return fmt.Errorf("%w, and failed to move it: its results are lost", why)
+	}
+
+	old := cpuset.New()
+	reqs := make([]draRequest, 0, len(c.results))
+	for i, cpus := range c.results {
+		var node system.Node
+		if ids := cpus.List(); len(ids) > 0 {
+			if cpu := p.sys.CPU(idset.ID(ids[0])); cpu != nil {
+				node = p.sys.Node(cpu.NodeID())
+			}
+		}
+		if node == nil {
+			return fmt.Errorf("%w, and failed to move it: no NUMA node for result #%d, CPUs %s", why, i, cpus)
+		}
+		old = old.Union(cpus)
+		reqs = append(reqs, draRequest{node: node, cpus: cpus.Size()})
+	}
+
+	moved, err := p.allocateClaim(reqs)
+	if err != nil {
+		return fmt.Errorf("%w, and failed to move it: %w", why, err)
+	}
+	moved.mpols = c.mpols
+	p.allocations.claims[uid] = moved
+	log.Warnf("%v, moved it from CPUs %s to %s", why, old, moved.ExclusiveCPUs())
+	return nil
+}
+
 // pickNodeCPUs picks n free CPUs of a NUMA node. It picks by topology,
 // so two CPUs are the two threads of one core.
 func (p *policy) pickNodeCPUs(node system.Node, n int, taken cpuset.CPUSet) (cpuset.CPUSet, error) {
