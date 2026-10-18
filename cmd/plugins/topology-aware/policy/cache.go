@@ -73,6 +73,26 @@ func (p *policy) restoreAllocations(allocations *allocations) error {
 	return nil
 }
 
+// restoreClaims restores the DRA claims saved before a restart. It fails on a
+// claim whose pool is gone or whose CPUs we cannot grant any more. We do not
+// restore container grants, since Sync() allocates every running container
+// again. We cannot rebuild claims like that: a claim may have no container
+// yet, and the kubelet does not prepare a claim again.
+func (p *policy) restoreClaims() error {
+	saved := p.newAllocations()
+	if !p.cache.GetPolicyEntry(keyAllocations, &saved) {
+		return nil
+	}
+	if saved.lost != nil {
+		return saved.lost
+	}
+	if err := p.reinstateClaims(saved.claims); err != nil {
+		return err
+	}
+	p.saveAllocations()
+	return nil
+}
+
 // reinstateClaims restores the given claim grants.
 func (p *policy) reinstateClaims(claims map[string]*claim) error {
 	for uid, c := range claims {
@@ -271,15 +291,23 @@ func (a *allocations) UnmarshalJSON(data []byte) error {
 
 	a.grants = make(map[string]Grant, 32)
 	a.claims = make(map[string]*claim)
+	a.lost = nil
 	for id, ccg := range cgrants {
+		uid, isClaim := strings.CutPrefix(id, keyClaimPrefix)
 		g, err := ccg.ToGrant(a.policy)
 		if err != nil {
+			// Nothing rebuilds a claim, so we fail on it later, when we
+			// restore it. Failing here would only make the cache fail
+			// with an error which names neither the claim nor its pool.
+			if isClaim {
+				a.lost = errors.Join(a.lost, policyError("failed to reinstate DRA claim %s: unknown pool %s", uid, ccg.Pool))
+				continue
+			}
 			log.Errorf("removing unresolvable cached grant %v: %v", *ccg, err)
 			continue
 		}
 		log.Debugf("resolved cache grant: %v", g.String())
-		uid, ok := strings.CutPrefix(id, keyClaimPrefix)
-		if !ok {
+		if !isClaim {
 			a.grants[id] = g
 			continue
 		}

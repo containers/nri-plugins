@@ -234,8 +234,9 @@ func (p *policy) ReleaseClaim(uid types.UID) error {
 }
 
 // containerClaims returns the CPUs and the memory policy of the claim results
-// a container holds. It ignores results we do not know, and fails if the
-// results have different memory policies.
+// a container holds. It ignores results we do not know, with a warning for
+// an unknown claim, and fails if the results have different memory
+// policies.
 func (p *policy) containerClaims(c cache.Container) (cpuset.CPUSet, *cfgapi.MemoryPolicy, error) {
 	var (
 		cpus = cpuset.New()
@@ -245,6 +246,7 @@ func (p *policy) containerClaims(c cache.Container) (cpuset.CPUSet, *cfgapi.Memo
 	for uid, indexes := range dra.ContainerClaims(c, draDriverName) {
 		claim, ok := p.allocations.claims[string(uid)]
 		if !ok {
+			log.Warnf("%s holds unknown DRA claim %s", c.PrettyName(), uid)
 			continue
 		}
 		for _, i := range indexes {
