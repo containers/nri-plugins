@@ -73,22 +73,36 @@ func (p *policy) restoreAllocations(allocations *allocations) error {
 	return nil
 }
 
-// restoreClaims restores the DRA claims saved before a restart. It fails on a
-// claim whose pool is gone or whose CPUs we cannot grant any more. We do not
-// restore container grants, since Sync() allocates every running container
-// again. We cannot rebuild claims like that: a claim may have no container
-// yet, and the kubelet does not prepare a claim again.
+// restoreClaims restores the DRA claims saved before a restart. A claim whose
+// pool is gone or whose CPUs we cannot grant any more moves to other CPUs of
+// the same NUMA nodes. It fails only if a node has too few CPUs for a claim.
 func (p *policy) restoreClaims() error {
 	saved := p.newAllocations()
 	if !p.cache.GetPolicyEntry(keyAllocations, &saved) {
 		return nil
 	}
-	if saved.lost != nil {
-		return saved.lost
+
+	// Only the claims are restored. Sync() allocates every running
+	// container again, but nothing prepares a claim again, and a claim
+	// may have no container yet.
+
+	// Claims which keep their CPUs go first, so that a claim which moves
+	// cannot take the CPUs of another one.
+	moving := saved.lost
+	for uid, c := range saved.claims {
+		if _, ok := moving[uid]; ok {
+			continue
+		}
+		if err := p.reinstateClaim(uid, c); err != nil {
+			moving[uid] = err
+		}
 	}
-	if err := p.reinstateClaims(saved.claims); err != nil {
-		return err
+	for uid, why := range moving {
+		if err := p.moveClaim(uid, saved.claims[uid], why); err != nil {
+			return err
+		}
 	}
+
 	p.saveAllocations()
 	return nil
 }
@@ -96,17 +110,25 @@ func (p *policy) restoreClaims() error {
 // reinstateClaims restores the given claim grants.
 func (p *policy) reinstateClaims(claims map[string]*claim) error {
 	for uid, c := range claims {
-		// A reserved CPU can also be isolated, and Reserve() would then take
-		// it for the isolated part of the claim.
-		if reserved := c.ExclusiveCPUs().Intersection(p.reserved); !reserved.IsEmpty() {
-			return policyError("failed to reinstate DRA claim %s: can't reserve CPUs %s because they are reserved",
-				uid, reserved)
+		if err := p.reinstateClaim(uid, c); err != nil {
+			return err
 		}
-		if _, err := c.GetCPUNode().FreeSupply().Reserve(c.Grant, nil); err != nil {
-			return policyError("failed to reinstate DRA claim %s: %w", uid, err)
-		}
-		p.allocations.claims[uid] = c
 	}
+	return nil
+}
+
+// reinstateClaim restores a claim grant.
+func (p *policy) reinstateClaim(uid string, c *claim) error {
+	// A reserved CPU can also be isolated, and Reserve() would then take it
+	// for the isolated part of the claim.
+	if reserved := c.ExclusiveCPUs().Intersection(p.reserved); !reserved.IsEmpty() {
+		return policyError("failed to reinstate DRA claim %s: can't reserve CPUs %s because they are reserved",
+			uid, reserved)
+	}
+	if _, err := c.GetCPUNode().FreeSupply().Reserve(c.Grant, nil); err != nil {
+		return policyError("failed to reinstate DRA claim %s: %w", uid, err)
+	}
+	p.allocations.claims[uid] = c
 	return nil
 }
 
@@ -297,22 +319,21 @@ func (a *allocations) UnmarshalJSON(data []byte) error {
 
 	a.grants = make(map[string]Grant, 32)
 	a.claims = make(map[string]*claim)
-	a.lost = nil
+	a.lost = make(map[string]error)
 	for id, ccg := range cgrants {
 		uid, isClaim := strings.CutPrefix(id, keyClaimPrefix)
 		g, err := ccg.ToGrant(a.policy)
-		if err != nil {
-			// Nothing rebuilds a claim, so we fail on it later, when we
-			// restore it. Failing here would only make the cache fail
-			// with an error which names neither the claim nor its pool.
-			if isClaim {
-				a.lost = errors.Join(a.lost, policyError("failed to reinstate DRA claim %s: unknown pool %s", uid, ccg.Pool))
-				continue
-			}
+		switch {
+		case err != nil && isClaim:
+			// Nothing rebuilds a claim, so we keep its results. When we
+			// restore the claim, it moves to other CPUs of the same nodes.
+			a.lost[uid] = policyError("failed to reinstate DRA claim %s: unknown pool %s", uid, ccg.Pool)
+		case err != nil:
 			log.Errorf("removing unresolvable cached grant %v: %v", *ccg, err)
 			continue
+		default:
+			log.Debugf("resolved cache grant: %v", g.String())
 		}
-		log.Debugf("resolved cache grant: %v", g.String())
 		if !isClaim {
 			a.grants[id] = g
 			continue
