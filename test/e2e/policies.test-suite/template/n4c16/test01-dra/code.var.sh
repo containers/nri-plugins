@@ -1,6 +1,7 @@
 # This test verifies that the template policy publishes its allowed CPUs as a
 # DRA device with consumable capacity, that it gives each claim CPUs of its
-# own, and that it remembers which ones across a restart.
+# own, and that it remembers which ones across a restart, even one which no
+# longer allows them.
 
 cleanup() {
     vm-command "kubectl delete pods --all --now --wait" || :
@@ -90,8 +91,23 @@ vm-command "kubectl delete pod pod1 --now --wait"
 NAME=pod3 CLAIM=two-cpus create dra-pod
 check-cpus pod3 "6-7"
 
+# Changing the allowed CPUs is refused at runtime. A restart with CPUs 5-9
+# keeps pod2's claim on CPUs 4-5, with a warning about CPU 4, so a new claim
+# gets CPU 8, the lowest one no claim holds.
+patch-policy-config '{"spec":{"availableResources":{"cpu":"cpuset:5-9"}}}'
+wait-config-status Failure 30s
+verify-config-status-error "needs a restart"
+restart-plugin
+wait-config-status Success 30s
+vm-command "kubectl logs -n kube-system ds/nri-resource-policy-template |
+            grep 'keeps CPUs 4, which are not allowed any more'" ||
+    error "the plugin did not warn about the CPUs of pod2's claim"
+NAME=one-cpu CPUS=1 wait="" create cpus-claim
+NAME=pod4 CLAIM=one-cpu create dra-pod
+check-cpus pod4 "8"
+
 vm-command "kubectl get deviceclasses,resourceslices,resourceclaims -o yaml" || :
 
 cleanup
 
-echo "OK: the template policy gave each claim CPUs of its own, across a restart"
+echo "OK: the template policy gave each claim CPUs of its own, across a restart, even one which no longer allowed them"
