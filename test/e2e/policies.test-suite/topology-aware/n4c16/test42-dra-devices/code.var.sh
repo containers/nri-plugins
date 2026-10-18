@@ -3,8 +3,9 @@
 # after claim changes. It also checks that a container runs on the CPUs
 # of its claim, or of the claim requests it names, that the policy
 # exports those CPUs to it, and that claims keep their CPUs across a
-# restart. A restart with a configuration which cannot hold a claim fails
-# until the configuration is reverted.
+# restart. A restart with a configuration which reserves a claimed CPU moves
+# the claim to other CPUs of its node. If the node has too few CPUs, the
+# restart fails until the configuration is reverted.
 #
 
 cleanup() {
@@ -299,14 +300,39 @@ verify "cpus['pod0c0'] == cpuset('$cpus0')" \
        "cpus['pod8c0'] == cpuset('$first')" \
        "cpus['pod8c1'] == cpuset('$second')" \
        "cpus['pod8c2'] == cpuset('$first,$second')"
+
+# Reserving the CPU of pod8's request on node 0 is refused at runtime. A
+# restart with it moves the request to the one free CPU of node 0. Its
+# containers move with it, and so do the CPUs exported to them.
+patch-policy-config "{\"spec\":{\"reservedResources\":{\"cpu\":\"cpuset:$first,15\"}}}"
+# Refusing it rebuilds the pools twice, which takes a while.
+wait-config-status Failure 90s
+restart-plugin
+wait-config-status Success 60s
+report allowed
+moved=$(exported pod8 CLAIMED_CPUS pod8c0)
+verify "cpuset('$moved') == cpuset('$(node-cpus 0)') - cpuset('$cpus6,$first')" \
+       "cpus['pod8c0'] == cpuset('$moved')" \
+       "cpus['pod8c1'] == cpuset('$second')" \
+       "cpus['pod8c2'] == cpuset('$moved,$second')" \
+       "cpuset('$(exported pod8 CLAIMED_CPUS pod8c2)') == cpuset('$moved,$second')" \
+       "cpus['pod0c0'] == cpuset('$cpus0')" \
+       "cpus['pod6c0'] == cpuset('$cpus6')"
+# Releasing the CPU again is accepted at runtime. It is then the only free
+# CPU of node 0.
+patch-policy-config '{"spec":{"reservedResources":{"cpu":"cpuset:15"}}}'
+wait-config-status Success 90s
+first=$moved
+
 claim pod9 0 1
 cpus9=$(claimed-cpus pod9)
 verify "cpuset('$cpus9') == cpuset('$(node-cpus 0)') - cpuset('$cpus6,$first')" \
        "cpus['pod9c0'] == cpuset('$cpus9')"
 
-# Reserving a CPU of pod0's claim is refused at runtime. A restart with it
-# fails, and the status of the configuration names the claim. Reverting the
-# configuration lets the plugin start again, with the claims kept.
+# Reserving a CPU of pod0's claim is refused at runtime. It leaves node 3 two
+# CPUs, too few for the claim to move, so a restart with it fails, and the
+# status of the configuration names the claim. Reverting the configuration
+# lets the plugin start again, with the claims kept.
 uid0=$(claim-uid pod0)
 [ -n "$uid0" ] || error "pod0 has no claim"
 patch-policy-config "{\"spec\":{\"reservedResources\":{\"cpu\":\"cpuset:${cpus0%%[-,]*},15\"}}}"
@@ -336,4 +362,4 @@ vm-command "kubectl get deviceclasses,resourceslices,resourceclaims -o yaml" || 
 
 cleanup
 
-echo "OK: the topology-aware policy published one DRA device per NUMA node, gave each claim CPUs of its own, and pinned containers to their claim's CPUs, or to those of the requests they named, and to the memory of its node, exported the claimed CPUs to the containers, the NRT CR followed the claims, the claims kept their CPUs across a restart, and a restart which could not hold a claim failed until the configuration was reverted"
+echo "OK: the topology-aware policy published one DRA device per NUMA node, gave each claim CPUs of its own, and pinned containers to their claim's CPUs, or to those of the requests they named, and to the memory of its node, exported the claimed CPUs to the containers, the NRT CR followed the claims, the claims kept their CPUs across a restart, a restart which reserved a claimed CPU moved the claim, and one which left a node too few CPUs for a claim failed until the configuration was reverted"
