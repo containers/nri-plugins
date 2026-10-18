@@ -15,8 +15,13 @@
 package topologyaware
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path"
+	"path/filepath"
+	"sync"
 	"testing"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
@@ -35,15 +40,91 @@ func findNodeWithName(name string, nodes []Node) Node {
 	panic("No node found with name " + name)
 }
 
-// testSysfs uncompresses the test sysfs data into a directory which is
-// removed when the test ends, and returns the directory.
+var (
+	sysfsOnce sync.Once
+	sysfsDir  string
+	sysfsErr  error
+)
+
+// testSysfs returns a read-only directory with the test sysfs data, shared by
+// all tests.
 func testSysfs(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	if err := testutils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), dir); err != nil {
-		t.Fatalf("failed to uncompress test sysfs data: %v", err)
+	sysfsOnce.Do(func() {
+		// Uncompressing the data takes a while, so it is done only once.
+		sysfsDir, sysfsErr = os.MkdirTemp("", "topology-aware-sysfs-")
+		if sysfsErr == nil {
+			sysfsErr = testutils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), sysfsDir)
+		}
+		// A test which writes to the shared data fails, so it cannot change
+		// what the tests after it see.
+		if sysfsErr == nil {
+			sysfsErr = chmodTree(sysfsDir, 0o555, 0o444)
+		}
+	})
+	if sysfsErr != nil {
+		t.Fatalf("failed to prepare test sysfs data: %v", sysfsErr)
 	}
-	return dir
+	return sysfsDir
+}
+
+// chmodTree sets the mode of every directory under root to dirMode, and of
+// every regular file to fileMode.
+func chmodTree(root string, dirMode, fileMode fs.FileMode) error {
+	return filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		switch {
+		case err != nil:
+			return err
+		case d.IsDir():
+			return os.Chmod(p, dirMode)
+		case d.Type().IsRegular():
+			return os.Chmod(p, fileMode)
+		default:
+			return nil
+		}
+	})
+}
+
+// TestMain runs the tests and removes the shared test sysfs data after them.
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if sysfsDir != "" {
+		// Removing the files needs write access to their directories.
+		if err := chmodTree(sysfsDir, 0o755, 0o444); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to make test sysfs data writable: %v\n", err)
+		}
+		if err := os.RemoveAll(sysfsDir); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to remove test sysfs data: %v\n", err)
+		}
+	}
+	os.Exit(code)
+}
+
+// TestSysfsIsReadOnly verifies that a test cannot change the shared test sysfs
+// data.
+func TestSysfsIsReadOnly(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("file permissions do not stop root")
+	}
+
+	node := path.Join(testSysfs(t), "sysfs", "server", "sys", "devices", "system", "node", "node3")
+	if _, err := os.Stat(path.Join(node, "meminfo")); err != nil {
+		t.Fatalf("test sysfs data has no meminfo to change: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name   string
+		change func() error
+	}{
+		{"modify a file", func() error { return os.WriteFile(path.Join(node, "meminfo"), nil, 0o644) }},
+		{"create a file", func() error { return os.WriteFile(path.Join(node, "new-file"), nil, 0o644) }},
+		{"remove a file", func() error { return os.Remove(path.Join(node, "meminfo")) }},
+		{"create a directory", func() error { return os.Mkdir(path.Join(node, "new-dir"), 0o755) }},
+	} {
+		if err := tc.change(); !errors.Is(err, fs.ErrPermission) {
+			t.Errorf("%s: got %v, expected a permission error", tc.name, err)
+		}
+	}
 }
 
 // testServerSystem discovers the "server" test sysfs.
