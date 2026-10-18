@@ -50,7 +50,7 @@ type allocations struct {
 	grants map[string]Grant  // container grants by container ID
 	claims map[string]*claim // DRA claims by claim UID
 	irqCnt int               // number of grant additions/deletions with IRQ affinity
-	lost   error             // DRA claims we failed to load from the cache
+	lost   map[string]error  // DRA claims whose pool is gone, by claim UID
 }
 
 // policy is our runtime state for this policy.
