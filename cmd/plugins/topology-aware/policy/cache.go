@@ -96,6 +96,12 @@ func (p *policy) restoreClaims() error {
 // reinstateClaims restores the given claim grants.
 func (p *policy) reinstateClaims(claims map[string]*claim) error {
 	for uid, c := range claims {
+		// A reserved CPU can also be isolated, and Reserve() would then take
+		// it for the isolated part of the claim.
+		if reserved := c.ExclusiveCPUs().Intersection(p.reserved); !reserved.IsEmpty() {
+			return policyError("failed to reinstate DRA claim %s: can't reserve CPUs %s because they are reserved",
+				uid, reserved)
+		}
 		if _, err := c.GetCPUNode().FreeSupply().Reserve(c.Grant, nil); err != nil {
 			return policyError("failed to reinstate DRA claim %s: %w", uid, err)
 		}
