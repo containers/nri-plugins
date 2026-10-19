@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Template Policy &mdash; NRI Plugins v0.14.0-220-g22d10119 documentation</title>
+  <title>Template Policy &mdash; NRI Plugins v0.14.0-227-g39c64f86 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=84f682f0"></script>
+        <script src="../../../_static/documentation_options.js?v=ca23d4a0"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -139,11 +139,12 @@ those no longer allowed, and the policy logs a warning about it.</p>
 </pre></div>
 </div>
 <p>A request without an amount gets one CPU.</p>
-<p>The policy picks the CPUs of a claim, lowest IDs first, and tells the
-container which ones it got in an environment variable named after the claim,
-such as <code class="docutils literal notranslate"><span class="pre">DRA_CPUSET_&lt;claim</span> <span class="pre">UID&gt;=2-3</span></code>. It does not pin the container to them,
-nor keep other containers off them: the template policy does not manage
-cpusets.</p>
+<p>The policy picks the CPUs of a claim, lowest IDs first. It tells a container
+which ones its claims got in <code class="docutils literal notranslate"><span class="pre">/.nri-resource-policy/resources.sh</span></code>, for
+instance <code class="docutils literal notranslate"><span class="pre">CLAIMED_CPUS=&quot;2-3&quot;</span></code>. A container which names only some requests of
+a claim is told the CPUs of those requests. The policy does not pin the
+container to them, nor keep other containers off them: the template policy
+does not manage cpusets.</p>
 </section>
 </section>
 
