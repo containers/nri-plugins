@@ -605,10 +605,13 @@ $(LOCALBIN):
 # External generation tool versions
 CLIENT_GEN_VERSION := v0.33.4
 CONTROLLER_GEN_VERSION := v0.18.0
+DEEPEQUAL_GEN_VERSION := latest
 
 # External generation tool binaries
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 CLIENT_GEN ?= $(LOCALBIN)/client-gen
+DEEPEQUAL_GEN ?= $(LOCALBIN)/deepequal-gen
+DEEPEQUAL_GEN_SH ?= ./scripts/hack/deepequal-gen.sh
 
 # Client generation rules
 .PHONY: controller-gen
@@ -618,6 +621,10 @@ controller-gen:
 .PHONY: code-generator
 code-generator:
 	@GOBIN=$(LOCALBIN) $(GO_CMD) install k8s.io/code-generator/cmd/client-gen@$(CLIENT_GEN_VERSION)
+
+.PHONY: deepequal-gen
+deepequal-gen:
+	@GOBIN=$(LOCALBIN) $(GO_CMD) install github.com/cilium/deepequal-gen@$(DEEPEQUAL_GEN_VERSION)
 
 # Generate RBAC and CRD objects.
 .PHONY: manifests
@@ -632,6 +639,9 @@ manifests: controller-gen
 generate-clients: controller-gen code-generator manifests
 	$(CONTROLLER_GEN) object:headerFile="scripts/hack/boilerplate.go.txt" paths="./pkg/apis/..."
 	./scripts/hack/update_codegen.sh $(GO_CMD) $(BUILD_AUX)
+
+generate-deepequals: deepequal-gen controller-gen code-generator manifests
+	$(Q)DEEPEQUAL_GEN=$(DEEPEQUAL_GEN) $(DEEPEQUAL_GEN_SH) ./pkg/apis/...
 
 # golang code generation rules
 generate-go:
@@ -653,4 +663,4 @@ update-helm-crds: generate-clients
 	done
 
 # top level rule to (re)generate everything we need
-generate: generate-go generate-clients update-helm-crds
+generate: generate-go generate-clients generate-deepequals update-helm-crds
