@@ -31,6 +31,7 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/containers/nri-plugins/pkg/kubernetes"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
@@ -50,6 +51,9 @@ type Plugin struct {
 	Name string
 	// CRD is the file of its configuration CRD in the crds of the chart.
 	CRD string
+	// DRADriver is the name of the DRA driver of the policy. An empty one
+	// means the replay cannot follow the resource claims of a pod.
+	DRADriver string
 	// New creates a policy.
 	New func() policyapi.Backend
 	// Config returns a new, empty configuration, for a launch to unmarshal
@@ -73,10 +77,13 @@ type Harness struct {
 	Cache   cache.Cache
 	Policy  policyapi.Backend
 	Owner   *Owner
-	Pods    map[string]cache.Pod       // live pods by name
-	Ctrs    map[string]cache.Container // live containers by name
-	specs   map[string]CtrSpec         // containers by name, for restarts
-	ctrCnt  int                        // makes container IDs unique
+	// DRAEnabled is what the configuration of the next launch says, which
+	// the Owner of that launch publishes the devices of the policy by.
+	DRAEnabled bool
+	Pods       map[string]cache.Pod       // live pods by name
+	Ctrs       map[string]cache.Container // live containers by name
+	specs      map[string]CtrSpec         // containers by name, for restarts
+	ctrCnt     int                        // makes container IDs unique
 }
 
 // Resources are the resources of a container, as the kubelet gives them.
@@ -86,11 +93,13 @@ type Resources struct {
 }
 
 // CtrSpec is what a container is created from. QoS is "" for guaranteed,
-// burstable or besteffort.
+// burstable or besteffort. CDIDevices are the qualified names of the CDI
+// devices the runtime reports for the container, those of its DRA claims.
 type CtrSpec struct {
-	Pod cache.Pod
-	QoS string
-	Res Resources
+	Pod        cache.Pod
+	QoS        string
+	Res        Resources
+	CDIDevices []string
 }
 
 // Owner is the owner of the policy, the resource manager. It keeps the DRA
@@ -98,6 +107,9 @@ type CtrSpec struct {
 type Owner struct {
 	sync.Mutex
 	devices []resourceapi.Device
+	// draEnabled is what the configuration of the launch says, which is
+	// what decides whether the devices of the policy are published.
+	draEnabled bool
 }
 
 // UpdateContainers implements policyapi.Owner.
@@ -105,6 +117,15 @@ func (*Owner) UpdateContainers() error { return nil }
 
 // PublishDRADevices implements policyapi.Owner.
 func (o *Owner) PublishDRADevices(devices []resourceapi.Device) error {
+	// The resource manager publishes nothing when DRA is disabled, having
+	// no DRA plugin to publish through, while the policy offers its devices
+	// whatever its configuration says. A cluster with DRA disabled
+	// therefore has no ResourceSlice of ours and no claim of it can be
+	// allocated, which is what an empty set of devices gives the replay.
+	if !o.draEnabled {
+		o.devices = nil
+		return nil
+	}
 	o.devices = slices.Clone(devices)
 	return nil
 }
@@ -175,7 +196,7 @@ func (h *Harness) launch(cfg any) error {
 	cch, err := cache.NewCache(cache.Options{CacheDir: h.cacheDir()})
 	require.NoError(h.T, err, "failed to create cache")
 
-	owner := &Owner{}
+	owner := &Owner{draEnabled: h.DRAEnabled}
 	p := h.Plugin.New()
 	if err := p.Setup(&policyapi.BackendOptions{
 		System: h.Machine,
@@ -209,7 +230,7 @@ func (h *Harness) LaunchFails(cfg any) {
 	err = h.Plugin.New().Setup(&policyapi.BackendOptions{
 		System: h.Machine,
 		Cache:  cch,
-		Owner:  &Owner{},
+		Owner:  &Owner{draEnabled: h.DRAEnabled},
 		Config: cfg,
 	})
 	require.Error(h.T, err, "policy setup succeeded, expected it to fail")
@@ -285,11 +306,17 @@ func (h *Harness) InsertContainer(spec CtrSpec, name string) cache.Container {
 			kubernetes.MinBurstableOOMScoreAdj), kubernetes.MaxBurstableOOMScoreAdj)
 	}
 
+	var cdiDevices []*nri.CDIDevice
+	for _, name := range spec.CDIDevices {
+		cdiDevices = append(cdiDevices, &nri.CDIDevice{Name: name})
+	}
+
 	h.ctrCnt++
 	c, err := h.Cache.InsertContainer(&nri.Container{
 		Id:           fmt.Sprintf("%s-%d", name, h.ctrCnt),
 		PodSandboxId: spec.Pod.GetID(),
 		Name:         name,
+		CDIDevices:   cdiDevices,
 		Linux: &nri.LinuxContainer{
 			Resources:   r,
 			OomScoreAdj: nri.Int(int(oomAdj)),
@@ -414,14 +441,22 @@ func (h *Harness) Allowed(name string) (cpuset.CPUSet, string) {
 // CreateFromPod creates a pod and starts its containers as the kubelet would
 // for the pod object, init containers first, one at a time to completion.
 // Containers which fail allocation are left stale.
-func (h *Harness) CreateFromPod(ns string, pod *corev1.Pod) {
+//
+//   - ns: the namespace of the pod
+//   - pod: the pod object
+//   - cdiDevices: the CDI devices of each container, by container name, those
+//     the prepared DRA claims of the pod granted it
+func (h *Harness) CreateFromPod(ns string, pod *corev1.Pod, cdiDevices map[string][]string) {
 	h.T.Helper()
 	Log.Infof("===== create %s/%s", ns, pod.Name)
 
 	qos := PodQOS(pod)
 	p := h.InsertPod(ns, pod.Name, qos, pod.Labels, pod.Annotations)
+	spec := func(c *corev1.Container) CtrSpec {
+		return CtrSpec{Pod: p, QoS: qos, Res: ResourcesOf(c), CDIDevices: cdiDevices[c.Name]}
+	}
 	for _, c := range pod.Spec.InitContainers {
-		ctr, err := h.CreateContainer(CtrSpec{p, qos, ResourcesOf(&c)}, c.Name)
+		ctr, err := h.CreateContainer(spec(&c), c.Name)
 		if err != nil {
 			Log.Warnf("===== %s failed: %v", c.Name, err)
 			continue
@@ -429,9 +464,34 @@ func (h *Harness) CreateFromPod(ns string, pod *corev1.Pod) {
 		h.StopContainer(ctr)
 	}
 	for _, c := range pod.Spec.Containers {
-		if _, err := h.CreateContainer(CtrSpec{p, qos, ResourcesOf(&c)}, c.Name); err != nil {
+		if _, err := h.CreateContainer(spec(&c), c.Name); err != nil {
 			Log.Warnf("===== %s failed: %v", c.Name, err)
 		}
+	}
+}
+
+// PrepareClaim does what the resource manager does for a claim the kubelet
+// prepares: the policy allocates the resources of it.
+func (h *Harness) PrepareClaim(claim *resourceapi.ResourceClaim, results []resourceapi.DeviceRequestAllocationResult) {
+	h.T.Helper()
+
+	Log.Infof("===== prepare claim %s/%s", claim.Namespace, claim.Name)
+	h.Owner.Lock()
+	defer h.Owner.Unlock()
+	_, err := h.Policy.AllocateClaim(claim, results)
+	require.NoError(h.T, err, "failed to allocate claim %s/%s", claim.Namespace, claim.Name)
+}
+
+// ReleaseClaims does what the resource manager does for the claims the
+// kubelet unprepares.
+func (h *Harness) ReleaseClaims(uids ...types.UID) {
+	h.T.Helper()
+
+	h.Owner.Lock()
+	defer h.Owner.Unlock()
+	for _, uid := range uids {
+		Log.Infof("===== release claim %s", uid)
+		require.NoError(h.T, h.Policy.ReleaseClaim(uid), "failed to release claim %s", uid)
 	}
 }
 

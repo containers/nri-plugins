@@ -32,6 +32,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
@@ -318,15 +320,25 @@ func replayRecord(t *testing.T, s *Script, r *record, launches map[*record]*laun
 		}
 		var meta struct{ Kind string }
 		require.NoError(t, json.Unmarshal(r.Object, &meta), "%s: bad object", r)
-		if meta.Kind != "Pod" {
+		switch meta.Kind {
+		case "Pod":
+			pod := &corev1.Pod{}
+			require.NoError(t, json.Unmarshal(r.Object, pod), "%s: bad pod", r)
+			s.createPod(r.Namespace, pod)
+		case "DeviceClass":
+			class := &resourceapi.DeviceClass{}
+			require.NoError(t, json.Unmarshal(r.Object, class), "%s: bad DeviceClass", r)
+			s.createDeviceClass(class)
+		case "ResourceClaimTemplate":
+			tmpl := &resourceapi.ResourceClaimTemplate{}
+			require.NoError(t, json.Unmarshal(r.Object, tmpl), "%s: bad ResourceClaimTemplate", r)
+			s.createClaimTemplate(r.Namespace, tmpl)
+		default:
 			if s.skipping != "" {
 				return
 			}
 			unsupported("creating a %s", meta.Kind)
 		}
-		pod := &corev1.Pod{}
-		require.NoError(t, json.Unmarshal(r.Object, pod), "%s: bad pod", r)
-		s.createPod(r.Namespace, pod)
 
 	case "delete":
 		if r.All {
@@ -388,18 +400,24 @@ func runningIDs(pods []*syncPod) map[string]bool {
 }
 
 // forgetGone deletes the pods and stops the containers which do not run any
-// more, as the e2e test deleted or stopped them in a skipped block.
-func (h *Harness) forgetGone(pods []*syncPod) {
+// more, as the e2e test deleted or stopped them in a skipped block. It
+// returns the pods it deleted, whose claims are the caller's to release.
+func (h *Harness) forgetGone(pods []*syncPod) []types.NamespacedName {
 	h.T.Helper()
 
 	running := map[string][]string{}
 	for _, p := range pods {
 		running[p.Namespace+"/"+p.Name] = p.Running
 	}
+	var gone []types.NamespacedName
 	for _, name := range slices.Sorted(maps.Keys(h.Pods)) {
 		pod := h.Pods[name]
 		ctrs, ok := running[pod.GetNamespace()+"/"+name]
 		if !ok {
+			gone = append(gone, types.NamespacedName{
+				Namespace: pod.GetNamespace(),
+				Name:      name,
+			})
 			h.DeletePods(name)
 			continue
 		}
@@ -409,6 +427,7 @@ func (h *Harness) forgetGone(pods []*syncPod) {
 			}
 		}
 	}
+	return gone
 }
 
 // parseLaunch parses the topology and the helm values of a launch.
@@ -420,9 +439,12 @@ func parseLaunch(t *testing.T, plugin *Plugin, r *record) *launchRecord {
 		t.Skipf("%s: %v", r, err)
 	}
 
-	cfg, env, err := plugin.HelmConfig(r.Values)
+	cfg, env, dra, err := plugin.HelmConfig(r.Values)
 	require.NoError(t, err, "%s: bad helm values", r)
-	return &launchRecord{topology: topo, launchConfig: &launchConfig{config: cfg, env: env}}
+	return &launchRecord{
+		topology:     topo,
+		launchConfig: &launchConfig{config: cfg, env: env, draEnabled: dra},
+	}
 }
 
 // syncPods does what the resource manager does for the Synchronize of a
@@ -447,7 +469,7 @@ func (h *Harness) syncPods(pods []*syncPod) {
 			if !slices.Contains(p.Running, c.Name) {
 				continue
 			}
-			ctr := h.InsertContainer(CtrSpec{pod, qos, ResourcesOf(&c)}, c.Name)
+			ctr := h.InsertContainer(CtrSpec{Pod: pod, QoS: qos, Res: ResourcesOf(&c)}, c.Name)
 			ctr.UpdateState(cache.ContainerStateRunning)
 			key := c.Name
 			if _, taken := h.Ctrs[key]; taken {

@@ -30,22 +30,26 @@ func srcDir() string {
 	return filepath.Join(filepath.Dir(file), "..", "..", "..")
 }
 
-// HelmConfig returns the configuration and the extra environment a helm
-// launch of the plugin with the given values files gives the policy. The
-// values of the chart are merged with the given ones in order, as helm does,
-// and the defaults of the CRD are applied to the configuration, as the API
-// server does.
-func (p *Plugin) HelmConfig(values ...json.RawMessage) (any, map[string]string, error) {
+// HelmConfig returns the configuration, the extra environment, and whether
+// DRA is enabled, as a helm launch of the plugin with the given values files
+// gives them to the policy. The values of the chart are merged with the given
+// ones in order, as helm does, and the defaults of the CRD are applied to the
+// configuration, as the API server does.
+//
+// draEnabled is not part of the policy's own configuration: the resource
+// manager reads it, and it is what decides whether the devices the policy
+// publishes reach a cluster at all.
+func (p *Plugin) HelmConfig(values ...json.RawMessage) (cfg any, env map[string]string, draEnabled bool, err error) {
 	chart, err := readYAML(filepath.Join(srcDir(), "deployment", "helm", p.Name, "values.yaml"))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	var merged any = chart
 	for _, v := range values {
 		var given map[string]any
 		if len(v) > 0 {
 			if err := json.Unmarshal(v, &given); err != nil {
-				return nil, nil, fmt.Errorf("bad helm values: %w", err)
+				return nil, nil, false, fmt.Errorf("bad helm values: %w", err)
 			}
 		}
 		merged = mergeValues(merged, given)
@@ -54,23 +58,26 @@ func (p *Plugin) HelmConfig(values ...json.RawMessage) (any, map[string]string, 
 
 	crd, err := readYAML(filepath.Join(srcDir(), "deployment", "helm", p.Name, "crds", p.CRD))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	schema := lookup(crd, "spec", "versions", 0, "schema", "openAPIV3Schema", "properties", "spec")
 	spec := applyDefaults(valuesMap["config"], schema)
 
 	data, err := json.Marshal(spec)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
-	cfg := p.Config()
+	cfg = p.Config()
 	if err := json.Unmarshal(data, cfg); err != nil {
-		return nil, nil, fmt.Errorf("bad %s configuration: %w", p.Name, err)
+		return nil, nil, false, fmt.Errorf("bad %s configuration: %w", p.Name, err)
 	}
+	// dra.enabled is a field of the configuration CRD, not of the policy's
+	// own configuration, so it is read from the spec rather than from cfg.
+	draEnabled, _ = lookup(spec, "dra", "enabled").(bool)
 
 	// The chart renders an extraEnv value unquoted into the YAML of the
 	// daemonset, which takes off one more level of quotes.
-	env := map[string]string{}
+	env = map[string]string{}
 	extra, _ := valuesMap["extraEnv"].(map[string]any)
 	for name, value := range extra {
 		s := fmt.Sprint(value)
@@ -81,7 +88,7 @@ func (p *Plugin) HelmConfig(values ...json.RawMessage) (any, map[string]string, 
 		env[name] = s
 	}
 
-	return cfg, env, nil
+	return cfg, env, draEnabled, nil
 }
 
 func readYAML(path string) (map[string]any, error) {
