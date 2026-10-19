@@ -20,8 +20,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/types"
 
-	"tags.cncf.io/container-device-interface/pkg/parser"
-
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 )
 
@@ -31,9 +29,16 @@ func TestDriverName(t *testing.T) {
 	}
 }
 
+func TestCDIDevice(t *testing.T) {
+	want := testDriverName + "/" + cdiClass + "=claim-" + string(testClaimUID) + "-3"
+	if got := CDIDevice(testDriverName, testClaimUID, 3); got != want {
+		t.Errorf("CDIDevice(%q, %q, 3) = %q, want %q", testDriverName, testClaimUID, got, want)
+	}
+}
+
 func TestClaimOfCDIDeviceRoundTrip(t *testing.T) {
 	for _, index := range []int{0, 1, 12} {
-		name := parser.QualifiedName(testDriverName, cdiClass, cdiDeviceName(testClaimUID, index))
+		name := CDIDevice(testDriverName, testClaimUID, index)
 		driver, uid, i, ok := ClaimOfCDIDevice(name)
 		if !ok || driver != testDriverName || uid != testClaimUID || i != index {
 			t.Errorf("ClaimOfCDIDevice(%q) = %q, %q, %d, %v, want %q, %q, %d, true",
@@ -74,9 +79,7 @@ func (c *testContainer) GetEnvList() []string    { return c.env }
 func TestContainerClaims(t *testing.T) {
 	const otherUID = types.UID("0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0")
 
-	device := func(driver string, uid types.UID, index int) string {
-		return parser.QualifiedName(driver, cdiClass, cdiDeviceName(uid, index))
-	}
+	device := CDIDevice
 
 	for _, tc := range []struct {
 		name       string

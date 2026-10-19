@@ -32,6 +32,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	resourceapi "k8s.io/api/resource/v1"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
@@ -318,15 +319,25 @@ func replayRecord(t *testing.T, s *Script, r *record, launches map[*record]*laun
 		}
 		var meta struct{ Kind string }
 		require.NoError(t, json.Unmarshal(r.Object, &meta), "%s: bad object", r)
-		if meta.Kind != "Pod" {
+		switch meta.Kind {
+		case "Pod":
+			pod := &corev1.Pod{}
+			require.NoError(t, json.Unmarshal(r.Object, pod), "%s: bad pod", r)
+			s.createPod(r.Namespace, pod)
+		case "DeviceClass":
+			class := &resourceapi.DeviceClass{}
+			require.NoError(t, json.Unmarshal(r.Object, class), "%s: bad DeviceClass", r)
+			s.createDeviceClass(class)
+		case "ResourceClaimTemplate":
+			tmpl := &resourceapi.ResourceClaimTemplate{}
+			require.NoError(t, json.Unmarshal(r.Object, tmpl), "%s: bad ResourceClaimTemplate", r)
+			s.createClaimTemplate(r.Namespace, tmpl)
+		default:
 			if s.skipping != "" {
 				return
 			}
 			unsupported("creating a %s", meta.Kind)
 		}
-		pod := &corev1.Pod{}
-		require.NoError(t, json.Unmarshal(r.Object, pod), "%s: bad pod", r)
-		s.createPod(r.Namespace, pod)
 
 	case "delete":
 		if r.All {
@@ -447,7 +458,7 @@ func (h *Harness) syncPods(pods []*syncPod) {
 			if !slices.Contains(p.Running, c.Name) {
 				continue
 			}
-			ctr := h.InsertContainer(CtrSpec{pod, qos, ResourcesOf(&c)}, c.Name)
+			ctr := h.InsertContainer(CtrSpec{Pod: pod, QoS: qos, Res: ResourcesOf(&c)}, c.Name)
 			ctr.UpdateState(cache.ContainerStateRunning)
 			key := c.Name
 			if _, taken := h.Ctrs[key]; taken {
