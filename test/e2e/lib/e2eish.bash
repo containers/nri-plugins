@@ -109,8 +109,8 @@ e2eish-mark-command() {
     # Usage: e2eish-mark-command COMMAND
     #
     # Record the pod deletions of a VM command, and flag the commands which
-    # kill or restart containers behind the policy's back, or tamper with its
-    # cache.
+    # kill or restart containers behind the policy's back, resize a container
+    # in place, or tamper with the policy's cache.
     [ "${e2eish:-1}" == 1 ] || return 0
     local line
     while IFS= read -r line; do
@@ -118,6 +118,9 @@ e2eish-mark-command() {
         case "$line" in
             *"kubectl delete "*)
                 e2eish-mark-delete ${line#*kubectl delete }
+                ;;
+            *"kubectl patch "*"--subresource resize"*|*"kubectl patch "*"--subresource=resize"*)
+                e2eish-mark unsupported command="$line"
                 ;;
             kill\ *|pkill\ *|killall\ *|"crictl stop"*|"crictl rm"*)
                 e2eish-mark unsupported command="$line"
