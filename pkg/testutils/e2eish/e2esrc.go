@@ -37,7 +37,7 @@ var e2eSteps = []string{
 	"Launch", "LaunchMayFail", "LaunchFails", "Terminate",
 	"SyncWithRuntimePods", "ResumeWithRuntimePods",
 	"CreateGuaranteed", "CreateBurstable", "CreateBestEffort", "CreatePod",
-	"DeletePods", "DeleteAllPodsIn", "SetNUMA", "SetCmdline",
+	"DeletePods", "DeleteAllPodsIn", "ResizeContainer", "SetNUMA", "SetCmdline",
 	"Consts", "VerifyPy", "Skip",
 }
 

@@ -368,6 +368,28 @@ func (s *Script) DeleteAllPodsIn(ns string) {
 	s.deletePods(ns, names...)
 }
 
+// ResizeContainer is an in-place resize of the resources of a container of
+// a pod, which the runtime gives the policy as a resource update.
+func (s *Script) ResizeContainer(ns, pod, ctr string, res Resources) {
+	s.t.Helper()
+	if s.h == nil || s.skipping != "" {
+		// With no state to compare, a resize is recorded as one which
+		// moves the cpuset: the e2e test then waits for a cpuset which
+		// may not change, which fails loudly, rather than being refused.
+		s.e2e.resize(ns, pod, ctr, res, true)
+		return
+	}
+	ns = canonicalNamespace(ns)
+	p, ok := s.h.Pods[pod]
+	require.True(s.t, ok && canonicalNamespace(p.GetNamespace()) == ns, "no pod %s/%s to resize", ns, pod)
+	// The allocation is read through the harness rather than through CPUs,
+	// which counts a Go state read of an assertion.
+	before, _ := s.h.Allowed(ctr)
+	s.h.ResizeContainer(pod, ctr, res)
+	after, _ := s.h.Allowed(ctr)
+	s.e2e.resize(ns, pod, ctr, res, !before.Equals(after))
+}
+
 // Consts is the py_consts code for the verify expressions after it.
 func (s *Script) Consts(code string) {
 	s.e2e.consts(code)

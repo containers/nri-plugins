@@ -306,6 +306,7 @@ A record is a line of `E2EISH ` and a JSON object, with its kind in `op`:
 | `terminate`             | `helm-terminate`                                              |                                                        |
 | `create`                | `create`                                                      | `namespace`, `name` and `object`, the object created   |
 | `delete`                | `kubectl delete` of pods, by any command                      | `namespace`, and `pods` or `all`                       |
+| `resize`                | `resize-cpu`                                                  | `namespace`, `name`, `container` and `cpu`             |
 | `consts`                | `verify`, when `py_consts` changed                            | `code`                                                 |
 | `verify`                | `verify`, for each assertion                                  | `result`, `ok` or `fail`, and `expr`                   |
 | `machine`               | `disable-numa`, `enable-numa`, `vm-set-kernel-cmdline-reboot` | `numa` or `cmdline`                                    |
