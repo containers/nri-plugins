@@ -110,7 +110,8 @@ e2eish-mark-command() {
     #
     # Record the pod deletions of a VM command, and flag the commands which
     # kill or restart containers behind the policy's back, resize a container
-    # in place, or tamper with the policy's cache.
+    # in place other than through resize-cpu, or tamper with the policy's
+    # cache.
     [ "${e2eish:-1}" == 1 ] || return 0
     local line
     while IFS= read -r line; do
@@ -120,7 +121,11 @@ e2eish-mark-command() {
                 e2eish-mark-delete ${line#*kubectl delete }
                 ;;
             *"kubectl patch "*"--subresource resize"*|*"kubectl patch "*"--subresource=resize"*)
-                e2eish-mark unsupported command="$line"
+                # resize-cpu records the patch it issues itself. Any other
+                # in-place patch changes the resources of a container with
+                # nothing recorded for it, which would leave a generated test
+                # asserting the state of a resize it never makes.
+                [ "${e2eish_resize_cpu:-0}" == 1 ] || e2eish-mark unsupported command="$line"
                 ;;
             kill\ *|pkill\ *|killall\ *|"crictl stop"*|"crictl rm"*)
                 e2eish-mark unsupported command="$line"

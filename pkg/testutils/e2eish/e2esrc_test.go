@@ -53,6 +53,12 @@ func TestHarness(t *testing.T) {
 	s := harness.NewE2EScript(t, plugin, "n4c16/test52-x")
 	s.Harness()
 }
+
+func TestResize(t *testing.T) {
+	s := harness.NewE2EScript(t, plugin, "n4c16/test54-x")
+	s.ResizeContainer("default", "pod0", "pod0c0", harness.Resources{CPUReq: 2000, CPULim: 2000})
+	s.Terminate()
+}
 `
 
 func writeSrc(t *testing.T) string {
@@ -87,6 +93,16 @@ func TestE2ESourceMerge(t *testing.T) {
 
 	_, err = mergeE2E(stmts, []e2eRec{{line: 3, cmds: []string{"x"}}})
 	require.ErrorContains(t, err, "outside")
+}
+
+// A resize is a step of an e2e test, so a test which resizes a container can
+// be rendered back to one. The step records a resize-cpu command, and leaving
+// it out of e2eSteps made the rendering refuse a test which passed.
+func TestE2ESourceResize(t *testing.T) {
+	w := pyWidths{cpu: 2, node: 1, pkg: 1}
+	_, stmts, err := e2eSource(writeSrc(t), "TestResize", w)
+	require.NoError(t, err)
+	require.Len(t, stmts, 2)
 }
 
 func TestE2ESourceRefuses(t *testing.T) {

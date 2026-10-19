@@ -364,6 +364,47 @@ func nsArg(ns string) string {
 	return " -n " + ns
 }
 
+// resize is resize-cpu, which takes the CPU of a container as its request
+// and its limit, in the namespace of the e2e test. moved says whether the
+// resize changed the cpuset of the container in the replay.
+//
+// The replay resizes synchronously, while resize-cpu returns once the patch
+// is in and the runtime updates the container after that, so the commands
+// of a step which asserts the new allocation have to wait for it. The wait
+// is the one test26-resize makes, for a cpuset other than the one before
+// the resize, which needs a resize that moves the cpuset: a resize which
+// does not move it is refused instead of waiting for a change that never
+// comes.
+func (e *e2eTarget) resize(ns, pod, ctr string, res Resources, moved bool) {
+	if e == nil {
+		return
+	}
+	switch {
+	case res.CPUReq != res.CPULim:
+		e.refuse("a resize to a CPU request of %dm other than its limit of %dm",
+			res.CPUReq, res.CPULim)
+	case res.MemReq != 0 || res.MemLim != 0:
+		e.refuse("a resize of memory, which resize-cpu cannot take")
+	case !moved:
+		e.refuse("a resize which leaves the cpuset of %s as it was, which an e2e test cannot wait for",
+			ctr)
+	default:
+		// resize-cpu patches the pod of $namespace, as create creates it
+		// there, and container-cpus reads the pod of $namespace as well,
+		// so a resize outside the default namespace takes the same
+		// variable rather than being refused.
+		vars := ""
+		if canonicalNamespace(ns) != "default" {
+			vars = "namespace=" + shellQuote(ns) + " "
+		}
+		e.record(
+			fmt.Sprintf("cpus_before=$(%scontainer-cpus %s %s)", vars, pod, ctr),
+			fmt.Sprintf("%sresize-cpu %s %s %dm", vars, pod, ctr, res.CPUReq),
+			fmt.Sprintf(`%swait-cpuset-change %s %s "$cpus_before"`, vars, pod, ctr),
+		)
+	}
+}
+
 func (e *e2eTarget) deletePods(ns string, names []string) {
 	if e == nil {
 		return

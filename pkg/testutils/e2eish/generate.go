@@ -36,6 +36,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	resapi "k8s.io/apimachinery/pkg/api/resource"
 	"sigs.k8s.io/yaml"
 )
 
@@ -345,6 +346,25 @@ func (g *genTest) delete(r *record) {
 	}
 }
 
+// resize is the step of a resize record, if it resizes a container of a pod
+// which is there. The CPU of the record is both the request and the limit, as
+// resize-cpu sets them.
+func (g *genTest) resize(r *record) {
+	key := g.podKey(r.Namespace, r.Name)
+	if !g.pods[key] {
+		return
+	}
+	cpu, err := resapi.ParseQuantity(r.CPU)
+	if err != nil {
+		g.stop("a resize to %s CPUs", strconv.Quote(r.CPU))
+		return
+	}
+	milli := cpu.MilliValue()
+	g.step("s.ResizeContainer(%s, %s, %s, harness.Resources{CPUReq: %d, CPULim: %d})",
+		strconv.Quote(r.Namespace), strconv.Quote(g.podName(r.Namespace, r.Name)),
+		strconv.Quote(r.Container), milli, milli)
+}
+
 // create is the step of a create record: one of a PodSpec if the pod is of
 // an e2e test template, one of its options otherwise.
 func (g *genTest) create(r *record) {
@@ -485,7 +505,7 @@ func (g *genTest) generate(records []*record) {
 			}
 			if skipping {
 				switch r.Op {
-				case "verify", "create", "delete", "unsupported":
+				case "verify", "create", "delete", "resize", "unsupported":
 					continue
 				}
 			}
@@ -550,6 +570,8 @@ func (g *genTest) generate(records []*record) {
 				launched = false
 			case "create":
 				g.create(r)
+			case "resize":
+				g.resize(r)
 			case "delete":
 				// Deletes before the first launch clean up after other tests.
 				if !started {
