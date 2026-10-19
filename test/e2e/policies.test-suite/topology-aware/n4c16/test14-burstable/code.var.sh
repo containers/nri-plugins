@@ -3,7 +3,7 @@
 helm-terminate
 helm_config=$(COLOCATE_PODS=true instantiate helm-config.yaml) helm-launch topology-aware
 
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 
 # pod0, pod1, pod2, and pod3 have total memory limit which
 # exceeds the total node capacity. They would not fit the
@@ -24,7 +24,7 @@ verify \
     'len(nodes["pod2c0"]) == 2' \
     'len(nodes["pod3c0"]) == 4'
 
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 
 helm-terminate
 helm_config=$(COLOCATE_PODS=false instantiate helm-config.yaml) helm-launch topology-aware
@@ -45,7 +45,7 @@ verify \
     'nodes["pod5c0"] == { "node0", "node1" } or nodes["pod5c0"] == { "node2", "node3" }' \
     'nodes["pod5c1"] == { "node0", "node1" } or nodes["pod5c1"] == { "node2", "node3" }'
 
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 
 # Containers can be annotated to have a different preference
 # for unlimited burstability than the default socket.
@@ -57,7 +57,7 @@ verify \
     'len(nodes["pod6c0"]) == 1' \
     'len(nodes["pod6c1"]) == 4'
 
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 
 # Containers annotated to a nonexistent topology level, will be assigned to
 # the next available level.
@@ -69,7 +69,7 @@ verify \
     'len(nodes["pod7c0"]) == 1' \
     'len(nodes["pod7c1"]) == 2'
 
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 
 helm-terminate
 

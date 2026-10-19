@@ -16,7 +16,7 @@ vm-command-q "curl --silent --noproxy localhost $instrumentation_url/e2e-test-co
 vm-command-q "curl --silent --noproxy localhost $instrumentation_url/e2e-test-controller-state" | jq '.Log.PostStart[]' 2>&1 | tr -d '"' | awk -v RS="" '/pod0c0/&&/pod0c1/{r=1; exit} END{exit !r}' || error "PostStart event not proper"
 
 # Then delete the pod, we should see PostStop event
-vm-command "kubectl delete pods pod0 --now"
+delete-pods pod0
 
 vm-command-q "curl --silent --noproxy localhost $instrumentation_url/e2e-test-controller-state" | jq '.Log.PostStop[]' 2>&1 | tr -d '"' | awk -v RS="" '/pod0c0/&&/pod0c1/{r=1; exit} END{exit !r}' || error "PostStop event not proper"
 

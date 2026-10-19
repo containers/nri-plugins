@@ -1,10 +1,6 @@
 # This test verifies prometheus metrics from the balloons policy.
 
-cleanup() {
-    delete-pods --all
-}
-
-cleanup
+cleanup-test
 
 # Launch nri-resource-policy with wanted metrics update interval and a
 # configuration that opens the instrumentation http server.
@@ -62,17 +58,17 @@ verify-metrics-has-line 'balloon_type="flex"'
 verify-metrics-has-line 'balloon_type="flex".* 5'
 
 # check deflating a balloon in metrics
-vm-command "kubectl delete pods --now pod3"
+delete-pods pod3
 verify-metrics-has-line 'balloon_type="flex"'
 verify-metrics-has-line 'balloon_type="flex".* 2'
 
-vm-command "kubectl delete pods --now pod4"
+delete-pods pod4
 sleep 5
 # check popping a balloon from metrics
 verify-metrics-has-no-line 'balloon_type="flex"'
 
 # pop fast-dualcore[0], keep fast-dualcore[1]
-vm-command "kubectl delete pods --now pod1"
+delete-pods pod1
 verify-metrics-has-line 'balloon="fast-dualcore\[1\]"'
 sleep 5
 verify-metrics-has-no-line 'balloon="fast-dualcore\[0\]"'
@@ -85,6 +81,6 @@ report allowed
 verify-metrics-has-line 'balloon="fast-dualcore\[1\]".*pod2c0.* 4'
 verify-metrics-has-line 'balloon="fast-dualcore\[0\]".*pod5c0.* 4'
 
-cleanup
+cleanup-test
 
 helm-terminate
