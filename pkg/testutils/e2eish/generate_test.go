@@ -158,6 +158,35 @@ func TestGenerateResumesOnEmptySnapshot(t *testing.T) {
 	require.True(t, hasStep(g, "s.ResumeWithRuntimePods"), "the empty snapshot is a resume")
 }
 
+// A resize of a container of a pod of the harness is a step of its CPUs.
+func TestGenerateResizeStep(t *testing.T) {
+	g := genOf(t, []*record{
+		launchOf(),
+		{Op: "sync", Pods: podsOf(t, syncPodOf("default", "pod0", "pod0c0", "id-of-pod0c0"))},
+		verifyOf(`len(cpus["pod0c0"]) == 1`),
+		{Op: "resize", Namespace: "default", Name: "pod0", Container: "pod0c0", CPU: "2"},
+		verifyOf(`len(cpus["pod0c0"]) == 2`),
+	})
+
+	require.Empty(t, g.stopped, "the replay follows the resize")
+	require.Contains(t, strings.Join(stepCalls(g), "\n"),
+		`s.ResizeContainer("default", "pod0", "pod0c0", harness.Resources{CPUReq: 2000, CPULim: 2000})`)
+}
+
+// A resize of a pod which is not there is no step.
+func TestGenerateResizeOfPodNotThere(t *testing.T) {
+	g := genOf(t, []*record{
+		launchOf(),
+		{Op: "sync", Pods: podsOf(t, syncPodOf("default", "pod0", "pod0c0", "id-of-pod0c0"))},
+		verifyOf(`len(cpus["pod0c0"]) == 1`),
+		{Op: "resize", Namespace: "default", Name: "pod9", Container: "pod9c0", CPU: "2"},
+		verifyOf(`len(cpus["pod0c0"]) == 1`),
+	})
+
+	require.Empty(t, g.stopped)
+	require.NotContains(t, strings.Join(stepCalls(g), "\n"), "s.ResizeContainer")
+}
+
 // Tests of the same topology and name generate one function name.
 func TestGenFileDuplicates(t *testing.T) {
 	f := &genFile{topo: "n4c16", plugin: "topology-aware", consts: &genConsts{}}

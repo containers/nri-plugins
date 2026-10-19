@@ -105,6 +105,8 @@ type record struct {
 	Values    json.RawMessage  `json:"values"`
 	Namespace string           `json:"namespace"`
 	Name      string           `json:"name"`
+	Container string           `json:"container"`
+	CPU       string           `json:"cpu"`
 	Object    json.RawMessage  `json:"object"`
 	Pods      json.RawMessage  `json:"pods"`
 	All       bool             `json:"all"`
