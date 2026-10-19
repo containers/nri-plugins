@@ -1355,6 +1355,21 @@ func TestE2eishGenN4c16Test22Isolcpus(t *testing.T) {
 	s.SetCmdline("")
 }
 
+// TestE2eishGenN4c16Test26Resize is n4c16/test26-resize.
+func TestE2eishGenN4c16Test26Resize(t *testing.T) {
+	s := harness.NewScript(t, e2eishPlugin)
+	s.Launch(genN4c16, genN4c16BaseConfig)
+	s.SyncWithRuntimePods(genN4c16Pods...)
+	s.CreateGuaranteed(harness.PodSpec{})
+	require.Len(t, s.CPUs("pod0c0"), 1)
+	s.ResizeContainer("default", "pod0", "pod0c0", harness.Resources{CPUReq: 2000, CPULim: 2000})
+	require.Len(t, s.CPUs("pod0c0"), 2)
+	s.ResizeContainer("default", "pod0", "pod0c0", harness.Resources{CPUReq: 1000, CPULim: 1000})
+	require.Len(t, s.CPUs("pod0c0"), 1)
+	s.DeleteAllPodsIn("default")
+	s.Terminate()
+}
+
 // TestE2eishGenN4c16Test40OtelLogging is n4c16/test40-otel-logging.
 func TestE2eishGenN4c16Test40OtelLogging(t *testing.T) {
 	const config = `
