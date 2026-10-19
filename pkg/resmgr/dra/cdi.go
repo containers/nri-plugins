@@ -96,7 +96,7 @@ func (s *cdiStore) WriteClaim(uid types.UID, edits []specs.ContainerEdits) ([]st
 
 	for i, e := range edits {
 		name := cdiDeviceName(uid, i)
-		qualified := parser.QualifiedName(s.vendor, cdiClass, name)
+		qualified := CDIDevice(s.vendor, uid, i)
 		env := cdiDeviceEnv(uid, i) + "=" + qualified
 		e.Env = append(slices.Clone(e.Env), env)
 		spec.Devices = append(spec.Devices, specs.Device{Name: name, ContainerEdits: e})
