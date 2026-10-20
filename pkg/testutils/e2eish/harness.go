@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 	"sort"
 	"sync"
@@ -153,13 +154,25 @@ func (h *Harness) LaunchMayFail(cfg any) bool {
 	return true
 }
 
+// cacheDir is a directory for the cache of a policy.
+func (h *Harness) cacheDir() string {
+	h.T.Helper()
+
+	// The cache refuses a directory anyone else may write to, and t.TempDir()
+	// honours the umask, which is 0002 on a Fedora host.
+	dir := h.T.TempDir()
+	require.NoError(h.T, os.Chmod(dir, 0o700), "failed to restrict cache directory %s", dir)
+
+	return dir
+}
+
 func (h *Harness) launch(cfg any) error {
 	h.T.Helper()
 	if data, err := json.Marshal(cfg); err == nil {
 		Log.Infof("===== launch %s", data)
 	}
 
-	cch, err := cache.NewCache(cache.Options{CacheDir: h.T.TempDir()})
+	cch, err := cache.NewCache(cache.Options{CacheDir: h.cacheDir()})
 	require.NoError(h.T, err, "failed to create cache")
 
 	owner := &Owner{}
@@ -190,7 +203,7 @@ func (h *Harness) LaunchFails(cfg any) {
 	h.T.Helper()
 	cfg = h.offHost(cfg)
 
-	cch, err := cache.NewCache(cache.Options{CacheDir: h.T.TempDir()})
+	cch, err := cache.NewCache(cache.Options{CacheDir: h.cacheDir()})
 	require.NoError(h.T, err, "failed to create cache")
 
 	err = h.Plugin.New().Setup(&policyapi.BackendOptions{
