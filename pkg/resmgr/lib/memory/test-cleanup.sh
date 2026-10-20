@@ -1,1 +1,1 @@
-../../../sysfs/test-cleanup.sh
+rm -fr testdata
