@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.14.0-239-ge6bdb787 documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.14.0-242-g01bda499 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=60803f89"></script>
+        <script src="../../../_static/documentation_options.js?v=0b5e3b85"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -59,6 +59,7 @@
 <li class="toctree-l4"><a class="reference internal" href="#overview">Overview</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#installation-and-configuration">Installation and Configuration</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#configuration-options">Configuration Options</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#dynamic-resource-allocation-dra">Dynamic Resource Allocation (DRA)</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#cookbook">Cookbook</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#troubleshooting">Troubleshooting</a></li>
 </ul>
@@ -253,6 +254,11 @@ fewer workloads</p></li>
 <li><p>Pin workload exclusively to PMEM for an initial warm-up period</p></li>
 </ul>
 </li>
+<li><p><strong>Dynamic Resource Allocation (DRA)</strong></p>
+<ul>
+<li><p>Publish NUMA nodes as DRA devices and allocate CPUs to claims</p></li>
+</ul>
+</li>
 </ul>
 </section>
 <section id="organization-of-this-document">
@@ -261,6 +267,7 @@ fewer workloads</p></li>
 <ul class="simple">
 <li><p><strong>Installation and configuration</strong> describes installation and basic configuration</p></li>
 <li><p><strong>Configuration options</strong> covers detailed configuration options</p></li>
+<li><p><strong>Dynamic Resource Allocation</strong> describes CPU allocation to DRA claims</p></li>
 <li><p><strong>Cookbook</strong> provides recipes for common use cases</p></li>
 <li><p><strong>Troubleshooting</strong> offers troubleshooting guidance</p></li>
 </ul>
@@ -1557,6 +1564,200 @@ one needs to give just the names of the containers, like in the example below.</
 </pre></div>
 </div>
 <!-- Links -->
+</section>
+</section>
+<section id="dynamic-resource-allocation-dra">
+<h2>Dynamic Resource Allocation (DRA)<a class="headerlink" href="#dynamic-resource-allocation-dra" title="Link to this heading"></a></h2>
+<p>The topology-aware policy can allocate CPUs to Kubernetes
+<a class="reference external" href="https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/">Dynamic Resource Allocation</a>
+(DRA) claims. With DRA enabled (<code class="docutils literal notranslate"><span class="pre">config.dra.enabled:</span> <span class="pre">true</span></code> in the Helm
+chart), the plugin registers the DRA driver <code class="docutils literal notranslate"><span class="pre">topology-aware.nri.io</span></code>, and the
+chart adds a <code class="docutils literal notranslate"><span class="pre">DeviceClass</span></code> of the same name. A pod claims CPUs of a NUMA node
+with a <code class="docutils literal notranslate"><span class="pre">ResourceClaim</span></code>. The scheduler picks a node with enough capacity, and
+the policy runs the containers of the pod on the claimed CPUs.</p>
+<section id="requirements">
+<h3>Requirements<a class="headerlink" href="#requirements" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p>Kubernetes 1.34 or later, with the <code class="docutils literal notranslate"><span class="pre">DRAConsumableCapacity</span></code> feature gate
+enabled. The gate is on by default from Kubernetes 1.36. It lets several
+claims share a device, each consuming a number of CPUs. Without it, no claim
+can be prepared.</p></li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">DRANodeAllocatableResources</span></code> feature gate (alpha) is optional. With it,
+the scheduler counts claimed CPUs against the <code class="docutils literal notranslate"><span class="pre">cpu</span></code> resource of the node, so
+claims and CPU requests together cannot overcommit the node. Without it,
+allocation works, but the scheduler does not count claimed CPUs against the
+<code class="docutils literal notranslate"><span class="pre">cpu</span></code> of the node.</p></li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">DRAListTypeAttributes</span></code> feature gate (alpha) is optional. The plugin
+checks at start whether the API server accepts list attributes, and
+publishes the <code class="docutils literal notranslate"><span class="pre">pcieRoot</span></code> attribute only then.</p></li>
+</ul>
+</section>
+<section id="devices">
+<h3>Devices<a class="headerlink" href="#devices" title="Link to this heading"></a></h3>
+<p>The policy publishes one device per NUMA node, named <code class="docutils literal notranslate"><span class="pre">cpudevnuma000</span></code>,
+<code class="docutils literal notranslate"><span class="pre">cpudevnuma001</span></code> and so on. The capacity <code class="docutils literal notranslate"><span class="pre">dra.cpu/cpu</span></code> of a device is the
+number of CPUs of the node, excluding the reserved CPUs. The capacity does not
+change when containers or claims use the CPUs. The devices have these
+attributes:</p>
+<table border="1" class="docutils">
+<thead>
+<tr>
+<th>Attribute</th>
+<th>Type</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>resource.kubernetes.io/numaNode</code></td>
+<td>int</td>
+<td>the ID of the NUMA node</td>
+</tr>
+<tr>
+<td><code>dra.cpu/socketID</code></td>
+<td>int</td>
+<td>the ID of the socket the node belongs to</td>
+</tr>
+<tr>
+<td><code>dra.cpu/smtEnabled</code></td>
+<td>bool</td>
+<td>whether the CPUs have hyperthreading enabled</td>
+</tr>
+<tr>
+<td><code>resource.kubernetes.io/pcieRoot</code></td>
+<td>list of strings</td>
+<td>the PCIe roots of the socket, with <code>DRAListTypeAttributes</code> only</td>
+</tr>
+</tbody>
+</table>
+<p>A request consumes a number of whole CPUs of one device. A request without an
+amount gets one CPU. The policy picks the CPUs by topology: two CPUs are the
+two threads of one core when possible.</p>
+</section>
+<section id="claims">
+<h3>Claims<a class="headerlink" href="#claims" title="Link to this heading"></a></h3>
+<p>A claim selects a NUMA node with its <code class="docutils literal notranslate"><span class="pre">numaNode</span></code> attribute, or leaves the
+choice to the scheduler. This claim asks for three CPUs of NUMA node 1:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">resource.k8s.io/v1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ResourceClaimTemplate</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">three-cpus</span>
+<span class="nt">spec</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">spec</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">devices</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">requests</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cpus</span>
+<span class="w">        </span><span class="nt">exactly</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">deviceClassName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">topology-aware.nri.io</span>
+<span class="w">          </span><span class="nt">selectors</span><span class="p">:</span>
+<span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">cel</span><span class="p">:</span>
+<span class="w">              </span><span class="nt">expression</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">device.attributes[&quot;resource.kubernetes.io&quot;].numaNode == 1</span>
+<span class="w">          </span><span class="nt">capacity</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">requests</span><span class="p">:</span>
+<span class="w">              </span><span class="nt">dra.cpu/cpu</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;3&quot;</span>
+</pre></div>
+</div>
+<p>A request gets CPUs of one NUMA node. A claim which needs CPUs of several
+nodes has one request per node. The constraints of a claim work as for any
+DRA device, for instance <code class="docutils literal notranslate"><span class="pre">matchAttribute:</span> <span class="pre">dra.cpu/socketID</span></code> keeps the
+requests of a claim in one socket.</p>
+<p>The policy allocates the CPUs of a claim when the kubelet prepares it, from
+the free CPUs of the node. If the node has too few free CPUs, preparing fails,
+and the pod events say why. The claimed CPUs stay allocated until the claim is
+released, and no other container runs on them.</p>
+</section>
+<section id="containers">
+<h3>Containers<a class="headerlink" href="#containers" title="Link to this heading"></a></h3>
+<p>A container which holds a claim runs on the CPUs of the claim. A container
+with a CPU request of its own runs on both its own CPUs and the claimed ones.
+A container which names only some requests of a claim runs on the CPUs of
+those requests. The memory of the container comes from the NUMA nodes of its
+CPUs, as for any other container.</p>
+<p>The policy tells a container which CPUs its claims got in
+<code class="docutils literal notranslate"><span class="pre">/.nri-resource-policy/resources.sh</span></code>, for instance <code class="docutils literal notranslate"><span class="pre">CLAIMED_CPUS=&quot;2-3&quot;</span></code>.</p>
+</section>
+<section id="memory-policy-of-a-claim">
+<h3>Memory Policy of a Claim<a class="headerlink" href="#memory-policy-of-a-claim" title="Link to this heading"></a></h3>
+<p>A claim, or its device class, can set the Linux memory policy of the
+containers holding the claim. The policy is given in a
+<code class="docutils literal notranslate"><span class="pre">TopologyAwareClaimConfig</span></code> in the opaque configuration of the claim. This
+claim takes one CPU of NUMA node 0 and one of NUMA node 1, and interleaves
+the memory of its containers over the two nodes:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">resource.k8s.io/v1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ResourceClaimTemplate</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">interleaved</span>
+<span class="nt">spec</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">spec</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">devices</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">requests</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">first</span>
+<span class="w">        </span><span class="nt">exactly</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">deviceClassName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">topology-aware.nri.io</span>
+<span class="w">          </span><span class="nt">selectors</span><span class="p">:</span>
+<span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">cel</span><span class="p">:</span>
+<span class="w">              </span><span class="nt">expression</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">device.attributes[&quot;resource.kubernetes.io&quot;].numaNode == 0</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">second</span>
+<span class="w">        </span><span class="nt">exactly</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">deviceClassName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">topology-aware.nri.io</span>
+<span class="w">          </span><span class="nt">selectors</span><span class="p">:</span>
+<span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">cel</span><span class="p">:</span>
+<span class="w">              </span><span class="nt">expression</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">device.attributes[&quot;resource.kubernetes.io&quot;].numaNode == 1</span>
+<span class="w">      </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">opaque</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">driver</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">topology-aware.nri.io</span>
+<span class="w">          </span><span class="nt">parameters</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">config.nri/v1alpha1</span>
+<span class="w">            </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">TopologyAwareClaimConfig</span>
+<span class="w">            </span><span class="nt">memoryPolicy</span><span class="p">:</span>
+<span class="w">              </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">interleave</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">memoryPolicy</span></code> has these fields:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">mode</span></code>: <code class="docutils literal notranslate"><span class="pre">default</span></code>, <code class="docutils literal notranslate"><span class="pre">preferred</span></code>, <code class="docutils literal notranslate"><span class="pre">bind</span></code>, <code class="docutils literal notranslate"><span class="pre">interleave</span></code>, <code class="docutils literal notranslate"><span class="pre">local</span></code>,
+<code class="docutils literal notranslate"><span class="pre">preferred-many</span></code> or <code class="docutils literal notranslate"><span class="pre">weighted-interleave</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nodes</span></code>: the memory nodes of the policy. <code class="docutils literal notranslate"><span class="pre">all</span></code> means all nodes,
+<code class="docutils literal notranslate"><span class="pre">allowed-mems</span></code> the memory nodes of the container, <code class="docutils literal notranslate"><span class="pre">cpu-nodes</span></code> the nodes of
+the CPUs of the container, <code class="docutils literal notranslate"><span class="pre">cpu-packages</span></code> all nodes in the sockets of those
+CPUs, <code class="docutils literal notranslate"><span class="pre">max-dist:&lt;distance&gt;</span></code> the nodes within the distance of <code class="docutils literal notranslate"><span class="pre">cpu-nodes</span></code>,
+and a list such as <code class="docutils literal notranslate"><span class="pre">0,2-3</span></code> those nodes. Unset means <code class="docutils literal notranslate"><span class="pre">allowed-mems</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">flags</span></code>: <code class="docutils literal notranslate"><span class="pre">static-nodes</span></code>, <code class="docutils literal notranslate"><span class="pre">relative-nodes</span></code> or <code class="docutils literal notranslate"><span class="pre">numa-balancing</span></code>.
+<code class="docutils literal notranslate"><span class="pre">numa-balancing</span></code> works only with <code class="docutils literal notranslate"><span class="pre">bind</span></code> and <code class="docutils literal notranslate"><span class="pre">preferred-many</span></code>, and <code class="docutils literal notranslate"><span class="pre">local</span></code>
+takes neither <code class="docutils literal notranslate"><span class="pre">static-nodes</span></code> nor <code class="docutils literal notranslate"><span class="pre">relative-nodes</span></code>.</p></li>
+</ul>
+<p>The mode, the nodes and the flags are the same as in the
+<code class="docutils literal notranslate"><span class="pre">policy.memory-policy.nri.io</span></code> annotation of the memory-policy plugin, with
+short names instead of the <code class="docutils literal notranslate"><span class="pre">MPOL_</span></code> names: <code class="docutils literal notranslate"><span class="pre">interleave</span></code> stands for
+<code class="docutils literal notranslate"><span class="pre">MPOL_INTERLEAVE</span></code>, and <code class="docutils literal notranslate"><span class="pre">static-nodes</span></code> for <code class="docutils literal notranslate"><span class="pre">MPOL_F_STATIC_NODES</span></code>. The memory-policy plugin and a claim both set the
+memory policy of a container. Use one or the other for a container.</p>
+<p>The nodes are resolved for each container, from the CPUs it runs on and the
+memory nodes it is allowed to use. If the memory of the container is not
+pinned (<code class="docutils literal notranslate"><span class="pre">pinMemory:</span> <span class="pre">false</span></code>), all nodes are allowed. A container which names
+only some requests of a claim gets the nodes of those requests. A config with
+a <code class="docutils literal notranslate"><span class="pre">requests</span></code> list applies to the containers holding those requests only, so
+the requests of a claim can have different memory policies. A container which
+holds requests with different memory policies is refused.</p>
+<p>The memory policy is set when the container is created. If the policy later
+changes the memory nodes of the container, the kernel remaps the nodes of the
+memory policy onto the new nodes, but it does not add nodes. A memory policy
+for nodes 0-1 stays on two nodes when the memory nodes grow to 0-3.</p>
+<p>A claim with a bad configuration fails to prepare, and the pod events say
+why.</p>
+</section>
+<section id="known-limitations">
+<h3>Known Limitations<a class="headerlink" href="#known-limitations" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p>The plugin forgets its claims when it restarts. Containers which hold a
+claim are placed again without it, so they lose the claimed CPUs, and new
+containers can get those CPUs.</p></li>
+<li><p>The CDI spec files of claims which ended while the plugin was not running
+are left behind.</p></li>
+<li><p>The capacity of a device is the total of the node, not its free CPUs.
+Containers with CPU requests take CPUs from the same supply, and the
+scheduler does not see that, so a claim can be placed on a node with too
+few free CPUs and fail to prepare.</p></li>
+</ul>
 </section>
 </section>
 <section id="cookbook">
