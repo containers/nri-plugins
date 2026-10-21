@@ -61,6 +61,20 @@ func (p *Plugin) UnprepareResourceClaims(_ context.Context, claims []kubeletplug
 		return nil, err
 	}
 
+	result := p.releaseClaims(claims)
+
+	// A failed update is only a warning: the updates stay pending for the next
+	// push, and until then the released resources just sit idle, which is no
+	// reason to hold up the teardown of the pod.
+	if err := p.owner.UpdateContainers(); err != nil {
+		log.Warnf("failed to update containers after releasing DRA claims: %v", err)
+	}
+
+	return result, nil
+}
+
+// releaseClaims releases the given claims and returns the error of each.
+func (p *Plugin) releaseClaims(claims []kubeletplugin.NamespacedObject) map[types.UID]error {
 	p.owner.Lock()
 	defer p.owner.Unlock()
 
@@ -73,7 +87,7 @@ func (p *Plugin) UnprepareResourceClaims(_ context.Context, claims []kubeletplug
 		result[claim.UID] = err
 	}
 
-	return result, nil
+	return result
 }
 
 // claimsAllowed fails a kubelet request we are not ready to serve. The whole

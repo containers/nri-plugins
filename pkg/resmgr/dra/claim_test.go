@@ -551,6 +551,10 @@ func TestUnprepareResourceClaims(t *testing.T) {
 	if owner.updates != 4 {
 		t.Errorf("committed %d claim update(s), expected four", owner.updates)
 	}
+	// Once for the unprepare, after the claims of the request are released.
+	if owner.pushes != 1 {
+		t.Errorf("pushed container updates %d time(s), expected once", owner.pushes)
+	}
 }
 
 // TestUnprepareResourceClaimsCommitError verifies that a release which cannot be
