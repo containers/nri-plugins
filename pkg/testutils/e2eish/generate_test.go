@@ -508,3 +508,23 @@ func TestGenerateMachineAfterLaunchFails(t *testing.T) {
 	require.Contains(t, calls, "s.SetNUMA(false)")
 	require.Contains(t, calls, "s.VerifyPy(")
 }
+
+// A log in an output directory of its own, as run_tests.sh -o writes it, has
+// no VM in its path, so its topology comes from the machine its launches
+// asked for.
+func TestTopologyOfOutputDirectory(t *testing.T) {
+	plugin := genPlugin()
+	groups := []map[string]any{
+		{"mem": "2G", "cores": float64(2), "nodes": float64(2), "packages": float64(2)},
+	}
+	records := []*record{{Op: "launch", Values: json.RawMessage(`{}`), Topology: groups}}
+
+	// With a VM in the path the topology comes from the VM, as before.
+	withVM := "/x/n4c16-fedora-43-containerd/policies.test-suite/topology-aware/test00-x/run.sh.output"
+	require.Equal(t, "n4c16", topologyOf(t, plugin, withVM, records))
+
+	// Without one it comes from the launch, and the directory name of the
+	// output root is not mistaken for a VM.
+	noVM := "/home/x/output-directory/policies.test-suite/topology-aware/test00-x/run.sh.output"
+	require.Equal(t, "n4c16", topologyOf(t, plugin, noVM, records))
+}
