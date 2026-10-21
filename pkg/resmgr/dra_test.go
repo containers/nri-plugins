@@ -21,7 +21,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/containerd/nri/pkg/api"
 	resourceapi "k8s.io/api/resource/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -242,82 +241,24 @@ func TestStopStopsDRABeforeTakingTheLock(t *testing.T) {
 	}
 }
 
-// TestClaimCommitFailedUpdates verifies that a container update the runtime did
-// not apply fails the allocation of a claim, but not its release: the container
-// may still be using what the claim is being given, while released resources
-// only sit idle until the update gets through.
-func TestClaimCommitFailedUpdates(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		stub func(ctr cache.Container) *testStub
-	}{
-		{
-			name: "update rejected",
-			stub: func(ctr cache.Container) *testStub {
-				return &testStub{failed: []*api.ContainerUpdate{{ContainerId: ctr.GetID()}}}
-			},
-		},
-		{
-			name: "update request failed",
-			stub: func(cache.Container) *testStub {
-				return &testStub{err: errors.New("update failed")}
-			},
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			m, ctr := newTestUpdate(t, &testStub{})
-			m.nri.stub = tc.stub(ctr)
-
-			if err := m.ClaimAllocated(); err == nil {
-				t.Error("ClaimAllocated() succeeded with a container left un-updated")
-			}
-			if err := m.ClaimReleased(); err != nil {
-				t.Errorf("ClaimReleased() failed: %v", err)
-			}
-			if ctr.PeekPendingUpdate() == nil {
-				t.Error("the update the runtime did not apply is no longer pending")
-			}
-		})
-	}
-}
-
-// TestClaimCommitPushesOnlyPendingUpdates verifies that committing a claim
-// change which left nothing to update does not push anything to the runtime.
-func TestClaimCommitPushesOnlyPendingUpdates(t *testing.T) {
-	m := &resmgr{
-		agent:  newTestAgent(t, "test-node"),
-		cache:  newTestCache(t),
-		policy: testPolicy{},
-		cfg:    &cfgapi.TopologyAwarePolicy{},
-	}
+// TestClaimCommitsDoNotPush verifies that committing a claim change leaves the
+// pending container updates to the push which follows it.
+func TestClaimCommitsDoNotPush(t *testing.T) {
 	stub := &testStub{}
-	m.nri = &nriPlugin{resmgr: m, stub: stub}
+	m, ctr := newTestUpdate(t, stub)
 
 	if err := m.ClaimAllocated(); err != nil {
 		t.Fatalf("ClaimAllocated() failed: %v", err)
 	}
+	if err := m.ClaimReleased(); err != nil {
+		t.Fatalf("ClaimReleased() failed: %v", err)
+	}
+
 	if len(stub.sent) != 0 {
-		t.Errorf("pushed %d container update(s) for a claim which changed nothing", len(stub.sent))
+		t.Errorf("pushed %d container update(s), expected none", len(stub.sent))
 	}
-
-	// A claim the policy did take resources from a container for is pushed.
-	m.cache.InsertPod(&api.PodSandbox{Id: "pod-0", Name: "pod-0"}, nil)
-	c, err := m.cache.InsertContainer(&api.Container{
-		Id:           "ctr-0",
-		Name:         "ctr-0",
-		PodSandboxId: "pod-0",
-	})
-	if err != nil {
-		t.Fatalf("failed to insert container: %v", err)
-	}
-	c.SetCpusetCpus("0")
-
-	if err := m.ClaimAllocated(); err != nil {
-		t.Fatalf("ClaimAllocated() failed: %v", err)
-	}
-	if len(stub.sent) != 1 {
-		t.Errorf("pushed %d container update(s) for a claim which updated a container, expected 1",
-			len(stub.sent))
+	if ctr.PeekPendingUpdate() == nil {
+		t.Error("the pending container update is gone")
 	}
 }
 
