@@ -75,7 +75,7 @@ func Generate(t *testing.T, plugin *Plugin) {
 		if other := pluginOf(path, records); other != "" && other != plugin.Name {
 			continue
 		}
-		topo, test := topologyOf(t, plugin, path), filepath.Base(filepath.Dir(path))
+		topo, test := topologyOf(t, plugin, path, records), filepath.Base(filepath.Dir(path))
 		ok := t.Run(topo+"/"+test, func(t *testing.T) {
 			f := files[topo]
 			if f == nil {
@@ -149,20 +149,56 @@ func vmOf(path string) string {
 
 // topologyOf is the topology of the e2e tests of the plugin whose directory
 // the VM of a log is named after, the longest one if more are.
-func topologyOf(t *testing.T, plugin *Plugin, path string) string {
+// topologyOf is the topology of the e2e test of a log. A log of a full run
+// is under the directory of the VM it ran on, which is named after its
+// topology. run_tests.sh -o puts the output of a run in a directory of its
+// own, with no VM in the path, and such a log names its topology only by the
+// machine its launches asked for.
+func topologyOf(t *testing.T, plugin *Plugin, path string, records []*record) string {
 	t.Helper()
-	vm := vmOf(path)
-	require.NotEmpty(t, vm, "%s: not in the output directory of an e2e test run", path)
-	entries, err := os.ReadDir(filepath.Join(srcDir(), "test", "e2e", "policies.test-suite", plugin.Name))
+
+	dir := filepath.Join(srcDir(), "test", "e2e", "policies.test-suite", plugin.Name)
+	entries, err := os.ReadDir(dir)
 	require.NoError(t, err)
-	topo := ""
-	for _, e := range entries {
-		if n := e.Name(); e.IsDir() && (vm == n || strings.HasPrefix(vm, n+"-")) && len(n) > len(topo) {
-			topo = n
+
+	if vm := vmOf(path); vm != "" {
+		topo := ""
+		for _, e := range entries {
+			if n := e.Name(); e.IsDir() && (vm == n || strings.HasPrefix(vm, n+"-")) && len(n) > len(topo) {
+				topo = n
+			}
+		}
+		if topo != "" {
+			return topo
 		}
 	}
-	require.NotEmpty(t, topo, "%s: no topology of %s for VM %s", path, plugin.Name, vm)
-	return topo
+
+	var launched Topology
+	for _, r := range records {
+		if r.Op == "launch" {
+			launched, err = topologyOfGroups(r.Topology)
+			require.NoError(t, err, "%s: %s: bad launch topology", path, r)
+			break
+		}
+	}
+	require.NotNil(t, launched,
+		"%s: no VM in the path and no launch to take the topology from", path)
+
+	var matched []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		topo, err := readTopology(filepath.Join(dir, e.Name(), "topology.var.json"))
+		if err == nil && reflect.DeepEqual(topo, launched) {
+			matched = append(matched, e.Name())
+		}
+	}
+	require.Len(t, matched, 1,
+		"%s: %d topologies of %s match the machine of its launches (%v), expected one",
+		path, len(matched), plugin.Name, matched)
+
+	return matched[0]
 }
 
 // genFile is the generated file of a topology.
