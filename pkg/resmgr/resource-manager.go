@@ -160,6 +160,13 @@ func (m *resmgr) updateConfig(newCfg any) (bool, error) {
 	log.InfoBlock("  <updated config> ", "%s", dump)
 
 	reconfErr := m.reconfigure(cfg)
+
+	// Push the updates of whichever configuration is now active, the new one or
+	// the old one restored after a failure.
+	if err := m.nri.pushPendingUpdates(); err != nil {
+		log.Warnf("failed to apply configuration to containers: %v", err)
+	}
+
 	m.updateNodeResources()
 	return false, reconfErr
 }
@@ -396,17 +403,7 @@ func (m *resmgr) reconfigure(cfg cfgapi.ResmgrConfig) error {
 			return err
 		}
 
-		err := m.policy.Reconfigure(cfg.PolicyConfig())
-		if err != nil {
-			return err
-		}
-
-		err = m.nri.updateContainers()
-		if err != nil {
-			log.Warnf("failed to apply configuration to containers: %v", err)
-		}
-
-		return nil
+		return m.policy.Reconfigure(cfg.PolicyConfig())
 	}
 
 	m.Lock()
