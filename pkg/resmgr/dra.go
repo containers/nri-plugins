@@ -88,7 +88,7 @@ func (m *resmgr) ClaimAllocated() error {
 		return err
 	}
 
-	if err := m.UpdateContainers(); err != nil {
+	if err := m.nri.updateContainers(); err != nil {
 		return err
 	}
 
@@ -106,7 +106,7 @@ func (m *resmgr) ClaimReleased() error {
 		return err
 	}
 
-	if err := m.UpdateContainers(); err != nil {
+	if err := m.nri.updateContainers(); err != nil {
 		log.Warnf("failed to update containers after releasing a DRA claim: %v", err)
 	}
 

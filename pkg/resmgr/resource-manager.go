@@ -265,11 +265,7 @@ func (m *resmgr) RequestShutdown(reason string) {
 
 // UpdateContainers pushes the pending container updates to the runtime.
 func (m *resmgr) UpdateContainers() error {
-	if len(m.cache.GetPendingContainers()) == 0 {
-		return nil
-	}
-
-	return m.nri.updateContainers()
+	return m.nri.pushPendingUpdates()
 }
 
 // setupCache creates a cache and reloads its last saved state if found.

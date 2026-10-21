@@ -69,7 +69,7 @@ type Owner interface {
 	// a timer firing.
 	sync.Locker
 	// UpdateContainers pushes the pending container changes to the runtime.
-	// It must be called with the lock held.
+	// It must be called without the lock held.
 	UpdateContainers() error
 	// PublishDRADevices publishes the given DRA devices, replacing the ones
 	// published before. A policy calls it whenever its devices change. The

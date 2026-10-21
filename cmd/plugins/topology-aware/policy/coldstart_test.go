@@ -78,8 +78,8 @@ func TestColdStart(t *testing.T) {
 
 	select {
 	case locked := <-owner.updated:
-		if !locked {
-			t.Errorf("containers updated without the lock held")
+		if locked {
+			t.Errorf("containers updated with the lock held")
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("cold start did not finish")

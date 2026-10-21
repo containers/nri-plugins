@@ -716,6 +716,9 @@ func (p *nriPlugin) updateContainers() (retErr error) {
 	// Notes: must be called with p.resmgr lock held.
 
 	updates := p.peekPendingUpdates(nil)
+	if len(updates) == 0 {
+		return nil
+	}
 
 	event := UpdateContainers
 	p.dump(out, event, updates)
