@@ -55,11 +55,14 @@ type Owner interface {
 	sync.Locker
 	// ClaimAllocated and ClaimReleased commit an allocation change the policy
 	// just made for a claim. They are called with the lock held, once per
-	// claim, and they are what make the change outlive us and reach the
-	// containers it affects. An error from ClaimAllocated means the claim's
-	// resources may still be in use by other containers.
+	// claim, and they are what make the change outlive us. ClaimAllocated also
+	// makes it reach the containers it affects. An error from ClaimAllocated
+	// means the claim's resources may still be in use by other containers.
 	ClaimAllocated() error
 	ClaimReleased() error
+	// UpdateContainers pushes the pending container changes to the runtime.
+	// It must be called without the lock held.
+	UpdateContainers() error
 	// RequestShutdown asks the owner to shut down, for errors the plugin cannot
 	// recover from. It runs on the very goroutine whose failure it reports, and
 	// Stop() waits for that goroutine, so it must not stop us from there: it

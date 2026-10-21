@@ -97,17 +97,11 @@ func (m *resmgr) ClaimAllocated() error {
 	return nil
 }
 
-// ClaimReleased commits the release of a DRA claim, like ClaimAllocated, but
-// failing to update the containers is only a warning here: the updates stay
-// pending for the next push, and until then the released resources just sit
-// idle, which is no reason to hold up the teardown of the pod.
+// ClaimReleased saves the release of a DRA claim and refreshes the resources we
+// export for the node.
 func (m *resmgr) ClaimReleased() error {
 	if err := m.cache.Save(); err != nil {
 		return err
-	}
-
-	if err := m.nri.updateContainers(); err != nil {
-		log.Warnf("failed to update containers after releasing a DRA claim: %v", err)
 	}
 
 	m.updateNodeResources()

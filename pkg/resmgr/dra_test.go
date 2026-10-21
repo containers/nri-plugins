@@ -283,8 +283,6 @@ func TestClaimCommitFailedUpdates(t *testing.T) {
 
 // TestClaimCommitPushesOnlyPendingUpdates verifies that committing a claim
 // change which left nothing to update does not push anything to the runtime.
-// Unpreparing a claim the policy has no record of is such a change, and failing
-// it on a push with nothing in it would hold up the pod it belongs to.
 func TestClaimCommitPushesOnlyPendingUpdates(t *testing.T) {
 	m := &resmgr{
 		agent:  newTestAgent(t, "test-node"),
@@ -295,8 +293,8 @@ func TestClaimCommitPushesOnlyPendingUpdates(t *testing.T) {
 	stub := &testStub{}
 	m.nri = &nriPlugin{resmgr: m, stub: stub}
 
-	if err := m.ClaimReleased(); err != nil {
-		t.Fatalf("ClaimReleased() failed: %v", err)
+	if err := m.ClaimAllocated(); err != nil {
+		t.Fatalf("ClaimAllocated() failed: %v", err)
 	}
 	if len(stub.sent) != 0 {
 		t.Errorf("pushed %d container update(s) for a claim which changed nothing", len(stub.sent))
