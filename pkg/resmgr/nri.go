@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/containers/nri-plugins/pkg/instrumentation/tracing"
@@ -39,6 +40,8 @@ type nriPlugin struct {
 	byname map[string]cache.Container
 	// IDs of the containers with an update on its way to the runtime.
 	inFlight map[string]struct{}
+	// Held while a push is on its way to the runtime.
+	pushMu sync.Mutex
 }
 
 var (
@@ -736,8 +739,25 @@ func (p *nriPlugin) updateContainers() (retErr error) {
 
 // pushPendingUpdates pushes the pending container updates to the runtime like
 // updateContainers, but without holding the resmgr lock while the runtime
-// applies them. An update which changed while it was pushed stays pending.
-func (p *nriPlugin) pushPendingUpdates() (retErr error) {
+// applies them. It pushes again the updates which changed while they were
+// pushed. It waits for a push already on its way to finish first.
+func (p *nriPlugin) pushPendingUpdates() error {
+	// A push skips the updates in flight, so without waiting it could return
+	// before they reach the runtime, or without the error they fail with.
+	p.pushMu.Lock()
+	defer p.pushMu.Unlock()
+
+	for {
+		changed, err := p.pushOnce()
+		if !changed {
+			return err
+		}
+	}
+}
+
+// pushOnce pushes the pending container updates once, and returns whether any
+// of them changed while they were pushed.
+func (p *nriPlugin) pushOnce() (changed bool, retErr error) {
 	// Notes: must be called without p.resmgr lock held. The runtime may be
 	// waiting for an NRI request of ours to finish before it applies the
 	// updates, and the request needs the lock.
@@ -748,7 +768,7 @@ func (p *nriPlugin) pushPendingUpdates() (retErr error) {
 	m.Unlock()
 
 	if len(updates) == 0 {
-		return nil
+		return false, nil
 	}
 
 	event := UpdateContainers
@@ -762,16 +782,16 @@ func (p *nriPlugin) pushPendingUpdates() (retErr error) {
 	m.Lock()
 	defer m.Unlock()
 
-	p.finishPush(updates, failed, err)
+	changed = p.finishPush(updates, failed, err)
 
 	if err != nil {
-		return fmt.Errorf("post-config container update failed: %w", err)
+		return false, fmt.Errorf("post-config container update failed: %w", err)
 	}
 	if len(failed) > 0 {
-		return fmt.Errorf("runtime failed to update %d container(s)", len(failed))
+		return changed, fmt.Errorf("runtime failed to update %d container(s)", len(failed))
 	}
 
-	return nil
+	return changed, nil
 }
 
 // startPush returns copies of the pending updates to push and marks their
@@ -790,9 +810,11 @@ func (p *nriPlugin) startPush() []*api.ContainerUpdate {
 	return updates
 }
 
-// finishPush ends the push of the given updates. It clears the ones the runtime
-// applied and which did not change while they were pushed.
-func (p *nriPlugin) finishPush(pushed, failed []*api.ContainerUpdate, err error) {
+// finishPush ends the push of the given updates, and returns whether any of
+// them changed while they were pushed. It clears the ones the runtime applied
+// and which did not change.
+func (p *nriPlugin) finishPush(pushed, failed []*api.ContainerUpdate, err error) bool {
+	changed := false
 	applied := []*api.ContainerUpdate{}
 	for _, u := range pushed {
 		id := u.GetContainerId()
@@ -802,13 +824,19 @@ func (p *nriPlugin) finishPush(pushed, failed []*api.ContainerUpdate, err error)
 			continue
 		}
 		c, ok := p.resmgr.cache.LookupContainer(id)
-		if !ok || !proto.Equal(u, c.PeekPendingUpdate()) {
+		if !ok {
+			continue
+		}
+		if !proto.Equal(u, c.PeekPendingUpdate()) {
+			changed = true
 			continue
 		}
 		applied = append(applied, u)
 	}
 
 	p.clearPendingUpdates(applied, failed)
+
+	return changed
 }
 
 // peekPendingUpdates returns the pending updates of all containers except skip
