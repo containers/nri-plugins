@@ -43,9 +43,10 @@ func (p *policy) triggerColdStart(c cache.Container) error {
 	timer := time.AfterFunc(duration, func() {
 		owner := p.options.Owner
 		owner.Lock()
-		defer owner.Unlock()
+		err := p.finishColdStart(c)
+		owner.Unlock()
 
-		if err := p.finishColdStart(c); err != nil {
+		if err != nil {
 			log.Errorf("%v", err)
 			return
 		}
