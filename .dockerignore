@@ -1,3 +1,6 @@
+# Ignore .git because it's huge and not used in any image
+.git/
+
 # Ignore any e2e VM directories
 **/n*-containerd/
 **/n*-crio/
