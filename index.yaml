@@ -2,6 +2,20 @@ apiVersion: v1
 entries:
   nri-memory-policy:
   - apiVersion: v2
+    appVersion: v0.15.0
+    created: "2026-10-21T10:06:40.175611528Z"
+    description: 'The memory-policy NRI plugin configures default Linux memory policy
+      for containers at creation time. '
+    digest: 3b219c890c9830c60a1924874d1b32694bbfb2d83266d5b521c90cc046422946
+    home: https://github.com/containers/nri-plugins
+    name: nri-memory-policy
+    sources:
+    - https://github.com/containers/nri-plugins
+    type: application
+    urls:
+    - https://github.com/containers/nri-plugins/releases/download/v0.15.0/nri-memory-policy-helm-chart-v0.15.0.tgz
+    version: v0.15.0
+  - apiVersion: v2
     appVersion: v0.14.0
     created: "2026-08-21T10:03:43.793213536Z"
     description: 'The memory-policy NRI plugin configures default Linux memory policy
@@ -128,6 +142,20 @@ entries:
     - https://github.com/containers/nri-plugins/releases/download/v0.10.0/nri-memory-policy-helm-chart-v0.10.0.tgz
     version: v0.10.0
   nri-memory-qos:
+  - apiVersion: v2
+    appVersion: v0.15.0
+    created: "2026-10-21T10:06:40.724969147Z"
+    description: 'The memory-qos NRI plugin adds two methods for controlling cgroups
+      v2 memory.* parameters: QoS class and direct memory annotations. '
+    digest: 7191d0a2508da123874d438b02c00449577b6f253ec15e1150c9ede5c534ee0c
+    home: https://github.com/containers/nri-plugins
+    name: nri-memory-qos
+    sources:
+    - https://github.com/containers/nri-plugins
+    type: application
+    urls:
+    - https://github.com/containers/nri-plugins/releases/download/v0.15.0/nri-memory-qos-helm-chart-v0.15.0.tgz
+    version: v0.15.0
   - apiVersion: v2
     appVersion: v0.14.0
     created: "2026-08-21T10:03:44.171197213Z"
@@ -452,6 +480,20 @@ entries:
     version: v0.2.0
   nri-memtierd:
   - apiVersion: v2
+    appVersion: v0.15.0
+    created: "2026-10-21T10:06:41.248339501Z"
+    description: 'The memtierd NRI plugin enables managing workloads with Memtierd
+      in Kubernetes. '
+    digest: 9f185af405fa5309eb2fa06ed9557d68d61341c9f271f325a78029e5da9da24e
+    home: https://github.com/containers/nri-plugins
+    name: nri-memtierd
+    sources:
+    - https://github.com/containers/nri-plugins
+    type: application
+    urls:
+    - https://github.com/containers/nri-plugins/releases/download/v0.15.0/nri-memtierd-helm-chart-v0.15.0.tgz
+    version: v0.15.0
+  - apiVersion: v2
     appVersion: v0.14.0
     created: "2026-08-21T10:03:44.559418033Z"
     description: 'The memtierd NRI plugin enables managing workloads with Memtierd
@@ -775,6 +817,20 @@ entries:
     version: v0.2.0
   nri-resctrl-mon:
   - apiVersion: v2
+    appVersion: v0.15.0
+    created: "2026-10-21T10:06:41.721348422Z"
+    description: 'The resctrl-mon NRI plugin creates per-pod resctrl monitoring groups
+      (mon_groups) for Application Energy Telemetry via Kepler passive mode. '
+    digest: bfb31cc6b42a33d17c43f640ef1f1a6132ee9fa235c837013198b0e3f710af0a
+    home: https://github.com/containers/nri-plugins
+    name: nri-resctrl-mon
+    sources:
+    - https://github.com/containers/nri-plugins
+    type: application
+    urls:
+    - https://github.com/containers/nri-plugins/releases/download/v0.15.0/nri-resctrl-mon-helm-chart-v0.15.0.tgz
+    version: v0.15.0
+  - apiVersion: v2
     appVersion: v0.14.0
     created: "2026-08-21T10:03:44.922606506Z"
     description: 'The resctrl-mon NRI plugin creates per-pod resctrl monitoring groups
@@ -817,6 +873,21 @@ entries:
     - https://github.com/containers/nri-plugins/releases/download/v0.13.0/nri-resctrl-mon-helm-chart-v0.13.0.tgz
     version: v0.13.0
   nri-resource-annotator:
+  - apiVersion: v2
+    appVersion: v0.15.0
+    created: "2026-10-21T10:06:42.290448881Z"
+    description: 'The resource annotator webhook creates a pod annotation with all
+      the resource requirements present in the pod''s containers for CPU and memory
+      compute resources. '
+    digest: 8839180ecd4294c1648ee989de16e4824fdc7483ad26cb84471b652020aaebd6
+    home: https://github.com/containers/nri-plugins
+    name: nri-resource-annotator
+    sources:
+    - https://github.com/containers/nri-plugins
+    type: application
+    urls:
+    - https://github.com/containers/nri-plugins/releases/download/v0.15.0/nri-resource-annotator-helm-chart-v0.15.0.tgz
+    version: v0.15.0
   - apiVersion: v2
     appVersion: v0.14.0
     created: "2026-08-21T10:03:45.355653761Z"
@@ -908,6 +979,20 @@ entries:
     - https://github.com/containers/nri-plugins/releases/download/v0.12.0/nri-resource-annotator-helm-chart-v0.12.0.tgz
     version: v0.12.0
   nri-resource-policy-balloons:
+  - apiVersion: v2
+    appVersion: v0.15.0
+    created: "2026-10-21T10:06:42.806079722Z"
+    description: 'The balloons NRI resource policy plugin implements workload placement
+      into “balloons” that are disjoint CPU pools. '
+    digest: 1c727a8ddc29a98ee941bb73d793660f1299539710579491032b2f7fe5cfc758
+    home: https://github.com/containers/nri-plugins
+    name: nri-resource-policy-balloons
+    sources:
+    - https://github.com/containers/nri-plugins
+    type: application
+    urls:
+    - https://github.com/containers/nri-plugins/releases/download/v0.15.0/nri-resource-policy-balloons-helm-chart-v0.15.0.tgz
+    version: v0.15.0
   - apiVersion: v2
     appVersion: v0.14.0
     created: "2026-08-21T10:03:45.731543887Z"
@@ -1232,6 +1317,20 @@ entries:
     version: v0.2.0
   nri-resource-policy-template:
   - apiVersion: v2
+    appVersion: v0.15.0
+    created: "2026-10-21T10:06:43.335551901Z"
+    description: 'The template NRI resource policy plugin is a wireframe implementation
+      without any policy logic. It can be used as a template to create new policies. '
+    digest: e8b3925bf3e4bc2e5206a4996013965b39f01301aff961e6590adb254694b188
+    home: https://github.com/containers/nri-plugins
+    name: nri-resource-policy-template
+    sources:
+    - https://github.com/containers/nri-plugins
+    type: application
+    urls:
+    - https://github.com/containers/nri-plugins/releases/download/v0.15.0/nri-resource-policy-template-helm-chart-v0.15.0.tgz
+    version: v0.15.0
+  - apiVersion: v2
     appVersion: v0.14.0
     created: "2026-08-21T10:03:46.086450718Z"
     description: 'The template NRI resource policy plugin is a wireframe implementation
@@ -1498,6 +1597,21 @@ entries:
     - https://github.com/containers/nri-plugins/releases/download/v0.3.0/nri-resource-policy-template-helm-chart-v0.3.0.tgz
     version: v0.3.0
   nri-resource-policy-topology-aware:
+  - apiVersion: v2
+    appVersion: v0.15.0
+    created: "2026-10-21T10:06:43.867406718Z"
+    description: 'Topology-aware NRI resource policy plugin is a NRI plugin that will
+      apply hardware-aware resource allocation policies to the containers running
+      in the system. '
+    digest: b660ffcd4117a154aa4f6dfa8978284bc10e59df35e424618b2fa5a5fe3f8fde
+    home: https://github.com/containers/nri-plugins
+    name: nri-resource-policy-topology-aware
+    sources:
+    - https://github.com/containers/nri-plugins
+    type: application
+    urls:
+    - https://github.com/containers/nri-plugins/releases/download/v0.15.0/nri-resource-policy-topology-aware-helm-chart-v0.15.0.tgz
+    version: v0.15.0
   - apiVersion: v2
     appVersion: v0.14.0
     created: "2026-08-21T10:03:46.529409157Z"
@@ -1845,6 +1959,20 @@ entries:
     version: v0.2.0
   nri-sgx-epc:
   - apiVersion: v2
+    appVersion: v0.15.0
+    created: "2026-10-21T10:06:44.317492265Z"
+    description: 'The sgx-epc NRI plugin allows control over SGX encrypted page cache
+      usage using the cgroup v2 misc controller and pod annotations. '
+    digest: d57b3ff26d7ad618438b36e9513b19eed8af8a4c97478885b90785d10130b41e
+    home: https://github.com/containers/nri-plugins
+    name: nri-sgx-epc
+    sources:
+    - https://github.com/containers/nri-plugins
+    type: application
+    urls:
+    - https://github.com/containers/nri-plugins/releases/download/v0.15.0/nri-sgx-epc-helm-chart-v0.15.0.tgz
+    version: v0.15.0
+  - apiVersion: v2
     appVersion: v0.14.0
     created: "2026-08-21T10:03:46.912147441Z"
     description: 'The sgx-epc NRI plugin allows control over SGX encrypted page cache
@@ -2110,4 +2238,4 @@ entries:
     urls:
     - https://github.com/containers/nri-plugins/releases/download/v0.3.0/nri-sgx-epc-helm-chart-v0.3.0.tgz
     version: v0.3.0
-generated: "2026-08-21T10:03:46.911720262Z"
+generated: "2026-10-21T10:06:44.31710794Z"
