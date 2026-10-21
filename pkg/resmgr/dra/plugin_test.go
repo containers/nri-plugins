@@ -60,6 +60,7 @@ type testOwner struct {
 	updates   int
 	updateErr error // fails ClaimAllocated and ClaimReleased
 	pushes    int
+	pushErr   error // fails UpdateContainers
 
 	shutdownMu sync.Mutex // the plugin asks from its own goroutines
 	shutdowns  []string
@@ -99,7 +100,7 @@ func (o *testOwner) UpdateContainers() error {
 	o.Mutex.Unlock()
 
 	o.pushes++
-	return nil
+	return o.pushErr
 }
 
 func (o *testOwner) RequestShutdown(reason string) {

@@ -55,9 +55,7 @@ type Owner interface {
 	sync.Locker
 	// ClaimAllocated and ClaimReleased commit an allocation change the policy
 	// just made for a claim. They are called with the lock held, once per
-	// claim, and they are what make the change outlive us. ClaimAllocated also
-	// makes it reach the containers it affects. An error from ClaimAllocated
-	// means the claim's resources may still be in use by other containers.
+	// claim, and they are what make the change outlive us.
 	ClaimAllocated() error
 	ClaimReleased() error
 	// UpdateContainers pushes the pending container changes to the runtime.
