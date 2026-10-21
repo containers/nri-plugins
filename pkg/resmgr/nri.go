@@ -704,46 +704,10 @@ func (p *nriPlugin) RemoveContainer(ctx context.Context, pod *api.PodSandbox, co
 	return nil
 }
 
-// updateContainers pushes the pending container updates to the runtime. Unlike
-// the updates carried by the response to an NRI request, these are only cleared
-// from the containers once the runtime has them: an update lost on the way out
-// is the only record of what the container should look like, so dropping it
-// would leave the container as it is with nothing left to retry it with.
-//
-// Updates the runtime rejects are an error too, although they stay pending for
-// the next push: a caller must not act as if the containers had been updated.
-func (p *nriPlugin) updateContainers() (retErr error) {
-	// Notes: must be called with p.resmgr lock held.
-
-	updates := p.peekPendingUpdates(nil)
-	if len(updates) == 0 {
-		return nil
-	}
-
-	event := UpdateContainers
-	p.dump(out, event, updates)
-	defer func() {
-		p.dump(in, event, retErr)
-	}()
-
-	failed, err := p.stub.UpdateContainers(updates)
-	if err != nil {
-		return fmt.Errorf("post-config container update failed: %w", err)
-	}
-
-	p.clearPendingUpdates(updates, failed)
-
-	if len(failed) > 0 {
-		return fmt.Errorf("runtime failed to update %d container(s)", len(failed))
-	}
-
-	return nil
-}
-
-// pushPendingUpdates pushes the pending container updates to the runtime like
-// updateContainers, but without holding the resmgr lock while the runtime
-// applies them. It pushes again the updates which changed while they were
-// pushed. It waits for a push already on its way to finish first.
+// pushPendingUpdates pushes the pending container updates to the runtime, and
+// pushes again the ones which changed while they were pushed. It waits for a
+// push already on its way to finish first. Updates the runtime rejects are an
+// error, and stay pending for the next push.
 func (p *nriPlugin) pushPendingUpdates() error {
 	// A push skips the updates in flight, so without waiting it could return
 	// before they reach the runtime, or without the error they fail with.
@@ -830,6 +794,9 @@ func (p *nriPlugin) finishPush(pushed, failed []*api.ContainerUpdate, err error)
 		if !ok {
 			continue
 		}
+		// Unlike the updates in the response to an NRI request, a pushed update
+		// is only cleared once the runtime has it: it is the only record of what
+		// the container should look like.
 		if !proto.Equal(u, c.PeekPendingUpdate()) {
 			changed = true
 			continue
