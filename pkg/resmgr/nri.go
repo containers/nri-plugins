@@ -30,12 +30,15 @@ import (
 	stub "github.com/containerd/nri/pkg/stub"
 	"github.com/containerd/otelttrpc"
 	"github.com/containerd/ttrpc"
+	"google.golang.org/protobuf/proto"
 )
 
 type nriPlugin struct {
 	stub   stub.Stub
 	resmgr *resmgr
 	byname map[string]cache.Container
+	// IDs of the containers with an update on its way to the runtime.
+	inFlight map[string]struct{}
 }
 
 var (
@@ -731,11 +734,94 @@ func (p *nriPlugin) updateContainers() (retErr error) {
 	return nil
 }
 
+// pushPendingUpdates pushes the pending container updates to the runtime like
+// updateContainers, but without holding the resmgr lock while the runtime
+// applies them. An update which changed while it was pushed stays pending.
+func (p *nriPlugin) pushPendingUpdates() (retErr error) {
+	// Notes: must be called without p.resmgr lock held. The runtime may be
+	// waiting for an NRI request of ours to finish before it applies the
+	// updates, and the request needs the lock.
+	m := p.resmgr
+
+	m.Lock()
+	updates := p.startPush()
+	m.Unlock()
+
+	if len(updates) == 0 {
+		return nil
+	}
+
+	event := UpdateContainers
+	p.dump(out, event, updates)
+	defer func() {
+		p.dump(in, event, retErr)
+	}()
+
+	failed, err := p.stub.UpdateContainers(updates)
+
+	m.Lock()
+	defer m.Unlock()
+
+	p.finishPush(updates, failed, err)
+
+	if err != nil {
+		return fmt.Errorf("post-config container update failed: %w", err)
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("runtime failed to update %d container(s)", len(failed))
+	}
+
+	return nil
+}
+
+// startPush returns copies of the pending updates to push and marks their
+// containers as having an update in flight.
+func (p *nriPlugin) startPush() []*api.ContainerUpdate {
+	// The copies are sent without the lock held, while the originals may change.
+	updates := p.peekPendingUpdates(nil)
+	if p.inFlight == nil {
+		p.inFlight = make(map[string]struct{})
+	}
+	for i, u := range updates {
+		updates[i] = proto.Clone(u).(*api.ContainerUpdate)
+		p.inFlight[u.GetContainerId()] = struct{}{}
+	}
+
+	return updates
+}
+
+// finishPush ends the push of the given updates. It clears the ones the runtime
+// applied and which did not change while they were pushed.
+func (p *nriPlugin) finishPush(pushed, failed []*api.ContainerUpdate, err error) {
+	applied := []*api.ContainerUpdate{}
+	for _, u := range pushed {
+		id := u.GetContainerId()
+		delete(p.inFlight, id)
+
+		if err != nil {
+			continue
+		}
+		c, ok := p.resmgr.cache.LookupContainer(id)
+		if !ok || !proto.Equal(u, c.PeekPendingUpdate()) {
+			continue
+		}
+		applied = append(applied, u)
+	}
+
+	p.clearPendingUpdates(applied, failed)
+}
+
+// peekPendingUpdates returns the pending updates of all containers except skip
+// and the containers with an update in flight.
 func (p *nriPlugin) peekPendingUpdates(skip *api.Container) []*api.ContainerUpdate {
 	m := p.resmgr
 	updates := []*api.ContainerUpdate{}
 	for _, c := range m.cache.GetPendingContainers() {
 		if skip != nil && skip.GetId() == c.GetID() {
+			continue
+		}
+		// A newer update must not reach the runtime ahead of the one in flight.
+		if _, ok := p.inFlight[c.GetID()]; ok {
 			continue
 		}
 
