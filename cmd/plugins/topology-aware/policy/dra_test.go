@@ -528,18 +528,18 @@ func TestAllocateClaim(t *testing.T) {
 			claim := p.allocations.claims["a"]
 			cpus := claim.ExclusiveCPUs()
 			// Every result has CPUs of its own, as many as it consumed, all
-			// on the node of its device.
+			// on its device.
 			if len(claim.results) != len(tc.results) {
 				t.Fatalf("claim has %d results, expected %d", len(claim.results), len(tc.results))
 			}
 			all := cpuset.New()
 			for i, r := range tc.results {
-				node, _ := p.draNode(r.Device)
+				deviceCPUs, _ := p.draDeviceCPUs(r.Device)
 				q := r.ConsumedCapacity[draCapacityCPU]
-				if got := claim.results[i]; got.Size() != int(q.Value()) || !got.IsSubsetOf(node.CPUSet()) ||
+				if got := claim.results[i]; got.Size() != int(q.Value()) || !got.IsSubsetOf(deviceCPUs) ||
 					!got.Intersection(all).IsEmpty() {
-					t.Errorf("result %d got CPUs %s, expected %d of node %d, none of %s",
-						i, got, q.Value(), node.ID(), all)
+					t.Errorf("result %d got CPUs %s, expected %d of device %s, none of %s",
+						i, got, q.Value(), r.Device, all)
 				}
 				all = all.Union(claim.results[i])
 			}
@@ -656,7 +656,7 @@ func TestAllocateClaimAgain(t *testing.T) {
 	// Nor move them to another node.
 	if _, err := p.AllocateClaim(draTestClaim("a"), []resourceapi.DeviceRequestAllocationResult{
 		draTestResult(1, "2"),
-	}); err == nil || !strings.Contains(err.Error(), "holds 0 CPUs of node #1 but consumed 2") {
+	}); err == nil || !strings.Contains(err.Error(), "holds 0 CPUs of device cpudevnuma001 but consumed 2") {
 		t.Errorf("got error %v, expected a node mismatch", err)
 	}
 }

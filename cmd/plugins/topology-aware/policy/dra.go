@@ -50,7 +50,6 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/dra"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
-	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
 )
@@ -194,12 +193,12 @@ func (p *policy) AllocateClaim(
 }
 
 // checkClaimCPUs verifies that the claim holds the requested number of CPUs
-// on every node.
+// on every device.
 func checkClaimCPUs(cpus cpuset.CPUSet, reqs []draRequest) error {
-	consumed := map[int]int{}
+	consumed := map[string]int{}
 	total := 0
 	for _, req := range reqs {
-		consumed[req.node.ID()] += req.cpus
+		consumed[req.device] += req.cpus
 		total += req.cpus
 	}
 
@@ -207,9 +206,8 @@ func checkClaimCPUs(cpus cpuset.CPUSet, reqs []draRequest) error {
 		return fmt.Errorf("holds %d CPUs but consumed %d", cpus.Size(), total)
 	}
 	for _, req := range reqs {
-		id := req.node.ID()
-		if held := cpus.Intersection(req.node.CPUSet()).Size(); held != consumed[id] {
-			return fmt.Errorf("holds %d CPUs of node #%d but consumed %d", held, id, consumed[id])
+		if held := cpus.Intersection(req.deviceCPUs).Size(); held != consumed[req.device] {
+			return fmt.Errorf("holds %d CPUs of device %s but consumed %d", held, req.device, consumed[req.device])
 		}
 	}
 	return nil
@@ -376,10 +374,11 @@ func (p *policy) applyMemoryPolicy(c cache.Container, mpol *cfgapi.MemoryPolicy,
 	c.SetMemoryPolicy(mode, nodes.MemsetString(), flags...)
 }
 
-// draRequest is what one allocation result requests: CPUs of a NUMA node.
+// draRequest is what one allocation result requests: CPUs of a device.
 type draRequest struct {
-	node system.Node
-	cpus int
+	device     string
+	deviceCPUs cpuset.CPUSet
+	cpus       int
 }
 
 // draRequests translates claim allocation results into draRequests.
@@ -388,10 +387,9 @@ func (p *policy) draRequests(results []resourceapi.DeviceRequestAllocationResult
 		return nil, fmt.Errorf("no allocation results")
 	}
 
-	grantable := grantableCPUs(p.root.GetSupply())
 	reqs := make([]draRequest, 0, len(results))
 	for i, r := range results {
-		node, ok := p.draNode(r.Device)
+		deviceCPUs, ok := p.draDeviceCPUs(r.Device)
 		if !ok {
 			return nil, fmt.Errorf("result %d: unknown device %q", i, r.Device)
 		}
@@ -405,27 +403,31 @@ func (p *policy) draRequests(results []resourceapi.DeviceRequestAllocationResult
 			return nil, fmt.Errorf("result %d consumed %s %s, not a positive whole number",
 				i, q.String(), draCapacityCPU)
 		}
-		if offered := node.CPUSet().Intersection(grantable).Size(); n > int64(offered) {
-			return nil, fmt.Errorf("result %d consumed %d CPUs of node #%d, which offers %d",
-				i, n, node.ID(), offered)
+		if offered := deviceCPUs.Size(); n > int64(offered) {
+			return nil, fmt.Errorf("result %d consumed %d CPUs of device %s, which offers %d",
+				i, n, r.Device, offered)
 		}
 
-		reqs = append(reqs, draRequest{node: node, cpus: int(n)})
+		reqs = append(reqs, draRequest{device: r.Device, deviceCPUs: deviceCPUs, cpus: int(n)})
 	}
 	return reqs, nil
 }
 
-// draNode returns the NUMA node identified by the device.
-func (p *policy) draNode(device string) (system.Node, bool) {
+// draDeviceCPUs returns the grantable CPUs of the device, or false for an
+// unknown device.
+func (p *policy) draDeviceCPUs(device string) (cpuset.CPUSet, bool) {
 	var id int
 	if _, err := fmt.Sscanf(device, draDeviceFormat, &id); err != nil {
-		return nil, false
+		return cpuset.New(), false
 	}
 	if fmt.Sprintf(draDeviceFormat, id) != device {
-		return nil, false
+		return cpuset.New(), false
 	}
 	node := p.sys.Node(idset.ID(id))
-	return node, node != nil
+	if node == nil {
+		return cpuset.New(), false
+	}
+	return node.CPUSet().Intersection(grantableCPUs(p.root.GetSupply())), true
 }
 
 // allocateClaim grants a claim the requested CPUs. Each request picks
@@ -436,7 +438,7 @@ func (p *policy) allocateClaim(reqs []draRequest) (*claim, error) {
 	cpus := cpuset.New()
 	results := make([]cpuset.CPUSet, 0, len(reqs))
 	for _, req := range reqs {
-		picked, err := p.pickNodeCPUs(req.node, req.cpus, cpus)
+		picked, err := p.pickCPUs(req, cpus)
 		if err != nil {
 			return nil, err
 		}
@@ -452,8 +454,8 @@ func (p *policy) allocateClaim(reqs []draRequest) (*claim, error) {
 	return &claim{Grant: grant, results: results}, nil
 }
 
-// moveClaim gives a saved claim other CPUs of the NUMA nodes of its results,
-// as many as each result had. The returned error starts with why, the reason
+// moveClaim gives a saved claim other CPUs of the devices of its results, as
+// many as each result had. The returned error starts with why, the reason
 // the claim cannot keep its CPUs.
 func (p *policy) moveClaim(uid string, c *claim, why error) error {
 	if len(c.results) == 0 {
@@ -463,17 +465,22 @@ func (p *policy) moveClaim(uid string, c *claim, why error) error {
 	old := cpuset.New()
 	reqs := make([]draRequest, 0, len(c.results))
 	for i, cpus := range c.results {
-		var node system.Node
+		var (
+			device     string
+			deviceCPUs cpuset.CPUSet
+			ok         bool
+		)
 		if ids := cpus.List(); len(ids) > 0 {
 			if cpu := p.sys.CPU(idset.ID(ids[0])); cpu != nil {
-				node = p.sys.Node(cpu.NodeID())
+				device = fmt.Sprintf(draDeviceFormat, cpu.NodeID())
+				deviceCPUs, ok = p.draDeviceCPUs(device)
 			}
 		}
-		if node == nil {
+		if !ok {
 			return fmt.Errorf("%w, and failed to move it: no NUMA node for result #%d, CPUs %s", why, i, cpus)
 		}
 		old = old.Union(cpus)
-		reqs = append(reqs, draRequest{node: node, cpus: cpus.Size()})
+		reqs = append(reqs, draRequest{device: device, deviceCPUs: deviceCPUs, cpus: cpus.Size()})
 	}
 
 	moved, err := p.allocateClaim(reqs)
@@ -486,26 +493,26 @@ func (p *policy) moveClaim(uid string, c *claim, why error) error {
 	return nil
 }
 
-// pickNodeCPUs picks n free CPUs of a NUMA node. It picks by topology,
-// so two CPUs are the two threads of one core.
-func (p *policy) pickNodeCPUs(node system.Node, n int, taken cpuset.CPUSet) (cpuset.CPUSet, error) {
-	nodeCPUs := node.CPUSet().Intersection(grantableCPUs(p.root.GetSupply()))
-	pool := p.poolForCPUs(nodeCPUs)
+// pickCPUs returns as many free CPUs of the device as the request asks for,
+// none of them in taken. It picks by topology, so two CPUs are the two
+// threads of one core.
+func (p *policy) pickCPUs(req draRequest, taken cpuset.CPUSet) (cpuset.CPUSet, error) {
+	pool := p.poolForCPUs(req.deviceCPUs)
 
 	free := pool.FreeSupply()
 	sliceable, err := free.SliceableCPUs()
 	if err != nil {
-		return cpuset.New(), fmt.Errorf("node #%d: %w", node.ID(), err)
+		return cpuset.New(), fmt.Errorf("device %s: %w", req.device, err)
 	}
-	from := free.IsolatedCPUs().Union(sliceable).Difference(free.ReservedCPUs()).Intersection(nodeCPUs).Difference(taken)
-	if from.Size() < n {
-		return cpuset.New(), fmt.Errorf("node #%d: %d CPUs requested, only %d free",
-			node.ID(), n, from.Size())
+	from := free.IsolatedCPUs().Union(sliceable).Difference(free.ReservedCPUs()).Intersection(req.deviceCPUs).Difference(taken)
+	if from.Size() < req.cpus {
+		return cpuset.New(), fmt.Errorf("device %s: %d CPUs requested, only %d free",
+			req.device, req.cpus, from.Size())
 	}
 
-	cpus, err := p.cpuAllocator.AllocateCpus(&from, n, defaultPrio.Option())
+	cpus, err := p.cpuAllocator.AllocateCpus(&from, req.cpus, defaultPrio.Option())
 	if err != nil {
-		return cpuset.New(), fmt.Errorf("node #%d: %w", node.ID(), err)
+		return cpuset.New(), fmt.Errorf("device %s: %w", req.device, err)
 	}
 	return cpus, nil
 }
