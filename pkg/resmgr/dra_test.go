@@ -131,6 +131,9 @@ func TestSetupDRA(t *testing.T) {
 				t.Error("setupDRA() created a plugin, expected none")
 			}
 
+			if m.DRAEnabled() {
+				t.Error("DRAEnabled() is true without a plugin")
+			}
 			// Starting, publishing and stopping must be no-ops without a
 			// plugin: resmgr and the policy run through these paths whether
 			// DRA came up or not.

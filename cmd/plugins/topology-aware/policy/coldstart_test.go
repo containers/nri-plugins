@@ -38,6 +38,7 @@ func (o *testOwner) UpdateContainers() error {
 	return nil
 }
 
+func (*testOwner) DRAEnabled() bool                             { return false }
 func (*testOwner) PublishDRADevices([]resourceapi.Device) error { return nil }
 func (*testOwner) DRAListAttributesSupported() bool             { return false }
 

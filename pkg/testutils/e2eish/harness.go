@@ -115,6 +115,9 @@ type Owner struct {
 // UpdateContainers implements policyapi.Owner.
 func (*Owner) UpdateContainers() error { return nil }
 
+// DRAEnabled implements policyapi.Owner.
+func (o *Owner) DRAEnabled() bool { return o.draEnabled }
+
 // PublishDRADevices implements policyapi.Owner.
 func (o *Owner) PublishDRADevices(devices []resourceapi.Device) error {
 	// The resource manager publishes nothing when DRA is disabled, having
