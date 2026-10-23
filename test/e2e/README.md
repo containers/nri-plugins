@@ -306,6 +306,7 @@ A record is a line of `E2EISH ` and a JSON object, with its kind in `op`:
 | `terminate`             | `helm-terminate`                                              |                                                        |
 | `create`                | `create`                                                      | `namespace`, `name` and `object`, the object created   |
 | `delete`                | `kubectl delete` of pods, by any command                      | `namespace`, and `pods` or `all`                       |
+| `resize`                | `resize-cpu`                                                  | `namespace`, `name`, `container` and `cpu`             |
 | `consts`                | `verify`, when `py_consts` changed                            | `code`                                                 |
 | `verify`                | `verify`, for each assertion                                  | `result`, `ok` or `fail`, and `expr`                   |
 | `machine`               | `disable-numa`, `enable-numa`, `vm-set-kernel-cmdline-reboot` | `numa` or `cmdline`                                    |
@@ -401,8 +402,49 @@ To generate the tests from the logs of a test run and run them:
 ./generate_tests.sh OUTPUT_DIR... [-- GO-TEST-ARG...]
 ```
 
-The file of each topology with logs is written anew, so `git diff` after a
-run shows where the e2e tests and the unit tests went apart. The generated
+The file of each topology with logs is written anew from the logs it is
+given, so `git diff` after a run shows where the e2e tests and the unit
+tests went apart. It is written anew because the helm values the launches
+share, and the constants more than one test uses, are computed across every
+test of the file: a file regenerated from a subset of its logs would give
+the rest of its tests a base they were not generated against.
+
+Two things follow from that, both of which lose tests silently:
+
+- Give `generate_tests.sh` the output of a **full** run. Logs it is not
+  given generate nothing, so their tests go.
+- Regenerate only from a run where every test **passed**. A log whose e2e
+  test failed generates nothing, so one flaky test takes its unit test with
+  it.
+
+### Updating the tests of some e2e tests only
+
+Logs live in the output directory until they are overwritten, and a rerun
+writes only the logs of the tests it runs. So to update the unit tests of
+some e2e tests, rerun those and regenerate from the whole output directory:
+
+```shell
+# 1. Change the policy, the e2e test or the e2e framework. Rebuild the
+#    images if the change was to the plugin; a change to test/e2e/lib
+#    needs no rebuild, the framework runs from the source tree.
+# 2. Rerun the affected tests, into the output directory of the full run.
+#    E2E_DIR is this directory, test/e2e of the source tree.
+cd OUTPUT_ROOT
+E2E_DIR/run_tests.sh E2E_DIR/policies.test-suite/POLICY/TOPOLOGY/TEST...
+# 3. Check that they passed, then regenerate from every log there.
+E2E_DIR/generate_tests.sh OUTPUT_ROOT/VM...
+```
+
+`run_tests.sh` writes under the current directory unless given `-o`, so run
+it where the full run wrote, or the new logs land outside the set which is
+regenerated from. The tests it runs are the directories it is given, which
+are in the source tree rather than under `OUTPUT_ROOT`, so they need a path
+of their own once the current directory is not `E2E_DIR` any more. Giving it
+`-o OUTPUT_ROOT` instead of the `cd` is not the same thing: `-o` puts the
+logs of every topology directly in that one directory, instead of the
+per-VM directory below it which step 3 regenerates from.
+
+The generated
 tests keep only what the replay uses of the logs. A pod of the guaranteed,
 burstable or besteffort template is a `PodSpec`, with only what differs from
 the defaults of the template, and other pods are built with `NewPod` and its

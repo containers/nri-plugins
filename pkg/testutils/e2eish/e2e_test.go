@@ -100,6 +100,43 @@ func TestE2ETargetCleansUpFirst(t *testing.T) {
 	}, lines)
 }
 
+// A resize in a namespace emits the namespace resize-cpu patches, which it
+// takes through the same variable as create. Refusing it would leave a test
+// which resizes a pod of a namespace with no e2e form at all. Every command
+// of the step takes the variable, the cpuset reads of the wait included.
+func TestE2ETargetResizeNamespace(t *testing.T) {
+	e := newE2ETarget("n4c16/test50-x", "x_test.go", "topology-aware")
+	e.resize("tenant-a", "pod0", "pod0c0", Resources{CPUReq: 2000, CPULim: 2000}, true)
+	e.resize("default", "pod1", "pod1c0", Resources{CPUReq: 1000, CPULim: 1000}, true)
+	e.resize("", "pod2", "pod2c0", Resources{CPUReq: 500, CPULim: 500}, true)
+
+	require.Empty(t, e.errs)
+	require.Equal(t, []string{
+		"cpus_before=$(namespace=tenant-a container-cpus pod0 pod0c0)",
+		"namespace=tenant-a resize-cpu pod0 pod0c0 2000m",
+		`namespace=tenant-a wait-cpuset-change pod0 pod0c0 "$cpus_before"`,
+		"cpus_before=$(container-cpus pod1 pod1c0)",
+		"resize-cpu pod1 pod1c0 1000m",
+		`wait-cpuset-change pod1 pod1c0 "$cpus_before"`,
+		"cpus_before=$(container-cpus pod2 pod2c0)",
+		"resize-cpu pod2 pod2c0 500m",
+		`wait-cpuset-change pod2 pod2c0 "$cpus_before"`,
+	}, cmdsOf(e))
+}
+
+// The replay resizes synchronously and the runtime does not, so a resize
+// emits a wait for the new cpuset. A resize which moves no cpuset has no
+// such wait, and emitting one would hang the e2e test until it times out,
+// so it is refused.
+func TestE2ETargetRefusesResizeWithNoWait(t *testing.T) {
+	e := newE2ETarget("n4c16/test50-x", "x_test.go", "topology-aware")
+	e.resize("default", "pod0", "pod0c0", Resources{CPUReq: 1000, CPULim: 1000}, false)
+
+	require.Empty(t, cmdsOf(e))
+	require.Len(t, e.errs, 1)
+	require.Contains(t, e.errs[0], "leaves the cpuset of pod0c0")
+}
+
 func TestShellQuote(t *testing.T) {
 	require.Equal(t, "500m", shellQuote("500m"))
 	require.Equal(t, `'a b'`, shellQuote("a b"))

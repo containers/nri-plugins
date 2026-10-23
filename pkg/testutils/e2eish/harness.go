@@ -243,12 +243,9 @@ func (h *Harness) InsertPod(ns, name, qos string, labels, annotations map[string
 	return pod
 }
 
-// InsertContainer adds a container to the cache, as the resource manager does
-// first for CreateContainer, with the resources the kubelet would give it.
-func (h *Harness) InsertContainer(spec CtrSpec, name string) cache.Container {
-	h.T.Helper()
-
-	res := spec.Res
+// nriResources are the resources of a container as the kubelet gives them to
+// the runtime.
+func nriResources(res Resources) *nri.LinuxResources {
 	r := &nri.LinuxResources{
 		Cpu:    &nri.LinuxCPU{},
 		Memory: &nri.LinuxMemory{},
@@ -264,6 +261,16 @@ func (h *Harness) InsertContainer(spec CtrSpec, name string) cache.Container {
 	if res.MemLim > 0 {
 		r.Memory.Limit = nri.Int64(res.MemLim)
 	}
+	return r
+}
+
+// InsertContainer adds a container to the cache, as the resource manager does
+// first for CreateContainer, with the resources the kubelet would give it.
+func (h *Harness) InsertContainer(spec CtrSpec, name string) cache.Container {
+	h.T.Helper()
+
+	res := spec.Res
+	r := nriResources(res)
 
 	// The cache estimates a burstable memory request from the OOM score
 	// adjustment, at a resolution of 1/1000 of the memory of the host.
@@ -317,6 +324,32 @@ func (h *Harness) CreateContainer(spec CtrSpec, name string) (cache.Container, e
 // Spec returns what a container was created from.
 func (h *Harness) Spec(name string) CtrSpec {
 	return h.specs[name]
+}
+
+// ResizeContainer does what the resource manager does for UpdateContainer: it
+// gives a container of a pod the resources of an in-place resize, and has the
+// policy update what it allocated when they really changed.
+func (h *Harness) ResizeContainer(pod, name string, res Resources) {
+	h.T.Helper()
+
+	p, ok := h.Pods[pod]
+	require.True(h.T, ok, "no pod %s to resize", pod)
+	var c cache.Container
+	for _, ctr := range p.GetContainers() {
+		if ctr.GetName() == name {
+			c = ctr
+			break
+		}
+	}
+	require.NotNil(h.T, c, "no container %s of pod %s to resize", name, pod)
+
+	Log.Infof("===== resize %s/%s", pod, name)
+	h.Owner.Lock()
+	defer h.Owner.Unlock()
+	if !c.SetResourceUpdates(nriResources(res)) {
+		return
+	}
+	require.NoError(h.T, h.Policy.UpdateResources(c), "failed to update %s", name)
 }
 
 // StopContainer does what the resource manager does for StopContainer and

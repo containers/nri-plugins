@@ -437,10 +437,14 @@ container-cpus() { # script API
     #
     # This is the live cpuset. Use allowed-cpu-ids instead to read the cpuset
     # from the latest snapshot which "report allowed" took.
+    #
+    # POD is read in $namespace, as create creates it there.
     local pod=$1 ctr=$2 status
+    local ns=""
+    [ -z "${namespace:-}" ] || ns="-n $namespace"
 
     status=$(vm-command-q \
-        "kubectl exec $pod -c $ctr -- grep Cpus_allowed_list /proc/1/status") ||
+        "kubectl exec $pod $ns -c $ctr -- grep Cpus_allowed_list /proc/1/status") ||
         error "failed to read the cpuset of container $ctr of pod $pod"
 
     tr -d '\t ' <<< "$status" | cut -d ':' -f 2
@@ -466,10 +470,14 @@ container-mems() { # script API
     # instance "0-1,3".
     #
     # This is the live memory set.
+    #
+    # POD is read in $namespace, as create creates it there.
     local pod=$1 ctr=$2 status
+    local ns=""
+    [ -z "${namespace:-}" ] || ns="-n $namespace"
 
     status=$(vm-command-q \
-        "kubectl exec $pod -c $ctr -- grep Mems_allowed_list /proc/1/status") ||
+        "kubectl exec $pod $ns -c $ctr -- grep Mems_allowed_list /proc/1/status") ||
         error "failed to read the memory set of container $ctr of pod $pod"
 
     tr -d '\t ' <<< "$status" | cut -d ':' -f 2
@@ -512,8 +520,13 @@ resize-cpu() { # script API
     #     resize-cpu pod0 pod0c0 2
     #     wait-cpuset-change pod0 pod0c0 "$before"
     local pod=$1 ctr=$2 cpu=$3
+    local ns=""
+    [ -z "${namespace:-}" ] || ns="-n $namespace"
+    # The patch below is the resize recorded after it, not a change behind the
+    # replay's back, which is what e2eish-mark-command flags.
+    local e2eish_resize_cpu=1
 
-    vm-command "kubectl patch pod $pod --subresource resize --patch '
+    vm-command "kubectl patch pod $pod $ns --subresource resize --patch '
 spec:
   containers:
   - name: $ctr
@@ -523,6 +536,7 @@ spec:
       limits:
         cpu: $cpu
 '" || command-error "failed to resize $ctr of $pod to $cpu CPUs"
+    e2eish-mark resize namespace="${namespace:-default}" name="$pod" container="$ctr" cpu="$cpu"
 }
 
 
