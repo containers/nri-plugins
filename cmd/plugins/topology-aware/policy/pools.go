@@ -712,6 +712,10 @@ func (p *policy) releasePool(container cache.Container) (Grant, bool) {
 
 // Update shared allocations effected by agrant.
 func (p *policy) updateSharedAllocations(grant *Grant) {
+	// Every change of the allocations ends here, and the free CPUs of the
+	// DRA devices change with them.
+	defer p.publishDRADevices()
+
 	if grant != nil {
 		log.Infof("* updating shared allocations affected by %s", (*grant).String())
 		if (*grant).CPUType() == cpuReserved {

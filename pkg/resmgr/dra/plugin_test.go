@@ -382,6 +382,56 @@ func TestPublish(t *testing.T) {
 	}
 }
 
+// TestPublishDoesNotWait verifies that publishing returns while the API server
+// does not answer, which lets the resource manager publish with its lock held.
+func TestPublishDoesNotWait(t *testing.T) {
+	client := fake.NewClientset(&corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: testNodeName},
+	})
+	p, _ := newTestPlugin(t, client, &testPolicy{})
+
+	var (
+		blocked = make(chan struct{})
+		release = make(chan struct{})
+		once    sync.Once
+	)
+	block := func(k8stesting.Action) (bool, runtime.Object, error) {
+		once.Do(func() { close(blocked) })
+		<-release
+		return false, nil, nil
+	}
+	client.PrependReactor("create", "resourceslices", block)
+	client.PrependReactor("update", "resourceslices", block)
+
+	publish := func(n int) {
+		t.Helper()
+		done := make(chan error, 1)
+		go func() { done <- p.Publish(testDevices(n)) }()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("Publish() failed: %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("Publish() waits for the API server")
+		}
+	}
+
+	if err := p.Start(t.Context()); err != nil {
+		t.Fatalf("Start() failed: %v", err)
+	}
+	defer p.Stop()
+	defer close(release)
+
+	publish(1)
+	select {
+	case <-blocked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the ResourceSlice was never written")
+	}
+	publish(2)
+}
+
 // TestStartTwice verifies a started plugin refuses to start again.
 func TestStartTwice(t *testing.T) {
 	client := newTestClient()

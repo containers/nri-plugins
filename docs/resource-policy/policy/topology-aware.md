@@ -1453,9 +1453,14 @@ the policy runs the containers of the pod on the claimed CPUs.
 
 The policy publishes one device per NUMA node, named `cpudevnuma000`,
 `cpudevnuma001` and so on. The capacity `dra.cpu/cpu` of a device is the
-number of CPUs of the node, excluding the reserved CPUs. The capacity does not
-change when containers or claims use the CPUs. The devices have these
-attributes:
+number of CPUs of the node which claims hold or can get: the CPUs of the node,
+minus the reserved CPUs, minus the CPUs containers hold exclusively, minus the
+whole CPUs the shared containers of the node need. The scheduler subtracts
+what claims consume, so the CPUs of claims stay in the capacity. The policy
+publishes the capacity again whenever it changes. A node with no CPUs left for
+claims has no device until some are free again. A new capacity applies to
+claims allocated after it: claims already allocated keep their CPUs. The
+devices have these attributes:
 
 | Attribute | Type | Value |
 |---|---|---|
@@ -1607,10 +1612,11 @@ leaves running, such as DaemonSet pods, lose the CPUs of their claims.
 
 - The CDI spec files of claims which ended while the plugin was not running
   are left behind.
-- The capacity of a device is the total of the node, not its free CPUs.
-  Containers with CPU requests take CPUs from the same supply, and the
-  scheduler does not see that, so a claim can be placed on a node with too
-  few free CPUs and fail to prepare.
+- A claim can fail to prepare when the node has too few free CPUs for it. The
+  pod then waits until enough CPUs are free. This happens when the scheduler
+  places the claim before the policy publishes a new capacity, or when shared
+  containers in a pool above the NUMA nodes need the CPUs: their need is not
+  in the capacity of any one node.
 
 ## Cookbook
 
