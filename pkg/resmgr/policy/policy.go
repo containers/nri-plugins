@@ -71,6 +71,9 @@ type Owner interface {
 	// UpdateContainers pushes the pending container changes to the runtime.
 	// It must be called without the lock held.
 	UpdateContainers() error
+	// DRAEnabled tells whether DRA is enabled. Without it the devices a
+	// policy publishes go nowhere.
+	DRAEnabled() bool
 	// PublishDRADevices publishes the given DRA devices, replacing the ones
 	// published before. A policy calls it whenever its devices change. The
 	// devices are copied, so the policy is free to change them afterwards.

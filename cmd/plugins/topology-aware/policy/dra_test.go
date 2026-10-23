@@ -55,6 +55,8 @@ type draTestOwner struct {
 
 func (*draTestOwner) UpdateContainers() error { return nil }
 
+func (*draTestOwner) DRAEnabled() bool { return true }
+
 func (o *draTestOwner) PublishDRADevices(devices []resourceapi.Device) error {
 	o.devices = devices
 	return nil

@@ -103,6 +103,10 @@ type Owner struct {
 // UpdateContainers implements policyapi.Owner.
 func (*Owner) UpdateContainers() error { return nil }
 
+// DRAEnabled implements policyapi.Owner. It is true, so the policy publishes
+// its devices to the harness.
+func (*Owner) DRAEnabled() bool { return true }
+
 // PublishDRADevices implements policyapi.Owner.
 func (o *Owner) PublishDRADevices(devices []resourceapi.Device) error {
 	o.devices = slices.Clone(devices)
