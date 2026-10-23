@@ -26,6 +26,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	resourceapi "k8s.io/api/resource/v1"
 	"sigs.k8s.io/yaml"
 
 	"github.com/containers/nri-plugins/pkg/utils"
@@ -52,6 +53,16 @@ type Script struct {
 	verified      int
 	skipped       int
 	reads         int // of the state, by the accessors of the Go assertions
+	dra           *draCluster
+	pending       []*pendingPod
+}
+
+// pendingPod is a pod whose claims did not fit when it was created. The
+// scheduler leaves such a pod unscheduled until claimed resources are
+// released, so none of its containers runs yet.
+type pendingPod struct {
+	ns  string
+	pod *corev1.Pod
 }
 
 // NewScript returns a script for the plugin. A test with overrides read when
@@ -59,13 +70,16 @@ type Script struct {
 func NewScript(t *testing.T, plugin *Plugin) *Script {
 	// The e2e deployment enables test hints.
 	t.Setenv(utils.EnvVarEnableTestAPIs, "1")
-	s := &Script{t: t, plugin: plugin}
+	s := &Script{t: t, plugin: plugin, dra: newDRACluster(plugin.DRADriver)}
 	t.Cleanup(func() {
 		if t.Failed() || t.Skipped() {
 			return
 		}
 		if s.skipping != "" {
 			t.Errorf("the skip of %q has no resume", s.skipping)
+		}
+		for _, p := range s.pending {
+			t.Errorf("the claims of %s/%s never fit", p.ns, p.pod.Name)
 		}
 		if r := s.verifyReport(); r != "" {
 			t.Log(r)
@@ -253,8 +267,10 @@ func (s *Script) syncPods(pods []*Pod) []*syncPod {
 func (s *Script) sync(pods []*syncPod) {
 	s.t.Helper()
 	for _, p := range pods {
+		// A claim of a pod already running is allocated, and only the cache
+		// of the policy says what it holds, which a fresh replay has not got.
 		if len(p.Spec.ResourceClaims) > 0 {
-			s.unsupported("a pod with resource claims")
+			s.unsupported("a pod which already holds resource claims")
 		}
 		if why := s.plugin.unsupportedPod(&p.Pod); why != "" {
 			s.unsupported("%s", why)
@@ -316,8 +332,8 @@ func (s *Script) createPod(ns string, p *corev1.Pod) {
 	if p.Kind != "" && p.Kind != "Pod" {
 		s.unsupported("creating a %s", p.Kind)
 	}
-	if len(p.Spec.ResourceClaims) > 0 {
-		s.unsupported("a pod with resource claims")
+	if len(p.Spec.ResourceClaims) > 0 && s.dra.driver == "" {
+		s.unsupported("a pod with resource claims, of a policy with no DRA driver")
 	}
 	if why := s.plugin.unsupportedPod(p); why != "" {
 		s.unsupported("%s", why)
@@ -326,7 +342,108 @@ func (s *Script) createPod(ns string, p *corev1.Pod) {
 	if s.failed {
 		s.unsupported("creating a pod after a launch which failed")
 	}
-	s.h.CreateFromPod(cmp.Or(p.Namespace, ns), p)
+	ns = cmp.Or(p.Namespace, ns)
+	if !s.startPod(ns, p) {
+		Log.Infof("===== %s/%s stays pending, its claims do not fit", ns, p.Name)
+		s.pending = append(s.pending, &pendingPod{ns: ns, pod: p})
+	}
+}
+
+// startPod allocates the claims of a pod and starts its containers. It tells
+// whether the claims fit: a pod whose claims do not is left unscheduled, the
+// way the scheduler leaves it, with none of its containers running.
+func (s *Script) startPod(ns string, p *corev1.Pod) bool {
+	s.t.Helper()
+
+	claims, err := s.dra.podClaims(ns, p)
+	if err != nil {
+		s.unsupported("%v", err)
+	}
+	fits, err := s.dra.allocate(s.h.Owner.Devices(), claims)
+	require.NoError(s.t, err, "failed to allocate the claims of %s/%s", ns, p.Name)
+	if !fits {
+		return false
+	}
+
+	// The kubelet prepares the claims of a pod before it creates any of its
+	// containers, and the policy resolves the claims of a container once,
+	// when it allocates resources for it.
+	for _, pc := range claims {
+		s.h.PrepareClaim(pc.claim, s.dra.results(pc.claim))
+	}
+	s.dra.own(ns, p.Name, claims)
+	s.h.CreateFromPod(ns, p, s.dra.containerDevices(p, claims))
+	return true
+}
+
+// startPending starts the pods waiting for their claims to fit, in the order
+// they were created, up to the first which still does not fit. A cluster's
+// scheduler would go on past that one, but the order claims are allocated in
+// is what the log of the e2e test recorded.
+func (s *Script) startPending() {
+	s.t.Helper()
+
+	for len(s.pending) > 0 {
+		p := s.pending[0]
+		if !s.startPod(p.ns, p.pod) {
+			return
+		}
+		s.pending = s.pending[1:]
+	}
+}
+
+// dropPending forgets the pods in the namespace which are waiting for their
+// claims to fit, as a deletion of them does.
+func (s *Script) dropPending(ns string, deleted func(string) bool) {
+	s.pending = slices.DeleteFunc(s.pending, func(p *pendingPod) bool {
+		return p.ns == ns && deleted(p.pod.Name)
+	})
+}
+
+// CreateDeviceClass is kubectl create of the DRA DeviceClass of the YAML,
+// which the device requests of a claim select devices through.
+func (s *Script) CreateDeviceClass(y string) {
+	s.t.Helper()
+	s.e2e.refuse("CreateDeviceClass has no e2e form")
+	class := &resourceapi.DeviceClass{}
+	require.NoError(s.t, yaml.UnmarshalStrict([]byte(y), class), "bad DeviceClass")
+	s.createDeviceClass(class)
+}
+
+func (s *Script) createDeviceClass(class *resourceapi.DeviceClass) {
+	s.t.Helper()
+	if s.skipping != "" {
+		return
+	}
+	if s.dra.driver == "" {
+		s.unsupported("a DeviceClass, of a policy with no DRA driver")
+	}
+	Log.Infof("===== create DeviceClass %s", class.Name)
+	s.dra.addClass(class)
+}
+
+// CreateClaimTemplate is kubectl create of the DRA ResourceClaimTemplate of
+// the YAML, in the namespace, which the claims of a pod naming it are created
+// from.
+func (s *Script) CreateClaimTemplate(ns, y string) {
+	s.t.Helper()
+	s.e2e.refuse("CreateClaimTemplate has no e2e form")
+	tmpl := &resourceapi.ResourceClaimTemplate{}
+	require.NoError(s.t, yaml.UnmarshalStrict([]byte(y), tmpl), "bad ResourceClaimTemplate")
+	s.createClaimTemplate(ns, tmpl)
+}
+
+func (s *Script) createClaimTemplate(ns string, tmpl *resourceapi.ResourceClaimTemplate) {
+	s.t.Helper()
+	if s.skipping != "" {
+		return
+	}
+	if s.dra.driver == "" {
+		s.unsupported("a ResourceClaimTemplate, of a policy with no DRA driver")
+	}
+	ns = cmp.Or(tmpl.Namespace, ns)
+	Log.Infof("===== create ResourceClaimTemplate %s/%s", ns, tmpl.Name)
+	s.dra.addTemplate(ns, tmpl)
 }
 
 // DeletePods is kubectl delete of pods in the namespace. Pods not there are
@@ -343,11 +460,16 @@ func (s *Script) deletePods(ns string, names ...string) {
 		return
 	}
 	ns = canonicalNamespace(ns)
+	s.dropPending(ns, func(name string) bool { return slices.Contains(names, name) })
 	for _, name := range names {
 		if pod, ok := s.h.Pods[name]; ok && canonicalNamespace(pod.GetNamespace()) == ns {
 			s.h.DeletePods(name)
+			// The kubelet unprepares the claims of a pod once its containers
+			// have stopped, and a claim of a template is the pod's own.
+			s.h.ReleaseClaims(s.dra.release(ns, name)...)
 		}
 	}
+	s.startPending()
 }
 
 // DeleteAllPodsIn is kubectl delete of all the pods in the namespace.
@@ -358,6 +480,7 @@ func (s *Script) DeleteAllPodsIn(ns string) {
 		return
 	}
 	ns = canonicalNamespace(ns)
+	s.dropPending(ns, func(string) bool { return true })
 	var names []string
 	for name, pod := range s.h.Pods {
 		if canonicalNamespace(pod.GetNamespace()) == ns {

@@ -40,6 +40,12 @@ func DriverName(policyName string) string {
 	return policyName + "." + draDomain
 }
 
+// CDIDevice returns the qualified name of the CDI device a driver writes for
+// the allocation result index of claim uid. ClaimOfCDIDevice parses it back.
+func CDIDevice(driver string, uid types.UID, index int) string {
+	return parser.QualifiedName(driver, cdiClass, cdiDeviceName(uid, index))
+}
+
 // cdiDeviceEnv returns the name of the environment variable set by the CDI
 // device of result index of claim uid. The value of the variable is the name
 // of the device.

@@ -36,6 +36,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	resourceapi "k8s.io/api/resource/v1"
 	resapi "k8s.io/apimachinery/pkg/api/resource"
 	"sigs.k8s.io/yaml"
 )
@@ -365,9 +366,30 @@ func (g *genTest) resize(r *record) {
 		strconv.Quote(r.Container), milli, milli)
 }
 
-// create is the step of a create record: one of a PodSpec if the pod is of
-// an e2e test template, one of its options otherwise.
+// create is the step of a create record, by the kind of its object. A pod is
+// a PodSpec if it is of an e2e test template, its options otherwise, and a
+// DRA object is its own YAML.
 func (g *genTest) create(r *record) {
+	switch kind := g.kindOf(r); kind {
+	case "":
+		return
+	case "Pod":
+		g.createPod(r)
+	case "DeviceClass":
+		if y := g.draObject(r, &resourceapi.DeviceClass{}); y != "" {
+			g.step("s.CreateDeviceClass(%s)", goString(y))
+		}
+	case "ResourceClaimTemplate":
+		if y := g.draObject(r, &resourceapi.ResourceClaimTemplate{}); y != "" {
+			g.step("s.CreateClaimTemplate(%s, %s)",
+				strconv.Quote(cmp.Or(r.Namespace, "default")), goString(y))
+		}
+	default:
+		g.stop("creating a %s", kind)
+	}
+}
+
+func (g *genTest) createPod(r *record) {
 	pod := g.podOf(r)
 	if pod == nil {
 		return
@@ -924,18 +946,10 @@ func overlay(values, base, chart any) map[string]any {
 // podOf is the pod of a create record, or nil if the replay cannot create it.
 func (g *genTest) podOf(r *record) *corev1.Pod {
 	g.t.Helper()
-	if string(r.Object) == "null" || len(r.Object) == 0 {
-		g.stop("an object the e2e test could not log")
-		return nil
-	}
 	pod := &corev1.Pod{}
 	require.NoError(g.t, json.Unmarshal(r.Object, pod), "%s: bad object", r)
-	if pod.Kind != "Pod" {
-		g.stop("creating a %s", pod.Kind)
-		return nil
-	}
-	if len(pod.Spec.ResourceClaims) > 0 {
-		g.stop("a pod with resource claims")
+	if len(pod.Spec.ResourceClaims) > 0 && g.plugin.DRADriver == "" {
+		g.stop("a pod with resource claims, of a policy with no DRA driver")
 		return nil
 	}
 	if why := g.plugin.unsupportedPod(pod); why != "" {
@@ -944,6 +958,35 @@ func (g *genTest) podOf(r *record) *corev1.Pod {
 	}
 	pod.Namespace = cmp.Or(pod.Namespace, r.Namespace, "default")
 	return pod
+}
+
+// kindOf is the kind of the object of a create record, "" for a record whose
+// object the replay cannot create.
+func (g *genTest) kindOf(r *record) string {
+	g.t.Helper()
+	if string(r.Object) == "null" || len(r.Object) == 0 {
+		g.stop("an object the e2e test could not log")
+		return ""
+	}
+	var meta struct{ Kind string }
+	require.NoError(g.t, json.Unmarshal(r.Object, &meta), "%s: bad object", r)
+	return meta.Kind
+}
+
+// draObject is the YAML of a DRA object of a create record, as the e2e test
+// submitted it, or "" if it is not an object of the kind the replay expects.
+// A field the kind does not know stops the generation rather than being
+// dropped from the YAML of a test which would then assert less than the e2e
+// test did.
+func (g *genTest) draObject(r *record, obj any) string {
+	g.t.Helper()
+	if err := yaml.UnmarshalStrict(r.Object, obj); err != nil {
+		g.stop("a %s the replay cannot read: %v", g.kindOf(r), err)
+		return ""
+	}
+	y, err := yaml.JSONToYAML(r.Object)
+	require.NoError(g.t, err, "%s: bad object", r)
+	return "\n" + string(y)
 }
 
 // podSpec is the QoS class and the Go PodSpec of a pod of an e2e test
@@ -1126,6 +1169,14 @@ func (g *genTest) podArgs(pod *corev1.Pod, init []corev1.Container, running []st
 	if len(pod.Annotations) > 0 {
 		args = append(args, "harness.WithAnnotations("+mapLiteral(pod.Annotations)+")")
 	}
+	for _, pc := range pod.Spec.ResourceClaims {
+		if pc.ResourceClaimTemplateName == nil {
+			g.stop("pod %s, whose claim %s names no template", pod.Name, pc.Name)
+			return ""
+		}
+		args = append(args, fmt.Sprintf("harness.FromClaimTemplate(%s, %s)",
+			strconv.Quote(pc.Name), strconv.Quote(*pc.ResourceClaimTemplateName)))
+	}
 	for _, list := range []struct {
 		option string
 		ctrs   []corev1.Container
@@ -1166,6 +1217,10 @@ func (g *genTest) container(c corev1.Container) string {
 		req, lim = c.Resources.Requests, c.Resources.Limits
 		opts     []string
 	)
+	for _, cc := range c.Resources.Claims {
+		opts = append(opts, fmt.Sprintf("harness.WithClaim(%s, %s)",
+			strconv.Quote(cc.Name), strconv.Quote(cc.Request)))
+	}
 	quantity := func(list corev1.ResourceList, name corev1.ResourceName) string {
 		if q, ok := list[name]; ok {
 			return strconv.Quote(q.String())

@@ -1485,6 +1485,320 @@ extraEnv:
 	s.Terminate()
 }
 
+// TestE2eishGenN4c16Test42DraDevices is n4c16/test42-dra-devices.
+func TestE2eishGenN4c16Test42DraDevices(t *testing.T) {
+	s := harness.NewScript(t, e2eishPlugin)
+	s.Launch(genN4c16, genN4c16BaseConfig, "config: {dra: {enabled: true}, reservedResources: {cpu: \"cpuset:15\"}}")
+	s.SyncWithRuntimePods(genN4c16Pods...)
+	s.CreateDeviceClass(`
+apiVersion: resource.k8s.io/v1
+kind: DeviceClass
+metadata:
+  name: topology-aware.nri.io
+spec:
+  selectors:
+  - cel:
+      expression: device.driver == "topology-aware.nri.io"
+`)
+	s.CreateClaimTemplate("default", `
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: pod0
+spec:
+  spec:
+    devices:
+      requests:
+      - exactly:
+          capacity:
+            requests:
+              dra.cpu/cpu: "3"
+          deviceClassName: topology-aware.nri.io
+          selectors:
+          - cel:
+              expression: device.attributes["resource.kubernetes.io"].numaNode ==
+                3
+        name: cpus
+`)
+	s.CreatePod("pod0",
+		harness.FromClaimTemplate("cpus", "pod0"),
+		harness.WithContainers(
+			harness.NewContainer("pod0c0", harness.WithClaim("cpus", "")),
+		),
+	)
+	s.Consts(`
+# Helpers for the expressions which "verify" evaluates, shared by every policy
+# and topology of this test suite.
+#
+# These run after the state which "report allowed" collects, so they can refer
+# to its variables: cpus, mems, nodes, cores, threads, dies, packages and
+# allocations. See "run.sh help pyexec".
+
+def local_mems(ctr, *types):
+    """Verify that ctr uses exactly the given memory types of its own package.
+
+    The memory_nodes mapping tells which memory node of a package holds which
+    memory type. A topology which has more than one memory type defines it,
+    see for instance n6-hbm-cxl/py_consts.var.py.
+    """
+    package = 0 if packages[ctr] == {"package0"} else 1
+    expected = set(memory_nodes[package][t] for t in types)
+    assert mems[ctr] == expected, (
+        "%s runs in %s, so its %s memory should be %s, but it uses %s" %
+        (ctr,
+         ",".join(sorted(packages[ctr])),
+         ",".join(types),
+         ",".join(sorted(expected)),
+         ",".join(sorted(mems[ctr]))))
+    return True
+def cpuset(s):
+    """Return a cpuset such as 4-5,8 as a set of CPU names, as in cpus."""
+    names = set()
+    for r in filter(None, s.split(",")):
+        first, _, last = r.partition("-")
+        for cpu in range(int(first), int(last or first) + 1):
+            names.add("cpu%02d" % cpu)
+    return names`)
+	s.VerifyPy(`cpuset('12-14') == cpuset('12-15') - cpuset('15')`)
+	s.VerifyPy(`cpus['pod0c0'] == cpuset('12-14')`)
+	require.Equal(t, []int{3}, harness.IDs(s.Mems("pod0c0")))
+	s.CreateClaimTemplate("default", `
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: pod1
+spec:
+  spec:
+    devices:
+      requests:
+      - exactly:
+          capacity:
+            requests:
+              dra.cpu/cpu: "2"
+          deviceClassName: topology-aware.nri.io
+          selectors:
+          - cel:
+              expression: device.attributes["resource.kubernetes.io"].numaNode ==
+                1
+        name: cpus
+`)
+	s.CreatePod("pod1",
+		harness.FromClaimTemplate("cpus", "pod1"),
+		harness.WithContainers(
+			harness.NewContainer("pod1c0", harness.WithClaim("cpus", "")),
+		),
+	)
+	s.VerifyPy(`cpuset('4-5') == cpuset('4-5')`)
+	s.VerifyPy(`cpuset('4-5') <= cpuset('4-7')`)
+	s.VerifyPy(`cpus['pod1c0'] == cpuset('4-5')`)
+	require.Equal(t, []int{1}, harness.IDs(s.Mems("pod1c0")))
+	s.CreateClaimTemplate("default", `
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: pod2
+spec:
+  spec:
+    devices:
+      requests:
+      - exactly:
+          capacity:
+            requests:
+              dra.cpu/cpu: "2"
+          deviceClassName: topology-aware.nri.io
+          selectors:
+          - cel:
+              expression: device.attributes["resource.kubernetes.io"].numaNode ==
+                1
+        name: cpus
+`)
+	s.CreatePod("pod2",
+		harness.FromClaimTemplate("cpus", "pod2"),
+		harness.WithContainers(
+			harness.NewContainer("pod2c0", harness.WithClaim("cpus", "")),
+		),
+	)
+	s.VerifyPy(`cpuset('4-5') | cpuset('6-7') == cpuset('4-7')`)
+	s.VerifyPy(`cpus['pod2c0'] == cpuset('6-7')`)
+	require.Equal(t, []int{1}, harness.IDs(s.Mems("pod2c0")))
+	s.CreateClaimTemplate("default", `
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: pod3
+spec:
+  spec:
+    devices:
+      requests:
+      - exactly:
+          capacity:
+            requests:
+              dra.cpu/cpu: "2"
+          deviceClassName: topology-aware.nri.io
+          selectors:
+          - cel:
+              expression: device.attributes["resource.kubernetes.io"].numaNode ==
+                1
+        name: cpus
+`)
+	s.CreatePod("pod3",
+		harness.FromClaimTemplate("cpus", "pod3"),
+		harness.WithContainers(
+			harness.NewContainer("pod3c0", harness.WithClaim("cpus", "")),
+		),
+	)
+	s.DeletePods("default", "pod1")
+	s.VerifyPy(`cpuset('4-5') == cpuset('4-5')`)
+	s.VerifyPy(`cpus['pod3c0'] == cpuset('4-5')`)
+	require.Equal(t, []int{1}, harness.IDs(s.Mems("pod3c0")))
+	s.CreateBestEffort(harness.PodSpec{})
+	s.VerifyPy(`cpus['pod4c0'].isdisjoint(cpuset('12-14,6-7,4-5'))`)
+	s.CreateClaimTemplate("default", `
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: pod5
+spec:
+  spec:
+    devices:
+      requests:
+      - exactly:
+          capacity:
+            requests:
+              dra.cpu/cpu: "2"
+          deviceClassName: topology-aware.nri.io
+          selectors:
+          - cel:
+              expression: device.attributes["resource.kubernetes.io"].numaNode ==
+                0
+        name: cpus
+`)
+	s.CreatePod("pod5",
+		harness.FromClaimTemplate("cpus", "pod5"),
+		harness.WithContainers(
+			harness.NewContainer("pod5c0", harness.WithClaim("cpus", "")),
+		),
+	)
+	s.VerifyPy(`cpuset('0-1') <= set(['cpu00', 'cpu01', 'cpu02', 'cpu03'])`)
+	s.VerifyPy(`cpus['pod5c0'] == cpuset('0-1')`)
+	require.Equal(t, []int{0}, harness.IDs(s.Mems("pod5c0")))
+	s.VerifyPy(`cpus['pod4c0'] == set(['cpu00', 'cpu01', 'cpu02', 'cpu03']) - cpuset('0-1')`)
+	s.DeletePods("default", "pod5")
+	s.VerifyPy(`cpus['pod4c0'] == set(['cpu00', 'cpu01', 'cpu02', 'cpu03'])`)
+	s.CreateClaimTemplate("default", `
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: pod6
+spec:
+  spec:
+    devices:
+      requests:
+      - exactly:
+          capacity:
+            requests:
+              dra.cpu/cpu: "2"
+          deviceClassName: topology-aware.nri.io
+          selectors:
+          - cel:
+              expression: device.attributes["resource.kubernetes.io"].numaNode ==
+                0
+        name: cpus
+`)
+	s.CreatePod("pod6",
+		harness.FromClaimTemplate("cpus", "pod6"),
+		harness.WithContainers(
+			harness.NewContainer("pod6c0", harness.WithClaim("cpus", "")),
+			harness.NewContainer("pod6c1", harness.WithClaim("cpus", "")),
+		),
+	)
+	s.VerifyPy(`cpus['pod6c0'] == cpuset('0-1')`)
+	s.VerifyPy(`cpus['pod6c1'] == cpuset('0-1')`)
+	require.Equal(t, []int{0}, harness.IDs(s.Mems("pod6c0")))
+	require.Equal(t, []int{0}, harness.IDs(s.Mems("pod6c1")))
+	s.VerifyPy(`cpus['pod4c0'].isdisjoint(cpuset('0-1'))`)
+	s.CreateClaimTemplate("default", `
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: pod7
+spec:
+  spec:
+    devices:
+      requests:
+      - exactly:
+          capacity:
+            requests:
+              dra.cpu/cpu: "2"
+          deviceClassName: topology-aware.nri.io
+          selectors:
+          - cel:
+              expression: device.attributes["resource.kubernetes.io"].numaNode ==
+                2
+        name: cpus
+`)
+	s.CreatePod("pod7",
+		harness.FromClaimTemplate("cpus", "pod7"),
+		harness.WithContainers(
+			harness.NewContainer("pod7c0", harness.WithClaim("cpus", ""), harness.WithRequests("100m", "")),
+		),
+	)
+	s.VerifyPy(`cpuset('8-9') <= cpuset('8-11')`)
+	s.VerifyPy(`cpus['pod7c0'] == cpuset('8-11')`)
+	require.Equal(t, []int{2}, harness.IDs(s.Mems("pod7c0")))
+	s.VerifyPy(`cpus['pod4c0'].isdisjoint(cpuset('8-9'))`)
+	s.VerifyPy(`cpuset('10-11') == cpuset('8-11') - cpuset('8-9')`)
+	s.CreateClaimTemplate("default", `
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: pod8
+spec:
+  spec:
+    devices:
+      requests:
+      - exactly:
+          capacity:
+            requests:
+              dra.cpu/cpu: "1"
+          deviceClassName: topology-aware.nri.io
+          selectors:
+          - cel:
+              expression: device.attributes["resource.kubernetes.io"].numaNode ==
+                0
+        name: first
+      - exactly:
+          capacity:
+            requests:
+              dra.cpu/cpu: "1"
+          deviceClassName: topology-aware.nri.io
+          selectors:
+          - cel:
+              expression: device.attributes["resource.kubernetes.io"].numaNode ==
+                2
+        name: second
+`)
+	s.CreatePod("pod8",
+		harness.FromClaimTemplate("cpus", "pod8"),
+		harness.WithContainers(
+			harness.NewContainer("pod8c0", harness.WithClaim("cpus", "first")),
+			harness.NewContainer("pod8c1", harness.WithClaim("cpus", "second")),
+			harness.NewContainer("pod8c2", harness.WithClaim("cpus", "")),
+		),
+	)
+	s.VerifyPy(`len(cpuset('2')) == 1`)
+	s.VerifyPy(`cpuset('2') <= cpuset('0-3')`)
+	s.VerifyPy(`len(cpuset('10')) == 1`)
+	s.VerifyPy(`cpuset('10') <= cpuset('8-11')`)
+	s.VerifyPy(`cpus['pod8c0'] == cpuset('2')`)
+	s.VerifyPy(`cpus['pod8c1'] == cpuset('10')`)
+	s.VerifyPy(`cpus['pod8c2'] == cpuset('2,10')`)
+	s.VerifyPy(`cpuset('2,10') == cpuset('2,10')`)
+	s.VerifyPy(`cpus['pod4c0'].isdisjoint(cpuset('2,10'))`)
+	s.DeleteAllPodsIn("default")
+	s.Terminate()
+}
+
 // TestE2eishGenN4c16Test43DraPcieRoots is n4c16/test43-dra-pcie-roots.
 func TestE2eishGenN4c16Test43DraPcieRoots(t *testing.T) {
 	s := harness.NewScript(t, e2eishPlugin)
