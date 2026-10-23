@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -1251,6 +1252,245 @@ func TestReconfigureKeepsClaims(t *testing.T) {
 	}
 	if again := allocateClaim(t, p, "a", draTestResult(0, "2")); !again.Equals(a) {
 		t.Errorf("claim a has CPUs %s after a refused reconfiguration, expected %s", again, a)
+	}
+}
+
+// draRestart sets up and starts a policy with its cache under dir, as the
+// plugin does after a restart, and returns the error of its setup.
+func draRestart(t *testing.T, dir string, sys system.System, cfg *cfgapi.Config) (*policy, error) {
+	t.Helper()
+	cch, err := cache.NewCache(cache.Options{CacheDir: filepath.Join(dir, "cache")})
+	if err != nil {
+		t.Fatalf("failed to create cache: %v", err)
+	}
+	p := New().(*policy)
+	if err := p.Setup(&policyapi.BackendOptions{
+		Cache:  cch,
+		System: sys,
+		Owner:  &draTestOwner{},
+		Config: cfg,
+	}); err != nil {
+		return nil, err
+	}
+	if err := p.Start(); err != nil {
+		t.Fatalf("failed to start policy: %v", err)
+	}
+	return p, nil
+}
+
+// TestRestoreClaims verifies that claims keep their CPUs across a restart,
+// including a claim with no container, and that a container created later
+// is pinned to the CPUs of its claim.
+func TestRestoreClaims(t *testing.T) {
+	sys := testServerSystem(t)
+	dir := t.TempDir()
+	cfg := draTestConfig("", draTestReserved(sys))
+	cfg.PinCPU = true
+	p, err := draRestart(t, dir, sys, cfg)
+	if err != nil {
+		t.Fatalf("failed to set up policy: %v", err)
+	}
+
+	a := allocateClaim(t, p, "a", draTestResult(0, "2"))
+	b := allocateClaim(t, p, "b", draTestResult(1, "2"), draTestResult(2, "1"))
+	free := freeCPUs(p)
+	results := p.allocations.claims["b"].results
+
+	p, err = draRestart(t, dir, sys, cfg)
+	if err != nil {
+		t.Fatalf("failed to restart policy: %v", err)
+	}
+	if len(p.allocations.claims) != 2 {
+		t.Fatalf("restored %d claims, expected 2", len(p.allocations.claims))
+	}
+	if got := p.allocations.claims["a"].ExclusiveCPUs(); !got.Equals(a) {
+		t.Errorf("claim a has CPUs %s after a restart, expected %s", got, a)
+	}
+	if got := p.allocations.claims["b"].ExclusiveCPUs(); !got.Equals(b) {
+		t.Errorf("claim b has CPUs %s after a restart, expected %s", got, b)
+	}
+	if got := p.allocations.claims["b"].results; !reflect.DeepEqual(got, results) {
+		t.Errorf("claim b has results %v after a restart, expected %v", got, results)
+	}
+	if got := freeCPUs(p); !got.Equals(free) {
+		t.Errorf("free CPUs are %s after a restart, expected %s", got, free)
+	}
+
+	c := &pinnedContainer{
+		mockContainer: mockContainer{
+			name:                   "claimer",
+			returnValueForGetID:    "claimer",
+			returnValueForQOSClass: v1.PodQOSBestEffort,
+		},
+		devices: holds("a", 0),
+	}
+	grant, err := p.allocatePool(c, "")
+	if err != nil {
+		t.Fatalf("failed to allocate: %v", err)
+	}
+	p.applyGrant(grant)
+	if pinned := cpuset.MustParse(c.cpus); !pinned.Equals(a) {
+		t.Errorf("pinned to %s after a restart, expected the claim's %s", pinned, a)
+	}
+}
+
+// TestRestoreClaimsRefused verifies that a restart fails on a claim whose
+// node has too few CPUs for it, naming the claim, and that the claim is
+// restored once the cause is gone.
+func TestRestoreClaimsRefused(t *testing.T) {
+	sys := testServerSystem(t)
+
+	for _, tc := range []struct {
+		name string
+		// restart restarts the policy so that it cannot hold claim a.
+		restart func(t *testing.T, dir string, a cpuset.CPUSet) error
+		err     string
+	}{
+		{
+			name: "claimed CPUs reserved",
+			restart: func(t *testing.T, dir string, a cpuset.CPUSet) error {
+				cfg := draTestConfig("", "cpuset:"+cpuset.New(a.List()[0]).String())
+				_, err := draRestart(t, dir, sys, cfg)
+				return err
+			},
+			err: "because they are reserved",
+		},
+		{
+			// An isolated CPU may be reserved if it is the only one.
+			name: "claimed isolated CPU reserved",
+			restart: func(t *testing.T, dir string, a cpuset.CPUSet) error {
+				isolated := a.Intersection(sys.IsolatedCPUs())
+				if isolated.IsEmpty() {
+					t.Fatalf("claim a holds no isolated CPUs: %s", a)
+				}
+				cfg := draTestConfig("", "cpuset:"+cpuset.New(isolated.List()[0]).String())
+				_, err := draRestart(t, dir, sys, cfg)
+				return err
+			},
+			err: "because they are reserved",
+		},
+		{
+			name: "claimed CPUs not available",
+			restart: func(t *testing.T, dir string, a cpuset.CPUSet) error {
+				available := sys.CPUSet().Difference(cpuset.New(a.List()[0]))
+				cfg := draTestConfig("cpuset:"+available.String(), draTestReserved(sys))
+				_, err := draRestart(t, dir, sys, cfg)
+				return err
+			},
+			err: "can't reserve exclusive CPUs",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			cfg := draTestConfig("", draTestReserved(sys))
+			p, err := draRestart(t, dir, sys, cfg)
+			if err != nil {
+				t.Fatalf("failed to set up policy: %v", err)
+			}
+			// Claim all of node 0, its isolated CPUs too.
+			a := allocateClaim(t, p, "a", draTestResult(0, fmt.Sprint(sys.Node(0).CPUSet().Size())))
+
+			err = tc.restart(t, dir, a)
+			if err == nil || !strings.Contains(err.Error(), "DRA claim a") || !strings.Contains(err.Error(), tc.err) ||
+				!strings.Contains(err.Error(), "failed to move it") {
+				t.Fatalf("got error %v restarting, expected one naming claim a and %q", err, tc.err)
+			}
+
+			p, err = draRestart(t, dir, sys, cfg)
+			if err != nil {
+				t.Fatalf("failed to restart policy with the old config: %v", err)
+			}
+			if _, ok := p.allocations.claims["a"]; !ok {
+				t.Fatalf("claim a not restored with the old config")
+			}
+			if got := p.allocations.claims["a"].ExclusiveCPUs(); !got.Equals(a) {
+				t.Errorf("claim a has CPUs %s after a restart, expected %s", got, a)
+			}
+		})
+	}
+}
+
+// TestRestoreClaimsMoved verifies that a restart moves a claim which cannot
+// keep its CPUs to other CPUs of the same node. Each result gets as many CPUs
+// as before, and the other claims keep their CPUs.
+func TestRestoreClaimsMoved(t *testing.T) {
+	sys := testServerSystem(t)
+	node0 := sys.Node(0).CPUSet()
+
+	for _, tc := range []struct {
+		name string
+		// restart restarts the policy so that claim a cannot keep its CPUs.
+		restart func(t *testing.T, dir string, a cpuset.CPUSet) (*policy, error)
+		// keepsB tells whether claim b keeps its CPUs.
+		keepsB bool
+	}{
+		{
+			name: "claimed CPU reserved",
+			restart: func(t *testing.T, dir string, a cpuset.CPUSet) (*policy, error) {
+				cfg := draTestConfig("", "cpuset:"+cpuset.New(a.List()[0]).String())
+				return draRestart(t, dir, sys, cfg)
+			},
+			keepsB: true,
+		},
+		{
+			name: "pool gone",
+			restart: func(t *testing.T, dir string, a cpuset.CPUSet) (*policy, error) {
+				file := filepath.Join(dir, "cache", "cache")
+				data, err := os.ReadFile(file)
+				if err != nil {
+					t.Fatalf("failed to read cache: %v", err)
+				}
+				gone := strings.ReplaceAll(string(data), "NUMA node #0", "NUMA node #9")
+				if err := os.WriteFile(file, []byte(gone), 0o600); err != nil {
+					t.Fatalf("failed to write cache: %v", err)
+				}
+				return draRestart(t, dir, sys, draTestConfig("", draTestReserved(sys)))
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			p, err := draRestart(t, dir, sys, draTestConfig("", draTestReserved(sys)))
+			if err != nil {
+				t.Fatalf("failed to set up policy: %v", err)
+			}
+			b := allocateClaim(t, p, "b", draTestResult(0, "2"))
+			a := allocateClaim(t, p, "a", draTestResult(0, "1"), draTestResult(0, "2"))
+
+			p, err = tc.restart(t, dir, a)
+			if err != nil {
+				t.Fatalf("failed to restart policy: %v", err)
+			}
+			if tc.keepsB {
+				if got := p.allocations.claims["b"].ExclusiveCPUs(); !got.Equals(b) {
+					t.Errorf("claim b has CPUs %s after a restart, expected %s", got, b)
+				}
+			}
+
+			taken := p.reserved
+			for _, uid := range []string{"a", "b"} {
+				c, ok := p.allocations.claims[uid]
+				if !ok {
+					t.Fatalf("claim %s not restored", uid)
+				}
+				sizes := map[string][]int{"a": {1, 2}, "b": {2}}[uid]
+				if len(c.results) != len(sizes) {
+					t.Fatalf("claim %s has %d results after a restart, expected %d", uid, len(c.results), len(sizes))
+				}
+				all := cpuset.New()
+				for i, cpus := range c.results {
+					if cpus.Size() != sizes[i] || !cpus.IsSubsetOf(node0) || !cpus.Intersection(taken).IsEmpty() {
+						t.Errorf("result #%d of claim %s has CPUs %s after a restart, expected %d CPUs of node 0 not in %s",
+							i, uid, cpus, sizes[i], taken)
+					}
+					taken = taken.Union(cpus)
+					all = all.Union(cpus)
+				}
+				if got := c.ExclusiveCPUs(); !got.Equals(all) {
+					t.Errorf("claim %s has CPUs %s after a restart, expected those of its results %s", uid, got, all)
+				}
+			}
+		})
 	}
 }
 

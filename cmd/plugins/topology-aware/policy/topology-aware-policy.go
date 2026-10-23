@@ -50,6 +50,7 @@ type allocations struct {
 	grants map[string]Grant  // container grants by container ID
 	claims map[string]*claim // DRA claims by claim UID
 	irqCnt int               // number of grant additions/deletions with IRQ affinity
+	lost   map[string]error  // DRA claims whose pool is gone, by claim UID
 }
 
 // policy is our runtime state for this policy.
@@ -102,9 +103,6 @@ func (p *policy) Setup(opts *policyapi.BackendOptions) error {
 	}
 	log.Infof("initial configuration: %+v", cfg)
 
-	// We keep no policy data across restarts.
-	opts.Cache.ResetPolicyEntries()
-
 	p.cfg = cfg
 	p.cache = opts.Cache
 	p.sys = opts.System
@@ -126,6 +124,10 @@ func (p *policy) Setup(opts *policyapi.BackendOptions) error {
 	}
 
 	if err := p.registerImplicitAffinities(); err != nil {
+		return policyError("failed to initialize %s policy: %w", PolicyName, err)
+	}
+
+	if err := p.restoreClaims(); err != nil {
 		return policyError("failed to initialize %s policy: %w", PolicyName, err)
 	}
 

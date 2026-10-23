@@ -1588,11 +1588,15 @@ for nodes 0-1 stays on two nodes when the memory nodes grow to 0-3.
 A claim with a bad configuration fails to prepare, and the pod events say
 why.
 
+Claims keep their CPUs when the plugin restarts. If the plugin restarts with
+a configuration which cannot give a claim its CPUs, for example one which
+reserves some of them, the claim moves to other CPUs of the same NUMA node,
+and its containers move with it. If the node has too few CPUs left for the
+claim, the plugin fails to start, and the status of the configuration names
+the claim. Revert the configuration to start the plugin again.
+
 ### Known Limitations
 
-- The plugin forgets its claims when it restarts. Containers which hold a
-  claim are placed again without it, so they lose the claimed CPUs, and new
-  containers can get those CPUs.
 - The CDI spec files of claims which ended while the plugin was not running
   are left behind.
 - The capacity of a device is the total of the node, not its free CPUs.

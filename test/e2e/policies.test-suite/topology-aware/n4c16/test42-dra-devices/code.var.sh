@@ -1,14 +1,18 @@
 # This test verifies that the topology-aware policy publishes one DRA
 # device per NUMA node, allocates CPUs to claims, and updates the NRT CR
 # after claim changes. It also checks that a container runs on the CPUs
-# of its claim, or of the claim requests it names, and that the policy
-# exports those CPUs to it.
+# of its claim, or of the claim requests it names, that the policy
+# exports those CPUs to it, and that claims keep their CPUs across a
+# restart. A restart with a configuration which reserves a claimed CPU moves
+# the claim to other CPUs of its node. If the node has too few CPUs, the
+# restart fails until the configuration is reverted.
 #
 
 cleanup() {
     vm-command "kubectl delete pods --all --now --wait" || :
     vm-command "kubectl delete resourceclaimtemplates --all --now" || :
     helm-terminate || :
+    remove-policy-cache
 }
 
 slice() {
@@ -57,6 +61,45 @@ node-cpus() {
     #
     # Print the CPUs of NUMA node NODE.
     vm-command-q "cat /sys/devices/system/node/node$1/cpulist"
+}
+
+plugin_ds=ds/nri-resource-policy-topology-aware
+
+follow-plugin() {
+    # Usage: follow-plugin [TIMEOUT]
+    #
+    # Wait for the plugin to run, for 60s by default, and keep collecting its
+    # logs.
+    vm-command "kubectl rollout status -n kube-system $plugin_ds --timeout=${1:-60s}" ||
+        error "the plugin is not running"
+    vm-stop-log-collection
+    vm-command "kubectl logs -f -n kube-system $plugin_ds >>nri-resource-policy.output.txt 2>&1 &"
+    vm-port-forward-enable
+}
+
+restart-plugin() {
+    # Usage: restart-plugin
+    #
+    # Restart the plugin, keeping its cache, and keep collecting its logs.
+    vm-command "kubectl rollout restart -n kube-system $plugin_ds" ||
+        error "failed to restart the plugin"
+    follow-plugin
+}
+
+claim-uid() {
+    # Usage: claim-uid POD
+    #
+    # Print the UID of the claim of POD.
+    vm-command-q "kubectl get resourceclaim -o jsonpath='{.metadata.uid}' \
+        \$(kubectl get pod $1 -o jsonpath='{.status.resourceClaimStatuses[0].resourceClaimName}')"
+}
+
+config-error() {
+    # Usage: config-error
+    #
+    # Print the error in the node status of our configuration.
+    vm-command-q "kubectl get -n kube-system $(config-resource) -o json |
+                      jq -r '.status.nodes[].errors // empty'"
 }
 
 nrt-shared-cpus() {
@@ -241,8 +284,82 @@ verify "len(cpuset('$first')) == 1" \
        "cpuset('$(exported pod8 CLAIMED_CPUS pod8c2)') == cpuset('$first,$second')" \
        "cpus['pod4c0'].isdisjoint(cpuset('$first,$second'))"
 
+# A plugin which forgot its claims would place the containers holding them
+# again without them, and could give their CPUs to a new claim. Node 0 has
+# one CPU left, the only one pod9 may get. pod4 goes first: the restart may
+# place it on node 0, which then keeps that CPU for it.
+vm-command "kubectl delete pod pod4 --now --wait"
+restart-plugin
+report allowed
+verify "cpus['pod0c0'] == cpuset('$cpus0')" \
+       "cpus['pod2c0'] == cpuset('$cpus2')" \
+       "cpus['pod3c0'] == cpuset('$cpus3')" \
+       "cpus['pod6c0'] == cpuset('$cpus6')" \
+       "cpus['pod6c1'] == cpuset('$cpus6')" \
+       "cpuset('$cpus7') <= cpus['pod7c0']" \
+       "cpus['pod8c0'] == cpuset('$first')" \
+       "cpus['pod8c1'] == cpuset('$second')" \
+       "cpus['pod8c2'] == cpuset('$first,$second')"
+
+# Reserving the CPU of pod8's request on node 0 is refused at runtime. A
+# restart with it moves the request to the one free CPU of node 0. Its
+# containers move with it, and so do the CPUs exported to them.
+patch-policy-config "{\"spec\":{\"reservedResources\":{\"cpu\":\"cpuset:$first,15\"}}}"
+# Refusing it rebuilds the pools twice, which takes a while.
+wait-config-status Failure 90s
+restart-plugin
+wait-config-status Success 60s
+report allowed
+moved=$(exported pod8 CLAIMED_CPUS pod8c0)
+verify "cpuset('$moved') == cpuset('$(node-cpus 0)') - cpuset('$cpus6,$first')" \
+       "cpus['pod8c0'] == cpuset('$moved')" \
+       "cpus['pod8c1'] == cpuset('$second')" \
+       "cpus['pod8c2'] == cpuset('$moved,$second')" \
+       "cpuset('$(exported pod8 CLAIMED_CPUS pod8c2)') == cpuset('$moved,$second')" \
+       "cpus['pod0c0'] == cpuset('$cpus0')" \
+       "cpus['pod6c0'] == cpuset('$cpus6')"
+# Releasing the CPU again is accepted at runtime. It is then the only free
+# CPU of node 0.
+patch-policy-config '{"spec":{"reservedResources":{"cpu":"cpuset:15"}}}'
+wait-config-status Success 90s
+first=$moved
+
+claim pod9 0 1
+cpus9=$(claimed-cpus pod9)
+verify "cpuset('$cpus9') == cpuset('$(node-cpus 0)') - cpuset('$cpus6,$first')" \
+       "cpus['pod9c0'] == cpuset('$cpus9')"
+
+# Reserving a CPU of pod0's claim is refused at runtime. It leaves node 3 two
+# CPUs, too few for the claim to move, so a restart with it fails, and the
+# status of the configuration names the claim. Reverting the configuration
+# lets the plugin start again, with the claims kept.
+uid0=$(claim-uid pod0)
+[ -n "$uid0" ] || error "pod0 has no claim"
+patch-policy-config "{\"spec\":{\"reservedResources\":{\"cpu\":\"cpuset:${cpus0%%[-,]*},15\"}}}"
+# Refusing it rebuilds the pools twice, which takes a while.
+wait-config-status Failure 90s
+vm-command "kubectl rollout restart -n kube-system $plugin_ds" ||
+    error "failed to restart the plugin"
+retry-until --timeout 60 --message "the restart to fail on pod0's claim" \
+    '[[ "$(config-error)" == *"failed to initialize"*"DRA claim $uid0"* ]]' ||
+    error "the restart did not fail on pod0's claim: $(config-error)"
+patch-policy-config '{"spec":{"reservedResources":{"cpu":"cpuset:15"}}}'
+# The plugin restarts with the crash-loop backoff of the kubelet.
+follow-plugin 180s
+wait-config-status Success 60s
+report allowed
+verify "cpus['pod0c0'] == cpuset('$cpus0')" \
+       "cpus['pod6c0'] == cpuset('$cpus6')" \
+       "cpus['pod9c0'] == cpuset('$cpus9')"
+# Deleting pod9 releases the only free CPU of node 0, which is all a new
+# claim there may get.
+vm-command "kubectl delete pod pod9 --now --wait"
+claim pod10 0 1
+verify "cpuset('$(claimed-cpus pod10)') == cpuset('$cpus9')" \
+       "cpus['pod10c0'] == cpuset('$cpus9')"
+
 vm-command "kubectl get deviceclasses,resourceslices,resourceclaims -o yaml" || :
 
 cleanup
 
-echo "OK: the topology-aware policy published one DRA device per NUMA node, gave each claim CPUs of its own, and pinned containers to their claim's CPUs, or to those of the requests they named, and to the memory of its node, exported the claimed CPUs to the containers, and the NRT CR followed the claims"
+echo "OK: the topology-aware policy published one DRA device per NUMA node, gave each claim CPUs of its own, and pinned containers to their claim's CPUs, or to those of the requests they named, and to the memory of its node, exported the claimed CPUs to the containers, the NRT CR followed the claims, the claims kept their CPUs across a restart, a restart which reserved a claimed CPU moved the claim, and one which left a node too few CPUs for a claim failed until the configuration was reverted"
