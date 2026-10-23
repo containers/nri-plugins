@@ -47,9 +47,10 @@ const (
 	testNodeName   = "test-node"
 )
 
-// testOwner counts how often its lock was taken and how many claim updates it
-// was asked to commit, and records the shutdowns it was asked for. The lock is a
-// real one, so a handler taking it twice deadlocks instead of passing the test.
+// testOwner counts how often its lock was taken, how many claim updates it was
+// asked to commit and how often it was asked to push container updates, and
+// records the shutdowns it was asked for. The lock is a real one, so a handler
+// taking it twice deadlocks instead of passing the test.
 type testOwner struct {
 	sync.Mutex
 	t       *testing.T
@@ -58,6 +59,8 @@ type testOwner struct {
 
 	updates   int
 	updateErr error // fails ClaimAllocated and ClaimReleased
+	pushes    int
+	pushErr   error // fails UpdateContainers
 
 	shutdownMu sync.Mutex // the plugin asks from its own goroutines
 	shutdowns  []string
@@ -87,6 +90,17 @@ func (o *testOwner) claimUpdated(method string) error {
 
 	o.updates++
 	return o.updateErr
+}
+
+func (o *testOwner) UpdateContainers() error {
+	if !o.TryLock() {
+		o.t.Error("UpdateContainers() was called with the owner's lock held")
+		return nil
+	}
+	o.Mutex.Unlock()
+
+	o.pushes++
+	return o.pushErr
 }
 
 func (o *testOwner) RequestShutdown(reason string) {

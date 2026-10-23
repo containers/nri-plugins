@@ -190,12 +190,17 @@ func TestPrepareResourceClaims(t *testing.T) {
 		t.Errorf("spec devices are\n%+v\nexpected\n%+v", spec.Devices, specDevices)
 	}
 
-	if owner.locks != 1 || owner.unlocks != 1 {
-		t.Errorf("locked %d times and unlocked %d times, expected once each",
+	// Locked to allocate the claim, and again to write its spec once the
+	// containers are updated, which happens without the lock.
+	if owner.locks != 2 || owner.unlocks != 2 {
+		t.Errorf("locked %d times and unlocked %d times, expected twice each",
 			owner.locks, owner.unlocks)
 	}
 	if owner.updates != 1 {
 		t.Errorf("committed %d claim update(s), expected one", owner.updates)
+	}
+	if owner.pushes != 1 {
+		t.Errorf("pushed container updates %d time(s), expected once", owner.pushes)
 	}
 }
 
@@ -382,9 +387,10 @@ func TestPrepareResourceClaimsIsolation(t *testing.T) {
 		t.Errorf("policy was asked to release %v, expected nothing", policy.releases)
 	}
 
-	// Two claims, one lock: the lock belongs to the request, not to the claim.
-	if owner.locks != 1 || owner.unlocks != 1 {
-		t.Errorf("locked %d times and unlocked %d times for one request, expected once each",
+	// Twice for the good claim, and once for the bad one, which fails before
+	// its containers would be updated.
+	if owner.locks != 3 || owner.unlocks != 3 {
+		t.Errorf("locked %d times and unlocked %d times, expected three times each",
 			owner.locks, owner.unlocks)
 	}
 }
@@ -395,9 +401,13 @@ func TestPrepareResourceClaimsIsolation(t *testing.T) {
 func TestPrepareResourceClaimsRollback(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		// edits replaces what the policy returns, updateErr fails the commit.
+		// edits replaces what the policy returns, updateErr fails the commit,
+		// pushErr fails the container updates. pushes is how often the
+		// container updates are pushed: once more after the claim fails.
 		edits     func([]resourceapi.DeviceRequestAllocationResult) []specs.ContainerEdits
 		updateErr error
+		pushErr   error
+		pushes    int
 	}{
 		{
 			// A policy bug: the edits no longer say which device is which.
@@ -405,10 +415,17 @@ func TestPrepareResourceClaimsRollback(t *testing.T) {
 			edits: func(results []resourceapi.DeviceRequestAllocationResult) []specs.ContainerEdits {
 				return make([]specs.ContainerEdits, len(results)+1)
 			},
+			pushes: 1,
 		},
 		{
 			name:      "allocation which cannot be committed",
 			updateErr: errors.New("failed to save cache"),
+			pushes:    1,
+		},
+		{
+			name:    "container updates the runtime did not apply",
+			pushErr: errors.New("runtime failed to update 1 container(s)"),
+			pushes:  2,
 		},
 		{
 			// An environment entry without a value is rejected by CDI itself.
@@ -420,6 +437,7 @@ func TestPrepareResourceClaimsRollback(t *testing.T) {
 				}
 				return edits
 			},
+			pushes: 2,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -428,6 +446,7 @@ func TestPrepareResourceClaimsRollback(t *testing.T) {
 			policy := &testPolicy{edits: tc.edits}
 			p, owner := newTestPlugin(t, fake.NewClientset(), policy)
 			owner.updateErr = tc.updateErr
+			owner.pushErr = tc.pushErr
 
 			result, err := p.PrepareResourceClaims(t.Context(),
 				[]*resourceapi.ResourceClaim{claim})
@@ -448,6 +467,9 @@ func TestPrepareResourceClaimsRollback(t *testing.T) {
 			}
 			if files := specFiles(t, p); len(files) != 0 {
 				t.Errorf("left spec file(s) %v behind, expected none", files)
+			}
+			if owner.pushes != tc.pushes {
+				t.Errorf("pushed container updates %d time(s), expected %d", owner.pushes, tc.pushes)
 			}
 		})
 	}
@@ -542,14 +564,19 @@ func TestUnprepareResourceClaims(t *testing.T) {
 		t.Errorf("left spec file(s) %v behind, expected none", files)
 	}
 
-	// Once for the prepare and once for the unprepare: the lock is taken per
-	// kubelet request, not per claim, and the second request carries three.
-	if owner.locks != 2 || owner.unlocks != 2 {
-		t.Errorf("locked %d times and unlocked %d times, expected twice each",
+	// Twice for the prepare and once for the unprepare: an unprepare takes the
+	// lock once per kubelet request, and the second request carries three.
+	if owner.locks != 3 || owner.unlocks != 3 {
+		t.Errorf("locked %d times and unlocked %d times, expected three times each",
 			owner.locks, owner.unlocks)
 	}
 	if owner.updates != 4 {
 		t.Errorf("committed %d claim update(s), expected four", owner.updates)
+	}
+	// Once for the prepare, and once for the unprepare after the claims of the
+	// request are released.
+	if owner.pushes != 2 {
+		t.Errorf("pushed container updates %d time(s), expected twice", owner.pushes)
 	}
 }
 

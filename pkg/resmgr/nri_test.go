@@ -40,12 +40,13 @@ type testPolicy struct {
 func (testPolicy) ExportResourceData(cache.Container) {}
 
 // testStub is an NRI stub which only serves container updates: err fails the
-// request, failed is what the runtime reports it could not apply, and sent
-// records what we asked it to update.
+// request, failed is what the runtime reports it could not apply, sent records
+// what we asked it to update, and during runs while the runtime has the request.
 type testStub struct {
 	err    error
 	failed []*nriapi.ContainerUpdate
 	sent   []*nriapi.ContainerUpdate
+	during func()
 }
 
 var _ nristub.Stub = (*testStub)(nil)
@@ -61,6 +62,9 @@ func (s *testStub) RuntimeNRIVersion() string          { return "" }
 func (s *testStub) PluginNRIVersion() string           { return "" }
 func (s *testStub) UpdateContainers(updates []*nriapi.ContainerUpdate) ([]*nriapi.ContainerUpdate, error) {
 	s.sent = append(s.sent, updates...)
+	if s.during != nil {
+		s.during()
+	}
 	return s.failed, s.err
 }
 
@@ -121,70 +125,147 @@ func newTestUpdate(t *testing.T, stub *testStub) (*resmgr, cache.Container) {
 	return m, ctr
 }
 
-func TestUpdateContainersRetainsPendingUpdatesOnFailure(t *testing.T) {
-	want := errors.New("update failed")
-	m, ctr := newTestUpdate(t, &testStub{err: want})
-
-	err := m.nri.updateContainers()
-	if err == nil {
-		t.Fatal("updateContainers() succeeded, expected failure")
-	}
-	if !errors.Is(err, want) {
-		t.Fatalf("updateContainers() error = %v, want %v", err, want)
-	}
-
-	pending := ctr.PeekPendingUpdate()
-	if pending == nil {
-		t.Fatal("updateContainers() cleared the pending update after failure")
-	}
-	if got := pending.GetLinux().GetResources().GetCpu().GetShares().GetValue(); got != 42 {
-		t.Fatalf("pending CPU shares = %d, want 42", got)
-	}
-	if !ctr.HasPending(cache.NRI) {
-		t.Fatal("updateContainers() cleared pending container markers after failure")
-	}
-}
-
-func TestUpdateContainersClearsDeliveredUpdates(t *testing.T) {
+// TestPushPendingUpdatesReleasesTheLock covers an NRI request served while the
+// runtime has our push: it must get the lock, and it must not carry the update
+// in flight in its response.
+func TestPushPendingUpdatesReleasesTheLock(t *testing.T) {
 	stub := &testStub{}
 	m, ctr := newTestUpdate(t, stub)
+	stub.during = func() {
+		if !m.TryLock() {
+			t.Error("pushPendingUpdates() held the lock while the runtime had the push")
+			return
+		}
+		defer m.Unlock()
 
-	if err := m.nri.updateContainers(); err != nil {
-		t.Fatalf("updateContainers() failed: %v", err)
+		if updates := m.nri.peekPendingUpdates(nil); len(updates) != 0 {
+			t.Errorf("an NRI response would carry %d update(s) in flight, want 0", len(updates))
+		}
+	}
+
+	if err := m.nri.pushPendingUpdates(); err != nil {
+		t.Fatalf("pushPendingUpdates() failed: %v", err)
 	}
 
 	if len(stub.sent) != 1 {
 		t.Fatalf("runtime got %d update(s), want 1", len(stub.sent))
 	}
-	if got := stub.sent[0].GetLinux().GetResources().GetCpu().GetShares().GetValue(); got != 42 {
-		t.Fatalf("updated CPU shares = %d, want 42", got)
-	}
-
 	if ctr.PeekPendingUpdate() != nil {
-		t.Error("updateContainers() left the delivered update pending")
+		t.Error("pushPendingUpdates() left the delivered update pending")
 	}
 	if ctr.HasPending(cache.NRI) {
-		t.Error("updateContainers() left pending container markers behind")
+		t.Error("pushPendingUpdates() left pending container markers behind")
+	}
+	if len(m.nri.inFlight) != 0 {
+		t.Errorf("pushPendingUpdates() left %d update(s) in flight", len(m.nri.inFlight))
 	}
 }
 
-// TestUpdateContainersRetainsUpdatesTheRuntimeRejected covers the updates which
-// come back in the runtime's answer instead of failing the request: those
-// containers were not updated either, so they fail the push and their updates
-// stay pending just the same.
-func TestUpdateContainersRetainsUpdatesTheRuntimeRejected(t *testing.T) {
+// TestPushPendingUpdatesPushesUpdatesChangedInFlight covers an update which
+// changes while the runtime has the push: the runtime got the older one, so the
+// newer one must be pushed too.
+func TestPushPendingUpdatesPushesUpdatesChangedInFlight(t *testing.T) {
+	stub := &testStub{}
+	m, ctr := newTestUpdate(t, stub)
+	stub.during = func() {
+		stub.during = nil
+		if !m.TryLock() {
+			t.Error("pushPendingUpdates() held the lock while the runtime had the push")
+			return
+		}
+		defer m.Unlock()
+		ctr.SetCPUShares(43)
+	}
+
+	if err := m.nri.pushPendingUpdates(); err != nil {
+		t.Fatalf("pushPendingUpdates() failed: %v", err)
+	}
+
+	if len(stub.sent) != 2 {
+		t.Fatalf("runtime got %d update(s), want 2", len(stub.sent))
+	}
+	for i, want := range []uint64{42, 43} {
+		if got := stub.sent[i].GetLinux().GetResources().GetCpu().GetShares().GetValue(); got != want {
+			t.Errorf("update %d has CPU shares %d, want %d", i, got, want)
+		}
+	}
+	if ctr.PeekPendingUpdate() != nil {
+		t.Error("pushPendingUpdates() left the newer update pending")
+	}
+	if len(m.nri.inFlight) != 0 {
+		t.Errorf("pushPendingUpdates() left %d update(s) in flight", len(m.nri.inFlight))
+	}
+}
+
+// TestPushPendingUpdatesRetainsUpdatesTheRuntimeRejected covers an update the
+// runtime rejects: it stays pending, and it is pushed only once.
+func TestPushPendingUpdatesRetainsUpdatesTheRuntimeRejected(t *testing.T) {
 	stub := &testStub{}
 	m, ctr := newTestUpdate(t, stub)
 	stub.failed = []*nriapi.ContainerUpdate{{ContainerId: ctr.GetID()}}
 
-	if err := m.nri.updateContainers(); err == nil {
-		t.Error("updateContainers() succeeded with an update the runtime rejected")
+	if err := m.nri.pushPendingUpdates(); err == nil {
+		t.Error("pushPendingUpdates() succeeded with an update the runtime rejected")
+	}
+
+	if len(stub.sent) != 1 {
+		t.Errorf("runtime got %d update(s), want 1", len(stub.sent))
+	}
+	if ctr.PeekPendingUpdate() == nil {
+		t.Error("pushPendingUpdates() cleared the update the runtime rejected")
+	}
+	if !ctr.HasPending(cache.NRI) {
+		t.Error("pushPendingUpdates() cleared the pending container markers of a rejected update")
+	}
+}
+
+func TestPushPendingUpdatesRetainsPendingUpdatesOnFailure(t *testing.T) {
+	want := errors.New("update failed")
+	m, ctr := newTestUpdate(t, &testStub{err: want})
+
+	if err := m.nri.pushPendingUpdates(); !errors.Is(err, want) {
+		t.Fatalf("pushPendingUpdates() error = %v, want %v", err, want)
 	}
 
 	if ctr.PeekPendingUpdate() == nil {
-		t.Error("updateContainers() cleared the update the runtime rejected")
+		t.Error("pushPendingUpdates() cleared the pending update after failure")
 	}
 	if !ctr.HasPending(cache.NRI) {
-		t.Error("updateContainers() cleared the pending container markers of a rejected update")
+		t.Error("pushPendingUpdates() cleared pending container markers after failure")
+	}
+	if len(m.nri.inFlight) != 0 {
+		t.Errorf("pushPendingUpdates() left %d update(s) in flight", len(m.nri.inFlight))
+	}
+}
+
+// TestPushPendingUpdatesWaitsForPushInFlight covers two overlapping pushes: the
+// second one must not return before the update the first one has in flight
+// reaches the runtime, and it must fail when the runtime rejects that update.
+func TestPushPendingUpdatesWaitsForPushInFlight(t *testing.T) {
+	stub := &testStub{}
+	m, ctr := newTestUpdate(t, stub)
+	stub.failed = []*nriapi.ContainerUpdate{{ContainerId: ctr.GetID()}}
+
+	var secondErr error
+	done := make(chan struct{})
+	stub.during = func() {
+		stub.during = nil
+		go func() {
+			secondErr = m.nri.pushPendingUpdates()
+			close(done)
+		}()
+		select {
+		case <-done:
+			t.Error("a second push returned while the first one was in flight")
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+
+	if err := m.nri.pushPendingUpdates(); err == nil {
+		t.Error("the first push succeeded with an update the runtime rejected")
+	}
+	<-done
+	if secondErr == nil {
+		t.Error("the second push succeeded with an update the runtime rejected")
 	}
 }

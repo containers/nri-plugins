@@ -69,26 +69,10 @@ func (m *resmgr) setupDRA(cfg *cfgapi.DRAConfig) error {
 	return nil
 }
 
-// ClaimAllocated commits the allocation the policy made for a DRA claim. It
-// runs with our lock held, from a kubelet request the DRA plugin is serving.
-// Saving the cache is what makes the policy's claim accounting survive us.
-//
-// The containers using the claim are not running yet, but the ones already
-// running may have to give up resources to them. Any update the runtime did
-// not apply fails the claim: we cannot tell whether that container still uses
-// what the claim is being given, and granting it anyway would share resources
-// the claim is supposed to have to itself.
-//
-// The resources we export for the node are refreshed once the containers are
-// updated. A failed refresh is only logged: it does not change what the claim
-// was given. A failed allocation needs no refresh of its own, since it is
-// rolled back through ClaimReleased.
+// ClaimAllocated saves the allocation the policy made for a DRA claim and
+// refreshes the resources we export for the node.
 func (m *resmgr) ClaimAllocated() error {
 	if err := m.cache.Save(); err != nil {
-		return err
-	}
-
-	if err := m.UpdateContainers(); err != nil {
 		return err
 	}
 
@@ -97,17 +81,11 @@ func (m *resmgr) ClaimAllocated() error {
 	return nil
 }
 
-// ClaimReleased commits the release of a DRA claim, like ClaimAllocated, but
-// failing to update the containers is only a warning here: the updates stay
-// pending for the next push, and until then the released resources just sit
-// idle, which is no reason to hold up the teardown of the pod.
+// ClaimReleased saves the release of a DRA claim and refreshes the resources we
+// export for the node.
 func (m *resmgr) ClaimReleased() error {
 	if err := m.cache.Save(); err != nil {
 		return err
-	}
-
-	if err := m.UpdateContainers(); err != nil {
-		log.Warnf("failed to update containers after releasing a DRA claim: %v", err)
 	}
 
 	m.updateNodeResources()

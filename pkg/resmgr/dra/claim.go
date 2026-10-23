@@ -38,18 +38,26 @@ func (p *Plugin) PrepareResourceClaims(_ context.Context, claims []*resourceapi.
 		return nil, err
 	}
 
-	p.owner.Lock()
-	defer p.owner.Unlock()
-
+	failed := false
 	result := make(map[types.UID]kubeletplugin.PrepareResult, len(claims))
 	for _, claim := range claims {
 		devices, err := p.prepareClaim(claim)
 		if err != nil {
 			log.Errorf("failed to prepare claim %s/%s: %v", claim.Namespace, claim.Name, err)
 			result[claim.UID] = kubeletplugin.PrepareResult{Err: err}
+			failed = true
 			continue
 		}
 		result[claim.UID] = kubeletplugin.PrepareResult{Devices: devices}
+	}
+
+	// A failed claim may give its resources back to the containers which gave
+	// them up, and those containers need an update. A failed update is only a
+	// warning: every claim has its answer already.
+	if failed {
+		if err := p.owner.UpdateContainers(); err != nil {
+			log.Warnf("failed to update containers after failing DRA claims: %v", err)
+		}
 	}
 
 	return result, nil
@@ -61,6 +69,20 @@ func (p *Plugin) UnprepareResourceClaims(_ context.Context, claims []kubeletplug
 		return nil, err
 	}
 
+	result := p.releaseClaims(claims)
+
+	// A failed update is only a warning: the updates stay pending for the next
+	// push, and until then the released resources just sit idle, which is no
+	// reason to hold up the teardown of the pod.
+	if err := p.owner.UpdateContainers(); err != nil {
+		log.Warnf("failed to update containers after releasing DRA claims: %v", err)
+	}
+
+	return result, nil
+}
+
+// releaseClaims releases the given claims and returns the error of each.
+func (p *Plugin) releaseClaims(claims []kubeletplugin.NamespacedObject) map[types.UID]error {
 	p.owner.Lock()
 	defer p.owner.Unlock()
 
@@ -73,7 +95,7 @@ func (p *Plugin) UnprepareResourceClaims(_ context.Context, claims []kubeletplug
 		result[claim.UID] = err
 	}
 
-	return result, nil
+	return result
 }
 
 // claimsAllowed fails a kubelet request we are not ready to serve. The whole
@@ -100,46 +122,24 @@ func (p *Plugin) prepareClaim(claim *resourceapi.ResourceClaim) ([]kubeletplugin
 		return nil, nil
 	}
 
-	// Whether a failure below may hand the allocation back. A spec is the last
-	// thing a successful prepare writes, so a claim without one was never
-	// prepared and nothing can be using its devices, which makes releasing it
-	// safe. A claim which has one may have running containers on those devices,
-	// and taking their resources away would be worse than leaving the allocation
-	// in place until the kubelet unprepares the claim.
-	prepared, err := p.cdi.HasClaim(claim.UID)
+	edits, rollback, err := p.allocateClaim(claim, results)
 	if err != nil {
 		return nil, err
 	}
-	rollback := !prepared
 
-	// The policy is asked to allocate the claim even if we already have a spec
-	// for it. Re-preparing a prepared claim is normal, the kubelet repeats a
-	// request whose answer it lost, and the policy is the one which knows what it
-	// has already allocated. Skipping it here, on the strength of a file we once
-	// wrote, would leave a claim whose spec outlived its accounting unaccounted
-	// for forever.
-	edits, err := p.policy.AllocateClaim(claim, results)
-	if err != nil {
-		return nil, fmt.Errorf("dra: policy failed to allocate claim %s: %w", claim.UID, err)
-	}
-	// A policy with nothing to add for the containers returns no edits. Every
-	// device still gets one edit: the variable set to its own name.
-	if len(edits) == 0 {
-		edits = make([]specs.ContainerEdits, len(results))
-	}
-	if len(edits) != len(results) {
-		p.undoClaim(claim.UID, rollback)
-		return nil, fmt.Errorf("dra: policy returned %d container edit(s) for the %d device(s) of claim %s",
-			len(edits), len(results), claim.UID)
-	}
+	// The containers using the claim are not running yet, but the ones already
+	// running may have to give up resources to them. Any update the runtime did
+	// not apply fails the claim: we cannot tell whether that container still uses
+	// what the claim is being given, and granting it anyway would share resources
+	// the claim is supposed to have to itself.
+	updateErr := p.owner.UpdateContainers()
 
-	// Commit the allocation before writing the spec which grants it: a crash
-	// between the two then leaves a spec nothing claims, which we can find and
-	// clean up, rather than resources granted to a container but accounted to
-	// nobody.
-	if err := p.owner.ClaimAllocated(); err != nil {
+	p.owner.Lock()
+	defer p.owner.Unlock()
+
+	if updateErr != nil {
 		p.undoClaim(claim.UID, rollback)
-		return nil, fmt.Errorf("dra: failed to commit the allocation of claim %s: %w", claim.UID, err)
+		return nil, fmt.Errorf("dra: failed to update containers for claim %s: %w", claim.UID, updateErr)
 	}
 
 	names, err := p.cdi.WriteClaim(claim.UID, edits)
@@ -162,6 +162,57 @@ func (p *Plugin) prepareClaim(claim *resourceapi.ResourceClaim) ([]kubeletplugin
 	}
 
 	return devices, nil
+}
+
+// allocateClaim allocates and commits the resources of a claim. It returns the
+// container edits of its devices, and whether the claim has no spec yet.
+func (p *Plugin) allocateClaim(claim *resourceapi.ResourceClaim, results []resourceapi.DeviceRequestAllocationResult) ([]specs.ContainerEdits, bool, error) {
+	p.owner.Lock()
+	defer p.owner.Unlock()
+
+	// Whether a failure below may hand the allocation back. A spec is the last
+	// thing a successful prepare writes, so a claim without one was never
+	// prepared and nothing can be using its devices, which makes releasing it
+	// safe. A claim which has one may have running containers on those devices,
+	// and taking their resources away would be worse than leaving the allocation
+	// in place until the kubelet unprepares the claim.
+	prepared, err := p.cdi.HasClaim(claim.UID)
+	if err != nil {
+		return nil, false, err
+	}
+	rollback := !prepared
+
+	// The policy is asked to allocate the claim even if we already have a spec
+	// for it. Re-preparing a prepared claim is normal, the kubelet repeats a
+	// request whose answer it lost, and the policy is the one which knows what it
+	// has already allocated. Skipping it here, on the strength of a file we once
+	// wrote, would leave a claim whose spec outlived its accounting unaccounted
+	// for forever.
+	edits, err := p.policy.AllocateClaim(claim, results)
+	if err != nil {
+		return nil, false, fmt.Errorf("dra: policy failed to allocate claim %s: %w", claim.UID, err)
+	}
+	// A policy with nothing to add for the containers returns no edits. Every
+	// device still gets one edit: the variable set to its own name.
+	if len(edits) == 0 {
+		edits = make([]specs.ContainerEdits, len(results))
+	}
+	if len(edits) != len(results) {
+		p.undoClaim(claim.UID, rollback)
+		return nil, false, fmt.Errorf("dra: policy returned %d container edit(s) for the %d device(s) of claim %s",
+			len(edits), len(results), claim.UID)
+	}
+
+	// Commit the allocation before writing the spec which grants it: a crash
+	// between the two then leaves a spec nothing claims, which we can find and
+	// clean up, rather than resources granted to a container but accounted to
+	// nobody.
+	if err := p.owner.ClaimAllocated(); err != nil {
+		p.undoClaim(claim.UID, rollback)
+		return nil, false, fmt.Errorf("dra: failed to commit the allocation of claim %s: %w", claim.UID, err)
+	}
+
+	return edits, rollback, nil
 }
 
 // releaseClaim releases the resources of a claim and removes its CDI spec. A
