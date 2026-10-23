@@ -80,20 +80,35 @@ type claim struct {
 	mpols   []*cfgapi.MemoryPolicy
 }
 
-// draDevices returns one device per NUMA node. A node's capacity is its share
-// of the CPUs an exclusive grant can draw from, isolated plus sharable,
-// which leaves out the reserved ones.
+// draDevices returns one device per NUMA node which has CPUs for claims. The
+// capacity of a device is the number of CPUs of its node which claims hold or
+// could get now: the isolated and sharable CPUs, minus the reserved ones, minus
+// the ones containers hold exclusively, minus the ones shared containers need.
 func (p *policy) draDevices() []resourceapi.Device {
 	var (
 		grantable = grantableCPUs(p.root.GetSupply())
+		claimed   = cpuset.New()
 		smt       = p.sys.MaxThreadCount() > 1
 		devices   []resourceapi.Device
 	)
+	for _, c := range p.allocations.claims {
+		claimed = claimed.Union(c.ExclusiveCPUs())
+	}
 
 	for _, id := range p.sys.NodeIDs() {
 		node := p.sys.Node(id)
 		cpus := grantable.Intersection(node.CPUSet())
 		if cpus.IsEmpty() {
+			continue
+		}
+		free, err := p.claimableCPUs(cpus)
+		if err != nil {
+			log.Errorf("failed to find the free CPUs of NUMA node #%d: %v", id, err)
+		}
+		// The scheduler subtracts what claims consume from the capacity,
+		// so the CPUs of claims are part of it.
+		capacity := free.Union(claimed.Intersection(cpus)).Size()
+		if capacity == 0 {
 			continue
 		}
 
@@ -117,18 +132,7 @@ func (p *policy) draDevices() []resourceapi.Device {
 			AllowMultipleAllocations: ptr.To(true),
 			Attributes:               attrs,
 			Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
-				draCapacityCPU: {
-					Value: *resource.NewQuantity(int64(cpus.Size()), resource.DecimalSI),
-					// Without a request policy a claim asking for no
-					// amount would consume the whole node.
-					RequestPolicy: &resourceapi.CapacityRequestPolicy{
-						Default: one,
-						ValidRange: &resourceapi.CapacityRequestPolicyRange{
-							Min:  one,
-							Step: one,
-						},
-					},
-				},
+				draCapacityCPU: draCPUCapacity(capacity),
 			},
 			NodeAllocatableResources: map[v1.ResourceName]resourceapi.NodeAllocatableResource{
 				v1.ResourceCPU: {
@@ -142,6 +146,38 @@ func (p *policy) draDevices() []resourceapi.Device {
 	}
 
 	return devices
+}
+
+// publishDRADevices publishes our DRA devices if DRA is enabled, logging a
+// failure.
+func (p *policy) publishDRADevices() {
+	if !p.options.Owner.DRAEnabled() {
+		return
+	}
+	if err := p.options.Owner.PublishDRADevices(p.draDevices()); err != nil {
+		log.Errorf("failed to publish DRA devices: %v", err)
+	}
+}
+
+// draCPUCapacity returns a capacity of n CPUs, which claims consume in whole
+// CPUs, one CPU if they ask for no amount.
+func draCPUCapacity(n int) resourceapi.DeviceCapacity {
+	one := resource.NewQuantity(1, resource.DecimalSI)
+	// Without a request policy a claim asking for no amount would consume
+	// the whole device.
+	policy := &resourceapi.CapacityRequestPolicy{
+		Default:    one,
+		ValidRange: &resourceapi.CapacityRequestPolicyRange{Min: one},
+	}
+	// The API server rejects a step which does not fit in the capacity. With
+	// one CPU, the minimum alone leaves only one whole CPU to ask for.
+	if n > 1 {
+		policy.ValidRange.Step = one
+	}
+	return resourceapi.DeviceCapacity{
+		Value:         *resource.NewQuantity(int64(n), resource.DecimalSI),
+		RequestPolicy: policy,
+	}
 }
 
 func grantableCPUs(s Supply) cpuset.CPUSet {
@@ -497,14 +533,11 @@ func (p *policy) moveClaim(uid string, c *claim, why error) error {
 // none of them in taken. It picks by topology, so two CPUs are the two
 // threads of one core.
 func (p *policy) pickCPUs(req draRequest, taken cpuset.CPUSet) (cpuset.CPUSet, error) {
-	pool := p.poolForCPUs(req.deviceCPUs)
-
-	free := pool.FreeSupply()
-	sliceable, err := free.SliceableCPUs()
+	from, err := p.claimableCPUs(req.deviceCPUs)
 	if err != nil {
 		return cpuset.New(), fmt.Errorf("device %s: %w", req.device, err)
 	}
-	from := free.IsolatedCPUs().Union(sliceable).Difference(free.ReservedCPUs()).Intersection(req.deviceCPUs).Difference(taken)
+	from = from.Difference(taken)
 	if from.Size() < req.cpus {
 		return cpuset.New(), fmt.Errorf("device %s: %d CPUs requested, only %d free",
 			req.device, req.cpus, from.Size())
@@ -515,6 +548,18 @@ func (p *policy) pickCPUs(req draRequest, taken cpuset.CPUSet) (cpuset.CPUSet, e
 		return cpuset.New(), fmt.Errorf("device %s: %w", req.device, err)
 	}
 	return cpus, nil
+}
+
+// claimableCPUs returns the CPUs among cpus which a claim can get now: the
+// free isolated and sharable ones, minus the reserved ones, minus the ones
+// shared containers need.
+func (p *policy) claimableCPUs(cpus cpuset.CPUSet) (cpuset.CPUSet, error) {
+	free := p.poolForCPUs(cpus).FreeSupply()
+	sliceable, err := free.SliceableCPUs()
+	if err != nil {
+		return cpuset.New(), err
+	}
+	return free.IsolatedCPUs().Union(sliceable).Difference(free.ReservedCPUs()).Intersection(cpus), nil
 }
 
 // poolForCPUs returns the deepest pool whose supply has all of the CPUs. The
