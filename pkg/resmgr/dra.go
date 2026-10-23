@@ -106,6 +106,11 @@ func (m *resmgr) startDRA() error {
 	return nil
 }
 
+// DRAEnabled tells the policy whether DRA is enabled.
+func (m *resmgr) DRAEnabled() bool {
+	return m.dra != nil
+}
+
 // PublishDRADevices publishes the DRA devices of the policy, if DRA is enabled.
 // The policy calls it with our lock held, so it must not take the lock.
 func (m *resmgr) PublishDRADevices(devices []resourceapi.Device) error {
