@@ -45,10 +45,12 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-// draTestOwner keeps published DRA devices.
+// draTestOwner keeps published DRA devices, or fails to publish them with
+// publishErr.
 type draTestOwner struct {
 	sync.Mutex
-	devices []resourceapi.Device
+	devices    []resourceapi.Device
+	publishErr error
 
 	listAttributesSupported bool
 }
@@ -58,6 +60,9 @@ func (*draTestOwner) UpdateContainers() error { return nil }
 func (*draTestOwner) DRAEnabled() bool { return true }
 
 func (o *draTestOwner) PublishDRADevices(devices []resourceapi.Device) error {
+	if o.publishErr != nil {
+		return o.publishErr
+	}
 	o.devices = devices
 	return nil
 }
@@ -182,6 +187,117 @@ func TestDRADevices(t *testing.T) {
 			}
 		})
 	}
+}
+
+// draTestContainer returns a container of the QoS class with the given CPU
+// request, and the same limit if it is guaranteed.
+func draTestContainer(id string, qos v1.PodQOSClass, cpu string) *pinnedContainer {
+	c := &pinnedContainer{mockContainer: mockContainer{
+		name:                   id,
+		returnValueForGetID:    id,
+		returnValueForQOSClass: qos,
+		returnValueForGetResourceRequirements: v1.ResourceRequirements{
+			Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse(cpu)},
+		},
+	}}
+	if qos == v1.PodQOSGuaranteed {
+		c.returnValueForGetResourceRequirements.Limits = c.returnValueForGetResourceRequirements.Requests
+	}
+	return c
+}
+
+// TestDRADevicesFollowFreeCPUs checks that the capacity of a device goes down
+// by the CPUs containers hold exclusively and the CPUs shared containers
+// need, but not by the CPUs of claims.
+func TestDRADevicesFollowFreeCPUs(t *testing.T) {
+	sys := testServerSystem(t)
+	p, owner := draTestPolicy(t, sys, draTestConfig("", draTestReserved(sys)))
+
+	expected := map[string]int64{
+		"cpudevnuma000": 28,
+		"cpudevnuma001": 28,
+		"cpudevnuma002": 28,
+		"cpudevnuma003": 26,
+	}
+	check := func(what string) {
+		t.Helper()
+		got := map[string]int64{}
+		for name, d := range draDeviceSummary(owner.devices) {
+			got[name] = d.cpus
+		}
+		if !reflect.DeepEqual(got, expected) {
+			t.Errorf("%s: published capacities %v, expected %v", what, got, expected)
+		}
+	}
+	check("at start")
+
+	exclusive := draTestContainer("exclusive", v1.PodQOSGuaranteed, "2")
+	if err := p.allocateResources(exclusive, "NUMA node #1"); err != nil {
+		t.Fatalf("failed to allocate: %v", err)
+	}
+	expected["cpudevnuma001"] -= 2
+	check("after an exclusive allocation")
+
+	allocateClaim(t, p, "a", draTestResult(0, "3"))
+	check("after a claim")
+
+	shared := draTestContainer("shared", v1.PodQOSBurstable, "1500m")
+	if err := p.allocateResources(shared, "NUMA node #2"); err != nil {
+		t.Fatalf("failed to allocate: %v", err)
+	}
+	expected["cpudevnuma002"] -= 2
+	check("after a shared allocation")
+
+	if err := p.ReleaseResources(exclusive); err != nil {
+		t.Fatalf("failed to release: %v", err)
+	}
+	if err := p.ReleaseResources(shared); err != nil {
+		t.Fatalf("failed to release: %v", err)
+	}
+	if err := p.ReleaseClaim("a"); err != nil {
+		t.Fatalf("failed to release claim: %v", err)
+	}
+	expected["cpudevnuma001"] += 2
+	expected["cpudevnuma002"] += 2
+	check("after releasing everything")
+}
+
+// TestDRADevicesNearlyFull checks that a device with one free CPU has no step,
+// which the API server would reject, and that a device with no free CPU is
+// left out.
+func TestDRADevicesNearlyFull(t *testing.T) {
+	// Node 0 has CPUs 8 and 12 for claims, node 1 has CPU 1.
+	p, owner := draTestPolicy(t, testServerSystem(t), draTestConfig("cpuset:0,1,8,12", "cpuset:0"))
+
+	if err := p.allocateResources(draTestContainer("c0", v1.PodQOSGuaranteed, "1"), "NUMA node #0"); err != nil {
+		t.Fatalf("failed to allocate: %v", err)
+	}
+	if err := p.allocateResources(draTestContainer("c1", v1.PodQOSGuaranteed, "1"), "NUMA node #1"); err != nil {
+		t.Fatalf("failed to allocate: %v", err)
+	}
+
+	if len(owner.devices) != 1 || owner.devices[0].Name != "cpudevnuma000" {
+		t.Fatalf("published devices %v, expected only cpudevnuma000", owner.devices)
+	}
+	capacity := owner.devices[0].Capacity[draCapacityCPU]
+	r := capacity.RequestPolicy.ValidRange
+	if capacity.Value.Value() != 1 || r.Min.Value() != 1 || r.Step != nil {
+		t.Errorf("published capacity %s with range min %s, step %v, expected 1 with min 1 and no step",
+			capacity.Value.String(), r.Min.String(), r.Step)
+	}
+}
+
+// TestDRAPublishFailure checks that a failure to publish the devices does not
+// fail an allocation.
+func TestDRAPublishFailure(t *testing.T) {
+	sys := testServerSystem(t)
+	p, owner := draTestPolicy(t, sys, draTestConfig("", draTestReserved(sys)))
+
+	owner.publishErr = fmt.Errorf("test failure")
+	if err := p.allocateResources(draTestContainer("c", v1.PodQOSGuaranteed, "2"), ""); err != nil {
+		t.Errorf("allocation failed with a failing publish: %v", err)
+	}
+	allocateClaim(t, p, "a", draTestResult(0, "2"))
 }
 
 // TestDRADeviceShape checks attributes of published device.
