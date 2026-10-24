@@ -1136,7 +1136,7 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 				if level2.Value() > target.Value() && level1.Value() < target.Value() {
 					log.Debugf("  - %s WINS on CPU burstability limit (%s, limit %s)",
 						node2.Name(), level2, target)
-					return true
+					return false
 				}
 				log.Debugf("  - CPU burstability limit is a TIE")
 				return id1 < id2
