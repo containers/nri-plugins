@@ -21,8 +21,11 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
+
+	corev1 "k8s.io/api/core/v1"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/topologyaware"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
@@ -615,6 +618,64 @@ func TestAffinities(t *testing.T) {
 			node := filteredPools[0]
 			if node.Name() != tc.expected {
 				t.Errorf("expected best pool %s, got %s", tc.expected, node.Name())
+			}
+		})
+	}
+}
+
+// Test that a burstable container without memory and CPU limits is placed
+// at the unlimitedBurstable topology level, instead of the largest pool.
+func TestUnlimitedBurstablePlacement(t *testing.T) {
+	dir := testSysfs(t)
+
+	tcases := []struct {
+		name     string
+		level    cfgapi.CPUTopologyLevel
+		expected string
+	}{
+		{name: "package level", level: cfgapi.CPUTopologyLevelPackage, expected: "socket #"},
+		{name: "system level", level: cfgapi.CPUTopologyLevelSystem, expected: "root"},
+	}
+
+	for _, tc := range tcases {
+		t.Run(tc.name, func(t *testing.T) {
+			sys, err := system.DiscoverSystemAt(path.Join(dir, "sysfs", "4-socket-server-nosnc", "sys"))
+			if err != nil {
+				panic(err)
+			}
+
+			policy := New().(*policy)
+			err = policy.Setup(&policyapi.BackendOptions{
+				Cache:  &mockCache{},
+				System: sys,
+				Config: &cfgapi.Config{
+					ReservedResources:  cfgapi.Constraints{cfgapi.CPU: "750m"},
+					UnlimitedBurstable: tc.level,
+				},
+			})
+			if err != nil {
+				log.Warnf("failed to setup test policy: %v", err)
+			}
+
+			req := &request{
+				memReq:   1 << 30,
+				memLim:   0,
+				memType:  memoryDRAM,
+				fraction: 1000,
+				limit:    unlimitedCPU,
+				container: &mockContainer{
+					returnValueForQOSClass: corev1.PodQOSBurstable,
+				},
+			}
+
+			log.EnableDebug(true)
+			_, pools := policy.sortPoolsByScore(req, map[int]int32{})
+			log.EnableDebug(false)
+			if len(pools) < 1 {
+				t.Fatalf("pool scoring failed to find any pools")
+			}
+			if name := pools[0].Name(); !strings.HasPrefix(name, tc.expected) {
+				t.Errorf("expected best pool %q*, got %s", tc.expected, name)
 			}
 		})
 	}
