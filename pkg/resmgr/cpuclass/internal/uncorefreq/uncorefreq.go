@@ -21,6 +21,7 @@ package uncorefreq
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/intel/goresctrl/pkg/utils"
 
@@ -30,6 +31,10 @@ import (
 )
 
 var log = logger.NewLogger("cpuclass")
+
+// restoreMaxKHz is passed to the max writer to restore the hardware
+// default; the sysfs writer clamps it to the hardware maximum.
+const restoreMaxKHz = math.MaxInt32
 
 // DieKey identifies one (package, die) uncore frequency domain.
 type DieKey struct {
@@ -59,7 +64,8 @@ type uncoreWritten struct {
 }
 
 // Writer enforces per-die uncore frequency limits. A die with
-// effective min=max=0 is left untouched. Failures on individual
+// effective min=max=0 is left untouched unless limits were written to
+// it earlier, in which case they are restored to hardware defaults. Failures on individual
 // dies are logged; the first error is returned to the caller.
 type Writer struct {
 	hooks       Hooks
@@ -134,17 +140,22 @@ func (w *Writer) Enforce(sys sysfs.System, defs map[string]types.ClassDef, cpuCl
 	var firstErr error
 	for key := range dirtyDies {
 		min, max, minCls, maxCls := effectiveUncoreFreqs(sys, key, defs, cpuClass)
-		if min == 0 && max == 0 {
+		state := w.lastWritten[key]
+		if min == 0 && max == 0 && !state.hasMin && !state.hasMax {
 			log.Debugf("uncore: pkg/die %d/%d: no limits in effect", key.Pkg, key.Die)
 			continue
 		}
 		log.Debugf("uncore: pkg/die %d/%d: min=%d (class %q) max=%d (class %q)",
 			key.Pkg, key.Die, min, minCls, max, maxCls)
-		state := w.lastWritten[key]
 		if min > 0 && max > 0 && min > max {
 			log.Warnf("uncore: pkg/die %d/%d: min %d > max %d", key.Pkg, key.Die, min, max)
 		}
-		if min > 0 && (!state.hasMin || state.min != min) {
+		// A limit we wrote earlier but which no class requests any
+		// more is restored to the hardware default. The sysfs writer
+		// clamps values to the hardware range, so 0 and restoreMaxKHz
+		// end up as the hardware min and max, respectively.
+		switch {
+		case min > 0 && (!state.hasMin || state.min != min):
 			if err := w.callSetMin(key.Pkg, key.Die, int(min)); err != nil {
 				log.Errorf("uncore: pkg/die %d/%d: cannot set min=%d: %v", key.Pkg, key.Die, min, err)
 				if firstErr == nil {
@@ -153,8 +164,19 @@ func (w *Writer) Enforce(sys sysfs.System, defs map[string]types.ClassDef, cpuCl
 			}
 			state.min = min
 			state.hasMin = true
+		case min == 0 && state.hasMin:
+			log.Debugf("uncore: pkg/die %d/%d: restoring default min", key.Pkg, key.Die)
+			if err := w.callSetMin(key.Pkg, key.Die, 0); err != nil {
+				log.Errorf("uncore: pkg/die %d/%d: cannot restore min: %v", key.Pkg, key.Die, err)
+				if firstErr == nil {
+					firstErr = err
+				}
+			}
+			state.min = 0
+			state.hasMin = false
 		}
-		if max > 0 && (!state.hasMax || state.max != max) {
+		switch {
+		case max > 0 && (!state.hasMax || state.max != max):
 			if err := w.callSetMax(key.Pkg, key.Die, int(max)); err != nil {
 				log.Errorf("uncore: pkg/die %d/%d: cannot set max=%d: %v", key.Pkg, key.Die, max, err)
 				if firstErr == nil {
@@ -163,6 +185,16 @@ func (w *Writer) Enforce(sys sysfs.System, defs map[string]types.ClassDef, cpuCl
 			}
 			state.max = max
 			state.hasMax = true
+		case max == 0 && state.hasMax:
+			log.Debugf("uncore: pkg/die %d/%d: restoring default max", key.Pkg, key.Die)
+			if err := w.callSetMax(key.Pkg, key.Die, restoreMaxKHz); err != nil {
+				log.Errorf("uncore: pkg/die %d/%d: cannot restore max: %v", key.Pkg, key.Die, err)
+				if firstErr == nil {
+					firstErr = err
+				}
+			}
+			state.max = 0
+			state.hasMax = false
 		}
 		w.lastWritten[key] = state
 	}
