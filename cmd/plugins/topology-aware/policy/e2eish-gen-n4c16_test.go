@@ -712,7 +712,7 @@ func TestE2eishGenN4c16Test14Burstable(t *testing.T) {
 	require.Len(t, s.Nodes("pod0c0"), 2)
 	require.Len(t, s.Nodes("pod1c0"), 4)
 	require.Len(t, s.Nodes("pod2c0"), 2)
-	require.Len(t, s.Nodes("pod3c0"), 4)
+	require.Len(t, s.Nodes("pod3c0"), 2)
 	s.DeleteAllPodsIn("default")
 	s.Terminate()
 	s.Launch(genN4c16, genN4c16BaseConfig)

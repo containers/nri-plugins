@@ -1055,13 +1055,14 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 		}
 		log.Debugf("  - offer memory types are a tie (%s vs %s)", t1, t2)
 
-		if req, lim := request.MemAmountToAllocate(), request.MemoryLimit(); req != lim {
+		// Unlimited memory (lim == 0) is handled below, after CPU burstability.
+		if req, lim := request.MemAmountToAllocate(), request.MemoryLimit(); req != lim && lim != 0 {
 			capa1, capa2 := p.poolZoneCapacity(node1, memType), p.poolZoneCapacity(node2, memType)
-			if (lim != 0 && capa1 >= lim && capa2 < lim) || (lim == 0 && capa1 > capa2) {
+			if capa1 >= lim && capa2 < lim {
 				log.Debugf("   - %s loses on memory offer burstability", node2.Name())
 				return true
 			}
-			if (lim != 0 && capa1 < lim && capa2 >= lim) || (lim == 0 && capa2 > capa1) {
+			if capa1 < lim && capa2 >= lim {
 				log.Debugf("   - %s loses on memory offer burstability", node1.Name())
 				return false
 			}
@@ -1136,12 +1137,44 @@ func (p *policy) compareScores(request Request, pools []Node, scores map[int]Sco
 				if level2.Value() > target.Value() && level1.Value() < target.Value() {
 					log.Debugf("  - %s WINS on CPU burstability limit (%s, limit %s)",
 						node2.Name(), level2, target)
-					return true
+					return false
 				}
 				log.Debugf("  - CPU burstability limit is a TIE")
 				return id1 < id2
 			}
 		}
+	}
+
+	// for unlimited memory, prefer a pool at the unlimited burstable topology
+	// level, then the pool with more memory capacity
+	if req, lim := request.MemAmountToAllocate(), request.MemoryLimit(); lim == 0 && req != lim && o1 != nil && o2 != nil {
+		var (
+			ctr     = request.GetContainer()
+			target  = node1.Policy().unlimitedBurstablePreference(ctr)
+			level1  = node1.Kind().TopologyLevel()
+			level2  = node2.Kind().TopologyLevel()
+			memType = request.MemoryType()
+		)
+
+		switch {
+		case level1 == target && level2 != target:
+			log.Debugf("  - %s WINS on unlimited memory topology level (%s)", node1.Name(), target)
+			return true
+		case level2 == target && level1 != target:
+			log.Debugf("  - %s WINS on unlimited memory topology level (%s)", node2.Name(), target)
+			return false
+		}
+
+		capa1, capa2 := p.poolZoneCapacity(node1, memType), p.poolZoneCapacity(node2, memType)
+		if capa1 > capa2 {
+			log.Debugf("   - %s loses on unlimited memory capacity", node2.Name())
+			return true
+		}
+		if capa2 > capa1 {
+			log.Debugf("   - %s loses on unlimited memory capacity", node1.Name())
+			return false
+		}
+		log.Debugf("  - unlimited memory capacity is a TIE")
 	}
 
 	// tighter memory offer wins (skip if both offers are nil)
