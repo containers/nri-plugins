@@ -345,3 +345,62 @@ func TestUncoreRecomputesOnAssignmentChange(t *testing.T) {
 		t.Errorf("uncore max after hi removed = %d, want 1_500_000", got)
 	}
 }
+
+// TestUncoreRestoredWhenLimitsDropped verifies that when the last
+// class with uncore limits leaves a die, the die's uncore range is
+// restored to hardware defaults instead of staying at the old limits.
+func TestUncoreRestoredWhenLimitsDropped(t *testing.T) {
+	sys := newDieFakeSys(map[int]dieFakeCpu{
+		0: {pkg: 0, die: 0},
+		1: {pkg: 0, die: 0},
+	})
+	h, r := newBareHandler()
+	h.sys = sys
+	h.SetClassDef("normal@d0", types.ClassDef{})
+	h.SetClassDef("high@d0", types.ClassDef{UncoreMinFreq: 2_200_000})
+	h.AssignCPUs("normal@d0", []int{0, 1})
+	h.AssignCPUs("high@d0", []int{1})
+	if err := h.Commit(); err != nil {
+		t.Fatalf("Commit#1: %v", err)
+	}
+	key := uncorefreq.DieKey{Pkg: 0, Die: 0}
+	if got := r.minU[key]; got != 2_200_000 {
+		t.Fatalf("uncore min = %d, want 2_200_000", got)
+	}
+	h.AssignCPUs("normal@d0", []int{1})
+	if err := h.Commit(); err != nil {
+		t.Fatalf("Commit#2: %v", err)
+	}
+	if got := r.minU[key]; got != 0 {
+		t.Errorf("uncore min after high class left = %d, want 0 (restore to hw min)", got)
+	}
+}
+
+// TestUncoreMinRestoredWhileMaxRemains verifies that each limit is
+// restored independently when only one of them is dropped.
+func TestUncoreMinRestoredWhileMaxRemains(t *testing.T) {
+	sys := newDieFakeSys(map[int]dieFakeCpu{
+		0: {pkg: 0, die: 0},
+		1: {pkg: 0, die: 0},
+	})
+	h, r := newBareHandler()
+	h.sys = sys
+	h.SetClassDef("cap@d0", types.ClassDef{UncoreMaxFreq: 2_000_000})
+	h.SetClassDef("high@d0", types.ClassDef{UncoreMinFreq: 2_200_000})
+	h.AssignCPUs("cap@d0", []int{0})
+	h.AssignCPUs("high@d0", []int{1})
+	if err := h.Commit(); err != nil {
+		t.Fatalf("Commit#1: %v", err)
+	}
+	h.AssignCPUs("cap@d0", []int{1})
+	if err := h.Commit(); err != nil {
+		t.Fatalf("Commit#2: %v", err)
+	}
+	key := uncorefreq.DieKey{Pkg: 0, Die: 0}
+	if got := r.minU[key]; got != 0 {
+		t.Errorf("uncore min = %d, want 0 (restored)", got)
+	}
+	if got := r.maxU[key]; got != 2_000_000 {
+		t.Errorf("uncore max = %d, want 2_000_000 (kept)", got)
+	}
+}
