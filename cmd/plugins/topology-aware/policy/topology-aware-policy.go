@@ -757,7 +757,12 @@ func (a *allocations) clone() allocations {
 		o.grants[id] = grant.Clone()
 	}
 	for uid, c := range a.claims {
-		o.claims[uid] = &claim{Grant: c.Clone(), results: slices.Clone(c.results), mpols: slices.Clone(c.mpols)}
+		o.claims[uid] = &claim{
+			Grant:   c.Clone(),
+			results: slices.Clone(c.results),
+			devices: slices.Clone(c.devices),
+			mpols:   slices.Clone(c.mpols),
+		}
 	}
 	return o
 }

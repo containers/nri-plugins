@@ -75,7 +75,7 @@ func (p *policy) restoreAllocations(allocations *allocations) error {
 
 // restoreClaims restores the DRA claims saved before a restart. A claim whose
 // pool is gone or whose CPUs we cannot grant any more moves to other CPUs of
-// the same NUMA nodes. It fails only if a node has too few CPUs for a claim.
+// the same devices. It fails only if a device has too few CPUs for a claim.
 func (p *policy) restoreClaims() error {
 	saved := p.newAllocations()
 	if !p.cache.GetPolicyEntry(keyAllocations, &saved) {
@@ -222,6 +222,8 @@ type cachedGrant struct {
 	Irqs       *IrqAffinity
 	// Results are the CPUs of each allocation result of a DRA claim.
 	Results []string `json:",omitempty"`
+	// Devices are the devices of the claim results.
+	Devices []string `json:",omitempty"`
 	// MemoryPolicies are the memory policies of the claim results.
 	MemoryPolicies []*cfgapi.MemoryPolicy `json:",omitempty"`
 }
@@ -304,6 +306,7 @@ func (a *allocations) MarshalJSON() ([]byte, error) {
 		for _, cpus := range c.results {
 			ccg.Results = append(ccg.Results, cpus.String())
 		}
+		ccg.Devices = c.devices
 		ccg.MemoryPolicies = c.mpols
 		cgrants[keyClaimPrefix+uid] = ccg
 	}
@@ -326,7 +329,7 @@ func (a *allocations) UnmarshalJSON(data []byte) error {
 		switch {
 		case err != nil && isClaim:
 			// Nothing rebuilds a claim, so we keep its results. When we
-			// restore the claim, it moves to other CPUs of the same nodes.
+			// restore the claim, it moves to other CPUs of the same devices.
 			a.lost[uid] = policyError("failed to reinstate DRA claim %s: unknown pool %s", uid, ccg.Pool)
 		case err != nil:
 			log.Errorf("removing unresolvable cached grant %v: %v", *ccg, err)
@@ -347,6 +350,10 @@ func (a *allocations) UnmarshalJSON(data []byte) error {
 				break
 			}
 			c.results = append(c.results, cpus)
+		}
+		c.devices = ccg.Devices
+		if len(c.devices) == 0 {
+			c.devices = a.policy.numaDevices(c.results)
 		}
 		a.claims[uid] = c
 	}
