@@ -56,6 +56,22 @@ exported() {
         sed -n "s/^$2=\"\(.*\)\"$/\1/p"
 }
 
+lowered() {
+    # Usage: lowered N DEVICE...
+    #
+    # Print the idle capacities with those of DEVICEs lowered by N.
+    local n=$1 entry name cpus expected=""
+    shift
+    for entry in $idle; do
+        name=${entry%=*} cpus=${entry#*=}
+        if [[ " $* " == *" $name "* ]]; then
+            cpus=$((cpus - n))
+        fi
+        expected+="${expected:+ }$name=$cpus"
+    done
+    echo "$expected"
+}
+
 cpu-ids() {
     # Usage: cpu-ids CPUSET
     #
@@ -114,7 +130,8 @@ fi
 
 vm-command "kubectl get resourceslices -o yaml"
 
-idle="cpudevnuma000=4 cpudevnuma001=4 cpudevnuma002=4 cpudevnuma003=3 cpudevsocket000=8 cpudevsocket001=7"
+# Sorted by name, as capacities prints them.
+idle="cpudevmachine=15 cpudevnuma000=4 cpudevnuma001=4 cpudevnuma002=4 cpudevnuma003=3 cpudevsocket000=8 cpudevsocket001=7"
 wait-capacities "$idle"
 
 for socket in 0 1; do
@@ -138,6 +155,7 @@ done
 # subtracts the claim from the socket device. A NUMA device keeps the CPUs of
 # the claim in its capacity only as far as the claim can move off them, to the
 # one free CPU of the socket, so both NUMA devices of socket 1 have 1 CPU.
+# The claim cannot leave the socket, so the machine device leaves its CPUs out.
 socket-claim pod0 1 6
 cpus0=$(exported pod0 CLAIMED_CPUS)
 [ "$(cpu-ids "$cpus0" | wc -l)" == "6" ] && [ "$(cpu-nodes "$cpus0")" == "2 3 " ] ||
@@ -145,7 +163,8 @@ cpus0=$(exported pod0 CLAIMED_CPUS)
 pinned=$(vm-command-q "kubectl exec pod0 -- cat /sys/fs/cgroup/cpuset.cpus.effective")
 [ "$pinned" == "$cpus0" ] ||
     error "pod0 runs on CPUs $pinned, expected its claimed CPUs $cpus0"
-wait-capacities "${idle/cpudevnuma002=4 cpudevnuma003=3/cpudevnuma002=1 cpudevnuma003=1}"
+expected=$(lowered 6 cpudevmachine)
+wait-capacities "${expected/cpudevnuma002=4 cpudevnuma003=3/cpudevnuma002=1 cpudevnuma003=1}"
 
 # Deleting pod0 gives the CPUs of its claim back: all 7 CPUs of socket 1 can
 # be claimed again.
@@ -165,8 +184,8 @@ node2=$(cpu-nodes "$cpus2")
 node2=${node2% }
 vm-command "kubectl delete pod pod2 --now --wait"
 
-# A container with 2 exclusive CPUs lowers the capacity of the NUMA device and
-# of the socket device of its CPUs by 2.
+# A container with 2 exclusive CPUs lowers the capacity of every device of its
+# CPUs by 2.
 NAME=pod3 CPU=2 create guaranteed
 cpus3=$(exported pod3 EXCLUSIVE_CPUS)
 [ -n "$cpus3" ] || cpus3=$(exported pod3 ISOLATED_CPUS)
@@ -174,16 +193,8 @@ node3=$(cpu-nodes "$cpus3")
 [ "$(cpu-ids "$cpus3" | wc -l)" == "2" ] && [ "$(wc -w <<< "$node3")" == "1" ] ||
     error "pod3 got exclusive CPUs \"$cpus3\", expected 2 CPUs of one NUMA node"
 node3=${node3% }
-expected=""
-for entry in $idle; do
-    name=${entry%=*} cpus=${entry#*=}
-    if [ "$name" == "$(printf "cpudevnuma%03d" "$node3")" ] ||
-           [ "$name" == "$(printf "cpudevsocket%03d" $((node3 / 2)))" ]; then
-        cpus=$((cpus - 2))
-    fi
-    expected+="${expected:+ }$name=$cpus"
-done
-wait-capacities "$expected"
+wait-capacities "$(lowered 2 "$(printf "cpudevnuma%03d" "$node3")" "$(printf "cpudevsocket%03d" $((node3 / 2)))" \
+    cpudevmachine)"
 vm-command "kubectl delete pod pod3 --now --wait"
 wait-capacities "$idle"
 

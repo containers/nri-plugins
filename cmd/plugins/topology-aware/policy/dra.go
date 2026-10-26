@@ -14,18 +14,17 @@
 
 package topologyaware
 
-// We publish each NUMA node as a DRA device. Its capacity is the number of
-// CPUs we can give out from that node. A claim requests a number of CPUs
-// from one device.
+// We publish each group of CPUs of the topology as a DRA device: the machine,
+// each socket and each NUMA node. Its capacity is the number of CPUs we can
+// give out from that group. A claim requests a number of CPUs from one device.
 //
 // We allocate the CPUs of a claim as a grant, the same way as for a
 // container. The grant has only exclusive CPUs: no shared part and no
 // memory. Like other grants, it is accounted, kept across a reconfiguration
 // and saved to the cache. The claimed CPUs leave the free supply, so the
-// policy does not hand them out again. A claim on a socket device is not
-// bound to its CPUs: when a claim on a NUMA node of the socket needs them,
-// it moves to other CPUs of the socket, and the containers holding it move
-// with it.
+// policy does not hand them out again. A claim is not bound to its CPUs:
+// when a claim on a smaller device inside its device needs them, it moves to
+// other CPUs of its device, and the containers holding it move with it.
 // A container holding claims runs on their CPUs, and also on its own CPUs
 // if it has a CPU request. A container naming only some requests of a claim
 // runs on the CPUs of those requests.
@@ -55,15 +54,18 @@ import (
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/dra"
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
+	system "github.com/containers/nri-plugins/pkg/sysfs"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
 )
 
 const (
-	// draNUMADeviceFormat names a device after the NUMA node it publishes.
-	draNUMADeviceFormat = "cpudevnuma%03d"
+	// draMachineDevice is the name of the device which publishes the machine.
+	draMachineDevice = "cpudevmachine"
 	// draSocketDeviceFormat names a device after the socket it publishes.
 	draSocketDeviceFormat = "cpudevsocket%03d"
+	// draNUMADeviceFormat names a device after the NUMA node it publishes.
+	draNUMADeviceFormat = "cpudevnuma%03d"
 	// draCapacityCPU is the number of CPUs a claim consumes of a device.
 	draCapacityCPU resourceapi.QualifiedName = "dra.cpu/cpu"
 	// draAttrSocketID is the socket the CPUs of a device belong to.
@@ -74,9 +76,10 @@ const (
 	draAttrLevel resourceapi.QualifiedName = "dra.cpu/level"
 	// draAttrNumCPUs is the number of CPUs of a device, used or not.
 	draAttrNumCPUs resourceapi.QualifiedName = "dra.cpu/numCPUs"
-	// draLevelNUMANode and draLevelSocket are the levels of our devices.
-	draLevelNUMANode = "numanode"
+	// The levels of our devices.
+	draLevelMachine  = "machine"
 	draLevelSocket   = "socket"
+	draLevelNUMANode = "numanode"
 	// draConfigAPIVersion and draConfigKind identify our claim configs.
 	draConfigAPIVersion = "config.nri/v1alpha1"
 	draConfigKind       = "TopologyAwareClaimConfig"
@@ -104,59 +107,87 @@ type claimMove struct {
 	from, to *claim
 }
 
-// draDevices returns one device per NUMA node and one per socket which has
-// CPUs for claims.
+// draCPUGroup is a group of CPUs of the topology which we publish as a DRA
+// device: its device name, level and CPUs, and the ID attributes of its level.
+type draCPUGroup struct {
+	name  string
+	level string
+	cpus  cpuset.CPUSet
+	ids   map[resourceapi.QualifiedName]int64
+}
+
+// draCPUGroups returns the NUMA nodes, the sockets and the machine.
+func draCPUGroups(sys system.System) []draCPUGroup {
+	var groups []draCPUGroup
+	for _, id := range sys.NodeIDs() {
+		groups = append(groups, draCPUGroup{
+			name:  fmt.Sprintf(draNUMADeviceFormat, id),
+			level: draLevelNUMANode,
+			cpus:  sys.Node(id).CPUSet(),
+			ids: map[resourceapi.QualifiedName]int64{
+				deviceattribute.StandardDeviceAttributeNUMANode: int64(id),
+				draAttrSocketID: int64(sys.Node(id).PackageID()),
+			},
+		})
+	}
+	for _, id := range sys.PackageIDs() {
+		groups = append(groups, draCPUGroup{
+			name:  fmt.Sprintf(draSocketDeviceFormat, id),
+			level: draLevelSocket,
+			cpus:  sys.Package(id).CPUSet(),
+			ids:   map[resourceapi.QualifiedName]int64{draAttrSocketID: int64(id)},
+		})
+	}
+	return append(groups, draCPUGroup{name: draMachineDevice, level: draLevelMachine, cpus: sys.CPUSet()})
+}
+
+// draDevices returns a device for each CPU group which has CPUs for claims.
 func (p *policy) draDevices() []resourceapi.Device {
 	var devices []resourceapi.Device
-
-	for _, id := range p.sys.NodeIDs() {
-		node := p.sys.Node(id)
-		attrs := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
-			deviceattribute.StandardDeviceAttributeNUMANode: {
-				IntValue: ptr.To(int64(id)),
-			},
-		}
-		name := fmt.Sprintf(draNUMADeviceFormat, id)
-		if d, ok := p.draDevice(name, draLevelNUMANode, node.PackageID(), attrs); ok {
+	for _, group := range p.groups {
+		if d, ok := p.draDevice(group); ok {
 			devices = append(devices, d)
 		}
 	}
-	for _, id := range p.sys.PackageIDs() {
-		attrs := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{}
-		name := fmt.Sprintf(draSocketDeviceFormat, id)
-		if d, ok := p.draDevice(name, draLevelSocket, id, attrs); ok {
-			devices = append(devices, d)
-		}
-	}
-
 	return devices
 }
 
-// draDevice returns the named device with the attributes of its level and
-// socket added to attrs, or false if it has no CPUs for claims.
-func (p *policy) draDevice(name, level string, socket idset.ID, attrs map[resourceapi.QualifiedName]resourceapi.DeviceAttribute) (resourceapi.Device, bool) {
-	cpus, _ := p.draDeviceCPUs(name)
+// draDevice returns the device of the CPU group, or false if it has no CPUs
+// for claims.
+func (p *policy) draDevice(group draCPUGroup) (resourceapi.Device, bool) {
+	cpus, _ := p.draDeviceCPUs(group.name)
 	if cpus.IsEmpty() {
 		return resourceapi.Device{}, false
 	}
-	capacity := p.draCapacity(name, cpus)
+	capacity := p.draCapacity(group.name, cpus)
 	if capacity == 0 {
 		return resourceapi.Device{}, false
 	}
 
-	attrs[draAttrLevel] = resourceapi.DeviceAttribute{StringValue: ptr.To(level)}
-	attrs[draAttrSocketID] = resourceapi.DeviceAttribute{IntValue: ptr.To(int64(socket))}
-	attrs[draAttrSMTEnabled] = resourceapi.DeviceAttribute{BoolValue: ptr.To(p.sys.MaxThreadCount() > 1)}
-	attrs[draAttrNumCPUs] = resourceapi.DeviceAttribute{IntValue: ptr.To(int64(cpus.Size()))}
-	roots := p.sys.Package(socket).PCIeRoots()
+	attrs := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+		draAttrLevel:      {StringValue: ptr.To(group.level)},
+		draAttrSMTEnabled: {BoolValue: ptr.To(p.sys.MaxThreadCount() > 1)},
+		draAttrNumCPUs:    {IntValue: ptr.To(int64(cpus.Size()))},
+	}
+	for attr, id := range group.ids {
+		attrs[attr] = resourceapi.DeviceAttribute{IntValue: ptr.To(id)}
+	}
+	var roots []string
+	for _, id := range p.sys.PackageIDs() {
+		if pkg := p.sys.Package(id); !pkg.CPUSet().Intersection(cpus).IsEmpty() {
+			roots = append(roots, pkg.PCIeRoots()...)
+		}
+	}
 	if len(roots) > 0 && p.options.Owner.DRAListAttributesSupported() {
+		// A root with CPUs of several sockets is a root of each of them.
+		slices.Sort(roots)
 		attrs[deviceattribute.StandardDeviceAttributePCIeRoot] = resourceapi.DeviceAttribute{
-			StringValues: roots,
+			StringValues: slices.Compact(roots),
 		}
 	}
 
 	return resourceapi.Device{
-		Name:                     name,
+		Name:                     group.name,
 		AllowMultipleAllocations: ptr.To(true),
 		Attributes:               attrs,
 		Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
@@ -538,23 +569,12 @@ func (p *policy) draRequests(results []resourceapi.DeviceRequestAllocationResult
 // draDeviceCPUs returns the grantable CPUs of the device, or false for an
 // unknown device.
 func (p *policy) draDeviceCPUs(device string) (cpuset.CPUSet, bool) {
-	var cpus cpuset.CPUSet
-	if id, ok := draDeviceID(device, draNUMADeviceFormat); ok {
-		node := p.sys.Node(id)
-		if node == nil {
-			return cpuset.New(), false
+	for _, group := range p.groups {
+		if group.name == device {
+			return group.cpus.Intersection(grantableCPUs(p.root.GetSupply())), true
 		}
-		cpus = node.CPUSet()
-	} else if id, ok := draDeviceID(device, draSocketDeviceFormat); ok {
-		pkg := p.sys.Package(id)
-		if pkg == nil {
-			return cpuset.New(), false
-		}
-		cpus = pkg.CPUSet()
-	} else {
-		return cpuset.New(), false
 	}
-	return cpus.Intersection(grantableCPUs(p.root.GetSupply())), true
+	return cpuset.New(), false
 }
 
 // numaDevices returns the NUMA device of the first CPU of each result, or nil if
@@ -574,16 +594,6 @@ func (p *policy) numaDevices(results []cpuset.CPUSet) []string {
 		devices = append(devices, fmt.Sprintf(draNUMADeviceFormat, cpu.NodeID()))
 	}
 	return devices
-}
-
-// draDeviceID returns the ID in the device name of the given format, or false
-// if the name is not of the format.
-func draDeviceID(device, format string) (idset.ID, bool) {
-	var id int
-	if _, err := fmt.Sscanf(device, format, &id); err != nil {
-		return 0, false
-	}
-	return idset.ID(id), fmt.Sprintf(format, id) == device
 }
 
 // allocateClaim returns a claim with the requested CPUs reserved for it, each
