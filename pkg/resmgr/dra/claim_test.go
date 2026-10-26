@@ -403,11 +403,14 @@ func TestPrepareResourceClaimsRollback(t *testing.T) {
 		name string
 		// edits replaces what the policy returns, updateErr fails the commit,
 		// pushErr fails the container updates. pushes is how often the
-		// container updates are pushed: once more after the claim fails.
+		// container updates are pushed: once more after the claim fails. undo
+		// tells whether the policy is asked to undo the claim: not once the
+		// runtime has the container updates.
 		edits     func([]resourceapi.DeviceRequestAllocationResult) []specs.ContainerEdits
 		updateErr error
 		pushErr   error
 		pushes    int
+		undo      bool
 	}{
 		{
 			// A policy bug: the edits no longer say which device is which.
@@ -416,16 +419,19 @@ func TestPrepareResourceClaimsRollback(t *testing.T) {
 				return make([]specs.ContainerEdits, len(results)+1)
 			},
 			pushes: 1,
+			undo:   true,
 		},
 		{
 			name:      "allocation which cannot be committed",
 			updateErr: errors.New("failed to save cache"),
 			pushes:    1,
+			undo:      true,
 		},
 		{
 			name:    "container updates the runtime did not apply",
 			pushErr: errors.New("runtime failed to update 1 container(s)"),
 			pushes:  2,
+			undo:    true,
 		},
 		{
 			// An environment entry without a value is rejected by CDI itself.
@@ -464,6 +470,9 @@ func TestPrepareResourceClaimsRollback(t *testing.T) {
 			if !reflect.DeepEqual(policy.releases, []types.UID{claim.UID}) {
 				t.Errorf("policy was asked to release %v, expected claim %s",
 					policy.releases, claim.UID)
+			}
+			if undone := len(policy.undos) != 0; undone != tc.undo {
+				t.Errorf("policy was asked to undo %v, expected undo %v", policy.undos, tc.undo)
 			}
 			if files := specFiles(t, p); len(files) != 0 {
 				t.Errorf("left spec file(s) %v behind, expected none", files)
@@ -559,6 +568,9 @@ func TestUnprepareResourceClaims(t *testing.T) {
 
 	if len(policy.allocated) != 0 {
 		t.Errorf("policy still accounts for %v", policy.allocated)
+	}
+	if len(policy.undos) != 0 {
+		t.Errorf("policy was asked to undo %v, expected nothing", policy.undos)
 	}
 	if files := specFiles(t, p); len(files) != 0 {
 		t.Errorf("left spec file(s) %v behind, expected none", files)

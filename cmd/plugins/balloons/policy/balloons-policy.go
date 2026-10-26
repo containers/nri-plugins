@@ -638,7 +638,7 @@ func (p *balloons) AllocateClaim(
 }
 
 // ReleaseClaim releases the resources allocated for the given claim.
-func (p *balloons) ReleaseClaim(types.UID) error {
+func (p *balloons) ReleaseClaim(types.UID, bool) error {
 	return policy.ErrNoDRAClaims
 }
 

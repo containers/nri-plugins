@@ -88,7 +88,7 @@ func (p *Plugin) releaseClaims(claims []kubeletplugin.NamespacedObject) map[type
 
 	result := make(map[types.UID]error, len(claims))
 	for _, claim := range claims {
-		err := p.releaseClaim(claim.UID)
+		err := p.releaseClaim(claim.UID, false)
 		if err != nil {
 			log.Errorf("failed to unprepare claim %s: %v", claim, err)
 		}
@@ -138,13 +138,13 @@ func (p *Plugin) prepareClaim(claim *resourceapi.ResourceClaim) ([]kubeletplugin
 	defer p.owner.Unlock()
 
 	if updateErr != nil {
-		p.undoClaim(claim.UID, rollback)
+		p.undoClaim(claim.UID, rollback, false)
 		return nil, fmt.Errorf("dra: failed to update containers for claim %s: %w", claim.UID, updateErr)
 	}
 
 	names, err := p.cdi.WriteClaim(claim.UID, edits)
 	if err != nil {
-		p.undoClaim(claim.UID, rollback)
+		p.undoClaim(claim.UID, rollback, true)
 		return nil, err
 	}
 
@@ -198,7 +198,7 @@ func (p *Plugin) allocateClaim(claim *resourceapi.ResourceClaim, results []resou
 		edits = make([]specs.ContainerEdits, len(results))
 	}
 	if len(edits) != len(results) {
-		p.undoClaim(claim.UID, rollback)
+		p.undoClaim(claim.UID, rollback, false)
 		return nil, false, fmt.Errorf("dra: policy returned %d container edit(s) for the %d device(s) of claim %s",
 			len(edits), len(results), claim.UID)
 	}
@@ -208,18 +208,19 @@ func (p *Plugin) allocateClaim(claim *resourceapi.ResourceClaim, results []resou
 	// clean up, rather than resources granted to a container but accounted to
 	// nobody.
 	if err := p.owner.ClaimAllocated(); err != nil {
-		p.undoClaim(claim.UID, rollback)
+		p.undoClaim(claim.UID, rollback, false)
 		return nil, false, fmt.Errorf("dra: failed to commit the allocation of claim %s: %w", claim.UID, err)
 	}
 
 	return edits, rollback, nil
 }
 
-// releaseClaim releases the resources of a claim and removes its CDI spec. A
+// releaseClaim releases the resources of a claim and removes its CDI spec. If
+// undo is true, the policy also undoes what allocating the claim changed. A
 // claim we know nothing about is not an error: the kubelet may ask to unprepare
 // the same claim more than once, and one it never got a successful answer for.
-func (p *Plugin) releaseClaim(uid types.UID) error {
-	if err := p.policy.ReleaseClaim(uid); err != nil {
+func (p *Plugin) releaseClaim(uid types.UID, undo bool) error {
+	if err := p.policy.ReleaseClaim(uid, undo); err != nil {
 		return fmt.Errorf("dra: policy failed to release claim %s: %w", uid, err)
 	}
 
@@ -236,17 +237,20 @@ func (p *Plugin) releaseClaim(uid types.UID) error {
 // earlier prepare of the same claim had already succeeded: what the policy
 // accounts for then is not only what this failed attempt allocated, and the
 // kubelet releases it all when the last pod using the claim goes away.
+// pushed tells whether the runtime has the container updates the allocation
+// made. The policy then keeps what allocating the claim changed for other
+// claims and containers, as the containers use it already.
 //
 // There is nothing to do about a failure of the release itself, the claim is
 // failed already, but it must be visible: it leaves the policy accounting for
 // resources no container got.
-func (p *Plugin) undoClaim(uid types.UID, rollback bool) {
+func (p *Plugin) undoClaim(uid types.UID, rollback, pushed bool) {
 	if !rollback {
 		log.Warnf("claim %s stays allocated: it was prepared before, so its devices may be in use", uid)
 		return
 	}
 
-	if err := p.releaseClaim(uid); err != nil {
+	if err := p.releaseClaim(uid, !pushed); err != nil {
 		log.Errorf("failed to release the allocation of claim %s: %v", uid, err)
 	}
 }

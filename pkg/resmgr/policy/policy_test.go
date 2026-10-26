@@ -34,6 +34,7 @@ type draBackend struct {
 	claim     *resourceapi.ResourceClaim
 	results   []resourceapi.DeviceRequestAllocationResult
 	releaseID types.UID
+	undo      bool
 }
 
 func (b *draBackend) AllocateClaim(
@@ -44,8 +45,8 @@ func (b *draBackend) AllocateClaim(
 	return b.edits, b.err
 }
 
-func (b *draBackend) ReleaseClaim(uid types.UID) error {
-	b.releaseID = uid
+func (b *draBackend) ReleaseClaim(uid types.UID, undo bool) error {
+	b.releaseID, b.undo = uid, undo
 	return b.err
 }
 
@@ -80,15 +81,16 @@ func TestReleaseClaim(t *testing.T) {
 	backend := &draBackend{}
 	p := &policy{active: backend}
 
-	if err := p.ReleaseClaim(types.UID("claim-uid")); err != nil {
+	if err := p.ReleaseClaim(types.UID("claim-uid"), true); err != nil {
 		t.Fatalf("ReleaseClaim() failed: %v", err)
 	}
-	if backend.releaseID != types.UID("claim-uid") {
-		t.Errorf("ReleaseClaim() passed UID %q, expected %q", backend.releaseID, "claim-uid")
+	if backend.releaseID != types.UID("claim-uid") || !backend.undo {
+		t.Errorf("ReleaseClaim() passed UID %q and undo %v, expected %q and true",
+			backend.releaseID, backend.undo, "claim-uid")
 	}
 
 	backend.err = errors.New("no such claim")
-	if err := p.ReleaseClaim(types.UID("claim-uid")); !errors.Is(err, backend.err) {
+	if err := p.ReleaseClaim(types.UID("claim-uid"), false); !errors.Is(err, backend.err) {
 		t.Errorf("ReleaseClaim() returned error %v, expected %v", err, backend.err)
 	}
 }

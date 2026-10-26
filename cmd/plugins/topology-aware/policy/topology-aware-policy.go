@@ -756,13 +756,33 @@ func (a *allocations) clone() allocations {
 	for id, grant := range a.grants {
 		o.grants[id] = grant.Clone()
 	}
+	clones := map[*claim]*claim{}
 	for uid, c := range a.claims {
-		o.claims[uid] = &claim{
-			Grant:   c.Clone(),
-			results: slices.Clone(c.results),
-			devices: slices.Clone(c.devices),
-			mpols:   slices.Clone(c.mpols),
+		o.claims[uid] = c.clone(clones)
+	}
+	return o
+}
+
+// clone returns a copy of the claim and of the claims of its moves, with one
+// copy of each claim in clones.
+func (c *claim) clone(clones map[*claim]*claim) *claim {
+	// A move back finds its claim by pointer, so each claim has one copy.
+	if o, ok := clones[c]; ok {
+		return o
+	}
+	o := &claim{
+		Grant:   c.Clone(),
+		results: slices.Clone(c.results),
+		devices: slices.Clone(c.devices),
+		mpols:   slices.Clone(c.mpols),
+	}
+	clones[c] = o
+	// A claim moved back may then move back the claims it moved.
+	for uid, m := range c.moves {
+		if o.moves == nil {
+			o.moves = map[string]claimMove{}
 		}
+		o.moves[uid] = claimMove{from: m.from.clone(clones), to: m.to.clone(clones)}
 	}
 	return o
 }

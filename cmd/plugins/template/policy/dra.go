@@ -147,7 +147,7 @@ func (p *policy) containerClaims(c cache.Container) cpuset.CPUSet {
 }
 
 // ReleaseClaim gives the CPUs of a claim back.
-func (p *policy) ReleaseClaim(uid types.UID) error {
+func (p *policy) ReleaseClaim(uid types.UID, _ bool) error {
 	delete(p.claims, string(uid))
 	p.cache.SetPolicyEntry(keyClaims, p.claims)
 	return nil
