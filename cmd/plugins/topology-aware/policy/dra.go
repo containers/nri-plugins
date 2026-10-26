@@ -55,14 +55,23 @@ import (
 )
 
 const (
-	// draDeviceFormat names a device after the NUMA node it publishes.
-	draDeviceFormat = "cpudevnuma%03d"
+	// draNUMADeviceFormat names a device after the NUMA node it publishes.
+	draNUMADeviceFormat = "cpudevnuma%03d"
+	// draSocketDeviceFormat names a device after the socket it publishes.
+	draSocketDeviceFormat = "cpudevsocket%03d"
 	// draCapacityCPU is the number of CPUs a claim consumes of a device.
 	draCapacityCPU resourceapi.QualifiedName = "dra.cpu/cpu"
-	// draAttrSocketID is the socket the NUMA node belongs to.
+	// draAttrSocketID is the socket the CPUs of a device belong to.
 	draAttrSocketID resourceapi.QualifiedName = "dra.cpu/socketID"
 	// draAttrSMTEnabled tells whether the CPUs have SMT enabled.
 	draAttrSMTEnabled resourceapi.QualifiedName = "dra.cpu/smtEnabled"
+	// draAttrLevel is the level of the topology a device publishes.
+	draAttrLevel resourceapi.QualifiedName = "dra.cpu/level"
+	// draAttrNumCPUs is the number of CPUs of a device, used or not.
+	draAttrNumCPUs resourceapi.QualifiedName = "dra.cpu/numCPUs"
+	// draLevelNUMANode and draLevelSocket are the levels of our devices.
+	draLevelNUMANode = "numanode"
+	draLevelSocket   = "socket"
 	// draConfigAPIVersion and draConfigKind identify our claim configs.
 	draConfigAPIVersion = "config.nri/v1alpha1"
 	draConfigKind       = "TopologyAwareClaimConfig"
@@ -72,80 +81,113 @@ const (
 var draDriverName = dra.DriverName(PolicyName)
 
 // claim is a DRA claim we allocated. It has a grant of all of its CPUs, and
-// the CPUs and the memory policy of each of its allocation results, in result
-// order. mpols is nil if no result has a memory policy.
+// the CPUs, the device and the memory policy of each of its allocation
+// results, in result order. mpols is nil if no result has a memory policy.
 type claim struct {
 	Grant
 	results []cpuset.CPUSet
+	devices []string
 	mpols   []*cfgapi.MemoryPolicy
 }
 
-// draDevices returns one device per NUMA node which has CPUs for claims. The
-// capacity of a device is the number of CPUs of its node which claims hold or
-// could get now: the isolated and sharable CPUs, minus the reserved ones, minus
-// the ones containers hold exclusively, minus the ones shared containers need.
+// draDevices returns one device per NUMA node and one per socket which has
+// CPUs for claims.
 func (p *policy) draDevices() []resourceapi.Device {
-	var (
-		grantable = grantableCPUs(p.root.GetSupply())
-		claimed   = cpuset.New()
-		smt       = p.sys.MaxThreadCount() > 1
-		devices   []resourceapi.Device
-	)
-	for _, c := range p.allocations.claims {
-		claimed = claimed.Union(c.ExclusiveCPUs())
-	}
+	var devices []resourceapi.Device
 
 	for _, id := range p.sys.NodeIDs() {
 		node := p.sys.Node(id)
-		cpus := grantable.Intersection(node.CPUSet())
-		if cpus.IsEmpty() {
-			continue
-		}
-		free, err := p.claimableCPUs(cpus)
-		if err != nil {
-			log.Errorf("failed to find the free CPUs of NUMA node #%d: %v", id, err)
-		}
-		// The scheduler subtracts what claims consume from the capacity,
-		// so the CPUs of claims are part of it.
-		capacity := free.Union(claimed.Intersection(cpus)).Size()
-		if capacity == 0 {
-			continue
-		}
-
 		attrs := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
 			deviceattribute.StandardDeviceAttributeNUMANode: {
 				IntValue: ptr.To(int64(id)),
 			},
-			draAttrSocketID:   {IntValue: ptr.To(int64(node.PackageID()))},
-			draAttrSMTEnabled: {BoolValue: ptr.To(smt)},
 		}
-		roots := p.sys.Package(node.PackageID()).PCIeRoots()
-		if len(roots) > 0 && p.options.Owner.DRAListAttributesSupported() {
-			attrs[deviceattribute.StandardDeviceAttributePCIeRoot] = resourceapi.DeviceAttribute{
-				StringValues: roots,
-			}
+		name := fmt.Sprintf(draNUMADeviceFormat, id)
+		if d, ok := p.draDevice(name, draLevelNUMANode, node.PackageID(), attrs); ok {
+			devices = append(devices, d)
 		}
-
-		one := resource.NewQuantity(1, resource.DecimalSI)
-		devices = append(devices, resourceapi.Device{
-			Name:                     fmt.Sprintf(draDeviceFormat, id),
-			AllowMultipleAllocations: ptr.To(true),
-			Attributes:               attrs,
-			Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
-				draCapacityCPU: draCPUCapacity(capacity),
-			},
-			NodeAllocatableResources: map[v1.ResourceName]resourceapi.NodeAllocatableResource{
-				v1.ResourceCPU: {
-					Mapping: &resourceapi.NodeAllocatableMapping{
-						CapacityKey:        ptr.To(draCapacityCPU),
-						CapacityMultiplier: one,
-					},
-				},
-			},
-		})
+	}
+	for _, id := range p.sys.PackageIDs() {
+		attrs := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{}
+		name := fmt.Sprintf(draSocketDeviceFormat, id)
+		if d, ok := p.draDevice(name, draLevelSocket, id, attrs); ok {
+			devices = append(devices, d)
+		}
 	}
 
 	return devices
+}
+
+// draDevice returns the named device with the attributes of its level and
+// socket added to attrs, or false if it has no CPUs for claims.
+func (p *policy) draDevice(name, level string, socket idset.ID, attrs map[resourceapi.QualifiedName]resourceapi.DeviceAttribute) (resourceapi.Device, bool) {
+	cpus, _ := p.draDeviceCPUs(name)
+	if cpus.IsEmpty() {
+		return resourceapi.Device{}, false
+	}
+	capacity := p.draCapacity(name, cpus)
+	if capacity == 0 {
+		return resourceapi.Device{}, false
+	}
+
+	attrs[draAttrLevel] = resourceapi.DeviceAttribute{StringValue: ptr.To(level)}
+	attrs[draAttrSocketID] = resourceapi.DeviceAttribute{IntValue: ptr.To(int64(socket))}
+	attrs[draAttrSMTEnabled] = resourceapi.DeviceAttribute{BoolValue: ptr.To(p.sys.MaxThreadCount() > 1)}
+	attrs[draAttrNumCPUs] = resourceapi.DeviceAttribute{IntValue: ptr.To(int64(cpus.Size()))}
+	roots := p.sys.Package(socket).PCIeRoots()
+	if len(roots) > 0 && p.options.Owner.DRAListAttributesSupported() {
+		attrs[deviceattribute.StandardDeviceAttributePCIeRoot] = resourceapi.DeviceAttribute{
+			StringValues: roots,
+		}
+	}
+
+	return resourceapi.Device{
+		Name:                     name,
+		AllowMultipleAllocations: ptr.To(true),
+		Attributes:               attrs,
+		Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
+			draCapacityCPU: draCPUCapacity(capacity),
+		},
+		NodeAllocatableResources: map[v1.ResourceName]resourceapi.NodeAllocatableResource{
+			v1.ResourceCPU: {
+				Mapping: &resourceapi.NodeAllocatableMapping{
+					CapacityKey:        ptr.To(draCapacityCPU),
+					CapacityMultiplier: resource.NewQuantity(1, resource.DecimalSI),
+				},
+			},
+		},
+	}, true
+}
+
+// draCapacity returns the number of CPUs of a device which claims hold or could
+// get now: the isolated and sharable CPUs, minus the reserved ones, minus the
+// ones containers hold exclusively, minus the ones shared containers need,
+// minus the ones of claims on smaller devices inside it.
+func (p *policy) draCapacity(device string, cpus cpuset.CPUSet) int {
+	free, err := p.claimableCPUs(cpus)
+	if err != nil {
+		log.Errorf("failed to find the free CPUs of DRA device %s: %v", device, err)
+	}
+
+	// The scheduler subtracts what claims consume of the device from its
+	// capacity, so the CPUs of its own claims are part of it. So are the CPUs
+	// of claims on larger devices: those claims are not bound to the CPUs of
+	// this device.
+	for _, c := range p.allocations.claims {
+		for i, held := range c.results {
+			if i >= len(c.devices) {
+				continue
+			}
+			if c.devices[i] != device {
+				larger, ok := p.draDeviceCPUs(c.devices[i])
+				if !ok || !cpus.IsSubsetOf(larger) || cpus.Equals(larger) {
+					continue
+				}
+			}
+			free = free.Union(held.Intersection(cpus))
+		}
+	}
+	return free.Size()
 }
 
 // publishDRADevices publishes our DRA devices if DRA is enabled, logging a
@@ -213,10 +255,7 @@ func (p *policy) AllocateClaim(
 		p.updateSharedAllocations(nil)
 	}
 
-	if len(c.results) != len(reqs) {
-		return nil, fmt.Errorf("claim %s holds %d results but has %d", uid, len(c.results), len(reqs))
-	}
-	if err := checkClaimCPUs(c.ExclusiveCPUs(), reqs); err != nil {
+	if err := checkClaimCPUs(c, reqs); err != nil {
 		return nil, fmt.Errorf("claim %s: %w", uid, err)
 	}
 	// The claim's configs do not change after it is allocated.
@@ -228,22 +267,18 @@ func (p *policy) AllocateClaim(
 	return nil, nil
 }
 
-// checkClaimCPUs verifies that the claim holds the requested number of CPUs
-// on every device.
-func checkClaimCPUs(cpus cpuset.CPUSet, reqs []draRequest) error {
-	consumed := map[string]int{}
-	total := 0
-	for _, req := range reqs {
-		consumed[req.device] += req.cpus
-		total += req.cpus
+// checkClaimCPUs verifies that every result of the claim holds the requested
+// number of CPUs of its device.
+func checkClaimCPUs(c *claim, reqs []draRequest) error {
+	if len(c.results) != len(reqs) || len(c.devices) != len(reqs) {
+		return fmt.Errorf("holds %d results but has %d", len(c.results), len(reqs))
 	}
-
-	if cpus.Size() != total {
-		return fmt.Errorf("holds %d CPUs but consumed %d", cpus.Size(), total)
-	}
-	for _, req := range reqs {
-		if held := cpus.Intersection(req.deviceCPUs).Size(); held != consumed[req.device] {
-			return fmt.Errorf("holds %d CPUs of device %s but consumed %d", held, req.device, consumed[req.device])
+	for i, req := range reqs {
+		if c.devices[i] != req.device {
+			return fmt.Errorf("result %d holds CPUs of device %s, not of %s", i, c.devices[i], req.device)
+		}
+		if held := c.results[i]; held.Size() != req.cpus || !held.IsSubsetOf(req.deviceCPUs) {
+			return fmt.Errorf("result %d holds CPUs %s but consumed %d CPUs of device %s", i, held, req.cpus, req.device)
 		}
 	}
 	return nil
@@ -452,18 +487,52 @@ func (p *policy) draRequests(results []resourceapi.DeviceRequestAllocationResult
 // draDeviceCPUs returns the grantable CPUs of the device, or false for an
 // unknown device.
 func (p *policy) draDeviceCPUs(device string) (cpuset.CPUSet, bool) {
+	var cpus cpuset.CPUSet
+	if id, ok := draDeviceID(device, draNUMADeviceFormat); ok {
+		node := p.sys.Node(id)
+		if node == nil {
+			return cpuset.New(), false
+		}
+		cpus = node.CPUSet()
+	} else if id, ok := draDeviceID(device, draSocketDeviceFormat); ok {
+		pkg := p.sys.Package(id)
+		if pkg == nil {
+			return cpuset.New(), false
+		}
+		cpus = pkg.CPUSet()
+	} else {
+		return cpuset.New(), false
+	}
+	return cpus.Intersection(grantableCPUs(p.root.GetSupply())), true
+}
+
+// numaDevices returns the NUMA device of the first CPU of each result, or nil if
+// a result has no CPU we know. A claim saved with no devices has NUMA devices
+// only.
+func (p *policy) numaDevices(results []cpuset.CPUSet) []string {
+	var devices []string
+	for _, cpus := range results {
+		ids := cpus.List()
+		if len(ids) == 0 {
+			return nil
+		}
+		cpu := p.sys.CPU(idset.ID(ids[0]))
+		if cpu == nil {
+			return nil
+		}
+		devices = append(devices, fmt.Sprintf(draNUMADeviceFormat, cpu.NodeID()))
+	}
+	return devices
+}
+
+// draDeviceID returns the ID in the device name of the given format, or false
+// if the name is not of the format.
+func draDeviceID(device, format string) (idset.ID, bool) {
 	var id int
-	if _, err := fmt.Sscanf(device, draDeviceFormat, &id); err != nil {
-		return cpuset.New(), false
+	if _, err := fmt.Sscanf(device, format, &id); err != nil {
+		return 0, false
 	}
-	if fmt.Sprintf(draDeviceFormat, id) != device {
-		return cpuset.New(), false
-	}
-	node := p.sys.Node(idset.ID(id))
-	if node == nil {
-		return cpuset.New(), false
-	}
-	return node.CPUSet().Intersection(grantableCPUs(p.root.GetSupply())), true
+	return idset.ID(id), fmt.Sprintf(format, id) == device
 }
 
 // allocateClaim grants a claim the requested CPUs. Each request picks
@@ -472,51 +541,43 @@ func (p *policy) draDeviceCPUs(device string) (cpuset.CPUSet, bool) {
 // all of its CPUs.
 func (p *policy) allocateClaim(reqs []draRequest) (*claim, error) {
 	cpus := cpuset.New()
-	results := make([]cpuset.CPUSet, 0, len(reqs))
+	c := &claim{}
 	for _, req := range reqs {
 		picked, err := p.pickCPUs(req, cpus)
 		if err != nil {
 			return nil, err
 		}
 		cpus = cpus.Union(picked)
-		results = append(results, picked)
+		c.results = append(c.results, picked)
+		c.devices = append(c.devices, req.device)
 	}
 
 	pool := p.poolForCPUs(cpus)
-	grant := newGrant(pool, nil, cpuNormal, "", cpus, 0, 0, nil, 0)
-	if _, err := pool.FreeSupply().Reserve(grant, nil); err != nil {
+	c.Grant = newGrant(pool, nil, cpuNormal, "", cpus, 0, 0, nil, 0)
+	if _, err := pool.FreeSupply().Reserve(c.Grant, nil); err != nil {
 		return nil, err
 	}
-	return &claim{Grant: grant, results: results}, nil
+	return c, nil
 }
 
 // moveClaim gives a saved claim other CPUs of the devices of its results, as
 // many as each result had. The returned error starts with why, the reason
 // the claim cannot keep its CPUs.
 func (p *policy) moveClaim(uid string, c *claim, why error) error {
-	if len(c.results) == 0 {
+	if len(c.results) == 0 || len(c.devices) != len(c.results) {
 		return fmt.Errorf("%w, and failed to move it: its results are lost", why)
 	}
 
 	old := cpuset.New()
 	reqs := make([]draRequest, 0, len(c.results))
 	for i, cpus := range c.results {
-		var (
-			device     string
-			deviceCPUs cpuset.CPUSet
-			ok         bool
-		)
-		if ids := cpus.List(); len(ids) > 0 {
-			if cpu := p.sys.CPU(idset.ID(ids[0])); cpu != nil {
-				device = fmt.Sprintf(draDeviceFormat, cpu.NodeID())
-				deviceCPUs, ok = p.draDeviceCPUs(device)
-			}
-		}
+		deviceCPUs, ok := p.draDeviceCPUs(c.devices[i])
 		if !ok {
-			return fmt.Errorf("%w, and failed to move it: no NUMA node for result #%d, CPUs %s", why, i, cpus)
+			return fmt.Errorf("%w, and failed to move it: unknown device %q for result #%d, CPUs %s",
+				why, c.devices[i], i, cpus)
 		}
 		old = old.Union(cpus)
-		reqs = append(reqs, draRequest{device: device, deviceCPUs: deviceCPUs, cpus: cpus.Size()})
+		reqs = append(reqs, draRequest{device: c.devices[i], deviceCPUs: deviceCPUs, cpus: cpus.Size()})
 	}
 
 	moved, err := p.allocateClaim(reqs)
@@ -530,8 +591,9 @@ func (p *policy) moveClaim(uid string, c *claim, why error) error {
 }
 
 // pickCPUs returns as many free CPUs of the device as the request asks for,
-// none of them in taken. It picks by topology, so two CPUs are the two
-// threads of one core.
+// none of them in taken. It picks them from the deepest pool which has enough
+// of them, and by topology within it, so two CPUs are the two threads of one
+// core.
 func (p *policy) pickCPUs(req draRequest, taken cpuset.CPUSet) (cpuset.CPUSet, error) {
 	from, err := p.claimableCPUs(req.deviceCPUs)
 	if err != nil {
@@ -541,6 +603,25 @@ func (p *policy) pickCPUs(req draRequest, taken cpuset.CPUSet) (cpuset.CPUSet, e
 	if from.Size() < req.cpus {
 		return cpuset.New(), fmt.Errorf("device %s: %d CPUs requested, only %d free",
 			req.device, req.cpus, from.Size())
+	}
+
+	// Of the child pools with enough free CPUs, the one with the fewest gets
+	// the request, which leaves the larger ones to requests which need them.
+	for pool := p.poolForCPUs(req.deviceCPUs); ; {
+		var (
+			fit     Node
+			fitCPUs cpuset.CPUSet
+		)
+		for _, child := range pool.Children() {
+			cpus := from.Intersection(grantableCPUs(child.GetSupply()))
+			if cpus.Size() >= req.cpus && (fit == nil || cpus.Size() < fitCPUs.Size()) {
+				fit, fitCPUs = child, cpus
+			}
+		}
+		if fit == nil {
+			break
+		}
+		pool, from = fit, fitCPUs
 	}
 
 	cpus, err := p.cpuAllocator.AllocateCpus(&from, req.cpus, defaultPrio.Option())

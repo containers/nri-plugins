@@ -131,9 +131,10 @@ vm-command "kubectl get resourceslices -o yaml"
 
 slices=$(vm-command-q "kubectl get resourceslices -o json")
 
+# One device per NUMA node and one per socket.
 count=$(jq '[.items[] | select(.spec.driver == "topology-aware.nri.io") | .spec.devices[]] | length' <<< "$slices")
-[ "$count" == "4" ] ||
-    error "published $count devices, expected 4"
+[ "$count" == "6" ] ||
+    error "published $count devices, expected 6"
 
 for node in 0 1 2 3; do
     name=$(printf "cpudevnuma%03d" "$node")
