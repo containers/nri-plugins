@@ -494,7 +494,7 @@ func (h *Harness) ReleaseClaims(uids ...types.UID) {
 	defer h.Owner.Unlock()
 	for _, uid := range uids {
 		Log.Infof("===== release claim %s", uid)
-		require.NoError(h.T, h.Policy.ReleaseClaim(uid), "failed to release claim %s", uid)
+		require.NoError(h.T, h.Policy.ReleaseClaim(uid, false), "failed to release claim %s", uid)
 	}
 }
 
