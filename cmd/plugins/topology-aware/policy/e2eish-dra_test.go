@@ -50,7 +50,7 @@ spec:
           deviceClassName: %s
           selectors:
           - cel:
-              expression: device.attributes["resource.kubernetes.io"].numaNode == %d
+              expression: device.attributes["dra.cpu"].level == "numanode" && device.attributes["resource.kubernetes.io"].numaNode == %d
         name: cpus
 `, name, cpus, draDriverName, node)
 }

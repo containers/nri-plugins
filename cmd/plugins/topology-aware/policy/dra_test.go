@@ -20,6 +20,8 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -106,6 +108,7 @@ func draTestPolicy(t *testing.T, sys system.System, cfg *cfgapi.Config) (*policy
 }
 
 type draDevice struct {
+	level    string
 	numaNode int64
 	socketID int64
 	smt      bool
@@ -118,6 +121,7 @@ func draDeviceSummary(devices []resourceapi.Device) map[string]draDevice {
 	for _, d := range devices {
 		capacity := d.Capacity[draCapacityCPU]
 		summary[d.Name] = draDevice{
+			level:    ptr.Deref(d.Attributes[draAttrLevel].StringValue, ""),
 			numaNode: ptr.Deref(d.Attributes[deviceattribute.StandardDeviceAttributeNUMANode].IntValue, -1),
 			socketID: ptr.Deref(d.Attributes[draAttrSocketID].IntValue, -1),
 			smt:      ptr.Deref(d.Attributes[draAttrSMTEnabled].BoolValue, false),
@@ -139,13 +143,15 @@ func TestDRADevices(t *testing.T) {
 	}{
 		{
 			// The two nodes with no CPUs of their own publish nothing.
-			name:     "one device per NUMA node with CPUs",
+			name:     "one device per NUMA node and socket with CPUs",
 			reserved: "cpuset:0,1",
 			expected: map[string]draDevice{
-				"cpudevnuma000": {numaNode: 0, socketID: 0, smt: true, cpus: 27},
-				"cpudevnuma001": {numaNode: 1, socketID: 1, smt: true, cpus: 27},
-				"cpudevnuma002": {numaNode: 2, socketID: 0, smt: true, cpus: 28},
-				"cpudevnuma003": {numaNode: 3, socketID: 1, smt: true, cpus: 28},
+				"cpudevnuma000":   {level: "numanode", numaNode: 0, socketID: 0, smt: true, cpus: 27},
+				"cpudevnuma001":   {level: "numanode", numaNode: 1, socketID: 1, smt: true, cpus: 27},
+				"cpudevnuma002":   {level: "numanode", numaNode: 2, socketID: 0, smt: true, cpus: 28},
+				"cpudevnuma003":   {level: "numanode", numaNode: 3, socketID: 1, smt: true, cpus: 28},
+				"cpudevsocket000": {level: "socket", numaNode: -1, socketID: 0, smt: true, cpus: 55},
+				"cpudevsocket001": {level: "socket", numaNode: -1, socketID: 1, smt: true, cpus: 55},
 			},
 		},
 		{
@@ -153,9 +159,11 @@ func TestDRADevices(t *testing.T) {
 			available: "exclude-cpuset:" + node0,
 			reserved:  "cpuset:1",
 			expected: map[string]draDevice{
-				"cpudevnuma001": {numaNode: 1, socketID: 1, smt: true, cpus: 27},
-				"cpudevnuma002": {numaNode: 2, socketID: 0, smt: true, cpus: 28},
-				"cpudevnuma003": {numaNode: 3, socketID: 1, smt: true, cpus: 28},
+				"cpudevnuma001":   {level: "numanode", numaNode: 1, socketID: 1, smt: true, cpus: 27},
+				"cpudevnuma002":   {level: "numanode", numaNode: 2, socketID: 0, smt: true, cpus: 28},
+				"cpudevnuma003":   {level: "numanode", numaNode: 3, socketID: 1, smt: true, cpus: 28},
+				"cpudevsocket000": {level: "socket", numaNode: -1, socketID: 0, smt: true, cpus: 28},
+				"cpudevsocket001": {level: "socket", numaNode: -1, socketID: 1, smt: true, cpus: 55},
 			},
 		},
 		{
@@ -163,7 +171,8 @@ func TestDRADevices(t *testing.T) {
 			available: "cpuset:0,8,12",
 			reserved:  "cpuset:0,8",
 			expected: map[string]draDevice{
-				"cpudevnuma000": {numaNode: 0, socketID: 0, smt: true, cpus: 1},
+				"cpudevnuma000":   {level: "numanode", numaNode: 0, socketID: 0, smt: true, cpus: 1},
+				"cpudevsocket000": {level: "socket", numaNode: -1, socketID: 0, smt: true, cpus: 1},
 			},
 		},
 		{
@@ -171,10 +180,12 @@ func TestDRADevices(t *testing.T) {
 			name:     "a reserved CPU that is also isolated is still excluded",
 			reserved: "cpuset:4",
 			expected: map[string]draDevice{
-				"cpudevnuma000": {numaNode: 0, socketID: 0, smt: true, cpus: 27},
-				"cpudevnuma001": {numaNode: 1, socketID: 1, smt: true, cpus: 28},
-				"cpudevnuma002": {numaNode: 2, socketID: 0, smt: true, cpus: 28},
-				"cpudevnuma003": {numaNode: 3, socketID: 1, smt: true, cpus: 28},
+				"cpudevnuma000":   {level: "numanode", numaNode: 0, socketID: 0, smt: true, cpus: 27},
+				"cpudevnuma001":   {level: "numanode", numaNode: 1, socketID: 1, smt: true, cpus: 28},
+				"cpudevnuma002":   {level: "numanode", numaNode: 2, socketID: 0, smt: true, cpus: 28},
+				"cpudevnuma003":   {level: "numanode", numaNode: 3, socketID: 1, smt: true, cpus: 28},
+				"cpudevsocket000": {level: "socket", numaNode: -1, socketID: 0, smt: true, cpus: 55},
+				"cpudevsocket001": {level: "socket", numaNode: -1, socketID: 1, smt: true, cpus: 56},
 			},
 		},
 	} {
@@ -207,8 +218,9 @@ func draTestContainer(id string, qos v1.PodQOSClass, cpu string) *pinnedContaine
 }
 
 // TestDRADevicesFollowFreeCPUs checks that the capacity of a device goes down
-// by the CPUs containers hold exclusively and the CPUs shared containers
-// need, but not by the CPUs of claims.
+// by the CPUs containers hold exclusively, the CPUs shared containers need and
+// the CPUs of claims on smaller devices inside it, but not by its own claims
+// or those of larger devices.
 func TestDRADevicesFollowFreeCPUs(t *testing.T) {
 	sys := testServerSystem(t)
 	p, owner := draTestPolicy(t, sys, draTestConfig("", draTestReserved(sys)))
@@ -218,6 +230,9 @@ func TestDRADevicesFollowFreeCPUs(t *testing.T) {
 		"cpudevnuma001": 28,
 		"cpudevnuma002": 28,
 		"cpudevnuma003": 26,
+		// Sockets 0 and 1 have nodes 0 and 2, and 1 and 3.
+		"cpudevsocket000": 56,
+		"cpudevsocket001": 54,
 	}
 	check := func(what string) {
 		t.Helper()
@@ -236,16 +251,25 @@ func TestDRADevicesFollowFreeCPUs(t *testing.T) {
 		t.Fatalf("failed to allocate: %v", err)
 	}
 	expected["cpudevnuma001"] -= 2
+	expected["cpudevsocket001"] -= 2
 	check("after an exclusive allocation")
 
+	// A claim on a node cannot leave it, so the socket device leaves its
+	// CPUs out.
 	allocateClaim(t, p, "a", draTestResult(0, "3"))
-	check("after a claim")
+	expected["cpudevsocket000"] -= 3
+	check("after a NUMA claim")
+
+	// A claim on a socket lowers no node.
+	allocateClaim(t, p, "b", draTestSocketResult(1, "4"))
+	check("after a socket claim")
 
 	shared := draTestContainer("shared", v1.PodQOSBurstable, "1500m")
 	if err := p.allocateResources(shared, "NUMA node #2"); err != nil {
 		t.Fatalf("failed to allocate: %v", err)
 	}
 	expected["cpudevnuma002"] -= 2
+	expected["cpudevsocket000"] -= 2
 	check("after a shared allocation")
 
 	if err := p.ReleaseResources(exclusive); err != nil {
@@ -254,11 +278,15 @@ func TestDRADevicesFollowFreeCPUs(t *testing.T) {
 	if err := p.ReleaseResources(shared); err != nil {
 		t.Fatalf("failed to release: %v", err)
 	}
-	if err := p.ReleaseClaim("a"); err != nil {
-		t.Fatalf("failed to release claim: %v", err)
+	for _, uid := range []types.UID{"a", "b"} {
+		if err := p.ReleaseClaim(uid); err != nil {
+			t.Fatalf("failed to release claim: %v", err)
+		}
 	}
 	expected["cpudevnuma001"] += 2
 	expected["cpudevnuma002"] += 2
+	expected["cpudevsocket000"] += 5
+	expected["cpudevsocket001"] += 2
 	check("after releasing everything")
 }
 
@@ -266,7 +294,8 @@ func TestDRADevicesFollowFreeCPUs(t *testing.T) {
 // which the API server would reject, and that a device with no free CPU is
 // left out.
 func TestDRADevicesNearlyFull(t *testing.T) {
-	// Node 0 has CPUs 8 and 12 for claims, node 1 has CPU 1.
+	// Node 0 and socket 0 have CPUs 8 and 12 for claims, node 1 and socket 1
+	// have CPU 1.
 	p, owner := draTestPolicy(t, testServerSystem(t), draTestConfig("cpuset:0,1,8,12", "cpuset:0"))
 
 	if err := p.allocateResources(draTestContainer("c0", v1.PodQOSGuaranteed, "1"), "NUMA node #0"); err != nil {
@@ -276,14 +305,18 @@ func TestDRADevicesNearlyFull(t *testing.T) {
 		t.Fatalf("failed to allocate: %v", err)
 	}
 
-	if len(owner.devices) != 1 || owner.devices[0].Name != "cpudevnuma000" {
-		t.Fatalf("published devices %v, expected only cpudevnuma000", owner.devices)
+	var names []string
+	for _, d := range owner.devices {
+		names = append(names, d.Name)
+		capacity := d.Capacity[draCapacityCPU]
+		r := capacity.RequestPolicy.ValidRange
+		if capacity.Value.Value() != 1 || r.Min.Value() != 1 || r.Step != nil {
+			t.Errorf("%s: published capacity %s with range min %s, step %v, expected 1 with min 1 and no step",
+				d.Name, capacity.Value.String(), r.Min.String(), r.Step)
+		}
 	}
-	capacity := owner.devices[0].Capacity[draCapacityCPU]
-	r := capacity.RequestPolicy.ValidRange
-	if capacity.Value.Value() != 1 || r.Min.Value() != 1 || r.Step != nil {
-		t.Errorf("published capacity %s with range min %s, step %v, expected 1 with min 1 and no step",
-			capacity.Value.String(), r.Min.String(), r.Step)
+	if expected := []string{"cpudevnuma000", "cpudevsocket000"}; !slices.Equal(names, expected) {
+		t.Errorf("published devices %v, expected %v", names, expected)
 	}
 }
 
@@ -300,19 +333,20 @@ func TestDRAPublishFailure(t *testing.T) {
 	allocateClaim(t, p, "a", draTestResult(0, "2"))
 }
 
-// TestDRADeviceShape checks attributes of published device.
+// TestDRADeviceShape checks attributes of published devices.
 func TestDRADeviceShape(t *testing.T) {
 	_, owner := draTestPolicy(t, testServerSystem(t), draTestConfig("cpuset:0,8,12", "cpuset:0"))
 
 	one := resource.NewQuantity(1, resource.DecimalSI)
-	expected := []resourceapi.Device{
-		{
-			Name:                     "cpudevnuma000",
+	device := func(name, level string) resourceapi.Device {
+		return resourceapi.Device{
+			Name:                     name,
 			AllowMultipleAllocations: ptr.To(true),
 			Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
-				deviceattribute.StandardDeviceAttributeNUMANode: {IntValue: ptr.To(int64(0))},
+				"dra.cpu/level":      {StringValue: ptr.To(level)},
 				"dra.cpu/socketID":   {IntValue: ptr.To(int64(0))},
 				"dra.cpu/smtEnabled": {BoolValue: ptr.To(true)},
+				"dra.cpu/numCPUs":    {IntValue: ptr.To(int64(2))},
 			},
 			Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
 				"dra.cpu/cpu": {
@@ -334,8 +368,11 @@ func TestDRADeviceShape(t *testing.T) {
 					},
 				},
 			},
-		},
+		}
 	}
+	numa := device("cpudevnuma000", "numanode")
+	numa.Attributes[deviceattribute.StandardDeviceAttributeNUMANode] = resourceapi.DeviceAttribute{IntValue: ptr.To(int64(0))}
+	expected := []resourceapi.Device{numa, device("cpudevsocket000", "socket")}
 
 	if !apiequality.Semantic.DeepEqual(owner.devices, expected) {
 		t.Errorf("published devices\n%+v\nexpected\n%+v", owner.devices, expected)
@@ -387,8 +424,9 @@ func TestDRAPCIeRoots(t *testing.T) {
 		t.Fatalf("failed to reconfigure policy: %v", err)
 	}
 	expected := map[string][]string{
-		"cpudevnuma000": {"pci0000:00", "pci0000:5d"},
-		"cpudevnuma002": {"pci0000:00", "pci0000:5d"},
+		"cpudevnuma000":   {"pci0000:00", "pci0000:5d"},
+		"cpudevnuma002":   {"pci0000:00", "pci0000:5d"},
+		"cpudevsocket000": {"pci0000:00", "pci0000:5d"},
 	}
 	if got := published(); !reflect.DeepEqual(got, expected) {
 		t.Errorf("published PCIe roots %v, expected %v", got, expected)
@@ -427,13 +465,20 @@ func draTestResult(node int, cpus string) resourceapi.DeviceRequestAllocationRes
 		Request: "cpus",
 		Driver:  "topology-aware.nri.io",
 		Pool:    "node",
-		Device:  fmt.Sprintf(draDeviceFormat, node),
+		Device:  fmt.Sprintf(draNUMADeviceFormat, node),
 	}
 	if cpus != "" {
 		r.ConsumedCapacity = map[resourceapi.QualifiedName]resource.Quantity{
 			draCapacityCPU: resource.MustParse(cpus),
 		}
 	}
+	return r
+}
+
+// draTestSocketResult is an allocation result of one socket device.
+func draTestSocketResult(socket int, cpus string) resourceapi.DeviceRequestAllocationResult {
+	r := draTestResult(0, cpus)
+	r.Device = fmt.Sprintf(draSocketDeviceFormat, socket)
 	return r
 }
 
@@ -667,7 +712,7 @@ func TestAllocateClaim(t *testing.T) {
 			for _, id := range sys.NodeIDs() {
 				want := 0
 				for _, r := range tc.results {
-					if r.Device == fmt.Sprintf(draDeviceFormat, id) {
+					if r.Device == fmt.Sprintf(draNUMADeviceFormat, id) {
 						q := r.ConsumedCapacity[draCapacityCPU]
 						want += int(q.Value())
 					}
@@ -768,13 +813,13 @@ func TestAllocateClaimAgain(t *testing.T) {
 	// A claim cannot change what it consumed once it has CPUs.
 	if _, err := p.AllocateClaim(draTestClaim("a"), []resourceapi.DeviceRequestAllocationResult{
 		draTestResult(0, "3"),
-	}); err == nil || !strings.Contains(err.Error(), "holds 2 CPUs but consumed 3") {
+	}); err == nil || !strings.Contains(err.Error(), "but consumed 3 CPUs of device cpudevnuma000") {
 		t.Errorf("got error %v, expected a size mismatch", err)
 	}
 	// Nor move them to another node.
 	if _, err := p.AllocateClaim(draTestClaim("a"), []resourceapi.DeviceRequestAllocationResult{
 		draTestResult(1, "2"),
-	}); err == nil || !strings.Contains(err.Error(), "holds 0 CPUs of device cpudevnuma001 but consumed 2") {
+	}); err == nil || !strings.Contains(err.Error(), "holds CPUs of device cpudevnuma000, not of cpudevnuma001") {
 		t.Errorf("got error %v, expected a node mismatch", err)
 	}
 }
@@ -1609,6 +1654,142 @@ func TestRestoreClaimsMoved(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestRestoreClaimDevices verifies that claims keep their devices across a
+// restart, that a socket claim which cannot keep its CPUs moves to other CPUs
+// of its socket, and that a claim saved without its devices gets the NUMA
+// devices of its CPUs.
+func TestRestoreClaimDevices(t *testing.T) {
+	sys := testServerSystem(t)
+	dir := t.TempDir()
+	p, err := draRestart(t, dir, sys, draTestConfig("", draTestReserved(sys)))
+	if err != nil {
+		t.Fatalf("failed to set up policy: %v", err)
+	}
+	allocateClaim(t, p, "a", draTestResult(0, "2"))
+	b := allocateClaim(t, p, "b", draTestSocketResult(1, "3"))
+
+	devices := func(p *policy, uid string) []string {
+		t.Helper()
+		c, ok := p.allocations.claims[uid]
+		if !ok {
+			t.Fatalf("claim %s not restored", uid)
+		}
+		return c.devices
+	}
+
+	// Reserving a CPU of claim b moves it. Reserved CPUs must not mix
+	// isolated and normal ones.
+	gone := b.Difference(sys.IsolatedCPUs()).List()[0]
+	cfg := draTestConfig("", draTestReserved(sys)+","+cpuset.New(gone).String())
+	if p, err = draRestart(t, dir, sys, cfg); err != nil {
+		t.Fatalf("failed to restart policy: %v", err)
+	}
+	if got := devices(p, "a"); !slices.Equal(got, []string{"cpudevnuma000"}) {
+		t.Errorf("claim a has devices %v after a restart, expected cpudevnuma000", got)
+	}
+	if got := devices(p, "b"); !slices.Equal(got, []string{"cpudevsocket001"}) {
+		t.Errorf("claim b has devices %v after a restart, expected cpudevsocket001", got)
+	}
+	moved := p.allocations.claims["b"].ExclusiveCPUs()
+	if moved.Size() != 3 || !moved.IsSubsetOf(sys.Package(1).CPUSet()) || moved.Contains(gone) {
+		t.Errorf("claim b has CPUs %s after a restart, expected 3 CPUs of socket 1 without %d", moved, gone)
+	}
+
+	// A cache with no devices for claims, as older versions write it.
+	file := filepath.Join(dir, "cache", "cache")
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("failed to read cache: %v", err)
+	}
+	old := regexp.MustCompile(`,?\\?"Devices\\?":\[[^\]]*\]`).ReplaceAllString(string(data), "")
+	if old == string(data) {
+		t.Fatalf("no devices to remove in the cache")
+	}
+	if err := os.WriteFile(file, []byte(old), 0o600); err != nil {
+		t.Fatalf("failed to write cache: %v", err)
+	}
+	if p, err = draRestart(t, dir, sys, cfg); err != nil {
+		t.Fatalf("failed to restart policy: %v", err)
+	}
+	if got := devices(p, "a"); !slices.Equal(got, []string{"cpudevnuma000"}) {
+		t.Errorf("claim a has devices %v after a restart from an old cache, expected cpudevnuma000", got)
+	}
+	allocateClaim(t, p, "a", draTestResult(0, "2"))
+}
+
+// TestSocketClaims verifies that a socket request gets CPUs of its socket, of
+// one NUMA node when one has enough free CPUs, of the node with the fewest of
+// them, and of several nodes only when it needs more than one has.
+func TestSocketClaims(t *testing.T) {
+	sys := testServerSystem(t)
+	p, _ := draTestPolicy(t, sys, draTestConfig("", draTestReserved(sys)))
+
+	nodes := func(cpus cpuset.CPUSet) []idset.ID {
+		var ids []idset.ID
+		for _, id := range sys.NodeIDs() {
+			if !cpus.Intersection(sys.Node(id).CPUSet()).IsEmpty() {
+				ids = append(ids, id)
+			}
+		}
+		return ids
+	}
+
+	// Node 0 has 28 CPUs, its sibling node 2 too. The CPU IDs of the two
+	// nodes alternate, so picking from the whole socket would take both.
+	if got := nodes(allocateClaim(t, p, "a", draTestSocketResult(0, "4"))); len(got) != 1 {
+		t.Errorf("a claim of 4 CPUs got CPUs of nodes %v, expected one node", got)
+	}
+	// Now one node has 24 free CPUs: a claim which fits goes there.
+	busy := nodes(p.allocations.claims["a"].ExclusiveCPUs())[0]
+	if got := nodes(allocateClaim(t, p, "b", draTestSocketResult(0, "20"))); !slices.Equal(got, []idset.ID{busy}) {
+		t.Errorf("a claim of 20 CPUs got CPUs of nodes %v, expected node %d with the fewest free CPUs", got, busy)
+	}
+	if got := nodes(allocateClaim(t, p, "c", draTestSocketResult(0, "26"))); len(got) != 1 || got[0] == busy {
+		t.Errorf("a claim of 26 CPUs got CPUs of nodes %v, expected the other node", got)
+	}
+
+	// Socket 1 has 54 CPUs: a claim of 40 spans its nodes, and two requests
+	// of a claim get disjoint CPUs.
+	d := allocateClaim(t, p, "d", draTestSocketResult(1, "40"))
+	if d.Size() != 40 || !d.IsSubsetOf(sys.Package(1).CPUSet()) || len(nodes(d)) != 2 {
+		t.Errorf("a claim of 40 CPUs got CPUs %s, expected 40 CPUs of both nodes of socket 1", d)
+	}
+	allocateClaim(t, p, "e", draTestSocketResult(1, "3"), draTestSocketResult(1, "3"))
+	e := p.allocations.claims["e"]
+	if r := e.results; r[0].Size() != 3 || r[1].Size() != 3 || !r[0].Intersection(r[1]).IsEmpty() ||
+		!e.ExclusiveCPUs().IsSubsetOf(sys.Package(1).CPUSet()) || !e.ExclusiveCPUs().Intersection(d).IsEmpty() {
+		t.Errorf("two requests of 3 CPUs got CPUs %v, expected disjoint CPUs of socket 1 apart from %s", r, d)
+	}
+}
+
+// TestDRADeviceCPUs verifies the CPUs of devices by name.
+func TestDRADeviceCPUs(t *testing.T) {
+	sys := testServerSystem(t)
+	p, _ := draTestPolicy(t, sys, draTestConfig("", "cpuset:0"))
+
+	for _, tc := range []struct {
+		device string
+		cpus   cpuset.CPUSet
+		ok     bool
+	}{
+		{device: "cpudevnuma000", cpus: sys.Node(0).CPUSet().Difference(cpuset.New(0)), ok: true},
+		{device: "cpudevnuma003", cpus: sys.Node(3).CPUSet(), ok: true},
+		{device: "cpudevsocket000", cpus: sys.Package(0).CPUSet().Difference(cpuset.New(0)), ok: true},
+		{device: "cpudevsocket001", cpus: sys.Package(1).CPUSet(), ok: true},
+		{device: "cpudevsocket0"},
+		{device: "cpudevsocket1000"},
+		{device: "cpudevsocket002"},
+		{device: "cpudevnuma0"},
+		{device: "cpudevnuma009"},
+		{device: "cpudev000"},
+	} {
+		cpus, ok := p.draDeviceCPUs(tc.device)
+		if ok != tc.ok || ok && !cpus.Equals(tc.cpus) {
+			t.Errorf("device %s has CPUs %s, %v, expected %s, %v", tc.device, cpus, ok, tc.cpus, tc.ok)
+		}
 	}
 }
 

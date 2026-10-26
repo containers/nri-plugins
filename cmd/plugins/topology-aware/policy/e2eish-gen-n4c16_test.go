@@ -1506,7 +1506,7 @@ spec:
           deviceClassName: topology-aware.nri.io
           selectors:
           - cel:
-              expression: device.attributes["resource.kubernetes.io"].numaNode ==
+              expression: device.attributes["dra.cpu"].level == "numanode" && device.attributes["resource.kubernetes.io"].numaNode ==
                 3
         name: cpus
 `)
@@ -1568,7 +1568,7 @@ spec:
           deviceClassName: topology-aware.nri.io
           selectors:
           - cel:
-              expression: device.attributes["resource.kubernetes.io"].numaNode ==
+              expression: device.attributes["dra.cpu"].level == "numanode" && device.attributes["resource.kubernetes.io"].numaNode ==
                 1
         name: cpus
 `)
@@ -1598,7 +1598,7 @@ spec:
           deviceClassName: topology-aware.nri.io
           selectors:
           - cel:
-              expression: device.attributes["resource.kubernetes.io"].numaNode ==
+              expression: device.attributes["dra.cpu"].level == "numanode" && device.attributes["resource.kubernetes.io"].numaNode ==
                 1
         name: cpus
 `)
@@ -1627,7 +1627,7 @@ spec:
           deviceClassName: topology-aware.nri.io
           selectors:
           - cel:
-              expression: device.attributes["resource.kubernetes.io"].numaNode ==
+              expression: device.attributes["dra.cpu"].level == "numanode" && device.attributes["resource.kubernetes.io"].numaNode ==
                 1
         name: cpus
 `)
@@ -1659,7 +1659,7 @@ spec:
           deviceClassName: topology-aware.nri.io
           selectors:
           - cel:
-              expression: device.attributes["resource.kubernetes.io"].numaNode ==
+              expression: device.attributes["dra.cpu"].level == "numanode" && device.attributes["resource.kubernetes.io"].numaNode ==
                 0
         name: cpus
 `)
@@ -1691,7 +1691,7 @@ spec:
           deviceClassName: topology-aware.nri.io
           selectors:
           - cel:
-              expression: device.attributes["resource.kubernetes.io"].numaNode ==
+              expression: device.attributes["dra.cpu"].level == "numanode" && device.attributes["resource.kubernetes.io"].numaNode ==
                 0
         name: cpus
 `)
@@ -1723,7 +1723,7 @@ spec:
           deviceClassName: topology-aware.nri.io
           selectors:
           - cel:
-              expression: device.attributes["resource.kubernetes.io"].numaNode ==
+              expression: device.attributes["dra.cpu"].level == "numanode" && device.attributes["resource.kubernetes.io"].numaNode ==
                 2
         name: cpus
 `)
@@ -1754,7 +1754,7 @@ spec:
           deviceClassName: topology-aware.nri.io
           selectors:
           - cel:
-              expression: device.attributes["resource.kubernetes.io"].numaNode ==
+              expression: device.attributes["dra.cpu"].level == "numanode" && device.attributes["resource.kubernetes.io"].numaNode ==
                 0
         name: first
       - exactly:
@@ -1764,7 +1764,7 @@ spec:
           deviceClassName: topology-aware.nri.io
           selectors:
           - cel:
-              expression: device.attributes["resource.kubernetes.io"].numaNode ==
+              expression: device.attributes["dra.cpu"].level == "numanode" && device.attributes["resource.kubernetes.io"].numaNode ==
                 2
         name: second
 `)
