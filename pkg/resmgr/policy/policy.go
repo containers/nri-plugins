@@ -190,8 +190,10 @@ type Backend interface {
 	) ([]specs.ContainerEdits, error)
 	// ReleaseClaim releases the resources the policy allocated for the claim
 	// with the given UID. Releasing a claim the policy has no record of is
-	// not an error.
-	ReleaseClaim(uid types.UID) error
+	// not an error. If undo is true, the claim failed to be prepared before
+	// the containers got the updates allocating it made, and the policy also
+	// undoes what allocating it changed for other claims and containers.
+	ReleaseClaim(uid types.UID, undo bool) error
 }
 
 // Policy is the exposed interface for container resource allocations decision making.
@@ -224,8 +226,9 @@ type Policy interface {
 		claim *resourceapi.ResourceClaim,
 		results []resourceapi.DeviceRequestAllocationResult,
 	) ([]specs.ContainerEdits, error)
-	// ReleaseClaim releases the resources allocated for the given claim.
-	ReleaseClaim(uid types.UID) error
+	// ReleaseClaim releases the resources allocated for the given claim, and
+	// undoes what allocating it changed if undo is true.
+	ReleaseClaim(uid types.UID, undo bool) error
 }
 
 // Metrics is the interface we expect policy-specific metrics to implement.
@@ -393,9 +396,9 @@ func (p *policy) AllocateClaim(
 }
 
 // ReleaseClaim releases the resources allocated for the given claim.
-func (p *policy) ReleaseClaim(uid types.UID) error {
+func (p *policy) ReleaseClaim(uid types.UID, undo bool) error {
 	defer p.scollect.Update()
-	return p.active.ReleaseClaim(uid)
+	return p.active.ReleaseClaim(uid, undo)
 }
 
 // ContainerStarted tells the active policy that a container has started.

@@ -122,9 +122,12 @@ type testPolicy struct {
 
 	// allocated is what the policy accounts for: the results it was asked to
 	// allocate, per claim. claims are the claims it was handed, in order.
+	// releases are the claims it was asked to release, and undos the ones of
+	// them it was asked to undo.
 	allocated map[types.UID][]resourceapi.DeviceRequestAllocationResult
 	claims    []*resourceapi.ResourceClaim
 	releases  []types.UID
+	undos     []types.UID
 
 	// allocateErr fails AllocateClaim, for failUID only if that is set.
 	allocateErr error
@@ -162,8 +165,11 @@ func (p *testPolicy) AllocateClaim(claim *resourceapi.ResourceClaim, results []r
 	return edits, nil
 }
 
-func (p *testPolicy) ReleaseClaim(uid types.UID) error {
+func (p *testPolicy) ReleaseClaim(uid types.UID, undo bool) error {
 	p.releases = append(p.releases, uid)
+	if undo {
+		p.undos = append(p.undos, uid)
+	}
 
 	if p.releaseErr != nil {
 		return p.releaseErr

@@ -1458,15 +1458,17 @@ of the socket. A socket with one NUMA node has a socket device with the same
 CPUs as its NUMA device.
 
 The capacity `dra.cpu/cpu` of a device is the number of its CPUs which claims
-hold or can get: the CPUs of the node or socket, minus the reserved CPUs, minus
-the CPUs containers hold exclusively, minus the whole CPUs the shared
+hold or can get: the CPUs of the node or socket, minus the reserved CPUs,
+minus the CPUs containers hold exclusively, minus the whole CPUs the shared
 containers need. The capacity of a socket device also leaves out the CPUs of
 claims on its NUMA nodes. The scheduler subtracts what claims consume of a
-device, so the CPUs of its own claims stay in its capacity. The policy
-publishes the capacity again whenever it changes. A node or socket with no CPUs
-left for claims has no device until some are free again. A new capacity
-applies to claims allocated after it: claims already allocated keep their
-CPUs. The devices have these attributes:
+device, so the CPUs of its own claims stay in its capacity. The capacity of a
+NUMA device also has the CPUs socket claims hold on the node, as many as these
+claims can move to other CPUs of the socket. The policy publishes the capacity
+again whenever it changes. A node or socket with no CPUs left for claims has
+no device until some are free again. A new capacity applies to claims
+allocated after it: claims already allocated keep their CPUs. The devices have
+these attributes:
 
 | Attribute | Type | Value |
 |---|---|---|
@@ -1487,6 +1489,12 @@ amount gets one CPU, not the whole device. The policy picks the CPUs by
 topology: two CPUs are the two threads of one core when possible. A request
 on a socket device gets CPUs of one NUMA node when a node has enough free
 CPUs, otherwise CPUs of several nodes of the socket.
+
+A claim on a socket device is not bound to its CPUs. When a claim on a NUMA
+node of the socket needs them, the claim on the socket device moves to other
+CPUs of the socket. Its containers move with it, and find the new CPUs in the
+`CLAIMED_CPUS` variable described below. Their memory stays on the nodes it
+was on.
 
 ### Selecting Devices
 
@@ -1653,12 +1661,14 @@ for nodes 0-1 stays on two nodes when the memory nodes grow to 0-3.
 A claim with a bad configuration fails to prepare, and the pod events say
 why.
 
-Claims keep their CPUs when the plugin restarts. If the plugin restarts with
-a configuration which cannot give a claim its CPUs, for example one which
+Claims keep their CPUs when the plugin restarts. If the plugin restarts with a
+configuration which cannot give a claim its CPUs, for example one which
 reserves some of them, the claim moves to other CPUs of the same device, and
-its containers move with it. If the device has too few CPUs left for the
-claim, the plugin fails to start, and the status of the configuration names
-the claim. Revert the configuration to start the plugin again.
+its containers move with it. If the claim needs CPUs of a socket claim, the
+socket claim moves to other CPUs of its socket. If the device has too few CPUs
+left for the claim, the plugin fails to start, and the status of the
+configuration names the claim. Revert the configuration to start the plugin
+again.
 
 If there is no configuration to revert to, drain the node, remove the cache
 file `/var/lib/nri-resource-policy/cache` on the node, and restart the plugin.
@@ -1677,8 +1687,11 @@ leaves running, such as DaemonSet pods, lose the CPUs of their claims.
   places the claim before the policy publishes a new capacity, or when shared
   containers in a pool above the NUMA nodes need the CPUs: their need is not
   in the capacity of any one node.
-- A claim on a NUMA device can fail to prepare when claims on the socket
-  device hold the CPUs of the node, though the socket has CPUs to spare.
+- The scheduler counts the capacity of each device on its own, also of devices
+  which share CPUs, such as a NUMA node and its socket. A claim can ask for
+  more CPUs of such devices than they have together, and so can claims which
+  the scheduler places before the policy publishes new capacities. Such a
+  claim fails to prepare, and its pod does not start.
 
 ## Cookbook
 

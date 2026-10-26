@@ -2,6 +2,8 @@
 # per socket next to the NUMA node devices. A claim on a socket device gets
 # CPUs of the socket, and CPUs of one NUMA node when it fits in one. The
 # capacity of the devices follows the CPUs which containers and claims use.
+# A socket claim moves to other CPUs of its socket when a NUMA node claim
+# needs its CPUs.
 #
 # n4c16 has two sockets of two NUMA nodes with four CPUs each: socket 0 has
 # CPUs 0-7, socket 1 CPUs 8-15.
@@ -83,6 +85,15 @@ socket-claim() {
     NAME=$1 create claim-pod
 }
 
+numa-claim() {
+    # Usage: numa-claim POD NODE CPUS
+    #
+    # Create POD with a claim for CPUS CPUs of NUMA node NODE, and wait for it
+    # to start.
+    NAME=$1 NODE=$2 CPUS=$3 wait="" create numa-claim
+    NAME=$1 create claim-pod
+}
+
 cleanup
 
 # Reserve CPU 15, so that socket 1 has one CPU less to give than socket 0.
@@ -123,9 +134,10 @@ for node in 0 1 2 3; do
         error "device $name has level $level, expected numanode"
 done
 
-# pod0 claims 6 CPUs of socket 1, more than one NUMA node has. The NUMA devices
-# keep the CPUs of the claim in their capacity, since the claim is not bound
-# to their CPUs, and the scheduler subtracts the claim from the socket device.
+# pod0 claims 6 CPUs of socket 1, more than one NUMA node has. The scheduler
+# subtracts the claim from the socket device. A NUMA device keeps the CPUs of
+# the claim in its capacity only as far as the claim can move off them, to the
+# one free CPU of the socket, so both NUMA devices of socket 1 have 1 CPU.
 socket-claim pod0 1 6
 cpus0=$(exported pod0 CLAIMED_CPUS)
 [ "$(cpu-ids "$cpus0" | wc -l)" == "6" ] && [ "$(cpu-nodes "$cpus0")" == "2 3 " ] ||
@@ -133,7 +145,7 @@ cpus0=$(exported pod0 CLAIMED_CPUS)
 pinned=$(vm-command-q "kubectl exec pod0 -- cat /sys/fs/cgroup/cpuset.cpus.effective")
 [ "$pinned" == "$cpus0" ] ||
     error "pod0 runs on CPUs $pinned, expected its claimed CPUs $cpus0"
-wait-capacities "$idle"
+wait-capacities "${idle/cpudevnuma002=4 cpudevnuma003=3/cpudevnuma002=1 cpudevnuma003=1}"
 
 # Deleting pod0 gives the CPUs of its claim back: all 7 CPUs of socket 1 can
 # be claimed again.
@@ -175,5 +187,27 @@ wait-capacities "$expected"
 vm-command "kubectl delete pod pod3 --now --wait"
 wait-capacities "$idle"
 
+# pod4 claims 4 CPUs of socket 0, which land on one NUMA node. pod5 then
+# claims all CPUs of that node: the claim of pod4 moves to the other node of
+# the socket, and pod4 runs on its new CPUs.
+socket-claim pod4 0 4
+cpus4=$(exported pod4 CLAIMED_CPUS)
+node4=$(cpu-nodes "$cpus4")
+[ "$(cpu-ids "$cpus4" | wc -l)" == "4" ] && [ "$(wc -w <<< "$node4")" == "1" ] ||
+    error "pod4 got claimed CPUs \"$cpus4\", expected 4 CPUs of one NUMA node"
+node4=${node4% }
+other=$((1 - node4))
+numa-claim pod5 "$node4" 4
+cpus5=$(exported pod5 CLAIMED_CPUS)
+[ "$(cpu-ids "$cpus5" | wc -l)" == "4" ] && [ "$(cpu-nodes "$cpus5")" == "$node4 " ] ||
+    error "pod5 got claimed CPUs \"$cpus5\", expected the 4 CPUs of NUMA node $node4"
+retry-until --timeout 30 --message "the claim of pod4 to move to NUMA node $other" \
+    '[ "$(cpu-nodes "$(exported pod4 CLAIMED_CPUS)")" == "$other " ]' ||
+    error "pod4 has claimed CPUs \"$(exported pod4 CLAIMED_CPUS)\", expected the CPUs of NUMA node $other"
+cpus4=$(exported pod4 CLAIMED_CPUS)
+pinned=$(vm-command-q "kubectl exec pod4 -- cat /sys/fs/cgroup/cpuset.cpus.effective")
+[ "$pinned" == "$cpus4" ] ||
+    error "pod4 runs on CPUs $pinned, expected its claimed CPUs $cpus4"
+
 cleanup
-echo "OK: socket devices next to the NUMA devices, socket claims within their socket, a 3-CPU claim on NUMA node $node2"
+echo "OK: socket devices next to the NUMA devices, socket claims within their socket, a 3-CPU claim on NUMA node $node2, a socket claim moved to NUMA node $other"
