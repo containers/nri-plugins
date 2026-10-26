@@ -25,6 +25,8 @@ package topologyaware
 // policy does not hand them out again. A claim is not bound to its CPUs:
 // when a claim on a smaller device inside its device needs them, it moves to
 // other CPUs of its device, and the containers holding it move with it.
+// Claims on larger devices holding these other CPUs move out of its device
+// first.
 // A container holding claims runs on their CPUs, and also on its own CPUs
 // if it has a CPU request. A container naming only some requests of a claim
 // runs on the CPUs of those requests.
@@ -99,6 +101,15 @@ type claim struct {
 	devices []string
 	mpols   []*cfgapi.MemoryPolicy
 	moves   map[string]claimMove
+}
+
+// cpus returns the CPUs of the claim's results.
+func (c *claim) cpus() cpuset.CPUSet {
+	cpus := cpuset.New()
+	for _, held := range c.results {
+		cpus = cpus.Union(held)
+	}
+	return cpus
 }
 
 // claimMove is a claim moved to other CPUs, as it was before and after the
@@ -370,18 +381,57 @@ func (p *policy) ReleaseClaim(uid types.UID, undo bool) error {
 // moveClaimsBack moves the claims allocating c moved back to the CPUs they
 // had, unless they moved again since, and pins their holders to those CPUs.
 func (p *policy) moveClaimsBack(c *claim) {
-	var back []string
-	for _, uid := range slices.Sorted(maps.Keys(c.moves)) {
-		m := c.moves[uid]
+	left := map[string]claimMove{}
+	for uid, m := range c.moves {
 		if p.allocations.claims[uid] != m.to {
 			log.Warnf("DRA claim %s moved again or was released, not moving it back", uid)
 			continue
 		}
+		left[uid] = m
+	}
+
+	// A claim may have moved to CPUs another claim had, which then moves back
+	// only after it.
+	var back []string
+	for len(left) > 0 {
+		uid, ok := nextMoveBack(left)
+		if !ok {
+			// Claims holding each other's CPUs move back together.
+			from := map[string]*claim{}
+			for uid, m := range left {
+				from[uid] = m.from
+			}
+			if p.swapClaims(from) {
+				back = append(back, slices.Sorted(maps.Keys(from))...)
+			}
+			break
+		}
+		m := left[uid]
+		delete(left, uid)
 		if p.swapClaim(uid, m.to, m.from) {
 			back = append(back, uid)
 		}
 	}
 	p.repinHolders(back)
+}
+
+// nextMoveBack returns the first claim of moves, by UID, whose CPUs before
+// its move no other claim of moves holds, or false if there is none.
+func nextMoveBack(moves map[string]claimMove) (string, bool) {
+	for _, uid := range slices.Sorted(maps.Keys(moves)) {
+		had := moves[uid].from.cpus()
+		free := true
+		for other, m := range moves {
+			if other != uid && !m.to.ExclusiveCPUs().Intersection(had).IsEmpty() {
+				free = false
+				break
+			}
+		}
+		if free {
+			return uid, true
+		}
+	}
+	return "", false
 }
 
 // containerClaims returns the CPUs and the memory policy of the claim results
@@ -619,11 +669,12 @@ func (p *policy) allocateClaim(reqs []draRequest, move bool) (*claim, error) {
 		req := reqs[i]
 		picked, err := p.pickCPUs(req, cpus)
 		if err != nil && move {
-			p.moveClaimsOff(req, cpus, moved)
+			short := req.cpus - p.availableCPUs(req.deviceCPUs, cpus).Size()
+			p.moveClaimsOff(req.deviceCPUs, req.deviceCPUs, short, cpus, moved)
 			picked, err = p.pickCPUs(req, cpus)
 		}
 		if err != nil {
-			p.undoMoves(moved)
+			p.swapClaims(moved)
 			return nil, err
 		}
 		cpus = cpus.Union(picked)
@@ -632,7 +683,7 @@ func (p *policy) allocateClaim(reqs []draRequest, move bool) (*claim, error) {
 	}
 
 	if err := p.reserveClaim(c); err != nil {
-		p.undoMoves(moved)
+		p.swapClaims(moved)
 		return nil, err
 	}
 	for uid, from := range moved {
@@ -647,63 +698,68 @@ func (p *policy) allocateClaim(reqs []draRequest, move bool) (*claim, error) {
 // reserveClaim reserves a grant of all CPUs of the claim's results for it,
 // from the deepest pool that has all of them.
 func (p *policy) reserveClaim(c *claim) error {
-	cpus := cpuset.New()
-	for _, held := range c.results {
-		cpus = cpus.Union(held)
-	}
+	cpus := c.cpus()
 	pool := p.poolForCPUs(cpus)
 	c.Grant = newGrant(pool, nil, cpuNormal, "", cpus, 0, 0, nil, 0)
 	_, err := pool.FreeSupply().Reserve(c.Grant, nil)
 	return err
 }
 
-// moveClaimsOff moves claims on devices larger than the device of req to
-// other CPUs of their devices, none of them in taken, until req has the CPUs
-// it asks for or no claim can move. moved gets the claims as they were before
-// their first move.
-func (p *policy) moveClaimsOff(req draRequest, taken cpuset.CPUSet, moved map[string]*claim) {
-	short := req.cpus - p.availableCPUs(req.deviceCPUs, taken).Size()
+// moveClaimsOff moves claims on devices larger than box off the CPUs in
+// target, to other CPUs of their devices outside box, none of them in taken,
+// until n more CPUs of target are free or no claim can move. target is part of
+// box. moved gets the claims as they were before their first move.
+func (p *policy) moveClaimsOff(box, target cpuset.CPUSet, n int, taken cpuset.CPUSet, moved map[string]*claim) {
 	for _, uid := range slices.Sorted(maps.Keys(p.allocations.claims)) {
-		if short <= 0 {
-			return
-		}
-		c := p.allocations.claims[uid]
-		next := &claim{results: slices.Clone(c.results), devices: c.devices, mpols: c.mpols}
-		gave, picked := 0, cpuset.New()
-		for i, held := range c.results {
-			if i >= len(c.devices) || !p.largerDevice(c.devices[i], req.deviceCPUs) {
+		for i := range p.allocations.claims[uid].results {
+			if n <= 0 {
+				return
+			}
+			c := p.allocations.claims[uid]
+			if i >= len(c.devices) || !p.largerDevice(c.devices[i], box) {
 				continue
 			}
-			// A result gives up only as many CPUs as req still needs.
-			give, replace := p.moveResult(c.devices[i], held, req.deviceCPUs, short-gave, taken.Union(picked))
+			// A result gives up only as many CPUs as are still needed.
+			give, replace := p.moveResult(c.devices[i], c.results[i], box, target, n, taken, moved)
 			if give.IsEmpty() {
 				continue
 			}
-			next.results[i] = held.Difference(give).Union(replace)
-			gave += give.Size()
-			picked = picked.Union(replace)
-		}
-		if gave > 0 && p.swapClaim(uid, c, next) {
-			if _, ok := moved[uid]; !ok {
-				moved[uid] = c
+			// Making room for the result may have moved other results of the
+			// claim.
+			c = p.allocations.claims[uid]
+			next := &claim{results: slices.Clone(c.results), devices: c.devices, mpols: c.mpols}
+			next.results[i] = c.results[i].Difference(give).Union(replace)
+			if p.swapClaim(uid, c, next) {
+				if _, ok := moved[uid]; !ok {
+					moved[uid] = c
+				}
+				n -= give.Size()
 			}
-			short -= gave
 		}
 	}
 }
 
 // moveResult returns up to n CPUs of a result held on device which are in
-// cpus, and as many other CPUs of the device to replace them with, none of
-// them in taken. The replacing CPUs leave the free CPUs of cpus free. It
-// returns no CPUs if the device has no others free.
-func (p *policy) moveResult(device string, held, cpus cpuset.CPUSet, n int, taken cpuset.CPUSet) (cpuset.CPUSet, cpuset.CPUSet) {
-	give := held.Intersection(cpus)
+// target, and as many other CPUs of the device outside box to replace them
+// with, none of them in taken. If too few of those are free, it first moves
+// claims on larger devices off them. The replacing CPUs leave the free CPUs of
+// target free. It returns no CPUs if none are free.
+func (p *policy) moveResult(device string, held, box, target cpuset.CPUSet, n int,
+	taken cpuset.CPUSet, moved map[string]*claim) (cpuset.CPUSet, cpuset.CPUSet) {
+	give := held.Intersection(target)
+	if give.IsEmpty() {
+		return cpuset.New(), cpuset.New()
+	}
 	deviceCPUs, _ := p.draDeviceCPUs(device)
-	other := draRequest{device: device, deviceCPUs: deviceCPUs.Difference(cpus)}
-	// Taking the free CPUs of cpus here keeps the CPUs of other from using
-	// up the spare CPUs of shared containers which cpus needs.
-	taken = taken.Union(p.availableCPUs(cpus, taken))
-	other.cpus = min(n, give.Size(), p.availableCPUs(other.deviceCPUs, taken).Size())
+	other := draRequest{device: device, deviceCPUs: deviceCPUs.Difference(box)}
+	// Taking the free CPUs of target here keeps the CPUs of other from using
+	// up the spare CPUs of shared containers which target needs.
+	taken = taken.Union(p.availableCPUs(target, taken))
+	want := min(n, give.Size())
+	if short := want - p.availableCPUs(other.deviceCPUs, taken).Size(); short > 0 {
+		p.moveClaimsOff(deviceCPUs, other.deviceCPUs, short, taken, moved)
+	}
+	other.cpus = min(want, p.availableCPUs(other.deviceCPUs, taken).Size())
 	if other.cpus == 0 {
 		return cpuset.New(), cpuset.New()
 	}
@@ -711,7 +767,7 @@ func (p *policy) moveResult(device string, held, cpus cpuset.CPUSet, n int, take
 	if other.cpus < give.Size() {
 		// The CPUs the result keeps stay together.
 		if _, err := p.cpuAllocator.ReleaseCpus(&give, other.cpus, defaultPrio.Option()); err != nil {
-			log.Errorf("device %s: failed to pick CPUs to move off %s: %v", device, cpus, err)
+			log.Errorf("device %s: failed to pick CPUs to move off %s: %v", device, target, err)
 			return cpuset.New(), cpuset.New()
 		}
 	}
@@ -727,39 +783,41 @@ func (p *policy) moveResult(device string, held, cpus cpuset.CPUSet, n int, take
 // whether it did. It keeps c if next holds the same CPUs or cannot have
 // them.
 func (p *policy) swapClaim(uid string, c, next *claim) bool {
-	from, to := c.ExclusiveCPUs(), cpuset.New()
-	for _, held := range next.results {
-		to = to.Union(held)
-	}
-	if to.Equals(from) {
+	if next.cpus().Equals(c.ExclusiveCPUs()) {
 		return false
 	}
-
-	c.Release()
-	if err := p.reserveClaim(next); err != nil {
-		log.Errorf("claim %s: failed to move from CPUs %s to %s: %v", uid, from, to, err)
-		if _, err := c.GetCPUNode().FreeSupply().Reserve(c.Grant, nil); err != nil {
-			log.Errorf("claim %s: failed to get CPUs %s back: %v", uid, from, err)
-		}
-		return false
-	}
-	p.allocations.claims[uid] = next
-	log.Infof("moved DRA claim %s from CPUs %s to %s", uid, from, to)
-	return true
+	return p.swapClaims(map[string]*claim{uid: next})
 }
 
-// undoMoves gives the moved claims back the CPUs they had.
-func (p *policy) undoMoves(moved map[string]*claim) {
-	for uid := range moved {
+// swapClaims replaces the claims by the ones in next, with the CPUs those
+// hold, and tells whether it did. It keeps all claims if one of next cannot
+// have its CPUs.
+func (p *policy) swapClaims(next map[string]*claim) bool {
+	uids := slices.Sorted(maps.Keys(next))
+	for _, uid := range uids {
 		p.allocations.claims[uid].Release()
 	}
-	for uid, c := range moved {
-		if _, err := c.GetCPUNode().FreeSupply().Reserve(c.Grant, nil); err != nil {
-			log.Errorf("claim %s: failed to get CPUs %s back: %v", uid, c.ExclusiveCPUs(), err)
+	for i, uid := range uids {
+		if err := p.reserveClaim(next[uid]); err != nil {
+			log.Errorf("claim %s: failed to move from CPUs %s to %s: %v",
+				uid, p.allocations.claims[uid].ExclusiveCPUs(), next[uid].cpus(), err)
+			for _, uid := range uids[:i] {
+				next[uid].Release()
+			}
+			for _, uid := range uids {
+				c := p.allocations.claims[uid]
+				if _, err := c.GetCPUNode().FreeSupply().Reserve(c.Grant, nil); err != nil {
+					log.Errorf("claim %s: failed to get CPUs %s back: %v", uid, c.ExclusiveCPUs(), err)
+				}
+			}
+			return false
 		}
-		p.allocations.claims[uid] = c
-		log.Infof("moved DRA claim %s back to CPUs %s", uid, c.ExclusiveCPUs())
 	}
+	for _, uid := range uids {
+		log.Infof("moved DRA claim %s from CPUs %s to %s", uid, p.allocations.claims[uid].ExclusiveCPUs(), next[uid].ExclusiveCPUs())
+		p.allocations.claims[uid] = next[uid]
+	}
+	return true
 }
 
 // repinHolders pins the containers holding the given claims to the CPUs the

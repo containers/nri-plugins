@@ -1472,10 +1472,11 @@ which are not larger than it, such as the claims on the NUMA nodes of a socket
 device. The scheduler subtracts what claims consume of a device, so the CPUs
 of its own claims stay in its capacity. The capacity of a device also has the
 CPUs which claims on larger devices hold in it, as many as these claims can
-move to other CPUs of their device. The policy publishes the capacity again
-whenever it changes. A group with no CPUs left for claims has no device until
-some are free again. A new capacity applies to claims allocated after it:
-claims already allocated keep their CPUs. The devices have these attributes:
+move to other CPUs of their device, also by moving claims on still larger
+devices out of the way. The policy publishes the capacity again whenever it
+changes. A group with no CPUs left for claims has no device until some are
+free again. A new capacity applies to claims allocated after it: claims
+already allocated keep their CPUs. The devices have these attributes:
 
 | Attribute | Type | Value |
 |---|---|---|
@@ -1506,9 +1507,10 @@ several sockets.
 
 A claim is not bound to its CPUs. When a claim on a smaller device inside its
 device needs them, for instance a claim on a NUMA node of a socket, the claim
-moves to other free CPUs of its device. Its containers move with it, and find
-the new CPUs in the `CLAIMED_CPUS` variable described below. Their memory
-stays on the nodes it was on.
+moves to other CPUs of its device. If claims on larger devices hold these
+CPUs, they move out of its device first. The containers of a claim move with
+it, and find the new CPUs in the `CLAIMED_CPUS` variable described below.
+Their memory stays on the nodes it was on.
 
 ### Selecting Devices
 

@@ -2301,6 +2301,155 @@ func TestMoveMachineClaim(t *testing.T) {
 	}
 }
 
+// A socket claim which moves for a NUMA claim first moves a machine claim out
+// of its socket, if the machine claim holds the CPUs it moves to. If that
+// fails, every claim keeps its CPUs.
+func TestMoveClaimsInChain(t *testing.T) {
+	sys := testServerSystem(t)
+	cpus := func(node idset.ID, n int) cpuset.CPUSet {
+		normal := sys.Node(node).CPUSet().Difference(sys.IsolatedCPUs())
+		return cpuset.New(normal.List()[:n]...)
+	}
+	// Nodes 0 and 2 of socket 0 have 4 CPUs for claims each, node 1 of socket
+	// 1 has 5.
+	reserved := cpus(3, 1)
+	available := cpus(0, 4).Union(cpus(2, 4), cpus(1, 5), reserved)
+	p, _ := draTestPolicy(t, sys, draTestConfig("cpuset:"+available.String(), "cpuset:"+reserved.String()))
+	nodeOf := func(cpus cpuset.CPUSet) idset.ID { return sys.CPU(idset.ID(cpus.List()[0])).NodeID() }
+
+	// The socket claim fills a node and the machine claim the other node of
+	// the socket, which has fewer free CPUs than node 1.
+	s := allocateClaim(t, p, "s", draTestSocketResult(0, "4"))
+	busy := nodeOf(s)
+	if !s.Equals(cpus(busy, 4)) {
+		t.Fatalf("claim s got CPUs %s, expected the CPUs of node %d, %s", s, busy, cpus(busy, 4))
+	}
+	other := 2 - busy
+	if m := allocateClaim(t, p, "m", draTestDeviceResult(draMachineDevice, "4")); !m.Equals(cpus(other, 4)) {
+		t.Fatalf("claim m got CPUs %s, expected the CPUs of node %d, %s", m, other, cpus(other, 4))
+	}
+	capacity := func() int {
+		device := fmt.Sprintf(draNUMADeviceFormat, busy)
+		cpus, _ := p.draDeviceCPUs(device)
+		return p.draCapacity(device, cpus)
+	}
+	if got := capacity(); got != 4 {
+		t.Errorf("node %d has capacity %d, expected 4", busy, got)
+	}
+
+	// Socket 1 has room for only 2 CPUs of the machine claim.
+	allocateClaim(t, p, "o", draTestResult(1, "3"))
+	if got := capacity(); got != 2 {
+		t.Errorf("node %d has capacity %d with room for 2 CPUs in socket 1, expected 2", busy, got)
+	}
+	if _, err := p.AllocateClaim(draTestClaim("n"), []resourceapi.DeviceRequestAllocationResult{
+		draTestResult(int(busy), "4"),
+	}); err == nil {
+		t.Errorf("claim n got CPUs of node %d with too few CPUs to move to", busy)
+	}
+	for uid, expected := range map[string]cpuset.CPUSet{"s": cpus(busy, 4), "m": cpus(other, 4)} {
+		if got := p.allocations.claims[uid].ExclusiveCPUs(); !got.Equals(expected) {
+			t.Errorf("claim %s holds CPUs %s after a failed claim, expected %s", uid, got, expected)
+		}
+	}
+
+	if err := p.ReleaseClaim("o", false); err != nil {
+		t.Fatalf("failed to release claim o: %v", err)
+	}
+	if n := allocateClaim(t, p, "n", draTestResult(int(busy), "4")); !n.Equals(cpus(busy, 4)) {
+		t.Errorf("claim n got CPUs %s, expected the CPUs of node %d, %s", n, busy, cpus(busy, 4))
+	}
+	for uid, expected := range map[string]cpuset.CPUSet{"s": cpus(other, 4), "m": cpus(1, 5)} {
+		if got := p.allocations.claims[uid].ExclusiveCPUs(); got.Size() != 4 || !got.IsSubsetOf(expected) {
+			t.Errorf("claim %s holds CPUs %s, expected 4 CPUs of %s", uid, got, expected)
+		}
+	}
+
+	// Undoing the NUMA claim moves both claims back.
+	if err := p.ReleaseClaim("n", true); err != nil {
+		t.Fatalf("failed to release claim n: %v", err)
+	}
+	for uid, expected := range map[string]cpuset.CPUSet{"s": cpus(busy, 4), "m": cpus(other, 4)} {
+		if got := p.allocations.claims[uid].ExclusiveCPUs(); !got.Equals(expected) {
+			t.Errorf("claim %s holds CPUs %s after undoing claim n, expected %s", uid, got, expected)
+		}
+	}
+}
+
+// Two claims with socket and machine results can each move onto CPUs the
+// other had. Undoing the claim that moved them moves both back together.
+func TestUndoMovedClaimsCycle(t *testing.T) {
+	sys := testServerSystem(t)
+	p, _ := draTestPolicy(t, sys, draTestConfig("", draTestReserved(sys)))
+
+	allocateClaim(t, p, "n", draTestResult(0, "2"), draTestResult(1, "2"))
+	allocateClaim(t, p, "a", draTestSocketResult(0, "2"), draTestDeviceResult(draMachineDevice, "2"))
+	allocateClaim(t, p, "b", draTestSocketResult(1, "2"), draTestDeviceResult(draMachineDevice, "2"))
+	n, a, b := p.allocations.claims["n"], p.allocations.claims["a"], p.allocations.claims["b"]
+
+	// The socket result of each claim had the CPUs of n on its socket, and
+	// its machine result had the CPUs the socket result of the other claim
+	// holds now.
+	aFrom := &claim{results: []cpuset.CPUSet{n.results[0], b.results[0]}, devices: a.devices}
+	bFrom := &claim{results: []cpuset.CPUSet{n.results[1], a.results[0]}, devices: b.devices}
+	n.moves = map[string]claimMove{"a": {from: aFrom, to: a}, "b": {from: bFrom, to: b}}
+
+	if err := p.ReleaseClaim("n", true); err != nil {
+		t.Fatalf("failed to release claim n: %v", err)
+	}
+	for uid, expected := range map[string]cpuset.CPUSet{"a": aFrom.cpus(), "b": bFrom.cpus()} {
+		if got := p.allocations.claims[uid].ExclusiveCPUs(); !got.Equals(expected) {
+			t.Errorf("claim %s holds CPUs %s after undoing claim n, expected %s", uid, got, expected)
+		}
+	}
+}
+
+// A socket claim which moves for a NUMA claim moves a machine claim out of its
+// socket also when free CPUs of the socket are left, if the shared containers
+// of the socket pool need them.
+func TestMoveClaimsInChainSharedLoad(t *testing.T) {
+	sys := testServerSystem(t)
+	cpus := func(node idset.ID, n int) cpuset.CPUSet {
+		normal := sys.Node(node).CPUSet().Difference(sys.IsolatedCPUs())
+		return cpuset.New(normal.List()[:n]...)
+	}
+	// Nodes 0 and 2 of socket 0 have 2 CPUs for claims each, node 1 of socket
+	// 1 has 4.
+	reserved := cpus(3, 1)
+	available := cpus(0, 2).Union(cpus(2, 2), cpus(1, 4), reserved)
+	p, _ := draTestPolicy(t, sys, draTestConfig("cpuset:"+available.String(), "cpuset:"+reserved.String()))
+	nodeOf := func(cpus cpuset.CPUSet) idset.ID { return sys.CPU(idset.ID(cpus.List()[0])).NodeID() }
+
+	// Each node of socket 0 has one free CPU, the shared containers need one
+	// of them.
+	s := allocateClaim(t, p, "s", draTestSocketResult(0, "1"))
+	busy := nodeOf(s)
+	other := 2 - busy
+	allocateClaim(t, p, "full", draTestResult(int(busy), "1"))
+	if m := allocateClaim(t, p, "m", draTestDeviceResult(draMachineDevice, "1")); nodeOf(m) != other {
+		t.Fatalf("claim m got CPUs %s, expected a CPU of node %d", m, other)
+	}
+	if err := p.ReleaseClaim("full", false); err != nil {
+		t.Fatalf("failed to release claim full: %v", err)
+	}
+	allocateShared(t, p, "shared", "900m", "socket #0")
+
+	device := fmt.Sprintf(draNUMADeviceFormat, busy)
+	deviceCPUs, _ := p.draDeviceCPUs(device)
+	if got := p.draCapacity(device, deviceCPUs); got != 2 {
+		t.Errorf("node %d has capacity %d, expected 2", busy, got)
+	}
+	if n := allocateClaim(t, p, "n", draTestResult(int(busy), "2")); !n.Equals(cpus(busy, 2)) {
+		t.Errorf("claim n got CPUs %s, expected the CPUs of node %d, %s", n, busy, cpus(busy, 2))
+	}
+	if got := p.allocations.claims["s"].ExclusiveCPUs(); nodeOf(got) != other {
+		t.Errorf("claim s holds CPUs %s, expected a CPU of node %d", got, other)
+	}
+	if got := p.allocations.claims["m"].ExclusiveCPUs(); !got.IsSubsetOf(cpus(1, 4)) {
+		t.Errorf("claim m holds CPUs %s, expected a CPU of node 1, %s", got, cpus(1, 4))
+	}
+}
+
 // treeSystem is a test system with two L3 caches per NUMA node, each shared
 // by half of the cores of the node.
 type treeSystem struct {
