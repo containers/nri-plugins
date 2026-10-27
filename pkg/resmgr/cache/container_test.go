@@ -19,810 +19,636 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"path/filepath"
 	"slices"
+	"testing"
 
 	"github.com/containers/nri-plugins/pkg/log"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
-	"github.com/containers/nri-plugins/pkg/topology"
 	"github.com/containers/nri-plugins/pkg/utils"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 
 	nri "github.com/containerd/nri/pkg/api"
 	"sigs.k8s.io/yaml"
 )
 
-var (
-	testdataDir     string
-	enableDebugging bool = false
+func TestContainerID(t *testing.T) {
+	var (
+		nriPods = []*nri.PodSandbox{
+			makePod(),
+		}
+		nriCtrs = []*nri.Container{
+			makeCtr(WithCtrPodID(nriPods[0].GetId())),
+		}
+	)
 
-	cpulist  string = "0-7"
-	numanode string = "0"
-)
+	_, _, ctrs := makePopulatedCache(t, nriPods, nriCtrs)
 
-var _ = BeforeSuite(func() {
-	pwd, err := os.Getwd()
-	if err != nil {
-		panic(fmt.Errorf("unable to get current directory: %w", err))
+	require.Equal(t, nriCtrs[0].GetId(), ctrs[0].GetID())
+}
+
+func TestContainerPodID(t *testing.T) {
+	var (
+		nriPods = []*nri.PodSandbox{
+			makePod(),
+		}
+		nriCtrs = []*nri.Container{
+			makeCtr(WithCtrPodID(nriPods[0].GetId())),
+		}
+	)
+
+	_, _, ctrs := makePopulatedCache(t, nriPods, nriCtrs)
+
+	require.Equal(t, nriPods[0].GetId(), ctrs[0].GetPodID())
+}
+
+func TestContainerPod(t *testing.T) {
+	var (
+		nriPods = []*nri.PodSandbox{
+			makePod(),
+		}
+		nriCtrs = []*nri.Container{
+			makeCtr(WithCtrPodID(nriPods[0].GetId())),
+		}
+	)
+
+	_, pods, ctrs := makePopulatedCache(t, nriPods, nriCtrs)
+
+	pod, ok := ctrs[0].GetPod()
+	require.Equal(t, pods[0], pod)
+	require.True(t, ok)
+}
+
+func TestContainerName(t *testing.T) {
+	var (
+		name    = "test-ctr"
+		nriPods = []*nri.PodSandbox{
+			makePod(),
+		}
+		nriCtrs = []*nri.Container{
+			makeCtr(WithCtrPodID(nriPods[0].GetId()), WithCtrName(name)),
+		}
+	)
+
+	_, _, ctrs := makePopulatedCache(t, nriPods, nriCtrs)
+
+	require.Equal(t, name, ctrs[0].GetName())
+}
+
+func TestContainerNamespace(t *testing.T) {
+	var (
+		namespace = "test-namespace"
+		nriPods   = []*nri.PodSandbox{
+			makePod(WithNamespace(namespace)),
+		}
+		nriCtrs = []*nri.Container{
+			makeCtr(WithCtrPodID(nriPods[0].GetId())),
+		}
+	)
+
+	_, _, ctrs := makePopulatedCache(t, nriPods, nriCtrs)
+
+	require.Equal(t, namespace, ctrs[0].GetNamespace())
+}
+
+func TestContainerState(t *testing.T) {
+	var (
+		state   = cache.ContainerStateRunning
+		nriPods = []*nri.PodSandbox{
+			makePod(),
+		}
+		nriCtrs = []*nri.Container{
+			makeCtr(
+				WithCtrPodID(nriPods[0].GetId()),
+				WithCtrState(state),
+			),
+		}
+	)
+
+	_, _, ctrs := makePopulatedCache(t, nriPods, nriCtrs)
+
+	require.Equal(t, state, ctrs[0].GetState())
+}
+
+func TestContainerQOSClass(t *testing.T) {
+	var (
+		nriPods = []*nri.PodSandbox{
+			makePod(WithCgroupParent("/a/besteffort/pod")),
+			makePod(WithCgroupParent("/a/burstable/pod")),
+			makePod(WithCgroupParent("/a/pod")),
+		}
+		nriCtrs = []*nri.Container{
+			makeCtr(WithCtrPodID(nriPods[0].GetId())),
+			makeCtr(WithCtrPodID(nriPods[1].GetId())),
+			makeCtr(WithCtrPodID(nriPods[2].GetId())),
+		}
+	)
+
+	_, _, ctrs := makePopulatedCache(t, nriPods, nriCtrs)
+
+	require.Equal(t, corev1.PodQOSBestEffort, ctrs[0].GetQOSClass())
+	require.Equal(t, corev1.PodQOSBurstable, ctrs[1].GetQOSClass())
+	require.Equal(t, corev1.PodQOSGuaranteed, ctrs[2].GetQOSClass())
+}
+
+func TestContainerArgs(t *testing.T) {
+	var (
+		args    = []string{"a", "b", "c"}
+		nriPods = []*nri.PodSandbox{
+			makePod(),
+		}
+		nriCtrs = []*nri.Container{
+			makeCtr(
+				WithCtrPodID(nriPods[0].GetId()),
+				WithCtrArgs(args),
+			),
+		}
+	)
+
+	_, _, ctrs := makePopulatedCache(t, nriPods, nriCtrs)
+
+	require.Equal(t, args, ctrs[0].GetArgs())
+}
+
+func TestContainerLabels(t *testing.T) {
+	var (
+		labels = map[string]string{
+			"key1": "value1",
+			"key2": "value2",
+		}
+		nriPods = []*nri.PodSandbox{
+			makePod(),
+		}
+		nriCtrs = []*nri.Container{
+			makeCtr(
+				WithCtrPodID(nriPods[0].GetId()),
+				WithCtrLabels(labels),
+			),
+		}
+	)
+
+	_, _, ctrs := makePopulatedCache(t, nriPods, nriCtrs)
+
+	for key, val := range labels {
+		chk, ok := ctrs[0].GetLabel(key)
+		require.Equal(t, val, chk)
+		require.True(t, ok)
+	}
+}
+
+func TestContainerAnnotations(t *testing.T) {
+	var (
+		objects = map[string]any{
+			"key1": true,
+			"key2": "foobar",
+			"key3": 3.141,
+		}
+		annotations = map[string]string{
+			"key1": jsonEncode(t, objects["key1"]),
+			"key2": jsonEncode(t, objects["key2"]),
+			"key3": jsonEncode(t, objects["key3"]),
+		}
+		nriPods = []*nri.PodSandbox{
+			makePod(),
+		}
+		nriCtrs = []*nri.Container{
+			makeCtr(
+				WithCtrPodID(nriPods[0].GetId()),
+				WithCtrAnnotations(annotations),
+			),
+		}
+	)
+
+	_, _, ctrs := makePopulatedCache(t, nriPods, nriCtrs)
+
+	for key, val := range objects {
+		var ok bool
+		switch objects[key].(type) {
+		case bool:
+			var bln bool
+			_, ok = ctrs[0].GetAnnotation(key, &bln)
+			require.Equal(t, val, bln)
+		case string:
+			var str string
+			_, ok = ctrs[0].GetAnnotation(key, &str)
+			require.Equal(t, val, str)
+		case float64:
+			var flt float64
+			_, ok = ctrs[0].GetAnnotation(key, &flt)
+			require.Equal(t, val, flt)
+		}
+		require.True(t, ok)
+	}
+}
+
+func TestContainerEnv(t *testing.T) {
+	var (
+		vars = []*nri.KeyValue{
+			{
+				Key:   "key1",
+				Value: "value1",
+			},
+			{
+				Key:   "key2",
+				Value: "value2",
+			},
+			{
+				Key:   "key3",
+				Value: "value3",
+			},
+		}
+		env = []string{
+			vars[0].Key + "=" + vars[0].Value,
+			vars[1].Key + "=" + vars[1].Value,
+			vars[2].Key + "=" + vars[2].Value,
+		}
+		nriPods = []*nri.PodSandbox{
+			makePod(),
+		}
+		nriCtrs = []*nri.Container{
+			makeCtr(
+				WithCtrPodID(nriPods[0].GetId()),
+				WithCtrEnv(env),
+			),
+		}
+	)
+
+	_, _, ctrs := makePopulatedCache(t, nriPods, nriCtrs)
+
+	for _, v := range vars {
+		chk, ok := ctrs[0].GetEnv(v.Key)
+		require.Equal(t, v.Value, chk)
+		require.True(t, ok)
+	}
+}
+
+func TestContainerMounts(t *testing.T) {
+	var (
+		mounts = []*nri.Mount{
+			{
+				Source:      "/foo",
+				Destination: "/host/foo",
+				Type:        "bind",
+				Options:     []string{"bind", "ro"},
+			},
+			{
+				Source:      "/bar",
+				Destination: "/host/bar",
+				Type:        "bind",
+				Options:     []string{"bind", "ro"},
+			},
+		}
+		nriPods = []*nri.PodSandbox{
+			makePod(),
+		}
+		nriCtrs = []*nri.Container{
+			makeCtr(
+				WithCtrPodID(nriPods[0].GetId()),
+				WithCtrMounts(mounts),
+			),
+		}
+	)
+
+	_, _, ctrs := makePopulatedCache(t, nriPods, nriCtrs)
+
+	require.Equal(t, mounts, ctrs[0].GetMounts())
+}
+
+func TestContainerDevices(t *testing.T) {
+	var (
+		devices = []*nri.LinuxDevice{
+			{
+				Path:     "/dev/null",
+				Type:     "c",
+				Major:    1,
+				Minor:    3,
+				FileMode: nri.FileMode(0644),
+			},
+			{
+				Path:     "/dev/zero",
+				Type:     "c",
+				Major:    1,
+				Minor:    5,
+				FileMode: nri.FileMode(0644),
+			},
+			{
+				Path:     "/dev/foo",
+				Type:     "c",
+				Major:    3,
+				Minor:    45,
+				Uid:      nri.UInt32(15),
+				Gid:      nri.UInt32(16),
+				FileMode: nri.FileMode(0755),
+			},
+		}
+		nriPods = []*nri.PodSandbox{
+			makePod(),
+		}
+		nriCtrs = []*nri.Container{
+			makeCtr(
+				WithCtrPodID(nriPods[0].GetId()),
+				WithCtrDevices(devices),
+			),
+		}
+	)
+
+	_, _, ctrs := makePopulatedCache(t, nriPods, nriCtrs)
+
+	require.Equal(t, devices, ctrs[0].GetDevices())
+}
+
+func TestContainerAdjustments(t *testing.T) {
+	const limit int64 = 123456789
+
+	tcases := []struct {
+		name  string
+		set   func(cache.Container)
+		check func(*testing.T, *nri.ContainerAdjustment)
+	}{
+		{
+			name: "CPU shares",
+			set:  func(c cache.Container) { c.SetCPUShares(999) },
+			check: func(t *testing.T, a *nri.ContainerAdjustment) {
+				require.Equal(t, uint64(999), a.GetLinux().GetResources().GetCpu().GetShares().GetValue())
+			},
+		},
+		{
+			name: "CPU quota",
+			set:  func(c cache.Container) { c.SetCPUQuota(998) },
+			check: func(t *testing.T, a *nri.ContainerAdjustment) {
+				require.Equal(t, int64(998), a.GetLinux().GetResources().GetCpu().GetQuota().GetValue())
+			},
+		},
+		{
+			name: "CPU period",
+			set:  func(c cache.Container) { c.SetCPUPeriod(997) },
+			check: func(t *testing.T, a *nri.ContainerAdjustment) {
+				require.Equal(t, uint64(997), a.GetLinux().GetResources().GetCpu().GetPeriod().GetValue())
+			},
+		},
+		{
+			name: "cpuset CPU",
+			set:  func(c cache.Container) { c.SetCpusetCpus("1-5,7") },
+			check: func(t *testing.T, a *nri.ContainerAdjustment) {
+				require.Equal(t, "1-5,7", a.GetLinux().GetResources().GetCpu().GetCpus())
+			},
+		},
+		{
+			name: "cpuset memory",
+			set:  func(c cache.Container) { c.SetCpusetMems("0-2,4") },
+			check: func(t *testing.T, a *nri.ContainerAdjustment) {
+				require.Equal(t, "0-2,4", a.GetLinux().GetResources().GetCpu().GetMems())
+			},
+		},
+		{
+			name: "memory limit",
+			set:  func(c cache.Container) { c.SetMemoryLimit(limit) },
+			check: func(t *testing.T, a *nri.ContainerAdjustment) {
+				require.Equal(t, limit, a.GetLinux().GetResources().GetMemory().GetLimit().GetValue())
+			},
+		},
+		{
+			name: "memory policy",
+			set: func(c cache.Container) {
+				c.SetMemoryPolicy(nri.MpolMode_MPOL_INTERLEAVE, "0-1", nri.MpolFlag_MPOL_F_STATIC_NODES)
+			},
+			check: func(t *testing.T, a *nri.ContainerAdjustment) {
+				mpol := a.GetLinux().GetMemoryPolicy()
+				require.Equal(t, nri.MpolMode_MPOL_INTERLEAVE, mpol.GetMode())
+				require.Equal(t, "0-1", mpol.GetNodes())
+				require.Equal(t, []nri.MpolFlag{nri.MpolFlag_MPOL_F_STATIC_NODES}, mpol.GetFlags())
+			},
+		},
 	}
 
-	if path, err := filepath.EvalSymlinks(pwd); err == nil {
-		pwd = path
+	for _, tc := range tcases {
+		t.Run(tc.name, func(t *testing.T) {
+			var (
+				nriPods = []*nri.PodSandbox{
+					makePod(),
+				}
+				nriCtrs = []*nri.Container{
+					makeCtr(WithCtrPodID(nriPods[0].GetId())),
+				}
+			)
+
+			_, _, ctrs := makePopulatedCache(t, nriPods, nriCtrs)
+
+			tc.set(ctrs[0])
+
+			pending := ctrs[0].GetPendingAdjustment()
+			require.NotNil(t, pending)
+			tc.check(t, pending)
+		})
+	}
+}
+
+func TestContainerRefusesMemoryPolicyOfRunningContainer(t *testing.T) {
+	var (
+		nriPods = []*nri.PodSandbox{
+			makePod(),
+		}
+		nriCtrs = []*nri.Container{
+			makeCtr(
+				WithCtrPodID(nriPods[0].GetId()),
+				WithCtrState(cache.ContainerStateRunning),
+			),
+		}
+	)
+
+	_, _, ctrs := makePopulatedCache(t, nriPods, nriCtrs)
+
+	ctrs[0].SetMemoryPolicy(nri.MpolMode_MPOL_INTERLEAVE, "0-1")
+
+	require.Empty(t, ctrs[0].GetPending())
+}
+
+func TestContainerUpdates(t *testing.T) {
+	const limit int64 = 123456789
+
+	tcases := []struct {
+		name  string
+		set   func(cache.Container)
+		check func(*testing.T, *nri.ContainerUpdate)
+	}{
+		{
+			name: "CPU shares",
+			set:  func(c cache.Container) { c.SetCPUShares(999) },
+			check: func(t *testing.T, u *nri.ContainerUpdate) {
+				require.Equal(t, uint64(999), u.GetLinux().GetResources().GetCpu().GetShares().GetValue())
+			},
+		},
+		{
+			name: "CPU quota",
+			set:  func(c cache.Container) { c.SetCPUQuota(998) },
+			check: func(t *testing.T, u *nri.ContainerUpdate) {
+				require.Equal(t, int64(998), u.GetLinux().GetResources().GetCpu().GetQuota().GetValue())
+			},
+		},
+		{
+			name: "CPU period",
+			set:  func(c cache.Container) { c.SetCPUPeriod(997) },
+			check: func(t *testing.T, u *nri.ContainerUpdate) {
+				require.Equal(t, uint64(997), u.GetLinux().GetResources().GetCpu().GetPeriod().GetValue())
+			},
+		},
+		{
+			name: "cpuset CPU",
+			set:  func(c cache.Container) { c.SetCpusetCpus("1-5,7") },
+			check: func(t *testing.T, u *nri.ContainerUpdate) {
+				require.Equal(t, "1-5,7", u.GetLinux().GetResources().GetCpu().GetCpus())
+			},
+		},
+		{
+			name: "cpuset memory",
+			set:  func(c cache.Container) { c.SetCpusetMems("0-2,4") },
+			check: func(t *testing.T, u *nri.ContainerUpdate) {
+				require.Equal(t, "0-2,4", u.GetLinux().GetResources().GetCpu().GetMems())
+			},
+		},
+		{
+			name: "memory limit",
+			set:  func(c cache.Container) { c.SetMemoryLimit(limit) },
+			check: func(t *testing.T, u *nri.ContainerUpdate) {
+				require.Equal(t, limit, u.GetLinux().GetResources().GetMemory().GetLimit().GetValue())
+			},
+		},
 	}
 
-	l := log.Get("topology-hints")
-	topology.SetLogger(l)
+	for _, tc := range tcases {
+		t.Run(tc.name, func(t *testing.T) {
+			var (
+				nriPods = []*nri.PodSandbox{
+					makePod(),
+				}
+				nriCtrs = []*nri.Container{
+					makeCtr(
+						WithCtrPodID(nriPods[0].GetId()),
+						WithCtrState(cache.ContainerStateRunning),
+					),
+				}
+			)
 
-	c := log.Get("cache")
+			_, _, ctrs := makePopulatedCache(t, nriPods, nriCtrs)
 
-	if enableDebugging {
-		l.EnableDebug(true)
-		c.EnableDebug(true)
+			tc.set(ctrs[0])
+
+			pending := ctrs[0].PeekPendingUpdate()
+			require.NotNil(t, pending)
+			tc.check(t, pending)
+		})
 	}
-
-	testdataDir = pwd + "/no-such-dir"
-	topology.SetSysRoot(testdataDir)
-})
-
-var _ = AfterSuite(func() {
-	topology.SetSysRoot("")
-})
-
-var _ = Describe("Container", func() {
-	It("can return its ID", func() {
-		var (
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(WithCtrPodID(nriPods[0].GetId())),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		Expect(ctrs[0].GetID()).To(Equal(nriCtrs[0].GetId()))
-	})
-
-	It("can return its Pod ID", func() {
-		var (
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(WithCtrPodID(nriPods[0].GetId())),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		Expect(ctrs[0].GetPodID()).To(Equal(nriPods[0].GetId()))
-	})
-
-	It("can return its Pod", func() {
-		var (
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(WithCtrPodID(nriPods[0].GetId())),
-			}
-		)
-
-		_, pods, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		pod, ok := ctrs[0].GetPod()
-		Expect(pod).To(Equal(pods[0]))
-		Expect(ok).To(BeTrue())
-	})
-
-	It("can return its name", func() {
-		var (
-			name    = "test-ctr"
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(WithCtrPodID(nriPods[0].GetId()), WithCtrName(name)),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		Expect(ctrs[0].GetName()).To(Equal(name))
-	})
-
-	It("can return its Kubernetes namespace", func() {
-		var (
-			namespace = "test-namespace"
-			nriPods   = []*nri.PodSandbox{
-				makePod(WithNamespace(namespace)),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(WithCtrPodID(nriPods[0].GetId())),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		Expect(ctrs[0].GetNamespace()).To(Equal(namespace))
-	})
-
-	It("can return its state", func() {
-		var (
-			state   = cache.ContainerStateRunning
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(
-					WithCtrPodID(nriPods[0].GetId()),
-					WithCtrState(state),
-				),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		Expect(ctrs[0].GetState()).To(Equal(state))
-	})
-
-	It("can return its QoS class", func() {
-		var (
-			nriPods = []*nri.PodSandbox{
-				makePod(WithCgroupParent("/a/besteffort/pod")),
-				makePod(WithCgroupParent("/a/burstable/pod")),
-				makePod(WithCgroupParent("/a/pod")),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(WithCtrPodID(nriPods[0].GetId())),
-				makeCtr(WithCtrPodID(nriPods[1].GetId())),
-				makeCtr(WithCtrPodID(nriPods[2].GetId())),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		Expect(ctrs[0].GetQOSClass()).To(Equal(corev1.PodQOSBestEffort))
-		Expect(ctrs[1].GetQOSClass()).To(Equal(corev1.PodQOSBurstable))
-		Expect(ctrs[2].GetQOSClass()).To(Equal(corev1.PodQOSGuaranteed))
-	})
-
-	It("can return its args", func() {
-		var (
-			args    = []string{"a", "b", "c"}
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(
-					WithCtrPodID(nriPods[0].GetId()),
-					WithCtrArgs(args),
-				),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		Expect(ctrs[0].GetArgs()).To(Equal(args))
-	})
-
-	It("can look up its labels", func() {
-		var (
-			labels = map[string]string{
-				"key1": "value1",
-				"key2": "value2",
-			}
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(
-					WithCtrPodID(nriPods[0].GetId()),
-					WithCtrLabels(labels),
-				),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		for key, val := range labels {
-			chk, ok := ctrs[0].GetLabel(key)
-			Expect(chk).To(Equal(val))
-			Expect(ok).To(BeTrue())
-		}
-	})
-
-	It("can look up annotations", func() {
-		var (
-			objects = map[string]any{
-				"key1": true,
-				"key2": "foobar",
-				"key3": 3.141,
-			}
-			annotations = map[string]string{
-				"key1": jsonEncode(objects["key1"]),
-				"key2": jsonEncode(objects["key2"]),
-				"key3": jsonEncode(objects["key3"]),
-			}
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(
-					WithCtrPodID(nriPods[0].GetId()),
-					WithCtrAnnotations(annotations),
-				),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		for key, val := range objects {
-			var ok bool
-			switch objects[key].(type) {
-			case bool:
-				var bln bool
-				_, ok = ctrs[0].GetAnnotation(key, &bln)
-				Expect(bln).To(Equal(val))
-			case string:
-				var str string
-				_, ok = ctrs[0].GetAnnotation(key, &str)
-				Expect(str).To(Equal(val))
-			case float64:
-				var flt float64
-				_, ok = ctrs[0].GetAnnotation(key, &flt)
-				Expect(flt).To(Equal(val))
-			}
-			Expect(ok).To(BeTrue())
-		}
-	})
-
-	It("can look up its environment variables", func() {
-		var (
-			vars = []*nri.KeyValue{
-				{
-					Key:   "key1",
-					Value: "value1",
-				},
-				{
-					Key:   "key2",
-					Value: "value2",
-				},
-				{
-					Key:   "key3",
-					Value: "value3",
-				},
-			}
-			env = []string{
-				vars[0].Key + "=" + vars[0].Value,
-				vars[1].Key + "=" + vars[1].Value,
-				vars[2].Key + "=" + vars[2].Value,
-			}
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(
-					WithCtrPodID(nriPods[0].GetId()),
-					WithCtrEnv(env),
-				),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		for _, v := range vars {
-			chk, ok := ctrs[0].GetEnv(v.Key)
-			Expect(chk).To(Equal(v.Value))
-			Expect(ok).To(BeTrue())
-		}
-	})
-
-	It("can return its mounts", func() {
-		var (
-			mounts = []*nri.Mount{
-				{
-					Source:      "/foo",
-					Destination: "/host/foo",
-					Type:        "bind",
-					Options:     []string{"bind", "ro"},
-				},
-				{
-					Source:      "/bar",
-					Destination: "/host/bar",
-					Type:        "bind",
-					Options:     []string{"bind", "ro"},
-				},
-			}
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(
-					WithCtrPodID(nriPods[0].GetId()),
-					WithCtrMounts(mounts),
-				),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		Expect(ctrs[0].GetMounts()).To(Equal(mounts))
-	})
-
-	It("can return its devices", func() {
-		var (
-			devices = []*nri.LinuxDevice{
-				{
-					Path:     "/dev/null",
-					Type:     "c",
-					Major:    1,
-					Minor:    3,
-					FileMode: nri.FileMode(0644),
-				},
-				{
-					Path:     "/dev/zero",
-					Type:     "c",
-					Major:    1,
-					Minor:    5,
-					FileMode: nri.FileMode(0644),
-				},
-				{
-					Path:     "/dev/foo",
-					Type:     "c",
-					Major:    3,
-					Minor:    45,
-					Uid:      nri.UInt32(15),
-					Gid:      nri.UInt32(16),
-					FileMode: nri.FileMode(0755),
-				},
-			}
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(
-					WithCtrPodID(nriPods[0].GetId()),
-					WithCtrDevices(devices),
-				),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		Expect(ctrs[0].GetDevices()).To(Equal(devices))
-	})
-
-})
-
-var _ = Describe("Container", func() {
-	It("properly records CPU shares adjustment", func() {
-		var (
-			shares  = 999
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(WithCtrPodID(nriPods[0].GetId())),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		ctrs[0].SetCPUShares(int64(shares))
-
-		pending := ctrs[0].GetPendingAdjustment()
-		Expect(pending).ToNot(BeNil())
-		value := pending.GetLinux().GetResources().GetCpu().GetShares().GetValue()
-		Expect(value).To(Equal(uint64(shares)))
-	})
-
-	It("properly records CPU quota adjustment", func() {
-		var (
-			quota   = 998
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(WithCtrPodID(nriPods[0].GetId())),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		ctrs[0].SetCPUQuota(int64(quota))
-
-		pending := ctrs[0].GetPendingAdjustment()
-		Expect(pending).ToNot(BeNil())
-		value := pending.GetLinux().GetResources().GetCpu().GetQuota().GetValue()
-		Expect(value).To(Equal(int64(quota)))
-	})
-
-	It("properly records CPU period adjustment", func() {
-		var (
-			period  = 997
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(WithCtrPodID(nriPods[0].GetId())),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		ctrs[0].SetCPUPeriod(int64(period))
-
-		pending := ctrs[0].GetPendingAdjustment()
-		Expect(pending).ToNot(BeNil())
-		value := pending.GetLinux().GetResources().GetCpu().GetPeriod().GetValue()
-		Expect(value).To(Equal(uint64(period)))
-	})
-
-	It("properly records cpuset CPU adjustment", func() {
-		var (
-			cpus    = "1-5,7"
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(WithCtrPodID(nriPods[0].GetId())),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		ctrs[0].SetCpusetCpus(cpus)
-
-		pending := ctrs[0].GetPendingAdjustment()
-		Expect(pending).ToNot(BeNil())
-		value := pending.GetLinux().GetResources().GetCpu().GetCpus()
-		Expect(value).To(Equal(cpus))
-	})
-
-	It("properly records cpuset memory adjustment", func() {
-		var (
-			mems    = "0-2,4"
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(WithCtrPodID(nriPods[0].GetId())),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		ctrs[0].SetCpusetMems(mems)
-
-		pending := ctrs[0].GetPendingAdjustment()
-		Expect(pending).ToNot(BeNil())
-		value := pending.GetLinux().GetResources().GetCpu().GetMems()
-		Expect(value).To(Equal(mems))
-	})
-
-	It("properly records memory limit adjustment", func() {
-		var (
-			limit   int64 = 123456789
-			nriPods       = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(WithCtrPodID(nriPods[0].GetId())),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		ctrs[0].SetMemoryLimit(limit)
-
-		pending := ctrs[0].GetPendingAdjustment()
-		Expect(pending).ToNot(BeNil())
-		value := pending.GetLinux().GetResources().GetMemory().GetLimit().GetValue()
-		Expect(value).To(Equal(limit))
-	})
-
-	It("properly records memory policy adjustment", func() {
-		var (
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(WithCtrPodID(nriPods[0].GetId())),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		ctrs[0].SetMemoryPolicy(nri.MpolMode_MPOL_INTERLEAVE, "0-1", nri.MpolFlag_MPOL_F_STATIC_NODES)
-
-		pending := ctrs[0].GetPendingAdjustment()
-		Expect(pending).ToNot(BeNil())
-		mpol := pending.GetLinux().GetMemoryPolicy()
-		Expect(mpol.GetMode()).To(Equal(nri.MpolMode_MPOL_INTERLEAVE))
-		Expect(mpol.GetNodes()).To(Equal("0-1"))
-		Expect(mpol.GetFlags()).To(Equal([]nri.MpolFlag{nri.MpolFlag_MPOL_F_STATIC_NODES}))
-	})
-
-	It("refuses to set the memory policy of a running container", func() {
-		var (
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(
-					WithCtrPodID(nriPods[0].GetId()),
-					WithCtrState(cache.ContainerStateRunning),
-				),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		ctrs[0].SetMemoryPolicy(nri.MpolMode_MPOL_INTERLEAVE, "0-1")
-
-		Expect(ctrs[0].GetPending()).To(BeEmpty())
-	})
-})
-
-var _ = Describe("Container", func() {
-	It("properly records CPU shares update", func() {
-		var (
-			shares  = 999
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(
-					WithCtrPodID(nriPods[0].GetId()),
-					WithCtrState(cache.ContainerStateRunning),
-				),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		ctrs[0].SetCPUShares(int64(shares))
-
-		pending := ctrs[0].PeekPendingUpdate()
-		Expect(pending).ToNot(BeNil())
-		value := pending.GetLinux().GetResources().GetCpu().GetShares().GetValue()
-		Expect(value).To(Equal(uint64(shares)))
-	})
-
-	It("properly records CPU quota update", func() {
-		var (
-			quota   = 998
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(
-					WithCtrPodID(nriPods[0].GetId()),
-					WithCtrState(cache.ContainerStateRunning),
-				),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		ctrs[0].SetCPUQuota(int64(quota))
-
-		pending := ctrs[0].PeekPendingUpdate()
-		Expect(pending).ToNot(BeNil())
-		value := pending.GetLinux().GetResources().GetCpu().GetQuota().GetValue()
-		Expect(value).To(Equal(int64(quota)))
-	})
-
-	It("properly records CPU period update", func() {
-		var (
-			period  = 997
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(
-					WithCtrPodID(nriPods[0].GetId()),
-					WithCtrState(cache.ContainerStateRunning),
-				),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		ctrs[0].SetCPUPeriod(int64(period))
-
-		pending := ctrs[0].PeekPendingUpdate()
-		Expect(pending).ToNot(BeNil())
-		value := pending.GetLinux().GetResources().GetCpu().GetPeriod().GetValue()
-		Expect(value).To(Equal(uint64(period)))
-	})
-
-	It("properly records cpuset CPU update", func() {
-		var (
-			cpus    = "1-5,7"
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(
-					WithCtrPodID(nriPods[0].GetId()),
-					WithCtrState(cache.ContainerStateRunning),
-				),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		ctrs[0].SetCpusetCpus(cpus)
-
-		pending := ctrs[0].PeekPendingUpdate()
-		Expect(pending).ToNot(BeNil())
-		value := pending.GetLinux().GetResources().GetCpu().GetCpus()
-		Expect(value).To(Equal(cpus))
-	})
-
-	It("properly records cpuset memory update", func() {
-		var (
-			mems    = "0-2,4"
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(
-					WithCtrPodID(nriPods[0].GetId()),
-					WithCtrState(cache.ContainerStateRunning),
-				),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		ctrs[0].SetCpusetMems(mems)
-
-		pending := ctrs[0].PeekPendingUpdate()
-		Expect(pending).ToNot(BeNil())
-		value := pending.GetLinux().GetResources().GetCpu().GetMems()
-		Expect(value).To(Equal(mems))
-	})
-
-	It("properly records memory limit update", func() {
-		var (
-			limit   int64 = 123456789
-			nriPods       = []*nri.PodSandbox{
-				makePod(),
-			}
-			nriCtrs = []*nri.Container{
-				makeCtr(
-					WithCtrPodID(nriPods[0].GetId()),
-					WithCtrState(cache.ContainerStateRunning),
-				),
-			}
-		)
-
-		_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
-
-		ctrs[0].SetMemoryLimit(limit)
-
-		pending := ctrs[0].PeekPendingUpdate()
-		Expect(pending).ToNot(BeNil())
-		value := pending.GetLinux().GetResources().GetMemory().GetLimit().GetValue()
-		Expect(value).To(Equal(limit))
-	})
-})
-
-var _ = Describe("Container", func() {
-	It("properly filters topology hints for mounts", func() {
-		var (
-			annotations1 = map[string]string{
-				"allow.topologyhints.resource-policy.nri.io": `type: prefix
+}
+
+func TestContainerTopologyHintFiltering(t *testing.T) {
+	var (
+		annotations1 = map[string]string{
+			"allow.topologyhints.resource-policy.nri.io": `type: prefix
 paths:
   - /boot
   - /path/allowed
 `,
-				"deny.topologyhints.resource-policy.nri.io": `type: prefix
+			"deny.topologyhints.resource-policy.nri.io": `type: prefix
 paths:
   - /path/denied
   - /denied
 `,
-				"test.topologyhints.resource-policy.nri.io": `test:
+			"test.topologyhints.resource-policy.nri.io": `test:
   Provider: /boot
   CPUs: ` + cpulist + `
   NUMAs: ` + numanode,
-			}
-			annotations2 = map[string]string{
-				"allow.topologyhints.resource-policy.nri.io": `type: prefix
+		}
+		annotations2 = map[string]string{
+			"allow.topologyhints.resource-policy.nri.io": `type: prefix
 paths:
   - /bar2
   - /allowedpath2
 `,
-				"deny.topologyhints.resource-policy.nri.io": `type: prefix
+			"deny.topologyhints.resource-policy.nri.io": `type: prefix
 paths:
   - /deniedpath2
   - /boot
 `,
-				"test.topologyhints.resource-policy.nri.io": `test:
+			"test.topologyhints.resource-policy.nri.io": `test:
   Provider: /boot
   CPUs: ` + cpulist + `
   NUMAs: ` + numanode,
-			}
-			annotations3 = map[string]string{
-				"allow.topologyhints.resource-policy.nri.io/pod": `type: glob
+		}
+		annotations3 = map[string]string{
+			"allow.topologyhints.resource-policy.nri.io/pod": `type: glob
 paths:
   - /boo*
   - /anotherglobbedpath*2
 `,
-				"deny.topologyhints.resource-policy.nri.io/pod": `type: glob
+			"deny.topologyhints.resource-policy.nri.io/pod": `type: glob
 paths:
   - /*
   - /yet*anotherglobbedpath2
 `,
-				"test.topologyhints.resource-policy.nri.io": `test:
+			"test.topologyhints.resource-policy.nri.io": `test:
   Provider: /boot
   CPUs: ` + cpulist + `
   NUMAs: ` + numanode,
-			}
-			annotations4 = map[string]string{
-				"allow.topologyhints.resource-policy.nri.io/pod": `type: glob
+		}
+		annotations4 = map[string]string{
+			"allow.topologyhints.resource-policy.nri.io/pod": `type: glob
 paths:
   - /a*
   - /anotherglobbedpath*2
 `,
-				"deny.topologyhints.resource-policy.nri.io/pod": `type: glob
+			"deny.topologyhints.resource-policy.nri.io/pod": `type: glob
 paths:
   - /b*
   - /yet*anotherglobbedpath2
 `,
-				"test.topologyhints.resource-policy.nri.io": `test:
+			"test.topologyhints.resource-policy.nri.io": `test:
   Provider: /boot
   CPUs: ` + cpulist + `
   NUMAs: ` + numanode,
-			}
-			annotations5 = map[string]string{
-				"allow.topologyhints.resource-policy.nri.io/pod": `paths:
+		}
+		annotations5 = map[string]string{
+			"allow.topologyhints.resource-policy.nri.io/pod": `paths:
   - /boot
   - /anotherglobbedpath*2
 `,
-				"deny.topologyhints.resource-policy.nri.io/pod": `type: glob
+			"deny.topologyhints.resource-policy.nri.io/pod": `type: glob
 paths:
   - /*
   - /yet*anotherglobbedpath2
 `,
-				"test.topologyhints.resource-policy.nri.io": `test:
+			"test.topologyhints.resource-policy.nri.io": `test:
   Provider: /boot
   CPUs: ` + cpulist + `
   NUMAs: ` + numanode,
-			}
-			annotations6 = map[string]string{
-				"allow.topologyhints.resource-policy.nri.io/pod": `this will fail unmarshaling
+		}
+		annotations6 = map[string]string{
+			"allow.topologyhints.resource-policy.nri.io/pod": `this will fail unmarshaling
   - /boot
   - /anotherglobbedpath*2
 `,
-				"deny.topologyhints.resource-policy.nri.io/pod": `type: glob
+			"deny.topologyhints.resource-policy.nri.io/pod": `type: glob
 paths:
   - /*
   - /yet*anotherglobbedpath2
 `,
-				"test.topologyhints.resource-policy.nri.io": `test:
+			"test.topologyhints.resource-policy.nri.io": `test:
   Provider: /boot
   CPUs: ` + cpulist + `
   NUMAs: ` + numanode,
-			}
-		)
+		}
+	)
 
-		Expect(checkAllowedHints(annotations1, 1)).To(Equal(true))
-		Expect(checkAllowedHints(annotations2, 0)).To(Equal(true))
-		Expect(checkAllowedHints(annotations3, 1)).To(Equal(true))
-		Expect(checkAllowedHints(annotations4, 0)).To(Equal(true))
-		Expect(checkAllowedHints(annotations5, 1)).To(Equal(true))
-		Expect(checkAllowedHints(annotations6, 0)).To(Equal(false))
-	})
-})
+	require.True(t, checkAllowedHints(t, annotations1, 1))
+	require.True(t, checkAllowedHints(t, annotations2, 0))
+	require.True(t, checkAllowedHints(t, annotations3, 1))
+	require.True(t, checkAllowedHints(t, annotations4, 0))
+	require.True(t, checkAllowedHints(t, annotations5, 1))
+	require.False(t, checkAllowedHints(t, annotations6, 0))
+}
 
-func checkAllowedHints(annotations map[string]string, expectedHints int) bool {
+func checkAllowedHints(t *testing.T, annotations map[string]string, expectedHints int) bool {
+	t.Helper()
+
 	var (
 		// Note that we assume here that /boot is installed in a non virtual
 		// device node so that the code in topology.go can resolve it to a real device.
@@ -857,7 +683,7 @@ func checkAllowedHints(annotations map[string]string, expectedHints int) bool {
 		return false
 	}
 
-	_, _, ctrs := makePopulatedCache(nriPods, nriCtrs)
+	_, _, ctrs := makePopulatedCache(t, nriPods, nriCtrs)
 	for _, ctr := range ctrs {
 		// First part of the checks make sure that the yaml
 		// above is properly set. Not strictly necessary but
@@ -888,11 +714,11 @@ func checkAllowedHints(annotations map[string]string, expectedHints int) bool {
 
 		// Then we check that we get proper hints from the APIs
 		hints := ctr.GetTopologyHints()
-		Expect(len(hints)).To(Equal(expectedHints))
+		require.Len(t, hints, expectedHints)
 
 		for _, hint := range hints {
-			Expect(hint.CPUs).To(Equal(cpulist))
-			Expect(hint.NUMAs).To(Equal(numanode))
+			require.Equal(t, cpulist, hint.CPUs)
+			require.Equal(t, numanode, hint.NUMAs)
 		}
 	}
 
@@ -1029,108 +855,10 @@ func makeCtr(options ...CtrOption) *nri.Container {
 	return ctr
 }
 
-func jsonEncode(o any) string {
+func jsonEncode(t *testing.T, o any) string {
+	t.Helper()
+
 	bytes, err := json.Marshal(o)
-	Expect(err).To(BeNil())
+	require.NoError(t, err)
 	return string(bytes)
 }
-
-/*
-func TestGetKubeletHint(t *testing.T) {
-	type T struct {
-		name        string
-		cpus        string
-		mems        string
-		expectedLen int
-	}
-
-	cases := []T{
-		{
-			name:        "empty",
-			cpus:        "",
-			mems:        "",
-			expectedLen: 0,
-		},
-		{
-			name:        "cpus",
-			cpus:        "0-9",
-			mems:        "",
-			expectedLen: 1,
-		},
-		{
-			name:        "mems",
-			cpus:        "",
-			mems:        "0,1",
-			expectedLen: 1,
-		},
-		{
-			name:        "both",
-			cpus:        "0-9",
-			mems:        "0,1",
-			expectedLen: 1,
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			output := getKubeletHint(tc.cpus, tc.mems)
-			if len(output) != tc.expectedLen {
-				t.Errorf("expected len of hints: %d, got: %d, hints: %+v", tc.expectedLen, len(output), output)
-			}
-		})
-	}
-}
-
-func TestGetTopologyHints(t *testing.T) {
-	type T struct {
-		name          string
-		hostPath      string
-		containerPath string
-		readOnly      bool
-		expectedLen   int
-	}
-
-	cases := []T{
-		{
-			name:          "read-only",
-			hostPath:      "/something",
-			containerPath: "/something",
-			readOnly:      true,
-		},
-		{
-			name:          "host /etc",
-			hostPath:      "/etc/something",
-			containerPath: "/data/something",
-		},
-		{
-			name:          "container /etc",
-			hostPath:      "/var/lib/kubelet/pods/0c9bcfc4-c51b-11e9-ac9a-b8aeed7c7427/etc-hosts",
-			containerPath: "/etc/hosts",
-		},
-		{
-			name:          "ConfigMap",
-			containerPath: "/var/lib/kube-proxy",
-			hostPath:      "/var/lib/kubelet/pods/0c9bcfc4-c51b-11e9-ac9a-b8aeed7c7427/volumes/kubernetes.io~configmap/kube-proxy",
-		},
-		{
-			name:          "secret",
-			containerPath: "/var/run/secrets/kubernetes.io/serviceaccount",
-			hostPath:      "/var/lib/kubelet/pods/0c9bcfc4-c51b-11e9-ac9a-b8aeed7c7427/volumes/kubernetes.io~secret/kube-proxy-token-d9slz",
-		},
-		{
-			name:          "dev null",
-			hostPath:      "/dev/null",
-			containerPath: "/dev/null",
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			output := getTopologyHintsForMount(tc.hostPath, tc.containerPath, tc.readOnly)
-			if len(output) != tc.expectedLen {
-				t.Errorf("expected len of hints: %d, got: %d, hints: %+v", tc.expectedLen, len(output), output)
-			}
-		})
-	}
-}
-*/
