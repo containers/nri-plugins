@@ -3,7 +3,8 @@
 # CPUs of the socket, and CPUs of one NUMA node when it fits in one. The
 # capacity of the devices follows the CPUs which containers and claims use.
 # A socket claim moves to other CPUs of its socket when a NUMA node claim
-# needs its CPUs.
+# needs its CPUs, and a machine claim moves out of the socket when the socket
+# claim needs its CPUs.
 #
 # n4c16 has two sockets of two NUMA nodes with four CPUs each: socket 0 has
 # CPUs 0-7, socket 1 CPUs 8-15.
@@ -107,6 +108,15 @@ numa-claim() {
     # Create POD with a claim for CPUS CPUs of NUMA node NODE, and wait for it
     # to start.
     NAME=$1 NODE=$2 CPUS=$3 wait="" create numa-claim
+    NAME=$1 create claim-pod
+}
+
+machine-claim() {
+    # Usage: machine-claim POD CPUS
+    #
+    # Create POD with a claim for CPUS CPUs of the machine, and wait for it to
+    # start.
+    NAME=$1 CPUS=$2 wait="" create machine-claim
     NAME=$1 create claim-pod
 }
 
@@ -219,6 +229,47 @@ cpus4=$(exported pod4 CLAIMED_CPUS)
 pinned=$(vm-command-q "kubectl exec pod4 -- cat /sys/fs/cgroup/cpuset.cpus.effective")
 [ "$pinned" == "$cpus4" ] ||
     error "pod4 runs on CPUs $pinned, expected its claimed CPUs $cpus4"
+vm-command "kubectl delete pods pod4 pod5 --now --wait"
+wait-capacities "$idle"
+
+# A claim on the machine device gets CPUs of both sockets when it does not fit
+# in one.
+machine-claim pod6 10
+cpus6=$(exported pod6 CLAIMED_CPUS)
+nodes6=$(cpu-nodes "$cpus6")
+[ "$(cpu-ids "$cpus6" | wc -l)" == "10" ] && [[ "$nodes6" =~ [01] && "$nodes6" =~ [23] ]] ||
+    error "pod6 got claimed CPUs \"$cpus6\", expected 10 CPUs of both sockets"
+vm-command "kubectl delete pod pod6 --now --wait"
+
+# pod7 takes all CPUs of socket 1 and pod8 4 CPUs of socket 0, so a machine
+# claim of pod9 gets the other NUMA node of socket 0. When pod7 is gone and
+# pod10 claims the NUMA node of pod8, the claim of pod9 moves to socket 1 and
+# the claim of pod8 to the CPUs pod9 left.
+socket-claim pod7 1 7
+socket-claim pod8 0 4
+node8=$(cpu-nodes "$(exported pod8 CLAIMED_CPUS)")
+node8=${node8% }
+node9=$((1 - node8))
+machine-claim pod9 4
+[ "$(cpu-nodes "$(exported pod9 CLAIMED_CPUS)")" == "$node9 " ] ||
+    error "pod9 got claimed CPUs \"$(exported pod9 CLAIMED_CPUS)\", expected the CPUs of NUMA node $node9"
+vm-command "kubectl delete pod pod7 --now --wait"
+numa-claim pod10 "$node8" 4
+[ "$(cpu-nodes "$(exported pod10 CLAIMED_CPUS)")" == "$node8 " ] ||
+    error "pod10 got claimed CPUs \"$(exported pod10 CLAIMED_CPUS)\", expected the CPUs of NUMA node $node8"
+retry-until --timeout 30 --message "the claim of pod8 to move to NUMA node $node9" \
+    '[ "$(cpu-nodes "$(exported pod8 CLAIMED_CPUS)")" == "$node9 " ]' ||
+    error "pod8 has claimed CPUs \"$(exported pod8 CLAIMED_CPUS)\", expected the CPUs of NUMA node $node9"
+socket1='^(2 |3 |2 3 )$'
+retry-until --timeout 30 --message "the claim of pod9 to move to socket 1" \
+    '[[ "$(cpu-nodes "$(exported pod9 CLAIMED_CPUS)")" =~ $socket1 ]]' ||
+    error "pod9 has claimed CPUs \"$(exported pod9 CLAIMED_CPUS)\", expected CPUs of socket 1"
+for pod in pod8 pod9; do
+    cpus=$(exported $pod CLAIMED_CPUS)
+    pinned=$(vm-command-q "kubectl exec $pod -- cat /sys/fs/cgroup/cpuset.cpus.effective")
+    [ "$pinned" == "$cpus" ] ||
+        error "$pod runs on CPUs $pinned, expected its claimed CPUs $cpus"
+done
 
 cleanup
-echo "OK: socket devices next to the NUMA devices, socket claims within their socket, a 3-CPU claim on NUMA node $node2, a socket claim moved to NUMA node $other"
+echo "OK: socket devices next to the NUMA devices, socket claims within their socket, a 3-CPU claim on NUMA node $node2, a socket claim moved to NUMA node $other, a machine claim on both sockets, a machine claim moved out of the way of a moving socket claim"
