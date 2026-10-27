@@ -17,217 +17,190 @@ package cache_test
 import (
 	"fmt"
 	"maps"
-
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"testing"
 
 	nri "github.com/containerd/nri/pkg/api"
 	"github.com/containers/nri-plugins/pkg/kubernetes"
-	"github.com/containers/nri-plugins/pkg/resmgr/cache"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 )
 
-var _ = Describe("Pod", func() {
-	It("can return its ID", func() {
-		var (
-			pods    []cache.Pod
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-		)
+func TestPodID(t *testing.T) {
+	nriPods := []*nri.PodSandbox{
+		makePod(),
+	}
 
-		_, pods, _ = makePopulatedCache(nriPods, nil)
-		Expect(pods[0].GetID()).To(Equal(nriPods[0].GetId()))
-	})
+	_, pods, _ := makePopulatedCache(t, nriPods, nil)
+	require.Equal(t, nriPods[0].GetId(), pods[0].GetID())
+}
 
-	It("can return its UID", func() {
-		var (
-			pods    []cache.Pod
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-		)
+func TestPodUID(t *testing.T) {
+	nriPods := []*nri.PodSandbox{
+		makePod(),
+	}
 
-		_, pods, _ = makePopulatedCache(nriPods, nil)
-		Expect(pods[0].GetUID()).To(Equal(nriPods[0].GetUid()))
-	})
+	_, pods, _ := makePopulatedCache(t, nriPods, nil)
+	require.Equal(t, nriPods[0].GetUid(), pods[0].GetUID())
+}
 
-	It("can return its name", func() {
-		var (
-			pods    []cache.Pod
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-		)
+func TestPodName(t *testing.T) {
+	nriPods := []*nri.PodSandbox{
+		makePod(),
+	}
 
-		_, pods, _ = makePopulatedCache(nriPods, nil)
-		Expect(pods[0].GetName()).To(Equal(nriPods[0].GetName()))
-	})
+	_, pods, _ := makePopulatedCache(t, nriPods, nil)
+	require.Equal(t, nriPods[0].GetName(), pods[0].GetName())
+}
 
-	It("can return its Kubernetes namespace", func() {
-		var (
-			pods    []cache.Pod
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-			}
-		)
+func TestPodNamespace(t *testing.T) {
+	nriPods := []*nri.PodSandbox{
+		makePod(),
+	}
 
-		_, pods, _ = makePopulatedCache(nriPods, nil)
-		Expect(pods[0].GetNamespace()).To(Equal(nriPods[0].GetNamespace()))
-	})
+	_, pods, _ := makePopulatedCache(t, nriPods, nil)
+	require.Equal(t, nriPods[0].GetNamespace(), pods[0].GetNamespace())
+}
 
-	It("can look up labels", func() {
-		var (
-			pods   []cache.Pod
-			labels = map[string]string{
-				"key1": "value1",
-				"key2": "value2",
-			}
-			nriPods = []*nri.PodSandbox{
-				makePod(WithPodLabels(labels)),
-			}
-		)
-
-		_, pods, _ = makePopulatedCache(nriPods, nil)
-		for key, val := range labels {
-			chk, ok := pods[0].GetLabel(key)
-			Expect(chk).To(Equal(val))
-			Expect(ok).To(BeTrue())
+func TestPodLabels(t *testing.T) {
+	var (
+		labels = map[string]string{
+			"key1": "value1",
+			"key2": "value2",
 		}
-	})
-
-	It("can look up annotations", func() {
-		var (
-			pods        []cache.Pod
-			annotations = map[string]string{
-				"key1": "value1",
-				"key2": "value2",
-			}
-			nriPods = []*nri.PodSandbox{
-				makePod(WithPodAnnotations(annotations)),
-			}
-		)
-
-		_, pods, _ = makePopulatedCache(nriPods, nil)
-		for key, val := range annotations {
-			chk, ok := pods[0].GetAnnotation(key)
-			Expect(chk).To(Equal(val))
-			Expect(ok).To(BeTrue())
+		nriPods = []*nri.PodSandbox{
+			makePod(WithPodLabels(labels)),
 		}
-	})
+	)
 
-	It("can return its cgroup parent", func() {
-		var (
-			pods         []cache.Pod
-			cgroupParent = "/cgroup/parent/dir"
-			nriPods      = []*nri.PodSandbox{
-				makePod(WithCgroupParent(cgroupParent)),
-			}
-		)
+	_, pods, _ := makePopulatedCache(t, nriPods, nil)
+	for key, val := range labels {
+		chk, ok := pods[0].GetLabel(key)
+		require.Equal(t, val, chk)
+		require.True(t, ok)
+	}
+}
 
-		_, pods, _ = makePopulatedCache(nriPods, nil)
-		Expect(pods[0].GetCgroupParent()).To(Equal(cgroupParent))
-	})
-
-	It("can return its QoS class", func() {
-		var (
-			pods    []cache.Pod
-			nriPods = []*nri.PodSandbox{
-				makePod(WithCgroupParent("/a/besteffort/pod")),
-				makePod(WithCgroupParent("/a/burstable/pod")),
-				makePod(WithCgroupParent("/a/guaranteed/pod")),
-			}
-		)
-
-		_, pods, _ = makePopulatedCache(nriPods, nil)
-		Expect(pods[0].GetQOSClass()).To(Equal(corev1.PodQOSBestEffort))
-		Expect(pods[1].GetQOSClass()).To(Equal(corev1.PodQOSBurstable))
-		Expect(pods[2].GetQOSClass()).To(Equal(corev1.PodQOSGuaranteed))
-	})
-
-	It("can look up annotations in the resmgr key namespace", func() {
-		var (
-			pods        []cache.Pod
-			annotations = map[string]string{
-				"key1": "value1",
-				"key2": "value2",
-			}
-			podAnnotations = map[string]string{
-				kubernetes.ResmgrKey("key1"): "value1",
-				kubernetes.ResmgrKey("key2"): "value2",
-			}
-			nriPods = []*nri.PodSandbox{
-				makePod(WithPodAnnotations(podAnnotations)),
-			}
-		)
-
-		_, pods, _ = makePopulatedCache(nriPods, nil)
-		for key, val := range annotations {
-			chk, ok := pods[0].GetResmgrAnnotation(key)
-			Expect(chk).To(Equal(val))
-			Expect(ok).To(BeTrue())
+func TestPodAnnotations(t *testing.T) {
+	var (
+		annotations = map[string]string{
+			"key1": "value1",
+			"key2": "value2",
 		}
-	})
-
-	It("can return the correct effective annotations for container names", func() {
-		var (
-			pods        []cache.Pod
-			annotations = map[string]string{
-				"test-key":                "test-value",
-				"test-key/container.ctr1": "ctr1-value",
-				"test-key/container.ctr2": "ctr2-value",
-				"test-key/container.ctr3": "ctr3-value",
-				"test-key1/pod":           "pod-value",
-			}
-			tests = []struct {
-				key    string
-				name   string
-				result string
-				ok     bool
-			}{
-				{"test-key", "ctr0", "test-value", true},
-				{"test-key", "ctr1", "ctr1-value", true},
-				{"test-key", "ctr2", "ctr2-value", true},
-				{"test-key", "ctr3", "ctr3-value", true},
-				{"test-key", "ctr4", "test-value", true},
-				{"test-key1", "ctr5", "pod-value", true},
-				{"test-key2", "ctr0", "", false},
-			}
-			nriPods = []*nri.PodSandbox{
-				makePod(WithPodAnnotations(annotations)),
-			}
-		)
-
-		_, pods, _ = makePopulatedCache(nriPods, nil)
-
-		for _, t := range tests {
-			result, ok := pods[0].GetEffectiveAnnotation(t.key, t.name)
-			Expect(result).To(Equal(t.result))
-			Expect(ok).To(Equal(t.ok))
+		nriPods = []*nri.PodSandbox{
+			makePod(WithPodAnnotations(annotations)),
 		}
-	})
+	)
 
-	It("produces pretty pod names as expected", func() {
-		var (
-			pods    []cache.Pod
-			nriPods = []*nri.PodSandbox{
-				makePod(
-					WithNamespace("default"),
-					WithPodName("test-pod1"),
-				),
-				makePod(
-					WithNamespace("non-default"),
-					WithPodName("test-pod2"),
-				),
-			}
-		)
+	_, pods, _ := makePopulatedCache(t, nriPods, nil)
+	for key, val := range annotations {
+		chk, ok := pods[0].GetAnnotation(key)
+		require.Equal(t, val, chk)
+		require.True(t, ok)
+	}
+}
 
-		_, pods, _ = makePopulatedCache(nriPods, nil)
+func TestPodCgroupParent(t *testing.T) {
+	var (
+		cgroupParent = "/cgroup/parent/dir"
+		nriPods      = []*nri.PodSandbox{
+			makePod(WithCgroupParent(cgroupParent)),
+		}
+	)
 
-		Expect(pods[0].PrettyName()).To(Equal(pods[0].GetNamespace() + "/" + pods[0].GetName()))
-		Expect(pods[1].PrettyName()).To(Equal(pods[1].GetNamespace() + "/" + pods[1].GetName()))
-	})
-})
+	_, pods, _ := makePopulatedCache(t, nriPods, nil)
+	require.Equal(t, cgroupParent, pods[0].GetCgroupParent())
+}
+
+func TestPodQOSClass(t *testing.T) {
+	nriPods := []*nri.PodSandbox{
+		makePod(WithCgroupParent("/a/besteffort/pod")),
+		makePod(WithCgroupParent("/a/burstable/pod")),
+		makePod(WithCgroupParent("/a/guaranteed/pod")),
+	}
+
+	_, pods, _ := makePopulatedCache(t, nriPods, nil)
+	require.Equal(t, corev1.PodQOSBestEffort, pods[0].GetQOSClass())
+	require.Equal(t, corev1.PodQOSBurstable, pods[1].GetQOSClass())
+	require.Equal(t, corev1.PodQOSGuaranteed, pods[2].GetQOSClass())
+}
+
+func TestPodResmgrAnnotations(t *testing.T) {
+	var (
+		annotations = map[string]string{
+			"key1": "value1",
+			"key2": "value2",
+		}
+		podAnnotations = map[string]string{
+			kubernetes.ResmgrKey("key1"): "value1",
+			kubernetes.ResmgrKey("key2"): "value2",
+		}
+		nriPods = []*nri.PodSandbox{
+			makePod(WithPodAnnotations(podAnnotations)),
+		}
+	)
+
+	_, pods, _ := makePopulatedCache(t, nriPods, nil)
+	for key, val := range annotations {
+		chk, ok := pods[0].GetResmgrAnnotation(key)
+		require.Equal(t, val, chk)
+		require.True(t, ok)
+	}
+}
+
+func TestPodEffectiveAnnotations(t *testing.T) {
+	var (
+		annotations = map[string]string{
+			"test-key":                "test-value",
+			"test-key/container.ctr1": "ctr1-value",
+			"test-key/container.ctr2": "ctr2-value",
+			"test-key/container.ctr3": "ctr3-value",
+			"test-key1/pod":           "pod-value",
+		}
+		tests = []struct {
+			key    string
+			name   string
+			result string
+			ok     bool
+		}{
+			{"test-key", "ctr0", "test-value", true},
+			{"test-key", "ctr1", "ctr1-value", true},
+			{"test-key", "ctr2", "ctr2-value", true},
+			{"test-key", "ctr3", "ctr3-value", true},
+			{"test-key", "ctr4", "test-value", true},
+			{"test-key1", "ctr5", "pod-value", true},
+			{"test-key2", "ctr0", "", false},
+		}
+		nriPods = []*nri.PodSandbox{
+			makePod(WithPodAnnotations(annotations)),
+		}
+	)
+
+	_, pods, _ := makePopulatedCache(t, nriPods, nil)
+
+	for _, tc := range tests {
+		result, ok := pods[0].GetEffectiveAnnotation(tc.key, tc.name)
+		require.Equal(t, tc.result, result)
+		require.Equal(t, tc.ok, ok)
+	}
+}
+
+func TestPodPrettyName(t *testing.T) {
+	nriPods := []*nri.PodSandbox{
+		makePod(
+			WithNamespace("default"),
+			WithPodName("test-pod1"),
+		),
+		makePod(
+			WithNamespace("non-default"),
+			WithPodName("test-pod2"),
+		),
+	}
+
+	_, pods, _ := makePopulatedCache(t, nriPods, nil)
+
+	require.Equal(t, pods[0].GetNamespace()+"/"+pods[0].GetName(), pods[0].PrettyName())
+	require.Equal(t, pods[1].GetNamespace()+"/"+pods[1].GetName(), pods[1].PrettyName())
+}
 
 type PodOption func(*nri.PodSandbox) error
 

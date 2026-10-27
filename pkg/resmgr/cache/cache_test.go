@@ -15,150 +15,139 @@
 package cache_test
 
 import (
-	"fmt"
+	"testing"
 
 	nri "github.com/containerd/nri/pkg/api"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 )
 
-var _ = Describe("Cache", func() {
-	It("can be created without errors", func() {
-		makeCache()
-	})
+func TestCacheCreate(t *testing.T) {
+	makeCache(t)
+}
 
-	It("can insert pods", func() {
-		var (
-			c       cache.Cache
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-				makePod(),
-				makePod(),
-			}
-		)
-
-		c, _, _ = makePopulatedCache(nriPods, nil)
-
-		for _, nriPod := range nriPods {
-			pod := c.InsertPod(nriPod, nil)
-			Expect(pod).ToNot(BeNil())
-		}
-	})
-
-	It("can look up inserted pods", func() {
-		var (
-			c       cache.Cache
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-				makePod(),
-				makePod(),
-			}
-		)
-
-		c, _, _ = makePopulatedCache(nriPods, nil)
-
-		for _, nriPod := range nriPods {
-			pod := c.InsertPod(nriPod, nil)
-			Expect(pod).ToNot(BeNil())
-
-			chk, ok := c.LookupPod(pod.GetID())
-			Expect(chk).ToNot(BeNil())
-			Expect(ok).To(BeTrue())
-		}
-	})
-
-	It("properly indicates pod lookup failure", func() {
-		var (
-			c       cache.Cache
-			nriPods = []*nri.PodSandbox{
-				makePod(),
-				makePod(),
-				makePod(),
-			}
-		)
-
-		c, _, _ = makePopulatedCache(nriPods, nil)
-
-		pod, ok := c.LookupPod("xyzzy-foobar")
-		Expect(pod).To(BeNil())
-		Expect(ok).To(BeFalse())
-	})
-
-	It("clears restored policy entries but keeps the active policy", func() {
-		dir := GinkgoT().TempDir()
-
-		c, err := cache.NewCache(cache.Options{CacheDir: dir})
-		Expect(err).To(BeNil())
-		Expect(c.SetActivePolicy("test")).To(Succeed())
-		c.SetPolicyEntry("key", "value")
-		Expect(c.Save()).To(Succeed())
-
-		c, err = cache.NewCache(cache.Options{CacheDir: dir})
-		Expect(err).To(BeNil())
-		c.ResetPolicyEntries()
-
-		var value string
-		Expect(c.GetPolicyEntry("key", &value)).To(BeFalse())
-		Expect(c.GetActivePolicy()).To(Equal("test"))
-	})
-
-	It("saves and restores maps of lists of cpusets as policy entries", func() {
-		dir := GinkgoT().TempDir()
-		saved := map[string][]cpuset.CPUSet{
-			"a": {cpuset.MustParse("0-1"), cpuset.MustParse("4,6")},
-			"b": {cpuset.MustParse("2")},
-			"c": {},
-		}
-
-		c, err := cache.NewCache(cache.Options{CacheDir: dir})
-		Expect(err).To(BeNil())
-		Expect(c.SetActivePolicy("test")).To(Succeed())
-		c.SetPolicyEntry("claims", saved)
-		Expect(c.Save()).To(Succeed())
-
-		c, err = cache.NewCache(cache.Options{CacheDir: dir})
-		Expect(err).To(BeNil())
-		restored := map[string][]cpuset.CPUSet{}
-		Expect(c.GetPolicyEntry("claims", &restored)).To(BeTrue())
-		Expect(restored).To(HaveLen(3))
-		for key, csets := range saved {
-			Expect(restored[key]).To(HaveLen(len(csets)))
-			for i, cset := range csets {
-				Expect(restored[key][i].Equals(cset)).To(BeTrue())
-			}
-		}
-	})
-})
-
-func makeCache() cache.Cache {
-	c, err := cache.NewCache(cache.Options{CacheDir: GinkgoT().TempDir()})
-	Expect(c).ToNot(BeNil())
-	Expect(err).To(BeNil())
-	if err != nil {
-		panic(fmt.Errorf("failed to create cache: %w", err))
+func TestCacheInsertPods(t *testing.T) {
+	nriPods := []*nri.PodSandbox{
+		makePod(),
+		makePod(),
+		makePod(),
 	}
+
+	c, _, _ := makePopulatedCache(t, nriPods, nil)
+
+	for _, nriPod := range nriPods {
+		pod := c.InsertPod(nriPod, nil)
+		require.NotNil(t, pod)
+	}
+}
+
+func TestCacheLookupPods(t *testing.T) {
+	nriPods := []*nri.PodSandbox{
+		makePod(),
+		makePod(),
+		makePod(),
+	}
+
+	c, _, _ := makePopulatedCache(t, nriPods, nil)
+
+	for _, nriPod := range nriPods {
+		pod := c.InsertPod(nriPod, nil)
+		require.NotNil(t, pod)
+
+		chk, ok := c.LookupPod(pod.GetID())
+		require.NotNil(t, chk)
+		require.True(t, ok)
+	}
+}
+
+func TestCacheLookupPodFailure(t *testing.T) {
+	nriPods := []*nri.PodSandbox{
+		makePod(),
+		makePod(),
+		makePod(),
+	}
+
+	c, _, _ := makePopulatedCache(t, nriPods, nil)
+
+	pod, ok := c.LookupPod("xyzzy-foobar")
+	require.Nil(t, pod)
+	require.False(t, ok)
+}
+
+func TestCacheResetPolicyEntries(t *testing.T) {
+	dir := t.TempDir()
+
+	c, err := cache.NewCache(cache.Options{CacheDir: dir})
+	require.NoError(t, err)
+	require.NoError(t, c.SetActivePolicy("test"))
+	c.SetPolicyEntry("key", "value")
+	require.NoError(t, c.Save())
+
+	c, err = cache.NewCache(cache.Options{CacheDir: dir})
+	require.NoError(t, err)
+	c.ResetPolicyEntries()
+
+	var value string
+	require.False(t, c.GetPolicyEntry("key", &value))
+	require.Equal(t, "test", c.GetActivePolicy())
+}
+
+func TestCacheSaveRestoreCPUSetMaps(t *testing.T) {
+	dir := t.TempDir()
+	saved := map[string][]cpuset.CPUSet{
+		"a": {cpuset.MustParse("0-1"), cpuset.MustParse("4,6")},
+		"b": {cpuset.MustParse("2")},
+		"c": {},
+	}
+
+	c, err := cache.NewCache(cache.Options{CacheDir: dir})
+	require.NoError(t, err)
+	require.NoError(t, c.SetActivePolicy("test"))
+	c.SetPolicyEntry("claims", saved)
+	require.NoError(t, c.Save())
+
+	c, err = cache.NewCache(cache.Options{CacheDir: dir})
+	require.NoError(t, err)
+	restored := map[string][]cpuset.CPUSet{}
+	require.True(t, c.GetPolicyEntry("claims", &restored))
+	require.Len(t, restored, 3)
+	for key, csets := range saved {
+		require.Len(t, restored[key], len(csets))
+		for i, cset := range csets {
+			require.True(t, restored[key][i].Equals(cset))
+		}
+	}
+}
+
+func makeCache(t *testing.T) cache.Cache {
+	t.Helper()
+
+	c, err := cache.NewCache(cache.Options{CacheDir: t.TempDir()})
+	require.NoError(t, err, "failed to create cache")
+	require.NotNil(t, c)
 	return c
 }
 
-func makePopulatedCache(nriPods []*nri.PodSandbox, nriCtrs []*nri.Container) (cache.Cache, []cache.Pod, []cache.Container) {
+func makePopulatedCache(t *testing.T, nriPods []*nri.PodSandbox, nriCtrs []*nri.Container) (cache.Cache, []cache.Pod, []cache.Container) {
+	t.Helper()
+
 	var (
-		c    = makeCache()
+		c    = makeCache(t)
 		pods []cache.Pod
 		ctrs []cache.Container
 	)
 
 	for _, nriPod := range nriPods {
 		pod := c.InsertPod(nriPod, nil)
-		Expect(pod).ToNot(BeNil())
+		require.NotNil(t, pod)
 		pods = append(pods, pod)
 	}
 	for _, nriCtr := range nriCtrs {
 		ctr, err := c.InsertContainer(nriCtr)
-		Expect(ctr).ToNot(BeNil())
-		Expect(err).To(BeNil())
+		require.NoError(t, err)
+		require.NotNil(t, ctr)
 		ctrs = append(ctrs, ctr)
 	}
 

@@ -16,16 +16,50 @@ package cache_test
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"github.com/containers/nri-plugins/pkg/log"
+	"github.com/containers/nri-plugins/pkg/topology"
 )
 
-func TestCache(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Cache Suite")
+var (
+	testdataDir     string
+	enableDebugging bool = false
+
+	cpulist  string = "0-7"
+	numanode string = "0"
+)
+
+func TestMain(m *testing.M) {
+	pwd, err := os.Getwd()
+	if err != nil {
+		panic(fmt.Errorf("unable to get current directory: %w", err))
+	}
+
+	if path, err := filepath.EvalSymlinks(pwd); err == nil {
+		pwd = path
+	}
+
+	l := log.Get("topology-hints")
+	topology.SetLogger(l)
+
+	c := log.Get("cache")
+
+	if enableDebugging {
+		l.EnableDebug(true)
+		c.EnableDebug(true)
+	}
+
+	testdataDir = pwd + "/no-such-dir"
+	topology.SetSysRoot(testdataDir)
+
+	code := m.Run()
+
+	topology.SetSysRoot("")
+	os.Exit(code)
 }
 
 var (

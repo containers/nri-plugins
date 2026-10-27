@@ -15,7 +15,7 @@
 package cache_test
 
 import (
-	. "github.com/onsi/ginkgo/v2"
+	"testing"
 
 	"github.com/containers/nri-plugins/pkg/kubernetes"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
@@ -30,60 +30,54 @@ const (
 	expectedAccuracy = 1
 )
 
-var _ = Describe("CPU request", func() {
-	It("estimated with reasonable accuracy", func() {
-		t := GinkgoT()
-		for request := range maxCPU {
-			shares := cache.MilliCPUToShares(int64(request))
-			estimate := cache.SharesToMilliCPU(int64(shares))
+func TestCPURequestEstimate(t *testing.T) {
+	for request := range maxCPU {
+		shares := cache.MilliCPUToShares(int64(request))
+		estimate := cache.SharesToMilliCPU(int64(shares))
 
-			diff := int64(request) - estimate
-			if diff > expectedAccuracy || diff < -expectedAccuracy {
-				if diff < 0 {
-					diff = -diff
-				}
-				if request > minNonZeroRequest {
-					t.Errorf("CPU request %v: estimate %v, unexpected inaccuracy %v > %v",
-						request, estimate, diff, expectedAccuracy)
-				} else {
-					t.Logf("CPU request %v: estimate %v, inaccuracy %v > %v (OK, this was expected)",
-						request, estimate, diff, expectedAccuracy)
-				}
+		diff := int64(request) - estimate
+		if diff > expectedAccuracy || diff < -expectedAccuracy {
+			if diff < 0 {
+				diff = -diff
 			}
-
-			// fail if our estimates are not accurate for full CPUs worth of millicpus
-			if (request%1000) == 0 && diff != 0 {
-				t.Errorf("CPU request %v != estimate %v (diff %v)", request, estimate, diff)
+			if request > minNonZeroRequest {
+				t.Errorf("CPU request %v: estimate %v, unexpected inaccuracy %v > %v",
+					request, estimate, diff, expectedAccuracy)
+			} else {
+				t.Logf("CPU request %v: estimate %v, inaccuracy %v > %v (OK, this was expected)",
+					request, estimate, diff, expectedAccuracy)
 			}
 		}
-	})
-})
 
-var _ = Describe("CPU limit", func() {
-	It("estimated with reasonable accurace", func() {
-		t := GinkgoT()
-		for limit := range int64(maxCPU) {
-			quota, period := cache.MilliCPUToQuota(limit)
-			estimate := cache.QuotaToMilliCPU(quota, period)
+		// fail if our estimates are not accurate for full CPUs worth of millicpus
+		if (request%1000) == 0 && diff != 0 {
+			t.Errorf("CPU request %v != estimate %v (diff %v)", request, estimate, diff)
+		}
+	}
+}
 
-			diff := limit - estimate
-			if diff > expectedAccuracy || diff < -expectedAccuracy {
-				if diff < 0 {
-					diff = -diff
-				}
-				if quota != kubernetes.MinQuotaPeriod {
-					t.Errorf("CPU limit %v: estimate %v, unexpected inaccuracy %v > %v",
-						limit, estimate, diff, expectedAccuracy)
-				} else {
-					t.Logf("CPU limit %v: estimate %v, inaccuracy %v > %v (OK, this was expected)",
-						limit, estimate, diff, expectedAccuracy)
-				}
+func TestCPULimitEstimate(t *testing.T) {
+	for limit := range int64(maxCPU) {
+		quota, period := cache.MilliCPUToQuota(limit)
+		estimate := cache.QuotaToMilliCPU(quota, period)
+
+		diff := limit - estimate
+		if diff > expectedAccuracy || diff < -expectedAccuracy {
+			if diff < 0 {
+				diff = -diff
 			}
-
-			// fail if our estimates are not accurate for full CPUs worth of millicpus
-			if (limit%1000) == 0 && diff != 0 {
-				t.Errorf("CPU limit %v != estimate %v (diff %v)", limit, estimate, diff)
+			if quota != kubernetes.MinQuotaPeriod {
+				t.Errorf("CPU limit %v: estimate %v, unexpected inaccuracy %v > %v",
+					limit, estimate, diff, expectedAccuracy)
+			} else {
+				t.Logf("CPU limit %v: estimate %v, inaccuracy %v > %v (OK, this was expected)",
+					limit, estimate, diff, expectedAccuracy)
 			}
 		}
-	})
-})
+
+		// fail if our estimates are not accurate for full CPUs worth of millicpus
+		if (limit%1000) == 0 && diff != 0 {
+			t.Errorf("CPU limit %v != estimate %v (diff %v)", limit, estimate, diff)
+		}
+	}
+}
