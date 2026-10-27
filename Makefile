@@ -39,11 +39,18 @@ GO_DEPS    := $(GO_CMD) list -f '{{ join .Deps "\n" }}'
 GO_VERSION ?= 1.26.0
 
 GO_MODULES := $(shell $(GO_CMD) list ./...)
-GO_SUBPKGS := $(shell find ./pkg -name go.mod | sed 's:/go.mod::g' | grep -v testdata | \
-                      tr -s ' \t\n' ' ')
+
+GO_TEST_PKGS ?= $(shell find . -name \*_test.go -exec dirname {} \; | \
+                   sort -u | while read dir; do \
+                       [ ! -e $$dir/go.mod ] && echo $$dir; \
+                   done)
+
+GO_TEST_MODS ?= $(shell find . -name \*_test.go -exec dirname {} \; | \
+                   sort -u | while read dir; do \
+                       [ -e $$dir/go.mod ] && echo $$dir; \
+                   done)
 
 GOLANG_CILINT := golangci-lint
-GINKGO        := ginkgo
 TEST_SETUP    := test-setup.sh
 TEST_CLEANUP  := test-cleanup.sh
 TEST_PKGS     := .
@@ -177,7 +184,7 @@ clean: clean-plugins clean-binaries clean-e2e-report
 
 allclean: clean clean-cache
 
-test: test-gopkgs
+test: test-setup test-run-pkgs test-run-mods test-cleanup
 
 verify: verify-godeps verify-fmt verify-generate verify-build verify-docs
 
@@ -419,53 +426,42 @@ $(BIN_PATH)/resource-annotator: \
 # test targets
 #
 
-test-gopkgs: ginkgo-test-setup ginkgo-tests ginkgo-subpkgs-tests ginkgo-test-cleanup
-
-ginkgo-test-setup:
-	$(Q)for i in $$(find $(TEST_PKGS) -name $(TEST_SETUP)); do \
+.PHONY: test-setup
+test-setup:
+	$(Q)for i in $$(find $(GO_TEST_PKGS) $(GO_TEST_MODS) -name $(TEST_SETUP) | sort -u); do \
 	    echo "+ Running test setup $$i..."; \
 	    (cd $${i%/*}; \
 	        if [ -x "$(TEST_SETUP)" ]; then \
-	            ./$(TEST_SETUP); \
+	            ./$(TEST_SETUP) > /dev/null; \
 	        fi); \
 	done
 
-ginkgo-test-cleanup: ginkgo-tests ginkgo-subpkgs-tests
-	$(Q)for i in $$(find $(TEST_PKGS) -name $(TEST_CLEANUP)); do \
+.PHONY: test-cleanup
+test-cleanup: test-run-pkgs test-run-mods
+	$(Q)for i in $$(find $(GO_TEST_PKGS) $(GO_TEST_MODS) -name $(TEST_CLEANUP) | sort -u); do \
 	    echo "- Running test cleanup $$i..."; \
 	    (cd $${i%/*}; \
 	        if [ -x "$(TEST_CLEANUP)" ]; then \
-	            ./$(TEST_CLEANUP); \
+	            ./$(TEST_CLEANUP) > /dev/null; \
 	        fi); \
 	done
 
-ginkgo-tests: ginkgo-test-setup
-	$(Q)$(GINKGO) run \
+.PHONY: test-run-pkgs
+test-run-pkgs: test-setup
+	$(Q)$(GO_TEST) -v \
 	    --race \
-	    --trace \
 	    --cover \
 	    --covermode atomic \
-	    --output-dir $(COVERAGE_PATH) \
-	    --junit-report junit.xml \
-	    --coverprofile coverprofile \
-	    --succinct \
-            --skip-package $$(echo $(GO_SUBPKGS) | tr -s '\t ' ',') \
-	    -r $(TEST_PKGS) && \
-	$(GO_CMD) tool cover -html=$(COVERAGE_PATH)/coverprofile -o $(COVERAGE_PATH)/coverage.html
+	     $(GO_TEST_PKGS)
 
-
-ginkgo-subpkgs-tests: ginkgo-test-setup # TODO(klihub): coverage
-	@find $(TEST_PKGS) -type d | while read t; do \
-	    for sub in $(GO_SUBPKGS); do \
-	        if [ "$$t" = "$$sub" ]; then \
-	            $(GINKGO) run \
-	                --race \
-	                --trace \
-	                --succinct \
-	                -r $$sub || exit 1; \
-	            break; \
-	        fi; \
-	    done; \
+.PHONY: test-run-mods
+test-run-mods: test-setup
+	$(Q)for dir in $(GO_TEST_MODS); do \
+	    (cd $$dir; $(GO_TEST) -v \
+	    --race \
+	    --cover \
+	    --covermode atomic \
+	    .); \
 	done
 
 # The e2e tests collect coverage data from the plugins they exercise and report
@@ -547,9 +543,6 @@ verify-licenses: licenses
 #
 # targets for installing dependencies
 #
-
-install-ginkgo:
-	$(Q)$(GO_INSTALL) -mod=mod github.com/onsi/ginkgo/v2/ginkgo
 
 .PHONY: pull-license-tool
 pull-license-tool:
