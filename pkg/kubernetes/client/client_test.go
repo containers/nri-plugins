@@ -41,13 +41,13 @@ func skipIfInCluster(t *testing.T) {
 
 func TestGetConfigForFile_Success(t *testing.T) {
 	cfg, err := GetConfigForFile(fixtureKubeconfig)
-	if err != nil {
-		t.Fatalf("GetConfigForFile(%q) returned error: %v", fixtureKubeconfig, err)
-	}
-	if cfg == nil {
+	switch {
+	case err != nil:
+		t.Fatalf("GetConfigForFile(%q) returned error: %v",
+			fixtureKubeconfig, err)
+	case cfg == nil:
 		t.Fatal("GetConfigForFile returned nil config with no error")
-	}
-	if cfg.Host == "" {
+	case cfg.Host == "":
 		t.Errorf("returned config has empty Host; expected value from fixture")
 	}
 }
