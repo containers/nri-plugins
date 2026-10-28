@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.15.0-24-g1a71000b documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.15.0-30-g8f36f22b documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=270dd128"></script>
+        <script src="../../../_static/documentation_options.js?v=c2bacc66"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -1744,13 +1744,23 @@ memory policy onto the new nodes, but it does not add nodes. A memory policy
 for nodes 0-1 stays on two nodes when the memory nodes grow to 0-3.</p>
 <p>A claim with a bad configuration fails to prepare, and the pod events say
 why.</p>
+<p>Claims keep their CPUs when the plugin restarts. If the plugin restarts with
+a configuration which cannot give a claim its CPUs, for example one which
+reserves some of them, the claim moves to other CPUs of the same NUMA node,
+and its containers move with it. If the node has too few CPUs left for the
+claim, the plugin fails to start, and the status of the configuration names
+the claim. Revert the configuration to start the plugin again.</p>
+<p>If there is no configuration to revert to, drain the node, remove the cache
+file <code class="docutils literal notranslate"><span class="pre">/var/lib/nri-resource-policy/cache</span></code> on the node, and restart the plugin.
+A drain alone does not help. The plugin keeps a claim until the kubelet
+unprepares it, and the kubelet cannot do that while the plugin is down, so the
+drained pods stay in Terminating. Once the plugin starts without the cache,
+the kubelet unprepares their claims and the pods go away. Pods which the drain
+leaves running, such as DaemonSet pods, lose the CPUs of their claims.</p>
 </section>
 <section id="known-limitations">
 <h3>Known Limitations<a class="headerlink" href="#known-limitations" title="Link to this heading"></a></h3>
 <ul class="simple">
-<li><p>The plugin forgets its claims when it restarts. Containers which hold a
-claim are placed again without it, so they lose the claimed CPUs, and new
-containers can get those CPUs.</p></li>
 <li><p>The CDI spec files of claims which ended while the plugin was not running
 are left behind.</p></li>
 <li><p>The capacity of a device is the total of the node, not its free CPUs.
