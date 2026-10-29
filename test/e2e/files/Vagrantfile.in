@@ -29,6 +29,10 @@ CONTAINERD_SRC = ""
 CACHE_DIR="#{ENV['CACHE_DIR']}"
 NO_PROVISION = "#{ENV['E2E_NO_PROVISION']}"
 
+# provision=all asks for the cluster to be rebuilt, not just for the
+# playbook to run again.
+KUBEADM_RESET = "#{ENV['provision']}" == "all"
+
 if CRI_RUNTIME == "containerd"
   CONTAINERD_RELEASE = "#{ENV['containerd_release']}"
   CONTAINERD_SRC = "#{ENV['containerd_src']}"
@@ -127,6 +131,7 @@ Vagrant.configure("2") do |config|
         k8s_release: K8S_RELEASE,
         k8s_version: K8S_VERSION,
         k8s_feature_gates: K8S_FEATURE_GATES,
+        kubeadm_reset: KUBEADM_RESET,
         helm_release: HELM_RELEASE,
         cri_runtime: CRI_RUNTIME,
         containerd_release: CONTAINERD_RELEASE,
