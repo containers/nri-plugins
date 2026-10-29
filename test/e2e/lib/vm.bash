@@ -398,7 +398,8 @@ vm-check-recorded-box-key() {
     #
     # A run which was asked to provision again only warns: provisioning is
     # what changes the versions in a VM, so refusing to start would block the
-    # one thing which resolves the difference.
+    # one thing which resolves the difference. Only provision=all rebuilds
+    # the cluster, so only it ends up matching.
     local vagrantdir="$1" key="$2" recorded
 
     case "${e2e_vm_versions:-check}" in
@@ -431,10 +432,20 @@ vm-check-recorded-box-key() {
          "resolved:" >&2
     vm-report-box-key-mismatch "$recorded" "$key"
 
+    if [ "${provision:-}" = "all" ]; then
+        echo "" >&2
+        echo "WARNING: provision=all, so the VM is provisioned again," \
+             "cluster included, and is expected to end up with what this" \
+             "run resolved." >&2
+        echo "" >&2
+        return 0
+    fi
+
     if [ -n "${provision:-}" ]; then
         echo "" >&2
-        echo "WARNING: provision=$provision, so provisioning runs again and" \
-             "is expected to change what is installed." >&2
+        echo "WARNING: provision=$provision, so provisioning runs again but" \
+             "the cluster is left as it is. Use provision=all to rebuild it" \
+             "with the versions above." >&2
         echo "" >&2
         return 0
     fi
@@ -449,8 +460,9 @@ vm-check-recorded-box-key() {
     fi
 
     error "the VM in $vagrantdir was provisioned with other versions.
-Remove the output directory to provision a VM with the ones above, or set
-e2e_vm_versions=ignore to run the tests against the VM as it is."
+Remove the output directory to provision a new VM with the ones above, set
+provision=all to reprovision this one in place, or set e2e_vm_versions=ignore
+to run the tests against the VM as it is."
 }
 
 vm-box-cache-cleanup-requested() {
@@ -759,9 +771,14 @@ vm-setup() {
 
      # If you want to force provisioning of already provisioned vm,
      # then you can set provision=1 when calling e2e test script.
-     # Note that this is not recommended as at least kubeinit
-     # cannot be called second time. But this could be used
-     # if the provisioning failed before kubernetes was setup.
+     # That leaves the cluster alone, so it stops at kubeadm init
+     # unless provisioning failed before kubernetes was set up.
+     # provision=all takes the cluster down first and rebuilds it.
+     #
+     # provision=all reaches the playbook through the Vagrantfile,
+     # which is generated once, so a VM created before it existed
+     # cannot be reprovisioned this way: kubeadm init fails as it
+     # used to, and the way out is a clean output directory.
      if [ ! -z "$provision" ]; then
          if ! (export ANSIBLE_SSH_ARGS="$SSH_PERSIST_OPTS"
 	  vagrant provision ${vagrant_debug:+--debug} || error "failed to provision VM"); then
@@ -799,10 +816,11 @@ EOF
     ) || exit $?
 
     # The VM is up and provisioned, so record what went into it for the next
-    # run to check. Only for a VM this run created: a VM which was already
-    # there has a record of its own, and overwriting it would hide a mismatch
-    # rather than report it.
-    if [ -n "$new_vm" ]; then
+    # run to check. A VM which was already there keeps the record it has,
+    # since overwriting it would hide a mismatch rather than report it, and
+    # the exception is provision=all: that run rebuilt the cluster, so the
+    # VM really does have what this one resolved.
+    if [ -n "$new_vm" ] || [ "${provision:-}" = "all" ]; then
         vm-record-box-key "$vagrantdir" "$vm_key"
     fi
 

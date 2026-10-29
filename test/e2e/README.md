@@ -190,8 +190,9 @@ The VM in /path/to/n4c16-fedora-43-containerd is not provisioned with what this 
   helm4.2.4 -> helm4.3.1
 
 error: the VM in /path/to/n4c16-fedora-43-containerd was provisioned with other versions.
-Remove the output directory to provision a VM with the ones above, or set
-e2e_vm_versions=ignore to run the tests against the VM as it is.
+Remove the output directory to provision a new VM with the ones above, set
+provision=all to reprovision this one in place, or set e2e_vm_versions=ignore
+to run the tests against the VM as it is.
 ```
 
 Set `e2e_vm_versions` to choose what such a run does:
@@ -204,6 +205,20 @@ Set `e2e_vm_versions` to choose what such a run does:
 ```shell
 e2e_vm_versions=ignore ./run_tests.sh policies.test-suite
 ```
+
+Or set `provision` to provision the VM again instead of keeping it as it is:
+
+| value | meaning |
+| --- | --- |
+| `1` | run the provisioning playbook again, leaving the cluster alone |
+| `all` | the same, after taking the cluster down with `kubeadm reset` and rebuilding it |
+
+```shell
+provision=all ./run_tests.sh policies.test-suite
+```
+
+Only `all` changes the Kubernetes release, so only `all` ends up matching what
+the run resolved.
 
 ## Collecting coverage data
 

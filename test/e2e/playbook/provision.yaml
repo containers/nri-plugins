@@ -25,6 +25,7 @@
     cache_dir: "{{ cache_dir }}"
     cached_runtime_tarball: ""
     remote_runtime_tarball: ""
+    cri_socket: ""
     cached_helm_tarball: "{{ cache_dir }}/{{ helm_tarball | basename }}"
     # How old an apt package index may be before it is refreshed. dnf needs
     # no such setting: it expires its own metadata, per repository, and a
@@ -37,13 +38,52 @@
         is_containerd: true
         cached_runtime_tarball: "{{ cache_dir }}/{{ containerd_tarball | basename }}"
         remote_runtime_tarball: "{{ containerd_tarball }}"
+        cri_socket: unix:///var/run/containerd/containerd.sock
       when: cri_runtime == "containerd"
     - name: Check if runtime is CRI-O
       ansible.builtin.set_fact:
         is_crio: true
         cached_runtime_tarball: "{{ cache_dir }}/{{ crio_tarball | basename }}"
         remote_runtime_tarball: "{{ crio_tarball }}"
+        cri_socket: unix:///var/run/crio/crio.sock
       when: cri_runtime == "crio"
+
+    # kubeadm init refuses to run a second time, so a rerun which means to
+    # rebuild the cluster has to take the old one down first. This happens
+    # here, before the tasks which write the CNI configuration and the
+    # kubeconfigs: kubeadm reset leaves both behind, and the tasks which
+    # write them copy rather than overwrite, so a stale one would survive
+    # and point at a cluster which no longer exists.
+    - name: Check for a cluster to reset
+      ansible.builtin.stat:
+        path: /etc/kubernetes/admin.conf
+      register: existing_cluster
+
+    - name: Reset the existing Kubernetes cluster
+      when: (kubeadm_reset | default(false) | bool) and existing_cluster.stat.exists
+      block:
+        - name: Tear the cluster down with kubeadm reset
+          ansible.builtin.command:
+            cmd: kubeadm reset --force --cri-socket {{ cri_socket }}
+
+        - name: Remove the CNI configuration of the old cluster
+          ansible.builtin.file:
+            path: /etc/cni/net.d
+            state: absent
+
+        - name: Recreate the CNI configuration directory
+          ansible.builtin.file:
+            path: /etc/cni/net.d
+            state: directory
+            mode: '0755'
+
+        - name: Remove the kubeconfigs of the old cluster
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          with_items:
+            - /root/.kube/config
+            - /home/vagrant/.kube/config
 
     - name: Setup DNS
       ansible.builtin.shell: "{{ item }}"
