@@ -11,6 +11,7 @@ CHECK_IMAGES="\
   nri-memtierd \
   nri-sgx-epc \
   nri-resource-annotator \
+  nri-resctrl-mon
 "
 
 CHECK_CHARTS="\
@@ -21,6 +22,7 @@ CHECK_CHARTS="\
   nri-memtierd \
   nri-sgx-epc \
   nri-resource-annotator \
+  nri-resctrl-mon
 "
 
 CHECKS="all"
