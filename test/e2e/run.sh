@@ -235,6 +235,27 @@ if [ "$k8scri" = "crio" -a "$crio_release" = "latest" ]; then
     echo "Latest CRI-O release: $crio_release"
 fi
 
+# If we run tests with cilium as the CNI plugin, we install it with the
+# cilium CLI of the release given below. The bridge plugin comes with the
+# distro, so it has no release of its own and needs nothing resolved.
+#
+# This release keeps its "v" prefix, unlike the ones above: the download
+# path of the CLI is built from the tag as it is.
+GH_CILIUM_REPO="cilium/cilium-cli"
+
+if [ "$cni_plugin" = "cilium" -a "$cni_release" = "latest" ]; then
+    if latest_cilium_release=$(vm-load-cached-var "$OUTPUT_DIR" latest_cilium_release); then
+        echo "Loaded cached latest_cilium_release=$latest_cilium_release..."
+        cni_release="$latest_cilium_release"
+    else
+        if ! cni_release=$(latest-github-release $GH_CILIUM_REPO); then
+            error "$cni_release"
+        fi
+        cache=global vm-save-cached-var "$OUTPUT_DIR" latest_cilium_release $cni_release
+    fi
+    echo "Latest cilium release: $cni_release"
+fi
+
 # Default topology if not given. The run_tests.sh script will figure out
 # the topology from the test directory structure and contents.
 if [ -z "$topology" ]; then
