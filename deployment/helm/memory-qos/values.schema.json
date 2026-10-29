@@ -43,6 +43,18 @@
                 }
             }
         },
+        "config": {
+            "type": "object",
+            "properties": {
+                "unifiedAnnotations": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "pattern": "^memory\\."
+                    }
+                }
+            }
+        },
         "resources": {
             "type": "object",
             "required": [

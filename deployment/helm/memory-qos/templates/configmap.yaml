@@ -13,5 +13,4 @@ data:
     - name: silver
       swaplimitratio: 0.2
     unifiedannotations:
-    - memory.swap.max
-    - memory.high
+    {{- toYaml .Values.config.unifiedAnnotations | nindent 6 }}
