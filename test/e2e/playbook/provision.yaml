@@ -26,6 +26,10 @@
     cached_runtime_tarball: ""
     remote_runtime_tarball: ""
     cached_helm_tarball: "{{ cache_dir }}/{{ helm_tarball | basename }}"
+    # How old an apt package index may be before it is refreshed. dnf needs
+    # no such setting: it expires its own metadata, per repository, and a
+    # rerun of this playbook only has to stop forcing a refresh.
+    apt_cache_valid_time: 3600
 
   tasks:
     - name: Check if runtime is containerd
@@ -106,6 +110,7 @@
     - name: Update APT package index
       ansible.builtin.apt:
         update_cache: yes
+        cache_valid_time: "{{ apt_cache_valid_time }}"
       when: ansible_facts['distribution'] == "Ubuntu"
 
     - name: Add yum repository for Kubernetes
@@ -176,6 +181,7 @@
           - software-properties-common
         state: present
         update_cache: true
+        cache_valid_time: "{{ apt_cache_valid_time }}"
       when: ansible_facts['distribution'] == "Ubuntu"
 
     - name: Install rpm packages
@@ -191,7 +197,6 @@
               # chrt, which the tests use to read scheduling flags back.
               - util-linux-core
             state: present
-            update_cache: true
         - name: Extra python3 rpm packages for ansible
           ansible.builtin.dnf:
             pkg:
@@ -243,7 +248,6 @@
           - podman
           - cri-o
         state: present
-        update_cache: true
       when: ansible_facts['distribution'] == "Fedora" and is_crio
 
     - name: Install python pip based apps
