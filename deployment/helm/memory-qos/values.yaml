@@ -8,6 +8,13 @@ image:
   #tag: unstable
   pullPolicy: Always
 
+config:
+  # unifiedAnnotations lists the cgroup v2 memory.* parameters that pods
+  # are allowed to set directly using annotations of the form <parameter>.memory-qos.nri.io: <value>
+  unifiedAnnotations:
+  - memory.swap.max
+  - memory.high
+
 resources:
   cpu: 10m
   memory: 100Mi
