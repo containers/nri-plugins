@@ -146,7 +146,8 @@ Worth knowing:
 - A box is only used when the VM is created for the first time. An output
   directory which already has a `Vagrantfile` keeps the VM and the box it was
   created from, so start from a clean output directory to benefit from the
-  cache.
+  cache. Such a run stops rather than test newer versions against an older VM,
+  see [Reusing an output directory](#reusing-an-output-directory).
 
 - Expect a couple of gigabytes per box, and note that vagrant unpacks a box
   into `~/.vagrant.d/boxes` on first use, so the disk cost is roughly twice the
@@ -170,6 +171,39 @@ Worth knowing:
   up, so the framework waits for the node and for the cluster DNS before
   running any test. Raise `CLUSTER_READY_TIMEOUT` (300 seconds by default) if a
   large topology needs longer.
+
+## Reusing an output directory
+
+The output directory of a run is named after the VM, so running the tests twice
+in the same tree reuses the VM of the first run. vagrant provisions a machine
+once, so that VM keeps the Kubernetes, container runtime, CNI plugin and Helm
+versions it was created with, however old they have become, while the run goes
+on reporting the versions it resolved.
+
+A run therefore records what went into a VM it created, and stops when it finds
+a VM which does not match:
+
+```
+The VM in /path/to/n4c16-fedora-43-containerd is not provisioned with what this run resolved:
+  k8s1.37.0 -> k8s1.37.1
+  containerd2.3.4 -> containerd2.4.2
+  helm4.2.4 -> helm4.3.1
+
+error: the VM in /path/to/n4c16-fedora-43-containerd was provisioned with other versions.
+Remove the output directory to provision a VM with the ones above, or set
+e2e_vm_versions=ignore to run the tests against the VM as it is.
+```
+
+Set `e2e_vm_versions` to choose what such a run does:
+
+| value | meaning |
+| --- | --- |
+| `check` | refuse to run against a VM provisioned with other versions (the default) |
+| `ignore` | warn and run the tests against the VM as it is |
+
+```shell
+e2e_vm_versions=ignore ./run_tests.sh policies.test-suite
+```
 
 ## Collecting coverage data
 

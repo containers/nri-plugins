@@ -24,6 +24,14 @@ BOX_CACHE_DECAY="${BOX_CACHE_DECAY:-$((30 * 24 * 3600))}" # cached boxes valid f
 # image which was downloaded for it.
 BOX_NAME_PREFIX="${BOX_NAME_PREFIX:-nri-e2e}"
 
+# Name of the file which records, in an output directory, the box key of the VM
+# in it, that is, the versions it was provisioned with.
+#
+# vagrant provisions a machine once. An output directory which is kept boots
+# the VM it already has, so without this the versions a run resolves say
+# nothing about the versions it tests.
+VM_KEY_FILE="${VM_KEY_FILE:-.e2e-vm-key}"
+
 # Files whose content shapes a provisioned VM. The name of a cached box has a
 # hash of them, so that editing any of them invalidates the cached boxes
 # instead of a later run reusing an image which predates the change.
@@ -290,6 +298,161 @@ vm-box-name() {
     echo "$BOX_NAME_PREFIX/$(vm-box-key "$1")"
 }
 
+vm-recorded-box-key() {
+    # Usage: vm-recorded-box-key VAGRANTDIR
+    #
+    # Print the box key recorded for the VM of an output directory, or nothing
+    # if there is none to read.
+    #
+    # vm-record-box-key writes the file when a VM is created. A VM which
+    # predates the file and came from a cached box still names that box in its
+    # Vagrantfile, and the name holds the key, so read it as a fallback. A VM
+    # which predates the file and was provisioned from a distro image has
+    # nothing to read, which is why an empty answer means "cannot tell" and
+    # never "does not match".
+    local vagrantdir="$1" key
+
+    if [ -s "$vagrantdir/$VM_KEY_FILE" ]; then
+        head -n 1 "$vagrantdir/$VM_KEY_FILE"
+        return 0
+    fi
+
+    key="$(sed -n "s|^IMAGE_NAME = \"$BOX_NAME_PREFIX/\(.*\)\"$|\1|p" \
+               "$vagrantdir/Vagrantfile" 2>/dev/null | head -n 1)"
+    if [ -n "$key" ]; then
+        echo "$key"
+    fi
+}
+
+vm-record-box-key() {
+    # Usage: vm-record-box-key VAGRANTDIR KEY
+    #
+    # Record KEY as the versions the VM of an output directory has just been
+    # created with. An empty KEY records nothing.
+    #
+    # Only for a VM which this run created. Rewriting the file for a VM which
+    # was already there would bless a mismatch instead of reporting it.
+    local vagrantdir="$1" key="$2"
+
+    if [ -z "$key" ]; then
+        return 0
+    fi
+
+    if ! echo "$key" > "$vagrantdir/$VM_KEY_FILE"; then
+        echo "WARNING: failed to record the versions of the VM in" \
+             "$vagrantdir. A later run cannot tell whether they are still" \
+             "the ones it resolves." >&2
+    fi
+}
+
+vm-report-box-key-mismatch() {
+    # Usage: vm-report-box-key-mismatch RECORDED CURRENT
+    #
+    # Print how the versions of an existing VM differ from the ones this run
+    # resolved.
+    #
+    # A key is a "-" separated list whose components hold "-" themselves, so
+    # the fields of two keys only line up when there are as many of them.
+    # Which is the usual case, both keys starting with the same VM name and
+    # carrying the same components, and the exception is a run which added or
+    # dropped the feature gates. Print the keys whole when they do not line up.
+    local recorded="$1" current="$2"
+    local -a was now
+    local i last label
+
+    IFS=- read -r -a was <<< "$recorded"
+    IFS=- read -r -a now <<< "$current"
+
+    if [ "${#was[@]}" = "${#now[@]}" ]; then
+        # The last field is the hash of the provisioning recipe, which says
+        # nothing to a reader on its own.
+        last=$(( ${#was[@]} - 1 ))
+        for i in "${!was[@]}"; do
+            if [ "${was[$i]}" = "${now[$i]}" ]; then
+                continue
+            fi
+            label=""
+            if [ "$i" = "$last" ]; then
+                label="provisioning recipe "
+            fi
+            echo "  $label${was[$i]} -> ${now[$i]}" >&2
+        done
+    else
+        echo "  VM:  $recorded" >&2
+        echo "  run: $current" >&2
+    fi
+}
+
+vm-check-recorded-box-key() {
+    # Usage: vm-check-recorded-box-key VAGRANTDIR KEY
+    #
+    # Fail unless the VM of an output directory was provisioned with KEY, the
+    # versions this run resolved. An empty KEY checks nothing.
+    #
+    # vagrant provisions a machine once, so an output directory which is kept
+    # boots the VM it has however old the Kubernetes, the container runtime,
+    # the CNI plugin or Helm in it have become, while the run goes on
+    # reporting the versions it resolved. Set e2e_vm_versions to
+    #   check:  refuse to run against a VM which does not match (the default)
+    #   ignore: warn and run against the VM as it is
+    #
+    # A run which was asked to provision again only warns: provisioning is
+    # what changes the versions in a VM, so refusing to start would block the
+    # one thing which resolves the difference.
+    local vagrantdir="$1" key="$2" recorded
+
+    case "${e2e_vm_versions:-check}" in
+        check|ignore)
+            ;;
+        *)
+            error "invalid e2e_vm_versions value: \"$e2e_vm_versions\"," \
+                  "expected check or ignore"
+            ;;
+    esac
+
+    if [ -z "$key" ]; then
+        return 0
+    fi
+
+    recorded="$(vm-recorded-box-key "$vagrantdir")"
+    if [ -z "$recorded" ]; then
+        echo "WARNING: the versions of the VM in $vagrantdir are not" \
+             "recorded, so what is installed in it cannot be told apart" \
+             "from what this run resolved." >&2
+        return 0
+    fi
+
+    if [ "$recorded" = "$key" ]; then
+        return 0
+    fi
+
+    echo "" >&2
+    echo "The VM in $vagrantdir is not provisioned with what this run" \
+         "resolved:" >&2
+    vm-report-box-key-mismatch "$recorded" "$key"
+
+    if [ -n "${provision:-}" ]; then
+        echo "" >&2
+        echo "WARNING: provision=$provision, so provisioning runs again and" \
+             "is expected to change what is installed." >&2
+        echo "" >&2
+        return 0
+    fi
+
+    if [ "${e2e_vm_versions:-check}" = "ignore" ]; then
+        echo "" >&2
+        echo "WARNING: e2e_vm_versions=ignore, so the tests run against the" \
+             "VM as it is. Every version this run reports is one it" \
+             "resolved, not one it installed." >&2
+        echo "" >&2
+        return 0
+    fi
+
+    error "the VM in $vagrantdir was provisioned with other versions.
+Remove the output directory to provision a VM with the ones above, or set
+e2e_vm_versions=ignore to run the tests against the VM as it is."
+}
+
 vm-box-cache-cleanup-requested() {
     # Usage: vm-box-cache-cleanup-requested
     #
@@ -408,7 +571,27 @@ vm-setup() {
     local qemu_dir="${qemu_dir:-/usr/share/qemu}"
     local efi_code efi_vars kind
     local box_name="$distro" box_file="" package_box="" use_cached_box=""
-    local no_provision="" e2e_no_provision=""
+    local no_provision="" e2e_no_provision="" new_vm="" vm_key=""
+
+    # The key names the versions a VM has, and both the check below and the
+    # record at the end of this function need it. Compute it here, before
+    # anything expensive happens: it hashes the provisioning recipe, and a
+    # recipe file which cannot be read has to be reported rather than
+    # discovered once a VM has been built. It stays empty when the versions
+    # are not resolved, which leaves the check and the record out.
+    if [ -n "$k8s_release" ] && [ -n "$distro" ]; then
+        # Outside the command substitution, which would swallow the failure.
+        vm-check-provisioning-recipe
+        vm_key="$(vm-box-key "$vmname")"
+    fi
+
+    if [ -f "$vagrantdir/Vagrantfile" ]; then
+        # The VM of this output directory is the one the tests will run on,
+        # whatever this run resolved, so check the two agree before going on.
+        vm-check-recorded-box-key "$vagrantdir" "$vm_key"
+    else
+        new_vm=1
+    fi
 
     # Reuse an already provisioned VM if we have one for this topology and for
     # the versions we are about to install. Otherwise provision as usual and
@@ -417,7 +600,7 @@ vm-setup() {
     # This only concerns a VM which does not exist yet. An output directory
     # which already has a Vagrantfile keeps the VM and the box it was created
     # from, so start from a clean output directory to benefit from the cache.
-    if [ ! -f "$vagrantdir/Vagrantfile" ] && vm-box-cache-enabled; then
+    if [ -n "$new_vm" ] && vm-box-cache-enabled; then
         box_file="$BOX_CACHE_DIR/$(vm-box-key "$vmname").box"
         if [ "$e2e_vm_cache" != "refresh" ] && vm-cached-box-usable "$box_file"; then
             echo "using cached provisioned VM $box_file..."
@@ -614,6 +797,14 @@ EOF
      # with shorter hostname "node"
      sed -i 's/^Host /Host node /' .ssh-config
     ) || exit $?
+
+    # The VM is up and provisioned, so record what went into it for the next
+    # run to check. Only for a VM this run created: a VM which was already
+    # there has a record of its own, and overwriting it would hide a mismatch
+    # rather than report it.
+    if [ -n "$new_vm" ]; then
+        vm-record-box-key "$vagrantdir" "$vm_key"
+    fi
 
     mkdir -p "$COMMAND_OUTPUT_DIR"
     rm -f "$COMMAND_OUTPUT_DIR"/0*
