@@ -46,8 +46,6 @@ BOX_RECIPE_FILES=(
     playbook/provision.yaml
     files/Vagrantfile.in
     files/env.in
-    files/containerd-nri-enable
-    files/crio-nri-enable
     files/10-bridge.conf.in
 )
 

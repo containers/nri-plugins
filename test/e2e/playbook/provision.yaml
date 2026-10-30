@@ -332,13 +332,6 @@
         state: present
       when: ansible_facts['distribution'] == "Fedora" and is_crio
 
-    - name: Install python pip based apps
-      ansible.builtin.pip:
-        name:
-          - toml
-          - tomli_w
-        state: present
-
     # Install containerd or CRI-O from a release tarball to /usr/local.
     - name: Install runtime binaries from release tarball
       block:
@@ -459,15 +452,6 @@
         state: started
         enabled: true
 
-    - name: Copy containerd nri enable script
-      ansible.builtin.copy:
-        src: "{{ nri_resource_policy_src }}/test/e2e/files/containerd-nri-enable"
-        dest: /usr/local/bin/containerd-nri-enable
-        owner: root
-        group: root
-        mode: '0755'
-      when: is_containerd
-
     - name: Configure containerd
       when: is_containerd and (manage_runtime | default(true) | bool)
       block:
@@ -524,40 +508,12 @@
             regexp: '(CNI_NETWORK)'
             replace: "{{ network }}"
 
-    - name: Setup NRI
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: directory
-        mode: '0755'
-      with_items:
-        - "/etc/nri/conf.d"
-        - "/opt/nri/plugins"
-
-    - name: Enable NRI for containerd
-      ansible.builtin.command:
-        cmd: /usr/local/bin/containerd-nri-enable
-      when: is_containerd
-
     - name: Restart the containerd
       ansible.builtin.systemd:
         state: restarted
         name: "{{ cri_runtime }}"
         daemon_reload: true
       when: is_containerd and (manage_runtime | default(true) | bool)
-
-    - name: Copy CRI-O NRI enable script
-      ansible.builtin.copy:
-        src: "{{ nri_resource_policy_src }}/test/e2e/files/crio-nri-enable"
-        dest: /usr/local/bin/crio-nri-enable
-        owner: root
-        group: root
-        mode: '0755'
-      when: is_crio
-
-    - name: Enable NRI for CRI-O
-      ansible.builtin.command:
-        cmd: /usr/local/bin/crio-nri-enable
-      when: is_crio
 
     - name: Restart CRI-O
       ansible.builtin.systemd:

@@ -269,8 +269,10 @@ What the host's runtime has to provide in return, because provisioning will no
 longer arrange any of it:
 
 - **NRI enabled.** Default in containerd 2.x and in recent CRI-O. For
-  containerd that is `plugins.'io.containerd.nri.v1.nri'.disable = false`, with
-  the socket at `/var/run/nri/nri.sock` and plugins under `/opt/nri/plugins`.
+  containerd that is `plugins.'io.containerd.nri.v1.nri'.disable = false`. The
+  socket directory makes itself; the plugin and config directories need not
+  exist, since these tests deploy their plugins as DaemonSets rather than
+  installing them for the runtime to find.
 - **The systemd cgroup driver**, matching what `kubeadm` configures for the
   kubelet. For containerd, `SystemdCgroup = true` for the runc handler.
 - **A CNI plugin directory that matches where the binaries are.** On Fedora
