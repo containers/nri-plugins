@@ -120,12 +120,10 @@
         [ -f /etc/netplan/01-netcfg.yaml ] && sed -i 's/addresses\(.\) \[.*\]$/addresses\1 \[{{ dns_nameserver }}\]/' /etc/netplan/01-netcfg.yaml || :
       when: ansible_facts['distribution'] == "Ubuntu"
 
-    - name: Disable swap
-      ansible.builtin.shell: "{{ item }}"
-      with_items:
-        - for swp in `systemctl --type swap | awk '/\.swap/ { print $1 }'`; do systemctl stop "$swp"; systemctl mask "$swp"; done
-        - swapoff --all
-      when: ansible_facts['swaptotal_mb'] > 0
+# Swap is not turned off. Since Kubernetes 1.30 kubelet can run on a host
+# which has swap enabled, so it is configured to tolerate it without using
+# it instead, which leaves the host's own swap alone. See the
+# KubeletConfiguration in the kubeadm configuration below.
 
     - name: Add Kubernetes APT repository to sources.list.d
       ansible.builtin.copy:
@@ -560,15 +558,6 @@
         daemon_reload: true
       when: is_crio
 
-    - name: Remove swapfile from /etc/fstab
-      ansible.posix.mount:
-        name: "{{ item }}"
-        fstype: swap
-        state: absent
-      with_items:
-        - swap
-        - none
-
     - name: Fulfill pre-flight requirements for k8s
       ansible.builtin.shell: "{{ item }}"
       with_items:
@@ -593,7 +582,7 @@
         daemon_reload: true
         state: restarted
 
-    - name: Write kubeadm config with feature gates
+    - name: Write the kubeadm configuration
       ansible.builtin.copy:
         dest: /root/kubeadm-config.yaml
         content: |
@@ -606,6 +595,7 @@
           kind: ClusterConfiguration
           networking:
             podSubnet: "{{ network }}"
+          {% if k8s_feature_gates != "" %}
           apiServer:
             extraArgs:
               - name: feature-gates
@@ -614,27 +604,27 @@
             extraArgs:
               - name: feature-gates
                 value: "{{ k8s_feature_gates }}"
+          {% endif %}
           ---
           apiVersion: kubelet.config.k8s.io/v1beta1
           kind: KubeletConfiguration
+          failSwapOn: false
+          memorySwap:
+            swapBehavior: NoSwap
+          {% if k8s_feature_gates != "" %}
           featureGates:
           {% for gate in k8s_feature_gates.split(',') if '=' in gate %}
             {{ gate.split('=')[0] | trim }}: {{ gate.split('=')[1] | trim }}
           {% endfor %}
-      when: k8s_feature_gates != ""
+          {% endif %}
 
-    # The node name is given rather than left to kubeadm, which would take the
-    # host's own hostname: on a real host that is the fqdn, while the
-    # framework looks the node up by the short name it was told to use.
+    # Always from the configuration file, so that the node name and the
+    # kubelet settings have one home. Left to itself kubeadm would name the
+    # node after the host's own hostname, which on a real host is the fqdn,
+    # while the framework looks the node up by the short name it was given.
     - name: Initialize the Kubernetes cluster using kubeadm
       ansible.builtin.command:
-        cmd: kubeadm init --pod-network-cidr="{{ network }}" --node-name {{ hostname }}
-      when: k8s_feature_gates == ""
-
-    - name: Initialize the Kubernetes cluster using kubeadm, with feature gates
-      ansible.builtin.command:
         cmd: kubeadm init --config /root/kubeadm-config.yaml
-      when: k8s_feature_gates != ""
 
     - name: Setup kubeconfig for the login user
       ansible.builtin.command: "{{ item }}"
