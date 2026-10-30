@@ -220,6 +220,33 @@ provision=all ./run_tests.sh policies.test-suite
 Only `all` changes the Kubernetes release, so only `all` ends up matching what
 the run resolved.
 
+## Running the tests on a host of its own
+
+The tests can run on a host which already exists, real hardware or a virtual
+machine somebody else made, instead of on a VM the framework creates. Give it
+an address and a key:
+
+```shell
+test_hw_addr=test@10.0.0.1 test_hw_key=~/.ssh/testbox ./run_tests.sh <tests>
+```
+
+The host has to let that user in by key and run `sudo` without a password,
+which is checked before anything is installed. The run is named after the
+host, so its output directory is `<hostname>-<runtime>`.
+
+**Provisioning a host changes it, and nothing here undoes that.** The playbook
+installs Kubernetes, the container runtime, the CNI plugin and Helm, runs
+`kubeadm init`, disables swap and firewalld, and rewrites `/etc/resolv.conf`
+if `dns_nameserver` is set. On a VM `vagrant destroy` takes all of it away
+again; on a host of its own there is no equivalent. So a host which already
+runs a cluster is refused rather than provisioned over, and `provision=all` is
+how you say that taking that cluster down is what you meant.
+
+Two things do not apply to such a run. The box cache has no VM to package, so
+asking for it alongside `test_hw_addr` is refused rather than half honoured.
+And the topology is whatever the host has, so the topology a test directory is
+named after is not created for it.
+
 ## Collecting coverage data
 
 The tests can collect the same kind of coverage data from the plugins they

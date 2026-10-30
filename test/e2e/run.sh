@@ -126,7 +126,19 @@ latest-github-release () {
     return $?
 }
 
-pre-cache-vagrant-image
+# A run against a host of its own boots no distro image, and fetching one is
+# half a gigabyte and a reason to abort when the mirror is down.
+#
+# The cache directory still has to exist. Downloading the image is what used
+# to create it, and the playbook fetches Helm and the runtime into it from
+# here, with get_url, which fails rather than create what it is pointed at. A
+# run which pins every release never resolves a "latest" either, and that is
+# the only other thing which creates it.
+if vm-hw-mode; then
+    mkdir -p "$CACHE_DIR" || error "failed to create cache dir $CACHE_DIR"
+else
+    pre-cache-vagrant-image
+fi
 
 if [ "$k8s_release" = "latest" ]; then
     if latest_k8s_release=$(vm-load-cached-var "$OUTPUT_DIR" latest_k8s_release); then
