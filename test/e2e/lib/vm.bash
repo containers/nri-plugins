@@ -609,6 +609,112 @@ Host $aliases
 EOF
 }
 
+vm-write-env-file() {
+    # Usage: vm-write-env-file VAGRANTDIR [NO_PROVISION]
+    #
+    # Write the dotenv file of a run, unless it is already there, and keep its
+    # provisioning flag in step.
+    #
+    # The Vagrantfile loads this file, and vm-write-ansible-vars reads the
+    # proxy settings back out of it, so a run against a host which is not a VM
+    # needs it too, even though the ssh port and the disk size in it mean
+    # nothing there.
+    local vagrantdir="$1" no_provision="${2:-}"
+    local files="$nri_resource_policy_src/test/e2e/files"
+    local SSH_PORT ESCAPED_PROXY
+
+    if [ ! -f "$vagrantdir/env" ]; then
+	# Get a random port between 50023 - 52071 to be used to access the VM
+	SSH_PORT="$[ $RANDOM % 2048 + 50023 ]"
+
+	if [ ! -z "${proxy:-}" ]; then
+	    ESCAPED_PROXY=$(printf '%s\n' "$proxy" | sed -e 's/[\/&]/\\&/g')
+
+	    sed -e "s/\#PROXY=\"\"/PROXY=\"$ESCAPED_PROXY\"/g" \
+		-e "s/\#HTTP/HTTP/g" \
+		-e "s/DNS_NAMESERVER=\"\"/DNS_NAMESERVER=\"${dns_nameserver:-}\"/g" \
+		-e "s/DNS_SEARCH_DOMAIN=\"\"/DNS_SEARCH_DOMAIN=\"${dns_search_domain:-}\"/g" \
+		-e "s/SSH_PORT=/SSH_PORT=$SSH_PORT/g" \
+                -e "s:CACHE_DIR=:CACHE_DIR=\"${CACHE_DIR:-}\":g" \
+                -e "s:E2E_NO_PROVISION=:E2E_NO_PROVISION=$no_provision:g" \
+		"$files/env.in" > "$vagrantdir/env"
+	else
+	    sed -e "s/DNS_NAMESERVER=\"\"/DNS_NAMESERVER=\"${dns_nameserver:-}\"/g" \
+		-e "s/DNS_SEARCH_DOMAIN=\"\"/DNS_SEARCH_DOMAIN=\"${dns_search_domain:-}\"/g" \
+		-e "s/SSH_PORT=/SSH_PORT=$SSH_PORT/g" \
+                -e "s:CACHE_DIR=:CACHE_DIR=\"${CACHE_DIR:-}\":g" \
+                -e "s:E2E_NO_PROVISION=:E2E_NO_PROVISION=$no_provision:g" \
+		"$files/env.in" > "$vagrantdir/env"
+	fi
+    fi
+
+    # An env file written before this VM was known to come from a box has no
+    # flag, or a stale one. Keep it in sync, so that a vagrant up which is not
+    # ours, from make up or make ssh, does not provision the VM either.
+    if [ -n "$no_provision" ] && [ -f "$vagrantdir/env" ] &&
+           ! grep -q '^E2E_NO_PROVISION=1$' "$vagrantdir/env"; then
+        sed -i 's/^E2E_NO_PROVISION=.*$/E2E_NO_PROVISION=1/' "$vagrantdir/env"
+        grep -q '^E2E_NO_PROVISION=1$' "$vagrantdir/env" ||
+            echo "E2E_NO_PROVISION=1" >> "$vagrantdir/env"
+    fi
+}
+
+vm-hw-check-cache-conflict() {
+    # Usage: vm-hw-check-cache-conflict
+    #
+    # Fail the run if it asks for the box cache against a host we did not
+    # create. There is nothing to package and nothing a cached box could be
+    # used for, so the two options cannot both be meant.
+    case "${e2e_vm_cache:-no}" in
+        yes|1|refresh)
+            error "e2e_vm_cache=$e2e_vm_cache and test_hw_addr do not go
+together: a host we were given is never created from a box and cannot be
+packaged into one. Unset one of them."
+            ;;
+    esac
+    return 0
+}
+
+vm-setup-hw() {
+    # Usage: vm-setup-hw OUTPUT_DIR VMNAME KEY
+    #
+    # Prepare a host we were given, instead of creating a VM.
+    #
+    # Almost nothing vagrant does applies here: no image, no topology, no
+    # Vagrantfile, no Makefile and nothing to package. What is left is the ssh
+    # config the rest of the framework talks through, the playbook, and the
+    # record of what went into the host.
+    local output_dir="$1" vmname="$2" vm_key="$3"
+    local vagrantdir="$output_dir" first=""
+
+    mkdir -p "$vagrantdir"
+    vm-write-hw-ssh-config "$vagrantdir" "$VM_HOSTNAME"
+    vm-write-env-file "$vagrantdir"
+    vm-write-ansible-vars "$vagrantdir"
+
+    vm-first-run "$vagrantdir" && first=1
+
+    # provision at all: a first run, or one which was asked to.
+    if [ -n "$first" ] || [ -n "${provision:-}" ]; then
+        vm-hw-check-provisionable "$vagrantdir"
+        vm-provision-hw "$vagrantdir"
+    fi
+
+    # Record what went in only when it really did. A plain provision= leaves
+    # the cluster alone, so it cannot claim the versions above it changed.
+    if [ -n "$first" ] || [ "${provision:-}" = "all" ]; then
+        vm-record-box-key "$vagrantdir" "$vm_key"
+    fi
+
+    mkdir -p "$COMMAND_OUTPUT_DIR"
+    rm -f "$COMMAND_OUTPUT_DIR"/0*
+
+    # The cluster was either built a moment ago or days ago on a host which
+    # has been rebooted since. Either way it is worth waiting for.
+    wait-for-node-ready
+    wait-for-dns-ready
+}
+
 vm-json-quote() {
     # Usage: vm-json-quote VALUE
     #
@@ -1035,6 +1141,15 @@ vm-setup() {
         vm-check-recorded-box-key "$vagrantdir" "$vm_key"
     fi
 
+    # A host we were given shares the version check above and nothing below
+    # it: the rest of this function is about making a VM.
+    if vm-hw-mode; then
+        vm-hw-check-cache-conflict
+        vm-hw-check-options
+        vm-setup-hw "$output_dir" "$vmname" "$vm_key"
+        return
+    fi
+
     # Reuse an already provisioned VM if we have one for this topology and for
     # the versions we are about to install. Otherwise provision as usual and
     # keep the result for the next run.
@@ -1154,40 +1269,7 @@ vm-setup() {
 	sed -e "s/SERVER_NAME/$vmname/g" -e "s/DISTRO/$distro_name/g" "$files/Makefile.in" > "$vagrantdir/Makefile"
     fi
 
-    if [ ! -f "$vagrantdir/env" ]; then
-	# Get a random port between 50023 - 52071 to be used to access the VM
-	SSH_PORT="$[ $RANDOM % 2048 + 50023 ]"
-
-	if [ ! -z "$proxy" ]; then
-	    ESCAPED_PROXY=$(printf '%s\n' "$proxy" | sed -e 's/[\/&]/\\&/g')
-
-	    sed -e "s/\#PROXY=\"\"/PROXY=\"$ESCAPED_PROXY\"/g" \
-		-e "s/\#HTTP/HTTP/g" \
-		-e "s/DNS_NAMESERVER=\"\"/DNS_NAMESERVER=\"$dns_nameserver\"/g" \
-		-e "s/DNS_SEARCH_DOMAIN=\"\"/DNS_SEARCH_DOMAIN=\"$dns_search_domain\"/g" \
-		-e "s/SSH_PORT=/SSH_PORT=$SSH_PORT/g" \
-                -e "s:CACHE_DIR=:CACHE_DIR=\"$CACHE_DIR\":g" \
-                -e "s:E2E_NO_PROVISION=:E2E_NO_PROVISION=$e2e_no_provision:g" \
-		"$files/env.in" > "$vagrantdir/env"
-	else
-	    sed -e "s/DNS_NAMESERVER=\"\"/DNS_NAMESERVER=\"$dns_nameserver\"/g" \
-		-e "s/DNS_SEARCH_DOMAIN=\"\"/DNS_SEARCH_DOMAIN=\"$dns_search_domain\"/g" \
-		-e "s/SSH_PORT=/SSH_PORT=$SSH_PORT/g" \
-                -e "s:CACHE_DIR=:CACHE_DIR=\"$CACHE_DIR\":g" \
-                -e "s:E2E_NO_PROVISION=:E2E_NO_PROVISION=$e2e_no_provision:g" \
-		"$files/env.in" > "$vagrantdir/env"
-	fi
-    fi
-
-    # An env file written before this VM was known to come from a box has no
-    # flag, or a stale one. Keep it in sync, so that a vagrant up which is not
-    # ours, from make up or make ssh, does not provision the VM either.
-    if [ -n "$e2e_no_provision" ] && [ -f "$vagrantdir/env" ] &&
-           ! grep -q '^E2E_NO_PROVISION=1$' "$vagrantdir/env"; then
-        sed -i 's/^E2E_NO_PROVISION=.*$/E2E_NO_PROVISION=1/' "$vagrantdir/env"
-        grep -q '^E2E_NO_PROVISION=1$' "$vagrantdir/env" ||
-            echo "E2E_NO_PROVISION=1" >> "$vagrantdir/env"
-    fi
+    vm-write-env-file "$vagrantdir" "$e2e_no_provision"
 
     # The playbook's variables, for whoever ends up running it. This reads the
     # env file, so it has to come after that file is written.

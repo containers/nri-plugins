@@ -126,7 +126,9 @@ latest-github-release () {
     return $?
 }
 
-pre-cache-vagrant-image
+# A run against a host of its own boots no distro image, and fetching one is
+# half a gigabyte and a reason to abort when the mirror is down.
+vm-hw-mode || pre-cache-vagrant-image
 
 if [ "$k8s_release" = "latest" ]; then
     if latest_k8s_release=$(vm-load-cached-var "$OUTPUT_DIR" latest_k8s_release); then
