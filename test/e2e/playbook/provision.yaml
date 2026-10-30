@@ -74,13 +74,20 @@
     # kubeconfigs: kubeadm reset leaves both behind, so a provisioning run
     # which stopped before writing them would otherwise leave a stale one
     # pointing at a cluster which no longer exists.
+    #
+    # admin.conf names a control plane node and kubelet.conf a node which
+    # joined a cluster somebody else runs. kubeadm init refuses to run over
+    # either, so both are something to reset.
     - name: Check for a cluster to reset
-      ansible.builtin.stat:
-        path: /etc/kubernetes/admin.conf
+      ansible.builtin.find:
+        paths: /etc/kubernetes
+        patterns:
+          - admin.conf
+          - kubelet.conf
       register: existing_cluster
 
     - name: Reset the existing Kubernetes cluster
-      when: (kubeadm_reset | default(false) | bool) and existing_cluster.stat.exists
+      when: (kubeadm_reset | default(false) | bool) and existing_cluster.matched > 0
       block:
         - name: Tear the cluster down with kubeadm reset
           ansible.builtin.command:
@@ -219,6 +226,8 @@
       when: (ansible_facts['distribution'] == "Fedora") and
             (ansible_facts['distribution_major_version'] | int == 41)
 
+    # rsync is what the deploy playbook's synchronize tasks run on the host.
+    # A VM image happens to carry it; a host we were given need not.
     - name: Install common packages
       ansible.builtin.package:
         name:
@@ -230,6 +239,7 @@
           - kubeadm
           - kubectl
           - systemd-container
+          - rsync
         state: present
 
     - name: Install apt packages

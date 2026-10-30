@@ -415,45 +415,169 @@ vm-hw-key() {
     realpath -m "$key" 2>/dev/null || printf '%s\n' "$key"
 }
 
+vm-hw-ssh() {
+    # Usage: vm-hw-ssh COMMAND...
+    #
+    # Run COMMAND on the host over a connection of our own.
+    #
+    # Options spelled out rather than -F: these probes run before the
+    # generated ssh config exists. BatchMode so that an encrypted key fails
+    # instead of waiting for a passphrase nobody can type.
+    ssh -i "$(vm-hw-key)" \
+        -o BatchMode=yes \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        -o IdentitiesOnly=yes \
+        -o PasswordAuthentication=no \
+        -o LogLevel=FATAL \
+        -o ConnectTimeout=10 \
+        "$(vm-hw-user)@$(vm-hw-address)" "$@"
+}
+
 vm-hw-hostname() {
     # Usage: vm-hw-hostname
     #
-    # Print the short hostname of the host, read from it.
-    #
-    # This runs before the ssh config file exists, so it cannot use -F and
-    # spells the same options out instead.
-    local name
+    # Print the short hostname of the host, read from it. Fail, and say what
+    # ssh said, when the host cannot be reached.
+    local out status
 
-    name=$(ssh -i "$(vm-hw-key)" \
-               -o StrictHostKeyChecking=no \
-               -o UserKnownHostsFile=/dev/null \
-               -o IdentitiesOnly=yes \
-               -o PasswordAuthentication=no \
-               -o LogLevel=FATAL \
-               -o ConnectTimeout=10 \
-               "$(vm-hw-user)@$(vm-hw-address)" hostname -s 2>/dev/null)
-    printf '%s\n' "$name"
+    out=$(vm-hw-ssh hostname -s 2>&1)
+    status=$?
+    if [ "$status" != 0 ]; then
+        echo "cannot reach $(vm-hw-user)@$(vm-hw-address) with the key" \
+             "$(vm-hw-key):" >&2
+        printf '%s\n' "$out" >&2
+        return 1
+    fi
+
+    # The last line only: an rc file which echoes would otherwise become a
+    # hostname nobody can account for.
+    printf '%s\n' "$(tail -n 1 <<< "$out")"
+}
+
+vm-hw-check-sudo() {
+    # Usage: vm-hw-check-sudo
+    #
+    # Return success if the login user can run sudo without a password.
+    vm-hw-ssh sudo -n true > /dev/null 2>&1
+}
+
+vm-hw-has-cluster() {
+    # Usage: vm-hw-has-cluster
+    #
+    # Return 0 if the host is already part of a Kubernetes cluster, 1 if it
+    # is part of none, and 2 if the question could not be put to it.
+    local probe answer
+
+    # Two questions, because neither answers for the other. kubeadm's own
+    # files are there whether or not anything of that cluster still runs,
+    # and kubeadm init refuses over either of them: admin.conf names a
+    # control plane node, kubelet.conf one which joined a cluster somebody
+    # else runs. The ports are what an active node of any other kind has
+    # instead, k3s and its like leaving none of kubeadm's files behind, and
+    # they are two of the ones kubeadm init claims for itself.
+    #
+    # A host with no ss says so rather than letting an unanswered question
+    # read as a free host.
+    probe='
+test -f /etc/kubernetes/admin.conf -o -f /etc/kubernetes/kubelet.conf &&
+    { echo cluster=yes; exit 0; }
+command -v ss > /dev/null 2>&1 ||
+    { echo cluster=unknown; exit 0; }
+test -n "$(ss -Htln "sport = :6443 or sport = :10250")" &&
+    { echo cluster=yes; exit 0; }
+echo cluster=no'
+
+    # The answer is tagged and printed rather than carried by the exit
+    # status, which cannot tell a host saying "no" from one which was never
+    # reached: ssh exits 255 for its own failures and sudo 1 for a refused
+    # password, and neither means the host is free.
+    answer=$(vm-hw-ssh "sudo -n sh -c '$probe'" 2>/dev/null)
+
+    case "$(sed -n 's/^cluster=//p' <<< "$answer" | tail -n 1)" in
+        yes) return 0;;
+        no)  return 1;;
+    esac
+    return 2
+}
+
+vm-hw-check-provisionable() {
+    # Usage: vm-hw-check-provisionable VAGRANTDIR
+    #
+    # Fail the run rather than provision over a cluster nobody asked to lose.
+    local vagrantdir="$1"
+
+    vm-hw-check-sudo ||
+        error "$(vm-hw-user)@$(vm-hw-address) cannot run sudo without a
+password, which provisioning and the tests both need. Check the host's
+sudoers, and that test_hw_key is the key that user accepts."
+
+    if [ "${provision:-}" = "all" ]; then
+        return 0
+    fi
+
+    vm-hw-has-cluster
+    case $? in
+        0)
+            if [ -z "$(vm-recorded-box-key "$vagrantdir")" ]; then
+                error "$(vm-hw-address) is already part of a Kubernetes cluster
+and this run has no record of what went into it. Set provision=all to take
+what is there down and build a cluster again, or point the run at a host which
+is in none."
+            fi
+            ;;
+        2)
+            error "cannot tell whether $(vm-hw-address) is already part of a
+Kubernetes cluster: it did not answer, or could not. Provisioning would
+reconfigure its runtime and CNI, so it is not attempted on an answer this run
+does not have."
+            ;;
+    esac
+
+    return 0
+}
+
+vm-provision-hw() {
+    # Usage: vm-provision-hw VAGRANTDIR
+    #
+    # Run the provisioning playbook against the host.
+    local vagrantdir="$1"
+    local playbook="$nri_resource_policy_src/test/e2e/playbook/provision.yaml"
+    local login_args=()
+    local reset=false
+
+    mapfile -t login_args < <(vm-ansible-login-args "$VM_HOSTNAME" "$vagrantdir")
+
+    if [ "${provision:-}" = "all" ]; then
+        reset=true
+    fi
+
+    echo "provisioning $VM_HOSTNAME..."
+    (cd "$vagrantdir";
+     export ANSIBLE_PIPELINING=True;
+     ANSIBLE_SSH_ARGS="-F $vagrantdir/.ssh-config" ansible-playbook "$playbook" \
+          -i "$VM_HOSTNAME," "${login_args[@]}" \
+          --ssh-common-args "-F $vagrantdir/.ssh-config" \
+          --extra-vars "@$vagrantdir/ansible-vars.json" \
+          --extra-vars "kubeadm_reset=$reset"
+    ) || error "failed to provision $VM_HOSTNAME"
 }
 
 vm-hw-resolve-names() {
     # Usage: vm-hw-resolve-names
     #
-    # Set vm_name and VM_HOSTNAME for a run against a host we did not create.
-    #
-    # The name of the VM doubles as the ssh alias and, through
-    # get-hostname-for-vm, as the Kubernetes node name. On a host of its own
-    # those come apart: the node is named after the host, while the output
-    # directory has to tell a containerd run from a crio one against the same
-    # box. So VM_HOSTNAME is the host and vm_name carries the runtime too.
-    #
-    # Reading the name costs an ssh round trip, and both run_tests.sh and
-    # run.sh default vm_name independently, so an already exported VM_HOSTNAME
-    # is taken as the answer rather than asked for again.
+    # Set VM_HOSTNAME to the host's own name and vm_name to that plus the
+    # runtime, so that a containerd run and a crio one against the same host
+    # keep separate output directories.
     local hostname="${VM_HOSTNAME:-}"
+
+    # An exported name is taken as the answer: reading it costs an ssh round
+    # trip, and run.sh and run_tests.sh both default vm_name.
 
     if [ -z "$hostname" ]; then
         vm-hw-check-options
-        hostname="$(vm-hw-hostname)"
+        hostname="$(vm-hw-hostname)" ||
+            error "could not read the name of the host, see above"
         vm-hw-valid-hostname "$hostname" ||
             error "the host does not have a usable name, see above"
     fi
