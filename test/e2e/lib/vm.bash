@@ -429,24 +429,117 @@ vm-hw-key() {
     realpath -m "$key" 2>/dev/null || printf '%s\n' "$key"
 }
 
+vm-hw-ssh() {
+    # Usage: vm-hw-ssh COMMAND...
+    #
+    # Run COMMAND on the host over a connection of our own.
+    #
+    # Everything the tests do goes through $SSH and the generated ssh config.
+    # These few probes run before that config exists, so they spell the same
+    # options out instead of using -F.
+    ssh -i "$(vm-hw-key)" \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        -o IdentitiesOnly=yes \
+        -o PasswordAuthentication=no \
+        -o LogLevel=FATAL \
+        -o ConnectTimeout=10 \
+        "$(vm-hw-user)@$(vm-hw-address)" "$@"
+}
+
 vm-hw-hostname() {
     # Usage: vm-hw-hostname
     #
-    # Print the short hostname of the host, read from it.
+    # Print the short hostname of the host, read from it. Fail, and say what
+    # ssh said, when the host cannot be reached.
     #
-    # This runs before the ssh config file exists, so it cannot use -F and
-    # spells the same options out instead.
-    local name
+    # Failing to log in is the likeliest mistake of a first run, so it has to
+    # be told apart from a host which genuinely has no usable name. Reporting
+    # both as an empty name sends the reader after the wrong thing.
+    local out status
 
-    name=$(ssh -i "$(vm-hw-key)" \
-               -o StrictHostKeyChecking=no \
-               -o UserKnownHostsFile=/dev/null \
-               -o IdentitiesOnly=yes \
-               -o PasswordAuthentication=no \
-               -o LogLevel=FATAL \
-               -o ConnectTimeout=10 \
-               "$(vm-hw-user)@$(vm-hw-address)" hostname -s 2>/dev/null)
-    printf '%s\n' "$name"
+    out=$(vm-hw-ssh hostname -s 2>&1)
+    status=$?
+    if [ "$status" != 0 ]; then
+        echo "cannot reach $(vm-hw-user)@$(vm-hw-address) with the key" \
+             "$(vm-hw-key):" >&2
+        printf '%s\n' "$out" >&2
+        return 1
+    fi
+
+    # The last line only: a login shell which echoes from an rc file would
+    # otherwise become a hostname nobody can account for.
+    printf '%s\n' "$(tail -n 1 <<< "$out")"
+}
+
+vm-hw-check-sudo() {
+    # Usage: vm-hw-check-sudo
+    #
+    # Return success if the login user can run sudo without being asked for a
+    # password, which is what provisioning and every vm-command need.
+    vm-hw-ssh sudo -n true > /dev/null 2>&1
+}
+
+vm-hw-has-cluster() {
+    # Usage: vm-hw-has-cluster
+    #
+    # Return success if the host already runs a Kubernetes cluster.
+    #
+    # Asked of the host rather than of the output directory: a directory can
+    # be removed and a cluster cannot, so the host is the only honest answer.
+    vm-hw-ssh test -f /etc/kubernetes/admin.conf > /dev/null 2>&1
+}
+
+vm-hw-check-provisionable() {
+    # Usage: vm-hw-check-provisionable VAGRANTDIR
+    #
+    # Fail the run rather than provision over a cluster nobody asked to lose.
+    #
+    # A second kubeadm init refuses to run, and the way through that is
+    # provision=all, which takes the cluster down first. Doing that on our own
+    # would destroy a cluster on a machine the user may share, so it is said
+    # rather than done.
+    local vagrantdir="$1"
+
+    vm-hw-check-sudo ||
+        error "$(vm-hw-user)@$(vm-hw-address) cannot run sudo without a
+password, which provisioning and the tests both need. Check the host's
+sudoers, and that test_hw_key is the key that user accepts."
+
+    if [ "${provision:-}" = "all" ]; then
+        return 0
+    fi
+
+    if vm-hw-has-cluster && [ -z "$(vm-recorded-box-key "$vagrantdir")" ]; then
+        error "$(vm-hw-address) already runs a Kubernetes cluster and this run
+has no record of what went into it. Set provision=all to take that cluster
+down and build it again, or point the run at a host without one."
+    fi
+
+    return 0
+}
+
+vm-provision-hw() {
+    # Usage: vm-provision-hw VAGRANTDIR
+    #
+    # Run the provisioning playbook against the host.
+    #
+    # The same playbook and the same variables the vagrant provisioner uses,
+    # from the same file, which is the point of writing that file.
+    local vagrantdir="$1"
+    local playbook="$nri_resource_policy_src/test/e2e/playbook/provision.yaml"
+    local login_args=()
+
+    mapfile -t login_args < <(vm-ansible-login-args "$VM_HOSTNAME" "$vagrantdir")
+
+    echo "provisioning $VM_HOSTNAME..."
+    (cd "$vagrantdir";
+     export ANSIBLE_PIPELINING=True;
+     ANSIBLE_SSH_ARGS="-F $vagrantdir/.ssh-config" ansible-playbook "$playbook" \
+          -i "$VM_HOSTNAME," "${login_args[@]}" \
+          --ssh-common-args "-F $vagrantdir/.ssh-config" \
+          --extra-vars "@$vagrantdir/ansible-vars.json"
+    ) || error "failed to provision $VM_HOSTNAME"
 }
 
 vm-hw-resolve-names() {
@@ -467,7 +560,8 @@ vm-hw-resolve-names() {
 
     if [ -z "$hostname" ]; then
         vm-hw-check-options
-        hostname="$(vm-hw-hostname)"
+        hostname="$(vm-hw-hostname)" ||
+            error "could not read the name of the host, see above"
         vm-hw-valid-hostname "$hostname" ||
             error "the host does not have a usable name, see above"
     fi
