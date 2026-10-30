@@ -11,7 +11,7 @@ spec:
           deviceClassName: topology-aware.nri.io
           selectors:
           - cel:
-              expression: device.attributes[\"resource.kubernetes.io\"].numaNode == ${NODE_A}
+              expression: device.attributes[\"dra.cpu\"].level == \"numanode\" && device.attributes[\"resource.kubernetes.io\"].numaNode == ${NODE_A}
           capacity:
             requests:
               dra.cpu/cpu: '${CPUS}'
@@ -20,7 +20,7 @@ spec:
           deviceClassName: topology-aware.nri.io
           selectors:
           - cel:
-              expression: device.attributes[\"resource.kubernetes.io\"].numaNode == ${NODE_B}
+              expression: device.attributes[\"dra.cpu\"].level == \"numanode\" && device.attributes[\"resource.kubernetes.io\"].numaNode == ${NODE_B}
           capacity:
             requests:
               dra.cpu/cpu: '${CPUS}'

@@ -20,6 +20,8 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -45,17 +47,24 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-// draTestOwner keeps published DRA devices.
+// draTestOwner keeps published DRA devices, or fails to publish them with
+// publishErr.
 type draTestOwner struct {
 	sync.Mutex
-	devices []resourceapi.Device
+	devices    []resourceapi.Device
+	publishErr error
 
 	listAttributesSupported bool
 }
 
 func (*draTestOwner) UpdateContainers() error { return nil }
 
+func (*draTestOwner) DRAEnabled() bool { return true }
+
 func (o *draTestOwner) PublishDRADevices(devices []resourceapi.Device) error {
+	if o.publishErr != nil {
+		return o.publishErr
+	}
 	o.devices = devices
 	return nil
 }
@@ -99,6 +108,7 @@ func draTestPolicy(t *testing.T, sys system.System, cfg *cfgapi.Config) (*policy
 }
 
 type draDevice struct {
+	level    string
 	numaNode int64
 	socketID int64
 	smt      bool
@@ -111,6 +121,7 @@ func draDeviceSummary(devices []resourceapi.Device) map[string]draDevice {
 	for _, d := range devices {
 		capacity := d.Capacity[draCapacityCPU]
 		summary[d.Name] = draDevice{
+			level:    ptr.Deref(d.Attributes[draAttrLevel].StringValue, ""),
 			numaNode: ptr.Deref(d.Attributes[deviceattribute.StandardDeviceAttributeNUMANode].IntValue, -1),
 			socketID: ptr.Deref(d.Attributes[draAttrSocketID].IntValue, -1),
 			smt:      ptr.Deref(d.Attributes[draAttrSMTEnabled].BoolValue, false),
@@ -132,13 +143,15 @@ func TestDRADevices(t *testing.T) {
 	}{
 		{
 			// The two nodes with no CPUs of their own publish nothing.
-			name:     "one device per NUMA node with CPUs",
+			name:     "one device per NUMA node and socket with CPUs",
 			reserved: "cpuset:0,1",
 			expected: map[string]draDevice{
-				"cpudevnuma000": {numaNode: 0, socketID: 0, smt: true, cpus: 27},
-				"cpudevnuma001": {numaNode: 1, socketID: 1, smt: true, cpus: 27},
-				"cpudevnuma002": {numaNode: 2, socketID: 0, smt: true, cpus: 28},
-				"cpudevnuma003": {numaNode: 3, socketID: 1, smt: true, cpus: 28},
+				"cpudevnuma000":   {level: "numanode", numaNode: 0, socketID: 0, smt: true, cpus: 27},
+				"cpudevnuma001":   {level: "numanode", numaNode: 1, socketID: 1, smt: true, cpus: 27},
+				"cpudevnuma002":   {level: "numanode", numaNode: 2, socketID: 0, smt: true, cpus: 28},
+				"cpudevnuma003":   {level: "numanode", numaNode: 3, socketID: 1, smt: true, cpus: 28},
+				"cpudevsocket000": {level: "socket", numaNode: -1, socketID: 0, smt: true, cpus: 55},
+				"cpudevsocket001": {level: "socket", numaNode: -1, socketID: 1, smt: true, cpus: 55},
 			},
 		},
 		{
@@ -146,9 +159,11 @@ func TestDRADevices(t *testing.T) {
 			available: "exclude-cpuset:" + node0,
 			reserved:  "cpuset:1",
 			expected: map[string]draDevice{
-				"cpudevnuma001": {numaNode: 1, socketID: 1, smt: true, cpus: 27},
-				"cpudevnuma002": {numaNode: 2, socketID: 0, smt: true, cpus: 28},
-				"cpudevnuma003": {numaNode: 3, socketID: 1, smt: true, cpus: 28},
+				"cpudevnuma001":   {level: "numanode", numaNode: 1, socketID: 1, smt: true, cpus: 27},
+				"cpudevnuma002":   {level: "numanode", numaNode: 2, socketID: 0, smt: true, cpus: 28},
+				"cpudevnuma003":   {level: "numanode", numaNode: 3, socketID: 1, smt: true, cpus: 28},
+				"cpudevsocket000": {level: "socket", numaNode: -1, socketID: 0, smt: true, cpus: 28},
+				"cpudevsocket001": {level: "socket", numaNode: -1, socketID: 1, smt: true, cpus: 55},
 			},
 		},
 		{
@@ -156,7 +171,8 @@ func TestDRADevices(t *testing.T) {
 			available: "cpuset:0,8,12",
 			reserved:  "cpuset:0,8",
 			expected: map[string]draDevice{
-				"cpudevnuma000": {numaNode: 0, socketID: 0, smt: true, cpus: 1},
+				"cpudevnuma000":   {level: "numanode", numaNode: 0, socketID: 0, smt: true, cpus: 1},
+				"cpudevsocket000": {level: "socket", numaNode: -1, socketID: 0, smt: true, cpus: 1},
 			},
 		},
 		{
@@ -164,10 +180,12 @@ func TestDRADevices(t *testing.T) {
 			name:     "a reserved CPU that is also isolated is still excluded",
 			reserved: "cpuset:4",
 			expected: map[string]draDevice{
-				"cpudevnuma000": {numaNode: 0, socketID: 0, smt: true, cpus: 27},
-				"cpudevnuma001": {numaNode: 1, socketID: 1, smt: true, cpus: 28},
-				"cpudevnuma002": {numaNode: 2, socketID: 0, smt: true, cpus: 28},
-				"cpudevnuma003": {numaNode: 3, socketID: 1, smt: true, cpus: 28},
+				"cpudevnuma000":   {level: "numanode", numaNode: 0, socketID: 0, smt: true, cpus: 27},
+				"cpudevnuma001":   {level: "numanode", numaNode: 1, socketID: 1, smt: true, cpus: 28},
+				"cpudevnuma002":   {level: "numanode", numaNode: 2, socketID: 0, smt: true, cpus: 28},
+				"cpudevnuma003":   {level: "numanode", numaNode: 3, socketID: 1, smt: true, cpus: 28},
+				"cpudevsocket000": {level: "socket", numaNode: -1, socketID: 0, smt: true, cpus: 55},
+				"cpudevsocket001": {level: "socket", numaNode: -1, socketID: 1, smt: true, cpus: 56},
 			},
 		},
 	} {
@@ -182,19 +200,161 @@ func TestDRADevices(t *testing.T) {
 	}
 }
 
-// TestDRADeviceShape checks attributes of published device.
+// draTestContainer returns a container of the QoS class with the given CPU
+// request, and the same limit if it is guaranteed.
+func draTestContainer(id string, qos v1.PodQOSClass, cpu string) *pinnedContainer {
+	c := &pinnedContainer{mockContainer: mockContainer{
+		name:                   id,
+		returnValueForGetID:    id,
+		returnValueForQOSClass: qos,
+		returnValueForGetResourceRequirements: v1.ResourceRequirements{
+			Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse(cpu)},
+		},
+	}}
+	if qos == v1.PodQOSGuaranteed {
+		c.returnValueForGetResourceRequirements.Limits = c.returnValueForGetResourceRequirements.Requests
+	}
+	return c
+}
+
+// TestDRADevicesFollowFreeCPUs checks that the capacity of a device goes down
+// by the CPUs containers hold exclusively, the CPUs shared containers need and
+// the CPUs of claims on smaller devices inside it, but not by its own claims
+// or those of larger devices.
+func TestDRADevicesFollowFreeCPUs(t *testing.T) {
+	sys := testServerSystem(t)
+	p, owner := draTestPolicy(t, sys, draTestConfig("", draTestReserved(sys)))
+
+	expected := map[string]int64{
+		"cpudevnuma000": 28,
+		"cpudevnuma001": 28,
+		"cpudevnuma002": 28,
+		"cpudevnuma003": 26,
+		// Sockets 0 and 1 have nodes 0 and 2, and 1 and 3.
+		"cpudevsocket000": 56,
+		"cpudevsocket001": 54,
+	}
+	check := func(what string) {
+		t.Helper()
+		got := map[string]int64{}
+		for name, d := range draDeviceSummary(owner.devices) {
+			got[name] = d.cpus
+		}
+		if !reflect.DeepEqual(got, expected) {
+			t.Errorf("%s: published capacities %v, expected %v", what, got, expected)
+		}
+	}
+	check("at start")
+
+	exclusive := draTestContainer("exclusive", v1.PodQOSGuaranteed, "2")
+	if err := p.allocateResources(exclusive, "NUMA node #1"); err != nil {
+		t.Fatalf("failed to allocate: %v", err)
+	}
+	expected["cpudevnuma001"] -= 2
+	expected["cpudevsocket001"] -= 2
+	check("after an exclusive allocation")
+
+	// A claim on a node cannot leave it, so the socket device leaves its
+	// CPUs out.
+	allocateClaim(t, p, "a", draTestResult(0, "3"))
+	expected["cpudevsocket000"] -= 3
+	check("after a NUMA claim")
+
+	// A claim on a socket lowers no node.
+	allocateClaim(t, p, "b", draTestSocketResult(1, "4"))
+	check("after a socket claim")
+
+	shared := draTestContainer("shared", v1.PodQOSBurstable, "1500m")
+	if err := p.allocateResources(shared, "NUMA node #2"); err != nil {
+		t.Fatalf("failed to allocate: %v", err)
+	}
+	expected["cpudevnuma002"] -= 2
+	expected["cpudevsocket000"] -= 2
+	check("after a shared allocation")
+
+	// A shared container in a socket pool needs CPUs of the socket, but of
+	// none of its nodes.
+	socketShared := draTestContainer("socket-shared", v1.PodQOSBurstable, "500m")
+	if err := p.allocateResources(socketShared, "socket #1"); err != nil {
+		t.Fatalf("failed to allocate: %v", err)
+	}
+	expected["cpudevsocket001"]--
+	check("after a shared allocation in a socket pool")
+
+	for _, c := range []cache.Container{exclusive, shared, socketShared} {
+		if err := p.ReleaseResources(c); err != nil {
+			t.Fatalf("failed to release: %v", err)
+		}
+	}
+	for _, uid := range []types.UID{"a", "b"} {
+		if err := p.ReleaseClaim(uid, false); err != nil {
+			t.Fatalf("failed to release claim: %v", err)
+		}
+	}
+	expected["cpudevnuma001"] += 2
+	expected["cpudevnuma002"] += 2
+	expected["cpudevsocket000"] += 5
+	expected["cpudevsocket001"] += 3
+	check("after releasing everything")
+}
+
+// TestDRADevicesNearlyFull checks that a device with one free CPU has no step,
+// which the API server would reject, and that a device with no free CPU is
+// left out.
+func TestDRADevicesNearlyFull(t *testing.T) {
+	// Node 0 and socket 0 have CPUs 8 and 12 for claims, node 1 and socket 1
+	// have CPU 1.
+	p, owner := draTestPolicy(t, testServerSystem(t), draTestConfig("cpuset:0,1,8,12", "cpuset:0"))
+
+	if err := p.allocateResources(draTestContainer("c0", v1.PodQOSGuaranteed, "1"), "NUMA node #0"); err != nil {
+		t.Fatalf("failed to allocate: %v", err)
+	}
+	if err := p.allocateResources(draTestContainer("c1", v1.PodQOSGuaranteed, "1"), "NUMA node #1"); err != nil {
+		t.Fatalf("failed to allocate: %v", err)
+	}
+
+	var names []string
+	for _, d := range owner.devices {
+		names = append(names, d.Name)
+		capacity := d.Capacity[draCapacityCPU]
+		r := capacity.RequestPolicy.ValidRange
+		if capacity.Value.Value() != 1 || r.Min.Value() != 1 || r.Step != nil {
+			t.Errorf("%s: published capacity %s with range min %s, step %v, expected 1 with min 1 and no step",
+				d.Name, capacity.Value.String(), r.Min.String(), r.Step)
+		}
+	}
+	if expected := []string{"cpudevnuma000", "cpudevsocket000"}; !slices.Equal(names, expected) {
+		t.Errorf("published devices %v, expected %v", names, expected)
+	}
+}
+
+// TestDRAPublishFailure checks that a failure to publish the devices does not
+// fail an allocation.
+func TestDRAPublishFailure(t *testing.T) {
+	sys := testServerSystem(t)
+	p, owner := draTestPolicy(t, sys, draTestConfig("", draTestReserved(sys)))
+
+	owner.publishErr = fmt.Errorf("test failure")
+	if err := p.allocateResources(draTestContainer("c", v1.PodQOSGuaranteed, "2"), ""); err != nil {
+		t.Errorf("allocation failed with a failing publish: %v", err)
+	}
+	allocateClaim(t, p, "a", draTestResult(0, "2"))
+}
+
+// TestDRADeviceShape checks attributes of published devices.
 func TestDRADeviceShape(t *testing.T) {
 	_, owner := draTestPolicy(t, testServerSystem(t), draTestConfig("cpuset:0,8,12", "cpuset:0"))
 
 	one := resource.NewQuantity(1, resource.DecimalSI)
-	expected := []resourceapi.Device{
-		{
-			Name:                     "cpudevnuma000",
+	device := func(name, level string) resourceapi.Device {
+		return resourceapi.Device{
+			Name:                     name,
 			AllowMultipleAllocations: ptr.To(true),
 			Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
-				deviceattribute.StandardDeviceAttributeNUMANode: {IntValue: ptr.To(int64(0))},
+				"dra.cpu/level":      {StringValue: ptr.To(level)},
 				"dra.cpu/socketID":   {IntValue: ptr.To(int64(0))},
 				"dra.cpu/smtEnabled": {BoolValue: ptr.To(true)},
+				"dra.cpu/numCPUs":    {IntValue: ptr.To(int64(2))},
 			},
 			Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
 				"dra.cpu/cpu": {
@@ -216,8 +376,11 @@ func TestDRADeviceShape(t *testing.T) {
 					},
 				},
 			},
-		},
+		}
 	}
+	numa := device("cpudevnuma000", "numanode")
+	numa.Attributes[deviceattribute.StandardDeviceAttributeNUMANode] = resourceapi.DeviceAttribute{IntValue: ptr.To(int64(0))}
+	expected := []resourceapi.Device{numa, device("cpudevsocket000", "socket")}
 
 	if !apiequality.Semantic.DeepEqual(owner.devices, expected) {
 		t.Errorf("published devices\n%+v\nexpected\n%+v", owner.devices, expected)
@@ -269,8 +432,9 @@ func TestDRAPCIeRoots(t *testing.T) {
 		t.Fatalf("failed to reconfigure policy: %v", err)
 	}
 	expected := map[string][]string{
-		"cpudevnuma000": {"pci0000:00", "pci0000:5d"},
-		"cpudevnuma002": {"pci0000:00", "pci0000:5d"},
+		"cpudevnuma000":   {"pci0000:00", "pci0000:5d"},
+		"cpudevnuma002":   {"pci0000:00", "pci0000:5d"},
+		"cpudevsocket000": {"pci0000:00", "pci0000:5d"},
 	}
 	if got := published(); !reflect.DeepEqual(got, expected) {
 		t.Errorf("published PCIe roots %v, expected %v", got, expected)
@@ -309,13 +473,20 @@ func draTestResult(node int, cpus string) resourceapi.DeviceRequestAllocationRes
 		Request: "cpus",
 		Driver:  "topology-aware.nri.io",
 		Pool:    "node",
-		Device:  fmt.Sprintf(draDeviceFormat, node),
+		Device:  fmt.Sprintf(draNUMADeviceFormat, node),
 	}
 	if cpus != "" {
 		r.ConsumedCapacity = map[resourceapi.QualifiedName]resource.Quantity{
 			draCapacityCPU: resource.MustParse(cpus),
 		}
 	}
+	return r
+}
+
+// draTestSocketResult is an allocation result of one socket device.
+func draTestSocketResult(socket int, cpus string) resourceapi.DeviceRequestAllocationResult {
+	r := draTestResult(0, cpus)
+	r.Device = fmt.Sprintf(draSocketDeviceFormat, socket)
 	return r
 }
 
@@ -528,18 +699,18 @@ func TestAllocateClaim(t *testing.T) {
 			claim := p.allocations.claims["a"]
 			cpus := claim.ExclusiveCPUs()
 			// Every result has CPUs of its own, as many as it consumed, all
-			// on the node of its device.
+			// on its device.
 			if len(claim.results) != len(tc.results) {
 				t.Fatalf("claim has %d results, expected %d", len(claim.results), len(tc.results))
 			}
 			all := cpuset.New()
 			for i, r := range tc.results {
-				node, _ := p.draNode(r.Device)
+				deviceCPUs, _ := p.draDeviceCPUs(r.Device)
 				q := r.ConsumedCapacity[draCapacityCPU]
-				if got := claim.results[i]; got.Size() != int(q.Value()) || !got.IsSubsetOf(node.CPUSet()) ||
+				if got := claim.results[i]; got.Size() != int(q.Value()) || !got.IsSubsetOf(deviceCPUs) ||
 					!got.Intersection(all).IsEmpty() {
-					t.Errorf("result %d got CPUs %s, expected %d of node %d, none of %s",
-						i, got, q.Value(), node.ID(), all)
+					t.Errorf("result %d got CPUs %s, expected %d of device %s, none of %s",
+						i, got, q.Value(), r.Device, all)
 				}
 				all = all.Union(claim.results[i])
 			}
@@ -549,7 +720,7 @@ func TestAllocateClaim(t *testing.T) {
 			for _, id := range sys.NodeIDs() {
 				want := 0
 				for _, r := range tc.results {
-					if r.Device == fmt.Sprintf(draDeviceFormat, id) {
+					if r.Device == fmt.Sprintf(draNUMADeviceFormat, id) {
 						q := r.ConsumedCapacity[draCapacityCPU]
 						want += int(q.Value())
 					}
@@ -650,13 +821,13 @@ func TestAllocateClaimAgain(t *testing.T) {
 	// A claim cannot change what it consumed once it has CPUs.
 	if _, err := p.AllocateClaim(draTestClaim("a"), []resourceapi.DeviceRequestAllocationResult{
 		draTestResult(0, "3"),
-	}); err == nil || !strings.Contains(err.Error(), "holds 2 CPUs but consumed 3") {
+	}); err == nil || !strings.Contains(err.Error(), "but consumed 3 CPUs of device cpudevnuma000") {
 		t.Errorf("got error %v, expected a size mismatch", err)
 	}
 	// Nor move them to another node.
 	if _, err := p.AllocateClaim(draTestClaim("a"), []resourceapi.DeviceRequestAllocationResult{
 		draTestResult(1, "2"),
-	}); err == nil || !strings.Contains(err.Error(), "holds 0 CPUs of node #1 but consumed 2") {
+	}); err == nil || !strings.Contains(err.Error(), "holds CPUs of device cpudevnuma000, not of cpudevnuma001") {
 		t.Errorf("got error %v, expected a node mismatch", err)
 	}
 }
@@ -704,7 +875,7 @@ func TestReleaseClaim(t *testing.T) {
 	a := allocateClaim(t, p, "a", draTestResult(0, "2"), draTestResult(1, "2"))
 	b := allocateClaim(t, p, "b", draTestResult(0, "2"))
 
-	if err := p.ReleaseClaim("a"); err != nil {
+	if err := p.ReleaseClaim("a", false); err != nil {
 		t.Fatalf("failed to release claim a: %v", err)
 	}
 	if got := freeCPUs(p); !got.Equals(free.Difference(b)) {
@@ -713,7 +884,7 @@ func TestReleaseClaim(t *testing.T) {
 
 	// Releasing a claim we do not know, or one we have released, is nothing.
 	for _, uid := range []types.UID{"a", "unknown"} {
-		if err := p.ReleaseClaim(uid); err != nil {
+		if err := p.ReleaseClaim(uid, false); err != nil {
 			t.Errorf("failed to release claim %s: %v", uid, err)
 		}
 	}
@@ -921,7 +1092,7 @@ func TestPinClaimedCPUs(t *testing.T) {
 				t.Errorf("pinned to %s while claim c holds %s, expected all of %s and none of %s",
 					got, cpus, claimed, cpus)
 			}
-			if err := p.ReleaseClaim("c"); err != nil {
+			if err := p.ReleaseClaim("c", false); err != nil {
 				t.Fatalf("failed to release claim c: %v", err)
 			}
 			if got := cpuset.MustParse(c.cpus); !got.Equals(pinned) {
@@ -1494,6 +1665,664 @@ func TestRestoreClaimsMoved(t *testing.T) {
 	}
 }
 
+// TestRestoreClaimDevices verifies that claims keep their devices across a
+// restart, that a socket claim which cannot keep its CPUs moves to other CPUs
+// of its socket, and that a claim saved without its devices gets the NUMA
+// devices of its CPUs.
+func TestRestoreClaimDevices(t *testing.T) {
+	sys := testServerSystem(t)
+	dir := t.TempDir()
+	p, err := draRestart(t, dir, sys, draTestConfig("", draTestReserved(sys)))
+	if err != nil {
+		t.Fatalf("failed to set up policy: %v", err)
+	}
+	allocateClaim(t, p, "a", draTestResult(0, "2"))
+	b := allocateClaim(t, p, "b", draTestSocketResult(1, "3"))
+
+	devices := func(p *policy, uid string) []string {
+		t.Helper()
+		c, ok := p.allocations.claims[uid]
+		if !ok {
+			t.Fatalf("claim %s not restored", uid)
+		}
+		return c.devices
+	}
+
+	// Reserving a CPU of claim b moves it. Reserved CPUs must not mix
+	// isolated and normal ones.
+	gone := b.Difference(sys.IsolatedCPUs()).List()[0]
+	cfg := draTestConfig("", draTestReserved(sys)+","+cpuset.New(gone).String())
+	if p, err = draRestart(t, dir, sys, cfg); err != nil {
+		t.Fatalf("failed to restart policy: %v", err)
+	}
+	if got := devices(p, "a"); !slices.Equal(got, []string{"cpudevnuma000"}) {
+		t.Errorf("claim a has devices %v after a restart, expected cpudevnuma000", got)
+	}
+	if got := devices(p, "b"); !slices.Equal(got, []string{"cpudevsocket001"}) {
+		t.Errorf("claim b has devices %v after a restart, expected cpudevsocket001", got)
+	}
+	moved := p.allocations.claims["b"].ExclusiveCPUs()
+	if moved.Size() != 3 || !moved.IsSubsetOf(sys.Package(1).CPUSet()) || moved.Contains(gone) {
+		t.Errorf("claim b has CPUs %s after a restart, expected 3 CPUs of socket 1 without %d", moved, gone)
+	}
+
+	// A cache with no devices for claims, as older versions write it.
+	file := filepath.Join(dir, "cache", "cache")
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("failed to read cache: %v", err)
+	}
+	old := regexp.MustCompile(`,?\\?"Devices\\?":\[[^\]]*\]`).ReplaceAllString(string(data), "")
+	if old == string(data) {
+		t.Fatalf("no devices to remove in the cache")
+	}
+	if err := os.WriteFile(file, []byte(old), 0o600); err != nil {
+		t.Fatalf("failed to write cache: %v", err)
+	}
+	if p, err = draRestart(t, dir, sys, cfg); err != nil {
+		t.Fatalf("failed to restart policy: %v", err)
+	}
+	if got := devices(p, "a"); !slices.Equal(got, []string{"cpudevnuma000"}) {
+		t.Errorf("claim a has devices %v after a restart from an old cache, expected cpudevnuma000", got)
+	}
+	allocateClaim(t, p, "a", draTestResult(0, "2"))
+}
+
+// TestSocketClaims verifies that a socket request gets CPUs of its socket, of
+// one NUMA node when one has enough free CPUs, of the node with the fewest of
+// them, and of several nodes only when it needs more than one has.
+func TestSocketClaims(t *testing.T) {
+	sys := testServerSystem(t)
+	p, _ := draTestPolicy(t, sys, draTestConfig("", draTestReserved(sys)))
+
+	nodes := func(cpus cpuset.CPUSet) []idset.ID {
+		var ids []idset.ID
+		for _, id := range sys.NodeIDs() {
+			if !cpus.Intersection(sys.Node(id).CPUSet()).IsEmpty() {
+				ids = append(ids, id)
+			}
+		}
+		return ids
+	}
+
+	// Node 0 has 28 CPUs, its sibling node 2 too. The CPU IDs of the two
+	// nodes alternate, so picking from the whole socket would take both.
+	if got := nodes(allocateClaim(t, p, "a", draTestSocketResult(0, "4"))); len(got) != 1 {
+		t.Errorf("a claim of 4 CPUs got CPUs of nodes %v, expected one node", got)
+	}
+	// Now one node has 24 free CPUs: a claim which fits goes there.
+	busy := nodes(p.allocations.claims["a"].ExclusiveCPUs())[0]
+	if got := nodes(allocateClaim(t, p, "b", draTestSocketResult(0, "20"))); !slices.Equal(got, []idset.ID{busy}) {
+		t.Errorf("a claim of 20 CPUs got CPUs of nodes %v, expected node %d with the fewest free CPUs", got, busy)
+	}
+	if got := nodes(allocateClaim(t, p, "c", draTestSocketResult(0, "26"))); len(got) != 1 || got[0] == busy {
+		t.Errorf("a claim of 26 CPUs got CPUs of nodes %v, expected the other node", got)
+	}
+
+	// Socket 1 has 54 CPUs: a claim of 40 spans its nodes, and two requests
+	// of a claim get disjoint CPUs.
+	d := allocateClaim(t, p, "d", draTestSocketResult(1, "40"))
+	if d.Size() != 40 || !d.IsSubsetOf(sys.Package(1).CPUSet()) || len(nodes(d)) != 2 {
+		t.Errorf("a claim of 40 CPUs got CPUs %s, expected 40 CPUs of both nodes of socket 1", d)
+	}
+	allocateClaim(t, p, "e", draTestSocketResult(1, "3"), draTestSocketResult(1, "3"))
+	e := p.allocations.claims["e"]
+	if r := e.results; r[0].Size() != 3 || r[1].Size() != 3 || !r[0].Intersection(r[1]).IsEmpty() ||
+		!e.ExclusiveCPUs().IsSubsetOf(sys.Package(1).CPUSet()) || !e.ExclusiveCPUs().Intersection(d).IsEmpty() {
+		t.Errorf("two requests of 3 CPUs got CPUs %v, expected disjoint CPUs of socket 1 apart from %s", r, d)
+	}
+}
+
+// draMoveTestPolicy returns a policy with 4 CPUs for claims on each NUMA node
+// of socket 0, and the node of the socket where a socket claim of 2 CPUs
+// lands first, then the other node.
+func draMoveTestPolicy(t *testing.T, cfg *cfgapi.Config) (*policy, int, int) {
+	sys := testServerSystem(t)
+	cpus := func(node idset.ID, n int) cpuset.CPUSet {
+		normal := sys.Node(node).CPUSet().Difference(sys.IsolatedCPUs())
+		return cpuset.New(normal.List()[:n]...)
+	}
+	reserved := cpus(1, 1)
+	available := cpus(0, 4).Union(cpus(2, 4)).Union(reserved)
+	cfg.AvailableResources = cfgapi.Constraints{cfgapi.CPU: cfgapi.Amount("cpuset:" + available.String())}
+	cfg.ReservedResources = cfgapi.Constraints{cfgapi.CPU: cfgapi.Amount("cpuset:" + reserved.String())}
+	p, _ := draTestPolicy(t, sys, cfg)
+
+	first := int(sys.CPU(idset.ID(allocateClaim(t, p, "probe", draTestSocketResult(0, "2")).List()[0])).NodeID())
+	if err := p.ReleaseClaim("probe", false); err != nil {
+		t.Fatalf("failed to release claim probe: %v", err)
+	}
+	return p, first, 2 - first
+}
+
+// A socket claim on the CPUs a NUMA claim needs moves to the other node of
+// the socket, and the containers holding it move with it. Releasing the NUMA
+// claim leaves the socket claim where it is, undoing it moves the socket
+// claim and its holders back.
+func TestMoveSocketClaim(t *testing.T) {
+	for _, undo := range []bool{false, true} {
+		t.Run(fmt.Sprintf("undo=%v", undo), func(t *testing.T) {
+			cfg := draTestConfig("", "")
+			cfg.PinCPU = true
+			p, busy, other := draMoveTestPolicy(t, cfg)
+			nodeCPUs := func(node int) cpuset.CPUSet { return p.sys.Node(idset.ID(node)).CPUSet() }
+
+			a := allocateClaim(t, p, "a", draTestSocketResult(0, "4"))
+			if !a.IsSubsetOf(nodeCPUs(busy)) {
+				t.Fatalf("claim a got CPUs %s, expected the CPUs of node %d", a, busy)
+			}
+			holder := &pinnedContainer{
+				mockContainer: mockContainer{
+					name:                   "holder",
+					returnValueForGetID:    "holder",
+					returnValueForQOSClass: v1.PodQOSBestEffort,
+				},
+				devices: holds("a", 0),
+			}
+			grant, err := p.allocatePool(holder, "")
+			if err != nil {
+				t.Fatalf("failed to allocate: %v", err)
+			}
+			p.applyGrant(grant)
+			p.allocations.addGrant(grant)
+
+			b := allocateClaim(t, p, "b", draTestResult(busy, "4"))
+			moved := p.allocations.claims["a"].ExclusiveCPUs()
+			if !b.Equals(nodeCPUs(busy).Intersection(b)) || b.Size() != 4 {
+				t.Errorf("claim b got CPUs %s, expected 4 CPUs of node %d", b, busy)
+			}
+			if moved.Size() != 4 || !moved.IsSubsetOf(nodeCPUs(other)) {
+				t.Errorf("claim a holds CPUs %s, expected 4 CPUs of node %d", moved, other)
+			}
+			if pinned := cpuset.MustParse(holder.cpus); !pinned.Equals(moved) {
+				t.Errorf("holder of claim a pinned to %s, expected %s", pinned, moved)
+			}
+			if got := p.ExportResourceData(holder)[policyapi.ExportClaimedCPUs]; got != moved.String() {
+				t.Errorf("exported claimed CPUs %q, expected %q", got, moved)
+			}
+
+			if err := p.ReleaseClaim("b", undo); err != nil {
+				t.Fatalf("failed to release claim b: %v", err)
+			}
+			expected := moved
+			if undo {
+				expected = a
+			}
+			if got := p.allocations.claims["a"].ExclusiveCPUs(); !got.Equals(expected) {
+				t.Errorf("claim a holds CPUs %s after releasing claim b, expected %s", got, expected)
+			}
+			if pinned := cpuset.MustParse(holder.cpus); !pinned.Equals(expected) {
+				t.Errorf("holder of claim a pinned to %s after releasing claim b, expected %s", pinned, expected)
+			}
+			if free := freeCPUs(p); !free.Intersection(expected).IsEmpty() {
+				t.Errorf("CPUs %s of claim a are free", free.Intersection(expected))
+			}
+		})
+	}
+}
+
+// Undoing a NUMA claim leaves a socket claim which another claim moved since
+// where it is.
+func TestUndoMovedSocketClaim(t *testing.T) {
+	p, busy, _ := draMoveTestPolicy(t, draTestConfig("", ""))
+
+	before := allocateClaim(t, p, "a", draTestSocketResult(0, "2"))
+	allocateClaim(t, p, "b", draTestResult(busy, "3"))
+	movedByB := p.allocations.claims["a"].ExclusiveCPUs()
+	allocateClaim(t, p, "d", draTestResult(busy, "1"))
+	movedByD := p.allocations.claims["a"].ExclusiveCPUs()
+	if movedByB.Equals(before) || movedByD.Equals(movedByB) {
+		t.Fatalf("claim a holds CPUs %s, then %s, then %s, expected it to move twice", before, movedByB, movedByD)
+	}
+
+	if err := p.ReleaseClaim("b", true); err != nil {
+		t.Fatalf("failed to release claim b: %v", err)
+	}
+	if got := p.allocations.claims["a"].ExclusiveCPUs(); !got.Equals(movedByD) {
+		t.Errorf("claim a holds CPUs %s after undoing claim b, expected %s", got, movedByD)
+	}
+
+	if err := p.ReleaseClaim("d", true); err != nil {
+		t.Fatalf("failed to release claim d: %v", err)
+	}
+	if got := p.allocations.claims["a"].ExclusiveCPUs(); !got.Equals(movedByB) {
+		t.Errorf("claim a holds CPUs %s after undoing claim d, expected %s", got, movedByB)
+	}
+}
+
+// A socket claim moves only as many CPUs as a NUMA claim needs and other
+// claims stay, and a NUMA claim which needs more than the socket can free
+// fails and leaves the socket claim as it was.
+func TestMoveSocketClaimPartly(t *testing.T) {
+	p, busy, other := draMoveTestPolicy(t, draTestConfig("", ""))
+	nodeCPUs := func(node int) cpuset.CPUSet { return p.sys.Node(idset.ID(node)).CPUSet() }
+	onNodes := func(uid string) (int, int) {
+		cpus := p.allocations.claims[uid].ExclusiveCPUs()
+		return cpus.Intersection(nodeCPUs(busy)).Size(), cpus.Intersection(nodeCPUs(other)).Size()
+	}
+
+	allocateClaim(t, p, "a", draTestSocketResult(0, "2"))
+	c := allocateClaim(t, p, "c", draTestResult(other, "2"))
+
+	allocateClaim(t, p, "b", draTestResult(busy, "3"))
+	if onBusy, onOther := onNodes("a"); onBusy != 1 || onOther != 1 {
+		t.Errorf("claim a holds %d CPUs of node %d and %d of node %d, expected 1 and 1", onBusy, busy, onOther, other)
+	}
+
+	// Claim a has no CPUs left to give on the busy node once this one is
+	// refused, which leaves it as it was.
+	before := p.allocations.claims["a"].ExclusiveCPUs()
+	_, err := p.AllocateClaim(draTestClaim("e"), []resourceapi.DeviceRequestAllocationResult{
+		draTestResult(busy, "1"), draTestResult(busy, "1"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "claim e:") {
+		t.Errorf("claim e got error %v, expected it to fail with the claim named", err)
+	}
+	if after := p.allocations.claims["a"].ExclusiveCPUs(); !after.Equals(before) {
+		t.Errorf("claim a holds CPUs %s after a failed claim, expected %s", after, before)
+	}
+
+	allocateClaim(t, p, "d", draTestResult(busy, "1"))
+	if onBusy, onOther := onNodes("a"); onBusy != 0 || onOther != 2 {
+		t.Errorf("claim a holds %d CPUs of node %d and %d of node %d, expected 0 and 2", onBusy, busy, onOther, other)
+	}
+	if got := p.allocations.claims["c"].ExclusiveCPUs(); !got.Equals(c) {
+		t.Errorf("claim c holds CPUs %s, expected %s", got, c)
+	}
+
+	// Both nodes are full now.
+	if _, err := p.AllocateClaim(draTestClaim("f"), []resourceapi.DeviceRequestAllocationResult{
+		draTestResult(other, "1"),
+	}); err == nil {
+		t.Errorf("claim f got CPUs of a full node")
+	}
+	if !freeCPUs(p).Intersection(nodeCPUs(busy).Union(nodeCPUs(other))).IsEmpty() {
+		t.Errorf("free CPUs %s on full nodes", freeCPUs(p))
+	}
+}
+
+// A claim with a result on a socket and one on a node of it gets the CPUs
+// of the node for the node result and other CPUs of the socket for the
+// socket result, in either order of the results.
+func TestSocketAndNUMAResults(t *testing.T) {
+	for _, socketFirst := range []bool{true, false} {
+		p, busy, other := draMoveTestPolicy(t, draTestConfig("", ""))
+		nodeCPUs := func(node int) cpuset.CPUSet { return p.sys.Node(idset.ID(node)).CPUSet() }
+
+		results := []resourceapi.DeviceRequestAllocationResult{draTestSocketResult(0, "4"), draTestResult(busy, "4")}
+		expected := []cpuset.CPUSet{nodeCPUs(other), nodeCPUs(busy)}
+		if !socketFirst {
+			slices.Reverse(results)
+			slices.Reverse(expected)
+		}
+		allocateClaim(t, p, "a", results...)
+		for i, cpus := range p.allocations.claims["a"].results {
+			if cpus.Size() != 4 || !cpus.IsSubsetOf(expected[i]) {
+				t.Errorf("socket first %v: result %d on device %s got CPUs %s, expected 4 CPUs of %s",
+					socketFirst, i, results[i].Device, cpus, expected[i])
+			}
+		}
+	}
+}
+
+// A node device counts the CPUs a socket claim holds on it only as far as the
+// claim can move to other CPUs of the socket.
+func TestSocketClaimCapacity(t *testing.T) {
+	p, busy, other := draMoveTestPolicy(t, draTestConfig("", ""))
+	capacity := func(node int) int {
+		device := fmt.Sprintf(draNUMADeviceFormat, node)
+		cpus, _ := p.draDeviceCPUs(device)
+		return p.draCapacity(device, cpus)
+	}
+
+	allocateClaim(t, p, "a", draTestSocketResult(0, "4"))
+	if got := capacity(busy); got != 4 {
+		t.Errorf("node %d has capacity %d, expected 4", busy, got)
+	}
+	allocateClaim(t, p, "c", draTestResult(other, "2"))
+	if got := capacity(busy); got != 2 {
+		t.Errorf("node %d has capacity %d with 2 CPUs free on node %d, expected 2", busy, got, other)
+	}
+	if got := capacity(other); got != 4 {
+		t.Errorf("node %d has capacity %d, expected 4", other, got)
+	}
+}
+
+// A node device does not count the CPUs a socket claim holds on it if the
+// claim can move only to free CPUs of the socket which the node needs for the
+// shared containers of the socket pool.
+func TestSocketClaimCapacitySharedLoad(t *testing.T) {
+	p, busy, other := draMoveTestPolicy(t, draTestConfig("", ""))
+	capacity := func(node int) int {
+		device := fmt.Sprintf(draNUMADeviceFormat, node)
+		cpus, _ := p.draDeviceCPUs(device)
+		return p.draCapacity(device, cpus)
+	}
+
+	// Each node has one free CPU, and the shared containers need one of them.
+	a := allocateClaim(t, p, "a", draTestSocketResult(0, "3"))
+	allocateClaim(t, p, "c", draTestResult(other, "3"))
+	allocateShared(t, p, "shared", "900m", "socket #0")
+	if got := capacity(busy); got != 1 {
+		t.Errorf("node %d has capacity %d, expected 1", busy, got)
+	}
+	if _, err := p.AllocateClaim(draTestClaim("n"), []resourceapi.DeviceRequestAllocationResult{
+		draTestResult(busy, "2"),
+	}); err == nil {
+		t.Errorf("claim n got 2 CPUs of node %d, which has capacity 1", busy)
+	}
+	if got := p.allocations.claims["a"].ExclusiveCPUs(); !got.Equals(a) {
+		t.Errorf("claim a holds CPUs %s after a failed claim, expected %s", got, a)
+	}
+
+	if err := p.ReleaseClaim("c", false); err != nil {
+		t.Fatalf("failed to release claim c: %v", err)
+	}
+	if got := capacity(busy); got != 4 {
+		t.Errorf("node %d has capacity %d with node %d free, expected 4", busy, got, other)
+	}
+	allocateClaim(t, p, "n", draTestResult(busy, "4"))
+}
+
+// A socket claim which moves for a NUMA claim takes an isolated CPU when the
+// shared containers of the socket pool need the free CPUs of the NUMA node.
+func TestMoveSocketClaimToIsolatedCPU(t *testing.T) {
+	sys := testServerSystem(t)
+	normal := func(node idset.ID, n int) cpuset.CPUSet {
+		cpus := sys.Node(node).CPUSet().Difference(sys.IsolatedCPUs())
+		return cpuset.New(cpus.List()[:n]...)
+	}
+	isolated := cpuset.New(sys.Node(2).CPUSet().Intersection(sys.IsolatedCPUs()).List()[0])
+	// Node 0 has 2 normal CPUs, node 2 one normal and one isolated CPU.
+	reserved := normal(1, 1)
+	available := normal(0, 2).Union(normal(2, 1), isolated, reserved)
+	p, _ := draTestPolicy(t, sys, draTestConfig("cpuset:"+available.String(), "cpuset:"+reserved.String()))
+
+	// The socket claim lands on node 0 while node 2 is full.
+	allocateClaim(t, p, "full", draTestResult(2, "2"))
+	if a := allocateClaim(t, p, "a", draTestSocketResult(0, "1")); !a.IsSubsetOf(normal(0, 2)) {
+		t.Fatalf("claim a got CPUs %s, expected a CPU of node 0, %s", a, normal(0, 2))
+	}
+	if err := p.ReleaseClaim("full", false); err != nil {
+		t.Fatalf("failed to release claim full: %v", err)
+	}
+	allocateShared(t, p, "shared", "900m", "socket #0")
+
+	if n := allocateClaim(t, p, "n", draTestResult(0, "2")); !n.Equals(normal(0, 2)) {
+		t.Errorf("claim n got CPUs %s, expected %s", n, normal(0, 2))
+	}
+	if got := p.allocations.claims["a"].ExclusiveCPUs(); !got.Equals(isolated) {
+		t.Errorf("claim a holds CPUs %s, expected isolated CPU %s", got, isolated)
+	}
+}
+
+// A socket claim which fits in a node gets CPUs of one node, also when the
+// shared containers of the socket pool need the CPUs of the other node.
+func TestSocketClaimSharedLoad(t *testing.T) {
+	p, busy, other := draMoveTestPolicy(t, draTestConfig("", ""))
+	for i := range 4 {
+		c := draTestContainer(fmt.Sprintf("shared%d", i), v1.PodQOSBurstable, "900m")
+		if err := p.allocateResources(c, "socket #0"); err != nil {
+			t.Fatalf("failed to allocate: %v", err)
+		}
+	}
+
+	a := allocateClaim(t, p, "a", draTestSocketResult(0, "4"))
+	nodes := 0
+	for _, node := range []int{busy, other} {
+		if !a.Intersection(p.sys.Node(idset.ID(node)).CPUSet()).IsEmpty() {
+			nodes++
+		}
+	}
+	if a.Size() != 4 || nodes != 1 {
+		t.Errorf("claim a got CPUs %s, expected 4 CPUs of one node", a)
+	}
+}
+
+// A socket result which fits in a node gets CPUs of one node when an earlier
+// result of its claim took CPUs of the other node and the shared containers
+// of the socket pool need CPUs too.
+func TestSocketResultSharedLoadTaken(t *testing.T) {
+	p, busy, other := draMoveTestPolicy(t, draTestConfig("", ""))
+	for i := range 2 {
+		c := draTestContainer(fmt.Sprintf("shared%d", i), v1.PodQOSBurstable, "900m")
+		if err := p.allocateResources(c, "socket #0"); err != nil {
+			t.Fatalf("failed to allocate: %v", err)
+		}
+	}
+
+	allocateClaim(t, p, "a", draTestResult(busy, "2"), draTestSocketResult(0, "4"))
+	results := p.allocations.claims["a"].results
+	if node := p.sys.Node(idset.ID(other)).CPUSet(); results[1].Size() != 4 || !results[1].IsSubsetOf(node) {
+		t.Errorf("socket result got CPUs %s, expected 4 CPUs of node %d, %s", results[1], other, node)
+	}
+}
+
+// A socket claim which fits in an L3 cache gets its CPUs, also when the
+// shared containers of the socket pool leave fewer CPUs than another node of
+// the socket has in two L3 caches.
+func TestSocketClaimSharedLoadDeepestPool(t *testing.T) {
+	sys := &treeSystem{System: testServerSystem(t)}
+	l3 := func(id idset.ID, n int) cpuset.CPUSet {
+		normal := sys.Package(0).L3CacheCPUSet(id).Difference(sys.IsolatedCPUs())
+		return cpuset.New(normal.List()[:n]...)
+	}
+	// Node 0 has 6 free CPUs in each of its L3 caches, node 2 has 8 in L3
+	// cache 4.
+	reserved := sys.Node(1).CPUSet().Difference(sys.IsolatedCPUs()).List()[:1]
+	available := l3(0, 6).Union(l3(1, 6), l3(4, 8), cpuset.New(reserved...))
+	p, _ := draTestPolicy(t, sys, draTestConfig("cpuset:"+available.String(), fmt.Sprintf("cpuset:%d", reserved[0])))
+	// The shared containers need 12 of the 20 CPUs of the socket.
+	for i := range 13 {
+		c := draTestContainer(fmt.Sprintf("shared%d", i), v1.PodQOSBurstable, "900m")
+		if err := p.allocateResources(c, "socket #0"); err != nil {
+			t.Fatalf("failed to allocate: %v", err)
+		}
+	}
+
+	if cpus := allocateClaim(t, p, "a", draTestSocketResult(0, "8")); !cpus.Equals(l3(4, 8)) {
+		t.Errorf("claim a got CPUs %s, expected the CPUs of L3 cache 4, %s", cpus, l3(4, 8))
+	}
+}
+
+// A socket offers the CPUs of a memoryless NUMA node, which has no pool of
+// its own, to claims too.
+func TestSocketClaimMemorylessNode(t *testing.T) {
+	sys := draTestMemorylessSystem(t)
+	cpus := func(node idset.ID, n int) cpuset.CPUSet {
+		normal := sys.Node(node).CPUSet().Difference(sys.IsolatedCPUs())
+		return cpuset.New(normal.List()[:n]...)
+	}
+	// Nodes 1 and 3 of socket 1 have 4 CPUs for claims each.
+	reserved := cpus(0, 1)
+	available := cpus(1, 4).Union(cpus(3, 4), reserved)
+	p, owner := draTestPolicy(t, sys, draTestConfig("cpuset:"+available.String(), "cpuset:"+reserved.String()))
+
+	summary := draDeviceSummary(owner.devices)
+	if got := summary["cpudevsocket001"].cpus; got != 8 {
+		t.Errorf("socket 1 has capacity %d, expected 8", got)
+	}
+	if got := summary["cpudevnuma003"].cpus; got != 4 {
+		t.Errorf("node 3 has capacity %d, expected 4", got)
+	}
+	if a := allocateClaim(t, p, "a", draTestSocketResult(1, "8")); !a.Equals(cpus(1, 4).Union(cpus(3, 4))) {
+		t.Errorf("claim a got CPUs %s, expected %s", a, cpus(1, 4).Union(cpus(3, 4)))
+	}
+}
+
+// A socket claim gets the CPUs of a memoryless NUMA node which has enough
+// free CPUs, if no pool of the socket has enough.
+func TestSocketClaimFitsMemorylessNode(t *testing.T) {
+	sys := draTestMemorylessSystem(t)
+	cpus := func(node idset.ID, n int) cpuset.CPUSet {
+		normal := sys.Node(node).CPUSet().Difference(sys.IsolatedCPUs())
+		return cpuset.New(normal.List()[:n]...)
+	}
+	// Node 1 of socket 1 has 2 CPUs for claims, node 3 has 4.
+	reserved := cpus(0, 1)
+	available := cpus(1, 2).Union(cpus(3, 4), reserved)
+	p, _ := draTestPolicy(t, sys, draTestConfig("cpuset:"+available.String(), "cpuset:"+reserved.String()))
+
+	if a := allocateClaim(t, p, "a", draTestSocketResult(1, "4")); !a.Equals(cpus(3, 4)) {
+		t.Errorf("claim a got CPUs %s, expected the CPUs of node 3, %s", a, cpus(3, 4))
+	}
+}
+
+// A claim moving on a restart moves a socket claim restored before it, if
+// the socket claim holds the CPUs it needs.
+func TestRestoreClaimsMoveSocketClaim(t *testing.T) {
+	sys := testServerSystem(t)
+	cpus := func(node idset.ID, n int) cpuset.CPUSet {
+		normal := sys.Node(node).CPUSet().Difference(sys.IsolatedCPUs())
+		return cpuset.New(normal.List()[:n]...)
+	}
+	// Node 0 has 3 CPUs for claims, node 2 has 2.
+	reserved := cpus(1, 1)
+	available := cpus(0, 3).Union(cpus(2, 2), reserved)
+	p, _ := draTestPolicy(t, sys, draTestConfig("cpuset:"+available.String(), "cpuset:"+reserved.String()))
+	saved := func(device string) *claim {
+		return &claim{results: []cpuset.CPUSet{cpus(2, 2)}, devices: []string{device}}
+	}
+	why := fmt.Errorf("lost")
+
+	// The socket claim takes node 2, which has the fewest free CPUs.
+	if err := p.moveClaim("s", saved(fmt.Sprintf(draSocketDeviceFormat, 0)), why); err != nil {
+		t.Fatalf("failed to move claim s: %v", err)
+	}
+	if got := p.allocations.claims["s"].ExclusiveCPUs(); !got.Equals(cpus(2, 2)) {
+		t.Fatalf("claim s got CPUs %s, expected %s", got, cpus(2, 2))
+	}
+	if err := p.moveClaim("n", saved(fmt.Sprintf(draNUMADeviceFormat, 2)), why); err != nil {
+		t.Fatalf("failed to move claim n: %v", err)
+	}
+	if got := p.allocations.claims["n"].ExclusiveCPUs(); !got.Equals(cpus(2, 2)) {
+		t.Errorf("claim n got CPUs %s, expected %s", got, cpus(2, 2))
+	}
+	if got := p.allocations.claims["s"].ExclusiveCPUs(); got.Size() != 2 || !got.IsSubsetOf(cpus(0, 3)) {
+		t.Errorf("claim s holds CPUs %s, expected 2 CPUs of %s", got, cpus(0, 3))
+	}
+}
+
+// treeSystem is a test system with two L3 caches per NUMA node, each shared
+// by half of the cores of the node.
+type treeSystem struct {
+	system.System
+}
+
+func (s *treeSystem) Package(id idset.ID) system.CPUPackage {
+	return &treePackage{CPUPackage: s.System.Package(id), sys: s.System}
+}
+
+type treePackage struct {
+	system.CPUPackage
+	sys system.System
+}
+
+// nodes returns the NUMA nodes of the package which have CPUs.
+func (p *treePackage) nodes() []idset.ID {
+	return slices.DeleteFunc(p.NodeIDs(), func(id idset.ID) bool {
+		return p.sys.Node(id).CPUSet().IsEmpty()
+	})
+}
+
+// L3CacheIDs returns 2n and 2n+1 for each NUMA node n of the package.
+func (p *treePackage) L3CacheIDs() []idset.ID {
+	var ids []idset.ID
+	for _, node := range p.nodes() {
+		ids = append(ids, 2*node, 2*node+1)
+	}
+	return ids
+}
+
+// L3CacheCPUSet returns the CPUs of the first 14 cores of NUMA node id/2 for
+// an even id, of the other 14 cores for an odd one. The server system has 56
+// cores, and CPUs n and n+56 are the threads of one core.
+func (p *treePackage) L3CacheCPUSet(id idset.ID) cpuset.CPUSet {
+	var cpus []int
+	for _, cpu := range p.sys.Node(id / 2).CPUSet().List() {
+		if (cpu%56 < 28) == (id%2 == 0) {
+			cpus = append(cpus, cpu)
+		}
+	}
+	return cpuset.New(cpus...)
+}
+
+// A socket claim gets the CPUs of one L3 cache which has enough free CPUs,
+// even if another node of the socket has fewer free CPUs in all.
+func TestSocketClaimDeepestPool(t *testing.T) {
+	sys := &treeSystem{System: testServerSystem(t)}
+	l3 := func(id idset.ID, n int) cpuset.CPUSet {
+		normal := sys.Package(0).L3CacheCPUSet(id).Difference(sys.IsolatedCPUs())
+		return cpuset.New(normal.List()[:n]...)
+	}
+	// Node 0 has 3 free CPUs in each of its L3 caches, node 2 has 8 in L3
+	// cache 4.
+	reserved := sys.Node(1).CPUSet().Difference(sys.IsolatedCPUs()).List()[:1]
+	available := l3(0, 3).Union(l3(1, 3)).Union(l3(4, 8)).Union(cpuset.New(reserved...))
+	cfg := draTestConfig("cpuset:"+available.String(), fmt.Sprintf("cpuset:%d", reserved[0]))
+	p, _ := draTestPolicy(t, sys, cfg)
+
+	if cpus := allocateClaim(t, p, "a", draTestSocketResult(0, "4")); !cpus.IsSubsetOf(l3(4, 8)) {
+		t.Errorf("claim a got CPUs %s, expected 4 CPUs of L3 cache 4, %s", cpus, l3(4, 8))
+	}
+}
+
+// The capacity of a device leaves out the CPUs which the shared containers of
+// each pool inside it need, also of pools with child pools.
+func TestDRADevicesSharedPools(t *testing.T) {
+	sys := &treeSystem{System: testServerSystem(t)}
+	p, owner := draTestPolicy(t, sys, draTestConfig("", draTestReserved(sys)))
+	capacities := func() map[string]int64 {
+		got := map[string]int64{}
+		for name, d := range draDeviceSummary(owner.devices) {
+			got[name] = d.cpus
+		}
+		return got
+	}
+
+	expected := capacities()
+	for _, pool := range []string{"NUMA node #0", "NUMA node #2"} {
+		c := draTestContainer("shared-"+pool, v1.PodQOSBurstable, "500m")
+		if err := p.allocateResources(c, pool); err != nil {
+			t.Fatalf("failed to allocate: %v", err)
+		}
+	}
+	expected["cpudevnuma000"]--
+	expected["cpudevnuma002"]--
+	expected["cpudevsocket000"] -= 2
+	if got := capacities(); !reflect.DeepEqual(got, expected) {
+		t.Errorf("published capacities %v, expected %v", got, expected)
+	}
+}
+
+// TestDRADeviceCPUs verifies the CPUs of devices by name.
+func TestDRADeviceCPUs(t *testing.T) {
+	sys := testServerSystem(t)
+	p, _ := draTestPolicy(t, sys, draTestConfig("", "cpuset:0"))
+
+	for _, tc := range []struct {
+		device string
+		cpus   cpuset.CPUSet
+		ok     bool
+	}{
+		{device: "cpudevnuma000", cpus: sys.Node(0).CPUSet().Difference(cpuset.New(0)), ok: true},
+		{device: "cpudevnuma003", cpus: sys.Node(3).CPUSet(), ok: true},
+		{device: "cpudevsocket000", cpus: sys.Package(0).CPUSet().Difference(cpuset.New(0)), ok: true},
+		{device: "cpudevsocket001", cpus: sys.Package(1).CPUSet(), ok: true},
+		{device: "cpudevsocket0"},
+		{device: "cpudevsocket1000"},
+		{device: "cpudevsocket002"},
+		{device: "cpudevnuma0"},
+		{device: "cpudevnuma009"},
+		{device: "cpudev000"},
+	} {
+		cpus, ok := p.draDeviceCPUs(tc.device)
+		if ok != tc.ok || ok && !cpus.Equals(tc.cpus) {
+			t.Errorf("device %s has CPUs %s, %v, expected %s, %v", tc.device, cpus, ok, tc.cpus, tc.ok)
+		}
+	}
+}
+
 // draTestMemoryPolicy is a claim config with a memory policy of the given
 // mode and nodes, for the given requests.
 func draTestMemoryPolicy(source resourceapi.AllocationConfigSource, mode, nodes string, requests ...string) resourceapi.DeviceAllocationConfiguration {
@@ -1729,10 +2558,10 @@ func TestClaimConfigRefused(t *testing.T) {
 	}
 }
 
-// Test that a memory policy bound to a node without memory is refused.
-func TestClaimMemoryPolicyMemorylessNode(t *testing.T) {
-	// Take the memory away from node 3 of a private copy of the "server"
-	// test sysfs.
+// draTestMemorylessSystem returns the "server" test system with the memory of
+// NUMA node 3 taken away.
+func draTestMemorylessSystem(t *testing.T) system.System {
+	t.Helper()
 	dir := t.TempDir()
 	if err := testutils.UncompressTbz2(path.Join("testdata", "sysfs.tar.bz2"), dir); err != nil {
 		t.Fatalf("failed to uncompress test sysfs data: %v", err)
@@ -1746,6 +2575,12 @@ func TestClaimMemoryPolicyMemorylessNode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to discover system: %v", err)
 	}
+	return sys
+}
+
+// Test that a memory policy bound to a node without memory is refused.
+func TestClaimMemoryPolicyMemorylessNode(t *testing.T) {
+	sys := draTestMemorylessSystem(t)
 	p, _ := draTestPolicy(t, sys, draTestConfig("", draTestReserved(sys)))
 	own := resourceapi.AllocationConfigSourceClaim
 	results := []resourceapi.DeviceRequestAllocationResult{draTestResult(0, "2")}

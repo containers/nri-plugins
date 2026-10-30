@@ -18,9 +18,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
+	nriapi "github.com/containerd/nri/pkg/api"
 	resourceapi "k8s.io/api/resource/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -131,6 +133,9 @@ func TestSetupDRA(t *testing.T) {
 				t.Error("setupDRA() created a plugin, expected none")
 			}
 
+			if m.DRAEnabled() {
+				t.Error("DRAEnabled() is true without a plugin")
+			}
 			// Starting, publishing and stopping must be no-ops without a
 			// plugin: resmgr and the policy run through these paths whether
 			// DRA came up or not.
@@ -259,6 +264,58 @@ func TestClaimCommitsDoNotPush(t *testing.T) {
 	}
 	if ctr.PeekPendingUpdate() == nil {
 		t.Error("the pending container update is gone")
+	}
+}
+
+// exportPolicy records the containers we export resources for.
+type exportPolicy struct {
+	testPolicy
+	exported *[]string
+}
+
+func (p exportPolicy) ExportResourceData(c cache.Container) {
+	*p.exported = append(*p.exported, c.GetID())
+}
+
+// TestClaimCommitRefreshesContainerExports verifies that allocating or
+// releasing a claim exports the resources of a running container again even if
+// the container needs no update: a claim it holds can have moved to other
+// CPUs, or back to its old ones. A stopped container gets no export.
+func TestClaimCommitRefreshesContainerExports(t *testing.T) {
+	for name, commit := range map[string]func(*resmgr) error{
+		"ClaimAllocated": (*resmgr).ClaimAllocated,
+		"ClaimReleased":  (*resmgr).ClaimReleased,
+	} {
+		t.Run(name, func(t *testing.T) {
+			var exported []string
+			m := &resmgr{
+				agent:  newTestAgent(t, "test-node"),
+				cache:  newTestCache(t),
+				policy: exportPolicy{exported: &exported},
+				cfg:    &cfgapi.TopologyAwarePolicy{},
+			}
+			m.cache.InsertPod(&nriapi.PodSandbox{Id: "pod-0", Name: "pod-0"}, nil)
+			for id, state := range map[string]nriapi.ContainerState{
+				"ctr-0": nriapi.ContainerState_CONTAINER_RUNNING,
+				"ctr-1": nriapi.ContainerState_CONTAINER_STOPPED,
+			} {
+				if _, err := m.cache.InsertContainer(&nriapi.Container{
+					Id:           id,
+					Name:         id,
+					PodSandboxId: "pod-0",
+					State:        state,
+				}); err != nil {
+					t.Fatalf("failed to insert container %s: %v", id, err)
+				}
+			}
+
+			if err := commit(m); err != nil {
+				t.Fatalf("%s() failed: %v", name, err)
+			}
+			if !slices.Equal(exported, []string{"ctr-0"}) {
+				t.Errorf("exported resources for %v, expected ctr-0", exported)
+			}
+		})
 	}
 }
 

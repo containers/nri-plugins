@@ -20,6 +20,7 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1"
+	"github.com/containers/nri-plugins/pkg/resmgr/cache"
 	"github.com/containers/nri-plugins/pkg/resmgr/dra"
 )
 
@@ -70,24 +71,31 @@ func (m *resmgr) setupDRA(cfg *cfgapi.DRAConfig) error {
 }
 
 // ClaimAllocated saves the allocation the policy made for a DRA claim and
-// refreshes the resources we export for the node.
+// refreshes the resources we export for the node and for each container.
 func (m *resmgr) ClaimAllocated() error {
-	if err := m.cache.Save(); err != nil {
-		return err
-	}
-
-	m.updateNodeResources()
-
-	return nil
+	return m.claimChanged()
 }
 
 // ClaimReleased saves the release of a DRA claim and refreshes the resources we
-// export for the node.
+// export for the node and for each container.
 func (m *resmgr) ClaimReleased() error {
+	return m.claimChanged()
+}
+
+// claimChanged saves a change of DRA claims and refreshes the resources we
+// export for the node and for each container. A container can get other
+// claimed CPUs without any update, if it is not pinned to them.
+func (m *resmgr) claimChanged() error {
 	if err := m.cache.Save(); err != nil {
 		return err
 	}
 
+	for _, c := range m.cache.GetContainers() {
+		switch c.GetState() {
+		case cache.ContainerStateRunning, cache.ContainerStateCreated:
+			m.policy.ExportResourceData(c)
+		}
+	}
 	m.updateNodeResources()
 
 	return nil
@@ -104,6 +112,11 @@ func (m *resmgr) startDRA() error {
 	}
 
 	return nil
+}
+
+// DRAEnabled tells the policy whether DRA is enabled.
+func (m *resmgr) DRAEnabled() bool {
+	return m.dra != nil
 }
 
 // PublishDRADevices publishes the DRA devices of the policy, if DRA is enabled.
