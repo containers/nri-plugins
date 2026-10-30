@@ -11,6 +11,7 @@
     k8s_feature_gates: "{{ k8s_feature_gates }}"
     is_containerd: false
     is_crio: false
+    is_hardware: false
     containerd_release: "{{ containerd_release }}"
     containerd_tarball: "https://github.com/containerd/containerd/releases/download/v{{ containerd_release }}/containerd-{{ containerd_release }}-linux-amd64.tar.gz"
     containerd_service_file: "https://raw.githubusercontent.com/containerd/containerd/main/containerd.service"
@@ -33,6 +34,40 @@
     apt_cache_valid_time: 3600
 
   tasks:
+    # Before the reset and the installs below, while the host is still as we
+    # found it: a host which cannot run the tests is refused rather than left
+    # with its cluster taken down and the packages of the next one in place.
+    #
+    # The kernel's own answer, not ansible_facts.selinux. That fact needs the
+    # SELinux python bindings on the host, and without them it reads
+    # "Missing selinux Python library", which no comparison against "enabled"
+    # can tell apart from a host that has SELinux switched off. The file
+    # below exists only while SELinux is active, and holds 1 while it is
+    # enforcing, whatever is installed for python.
+    - name: Look for SELinux on a host we were given
+      ansible.builtin.stat:
+        path: /sys/fs/selinux/enforce
+      register: selinux_enforce_file
+      when: is_hardware
+
+    - name: Ask it whether SELinux is enforcing
+      ansible.builtin.slurp:
+        src: /sys/fs/selinux/enforce
+      register: selinux_enforce
+      when: is_hardware and
+            (selinux_enforce_file.stat.exists | default(false))
+
+    - name: Refuse to run with SELinux enforcing
+      ansible.builtin.fail:
+        msg: >-
+          SELinux is enforcing on this host. The tests need it permissive or
+          disabled, and turning it off is not something this playbook will do
+          to a host which is not its own: run "setenforce 0" for this boot, or
+          set SELINUX=permissive in /etc/selinux/config and reboot.
+      when: is_hardware and
+            (selinux_enforce_file.stat.exists | default(false)) and
+            (selinux_enforce.content | default('') | b64decode | trim) == '1'
+
     - name: Check if runtime is containerd
       ansible.builtin.set_fact:
         is_containerd: true
@@ -104,10 +139,15 @@
             state: directory
             mode: '0755'
 
-        - name: Remove the kubeconfigs of the old cluster
-          ansible.builtin.file:
-            path: "{{ item }}"
-            state: absent
+        # Moved, not deleted: on a host somebody owns this file is theirs,
+        # and it can hold credentials and contexts for clusters which have
+        # nothing to do with this run. Numbered, so that a second run lands
+        # beside the backup the first one left rather than on top of it. The
+        # home directory is quoted for a passwd home with a space in it.
+        - name: Move the kubeconfigs of the old cluster aside
+          ansible.builtin.command:
+            cmd: mv --backup=numbered "{{ item }}" "{{ item }}~"
+            removes: "{{ item }}"
           with_items:
             - /root/.kube/config
             - "{{ login_user_home }}/.kube/config"
@@ -172,7 +212,8 @@
             name: sshd
             state: restarted
       when: (ansible_facts['distribution'] == "Fedora") and
-            (ansible_facts['distribution_major_version'] | int >= 41)
+            (ansible_facts['distribution_major_version'] | int >= 41) and
+            (not is_hardware)
 
     - name: Update APT package index
       ansible.builtin.apt:
@@ -283,8 +324,11 @@
               present
           when: ansible_facts['distribution_major_version'] | int >= 43
 
+    # Not on a host we were given: growing somebody's root partition to fill
+    # their disk is not ours to do, and is not undone by anything here.
     - name: Resize root filesystem to the maximum possible
-      when: ansible_facts['distribution'] == "Fedora"
+      when: ansible_facts['distribution'] == "Fedora" and
+            (not is_hardware)
       ansible.builtin.shell: |
         fstype="$(stat -f -c %T /)"
         if [ "$fstype" == "btrfs" ]; then
@@ -301,10 +345,18 @@
             sleep 3
         fi
 
+    # Not on a host we were given. This task changes such a host twice: it
+    # switches the running mode to permissive at once, and writes
+    # SELINUX=disabled for a next boot which this playbook never performs.
+    # Neither is ours to do to a machine somebody else owns, and the second
+    # takes effect long afterwards with nothing to connect it to a test run.
+    # Such a host has to come with SELinux already out of the way, and the
+    # tasks at the top of this play refuse it if it does not.
     - name: Disable SELinux
       ansible.posix.selinux:
         state: disabled
-      when: ansible_facts['distribution'] == "Fedora"
+      when: ansible_facts['distribution'] == "Fedora" and
+            (not is_hardware)
 
     - name: Remove the firewalld package
       ansible.builtin.package:
@@ -614,12 +666,13 @@
         cmd: kubeadm init --config /root/kubeadm-config.yaml
       when: k8s_feature_gates != ""
 
-    # -b, not -i: kubeadm init wrote a new admin.conf a moment ago, so any
-    # kubeconfig already in place is stale, and on a host we were given it can
-    # name a cluster of its own. -i would prompt, read the end of ansible's
-    # empty stdin as a no, and leave that one in place for every kubectl below
-    # and in the tests to talk to the wrong cluster through. The ~ copy it
-    # leaves behind is for whoever owns the host.
+    # --backup, not -i: kubeadm init wrote a new admin.conf a moment ago, so
+    # any kubeconfig already in place is stale, and on a host we were given it
+    # can name a cluster of its own. -i would prompt, read the end of
+    # ansible's empty stdin as a no, and leave that one in place for every
+    # kubectl below and in the tests to talk to the wrong cluster through. The
+    # copy it leaves behind is for whoever owns the host, and is numbered so
+    # that repeated runs do not overwrite the first one taken.
     - name: Setup kubeconfig for the login user
       ansible.builtin.command: "{{ item }}"
       # The home directory is quoted in each: these run without a shell, and
@@ -627,21 +680,21 @@
       # otherwise arrive as two arguments.
       with_items:
         - mkdir -p "{{ login_user_home }}/.kube"
-        - cp -b /etc/kubernetes/admin.conf "{{ login_user_home }}/.kube/config"
+        - cp --backup=numbered /etc/kubernetes/admin.conf "{{ login_user_home }}/.kube/config"
         # Trailing colon: the user's own login group, whatever it is called.
         # A group named after the user is a convention, not a rule. The item
         # is quoted too, or the ": " in it makes yaml read it as a mapping.
         - 'chown {{ login_user }}: "{{ login_user_home }}/.kube/config"'
 
     # Skipped when the login user is root, which already has its kubeconfig
-    # from the task above: a second cp -b would replace the backup that one
-    # made with the config it had just written.
+    # from the task above: a second copy would only push the config that one
+    # wrote into a backup of its own.
     - name: Setup kubeconfig for root
       when: login_user_home != "/root"
       ansible.builtin.command: "{{ item }}"
       with_items:
         - mkdir -p /root/.kube
-        - cp -b /etc/kubernetes/admin.conf /root/.kube/config
+        - cp --backup=numbered /etc/kubernetes/admin.conf /root/.kube/config
 
     - name: Install single-node cluster
       become: false

@@ -915,6 +915,7 @@ vm-write-ansible-vars() {
     local containerd_rel="" containerd_source=""
     local crio_rel="1.28.1" crio_source=""
     local http_p="" https_p="" no_p=""
+    local hardware=false
 
     # Only the selected runtime's release is passed on, which is what the
     # Vagrantfile did. crio keeps a fallback release so that the tarball URL
@@ -938,6 +939,12 @@ vm-write-ansible-vars() {
         )
     fi
 
+    # Tells the playbook it is on a host somebody owns. Anything fine to do to
+    # a throwaway VM and rude to do to such a host is gated on this.
+    if vm-hw-mode; then
+        hardware=true
+    fi
+
     cat > "$vagrantdir/ansible-vars.json" <<EOF
 {
   "network": "10.217.0.0/16",
@@ -952,6 +959,7 @@ vm-write-ansible-vars() {
   "k8s_release": $(vm-json-quote "${k8s_release:-}"),
   "k8s_version": $(vm-json-quote "${k8s_version:-}"),
   "k8s_feature_gates": $(vm-json-quote "${k8s_feature_gates:-}"),
+  "is_hardware": $hardware,
   "helm_release": $(vm-json-quote "${helm_release:-}"),
   "cri_runtime": $(vm-json-quote "$cri_runtime"),
   "containerd_release": $(vm-json-quote "$containerd_rel"),
