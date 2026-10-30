@@ -298,6 +298,188 @@ vm-box-name() {
     echo "$BOX_NAME_PREFIX/$(vm-box-key "$1")"
 }
 
+# Testing on a host which already exists, real hardware or a VM somebody else
+# made, instead of creating one with vagrant. Set
+#   test_hw_addr=user@address   the host to log in to
+#   test_hw_key=path            the private key to log in with
+# The host has to let that user in by key and run sudo without a password.
+
+vm-hw-mode() {
+    # Usage: vm-hw-mode
+    #
+    # Return success if this run targets a host we did not create.
+    #
+    # Silent and status-only. Every branch which has to tell the two kinds of
+    # host apart asks this, so it must neither print nor exit.
+    [ -n "${test_hw_addr:-}" ]
+}
+
+vm-hw-valid-target() {
+    # Usage: vm-hw-valid-target ADDR
+    #
+    # Return success if ADDR names both a user and a host. Without a user ssh
+    # would quietly log in as whoever started the run, which is not a default
+    # worth having.
+    local addr="$1"
+
+    case "$addr" in
+        ?*@?*) return 0;;
+    esac
+    echo "test_hw_addr=\"$addr\" names no user: it has to read user@host," \
+         "since that user is what the run logs in as and runs sudo as" >&2
+    return 1
+}
+
+vm-hw-valid-key() {
+    # Usage: vm-hw-valid-key PATH
+    #
+    # Return success if PATH is a private key ssh will agree to use. ssh
+    # refuses one which group or others can read, so refuse it here, where
+    # the message can name the file instead of coming out of ssh.
+    local key="$1" mode
+
+    if [ -z "$key" ]; then
+        echo "test_hw_key is not set: a run against a host which is not a VM" \
+             "logs in with a key" >&2
+        return 1
+    fi
+    if [ -d "$key" ]; then
+        echo "test_hw_key=\"$key\" is a directory, not a private key" >&2
+        return 1
+    fi
+    if [ ! -f "$key" ] || [ ! -r "$key" ]; then
+        echo "test_hw_key=\"$key\" is not a readable file" >&2
+        return 1
+    fi
+    mode=$(stat -c %a "$key")
+    if [ "${mode: -2}" != "00" ]; then
+        echo "test_hw_key=\"$key\" is mode $mode: ssh refuses a key which" \
+             "group or others can read, so chmod 600 it" >&2
+        return 1
+    fi
+    return 0
+}
+
+vm-hw-valid-hostname() {
+    # Usage: vm-hw-valid-hostname NAME
+    #
+    # Return success if NAME can serve as a Kubernetes node name.
+    #
+    # kubeadm names the node after the host, and the framework looks the node
+    # up by that name, so a name which will not survive the lookup has to be
+    # refused here rather than turn into test failures nobody can read back.
+    local name="$1"
+
+    if [ -z "$name" ] || [ "$name" = "localhost" ]; then
+        echo "the host calls itself \"$name\", which cannot identify a node:" \
+             "give it a name of its own" >&2
+        return 1
+    fi
+    if [[ ! "$name" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]]; then
+        echo "the host calls itself \"$name\": a node name takes lower case" \
+             "letters, digits and dashes, and starts and ends with a letter" \
+             "or a digit" >&2
+        return 1
+    fi
+    return 0
+}
+
+vm-hw-check-options() {
+    # Usage: vm-hw-check-options
+    #
+    # Fail the run unless the hardware options are usable. The validators
+    # print what is wrong; this turns it into an exit.
+    #
+    # Call this outside a command substitution: error only exits the subshell
+    # of one, which is why it cannot live in the validators themselves.
+    vm-hw-valid-target "${test_hw_addr:-}" ||
+        error "test_hw_addr is unusable, see above"
+    vm-hw-valid-key "${test_hw_key:-}" ||
+        error "test_hw_key is unusable, see above"
+}
+
+vm-hw-user() {
+    # Usage: vm-hw-user
+    local addr="${test_hw_addr:-}"
+    printf '%s\n' "${addr%%@*}"
+}
+
+vm-hw-address() {
+    # Usage: vm-hw-address
+    local addr="${test_hw_addr:-}"
+    printf '%s\n' "${addr#*@}"
+}
+
+vm-hw-key() {
+    # Usage: vm-hw-key
+    #
+    # Print the private key to log in with, as an absolute path.
+    #
+    # Absolute because this path is written into the generated ssh config and
+    # handed to ansible, and both are used from the output directory rather
+    # than from wherever the run was started. A relative path authenticates
+    # for the probes here and then stops working the moment something changes
+    # directory, which reads as the key being rejected.
+    local key="${test_hw_key:-}"
+
+    if [ -z "$key" ]; then
+        return 0
+    fi
+
+    realpath -m "$key" 2>/dev/null || printf '%s\n' "$key"
+}
+
+vm-hw-hostname() {
+    # Usage: vm-hw-hostname
+    #
+    # Print the short hostname of the host, read from it.
+    #
+    # This runs before the ssh config file exists, so it cannot use -F and
+    # spells the same options out instead.
+    local name
+
+    name=$(ssh -i "$(vm-hw-key)" \
+               -o StrictHostKeyChecking=no \
+               -o UserKnownHostsFile=/dev/null \
+               -o IdentitiesOnly=yes \
+               -o PasswordAuthentication=no \
+               -o LogLevel=FATAL \
+               -o ConnectTimeout=10 \
+               "$(vm-hw-user)@$(vm-hw-address)" hostname -s 2>/dev/null)
+    printf '%s\n' "$name"
+}
+
+vm-write-hw-ssh-config() {
+    # Usage: vm-write-hw-ssh-config VAGRANTDIR HOSTNAME
+    #
+    # Write the ssh config of a host we did not create.
+    #
+    # Same shape vagrant ssh-config produces, alias included, so that
+    # vm-command, vm-play and the host helpers need to know nothing about
+    # which kind of host they are talking to.
+    #
+    # Host key checking is off and known hosts discarded, as on the vagrant
+    # path: a test framework has no business writing to anyone's known_hosts,
+    # and should not start failing because a test box was reinstalled.
+    local vagrantdir="$1" hostname="$2"
+
+    cat > "$vagrantdir/.ssh-config" <<EOF
+Host node $hostname
+  HostName $(vm-hw-address)
+  User $(vm-hw-user)
+  UserKnownHostsFile /dev/null
+  StrictHostKeyChecking no
+  PasswordAuthentication no
+  IdentityFile $(vm-hw-key)
+  IdentitiesOnly yes
+  LogLevel FATAL
+
+  ControlMaster auto
+  ControlPersist 60
+  ControlPath /tmp/ssh-%C
+EOF
+}
+
 vm-json-quote() {
     # Usage: vm-json-quote VALUE
     #
