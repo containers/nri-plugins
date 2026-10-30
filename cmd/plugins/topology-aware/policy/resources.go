@@ -84,6 +84,8 @@ type Supply interface {
 	AllocatableSharedCPU(...bool) int
 	// SliceableCPUs calculates the shared cpuset we can slice exclusive CPUs off of.
 	SliceableCPUs() (cpuset.CPUSet, error)
+	// SliceableCPUCount returns the number of CPUs in SliceableCPUs().
+	SliceableCPUCount() int
 	// Allocate allocates a grant from the supply.
 	Allocate(Request, *libmem.Offer) (Grant, map[string]libmem.NodeMask, error)
 	// ReleaseCPU releases a previously allocated CPU grant from this supply.
@@ -517,6 +519,12 @@ func (cs *supply) pickExclusiveCPUs(r Request, cnt int, dryRun bool) (cpuset.CPU
 		}
 
 		log.Debugf("%s: sliceable cpuset is %s", cs.node.Name(), slice)
+
+		if slice.Size() < cnt {
+			return none, policyError("internal error: "+
+				"%s: can't slice %d exclusive CPUs from %s, %dm available, %d sliceable",
+				cs.node.Name(), cnt, cs.sharable, cs.AllocatableSharedCPU(), cs.SliceableCPUCount())
+		}
 
 		if cr.PickByHints() {
 			pick, err = cs.takeCPUsByHints(&slice, cr.GetContainer().GetTopologyHints(), cnt, cr.CPUPrio())
@@ -1132,6 +1140,13 @@ func (cs *supply) GetScore(req Request) Score {
 		// calculate fractional capacity
 		score.shared -= part
 
+		// enough milli-CPU is not enough, the whole CPUs must be sliceable too
+		if full > 0 && (!cr.isolate || score.isolated < 0) && score.shared >= 0 {
+			if short := full - cs.SliceableCPUCount(); short > 0 {
+				score.shared = -1000*short - part
+			}
+		}
+
 		lpCPUs := cs.GetNode().System().CoreKindCPUs(sysfs.EfficientCore)
 		if lpCPUs.Size() == 0 {
 			lpCPUs = p.cpuAllocator.GetCPUPriorities()[lowPrio]
@@ -1348,6 +1363,26 @@ func (cs *supply) sliceableCPUs(n Node, cnt int, hints []cpuset.CPUSet) (cpuset.
 		return cpuset.New(), err
 	}
 	return offer.Union(more), nil
+}
+
+// SliceableCPUCount returns the number of CPUs in SliceableCPUs().
+func (cs *supply) SliceableCPUCount() int {
+	return cs.sliceableCPUCount(cs.node)
+}
+
+// sliceableCPUCount returns the number of CPUs n offers to SliceableCPUs(),
+// without picking them.
+func (cs *supply) sliceableCPUCount(n Node) int {
+	own := n.FreeSupply().SharableCPUs()
+	if n.IsSameNode(cs.node) && !n.IsLeafNode() {
+		own = cpuset.New()
+	}
+	cnt := 0
+	for _, c := range n.Children() {
+		own = own.Difference(c.FreeSupply().SharableCPUs())
+		cnt += cs.sliceableCPUCount(c)
+	}
+	return min(own.Size()+cnt, max(0, n.FreeSupply().AllocatableSharedCPU(true)/1000))
 }
 
 func (score *score) Supply() Supply {

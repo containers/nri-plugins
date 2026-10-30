@@ -17,6 +17,7 @@ package topologyaware
 import (
 	"fmt"
 	"math"
+	"regexp"
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
@@ -218,4 +219,78 @@ func TestSliceableCPUs(t *testing.T) {
 			t.Errorf("socket #0 can slice %s (%v), expected 1-15", cpus, err)
 		}
 	})
+}
+
+// A pool can have enough free milli-CPU for an exclusive request but too few
+// whole CPUs in its L3 cache pools. It must score insufficient, so that the
+// request goes to a pool which can slice it, or fails cleanly.
+func TestExclusiveSlicingWholeCPUs(t *testing.T) {
+	// L3 caches #0-#1 keep 2 CPUs each for 1500m: socket #0 has 12000m free
+	// but 5+6 whole CPUs. L3 caches #2-#3 keep 3 CPUs each for 2500m: socket
+	// #1 has 11000m free. The root has 23000m free but 21 whole CPUs.
+	shared := map[string]string{
+		"socket #0/L3 cache #0": "1500m",
+		"socket #0/L3 cache #1": "1500m",
+		"socket #1/L3 cache #2": "2500m",
+		"socket #1/L3 cache #3": "2500m",
+	}
+	for _, tc := range []struct {
+		name     string
+		cpu      string
+		rejected []string // pools which must score insufficient
+		wantPool string
+		wantErr  string // error allocating from the root
+	}{
+		{
+			name:     "socket with too few whole CPUs",
+			cpu:      "12",
+			rejected: []string{"socket #0", "socket #1"},
+			wantPool: "root",
+		},
+		{
+			name:     "root with too few whole CPUs",
+			cpu:      "22",
+			rejected: []string{"root", "socket #0", "socket #1"},
+			wantErr:  `23000m available, 21 sliceable`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newSlicingPolicy(t)
+			for pool, cpu := range shared {
+				if _, err := p.allocatePool(newSlicingCtr("shared-"+pool, v1.PodQOSBurstable, cpu), pool); err != nil {
+					t.Fatalf("failed to allocate shared CPU in %s: %v", pool, err)
+				}
+			}
+
+			ctr := newSlicingCtr("excl", v1.PodQOSGuaranteed, tc.cpu)
+			req, err := p.newRequest(ctr, p.memAllocator.Masks().AvailableTypes())
+			if err != nil {
+				t.Fatalf("failed to create request: %v", err)
+			}
+			scores, _ := p.sortPoolsByScore(req, nil)
+			for _, name := range tc.rejected {
+				if shared := scores[p.nodes[name].NodeID()].SharedCapacity(); shared >= 0 {
+					t.Errorf("%s scores sufficient (shared %d) for %s exclusive CPUs", name, shared, tc.cpu)
+				}
+			}
+
+			if tc.wantErr != "" {
+				if _, err := p.root.FreeSupply().(*supply).AllocateCPU(req); err == nil || !regexp.MustCompile(tc.wantErr).MatchString(err.Error()) {
+					t.Errorf("root: got error %v, expected an error matching %q", err, tc.wantErr)
+				}
+			}
+			g, err := p.allocatePool(ctr, "")
+			switch {
+			case tc.wantErr != "":
+				if err == nil {
+					t.Errorf("got grant %v, expected an error", g)
+				}
+			case err != nil:
+				t.Fatalf("failed to allocate %s exclusive CPUs: %v", tc.cpu, err)
+			case g.GetCPUNode().Name() != tc.wantPool:
+				t.Errorf("allocated from %s, expected %s", g.GetCPUNode().Name(), tc.wantPool)
+			}
+			requireNoOvercommit(t, p)
+		})
+	}
 }
