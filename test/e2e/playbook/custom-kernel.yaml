@@ -43,7 +43,7 @@
           when: cached_kernel_stat.stat.exists
           synchronize:
             src: "{{ cached_kernel_pkgs_tarball }}"
-            dest: "/home/vagrant/kernel-pkgs.tar"
+            dest: "kernel-pkgs.tar"
             use_ssh_args: true
 
         - name: If we do not have a cached kernel, fetch and build the kernel on vm
