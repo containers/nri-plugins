@@ -126,7 +126,9 @@ latest-github-release () {
     return $?
 }
 
-pre-cache-vagrant-image
+# A run against a host of its own boots no distro image, and fetching one is
+# half a gigabyte and a reason to abort when the mirror is down.
+vm-hw-mode || pre-cache-vagrant-image
 
 if [ "$k8s_release" = "latest" ]; then
     if latest_k8s_release=$(vm-load-cached-var "$OUTPUT_DIR" latest_k8s_release); then
@@ -162,9 +164,16 @@ if [ "$helm_release" = "latest" ]; then
 fi
 
 
-export vm_name=${vm_name:=$(vm-create-name "$k8scri" "$(basename "$TOPOLOGY_DIR")" ${distro})}
+if vm-hw-mode; then
+    vm-hw-resolve-names
+else
+    export vm_name=${vm_name:=$(vm-create-name "$k8scri" "$(basename "$TOPOLOGY_DIR")" ${distro})}
+fi
 ESCAPED_VM=$(printf '%s\n' "$vm_name" | sed -e 's/[\/]/-/g')
-export VM_HOSTNAME="$ESCAPED_VM"
+# The name of the VM is also the ssh alias and, through get-hostname-for-vm,
+# the Kubernetes node name. On a host we did not create those are not the same
+# thing and vm-hw-resolve-names has already set this to the host's own name.
+vm-hw-mode || export VM_HOSTNAME="$ESCAPED_VM"
 export POLICY=${policy:-"topology-aware"}
 
 # These exports force ssh-* to fail instead of prompting for a passphrase.
@@ -190,6 +199,11 @@ fi
 # from a release tarball with the version given below... unless
 # a source directory is given, which is then expected to contain
 # a compiled version of containerd which we should install.
+# A release of "installed" means the host already has a runtime and we are to
+# use it. This replaces that word with the version it actually has, so it has
+# to happen before the resolution of "latest" below.
+vm-resolve-installed-runtime
+
 GH_CONTAINERD_REPO="containerd/containerd"
 export containerd_release=${containerd_release:-latest}
 containerd_release="${containerd_release#v}"
@@ -233,6 +247,27 @@ if [ "$k8scri" = "crio" -a "$crio_release" = "latest" ]; then
     fi
     crio_release="${crio_release#v}"
     echo "Latest CRI-O release: $crio_release"
+fi
+
+# If we run tests with cilium as the CNI plugin, we install it with the
+# cilium CLI of the release given below. The bridge plugin comes with the
+# distro, so it has no release of its own and needs nothing resolved.
+#
+# This release keeps its "v" prefix, unlike the ones above: the download
+# path of the CLI is built from the tag as it is.
+GH_CILIUM_REPO="cilium/cilium-cli"
+
+if [ "$cni_plugin" = "cilium" -a "$cni_release" = "latest" ]; then
+    if latest_cilium_release=$(vm-load-cached-var "$OUTPUT_DIR" latest_cilium_release); then
+        echo "Loaded cached latest_cilium_release=$latest_cilium_release..."
+        cni_release="$latest_cilium_release"
+    else
+        if ! cni_release=$(latest-github-release $GH_CILIUM_REPO); then
+            error "$cni_release"
+        fi
+        cache=global vm-save-cached-var "$OUTPUT_DIR" latest_cilium_release $cni_release
+    fi
+    echo "Latest cilium release: $cni_release"
 fi
 
 # Default topology if not given. The run_tests.sh script will figure out

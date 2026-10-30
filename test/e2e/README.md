@@ -146,7 +146,8 @@ Worth knowing:
 - A box is only used when the VM is created for the first time. An output
   directory which already has a `Vagrantfile` keeps the VM and the box it was
   created from, so start from a clean output directory to benefit from the
-  cache.
+  cache. Such a run stops rather than test newer versions against an older VM,
+  see [Reusing an output directory](#reusing-an-output-directory).
 
 - Expect a couple of gigabytes per box, and note that vagrant unpacks a box
   into `~/.vagrant.d/boxes` on first use, so the disk cost is roughly twice the
@@ -170,6 +171,139 @@ Worth knowing:
   up, so the framework waits for the node and for the cluster DNS before
   running any test. Raise `CLUSTER_READY_TIMEOUT` (300 seconds by default) if a
   large topology needs longer.
+
+## Reusing an output directory
+
+The output directory of a run is named after the VM, so running the tests twice
+in the same tree reuses the VM of the first run. vagrant provisions a machine
+once, so that VM keeps the Kubernetes, container runtime, CNI plugin and Helm
+versions it was created with, however old they have become, while the run goes
+on reporting the versions it resolved.
+
+A run therefore records what went into a VM it created, and stops when it finds
+a VM which does not match:
+
+```
+The VM in /path/to/n4c16-fedora-43-containerd is not provisioned with what this run resolved:
+  k8s1.37.0 -> k8s1.37.1
+  containerd2.3.4 -> containerd2.4.2
+  helm4.2.4 -> helm4.3.1
+
+error: the VM in /path/to/n4c16-fedora-43-containerd was provisioned with other versions.
+Remove the output directory to provision a new VM with the ones above, set
+provision=all to reprovision this one in place, or set e2e_vm_versions=ignore
+to run the tests against the VM as it is.
+```
+
+Set `e2e_vm_versions` to choose what such a run does:
+
+| value | meaning |
+| --- | --- |
+| `check` | refuse to run against a VM provisioned with other versions (the default) |
+| `ignore` | warn and run the tests against the VM as it is |
+
+```shell
+e2e_vm_versions=ignore ./run_tests.sh policies.test-suite
+```
+
+Or set `provision` to provision the VM again instead of keeping it as it is:
+
+| value | meaning |
+| --- | --- |
+| `1` | run the provisioning playbook again, leaving the cluster alone |
+| `all` | the same, after taking the cluster down with `kubeadm reset` and rebuilding it |
+
+```shell
+provision=all ./run_tests.sh policies.test-suite
+```
+
+Only `all` changes the Kubernetes release, so only `all` ends up matching what
+the run resolved.
+
+## Running the tests on a host of its own
+
+The tests can run on a host which already exists, real hardware or a virtual
+machine somebody else made, instead of on a VM the framework creates:
+
+```shell
+test_hw_addr=test@10.0.0.1 test_hw_key=~/.ssh/testbox ./run_tests.sh policies.test-suite
+```
+
+The host must let that user in by key, let it run `sudo` without a password,
+and have SELinux permissive or disabled. The first two are checked before
+anything is installed. The run is named after the host, so its output
+directory is `<hostname>-<runtime>`.
+
+**Provisioning a host changes it and nothing here undoes that**: Kubernetes,
+the container runtime, the CNI plugin and Helm are installed, `kubeadm init`
+is run, `firewalld` is removed, and `/etc/resolv.conf` is rewritten if
+`dns_nameserver` is set. A host which already runs a cluster is refused;
+`provision=all` says that taking that cluster down is what you meant.
+
+What is done differently from a VM, all of it gated on `is_hardware`:
+
+| on a VM | on a host of its own |
+| --- | --- |
+| the root filesystem is grown to fill the disk | left alone |
+| SELinux is turned off | required to be permissive or disabled already |
+| the box cache can package the VM | refused, there is nothing to package |
+| the topology is created to order | whatever the host has |
+
+Swap is not touched on either: kubelet is configured to tolerate it without
+using it.
+
+### Leaving the runtime alone
+
+Give the runtime's release as `installed` to keep the one the host has:
+
+```shell
+test_hw_addr=test@10.0.0.1 test_hw_key=~/.ssh/testbox containerd_release=installed \
+    ./run_tests.sh policies.test-suite
+```
+
+Nothing is then downloaded, unpacked, reconfigured or restarted, and the
+version is read off the host so the run still records what is under test.
+`installed` needs `test_hw_addr`. In exchange the host's runtime has to
+already have:
+
+- **NRI enabled**, which is the default in containerd 2.x and recent CRI-O.
+- **The systemd cgroup driver**, matching what `kubeadm` gives the kubelet.
+- **A CNI plugin directory matching where the binaries are**, which on Fedora
+  is `/usr/libexec/cni` rather than `/opt/cni/bin`.
+- **Working image pulls**, through any proxy the host needs, as no proxy
+  drop-in is written for it.
+
+### Trying it on localhost
+
+Anyone can exercise this path without separate hardware, by pointing it at
+`127.0.0.1`. **This provisions the machine you run it on**, so use a machine
+you are willing to have a Kubernetes cluster installed on.
+
+```shell
+# A throwaway user to log in as, and a key for it.
+sudo useradd -G root,wheel test
+ssh-keygen -t ed25519 -N '' -f ~/.ssh/ansible-test-ssh
+sudo install -d -m 700 -o test -g test /home/test/.ssh
+sudo install -m 600 -o test -g test ~/.ssh/ansible-test-ssh.pub \
+    /home/test/.ssh/authorized_keys
+
+# Passwordless sudo for it.
+sudo /bin/bash -c 'echo "test ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/test'
+
+# Check both before handing them to the framework.
+ssh -i ~/.ssh/ansible-test-ssh test@127.0.0.1 sudo -n true && echo ok
+
+# Run one test against it, from the top of the repository.
+test_hw_addr=test@127.0.0.1 test_hw_key=~/.ssh/ansible-test-ssh \
+    ./test/e2e/run_tests.sh ./test/e2e/policies.test-suite/template/n4c16/test01-dra
+
+# The same, leaving the runtime the host already has alone.
+containerd_release=installed test_hw_addr=test@127.0.0.1 test_hw_key=~/.ssh/ansible-test-ssh \
+    ./test/e2e/run_tests.sh ./test/e2e/policies.test-suite/template/n4c16/test01-dra
+```
+
+A second run is refused, because the first leaves a cluster behind; pass
+`provision=all` to rebuild it.
 
 ## Collecting coverage data
 
