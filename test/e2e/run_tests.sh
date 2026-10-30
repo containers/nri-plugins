@@ -293,8 +293,13 @@ run-tests-in() {
 
                 policy_name="$(basename $POLICY_DIR)"
 
-                # Create name for the vm, unless the caller gave one.
-                export vm_name=${vm_name:-$(vm-create-name "$k8scri" "$(basename "$TOPOLOGY_DIR")" ${distro})}
+                # Create name for the vm, unless the caller gave one. A host
+                # we did not create is named after itself.
+                if vm-hw-mode; then
+                    vm-hw-resolve-names
+                else
+                    export vm_name=${vm_name:-$(vm-create-name "$k8scri" "$(basename "$TOPOLOGY_DIR")" ${distro})}
+                fi
                     export-and-source-dir "$TOPOLOGY_DIR"
 
                 # Create ansible inventory file from a template

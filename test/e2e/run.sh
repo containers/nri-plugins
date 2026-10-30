@@ -162,9 +162,16 @@ if [ "$helm_release" = "latest" ]; then
 fi
 
 
-export vm_name=${vm_name:=$(vm-create-name "$k8scri" "$(basename "$TOPOLOGY_DIR")" ${distro})}
+if vm-hw-mode; then
+    vm-hw-resolve-names
+else
+    export vm_name=${vm_name:=$(vm-create-name "$k8scri" "$(basename "$TOPOLOGY_DIR")" ${distro})}
+fi
 ESCAPED_VM=$(printf '%s\n' "$vm_name" | sed -e 's/[\/]/-/g')
-export VM_HOSTNAME="$ESCAPED_VM"
+# The name of the VM is also the ssh alias and, through get-hostname-for-vm,
+# the Kubernetes node name. On a host we did not create those are not the same
+# thing and vm-hw-resolve-names has already set this to the host's own name.
+vm-hw-mode || export VM_HOSTNAME="$ESCAPED_VM"
 export POLICY=${policy:-"topology-aware"}
 
 # These exports force ssh-* to fail instead of prompting for a passphrase.

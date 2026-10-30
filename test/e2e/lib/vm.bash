@@ -449,6 +449,33 @@ vm-hw-hostname() {
     printf '%s\n' "$name"
 }
 
+vm-hw-resolve-names() {
+    # Usage: vm-hw-resolve-names
+    #
+    # Set vm_name and VM_HOSTNAME for a run against a host we did not create.
+    #
+    # The name of the VM doubles as the ssh alias and, through
+    # get-hostname-for-vm, as the Kubernetes node name. On a host of its own
+    # those come apart: the node is named after the host, while the output
+    # directory has to tell a containerd run from a crio one against the same
+    # box. So VM_HOSTNAME is the host and vm_name carries the runtime too.
+    #
+    # Reading the name costs an ssh round trip, and both run_tests.sh and
+    # run.sh default vm_name independently, so an already exported VM_HOSTNAME
+    # is taken as the answer rather than asked for again.
+    local hostname="${VM_HOSTNAME:-}"
+
+    if [ -z "$hostname" ]; then
+        vm-hw-check-options
+        hostname="$(vm-hw-hostname)"
+        vm-hw-valid-hostname "$hostname" ||
+            error "the host does not have a usable name, see above"
+    fi
+
+    export VM_HOSTNAME="$hostname"
+    export vm_name="${vm_name:-$hostname-${k8scri:-containerd}}"
+}
+
 vm-write-hw-ssh-config() {
     # Usage: vm-write-hw-ssh-config VAGRANTDIR HOSTNAME
     #
