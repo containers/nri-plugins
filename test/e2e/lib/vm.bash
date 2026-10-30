@@ -694,6 +694,26 @@ vm-write-ansible-vars() {
 EOF
 }
 
+vm-first-run() {
+    # Usage: vm-first-run VAGRANTDIR
+    #
+    # Return success if this is the run which brings the host into being:
+    # creating the VM, or provisioning a host we were given for the first
+    # time.
+    #
+    # A VM is new when its output directory has no Vagrantfile. A host of its
+    # own never has one, so what tells its first run from a later one is
+    # whether anything was recorded about it.
+    local vagrantdir="$1"
+
+    if vm-hw-mode; then
+        [ -z "$(vm-recorded-box-key "$vagrantdir")" ]
+        return
+    fi
+
+    [ ! -f "$vagrantdir/Vagrantfile" ]
+}
+
 vm-recorded-box-key() {
     # Usage: vm-recorded-box-key VAGRANTDIR
     #
@@ -824,8 +844,13 @@ vm-check-recorded-box-key() {
     fi
 
     echo "" >&2
-    echo "The VM in $vagrantdir is not provisioned with what this run" \
-         "resolved:" >&2
+    if vm-hw-mode; then
+        echo "$(vm-hw-address) is not provisioned with what this run" \
+             "resolved:" >&2
+    else
+        echo "The VM in $vagrantdir is not provisioned with what this run" \
+             "resolved:" >&2
+    fi
     vm-report-box-key-mismatch "$recorded" "$key"
 
     if [ "${provision:-}" = "all" ]; then
@@ -853,6 +878,15 @@ vm-check-recorded-box-key() {
              "resolved, not one it installed." >&2
         echo "" >&2
         return 0
+    fi
+
+    # The way out is not the same for the two: a host we were given keeps
+    # whatever is installed on it however many directories are deleted.
+    if vm-hw-mode; then
+        error "$(vm-hw-address) is provisioned with other versions.
+Set provision=all to build it again with the ones above, or set
+e2e_vm_versions=ignore to run the tests against the host as it is. Deleting
+the output directory will not help: the host keeps what is on it."
     fi
 
     error "the VM in $vagrantdir was provisioned with other versions.
@@ -993,12 +1027,12 @@ vm-setup() {
         vm_key="$(vm-box-key "$vmname")"
     fi
 
-    if [ -f "$vagrantdir/Vagrantfile" ]; then
-        # The VM of this output directory is the one the tests will run on,
+    if vm-first-run "$vagrantdir"; then
+        new_vm=1
+    else
+        # The host of this output directory is the one the tests will run on,
         # whatever this run resolved, so check the two agree before going on.
         vm-check-recorded-box-key "$vagrantdir" "$vm_key"
-    else
-        new_vm=1
     fi
 
     # Reuse an already provisioned VM if we have one for this topology and for
