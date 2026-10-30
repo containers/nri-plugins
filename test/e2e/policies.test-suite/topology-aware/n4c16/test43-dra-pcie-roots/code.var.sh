@@ -25,7 +25,7 @@ metadata:
   name: list-attribute-probe
 spec:
   driver: probe.nri.io
-  nodeName: \$(hostname)
+  nodeName: ${VM_HOSTNAME:-\$(hostname)}
   pool:
     name: probe
     generation: 0

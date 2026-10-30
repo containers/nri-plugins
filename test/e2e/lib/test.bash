@@ -216,7 +216,10 @@ verify-metrics-has-no-line() { # script API
 ###
 
 # The kubectl command which addresses the node resource topology of the node.
-export nrt_kubectl_get="kubectl get noderesourcetopologies.topology.node.k8s.io \$(hostname)"
+#
+# The name the run resolved, which is the short hostname and the name the node
+# is registered under. A host's own hostname can be a fully qualified one.
+export nrt_kubectl_get="kubectl get noderesourcetopologies.topology.node.k8s.io ${VM_HOSTNAME:-\$(hostname)}"
 
 nrt-query() { # script API
     # Usage: nrt-query JQ-EXPRESSION
