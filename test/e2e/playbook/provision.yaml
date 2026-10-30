@@ -48,6 +48,26 @@
         cri_socket: unix:///var/run/crio/crio.sock
       when: cri_runtime == "crio"
 
+    # Where to put a kubeconfig the user who logs in can read. This play runs
+    # with become, so the facts describe root: ansible_env.HOME,
+    # ansible_user_dir and ansible_user_id all say root, and only
+    # ansible_user is the account we connected as. So look its home up
+    # rather than deriving it from a fact or assuming /home/<user>.
+    - name: Read the passwd entry of the login user
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ ansible_user }}"
+
+    # Captured into facts here, and only used as facts below. ansible-core
+    # 2.20 templates loop items without the connection magic variables, so
+    # ansible_user is undefined inside a with_items although it resolves in
+    # an ordinary task, and a with_items which referenced it failed with
+    # "'ansible_user' is undefined" a hundred tasks into a run.
+    - name: Note the login user and its home directory
+      ansible.builtin.set_fact:
+        login_user: "{{ ansible_user }}"
+        login_user_home: "{{ ansible_facts.getent_passwd[ansible_user][4] }}"
+
     # kubeadm init refuses to run a second time, so a rerun which means to
     # rebuild the cluster has to take the old one down first. This happens
     # here, before the tasks which write the CNI configuration and the
@@ -83,7 +103,7 @@
             state: absent
           with_items:
             - /root/.kube/config
-            - /home/vagrant/.kube/config
+            - "{{ login_user_home }}/.kube/config"
 
     - name: Setup DNS
       ansible.builtin.shell: "{{ item }}"
@@ -584,12 +604,15 @@
         cmd: kubeadm init --config /root/kubeadm-config.yaml
       when: k8s_feature_gates != ""
 
-    - name: Setup kubeconfig for vagrant user
+    - name: Setup kubeconfig for the login user
       ansible.builtin.command: "{{ item }}"
       with_items:
-        - mkdir -p /home/vagrant/.kube
-        - cp -i /etc/kubernetes/admin.conf /home/vagrant/.kube/config
-        - chown vagrant:vagrant /home/vagrant/.kube/config
+        - mkdir -p {{ login_user_home }}/.kube
+        - cp -i /etc/kubernetes/admin.conf {{ login_user_home }}/.kube/config
+        # Trailing colon: the user's own login group, whatever it is called.
+        # A group named after the user is a convention, not a rule. Quoted,
+        # or the ": " in it makes yaml read the item as a mapping.
+        - "chown {{ login_user }}: {{ login_user_home }}/.kube/config"
         - mkdir -p /root/.kube
         - cp -i /etc/kubernetes/admin.conf /root/.kube/config
 
