@@ -199,6 +199,11 @@ fi
 # from a release tarball with the version given below... unless
 # a source directory is given, which is then expected to contain
 # a compiled version of containerd which we should install.
+# A release of "installed" means the host already has a runtime and we are to
+# use it. This replaces that word with the version it actually has, so it has
+# to happen before the resolution of "latest" below.
+vm-resolve-installed-runtime
+
 GH_CONTAINERD_REPO="containerd/containerd"
 export containerd_release=${containerd_release:-latest}
 containerd_release="${containerd_release#v}"

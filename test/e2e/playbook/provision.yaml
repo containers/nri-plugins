@@ -369,7 +369,9 @@
             cmd: ./install
             chdir: /usr/local/cri-o
           when: is_crio
-      when: (is_containerd and containerd_src == "") or (is_crio and crio_src == "")
+      when: ((is_containerd and containerd_src == "") or
+             (is_crio and crio_src == "")) and
+            (manage_runtime | default(true) | bool)
 
     # Install containerd binaries from compiled sources.
     - name: Install containerd binaries from compiled sources
@@ -398,12 +400,12 @@
     - name: Install CRI-O systemd service file from compiled sources
       ansible.builtin.copy:
         src: "{{ crio_src }}/contrib/crio.service"
-        dest: "/lib/systemd/system/crio.service"
+        dest: "/etc/systemd/system/crio.service"
         mode: '0644'
       when: is_crio and crio_src != ""
 
     - name: Configure runc as the default CRI-O runtime
-      when: is_crio
+      when: is_crio and (manage_runtime | default(true) | bool)
       block:
         - name: Remove CRI-O crun configuration
           ansible.builtin.file:
@@ -418,20 +420,25 @@
               default_runtime = "runc"
             mode: '0644'
 
+    # Under /etc, not /lib. /etc/systemd/system takes precedence over the
+    # package-owned unit instead of overwriting it, so removing this file
+    # gives the host its own containerd back. /lib is a symlink to /usr/lib
+    # on Fedora, so a unit written there replaced the rpm's copy.
     - name: Install containerd systemd service file
       ansible.builtin.get_url:
         url: "{{ containerd_service_file }}"
-        dest: /lib/systemd/system/containerd.service
+        dest: /etc/systemd/system/containerd.service
         owner: root
         group: root
         mode: '0644'
-      when: is_containerd
+      when: is_containerd and (manage_runtime | default(true) | bool)
 
     - name: Create service.d directory for the runtime
       ansible.builtin.file:
         path: "/etc/systemd/system/{{ cri_runtime }}.service.d"
         state: directory
         mode: '0755'
+      when: (manage_runtime | default(true) | bool)
 
     - name: Set up proxies for the runtime
       ansible.builtin.copy:
@@ -442,6 +449,7 @@
           Environment=HTTPS_PROXY="{{ https_proxy }}"
           Environment=NO_PROXY="{{ no_proxy }}"
         mode: '0644'
+      when: (manage_runtime | default(true) | bool)
 
     # First issue daemon-reload to pick up config changes
     - name: Start runtime
@@ -461,7 +469,7 @@
       when: is_containerd
 
     - name: Configure containerd
-      when: is_containerd
+      when: is_containerd and (manage_runtime | default(true) | bool)
       block:
         - name: Create drop-in directory (/etc/containerd/conf.d)
           ansible.builtin.file:
@@ -535,7 +543,7 @@
         state: restarted
         name: "{{ cri_runtime }}"
         daemon_reload: true
-      when: is_containerd
+      when: is_containerd and (manage_runtime | default(true) | bool)
 
     - name: Copy CRI-O NRI enable script
       ansible.builtin.copy:
@@ -556,7 +564,7 @@
         state: restarted
         name: "{{ cri_runtime }}"
         daemon_reload: true
-      when: is_crio
+      when: is_crio and (manage_runtime | default(true) | bool)
 
     - name: Fulfill pre-flight requirements for k8s
       ansible.builtin.shell: "{{ item }}"
