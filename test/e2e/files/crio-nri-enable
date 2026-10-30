@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-
-mkdir -p /etc/crio/crio.conf.d
-
-cat > /etc/crio/crio.conf.d/10-enable-nri.conf <<EOF
-[crio.nri]
-enable_nri = true
-EOF
