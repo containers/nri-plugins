@@ -15,37 +15,14 @@ HOSTNAME = "SERVER_NAME"
 # How many nodes to create
 N = 1
 
-KERNEL_GETSOURCE = "#{ENV['kernel_getsource']}"
-KERNEL_CONFIG = "#{ENV['kernel_config']}"
-K8S_RELEASE = "#{ENV['k8s_release']}"
-K8S_VERSION = "#{ENV['k8s_version']}"
-K8S_FEATURE_GATES = "#{ENV['k8s_feature_gates']}"
-HELM_RELEASE = "#{ENV['helm_release']}"
-CRI_RUNTIME = "#{ENV['k8scri']}"
-CRIO_RELEASE = "1.28.1"
-CRIO_SRC = ""
-CONTAINERD_RELEASE = ""
-CONTAINERD_SRC = ""
-CACHE_DIR="#{ENV['CACHE_DIR']}"
 NO_PROVISION = "#{ENV['E2E_NO_PROVISION']}"
 
-# provision=all asks for the cluster to be rebuilt, not just for the
-# playbook to run again.
-KUBEADM_RESET = "#{ENV['provision']}" == "all"
-
-if CRI_RUNTIME == "containerd"
-  CONTAINERD_RELEASE = "#{ENV['containerd_release']}"
-  CONTAINERD_SRC = "#{ENV['containerd_src']}"
-else
-  CRIO_RELEASE = "#{ENV['crio_release']}"
-  CRIO_SRC = "#{ENV['crio_src']}"
-end
-
-CNI_PLUGIN = "#{ENV['cni_plugin']}"
-CNI_RELEASE = "#{ENV['cni_release']}"
-
-NRI_RESOURCE_POLICY_SRC = "#{ENV['nri_resource_policy_src']}"
 OUTPUT_DIR = "#{ENV['OUTPUT_DIR']}"
+
+# The variables the provisioning playbook takes are not assembled here.
+# vm-write-ansible-vars writes them to ansible-vars.json in this directory,
+# and the provisioner below takes that file, so a run which provisions a host
+# over ssh rather than a VM feeds the playbook from the very same file.
 
 # Each VM should have its own ssh port so that we can have multiple
 # VM in the host side that will not have conflicting source port
@@ -118,32 +95,7 @@ Vagrant.configure("2") do |config|
   if NO_PROVISION != "1"
     config.vm.provision :ansible do |ansible|
       ansible.playbook = "#{ENV['nri_resource_policy_src']}/test/e2e/playbook/provision.yaml"
-      ansible.extra_vars = {
-        network: "10.217.0.0/16",
-        hostname: HOSTNAME,
-        dns_nameserver: "#{ENV['DNS_NAMESERVER']}",
-        dns_search_domain: "#{ENV['DNS_SEARCH_DOMAIN']}",
-        https_proxy: "#{ENV['HTTPS_PROXY']}",
-        http_proxy: "#{ENV['HTTP_PROXY']}",
-        no_proxy: "#{ENV['NO_PROXY']}",
-        kernel_getsource: KERNEL_GETSOURCE,
-        kernel_config: KERNEL_CONFIG,
-        k8s_release: K8S_RELEASE,
-        k8s_version: K8S_VERSION,
-        k8s_feature_gates: K8S_FEATURE_GATES,
-        kubeadm_reset: KUBEADM_RESET,
-        helm_release: HELM_RELEASE,
-        cri_runtime: CRI_RUNTIME,
-        containerd_release: CONTAINERD_RELEASE,
-        containerd_src: CONTAINERD_SRC,
-        crio_release: CRIO_RELEASE,
-        crio_src: CRIO_SRC,
-        cache_dir: CACHE_DIR,
-        cni_plugin: CNI_PLUGIN,
-        cni_release: CNI_RELEASE,
-        nri_resource_policy_src: NRI_RESOURCE_POLICY_SRC,
-        outdir: OUTPUT_DIR,
-      }
+      ansible.extra_vars = "@#{OUTPUT_DIR}/ansible-vars.json"
     end
   end
 end

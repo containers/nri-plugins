@@ -298,6 +298,91 @@ vm-box-name() {
     echo "$BOX_NAME_PREFIX/$(vm-box-key "$1")"
 }
 
+vm-json-quote() {
+    # Usage: vm-json-quote VALUE
+    #
+    # Print VALUE as a JSON string.
+    local s="${1//\\/\\\\}"
+
+    s="${s//\"/\\\"}"
+    printf '"%s"' "$s"
+}
+
+vm-write-ansible-vars() {
+    # Usage: vm-write-ansible-vars VAGRANTDIR
+    #
+    # Write the variables the provisioning playbook takes into
+    # $VAGRANTDIR/ansible-vars.json.
+    #
+    # One file serves both ways of provisioning: the vagrant ansible
+    # provisioner takes it as "@<path>" and a run against a host which is not
+    # a VM hands the same path to ansible-playbook as --extra-vars. Assembling
+    # these in the Vagrantfile as well would be a second copy, in another
+    # language, for the two to drift apart.
+    local vagrantdir="$1"
+    local cri_runtime="${k8scri:-containerd}"
+    local containerd_rel="" containerd_source=""
+    local crio_rel="1.28.1" crio_source=""
+    local http_p="" https_p="" no_p=""
+    local reset=false
+
+    # Only the selected runtime's release is passed on, which is what the
+    # Vagrantfile did. crio keeps a fallback release so that the tarball URL
+    # the playbook builds from it stays well formed when it goes unused.
+    if [ "$cri_runtime" = "containerd" ]; then
+        containerd_rel="${containerd_release:-}"
+        containerd_source="${containerd_src:-}"
+    else
+        crio_rel="${crio_release:-}"
+        crio_source="${crio_src:-}"
+    fi
+
+    # NO_PROXY is spelled out in files/env.in and the two proxy variables are
+    # written into the env file from $proxy, so the env file is where all
+    # three are read from rather than being repeated here.
+    if [ -f "$vagrantdir/env" ]; then
+        { read -r http_p; read -r https_p; read -r no_p; } < <(
+            set +u
+            . "$vagrantdir/env" > /dev/null 2>&1
+            printf '%s\n%s\n%s\n' "${http_proxy:-}" "${https_proxy:-}" \
+                   "${no_proxy:-}"
+        )
+    fi
+
+    if [ "${provision:-}" = "all" ]; then
+        reset=true
+    fi
+
+    cat > "$vagrantdir/ansible-vars.json" <<EOF
+{
+  "network": $(vm-json-quote "${pod_cidr:-10.217.0.0/16}"),
+  "hostname": $(vm-json-quote "${VM_HOSTNAME:-}"),
+  "dns_nameserver": $(vm-json-quote "${dns_nameserver:-}"),
+  "dns_search_domain": $(vm-json-quote "${dns_search_domain:-}"),
+  "https_proxy": $(vm-json-quote "$https_p"),
+  "http_proxy": $(vm-json-quote "$http_p"),
+  "no_proxy": $(vm-json-quote "$no_p"),
+  "kernel_getsource": $(vm-json-quote "${kernel_getsource:-}"),
+  "kernel_config": $(vm-json-quote "${kernel_config:-}"),
+  "k8s_release": $(vm-json-quote "${k8s_release:-}"),
+  "k8s_version": $(vm-json-quote "${k8s_version:-}"),
+  "k8s_feature_gates": $(vm-json-quote "${k8s_feature_gates:-}"),
+  "kubeadm_reset": $reset,
+  "helm_release": $(vm-json-quote "${helm_release:-}"),
+  "cri_runtime": $(vm-json-quote "$cri_runtime"),
+  "containerd_release": $(vm-json-quote "$containerd_rel"),
+  "containerd_src": $(vm-json-quote "$containerd_source"),
+  "crio_release": $(vm-json-quote "$crio_rel"),
+  "crio_src": $(vm-json-quote "$crio_source"),
+  "cache_dir": $(vm-json-quote "${CACHE_DIR:-}"),
+  "cni_plugin": $(vm-json-quote "${cni_plugin:-}"),
+  "cni_release": $(vm-json-quote "${cni_release:-}"),
+  "nri_resource_policy_src": $(vm-json-quote "${nri_resource_policy_src:-}"),
+  "outdir": $(vm-json-quote "${OUTPUT_DIR:-}")
+}
+EOF
+}
+
 vm-recorded-box-key() {
     # Usage: vm-recorded-box-key VAGRANTDIR
     #
@@ -758,6 +843,10 @@ vm-setup() {
         grep -q '^E2E_NO_PROVISION=1$' "$vagrantdir/env" ||
             echo "E2E_NO_PROVISION=1" >> "$vagrantdir/env"
     fi
+
+    # The playbook's variables, for whoever ends up running it. This reads the
+    # env file, so it has to come after that file is written.
+    vm-write-ansible-vars "$vagrantdir"
 
     (cd "$vagrantdir";
      export ANSIBLE_PIPELINING=True;
