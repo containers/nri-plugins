@@ -598,6 +598,11 @@
         dest: /root/kubeadm-config.yaml
         content: |
           apiVersion: kubeadm.k8s.io/v1beta4
+          kind: InitConfiguration
+          nodeRegistration:
+            name: "{{ hostname }}"
+          ---
+          apiVersion: kubeadm.k8s.io/v1beta4
           kind: ClusterConfiguration
           networking:
             podSubnet: "{{ network }}"
@@ -618,9 +623,12 @@
           {% endfor %}
       when: k8s_feature_gates != ""
 
+    # The node name is given rather than left to kubeadm, which would take the
+    # host's own hostname: on a real host that is the fqdn, while the
+    # framework looks the node up by the short name it was told to use.
     - name: Initialize the Kubernetes cluster using kubeadm
       ansible.builtin.command:
-        cmd: kubeadm init --pod-network-cidr="{{ network }}"
+        cmd: kubeadm init --pod-network-cidr="{{ network }}" --node-name {{ hostname }}
       when: k8s_feature_gates == ""
 
     - name: Initialize the Kubernetes cluster using kubeadm, with feature gates
