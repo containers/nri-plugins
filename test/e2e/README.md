@@ -231,8 +231,9 @@ test_hw_addr=test@10.0.0.1 test_hw_key=~/.ssh/testbox ./run_tests.sh <tests>
 ```
 
 The host has to let that user in by key and run `sudo` without a password,
-which is checked before anything is installed. The run is named after the
-host, so its output directory is `<hostname>-<runtime>`.
+which is checked before anything is installed, and it has to have SELinux
+permissive or disabled already. The run is named after the host, so its output
+directory is `<hostname>-<runtime>`.
 
 **Provisioning a host changes it, and nothing here undoes that.** The playbook
 installs Kubernetes, the container runtime, the CNI plugin and Helm, runs
@@ -242,10 +243,18 @@ again; on a host of its own there is no equivalent. So a host which already
 runs a cluster is refused rather than provisioned over, and `provision=all` is
 how you say that taking that cluster down is what you meant.
 
-Two things do not apply to such a run. The box cache has no VM to package, so
-asking for it alongside `test_hw_addr` is refused rather than half honoured.
-And the topology is whatever the host has, so the topology a test directory is
-named after is not created for it.
+What provisioning does **not** do to such a host is grow its root filesystem
+to fill the disk, or turn SELinux off, both of which it does to a VM. The
+playbook is told which kind of host it is on through `is_hardware`, and
+anything in that class is gated on it. SELinux is a requirement rather than
+something to change: switching it would put the host into permissive at once
+and set it to disabled for its next boot, and the second of those takes effect
+long after the run that caused it.
+
+Two other things do not apply. The box cache has no VM to package, so asking
+for it alongside `test_hw_addr` is refused rather than half honoured. And the
+topology is whatever the host has, so the topology a test directory is named
+after is not created for it.
 
 ## Collecting coverage data
 

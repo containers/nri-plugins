@@ -273,8 +273,11 @@
               present
           when: ansible_facts['distribution_major_version'] | int >= 43
 
+    # Not on a host we were given: growing somebody's root partition to fill
+    # their disk is not ours to do, and is not undone by anything here.
     - name: Resize root filesystem to the maximum possible
-      when: ansible_facts['distribution'] == "Fedora"
+      when: ansible_facts['distribution'] == "Fedora" and
+            not (is_hardware | default(false) | bool)
       ansible.builtin.shell: |
         fstype="$(stat -f -c %T /)"
         if [ "$fstype" == "btrfs" ]; then
@@ -291,10 +294,31 @@
             sleep 3
         fi
 
+    # Not on a host we were given. This task changes such a host twice: it
+    # switches the running mode to permissive at once, and writes
+    # SELINUX=disabled for a next boot which this playbook never performs.
+    # Neither is ours to do to a machine somebody else owns, and the second
+    # takes effect long afterwards with nothing to connect it to a test run.
+    # Such a host has to come with SELinux already out of the way, and is
+    # refused below if it does not.
     - name: Disable SELinux
       ansible.posix.selinux:
         state: disabled
-      when: ansible_facts['distribution'] == "Fedora"
+      when: ansible_facts['distribution'] == "Fedora" and
+            not (is_hardware | default(false) | bool)
+
+    # When SELinux is off, ansible reports {status: disabled} with no mode
+    # key, so both lookups need defaults which mean "nothing to object to".
+    - name: Refuse to run with SELinux enforcing
+      ansible.builtin.fail:
+        msg: >-
+          SELinux is enforcing on this host. The tests need it permissive or
+          disabled, and turning it off is not something this playbook will do
+          to a host which is not its own: run "setenforce 0" for this boot, or
+          set SELINUX=permissive in /etc/selinux/config and reboot.
+      when: (is_hardware | default(false) | bool) and
+            ansible_facts.selinux.status | default('disabled') == 'enabled' and
+            ansible_facts.selinux.mode | default('permissive') == 'enforcing'
 
     - name: Remove the firewalld package
       ansible.builtin.package:
