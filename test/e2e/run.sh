@@ -32,7 +32,7 @@ SRC_DIR=$(realpath "$SCRIPT_DIR/../..")
 LIB_DIR=$(realpath "$SCRIPT_DIR/lib")
 qemu_dir="${qemu_dir:-/usr/share/qemu}"
 
-export OUTPUT_DIR=${outdir:-"$SCRIPT_DIR"/output}
+export OUTPUT_DIR=$(realpath -m "${outdir:-$SCRIPT_DIR/output}")
 
 # e2eish=0 leaves the E2EISH replay records out of the test log.
 export e2eish=${e2eish:-1}
