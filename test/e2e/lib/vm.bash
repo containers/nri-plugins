@@ -465,6 +465,77 @@ vm-hw-hostname() {
     printf '%s\n' "$(tail -n 1 <<< "$out")"
 }
 
+vm-hw-runtime-version() {
+    # Usage: vm-hw-runtime-version
+    #
+    # Print the version of the container runtime already installed on the
+    # host, without a leading v.
+    local runtime out
+
+    case "${k8scri:-containerd}" in
+        crio) runtime=crio;;
+        *)    runtime=containerd;;
+    esac
+
+    # Tagged on the host, so that the runtime's own output can be told from
+    # whatever a login shell prints around it: an untagged "Ubuntu 24.04.1"
+    # from a banner would otherwise be read as the version of the runtime.
+    out=$(vm-hw-ssh "$runtime --version 2>/dev/null | sed -n 's/^/ver=/p'" \
+              2>/dev/null)
+
+    # The whole version, prerelease and build metadata included, so that an
+    # rc is not recorded as the release it precedes.
+    printf '%s\n' "$(sed -n 's/^ver=//p' <<< "$out" |
+                     grep -oE '[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)*' |
+                     head -n 1)"
+}
+
+vm-resolve-installed-runtime() {
+    # Usage: vm-resolve-installed-runtime
+    #
+    # Turn a release of "installed" into the version the host already has,
+    # and record that provisioning is not to install one.
+    #
+    # The real version, not a sentinel, so that the box key and the recorded
+    # versions name what is actually under test.
+    local runtime="${k8scri:-containerd}" ver src
+
+    case "$runtime" in
+        crio) [ "${crio_release:-}" = "installed" ] || return 0;;
+        *)    [ "${containerd_release:-}" = "installed" ] || return 0;;
+    esac
+
+    vm-hw-mode ||
+        error "a release of \"installed\" only means something with
+test_hw_addr set: there is no host to read a version from while the VM it
+would come from has yet to be created."
+
+    # The source install answers to the source, not to manage_runtime, so
+    # refuse the pair rather than let one of the two silently win.
+    case "$runtime" in
+        crio) src="${crio_src:-}";;
+        *)    src="${containerd_src:-}";;
+    esac
+    [ -z "$src" ] ||
+        error "a release of \"installed\" and ${runtime}_src=\"$src\" do not go
+together: one leaves the runtime the host has alone, the other installs the
+binaries of that build over it. Unset one of them."
+
+    ver="$(vm-hw-runtime-version)"
+    if [ -z "$ver" ]; then
+        error "could not read the version of the $runtime installed on
+$(vm-hw-address). Is it on that user's PATH?"
+    fi
+
+    export runtime_preinstalled=1
+    case "$runtime" in
+        crio) export crio_release="$ver";;
+        *)    export containerd_release="$ver";;
+    esac
+
+    echo "Runtime already installed on the host: $runtime $ver"
+}
+
 vm-hw-check-sudo() {
     # Usage: vm-hw-check-sudo
     #
@@ -915,11 +986,11 @@ vm-write-ansible-vars() {
     local containerd_rel="" containerd_source=""
     local crio_rel="1.28.1" crio_source=""
     local http_p="" https_p="" no_p=""
-    local hardware=false
+    local hardware=false manage_rt=true
 
-    # Only the selected runtime's release is passed on, which is what the
-    # Vagrantfile did. crio keeps a fallback release so that the tarball URL
-    # the playbook builds from it stays well formed when it goes unused.
+    # Only the selected runtime's release is passed on. crio keeps a fallback
+    # so the tarball URL the playbook builds from it stays well formed when it
+    # goes unused.
     if [ "$cri_runtime" = "containerd" ]; then
         containerd_rel="${containerd_release:-}"
         containerd_source="${containerd_src:-}"
@@ -945,6 +1016,12 @@ vm-write-ansible-vars() {
         hardware=true
     fi
 
+    # Set when the host's own runtime is being used, so provisioning knows to
+    # configure it rather than replace it.
+    if [ -n "${runtime_preinstalled:-}" ]; then
+        manage_rt=false
+    fi
+
     cat > "$vagrantdir/ansible-vars.json" <<EOF
 {
   "network": "10.217.0.0/16",
@@ -960,6 +1037,7 @@ vm-write-ansible-vars() {
   "k8s_version": $(vm-json-quote "${k8s_version:-}"),
   "k8s_feature_gates": $(vm-json-quote "${k8s_feature_gates:-}"),
   "is_hardware": $hardware,
+  "manage_runtime": $manage_rt,
   "helm_release": $(vm-json-quote "${helm_release:-}"),
   "cri_runtime": $(vm-json-quote "$cri_runtime"),
   "containerd_release": $(vm-json-quote "$containerd_rel"),

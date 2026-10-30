@@ -251,6 +251,35 @@ something to change: switching it would put the host into permissive at once
 and set it to disabled for its next boot, and the second of those takes effect
 long after the run that caused it.
 
+To leave the host's container runtime where it is, give its release as
+`installed` instead of a version or `latest`:
+
+```shell
+test_hw_addr=test@10.0.0.1 test_hw_key=~/.ssh/testbox containerd_release=installed \
+    ./run_tests.sh <tests>
+```
+
+The runtime is then left alone entirely: nothing is downloaded or unpacked, its
+unit file and configuration are untouched, and it is not restarted. The version
+is read off the host instead, so the run still reports and records the version
+actually under test. `installed` needs `test_hw_addr`, since a VM which does
+not exist yet has no runtime to read a version from.
+
+What the host's runtime has to provide in return, because provisioning will no
+longer arrange any of it:
+
+- **NRI enabled.** Default in containerd 2.x and in recent CRI-O. For
+  containerd that is `plugins.'io.containerd.nri.v1.nri'.disable = false`, with
+  the socket at `/var/run/nri/nri.sock` and plugins under `/opt/nri/plugins`.
+- **The systemd cgroup driver**, matching what `kubeadm` configures for the
+  kubelet. For containerd, `SystemdCgroup = true` for the runc handler.
+- **A CNI plugin directory that matches where the binaries are.** On Fedora
+  those live in `/usr/libexec/cni` rather than `/opt/cni/bin`.
+- **The ability to pull images**, including through whatever proxy the host
+  needs, since no proxy drop-in is written for it.
+- **The runtime running.** This is the one thing still ensured, since nothing
+  can be tested otherwise.
+
 Two other things do not apply. The box cache has no VM to package, so asking
 for it alongside `test_hw_addr` is refused rather than half honoured. And the
 topology is whatever the host has, so the topology a test directory is named
