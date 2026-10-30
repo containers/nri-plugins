@@ -488,10 +488,18 @@ vm-write-hw-ssh-config() {
     # Host key checking is off and known hosts discarded, as on the vagrant
     # path: a test framework has no business writing to anyone's known_hosts,
     # and should not start failing because a test box was reinstalled.
-    local vagrantdir="$1" hostname="$2"
+    local vagrantdir="$1" hostname="$2" aliases="node $2"
+
+    # vagrant answers to "node" and to the name of the VM, and the framework
+    # uses both: vm-command goes through VM_HOSTNAME, which is the host, while
+    # vm-play hands ansible vm_name as the inventory host. So answer to all of
+    # them.
+    if [ -n "${vm_name:-}" ] && [ "${vm_name:-}" != "$hostname" ]; then
+        aliases="$aliases $vm_name"
+    fi
 
     cat > "$vagrantdir/.ssh-config" <<EOF
-Host node $hostname
+Host $aliases
   HostName $(vm-hw-address)
   User $(vm-hw-user)
   UserKnownHostsFile /dev/null
@@ -1135,20 +1143,38 @@ EOF
     fi
 }
 
+vm-ansible-login-args() {
+    # Usage: vm-ansible-login-args VM VAGRANTDIR
+    #
+    # Print how ansible-playbook is to log in, one argument per line: the
+    # user, then the private key. Where those come from is the only thing
+    # which differs between a VM we made and a host we were given.
+    local vm="$1" vagrantdir="$2"
+
+    if vm-hw-mode; then
+        printf '%s\n' "-u" "$(vm-hw-user)" "--private-key=$(vm-hw-key)"
+        return 0
+    fi
+
+    # private_key may be under qemu/ or libvirt/ directory
+    printf '%s\n' "-u" "vagrant" \
+           "--private-key=$(echo "$vagrantdir/.vagrant/machines/${vm}"/*/private_key)"
+}
+
 vm-play() {
     local vm="$1"
     local playbook="$2"
     local vagrantdir="$3"
+    local login_args=()
+
+    mapfile -t login_args < <(vm-ansible-login-args "$vm" "$vagrantdir")
 
     (cd "$vagrantdir";
      export ANSIBLE_PIPELINING=True;
-     # private_key may be under qemu/ or libvirt/ directory
-     private_key=$(echo .vagrant/machines/${vm}/*/private_key)
      # ansible synchronize does not respect --ssh-common-args,
      # therefore pass the same in the environment variable, too
      ANSIBLE_SSH_ARGS="-F $vagrantdir/.ssh-config" ansible-playbook "$playbook" \
-	  -i "${vm}," -u vagrant \
-	  --private-key="$private_key" \
+	  -i "${vm}," "${login_args[@]}" \
 	  --ssh-common-args "-F $vagrantdir/.ssh-config" \
 	  --extra-vars "cri_runtime=${k8scri} nri_resource_policy_src=${nri_resource_policy_src} cache_dir=$CACHE_DIR kernel_getsource=$kernel_getsource kernel_config=$kernel_config"
     )
