@@ -220,6 +220,28 @@ provision=all ./run_tests.sh policies.test-suite
 Only `all` changes the Kubernetes release, so only `all` ends up matching what
 the run resolved.
 
+A run also stops when it finds a VM whose provisioning never finished:
+
+```
+error: provisioning the VM in /path/to/n4c16-fedora-43-crio started at 2026-11-01T00:04:11+00:00 and did not finish.
+vagrant flags the machine as provisioned all the same, so the tests would run
+against however much of the installation that run got done. Remove the output
+directory to provision a new VM, or set provision=all to provision this one
+again.
+```
+
+vagrant provisions a machine once whether the playbook succeeded or not, so
+without this check the rest of the tests would run against a VM which is
+missing whatever the playbook had not installed yet, and fail with errors of
+their own: no `kubectl`, no `crictl`, no `kubelet`, no cluster. The one real
+error is the one the failed run printed.
+
+A host of its own needs no such check: nothing is recorded about it until
+provisioning finishes, so an incomplete installation is not reused as a
+provisioned host. A failure before cluster creation is retried automatically.
+If the failed run already created a cluster, set `provision=all` to reset it
+and provision the host again.
+
 ## Running the tests on a host of its own
 
 The tests can run on a host which already exists, real hardware or a virtual
