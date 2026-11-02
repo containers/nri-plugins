@@ -260,6 +260,20 @@
         name: kubernetes
       when: ansible_facts['distribution'] == "Fedora"
 
+    # Every repository is configured by now, so download the metadata of them
+    # all here. Otherwise the first task which installs a package is the one
+    # which downloads it, and the dnf5 ansible module reports a failure to do
+    # so as a python traceback which names neither the repository nor the
+    # reason, leaving a run which hits one with nothing to go on.
+    #
+    # dnf expires its metadata per repository, so this downloads what is
+    # missing or stale and nothing else.
+    - name: Download the metadata of the package repositories
+      ansible.builtin.command:
+        cmd: dnf makecache
+      changed_when: false
+      when: ansible_facts['distribution'] == "Fedora"
+
     # Install Helm from a release tarball to /usr/local.
     - name: Install Helm binaries from release tarball
       block:
