@@ -124,9 +124,25 @@
     - name: Reset the existing Kubernetes cluster
       when: (kubeadm_reset | default(false) | bool) and existing_cluster.matched > 0
       block:
+        # The endpoint the cluster on the host runs on, which is not the one
+        # this run asked for when the runtime is being switched. kubeadm
+        # recorded it in kubelet's arguments when it created the cluster.
+        - name: Read the runtime endpoint of the existing cluster
+          ansible.builtin.command:
+            cmd: sed -n 's/.*--container-runtime-endpoint=\([^ "]*\).*/\1/p' /var/lib/kubelet/kubeadm-flags.env
+          register: existing_endpoint
+          changed_when: false
+          failed_when: false
+
+        # Reset talks to the runtime holding the control plane containers.
+        # Told the wrong one it removes nothing, and they keep the ports the
+        # replacement cluster needs. The requested socket is the fallback,
+        # and what kubeadm init below is given.
         - name: Tear the cluster down with kubeadm reset
           ansible.builtin.command:
-            cmd: kubeadm reset --force --cri-socket {{ cri_socket }}
+            cmd: >-
+              kubeadm reset --force --cri-socket
+              {{ (existing_endpoint.stdout | default('') | trim) or cri_socket }}
 
         - name: Remove the CNI configuration of the old cluster
           ansible.builtin.file:
