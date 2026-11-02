@@ -360,12 +360,18 @@ A record is a line of `E2EISH ` and a JSON object, with its kind in `op`:
 | `verify`                | `verify`, for each assertion                                  | `result`, `ok` or `fail`, and `expr`                   |
 | `machine`               | `disable-numa`, `enable-numa`, `vm-set-kernel-cmdline-reboot` | `numa` or `cmdline`                                    |
 | `skip`, `resume`        | `e2eish skip`, `e2eish resume`                                | `pods`, and the `reason` of a skip                     |
-| `unsupported`           | a command which kills containers or the plugin, or touches its cache | `command`                                       |
+| `unsupported`           | a command which kills or restarts the plugin or containers, patches resources or configuration, or touches the cache | `command`                 |
 
 A pod in a record has its metadata, the resources of its containers, its QoS
 class, and the names and IDs of its running containers. YAML goes into a
 record as JSON, converted by `cmd/yaml2json`. `e2eish=0` turns the records
 off.
+
+A `kubectl patch` of the status of a node is the one patch not flagged: the
+status cannot carry the labels which pick the node's or its group's
+configuration, and the replay models no node status, so it changes nothing
+the replay must follow. A patch of anything else about a node is flagged,
+because a label can switch the policy's whole configuration.
 
 ### Marking a block the replay cannot follow
 
