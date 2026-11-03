@@ -1128,7 +1128,7 @@ vm-report-box-key-mismatch() {
     # dropped the feature gates. Print the keys whole when they do not line up.
     local recorded="$1" current="$2"
     local -a was now
-    local i last label
+    local i last label files
 
     IFS=- read -r -a was <<< "$recorded"
     IFS=- read -r -a now <<< "$current"
@@ -1147,10 +1147,30 @@ vm-report-box-key-mismatch() {
             fi
             echo "  $label${was[$i]} -> ${now[$i]}" >&2
         done
+        if [ "${was[$last]}" != "${now[$last]}" ]; then
+            files=$(printf '%s, ' "${BOX_RECIPE_FILES[@]}")
+            echo "" >&2
+            echo "The recipe is these files under test/e2e:
+  ${files%, }
+Editing any of them changes the hash. A different hash means this machine
+was provisioned from a different copy of these files. It does not mean the
+versions installed on it differ." >&2
+        fi
     else
         echo "  VM:  $recorded" >&2
         echo "  run: $current" >&2
     fi
+}
+
+vm-box-key-recipe-only() {
+    # Usage: vm-box-key-recipe-only RECORDED CURRENT
+    #
+    # Return success if two box keys differ in the provisioning recipe alone.
+    local recorded="$1" current="$2"
+
+    # The recipe hash is the last field and holds no "-" itself, so what is
+    # in front of it is everything else the key says.
+    [ "${recorded%-*}" = "${current%-*}" ] && [ "$recorded" != "$current" ]
 }
 
 vm-check-recorded-box-key() {
@@ -1171,7 +1191,7 @@ vm-check-recorded-box-key() {
     # what changes the versions in a VM, so refusing to start would block the
     # one thing which resolves the difference. Only provision=all rebuilds
     # the cluster, so only it ends up matching.
-    local vagrantdir="$1" key="$2" recorded="$3"
+    local vagrantdir="$1" key="$2" recorded="$3" what
 
     case "${e2e_vm_versions:-check}" in
         check|ignore)
@@ -1234,19 +1254,27 @@ vm-check-recorded-box-key() {
         return 0
     fi
 
+    # Naming the recipe rather than the versions when the versions all
+    # matched: claiming otherwise sends the reader looking for a version
+    # difference which the report above does not show.
+    what="is provisioned with other versions"
+    if vm-box-key-recipe-only "$recorded" "$key"; then
+        what="was not provisioned by this recipe"
+    fi
+
     # A host we were given keeps what is installed on it however many
     # directories are deleted, so the way out differs.
     if vm-hw-mode; then
-        error "$(vm-hw-address) is provisioned with other versions.
-Set provision=all to build it again with the ones above, or set
-e2e_vm_versions=ignore to run the tests against the host as it is. Deleting
-the output directory will not help: the host keeps what is on it."
+        error "$(vm-hw-address) $what.
+Set provision=all to provision it again, or set e2e_vm_versions=ignore to run
+the tests against the host as it is. Deleting the output directory will not
+help: the host keeps what is on it."
     fi
 
-    error "the VM in $vagrantdir was provisioned with other versions.
-Remove the output directory to provision a new VM with the ones above, set
-provision=all to reprovision this one in place, or set e2e_vm_versions=ignore
-to run the tests against the VM as it is."
+    error "the VM in $vagrantdir $what.
+Remove the output directory to provision a new VM, set provision=all to
+reprovision this one in place, or set e2e_vm_versions=ignore to run the tests
+against the VM as it is."
 }
 
 vm-box-cache-cleanup-requested() {
