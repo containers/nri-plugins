@@ -33,6 +33,7 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	promexp "go.opentelemetry.io/otel/exporters/prometheus"
+	otelmetric "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
@@ -172,10 +173,11 @@ func validateTelemetryConfig(cfg *telemetryConfig) error {
 	return nil
 }
 
-// dataPointLabels are the Prometheus labels every sample already carries.
+// dataPointLabels are the Prometheus labels that the plugin's samples carry.
 var dataPointLabels = map[string]bool{
 	"domain_id":             true,
 	"domain_name":           true,
+	"error_type":            true,
 	"k8s_pod_uid":           true,
 	"resctrl_control_group": true,
 	"resctrl_group_source":  true,
@@ -373,6 +375,13 @@ func (p *plugin) startTelemetry(ctx context.Context) error {
 	}
 
 	meter := state.provider.Meter("nri-resctrl-mon")
+	errCount, err := meter.Int64Counter("resctrl_mon.errors",
+		otelmetric.WithUnit("{error}"),
+		otelmetric.WithDescription("Failed mon_group creations and PID assignments, by errno."))
+	if err != nil {
+		state.shutdown(ctx)
+		return fmt.Errorf("metrics registration: %w", err)
+	}
 	reg, err := setupMetrics(p.mgr, cfg, p.config.ResctrlPath, meter)
 	if err != nil {
 		state.shutdown(ctx)
@@ -382,5 +391,6 @@ func (p *plugin) startTelemetry(ctx context.Context) error {
 	// would leave p.telemetry non-nil and a later Configure would skip startup.
 	p.telemetry = state
 	p.metrics = reg
+	p.errCount = errCount
 	return nil
 }
