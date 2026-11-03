@@ -31,10 +31,11 @@ import (
 
 // e2eishPlugin is the policy for the harness.
 var e2eishPlugin = &harness.Plugin{
-	Name:   "topology-aware",
-	CRD:    "config.nri_topologyawarepolicies.yaml",
-	New:    func() policyapi.Backend { return New() },
-	Config: func() any { return &cfgapi.Config{} },
+	Name:      "topology-aware",
+	CRD:       "config.nri_topologyawarepolicies.yaml",
+	DRADriver: draDriverName,
+	New:       func() policyapi.Backend { return New() },
+	Config:    func() any { return &cfgapi.Config{} },
 	OffHost: func(cfg any) any {
 		c := cfg.(*cfgapi.Config).DeepCopy()
 		c.ControllableInterrupts = []string{harness.NoInterrupts}

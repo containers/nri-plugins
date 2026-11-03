@@ -105,6 +105,29 @@ e2eish-mark-consts() {
     e2eish-mark consts code="$E2EISH_CONSTS"
 }
 
+e2eish-node-status-patch() {
+    # Usage: e2eish-node-status-patch COMMAND
+    #
+    # True if the command patches the status subresource of a node, which
+    # changes nothing a replay must follow: the status cannot carry the
+    # labels which pick the node's or its group's configuration, the only
+    # part of a node the policy reads, and the replay models no node status
+    # at all. The extended resources balloons/test19-pct injects there are
+    # the case in practice.
+    #
+    # The two conditions are matched independently, rather than as one
+    # pattern, because kubectl takes them in either order, and requiring
+    # them adjacent is how the rollout pattern beside this one grew a hole.
+    case "$1" in
+        *" node "*|*" node/"*|*" nodes "*|*" nodes/"*) ;;
+        *) return 1;;
+    esac
+    case "$1" in
+        *--subresource=status*|*"--subresource status"*) return 0;;
+    esac
+    return 1
+}
+
 e2eish-mark-command() {
     # Usage: e2eish-mark-command COMMAND
     #
@@ -120,12 +143,22 @@ e2eish-mark-command() {
             *"kubectl delete "*)
                 e2eish-mark-delete ${line#*kubectl delete }
                 ;;
-            *"kubectl patch "*"--subresource resize"*|*"kubectl patch "*"--subresource=resize"*)
-                # resize-cpu records the patch it issues itself. Any other
-                # in-place patch changes the resources of a container with
-                # nothing recorded for it, which would leave a generated test
-                # asserting the state of a resize it never makes.
-                [ "${e2eish_resize_cpu:-0}" == 1 ] || e2eish-mark unsupported command="$line"
+            *kubectl*" patch "*)
+                # resize-cpu records the patch it issues itself, and a patch
+                # of the status of a node changes nothing the replay must
+                # follow. Any other patch changes something with nothing
+                # recorded for it: the resources of a container in place, or
+                # the configuration of the policy, either of which would
+                # leave a generated test asserting the state of a change it
+                # never makes.
+                [ "${e2eish_resize_cpu:-0}" == 1 ] || e2eish-node-status-patch "$line" ||
+                    e2eish-mark unsupported command="$line"
+                ;;
+            *kubectl*" rollout restart"*)
+                # A restarted plugin reads its cache back and may place the
+                # containers it finds differently, and the replay has no
+                # restart of its own to follow it with.
+                e2eish-mark unsupported command="$line"
                 ;;
             kill\ *|pkill\ *|killall\ *|"crictl stop"*|"crictl rm"*)
                 e2eish-mark unsupported command="$line"

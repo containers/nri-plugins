@@ -436,6 +436,25 @@ func TestPodSpecExplicitZeroRequest(t *testing.T) {
 	require.Empty(t, qos)
 }
 
+// A pod with resource claims has no PodSpec, however much the rest of it
+// looks like a pod of an e2e test template. A PodSpec cannot carry a claim,
+// so the shortcut would turn a DRA test into an ordinary pod test which
+// asserts the state of devices it never asked for.
+func TestPodSpecOfClaimBearingPod(t *testing.T) {
+	pod := draTestPod("pod0", "pod0", "pod0c0")
+	pod.Namespace, pod.Labels = "default", map[string]string{"app": "pod0"}
+
+	g := newGenTest(t)
+	g.plugin.DRADriver = draTestDriver
+
+	qos, spec := g.podSpec(pod)
+	require.Empty(t, spec, "a pod with resource claims has no PodSpec")
+	require.Empty(t, qos)
+
+	require.Contains(t, g.podArgs(pod, nil, nil),
+		`harness.FromClaimTemplate("cpus", "pod0")`, "the claim of the pod is kept")
+}
+
 // A mapping key which YAML 1.1 reads as a boolean or a null is quoted, so
 // that the helm values of a generated launch are the ones the e2e test had.
 // Every other plain key stays unquoted, which keeps the overlay readable.

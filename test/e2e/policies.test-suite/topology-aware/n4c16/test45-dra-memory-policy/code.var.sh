@@ -4,6 +4,12 @@
 # bad memory policy fails to prepare.
 #
 
+# The memory policies verified here are read from /proc/1/numa_maps in the
+# containers, which a replay has no process of its own to read, and pod1's
+# claim is meant to fail to prepare, which a replay takes for an error of
+# its own. So this test cannot be replayed.
+e2eish=0
+
 cleanup() {
     vm-command "kubectl delete pods --all --now --wait" || :
     vm-command "kubectl delete resourceclaimtemplates --all --now" || :

@@ -32,6 +32,7 @@ type Pod struct {
 	initContainers []*Container
 	containers     []*Container
 	running        []string // nil for all containers
+	claims         []corev1.PodResourceClaim
 }
 
 // PodOption is an option of a Pod.
@@ -77,12 +78,25 @@ func WithRunning(names ...string) PodOption {
 	return func(p *Pod) { p.running = append([]string{}, names...) }
 }
 
+// FromClaimTemplate gives a pod a DRA resource claim of its own, created
+// from the named ResourceClaimTemplate. Its containers hold it by the claim
+// name with WithClaim.
+func FromClaimTemplate(claim, template string) PodOption {
+	return func(p *Pod) {
+		p.claims = append(p.claims, corev1.PodResourceClaim{
+			Name:                      claim,
+			ResourceClaimTemplateName: &template,
+		})
+	}
+}
+
 // Container is a container of a Pod, built with options.
 type Container struct {
 	name           string
 	cpuReq, memReq string
 	cpuLim, memLim string
 	extended       map[string]string // extended resources by name
+	claims         []corev1.ResourceClaim
 }
 
 // ContainerOption is an option of a Container.
@@ -120,11 +134,21 @@ func WithExtendedResource(name, quantity string) ContainerOption {
 	}
 }
 
+// WithClaim gives a container a claim of its pod. An empty request gives it
+// everything the claim holds, a named one only what that request of the claim
+// holds.
+func WithClaim(claim, request string) ContainerOption {
+	return func(c *Container) {
+		c.claims = append(c.claims, corev1.ResourceClaim{Name: claim, Request: request})
+	}
+}
+
 // k8s gives the pod as a kubernetes object.
 func (p *Pod) k8s() (*corev1.Pod, error) {
 	pod := &corev1.Pod{}
 	pod.Name, pod.Namespace = p.name, p.namespace
 	pod.Labels, pod.Annotations = p.labels, p.annotations
+	pod.Spec.ResourceClaims = p.claims
 	for _, list := range []struct {
 		from []*Container
 		to   *[]corev1.Container
@@ -160,6 +184,7 @@ func (p *Pod) syncPod() (*syncPod, error) {
 
 func (c *Container) k8s() (corev1.Container, error) {
 	ctr := corev1.Container{Name: c.name}
+	ctr.Resources.Claims = c.claims
 	type resource struct {
 		value string
 		list  *corev1.ResourceList

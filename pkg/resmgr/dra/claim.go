@@ -113,7 +113,7 @@ func (p *Plugin) claimsAllowed() error {
 // prepareClaim prepares a single claim and returns the devices its requests were
 // prepared as.
 func (p *Plugin) prepareClaim(claim *resourceapi.ResourceClaim) ([]kubeletplugin.Device, error) {
-	results := p.claimResults(claim)
+	results := ClaimResults(claim, p.driverName)
 	if len(results) == 0 {
 		// The kubelet only asks the drivers a claim was allocated from, so this
 		// is not supposed to happen. Nothing of ours is in the claim, so there is
@@ -251,17 +251,17 @@ func (p *Plugin) undoClaim(uid types.UID, rollback bool) {
 	}
 }
 
-// claimResults returns the allocation results of a claim which are ours. A claim
-// can be allocated from several drivers, and the other drivers' devices are
-// theirs to prepare, not ours to look at.
-func (p *Plugin) claimResults(claim *resourceapi.ResourceClaim) []resourceapi.DeviceRequestAllocationResult {
+// ClaimResults returns the allocation results of a claim which are the given
+// driver's own. A claim can be allocated from several drivers, and the other
+// drivers' devices are theirs to prepare, not ours to look at.
+func ClaimResults(claim *resourceapi.ResourceClaim, driver string) []resourceapi.DeviceRequestAllocationResult {
 	if claim.Status.Allocation == nil {
 		return nil
 	}
 
 	var results []resourceapi.DeviceRequestAllocationResult
 	for _, r := range claim.Status.Allocation.Devices.Results {
-		if r.Driver == p.driverName {
+		if r.Driver == driver {
 			results = append(results, r)
 		}
 	}
