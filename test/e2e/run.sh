@@ -198,12 +198,6 @@ export nri_resource_policy_src=${nri_resource_policy_src:-"$SRC_DIR"}
 
 nri_resource_policy_cache="/var/lib/nri-resource-policy/cache"
 
-if [ "$k8scri" == "containerd" ]; then
-    k8scri_sock="/var/run/containerd/containerd.sock"
-else
-    k8scri_sock="/var/run/crio/crio.sock"
-fi
-
 # If we run tests with containerd as the runtime, we install it
 # from a release tarball with the version given below... unless
 # a source directory is given, which is then expected to contain
@@ -864,7 +858,7 @@ create() { # script API
         images="$(grep -E '^ *image: .*$' "$TEST_OUTPUT_DIR/$NAME.yaml" | sed -E 's/^ *image: *([^ ]*)$/\1/g' | sort -u)"
         if [ "${#pulled_images_on_vm[@]}" = "0" ]; then
             # Initialize pulled images available on VM
-            vm-command "crictl -i unix://${k8scri_sock} images" >/dev/null &&
+            vm-command "crictl images" >/dev/null &&
             while read -r image tag _; do
                 if [ "$image" = "IMAGE" ]; then
                     continue
@@ -886,7 +880,7 @@ create() { # script API
                 if [ "$use_host_images" == "1" ] && vm-put-docker-image "$image"; then
                     : # no need to pull the image to vm, it is now imported.
                 else
-                    vm-command "crictl -i unix://${k8scri_sock} pull \"$image\"" || {
+                    vm-command "crictl pull \"$image\"" || {
                         errormsg="pulling image \"$image\" for \"$TEST_OUTPUT_DIR/$NAME.yaml\" failed."
                         if is-hooked on_create_fail; then
                             echo "$errormsg"

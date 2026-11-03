@@ -525,6 +525,24 @@
         state: started
         enabled: true
 
+    # crictl tries a list of well known endpoints when it is not told one,
+    # so on a host with both runtimes installed it can talk to the one this
+    # run did not ask for. Written whatever manage_runtime says, since a
+    # runtime the host installed itself still has to be named. Only the two
+    # endpoint lines are ours; the rest of the file, and whatever those two
+    # held, is the host owner's.
+    - name: Point crictl at the runtime of this run
+      ansible.builtin.lineinfile:
+        path: /etc/crictl.yaml
+        regexp: '^{{ item }}:'
+        line: "{{ item }}: {{ cri_socket }}"
+        create: true
+        mode: '0644'
+        backup: true
+      loop:
+        - runtime-endpoint
+        - image-endpoint
+
     - name: Configure containerd
       when: is_containerd and (manage_runtime | default(true) | bool)
       block:
