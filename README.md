@@ -11,11 +11,13 @@ Currently following plugins are available:
 | [Memtierd][3]       | memory management |
 | [Memory-qos][4]     | memory management |
 | [SGX-EPC][5]        | memory management |
+| [Block I/O][6]      | I/O management    |
 
 [1]: https://containers.github.io/nri-plugins/stable/docs/resource-policy/policy/topology-aware.html
 [2]: https://containers.github.io/nri-plugins/stable/docs/resource-policy/policy/balloons.html
 [3]: https://containers.github.io/nri-plugins/stable/docs/memory/memtierd.html
 [4]: https://containers.github.io/nri-plugins/stable/docs/memory/memory-qos.html
 [5]: https://containers.github.io/nri-plugins/stable/docs/memory/sgx-epc.html
+[6]: https://containers.github.io/nri-plugins/stable/docs/blockio.html
 
 See the [NRI plugins documentation](https://containers.github.io/nri-plugins/) for more information.
