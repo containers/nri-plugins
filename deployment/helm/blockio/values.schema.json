@@ -1,0 +1,81 @@
+{
+    "$schema": "http://json-schema.org/schema#",
+    "type": "object",
+    "required": ["image", "resources", "config", "nri"],
+    "properties": {
+        "image": {
+            "type": "object",
+            "required": ["name", "pullPolicy"],
+            "properties": {
+                "name": {"type": "string"},
+                "tag": {"type": "string"},
+                "pullPolicy": {
+                    "type": "string",
+                    "enum": ["Never", "Always", "IfNotPresent"]
+                }
+            }
+        },
+        "config": {
+            "description": "Block I/O class configuration as a map or raw YAML string.",
+            "type": ["object", "string"]
+        },
+        "resources": {
+            "type": "object",
+            "required": ["cpu", "memory"],
+            "properties": {
+                "cpu": {"type": "string"},
+                "memory": {"type": "string"}
+            }
+        },
+        "openshift": {
+            "type": "object",
+            "required": ["grant-scc"],
+            "properties": {
+                "grant-scc": {
+                    "description": "Create an SCC and grant its use to the plugin's ServiceAccount.",
+                    "type": "boolean"
+                }
+            }
+        },
+        "nri": {
+            "type": "object",
+            "required": ["plugin", "runtime"],
+            "properties": {
+                "plugin": {
+                    "type": "object",
+                    "required": ["index"],
+                    "properties": {
+                        "index": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 99
+                        },
+                        "annotations": {
+                            "description": "Extra annotations for the plugin's pod.",
+                            "type": "object",
+                            "additionalProperties": {"type": "string"}
+                        }
+                    }
+                },
+                "runtime": {
+                    "type": "object",
+                    "required": ["socketPath"],
+                    "properties": {
+                        "socketPath": {
+                            "description": "Host directory containing nri.sock.",
+                            "type": "string",
+                            "pattern": "^/"
+                        }
+                    }
+                }
+            }
+        },
+        "tolerations": {"type": "array", "items": {"type": "object"}},
+        "affinity": {"type": "object"},
+        "nodeSelector": {
+            "type": "object",
+            "additionalProperties": {"type": "string"}
+        },
+        "podPriorityClassNodeCritical": {"type": "boolean"}
+    }
+}

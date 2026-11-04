@@ -1,0 +1,62 @@
+# Default values for blockio.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+---
+image:
+  name: ghcr.io/containers/nri-plugins/nri-blockio
+  # tag, if defined will use the given image tag, otherwise Chart.AppVersion will be used
+  #tag: unstable
+  pullPolicy: Always
+
+# Block I/O classes. Also accepts a YAML string (--set-file config=...).
+config:
+  Classes: {}
+
+resources:
+  cpu: 10m
+  memory: 100Mi
+
+nri:
+  plugin:
+    index: 50
+    # Extra annotations for the plugin's pod, for example openshift.io/required-scc.
+    annotations: {}
+  runtime:
+    # Host directory containing nri.sock, mounted at /var/run/nri in the container.
+    socketPath: /var/run/nri
+
+# Example:
+# tolerations:
+# - key: node-role.kubernetes.io/control-plane
+#   operator: Exists
+#   effect: NoSchedule
+tolerations: []
+
+# Example:
+# affinity:
+#   nodeAffinity:
+#     requiredDuringSchedulingIgnoredDuringExecution:
+#       nodeSelectorTerms:
+#       - matchExpressions:
+#         - key: kubernetes.io/hostname
+#           operator: In
+#           values: [worker-1]
+affinity: {}
+
+# Additional node selector labels. The chart always selects Linux nodes.
+# nodeSelector:
+#   kubernetes.io/hostname: worker-1
+nodeSelector: {}
+
+# NRI plugins should be considered as part of the container runtime.
+# By default we make them part of the system-node-critical priority
+# class. This should mitigate the potential risk of a plugin getting
+# evicted under heavy system load. It should also ensure that during
+# autoscaling enough new nodes are brought up to leave room for the
+# plugin on each new node.
+podPriorityClassNodeCritical: true
+
+# Create an SCC and grant its use to the nri-blockio ServiceAccount on OpenShift.
+# Leave false on Kubernetes clusters without SCC support.
+openshift:
+  grant-scc: false

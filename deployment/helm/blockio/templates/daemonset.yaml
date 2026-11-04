@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    {{- include "nri-plugin.labels" . | nindent 4 }}
+  name: nri-blockio
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "nri-plugin.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nri-plugin.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      {{- range $name, $value := omit .Values.nri.plugin.annotations "checksum/config" }}
+        {{ $name }}: {{ $value | quote }}
+      {{- end }}
+    spec:
+      serviceAccountName: nri-blockio
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      nodeSelector:
+        {{- merge (dict "kubernetes.io/os" "linux") .Values.nodeSelector | toYaml | nindent 8 }}
+      containers:
+        - name: nri-blockio
+          command:
+            - nri-blockio
+            - --name
+            - blockio
+            - --idx
+            - {{ .Values.nri.plugin.index | int | printf "%02d" | quote }}
+            - --config
+            - /etc/nri/blockio/config.yaml
+            - --v
+          image: {{ .Values.image.name }}:{{ .Values.image.tag | default .Chart.AppVersion }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          terminationMessagePath: /tmp/termination-log
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            {{- if index .Values.openshift "grant-scc" }}
+            runAsUser: 0
+            seLinuxOptions:
+              type: spc_t
+            {{- end }}
+          resources:
+            requests:
+              cpu: {{ .Values.resources.cpu }}
+              memory: {{ .Values.resources.memory }}
+          volumeMounts:
+            - name: blockio-config-vol
+              mountPath: /etc/nri/blockio
+              readOnly: true
+            - name: nrisockets
+              mountPath: /var/run/nri
+              readOnly: true
+            - name: hostdev
+              mountPath: /dev
+              readOnly: true
+      {{- if .Values.podPriorityClassNodeCritical }}
+      priorityClassName: system-node-critical
+      {{- end }}
+      volumes:
+        - name: blockio-config-vol
+          configMap:
+            name: nri-blockio-config.default
+        - name: nrisockets
+          hostPath:
+            path: {{ .Values.nri.runtime.socketPath | quote }}
+            type: DirectoryOrCreate
+        - name: hostdev
+          hostPath:
+            path: /dev
+            type: Directory

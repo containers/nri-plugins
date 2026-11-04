@@ -8,3 +8,6 @@
 			if dieA < a.cnt && dieB >= a.cnt {
 			if dieA >= a.cnt && dieB >= a.cnt {
 				if diff := dieA - dieB; diff != 0 {
+        blockio-cri stopp "$pod"
+    blockio-cri stopp "$pod"
+            blockio-cri stopp "$pod" || status=1

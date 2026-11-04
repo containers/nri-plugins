@@ -103,6 +103,7 @@ PLUGINS ?= \
 	nri-resource-policy-template \
 	nri-memory-policy \
 	nri-memory-qos \
+	nri-blockio \
 	nri-memtierd \
         nri-sgx-epc \
 	nri-resctrl-mon
@@ -389,6 +390,8 @@ nri-plugins-operator-bundle-image:
 #
 # plugin build dependencies
 #
+
+$(BIN_PATH)/nri-blockio: $(wildcard cmd/plugins/blockio/*.go) go.mod go.sum
 
 $(BIN_PATH)/nri-resource-policy-topology-aware: \
     $(shell for f in cmd/plugins/topology-aware/*.go; do echo $$f; done; \
