@@ -14,6 +14,7 @@ require (
 	github.com/intel/memtierd v0.1.1
 	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.3
 	github.com/klauspost/compress v1.19.1
+	github.com/opencontainers/runtime-spec v1.3.0
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/client_model v0.6.2
@@ -93,7 +94,6 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/onsi/ginkgo/v2 v2.32.1 // indirect
 	github.com/onsi/gomega v1.42.1 // indirect
-	github.com/opencontainers/runtime-spec v1.3.0 // indirect
 	github.com/opencontainers/runtime-tools v0.9.1-0.20251114084447-edf4cb3d2116 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/common v0.70.1 // indirect

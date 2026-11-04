@@ -9,6 +9,7 @@ introduction.md
 resource-policy/index.rst
 memory/index.md
 monitoring/index.md
+blockio.md
 deployment/index.md
 contributing.md
 Project GitHub repository <https://github.com/containers/nri-plugins>
