@@ -286,6 +286,38 @@ already have:
   is `/usr/libexec/cni` rather than `/opt/cni/bin`.
 - **Working image pulls**, through any proxy the host needs.
 
+### Using the cluster the host runs
+
+Give the Kubernetes release as `installed` to run the tests on the cluster the
+host already runs, instead of building one:
+
+```shell
+test_hw_addr=test@10.0.0.1 test_hw_key=~/.ssh/testbox \
+    containerd_release=installed k8s_release=installed \
+    ./run_tests.sh policies.test-suite
+```
+
+The cluster is then left as it is: no Kubernetes package, repository, CNI
+configuration, sysctl, kernel module, kubeconfig or taint is installed or
+changed, and neither `kubeadm init` nor `kubeadm reset` is run. The version
+is read from the cluster, and the node is named after its one node.
+Provisioning still installs Helm and the packages the framework uses.
+
+`installed` needs `test_hw_addr`, and refuses `provision=all` and
+`k8s_feature_gates`: the run cannot take the cluster down, and the gates of
+the cluster are set by whoever runs it. In exchange the cluster has to be:
+
+- **A single node** cluster, with its `admin.conf` in `/etc/kubernetes`, as
+  kubeadm and the tools built on it leave it.
+- **Untainted**: a `NoSchedule` or `NoExecute` taint on the node is refused,
+  since it would keep the pods of the tests off it.
+- **Reachable by root's `kubectl`**, through `/root/.kube/config`, which is
+  what the tests run their commands with.
+- **Set up with the gates the tests need**, on the apiserver, scheduler and
+  kubelet.
+- **On a runtime which meets the list above**, which `containerd_release`
+  set to `installed` keeps as it is.
+
 ### Trying it on localhost
 
 This path can be exercised without separate hardware, by pointing it at

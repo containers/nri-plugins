@@ -534,6 +534,88 @@ $(vm-hw-address). Is it on that user's PATH?"
     echo "Runtime already installed on the host: $runtime $ver"
 }
 
+vm-hw-k8s-cluster() {
+    # Usage: vm-hw-k8s-cluster
+    #
+    # Print the version of the Kubernetes cluster running on the host,
+    # without a leading v, as "ver=VERSION", each of its nodes as
+    # "node=NAME", each taint of its nodes as "taint=KEY:EFFECT", and
+    # "taints=read" once the taints have been read.
+    #
+    # Through admin.conf, which only root can read. kubectl is looked up on
+    # the login user's PATH, since sudo's secure_path can leave out the
+    # /usr/local/bin a hand installed cluster puts it in.
+    local k='sudo -n "$(command -v kubectl)" --kubeconfig=/etc/kubernetes/admin.conf'
+
+    vm-hw-ssh "$k get --raw /version 2>/dev/null |
+                   sed -n 's/.*\"gitVersion\": *\"v\{0,1\}\([^\"]*\)\".*/ver=\1/p'
+               $k get nodes -o name 2>/dev/null | sed -n 's|^node/|node=|p'
+               $k get nodes -o jsonpath='{range .items[*].spec.taints[*]}taint={.key}:{.effect}{\"\n\"}{end}' 2>/dev/null &&
+                   echo taints=read" \
+        2>/dev/null
+}
+
+vm-resolve-installed-k8s() {
+    # Usage: vm-resolve-installed-k8s
+    #
+    # Turn a Kubernetes release of "installed" into the version of the
+    # cluster the host already runs, name the node after the one node of
+    # that cluster, and record that provisioning is not to build one.
+    local out ver nodes taints
+
+    [ "${k8s_release:-}" = "installed" ] || return 0
+
+    vm-hw-mode ||
+        error "a Kubernetes release of \"installed\" only means something
+with test_hw_addr set: there is no cluster to use while the VM it would run
+on has yet to be created."
+
+    [ "${provision:-}" != "all" ] ||
+        error "a Kubernetes release of \"installed\" and provision=all do not
+go together: one uses the cluster the host has, the other takes it down."
+
+    # The gates of a cluster which is already running are set by whoever runs
+    # it. Taking them anyway would record gates the cluster does not have.
+    [ -z "${k8s_feature_gates:-}" ] ||
+        error "a Kubernetes release of \"installed\" and k8s_feature_gates do
+not go together: this run cannot set the gates of the cluster on the host.
+Set them on its apiserver, scheduler and kubelet, and unset k8s_feature_gates."
+
+    out="$(vm-hw-k8s-cluster)"
+    ver="$(sed -n 's/^ver=//p' <<< "$out" | head -n 1)"
+    nodes="$(sed -n 's/^node=//p' <<< "$out")"
+    taints="$(sed -n 's/^taint=//p' <<< "$out" | grep -v ':PreferNoSchedule$')"
+
+    # The taints are read last, so a probe which failed there still has a
+    # version and a node, and an unread taint must not pass for none.
+    if [ -z "$ver" ] || [ -z "$nodes" ] || ! grep -qx 'taints=read' <<< "$out"; then
+        error "could not read the Kubernetes cluster on $(vm-hw-address)
+through /etc/kubernetes/admin.conf. Is it running, and is kubectl on that
+user's PATH?"
+    fi
+
+    # The tests run their pods on the node they were given, and the plugin
+    # pins every container on each node it is deployed to.
+    if [ "$(wc -l <<< "$nodes")" != 1 ]; then
+        error "the cluster on $(vm-hw-address) has more than one node:
+$(paste -sd' ' <<< "$nodes"). The tests need a single-node cluster."
+    fi
+
+    # The cluster is left as it is, taints included, and a taint which keeps
+    # pods off the node would keep the pods of the tests off it.
+    if [ -n "$taints" ]; then
+        error "the node $nodes of the cluster on $(vm-hw-address) has taints
+which keep pods off it: $(paste -sd' ' <<< "$taints"). Remove them on the
+cluster, for instance kubectl taint nodes $nodes KEY:EFFECT-."
+    fi
+
+    export k8s_preinstalled=1
+    export k8s_release="$ver"
+    export VM_HOSTNAME="$nodes"
+
+    echo "Kubernetes already running on the host: $ver, node $nodes"
+}
+
 vm-hw-check-sudo() {
     # Usage: vm-hw-check-sudo
     #
@@ -703,6 +785,12 @@ vm-hw-check-provisionable() {
         error "$(vm-hw-user)@$(vm-hw-address) cannot run sudo without a
 password, which provisioning and the tests both need. Check the host's
 sudoers, and that test_hw_key is the key that user accepts."
+
+    # A cluster this run was told to use, and has already read through its
+    # admin.conf, is not one provisioning would take down or build over.
+    if [ -n "${k8s_preinstalled:-}" ]; then
+        return 0
+    fi
 
     # provision=all is permission to take down a cluster this harness could
     # have built, and nothing more: the playbook resets what kubeadm made
@@ -984,7 +1072,7 @@ vm-write-ansible-vars() {
     local containerd_rel="" containerd_source=""
     local crio_rel="1.28.1" crio_source=""
     local http_p="" https_p="" no_p=""
-    local hardware=false manage_rt=true
+    local hardware=false manage_rt=true manage_k8s=true
 
     # Only the selected runtime's release is passed on. crio keeps a fallback
     # so the tarball URL the playbook builds from it stays well formed when it
@@ -1020,6 +1108,12 @@ vm-write-ansible-vars() {
         manage_rt=false
     fi
 
+    # Set when the cluster the host runs is being used, so provisioning
+    # neither installs Kubernetes nor builds a cluster.
+    if [ -n "${k8s_preinstalled:-}" ]; then
+        manage_k8s=false
+    fi
+
     cat > "$vagrantdir/ansible-vars.json" <<EOF
 {
   "network": "10.217.0.0/16",
@@ -1036,6 +1130,7 @@ vm-write-ansible-vars() {
   "k8s_feature_gates": $(vm-json-quote "${k8s_feature_gates:-}"),
   "is_hardware": $hardware,
   "manage_runtime": $manage_rt,
+  "manage_k8s": $manage_k8s,
   "helm_release": $(vm-json-quote "${helm_release:-}"),
   "cri_runtime": $(vm-json-quote "$cri_runtime"),
   "containerd_release": $(vm-json-quote "$containerd_rel"),

@@ -50,6 +50,8 @@ export cni_release=${cni_release:-latest}
 TOPOLOGY_DIR=${TOPOLOGY_DIR:=e2e}
 
 GH_K8S_REPO="kubernetes/kubernetes"
+# A release of "installed" uses the cluster the host already runs, and is
+# replaced by its version once the host is known.
 export k8s_release=${k8s_release:-"latest"}
 k8s_release="${k8s_release#v}"
 export k8s_version=""
@@ -154,11 +156,6 @@ if [ "$k8s_release" = "latest" ]; then
     echo "Latest Kubernetes release: $k8s_release"
 fi
 
-export k8s_version=$(echo $k8s_release | sed -E 's/([0-9]*\.[0-9]*)(\.[0-9]*)/\1/g')
-if [ -z "$k8s_version" ]; then
-    error "failed to determine latest Kubernetes version from \"$k8s_release"\"
-fi
-
 if [ "$helm_release" = "latest" ]; then
     if latest_helm_release=$(vm-load-cached-var "$OUTPUT_DIR" latest_helm_release); then
         echo "Loaded cached latest_helm_release=$latest_helm_release..."
@@ -206,6 +203,12 @@ nri_resource_policy_cache="/var/lib/nri-resource-policy/cache"
 # use it. This replaces that word with the version it actually has, so it has
 # to happen before the resolution of "latest" below.
 vm-resolve-installed-runtime
+vm-resolve-installed-k8s
+
+export k8s_version=$(echo $k8s_release | sed -E 's/([0-9]*\.[0-9]*)(\.[0-9]*)/\1/g')
+if [ -z "$k8s_version" ]; then
+    error "failed to determine latest Kubernetes version from \"$k8s_release"\"
+fi
 
 GH_CONTAINERD_REPO="containerd/containerd"
 export containerd_release=${containerd_release:-latest}
@@ -697,25 +700,41 @@ get-config-generation() {
 
 get-hostname-for-vm() {
     local node="${node:-$VM_HOSTNAME}"
+    # The distro of a VM named like xyzzy-foobar-22.04 calls it xyzzy-foobar-22.
+    # A host we were given, or the cluster on it, names its node itself.
+    if vm-hw-mode; then
+        echo "$node"
+        return 0
+    fi
     echo ${node%.*}
 }
 
+config-node-status-jsonpath() {
+    # Usage: config-node-status-jsonpath FIELD
+    #
+    # Print the JSONPath of FIELD in the status of the node in a configuration
+    # resource. JSONPath splits a key at its dots even in brackets, so they are
+    # escaped.
+    local node="$(get-hostname-for-vm)"
+    echo "{.status.nodes['${node//./\\.}'].$1}"
+}
+
 get-config-node-status-generation() {
-    local resource="$1" node="$(get-hostname-for-vm)"
+    local resource="$1"
     vm-command-q "kubectl get -n kube-system $resource \
-                      -ojsonpath=\"{.status.nodes['$node'].generation}\""
+                      -ojsonpath=\"$(config-node-status-jsonpath generation)\""
 }
 
 get-config-node-status-result() {
-    local resource="$1" node="$(get-hostname-for-vm)"
+    local resource="$1"
     vm-command-q "kubectl get -n kube-system $resource \
-                     -ojsonpath=\"{.status.nodes['$node'].status}\""
+                     -ojsonpath=\"$(config-node-status-jsonpath status)\""
 }
 
 get-config-node-status-error() {
-    local resource="$1" node="$(get-hostname-for-vm)"
+    local resource="$1"
     vm-command-q "kubectl get -n kube-system $resource \
-                      -ojsonpath=\"{.status.nodes['$node'].errors}\""
+                      -ojsonpath=\"$(config-node-status-jsonpath errors)\""
 }
 
 wait-config-node-status() {
@@ -725,7 +744,7 @@ wait-config-node-status() {
     local generation jsonpath result errors
 
     generation=$(get-config-generation $resource)
-    jsonpath="{.status.nodes['$node'].generation}"
+    jsonpath="$(config-node-status-jsonpath generation)"
 
     vm-command-q "kubectl wait -n kube-system --timeout=$timeout \
                       $resource --for=jsonpath=\"$jsonpath\"=$generation > /dev/null" ||
@@ -757,9 +776,8 @@ wait-config-status() { # script API
     #
     # Dump the whole status of the resource and fail the test on timeout.
     local status="$1" timeout="${2:-5s}" resource="${3:-$(config-resource)}"
-    local node jsonpath
-    node="$(get-hostname-for-vm)"
-    jsonpath="{.status.nodes['$node'].status}"
+    local jsonpath
+    jsonpath="$(config-node-status-jsonpath status)"
 
     vm-command "kubectl wait -n kube-system $resource \
                     --for=jsonpath=\"$jsonpath\"=\"$status\" --timeout=$timeout" || {
