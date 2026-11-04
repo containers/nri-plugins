@@ -13,6 +13,7 @@
     is_crio: false
     is_hardware: false
     manage_runtime: true
+    manage_k8s: true
     containerd_release: "{{ containerd_release }}"
     containerd_tarball: "https://github.com/containerd/containerd/releases/download/v{{ containerd_release }}/containerd-{{ containerd_release }}-linux-amd64.tar.gz"
     containerd_service_file: "https://raw.githubusercontent.com/containerd/containerd/main/containerd.service"
@@ -210,25 +211,25 @@
         content: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/ /"
         dest: /etc/apt/sources.list.d/kubernetes.list
         mode: '0644'
-      when: ansible_facts['distribution'] == "Ubuntu"
+      when: ansible_facts['distribution'] == "Ubuntu" and manage_k8s
 
     - name: Download Kubernetes APT key
       ansible.builtin.get_url:
         url: https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/Release.key
         dest: /tmp/kubernetes-release.key
         mode: '0644'
-      when: ansible_facts['distribution'] == "Ubuntu"
+      when: ansible_facts['distribution'] == "Ubuntu" and manage_k8s
 
     - name: Convert the Kubernetes APT key to keyring format
       ansible.builtin.command:
         cmd: gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg /tmp/kubernetes-release.key
-      when: ansible_facts['distribution'] == "Ubuntu"
+      when: ansible_facts['distribution'] == "Ubuntu" and manage_k8s
 
     - name: Clean up temporary key file
       ansible.builtin.file:
         path: /tmp/kubernetes-release.key
         state: absent
-      when: ansible_facts['distribution'] == "Ubuntu"
+      when: ansible_facts['distribution'] == "Ubuntu" and manage_k8s
 
     - name: Disable ssh daemon per source penalties
       block:
@@ -259,7 +260,7 @@
         gpgkey: "https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/rpm/repodata/repomd.xml.key"
         state: present
         name: kubernetes
-      when: ansible_facts['distribution'] == "Fedora"
+      when: ansible_facts['distribution'] == "Fedora" and manage_k8s
 
     # Every repository is configured by now, so download the metadata of them
     # all here. Otherwise the first task which installs a package is the one
@@ -321,12 +322,18 @@
           - runc
           - jq
           - python3-pip
-          - kubelet
-          - kubeadm
-          - kubectl
           - systemd-container
           - rsync
         state: present
+
+    - name: Install Kubernetes packages
+      ansible.builtin.package:
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
+      when: manage_k8s
 
     - name: Install apt packages
       ansible.builtin.apt:
@@ -612,7 +619,7 @@
             replace: '/usr/libexec/cni'
 
     - name: Configure bridge CNI plugin
-      when: cni_plugin == "bridge"
+      when: cni_plugin == "bridge" and manage_k8s
       block:
         - name: Copy CNI bridge plugin configuration
           ansible.builtin.copy:
@@ -643,6 +650,7 @@
       when: is_crio and manage_runtime
 
     - name: Load modules the k8s cluster needs
+      when: manage_k8s
       block:
         - name: Add modules for k8s cluster
           ansible.builtin.copy:
@@ -657,6 +665,7 @@
           ansible.builtin.shell: systemctl restart systemd-modules-load
 
     - name: Set sysctl settings the k8s cluster needs
+      when: manage_k8s
       block:
         - name: Add sysctl settings for k8s cluster
           ansible.builtin.copy:
@@ -686,137 +695,141 @@
           ansible.builtin.shell: sysctl --system || true
           changed_when: false
 
-    - name: Restart kubelet
-      ansible.builtin.service:
-        name: kubelet
-        daemon_reload: true
-        state: restarted
-
-    - name: Write the kubeadm configuration
-      ansible.builtin.copy:
-        dest: /root/kubeadm-config.yaml
-        content: |
-          apiVersion: kubeadm.k8s.io/v1beta4
-          kind: InitConfiguration
-          nodeRegistration:
-            name: "{{ hostname }}"
-            criSocket: "{{ cri_socket }}"
-          ---
-          apiVersion: kubeadm.k8s.io/v1beta4
-          kind: ClusterConfiguration
-          networking:
-            podSubnet: "{{ network }}"
-          {% if k8s_feature_gates != "" %}
-          apiServer:
-            extraArgs:
-              - name: feature-gates
-                value: "{{ k8s_feature_gates }}"
-          scheduler:
-            extraArgs:
-              - name: feature-gates
-                value: "{{ k8s_feature_gates }}"
-          {% endif %}
-          ---
-          apiVersion: kubelet.config.k8s.io/v1beta1
-          kind: KubeletConfiguration
-          failSwapOn: false
-          memorySwap:
-            swapBehavior: NoSwap
-          {% if k8s_feature_gates != "" %}
-          featureGates:
-          {% for gate in k8s_feature_gates.split(',') if '=' in gate %}
-            {{ gate.split('=')[0] | trim }}: {{ gate.split('=')[1] | trim }}
-          {% endfor %}
-          {% endif %}
-
-    # Always from the configuration file, so that the node name and the
-    # kubelet settings have one home. Left to itself kubeadm would name the
-    # node after the host's own hostname, which on a real host is the fqdn,
-    # while the framework looks the node up by the short name it was given.
-    #
-    # The CRI socket is named for the same reason: a host we were given can
-    # have both runtimes installed, and kubeadm refuses to pick between two
-    # endpoints although the run has already picked one.
-    - name: Initialize the Kubernetes cluster using kubeadm
-      ansible.builtin.command:
-        cmd: kubeadm init --config /root/kubeadm-config.yaml
-
-    # --backup, not -i: kubeadm init wrote a new admin.conf a moment ago, so
-    # any kubeconfig already in place is stale, and on a host we were given it
-    # can name a cluster of its own. -i would prompt, read the end of
-    # ansible's empty stdin as a no, and leave that one in place for every
-    # kubectl below and in the tests to talk to the wrong cluster through. The
-    # copy it leaves behind is for whoever owns the host, and is numbered so
-    # that repeated runs do not overwrite the first one taken.
-    - name: Setup kubeconfig for the login user
-      ansible.builtin.command: "{{ item }}"
-      # The home directory is quoted in each: these run without a shell, and
-      # ansible splits the string, so a passwd home with a space in it would
-      # otherwise arrive as two arguments.
-      with_items:
-        - mkdir -p "{{ login_user_home }}/.kube"
-        - cp --backup=numbered /etc/kubernetes/admin.conf "{{ login_user_home }}/.kube/config"
-        # Trailing colon: the user's own login group, whatever it is called.
-        # A group named after the user is a convention, not a rule. The item
-        # is quoted too, or the ": " in it makes yaml read it as a mapping.
-        - 'chown {{ login_user }}: "{{ login_user_home }}/.kube/config"'
-
-    # Skipped when the login user is root, which already has its kubeconfig
-    # from the task above: a second copy would only push the config that one
-    # wrote into a backup of its own.
-    - name: Setup kubeconfig for root
-      when: login_user_home != "/root"
-      ansible.builtin.command: "{{ item }}"
-      with_items:
-        - mkdir -p /root/.kube
-        - cp --backup=numbered /etc/kubernetes/admin.conf /root/.kube/config
-
-    - name: Install single-node cluster
-      become: false
-      ansible.builtin.shell: "{{ item }}"
-      with_items:
-        - kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true
-        - kubectl taint nodes --all node-role.kubernetes.io/master- || true
-
-    - name: Install cilium CNI plugin
-      when: cni_plugin == "cilium"
+    # Skipped with k8s_release=installed, since the cluster already exists.
+    - name: Build the Kubernetes cluster
+      when: manage_k8s
       block:
-        - name: "Use irregular download path if cilium release is latest"
-          when: cni_release == "latest"
-          ansible.builtin.set_fact:
-            cilium_tarball: https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz
+        - name: Restart kubelet
+          ansible.builtin.service:
+            name: kubelet
+            daemon_reload: true
+            state: restarted
 
-        - name: "Use regular download path if cilium release is not latest"
-          when: cni_release != "latest"
-          ansible.builtin.set_fact:
-            cilium_tarball: https://github.com/cilium/cilium-cli/releases/download/{{ cni_release }}/cilium-linux-amd64.tar.gz
+        - name: Write the kubeadm configuration
+          ansible.builtin.copy:
+            dest: /root/kubeadm-config.yaml
+            content: |
+              apiVersion: kubeadm.k8s.io/v1beta4
+              kind: InitConfiguration
+              nodeRegistration:
+                name: "{{ hostname }}"
+                criSocket: "{{ cri_socket }}"
+              ---
+              apiVersion: kubeadm.k8s.io/v1beta4
+              kind: ClusterConfiguration
+              networking:
+                podSubnet: "{{ network }}"
+              {% if k8s_feature_gates != "" %}
+              apiServer:
+                extraArgs:
+                  - name: feature-gates
+                    value: "{{ k8s_feature_gates }}"
+              scheduler:
+                extraArgs:
+                  - name: feature-gates
+                    value: "{{ k8s_feature_gates }}"
+              {% endif %}
+              ---
+              apiVersion: kubelet.config.k8s.io/v1beta1
+              kind: KubeletConfiguration
+              failSwapOn: false
+              memorySwap:
+                swapBehavior: NoSwap
+              {% if k8s_feature_gates != "" %}
+              featureGates:
+              {% for gate in k8s_feature_gates.split(',') if '=' in gate %}
+                {{ gate.split('=')[0] | trim }}: {{ gate.split('=')[1] | trim }}
+              {% endfor %}
+              {% endif %}
 
-        - name: "Fetch and extract {{ cni_release }} cilium (installer) release tarball"
-          ansible.builtin.unarchive:
-            src: "{{ cilium_tarball }}"
-            dest: /usr/local/bin
-            remote_src: true
+        # Always from the configuration file, so that the node name and the
+        # kubelet settings have one home. Left to itself kubeadm would name the
+        # node after the host's own hostname, which on a real host is the fqdn,
+        # while the framework looks the node up by the short name it was given.
+        #
+        # The CRI socket is named for the same reason: a host we were given can
+        # have both runtimes installed, and kubeadm refuses to pick between two
+        # endpoints although the run has already picked one.
+        - name: Initialize the Kubernetes cluster using kubeadm
+          ansible.builtin.command:
+            cmd: kubeadm init --config /root/kubeadm-config.yaml
 
-        - name: Run cilium installer
+        # --backup, not -i: kubeadm init wrote a new admin.conf a moment ago, so
+        # any kubeconfig already in place is stale, and on a host we were given it
+        # can name a cluster of its own. -i would prompt, read the end of
+        # ansible's empty stdin as a no, and leave that one in place for every
+        # kubectl below and in the tests to talk to the wrong cluster through. The
+        # copy it leaves behind is for whoever owns the host, and is numbered so
+        # that repeated runs do not overwrite the first one taken.
+        - name: Setup kubeconfig for the login user
+          ansible.builtin.command: "{{ item }}"
+          # The home directory is quoted in each: these run without a shell, and
+          # ansible splits the string, so a passwd home with a space in it would
+          # otherwise arrive as two arguments.
+          with_items:
+            - mkdir -p "{{ login_user_home }}/.kube"
+            - cp --backup=numbered /etc/kubernetes/admin.conf "{{ login_user_home }}/.kube/config"
+            # Trailing colon: the user's own login group, whatever it is called.
+            # A group named after the user is a convention, not a rule. The item
+            # is quoted too, or the ": " in it makes yaml read it as a mapping.
+            - 'chown {{ login_user }}: "{{ login_user_home }}/.kube/config"'
+
+        # Skipped when the login user is root, which already has its kubeconfig
+        # from the task above: a second copy would only push the config that one
+        # wrote into a backup of its own.
+        - name: Setup kubeconfig for root
+          when: login_user_home != "/root"
           ansible.builtin.command: "{{ item }}"
           with_items:
-            - cilium install --wait
-            - cilium status --wait
+            - mkdir -p /root/.kube
+            - cp --backup=numbered /etc/kubernetes/admin.conf /root/.kube/config
 
-    - name: Generate join command
-      ansible.builtin.command:
-        cmd: kubeadm token create --print-join-command
-      register: join_command
+        - name: Install single-node cluster
+          become: false
+          ansible.builtin.shell: "{{ item }}"
+          with_items:
+            - kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true
+            - kubectl taint nodes --all node-role.kubernetes.io/master- || true
 
-    - name: Copy join command to local file
-      delegate_to: localhost
-      become: false
-      ansible.builtin.copy:
-        content: "{{ join_command.stdout_lines[0] }}"
-        dest: "{{ outdir }}/join-command"
-        mode: '0644'
+        - name: Install cilium CNI plugin
+          when: cni_plugin == "cilium"
+          block:
+            - name: "Use irregular download path if cilium release is latest"
+              when: cni_release == "latest"
+              ansible.builtin.set_fact:
+                cilium_tarball: https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz
 
-    - name: Enable kubelet systemd service
-      ansible.builtin.systemd:
-        name: kubelet
-        enabled: true
+            - name: "Use regular download path if cilium release is not latest"
+              when: cni_release != "latest"
+              ansible.builtin.set_fact:
+                cilium_tarball: https://github.com/cilium/cilium-cli/releases/download/{{ cni_release }}/cilium-linux-amd64.tar.gz
+
+            - name: "Fetch and extract {{ cni_release }} cilium (installer) release tarball"
+              ansible.builtin.unarchive:
+                src: "{{ cilium_tarball }}"
+                dest: /usr/local/bin
+                remote_src: true
+
+            - name: Run cilium installer
+              ansible.builtin.command: "{{ item }}"
+              with_items:
+                - cilium install --wait
+                - cilium status --wait
+
+        - name: Generate join command
+          ansible.builtin.command:
+            cmd: kubeadm token create --print-join-command
+          register: join_command
+
+        - name: Copy join command to local file
+          delegate_to: localhost
+          become: false
+          ansible.builtin.copy:
+            content: "{{ join_command.stdout_lines[0] }}"
+            dest: "{{ outdir }}/join-command"
+            mode: '0644'
+
+        - name: Enable kubelet systemd service
+          ansible.builtin.systemd:
+            name: kubelet
+            enabled: true
