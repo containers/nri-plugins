@@ -315,7 +315,7 @@ host, instead of building a new one:
 
 ```shell
 test_hw_addr=test@10.0.0.1 test_hw_key=~/.ssh/testbox \
-    containerd_release=installed k8s_release=installed \
+    containerd_release=installed k8s_release=installed helm_release=installed \
     ./run_tests.sh policies.test-suite
 ```
 
@@ -323,7 +323,9 @@ The cluster is then left as it is. Provisioning does not install or change a
 Kubernetes package, repository, CNI configuration, sysctl, kernel module,
 kubeconfig or taint, and does not run `kubeadm init` or `kubeadm reset`. The
 version is read from the cluster, and the node is named after its one node.
-Provisioning still installs Helm and the packages the framework uses.
+Provisioning still installs the packages the framework uses, and Helm unless
+`helm_release=installed` is set too. Then it installs no Helm, and the tests
+use the one on root's `PATH`.
 
 `installed` needs `test_hw_addr`. It cannot be used with `provision=all`,
 because the run must not take the cluster down, or with `k8s_feature_gates`,
