@@ -64,6 +64,8 @@ export k8s_version=""
 export k8s_feature_gates=${k8s_feature_gates:-}
 
 GH_HELM_REPO="helm/helm"
+# A release of "installed" reuses the existing Helm, and is
+# replaced by its version once the host is known.
 export helm_release=${helm_release:-"latest"}
 
 source "$LIB_DIR"/vm.bash
@@ -204,6 +206,7 @@ nri_resource_policy_cache="/var/lib/nri-resource-policy/cache"
 # to happen before the resolution of "latest" below.
 vm-resolve-installed-runtime
 vm-resolve-installed-k8s
+vm-resolve-installed-helm
 
 export k8s_version=$(echo $k8s_release | sed -E 's/([0-9]*\.[0-9]*)(\.[0-9]*)/\1/g')
 if [ -z "$k8s_version" ]; then
