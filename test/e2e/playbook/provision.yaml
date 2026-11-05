@@ -251,6 +251,7 @@
 
     # Install Helm from a release tarball to /usr/local.
     - name: Install Helm binaries from release tarball
+      when: (manage_helm | default(true) | bool)
       block:
         - name: Check for cached Helm release tarball
           ansible.builtin.stat:

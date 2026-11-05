@@ -534,6 +534,43 @@ $(vm-hw-address). Is it on that user's PATH?"
     echo "Runtime already installed on the host: $runtime $ver"
 }
 
+vm-resolve-installed-helm() {
+    # Usage: vm-resolve-installed-helm
+    #
+    # Turn a Helm release of "installed" into the version of the Helm the
+    # host already has, and record that provisioning is not to install one.
+    local out ver
+
+    [ "${helm_release:-}" = "installed" ] || return 0
+
+    vm-hw-mode ||
+        error "a Helm release of \"installed\" only means something with
+test_hw_addr set: there is no host to read a version from while the VM it
+would come from has yet to be created."
+
+    # Through root's login shell, which is how the tests run helm. Tagged
+    # inside it, so that what its profile prints is not read as a version.
+    out=$(vm-hw-ssh "sudo -n bash -lc 'helm version --short 2>/dev/null |
+                     sed -n s/^/ver=/p'" 2>/dev/null)
+    ver="$(sed -n 's/^ver=//p' <<< "$out" |
+           grep -oE '[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)*' | head -n 1)"
+    if [ -z "$ver" ]; then
+        error "could not read the version of the Helm installed on
+$(vm-hw-address). Is it on root's PATH?"
+    fi
+
+    # helm-launch installs with --rollback-on-failure, which Helm 3 lacks.
+    if [ "${ver%%.*}" -lt 4 ]; then
+        error "the Helm installed on $(vm-hw-address) is $ver, and the tests
+need Helm 4 or later. Unset helm_release to install one."
+    fi
+
+    export helm_preinstalled=1
+    export helm_release="$ver"
+
+    echo "Helm already installed on the host: $ver"
+}
+
 vm-hw-k8s-cluster() {
     # Usage: vm-hw-k8s-cluster
     #
@@ -1072,7 +1109,7 @@ vm-write-ansible-vars() {
     local containerd_rel="" containerd_source=""
     local crio_rel="1.28.1" crio_source=""
     local http_p="" https_p="" no_p=""
-    local hardware=false manage_rt=true manage_k8s=true
+    local hardware=false manage_rt=true manage_k8s=true manage_helm=true
 
     # Only the selected runtime's release is passed on. crio keeps a fallback
     # so the tarball URL the playbook builds from it stays well formed when it
@@ -1114,6 +1151,11 @@ vm-write-ansible-vars() {
         manage_k8s=false
     fi
 
+    # Set when the Helm the host has is being used.
+    if [ -n "${helm_preinstalled:-}" ]; then
+        manage_helm=false
+    fi
+
     cat > "$vagrantdir/ansible-vars.json" <<EOF
 {
   "network": "10.217.0.0/16",
@@ -1131,6 +1173,7 @@ vm-write-ansible-vars() {
   "is_hardware": $hardware,
   "manage_runtime": $manage_rt,
   "manage_k8s": $manage_k8s,
+  "manage_helm": $manage_helm,
   "helm_release": $(vm-json-quote "${helm_release:-}"),
   "cri_runtime": $(vm-json-quote "$cri_runtime"),
   "containerd_release": $(vm-json-quote "$containerd_rel"),

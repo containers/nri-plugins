@@ -293,7 +293,7 @@ host already runs, instead of building one:
 
 ```shell
 test_hw_addr=test@10.0.0.1 test_hw_key=~/.ssh/testbox \
-    containerd_release=installed k8s_release=installed \
+    containerd_release=installed k8s_release=installed helm_release=installed \
     ./run_tests.sh policies.test-suite
 ```
 
@@ -301,7 +301,9 @@ The cluster is then left as it is: no Kubernetes package, repository, CNI
 configuration, sysctl, kernel module, kubeconfig or taint is installed or
 changed, and neither `kubeadm init` nor `kubeadm reset` is run. The version
 is read from the cluster, and the node is named after its one node.
-Provisioning still installs Helm and the packages the framework uses.
+Provisioning still installs the packages the framework uses, and Helm unless
+`helm_release` is `installed` too, which keeps the Helm root's login shell
+finds and reads its version off the host.
 
 `installed` needs `test_hw_addr`, and refuses `provision=all` and
 `k8s_feature_gates`: the run cannot take the cluster down, and the gates of
