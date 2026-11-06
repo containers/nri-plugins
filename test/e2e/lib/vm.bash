@@ -42,6 +42,18 @@ VM_HW_ADDR_FILE="${VM_HW_ADDR_FILE:-.e2e-hw-addr}"
 # installed on it: it can be deleted, and several can name the same host.
 VM_HW_KEY_PATH="${VM_HW_KEY_PATH:-/etc/nri-e2e-vm-key}"
 
+# Name of the file which marks, in an output directory, that provisioning the
+# VM in it is under way. vm-setup writes it before vagrant provisions and
+# removes it once the VM is up, so one which is still there says that an
+# earlier run stopped in the middle of provisioning.
+#
+# vagrant flags a machine as provisioned whether the provisioner succeeded or
+# not, so the next vagrant up skips the playbook and boots a VM with however
+# much of the installation the failed run got done. Without this the tests
+# then run against that VM and fail for reasons of their own: no kubectl, no
+# crictl, no kubelet, no cluster.
+VM_PROVISIONING_FILE="${VM_PROVISIONING_FILE:-.e2e-vm-provisioning}"
+
 # Files whose content shapes a provisioned VM. The name of a cached box has a
 # hash of them, so that editing any of them invalidates the cached boxes
 # instead of a later run reusing an image which predates the change.
@@ -1277,6 +1289,91 @@ reprovision this one in place, or set e2e_vm_versions=ignore to run the tests
 against the VM as it is."
 }
 
+vm-mark-provisioning() {
+    # Usage: vm-mark-provisioning VAGRANTDIR
+    #
+    # Note down that provisioning the VM of an output directory starts now.
+    # vm-unmark-provisioning removes the note once the VM is up.
+    local vagrantdir="$1"
+
+    if ! date -Is > "$vagrantdir/$VM_PROVISIONING_FILE"; then
+        echo "WARNING: failed to note down that provisioning the VM in" \
+             "$vagrantdir started. A later run cannot tell whether it" \
+             "finished." >&2
+    fi
+}
+
+vm-unmark-provisioning() {
+    # Usage: vm-unmark-provisioning VAGRANTDIR
+    #
+    # Remove the note of vm-mark-provisioning: the VM is up and provisioned.
+    local vagrantdir="$1"
+
+    rm -f "$vagrantdir/$VM_PROVISIONING_FILE"
+}
+
+vm-provisioning-runs() {
+    # Usage: vm-provisioning-runs VAGRANTDIR VMNAME NO_PROVISION
+    #
+    # Return success if the playbook runs for the VM of an output directory.
+    #
+    #   VAGRANTDIR:   output directory of the VM.
+    #   VMNAME:       name of the VM, which is also its vagrant machine name.
+    #   NO_PROVISION: --no-provision to keep the provisioner out of vagrant
+    #                 up, empty to leave it in.
+    local vagrantdir="$1" vmname="$2" no_provision="$3"
+
+    # E2E_NO_PROVISION goes with this, and it leaves the provisioner out of
+    # the Vagrantfile, so nothing runs the playbook: neither vagrant up, nor
+    # provision= below.
+    if [ -n "$no_provision" ]; then
+        return 1
+    fi
+
+    # provision= forces the playbook with vagrant up --provision, whatever
+    # state the machine is in.
+    if [ -n "${provision:-}" ]; then
+        return 0
+    fi
+
+    # Otherwise the playbook only gets its chance from vagrant up, which
+    # takes it once per machine: vagrant notes a machine it has provisioned
+    # in action_provision, in the state directory of that machine, and skips
+    # the provisioner for as long as that note is there.
+    [ ! -f "$vagrantdir/.vagrant/machines/$vmname/qemu/action_provision" ]
+}
+
+vm-check-provisioning-finished() {
+    # Usage: vm-check-provisioning-finished VAGRANTDIR
+    #
+    # Fail if an earlier run left the VM of an output directory in the middle
+    # of provisioning. See VM_PROVISIONING_FILE for why running the tests
+    # against such a VM is worse than not running them at all.
+    #
+    # A run which was asked to provision again only warns: provisioning is
+    # the one thing which finishes what the earlier run started.
+    local vagrantdir="$1" started
+
+    if [ ! -f "$vagrantdir/$VM_PROVISIONING_FILE" ]; then
+        return 0
+    fi
+
+    started="$(head -n 1 "$vagrantdir/$VM_PROVISIONING_FILE" 2>/dev/null)"
+
+    if [ -n "${provision:-}" ]; then
+        echo "WARNING: provisioning the VM in $vagrantdir started" \
+             "${started:+at $started }and did not finish, but" \
+             "provision=$provision, so it runs again." >&2
+        return 0
+    fi
+
+    error "provisioning the VM in $vagrantdir started ${started:+at $started }and did not finish.
+vagrant flags the machine as provisioned all the same, so the tests would run
+against however much of the installation that run got done. Remove the output
+directory to provision a new VM, or set provision=all to provision this one
+again."
+}
+
 vm-box-cache-cleanup-requested() {
     # Usage: vm-box-cache-cleanup-requested
     #
@@ -1447,8 +1544,12 @@ vm-setup() {
     fi
 
     if [ -z "$new_vm" ]; then
-        # The tests run on the host this directory already has, so check it
-        # against what this run resolved.
+        # The tests run on the host this directory already has, so check that
+        # it was provisioned, and provisioned with what this run resolved.
+        # A host whose provisioning stopped halfway has no recorded versions
+        # either, so report that first: it is the more specific of the two,
+        # and it says what to do about it.
+        vm-check-provisioning-finished "$vagrantdir"
         vm-check-recorded-box-key "$vagrantdir" "$vm_key" "$recorded"
     fi
 
@@ -1583,6 +1684,15 @@ vm-setup() {
     # Reads the env file, so it has to come after that file is written.
     vm-write-ansible-vars "$vagrantdir"
 
+    # Note it down if the playbook is about to run, so that a run which stops
+    # while it does leaves the VM behind marked as the half built one it is.
+    # A run which installs nothing leaves the VM as complete as it found it,
+    # and marking it would turn an interrupted boot into a VM reported as
+    # half built.
+    if vm-provisioning-runs "$vagrantdir" "$vmname" "$no_provision"; then
+        vm-mark-provisioning "$vagrantdir"
+    fi
+
     (cd "$vagrantdir";
      export ANSIBLE_PIPELINING=True;
      # Make sure the vagrant plugins are installed
@@ -1605,7 +1715,8 @@ vm-setup() {
      # used to, and the way out is a clean output directory.
      if [ ! -z "$provision" ]; then
          if ! (export ANSIBLE_SSH_ARGS="$SSH_PERSIST_OPTS"
-	  vagrant provision ${vagrant_debug:+--debug} || error "failed to provision VM"); then
+          vagrant up --provision --provider qemu ${vagrant_debug:+--debug} || \
+              error "failed to provision VM"); then
              exit 1
          fi
      fi
@@ -1638,6 +1749,9 @@ EOF
      # with shorter hostname "node"
      sed -i 's/^Host /Host node /' .ssh-config
     ) || exit $?
+
+    # The VM is up and provisioned, so the note about provisioning it goes.
+    vm-unmark-provisioning "$vagrantdir"
 
     # The VM is up and provisioned, so record what went into it for the next
     # run to check. A VM which was already there keeps the record it has,

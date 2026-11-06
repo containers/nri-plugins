@@ -188,6 +188,22 @@
 # it instead, which leaves the host's own swap alone. See the
 # KubeletConfiguration in the kubeadm configuration below.
 
+    # No task above this one needs the network, and nothing has waited for it
+    # either: vagrant waits for ssh, which answers on a forwarded port while
+    # the guest is still bringing its own network up. So wait here rather than
+    # let the first download race the boot. Starting the target is the wait:
+    # it pulls in the wait-online service of whichever network manager the
+    # distro uses, and returns once the network is configured.
+    #
+    # Not on a host we were given: that one was up and on the network long
+    # before the run reached it, and starting targets on a machine somebody
+    # else owns is not ours to do.
+    - name: Wait for the network of the VM to be up
+      ansible.builtin.systemd:
+        name: network-online.target
+        state: started
+      when: not (is_hardware | default(false) | bool)
+
     - name: Add Kubernetes APT repository to sources.list.d
       ansible.builtin.copy:
         content: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/ /"
@@ -242,6 +258,20 @@
         gpgkey: "https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/rpm/repodata/repomd.xml.key"
         state: present
         name: kubernetes
+      when: ansible_facts['distribution'] == "Fedora"
+
+    # Every repository is configured by now, so download the metadata of them
+    # all here. Otherwise the first task which installs a package is the one
+    # which downloads it, and the dnf5 ansible module reports a failure to do
+    # so as a python traceback which names neither the repository nor the
+    # reason, leaving a run which hits one with nothing to go on.
+    #
+    # dnf expires its metadata per repository, so this downloads what is
+    # missing or stale and nothing else.
+    - name: Download the metadata of the package repositories
+      ansible.builtin.command:
+        cmd: dnf makecache
+      changed_when: false
       when: ansible_facts['distribution'] == "Fedora"
 
     # Install Helm from a release tarball to /usr/local.
