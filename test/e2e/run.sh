@@ -32,7 +32,7 @@ SRC_DIR=$(realpath "$SCRIPT_DIR/../..")
 LIB_DIR=$(realpath "$SCRIPT_DIR/lib")
 qemu_dir="${qemu_dir:-/usr/share/qemu}"
 
-export OUTPUT_DIR=${outdir:-"$SCRIPT_DIR"/output}
+export OUTPUT_DIR=$(realpath -m "${outdir:-$SCRIPT_DIR/output}")
 
 # e2eish=0 leaves the E2EISH replay records out of the test log.
 export e2eish=${e2eish:-1}
@@ -126,7 +126,19 @@ latest-github-release () {
     return $?
 }
 
-pre-cache-vagrant-image
+# A run against a host of its own boots no distro image, and fetching one is
+# half a gigabyte and a reason to abort when the mirror is down.
+#
+# The cache directory still has to exist. Downloading the image is what used
+# to create it, and the playbook fetches Helm and the runtime into it from
+# here, with get_url, which fails rather than create what it is pointed at. A
+# run which pins every release never resolves a "latest" either, and that is
+# the only other thing which creates it.
+if vm-hw-mode; then
+    mkdir -p "$CACHE_DIR" || error "failed to create cache dir $CACHE_DIR"
+else
+    pre-cache-vagrant-image
+fi
 
 if [ "$k8s_release" = "latest" ]; then
     if latest_k8s_release=$(vm-load-cached-var "$OUTPUT_DIR" latest_k8s_release); then
@@ -162,9 +174,15 @@ if [ "$helm_release" = "latest" ]; then
 fi
 
 
-export vm_name=${vm_name:=$(vm-create-name "$k8scri" "$(basename "$TOPOLOGY_DIR")" ${distro})}
+if vm-hw-mode; then
+    vm-hw-resolve-names
+else
+    export vm_name=${vm_name:=$(vm-create-name "$k8scri" "$(basename "$TOPOLOGY_DIR")" ${distro})}
+fi
 ESCAPED_VM=$(printf '%s\n' "$vm_name" | sed -e 's/[\/]/-/g')
-export VM_HOSTNAME="$ESCAPED_VM"
+# On a host we did not create the node name is not the name of the VM, and
+# vm-hw-resolve-names has already set it to the host's own name.
+vm-hw-mode || export VM_HOSTNAME="$ESCAPED_VM"
 export POLICY=${policy:-"topology-aware"}
 
 # These exports force ssh-* to fail instead of prompting for a passphrase.
@@ -180,16 +198,15 @@ export nri_resource_policy_src=${nri_resource_policy_src:-"$SRC_DIR"}
 
 nri_resource_policy_cache="/var/lib/nri-resource-policy/cache"
 
-if [ "$k8scri" == "containerd" ]; then
-    k8scri_sock="/var/run/containerd/containerd.sock"
-else
-    k8scri_sock="/var/run/crio/crio.sock"
-fi
-
 # If we run tests with containerd as the runtime, we install it
 # from a release tarball with the version given below... unless
 # a source directory is given, which is then expected to contain
 # a compiled version of containerd which we should install.
+# A release of "installed" means the host already has a runtime and we are to
+# use it. This replaces that word with the version it actually has, so it has
+# to happen before the resolution of "latest" below.
+vm-resolve-installed-runtime
+
 GH_CONTAINERD_REPO="containerd/containerd"
 export containerd_release=${containerd_release:-latest}
 containerd_release="${containerd_release#v}"
@@ -841,7 +858,7 @@ create() { # script API
         images="$(grep -E '^ *image: .*$' "$TEST_OUTPUT_DIR/$NAME.yaml" | sed -E 's/^ *image: *([^ ]*)$/\1/g' | sort -u)"
         if [ "${#pulled_images_on_vm[@]}" = "0" ]; then
             # Initialize pulled images available on VM
-            vm-command "crictl -i unix://${k8scri_sock} images" >/dev/null &&
+            vm-command "crictl images" >/dev/null &&
             while read -r image tag _; do
                 if [ "$image" = "IMAGE" ]; then
                     continue
@@ -863,7 +880,7 @@ create() { # script API
                 if [ "$use_host_images" == "1" ] && vm-put-docker-image "$image"; then
                     : # no need to pull the image to vm, it is now imported.
                 else
-                    vm-command "crictl -i unix://${k8scri_sock} pull \"$image\"" || {
+                    vm-command "crictl pull \"$image\"" || {
                         errormsg="pulling image \"$image\" for \"$TEST_OUTPUT_DIR/$NAME.yaml\" failed."
                         if is-hooked on_create_fail; then
                             echo "$errormsg"

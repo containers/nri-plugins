@@ -11,6 +11,7 @@
     k8s_feature_gates: "{{ k8s_feature_gates }}"
     is_containerd: false
     is_crio: false
+    is_hardware: false
     containerd_release: "{{ containerd_release }}"
     containerd_tarball: "https://github.com/containerd/containerd/releases/download/v{{ containerd_release }}/containerd-{{ containerd_release }}-linux-amd64.tar.gz"
     containerd_service_file: "https://raw.githubusercontent.com/containerd/containerd/main/containerd.service"
@@ -33,6 +34,40 @@
     apt_cache_valid_time: 3600
 
   tasks:
+    # Before the reset and the installs below, while the host is still as we
+    # found it: a host which cannot run the tests is refused rather than left
+    # with its cluster taken down and the packages of the next one in place.
+    #
+    # The kernel's own answer, not ansible_facts.selinux. That fact needs the
+    # SELinux python bindings on the host, and without them it reads
+    # "Missing selinux Python library", which no comparison against "enabled"
+    # can tell apart from a host that has SELinux switched off. The file
+    # below exists only while SELinux is active, and holds 1 while it is
+    # enforcing, whatever is installed for python.
+    - name: Look for SELinux on a host we were given
+      ansible.builtin.stat:
+        path: /sys/fs/selinux/enforce
+      register: selinux_enforce_file
+      when: is_hardware
+
+    - name: Ask it whether SELinux is enforcing
+      ansible.builtin.slurp:
+        src: /sys/fs/selinux/enforce
+      register: selinux_enforce
+      when: is_hardware and
+            (selinux_enforce_file.stat.exists | default(false))
+
+    - name: Refuse to run with SELinux enforcing
+      ansible.builtin.fail:
+        msg: >-
+          SELinux is enforcing on this host. The tests need it permissive or
+          disabled, and turning it off is not something this playbook will do
+          to a host which is not its own: run "setenforce 0" for this boot, or
+          set SELINUX=permissive in /etc/selinux/config and reboot.
+      when: is_hardware and
+            (selinux_enforce_file.stat.exists | default(false)) and
+            (selinux_enforce.content | default('') | b64decode | trim) == '1'
+
     - name: Check if runtime is containerd
       ansible.builtin.set_fact:
         is_containerd: true
@@ -48,23 +83,66 @@
         cri_socket: unix:///var/run/crio/crio.sock
       when: cri_runtime == "crio"
 
+    # Where to put a kubeconfig the user who logs in can read. This play runs
+    # with become, so the facts describe root: ansible_env.HOME,
+    # ansible_user_dir and ansible_user_id all say root, and only
+    # ansible_user is the account we connected as. So look its home up
+    # rather than deriving it from a fact or assuming /home/<user>.
+    - name: Read the passwd entry of the login user
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ ansible_user }}"
+
+    # Captured into facts here, and only used as facts below. ansible-core
+    # 2.20 templates loop items without the connection magic variables, so
+    # ansible_user is undefined inside a with_items although it resolves in
+    # an ordinary task, and a with_items which referenced it failed with
+    # "'ansible_user' is undefined" a hundred tasks into a run.
+    - name: Note the login user and its home directory
+      ansible.builtin.set_fact:
+        login_user: "{{ ansible_user }}"
+        login_user_home: "{{ ansible_facts.getent_passwd[ansible_user][4] }}"
+
     # kubeadm init refuses to run a second time, so a rerun which means to
     # rebuild the cluster has to take the old one down first. This happens
     # here, before the tasks which write the CNI configuration and the
-    # kubeconfigs: kubeadm reset leaves both behind, and the tasks which
-    # write them copy rather than overwrite, so a stale one would survive
-    # and point at a cluster which no longer exists.
+    # kubeconfigs: kubeadm reset leaves both behind, so a provisioning run
+    # which stopped before writing them would otherwise leave a stale one
+    # pointing at a cluster which no longer exists.
+    #
+    # admin.conf names a control plane node and kubelet.conf a node which
+    # joined a cluster somebody else runs. kubeadm init refuses to run over
+    # either, so both are something to reset.
     - name: Check for a cluster to reset
-      ansible.builtin.stat:
-        path: /etc/kubernetes/admin.conf
+      ansible.builtin.find:
+        paths: /etc/kubernetes
+        patterns:
+          - admin.conf
+          - kubelet.conf
       register: existing_cluster
 
     - name: Reset the existing Kubernetes cluster
-      when: (kubeadm_reset | default(false) | bool) and existing_cluster.stat.exists
+      when: (kubeadm_reset | default(false) | bool) and existing_cluster.matched > 0
       block:
+        # The endpoint the cluster on the host runs on, which is not the one
+        # this run asked for when the runtime is being switched. kubeadm
+        # recorded it in kubelet's arguments when it created the cluster.
+        - name: Read the runtime endpoint of the existing cluster
+          ansible.builtin.command:
+            cmd: sed -n 's/.*--container-runtime-endpoint=\([^ "]*\).*/\1/p' /var/lib/kubelet/kubeadm-flags.env
+          register: existing_endpoint
+          changed_when: false
+          failed_when: false
+
+        # Reset talks to the runtime holding the control plane containers.
+        # Told the wrong one it removes nothing, and they keep the ports the
+        # replacement cluster needs. The requested socket is the fallback,
+        # and what kubeadm init below is given.
         - name: Tear the cluster down with kubeadm reset
           ansible.builtin.command:
-            cmd: kubeadm reset --force --cri-socket {{ cri_socket }}
+            cmd: >-
+              kubeadm reset --force --cri-socket
+              {{ (existing_endpoint.stdout | default('') | trim) or cri_socket }}
 
         - name: Remove the CNI configuration of the old cluster
           ansible.builtin.file:
@@ -77,13 +155,18 @@
             state: directory
             mode: '0755'
 
-        - name: Remove the kubeconfigs of the old cluster
-          ansible.builtin.file:
-            path: "{{ item }}"
-            state: absent
+        # Moved, not deleted: on a host somebody owns this file is theirs,
+        # and it can hold credentials and contexts for clusters which have
+        # nothing to do with this run. Numbered, so that a second run lands
+        # beside the backup the first one left rather than on top of it. The
+        # home directory is quoted for a passwd home with a space in it.
+        - name: Move the kubeconfigs of the old cluster aside
+          ansible.builtin.command:
+            cmd: mv --backup=numbered "{{ item }}" "{{ item }}~"
+            removes: "{{ item }}"
           with_items:
             - /root/.kube/config
-            - /home/vagrant/.kube/config
+            - "{{ login_user_home }}/.kube/config"
 
     - name: Setup DNS
       ansible.builtin.shell: "{{ item }}"
@@ -100,12 +183,10 @@
         [ -f /etc/netplan/01-netcfg.yaml ] && sed -i 's/addresses\(.\) \[.*\]$/addresses\1 \[{{ dns_nameserver }}\]/' /etc/netplan/01-netcfg.yaml || :
       when: ansible_facts['distribution'] == "Ubuntu"
 
-    - name: Disable swap
-      ansible.builtin.shell: "{{ item }}"
-      with_items:
-        - for swp in `systemctl --type swap | awk '/\.swap/ { print $1 }'`; do systemctl stop "$swp"; systemctl mask "$swp"; done
-        - swapoff --all
-      when: ansible_facts['swaptotal_mb'] > 0
+# Swap is not turned off. Since Kubernetes 1.30 kubelet can run on a host
+# which has swap enabled, so it is configured to tolerate it without using
+# it instead, which leaves the host's own swap alone. See the
+# KubeletConfiguration in the kubeadm configuration below.
 
     - name: Add Kubernetes APT repository to sources.list.d
       ansible.builtin.copy:
@@ -145,7 +226,8 @@
             name: sshd
             state: restarted
       when: (ansible_facts['distribution'] == "Fedora") and
-            (ansible_facts['distribution_major_version'] | int >= 41)
+            (ansible_facts['distribution_major_version'] | int >= 41) and
+            (not is_hardware)
 
     - name: Update APT package index
       ansible.builtin.apt:
@@ -199,6 +281,8 @@
       when: (ansible_facts['distribution'] == "Fedora") and
             (ansible_facts['distribution_major_version'] | int == 41)
 
+    # rsync is what the deploy playbook's synchronize tasks run on the host.
+    # A VM image happens to carry it; a host we were given need not.
     - name: Install common packages
       ansible.builtin.package:
         name:
@@ -210,6 +294,7 @@
           - kubeadm
           - kubectl
           - systemd-container
+          - rsync
         state: present
 
     - name: Install apt packages
@@ -253,8 +338,11 @@
               present
           when: ansible_facts['distribution_major_version'] | int >= 43
 
+    # Not on a host we were given: growing somebody's root partition to fill
+    # their disk is not ours to do, and is not undone by anything here.
     - name: Resize root filesystem to the maximum possible
-      when: ansible_facts['distribution'] == "Fedora"
+      when: ansible_facts['distribution'] == "Fedora" and
+            (not is_hardware)
       ansible.builtin.shell: |
         fstype="$(stat -f -c %T /)"
         if [ "$fstype" == "btrfs" ]; then
@@ -271,10 +359,18 @@
             sleep 3
         fi
 
+    # Not on a host we were given. This task changes such a host twice: it
+    # switches the running mode to permissive at once, and writes
+    # SELINUX=disabled for a next boot which this playbook never performs.
+    # Neither is ours to do to a machine somebody else owns, and the second
+    # takes effect long afterwards with nothing to connect it to a test run.
+    # Such a host has to come with SELinux already out of the way, and the
+    # tasks at the top of this play refuse it if it does not.
     - name: Disable SELinux
       ansible.posix.selinux:
         state: disabled
-      when: ansible_facts['distribution'] == "Fedora"
+      when: ansible_facts['distribution'] == "Fedora" and
+            (not is_hardware)
 
     - name: Remove the firewalld package
       ansible.builtin.package:
@@ -282,20 +378,24 @@
         state: absent
       when: ansible_facts['distribution'] == "Fedora"
 
-    - name: Install additional cri-o packages
+    - name: Install podman for CRI-O runs
       ansible.builtin.dnf:
         pkg:
           - podman
-          - cri-o
         state: present
       when: ansible_facts['distribution'] == "Fedora" and is_crio
 
-    - name: Install python pip based apps
-      ansible.builtin.pip:
-        name:
-          - toml
-          - tomli_w
+    # Separate from podman, and not for the runtime the host already has: the
+    # rpm brings its own binaries, configuration and unit file, so installing
+    # it would replace or shadow the CRI-O under test, which is the one thing
+    # a release of "installed" promises not to do.
+    - name: Install the distro CRI-O
+      ansible.builtin.dnf:
+        pkg:
+          - cri-o
         state: present
+      when: ansible_facts['distribution'] == "Fedora" and is_crio and
+            (manage_runtime | default(true) | bool)
 
     # Install containerd or CRI-O from a release tarball to /usr/local.
     - name: Install runtime binaries from release tarball
@@ -327,7 +427,9 @@
             cmd: ./install
             chdir: /usr/local/cri-o
           when: is_crio
-      when: (is_containerd and containerd_src == "") or (is_crio and crio_src == "")
+      when: ((is_containerd and containerd_src == "") or
+             (is_crio and crio_src == "")) and
+            (manage_runtime | default(true) | bool)
 
     # Install containerd binaries from compiled sources.
     - name: Install containerd binaries from compiled sources
@@ -356,12 +458,12 @@
     - name: Install CRI-O systemd service file from compiled sources
       ansible.builtin.copy:
         src: "{{ crio_src }}/contrib/crio.service"
-        dest: "/lib/systemd/system/crio.service"
+        dest: "/etc/systemd/system/crio.service"
         mode: '0644'
       when: is_crio and crio_src != ""
 
     - name: Configure runc as the default CRI-O runtime
-      when: is_crio
+      when: is_crio and (manage_runtime | default(true) | bool)
       block:
         - name: Remove CRI-O crun configuration
           ansible.builtin.file:
@@ -376,20 +478,33 @@
               default_runtime = "runc"
             mode: '0644'
 
+    # Under /etc, not /lib. /etc/systemd/system takes precedence over the
+    # package-owned unit instead of overwriting it, so removing this file
+    # gives the host its own containerd back. /lib is a symlink to /usr/lib
+    # on Fedora, so a unit written there replaced the rpm's copy.
+    #
+    # force, because get_url downloads nothing when the destination exists,
+    # and a unit already at this path can start a containerd other than the
+    # one installed under /usr/local above. backup, because on a host
+    # somebody owns that unit is theirs; an unchanged file makes neither a
+    # download nor a backup.
     - name: Install containerd systemd service file
       ansible.builtin.get_url:
         url: "{{ containerd_service_file }}"
-        dest: /lib/systemd/system/containerd.service
+        dest: /etc/systemd/system/containerd.service
         owner: root
         group: root
         mode: '0644'
-      when: is_containerd
+        force: true
+        backup: true
+      when: is_containerd and (manage_runtime | default(true) | bool)
 
     - name: Create service.d directory for the runtime
       ansible.builtin.file:
         path: "/etc/systemd/system/{{ cri_runtime }}.service.d"
         state: directory
         mode: '0755'
+      when: (manage_runtime | default(true) | bool)
 
     - name: Set up proxies for the runtime
       ansible.builtin.copy:
@@ -400,6 +515,7 @@
           Environment=HTTPS_PROXY="{{ https_proxy }}"
           Environment=NO_PROXY="{{ no_proxy }}"
         mode: '0644'
+      when: (manage_runtime | default(true) | bool)
 
     # First issue daemon-reload to pick up config changes
     - name: Start runtime
@@ -409,17 +525,26 @@
         state: started
         enabled: true
 
-    - name: Copy containerd nri enable script
-      ansible.builtin.copy:
-        src: "{{ nri_resource_policy_src }}/test/e2e/files/containerd-nri-enable"
-        dest: /usr/local/bin/containerd-nri-enable
-        owner: root
-        group: root
-        mode: '0755'
-      when: is_containerd
+    # crictl tries a list of well known endpoints when it is not told one,
+    # so on a host with both runtimes installed it can talk to the one this
+    # run did not ask for. Written whatever manage_runtime says, since a
+    # runtime the host installed itself still has to be named. Only the two
+    # endpoint lines are ours; the rest of the file, and whatever those two
+    # held, is the host owner's.
+    - name: Point crictl at the runtime of this run
+      ansible.builtin.lineinfile:
+        path: /etc/crictl.yaml
+        regexp: '^{{ item }}:'
+        line: "{{ item }}: {{ cri_socket }}"
+        create: true
+        mode: '0644'
+        backup: true
+      loop:
+        - runtime-endpoint
+        - image-endpoint
 
     - name: Configure containerd
-      when: is_containerd
+      when: is_containerd and (manage_runtime | default(true) | bool)
       block:
         - name: Create drop-in directory (/etc/containerd/conf.d)
           ansible.builtin.file:
@@ -474,74 +599,63 @@
             regexp: '(CNI_NETWORK)'
             replace: "{{ network }}"
 
-    - name: Setup NRI
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: directory
-        mode: '0755'
-      with_items:
-        - "/etc/nri/conf.d"
-        - "/opt/nri/plugins"
-
-    - name: Enable NRI for containerd
-      ansible.builtin.command:
-        cmd: /usr/local/bin/containerd-nri-enable
-      when: is_containerd
-
     - name: Restart the containerd
       ansible.builtin.systemd:
         state: restarted
         name: "{{ cri_runtime }}"
         daemon_reload: true
-      when: is_containerd
-
-    - name: Copy CRI-O NRI enable script
-      ansible.builtin.copy:
-        src: "{{ nri_resource_policy_src }}/test/e2e/files/crio-nri-enable"
-        dest: /usr/local/bin/crio-nri-enable
-        owner: root
-        group: root
-        mode: '0755'
-      when: is_crio
-
-    - name: Enable NRI for CRI-O
-      ansible.builtin.command:
-        cmd: /usr/local/bin/crio-nri-enable
-      when: is_crio
+      when: is_containerd and (manage_runtime | default(true) | bool)
 
     - name: Restart CRI-O
       ansible.builtin.systemd:
         state: restarted
         name: "{{ cri_runtime }}"
         daemon_reload: true
-      when: is_crio
+      when: is_crio and (manage_runtime | default(true) | bool)
 
-    - name: Remove swapfile from /etc/fstab
-      ansible.posix.mount:
-        name: "{{ item }}"
-        fstype: swap
-        state: absent
-      with_items:
-        - swap
-        - none
+    - name: Load modules the k8s cluster needs
+      block:
+        - name: Add modules for k8s cluster
+          ansible.builtin.copy:
+            dest: /etc/modules-load.d/nri-plugins-e2e-k8s.conf
+            content: |
+              bridge
+              br_netfilter
+            mode: '0644'
+            backup: true
 
-    - name: Fulfill pre-flight requirements for k8s
-      ansible.builtin.shell: "{{ item }}"
-      with_items:
-        - rm -f /etc/modules-load.d/k8s.conf
-        - touch /etc/modules-load.d/k8s.conf
-        - modprobe bridge && echo bridge >> /etc/modules-load.d/k8s.conf || true
-        - modprobe nf-tables-bridge && echo nf-tables-bridge >> /etc/modules-load.d/k8s.conf || true
-        - modprobe br_netfilter && echo br_netfilter >> /etc/modules-load.d/k8s.conf || true
-        - touch /etc/sysctl.d/k8s.conf
-        - echo "net.bridge.bridge-nf-call-ip6tables = 1" >> /etc/sysctl.d/k8s.conf
-        - echo "net.bridge.bridge-nf-call-iptables = 1" >> /etc/sysctl.d/k8s.conf
-        - echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.d/k8s.conf
-        # rp_filter (partially) mitigates DDOS attacks with spoofed IP addresses
-        # by dropping packages with non-routable (unanswerable) source addresses.
-        # However, rp_filter > 0 breaks cilium networking. Make sure it's disabled.
-        - echo "net.ipv4.conf.*.rp_filter = 0" >> /etc/sysctl.d/k8s.conf
-        - sysctl -p /etc/sysctl.d/k8s.conf || true
+        - name: Load modules for k8s cluster
+          ansible.builtin.shell: systemctl restart systemd-modules-load
+
+    - name: Set sysctl settings the k8s cluster needs
+      block:
+        - name: Add sysctl settings for k8s cluster
+          ansible.builtin.copy:
+            dest: /etc/sysctl.d/60-nri-plugins-e2e-k8s.conf
+            content: |
+              net.bridge.bridge-nf-call-ip6tables = 1
+              net.bridge.bridge-nf-call-iptables = 1
+              net.ipv4.ip_forward = 1
+            mode: '0644'
+            backup: true
+
+        - name: Disable rp_filter for cilium
+          ansible.builtin.copy:
+            dest: /etc/sysctl.d/90-nri-plugins-e2e-cilium.conf
+            content: |
+              net.ipv4.conf.*.rp_filter = 0
+            mode: '0644'
+          when: cni_plugin == "cilium"
+
+        - name: Restore rp_filter when cilium is not used
+          ansible.builtin.file:
+            path: /etc/sysctl.d/90-nri-plugins-e2e-cilium.conf
+            state: absent
+          when: cni_plugin != "cilium"
+
+        - name: Apply sysctl settings
+          ansible.builtin.shell: sysctl --system || true
+          changed_when: false
 
     - name: Restart kubelet
       ansible.builtin.service:
@@ -549,14 +663,21 @@
         daemon_reload: true
         state: restarted
 
-    - name: Write kubeadm config with feature gates
+    - name: Write the kubeadm configuration
       ansible.builtin.copy:
         dest: /root/kubeadm-config.yaml
         content: |
           apiVersion: kubeadm.k8s.io/v1beta4
+          kind: InitConfiguration
+          nodeRegistration:
+            name: "{{ hostname }}"
+            criSocket: "{{ cri_socket }}"
+          ---
+          apiVersion: kubeadm.k8s.io/v1beta4
           kind: ClusterConfiguration
           networking:
             podSubnet: "{{ network }}"
+          {% if k8s_feature_gates != "" %}
           apiServer:
             extraArgs:
               - name: feature-gates
@@ -565,33 +686,61 @@
             extraArgs:
               - name: feature-gates
                 value: "{{ k8s_feature_gates }}"
+          {% endif %}
           ---
           apiVersion: kubelet.config.k8s.io/v1beta1
           kind: KubeletConfiguration
+          failSwapOn: false
+          memorySwap:
+            swapBehavior: NoSwap
+          {% if k8s_feature_gates != "" %}
           featureGates:
           {% for gate in k8s_feature_gates.split(',') if '=' in gate %}
             {{ gate.split('=')[0] | trim }}: {{ gate.split('=')[1] | trim }}
           {% endfor %}
-      when: k8s_feature_gates != ""
+          {% endif %}
 
+    # Always from the configuration file, so that the node name and the
+    # kubelet settings have one home. Left to itself kubeadm would name the
+    # node after the host's own hostname, which on a real host is the fqdn,
+    # while the framework looks the node up by the short name it was given.
+    #
+    # The CRI socket is named for the same reason: a host we were given can
+    # have both runtimes installed, and kubeadm refuses to pick between two
+    # endpoints although the run has already picked one.
     - name: Initialize the Kubernetes cluster using kubeadm
       ansible.builtin.command:
-        cmd: kubeadm init --pod-network-cidr="{{ network }}"
-      when: k8s_feature_gates == ""
-
-    - name: Initialize the Kubernetes cluster using kubeadm, with feature gates
-      ansible.builtin.command:
         cmd: kubeadm init --config /root/kubeadm-config.yaml
-      when: k8s_feature_gates != ""
 
-    - name: Setup kubeconfig for vagrant user
+    # --backup, not -i: kubeadm init wrote a new admin.conf a moment ago, so
+    # any kubeconfig already in place is stale, and on a host we were given it
+    # can name a cluster of its own. -i would prompt, read the end of
+    # ansible's empty stdin as a no, and leave that one in place for every
+    # kubectl below and in the tests to talk to the wrong cluster through. The
+    # copy it leaves behind is for whoever owns the host, and is numbered so
+    # that repeated runs do not overwrite the first one taken.
+    - name: Setup kubeconfig for the login user
+      ansible.builtin.command: "{{ item }}"
+      # The home directory is quoted in each: these run without a shell, and
+      # ansible splits the string, so a passwd home with a space in it would
+      # otherwise arrive as two arguments.
+      with_items:
+        - mkdir -p "{{ login_user_home }}/.kube"
+        - cp --backup=numbered /etc/kubernetes/admin.conf "{{ login_user_home }}/.kube/config"
+        # Trailing colon: the user's own login group, whatever it is called.
+        # A group named after the user is a convention, not a rule. The item
+        # is quoted too, or the ": " in it makes yaml read it as a mapping.
+        - 'chown {{ login_user }}: "{{ login_user_home }}/.kube/config"'
+
+    # Skipped when the login user is root, which already has its kubeconfig
+    # from the task above: a second copy would only push the config that one
+    # wrote into a backup of its own.
+    - name: Setup kubeconfig for root
+      when: login_user_home != "/root"
       ansible.builtin.command: "{{ item }}"
       with_items:
-        - mkdir -p /home/vagrant/.kube
-        - cp -i /etc/kubernetes/admin.conf /home/vagrant/.kube/config
-        - chown vagrant:vagrant /home/vagrant/.kube/config
         - mkdir -p /root/.kube
-        - cp -i /etc/kubernetes/admin.conf /root/.kube/config
+        - cp --backup=numbered /etc/kubernetes/admin.conf /root/.kube/config
 
     - name: Install single-node cluster
       become: false

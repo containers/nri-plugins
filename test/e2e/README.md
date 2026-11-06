@@ -220,6 +220,107 @@ provision=all ./run_tests.sh policies.test-suite
 Only `all` changes the Kubernetes release, so only `all` ends up matching what
 the run resolved.
 
+## Running the tests on a host of its own
+
+The tests can run on a host which already exists, real hardware or a virtual
+machine somebody else made, instead of on a VM the framework creates:
+
+```shell
+test_hw_addr=test@10.0.0.1 test_hw_key=~/.ssh/testbox ./run_tests.sh policies.test-suite
+```
+
+The host must let that user in by key, let it run `sudo` without a password,
+and have SELinux permissive or disabled. The first two are checked before
+anything is installed. A host behind a proxy has to be configured to use one
+already: provisioning installs packages and downloads tarballs as the host,
+and the `proxy` option configures the container runtime, not the host.
+
+The run is named after the host, so its output directory is
+`<hostname>-<runtime>`. Since two hosts can answer to the same short
+hostname, a run pointed at a different host than that directory was recorded
+against is refused: set `vm_name` to keep them apart. What the host was
+provisioned with is recorded on the host, in `/etc/nri-e2e-vm-key`, because
+an output directory is not evidence of what is installed on it.
+
+**Provisioning a host changes it and nothing here undoes that**: Kubernetes,
+the container runtime, the CNI plugin and Helm are installed, `kubeadm init`
+is run, `firewalld` is removed, and `/etc/resolv.conf` is rewritten if
+`dns_nameserver` is set. A host which already runs a cluster is refused;
+`provision=all` says that taking that cluster down is what you meant.
+
+What is done differently from a VM, all of it gated on `is_hardware`:
+
+| on a VM | on a host of its own |
+| --- | --- |
+| the root filesystem is grown to fill the disk | left alone |
+| SELinux is turned off | required to be permissive or disabled already |
+| the box cache can package the VM | refused, there is nothing to package |
+| the topology is created to order | whatever the host has |
+
+Swap is not touched on either: kubelet is configured to tolerate it without
+using it.
+
+A test which needs the node rebooted does not run on a host of its own:
+rebooting goes through vagrant, so the same path would switch the host off
+for good. `vm-reboot`, `vm-set-kernel-cmdline-reboot` and
+`vm-kernel-pkgs-install` refuse before changing anything, which rules out the
+`test22-isolcpus` tests and the custom kernel ones.
+
+### Leaving the runtime alone
+
+Give the runtime's release as `installed` to keep the one the host has:
+
+```shell
+test_hw_addr=test@10.0.0.1 test_hw_key=~/.ssh/testbox containerd_release=installed \
+    ./run_tests.sh policies.test-suite
+```
+
+Nothing is then downloaded, unpacked, reconfigured or restarted, and the
+version is read off the host so the run still records what is under test.
+`installed` needs `test_hw_addr`. In exchange the host's runtime has to
+already have:
+
+- **NRI enabled**, which is the default in containerd 2.x and recent CRI-O.
+- **The systemd cgroup driver**, matching what `kubeadm` gives the kubelet.
+- **A CNI plugin directory matching where the binaries are**, which on Fedora
+  is `/usr/libexec/cni` rather than `/opt/cni/bin`.
+- **Working image pulls**, through any proxy the host needs.
+
+### Trying it on localhost
+
+This path can be exercised without separate hardware, by pointing it at
+`127.0.0.1`. **This provisions the machine you run it on**, so use one you
+are willing to have a Kubernetes cluster installed on.
+
+```shell
+# A throwaway user to log in as, and a key for it.
+sudo useradd -G root,wheel test
+ssh-keygen -t ed25519 -N '' -f ~/.ssh/ansible-test-ssh
+sudo install -d -m 700 -o test -g test /home/test/.ssh
+sudo install -m 600 -o test -g test ~/.ssh/ansible-test-ssh.pub \
+    /home/test/.ssh/authorized_keys
+
+# Passwordless sudo for it.
+sudo /bin/bash -c 'echo "test ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/test'
+
+# Check both before handing them to the framework.
+ssh -i ~/.ssh/ansible-test-ssh test@127.0.0.1 sudo -n true && echo ok
+
+# Run one test against it, from the top of the repository.
+test_hw_addr=test@127.0.0.1 test_hw_key=~/.ssh/ansible-test-ssh \
+    ./test/e2e/run_tests.sh ./test/e2e/policies.test-suite/template/n4c16/test01-dra
+
+# The same, leaving the runtime the host already has alone.
+containerd_release=installed test_hw_addr=test@127.0.0.1 test_hw_key=~/.ssh/ansible-test-ssh \
+    ./test/e2e/run_tests.sh ./test/e2e/policies.test-suite/template/n4c16/test01-dra
+```
+
+A second run reuses the cluster the first one built, as long as the versions
+it resolves still match what the host is recorded as carrying, and
+`provision=all` rebuilds it instead. What is refused is a host carrying a
+cluster this framework has no record of, which is what an interrupted first
+run leaves behind.
+
 ## Collecting coverage data
 
 The tests can collect the same kind of coverage data from the plugins they

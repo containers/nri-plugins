@@ -32,6 +32,16 @@ BOX_NAME_PREFIX="${BOX_NAME_PREFIX:-nri-e2e}"
 # nothing about the versions it tests.
 VM_KEY_FILE="${VM_KEY_FILE:-.e2e-vm-key}"
 
+# The host an output directory belongs to, when the run was given one instead
+# of creating a VM. Two machines answering to the same short hostname would
+# otherwise share the directory and the record in it.
+VM_HW_ADDR_FILE="${VM_HW_ADDR_FILE:-.e2e-hw-addr}"
+
+# Where a host we were given carries the versions it was provisioned with.
+# On the host, because an output directory is not evidence of what is
+# installed on it: it can be deleted, and several can name the same host.
+VM_HW_KEY_PATH="${VM_HW_KEY_PATH:-/etc/nri-e2e-vm-key}"
+
 # Files whose content shapes a provisioned VM. The name of a cached box has a
 # hash of them, so that editing any of them invalidates the cached boxes
 # instead of a later run reusing an image which predates the change.
@@ -46,8 +56,6 @@ BOX_RECIPE_FILES=(
     playbook/provision.yaml
     files/Vagrantfile.in
     files/env.in
-    files/containerd-nri-enable
-    files/crio-nri-enable
     files/10-bridge.conf.in
 )
 
@@ -298,6 +306,751 @@ vm-box-name() {
     echo "$BOX_NAME_PREFIX/$(vm-box-key "$1")"
 }
 
+# Testing on a host which already exists, real hardware or a VM somebody else
+# made, instead of creating one with vagrant. Set
+#   test_hw_addr=user@address   the host to log in to
+#   test_hw_key=path            the private key to log in with
+# The host has to let that user in by key and run sudo without a password.
+
+vm-hw-mode() {
+    # Usage: vm-hw-mode
+    #
+    # Return success if this run targets a host we did not create.
+    [ -n "${test_hw_addr:-}" ]
+}
+
+vm-hw-valid-target() {
+    # Usage: vm-hw-valid-target ADDR
+    #
+    # Return success if ADDR names both a user and a host.
+    local addr="$1"
+
+    case "$addr" in
+        ?*@?*) return 0;;
+    esac
+    echo "test_hw_addr=\"$addr\" names no user: it has to read user@host," \
+         "since that user is what the run logs in as and runs sudo as" >&2
+    return 1
+}
+
+vm-hw-valid-key() {
+    # Usage: vm-hw-valid-key PATH
+    #
+    # Return success if PATH is a private key ssh will agree to use.
+    local key="$1" mode
+
+    if [ -z "$key" ]; then
+        echo "test_hw_key is not set: a run against a host which is not a VM" \
+             "logs in with a key" >&2
+        return 1
+    fi
+    if [ -d "$key" ]; then
+        echo "test_hw_key=\"$key\" is a directory, not a private key" >&2
+        return 1
+    fi
+    if [ ! -f "$key" ] || [ ! -r "$key" ]; then
+        echo "test_hw_key=\"$key\" is not a readable file" >&2
+        return 1
+    fi
+    # The mode of what the path leads to, like ssh, which opens the key
+    # rather than reading the link: a symlink is mode 777 of its own.
+    mode=$(stat -Lc %a "$key")
+    if [ "${mode: -2}" != "00" ]; then
+        echo "test_hw_key=\"$key\" is mode $mode: ssh refuses a key which" \
+             "group or others can read, so chmod 600 it" >&2
+        return 1
+    fi
+    return 0
+}
+
+vm-hw-valid-hostname() {
+    # Usage: vm-hw-valid-hostname NAME
+    #
+    # Return success if NAME can serve as a Kubernetes node name.
+    local name="$1"
+
+    if [ -z "$name" ] || [ "$name" = "localhost" ]; then
+        echo "the host calls itself \"$name\", which cannot identify a node:" \
+             "give it a name of its own" >&2
+        return 1
+    fi
+    if [[ ! "$name" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]]; then
+        echo "the host calls itself \"$name\": a node name takes lower case" \
+             "letters, digits and dashes, and starts and ends with a letter" \
+             "or a digit" >&2
+        return 1
+    fi
+    return 0
+}
+
+vm-hw-check-options() {
+    # Usage: vm-hw-check-options
+    #
+    # Fail the run unless the hardware options are usable.
+    #
+    # The exits live here rather than in the validators: error only exits the
+    # subshell of a command substitution.
+    vm-hw-valid-target "${test_hw_addr:-}" ||
+        error "test_hw_addr is unusable, see above"
+    vm-hw-valid-key "${test_hw_key:-}" ||
+        error "test_hw_key is unusable, see above"
+}
+
+vm-hw-user() {
+    # Usage: vm-hw-user
+    local addr="${test_hw_addr:-}"
+    printf '%s\n' "${addr%%@*}"
+}
+
+vm-hw-address() {
+    # Usage: vm-hw-address
+    local addr="${test_hw_addr:-}"
+    printf '%s\n' "${addr#*@}"
+}
+
+vm-hw-key() {
+    # Usage: vm-hw-key
+    #
+    # Print the private key to log in with, as an absolute path.
+    local key="${test_hw_key:-}"
+
+    if [ -z "$key" ]; then
+        return 0
+    fi
+
+    # Absolute: a relative path stops working as soon as the ssh config or
+    # ansible is used from the output directory.
+    realpath -m "$key" 2>/dev/null || printf '%s\n' "$key"
+}
+
+vm-hw-ssh() {
+    # Usage: vm-hw-ssh COMMAND...
+    #
+    # Run COMMAND on the host over a connection of our own.
+    #
+    # Options spelled out rather than -F: these probes run before the
+    # generated ssh config exists. BatchMode so that an encrypted key fails
+    # instead of waiting for a passphrase nobody can type.
+    ssh -i "$(vm-hw-key)" \
+        -o BatchMode=yes \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        -o IdentitiesOnly=yes \
+        -o PasswordAuthentication=no \
+        -o LogLevel=FATAL \
+        -o ConnectTimeout=10 \
+        "$(vm-hw-user)@$(vm-hw-address)" "$@"
+}
+
+vm-hw-hostname() {
+    # Usage: vm-hw-hostname
+    #
+    # Print the short hostname of the host, read from it. Fail, and say what
+    # ssh said, when the host cannot be reached.
+    local out status
+
+    out=$(vm-hw-ssh hostname -s 2>&1)
+    status=$?
+    if [ "$status" != 0 ]; then
+        echo "cannot reach $(vm-hw-user)@$(vm-hw-address) with the key" \
+             "$(vm-hw-key):" >&2
+        printf '%s\n' "$out" >&2
+        return 1
+    fi
+
+    # The last line only: an rc file which echoes would otherwise become a
+    # hostname nobody can account for.
+    printf '%s\n' "$(tail -n 1 <<< "$out")"
+}
+
+vm-hw-runtime-version() {
+    # Usage: vm-hw-runtime-version
+    #
+    # Print the version of the container runtime already installed on the
+    # host, without a leading v.
+    local runtime out
+
+    case "${k8scri:-containerd}" in
+        crio) runtime=crio;;
+        *)    runtime=containerd;;
+    esac
+
+    # Tagged on the host, so that the runtime's own output can be told from
+    # whatever a login shell prints around it: an untagged "Ubuntu 24.04.1"
+    # from a banner would otherwise be read as the version of the runtime.
+    out=$(vm-hw-ssh "$runtime --version 2>/dev/null | sed -n 's/^/ver=/p'" \
+              2>/dev/null)
+
+    # The whole version, prerelease and build metadata included, so that an
+    # rc is not recorded as the release it precedes.
+    printf '%s\n' "$(sed -n 's/^ver=//p' <<< "$out" |
+                     grep -oE '[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)*' |
+                     head -n 1)"
+}
+
+vm-resolve-installed-runtime() {
+    # Usage: vm-resolve-installed-runtime
+    #
+    # Turn a release of "installed" into the version the host already has,
+    # and record that provisioning is not to install one.
+    #
+    # The real version, not a sentinel, so that the box key and the recorded
+    # versions name what is actually under test.
+    local runtime="${k8scri:-containerd}" ver src
+
+    case "$runtime" in
+        crio) [ "${crio_release:-}" = "installed" ] || return 0;;
+        *)    [ "${containerd_release:-}" = "installed" ] || return 0;;
+    esac
+
+    vm-hw-mode ||
+        error "a release of \"installed\" only means something with
+test_hw_addr set: there is no host to read a version from while the VM it
+would come from has yet to be created."
+
+    # The source install answers to the source, not to manage_runtime, so
+    # refuse the pair rather than let one of the two silently win.
+    case "$runtime" in
+        crio) src="${crio_src:-}";;
+        *)    src="${containerd_src:-}";;
+    esac
+    [ -z "$src" ] ||
+        error "a release of \"installed\" and ${runtime}_src=\"$src\" do not go
+together: one leaves the runtime the host has alone, the other installs the
+binaries of that build over it. Unset one of them."
+
+    ver="$(vm-hw-runtime-version)"
+    if [ -z "$ver" ]; then
+        error "could not read the version of the $runtime installed on
+$(vm-hw-address). Is it on that user's PATH?"
+    fi
+
+    export runtime_preinstalled=1
+    case "$runtime" in
+        crio) export crio_release="$ver";;
+        *)    export containerd_release="$ver";;
+    esac
+
+    echo "Runtime already installed on the host: $runtime $ver"
+}
+
+vm-hw-check-sudo() {
+    # Usage: vm-hw-check-sudo
+    #
+    # Return success if the login user can run sudo without a password.
+    vm-hw-ssh sudo -n true > /dev/null 2>&1
+}
+
+vm-hw-cluster-kind() {
+    # Usage: vm-hw-cluster-kind
+    #
+    # Print the kind of Kubernetes cluster the host belongs to: kubeadm for
+    # one kubeadm made, foreign for one it did not, none for a host in no
+    # cluster, and unknown if the question could not be put to the host.
+    local probe answer
+
+    # Two questions, because neither answers for the other. kubeadm's own
+    # files are there whether or not anything of that cluster still runs,
+    # and kubeadm init refuses over either of them: admin.conf names a
+    # control plane node, kubelet.conf one which joined a cluster somebody
+    # else runs. The ports are what an active node of any other kind has
+    # instead, k3s and its like leaving none of kubeadm's files behind, and
+    # they are two of the ones kubeadm init claims for itself. The files are
+    # asked about first, so a cluster this harness built reads as kubeadm
+    # although its ports answer too.
+    #
+    # A host with no ss says so rather than letting an unanswered question
+    # read as a free host.
+    probe='
+test -f /etc/kubernetes/admin.conf -o -f /etc/kubernetes/kubelet.conf &&
+    { echo cluster=kubeadm; exit 0; }
+command -v ss > /dev/null 2>&1 ||
+    { echo cluster=unknown; exit 0; }
+test -n "$(ss -Htln "sport = :6443 or sport = :10250")" &&
+    { echo cluster=foreign; exit 0; }
+echo cluster=none'
+
+    # The answer is tagged and printed rather than carried by the exit
+    # status, which cannot tell a host saying "none" from one which was
+    # never reached: ssh exits 255 for its own failures and sudo 1 for a
+    # refused password, and neither means the host is free. The words are
+    # mapped rather than echoed on, so anything else the connection puts on
+    # stdout is unknown instead of a kind.
+    answer=$(vm-hw-ssh "sudo -n sh -c '$probe'" 2>/dev/null)
+
+    case "$(sed -n 's/^cluster=//p' <<< "$answer" | tail -n 1)" in
+        kubeadm) echo kubeadm;;
+        foreign) echo foreign;;
+        none)    echo none;;
+        *)       echo unknown;;
+    esac
+}
+
+vm-hw-recorded-key() {
+    # Usage: vm-hw-recorded-key
+    #
+    # Print the versions recorded on the host, or nothing if it carries no
+    # record or cannot be asked.
+    local out
+
+    vm-hw-mode || return 0
+
+    # Over sudo, since the file is root owned, and tagged on the host so that
+    # the answer can be told from anything a login shell prints around it. An
+    # absent or empty record prints nothing, and so does a host which cannot
+    # be reached: "cannot tell" has to read as "nothing recorded" rather than
+    # as a mismatch.
+    out=$(vm-hw-ssh "sudo -n sh -c 'test -s $VM_HW_KEY_PATH \
+&& sed -n \"1s/^/key=/p\" $VM_HW_KEY_PATH'" 2>/dev/null)
+
+    sed -n 's/^key=//p' <<< "$out" | tail -n 1
+}
+
+vm-hw-record-key() {
+    # Usage: vm-hw-record-key KEY
+    #
+    # Record KEY on the host as the versions it has just been provisioned
+    # with. An empty KEY records nothing.
+    local key="$1"
+
+    vm-hw-mode || return 0
+
+    if [ -z "$key" ]; then
+        return 0
+    fi
+
+    if ! printf '%s\n' "$key" |
+            vm-hw-ssh sudo -n tee "$VM_HW_KEY_PATH" > /dev/null 2>&1; then
+        echo "WARNING: failed to record the versions on $(vm-hw-address) as" \
+             "$VM_HW_KEY_PATH. A later run cannot tell what is installed on" \
+             "the host, and will treat it as provisioned by this run's" \
+             "output directory." >&2
+    fi
+}
+
+vm-hw-forget-key() {
+    # Usage: vm-hw-forget-key
+    #
+    # Drop the record of the versions the host carries. Return success only
+    # if the host no longer carries one.
+    vm-hw-mode || return 0
+
+    vm-hw-ssh sudo -n rm -f "$VM_HW_KEY_PATH" > /dev/null 2>&1
+}
+
+vm-hw-recorded-target() {
+    # Usage: vm-hw-recorded-target VAGRANTDIR
+    #
+    # Print the address of the host an output directory belongs to, or
+    # nothing if none was recorded.
+    local vagrantdir="$1"
+
+    if [ -s "$vagrantdir/$VM_HW_ADDR_FILE" ]; then
+        head -n 1 "$vagrantdir/$VM_HW_ADDR_FILE"
+    fi
+}
+
+vm-hw-check-target() {
+    # Usage: vm-hw-check-target VAGRANTDIR
+    #
+    # Fail the run if an output directory belongs to another host, and claim
+    # it for this one when it belongs to none.
+    local vagrantdir="$1" addr recorded
+
+    # A directory with a Vagrantfile belongs to a VM, and what is recorded in
+    # it describes that VM. Claiming it would read those versions as the
+    # host's and report a cluster nobody here built.
+    if [ -f "$vagrantdir/Vagrantfile" ]; then
+        error "the output directory $vagrantdir belongs to a VM, and this run
+targets the host $(vm-hw-address). Give the run an output directory of its
+own, or unset test_hw_addr to use the VM in this one."
+    fi
+
+    addr="$(vm-hw-address)"
+    recorded="$(vm-hw-recorded-target "$vagrantdir")"
+
+    # The address alone, not user@address: the cluster belongs to the machine,
+    # so two runs logging in as different users are the same host. provision=all
+    # claims the directory instead, having rebuilt whatever was on it.
+    if [ -n "$recorded" ] && [ "$recorded" != "$addr" ] &&
+       [ "${provision:-}" != "all" ]; then
+        error "the output directory $vagrantdir was recorded against
+$recorded, and this run targets $addr. Two hosts which answer to the same
+short hostname land in the same directory. If this is that host under a new
+address, set vm_name to keep the two runs apart, or provision=all to take
+down what is on $addr and build a cluster there again."
+    fi
+
+    if [ "$recorded" = "$addr" ]; then
+        return 0
+    fi
+
+    if ! echo "$addr" > "$vagrantdir/$VM_HW_ADDR_FILE"; then
+        echo "WARNING: failed to record $addr as the host of $vagrantdir." \
+             "A later run cannot tell whether it is pointed at the same" \
+             "host." >&2
+    fi
+}
+
+vm-hw-check-provisionable() {
+    # Usage: vm-hw-check-provisionable RECORDED
+    #
+    # Fail the run rather than provision over a cluster nobody asked to lose.
+    # RECORDED is the versions the host carries, empty if it carries none.
+    local recorded="$1"
+
+    vm-hw-check-sudo ||
+        error "$(vm-hw-user)@$(vm-hw-address) cannot run sudo without a
+password, which provisioning and the tests both need. Check the host's
+sudoers, and that test_hw_key is the key that user accepts."
+
+    # provision=all is permission to take down a cluster this harness could
+    # have built, and nothing more: the playbook resets what kubeadm made
+    # and leaves anything else running, so a foreign cluster would keep the
+    # ports kubeadm init needs and the run would die having already changed
+    # the host's packages, runtime and networking.
+    case "$(vm-hw-cluster-kind)" in
+        kubeadm)
+            if [ "${provision:-}" != "all" ] && [ -z "$recorded" ]; then
+                error "$(vm-hw-address) is already part of a Kubernetes cluster
+and this run has no record of what went into it. Set provision=all to take
+what is there down and build a cluster again, or point the run at a host which
+is in none."
+            fi
+            ;;
+        foreign)
+            error "$(vm-hw-address) runs a Kubernetes cluster this harness did
+not build: the ports kubeadm init needs are taken and the host has no kubeadm
+configuration, which is what k3s and its like look like. The tests run on a
+kubeadm cluster of their own, and somebody else's is not this harness's to
+take down, provision=all included. Take it down and run again, or point the
+run at another host."
+            ;;
+        unknown)
+            error "cannot tell what $(vm-hw-address) runs: it did not answer,
+or could not. ss is what the question needs, from iproute2. Provisioning
+would reconfigure the host's runtime and CNI, so it is not attempted on an
+answer this run does not have."
+            ;;
+    esac
+
+    return 0
+}
+
+vm-hw-refuse-reboot() {
+    # Usage: vm-hw-refuse-reboot WHAT
+    #
+    # Fail the run, naming WHAT, if the node is a host we were given.
+    #
+    # Rebooting goes through vagrant, and a host we were given has no
+    # Vagrantfile, so the same path would switch it off for good.
+    vm-hw-mode || return 0
+
+    error "$1 needs the node rebooted, which $(vm-hw-address) does not get:
+the framework can halt a host we were given but has no way to switch it back
+on. Run this on a VM of its own, or leave it out of a run against a host."
+}
+
+vm-provision-hw() {
+    # Usage: vm-provision-hw VAGRANTDIR
+    #
+    # Run the provisioning playbook against the host.
+    local vagrantdir="$1"
+    local playbook="$nri_resource_policy_src/test/e2e/playbook/provision.yaml"
+    local login_args=()
+    local reset=false
+
+    mapfile -t login_args < <(vm-ansible-login-args "$VM_HOSTNAME" "$vagrantdir")
+
+    if [ "${provision:-}" = "all" ]; then
+        reset=true
+    fi
+
+    echo "provisioning $VM_HOSTNAME..."
+    (cd "$vagrantdir";
+     export ANSIBLE_PIPELINING=True;
+     ANSIBLE_SSH_ARGS="-F $vagrantdir/.ssh-config" ansible-playbook "$playbook" \
+          -i "$VM_HOSTNAME," "${login_args[@]}" \
+          --ssh-common-args "-F $vagrantdir/.ssh-config" \
+          --extra-vars "@$vagrantdir/ansible-vars.json" \
+          --extra-vars "kubeadm_reset=$reset"
+    ) || error "failed to provision $VM_HOSTNAME"
+}
+
+vm-hw-resolve-names() {
+    # Usage: vm-hw-resolve-names
+    #
+    # Set VM_HOSTNAME to the host's own name and vm_name to that plus the
+    # runtime, so that a containerd run and a crio one against the same host
+    # keep separate output directories.
+    local hostname="${VM_HOSTNAME:-}"
+
+    # An exported name is taken as the answer: reading it costs an ssh round
+    # trip, and run.sh and run_tests.sh both default vm_name.
+
+    if [ -z "$hostname" ]; then
+        vm-hw-check-options
+        hostname="$(vm-hw-hostname)" ||
+            error "could not read the name of the host, see above"
+        vm-hw-valid-hostname "$hostname" ||
+            error "the host does not have a usable name, see above"
+    fi
+
+    export VM_HOSTNAME="$hostname"
+    export vm_name="${vm_name:-$hostname-${k8scri:-containerd}}"
+}
+
+vm-write-hw-ssh-config() {
+    # Usage: vm-write-hw-ssh-config VAGRANTDIR HOSTNAME
+    #
+    # Write the ssh config of a host we did not create into
+    # $VAGRANTDIR/.ssh-config.
+    local vagrantdir="$1" hostname="$2" aliases="node $2"
+    local vm_alias="${vm_name:-}"
+
+    # Answer to both names the framework uses: vm-command goes through
+    # VM_HOSTNAME, and ansible is given the inventory host, which run.sh
+    # normalises the slashes out of.
+    vm_alias="${vm_alias//\//-}"
+    if [ -n "$vm_alias" ] && [ "$vm_alias" != "$hostname" ]; then
+        aliases="$aliases $vm_alias"
+    fi
+
+    # The shape vagrant ssh-config produces, alias included. Host key checking
+    # is off and known hosts discarded, as on the vagrant path.
+    cat > "$vagrantdir/.ssh-config" <<EOF
+Host $aliases
+  HostName $(vm-hw-address)
+  User $(vm-hw-user)
+  UserKnownHostsFile /dev/null
+  StrictHostKeyChecking no
+  PasswordAuthentication no
+  BatchMode yes
+  IdentityFile "$(vm-hw-key)"
+  IdentitiesOnly yes
+  LogLevel FATAL
+
+  ControlMaster auto
+  ControlPersist 60
+  ControlPath /tmp/ssh-%C
+EOF
+}
+
+vm-write-env-file() {
+    # Usage: vm-write-env-file VAGRANTDIR [NO_PROVISION]
+    #
+    # Write the dotenv file of a run, unless it is already there, and keep its
+    # provisioning flag in step.
+    #
+    # A host which is not a VM needs it too: the proxy settings are read back
+    # out of it.
+    local vagrantdir="$1" no_provision="${2:-}"
+    local files="$nri_resource_policy_src/test/e2e/files"
+    local SSH_PORT ESCAPED_PROXY
+
+    if [ ! -f "$vagrantdir/env" ]; then
+	# Get a random port between 50023 - 52071 to be used to access the VM
+	SSH_PORT="$[ $RANDOM % 2048 + 50023 ]"
+
+	if [ ! -z "${proxy:-}" ]; then
+	    ESCAPED_PROXY=$(printf '%s\n' "$proxy" | sed -e 's/[\/&]/\\&/g')
+
+	    sed -e "s/\#PROXY=\"\"/PROXY=\"$ESCAPED_PROXY\"/g" \
+		-e "s/\#HTTP/HTTP/g" \
+		-e "s/DNS_NAMESERVER=\"\"/DNS_NAMESERVER=\"${dns_nameserver:-}\"/g" \
+		-e "s/DNS_SEARCH_DOMAIN=\"\"/DNS_SEARCH_DOMAIN=\"${dns_search_domain:-}\"/g" \
+		-e "s/SSH_PORT=/SSH_PORT=$SSH_PORT/g" \
+                -e "s:CACHE_DIR=:CACHE_DIR=\"${CACHE_DIR:-}\":g" \
+                -e "s:E2E_NO_PROVISION=:E2E_NO_PROVISION=$no_provision:g" \
+		"$files/env.in" > "$vagrantdir/env"
+	else
+	    sed -e "s/DNS_NAMESERVER=\"\"/DNS_NAMESERVER=\"${dns_nameserver:-}\"/g" \
+		-e "s/DNS_SEARCH_DOMAIN=\"\"/DNS_SEARCH_DOMAIN=\"${dns_search_domain:-}\"/g" \
+		-e "s/SSH_PORT=/SSH_PORT=$SSH_PORT/g" \
+                -e "s:CACHE_DIR=:CACHE_DIR=\"${CACHE_DIR:-}\":g" \
+                -e "s:E2E_NO_PROVISION=:E2E_NO_PROVISION=$no_provision:g" \
+		"$files/env.in" > "$vagrantdir/env"
+	fi
+    fi
+
+    # An env file written before this VM was known to come from a box has no
+    # flag, or a stale one. Keep it in sync, so that a vagrant up which is not
+    # ours, from make up or make ssh, does not provision the VM either.
+    if [ -n "$no_provision" ] && [ -f "$vagrantdir/env" ] &&
+           ! grep -q '^E2E_NO_PROVISION=1$' "$vagrantdir/env"; then
+        sed -i 's/^E2E_NO_PROVISION=.*$/E2E_NO_PROVISION=1/' "$vagrantdir/env"
+        grep -q '^E2E_NO_PROVISION=1$' "$vagrantdir/env" ||
+            echo "E2E_NO_PROVISION=1" >> "$vagrantdir/env"
+    fi
+}
+
+vm-hw-check-cache-conflict() {
+    # Usage: vm-hw-check-cache-conflict
+    #
+    # Fail the run if it asks for the box cache against a host we did not
+    # create: there is nothing to package and no cached box to use.
+    case "${e2e_vm_cache:-no}" in
+        yes|1|refresh)
+            error "e2e_vm_cache=$e2e_vm_cache and test_hw_addr do not go
+together: a host we were given is never created from a box and cannot be
+packaged into one. Unset one of them."
+            ;;
+    esac
+    return 0
+}
+
+vm-hw-check-kernel-conflict() {
+    # Usage: vm-hw-check-kernel-conflict
+    #
+    # Fail the run if it asks for a custom kernel on a host we were given.
+    #
+    # Sooner than vm-kernel-pkgs-install: custom-kernel.yaml writes a grub
+    # drop-in and builds a kernel first, and both outlive the run.
+    #
+    # The pair, as in the playbook: one of the two on its own builds nothing.
+    if [ -z "${kernel_getsource:-}" ] || [ -z "${kernel_config:-}" ]; then
+        return 0
+    fi
+
+    error "kernel_getsource and kernel_config do not go together with
+test_hw_addr: a custom kernel is installed by booting into it, and a host we
+were given is never rebooted. Unset them, or run this on a VM of its own."
+}
+
+vm-setup-hw() {
+    # Usage: vm-setup-hw OUTPUT_DIR VMNAME KEY RECORDED
+    #
+    # Prepare a host we were given, instead of creating a VM. RECORDED is the
+    # versions the host carries, empty if it carries none.
+    local output_dir="$1" vmname="$2" vm_key="$3" recorded="$4"
+    local vagrantdir="$output_dir" first=""
+
+    mkdir -p "$vagrantdir"
+    vm-write-hw-ssh-config "$vagrantdir" "$VM_HOSTNAME"
+    vm-write-env-file "$vagrantdir"
+    vm-write-ansible-vars "$vagrantdir"
+
+    # Nothing recorded on the host is a host which has not been provisioned.
+    [ -n "$recorded" ] || first=1
+
+    # provision at all: a first run, or one which was asked to.
+    if [ -n "$first" ] || [ -n "${provision:-}" ]; then
+        vm-hw-check-provisionable "$recorded"
+        # Provisioning installs and restarts the runtime this run resolved,
+        # whether or not it goes on to rebuild the cluster, so the recorded
+        # versions stop being true the moment it starts. A run which dies in
+        # between must not leave them for the next one to read as a host
+        # which is ready.
+        vm-hw-forget-key ||
+            error "cannot remove $VM_HW_KEY_PATH on $(vm-hw-address). A run
+which failed partway would leave it naming versions the host no longer has,
+and the next run would trust them, so one is not started."
+        # After it, so that only a host which really carries these versions
+        # is recorded as carrying them.
+        vm-provision-hw "$vagrantdir"
+        vm-record-box-key "$vagrantdir" "$vm_key"
+    fi
+
+    mkdir -p "$COMMAND_OUTPUT_DIR"
+    rm -f "$COMMAND_OUTPUT_DIR"/0*
+
+    # The cluster may have been built days ago, on a host rebooted since.
+    wait-for-node-ready
+    wait-for-dns-ready
+}
+
+vm-json-quote() {
+    # Usage: vm-json-quote VALUE
+    #
+    # Print VALUE as a JSON string.
+    local s="${1//\\/\\\\}"
+
+    s="${s//\"/\\\"}"
+    printf '"%s"' "$s"
+}
+
+vm-write-ansible-vars() {
+    # Usage: vm-write-ansible-vars VAGRANTDIR
+    #
+    # Write the variables the provisioning playbook takes into
+    # $VAGRANTDIR/ansible-vars.json, which both ways of provisioning read.
+    #
+    # kubeadm_reset is not among them. The file outlives the run which wrote
+    # it, and permission to take a cluster down belongs to the command which
+    # is running, so both ways of provisioning pass that one on the command
+    # line instead.
+    local vagrantdir="$1"
+    local cri_runtime="${k8scri:-containerd}"
+    local containerd_rel="" containerd_source=""
+    local crio_rel="1.28.1" crio_source=""
+    local http_p="" https_p="" no_p=""
+    local hardware=false manage_rt=true
+
+    # Only the selected runtime's release is passed on. crio keeps a fallback
+    # so the tarball URL the playbook builds from it stays well formed when it
+    # goes unused.
+    if [ "$cri_runtime" = "containerd" ]; then
+        containerd_rel="${containerd_release:-}"
+        containerd_source="${containerd_src:-}"
+    else
+        crio_rel="${crio_release:-}"
+        crio_source="${crio_src:-}"
+    fi
+
+    # All three proxy variables are read back from the env file, which is
+    # where files/env.in spells NO_PROXY out.
+    if [ -f "$vagrantdir/env" ]; then
+        { read -r http_p; read -r https_p; read -r no_p; } < <(
+            set +u
+            . "$vagrantdir/env" > /dev/null 2>&1
+            printf '%s\n%s\n%s\n' "${http_proxy:-}" "${https_proxy:-}" \
+                   "${no_proxy:-}"
+        )
+    fi
+
+    # Tells the playbook it is on a host somebody owns. Anything fine to do to
+    # a throwaway VM and rude to do to such a host is gated on this.
+    if vm-hw-mode; then
+        hardware=true
+    fi
+
+    # Set when the host's own runtime is being used, so provisioning knows to
+    # configure it rather than replace it.
+    if [ -n "${runtime_preinstalled:-}" ]; then
+        manage_rt=false
+    fi
+
+    cat > "$vagrantdir/ansible-vars.json" <<EOF
+{
+  "network": "10.217.0.0/16",
+  "hostname": $(vm-json-quote "${VM_HOSTNAME:-}"),
+  "dns_nameserver": $(vm-json-quote "${dns_nameserver:-}"),
+  "dns_search_domain": $(vm-json-quote "${dns_search_domain:-}"),
+  "https_proxy": $(vm-json-quote "$https_p"),
+  "http_proxy": $(vm-json-quote "$http_p"),
+  "no_proxy": $(vm-json-quote "$no_p"),
+  "kernel_getsource": $(vm-json-quote "${kernel_getsource:-}"),
+  "kernel_config": $(vm-json-quote "${kernel_config:-}"),
+  "k8s_release": $(vm-json-quote "${k8s_release:-}"),
+  "k8s_version": $(vm-json-quote "${k8s_version:-}"),
+  "k8s_feature_gates": $(vm-json-quote "${k8s_feature_gates:-}"),
+  "is_hardware": $hardware,
+  "manage_runtime": $manage_rt,
+  "helm_release": $(vm-json-quote "${helm_release:-}"),
+  "cri_runtime": $(vm-json-quote "$cri_runtime"),
+  "containerd_release": $(vm-json-quote "$containerd_rel"),
+  "containerd_src": $(vm-json-quote "$containerd_source"),
+  "crio_release": $(vm-json-quote "$crio_rel"),
+  "crio_src": $(vm-json-quote "$crio_source"),
+  "cache_dir": $(vm-json-quote "${CACHE_DIR:-}"),
+  "cni_plugin": $(vm-json-quote "${cni_plugin:-}"),
+  "cni_release": $(vm-json-quote "${cni_release:-}"),
+  "nri_resource_policy_src": $(vm-json-quote "${nri_resource_policy_src:-}"),
+  "outdir": $(vm-json-quote "${OUTPUT_DIR:-}")
+}
+EOF
+}
+
 vm-recorded-box-key() {
     # Usage: vm-recorded-box-key VAGRANTDIR
     #
@@ -310,7 +1063,16 @@ vm-recorded-box-key() {
     # which predates the file and was provisioned from a distro image has
     # nothing to read, which is why an empty answer means "cannot tell" and
     # never "does not match".
+    #
+    # A host we were given answers for itself, and nothing in an output
+    # directory speaks for it: several directories can name one host, and what
+    # any of them was told stops being true as soon as another rebuilds it.
     local vagrantdir="$1" key
+
+    if vm-hw-mode; then
+        vm-hw-recorded-key
+        return
+    fi
 
     if [ -s "$vagrantdir/$VM_KEY_FILE" ]; then
         head -n 1 "$vagrantdir/$VM_KEY_FILE"
@@ -332,10 +1094,18 @@ vm-record-box-key() {
     #
     # Only for a VM which this run created. Rewriting the file for a VM which
     # was already there would bless a mismatch instead of reporting it.
+    #
+    # A host we were given is recorded on the host and nowhere else, so that
+    # no copy of this can be read as its state once it has moved on.
     local vagrantdir="$1" key="$2"
 
     if [ -z "$key" ]; then
         return 0
+    fi
+
+    if vm-hw-mode; then
+        vm-hw-record-key "$key"
+        return
     fi
 
     if ! echo "$key" > "$vagrantdir/$VM_KEY_FILE"; then
@@ -358,7 +1128,7 @@ vm-report-box-key-mismatch() {
     # dropped the feature gates. Print the keys whole when they do not line up.
     local recorded="$1" current="$2"
     local -a was now
-    local i last label
+    local i last label files
 
     IFS=- read -r -a was <<< "$recorded"
     IFS=- read -r -a now <<< "$current"
@@ -377,17 +1147,38 @@ vm-report-box-key-mismatch() {
             fi
             echo "  $label${was[$i]} -> ${now[$i]}" >&2
         done
+        if [ "${was[$last]}" != "${now[$last]}" ]; then
+            files=$(printf '%s, ' "${BOX_RECIPE_FILES[@]}")
+            echo "" >&2
+            echo "The recipe is these files under test/e2e:
+  ${files%, }
+Editing any of them changes the hash. A different hash means this machine
+was provisioned from a different copy of these files. It does not mean the
+versions installed on it differ." >&2
+        fi
     else
         echo "  VM:  $recorded" >&2
         echo "  run: $current" >&2
     fi
 }
 
+vm-box-key-recipe-only() {
+    # Usage: vm-box-key-recipe-only RECORDED CURRENT
+    #
+    # Return success if two box keys differ in the provisioning recipe alone.
+    local recorded="$1" current="$2"
+
+    # The recipe hash is the last field and holds no "-" itself, so what is
+    # in front of it is everything else the key says.
+    [ "${recorded%-*}" = "${current%-*}" ] && [ "$recorded" != "$current" ]
+}
+
 vm-check-recorded-box-key() {
-    # Usage: vm-check-recorded-box-key VAGRANTDIR KEY
+    # Usage: vm-check-recorded-box-key VAGRANTDIR KEY RECORDED
     #
     # Fail unless the VM of an output directory was provisioned with KEY, the
-    # versions this run resolved. An empty KEY checks nothing.
+    # versions this run resolved. RECORDED is the versions it was provisioned
+    # with, empty if none are recorded. An empty KEY checks nothing.
     #
     # vagrant provisions a machine once, so an output directory which is kept
     # boots the VM it has however old the Kubernetes, the container runtime,
@@ -400,7 +1191,7 @@ vm-check-recorded-box-key() {
     # what changes the versions in a VM, so refusing to start would block the
     # one thing which resolves the difference. Only provision=all rebuilds
     # the cluster, so only it ends up matching.
-    local vagrantdir="$1" key="$2" recorded
+    local vagrantdir="$1" key="$2" recorded="$3" what
 
     case "${e2e_vm_versions:-check}" in
         check|ignore)
@@ -415,7 +1206,6 @@ vm-check-recorded-box-key() {
         return 0
     fi
 
-    recorded="$(vm-recorded-box-key "$vagrantdir")"
     if [ -z "$recorded" ]; then
         echo "WARNING: the versions of the VM in $vagrantdir are not" \
              "recorded, so what is installed in it cannot be told apart" \
@@ -428,8 +1218,13 @@ vm-check-recorded-box-key() {
     fi
 
     echo "" >&2
-    echo "The VM in $vagrantdir is not provisioned with what this run" \
-         "resolved:" >&2
+    if vm-hw-mode; then
+        echo "$(vm-hw-address) is not provisioned with what this run" \
+             "resolved:" >&2
+    else
+        echo "The VM in $vagrantdir is not provisioned with what this run" \
+             "resolved:" >&2
+    fi
     vm-report-box-key-mismatch "$recorded" "$key"
 
     if [ "${provision:-}" = "all" ]; then
@@ -459,10 +1254,27 @@ vm-check-recorded-box-key() {
         return 0
     fi
 
-    error "the VM in $vagrantdir was provisioned with other versions.
-Remove the output directory to provision a new VM with the ones above, set
-provision=all to reprovision this one in place, or set e2e_vm_versions=ignore
-to run the tests against the VM as it is."
+    # Naming the recipe rather than the versions when the versions all
+    # matched: claiming otherwise sends the reader looking for a version
+    # difference which the report above does not show.
+    what="is provisioned with other versions"
+    if vm-box-key-recipe-only "$recorded" "$key"; then
+        what="was not provisioned by this recipe"
+    fi
+
+    # A host we were given keeps what is installed on it however many
+    # directories are deleted, so the way out differs.
+    if vm-hw-mode; then
+        error "$(vm-hw-address) $what.
+Set provision=all to provision it again, or set e2e_vm_versions=ignore to run
+the tests against the host as it is. Deleting the output directory will not
+help: the host keeps what is on it."
+    fi
+
+    error "the VM in $vagrantdir $what.
+Remove the output directory to provision a new VM, set provision=all to
+reprovision this one in place, or set e2e_vm_versions=ignore to run the tests
+against the VM as it is."
 }
 
 vm-box-cache-cleanup-requested() {
@@ -583,7 +1395,7 @@ vm-setup() {
     local qemu_dir="${qemu_dir:-/usr/share/qemu}"
     local efi_code efi_vars kind
     local box_name="$distro" box_file="" package_box="" use_cached_box=""
-    local no_provision="" e2e_no_provision="" new_vm="" vm_key=""
+    local no_provision="" e2e_no_provision="" new_vm="" vm_key="" recorded=""
 
     # The key names the versions a VM has, and both the check below and the
     # record at the end of this function need it. Compute it here, before
@@ -594,15 +1406,57 @@ vm-setup() {
     if [ -n "$k8s_release" ] && [ -n "$distro" ]; then
         # Outside the command substitution, which would swallow the failure.
         vm-check-provisioning-recipe
-        vm_key="$(vm-box-key "$vmname")"
+        # A host we were given carries its record itself, and answers for it
+        # to every output directory which names the host. So the key names
+        # the host and the runtime installed on it, not the label of a
+        # directory: vm_name is one of several a host can be reached under,
+        # and changing it leaves the node and the software on it untouched.
+        if vm-hw-mode; then
+            vm_key="$(vm-box-key "$VM_HOSTNAME-${k8scri:-containerd}")"
+        else
+            vm_key="$(vm-box-key "$vmname")"
+        fi
     fi
 
-    if [ -f "$vagrantdir/Vagrantfile" ]; then
-        # The VM of this output directory is the one the tests will run on,
-        # whatever this run resolved, so check the two agree before going on.
-        vm-check-recorded-box-key "$vagrantdir" "$vm_key"
-    else
+    # What was asked for, before anything is written: an option combination
+    # which is refused must not leave the directory claimed for a new host.
+    #
+    # Then which host the directory is about, before the checks below read
+    # what is recorded in it: another host of the same name left the same
+    # record.
+    if vm-hw-mode; then
+        vm-hw-check-cache-conflict
+        vm-hw-check-kernel-conflict
+        vm-hw-check-options
+        mkdir -p "$vagrantdir"
+        vm-hw-check-target "$vagrantdir"
+    fi
+
+    # Read once, for the version check below and for the provisioning
+    # decision both: on a host we were given this costs an ssh round trip
+    # which can fail, and an answer to one of the two and not the other
+    # leaves them disagreeing about the same host.
+    recorded="$(vm-recorded-box-key "$vagrantdir")"
+
+    # A host we were given has no Vagrantfile, so its record is what tells a
+    # first run from a later one.
+    if vm-hw-mode; then
+        [ -n "$recorded" ] || new_vm=1
+    elif [ ! -f "$vagrantdir/Vagrantfile" ]; then
         new_vm=1
+    fi
+
+    if [ -z "$new_vm" ]; then
+        # The tests run on the host this directory already has, so check it
+        # against what this run resolved.
+        vm-check-recorded-box-key "$vagrantdir" "$vm_key" "$recorded"
+    fi
+
+    # A host we were given shares the version check above and nothing below
+    # it: the rest of this function is about making a VM.
+    if vm-hw-mode; then
+        vm-setup-hw "$output_dir" "$vmname" "$vm_key" "$recorded"
+        return
     fi
 
     # Reuse an already provisioned VM if we have one for this topology and for
@@ -724,40 +1578,10 @@ vm-setup() {
 	sed -e "s/SERVER_NAME/$vmname/g" -e "s/DISTRO/$distro_name/g" "$files/Makefile.in" > "$vagrantdir/Makefile"
     fi
 
-    if [ ! -f "$vagrantdir/env" ]; then
-	# Get a random port between 50023 - 52071 to be used to access the VM
-	SSH_PORT="$[ $RANDOM % 2048 + 50023 ]"
+    vm-write-env-file "$vagrantdir" "$e2e_no_provision"
 
-	if [ ! -z "$proxy" ]; then
-	    ESCAPED_PROXY=$(printf '%s\n' "$proxy" | sed -e 's/[\/&]/\\&/g')
-
-	    sed -e "s/\#PROXY=\"\"/PROXY=\"$ESCAPED_PROXY\"/g" \
-		-e "s/\#HTTP/HTTP/g" \
-		-e "s/DNS_NAMESERVER=\"\"/DNS_NAMESERVER=\"$dns_nameserver\"/g" \
-		-e "s/DNS_SEARCH_DOMAIN=\"\"/DNS_SEARCH_DOMAIN=\"$dns_search_domain\"/g" \
-		-e "s/SSH_PORT=/SSH_PORT=$SSH_PORT/g" \
-                -e "s:CACHE_DIR=:CACHE_DIR=\"$CACHE_DIR\":g" \
-                -e "s:E2E_NO_PROVISION=:E2E_NO_PROVISION=$e2e_no_provision:g" \
-		"$files/env.in" > "$vagrantdir/env"
-	else
-	    sed -e "s/DNS_NAMESERVER=\"\"/DNS_NAMESERVER=\"$dns_nameserver\"/g" \
-		-e "s/DNS_SEARCH_DOMAIN=\"\"/DNS_SEARCH_DOMAIN=\"$dns_search_domain\"/g" \
-		-e "s/SSH_PORT=/SSH_PORT=$SSH_PORT/g" \
-                -e "s:CACHE_DIR=:CACHE_DIR=\"$CACHE_DIR\":g" \
-                -e "s:E2E_NO_PROVISION=:E2E_NO_PROVISION=$e2e_no_provision:g" \
-		"$files/env.in" > "$vagrantdir/env"
-	fi
-    fi
-
-    # An env file written before this VM was known to come from a box has no
-    # flag, or a stale one. Keep it in sync, so that a vagrant up which is not
-    # ours, from make up or make ssh, does not provision the VM either.
-    if [ -n "$e2e_no_provision" ] && [ -f "$vagrantdir/env" ] &&
-           ! grep -q '^E2E_NO_PROVISION=1$' "$vagrantdir/env"; then
-        sed -i 's/^E2E_NO_PROVISION=.*$/E2E_NO_PROVISION=1/' "$vagrantdir/env"
-        grep -q '^E2E_NO_PROVISION=1$' "$vagrantdir/env" ||
-            echo "E2E_NO_PROVISION=1" >> "$vagrantdir/env"
-    fi
+    # Reads the env file, so it has to come after that file is written.
+    vm-write-ansible-vars "$vagrantdir"
 
     (cd "$vagrantdir";
      export ANSIBLE_PIPELINING=True;
@@ -837,20 +1661,37 @@ EOF
     fi
 }
 
+vm-ansible-login-args() {
+    # Usage: vm-ansible-login-args VM VAGRANTDIR
+    #
+    # Print how ansible-playbook is to log in, one argument per line: the
+    # user, then the private key.
+    local vm="$1" vagrantdir="$2"
+
+    if vm-hw-mode; then
+        printf '%s\n' "-u" "$(vm-hw-user)" "--private-key=$(vm-hw-key)"
+        return 0
+    fi
+
+    # private_key may be under qemu/ or libvirt/ directory
+    printf '%s\n' "-u" "vagrant" \
+           "--private-key=$(echo "$vagrantdir/.vagrant/machines/${vm}"/*/private_key)"
+}
+
 vm-play() {
     local vm="$1"
     local playbook="$2"
     local vagrantdir="$3"
+    local login_args=()
+
+    mapfile -t login_args < <(vm-ansible-login-args "$vm" "$vagrantdir")
 
     (cd "$vagrantdir";
      export ANSIBLE_PIPELINING=True;
-     # private_key may be under qemu/ or libvirt/ directory
-     private_key=$(echo .vagrant/machines/${vm}/*/private_key)
      # ansible synchronize does not respect --ssh-common-args,
      # therefore pass the same in the environment variable, too
      ANSIBLE_SSH_ARGS="-F $vagrantdir/.ssh-config" ansible-playbook "$playbook" \
-	  -i "${vm}," -u vagrant \
-	  --private-key="$private_key" \
+	  -i "${vm}," "${login_args[@]}" \
 	  --ssh-common-args "-F $vagrantdir/.ssh-config" \
 	  --extra-vars "cri_runtime=${k8scri} nri_resource_policy_src=${nri_resource_policy_src} cache_dir=$CACHE_DIR kernel_getsource=$kernel_getsource kernel_config=$kernel_config"
     )
@@ -911,6 +1752,8 @@ vm-reboot() { # script API
     local _vagrantdir=${1:-$OUTPUT_DIR}
     local _shutdown=0
     local _pid
+
+    vm-hw-refuse-reboot "vm-reboot"
 
     if [ -z "$deadline" ]; then
         _deadline=$(( $(date +%s) + ${timeout:-60} ))
@@ -1607,6 +2450,11 @@ vm-set-kernel-cmdline-reboot() { # script API
     # timeout is the time to wait for the VM to reboot, 600 seconds by default.
     local cmdline="$1"
 
+    # Before vm-set-kernel-cmdline, not only before the reboot: a host we
+    # were given would otherwise keep a boot configuration of ours which only
+    # takes effect the next time somebody else reboots it.
+    vm-hw-refuse-reboot "setting the kernel command line"
+
     vm-set-kernel-cmdline "$cmdline"
     timeout=${timeout:-600} vm-reboot
     if [ -n "$cmdline" ]; then
@@ -1631,6 +2479,10 @@ vm-kernel-pkgs-install() { # script API
     # That kernel can be restored with vm-kernel-pkgs-uninstall.
     local file="${file:-kernel-pkgs.tar}"
     local feat="vm-kernel-pkgs"
+
+    # Before the packages are installed and the default kernel repointed,
+    # both of which outlive the run on a host we were given.
+    vm-hw-refuse-reboot "installing a kernel"
 
     vm-command "tar tf $file" || \
         command-error "cannot list contents of kernel packages file $file"
