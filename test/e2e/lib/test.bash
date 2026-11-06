@@ -1188,6 +1188,54 @@ assert-cpu-freq() { # script API
 }
 
 ###
+### Generated test scripts
+###
+
+run-generated-tests() { # script API
+    # Usage: run-generated-tests
+    #
+    # Run every generated*.sh script of the test directory in parallel, each
+    # with an output directory of its own, and wait for all of them to finish.
+    # Prefix every line a script prints with the name of the script.
+    #
+    # End the test with a warning if the directory has no generated script.
+    # Writing them is what the generate.sh of the directory does.
+    local genscript count=0 paralleloutdir
+
+    for genscript in "$TEST_DIR"/generated*.sh; do
+        if [ ! -f "$genscript" ]; then
+            continue
+        fi
+        (
+            paralleloutdir="$outdir/parallel$count"
+            [ -d "$paralleloutdir" ] && rm -rf "$paralleloutdir"
+            mkdir "$paralleloutdir"
+            OUTPUT_DIR="$paralleloutdir"
+            COMMAND_OUTPUT_DIR="$paralleloutdir/commands"
+            mkdir "$COMMAND_OUTPUT_DIR"
+            source "$genscript" 2>&1 | sed -u -e "s/^/$(basename "$genscript"): /g"
+        ) &
+        count=$(( count + 1 ))
+    done
+
+    if [ "$count" == "0" ]; then
+        echo "WARNING:"
+        echo "WARNING: Skipping fuzz tests:"
+        echo "WARNING: - Generated tests not found."
+        echo "WARNING: - Generate a test by running:"
+        echo "WARNING:   $TEST_DIR/generate.sh"
+        echo "WARNING: - See test generation options:"
+        echo "WARNING:   $TEST_DIR/generate.sh --help"
+        echo "WARNING:"
+        sleep 5
+        exit 0
+    fi
+
+    echo "waiting for $count generated tests to finish..."
+    wait
+}
+
+###
 ### Ending the test early
 ###
 
