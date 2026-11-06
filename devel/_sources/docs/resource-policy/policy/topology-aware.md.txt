@@ -1451,33 +1451,46 @@ capacity, and the policy runs the containers of the pod on the claimed CPUs.
 
 ### Devices
 
-The policy publishes one device per NUMA node, named `cpudevnuma000`,
-`cpudevnuma001` and so on, and one device per socket, named `cpudevsocket000`,
-`cpudevsocket001` and so on. A socket device offers the CPUs of all NUMA nodes
-of the socket. A socket with one NUMA node has a socket device with the same
-CPUs as its NUMA device.
+The policy publishes a device for each group of CPUs of the topology:
+
+| Device | Level | CPUs |
+|---|---|---|
+| `cpudevmachine` | `machine` | all CPUs |
+| `cpudevsocket000`, `cpudevsocket001`, ... | `socket` | the CPUs of a socket |
+| `cpudevnuma000`, `cpudevnuma001`, ... | `numanode` | the CPUs of a NUMA node |
+
+Every level is published, also when it adds no group of its own: a machine
+with one socket has a socket device with the same CPUs as its machine device,
+and a socket with one NUMA node has a NUMA device with the same CPUs as its
+socket device. So a claim written for one level works on every machine.
 
 The capacity `dra.cpu/cpu` of a device is the number of its CPUs which claims
-hold or can get: the CPUs of the node or socket, minus the reserved CPUs,
-minus the CPUs containers hold exclusively, minus the whole CPUs the shared
-containers need. The capacity of a socket device also leaves out the CPUs of
-claims on its NUMA nodes. The scheduler subtracts what claims consume of a
-device, so the CPUs of its own claims stay in its capacity. The capacity of a
-NUMA device also has the CPUs socket claims hold on the node, as many as these
-claims can move to other CPUs of the socket. The policy publishes the capacity
-again whenever it changes. A node or socket with no CPUs left for claims has
-no device until some are free again. A new capacity applies to claims
-allocated after it: claims already allocated keep their CPUs. The devices have
-these attributes:
+hold or can get: the CPUs of the group, minus the reserved CPUs, minus the
+CPUs containers hold exclusively, minus the whole CPUs the shared containers
+need. The capacity of a device also leaves out the CPUs of claims on devices
+which are not larger than it, such as the claims on the NUMA nodes of a socket
+device. The scheduler subtracts what claims consume of a device, so the CPUs
+of its own claims stay in its capacity. The capacity of a device also has the
+CPUs which claims on larger devices hold in it, as many as these claims can
+move to other CPUs of their device, also by moving claims on still larger
+devices out of the way. The policy publishes the capacity again whenever it
+changes. A group with no CPUs left for claims has no device until some are
+free again. A new capacity applies to claims allocated after it: claims
+already allocated keep their CPUs. The devices have these attributes:
 
 | Attribute | Type | Value |
 |---|---|---|
-| `dra.cpu/level` | string | `numanode` or `socket` |
-| `resource.kubernetes.io/numaNode` | int | the ID of the NUMA node, on NUMA devices only |
-| `dra.cpu/socketID` | int | the ID of the socket |
+| `dra.cpu/level` | string | `machine`, `socket` or `numanode` |
+| `dra.cpu/socketID` | int | the ID of the socket, on NUMA and socket devices |
+| `resource.kubernetes.io/numaNode` | int | the ID of the NUMA node, on NUMA devices |
 | `dra.cpu/smtEnabled` | bool | whether the CPUs have hyperthreading enabled |
 | `dra.cpu/numCPUs` | int | the number of CPUs of the device, without the reserved CPUs |
-| `resource.kubernetes.io/pcieRoot` | list of strings | the PCIe roots of the socket, with `DRAListTypeAttributes` only |
+| `resource.kubernetes.io/pcieRoot` | list of strings | the PCIe roots of the sockets of the CPUs, with `DRAListTypeAttributes` only |
+
+Which IDs a device has depends only on its level, so a selector works the
+same way on every machine. A socket device has no `numaNode`, even when its
+socket has one NUMA node, and the machine device has no IDs, even on a machine
+with one socket.
 
 With sub-NUMA clustering, the kernel gives each PCIe root the CPUs of one
 NUMA node, but the root serves the whole socket. So every device of a socket
@@ -1487,28 +1500,31 @@ selects the node with `numaNode` as well.
 A request consumes a number of whole CPUs of one device. A request without an
 amount gets one CPU, not the whole device. The policy picks the CPUs by
 topology: two CPUs are the two threads of one core when possible. A request
-on a socket device gets CPUs of one NUMA node when a node has enough free
-CPUs, otherwise CPUs of several nodes of the socket.
+gets CPUs of the smallest group inside its device which has enough free CPUs.
+For instance, a request on the machine device gets CPUs of one NUMA node when
+a node has enough free CPUs, otherwise CPUs of one socket, otherwise CPUs of
+several sockets.
 
-A claim on a socket device is not bound to its CPUs. When a claim on a NUMA
-node of the socket needs them, the claim on the socket device moves to other
-CPUs of the socket. Its containers move with it, and find the new CPUs in the
-`CLAIMED_CPUS` variable described below. Their memory stays on the nodes it
-was on.
+A claim is not bound to its CPUs. When a claim on a smaller device inside its
+device needs them, for instance a claim on a NUMA node of a socket, the claim
+moves to other CPUs of its device. If claims on larger devices hold these
+CPUs, they move out of its device first. The containers of a claim move with
+it, and find the new CPUs in the `CLAIMED_CPUS` variable described below.
+Their memory stays on the nodes it was on.
 
 ### Selecting Devices
 
-The `topology-aware.nri.io` device class matches the NUMA devices and the
-socket devices. A selector which reads an attribute that a device does not
+The `topology-aware.nri.io` device class matches the devices of every level.
+A selector which reads an attribute that a device does not
 have fails the allocation of the claim on the node, instead of skipping the
 device. A selector on `numaNode` therefore first checks the level, for
 instance
 `device.attributes["dra.cpu"].level == "numanode" && device.attributes["resource.kubernetes.io"].numaNode == 1`.
 Claims written for earlier versions of the plugin, which had NUMA devices
-only, select `numaNode` without this check, and need it now. A selector on
-`socketID` alone, such as `device.attributes["dra.cpu"].socketID == 0`,
-matches every device of the socket, and the scheduler picks a NUMA device or
-the socket device.
+only, select `numaNode` without this check, and need it now. The machine
+device has no `socketID`, so a selector on `socketID` checks the level too:
+`device.attributes["dra.cpu"].level != "machine" && device.attributes["dra.cpu"].socketID == 0`
+matches every device inside socket 0, and the scheduler picks one of them.
 
 ### Claims
 
@@ -1664,9 +1680,9 @@ why.
 Claims keep their CPUs when the plugin restarts. If the plugin restarts with a
 configuration which cannot give a claim its CPUs, for example one which
 reserves some of them, the claim moves to other CPUs of the same device, and
-its containers move with it. If the claim needs CPUs of a socket claim, the
-socket claim moves to other CPUs of its socket. If the device has too few CPUs
-left for the claim, the plugin fails to start, and the status of the
+its containers move with it. If the claim needs CPUs of a claim on a larger
+device, that claim moves to other CPUs of its device. If the device has too
+few CPUs left for the claim, the plugin fails to start, and the status of the
 configuration names the claim. Revert the configuration to start the plugin
 again.
 

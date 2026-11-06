@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.15.0-77-g09fc26f8 documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.15.0-80-gcbad3321 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=9e8c7c7b"></script>
+        <script src="../../../_static/documentation_options.js?v=03ed1b98"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -1594,23 +1594,50 @@ publishes the <code class="docutils literal notranslate"><span class="pre">pcieR
 </section>
 <section id="devices">
 <h3>Devices<a class="headerlink" href="#devices" title="Link to this heading"></a></h3>
-<p>The policy publishes one device per NUMA node, named <code class="docutils literal notranslate"><span class="pre">cpudevnuma000</span></code>,
-<code class="docutils literal notranslate"><span class="pre">cpudevnuma001</span></code> and so on, and one device per socket, named <code class="docutils literal notranslate"><span class="pre">cpudevsocket000</span></code>,
-<code class="docutils literal notranslate"><span class="pre">cpudevsocket001</span></code> and so on. A socket device offers the CPUs of all NUMA nodes
-of the socket. A socket with one NUMA node has a socket device with the same
-CPUs as its NUMA device.</p>
+<p>The policy publishes a device for each group of CPUs of the topology:</p>
+<table border="1" class="docutils">
+<thead>
+<tr>
+<th>Device</th>
+<th>Level</th>
+<th>CPUs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cpudevmachine</code></td>
+<td><code>machine</code></td>
+<td>all CPUs</td>
+</tr>
+<tr>
+<td><code>cpudevsocket000</code>, <code>cpudevsocket001</code>, ...</td>
+<td><code>socket</code></td>
+<td>the CPUs of a socket</td>
+</tr>
+<tr>
+<td><code>cpudevnuma000</code>, <code>cpudevnuma001</code>, ...</td>
+<td><code>numanode</code></td>
+<td>the CPUs of a NUMA node</td>
+</tr>
+</tbody>
+</table>
+<p>Every level is published, also when it adds no group of its own: a machine
+with one socket has a socket device with the same CPUs as its machine device,
+and a socket with one NUMA node has a NUMA device with the same CPUs as its
+socket device. So a claim written for one level works on every machine.</p>
 <p>The capacity <code class="docutils literal notranslate"><span class="pre">dra.cpu/cpu</span></code> of a device is the number of its CPUs which claims
-hold or can get: the CPUs of the node or socket, minus the reserved CPUs,
-minus the CPUs containers hold exclusively, minus the whole CPUs the shared
-containers need. The capacity of a socket device also leaves out the CPUs of
-claims on its NUMA nodes. The scheduler subtracts what claims consume of a
-device, so the CPUs of its own claims stay in its capacity. The capacity of a
-NUMA device also has the CPUs socket claims hold on the node, as many as these
-claims can move to other CPUs of the socket. The policy publishes the capacity
-again whenever it changes. A node or socket with no CPUs left for claims has
-no device until some are free again. A new capacity applies to claims
-allocated after it: claims already allocated keep their CPUs. The devices have
-these attributes:</p>
+hold or can get: the CPUs of the group, minus the reserved CPUs, minus the
+CPUs containers hold exclusively, minus the whole CPUs the shared containers
+need. The capacity of a device also leaves out the CPUs of claims on devices
+which are not larger than it, such as the claims on the NUMA nodes of a socket
+device. The scheduler subtracts what claims consume of a device, so the CPUs
+of its own claims stay in its capacity. The capacity of a device also has the
+CPUs which claims on larger devices hold in it, as many as these claims can
+move to other CPUs of their device, also by moving claims on still larger
+devices out of the way. The policy publishes the capacity again whenever it
+changes. A group with no CPUs left for claims has no device until some are
+free again. A new capacity applies to claims allocated after it: claims
+already allocated keep their CPUs. The devices have these attributes:</p>
 <table border="1" class="docutils">
 <thead>
 <tr>
@@ -1623,17 +1650,17 @@ these attributes:</p>
 <tr>
 <td><code>dra.cpu/level</code></td>
 <td>string</td>
-<td><code>numanode</code> or <code>socket</code></td>
-</tr>
-<tr>
-<td><code>resource.kubernetes.io/numaNode</code></td>
-<td>int</td>
-<td>the ID of the NUMA node, on NUMA devices only</td>
+<td><code>machine</code>, <code>socket</code> or <code>numanode</code></td>
 </tr>
 <tr>
 <td><code>dra.cpu/socketID</code></td>
 <td>int</td>
-<td>the ID of the socket</td>
+<td>the ID of the socket, on NUMA and socket devices</td>
+</tr>
+<tr>
+<td><code>resource.kubernetes.io/numaNode</code></td>
+<td>int</td>
+<td>the ID of the NUMA node, on NUMA devices</td>
 </tr>
 <tr>
 <td><code>dra.cpu/smtEnabled</code></td>
@@ -1648,10 +1675,14 @@ these attributes:</p>
 <tr>
 <td><code>resource.kubernetes.io/pcieRoot</code></td>
 <td>list of strings</td>
-<td>the PCIe roots of the socket, with <code>DRAListTypeAttributes</code> only</td>
+<td>the PCIe roots of the sockets of the CPUs, with <code>DRAListTypeAttributes</code> only</td>
 </tr>
 </tbody>
 </table>
+<p>Which IDs a device has depends only on its level, so a selector works the
+same way on every machine. A socket device has no <code class="docutils literal notranslate"><span class="pre">numaNode</span></code>, even when its
+socket has one NUMA node, and the machine device has no IDs, even on a machine
+with one socket.</p>
 <p>With sub-NUMA clustering, the kernel gives each PCIe root the CPUs of one
 NUMA node, but the root serves the whole socket. So every device of a socket
 lists every PCIe root of the socket. A claim which needs CPUs of one NUMA node
@@ -1659,27 +1690,30 @@ selects the node with <code class="docutils literal notranslate"><span class="pr
 <p>A request consumes a number of whole CPUs of one device. A request without an
 amount gets one CPU, not the whole device. The policy picks the CPUs by
 topology: two CPUs are the two threads of one core when possible. A request
-on a socket device gets CPUs of one NUMA node when a node has enough free
-CPUs, otherwise CPUs of several nodes of the socket.</p>
-<p>A claim on a socket device is not bound to its CPUs. When a claim on a NUMA
-node of the socket needs them, the claim on the socket device moves to other
-CPUs of the socket. Its containers move with it, and find the new CPUs in the
-<code class="docutils literal notranslate"><span class="pre">CLAIMED_CPUS</span></code> variable described below. Their memory stays on the nodes it
-was on.</p>
+gets CPUs of the smallest group inside its device which has enough free CPUs.
+For instance, a request on the machine device gets CPUs of one NUMA node when
+a node has enough free CPUs, otherwise CPUs of one socket, otherwise CPUs of
+several sockets.</p>
+<p>A claim is not bound to its CPUs. When a claim on a smaller device inside its
+device needs them, for instance a claim on a NUMA node of a socket, the claim
+moves to other CPUs of its device. If claims on larger devices hold these
+CPUs, they move out of its device first. The containers of a claim move with
+it, and find the new CPUs in the <code class="docutils literal notranslate"><span class="pre">CLAIMED_CPUS</span></code> variable described below.
+Their memory stays on the nodes it was on.</p>
 </section>
 <section id="selecting-devices">
 <h3>Selecting Devices<a class="headerlink" href="#selecting-devices" title="Link to this heading"></a></h3>
-<p>The <code class="docutils literal notranslate"><span class="pre">topology-aware.nri.io</span></code> device class matches the NUMA devices and the
-socket devices. A selector which reads an attribute that a device does not
+<p>The <code class="docutils literal notranslate"><span class="pre">topology-aware.nri.io</span></code> device class matches the devices of every level.
+A selector which reads an attribute that a device does not
 have fails the allocation of the claim on the node, instead of skipping the
 device. A selector on <code class="docutils literal notranslate"><span class="pre">numaNode</span></code> therefore first checks the level, for
 instance
 <code class="docutils literal notranslate"><span class="pre">device.attributes[&quot;dra.cpu&quot;].level</span> <span class="pre">==</span> <span class="pre">&quot;numanode&quot;</span> <span class="pre">&amp;&amp;</span> <span class="pre">device.attributes[&quot;resource.kubernetes.io&quot;].numaNode</span> <span class="pre">==</span> <span class="pre">1</span></code>.
 Claims written for earlier versions of the plugin, which had NUMA devices
-only, select <code class="docutils literal notranslate"><span class="pre">numaNode</span></code> without this check, and need it now. A selector on
-<code class="docutils literal notranslate"><span class="pre">socketID</span></code> alone, such as <code class="docutils literal notranslate"><span class="pre">device.attributes[&quot;dra.cpu&quot;].socketID</span> <span class="pre">==</span> <span class="pre">0</span></code>,
-matches every device of the socket, and the scheduler picks a NUMA device or
-the socket device.</p>
+only, select <code class="docutils literal notranslate"><span class="pre">numaNode</span></code> without this check, and need it now. The machine
+device has no <code class="docutils literal notranslate"><span class="pre">socketID</span></code>, so a selector on <code class="docutils literal notranslate"><span class="pre">socketID</span></code> checks the level too:
+<code class="docutils literal notranslate"><span class="pre">device.attributes[&quot;dra.cpu&quot;].level</span> <span class="pre">!=</span> <span class="pre">&quot;machine&quot;</span> <span class="pre">&amp;&amp;</span> <span class="pre">device.attributes[&quot;dra.cpu&quot;].socketID</span> <span class="pre">==</span> <span class="pre">0</span></code>
+matches every device inside socket 0, and the scheduler picks one of them.</p>
 </section>
 <section id="claims">
 <h3>Claims<a class="headerlink" href="#claims" title="Link to this heading"></a></h3>
@@ -1824,9 +1858,9 @@ why.</p>
 <p>Claims keep their CPUs when the plugin restarts. If the plugin restarts with a
 configuration which cannot give a claim its CPUs, for example one which
 reserves some of them, the claim moves to other CPUs of the same device, and
-its containers move with it. If the claim needs CPUs of a socket claim, the
-socket claim moves to other CPUs of its socket. If the device has too few CPUs
-left for the claim, the plugin fails to start, and the status of the
+its containers move with it. If the claim needs CPUs of a claim on a larger
+device, that claim moves to other CPUs of its device. If the device has too
+few CPUs left for the claim, the plugin fails to start, and the status of the
 configuration names the claim. Revert the configuration to start the plugin
 again.</p>
 <p>If there is no configuration to revert to, drain the node, remove the cache
