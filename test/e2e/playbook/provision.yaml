@@ -193,25 +193,29 @@
         content: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/ /"
         dest: /etc/apt/sources.list.d/kubernetes.list
         mode: '0644'
-      when: ansible_facts['distribution'] == "Ubuntu"
+      when: ansible_facts['distribution'] == "Ubuntu" and
+            (manage_k8s | default(true) | bool)
 
     - name: Download Kubernetes APT key
       ansible.builtin.get_url:
         url: https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/Release.key
         dest: /tmp/kubernetes-release.key
         mode: '0644'
-      when: ansible_facts['distribution'] == "Ubuntu"
+      when: ansible_facts['distribution'] == "Ubuntu" and
+            (manage_k8s | default(true) | bool)
 
     - name: Convert the Kubernetes APT key to keyring format
       ansible.builtin.command:
         cmd: gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg /tmp/kubernetes-release.key
-      when: ansible_facts['distribution'] == "Ubuntu"
+      when: ansible_facts['distribution'] == "Ubuntu" and
+            (manage_k8s | default(true) | bool)
 
     - name: Clean up temporary key file
       ansible.builtin.file:
         path: /tmp/kubernetes-release.key
         state: absent
-      when: ansible_facts['distribution'] == "Ubuntu"
+      when: ansible_facts['distribution'] == "Ubuntu" and
+            (manage_k8s | default(true) | bool)
 
     - name: Disable ssh daemon per source penalties
       block:
@@ -242,10 +246,12 @@
         gpgkey: "https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/rpm/repodata/repomd.xml.key"
         state: present
         name: kubernetes
-      when: ansible_facts['distribution'] == "Fedora"
+      when: ansible_facts['distribution'] == "Fedora" and
+            (manage_k8s | default(true) | bool)
 
     # Install Helm from a release tarball to /usr/local.
     - name: Install Helm binaries from release tarball
+      when: (manage_helm | default(true) | bool)
       block:
         - name: Check for cached Helm release tarball
           ansible.builtin.stat:
@@ -290,12 +296,18 @@
           - runc
           - jq
           - python3-pip
-          - kubelet
-          - kubeadm
-          - kubectl
           - systemd-container
           - rsync
         state: present
+
+    - name: Install Kubernetes packages
+      ansible.builtin.package:
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
+      when: (manage_k8s | default(true) | bool)
 
     - name: Install apt packages
       ansible.builtin.apt:
@@ -583,7 +595,7 @@
             replace: '/usr/libexec/cni'
 
     - name: Configure bridge CNI plugin
-      when: cni_plugin == "bridge"
+      when: cni_plugin == "bridge" and (manage_k8s | default(true) | bool)
       block:
         - name: Copy CNI bridge plugin configuration
           ansible.builtin.copy:
@@ -614,6 +626,7 @@
       when: is_crio and (manage_runtime | default(true) | bool)
 
     - name: Load modules the k8s cluster needs
+      when: (manage_k8s | default(true) | bool)
       block:
         - name: Add modules for k8s cluster
           ansible.builtin.copy:
@@ -628,6 +641,7 @@
           ansible.builtin.shell: systemctl restart systemd-modules-load
 
     - name: Set sysctl settings the k8s cluster needs
+      when: (manage_k8s | default(true) | bool)
       block:
         - name: Add sysctl settings for k8s cluster
           ansible.builtin.copy:
@@ -658,12 +672,14 @@
           changed_when: false
 
     - name: Restart kubelet
+      when: (manage_k8s | default(true) | bool)
       ansible.builtin.service:
         name: kubelet
         daemon_reload: true
         state: restarted
 
     - name: Write the kubeadm configuration
+      when: (manage_k8s | default(true) | bool)
       ansible.builtin.copy:
         dest: /root/kubeadm-config.yaml
         content: |
@@ -709,6 +725,7 @@
     # have both runtimes installed, and kubeadm refuses to pick between two
     # endpoints although the run has already picked one.
     - name: Initialize the Kubernetes cluster using kubeadm
+      when: (manage_k8s | default(true) | bool)
       ansible.builtin.command:
         cmd: kubeadm init --config /root/kubeadm-config.yaml
 
@@ -720,6 +737,7 @@
     # copy it leaves behind is for whoever owns the host, and is numbered so
     # that repeated runs do not overwrite the first one taken.
     - name: Setup kubeconfig for the login user
+      when: (manage_k8s | default(true) | bool)
       ansible.builtin.command: "{{ item }}"
       # The home directory is quoted in each: these run without a shell, and
       # ansible splits the string, so a passwd home with a space in it would
@@ -736,13 +754,14 @@
     # from the task above: a second copy would only push the config that one
     # wrote into a backup of its own.
     - name: Setup kubeconfig for root
-      when: login_user_home != "/root"
+      when: login_user_home != "/root" and (manage_k8s | default(true) | bool)
       ansible.builtin.command: "{{ item }}"
       with_items:
         - mkdir -p /root/.kube
         - cp --backup=numbered /etc/kubernetes/admin.conf /root/.kube/config
 
     - name: Install single-node cluster
+      when: (manage_k8s | default(true) | bool)
       become: false
       ansible.builtin.shell: "{{ item }}"
       with_items:
@@ -750,7 +769,7 @@
         - kubectl taint nodes --all node-role.kubernetes.io/master- || true
 
     - name: Install cilium CNI plugin
-      when: cni_plugin == "cilium"
+      when: cni_plugin == "cilium" and (manage_k8s | default(true) | bool)
       block:
         - name: "Use irregular download path if cilium release is latest"
           when: cni_release == "latest"
@@ -775,11 +794,13 @@
             - cilium status --wait
 
     - name: Generate join command
+      when: (manage_k8s | default(true) | bool)
       ansible.builtin.command:
         cmd: kubeadm token create --print-join-command
       register: join_command
 
     - name: Copy join command to local file
+      when: (manage_k8s | default(true) | bool)
       delegate_to: localhost
       become: false
       ansible.builtin.copy:
@@ -788,6 +809,7 @@
         mode: '0644'
 
     - name: Enable kubelet systemd service
+      when: (manage_k8s | default(true) | bool)
       ansible.builtin.systemd:
         name: kubelet
         enabled: true
