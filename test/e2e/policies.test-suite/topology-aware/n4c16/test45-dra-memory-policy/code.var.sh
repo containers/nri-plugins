@@ -11,9 +11,7 @@
 e2eish=0
 
 cleanup() {
-    vm-command "kubectl delete pods --all --now --wait" || :
-    vm-command "kubectl delete resourceclaimtemplates --all --now" || :
-    helm-terminate || :
+    cleanup-test --helm --claims
 }
 
 slice() {

@@ -4,10 +4,7 @@
 # longer allows them.
 
 cleanup() {
-    delete-pods --all
-    vm-command "kubectl delete resourceclaimtemplates --all --now" || :
-    helm-terminate || :
-    remove-policy-cache
+    cleanup-test --helm --cache --claims
 }
 
 device() {

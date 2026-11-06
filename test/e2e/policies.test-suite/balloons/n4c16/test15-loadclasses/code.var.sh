@@ -4,12 +4,6 @@
 
 relaunch-policy balloons "$TEST_DIR/balloons-loadclasses.cfg"
 
-cleanup() {
-    delete-pods --all
-    helm-terminate
-    remove-policy-cache
-}
-
 # Policy's allocatorTopologyBalancing is false, so CPU allocations are
 # tightly packed rather than evenly spread accross the system.
 
@@ -87,4 +81,4 @@ POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: l2htload" CONTCOUNT=1 c
 verify 'len(cpus["pod7c0"]) == 4' \
        'len(cores["pod7c0"]) == 4'
 
-cleanup
+cleanup-test --helm --cache

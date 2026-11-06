@@ -1,8 +1,3 @@
-cleanup() {
-    delete-pods --all
-    delete-namespaces highprio lowprio
-}
-
 SCHEDULING_CLASSES="[
     { name: realtime, policy: fifo,  priority: 42 },
     { name: highprio, policy: fifo,  priority: 10 },
@@ -14,7 +9,11 @@ SCHEDULING_CLASSES="[
 NAMESPACE_SCHEDULING_CLASSES="{ highprio: highprio, lowprio: lowprio }"
 PODQOS_SCHEDULING_CLASSES="{ BestEffort: lowprio, Burstable: default, Guaranteed: highprio }"
 
-cleanup
+cleanup-test
+# Make the namespaces of the later phases now, so that create-namespaces
+# empties what a failed run left in them before the first phase measures the
+# CPUs of the node.
+create-namespaces highprio lowprio
 helm-terminate
 
 helm_config=$(COLOCATE_PODS=false \
@@ -83,7 +82,6 @@ delete-pods --all
 #
 
 # First in a namespace with default highprio scheduling class.
-create-namespaces highprio
 ANN0="scheduling-class.resource-policy.nri.io/container.pod4c0: lowprio" \
         CONTCOUNT=2 namespace=highprio create burstable
 
@@ -94,7 +92,6 @@ verify 'len(cpus["pod4c1"]) != 1'
 expected_policy=$SCHED_FIFO expected_prio=$((99 - 10)) verify-sched pod4c1
 
 # Then in a namespace with default lowprio scheduling class.
-create-namespaces lowprio
 ANN0="scheduling-class.resource-policy.nri.io/container.pod5c0: highprio" \
         CONTCOUNT=2 namespace=lowprio create besteffort
 
@@ -178,4 +175,4 @@ vm-command "chrt -p \$(pgrep -f 'echo pod10c0')" ||
 grep -q 'SCHED_OTHER|SCHED_RESET_ON_FORK' <<< "$COMMAND_OUTPUT" ||
     error "the reset-on-fork flag of scheduling class onfork was not set on pod10c0"
 
-cleanup
+cleanup-test

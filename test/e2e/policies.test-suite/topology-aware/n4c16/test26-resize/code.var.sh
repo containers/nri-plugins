@@ -9,12 +9,7 @@
 
 plugin_log_filter='UpdateContainer|updating .reallocating. container'
 
-cleanup() {
-    delete-pods --all
-    helm-terminate || :
-}
-
-cleanup
+cleanup-test --helm
 helm_config=$(instantiate helm-config.yaml) helm-launch topology-aware
 
 CONTCOUNT=1 CPU=1 MEM=100M create guaranteed
@@ -46,4 +41,4 @@ wait-cpuset-change pod0 pod0c0 "$cpus_grown" \
 report allowed
 verify 'len(cpus["pod0c0"]) == 1'
 
-cleanup
+cleanup-test --helm

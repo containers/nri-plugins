@@ -10,10 +10,7 @@
 # CPUs 0-7, socket 1 CPUs 8-15.
 
 cleanup() {
-    vm-command "kubectl delete pods --all --now --wait" || :
-    vm-command "kubectl delete resourceclaimtemplates --all --now" || :
-    helm-terminate || :
-    remove-policy-cache
+    cleanup-test --helm --cache --claims
 }
 
 slice() {

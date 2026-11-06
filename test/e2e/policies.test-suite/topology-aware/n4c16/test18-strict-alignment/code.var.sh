@@ -1,10 +1,9 @@
-
-cleanup() {
-    delete-pods --all
-    delete-namespaces highprio lowprio
-}
-
-cleanup
+cleanup-test
+# test17 puts pod4 in highprio and pod5 in lowprio, and leaves them running
+# if it fails. "report allowed" finds the processes of a pod by name whatever
+# namespace it is in, so they would collide with this test's own pod4 and
+# pod5, and their CPUs would be missing from the pools this test measures.
+delete-namespaces highprio lowprio
 helm-terminate
 helm_config=$(instantiate helm-config.yaml) helm-launch topology-aware
 

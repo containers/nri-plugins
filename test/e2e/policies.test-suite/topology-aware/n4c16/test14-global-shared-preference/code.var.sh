@@ -1,8 +1,3 @@
-cleanup-test-pods() {
-    # Make sure all the pods in default namespace are cleared so we get a fresh start
-    delete-pods --all
-}
-
 # restart with a global shared CPU allocation preference
 PREFER_SHARED_CPUS=true helm_config=$(instantiate helm-config.yaml) helm-launch topology-aware
 
@@ -17,7 +12,7 @@ report allowed
 verify `# pod1c0 has shared CPUs` \
        "len(cpus['pod1c0']) > 1"
 
-cleanup-test-pods
+cleanup-test
 
 # verify that a container can be annotated to opt out from shared allocation
 ANNOTATIONS=('prefer-shared-cpus.resource-policy.nri.io/pod: "false"')
@@ -33,6 +28,6 @@ report allowed
 verify `# pod3c0 has a single exclusive CPU allocated` \
        "len(cpus['pod3c0']) == 2"
 
-cleanup-test-pods
+cleanup-test
 
 helm-terminate

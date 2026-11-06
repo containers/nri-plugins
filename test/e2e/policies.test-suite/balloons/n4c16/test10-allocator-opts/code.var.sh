@@ -1,8 +1,4 @@
-cleanup() {
-    delete-pods --all
-}
-
-cleanup
+cleanup-test
 
 # Launch cri-resmgr with wanted metrics update interval and a
 # configuration that opens the instrumentation http server.
@@ -67,5 +63,4 @@ verify '"node2" not in nodes["pod5c0"]' \
        'len(cores["pod5c0"]) == 2' \
        'len(cpus["pod5c0"]) == 2'
 
-cleanup
-helm-terminate
+cleanup-test --helm

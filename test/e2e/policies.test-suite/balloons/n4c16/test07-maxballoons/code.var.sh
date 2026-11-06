@@ -1,8 +1,4 @@
-cleanup() {
-    delete-pods --all
-}
-
-cleanup
+cleanup-test
 
 relaunch-policy balloons "${TEST_DIR}/balloons-maxballoons.cfg"
 
@@ -59,7 +55,7 @@ if ! grep -q 'no suitable balloon instance available' <<< "$COMMAND_OUTPUT"; the
 fi
 delete-pods pod5
 
-cleanup
+cleanup-test
 
 # Try starting nri-resource-policy with a configuration where MinBalloons and
 # MaxBalloons of the same balloon type contradict.

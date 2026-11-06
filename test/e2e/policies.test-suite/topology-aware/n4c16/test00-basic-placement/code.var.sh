@@ -1,7 +1,7 @@
-# Make sure all the pods in default namespace are cleared so we get a fresh start
-delete-pods --all
+cleanup-test
 
-# Remove also any leftover test pods from kube-system
+# Remove also any leftover test pods from kube-system, which cleanup-test
+# leaves alone.
 delete-pods -n kube-system pod0 pod1 pod2 pod3 pod4 pod5
 
 # Cleanup kernel commandline, otherwise isolcpus will affect CPU
@@ -99,9 +99,7 @@ verify \
     'cpus["pod7c0"] == cpus["pod5c0"]' \
     'cpus["pod7c1"] == cpus["pod5c0"]'
 
-delete-namespaces test-ns
-
-# Restore default test configuration, restart nri-resource-policy.
-helm-terminate
+# Leave the node without the pods, the namespace or the plugin of the test.
+cleanup-test --helm
 
 echo $?

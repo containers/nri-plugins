@@ -5,11 +5,14 @@ relaunch-policy balloons "${TEST_DIR}/../../helm-config.yaml"
 
 cleanup() {
     delete-pods -n kube-system pod0
-    delete-pods --all
-    delete-namespaces three
+    cleanup-test
 }
 
 cleanup
+# Make the namespace of the last phase now, so that create-namespaces empties
+# what a failed run left in it before the first phase measures the CPUs of
+# the node.
+create-namespaces three
 
 # pod0: run on reserved CPUs
 CPUREQ="" RESERVED_CPU=1 namespace=kube-system CONTCOUNT=2 create balloons-busybox
@@ -36,7 +39,6 @@ verify 'len(cpus["pod2c0"]) == 2' \
 # pod3: fits exactly on a single three-cpu instance. No need to create
 # new balloon even if spreading pods is preferred.
 CPUREQ="1500m" MEMREQ="100M" CPULIM="1500m" MEMLIM="100M"
-create-namespaces three
 namespace="three" CONTCOUNT=2 create balloons-busybox
 report allowed
 verify 'cpus["pod3c0"] == cpus["pod3c1"]' \

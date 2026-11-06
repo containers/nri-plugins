@@ -3,12 +3,7 @@
 # - cpu.preserve
 # - memory.preserve
 
-cleanup() {
-    delete-pods --all
-    helm-terminate
-}
-
-cleanup
+cleanup-test --helm
 
 AVAILABLE_CPU="cpuset:8-11"
 RESERVED_CPU="cpuset:10-11"
@@ -65,4 +60,4 @@ report allowed
 
 verify 'cpus["pod4c0"] == {"cpu10", "cpu11"}'
 
-cleanup
+cleanup-test --helm

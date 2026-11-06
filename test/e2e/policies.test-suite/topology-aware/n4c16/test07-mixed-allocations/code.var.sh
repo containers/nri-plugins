@@ -1,15 +1,14 @@
 helm-terminate
 helm_config=$(instantiate helm-config.yaml) helm-launch topology-aware
 
-cleanup-test-pods() {
-    # Make sure all the pods in default namespace are cleared so we get a fresh start
-    delete-pods --all
-
-    # Remove also any leftover test pods from kube-system
+cleanup() {
+    # The test places some of its pods in kube-system, which cleanup-test
+    # leaves alone.
     delete-pods -n kube-system pod0 pod1 pod2 pod3 pod4 pod5
+    cleanup-test
 }
 
-cleanup-test-pods
+cleanup
 
 # Place pod0c0 and pod0c1 to shared pools on separate nodes.
 CONTCOUNT=2 CPU=500m create guaranteed
@@ -125,6 +124,6 @@ verify `# every container is placed on a single node (no socket, no root)` \
        "len(cpus['pod5c0'] - set.union(*[cpus[c] for c in cpus if c != 'pod5c0'])) == 0" \
        "len(cpus['pod5c1'] - set.union(*[cpus[c] for c in cpus if c != 'pod5c1'])) == 0"
 
-cleanup-test-pods
+cleanup
 
 helm-terminate

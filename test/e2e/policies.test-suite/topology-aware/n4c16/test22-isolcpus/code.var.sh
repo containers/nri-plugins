@@ -4,8 +4,7 @@
 #
 
 cleanup() {
-    delete-pods --all
-    helm-terminate || :
+    cleanup-test --helm
     clear-isolcpus
 }
 

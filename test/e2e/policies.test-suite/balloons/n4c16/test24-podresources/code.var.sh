@@ -5,7 +5,7 @@ relaunch-policy balloons "$TEST_DIR/balloons-podresources.cfg"
 
 cleanup() {
     stop-fake-device-plugins
-    delete-pods --all
+    cleanup-test
 }
 
 # verify-podres-locality RESOURCE CONTAINER...

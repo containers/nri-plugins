@@ -15,8 +15,7 @@ e2eish=0
 
 cleanup() {
     vm-command "touch churn.stop; pkill -f churn.sh; rm -f churn.stop" || :
-    delete-pods --all
-    helm-terminate || :
+    cleanup-test --helm
 }
 
 plugin-restarts() {

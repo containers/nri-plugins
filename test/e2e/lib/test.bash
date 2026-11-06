@@ -1061,13 +1061,23 @@ delete-pods() { # script API
     vm-command "kubectl delete pods $ns $* --now --ignore-not-found=true" || :
 }
 
+# The namespaces create-namespaces has made, for cleanup-test to delete again.
+# Every test runs in a shell of its own, so this never carries over to the next.
+created_namespaces=()
+
 create-namespaces() { # script API
     # Usage: create-namespaces NAMESPACE...
     #
-    # Create namespaces unless they already exist. Never fails.
+    # Leave each namespace existing and empty: create it unless it is already
+    # there, and delete any pods left in it either way. Never fails.
+    #
+    # Remember/record created namespaces, so cleanup-test can delete them
+    # at will.
     local ns
     for ns in "$@"; do
         vm-command "kubectl get namespace $ns > /dev/null 2>&1 || kubectl create namespace $ns" || :
+        delete-pods -n "$ns" --all
+        created_namespaces+=("$ns")
     done
 }
 
@@ -1081,6 +1091,72 @@ delete-namespaces() { # script API
         vm-command "kubectl delete pods -n $ns --all --now --ignore-not-found=true
                     kubectl delete namespace $ns --now --ignore-not-found=true" || :
     done
+}
+
+cleanup-test() { # script API
+    # Usage: cleanup-test [--helm] [--cache] [--claims] [--preserve-namespaces NS[,NS...]]
+    #
+    # Delete all pods in the default namespace, and the namespaces which
+    # create-namespaces made, so that a test both starts from and leaves
+    # behind a clean node. With --helm, terminate the helm release, too. With
+    # --cache, also remove the policy cache. With --claims, delete the
+    # resource claim templates of the node as well.
+    #
+    # --cache implies --helm: a running plugin writes its cache back out.
+    #
+    # --preserve-namespaces keeps the listed namespaces alive, for a test
+    # which cleans up between its phases but still needs them. They stay
+    # remembered, so a later call without the option still deletes them.
+    #
+    # Never fails, so this is safe to call both before and after a test.
+    # Tests with more to clean up than this call it and add the rest.
+    local helm="" cache="" claims="" preserve="" ns keep=() drop=()
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --helm)
+                helm=1
+                ;;
+            --cache)
+                cache=1
+                helm=1
+                ;;
+            --claims)
+                claims=1
+                ;;
+            --preserve-namespaces)
+                preserve=",$2,"
+                shift
+                ;;
+            *)
+                error "cleanup-test: unknown option '$1'"
+                ;;
+        esac
+        shift
+    done
+    delete-pods --all
+    if [ -n "$claims" ]; then
+        vm-command "kubectl delete resourceclaimtemplates --all --now" || :
+    fi
+    # Delete the namespaces while the plugin still runs, so that it sees their
+    # pods go the same way as the ones above.
+    for ns in "${created_namespaces[@]}"; do
+        if [ -n "$preserve" ] && [[ "$preserve" == *",$ns,"* ]]; then
+            keep+=("$ns")
+        else
+            drop+=("$ns")
+        fi
+    done
+    if [ "${#drop[@]}" -gt 0 ]; then
+        delete-namespaces "${drop[@]}"
+    fi
+    created_namespaces=("${keep[@]}")
+    if [ -n "$helm" ]; then
+        helm-terminate || :
+    fi
+    if [ -n "$cache" ]; then
+        remove-policy-cache
+    fi
+    return 0
 }
 
 remove-policy-cache() { # script API

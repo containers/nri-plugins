@@ -1,9 +1,4 @@
-cleanup() {
-    delete-pods --all
-    helm-terminate
-}
-
-cleanup
+cleanup-test --helm
 
 DEBUG_LOGGERS="irq"
 
@@ -180,7 +175,7 @@ ANN0=$ANN0 \
 
 verify-container-error $pod ${pod}c0 "invalid IRQ affinity mode .*xyzzy.* (valid modes: .*)"
 
-cleanup
+cleanup-test --helm
 unset ANN0
 
 #
@@ -206,7 +201,7 @@ ANN0=$ANN0 \
 
 verify-container-error $pod ${pod}c0 "denied interrupt: .* denied but matched by user pattern .*"
 
-cleanup
+cleanup-test --helm
 unset ANN0
 
 #
@@ -300,7 +295,7 @@ unset ANN0 ANN1
 # Test claim-first mode, and a container with no exclusive CPUs.
 #
 
-cleanup
+cleanup-test --helm
 unset CONTROLLABLE_INTERRUPTS
 
 helm_config=$(COLOCATE_PODS=false \
@@ -355,4 +350,4 @@ verify-irq-cpus ".*rtc0.*" $ALLCPUS
 delete-pods $pod
 unset ANN0
 
-cleanup
+cleanup-test --helm
