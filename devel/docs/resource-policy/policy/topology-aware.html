@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Topology-Aware Policy &mdash; NRI Plugins v0.15.0-71-g33ec9806 documentation</title>
+  <title>Topology-Aware Policy &mdash; NRI Plugins v0.15.0-77-g09fc26f8 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=19f00094" />
 
@@ -15,7 +15,7 @@
   
         <script src="../../../_static/jquery.js?v=5d32c60e"></script>
         <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../../_static/documentation_options.js?v=24a161cd"></script>
+        <script src="../../../_static/documentation_options.js?v=9e8c7c7b"></script>
         <script src="../../../_static/doctools.js?v=9a2dae69"></script>
         <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../../_static/js/theme.js"></script>
@@ -1573,8 +1573,8 @@ one needs to give just the names of the containers, like in the example below.</
 (DRA) claims. With DRA enabled (<code class="docutils literal notranslate"><span class="pre">config.dra.enabled:</span> <span class="pre">true</span></code> in the Helm
 chart), the plugin registers the DRA driver <code class="docutils literal notranslate"><span class="pre">topology-aware.nri.io</span></code>, and the
 chart adds a <code class="docutils literal notranslate"><span class="pre">DeviceClass</span></code> of the same name. A pod claims CPUs of a NUMA node
-with a <code class="docutils literal notranslate"><span class="pre">ResourceClaim</span></code>. The scheduler picks a node with enough capacity, and
-the policy runs the containers of the pod on the claimed CPUs.</p>
+or of a socket with a <code class="docutils literal notranslate"><span class="pre">ResourceClaim</span></code>. The scheduler picks a node with enough
+capacity, and the policy runs the containers of the pod on the claimed CPUs.</p>
 <section id="requirements">
 <h3>Requirements<a class="headerlink" href="#requirements" title="Link to this heading"></a></h3>
 <ul class="simple">
@@ -1586,7 +1586,7 @@ can be prepared.</p></li>
 the scheduler counts claimed CPUs against the <code class="docutils literal notranslate"><span class="pre">cpu</span></code> resource of the node, so
 claims and CPU requests together cannot overcommit the node. Without it,
 allocation works, but the scheduler does not count claimed CPUs against the
-<code class="docutils literal notranslate"><span class="pre">cpu</span></code> of the node.</p></li>
+<code class="docutils literal notranslate"><span class="pre">cpu</span></code> of the node. With the gate, a claim cannot be shared by several pods.</p></li>
 <li><p>The <code class="docutils literal notranslate"><span class="pre">DRAListTypeAttributes</span></code> feature gate (alpha) is optional. The plugin
 checks at start whether the API server accepts list attributes, and
 publishes the <code class="docutils literal notranslate"><span class="pre">pcieRoot</span></code> attribute only then.</p></li>
@@ -1595,10 +1595,22 @@ publishes the <code class="docutils literal notranslate"><span class="pre">pcieR
 <section id="devices">
 <h3>Devices<a class="headerlink" href="#devices" title="Link to this heading"></a></h3>
 <p>The policy publishes one device per NUMA node, named <code class="docutils literal notranslate"><span class="pre">cpudevnuma000</span></code>,
-<code class="docutils literal notranslate"><span class="pre">cpudevnuma001</span></code> and so on. The capacity <code class="docutils literal notranslate"><span class="pre">dra.cpu/cpu</span></code> of a device is the
-number of CPUs of the node, excluding the reserved CPUs. The capacity does not
-change when containers or claims use the CPUs. The devices have these
-attributes:</p>
+<code class="docutils literal notranslate"><span class="pre">cpudevnuma001</span></code> and so on, and one device per socket, named <code class="docutils literal notranslate"><span class="pre">cpudevsocket000</span></code>,
+<code class="docutils literal notranslate"><span class="pre">cpudevsocket001</span></code> and so on. A socket device offers the CPUs of all NUMA nodes
+of the socket. A socket with one NUMA node has a socket device with the same
+CPUs as its NUMA device.</p>
+<p>The capacity <code class="docutils literal notranslate"><span class="pre">dra.cpu/cpu</span></code> of a device is the number of its CPUs which claims
+hold or can get: the CPUs of the node or socket, minus the reserved CPUs,
+minus the CPUs containers hold exclusively, minus the whole CPUs the shared
+containers need. The capacity of a socket device also leaves out the CPUs of
+claims on its NUMA nodes. The scheduler subtracts what claims consume of a
+device, so the CPUs of its own claims stay in its capacity. The capacity of a
+NUMA device also has the CPUs socket claims hold on the node, as many as these
+claims can move to other CPUs of the socket. The policy publishes the capacity
+again whenever it changes. A node or socket with no CPUs left for claims has
+no device until some are free again. A new capacity applies to claims
+allocated after it: claims already allocated keep their CPUs. The devices have
+these attributes:</p>
 <table border="1" class="docutils">
 <thead>
 <tr>
@@ -1609,19 +1621,29 @@ attributes:</p>
 </thead>
 <tbody>
 <tr>
+<td><code>dra.cpu/level</code></td>
+<td>string</td>
+<td><code>numanode</code> or <code>socket</code></td>
+</tr>
+<tr>
 <td><code>resource.kubernetes.io/numaNode</code></td>
 <td>int</td>
-<td>the ID of the NUMA node</td>
+<td>the ID of the NUMA node, on NUMA devices only</td>
 </tr>
 <tr>
 <td><code>dra.cpu/socketID</code></td>
 <td>int</td>
-<td>the ID of the socket the node belongs to</td>
+<td>the ID of the socket</td>
 </tr>
 <tr>
 <td><code>dra.cpu/smtEnabled</code></td>
 <td>bool</td>
 <td>whether the CPUs have hyperthreading enabled</td>
+</tr>
+<tr>
+<td><code>dra.cpu/numCPUs</code></td>
+<td>int</td>
+<td>the number of CPUs of the device, without the reserved CPUs</td>
 </tr>
 <tr>
 <td><code>resource.kubernetes.io/pcieRoot</code></td>
@@ -1630,14 +1652,40 @@ attributes:</p>
 </tr>
 </tbody>
 </table>
+<p>With sub-NUMA clustering, the kernel gives each PCIe root the CPUs of one
+NUMA node, but the root serves the whole socket. So every device of a socket
+lists every PCIe root of the socket. A claim which needs CPUs of one NUMA node
+selects the node with <code class="docutils literal notranslate"><span class="pre">numaNode</span></code> as well.</p>
 <p>A request consumes a number of whole CPUs of one device. A request without an
-amount gets one CPU. The policy picks the CPUs by topology: two CPUs are the
-two threads of one core when possible.</p>
+amount gets one CPU, not the whole device. The policy picks the CPUs by
+topology: two CPUs are the two threads of one core when possible. A request
+on a socket device gets CPUs of one NUMA node when a node has enough free
+CPUs, otherwise CPUs of several nodes of the socket.</p>
+<p>A claim on a socket device is not bound to its CPUs. When a claim on a NUMA
+node of the socket needs them, the claim on the socket device moves to other
+CPUs of the socket. Its containers move with it, and find the new CPUs in the
+<code class="docutils literal notranslate"><span class="pre">CLAIMED_CPUS</span></code> variable described below. Their memory stays on the nodes it
+was on.</p>
+</section>
+<section id="selecting-devices">
+<h3>Selecting Devices<a class="headerlink" href="#selecting-devices" title="Link to this heading"></a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">topology-aware.nri.io</span></code> device class matches the NUMA devices and the
+socket devices. A selector which reads an attribute that a device does not
+have fails the allocation of the claim on the node, instead of skipping the
+device. A selector on <code class="docutils literal notranslate"><span class="pre">numaNode</span></code> therefore first checks the level, for
+instance
+<code class="docutils literal notranslate"><span class="pre">device.attributes[&quot;dra.cpu&quot;].level</span> <span class="pre">==</span> <span class="pre">&quot;numanode&quot;</span> <span class="pre">&amp;&amp;</span> <span class="pre">device.attributes[&quot;resource.kubernetes.io&quot;].numaNode</span> <span class="pre">==</span> <span class="pre">1</span></code>.
+Claims written for earlier versions of the plugin, which had NUMA devices
+only, select <code class="docutils literal notranslate"><span class="pre">numaNode</span></code> without this check, and need it now. A selector on
+<code class="docutils literal notranslate"><span class="pre">socketID</span></code> alone, such as <code class="docutils literal notranslate"><span class="pre">device.attributes[&quot;dra.cpu&quot;].socketID</span> <span class="pre">==</span> <span class="pre">0</span></code>,
+matches every device of the socket, and the scheduler picks a NUMA device or
+the socket device.</p>
 </section>
 <section id="claims">
 <h3>Claims<a class="headerlink" href="#claims" title="Link to this heading"></a></h3>
-<p>A claim selects a NUMA node with its <code class="docutils literal notranslate"><span class="pre">numaNode</span></code> attribute, or leaves the
-choice to the scheduler. This claim asks for three CPUs of NUMA node 1:</p>
+<p>A claim selects a NUMA node with its <code class="docutils literal notranslate"><span class="pre">numaNode</span></code> attribute, a socket with its
+<code class="docutils literal notranslate"><span class="pre">socketID</span></code> attribute, or leaves the choice to the scheduler. This claim asks
+for three CPUs of NUMA node 1:</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">resource.k8s.io/v1</span>
 <span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ResourceClaimTemplate</span>
 <span class="nt">metadata</span><span class="p">:</span>
@@ -1651,16 +1699,41 @@ choice to the scheduler. This claim asks for three CPUs of NUMA node 1:</p>
 <span class="w">          </span><span class="nt">deviceClassName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">topology-aware.nri.io</span>
 <span class="w">          </span><span class="nt">selectors</span><span class="p">:</span>
 <span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">cel</span><span class="p">:</span>
-<span class="w">              </span><span class="nt">expression</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">device.attributes[&quot;resource.kubernetes.io&quot;].numaNode == 1</span>
+<span class="w">              </span><span class="nt">expression</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">&gt;-</span>
+<span class="w">                </span><span class="no">device.attributes[&quot;dra.cpu&quot;].level == &quot;numanode&quot; &amp;&amp;</span>
+<span class="w">                </span><span class="no">device.attributes[&quot;resource.kubernetes.io&quot;].numaNode == 1</span>
 <span class="w">          </span><span class="nt">capacity</span><span class="p">:</span>
 <span class="w">            </span><span class="nt">requests</span><span class="p">:</span>
 <span class="w">              </span><span class="nt">dra.cpu/cpu</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;3&quot;</span>
 </pre></div>
 </div>
-<p>A request gets CPUs of one NUMA node. A claim which needs CPUs of several
-nodes has one request per node. The constraints of a claim work as for any
-DRA device, for instance <code class="docutils literal notranslate"><span class="pre">matchAttribute:</span> <span class="pre">dra.cpu/socketID</span></code> keeps the
-requests of a claim in one socket.</p>
+<p>A request on a NUMA device gets CPUs of that node, and a request on a socket
+device gets CPUs of that socket. A claim which needs more CPUs than one device
+offers uses one request per device. The constraints of a claim work as for any DRA
+device, for instance <code class="docutils literal notranslate"><span class="pre">matchAttribute:</span> <span class="pre">dra.cpu/socketID</span></code> keeps the requests of
+a claim in one socket. This claim asks for 20 CPUs of socket 0, which can be
+more than one NUMA node has:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">resource.k8s.io/v1</span>
+<span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ResourceClaimTemplate</span>
+<span class="nt">metadata</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">twenty-cpus</span>
+<span class="nt">spec</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">spec</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">devices</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">requests</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cpus</span>
+<span class="w">        </span><span class="nt">exactly</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">deviceClassName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">topology-aware.nri.io</span>
+<span class="w">          </span><span class="nt">selectors</span><span class="p">:</span>
+<span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">cel</span><span class="p">:</span>
+<span class="w">              </span><span class="nt">expression</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">&gt;-</span>
+<span class="w">                </span><span class="no">device.attributes[&quot;dra.cpu&quot;].level == &quot;socket&quot; &amp;&amp;</span>
+<span class="w">                </span><span class="no">device.attributes[&quot;dra.cpu&quot;].socketID == 0</span>
+<span class="w">          </span><span class="nt">capacity</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">requests</span><span class="p">:</span>
+<span class="w">              </span><span class="nt">dra.cpu/cpu</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;20&quot;</span>
+</pre></div>
+</div>
 <p>The policy allocates the CPUs of a claim when the kubelet prepares it, from
 the free CPUs of the node. If the node has too few free CPUs, preparing fails,
 and the pod events say why. The claimed CPUs stay allocated until the claim is
@@ -1696,13 +1769,17 @@ the memory of its containers over the two nodes:</p>
 <span class="w">          </span><span class="nt">deviceClassName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">topology-aware.nri.io</span>
 <span class="w">          </span><span class="nt">selectors</span><span class="p">:</span>
 <span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">cel</span><span class="p">:</span>
-<span class="w">              </span><span class="nt">expression</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">device.attributes[&quot;resource.kubernetes.io&quot;].numaNode == 0</span>
+<span class="w">              </span><span class="nt">expression</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">&gt;-</span>
+<span class="w">                </span><span class="no">device.attributes[&quot;dra.cpu&quot;].level == &quot;numanode&quot; &amp;&amp;</span>
+<span class="w">                </span><span class="no">device.attributes[&quot;resource.kubernetes.io&quot;].numaNode == 0</span>
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">second</span>
 <span class="w">        </span><span class="nt">exactly</span><span class="p">:</span>
 <span class="w">          </span><span class="nt">deviceClassName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">topology-aware.nri.io</span>
 <span class="w">          </span><span class="nt">selectors</span><span class="p">:</span>
 <span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">cel</span><span class="p">:</span>
-<span class="w">              </span><span class="nt">expression</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">device.attributes[&quot;resource.kubernetes.io&quot;].numaNode == 1</span>
+<span class="w">              </span><span class="nt">expression</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">&gt;-</span>
+<span class="w">                </span><span class="no">device.attributes[&quot;dra.cpu&quot;].level == &quot;numanode&quot; &amp;&amp;</span>
+<span class="w">                </span><span class="no">device.attributes[&quot;resource.kubernetes.io&quot;].numaNode == 1</span>
 <span class="w">      </span><span class="nt">config</span><span class="p">:</span>
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">opaque</span><span class="p">:</span>
 <span class="w">          </span><span class="nt">driver</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">topology-aware.nri.io</span>
@@ -1744,12 +1821,14 @@ memory policy onto the new nodes, but it does not add nodes. A memory policy
 for nodes 0-1 stays on two nodes when the memory nodes grow to 0-3.</p>
 <p>A claim with a bad configuration fails to prepare, and the pod events say
 why.</p>
-<p>Claims keep their CPUs when the plugin restarts. If the plugin restarts with
-a configuration which cannot give a claim its CPUs, for example one which
-reserves some of them, the claim moves to other CPUs of the same NUMA node,
-and its containers move with it. If the node has too few CPUs left for the
-claim, the plugin fails to start, and the status of the configuration names
-the claim. Revert the configuration to start the plugin again.</p>
+<p>Claims keep their CPUs when the plugin restarts. If the plugin restarts with a
+configuration which cannot give a claim its CPUs, for example one which
+reserves some of them, the claim moves to other CPUs of the same device, and
+its containers move with it. If the claim needs CPUs of a socket claim, the
+socket claim moves to other CPUs of its socket. If the device has too few CPUs
+left for the claim, the plugin fails to start, and the status of the
+configuration names the claim. Revert the configuration to start the plugin
+again.</p>
 <p>If there is no configuration to revert to, drain the node, remove the cache
 file <code class="docutils literal notranslate"><span class="pre">/var/lib/nri-resource-policy/cache</span></code> on the node, and restart the plugin.
 A drain alone does not help. The plugin keeps a claim until the kubelet
@@ -1763,10 +1842,16 @@ leaves running, such as DaemonSet pods, lose the CPUs of their claims.</p>
 <ul class="simple">
 <li><p>The CDI spec files of claims which ended while the plugin was not running
 are left behind.</p></li>
-<li><p>The capacity of a device is the total of the node, not its free CPUs.
-Containers with CPU requests take CPUs from the same supply, and the
-scheduler does not see that, so a claim can be placed on a node with too
-few free CPUs and fail to prepare.</p></li>
+<li><p>A claim can fail to prepare when the node has too few free CPUs for it. The
+pod then waits until enough CPUs are free. This happens when the scheduler
+places the claim before the policy publishes a new capacity, or when shared
+containers in a pool above the NUMA nodes need the CPUs: their need is not
+in the capacity of any one node.</p></li>
+<li><p>The scheduler counts the capacity of each device on its own, also of devices
+which share CPUs, such as a NUMA node and its socket. A claim can ask for
+more CPUs of such devices than they have together, and so can claims which
+the scheduler places before the policy publishes new capacities. Such a
+claim fails to prepare, and its pod does not start.</p></li>
 </ul>
 </section>
 </section>
