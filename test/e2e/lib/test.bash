@@ -799,6 +799,102 @@ stop-fake-device-plugins() { # script API
 }
 
 ###
+### Resources exported to containers
+###
+
+exported-resource() { # script API
+    # Usage: exported-resource POD NAME [CONTAINER]
+    #
+    # Print the resource NAME which the policy exported to the container of
+    # POD, or to its container CONTAINER. The policy writes these into
+    # /.nri-resource-policy/resources.sh in the container, as shell variable
+    # assignments.
+    #
+    # Example:
+    #   verify "cpus['pod0c0'] == cpuset('$(exported-resource pod0 SHARED_CPUS)')"
+    vm-command-q "kubectl exec $1 ${3:+-c $3} -- cat /.nri-resource-policy/resources.sh" |
+        sed -n "s/^$2=\"\(.*\)\"$/\1/p"
+}
+
+###
+### Dynamic resource allocation
+###
+
+dra-devices() { # script API
+    # Usage: dra-devices [DRIVER]
+    #
+    # Print the devices which DRIVER, "$POLICY.nri.io" by default, publishes
+    # in its ResourceSlices, as a JSON array. Does not log the command, so
+    # this is safe to call in a retry loop.
+    #
+    # Pick the fields apart with jq on the host, so that checking many fields
+    # of many devices costs a single round trip to the VM.
+    #
+    # Example: print the capacity of the first device:
+    #   dra-devices | jq -r '.[0].capacity["dra.cpu/cpu"].value'
+    vm-command-q "kubectl get resourceslices -o json |
+                      jq '[.items[] | select(.spec.driver == \"${1:-$POLICY.nri.io}\") |
+                           .spec.devices[]]'"
+}
+
+dra-device() { # script API
+    # Usage: dra-device NAME JQ [DEVICES]
+    #
+    # Print the jq expression JQ of the device NAME in DEVICES, a JSON array
+    # which dra-devices printed. DEVICES defaults to $devices, and to a fresh
+    # fetch if that is unset.
+    #
+    # A test which checks many fields of many devices fetches them once into
+    # $devices, so that all the checks cost a single round trip to the VM:
+    #     devices=$(dra-devices)
+    #     socket=$(dra-device cpudevnuma000 '.attributes["dra.cpu/socketID"].int')
+    local name=$1 expr=$2 json=${3:-${devices:-$(dra-devices)}}
+
+    jq -r --arg name "$name" '.[] | select(.name == $name) | '"$expr" <<< "$json"
+}
+
+wait-dra-devices() { # script API
+    # Usage: wait-dra-devices [--timeout SECS] [DRIVER]
+    #
+    # Wait until DRIVER, "$POLICY.nri.io" by default, has published at least
+    # one device, SECS seconds at most, 30 by default. Fail the test if it
+    # publishes none in time.
+    local timeout=30
+    if [ "$1" == "--timeout" ]; then
+        timeout=$2
+        shift 2
+    fi
+    retry-until --timeout "$timeout" --message "the plugin to publish its devices" \
+        "[ -n \"\$(dra-devices $1 | jq -r '.[0].name // empty')\" ]" ||
+        error "the plugin published no devices"
+}
+
+dra-consumable-capacity() { # script API
+    # Usage: dra-consumable-capacity [DRIVER]
+    #
+    # Succeed if the devices of DRIVER, "$POLICY.nri.io" by default, allow
+    # multiple allocations, that is, if several claims can share a device.
+    #
+    # The API server silently drops allowMultipleAllocations unless the
+    # DRAConsumableCapacity feature gate is enabled, so a test which needs
+    # shared devices has to skip itself if this does not hold.
+    #
+    # Example:
+    #   dra-consumable-capacity ||
+    #       { cleanup; skip-test "DRAConsumableCapacity is not enabled"; }
+    [ "$(dra-devices "$1" | jq -r '.[0].allowMultipleAllocations')" == "true" ]
+}
+
+dra-claimed-cpus() { # script API
+    # Usage: dra-claimed-cpus POD [CONTAINER]
+    #
+    # Print the CPUs which the DRA claim of POD got, as the container of the
+    # pod sees them, or as its container CONTAINER does. Prints nothing if the
+    # container holds no claim.
+    exported-resource "$1" CLAIMED_CPUS "$2"
+}
+
+###
 ### Reading the log of the plugin
 ###
 
@@ -1012,6 +1108,23 @@ assert-cpu-freq() { # script API
         wait-assert-log-contains "enforcing cpu frequency from class .$class@.* on cpu $cpu\$" \
             "${msg:-CPU frequency class $class not enforced on cpu $cpu}" "$tmo"
     done
+}
+
+###
+### Ending the test early
+###
+
+skip-test() { # script API
+    # Usage: skip-test REASON
+    #
+    # Report the test as skipped because of REASON, and end it. Clean up
+    # first: this does not return.
+    #
+    # Use this where the test cannot tell anything about the plugin, because
+    # the cluster or the kernel does not have what it needs. run_tests.sh
+    # picks the verdict up from the output of the test.
+    echo "Test verdict: SKIP ($1)"
+    exit 0
 }
 
 ###
