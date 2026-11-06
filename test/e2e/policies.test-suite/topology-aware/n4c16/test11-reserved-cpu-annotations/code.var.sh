@@ -24,7 +24,7 @@ CONTCOUNT=1 create reserved-annotated
 report allowed
 verify 'cpus["pod1c0"] == {"cpu08"}'
 
-vm-command "kubectl delete pods pod0 --now"
+delete-pods pod0
 ANNOTATIONS=(
     'prefer-reserved-cpus.resource-policy.nri.io/pod: "true"'
     'hide-hyperthreads.resource-policy.nri.io/pod: "true"'

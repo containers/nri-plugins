@@ -75,7 +75,7 @@ expected_ionice="best-effort: prio 6"
 # store CPU ids of maximal cpuset before deleting pods
 max_lowlatency_cpus="$(echo $(allowed-cpu-ids pod1c0) )"
 
-vm-command 'kubectl delete pod pod1'
+delete-pods pod1
 report allowed
 verify 'len(cpus["pod0c0"]) == 1'
 
@@ -93,7 +93,7 @@ verify-cstates "$freed_cpus" "C1E C2 C4 C8" "" 24
 echo "verify that c-states of the remaining CPU $(allowed-cpu-ids pod0c0) are still configured for low-latency"
 verify-cstates "$(allowed-cpu-ids pod0c0)" "C1E C2" "C4 C8" 16
 
-vm-command 'kubectl delete pod pod0'
+delete-pods pod0
 report allowed
 
 echo "verify that after all containers are gone and their destroyed, c-states of all used CPUs are enabled again"

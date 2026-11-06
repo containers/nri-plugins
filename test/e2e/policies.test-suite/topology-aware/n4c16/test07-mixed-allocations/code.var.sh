@@ -85,7 +85,7 @@ verify `# every container is placed on a single node (no socket, no root)` \
 # no-effect from isolated preference.
 # - opt-out from shared CPUs (=> opt-in to exclusive CPUs)
 # - opt-out from isolated CPUs (this does not affect getting exclusive CPUs)
-vm-command "kubectl delete pods pod3 --now"
+delete-pods pod3
 ANNOTATIONS=('prefer-shared-cpus.resource-policy.nri.io/pod: "false"'
              'prefer-isolated-cpus.resource-policy.nri.io/pod: "false"')
 CONTCOUNT=1 CPU=2400m create guaranteed-annotated
@@ -102,7 +102,7 @@ verify `# every container is placed on a single node (no socket, no root)` \
 # Replace pod1 with pod5.
 # pod1 implicitly opted-in to exclusive CPUs due to 1500 mCPU request.
 # Now explicitly opt-out of it by opting-in to shared-cpus.
-vm-command "kubectl delete pods pod1 --now"
+delete-pods pod1
 # Make sure that shared pool size increased correctly after mixed pod deletion.
 verify `# pod0c0 or pod0c1 shared a node with pod1c1 and had only 3 CPUs` \
        "len(cpus['pod0c0']) == 4" \

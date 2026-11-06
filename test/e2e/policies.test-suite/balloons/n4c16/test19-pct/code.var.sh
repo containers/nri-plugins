@@ -151,14 +151,14 @@ report allowed
 # would consume limited Priority Core Turbo capacity).
 plugin-log-tail 500
 prev_to_clos3=$(grep -c 'to CLOS 3' <<< "$COMMAND_OUTPUT")
-vm-command "kubectl delete pod pod1 --now"
+delete-pods pod1
 wait-assert-log-grew 'to CLOS 3' "$prev_to_clos3" "deleting LP pod did not reassociate its CPUs to LP fallback CLOS 3"
 
 # Now delete the rest -- all freed CPUs end up on the LP
 # fallback CLOS 3 for the same reason.
 plugin-log-tail 500
 prev_to_clos3=$(grep -c 'to CLOS 3' <<< "$COMMAND_OUTPUT")
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 wait-assert-log-grew 'to CLOS 3' "$prev_to_clos3" "after deleting remaining pods CPUs were not reassociated to LP fallback CLOS 3"
 
 helm-terminate

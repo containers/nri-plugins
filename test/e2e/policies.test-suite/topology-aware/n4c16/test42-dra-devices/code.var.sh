@@ -9,7 +9,7 @@
 #
 
 cleanup() {
-    vm-command "kubectl delete pods --all --now --wait" || :
+    delete-pods --all
     vm-command "kubectl delete resourceclaimtemplates --all --now" || :
     helm-terminate || :
     remove-policy-cache
@@ -207,11 +207,11 @@ verify "cpuset('$cpus1') | cpuset('$cpus2') == cpuset('$(node-cpus 1)')" \
 # there, until deleting pod1 releases its claim, whose CPUs the third gets.
 NAME=pod3 NODE=1 CPUS=2 wait="" create cpus-claim
 NAME=pod3 wait="" create dra-pod
-vm-command "kubectl wait --for=condition=PodScheduled=false pod/pod3 --timeout=60s" ||
-    error "pod3 was scheduled with no CPUs left on node 1"
-vm-command "kubectl delete pod pod1 --now --wait"
-vm-command "kubectl wait --for=condition=Ready pod/pod3 --timeout=120s" ||
-    error "pod3 did not start after pod1 released its claim"
+wait-pod-condition --timeout 60 pod3 PodScheduled=false \
+    "pod3 was scheduled with no CPUs left on node 1"
+delete-pods pod1
+wait-pod-condition --timeout 120 pod3 Ready \
+    "pod3 did not start after pod1 released its claim"
 cpus3=$(claimed-cpus pod3)
 verify "cpuset('$cpus3') == cpuset('$cpus1')" \
        "cpus['pod3c0'] == cpuset('$cpus3')" \
@@ -235,7 +235,7 @@ verify "cpuset('$cpus5') <= set($shared)" \
 retry-until --timeout 30 --message "the NRT CR to drop the CPUs of pod5's claim" \
     '[ "$(pyexec "print(cpuset(\"$(nrt-shared-cpus $node)\").isdisjoint(cpuset(\"$cpus5\")))")" == True ]' ||
     error "the NRT CR still lists the CPUs of pod5's claim as shared"
-vm-command "kubectl delete pod pod5 --now --wait"
+delete-pods pod5
 # Deleting the pod does not wait for the kubelet to unprepare its claim.
 retry-until --timeout 30 --message "pod4 to get back the CPUs of pod5's claim" \
     '[ "$(report allowed >/dev/null; pyexec "print(cpus[\"pod4c0\"] == set($shared))")" == True ]'

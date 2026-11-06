@@ -30,8 +30,6 @@ helm_config=$(instantiate custom-config.yaml) helm-launch topology-aware
 pod=pod0
 CONTCOUNT=4 create besteffort
 
-vm-command "kubectl wait --timeout=5s --for=condition=Ready pods/$pod"
-
 cnt=0
 while [ $cnt -lt 5 ]; do
    vm-command "crictl ps | grep ${pod}c3 | grep Running"
