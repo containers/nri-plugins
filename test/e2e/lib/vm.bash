@@ -2226,12 +2226,22 @@ vm-port-forward-disable() {
     vm-command "fuser --kill $port_forward_log_file 2>/dev/null || :"
 }
 
+# Collect the logs of the object kubectl logs ARGS names into $log_file,
+# nri-resource-policy.output.txt by default. Truncate the file first, or keep
+# what it has with --append.
 vm-start-log-collection() {
     local log_file="${log_file:-nri-resource-policy.output.txt}"
+    local redirect=">"
+
+    if [ "$1" == "--append" ]; then
+        redirect=">>"
+        shift
+    fi
+
     local log_args="$*"
 
     log_file="$log_file" vm-stop-log-collection
-    vm-command "kubectl logs -f $log_args >$log_file 2>&1 &"
+    vm-command "kubectl logs -f $log_args $redirect$log_file 2>&1 &"
 }
 
 vm-stop-log-collection() {

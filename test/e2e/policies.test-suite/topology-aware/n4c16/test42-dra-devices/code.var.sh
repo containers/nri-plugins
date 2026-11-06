@@ -28,43 +28,12 @@ node-cpus() {
     vm-command-q "cat /sys/devices/system/node/node$1/cpulist"
 }
 
-plugin_ds=ds/nri-resource-policy-topology-aware
-
-follow-plugin() {
-    # Usage: follow-plugin [TIMEOUT]
-    #
-    # Wait for the plugin to run, for 60s by default, and keep collecting its
-    # logs.
-    vm-command "kubectl rollout status -n kube-system $plugin_ds --timeout=${1:-60s}" ||
-        error "the plugin is not running"
-    vm-stop-log-collection
-    vm-command "kubectl logs -f -n kube-system $plugin_ds >>nri-resource-policy.output.txt 2>&1 &"
-    vm-port-forward-enable
-}
-
-restart-plugin() {
-    # Usage: restart-plugin
-    #
-    # Restart the plugin, keeping its cache, and keep collecting its logs.
-    vm-command "kubectl rollout restart -n kube-system $plugin_ds" ||
-        error "failed to restart the plugin"
-    follow-plugin
-}
-
 claim-uid() {
     # Usage: claim-uid POD
     #
     # Print the UID of the claim of POD.
     vm-command-q "kubectl get resourceclaim -o jsonpath='{.metadata.uid}' \
         \$(kubectl get pod $1 -o jsonpath='{.status.resourceClaimStatuses[0].resourceClaimName}')"
-}
-
-config-error() {
-    # Usage: config-error
-    #
-    # Print the error in the node status of our configuration.
-    vm-command-q "kubectl get -n kube-system $(config-resource) -o json |
-                      jq -r '.status.nodes[].errors // empty'"
 }
 
 nrt-shared-cpus() {
@@ -296,14 +265,11 @@ uid0=$(claim-uid pod0)
 patch-policy-config "{\"spec\":{\"reservedResources\":{\"cpu\":\"cpuset:${cpus0%%[-,]*},15\"}}}"
 # Refusing it rebuilds the pools twice, which takes a while.
 wait-config-status Failure 90s
-vm-command "kubectl rollout restart -n kube-system $plugin_ds" ||
-    error "failed to restart the plugin"
-retry-until --timeout 60 --message "the restart to fail on pod0's claim" \
-    '[[ "$(config-error)" == *"failed to initialize"*"DRA claim $uid0"* ]]' ||
-    error "the restart did not fail on pod0's claim: $(config-error)"
+restart-plugin --no-wait
+wait-config-status-error "failed to initialize.*DRA claim $uid0" 60
 patch-policy-config '{"spec":{"reservedResources":{"cpu":"cpuset:15"}}}'
 # The plugin restarts with the crash-loop backoff of the kubelet.
-follow-plugin 180s
+follow-plugin --timeout 180s
 wait-config-status Success 60s
 report allowed
 verify "cpus['pod0c0'] == cpuset('$cpus0')" \

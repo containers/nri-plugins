@@ -19,19 +19,6 @@ check-cpus() {
     echo "$1 got CPUs $cpus"
 }
 
-restart-plugin() {
-    # Usage: restart-plugin
-    #
-    # Restart the plugin, keeping its cache, and keep collecting its logs.
-    local ds=ds/nri-resource-policy-template
-    vm-command "kubectl rollout restart -n kube-system $ds &&
-                kubectl rollout status -n kube-system $ds --timeout=60s" ||
-        error "failed to restart the plugin"
-    vm-stop-log-collection
-    vm-command "kubectl logs -f -n kube-system $ds >>nri-resource-policy.output.txt 2>&1 &"
-    vm-port-forward-enable
-}
-
 cleanup
 
 # Allow four CPUs, so that two claims of two CPUs take all of them.

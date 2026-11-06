@@ -6,29 +6,14 @@
 # match anything else which happens to mention the plugin on its command line.
 plugin_binary='^/bin/nri-resource-policy-topology-aware'
 
-pod=""
-
 cleanup() {
     helm-terminate || :
-}
-
-plugin-pod() {
-    vm-command-q "kubectl -n kube-system get pods \
-                      -l app.kubernetes.io/name=$(plugin-daemonset) \
-                      -o jsonpath='{.items[0].metadata.name}'"
-}
-
-plugin-container-status() {
-    # Usage: plugin-container-status JSONPATH-SUFFIX
-    vm-command-q "kubectl -n kube-system get pod $pod \
-                      -o jsonpath='{.status.containerStatuses[0].$1}'" | tr -d '[:space:]'
 }
 
 cleanup
 helm_config=$(instantiate helm-config.yaml) helm-launch topology-aware
 
-pod=$(plugin-pod)
-[ -n "$pod" ] || error "failed to find the pod of the plugin"
+[ -n "$(plugin-pod)" ] || error "failed to find the pod of the plugin"
 
 # Signal the plugin the way the kubelet does when it terminates the container.
 # Signalling the process instead of deleting the pod restarts the container in

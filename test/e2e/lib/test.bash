@@ -205,6 +205,58 @@ expect-launch-failure() { # script API
     echo "launching $policy failed as expected"
 }
 
+follow-plugin() { # script API
+    # Usage: follow-plugin [--plugin PLUGIN] [--timeout TIMEOUT]
+    #
+    # Wait until the DaemonSet of PLUGIN, $POLICY by default, is rolled out,
+    # TIMEOUT at most, 60s by default, then collect its logs and forward its
+    # port again. Fail the test if it is not rolled out in time.
+    #
+    # Appends to the log of the plugin, so that what an instance printed
+    # before a restart stays readable.
+    local plugin="" timeout=60s ds
+    while [ "${1#--}" != "$1" ]; do
+        case "$1" in
+            --plugin)  plugin="$2"; shift 2;;
+            --timeout) timeout="$2"; shift 2;;
+            *)         error "follow-plugin: unknown option \"$1\"";;
+        esac
+    done
+    ds=ds/$(plugin-daemonset "$plugin")
+
+    vm-command "kubectl rollout status -n kube-system $ds --timeout=$timeout" ||
+        error "the plugin is not running"
+    vm-start-log-collection --append -n kube-system "$ds"
+    vm-port-forward-enable
+}
+
+restart-plugin() { # script API
+    # Usage: restart-plugin [--plugin PLUGIN] [--timeout TIMEOUT] [--no-wait]
+    #
+    # Restart the DaemonSet of PLUGIN, $POLICY by default, keeping its cache,
+    # then follow it with follow-plugin. With --no-wait, return as soon as the
+    # restart is requested, leaving the follow to the caller.
+    #
+    # Use this to test what the plugin recovers from its cache. helm-terminate
+    # followed by helm-launch starts it with the cache of the test it belongs
+    # to, which is not the same thing.
+    local plugin="" follow=1 ds
+    local -a follow_args=()
+    while [ "${1#--}" != "$1" ]; do
+        case "$1" in
+            --plugin)  plugin="$2"; follow_args+=(--plugin "$2"); shift 2;;
+            --timeout) follow_args+=(--timeout "$2"); shift 2;;
+            --no-wait) follow=""; shift;;
+            *)         error "restart-plugin: unknown option \"$1\"";;
+        esac
+    done
+    ds=ds/$(plugin-daemonset "$plugin")
+
+    vm-command "kubectl rollout restart -n kube-system $ds" ||
+        error "failed to restart the plugin"
+    [ -z "$follow" ] || follow-plugin "${follow_args[@]}"
+}
+
 ###
 ### Metrics and instrumentation
 ###
@@ -913,6 +965,31 @@ plugin-daemonset() { # script API
         *memtierd*)       echo nri-memtierd;;
         *)                error "plugin-daemonset: unknown plugin \"$plugin\"";;
     esac
+}
+
+plugin-pod() { # script API
+    # Usage: plugin-pod [PLUGIN]
+    #
+    # Print the name of the pod which runs PLUGIN, $POLICY by default. Does
+    # not log the command, so this is safe to call in a retry loop.
+    vm-command-q "kubectl -n kube-system get pods \
+                      -l app.kubernetes.io/name=$(plugin-daemonset "$1") \
+                      -o jsonpath='{.items[0].metadata.name}'"
+}
+
+plugin-container-status() { # script API
+    # Usage: plugin-container-status JSONPATH [PLUGIN]
+    #
+    # Print JSONPATH of the status of the container which runs PLUGIN, $POLICY
+    # by default. Does not log the command, so this is safe to call in a retry
+    # loop.
+    #
+    # Example: wait until the plugin has restarted once:
+    #   retry-until --timeout 60 '[ "$(plugin-container-status restartCount)" == "1" ]'
+    vm-command-q "kubectl -n kube-system get pods \
+                      -l app.kubernetes.io/name=$(plugin-daemonset "$2") \
+                      -o jsonpath='{.items[0].status.containerStatuses[0].$1}'" |
+        tr -d '[:space:]'
 }
 
 plugin-log() { # script API
