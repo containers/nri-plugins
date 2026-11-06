@@ -4,6 +4,11 @@ cleanup-test
 # leaves alone.
 delete-pods -n kube-system pod0 pod1 pod2 pod3 pod4 pod5
 
+# Make the namespace of the last phase now, so that create-namespaces empties
+# what a failed run left in it before the first phase measures the CPUs of
+# the node.
+create-namespaces test-ns
+
 # Cleanup kernel commandline, otherwise isolcpus will affect CPU
 # pinning and cause false negatives from other tests on this VM.
 # This can happen if test08-isolcpus failed and we are re-running
@@ -87,8 +92,6 @@ delete-pods --all
 # other) as opposed to being evenly spread out.
 helm-terminate
 helm_config=$(COLOCATE_NAMESPACES=true instantiate helm-config.yaml) helm-launch topology-aware
-
-create-namespaces test-ns
 
 CONTCOUNT=1 CPU=100m namespace=test-ns create guaranteed
 CONTCOUNT=1 CPU=100m namespace=test-ns create guaranteed

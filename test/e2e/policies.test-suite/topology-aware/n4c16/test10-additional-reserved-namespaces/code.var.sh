@@ -5,11 +5,16 @@
 # phase leaves its pods running for debugging.
 cleanup() {
     # The test places one of its pods in kube-system, which cleanup-test
-    # leaves alone.
+    # leaves alone, and needs foobar until its last phase is over.
     delete-pods -n kube-system pod0
-    cleanup-test
+    cleanup-test --preserve-namespaces foobar
 }
 cleanup
+
+# Make the namespace of the second phase now, so that create-namespaces
+# empties what a failed run left in it before the first phase measures the
+# CPUs of the node.
+create-namespaces foobar
 
 helm-terminate
 RESERVED_POOL_NAMESPACES="reserved-pool reserved-* foobar"
@@ -29,8 +34,6 @@ cleanup
 # - containers that are namespace-assigned to reserved pools are pinned there
 # - containers that are annotated to opt-put that are pinned elsewhere, and
 # - containers that are namespace-assigned and annotated to reserved pools are pinned there
-
-create-namespaces foobar
 
 CONTCOUNT=1 namespace=foobar create besteffort
 ANN0='prefer-reserved-cpus.resource-policy.nri.io/pod: "false"'
