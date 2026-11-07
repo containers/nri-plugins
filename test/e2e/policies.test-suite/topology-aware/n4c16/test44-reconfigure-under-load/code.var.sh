@@ -15,15 +15,7 @@ e2eish=0
 
 cleanup() {
     vm-command "touch churn.stop; pkill -f churn.sh; rm -f churn.stop" || :
-    delete-pods --all
-    helm-terminate || :
-}
-
-plugin-restarts() {
-    vm-command-q "kubectl -n kube-system get pods \
-                      -l app.kubernetes.io/name=$(plugin-daemonset) \
-                      -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}'" |
-        tr -d '[:space:]'
+    cleanup-test --helm
 }
 
 cleanup
@@ -85,7 +77,7 @@ vm-command "touch churn.stop"
 timeout=120s wait-config-node-status $(config-resource)
 wait-config-status Success
 
-restarts=$(plugin-restarts)
+restarts=$(plugin-container-status restartCount)
 
 if [ "$restarts" != "0" ]; then
     plugin-log --previous 'connection to NRI/runtime lost' || :

@@ -1,6 +1,6 @@
 cleanup() {
     delete-pods -n kube-system pod0
-    delete-namespaces reserved
+    cleanup-test
 }
 
 cleanup

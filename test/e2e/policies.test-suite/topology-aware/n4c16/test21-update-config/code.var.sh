@@ -11,12 +11,7 @@ ALLCPUS=0-15
 # the inspected tail.
 plugin_log_filter='updating existing allocations|reinstate|reallocating resources'
 
-cleanup() {
-    delete-pods --all
-    helm-terminate || :
-}
-
-cleanup
+cleanup-test --helm
 helm_config=$(instantiate helm-config.yaml) helm-launch topology-aware
 
 # pod0c0 takes exclusive CPUs, pod1c0 a shared portion and pod2c0 reserved
@@ -92,4 +87,4 @@ wait-config-status Failure 30s
 [ "$(container-cpus pod0 pod0c0)" = "$excl_refused" ] ||
     error "a refused configuration changed the allocation of pod0c0"
 
-cleanup
+cleanup-test --helm

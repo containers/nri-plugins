@@ -41,15 +41,14 @@ else
     vm-command 'grep . /sys/fs/cgroup/$(grep . /proc/$(pgrep -f "echo pod0c0")/cgroup | awk -F::/ "{print \$2}")/cpuset.cpus.effective'
     if grep 4095 <<< "$COMMAND_OUTPUT"; then
         echo "RUNC BUG: pod0c0 cannot run on CPU 4095 yet the CPU is in cgroup cpuset.cpus.effective. See: https://github.com/opencontainers/runc/issues/5023"
-        echo "Test verdict: SKIP (buggy runc)"
-        exit 0
+        skip-test "buggy runc"
     else
         error "expected: pod0c0 is allowed to run on CPU 4095"
     fi
 fi
 
 # Release all 5 CPUs.
-vm-command 'kubectl delete pod pod0 --now'
+delete-pods pod0
 wait-pod-gone pod0
 
 # Only socket #0 has enough CPUs for pod1.
@@ -64,7 +63,7 @@ verify 'cpus["pod2c0"] == {"cpu4095"}'
 CONTCOUNT=1 create besteffort
 report allowed
 
-vm-command 'kubectl delete pods pod1 pod2 pod3 --now'
+delete-pods pod1 pod2 pod3
 
 # Verify no CPU leaks, allocate all again.
 CPU=5000m create guaranteed

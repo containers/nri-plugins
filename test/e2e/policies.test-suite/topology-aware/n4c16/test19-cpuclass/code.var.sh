@@ -1,8 +1,3 @@
-cleanup() {
-    delete-pods --all
-    helm-terminate
-}
-
 # Restrict the log assertions to the cpuclass-related log lines.
 plugin_log_filter='   *cpuclass   *'
 
@@ -21,7 +16,7 @@ SHARED_CPUCLASS="shared"
 RESERVED_CPUCLASS="reserved"
 DEBUG_LOGGERS="agent cpu cpuclass"
 
-cleanup
+cleanup-test --helm
 
 helm_config=$(COLOCATE_PODS=false \
               DEBUG_LOGGERS="$DEBUG_LOGGERS" \
@@ -70,7 +65,7 @@ assert-cpu-clos $cpu3 "CLOS 0"
 
 # Delete pod. Verify that each released exclusive CPU gets assigned to
 # the shared pool CPU class which is configured with low PCT priority.
-vm-command "kubectl delete pod $pod"
+delete-pods "$pod"
 assert-cpu-clos $cpu0 "CLOS 3"
 assert-cpu-clos $cpu1 "CLOS 3"
 assert-cpu-clos $cpu2 "CLOS 3"
@@ -100,7 +95,7 @@ assert-cpu-clos $cpu3 "CLOS 0"
 
 # Delete pod. Verify that each released CPU get assigned to
 # the shared pool CPU class.
-vm-command "kubectl delete pod $pod"
+delete-pods "$pod"
 assert-cpu-clos $cpu0 "CLOS 3"
 assert-cpu-clos $cpu1 "CLOS 3"
 assert-cpu-clos $cpu2 "CLOS 3"
@@ -142,7 +137,7 @@ ANN0="cpu-class.resource-policy.nri.io/container.${pod}c0: nosuchclass" \
 
 verify-container-error $pod ${pod}c0 "unknown CPU class"
 
-cleanup
+cleanup-test --helm
 
 #
 # Configuration validation
@@ -201,4 +196,4 @@ helm_config=$(COLOCATE_PODS=false \
 
 verify-config-status-error 'unknown default exclusive CPU class \\"nonexistent\\"'
 
-cleanup
+cleanup-test --helm

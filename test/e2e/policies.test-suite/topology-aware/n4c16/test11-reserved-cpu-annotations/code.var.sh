@@ -3,12 +3,7 @@
 # - cpu.preserve
 # - memory.preserve
 
-cleanup() {
-    delete-pods --all
-    helm-terminate
-}
-
-cleanup
+cleanup-test --helm
 
 AVAILABLE_CPU="cpuset:8-11"
 RESERVED_CPU="cpuset:10-11"
@@ -24,7 +19,7 @@ CONTCOUNT=1 create reserved-annotated
 report allowed
 verify 'cpus["pod1c0"] == {"cpu08"}'
 
-vm-command "kubectl delete pods pod0 --now"
+delete-pods pod0
 ANNOTATIONS=(
     'prefer-reserved-cpus.resource-policy.nri.io/pod: "true"'
     'hide-hyperthreads.resource-policy.nri.io/pod: "true"'
@@ -65,4 +60,4 @@ report allowed
 
 verify 'cpus["pod4c0"] == {"cpu10", "cpu11"}'
 
-cleanup
+cleanup-test --helm

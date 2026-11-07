@@ -1,11 +1,5 @@
 relaunch-policy balloons "$TEST_DIR/balloons-4cpu-cacheclusters.cfg"
 
-cleanup() {
-    delete-pods --all
-    helm-terminate
-    remove-policy-cache
-}
-
 # pod0c{0,1,2}: one container per free L2 group
 CPUREQ="1500m" MEMREQ="100M" CPULIM="1500m" MEMLIM="100M"
 POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: l2burst" CONTCOUNT=3 create balloons-busybox
@@ -23,7 +17,7 @@ verify 'len(cpus["pod1c0"]) == 3' \
        'disjoint_sets(cpus["pod1c0"], cpus["pod0c0"], cpus["pod0c1"], cpus["pod0c2"])'
 
 # pod2c{0,1,2,3} fit two per l2pack balloon, all l2pack balloons should be in the same L2 cache.
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 CPUREQ="500m" MEMREQ="100M" CPULIM="500m" MEMLIM="100M"
 POD_ANNOTATION="balloon.balloons.resource-policy.nri.io: l2pack" CONTCOUNT=4 create balloons-busybox
 report allowed
@@ -53,7 +47,7 @@ verify 'nodes["pod3c0"] == nodes["pod2c0"] == nodes["pod2c1"] == nodes["pod2c2"]
        'disjoint_sets(cpus["pod3c0"], cpus["pod2c3"])' \
        'len(set.union(cpus["pod3c0"], cpus["pod2c0"], cpus["pod2c1"], cpus["pod2c2"], cpus["pod2c3"])) == 4'
 
-cleanup
+cleanup-test --helm --cache
 
 relaunch-policy balloons "$TEST_DIR/balloons-2cpu-cacheclusters.cfg"
 
@@ -76,4 +70,4 @@ verify 'len(cpus["pod5c0"]) == 2' \
        'len(cpus["pod5c2"]) == 2' \
        'disjoint_sets(cpus["pod5c0"], cpus["pod5c1"], cpus["pod5c2"], cpus["pod4c0"], cpus["pod4c1"], cpus["pod4c2"], cpus["pod4c3"])'
 
-cleanup
+cleanup-test --helm --cache

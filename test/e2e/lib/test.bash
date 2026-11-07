@@ -134,6 +134,31 @@ wait-pod-gone() { # script API
     }
 }
 
+wait-pod-condition() { # script API
+    # Usage: wait-pod-condition [--timeout SECS] POD CONDITION [MESSAGE]
+    #
+    # Wait until POD meets CONDITION, SECS seconds at most, 30 by default.
+    # Fail the test with MESSAGE if it does not.
+    #
+    # CONDITION is what "kubectl wait --for=condition=" takes, so it can also
+    # be negative: PodScheduled=false waits for the pod to stay unscheduled.
+    #
+    # Use this where the pod reaches the condition later than at creation,
+    # which is what the wait and wait_t parameters of create are for.
+    #
+    # Example: wait for a pod which had no CPUs to start once it got some:
+    #   wait-pod-condition --timeout 120 pod2 Ready "pod2 did not get CPUs"
+    local timeout=30
+    if [ "$1" == "--timeout" ]; then
+        timeout=$2
+        shift 2
+    fi
+    local pod=$1 condition=$2
+    vm-command "kubectl wait --timeout=${timeout}s --for=condition=$condition pod/$pod" || {
+        command-error "${3:-pod $pod did not reach condition $condition within ${timeout}s}"
+    }
+}
+
 ###
 ### Launching the plugin
 ###
@@ -178,6 +203,58 @@ expect-launch-failure() { # script API
         error "launching $policy succeeded, but was expected to fail"
     fi
     echo "launching $policy failed as expected"
+}
+
+follow-plugin() { # script API
+    # Usage: follow-plugin [--plugin PLUGIN] [--timeout TIMEOUT]
+    #
+    # Wait until the DaemonSet of PLUGIN, $POLICY by default, is rolled out,
+    # TIMEOUT at most, 60s by default, then collect its logs and forward its
+    # port again. Fail the test if it is not rolled out in time.
+    #
+    # Appends to the log of the plugin, so that what an instance printed
+    # before a restart stays readable.
+    local plugin="" timeout=60s ds
+    while [ "${1#--}" != "$1" ]; do
+        case "$1" in
+            --plugin)  plugin="$2"; shift 2;;
+            --timeout) timeout="$2"; shift 2;;
+            *)         error "follow-plugin: unknown option \"$1\"";;
+        esac
+    done
+    ds=ds/$(plugin-daemonset "$plugin")
+
+    vm-command "kubectl rollout status -n kube-system $ds --timeout=$timeout" ||
+        error "the plugin is not running"
+    vm-start-log-collection --append -n kube-system "$ds"
+    vm-port-forward-enable
+}
+
+restart-plugin() { # script API
+    # Usage: restart-plugin [--plugin PLUGIN] [--timeout TIMEOUT] [--no-wait]
+    #
+    # Restart the DaemonSet of PLUGIN, $POLICY by default, keeping its cache,
+    # then follow it with follow-plugin. With --no-wait, return as soon as the
+    # restart is requested, leaving the follow to the caller.
+    #
+    # Use this to test what the plugin recovers from its cache. helm-terminate
+    # followed by helm-launch starts it with the cache of the test it belongs
+    # to, which is not the same thing.
+    local plugin="" follow=1 ds
+    local -a follow_args=()
+    while [ "${1#--}" != "$1" ]; do
+        case "$1" in
+            --plugin)  plugin="$2"; follow_args+=(--plugin "$2"); shift 2;;
+            --timeout) follow_args+=(--timeout "$2"); shift 2;;
+            --no-wait) follow=""; shift;;
+            *)         error "restart-plugin: unknown option \"$1\"";;
+        esac
+    done
+    ds=ds/$(plugin-daemonset "$plugin")
+
+    vm-command "kubectl rollout restart -n kube-system $ds" ||
+        error "failed to restart the plugin"
+    [ -z "$follow" ] || follow-plugin "${follow_args[@]}"
 }
 
 ###
@@ -229,6 +306,19 @@ nrt-query() { # script API
     #
     # JQ-EXPRESSION must not contain single quotes.
     vm-command "$nrt_kubectl_get -o json | jq -r '$1'"
+}
+
+nrt-query-q() { # script API
+    # Usage: nrt-query-q JQ-EXPRESSION
+    #
+    # Print the result of evaluating JQ-EXPRESSION on the node resource
+    # topology of the node, without logging the command.
+    #
+    # Use this instead of nrt-query inside a retry loop, which would otherwise
+    # log the same command once per attempt.
+    #
+    # JQ-EXPRESSION must not contain single quotes.
+    vm-command-q "$nrt_kubectl_get -o json | jq -r '$1'"
 }
 
 nrt-dump() { # script API
@@ -761,7 +851,103 @@ stop-fake-device-plugins() { # script API
 }
 
 ###
-### Reading the log of the plugin
+### Resources exported to containers
+###
+
+exported-resource() { # script API
+    # Usage: exported-resource POD NAME [CONTAINER]
+    #
+    # Print the resource NAME which the policy exported to the container of
+    # POD, or to its container CONTAINER. The policy writes these into
+    # /.nri-resource-policy/resources.sh in the container, as shell variable
+    # assignments.
+    #
+    # Example:
+    #   verify "cpus['pod0c0'] == cpuset('$(exported-resource pod0 SHARED_CPUS)')"
+    vm-command-q "kubectl exec $1 ${3:+-c $3} -- cat /.nri-resource-policy/resources.sh" |
+        sed -n "s/^$2=\"\(.*\)\"$/\1/p"
+}
+
+###
+### Dynamic resource allocation
+###
+
+dra-devices() { # script API
+    # Usage: dra-devices [DRIVER]
+    #
+    # Print the devices which DRIVER, "$POLICY.nri.io" by default, publishes
+    # in its ResourceSlices, as a JSON array. Does not log the command, so
+    # this is safe to call in a retry loop.
+    #
+    # Pick the fields apart with jq on the host, so that checking many fields
+    # of many devices costs a single round trip to the VM.
+    #
+    # Example: print the capacity of the first device:
+    #   dra-devices | jq -r '.[0].capacity["dra.cpu/cpu"].value'
+    vm-command-q "kubectl get resourceslices -o json |
+                      jq '[.items[] | select(.spec.driver == \"${1:-$POLICY.nri.io}\") |
+                           .spec.devices[]]'"
+}
+
+dra-device() { # script API
+    # Usage: dra-device NAME JQ [DEVICES]
+    #
+    # Print the jq expression JQ of the device NAME in DEVICES, a JSON array
+    # which dra-devices printed. DEVICES defaults to $devices, and to a fresh
+    # fetch if that is unset.
+    #
+    # A test which checks many fields of many devices fetches them once into
+    # $devices, so that all the checks cost a single round trip to the VM:
+    #     devices=$(dra-devices)
+    #     socket=$(dra-device cpudevnuma000 '.attributes["dra.cpu/socketID"].int')
+    local name=$1 expr=$2 json=${3:-${devices:-$(dra-devices)}}
+
+    jq -r --arg name "$name" '.[] | select(.name == $name) | '"$expr" <<< "$json"
+}
+
+wait-dra-devices() { # script API
+    # Usage: wait-dra-devices [--timeout SECS] [DRIVER]
+    #
+    # Wait until DRIVER, "$POLICY.nri.io" by default, has published at least
+    # one device, SECS seconds at most, 30 by default. Fail the test if it
+    # publishes none in time.
+    local timeout=30
+    if [ "$1" == "--timeout" ]; then
+        timeout=$2
+        shift 2
+    fi
+    retry-until --timeout "$timeout" --message "the plugin to publish its devices" \
+        "[ -n \"\$(dra-devices $1 | jq -r '.[0].name // empty')\" ]" ||
+        error "the plugin published no devices"
+}
+
+dra-consumable-capacity() { # script API
+    # Usage: dra-consumable-capacity [DRIVER]
+    #
+    # Succeed if the devices of DRIVER, "$POLICY.nri.io" by default, allow
+    # multiple allocations, that is, if several claims can share a device.
+    #
+    # The API server silently drops allowMultipleAllocations unless the
+    # DRAConsumableCapacity feature gate is enabled, so a test which needs
+    # shared devices has to skip itself if this does not hold.
+    #
+    # Example:
+    #   dra-consumable-capacity ||
+    #       { cleanup; skip-test "DRAConsumableCapacity is not enabled"; }
+    [ "$(dra-devices "$1" | jq -r '.[0].allowMultipleAllocations')" == "true" ]
+}
+
+dra-claimed-cpus() { # script API
+    # Usage: dra-claimed-cpus POD [CONTAINER]
+    #
+    # Print the CPUs which the DRA claim of POD got, as the container of the
+    # pod sees them, or as its container CONTAINER does. Prints nothing if the
+    # container holds no claim.
+    exported-resource "$1" CLAIMED_CPUS "$2"
+}
+
+###
+### The pod of the plugin
 ###
 
 plugin-daemonset() { # script API
@@ -780,6 +966,35 @@ plugin-daemonset() { # script API
         *)                error "plugin-daemonset: unknown plugin \"$plugin\"";;
     esac
 }
+
+plugin-pod() { # script API
+    # Usage: plugin-pod [PLUGIN]
+    #
+    # Print the name of the pod which runs PLUGIN, $POLICY by default. Does
+    # not log the command, so this is safe to call in a retry loop.
+    vm-command-q "kubectl -n kube-system get pods \
+                      -l app.kubernetes.io/name=$(plugin-daemonset "$1") \
+                      -o jsonpath='{.items[0].metadata.name}'"
+}
+
+plugin-container-status() { # script API
+    # Usage: plugin-container-status JSONPATH [PLUGIN]
+    #
+    # Print JSONPATH of the status of the container which runs PLUGIN, $POLICY
+    # by default. Does not log the command, so this is safe to call in a retry
+    # loop.
+    #
+    # Example: wait until the plugin has restarted once:
+    #   retry-until --timeout 60 '[ "$(plugin-container-status restartCount)" == "1" ]'
+    vm-command-q "kubectl -n kube-system get pods \
+                      -l app.kubernetes.io/name=$(plugin-daemonset "$2") \
+                      -o jsonpath='{.items[0].status.containerStatuses[0].$1}'" |
+        tr -d '[:space:]'
+}
+
+###
+### Reading the log of the plugin
+###
 
 plugin-log() { # script API
     # Usage: plugin-log [--plugin PLUGIN] [--tail LINES] [--ignore-case] [--previous] [PATTERN]
@@ -924,6 +1139,128 @@ assert-cpu-freq() { # script API
 }
 
 ###
+### Verifying the state of the node
+###
+
+# The expression wait-verify is waiting for. A global, so that the snippet
+# retry-until evaluates can reach it without quoting it into it.
+wait_verify_expr=""
+
+wait-verify-poll() {
+    # Refresh the state verify would look at, then evaluate the expression
+    # without asserting it. An expression can raise while the state is still
+    # settling, a container missing from cpus[] for instance, which counts as
+    # not holding yet rather than as an error.
+    get-py-allowed
+    get-py-cache
+    pyexec "
+try:
+    print(bool($wait_verify_expr))
+except Exception:
+    print(False)
+"
+}
+
+wait-verify() { # script API
+    # Usage: wait-verify [--timeout SECS] EXPR...
+    #
+    # Wait until every EXPR is True, SECS seconds at most, 30 by default, then
+    # verify them. Takes the same expressions as verify, and fails the test
+    # the same way if they do not hold in time.
+    #
+    # Use this where the expected state is reached eventually rather than at
+    # once. Deleting a pod, for instance, waits for its object to go but not
+    # for the kubelet to unprepare its DRA claim, so the CPUs the claim held
+    # come back to other containers a moment later.
+    #
+    # Example: wait for a container to get the CPUs of a deleted claim back:
+    #   wait-verify "cpus['pod4c0'] == set($shared)"
+    local timeout=30 expr
+    if [ "$1" == "--timeout" ]; then
+        timeout=$2
+        shift 2
+    fi
+    if [ "$#" == 0 ]; then
+        verify
+        return
+    fi
+    wait_verify_expr=""
+    for expr in "$@"; do
+        wait_verify_expr="${wait_verify_expr:+$wait_verify_expr and }($expr)"
+    done
+    # Poll with pyexec rather than with verify. A verify which does not hold
+    # appends to the test summary and stops the test, and neither is right
+    # before the last attempt. Verifying once at the end reports the outcome.
+    retry-until --timeout "$timeout" '[ "$(wait-verify-poll)" == True ]'
+    verify "$@"
+}
+
+###
+### Generated test scripts
+###
+
+run-generated-tests() { # script API
+    # Usage: run-generated-tests
+    #
+    # Run every generated*.sh script of the test directory in parallel, each
+    # with an output directory of its own, and wait for all of them to finish.
+    # Prefix every line a script prints with the name of the script.
+    #
+    # End the test with a warning if the directory has no generated script.
+    # Writing them is what the generate.sh of the directory does.
+    local genscript count=0 paralleloutdir
+
+    for genscript in "$TEST_DIR"/generated*.sh; do
+        if [ ! -f "$genscript" ]; then
+            continue
+        fi
+        (
+            paralleloutdir="$outdir/parallel$count"
+            [ -d "$paralleloutdir" ] && rm -rf "$paralleloutdir"
+            mkdir "$paralleloutdir"
+            OUTPUT_DIR="$paralleloutdir"
+            COMMAND_OUTPUT_DIR="$paralleloutdir/commands"
+            mkdir "$COMMAND_OUTPUT_DIR"
+            source "$genscript" 2>&1 | sed -u -e "s/^/$(basename "$genscript"): /g"
+        ) &
+        count=$(( count + 1 ))
+    done
+
+    if [ "$count" == "0" ]; then
+        echo "WARNING:"
+        echo "WARNING: Skipping fuzz tests:"
+        echo "WARNING: - Generated tests not found."
+        echo "WARNING: - Generate a test by running:"
+        echo "WARNING:   $TEST_DIR/generate.sh"
+        echo "WARNING: - See test generation options:"
+        echo "WARNING:   $TEST_DIR/generate.sh --help"
+        echo "WARNING:"
+        sleep 5
+        exit 0
+    fi
+
+    echo "waiting for $count generated tests to finish..."
+    wait
+}
+
+###
+### Ending the test early
+###
+
+skip-test() { # script API
+    # Usage: skip-test REASON
+    #
+    # Report the test as skipped because of REASON, and end it. Clean up
+    # first: this does not return.
+    #
+    # Use this where the test cannot tell anything about the plugin, because
+    # the cluster or the kernel does not have what it needs. run_tests.sh
+    # picks the verdict up from the output of the test.
+    echo "Test verdict: SKIP ($1)"
+    exit 0
+}
+
+###
 ### Cleaning up
 ###
 
@@ -954,6 +1291,10 @@ delete-pods() { # script API
     # Delete pods immediately, ignoring pods which do not exist. Delete the
     # pods in NAMESPACE, or in the default namespace if -n is not given.
     #
+    # Returns once the pods are gone: kubectl delete waits for that by
+    # default. It does not wait for whatever the kubelet does afterwards, such
+    # as unpreparing a DRA claim; use wait-verify for that.
+    #
     # Never fails, so this is safe to call both before and after a test.
     local ns=""
     if [ "$1" == "-n" ]; then
@@ -966,13 +1307,23 @@ delete-pods() { # script API
     vm-command "kubectl delete pods $ns $* --now --ignore-not-found=true" || :
 }
 
+# The namespaces create-namespaces has made, for cleanup-test to delete again.
+# Every test runs in a shell of its own, so this never carries over to the next.
+created_namespaces=()
+
 create-namespaces() { # script API
     # Usage: create-namespaces NAMESPACE...
     #
-    # Create namespaces unless they already exist. Never fails.
+    # Leave each namespace existing and empty: create it unless it is already
+    # there, and delete any pods left in it either way. Never fails.
+    #
+    # Remember/record created namespaces, so cleanup-test can delete them
+    # at will.
     local ns
     for ns in "$@"; do
         vm-command "kubectl get namespace $ns > /dev/null 2>&1 || kubectl create namespace $ns" || :
+        delete-pods -n "$ns" --all
+        created_namespaces+=("$ns")
     done
 }
 
@@ -986,6 +1337,72 @@ delete-namespaces() { # script API
         vm-command "kubectl delete pods -n $ns --all --now --ignore-not-found=true
                     kubectl delete namespace $ns --now --ignore-not-found=true" || :
     done
+}
+
+cleanup-test() { # script API
+    # Usage: cleanup-test [--helm] [--cache] [--claims] [--preserve-namespaces NS[,NS...]]
+    #
+    # Delete all pods in the default namespace, and the namespaces which
+    # create-namespaces made, so that a test both starts from and leaves
+    # behind a clean node. With --helm, terminate the helm release, too. With
+    # --cache, also remove the policy cache. With --claims, delete the
+    # resource claim templates of the node as well.
+    #
+    # --cache implies --helm: a running plugin writes its cache back out.
+    #
+    # --preserve-namespaces keeps the listed namespaces alive, for a test
+    # which cleans up between its phases but still needs them. They stay
+    # remembered, so a later call without the option still deletes them.
+    #
+    # Never fails, so this is safe to call both before and after a test.
+    # Tests with more to clean up than this call it and add the rest.
+    local helm="" cache="" claims="" preserve="" ns keep=() drop=()
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --helm)
+                helm=1
+                ;;
+            --cache)
+                cache=1
+                helm=1
+                ;;
+            --claims)
+                claims=1
+                ;;
+            --preserve-namespaces)
+                preserve=",$2,"
+                shift
+                ;;
+            *)
+                error "cleanup-test: unknown option '$1'"
+                ;;
+        esac
+        shift
+    done
+    delete-pods --all
+    if [ -n "$claims" ]; then
+        vm-command "kubectl delete resourceclaimtemplates --all --now" || :
+    fi
+    # Delete the namespaces while the plugin still runs, so that it sees their
+    # pods go the same way as the ones above.
+    for ns in "${created_namespaces[@]}"; do
+        if [ -n "$preserve" ] && [[ "$preserve" == *",$ns,"* ]]; then
+            keep+=("$ns")
+        else
+            drop+=("$ns")
+        fi
+    done
+    if [ "${#drop[@]}" -gt 0 ]; then
+        delete-namespaces "${drop[@]}"
+    fi
+    created_namespaces=("${keep[@]}")
+    if [ -n "$helm" ]; then
+        helm-terminate || :
+    fi
+    if [ -n "$cache" ]; then
+        remove-policy-cache
+    fi
+    return 0
 }
 
 remove-policy-cache() { # script API

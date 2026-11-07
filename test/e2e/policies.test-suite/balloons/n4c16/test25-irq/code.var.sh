@@ -8,7 +8,7 @@ ACPI_IRQ=".* acpi.*"
 ALL_CPUS="$(expand-cpulist 0-15)"
 
 cleanup() {
-    delete-pods --all
+    cleanup-test
     vm-command "for f in /proc/irq/*/smp_affinity_list ; do echo 0-15 | tee $f >&/dev/null; done"
 }
 
@@ -74,7 +74,7 @@ verify-irq-cpus "$TTYS0_IRQ" "$claimer_cpus"
 verify-irq-cpus "$RTC0_IRQ" "$claimer_cpus"
 verify-irq-cpus "$ACPI_IRQ" "$sink_cpus"
 
-vm-command 'kubectl delete pod pod2 --now'
+delete-pods pod2
 # no sink present anymore
 verify-irq-cpus "$TTYS0_IRQ" "$claimer_cpus"
 verify-irq-cpus "$RTC0_IRQ" "$claimer_cpus"

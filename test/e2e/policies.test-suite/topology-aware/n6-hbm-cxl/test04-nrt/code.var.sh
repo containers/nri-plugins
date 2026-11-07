@@ -1,9 +1,4 @@
-cleanup() {
-    delete-pods --all
-    helm-terminate
-}
-
-cleanup
+cleanup-test --helm
 helm_config=${TEST_DIR}/topology-aware-nrt.cfg helm-launch topology-aware
 
 # Print full NRT yaml for debugging
