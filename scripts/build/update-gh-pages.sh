@@ -169,17 +169,17 @@ cat > index.html << EOF
 <meta http-equiv="refresh" content="0; URL='$redirect_to'" />
 EOF
 
-if [ -z "`git status --short`" ]; then
+# Create a new commit
+commit_msg=`echo -e "Update documentation for $build_subdir\n\nAuto-generated from $commit_hash by '$script'"`
+
+# Exclude doctrees dir
+git add -- ":!*/.doctrees/*"
+if git diff --cached --quiet; then
     echo "No new content, gh-pages branch already up-to-date"
     exit 0
 fi
 
-# Create a new commit
-commit_msg=`echo -e "Update documentation for $build_subdir\n\nAuto-generated from $commit_hash by '$script'"`
-
 echo "Committing changes..."
-# Exclude doctrees dir
-git add -- ":!$build_subdir/.doctrees"
 git commit $amend -m "$commit_msg"
 
 popd
