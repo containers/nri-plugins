@@ -17,6 +17,7 @@ package dra
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -178,6 +179,10 @@ func (p *testPolicy) ReleaseClaim(uid types.UID, undo bool) error {
 	delete(p.allocated, uid)
 
 	return nil
+}
+
+func (p *testPolicy) Claims() ([]types.UID, error) {
+	return slices.Sorted(maps.Keys(p.allocated)), nil
 }
 
 // testDevices returns n uniquely named devices, for the cases which care about

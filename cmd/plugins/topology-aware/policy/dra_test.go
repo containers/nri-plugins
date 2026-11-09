@@ -933,6 +933,20 @@ func TestAllocateClaimsExclusive(t *testing.T) {
 	}
 }
 
+// checkClaims checks the policy claims.
+func checkClaims(t *testing.T, p *policy, want ...types.UID) {
+	t.Helper()
+	got, err := p.Claims()
+	if err != nil {
+		t.Fatalf("failed to list claims: %v", err)
+	}
+	slices.Sort(got)
+	slices.Sort(want)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("policy lists claims %v, expected %v", got, want)
+	}
+}
+
 // TestReleaseClaim checks that releasing a claim frees its CPUs,
 // that releasing an unknown or already released claim has no effect,
 // and that released CPUs can be claimed again.
@@ -943,10 +957,12 @@ func TestReleaseClaim(t *testing.T) {
 
 	a := allocateClaim(t, p, "a", draTestResult(0, "2"), draTestResult(1, "2"))
 	b := allocateClaim(t, p, "b", draTestResult(0, "2"))
+	checkClaims(t, p, "a", "b")
 
 	if err := p.ReleaseClaim("a", false); err != nil {
 		t.Fatalf("failed to release claim a: %v", err)
 	}
+	checkClaims(t, p, "b")
 	if got := freeCPUs(p); !got.Equals(free.Difference(b)) {
 		t.Errorf("free CPUs are %s after releasing a, expected all but b's %s", got, b)
 	}
@@ -1540,9 +1556,7 @@ func TestRestoreClaims(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to restart policy: %v", err)
 	}
-	if len(p.allocations.claims) != 2 {
-		t.Fatalf("restored %d claims, expected 2", len(p.allocations.claims))
-	}
+	checkClaims(t, p, "a", "b")
 	if got := p.allocations.claims["a"].ExclusiveCPUs(); !got.Equals(a) {
 		t.Errorf("claim a has CPUs %s after a restart, expected %s", got, a)
 	}

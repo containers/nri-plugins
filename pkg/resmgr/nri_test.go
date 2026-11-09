@@ -25,6 +25,7 @@ import (
 	nriapi "github.com/containerd/nri/pkg/api"
 	nrilog "github.com/containerd/nri/pkg/log"
 	nristub "github.com/containerd/nri/pkg/stub"
+	"k8s.io/apimachinery/pkg/types"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1"
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
@@ -38,6 +39,8 @@ type testPolicy struct {
 }
 
 func (testPolicy) ExportResourceData(cache.Container) {}
+
+func (testPolicy) Claims() ([]types.UID, error) { return nil, policy.ErrNoDRAClaims }
 
 // testStub is an NRI stub which only serves container updates: err fails the
 // request, failed is what the runtime reports it could not apply, sent records

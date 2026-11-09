@@ -19,9 +19,7 @@ import (
 	"fmt"
 )
 
-// ErrNoDRAClaims is what AllocateClaim and ReleaseClaim return in a policy
-// which does not support DRA claims. Such a policy publishes no DRA devices
-// either, so no claim can name it and these are never called in practice.
+// ErrNoDRAClaims means that the policy does not support DRA claims.
 var ErrNoDRAClaims = errors.New("policy does not support DRA claims")
 
 func policyError(format string, args ...any) error {

@@ -379,6 +379,15 @@ func (p *policy) ReleaseClaim(uid types.UID, undo bool) error {
 	return nil
 }
 
+// Claims returns the UIDs of the policy claims.
+func (p *policy) Claims() ([]types.UID, error) {
+	uids := make([]types.UID, 0, len(p.allocations.claims))
+	for uid := range p.allocations.claims {
+		uids = append(uids, types.UID(uid))
+	}
+	return uids, nil
+}
+
 // moveClaimsBack moves the claims allocating c moved back to the CPUs they
 // had, unless they moved again since, and pins their holders to those CPUs.
 func (p *policy) moveClaimsBack(c *claim) {
