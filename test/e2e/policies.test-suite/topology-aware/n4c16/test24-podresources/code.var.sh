@@ -4,8 +4,7 @@
 
 cleanup() {
     stop-fake-device-plugins
-    delete-pods --all
-    helm-terminate || :
+    cleanup-test --helm
 }
 
 cleanup

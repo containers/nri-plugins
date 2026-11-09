@@ -695,9 +695,14 @@ get-config-generation() {
     vm-command-q "kubectl get -n kube-system $resource -ojsonpath={.metadata.generation}"
 }
 
+# Print the name the configuration status gives the node: the hostname of the
+# VM without its domain.
+#
+# Read it from VM_HOSTNAME alone. The callers below expand this inside a
+# "local node=..." declaration, which bash expands before the local exists, so
+# a $node the test case happens to have set would otherwise be in scope here.
 get-hostname-for-vm() {
-    local node="${node:-$VM_HOSTNAME}"
-    echo ${node%.*}
+    echo "${VM_HOSTNAME%.*}"
 }
 
 get-config-node-status-generation() {
@@ -795,6 +800,24 @@ verify-config-status-error() { # script API
     vm-command "kubectl get -n kube-system $resource -ojson | jq '.status.nodes[].errors'"
     grep -q "$regexp" <<< "$COMMAND_OUTPUT" ||
         error "expected an error matching \"$regexp\" in the status of $resource"
+}
+
+wait-config-status-error() { # script API
+    # Usage: wait-config-status-error REGEXP [TIMEOUT] [RESOURCE]
+    #
+    # Wait until REGEXP matches the errors in the node status of the
+    # configuration custom resource RESOURCE, which defaults to the
+    # configuration resource of $POLICY, TIMEOUT seconds at most, 30 by
+    # default. Fail the test, dumping the status, if it does not in time.
+    #
+    # Use this where the plugin reports the error later than the status turns
+    # into a Failure, as it does for a restart which fails.
+    local regexp="$1" timeout="${2:-30}" resource="${3:-$(config-resource)}"
+
+    retry-until --timeout "$timeout" \
+        --message "an error matching \"$regexp\" in the status of $resource" \
+        'grep -q "$regexp" <<< "$(get-config-node-status-error "$resource")"' ||
+        verify-config-status-error "$regexp" "$resource"
 }
 
 declare -a pulled_images_on_vm

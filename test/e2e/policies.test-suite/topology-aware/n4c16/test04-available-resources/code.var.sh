@@ -17,7 +17,7 @@ verify "cpus['pod1c0'] == {'cpu08', 'cpu09', 'cpu10'}" \
        "cpus['pod1c1'] == {'cpu08', 'cpu09', 'cpu10'}" \
        "mems['pod1c0'] == {'node2'}" \
        "mems['pod1c1'] == {'node2'}"
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 
 helm-terminate
 RESERVED_CPU="cpuset:11-15"

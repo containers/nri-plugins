@@ -802,17 +802,25 @@ available:
   | group | helpers |
   | --- | --- |
   | waiting | `retry-until` |
-  | pods and containers | `container-state`, `wait-container-waiting-reason`, `verify-container-error`, `wait-pod-gone` |
-  | launching the plugin | `relaunch-policy`, `expect-launch-failure` |
-  | cleaning up | `delete-pods`, `create-namespaces`, `delete-namespaces`, `remove-policy-cache`, `kill-test-processes` |
-  | log of the plugin | `plugin-daemonset`, `plugin-log`, `plugin-log-tail`, `assert-log-contains`, `assert-log-not-contains`, `wait-assert-log-contains`, `wait-assert-log-grew`, `assert-cpu-clos`, `assert-cpu-freq` |
+  | pods and containers | `container-state`, `wait-container-waiting-reason`, `verify-container-error`, `wait-pod-gone`, `wait-pod-condition` |
+  | launching the plugin | `relaunch-policy`, `expect-launch-failure`, `follow-plugin`, `restart-plugin` |
+  | cleaning up | `cleanup-test`, `delete-pods`, `create-namespaces`, `delete-namespaces`, `remove-policy-cache`, `kill-test-processes` |
+  | pod of the plugin | `plugin-daemonset`, `plugin-pod`, `plugin-container-status` |
+  | log of the plugin | `plugin-log`, `plugin-log-tail`, `assert-log-contains`, `assert-log-not-contains`, `wait-assert-log-contains`, `wait-assert-log-grew`, `assert-cpu-clos`, `assert-cpu-freq` |
+  | verifying the state | `wait-verify` |
   | metrics | `verify-metrics-has-line`, `verify-metrics-has-no-line` |
-  | node resource topology | `nrt-query`, `nrt-dump`, `nrt-verify-zone-attribute`, `nrt-verify-zone-resource` |
+  | node resource topology | `nrt-query`, `nrt-query-q`, `nrt-dump`, `nrt-verify-zone-attribute`, `nrt-verify-zone-resource` |
   | node state | `require-kernel-version`, `verify-kubepods-cpus`, `clear-isolcpus`, `disable-numa`, `enable-numa` |
-  | CPU lists | `expand-cpulist`, `cpulist-difference`, `container-cpus`, `allowed-cpu-ids` |
+  | CPU lists | `expand-cpulist`, `cpulist-difference`, `container-cpus`, `container-mems`, `allowed-cpu-ids`, `wait-cpuset-change` |
+  | resizing containers | `resize-cpu` |
   | extended resources | `get-node-resource`, `wait-node-resource` |
+  | fake device plugins | `install-fake-device-plugin`, `start-fake-device-plugin`, `stop-fake-device-plugins` |
+  | resources exported to containers | `exported-resource` |
+  | dynamic resource allocation | `dra-devices`, `dra-device`, `wait-dra-devices`, `dra-consumable-capacity`, `dra-claimed-cpus` |
   | interrupts | `resolve-irq`, `irq-cpu-ids`, `verify-irq-cpus` |
   | scheduling | `verify-sched`, `SCHED_*` |
+  | generated test scripts | `run-generated-tests` |
+  | ending the test early | `skip-test` |
 
   Some of them are configured by variables a test case can set, notably
   `plugin_log_filter`, which restricts the log assertions to the log lines of

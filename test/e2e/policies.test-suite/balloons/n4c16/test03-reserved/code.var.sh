@@ -2,8 +2,7 @@ relaunch-policy balloons "${TEST_DIR}/balloons-reserved.cfg"
 
 cleanup() {
     delete-pods -n kube-system pod0 pod3 pod7
-    delete-pods pod4 pod5 pod6
-    delete-namespaces monitor-mypods system-logs my-exact-name
+    cleanup-test
 }
 
 cleanup

@@ -29,7 +29,7 @@ verify 'cpus["pod2c0"] == cpus["pod2c1"]' \
        'cpus["pod2c0"] == cpus["pod1c0"]'
 verify 'disjoint_sets(nodes["pod0c0"],nodes["pod0c1"],nodes["pod0c2"],nodes["pod1c0"])'
 
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 
 # Now test the other way around. First spread 2 besteffort containers
 # around NUMA nodes. Then create a guaranteed one with 4 CPUs and check

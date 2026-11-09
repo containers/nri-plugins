@@ -2,8 +2,7 @@ OTEL_LOGS=/tmp/otel/data/otel-export.out
 
 cleanup() {
     always-cleanup
-    delete-pods --all
-    helm-terminate || :
+    cleanup-test --helm
     vm-command "mkdir -p /tmp/otel/data && chmod a+rw /tmp/otel/data"
     vm-command "rm -f $OTEL_LOGS && touch -f $OTEL_LOGS && chmod a+rw $OTEL_LOGS"
 }
@@ -29,8 +28,6 @@ helm_config=$(instantiate custom-config.yaml) helm-launch topology-aware
 
 pod=pod0
 CONTCOUNT=4 create besteffort
-
-vm-command "kubectl wait --timeout=5s --for=condition=Ready pods/$pod"
 
 cnt=0
 while [ $cnt -lt 5 ]; do

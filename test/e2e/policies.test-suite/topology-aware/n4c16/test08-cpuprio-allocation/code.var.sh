@@ -17,7 +17,7 @@ verify \
     'cpus["pod0c1"] not in [ {"cpu04"}, {"cpu05"} ]' \
     'cpus["pod0c2"] == {"cpu05"}'
 
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 
 # Override CPU type detection, to detect 3 high-perf CPUs (one extra
 # for the reserved CPU allocation for which we currently always prefer

@@ -1,15 +1,14 @@
 helm-terminate
 helm_config=$(instantiate helm-config.yaml) helm-launch topology-aware
 
-cleanup-test-pods() {
-    # Make sure all the pods in default namespace are cleared so we get a fresh start
-    delete-pods --all
-
-    # Remove also any leftover test pods from kube-system
+cleanup() {
+    # The test places some of its pods in kube-system, which cleanup-test
+    # leaves alone.
     delete-pods -n kube-system pod0 pod1 pod2 pod3 pod4 pod5
+    cleanup-test
 }
 
-cleanup-test-pods
+cleanup
 
 # Place pod0c0 and pod0c1 to shared pools on separate nodes.
 CONTCOUNT=2 CPU=500m create guaranteed
@@ -85,7 +84,7 @@ verify `# every container is placed on a single node (no socket, no root)` \
 # no-effect from isolated preference.
 # - opt-out from shared CPUs (=> opt-in to exclusive CPUs)
 # - opt-out from isolated CPUs (this does not affect getting exclusive CPUs)
-vm-command "kubectl delete pods pod3 --now"
+delete-pods pod3
 ANNOTATIONS=('prefer-shared-cpus.resource-policy.nri.io/pod: "false"'
              'prefer-isolated-cpus.resource-policy.nri.io/pod: "false"')
 CONTCOUNT=1 CPU=2400m create guaranteed-annotated
@@ -102,7 +101,7 @@ verify `# every container is placed on a single node (no socket, no root)` \
 # Replace pod1 with pod5.
 # pod1 implicitly opted-in to exclusive CPUs due to 1500 mCPU request.
 # Now explicitly opt-out of it by opting-in to shared-cpus.
-vm-command "kubectl delete pods pod1 --now"
+delete-pods pod1
 # Make sure that shared pool size increased correctly after mixed pod deletion.
 verify `# pod0c0 or pod0c1 shared a node with pod1c1 and had only 3 CPUs` \
        "len(cpus['pod0c0']) == 4" \
@@ -125,6 +124,6 @@ verify `# every container is placed on a single node (no socket, no root)` \
        "len(cpus['pod5c0'] - set.union(*[cpus[c] for c in cpus if c != 'pod5c0'])) == 0" \
        "len(cpus['pod5c1'] - set.union(*[cpus[c] for c in cpus if c != 'pod5c1'])) == 0"
 
-cleanup-test-pods
+cleanup
 
 helm-terminate

@@ -12,8 +12,7 @@ setup() {
 cleanup() {
     delete-pods -n "$TESTNS" --all
     kill-test-processes
-    delete-namespaces "$TESTNS"
-    helm-terminate
+    cleanup-test --helm
 }
 
 create-containers() {

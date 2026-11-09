@@ -1,17 +1,20 @@
 # Test that
 # - containers marked in ReservedPoolNamespaces option pinned on Reserved CPUs.
 
-create-namespaces reserved-test
-
-# This script will create pods to the reserved and default namespace.
-# Make sure the namespace is clear when starting the test and clean it up
-# if exiting with success. Otherwise leave the pod running for
-# debugging in case of a failure.
-cleanup-test-pods() {
+# Called between the phases of the test and at its end, so that a failing
+# phase leaves its pods running for debugging.
+cleanup() {
+    # The test places one of its pods in kube-system, which cleanup-test
+    # leaves alone, and needs foobar until its last phase is over.
     delete-pods -n kube-system pod0
-    delete-pods pod1
+    cleanup-test --preserve-namespaces foobar
 }
-cleanup-test-pods
+cleanup
+
+# Make the namespace of the second phase now, so that create-namespaces
+# empties what a failed run left in it before the first phase measures the
+# CPUs of the node.
+create-namespaces foobar
 
 helm-terminate
 RESERVED_POOL_NAMESPACES="reserved-pool reserved-* foobar"
@@ -25,19 +28,12 @@ report allowed
 verify 'cpus["pod0c0"] == {"cpu10", "cpu11"}'
 verify 'cpus["pod1c0"] == {"cpu08", "cpu09"}'
 
-cleanup-test-pods
+cleanup
 
 # Test that
 # - containers that are namespace-assigned to reserved pools are pinned there
 # - containers that are annotated to opt-put that are pinned elsewhere, and
 # - containers that are namespace-assigned and annotated to reserved pools are pinned there
-
-create-namespaces foobar
-
-cleanup-foobar-namespace() {
-    delete-pods -n foobar --all
-}
-cleanup-foobar-namespace
 
 CONTCOUNT=1 namespace=foobar create besteffort
 ANN0='prefer-reserved-cpus.resource-policy.nri.io/pod: "false"'
@@ -50,6 +46,4 @@ verify 'cpus["pod2c0"] == {"cpu10", "cpu11"}'
 verify 'cpus["pod3c0"] == {"cpu08", "cpu09"}'
 verify 'cpus["pod4c0"] == {"cpu10", "cpu11"}'
 
-cleanup-foobar-namespace
-
-helm-terminate
+cleanup-test --helm

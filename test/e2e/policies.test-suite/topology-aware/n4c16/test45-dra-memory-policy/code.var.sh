@@ -11,17 +11,7 @@
 e2eish=0
 
 cleanup() {
-    vm-command "kubectl delete pods --all --now --wait" || :
-    vm-command "kubectl delete resourceclaimtemplates --all --now" || :
-    helm-terminate || :
-}
-
-slice() {
-    # Usage: slice JQ
-    #
-    # Print JQ of our ResourceSlice.
-    vm-command-q "kubectl get resourceslices -o json | jq -r '.items[] |
-                      select(.spec.driver == \"topology-aware.nri.io\") | $1'"
+    cleanup-test --helm --claims
 }
 
 memory-policies() {
@@ -36,17 +26,10 @@ cleanup
 
 helm_config=$(DRA_ENABLED=true instantiate helm-config.yaml) helm-launch topology-aware
 
-retry-until --timeout 30 --message "the plugin to publish its devices" \
-    '[ -n "$(slice ".spec.devices[0].name // empty")" ]' ||
-    error "the plugin published no devices"
+wait-dra-devices
 
-# allowMultipleAllocations lets claims share a device. Without
-# DRAConsumableCapacity, the API server drops this field.
-if [ "$(slice ".spec.devices[0].allowMultipleAllocations")" != "true" ]; then
-    cleanup
-    echo "Test verdict: SKIP (DRAConsumableCapacity is not enabled)"
-    exit 0
-fi
+dra-consumable-capacity ||
+    { cleanup; skip-test "DRAConsumableCapacity is not enabled"; }
 
 # pod0's claim asks for one CPU of node 0 and one of node 1, both in package
 # 0. Its config interleaves memory on the nodes the containers may use.

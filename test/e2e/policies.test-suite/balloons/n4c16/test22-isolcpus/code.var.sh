@@ -1,15 +1,10 @@
-cleanup-pods() {
-    delete-pods --all
-    delete-namespaces "$ns"
-}
-
 cleanup() {
-    cleanup-pods
+    cleanup-test
     clear-isolcpus
 }
 
 ns=isolcpus
-cleanup-pods
+cleanup-test
 
 vm-command "grep isolcpus=0,1 /proc/cmdline" || vm-set-kernel-cmdline-reboot "isolcpus=0,1"
 

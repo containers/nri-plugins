@@ -1,8 +1,13 @@
-# Make sure all the pods in default namespace are cleared so we get a fresh start
-delete-pods --all
+cleanup-test
 
-# Remove also any leftover test pods from kube-system
+# Remove also any leftover test pods from kube-system, which cleanup-test
+# leaves alone.
 delete-pods -n kube-system pod0 pod1 pod2 pod3 pod4 pod5
+
+# Make the namespace of the last phase now, so that create-namespaces empties
+# what a failed run left in it before the first phase measures the CPUs of
+# the node.
+create-namespaces test-ns
 
 # Cleanup kernel commandline, otherwise isolcpus will affect CPU
 # pinning and cause false negatives from other tests on this VM.
@@ -26,7 +31,7 @@ verify \
     'disjoint_sets(cpus["pod0c0"], cpus["pod0c1"], cpus["pod0c2"], cpus["pod0c3"])' \
     'disjoint_sets(nodes["pod0c0"], nodes["pod0c1"], nodes["pod0c2"], nodes["pod0c3"])'
 
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 
 # pod1: Test that 4 guaranteed containers not eligible for isolated CPU allocation
 # gets evenly spread over NUMA nodes.
@@ -41,7 +46,7 @@ verify \
     'disjoint_sets(cpus["pod1c0"], cpus["pod1c1"], cpus["pod1c2"], cpus["pod1c3"])' \
     'disjoint_sets(nodes["pod1c0"], nodes["pod1c1"], nodes["pod1c2"], nodes["pod1c3"])'
 
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 
 # pod2: Test that 4 burstable containers not eligible for isolated/exclusive CPU allocation
 # gets evenly spread over NUMA nodes.
@@ -51,7 +56,7 @@ verify \
     'disjoint_sets(cpus["pod2c0"], cpus["pod2c1"], cpus["pod2c2"], cpus["pod2c3"])' \
     'disjoint_sets(nodes["pod2c0"], nodes["pod2c1"], nodes["pod2c2"], nodes["pod2c3"])'
 
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 
 # pod3: Test that initContainer resources are freed before launching
 # containers: instantiate 5 init containers, each requiring 5 CPUs. If
@@ -65,7 +70,7 @@ verify \
     'disjoint_sets(nodes["pod3c0"], nodes["pod3c1"])' \
     'disjoint_sets(packages["pod3c0"], packages["pod3c1"])'
 
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 
 # pod4: Test that with pod colocation enabled containers within a pod get
 # colocated (assigned topologically close to each other) as opposed to being
@@ -80,15 +85,13 @@ verify \
     'cpus["pod4c2"] == cpus["pod4c0"]' \
     'cpus["pod4c3"] == cpus["pod4c0"]'
 
-vm-command "kubectl delete pods --all --now"
+delete-pods --all
 
 # pod{5,6,7}: Test that with namespace colocation enabled containers of pods
 # in the same namespace get colocated (assigned topologically close to each
 # other) as opposed to being evenly spread out.
 helm-terminate
 helm_config=$(COLOCATE_NAMESPACES=true instantiate helm-config.yaml) helm-launch topology-aware
-
-create-namespaces test-ns
 
 CONTCOUNT=1 CPU=100m namespace=test-ns create guaranteed
 CONTCOUNT=1 CPU=100m namespace=test-ns create guaranteed
@@ -99,9 +102,7 @@ verify \
     'cpus["pod7c0"] == cpus["pod5c0"]' \
     'cpus["pod7c1"] == cpus["pod5c0"]'
 
-delete-namespaces test-ns
-
-# Restore default test configuration, restart nri-resource-policy.
-helm-terminate
+# Leave the node without the pods, the namespace or the plugin of the test.
+cleanup-test --helm
 
 echo $?
