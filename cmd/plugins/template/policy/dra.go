@@ -153,6 +153,15 @@ func (p *policy) ReleaseClaim(uid types.UID, _ bool) error {
 	return nil
 }
 
+// Claims returns the UIDs of the policy claims.
+func (p *policy) Claims() ([]types.UID, error) {
+	uids := make([]types.UID, 0, len(p.claims))
+	for uid := range p.claims {
+		uids = append(uids, types.UID(uid))
+	}
+	return uids, nil
+}
+
 // restoreClaims loads the claimed CPUs saved before a restart. A claim keeps
 // its CPUs even if we are not allowed some of them any more: its containers
 // were told them when they were created, so it cannot move, and until it is

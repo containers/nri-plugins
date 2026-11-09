@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 
 	cfgapi "github.com/containers/nri-plugins/pkg/apis/config/v1alpha1/resmgr/policy/template"
@@ -129,6 +130,20 @@ func checkClaim(t *testing.T, p *policy, uid types.UID, want ...string) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("claim %s holds CPUs %v, want %v", uid, got, want)
+	}
+}
+
+// checkClaims checks the policy claims.
+func checkClaims(t *testing.T, p *policy, want ...types.UID) {
+	t.Helper()
+	got, err := p.Claims()
+	if err != nil {
+		t.Fatalf("failed to list claims: %v", err)
+	}
+	slices.Sort(got)
+	slices.Sort(want)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("policy lists claims %v, want %v", got, want)
 	}
 }
 
@@ -278,12 +293,14 @@ func TestReleaseClaim(t *testing.T) {
 
 	allocate(t, p, "a", "2")
 	allocate(t, p, "b", "2")
+	checkClaims(t, p, "a", "b")
 	if err := p.ReleaseClaim("a", false); err != nil {
 		t.Fatalf("failed to release claim: %v", err)
 	}
 	if err := p.ReleaseClaim("unknown", false); err != nil {
 		t.Errorf("failed to release an unknown claim: %v", err)
 	}
+	checkClaims(t, p, "b")
 
 	allocate(t, p, "c", "3")
 	checkClaim(t, p, "c", "0-1,4")
@@ -304,6 +321,7 @@ func TestRestoreClaims(t *testing.T) {
 	// Claim b holds CPUs 1-3, not the lowest free ones, so only a restored
 	// claim gets them again.
 	p = testPolicy(t, dir, testConfig("", "750m"))
+	checkClaims(t, p, "b")
 	allocate(t, p, "b", "1", "2")
 	checkClaim(t, p, "b", "1", "2-3")
 	allocate(t, p, "c", "2")

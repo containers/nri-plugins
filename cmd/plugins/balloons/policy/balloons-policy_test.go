@@ -15,11 +15,13 @@
 package balloons
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/containers/nri-plugins/pkg/resmgr/cache"
+	policy "github.com/containers/nri-plugins/pkg/resmgr/policy"
 )
 
 func TestChangesBalloons(t *testing.T) {
@@ -227,5 +229,20 @@ func TestFilterOutPrefixDevs(t *testing.T) {
 	remainingDevs := filterOutPrefixDevs(devs, podResourceHintDevName(ctr0, ""))
 	if !slices.Equal(remainingDevs, expectedDevs) {
 		t.Errorf("expected remaining devices %v but got %v", expectedDevs, remainingDevs)
+	}
+}
+
+// TestNoDRAClaims verifies that every DRA claim method returns ErrNoDRAClaims.
+func TestNoDRAClaims(t *testing.T) {
+	p := &balloons{}
+
+	if _, err := p.AllocateClaim(nil, nil); !errors.Is(err, policy.ErrNoDRAClaims) {
+		t.Errorf("AllocateClaim() returned %v, expected %v", err, policy.ErrNoDRAClaims)
+	}
+	if err := p.ReleaseClaim("a", false); !errors.Is(err, policy.ErrNoDRAClaims) {
+		t.Errorf("ReleaseClaim() returned %v, expected %v", err, policy.ErrNoDRAClaims)
+	}
+	if _, err := p.Claims(); !errors.Is(err, policy.ErrNoDRAClaims) {
+		t.Errorf("Claims() returned %v, expected %v", err, policy.ErrNoDRAClaims)
 	}
 }

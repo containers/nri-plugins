@@ -16,6 +16,7 @@ package policy
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	resourceapi "k8s.io/api/resource/v1"
@@ -35,6 +36,7 @@ type draBackend struct {
 	results   []resourceapi.DeviceRequestAllocationResult
 	releaseID types.UID
 	undo      bool
+	claims    []types.UID
 }
 
 func (b *draBackend) AllocateClaim(
@@ -48,6 +50,10 @@ func (b *draBackend) AllocateClaim(
 func (b *draBackend) ReleaseClaim(uid types.UID, undo bool) error {
 	b.releaseID, b.undo = uid, undo
 	return b.err
+}
+
+func (b *draBackend) Claims() ([]types.UID, error) {
+	return b.claims, b.err
 }
 
 func TestAllocateClaim(t *testing.T) {
@@ -92,5 +98,23 @@ func TestReleaseClaim(t *testing.T) {
 	backend.err = errors.New("no such claim")
 	if err := p.ReleaseClaim(types.UID("claim-uid"), false); !errors.Is(err, backend.err) {
 		t.Errorf("ReleaseClaim() returned error %v, expected %v", err, backend.err)
+	}
+}
+
+func TestClaims(t *testing.T) {
+	backend := &draBackend{claims: []types.UID{"a", "b"}}
+	p := &policy{active: backend}
+
+	got, err := p.Claims()
+	if err != nil {
+		t.Fatalf("Claims() failed: %v", err)
+	}
+	if !reflect.DeepEqual(got, backend.claims) {
+		t.Errorf("Claims() returned %v, expected %v", got, backend.claims)
+	}
+
+	backend.err = ErrNoDRAClaims
+	if _, err := p.Claims(); !errors.Is(err, ErrNoDRAClaims) {
+		t.Errorf("Claims() returned error %v, expected %v", err, ErrNoDRAClaims)
 	}
 }

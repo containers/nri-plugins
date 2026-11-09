@@ -194,6 +194,9 @@ type Backend interface {
 	// the containers got the updates allocating it made, and the policy also
 	// undoes what allocating it changed for other claims and containers.
 	ReleaseClaim(uid types.UID, undo bool) error
+	// Claims returns the UIDs of the policy claims. A policy without DRA
+	// support returns ErrNoDRAClaims.
+	Claims() ([]types.UID, error)
 }
 
 // Policy is the exposed interface for container resource allocations decision making.
@@ -229,6 +232,9 @@ type Policy interface {
 	// ReleaseClaim releases the resources allocated for the given claim, and
 	// undoes what allocating it changed if undo is true.
 	ReleaseClaim(uid types.UID, undo bool) error
+	// Claims returns the UIDs of the active policy claims. It returns
+	// ErrNoDRAClaims if the active policy does not support DRA.
+	Claims() ([]types.UID, error)
 }
 
 // Metrics is the interface we expect policy-specific metrics to implement.
@@ -399,6 +405,12 @@ func (p *policy) AllocateClaim(
 func (p *policy) ReleaseClaim(uid types.UID, undo bool) error {
 	defer p.scollect.Update()
 	return p.active.ReleaseClaim(uid, undo)
+}
+
+// Claims returns the UIDs of the active policy claims. It returns
+// ErrNoDRAClaims if the active policy does not support DRA.
+func (p *policy) Claims() ([]types.UID, error) {
+	return p.active.Claims()
 }
 
 // ContainerStarted tells the active policy that a container has started.

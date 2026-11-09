@@ -642,6 +642,11 @@ func (p *balloons) ReleaseClaim(types.UID, bool) error {
 	return policy.ErrNoDRAClaims
 }
 
+// Claims returns an error because the balloons policy does not support DRA.
+func (p *balloons) Claims() ([]types.UID, error) {
+	return nil, policy.ErrNoDRAClaims
+}
+
 // balloonByContainer returns a balloon that contains a container.
 func (p *balloons) balloonByContainer(c cache.Container) *Balloon {
 	podID := c.GetPodID()
