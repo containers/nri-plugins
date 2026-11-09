@@ -12,6 +12,7 @@
     is_containerd: false
     is_crio: false
     is_hardware: false
+    manage_runtime: true
     containerd_release: "{{ containerd_release }}"
     containerd_tarball: "https://github.com/containerd/containerd/releases/download/v{{ containerd_release }}/containerd-{{ containerd_release }}-linux-amd64.tar.gz"
     containerd_service_file: "https://raw.githubusercontent.com/containerd/containerd/main/containerd.service"
@@ -202,7 +203,7 @@
       ansible.builtin.systemd:
         name: network-online.target
         state: started
-      when: not (is_hardware | default(false) | bool)
+      when: not is_hardware
 
     - name: Add Kubernetes APT repository to sources.list.d
       ansible.builtin.copy:
@@ -424,8 +425,7 @@
         pkg:
           - cri-o
         state: present
-      when: ansible_facts['distribution'] == "Fedora" and is_crio and
-            (manage_runtime | default(true) | bool)
+      when: ansible_facts['distribution'] == "Fedora" and is_crio and manage_runtime
 
     # Install containerd or CRI-O from a release tarball to /usr/local.
     - name: Install runtime binaries from release tarball
@@ -458,8 +458,7 @@
             chdir: /usr/local/cri-o
           when: is_crio
       when: ((is_containerd and containerd_src == "") or
-             (is_crio and crio_src == "")) and
-            (manage_runtime | default(true) | bool)
+             (is_crio and crio_src == "")) and manage_runtime
 
     # Install containerd binaries from compiled sources.
     - name: Install containerd binaries from compiled sources
@@ -493,7 +492,7 @@
       when: is_crio and crio_src != ""
 
     - name: Configure runc as the default CRI-O runtime
-      when: is_crio and (manage_runtime | default(true) | bool)
+      when: is_crio and manage_runtime
       block:
         - name: Remove CRI-O crun configuration
           ansible.builtin.file:
@@ -527,14 +526,14 @@
         mode: '0644'
         force: true
         backup: true
-      when: is_containerd and (manage_runtime | default(true) | bool)
+      when: is_containerd and manage_runtime
 
     - name: Create service.d directory for the runtime
       ansible.builtin.file:
         path: "/etc/systemd/system/{{ cri_runtime }}.service.d"
         state: directory
         mode: '0755'
-      when: (manage_runtime | default(true) | bool)
+      when: manage_runtime
 
     - name: Set up proxies for the runtime
       ansible.builtin.copy:
@@ -545,7 +544,7 @@
           Environment=HTTPS_PROXY="{{ https_proxy }}"
           Environment=NO_PROXY="{{ no_proxy }}"
         mode: '0644'
-      when: (manage_runtime | default(true) | bool)
+      when: manage_runtime
 
     # First issue daemon-reload to pick up config changes
     - name: Start runtime
@@ -574,7 +573,7 @@
         - image-endpoint
 
     - name: Configure containerd
-      when: is_containerd and (manage_runtime | default(true) | bool)
+      when: is_containerd and manage_runtime
       block:
         - name: Create drop-in directory (/etc/containerd/conf.d)
           ansible.builtin.file:
@@ -634,14 +633,14 @@
         state: restarted
         name: "{{ cri_runtime }}"
         daemon_reload: true
-      when: is_containerd and (manage_runtime | default(true) | bool)
+      when: is_containerd and manage_runtime
 
     - name: Restart CRI-O
       ansible.builtin.systemd:
         state: restarted
         name: "{{ cri_runtime }}"
         daemon_reload: true
-      when: is_crio and (manage_runtime | default(true) | bool)
+      when: is_crio and manage_runtime
 
     - name: Load modules the k8s cluster needs
       block:
