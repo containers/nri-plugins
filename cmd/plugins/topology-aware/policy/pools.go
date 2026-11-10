@@ -410,8 +410,19 @@ func (p *policy) checkHWTopology() error {
 	return nil
 }
 
-// Pick a pool and allocate resource from it to the container.
+// Pick a pool and allocate resource from it to the container. Use the
+// hinted pool if it has room, otherwise the best fitting one.
 func (p *policy) allocatePool(container cache.Container, poolHint string) (Grant, error) {
+	grant, err := p.allocateFromPool(container, poolHint)
+	if err != nil && poolHint != "" {
+		log.Infof("%s: can't allocate from hinted pool %s (%v), trying any pool",
+			container.PrettyName(), poolHint, err)
+		grant, err = p.allocateFromPool(container, "")
+	}
+	return grant, err
+}
+
+func (p *policy) allocateFromPool(container cache.Container, poolHint string) (Grant, error) {
 	var (
 		pool  Node
 		offer *libmem.Offer
