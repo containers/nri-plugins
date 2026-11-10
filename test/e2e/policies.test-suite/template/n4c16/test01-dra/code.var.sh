@@ -5,6 +5,7 @@
 
 cleanup() {
     cleanup-test --helm --cache --claims
+    remove-test-cdi-specs
 }
 
 check-cpus() {
@@ -53,8 +54,10 @@ wait-pod-condition --timeout 120 pod2 Ready \
 check-cpus pod2 "4-5"
 
 # A plugin which forgot its claims would give pod3 the lowest free CPUs, which
-# are pod2's.
+# are pod2's. The restart removes orphaned CDI specs. It keeps the other specs.
+plant-test-cdi-specs
 restart-plugin
+verify-test-cdi-specs
 delete-pods pod1
 NAME=pod3 CLAIM=two-cpus create dra-pod
 check-cpus pod3 "6-7"

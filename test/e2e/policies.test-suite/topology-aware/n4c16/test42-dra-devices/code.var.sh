@@ -10,6 +10,7 @@
 
 cleanup() {
     cleanup-test --helm --cache --claims
+    remove-test-cdi-specs
 }
 
 claim() {
@@ -216,7 +217,10 @@ verify "len(cpuset('$first')) == 1" \
 # one CPU left, the only one pod9 may get. pod4 goes first: the restart may
 # place it on node 0, which then keeps that CPU for it.
 delete-pods pod4
+# The restart removes orphaned CDI specs. It keeps the other specs.
+plant-test-cdi-specs
 restart-plugin
+verify-test-cdi-specs
 report allowed
 verify "cpus['pod0c0'] == cpuset('$cpus0')" \
        "cpus['pod2c0'] == cpuset('$cpus2')" \

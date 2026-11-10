@@ -946,6 +946,60 @@ dra-claimed-cpus() { # script API
     exported-resource "$1" CLAIMED_CPUS "$2"
 }
 
+# The CDI spec directory.
+cdi_dir=/var/run/cdi
+# The UID of the stale spec.
+cdi_stale_uid=00000000-dead-beef-0000-000000000000
+# The path of the other vendor spec.
+cdi_other_spec=$cdi_dir/other.example.com-device_keep.yaml
+
+plant-test-cdi-specs() { # script API
+    # Usage: plant-test-cdi-specs [DRIVER]
+    #
+    # Plant two CDI specs. One is a stale spec of DRIVER, "$POLICY.nri.io" by
+    # default. It is a copy of a live claim's spec under another UID. The other
+    # is a spec of another vendor. Set cdi_live_spec to the live claim's spec.
+    # Fail the test if DRIVER has no spec to copy.
+    #
+    # A real orphan cannot be made on demand. The plugin removes the claim's
+    # spec on unprepare.
+    local driver=${1:-$POLICY.nri.io} live
+    live=$(vm-command-q "ls $cdi_dir/$driver-device_*.yaml | head -n 1")
+    [ -n "$live" ] || error "no CDI spec of $driver to copy"
+    vm-command "sed 's/$(basename "${live##*_}" .yaml)/$cdi_stale_uid/g' $live > \
+                    $cdi_dir/$driver-device_$cdi_stale_uid.yaml" ||
+        error "failed to plant a stale CDI spec"
+    vm-command "printf 'cdiVersion: \"0.6.0\"\nkind: other.example.com/device\ndevices:\n- name: keep\n  containerEdits:\n    env:\n    - OTHER=1\n' > $cdi_other_spec" ||
+        error "failed to plant the CDI spec of another vendor"
+    cdi_live_spec=$live
+}
+
+verify-test-cdi-specs() { # script API
+    # Usage: verify-test-cdi-specs [DRIVER]
+    #
+    # Wait until the plugin logs the removal of the stale spec, 30s at most.
+    # Then check that the stale spec is gone. Check that the specs of the live
+    # claim and of the other vendor are still there.
+    local driver=${1:-$POLICY.nri.io}
+    vm-run-until "kubectl logs -n kube-system ds/$(plugin-daemonset) |
+                  grep 'removed the CDI spec of claim $cdi_stale_uid'" ||
+        error "the plugin did not log the removal of the stale CDI spec"
+    vm-command "test ! -e $cdi_dir/$driver-device_$cdi_stale_uid.yaml" ||
+        error "the plugin left the stale CDI spec in place"
+    vm-command "test -e $cdi_live_spec" ||
+        error "the plugin removed the CDI spec of a live claim"
+    vm-command "test -e $cdi_other_spec" ||
+        error "the plugin removed the CDI spec of another vendor"
+}
+
+remove-test-cdi-specs() { # script API
+    # Usage: remove-test-cdi-specs [DRIVER]
+    #
+    # Remove both planted specs if they exist.
+    # Never fails.
+    vm-command "rm -f $cdi_other_spec $cdi_dir/${1:-$POLICY.nri.io}-device_$cdi_stale_uid.yaml" || :
+}
+
 ###
 ### The pod of the plugin
 ###
