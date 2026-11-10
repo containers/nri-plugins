@@ -310,8 +310,7 @@ already have:
 
 ### Reusing an existing cluster
 
-Set `k8s_release=installed` to run the tests on the Kubernetes cluster of the
-host, instead of building a new one:
+Set `k8s_release=installed` to run the tests on the existing Kubernetes cluster:
 
 ```shell
 test_hw_addr=test@10.0.0.1 test_hw_key=~/.ssh/testbox \
@@ -319,27 +318,25 @@ test_hw_addr=test@10.0.0.1 test_hw_key=~/.ssh/testbox \
     ./run_tests.sh policies.test-suite
 ```
 
-The cluster is then left as it is. Provisioning does not install or change a
-Kubernetes package, repository, CNI configuration, sysctl, kernel module,
-kubeconfig or taint, and does not run `kubeadm init` or `kubeadm reset`. The
-version is read from the cluster, and the node is named after its one node.
-Provisioning still installs the packages the framework uses, and Helm unless
-`helm_release=installed` is set too. Then it installs no Helm, and the tests
-use the one on root's `PATH`.
+The cluster is then left as it is. Provisioning does not install or change
+Kubernetes packages, repositories, the CNI configuration, sysctl settings,
+kernel modules or kubeconfigs, does not remove taints, and does not run
+`kubeadm init` or `kubeadm reset`. The Kubernetes version and the node name are
+taken from the cluster. Provisioning still installs the packages the framework
+uses, and Helm unless `helm_release=installed` is set too. Then it installs no
+Helm, and the tests use the one on root's `PATH`.
 
 `installed` needs `test_hw_addr`. It cannot be used with `provision=all`,
 because the run must not take the cluster down, or with `k8s_feature_gates`,
-because the gates of a running cluster are set by whoever runs it. The cluster
-has to be:
+because the gates of a running cluster are already set. The cluster has to be:
 
-- **A single node** cluster, with its `admin.conf` in `/etc/kubernetes`, as
-  kubeadm and the tools built on it leave it.
-- **Untainted**: a `NoSchedule` or `NoExecute` taint on the node is refused,
-  since it would keep the pods of the tests off it.
-- **Reachable by root's `kubectl`**, through `/root/.kube/config`, which is
-  what the tests run their commands with.
-- **Set up with the gates the tests need**, on the apiserver, scheduler and
-  kubelet.
+- **A single node** cluster, with its `admin.conf` in `/etc/kubernetes`.
+- **Untainted**: the node must have no `NoSchedule` or `NoExecute` taints,
+  because they stop the tests from running pods on it.
+- **Reachable by `kubectl` run as root**: `/root/.kube/config` must point to
+  the cluster, because the tests run `kubectl` as root.
+- **Set up with the feature gates required for the tests**, on the
+  apiserver, scheduler and kubelet.
 - **On a runtime which meets the requirements above.** Use
   `containerd_release=installed` to leave the runtime as it is.
 

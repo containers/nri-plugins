@@ -621,39 +621,38 @@ is no cluster to read."
         error "k8s_release=installed cannot be used with provision=all:
 provision=all takes the cluster down."
 
-    # The gates of a running cluster are set by whoever runs it. Accepting
+    # The feature gates of a running cluster cannot be changed. Accepting
     # k8s_feature_gates here would record gates the cluster does not have.
     [ -z "${k8s_feature_gates:-}" ] ||
         error "k8s_release=installed cannot be used with k8s_feature_gates:
-this run cannot set the gates of the cluster on the host. Set them on its
-apiserver, scheduler and kubelet, and unset k8s_feature_gates."
+this run cannot change the gates of the running cluster. Start the cluster
+with the gates the tests need, and unset k8s_feature_gates."
 
     out="$(vm-hw-k8s-cluster)"
     ver="$(sed -n 's/^ver=//p' <<< "$out" | head -n 1)"
     nodes="$(sed -n 's/^node=//p' <<< "$out")"
     taints="$(sed -n 's/^taint=//p' <<< "$out" | grep -v ':PreferNoSchedule$')"
 
-    # The taints are read last, so a probe which failed there still has a
-    # version and a node, and an unread taint must not pass for none.
+    # The taints=read line shows that the taints were read. Without it, an
+    # empty list of taints could mean that reading them failed.
     if [ -z "$ver" ] || [ -z "$nodes" ] || ! grep -qx 'taints=read' <<< "$out"; then
         error "could not read the Kubernetes cluster on $(vm-hw-address)
 through /etc/kubernetes/admin.conf. Is it running, and is kubectl on that
 user's PATH?"
     fi
 
-    # The tests run their pods on the node they were given, and the plugin
-    # pins every container on each node it is deployed to.
+    # The tests need only one node.
     if [ "$(wc -l <<< "$nodes")" != 1 ]; then
         error "the cluster on $(vm-hw-address) has more than one node:
 $(paste -sd' ' <<< "$nodes"). The tests need a single-node cluster."
     fi
 
-    # The cluster is left as it is, taints included, and a taint which keeps
-    # pods off the node would keep the pods of the tests off it.
+    # This run does not remove taints, and the tests cannot run on a tainted
+    # node.
     if [ -n "$taints" ]; then
-        error "the node $nodes of the cluster on $(vm-hw-address) has taints
-which keep pods off it: $(paste -sd' ' <<< "$taints"). Remove them on the
-cluster, for instance kubectl taint nodes $nodes KEY:EFFECT-."
+        error "the node $nodes on $(vm-hw-address) has taints:
+$(paste -sd' ' <<< "$taints"). The tests cannot run pods on it. Remove the
+taints, for example: kubectl taint nodes $nodes KEY:EFFECT-"
     fi
 
     export k8s_preinstalled=1
@@ -927,8 +926,8 @@ vm-hw-resolve-names() {
         vm-hw-check-options
         hostname="$(vm-hw-hostname)" ||
             error "could not read the name of the host, see above"
-        # An existing cluster names its node itself, and
-        # vm-resolve-installed-k8s gives VM_HOSTNAME that name.
+        # With k8s_release=installed the node name comes from the cluster, so
+        # the hostname is not checked.
         [ "${k8s_release:-}" = "installed" ] ||
             vm-hw-valid-hostname "$hostname" ||
             error "the host does not have a usable name, see above"

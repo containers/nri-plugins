@@ -50,8 +50,8 @@ export cni_release=${cni_release:-latest}
 TOPOLOGY_DIR=${TOPOLOGY_DIR:=e2e}
 
 GH_K8S_REPO="kubernetes/kubernetes"
-# A release of "installed" reuses the existing cluster, and is
-# replaced by its version once the host is known.
+# k8s_release=installed reuses the existing cluster. It is replaced with the
+# cluster version once the host is known.
 export k8s_release=${k8s_release:-"latest"}
 k8s_release="${k8s_release#v}"
 export k8s_version=""
@@ -64,8 +64,8 @@ export k8s_version=""
 export k8s_feature_gates=${k8s_feature_gates:-}
 
 GH_HELM_REPO="helm/helm"
-# A release of "installed" reuses the existing Helm, and is
-# replaced by its version once the host is known.
+# helm_release=installed reuses the existing Helm. It is replaced with the Helm
+# version once the host is known.
 export helm_release=${helm_release:-"latest"}
 
 source "$LIB_DIR"/vm.bash
@@ -701,19 +701,18 @@ get-config-generation() {
     vm-command-q "kubectl get -n kube-system $resource -ojsonpath={.metadata.generation}"
 }
 
-# Print the name the configuration status gives the node: the hostname of the
-# VM without its domain, or all of it on a host we were given.
+# Print the name of the node in the configuration status.
 #
 # Read it from VM_HOSTNAME alone. The callers below expand this inside a
 # "local node=..." declaration, which bash expands before the local exists, so
 # a $node the test case happens to have set would otherwise be in scope here.
 get-hostname-for-vm() {
-    # The distro of a VM named like xyzzy-foobar-22.04 calls it xyzzy-foobar-22.
-    # A host we were given, or the cluster on it, names its node itself.
+    # On a hardware host the node name is VM_HOSTNAME.
     if vm-hw-mode; then
         echo "$VM_HOSTNAME"
         return 0
     fi
+    # The distro calls a VM named xyzzy-foobar-22.04 xyzzy-foobar-22.
     echo "${VM_HOSTNAME%.*}"
 }
 
