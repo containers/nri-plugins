@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/types"
 
@@ -141,6 +142,37 @@ func (s *cdiStore) HasClaim(uid types.UID) (bool, error) {
 	default:
 		return false, fmt.Errorf("dra: failed to look for the CDI spec of claim %s: %w", uid, err)
 	}
+}
+
+// Claims returns the sorted UIDs of the spec claims. It returns none if the
+// spec directory does not exist. It returns an error if the directory cannot
+// be read.
+func (s *cdiStore) Claims() ([]types.UID, error) {
+	entries, err := os.ReadDir(s.dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("dra: failed to list CDI specs in %q: %w", s.dir, err)
+	}
+
+	// Other drivers write specs to this directory. Only the files named by
+	// specName are ours.
+	prefix := s.specName("")
+	ext := filepath.Ext(prefix)
+	prefix = strings.TrimSuffix(prefix, ext)
+
+	var uids []types.UID
+	for _, e := range entries {
+		name := strings.TrimSuffix(e.Name(), ext)
+		uid, ok := strings.CutPrefix(name, prefix)
+		if ok && uid != "" && s.specName(types.UID(uid)) == e.Name() {
+			uids = append(uids, types.UID(uid))
+		}
+	}
+	slices.Sort(uids)
+
+	return uids, nil
 }
 
 // specPath is the spec file of a claim.

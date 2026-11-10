@@ -156,7 +156,13 @@ func New(driverName string, opts Options) (*Plugin, error) {
 }
 
 // Start registers the plugin with the kubelet and publishes its resources.
+// It first removes the orphaned CDI specs.
 func (p *Plugin) Start(ctx context.Context) error {
+	// This takes the owner's lock. It must run before we take p.mu. The
+	// policy holds the owner's lock when it publishes devices. Publishing
+	// takes p.mu.
+	p.removeStaleSpecs()
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -199,6 +205,42 @@ func (p *Plugin) Start(ctx context.Context) error {
 	p.helper = helper
 
 	return nil
+}
+
+// removeStaleSpecs removes the orphaned CDI specs. It removes nothing if
+// listing the policy claims or the specs fails.
+func (p *Plugin) removeStaleSpecs() {
+	// The policy accounts for a claim before its spec is written. It releases
+	// the claim before the spec is removed. A spec of a claim the policy does
+	// not hold is a leftover of a release that did not finish. It can also be
+	// a leftover of a release made while the plugin was not running. We never
+	// drop a claim for having no spec. The claim gets a spec at its next
+	// prepare. No container can use the claim before that.
+	p.owner.Lock()
+	defer p.owner.Unlock()
+
+	held, err := p.policy.Claims()
+	if err != nil {
+		log.Warnf("leaving CDI specs in place, the policy cannot list its claims: %v", err)
+		return
+	}
+
+	written, err := p.cdi.Claims()
+	if err != nil {
+		log.Warnf("leaving CDI specs in place: %v", err)
+		return
+	}
+
+	for _, uid := range written {
+		if slices.Contains(held, uid) {
+			continue
+		}
+		if err := p.cdi.RemoveClaim(uid); err != nil {
+			log.Warnf("%v", err)
+			continue
+		}
+		log.Infof("removed the CDI spec of claim %s, which the policy does not hold", uid)
+	}
 }
 
 // probeListAttributes tells whether the API server accepts list attributes,

@@ -16,6 +16,7 @@ package dra
 
 import (
 	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strconv"
@@ -139,6 +140,63 @@ func TestHasClaim(t *testing.T) {
 		t.Errorf("HasClaim() failed: %v", err)
 	} else if has {
 		t.Errorf("claim %s still has a spec after it was removed", testClaimUID)
+	}
+}
+
+// TestClaims verifies that the store lists the UIDs of its spec claims. It
+// ignores the specs of another vendor. A missing directory has no claims. An
+// unreadable directory is an error.
+func TestClaims(t *testing.T) {
+	s := newTestCDIStore(t)
+	dir := s.specDir(t)
+	a, b := types.UID("a-"+string(testClaimUID)), types.UID("b-"+string(testClaimUID))
+
+	checkClaims := func(want ...types.UID) {
+		t.Helper()
+		got, err := s.Claims()
+		if err != nil {
+			t.Fatalf("Claims() failed: %v", err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("Claims() returned %v, expected %v", got, want)
+		}
+	}
+
+	checkClaims()
+
+	for _, uid := range []types.UID{b, a} {
+		if _, err := s.WriteClaim(uid, []specs.ContainerEdits{{Env: []string{"NRI=1"}}}); err != nil {
+			t.Fatalf("WriteClaim() failed: %v", err)
+		}
+	}
+	other := filepath.Join(dir, "other.nri.io-device_"+string(a)+".yaml")
+	if err := os.WriteFile(other, []byte("cdiVersion: 0.5.0\n"), 0o644); err != nil {
+		t.Fatalf("failed to write a spec of another vendor: %v", err)
+	}
+	checkClaims(a, b)
+
+	if err := s.RemoveClaim(a); err != nil {
+		t.Fatalf("RemoveClaim() failed: %v", err)
+	}
+	checkClaims(b)
+	if _, err := os.Stat(other); err != nil {
+		t.Errorf("the spec of another vendor is gone: %v", err)
+	}
+
+	missing, err := newCDIStore(testDriverName, filepath.Join(t.TempDir(), "missing"))
+	if err != nil {
+		t.Fatalf("newCDIStore() failed: %v", err)
+	}
+	if got, err := missing.Claims(); err != nil || len(got) != 0 {
+		t.Errorf("Claims() of a missing directory returned %v, %v, expected none", got, err)
+	}
+
+	if err := os.Chmod(dir, 0); err != nil {
+		t.Fatalf("failed to make %q unreadable: %v", dir, err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	if _, err := s.Claims(); err == nil {
+		t.Error("Claims() of an unreadable directory succeeded, expected an error")
 	}
 }
 

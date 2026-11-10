@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
 	"reflect"
 	"slices"
 	"strings"
@@ -40,6 +41,7 @@ import (
 
 	specs "tags.cncf.io/container-device-interface/specs-go"
 
+	logger "github.com/containers/nri-plugins/pkg/log"
 	policyapi "github.com/containers/nri-plugins/pkg/resmgr/policy"
 )
 
@@ -135,6 +137,8 @@ type testPolicy struct {
 	failUID     types.UID
 	// releaseErr fails ReleaseClaim.
 	releaseErr error
+	// claimsErr fails Claims.
+	claimsErr error
 	// edits, when set, replaces the container edits AllocateClaim returns, for
 	// the cases which care about what a policy hands us.
 	edits func(results []resourceapi.DeviceRequestAllocationResult) []specs.ContainerEdits
@@ -182,6 +186,9 @@ func (p *testPolicy) ReleaseClaim(uid types.UID, undo bool) error {
 }
 
 func (p *testPolicy) Claims() ([]types.UID, error) {
+	if p.claimsErr != nil {
+		return nil, p.claimsErr
+	}
 	return slices.Sorted(maps.Keys(p.allocated)), nil
 }
 
@@ -455,6 +462,85 @@ func TestStartTwice(t *testing.T) {
 
 	if err := p.Start(t.Context()); err == nil {
 		t.Error("second Start() succeeded, expected an error")
+	}
+}
+
+// writeTestSpec writes a claim's CDI spec.
+func writeTestSpec(t *testing.T, p *Plugin, uid types.UID) {
+	t.Helper()
+	if _, err := p.cdi.WriteClaim(uid, []specs.ContainerEdits{{Env: []string{"NRI=1"}}}); err != nil {
+		t.Fatalf("WriteClaim() failed: %v", err)
+	}
+}
+
+// checkSpec checks whether a claim has a spec.
+func checkSpec(t *testing.T, p *Plugin, uid types.UID, want bool) {
+	t.Helper()
+	has, err := p.cdi.HasClaim(uid)
+	if err != nil {
+		t.Fatalf("HasClaim() failed: %v", err)
+	}
+	if has != want {
+		t.Errorf("claim %s has a spec: %v, expected %v", uid, has, want)
+	}
+}
+
+// TestStartRemovesStaleSpecs verifies that starting removes the orphaned CDI
+// specs. It keeps the CDI specs of live claims.
+func TestStartRemovesStaleSpecs(t *testing.T) {
+	live, stale := types.UID("live"), types.UID("stale")
+	policy := &testPolicy{
+		allocated: map[types.UID][]resourceapi.DeviceRequestAllocationResult{live: nil},
+	}
+	p, _ := newTestPlugin(t, newTestClient(), policy)
+	writeTestSpec(t, p, live)
+	writeTestSpec(t, p, stale)
+
+	if err := p.Start(t.Context()); err != nil {
+		t.Fatalf("Start() failed: %v", err)
+	}
+	defer p.Stop()
+
+	checkSpec(t, p, live, true)
+	checkSpec(t, p, stale, false)
+}
+
+// TestStartKeepsSpecsWithoutClaims verifies that no spec is removed when the
+// policy does not support claims.
+func TestStartKeepsSpecsWithoutClaims(t *testing.T) {
+	policy := &testPolicy{claimsErr: policyapi.ErrNoDRAClaims}
+	p, _ := newTestPlugin(t, newTestClient(), policy)
+	writeTestSpec(t, p, testClaimUID)
+
+	if err := p.Start(t.Context()); err != nil {
+		t.Fatalf("Start() failed: %v", err)
+	}
+	defer p.Stop()
+
+	checkSpec(t, p, testClaimUID, true)
+}
+
+// TestStartUnreadableSpecDir verifies that the plugin starts with an unreadable
+// spec directory. A warning names the directory.
+func TestStartUnreadableSpecDir(t *testing.T) {
+	p, _ := newTestPlugin(t, newTestClient(), &testPolicy{})
+	writeTestSpec(t, p, testClaimUID)
+	dir := p.cdi.dir
+	if err := os.Chmod(dir, 0); err != nil {
+		t.Fatalf("failed to make %q unreadable: %v", dir, err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+	var logs strings.Builder
+	defer logger.SetOutput(logger.SetOutput(&logs))
+
+	if err := p.Start(t.Context()); err != nil {
+		t.Fatalf("Start() failed: %v", err)
+	}
+	defer p.Stop()
+
+	if !strings.Contains(logs.String(), dir) {
+		t.Errorf("no warning names %q, got:\n%s", dir, logs.String())
 	}
 }
 
