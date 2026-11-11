@@ -846,19 +846,6 @@
                 - cilium install --wait
                 - cilium status --wait
 
-        - name: Generate join command
-          ansible.builtin.command:
-            cmd: kubeadm token create --print-join-command
-          register: join_command
-
-        - name: Copy join command to local file
-          delegate_to: localhost
-          become: false
-          ansible.builtin.copy:
-            content: "{{ join_command.stdout_lines[0] }}"
-            dest: "{{ outdir }}/join-command"
-            mode: '0644'
-
         # Not in check mode, as for "Start runtime".
         - name: Enable kubelet systemd service
           ansible.builtin.systemd:

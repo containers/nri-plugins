@@ -1260,8 +1260,7 @@ vm-write-ansible-vars() {
   "cache_dir": $(vm-json-quote "${CACHE_DIR:-}"),
   "cni_plugin": $(vm-json-quote "${cni_plugin:-}"),
   "cni_release": $(vm-json-quote "${cni_release:-}"),
-  "nri_resource_policy_src": $(vm-json-quote "${nri_resource_policy_src:-}"),
-  "outdir": $(vm-json-quote "${OUTPUT_DIR:-}")
+  "nri_resource_policy_src": $(vm-json-quote "${nri_resource_policy_src:-}")
 }
 EOF
 }
