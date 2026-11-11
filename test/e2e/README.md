@@ -402,6 +402,57 @@ it resolves still match what the host is recorded as carrying, and
 cluster this framework has no record of, which is what an interrupted first
 run leaves behind.
 
+### Running a test step by step
+
+`--step --diff` asks before each provisioning task and shows what the task
+changes. Answer `y` to run the task, `n` to skip it, or `c` to run the rest
+without asking:
+
+```shell
+test_hw_addr=test@10.0.0.1 test_hw_key=~/.ssh/testbox \
+    e2e_ansible_args="--step --diff" ./run_tests.sh policies.test-suite/topology-aware/myhost
+```
+
+The playbook runs only on a first run or with `provision` set. A host that is
+recorded with the versions the run resolves is not provisioned again. The run
+only deploys the plugin and runs the tests.
+
+The host is recorded as provisioned even when a task was skipped with `n`.
+Later runs do not run that task. Set `provision` to run the playbook again.
+
+To run the steps of a test by hand, end its `code.var.sh` with `breakpoint`.
+The test stops there, at a `run.sh>` prompt. Each line typed there runs as part
+of the test, with the helpers of `run.sh`, `lib/test.bash` and `code.var.sh`.
+`exit` leaves the prompt. The test then goes on after `breakpoint`. On an
+existing host, the topology directory can have any name. A test whose
+`code.var.sh` holds only `breakpoint` gives a prompt on a host with no plugin
+running:
+
+```shell
+mkdir -p policies.test-suite/topology-aware/myhost/test00-by-hand
+echo breakpoint > policies.test-suite/topology-aware/myhost/test00-by-hand/code.var.sh
+test_hw_addr=test@10.0.0.1 test_hw_key=~/.ssh/testbox \
+    ./run_tests.sh policies.test-suite/topology-aware/myhost/test00-by-hand
+```
+
+At the prompt, start the plugin as a test does, for instance:
+
+```shell
+helm_config=$(DRA_ENABLED=true instantiate helm-config.yaml) helm-launch topology-aware
+```
+
+The prompt has some limits:
+
+- It reads each line with `read` without `-r`. This drops backslashes. Write
+  the commands without them. For instance, use jq's `join` in place of
+  `"\(...)"`.
+- Each line runs on its own. A function defined there has to fit on one line.
+  Functions and variables stay defined until `exit`.
+- A helper that calls `error` ends the test and the prompt with it. Many
+  helpers do this on a timeout, such as `wait-config-status`. Poll with
+  `retry-until` in their place. It returns non-zero on a timeout. It does not
+  end the test.
+
 ## Collecting coverage data
 
 The tests can collect the same kind of coverage data from the plugins they
