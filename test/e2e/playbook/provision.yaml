@@ -290,11 +290,14 @@
           delegate_to: localhost
           become: false
 
+        # Also in check mode. The unarchive below needs the file. It goes to
+        # the cache of the runner, not to the host.
         - name: Download and cache Helm release tarball
           ansible.builtin.get_url:
             url: "{{ helm_tarball }}"
             dest: "{{ cached_helm_tarball }}"
             mode: '0644'
+          check_mode: false
           when: not cached_helm.stat.exists
           delegate_to: localhost
           become: false
@@ -333,6 +336,8 @@
           - rsync
         state: present
 
+    # Not in check mode. The Kubernetes repository is not added then. So the
+    # packages can be missing from the package index.
     - name: Install Kubernetes packages
       ansible.builtin.package:
         name:
@@ -340,7 +345,7 @@
           - kubeadm
           - kubectl
         state: present
-      when: manage_k8s
+      when: manage_k8s and not ansible_check_mode
 
     - name: Install apt packages
       ansible.builtin.apt:
@@ -451,11 +456,14 @@
           delegate_to: localhost
           become: false
 
+        # Also in check mode. The unarchive below needs the file. It goes to
+        # the cache of the runner, not to the host.
         - name: Download and cache runtime release tarball
           ansible.builtin.get_url:
             url: "{{ remote_runtime_tarball }}"
             dest: "{{ cached_runtime_tarball }}"
             mode: '0644'
+          check_mode: false
           when: not cached_runtime.stat.exists
           delegate_to: localhost
           become: false
@@ -563,13 +571,15 @@
         mode: '0644'
       when: manage_runtime
 
-    # First issue daemon-reload to pick up config changes
+    # First issue daemon-reload to pick up config changes. Not in check mode.
+    # A preview of a first run installs nothing. So the unit can be missing.
     - name: Start runtime
       ansible.builtin.systemd:
         name: "{{ cri_runtime }}"
         daemon_reload: true
         state: started
         enabled: true
+      when: not ansible_check_mode
 
     # crictl tries a list of well known endpoints when it is not told one,
     # so on a host with both runtimes installed it can talk to the one this
@@ -600,12 +610,16 @@
         - name: Generate default configuration (/etc/containerd/config.toml)
           ansible.builtin.shell: containerd config default > /etc/containerd/config.toml
 
+        # The edits of config.toml do not run in check mode. The file is not
+        # generated then. It can be missing. An edit of the old file shows
+        # nothing useful.
         - name: Enable drop-in directory in configuration
           ansible.builtin.lineinfile:
             path: /etc/containerd/config.toml
             regexp: '^imports *=.*'
             line: 'imports = [ "/etc/containerd/conf.d/*.toml" ]'
             state: present
+          when: not ansible_check_mode
 
         - name: Enable all plugins
           ansible.builtin.lineinfile:
@@ -613,6 +627,7 @@
             regexp: '^disabled_plugins *=.*'
             line: 'disabled_plugins = []'
             state: present
+          when: not ansible_check_mode
 
         - name: Enable systemd cgroup driver
           ansible.builtin.copy:
@@ -622,7 +637,7 @@
               SystemdCgroup = true
 
         - name: Update CNI plugin directory on Fedora
-          when: ansible_facts['distribution'] == "Fedora"
+          when: ansible_facts['distribution'] == "Fedora" and not ansible_check_mode
           ansible.builtin.replace:
             path: /etc/containerd/config.toml
             regexp: '/opt/cni/bin'
@@ -709,11 +724,13 @@
     - name: Build the Kubernetes cluster
       when: manage_k8s
       block:
+        # Not in check mode, as for "Start runtime".
         - name: Restart kubelet
           ansible.builtin.service:
             name: kubelet
             daemon_reload: true
             state: restarted
+          when: not ansible_check_mode
 
         - name: Write the kubeadm configuration
           ansible.builtin.copy:
@@ -842,7 +859,9 @@
             dest: "{{ outdir }}/join-command"
             mode: '0644'
 
+        # Not in check mode, as for "Start runtime".
         - name: Enable kubelet systemd service
           ansible.builtin.systemd:
             name: kubelet
             enabled: true
+          when: not ansible_check_mode

@@ -818,6 +818,11 @@ down what is on $addr and build a cluster there again."
         return 0
     fi
 
+    # A preview changes nothing on the host. So it claims nothing.
+    if vm-hw-ansible-preview; then
+        return 0
+    fi
+
     if ! echo "$addr" > "$vagrantdir/$VM_HW_ADDR_FILE"; then
         echo "WARNING: failed to record $addr as the host of $vagrantdir." \
              "A later run cannot tell whether it is pointed at the same" \
@@ -890,16 +895,55 @@ the framework can halt a host we were given but has no way to switch it back
 on. Run this on a VM of its own, or leave it out of a run against a host."
 }
 
+vm-hw-ansible-preview() {
+    # Usage: vm-hw-ansible-preview
+    #
+    # Return success if e2e_ansible_args makes the playbook change nothing.
+    # Fail the run on an option which is not listed below.
+    local args=() arg preview=""
+
+    # read takes only the first line.
+    if [[ "${e2e_ansible_args:-}" == *$'\n'* ]]; then
+        error "e2e_ansible_args must be on a single line."
+    fi
+
+    # Split as vm-provision-hw splits it.
+    read -r -a args <<< "${e2e_ansible_args:-}"
+    for arg in "${args[@]}"; do
+        # Only options which keep the host, the connection, the tasks and the
+        # variables of the run as they are.
+        case "$arg" in
+            --check|-C|--syntax-check|--list-hosts|--list-tasks|--list-tags|\
+            --help|-h|--version)
+                preview=1
+                ;;
+            --diff|-D|--step|-v|-vv|-vvv|-vvvv)
+                ;;
+            *)
+                error "e2e_ansible_args=\"$e2e_ansible_args\": $arg is not
+supported. Use --check, -C, --diff, -D, --step, -v to -vvvv, --syntax-check,
+--list-hosts, --list-tasks, --list-tags, --help, -h or --version, each one on
+its own."
+                ;;
+        esac
+    done
+
+    [ -n "$preview" ]
+}
+
 vm-provision-hw() {
     # Usage: vm-provision-hw VAGRANTDIR
     #
-    # Run the provisioning playbook against the host.
+    # Run the provisioning playbook against the host. The words of
+    # e2e_ansible_args are added to its command line.
     local vagrantdir="$1"
     local playbook="$nri_resource_policy_src/test/e2e/playbook/provision.yaml"
     local login_args=()
+    local extra_args=()
     local reset=false
 
     mapfile -t login_args < <(vm-ansible-login-args "$VM_HOSTNAME" "$vagrantdir")
+    read -r -a extra_args <<< "${e2e_ansible_args:-}"
 
     if [ "${provision:-}" = "all" ]; then
         reset=true
@@ -908,7 +952,11 @@ vm-provision-hw() {
     echo "provisioning $VM_HOSTNAME..."
     (cd "$vagrantdir";
      export ANSIBLE_PIPELINING=True;
+     # The words of e2e_ansible_args come before the variables of the run.
+     # A later --extra-vars wins. So the run's own variables cannot be
+     # overridden.
      ANSIBLE_SSH_ARGS="-F $vagrantdir/.ssh-config" ansible-playbook "$playbook" \
+          "${extra_args[@]}" \
           -i "$VM_HOSTNAME," "${login_args[@]}" \
           --ssh-common-args "-F $vagrantdir/.ssh-config" \
           --extra-vars "@$vagrantdir/ansible-vars.json" \
@@ -1074,6 +1122,18 @@ vm-setup-hw() {
 
     # Nothing recorded on the host is a host which has not been provisioned.
     [ -n "$recorded" ] || first=1
+
+    # A preview runs on a recorded host, too. It changes nothing. So the
+    # record stays as it is. The run ends after the playbook.
+    if vm-hw-ansible-preview; then
+        vm-hw-check-provisionable "$recorded"
+        vm-provision-hw "$vagrantdir"
+        # The report reads the verdict from summary.txt.
+        echo "Test verdict: SKIP (provisioning previewed with" \
+             "e2e_ansible_args=\"$e2e_ansible_args\")" |
+            tee -a "$SUMMARY_FILE"
+        exit 0
+    fi
 
     # provision at all: a first run, or one which was asked to.
     if [ -n "$first" ] || [ -n "${provision:-}" ]; then
@@ -1396,6 +1456,15 @@ vm-check-recorded-box-key() {
         echo "WARNING: provision=$provision, so provisioning runs again but" \
              "the cluster is left as it is. Use provision=all to rebuild it" \
              "with the versions above." >&2
+        echo "" >&2
+        return 0
+    fi
+
+    # A preview changes nothing. It shows what provisioning would change.
+    if vm-hw-mode && vm-hw-ansible-preview; then
+        echo "" >&2
+        echo "WARNING: e2e_ansible_args=\"$e2e_ansible_args\" only previews" \
+             "provisioning." >&2
         echo "" >&2
         return 0
     fi

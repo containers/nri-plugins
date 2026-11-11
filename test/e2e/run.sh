@@ -349,12 +349,15 @@ echo "    Policy          = $POLICY"
 echo "    Topology        = $topology"
 echo
 
+# Before the setup. A run which fails there must not leave the verdict of an
+# earlier run in summary.txt.
+SUMMARY_FILE="$TEST_OUTPUT_DIR/summary.txt"
+mkdir -p "$TEST_OUTPUT_DIR"
+echo -n "" > "$SUMMARY_FILE" || error "cannot write summary to \"$SUMMARY_FILE\""
+
 vm-setup "$OUTPUT_DIR" "$ESCAPED_VM" "$distro" "$TOPOLOGY_DIR" "$topology"
 
 vm-nri-plugin-deploy "$OUTPUT_DIR" "$ESCAPED_VM" "$POLICY"
-
-SUMMARY_FILE="$TEST_OUTPUT_DIR/summary.txt"
-echo -n "" > "$SUMMARY_FILE" || error "cannot write summary to \"$SUMMARY_FILE\""
 
 # The breakpoint function can be used in debugging the test script. You can call
 # this function which causes the script to enter interactive mode where you can
