@@ -646,33 +646,33 @@
     - name: Configure bridge CNI plugin
       when: cni_plugin == "bridge" and manage_k8s
       block:
-        - name: Copy CNI bridge plugin configuration
-          ansible.builtin.copy:
+        - name: Write the CNI bridge plugin configuration
+          ansible.builtin.template:
             src: "{{ nri_resource_policy_src }}/test/e2e/files/10-bridge.conf.in"
             dest: "/etc/cni/net.d/10-bridge.conf"
             owner: root
             group: root
             mode: '0644'
+          register: bridge_conf
 
-        - name: Update CNI bridge plugin configuration
-          ansible.builtin.replace:
-            path: /etc/cni/net.d/10-bridge.conf
-            regexp: '(CNI_NETWORK)'
-            replace: "{{ network }}"
-
+    # A new CNI configuration restarts the runtime, too. containerd does not
+    # load a file renamed into its CNI directory. Ansible writes files that
+    # way. Not in check mode, as for "Start runtime".
     - name: Restart the containerd
       ansible.builtin.systemd:
         state: restarted
         name: "{{ cri_runtime }}"
         daemon_reload: true
-      when: is_containerd and manage_runtime
+      when: is_containerd and (manage_runtime or bridge_conf is changed) and
+            not ansible_check_mode
 
     - name: Restart CRI-O
       ansible.builtin.systemd:
         state: restarted
         name: "{{ cri_runtime }}"
         daemon_reload: true
-      when: is_crio and manage_runtime
+      when: is_crio and (manage_runtime or bridge_conf is changed) and
+            not ansible_check_mode
 
     - name: Load modules the k8s cluster needs
       when: manage_k8s
