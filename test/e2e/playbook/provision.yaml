@@ -299,11 +299,14 @@
           delegate_to: localhost
           become: false
 
+        # The files in the tarball belong to the uid of its builder.
         - name: Install Helm runtime release tarball under /usr/local
           ansible.builtin.unarchive:
             src: "{{ cached_helm_tarball }}"
             dest: /usr/local
             copy: true
+            owner: root
+            group: root
 
         - name: Move Helm binaries to /usr/local/bin from extracted release tarball
           ansible.builtin.shell: "{{ item }}"
@@ -457,11 +460,14 @@
           delegate_to: localhost
           become: false
 
+        # The files in the tarball belong to the uid of its builder.
         - name: Install runtime release tarball under /usr/local
           ansible.builtin.unarchive:
             src: "{{ cached_runtime_tarball }}"
             dest: /usr/local
             copy: true
+            owner: root
+            group: root
 
         - name: Install CRI-O binaries from release tarball
           ansible.builtin.shell:
@@ -808,11 +814,14 @@
               ansible.builtin.set_fact:
                 cilium_tarball: https://github.com/cilium/cilium-cli/releases/download/{{ cni_release }}/cilium-linux-amd64.tar.gz
 
+            # The files in the tarball belong to the uid of its builder.
             - name: "Fetch and extract {{ cni_release }} cilium (installer) release tarball"
               ansible.builtin.unarchive:
                 src: "{{ cilium_tarball }}"
                 dest: /usr/local/bin
                 remote_src: true
+                owner: root
+                group: root
 
             - name: Run cilium installer
               ansible.builtin.command: "{{ item }}"
