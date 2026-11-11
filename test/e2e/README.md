@@ -299,6 +299,8 @@ test_hw_addr=test@10.0.0.1 test_hw_key=~/.ssh/testbox containerd_release=install
 
 Nothing is then downloaded, unpacked, reconfigured or restarted, and the
 version is read off the host so the run still records what is under test.
+The one exception is a run which writes a new CNI configuration. It restarts
+the runtime, because containerd does not load the new file otherwise.
 `installed` needs `test_hw_addr`. In exchange the host's runtime has to
 already have:
 
