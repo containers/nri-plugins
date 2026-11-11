@@ -221,9 +221,11 @@
         mode: '0644'
       when: ansible_facts['distribution'] == "Ubuntu" and manage_k8s
 
+    # gpg asks before it overwrites an existing keyring. Under Ansible
+    # there is no tty to ask on. --batch --yes overwrite it without asking.
     - name: Convert the Kubernetes APT key to keyring format
       ansible.builtin.command:
-        cmd: gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg /tmp/kubernetes-release.key
+        cmd: gpg --batch --yes --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg /tmp/kubernetes-release.key
       when: ansible_facts['distribution'] == "Ubuntu" and manage_k8s
 
     - name: Clean up temporary key file
