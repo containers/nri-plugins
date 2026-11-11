@@ -374,12 +374,21 @@ breakpoint() { # script API
     # the standard input until "exit".
     echo "Entering the interactive mode until \"exit\"."
     INTERACTIVE_MODE=$(( INTERACTIVE_MODE + 1 ))
-    # shellcheck disable=SC2162
-    while read -e -p "run.sh> " -a commands; do
-        if [ "${commands[0]}" == "exit" ]; then
+    local cmd line
+    while read -r -e -p "run.sh> " cmd; do
+        # Read more lines while the command is not complete. The first
+        # line of a function or a here-document is not complete. A line
+        # that ends with a backslash is not complete.
+        while [[ $cmd == *\\ ]] ||
+                LC_ALL=C bash -n <<< "$cmd" 2>&1 |
+                grep -q "unexpected end of file\|unexpected EOF\|delimited by end-of-file" &&
+                IFS= read -r -e -p "> " line; do
+            cmd+=$'\n'"$line"
+        done
+        if [ "$cmd" == "exit" ]; then
             break
         fi
-        eval "${commands[@]}"
+        eval "$cmd"
     done
     INTERACTIVE_MODE=$(( INTERACTIVE_MODE - 1 ))
 }
