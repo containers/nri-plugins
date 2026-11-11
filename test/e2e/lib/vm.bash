@@ -487,10 +487,15 @@ vm-hw-runtime-version() {
         *)    runtime=containerd;;
     esac
 
+    # Ask the binary the runtime's systemd unit starts. Another one can come
+    # first on the PATH. A host with no unit falls back to the PATH.
+    #
     # Tagged on the host, so that the runtime's own output can be told from
     # whatever a login shell prints around it: an untagged "Ubuntu 24.04.1"
     # from a banner would otherwise be read as the version of the runtime.
-    out=$(vm-hw-ssh "$runtime --version 2>/dev/null | sed -n 's/^/ver=/p'" \
+    out=$(vm-hw-ssh "bin=\$(systemctl show -p ExecStart --value $runtime 2>/dev/null |
+                          sed -n 's/^{ path=\([^ ;]*\).*/\1/p' | head -n 1)
+                     \${bin:-$runtime} --version 2>/dev/null | sed -n 's/^/ver=/p'" \
               2>/dev/null)
 
     # The whole version, prerelease and build metadata included, so that an
@@ -534,7 +539,7 @@ binaries of that build over it. Unset one of them."
     ver="$(vm-hw-runtime-version)"
     if [ -z "$ver" ]; then
         error "could not read the version of the $runtime installed on
-$(vm-hw-address). Is it on that user's PATH?"
+$(vm-hw-address). Does its systemd unit or that user's PATH name it?"
     fi
 
     export runtime_preinstalled=1
