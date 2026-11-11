@@ -1,0 +1,14 @@
+# CRI-O-compatible goresctrl class configuration.
+# Replace the device patterns with the backing block devices on your nodes.
+Classes:
+  gold:
+    - Weight: 400
+  bronze:
+    - Weight: 100
+    - Devices:
+        - /dev/sd[a-z]
+        - /dev/nvme[0-9]n[0-9]
+      ThrottleReadBps: 50M
+      ThrottleWriteBps: 10M
+      ThrottleReadIOPS: 10k
+      ThrottleWriteIOPS: 5k

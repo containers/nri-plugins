@@ -1,0 +1,24 @@
+---
+- name: check need and availability of a custom kernel
+  ansible.builtin.import_playbook: custom-kernel.yaml
+
+- hosts: all
+  become: true
+  tasks:
+    - name: require CRI-O for the blockio comparison suite
+      ansible.builtin.assert:
+        that: cri_runtime == 'crio'
+        fail_msg: Run io.test-suite with k8scri=crio
+
+    - name: install blockio comparison dependencies
+      ansible.builtin.package:
+        name:
+          - crun
+          - jq
+        state: present
+
+    - name: copy the blockio plugin binary
+      ansible.builtin.copy:
+        src: "{{ nri_resource_policy_src }}/build/bin/nri-blockio"
+        dest: /usr/local/bin/nri-blockio
+        mode: '0755'
