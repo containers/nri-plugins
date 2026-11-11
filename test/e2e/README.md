@@ -340,6 +340,31 @@ because the gates of a running cluster are already set. The cluster has to be:
 - **On a runtime which meets the requirements above.** Use
   `containerd_release=installed` to leave the runtime as it is.
 
+### Passing options to Ansible
+
+Set `e2e_ansible_args` to add options to the `ansible-playbook` command that
+provisions the host. The value is split on whitespace. For instance,
+`--check --diff` only shows what provisioning would change:
+
+```shell
+test_hw_addr=test@10.0.0.1 test_hw_key=~/.ssh/testbox \
+    e2e_ansible_args="--check --diff" ./run_tests.sh policies.test-suite
+```
+
+A run with `--check` or `-C` stops after the playbook. It records nothing,
+deploys no plugin and runs no test. `run_tests.sh` reports the test as
+skipped. The same goes for `--syntax-check`, `--list-hosts`, `--list-tasks`
+and `--list-tags`. Such a run previews the playbook on a recorded host too,
+without `provision` set.
+
+Only these options are taken: `--check`, `-C`, `--diff`, `-D`, `--step`, `-v`
+to `-vvvv`, `--syntax-check`, `--list-hosts`, `--list-tasks`, `--list-tags`,
+`--help`, `-h` and `--version`. Write each one on its own, such as `-C -D` in
+place of `-CD`. A run with any other option fails.
+
+`--step` asks before each task. The option applies only on an existing host.
+On a VM, vagrant runs the provisioning.
+
 ### Trying it on localhost
 
 This path can be exercised without separate hardware, by pointing it at
