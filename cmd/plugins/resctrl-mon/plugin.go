@@ -15,6 +15,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -25,8 +26,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
+	otelmetric "go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/noop"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	"golang.org/x/sys/unix"
 	"sigs.k8s.io/yaml"
 
 	"github.com/containerd/nri/pkg/api"
@@ -38,7 +44,8 @@ import (
 
 const (
 	// reconcileInterval is how often the background reconciler retries failed
-	// RemovePodSandbox removals and reaps orphans from a previous process.
+	// RemovePodSandbox removals, reaps orphans from a previous process, and
+	// retries the containers that found no free RMID.
 	reconcileInterval = 30 * time.Second
 
 	// telemetryShutdownTimeout bounds how long onClose waits for the telemetry
@@ -53,13 +60,17 @@ type plugin struct {
 	// The runtime serializes NRI events, sends Synchronize before any other
 	// event, and disconnects a plugin whose handler times out (onClose exits).
 	// opMu makes that explicit and orders the background reconciler against
-	// the handlers. It guards config, mgr, runtime, pendingRemoval, and sandboxes.
+	// the handlers. It guards config, mgr, runtime, pendingRemoval,
+	// pendingCreate, sandboxes, errCount and loggedErrnos.
 	opMu           sync.Mutex
 	config         *pluginConfig
 	mgr            resctrlManager
 	runtime        string                         // runtime name reported to Configure
 	pendingRemoval map[string]bool                // keys whose Remove failed, retried by the reconciler
+	pendingCreate  map[string][]retryCtr          // canonical pod UID -> started containers that found no free RMID
 	sandboxes      map[string]map[string]struct{} // canonical pod UID -> live sandbox IDs
+	errCount       otelmetric.Int64Counter        // failed mon_group creations and PID assignments, by errno
+	loggedErrnos   map[syscall.Errno]bool         // errnos already logged at error level
 
 	// lifeMu guards the state onClose tears down; onClose must not wait on a
 	// stuck handler holding opMu. Lock order: opMu, then lifeMu.
@@ -106,6 +117,9 @@ func newPlugin() *plugin {
 		config:         cfg,
 		mgr:            mgr,
 		pendingRemoval: make(map[string]bool),
+		pendingCreate:  make(map[string][]retryCtr),
+		errCount:       noop.Int64Counter{},
+		loggedErrnos:   make(map[syscall.Errno]bool),
 	}
 }
 
@@ -268,6 +282,7 @@ func (p *plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, contai
 			continue
 		}
 		if _, err := mgr.EnsureGroup(uid, class); err != nil {
+			p.countError(err)
 			log.Warnf("Synchronize: failed to adopt mon_group %s under class %q: %v", uid, class, err)
 		}
 	}
@@ -296,6 +311,7 @@ func (p *plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, contai
 		// as an error, so on any error skip the container instead of assigning.
 		grp, err := mgr.EnsureGroup(podUID, rdtClass)
 		if err != nil {
+			p.createFailed(pod, ctr, rdtClass, err)
 			log.Warnf("Synchronize: not monitoring a container of pod %s: %v", podUID, err)
 			continue
 		}
@@ -303,6 +319,7 @@ func (p *plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, contai
 		pid := int(ctr.GetPid())
 		if pid > 0 {
 			if err := mgr.AssignPID(podUID, pid); err != nil {
+				p.countError(err)
 				log.Warnf("Synchronize: failed to write PID %d for pod %s: %v", pid, podUID, err)
 			} else {
 				log.Debugf("Synchronize: assigned pid %d for pod %s in %s", pid, podUID, grp.Path())
@@ -339,7 +356,8 @@ func (p *plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, contai
 	}
 
 	// Start the background reconciler to retry failed RemovePodSandbox
-	// removals and reap orphans from a previous process.
+	// removals, reap orphans from a previous process, and retry the containers
+	// that found no free RMID.
 	p.startReconciler()
 
 	log.Infof("synchronization complete: tracking %d pods", len(mgr.List()))
@@ -347,9 +365,10 @@ func (p *plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, contai
 }
 
 // startReconciler launches a background goroutine that periodically retries
-// failed removals and removes orphaned mon_group directories. This covers a
-// Remove that fails in RemovePodSandbox (e.g., kernel busy) and leaves the
-// directory behind.
+// failed removals, removes orphaned mon_group directories, and retries the
+// containers that found no free RMID. This covers a Remove that fails in
+// RemovePodSandbox (e.g., kernel busy) and leaves the directory behind, and
+// pods that started while every RMID was in use.
 func (p *plugin) startReconciler() {
 	p.lifeMu.Lock()
 	defer p.lifeMu.Unlock()
@@ -377,10 +396,11 @@ func (p *plugin) startReconciler() {
 	log.Debugf("background reconciler started (interval=%s)", reconcileInterval)
 }
 
-// reconcile retries removals that previously failed and reaps untracked orphan
-// directories. A failed Remove leaves its key tracked, so Reconcile(List())
-// would treat it as live forever; retrying Remove is what actually frees the
-// RMID once the kernel releases the directory. The caller must hold opMu.
+// reconcile retries removals that previously failed, reaps untracked orphan
+// directories, and then retries the containers that found no free RMID. A
+// failed Remove leaves its key tracked, so Reconcile(List()) would treat it as
+// live forever; retrying Remove is what actually frees the RMID once the kernel
+// releases the directory. The caller must hold opMu.
 func (p *plugin) reconcile(mgr resctrlManager) {
 	for key := range p.pendingRemoval {
 		if _, live := p.sandboxes[monitor.CanonicalizePodUID(key)]; live {
@@ -401,6 +421,120 @@ func (p *plugin) reconcile(mgr resctrlManager) {
 	// RMID.
 	if err := mgr.Reconcile(p.reconcileLiveSet(mgr)); err != nil {
 		log.Warnf("reconciler: %v", err)
+	}
+	p.retryPending(mgr)
+}
+
+// retryCtr is a started container whose pod's mon_group could not be created
+// because no RMID was free.
+type retryCtr struct {
+	name      string // pprintCtr name, for logs
+	class     string
+	pid       int
+	startTime uint64 // of pid, to tell a reused PID apart
+}
+
+// createFailed counts a failed EnsureGroup and, when no RMID was free, queues
+// the started container for the reconciler. The caller must hold opMu.
+func (p *plugin) createFailed(pod *api.PodSandbox, ctr *api.Container, class string, err error) {
+	p.countError(err)
+	pid := int(ctr.GetPid())
+	if pid <= 0 || !noRMID(err) {
+		return
+	}
+	start, err := procStartTime(pid)
+	if err != nil {
+		log.Debugf("%s: not retrying pid %d: %v", pprintCtr(pod, ctr), pid, err)
+		return
+	}
+	uid := monitor.CanonicalizePodUID(pod.GetUid())
+	p.pendingCreate[uid] = append(p.pendingCreate[uid], retryCtr{pprintCtr(pod, ctr), class, pid, start})
+}
+
+// retryPending creates the mon_groups that found no free RMID and assigns the
+// init PIDs of their containers, in arrival order so that the same container
+// fixes the group's class. Only the init PID moves, as in Synchronize. The
+// caller must hold opMu.
+func (p *plugin) retryPending(mgr resctrlManager) {
+	for uid, ctrs := range p.pendingCreate {
+		// A container whose init has exited must not create a group: its pod's
+		// RemovePodSandbox may never arrive.
+		ctrs = slices.DeleteFunc(ctrs, func(r retryCtr) bool {
+			start, err := procStartTime(r.pid)
+			if err != nil || start != r.startTime {
+				log.Debugf("reconciler: %s: pid %d has exited, not retrying", r.name, r.pid)
+				return true
+			}
+			return false
+		})
+		for len(ctrs) > 0 {
+			r := ctrs[0]
+			grp, err := mgr.EnsureGroup(uid, r.class)
+			if noRMID(err) {
+				// Count once per pass: the other pods would fail the same way.
+				p.countError(err)
+				p.pendingCreate[uid] = ctrs
+				log.Debugf("reconciler: %s: still no free RMID: %v", r.name, err)
+				return
+			}
+			ctrs = ctrs[1:]
+			if err == nil {
+				err = mgr.AssignPID(uid, r.pid)
+			}
+			if err != nil {
+				p.countError(err)
+				log.Warnf("reconciler: %s: not assigning PID %d: %v", r.name, r.pid, err)
+				continue
+			}
+			log.Infof("reconciler: %s: assigned pid %d in %s after waiting for a free RMID", r.name, r.pid, grp.Path())
+		}
+		delete(p.pendingCreate, uid)
+	}
+}
+
+// noRMID reports whether err means that no RMID is free yet: ENOSPC, or EBUSY
+// while freed RMIDs wait in the kernel's limbo list.
+func noRMID(err error) bool {
+	return errors.Is(err, monitor.ErrNoRMIDs) || errors.Is(err, syscall.EBUSY)
+}
+
+// procStartTime returns the start time of pid in clock ticks after boot, field
+// 22 of /proc/<pid>/stat.
+func procStartTime(pid int) (uint64, error) {
+	data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
+	if err != nil {
+		return 0, err
+	}
+	// Field 2, the command name, may contain spaces and parentheses.
+	fields := strings.Fields(string(data[bytes.LastIndexByte(data, ')')+1:]))
+	if len(fields) < 20 {
+		return 0, fmt.Errorf("/proc/%d/stat: too few fields", pid)
+	}
+	return strconv.ParseUint(fields[19], 10, 64)
+}
+
+// countError counts a failed mon_group creation or PID assignment by errno.
+// The first EACCES, EPERM or EINVAL is also logged at error level: unlike RMID
+// exhaustion or an exited task, these usually mean a misconfigured host or
+// plugin, and hit every pod. The caller must hold opMu.
+func (p *plugin) countError(err error) {
+	var errno syscall.Errno
+	if !errors.As(err, &errno) {
+		return
+	}
+	attr := semconv.ErrorTypeOther
+	if name := unix.ErrnoName(errno); name != "" {
+		attr = semconv.ErrorTypeKey.String(name)
+	}
+	p.errCount.Add(context.Background(), 1, otelmetric.WithAttributes(attr))
+	switch errno {
+	case syscall.EACCES, syscall.EPERM, syscall.EINVAL:
+		if !p.loggedErrnos[errno] {
+			p.loggedErrnos[errno] = true
+			log.Errorf("resctrl refused a mon_group operation, so the pods it affects are not monitored; "+
+				"check the plugin's AppArmor or SELinux confinement and %s (logged once per errno): %v",
+				filepath.Join(p.config.ResctrlPath, "info", "last_cmd_status"), err)
+		}
 	}
 }
 
@@ -475,6 +609,7 @@ func (p *plugin) PostCreateContainer(ctx context.Context, pod *api.PodSandbox, c
 		return nil
 	}
 	if _, err := p.mgr.EnsureGroup(podUID, rdtClass); err != nil {
+		p.countError(err)
 		log.Warnf("PostCreateContainer %s: failed to create mon_group: %v", ctrName, err)
 		return nil // non-fatal: don't block container creation
 	}
@@ -514,8 +649,10 @@ func (p *plugin) StartContainer(ctx context.Context, pod *api.PodSandbox, ctr *a
 		if rdtClass, ok := groupClass(pod, ctr); !ok {
 			log.Debugf("StartContainer %s: not assigning PID %d: its RDT class differs from the pod's", ctrName, pid)
 		} else if grp, err := mgr.EnsureGroup(podUID, rdtClass); err != nil {
+			p.countError(err)
 			log.Warnf("StartContainer %s: not assigning PID %d: %v", ctrName, pid, err)
 		} else if err := mgr.AssignPID(podUID, pid); err != nil {
+			p.countError(err)
 			log.Warnf("StartContainer %s: failed to assign PID %d: %v", ctrName, pid, err)
 		} else {
 			log.Infof("StartContainer %s: assigned pid %d (pre-start, no threads yet) in %s", ctrName, pid, grp.Path())
@@ -552,8 +689,12 @@ func (p *plugin) PostStartContainer(ctx context.Context, pod *api.PodSandbox, ct
 		if rdtClass, ok := groupClass(pod, ctr); !ok {
 			log.Debugf("PostStartContainer %s: not assigning PID %d: its RDT class differs from the pod's", ctrName, pid)
 		} else if grp, err := mgr.EnsureGroup(podUID, rdtClass); err != nil {
+			// The last hook with this PID, so a container that found no free
+			// RMID is queued here.
+			p.createFailed(pod, ctr, rdtClass, err)
 			log.Warnf("PostStartContainer %s: not assigning PID %d: %v", ctrName, pid, err)
 		} else if err := mgr.AssignPID(podUID, pid); err != nil {
+			p.countError(err)
 			log.Warnf("PostStartContainer %s: failed to assign PID %d: %v", ctrName, pid, err)
 		} else {
 			log.Infof("PostStartContainer %s: assigned pid %d in %s", ctrName, pid, grp.Path())
@@ -606,6 +747,7 @@ func (p *plugin) RemovePodSandbox(ctx context.Context, pod *api.PodSandbox) erro
 	// The pod is gone, so stop protecting its key in the reconciler's live set;
 	// otherwise a failed Remove below could never be reaped.
 	delete(p.sandboxes, uid)
+	delete(p.pendingCreate, uid)
 
 	// Attempt removal unconditionally rather than gating on shouldMonitorPod: a
 	// pod may have been monitored under a configuration that was later changed to

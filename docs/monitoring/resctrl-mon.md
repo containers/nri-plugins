@@ -33,8 +33,9 @@ approaches.
    teardown is missed (for example while the plugin is disconnected), the next
    NRI `Synchronize` reaps the stale
    `mon_group` using the runtime's authoritative pod list. A background
-   reconciler additionally retries removals that failed transiently and clears
-   untracked directories left behind by an earlier plugin process.
+   reconciler (every 30 s) additionally retries removals that failed
+   transiently, clears untracked directories left behind by an earlier plugin
+   process, and retries pods that found no free RMID.
 
 The plugin DaemonSet runs with `hostPID: true` so that it can write
 host-namespace PIDs to the resctrl `tasks` file. Without `hostPID`,
@@ -117,6 +118,12 @@ when `telemetry.perfCounters.enabled` is true. Names follow goresctrl's
 under the `UnderscoreEscapingWithSuffixes` translation strategy, which the
 plugin pins.
 
+The plugin also exports `resctrl_mon_errors_total`, a counter of failed
+`mon_group` creations and PID assignments, with the errno in the label
+`error_type` (OTLP `error.type`), for example `EACCES` or `ENOSPC`. A pod that
+hits one of these errors is not monitored, or only partly (see
+[Limitations](#limitations)).
+
 Labels (OTLP uses the dotted attribute names, e.g. `k8s.pod.uid`):
 
 - `domain_id`: domain instance, e.g. `00`.
@@ -127,11 +134,11 @@ Labels (OTLP uses the dotted attribute names, e.g. `k8s.pod.uid`):
 - `resctrl_group_source`: always `pod`.
 - `k8s_node_name`: the node name, from the `NODE_NAME` environment variable.
 - Each key in `telemetry.resourceAttributes`. A key must not map to one of the
-  labels above (for example `k8s.pod.uid` or `domain_id`), to another key's
-  label, or to a label that OTLP-to-Prometheus conversion derives: `job` or
-  `service_name` (set `service.name` itself to override it), and `instance`
-  when `service.instance.id` is set. Names starting with `__` are reserved by
-  Prometheus. Such a configuration is rejected.
+  labels above (for example `k8s.pod.uid` or `domain_id`), to `error_type`, to
+  another key's label, or to a label that OTLP-to-Prometheus conversion derives:
+  `job` or `service_name` (set `service.name` itself to override it), and
+  `instance` when `service.instance.id` is set. Names starting with `__` are
+  reserved by Prometheus. Such a configuration is rejected.
 
 ## Samples
 
@@ -183,18 +190,25 @@ runtime's RDT annotations, get `mon_groups` under the root resctrl directory.
 RMID allocation is delegated entirely to the Linux kernel:
 
 - **Allocation**: `mkdir` on a `mon_group` directory assigns an RMID. If
-  none are available, the kernel returns `ENOSPC` and the plugin logs a
-  warning and skips the pod.
+  none are available, the kernel returns `ENOSPC` (or `EBUSY` while freed
+  RMIDs wait to be reused). The plugin then logs a warning, and the
+  reconciler retries the pod every 30 s until an RMID is free or the pod is
+  removed.
 - **Deallocation**: `rmdir` releases the RMID. The kernel handles the
   hardware recycling window.
+
+The first `EACCES`, `EPERM` or `EINVAL` from resctrl is logged at error level,
+and later ones as warnings. These errors are not retried. `EACCES` usually
+means that a security profile (AppArmor or SELinux) confines the plugin.
+Every failure is counted in `resctrl_mon_errors_total`.
 
 ## Limitations
 
 - **PID assignment moves one task.** Writing a PID to a `tasks` file moves
   only that thread. Threads and children that already exist stay where they
   are. Containers that started while the plugin was down (adopted in
-  `Synchronize`), or whose PID is assigned only in `PostStartContainer`, are
-  partly attributed until they restart.
+  `Synchronize`), whose PID is assigned only in `PostStartContainer`, or that
+  waited for a free RMID, are partly attributed until they restart.
 - **One control group per pod.** A pod's `mon_group` lives under one RDT class.
   A container in a different class (for example, a sidecar) is not monitored,
   because assigning it would overwrite its allocation. The plugin reads a
@@ -225,8 +239,10 @@ RMID allocation is delegated entirely to the Linux kernel:
   ```
 
 - **RMID exhaustion.** When no RMID is free, the plugin logs a warning for each
-  container and the pod is not monitored. Use `namespaces` or `labelSelector`
-  to limit monitoring to the pods that matter.
+  container and the pod is not monitored until the reconciler gets an RMID for
+  it. Only containers that have started are retried, and only while their init
+  process runs. Use `namespaces` or `labelSelector` to limit monitoring to the
+  pods that matter.
 - **Ownership.** The plugin reconciles every UUID-named `mon_group`: it keeps
   the groups of all live pods (including filtered ones) and removes the rest.
   Other tools must not create UUID-named groups for anything else.
