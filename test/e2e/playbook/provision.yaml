@@ -186,7 +186,8 @@
     - name: Setup DNS for Ubuntu
       ansible.builtin.shell: |
         [ -f /etc/netplan/01-netcfg.yaml ] && sed -i 's/addresses\(.\) \[.*\]$/addresses\1 \[{{ dns_nameserver }}\]/' /etc/netplan/01-netcfg.yaml || :
-      when: ansible_facts['distribution'] == "Ubuntu" and (not is_hardware)
+      when: ansible_facts['distribution'] == "Ubuntu" and dns_nameserver != "" and
+            (not is_hardware)
 
 # Swap is not turned off. Since Kubernetes 1.30 kubelet can run on a host
 # which has swap enabled, so it is configured to tolerate it without using
