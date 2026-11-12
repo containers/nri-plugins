@@ -171,6 +171,8 @@
             - /root/.kube/config
             - "{{ login_user_home }}/.kube/config"
 
+    # Not on a host we were given. Such a host has working DNS of its own.
+    # These tasks replace /etc/resolv.conf and edit its network files.
     - name: Setup DNS
       ansible.builtin.shell: "{{ item }}"
       with_items:
@@ -179,12 +181,12 @@
         - echo "search  {{ dns_search_domain }}" >> /etc/resolv.conf
         - sed -i "s/DNS=.*$/DNS={{ dns_nameserver }}/" /etc/systemd/resolved.conf
         - sed -i "s/Domains=.*$/Domains={{ dns_search_domain }}/" /etc/systemd/resolved.conf
-      when: dns_nameserver != ""
+      when: dns_nameserver != "" and (not is_hardware)
 
     - name: Setup DNS for Ubuntu
       ansible.builtin.shell: |
         [ -f /etc/netplan/01-netcfg.yaml ] && sed -i 's/addresses\(.\) \[.*\]$/addresses\1 \[{{ dns_nameserver }}\]/' /etc/netplan/01-netcfg.yaml || :
-      when: ansible_facts['distribution'] == "Ubuntu"
+      when: ansible_facts['distribution'] == "Ubuntu" and (not is_hardware)
 
 # Swap is not turned off. Since Kubernetes 1.30 kubelet can run on a host
 # which has swap enabled, so it is configured to tolerate it without using
@@ -422,11 +424,12 @@
       when: ansible_facts['distribution'] == "Fedora" and
             (not is_hardware)
 
+    # Not on a host we were given. Its firewall is the owner's to configure.
     - name: Remove the firewalld package
       ansible.builtin.package:
         name: firewalld
         state: absent
-      when: ansible_facts['distribution'] == "Fedora"
+      when: ansible_facts['distribution'] == "Fedora" and (not is_hardware)
 
     - name: Install podman for CRI-O runs
       ansible.builtin.dnf:
