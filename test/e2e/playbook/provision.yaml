@@ -331,12 +331,26 @@
       ansible.builtin.package:
         name:
           - curl
-          - runc
           - jq
-          - python3-pip
-          - systemd-container
           - rsync
         state: present
+
+    # Not with the host's own runtime. That runtime brings its own runc. A
+    # second one would land next to it.
+    - name: Install runc
+      ansible.builtin.package:
+        name: runc
+        state: present
+      when: manage_runtime
+
+    # Not on a host we were given. Nothing the tests run there needs them.
+    - name: Install VM packages
+      ansible.builtin.package:
+        name:
+          - python3-pip
+          - systemd-container
+        state: present
+      when: not is_hardware
 
     # Not in check mode. The Kubernetes repository is not added then. So the
     # packages can be missing from the package index.
@@ -349,6 +363,8 @@
         state: present
       when: manage_k8s and not ansible_check_mode
 
+    # Not on a host we were given. The Kubernetes repository and its key are
+    # set up above without them.
     - name: Install apt packages
       ansible.builtin.apt:
         pkg:
@@ -359,7 +375,7 @@
         state: present
         update_cache: true
         cache_valid_time: "{{ apt_cache_valid_time }}"
-      when: ansible_facts['distribution'] == "Ubuntu"
+      when: ansible_facts['distribution'] == "Ubuntu" and (not is_hardware)
 
     - name: Install rpm packages
       when: ansible_facts['distribution'] == "Fedora"
@@ -368,12 +384,19 @@
           ansible.builtin.dnf:
             pkg:
               - iproute-tc
-              - grubby
-              - cloud-utils-growpart
-              - btrfs-progs
               # chrt, which the tests use to read scheduling flags back.
               - util-linux-core
             state: present
+        # Not on a host we were given. They are for a custom kernel and for
+        # growing the root filesystem, and neither is done there.
+        - name: VM rpm packages
+          ansible.builtin.dnf:
+            pkg:
+              - grubby
+              - cloud-utils-growpart
+              - btrfs-progs
+            state: present
+          when: not is_hardware
         - name: Extra python3 rpm packages for ansible
           ansible.builtin.dnf:
             pkg:
