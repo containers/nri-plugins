@@ -16,6 +16,11 @@ epochrealtime() {
     [ -n "$EPOCHREALTIME" ] && echo "$EPOCHREALTIME" || echo "$SECONDS"
 }
 
+time-diff() {
+    # Print END minus START in seconds: time-diff END START.
+    awk -v end="$1" -v start="$2" 'BEGIN { printf "%.6f\n", end - start }'
+}
+
 COMMAND_COUNTER=0
 command_init_time=$(epochrealtime)
 
@@ -28,7 +33,7 @@ command-start() {
     COMMAND_OUTPUT=""
     COMMAND_COUNTER=$(( COMMAND_COUNTER + 1 ))
     local command_start_time=$(epochrealtime)
-    local time_since_start=$(echo "$command_start_time - $command_init_time" | bc)
+    local time_since_start=$(time-diff "$command_start_time" "$command_init_time")
     COMMAND_OUT_FILE="$COMMAND_OUTPUT_DIR/$(printf %04d $COMMAND_COUNTER)-$COMMAND_TARGET"
     echo "# start time: $time_since_start" > "$COMMAND_OUT_FILE" || {
         echo "cannot write command output to file \"$COMMAND_OUT_FILE\""
@@ -68,7 +73,7 @@ command-end() {
     # example: command-end EXIT_STATUS
     COMMAND_STATUS=$1
     local command_end_time=$(epochrealtime)
-    local time_since_start=$(echo "$command_end_time - $command_init_time" | bc)
+    local time_since_start=$(time-diff "$command_end_time" "$command_init_time")
     ( echo "# exit status: $COMMAND_STATUS"; echo "# end time: $time_since_start" ) >> "$COMMAND_OUT_FILE"
     COMMAND_OUTPUT=$(<"$COMMAND_OUT_FILE.tmp")
     rm -f "$COMMAND_OUT_FILE.tmp"

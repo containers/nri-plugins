@@ -359,7 +359,7 @@ run-tests-in() {
                                 "$RUN_SH" test 2>&1 | tee "$test_outdir/run.sh.output"
 
                         test_end_time=$(epochrealtime)
-                        test_time=$(echo "$test_end_time - $test_start_time" | bc)
+                        test_time=$(time-diff "$test_end_time" "$test_start_time")
 
                         printf "\nTest duration: $test_time sec\n\n" >> "$test_outdir/run.sh.output"
 
