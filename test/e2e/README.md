@@ -251,6 +251,10 @@ machine somebody else made, instead of on a VM the framework creates:
 test_hw_addr=test@10.0.0.1 test_hw_key=~/.ssh/testbox ./run_tests.sh policies.test-suite
 ```
 
+`test_hw_port` sets the ssh port of the host, 22 by default. A VM which
+forwards its ssh port to the runner is reached as `test_hw_addr=user@127.0.0.1`
+with that port.
+
 The host must let that user in by key, let it run `sudo` without a password,
 and have SELinux permissive or disabled. The first two are checked before
 anything is installed. A host behind a proxy has to be configured to use one
@@ -299,6 +303,8 @@ test_hw_addr=test@10.0.0.1 test_hw_key=~/.ssh/testbox containerd_release=install
 
 Nothing is then downloaded, unpacked, reconfigured or restarted, and the
 version is read off the host so the run still records what is under test.
+The one exception is a run which writes a new CNI configuration. It restarts
+the runtime, because containerd does not load the new file otherwise.
 `installed` needs `test_hw_addr`. In exchange the host's runtime has to
 already have:
 
@@ -340,6 +346,31 @@ because the gates of a running cluster are already set. The cluster has to be:
 - **On a runtime which meets the requirements above.** Use
   `containerd_release=installed` to leave the runtime as it is.
 
+### Passing options to Ansible
+
+Set `e2e_ansible_args` to add options to the `ansible-playbook` command that
+provisions the host. The value is split on whitespace. For instance,
+`--check --diff` only shows what provisioning would change:
+
+```shell
+test_hw_addr=test@10.0.0.1 test_hw_key=~/.ssh/testbox \
+    e2e_ansible_args="--check --diff" ./run_tests.sh policies.test-suite
+```
+
+A run with `--check` or `-C` stops after the playbook. It records nothing,
+deploys no plugin and runs no test. `run_tests.sh` reports the test as
+skipped. The same goes for `--syntax-check`, `--list-hosts`, `--list-tasks`
+and `--list-tags`. Such a run previews the playbook on a recorded host too,
+without `provision` set.
+
+Only these options are taken: `--check`, `-C`, `--diff`, `-D`, `--step`, `-v`
+to `-vvvv`, `--syntax-check`, `--list-hosts`, `--list-tasks`, `--list-tags`,
+`--help`, `-h` and `--version`. Write each one on its own, such as `-C -D` in
+place of `-CD`. A run with any other option fails.
+
+`--step` asks before each task. The option applies only on an existing host.
+On a VM, vagrant runs the provisioning.
+
 ### Trying it on localhost
 
 This path can be exercised without separate hardware, by pointing it at
@@ -374,6 +405,57 @@ it resolves still match what the host is recorded as carrying, and
 `provision=all` rebuilds it instead. What is refused is a host carrying a
 cluster this framework has no record of, which is what an interrupted first
 run leaves behind.
+
+### Running a test step by step
+
+`--step --diff` asks before each provisioning task and shows what the task
+changes. Answer `y` to run the task, `n` to skip it, or `c` to run the rest
+without asking:
+
+```shell
+test_hw_addr=test@10.0.0.1 test_hw_key=~/.ssh/testbox \
+    e2e_ansible_args="--step --diff" ./run_tests.sh policies.test-suite/topology-aware/myhost
+```
+
+The playbook runs only on a first run or with `provision` set. A host that is
+recorded with the versions the run resolves is not provisioned again. The run
+only deploys the plugin and runs the tests.
+
+The host is recorded as provisioned even when a task was skipped with `n`.
+Later runs do not run that task. Set `provision` to run the playbook again.
+
+To run the steps of a test by hand, end its `code.var.sh` with `breakpoint`.
+The test stops there, at a `run.sh>` prompt. Each line typed there runs as part
+of the test, with the helpers of `run.sh`, `lib/test.bash` and `code.var.sh`.
+`exit` leaves the prompt. The test then goes on after `breakpoint`. On an
+existing host, the topology directory can have any name. A test whose
+`code.var.sh` holds only `breakpoint` gives a prompt on a host with no plugin
+running:
+
+```shell
+mkdir -p policies.test-suite/topology-aware/myhost/test00-by-hand
+echo breakpoint > policies.test-suite/topology-aware/myhost/test00-by-hand/code.var.sh
+test_hw_addr=test@10.0.0.1 test_hw_key=~/.ssh/testbox \
+    ./run_tests.sh policies.test-suite/topology-aware/myhost/test00-by-hand
+```
+
+At the prompt, start the plugin as a test does, for instance:
+
+```shell
+helm_config=$(DRA_ENABLED=true instantiate helm-config.yaml) helm-launch topology-aware
+```
+
+The prompt has some limits:
+
+- It reads each line with `read` without `-r`. This drops backslashes. Write
+  the commands without them. For instance, use jq's `join` in place of
+  `"\(...)"`.
+- Each line runs on its own. A function defined there has to fit on one line.
+  Functions and variables stay defined until `exit`.
+- A helper that calls `error` ends the test and the prompt with it. Many
+  helpers do this on a timeout, such as `wait-config-status`. Poll with
+  `retry-until` in their place. It returns non-zero on a timeout. It does not
+  end the test.
 
 ## Collecting coverage data
 

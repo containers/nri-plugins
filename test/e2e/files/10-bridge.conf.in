@@ -6,7 +6,7 @@
   "ipMasq": true,
   "ipam": {
     "type": "host-local",
-    "subnet": "CNI_NETWORK",
+    "subnet": "{{ network }}",
     "routes": [
       { "dst": "0.0.0.0/0" }
     ]

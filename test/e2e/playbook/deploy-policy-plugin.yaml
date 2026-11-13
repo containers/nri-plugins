@@ -45,8 +45,12 @@
         image_ref: "{{ nri_resource_policy_images.stdout_lines[0] | regex_replace('.*-image-([0-9a-z]*).tar', '\\1') }}"
       delegate_to: localhost
 
+    # A runtime installed by hand can keep ctr in /usr/local/bin. sudo's
+    # secure_path does not have that directory on every distro.
     - name: import and tag nri plugin image when using containerd
       become: yes
+      environment:
+        PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
       shell: "{{ item }}"
       with_items:
         - ctr -n k8s.io images import `basename {{ nri_resource_policy_images.stdout_lines[0] }}`

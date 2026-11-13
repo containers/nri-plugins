@@ -322,6 +322,7 @@ vm-box-name() {
 # made, instead of creating one with vagrant. Set
 #   test_hw_addr=user@address   the host to log in to
 #   test_hw_key=path            the private key to log in with
+#   test_hw_port=port           the ssh port of the host, 22 by default
 # The host has to let that user in by key and run sudo without a password.
 
 vm-hw-mode() {
@@ -342,6 +343,22 @@ vm-hw-valid-target() {
     esac
     echo "test_hw_addr=\"$addr\" names no user: it has to read user@host," \
          "since that user is what the run logs in as and runs sudo as" >&2
+    return 1
+}
+
+vm-hw-valid-port() {
+    # Usage: vm-hw-valid-port PORT
+    #
+    # Return success if PORT is empty or a TCP port number.
+    local port="$1"
+
+    if [ -z "$port" ]; then
+        return 0
+    fi
+    if [[ "$port" =~ ^[1-9][0-9]{0,4}$ ]] && [ "$port" -le 65535 ]; then
+        return 0
+    fi
+    echo "test_hw_port=\"$port\" is not a TCP port number" >&2
     return 1
 }
 
@@ -406,6 +423,8 @@ vm-hw-check-options() {
         error "test_hw_addr is unusable, see above"
     vm-hw-valid-key "${test_hw_key:-}" ||
         error "test_hw_key is unusable, see above"
+    vm-hw-valid-port "${test_hw_port:-}" ||
+        error "test_hw_port is unusable, see above"
 }
 
 vm-hw-user() {
@@ -451,7 +470,18 @@ vm-hw-ssh() {
         -o PasswordAuthentication=no \
         -o LogLevel=FATAL \
         -o ConnectTimeout=10 \
+        -p "${test_hw_port:-22}" \
         "$(vm-hw-user)@$(vm-hw-address)" "$@"
+}
+
+vm-hw-system() {
+    # Usage: vm-hw-system
+    #
+    # Print the OS of the host, its online CPUs and its NUMA nodes, read from
+    # it. Print "unknown" when the host cannot be reached.
+    vm-hw-ssh '. /etc/os-release &&
+        echo "$PRETTY_NAME, CPUs $(cat /sys/devices/system/cpu/online), NUMA nodes $(cat /sys/devices/system/node/online)"' \
+        2>/dev/null || echo unknown
 }
 
 vm-hw-hostname() {
@@ -487,10 +517,15 @@ vm-hw-runtime-version() {
         *)    runtime=containerd;;
     esac
 
+    # Ask the binary the runtime's systemd unit starts. Another one can come
+    # first on the PATH. A host with no unit falls back to the PATH.
+    #
     # Tagged on the host, so that the runtime's own output can be told from
     # whatever a login shell prints around it: an untagged "Ubuntu 24.04.1"
     # from a banner would otherwise be read as the version of the runtime.
-    out=$(vm-hw-ssh "$runtime --version 2>/dev/null | sed -n 's/^/ver=/p'" \
+    out=$(vm-hw-ssh "bin=\$(systemctl show -p ExecStart --value $runtime 2>/dev/null |
+                          sed -n 's/^{ path=\([^ ;]*\).*/\1/p' | head -n 1)
+                     \${bin:-$runtime} --version 2>/dev/null | sed -n 's/^/ver=/p'" \
               2>/dev/null)
 
     # The whole version, prerelease and build metadata included, so that an
@@ -534,7 +569,7 @@ binaries of that build over it. Unset one of them."
     ver="$(vm-hw-runtime-version)"
     if [ -z "$ver" ]; then
         error "could not read the version of the $runtime installed on
-$(vm-hw-address). Is it on that user's PATH?"
+$(vm-hw-address). Does its systemd unit or that user's PATH name it?"
     fi
 
     export runtime_preinstalled=1
@@ -794,7 +829,12 @@ targets the host $(vm-hw-address). Give the run an output directory of its
 own, or unset test_hw_addr to use the VM in this one."
     fi
 
+    # The port too, when it is not 22: two VMs which forward their ssh ports
+    # to 127.0.0.1 are two hosts.
     addr="$(vm-hw-address)"
+    if [ "${test_hw_port:-22}" != 22 ]; then
+        addr="$addr:$test_hw_port"
+    fi
     recorded="$(vm-hw-recorded-target "$vagrantdir")"
 
     # The address alone, not user@address: the cluster belongs to the machine,
@@ -810,6 +850,11 @@ down what is on $addr and build a cluster there again."
     fi
 
     if [ "$recorded" = "$addr" ]; then
+        return 0
+    fi
+
+    # A preview changes nothing on the host. So it claims nothing.
+    if vm-hw-ansible-preview; then
         return 0
     fi
 
@@ -885,16 +930,55 @@ the framework can halt a host we were given but has no way to switch it back
 on. Run this on a VM of its own, or leave it out of a run against a host."
 }
 
+vm-hw-ansible-preview() {
+    # Usage: vm-hw-ansible-preview
+    #
+    # Return success if e2e_ansible_args makes the playbook change nothing.
+    # Fail the run on an option which is not listed below.
+    local args=() arg preview=""
+
+    # read takes only the first line.
+    if [[ "${e2e_ansible_args:-}" == *$'\n'* ]]; then
+        error "e2e_ansible_args must be on a single line."
+    fi
+
+    # Split as vm-provision-hw splits it.
+    read -r -a args <<< "${e2e_ansible_args:-}"
+    for arg in "${args[@]}"; do
+        # Only options which keep the host, the connection, the tasks and the
+        # variables of the run as they are.
+        case "$arg" in
+            --check|-C|--syntax-check|--list-hosts|--list-tasks|--list-tags|\
+            --help|-h|--version)
+                preview=1
+                ;;
+            --diff|-D|--step|-v|-vv|-vvv|-vvvv)
+                ;;
+            *)
+                error "e2e_ansible_args=\"$e2e_ansible_args\": $arg is not
+supported. Use --check, -C, --diff, -D, --step, -v to -vvvv, --syntax-check,
+--list-hosts, --list-tasks, --list-tags, --help, -h or --version, each one on
+its own."
+                ;;
+        esac
+    done
+
+    [ -n "$preview" ]
+}
+
 vm-provision-hw() {
     # Usage: vm-provision-hw VAGRANTDIR
     #
-    # Run the provisioning playbook against the host.
+    # Run the provisioning playbook against the host. The words of
+    # e2e_ansible_args are added to its command line.
     local vagrantdir="$1"
     local playbook="$nri_resource_policy_src/test/e2e/playbook/provision.yaml"
     local login_args=()
+    local extra_args=()
     local reset=false
 
     mapfile -t login_args < <(vm-ansible-login-args "$VM_HOSTNAME" "$vagrantdir")
+    read -r -a extra_args <<< "${e2e_ansible_args:-}"
 
     if [ "${provision:-}" = "all" ]; then
         reset=true
@@ -903,7 +987,11 @@ vm-provision-hw() {
     echo "provisioning $VM_HOSTNAME..."
     (cd "$vagrantdir";
      export ANSIBLE_PIPELINING=True;
+     # The words of e2e_ansible_args come before the variables of the run.
+     # A later --extra-vars wins. So the run's own variables cannot be
+     # overridden.
      ANSIBLE_SSH_ARGS="-F $vagrantdir/.ssh-config" ansible-playbook "$playbook" \
+          "${extra_args[@]}" \
           -i "$VM_HOSTNAME," "${login_args[@]}" \
           --ssh-common-args "-F $vagrantdir/.ssh-config" \
           --extra-vars "@$vagrantdir/ansible-vars.json" \
@@ -958,6 +1046,7 @@ vm-write-hw-ssh-config() {
     cat > "$vagrantdir/.ssh-config" <<EOF
 Host $aliases
   HostName $(vm-hw-address)
+  Port ${test_hw_port:-22}
   User $(vm-hw-user)
   UserKnownHostsFile /dev/null
   StrictHostKeyChecking no
@@ -1069,6 +1158,18 @@ vm-setup-hw() {
 
     # Nothing recorded on the host is a host which has not been provisioned.
     [ -n "$recorded" ] || first=1
+
+    # A preview runs on a recorded host, too. It changes nothing. So the
+    # record stays as it is. The run ends after the playbook.
+    if vm-hw-ansible-preview; then
+        vm-hw-check-provisionable "$recorded"
+        vm-provision-hw "$vagrantdir"
+        # The report reads the verdict from summary.txt.
+        echo "Test verdict: SKIP (provisioning previewed with" \
+             "e2e_ansible_args=\"$e2e_ansible_args\")" |
+            tee -a "$SUMMARY_FILE"
+        exit 0
+    fi
 
     # provision at all: a first run, or one which was asked to.
     if [ -n "$first" ] || [ -n "${provision:-}" ]; then
@@ -1195,8 +1296,7 @@ vm-write-ansible-vars() {
   "cache_dir": $(vm-json-quote "${CACHE_DIR:-}"),
   "cni_plugin": $(vm-json-quote "${cni_plugin:-}"),
   "cni_release": $(vm-json-quote "${cni_release:-}"),
-  "nri_resource_policy_src": $(vm-json-quote "${nri_resource_policy_src:-}"),
-  "outdir": $(vm-json-quote "${OUTPUT_DIR:-}")
+  "nri_resource_policy_src": $(vm-json-quote "${nri_resource_policy_src:-}")
 }
 EOF
 }
@@ -1391,6 +1491,15 @@ vm-check-recorded-box-key() {
         echo "WARNING: provision=$provision, so provisioning runs again but" \
              "the cluster is left as it is. Use provision=all to rebuild it" \
              "with the versions above." >&2
+        echo "" >&2
+        return 0
+    fi
+
+    # A preview changes nothing. It shows what provisioning would change.
+    if vm-hw-mode && vm-hw-ansible-preview; then
+        echo "" >&2
+        echo "WARNING: e2e_ansible_args=\"$e2e_ansible_args\" only previews" \
+             "provisioning." >&2
         echo "" >&2
         return 0
     fi

@@ -171,6 +171,8 @@
             - /root/.kube/config
             - "{{ login_user_home }}/.kube/config"
 
+    # Not on a host we were given. Such a host has working DNS of its own.
+    # These tasks replace /etc/resolv.conf and edit its network files.
     - name: Setup DNS
       ansible.builtin.shell: "{{ item }}"
       with_items:
@@ -179,12 +181,13 @@
         - echo "search  {{ dns_search_domain }}" >> /etc/resolv.conf
         - sed -i "s/DNS=.*$/DNS={{ dns_nameserver }}/" /etc/systemd/resolved.conf
         - sed -i "s/Domains=.*$/Domains={{ dns_search_domain }}/" /etc/systemd/resolved.conf
-      when: dns_nameserver != ""
+      when: dns_nameserver != "" and (not is_hardware)
 
     - name: Setup DNS for Ubuntu
       ansible.builtin.shell: |
         [ -f /etc/netplan/01-netcfg.yaml ] && sed -i 's/addresses\(.\) \[.*\]$/addresses\1 \[{{ dns_nameserver }}\]/' /etc/netplan/01-netcfg.yaml || :
-      when: ansible_facts['distribution'] == "Ubuntu"
+      when: ansible_facts['distribution'] == "Ubuntu" and dns_nameserver != "" and
+            (not is_hardware)
 
 # Swap is not turned off. Since Kubernetes 1.30 kubelet can run on a host
 # which has swap enabled, so it is configured to tolerate it without using
@@ -221,9 +224,11 @@
         mode: '0644'
       when: ansible_facts['distribution'] == "Ubuntu" and manage_k8s
 
+    # gpg asks before it overwrites an existing keyring. Under Ansible
+    # there is no tty to ask on. --batch --yes overwrite it without asking.
     - name: Convert the Kubernetes APT key to keyring format
       ansible.builtin.command:
-        cmd: gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg /tmp/kubernetes-release.key
+        cmd: gpg --batch --yes --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg /tmp/kubernetes-release.key
       when: ansible_facts['distribution'] == "Ubuntu" and manage_k8s
 
     - name: Clean up temporary key file
@@ -288,20 +293,26 @@
           delegate_to: localhost
           become: false
 
+        # Also in check mode. The unarchive below needs the file. It goes to
+        # the cache of the runner, not to the host.
         - name: Download and cache Helm release tarball
           ansible.builtin.get_url:
             url: "{{ helm_tarball }}"
             dest: "{{ cached_helm_tarball }}"
             mode: '0644'
+          check_mode: false
           when: not cached_helm.stat.exists
           delegate_to: localhost
           become: false
 
+        # The files in the tarball belong to the uid of its builder.
         - name: Install Helm runtime release tarball under /usr/local
           ansible.builtin.unarchive:
             src: "{{ cached_helm_tarball }}"
             dest: /usr/local
             copy: true
+            owner: root
+            group: root
 
         - name: Move Helm binaries to /usr/local/bin from extracted release tarball
           ansible.builtin.shell: "{{ item }}"
@@ -321,13 +332,29 @@
       ansible.builtin.package:
         name:
           - curl
-          - runc
           - jq
-          - python3-pip
-          - systemd-container
           - rsync
         state: present
 
+    # Not with the host's own runtime. That runtime brings its own runc. A
+    # second one would land next to it.
+    - name: Install runc
+      ansible.builtin.package:
+        name: runc
+        state: present
+      when: manage_runtime
+
+    # Not on a host we were given. Nothing the tests run there needs them.
+    - name: Install VM packages
+      ansible.builtin.package:
+        name:
+          - python3-pip
+          - systemd-container
+        state: present
+      when: not is_hardware
+
+    # Not in check mode. The Kubernetes repository is not added then. So the
+    # packages can be missing from the package index.
     - name: Install Kubernetes packages
       ansible.builtin.package:
         name:
@@ -335,8 +362,10 @@
           - kubeadm
           - kubectl
         state: present
-      when: manage_k8s
+      when: manage_k8s and not ansible_check_mode
 
+    # Not on a host we were given. The Kubernetes repository and its key are
+    # set up above without them.
     - name: Install apt packages
       ansible.builtin.apt:
         pkg:
@@ -347,7 +376,7 @@
         state: present
         update_cache: true
         cache_valid_time: "{{ apt_cache_valid_time }}"
-      when: ansible_facts['distribution'] == "Ubuntu"
+      when: ansible_facts['distribution'] == "Ubuntu" and (not is_hardware)
 
     - name: Install rpm packages
       when: ansible_facts['distribution'] == "Fedora"
@@ -356,12 +385,19 @@
           ansible.builtin.dnf:
             pkg:
               - iproute-tc
-              - grubby
-              - cloud-utils-growpart
-              - btrfs-progs
               # chrt, which the tests use to read scheduling flags back.
               - util-linux-core
             state: present
+        # Not on a host we were given. They are for a custom kernel and for
+        # growing the root filesystem, and neither is done there.
+        - name: VM rpm packages
+          ansible.builtin.dnf:
+            pkg:
+              - grubby
+              - cloud-utils-growpart
+              - btrfs-progs
+            state: present
+          when: not is_hardware
         - name: Extra python3 rpm packages for ansible
           ansible.builtin.dnf:
             pkg:
@@ -412,11 +448,12 @@
       when: ansible_facts['distribution'] == "Fedora" and
             (not is_hardware)
 
+    # Not on a host we were given. Its firewall is the owner's to configure.
     - name: Remove the firewalld package
       ansible.builtin.package:
         name: firewalld
         state: absent
-      when: ansible_facts['distribution'] == "Fedora"
+      when: ansible_facts['distribution'] == "Fedora" and (not is_hardware)
 
     - name: Install podman for CRI-O runs
       ansible.builtin.dnf:
@@ -446,20 +483,26 @@
           delegate_to: localhost
           become: false
 
+        # Also in check mode. The unarchive below needs the file. It goes to
+        # the cache of the runner, not to the host.
         - name: Download and cache runtime release tarball
           ansible.builtin.get_url:
             url: "{{ remote_runtime_tarball }}"
             dest: "{{ cached_runtime_tarball }}"
             mode: '0644'
+          check_mode: false
           when: not cached_runtime.stat.exists
           delegate_to: localhost
           become: false
 
+        # The files in the tarball belong to the uid of its builder.
         - name: Install runtime release tarball under /usr/local
           ansible.builtin.unarchive:
             src: "{{ cached_runtime_tarball }}"
             dest: /usr/local
             copy: true
+            owner: root
+            group: root
 
         - name: Install CRI-O binaries from release tarball
           ansible.builtin.shell:
@@ -555,13 +598,15 @@
         mode: '0644'
       when: manage_runtime
 
-    # First issue daemon-reload to pick up config changes
+    # First issue daemon-reload to pick up config changes. Not in check mode.
+    # A preview of a first run installs nothing. So the unit can be missing.
     - name: Start runtime
       ansible.builtin.systemd:
         name: "{{ cri_runtime }}"
         daemon_reload: true
         state: started
         enabled: true
+      when: not ansible_check_mode
 
     # crictl tries a list of well known endpoints when it is not told one,
     # so on a host with both runtimes installed it can talk to the one this
@@ -592,12 +637,16 @@
         - name: Generate default configuration (/etc/containerd/config.toml)
           ansible.builtin.shell: containerd config default > /etc/containerd/config.toml
 
+        # The edits of config.toml do not run in check mode. The file is not
+        # generated then. It can be missing. An edit of the old file shows
+        # nothing useful.
         - name: Enable drop-in directory in configuration
           ansible.builtin.lineinfile:
             path: /etc/containerd/config.toml
             regexp: '^imports *=.*'
             line: 'imports = [ "/etc/containerd/conf.d/*.toml" ]'
             state: present
+          when: not ansible_check_mode
 
         - name: Enable all plugins
           ansible.builtin.lineinfile:
@@ -605,6 +654,7 @@
             regexp: '^disabled_plugins *=.*'
             line: 'disabled_plugins = []'
             state: present
+          when: not ansible_check_mode
 
         - name: Enable systemd cgroup driver
           ansible.builtin.copy:
@@ -614,7 +664,7 @@
               SystemdCgroup = true
 
         - name: Update CNI plugin directory on Fedora
-          when: ansible_facts['distribution'] == "Fedora"
+          when: ansible_facts['distribution'] == "Fedora" and not ansible_check_mode
           ansible.builtin.replace:
             path: /etc/containerd/config.toml
             regexp: '/opt/cni/bin'
@@ -623,33 +673,33 @@
     - name: Configure bridge CNI plugin
       when: cni_plugin == "bridge" and manage_k8s
       block:
-        - name: Copy CNI bridge plugin configuration
-          ansible.builtin.copy:
+        - name: Write the CNI bridge plugin configuration
+          ansible.builtin.template:
             src: "{{ nri_resource_policy_src }}/test/e2e/files/10-bridge.conf.in"
             dest: "/etc/cni/net.d/10-bridge.conf"
             owner: root
             group: root
             mode: '0644'
+          register: bridge_conf
 
-        - name: Update CNI bridge plugin configuration
-          ansible.builtin.replace:
-            path: /etc/cni/net.d/10-bridge.conf
-            regexp: '(CNI_NETWORK)'
-            replace: "{{ network }}"
-
+    # A new CNI configuration restarts the runtime, too. containerd does not
+    # load a file renamed into its CNI directory. Ansible writes files that
+    # way. Not in check mode, as for "Start runtime".
     - name: Restart the containerd
       ansible.builtin.systemd:
         state: restarted
         name: "{{ cri_runtime }}"
         daemon_reload: true
-      when: is_containerd and manage_runtime
+      when: is_containerd and (manage_runtime or bridge_conf is changed) and
+            not ansible_check_mode
 
     - name: Restart CRI-O
       ansible.builtin.systemd:
         state: restarted
         name: "{{ cri_runtime }}"
         daemon_reload: true
-      when: is_crio and manage_runtime
+      when: is_crio and (manage_runtime or bridge_conf is changed) and
+            not ansible_check_mode
 
     - name: Load modules the k8s cluster needs
       when: manage_k8s
@@ -701,11 +751,13 @@
     - name: Build the Kubernetes cluster
       when: manage_k8s
       block:
+        # Not in check mode, as for "Start runtime".
         - name: Restart kubelet
           ansible.builtin.service:
             name: kubelet
             daemon_reload: true
             state: restarted
+          when: not ansible_check_mode
 
         - name: Write the kubeadm configuration
           ansible.builtin.copy:
@@ -806,11 +858,14 @@
               ansible.builtin.set_fact:
                 cilium_tarball: https://github.com/cilium/cilium-cli/releases/download/{{ cni_release }}/cilium-linux-amd64.tar.gz
 
+            # The files in the tarball belong to the uid of its builder.
             - name: "Fetch and extract {{ cni_release }} cilium (installer) release tarball"
               ansible.builtin.unarchive:
                 src: "{{ cilium_tarball }}"
                 dest: /usr/local/bin
                 remote_src: true
+                owner: root
+                group: root
 
             - name: Run cilium installer
               ansible.builtin.command: "{{ item }}"
@@ -818,20 +873,9 @@
                 - cilium install --wait
                 - cilium status --wait
 
-        - name: Generate join command
-          ansible.builtin.command:
-            cmd: kubeadm token create --print-join-command
-          register: join_command
-
-        - name: Copy join command to local file
-          delegate_to: localhost
-          become: false
-          ansible.builtin.copy:
-            content: "{{ join_command.stdout_lines[0] }}"
-            dest: "{{ outdir }}/join-command"
-            mode: '0644'
-
+        # Not in check mode, as for "Start runtime".
         - name: Enable kubelet systemd service
           ansible.builtin.systemd:
             name: kubelet
             enabled: true
+          when: not ansible_check_mode

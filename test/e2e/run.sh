@@ -9,7 +9,7 @@ DEFAULT_DISTRO=${DEFAULT_DISTRO:-"fedora/43"}
 #    fedora/41
 
 if [ -z "${!distro_images[*]}" ]; then
-    echo "Using stock distro images"
+    [ -n "${test_hw_addr:-}" ] || echo "Using stock distro images"
     declare -A distro_images=(
         ["generic/ubuntu2204"]=""
         ["fedora/40"]="https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/40/Cloud/x86_64/images/Fedora-Cloud-Base-Vagrant-libvirt.x86_64-40-1.14.vagrant.libvirt.box"
@@ -22,10 +22,13 @@ else
     echo "WARNING: using overridden distro images"
 fi
 
-for d in ${distro_images[*]}; do
-    img=${distro_images[$d]}
-    echo "  - $d: ${img:-vagrant resolved default}"
-done
+# A host we were given boots no box.
+if [ -z "${test_hw_addr:-}" ]; then
+    for d in ${distro_images[*]}; do
+        img=${distro_images[$d]}
+        echo "  - $d: ${img:-vagrant resolved default}"
+    done
+fi
 
 SCRIPT_DIR="$(dirname "${BASH_SOURCE[0]}")"
 SRC_DIR=$(realpath "$SCRIPT_DIR/../..")
@@ -69,6 +72,17 @@ GH_HELM_REPO="helm/helm"
 export helm_release=${helm_release:-"latest"}
 
 source "$LIB_DIR"/vm.bash
+
+# Before anything which can fail. A run which fails must not leave the verdict
+# of an earlier run in summary.txt. help and runtime-logs run no test.
+SUMMARY_FILE="$TEST_OUTPUT_DIR/summary.txt"
+SKIP_FILE="$TEST_OUTPUT_DIR/skip.txt"
+if [ "$1" != "help" ] && [ "$1" != "runtime-logs" ]; then
+    mkdir -p "$TEST_OUTPUT_DIR"
+    echo -n "" > "$SUMMARY_FILE" ||
+        error "cannot write summary to \"$SUMMARY_FILE\""
+    rm -f "$SKIP_FILE"
+fi
 
 fetch-or-use-cached-url() {
     local url="$1" cached="$2"
@@ -323,15 +337,24 @@ if [ "$1" == "help" ]; then
 fi
 
 echo
-echo "    VM              = $vm_name"
-echo "    EFI boot        = ${efi:-no}"
-echo "    Distro          = $distro"
-echo "    Distro image    = ${distro_img:-vagrant default}"
+if vm-hw-mode; then
+    echo "    Host            = $test_hw_addr"
+    echo "    System          = $(vm-hw-system)"
+else
+    echo "    VM              = $vm_name"
+    echo "    EFI boot        = ${efi:-no}"
+    echo "    Distro          = $distro"
+    echo "    Distro image    = ${distro_img:-vagrant default}"
+fi
 echo "    Kubernetes"
 echo "      - release     = $k8s_release"
 echo "      - version     = $k8s_version"
 echo "      - Helm        = $helm_release"
-echo "      - gates       = ${k8s_feature_gates:-none}"
+if [ -n "${k8s_preinstalled:-}" ]; then
+    echo "      - gates       = those of the existing cluster"
+else
+    echo "      - gates       = ${k8s_feature_gates:-none}"
+fi
 echo "    Runtime         = $k8scri"
 echo "    Output dir      = $OUTPUT_DIR"
 echo "    Test output dir = $TEST_OUTPUT_DIR"
@@ -346,15 +369,16 @@ else
     echo "      sources       = $crio_src"
 fi
 echo "    Policy          = $POLICY"
-echo "    Topology        = $topology"
+if vm-hw-mode; then
+    echo "    Topology        = the host's own"
+else
+    echo "    Topology        = $topology"
+fi
 echo
 
 vm-setup "$OUTPUT_DIR" "$ESCAPED_VM" "$distro" "$TOPOLOGY_DIR" "$topology"
 
 vm-nri-plugin-deploy "$OUTPUT_DIR" "$ESCAPED_VM" "$POLICY"
-
-SUMMARY_FILE="$TEST_OUTPUT_DIR/summary.txt"
-echo -n "" > "$SUMMARY_FILE" || error "cannot write summary to \"$SUMMARY_FILE\""
 
 # The breakpoint function can be used in debugging the test script. You can call
 # this function which causes the script to enter interactive mode where you can
@@ -1238,6 +1262,9 @@ vm-coverage-collect "${TEST_OUTPUT_DIR}/coverage"
 exit_status=0
 if [ -n "$TEST_FAILURES" ]; then
     echo "Test verdict: FAIL" >> "$SUMMARY_FILE"
+# skip-test ends only the subshell of the test. It leaves its verdict here.
+elif [ -s "$SKIP_FILE" ]; then
+    cat "$SKIP_FILE" >> "$SUMMARY_FILE"
 else
     echo "Test verdict: PASS" >> "$SUMMARY_FILE"
 fi
