@@ -9,7 +9,7 @@ DEFAULT_DISTRO=${DEFAULT_DISTRO:-"fedora/43"}
 #    fedora/41
 
 if [ -z "${!distro_images[*]}" ]; then
-    echo "Using stock distro images"
+    [ -n "${test_hw_addr:-}" ] || echo "Using stock distro images"
     declare -A distro_images=(
         ["generic/ubuntu2204"]=""
         ["fedora/40"]="https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/40/Cloud/x86_64/images/Fedora-Cloud-Base-Vagrant-libvirt.x86_64-40-1.14.vagrant.libvirt.box"
@@ -22,10 +22,13 @@ else
     echo "WARNING: using overridden distro images"
 fi
 
-for d in ${distro_images[*]}; do
-    img=${distro_images[$d]}
-    echo "  - $d: ${img:-vagrant resolved default}"
-done
+# A host we were given boots no box.
+if [ -z "${test_hw_addr:-}" ]; then
+    for d in ${distro_images[*]}; do
+        img=${distro_images[$d]}
+        echo "  - $d: ${img:-vagrant resolved default}"
+    done
+fi
 
 SCRIPT_DIR="$(dirname "${BASH_SOURCE[0]}")"
 SRC_DIR=$(realpath "$SCRIPT_DIR/../..")
@@ -323,15 +326,24 @@ if [ "$1" == "help" ]; then
 fi
 
 echo
-echo "    VM              = $vm_name"
-echo "    EFI boot        = ${efi:-no}"
-echo "    Distro          = $distro"
-echo "    Distro image    = ${distro_img:-vagrant default}"
+if vm-hw-mode; then
+    echo "    Host            = $test_hw_addr"
+    echo "    System          = $(vm-hw-system)"
+else
+    echo "    VM              = $vm_name"
+    echo "    EFI boot        = ${efi:-no}"
+    echo "    Distro          = $distro"
+    echo "    Distro image    = ${distro_img:-vagrant default}"
+fi
 echo "    Kubernetes"
 echo "      - release     = $k8s_release"
 echo "      - version     = $k8s_version"
 echo "      - Helm        = $helm_release"
-echo "      - gates       = ${k8s_feature_gates:-none}"
+if [ -n "${k8s_preinstalled:-}" ]; then
+    echo "      - gates       = those of the existing cluster"
+else
+    echo "      - gates       = ${k8s_feature_gates:-none}"
+fi
 echo "    Runtime         = $k8scri"
 echo "    Output dir      = $OUTPUT_DIR"
 echo "    Test output dir = $TEST_OUTPUT_DIR"
@@ -346,7 +358,11 @@ else
     echo "      sources       = $crio_src"
 fi
 echo "    Policy          = $POLICY"
-echo "    Topology        = $topology"
+if vm-hw-mode; then
+    echo "    Topology        = the host's own"
+else
+    echo "    Topology        = $topology"
+fi
 echo
 
 # Before the setup. A run which fails there must not leave the verdict of an
