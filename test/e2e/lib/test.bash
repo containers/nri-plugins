@@ -1308,9 +1308,9 @@ skip-test() { # script API
     # first: this does not return.
     #
     # Use this where the test cannot tell anything about the plugin, because
-    # the cluster or the kernel does not have what it needs. run_tests.sh
-    # picks the verdict up from the output of the test.
-    echo "Test verdict: SKIP ($1)"
+    # the cluster or the kernel does not have what it needs. run.sh copies
+    # the verdict to summary.txt after the test, and prints it.
+    echo "Test verdict: SKIP ($1)" > "$SKIP_FILE"
     exit 0
 }
 

@@ -73,6 +73,17 @@ export helm_release=${helm_release:-"latest"}
 
 source "$LIB_DIR"/vm.bash
 
+# Before anything which can fail. A run which fails must not leave the verdict
+# of an earlier run in summary.txt. help and runtime-logs run no test.
+SUMMARY_FILE="$TEST_OUTPUT_DIR/summary.txt"
+SKIP_FILE="$TEST_OUTPUT_DIR/skip.txt"
+if [ "$1" != "help" ] && [ "$1" != "runtime-logs" ]; then
+    mkdir -p "$TEST_OUTPUT_DIR"
+    echo -n "" > "$SUMMARY_FILE" ||
+        error "cannot write summary to \"$SUMMARY_FILE\""
+    rm -f "$SKIP_FILE"
+fi
+
 fetch-or-use-cached-url() {
     local url="$1" cached="$2"
     local dir=$(dirname $cached)
@@ -364,12 +375,6 @@ else
     echo "    Topology        = $topology"
 fi
 echo
-
-# Before the setup. A run which fails there must not leave the verdict of an
-# earlier run in summary.txt.
-SUMMARY_FILE="$TEST_OUTPUT_DIR/summary.txt"
-mkdir -p "$TEST_OUTPUT_DIR"
-echo -n "" > "$SUMMARY_FILE" || error "cannot write summary to \"$SUMMARY_FILE\""
 
 vm-setup "$OUTPUT_DIR" "$ESCAPED_VM" "$distro" "$TOPOLOGY_DIR" "$topology"
 
@@ -1257,6 +1262,9 @@ vm-coverage-collect "${TEST_OUTPUT_DIR}/coverage"
 exit_status=0
 if [ -n "$TEST_FAILURES" ]; then
     echo "Test verdict: FAIL" >> "$SUMMARY_FILE"
+# skip-test ends only the subshell of the test. It leaves its verdict here.
+elif [ -s "$SKIP_FILE" ]; then
+    cat "$SKIP_FILE" >> "$SUMMARY_FILE"
 else
     echo "Test verdict: PASS" >> "$SUMMARY_FILE"
 fi
