@@ -70,6 +70,17 @@ export helm_release=${helm_release:-"latest"}
 
 source "$LIB_DIR"/vm.bash
 
+# Do this before anything that can fail. A failed run must not leave an old
+# verdict in summary.txt. help and runtime-logs run no test.
+SUMMARY_FILE="$TEST_OUTPUT_DIR/summary.txt"
+SKIP_FILE="$TEST_OUTPUT_DIR/skip.txt"
+if [ "$1" != "help" ] && [ "$1" != "runtime-logs" ]; then
+    mkdir -p "$TEST_OUTPUT_DIR"
+    echo -n "" > "$SUMMARY_FILE" ||
+        error "cannot write summary to \"$SUMMARY_FILE\""
+    rm -f "$SKIP_FILE"
+fi
+
 fetch-or-use-cached-url() {
     local url="$1" cached="$2"
     local dir=$(dirname $cached)
@@ -352,9 +363,6 @@ echo
 vm-setup "$OUTPUT_DIR" "$ESCAPED_VM" "$distro" "$TOPOLOGY_DIR" "$topology"
 
 vm-nri-plugin-deploy "$OUTPUT_DIR" "$ESCAPED_VM" "$POLICY"
-
-SUMMARY_FILE="$TEST_OUTPUT_DIR/summary.txt"
-echo -n "" > "$SUMMARY_FILE" || error "cannot write summary to \"$SUMMARY_FILE\""
 
 # The breakpoint function can be used in debugging the test script. You can call
 # this function which causes the script to enter interactive mode where you can
@@ -1238,6 +1246,9 @@ vm-coverage-collect "${TEST_OUTPUT_DIR}/coverage"
 exit_status=0
 if [ -n "$TEST_FAILURES" ]; then
     echo "Test verdict: FAIL" >> "$SUMMARY_FILE"
+# skip-test ends only the subshell of the test. It leaves its reason here.
+elif [ -e "$SKIP_FILE" ]; then
+    echo "Test verdict: SKIP ($(< "$SKIP_FILE"))" >> "$SUMMARY_FILE"
 else
     echo "Test verdict: PASS" >> "$SUMMARY_FILE"
 fi
