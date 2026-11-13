@@ -251,6 +251,10 @@ machine somebody else made, instead of on a VM the framework creates:
 test_hw_addr=test@10.0.0.1 test_hw_key=~/.ssh/testbox ./run_tests.sh policies.test-suite
 ```
 
+`test_hw_port` sets the ssh port of the host, 22 by default. A VM which
+forwards its ssh port to the runner is reached as `test_hw_addr=user@127.0.0.1`
+with that port.
+
 The host must let that user in by key, let it run `sudo` without a password,
 and have SELinux permissive or disabled. The first two are checked before
 anything is installed. A host behind a proxy has to be configured to use one

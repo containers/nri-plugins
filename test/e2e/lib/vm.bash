@@ -322,6 +322,7 @@ vm-box-name() {
 # made, instead of creating one with vagrant. Set
 #   test_hw_addr=user@address   the host to log in to
 #   test_hw_key=path            the private key to log in with
+#   test_hw_port=port           the ssh port of the host, 22 by default
 # The host has to let that user in by key and run sudo without a password.
 
 vm-hw-mode() {
@@ -342,6 +343,22 @@ vm-hw-valid-target() {
     esac
     echo "test_hw_addr=\"$addr\" names no user: it has to read user@host," \
          "since that user is what the run logs in as and runs sudo as" >&2
+    return 1
+}
+
+vm-hw-valid-port() {
+    # Usage: vm-hw-valid-port PORT
+    #
+    # Return success if PORT is empty or a TCP port number.
+    local port="$1"
+
+    if [ -z "$port" ]; then
+        return 0
+    fi
+    if [[ "$port" =~ ^[1-9][0-9]{0,4}$ ]] && [ "$port" -le 65535 ]; then
+        return 0
+    fi
+    echo "test_hw_port=\"$port\" is not a TCP port number" >&2
     return 1
 }
 
@@ -406,6 +423,8 @@ vm-hw-check-options() {
         error "test_hw_addr is unusable, see above"
     vm-hw-valid-key "${test_hw_key:-}" ||
         error "test_hw_key is unusable, see above"
+    vm-hw-valid-port "${test_hw_port:-}" ||
+        error "test_hw_port is unusable, see above"
 }
 
 vm-hw-user() {
@@ -451,6 +470,7 @@ vm-hw-ssh() {
         -o PasswordAuthentication=no \
         -o LogLevel=FATAL \
         -o ConnectTimeout=10 \
+        -p "${test_hw_port:-22}" \
         "$(vm-hw-user)@$(vm-hw-address)" "$@"
 }
 
@@ -809,7 +829,12 @@ targets the host $(vm-hw-address). Give the run an output directory of its
 own, or unset test_hw_addr to use the VM in this one."
     fi
 
+    # The port too, when it is not 22: two VMs which forward their ssh ports
+    # to 127.0.0.1 are two hosts.
     addr="$(vm-hw-address)"
+    if [ "${test_hw_port:-22}" != 22 ]; then
+        addr="$addr:$test_hw_port"
+    fi
     recorded="$(vm-hw-recorded-target "$vagrantdir")"
 
     # The address alone, not user@address: the cluster belongs to the machine,
@@ -1021,6 +1046,7 @@ vm-write-hw-ssh-config() {
     cat > "$vagrantdir/.ssh-config" <<EOF
 Host $aliases
   HostName $(vm-hw-address)
+  Port ${test_hw_port:-22}
   User $(vm-hw-user)
   UserKnownHostsFile /dev/null
   StrictHostKeyChecking no
