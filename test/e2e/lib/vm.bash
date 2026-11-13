@@ -454,6 +454,16 @@ vm-hw-ssh() {
         "$(vm-hw-user)@$(vm-hw-address)" "$@"
 }
 
+vm-hw-system() {
+    # Usage: vm-hw-system
+    #
+    # Print the OS, the online CPUs and the NUMA nodes of the host. Print
+    # "unknown" when ssh to the host fails.
+    vm-hw-ssh '. /etc/os-release &&
+        echo "$PRETTY_NAME, CPUs $(cat /sys/devices/system/cpu/online), NUMA nodes $(cat /sys/devices/system/node/online)"' \
+        2>/dev/null || echo unknown
+}
+
 vm-hw-hostname() {
     # Usage: vm-hw-hostname
     #
