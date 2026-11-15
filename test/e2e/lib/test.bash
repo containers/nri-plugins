@@ -922,19 +922,34 @@ wait-dra-devices() { # script API
 }
 
 dra-consumable-capacity() { # script API
-    # Usage: dra-consumable-capacity [DRIVER]
+    # Usage: dra-consumable-capacity
     #
-    # Succeed if the devices of DRIVER, "$POLICY.nri.io" by default, allow
-    # multiple allocations, that is, if several claims can share a device.
+    # Succeed if the DRAConsumableCapacity feature gate is enabled.
     #
-    # The API server silently drops allowMultipleAllocations unless the
-    # DRAConsumableCapacity feature gate is enabled, so a test which needs
-    # shared devices has to skip itself if this does not hold.
+    # The API server silently drops allowMultipleAllocations of a device
+    # unless the gate is enabled. A dry run of a ResourceSlice with the field
+    # tells whether the server keeps it.
     #
     # Example:
     #   dra-consumable-capacity ||
     #       { cleanup; skip-test "DRAConsumableCapacity is not enabled"; }
-    [ "$(dra-devices "$1" | jq -r '.[0].allowMultipleAllocations')" == "true" ]
+    [ "$(vm-command-q "kubectl create --dry-run=server -f - \
+                          -o jsonpath='{.spec.devices[0].allowMultipleAllocations}' <<EOF
+apiVersion: resource.k8s.io/v1
+kind: ResourceSlice
+metadata:
+  name: consumable-capacity-probe
+spec:
+  driver: probe.nri.io
+  nodeName: ${VM_HOSTNAME:-\$(hostname)}
+  pool:
+    name: probe
+    generation: 0
+    resourceSliceCount: 1
+  devices:
+  - name: probe
+    allowMultipleAllocations: true
+EOF")" == "true" ]
 }
 
 dra-claimed-cpus() { # script API
