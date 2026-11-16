@@ -36,6 +36,16 @@ description: "Use for generating code and comments to nri-plugins and to e2e tes
 
 - Names, numbers, paths, flags and error messages are never shortened.
 
+- End every commit with a `Signed-off-by` line. An AI-assisted commit also
+  has an `Assisted-by` line before it. This line names the model:
+
+  ```
+  Assisted-by: Claude Opus 5.5 <noreply@anthropic.com>
+  Signed-off-by: Jane Doe <jane.doe@example.com>
+  ```
+
+  Do not add a `Co-Authored-By` line for the AI.
+
 ### Length
 
 The default body is three to five lines. A change that speaks for itself has
