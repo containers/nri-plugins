@@ -97,6 +97,8 @@ the length only. The prose stays plain English either way.
     why, where, or by whom the function is called. For instance, never
     document from where the call is expected to come from or how the
     caller is expected to continue in case of any return value.
+  - The one exception is a lock rule on an interface method. Its
+    documentation may say that a caller must or must not hold a lock.
   - Functions with many or complex input parameters should have parameters
     documented in an itemized list, one per line.
 
