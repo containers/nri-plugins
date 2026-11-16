@@ -16,7 +16,7 @@ description: "Use for generating code and comments to nri-plugins and to e2e tes
 
 ## Commit messages
 
-- Subject line is "area: summary." - lowercase area, trailing period.
+- Subject line is "area: summary" - lowercase area.
 
 - Say what changed, and the one consequence a reader needs. Leave out
   restatement of the diff, rationale that belongs in a comment beside the
