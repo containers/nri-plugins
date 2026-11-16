@@ -952,6 +952,41 @@ spec:
 EOF")" == "true" ]
 }
 
+dra-list-attributes() { # script API
+    # Usage: dra-list-attributes
+    #
+    # Succeed if the API server accepts device attributes with a list of
+    # values. They need the DRAListTypeAttributes feature gate. Fail if the
+    # server rejects them. Fail the test if the check itself fails.
+
+    # A server dry run of a slice with a list attribute tells whether the
+    # gate is on. With --validate=false, an API server older than list
+    # attributes drops the unknown field.
+    vm-command "kubectl create --dry-run=server --validate=false -f - <<EOF
+apiVersion: resource.k8s.io/v1
+kind: ResourceSlice
+metadata:
+  generateName: list-attribute-probe-
+spec:
+  driver: probe.nri.io
+  nodeName: ${VM_HOSTNAME:-\$(hostname)}
+  pool:
+    name: probe
+    generation: 0
+    resourceSliceCount: 1
+  devices:
+  - name: probe
+    attributes:
+      probe:
+        strings: [a, b]
+EOF" && return 0
+    # Without the gate, the API server drops the list and rejects the empty
+    # attribute.
+    [[ "$COMMAND_OUTPUT" == *"must specify one of"* ]] ||
+        error "failed to check for list attributes: $COMMAND_OUTPUT"
+    return 1
+}
+
 dra-claimed-cpus() { # script API
     # Usage: dra-claimed-cpus POD [CONTAINER]
     #

@@ -938,7 +938,7 @@ available:
   | extended resources | `get-node-resource`, `wait-node-resource` |
   | fake device plugins | `install-fake-device-plugin`, `start-fake-device-plugin`, `stop-fake-device-plugins` |
   | resources exported to containers | `exported-resource` |
-  | dynamic resource allocation | `dra-devices`, `dra-device`, `wait-dra-devices`, `dra-consumable-capacity`, `dra-claimed-cpus` |
+  | dynamic resource allocation | `dra-devices`, `dra-device`, `wait-dra-devices`, `dra-consumable-capacity`, `dra-list-attributes`, `dra-claimed-cpus` |
   | interrupts | `resolve-irq`, `irq-cpu-ids`, `verify-irq-cpus` |
   | scheduling | `verify-sched`, `SCHED_*` |
   | generated test scripts | `run-generated-tests` |

@@ -8,28 +8,8 @@ cleanup() {
 
 cleanup
 
-# A dry run tells whether the API server accepts list attributes.
 list_attributes_supported=true
-if ! vm-command "kubectl create --dry-run=server -f - <<EOF
-apiVersion: resource.k8s.io/v1
-kind: ResourceSlice
-metadata:
-  name: list-attribute-probe
-spec:
-  driver: probe.nri.io
-  nodeName: ${VM_HOSTNAME:-\$(hostname)}
-  pool:
-    name: probe
-    generation: 0
-    resourceSliceCount: 1
-  devices:
-  - name: probe
-    attributes:
-      probe:
-        strings: [a, b]
-EOF"; then
-    list_attributes_supported=false
-fi
+dra-list-attributes || list_attributes_supported=false
 
 # The VM's roots report all CPUs, so every device lists all roots.
 roots=$(vm-command-q "ls -d /sys/devices/pci[0-9a-f][0-9a-f][0-9a-f][0-9a-f]:[0-9a-f][0-9a-f] |
