@@ -36,8 +36,8 @@ description: "Use for writing, reviewing or cleaning up code, comments, commit m
 
 - Never shorten names, numbers, paths, flags or error messages.
 
-- End every commit with a `Signed-off-by` line. An AI-assisted commit also
-  has an `Assisted-by` line before it. This line names the model:
+- End every commit with a `Signed-off-by` line. An AI-assisted commit may
+  also have an `Assisted-by` line before it. This line names the model:
 
   ```
   Assisted-by: Claude Opus 5.5 <noreply@anthropic.com>
