@@ -76,6 +76,21 @@ the length only. The prose stays plain English either way.
 
 - Do not add a "Generated with ..." line.
 
+## Code
+
+- Add a file, a type or a wrapper only when it carries something new.
+
+- Start a package as one implementation file and its test.
+
+- Put the package comment on the `package` clause. Add a `doc.go` only for
+  long package documentation or `go:generate` lines.
+
+- Use a type from the standard library or the repo when one fits. For
+  instance, use `sync.Locker` instead of a local `Locker` interface.
+
+- Check what a library already supports before you write an adapter for
+  it.
+
 ## Code comments
 
 - Always use plain ASCII characters. Also in documentation.
