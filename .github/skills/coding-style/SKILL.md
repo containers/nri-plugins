@@ -1,6 +1,6 @@
 ---
 name: coding-style
-description: "Use for generating code and comments to nri-plugins and to e2e tests, or to review and clean up existing code. Gives style guidelines."
+description: "Use for writing, reviewing or cleaning up code, comments, commit messages and PR descriptions in nri-plugins and its e2e tests. Gives style guidelines."
 ---
 
 # Code generation and review guidelines
@@ -60,6 +60,21 @@ the length only. The prose stays plain English either way.
 - "subject only": no body.
 - "explain it": as long as the change needs. Use it when a reviewer cannot
   get the reasoning from the diff.
+
+## PR descriptions
+
+- Name the specific change in the title.
+
+- Start the description with what the PR does. Do not state its place in a
+  series or its base branch. GitHub shows both.
+
+- Do not list the commits.
+
+- End with a Testing section. It says how the change was tested.
+
+- Write each paragraph and each list item on one line. Do not wrap them.
+
+- Do not add a "Generated with ..." line.
 
 ## Code comments
 
