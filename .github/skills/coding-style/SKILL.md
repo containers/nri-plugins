@@ -9,16 +9,16 @@ description: "Use for generating code and comments to nri-plugins and to e2e tes
 
 - run `make reformat` to find and automatically fix formatting issues.
 - run `make golangci-lint` to find lint issues.
-- if the only issues reported come from `typecheck`, fix those first: when
-  golangci-lint cannot build a package, it reports nothing but the compilation
-  errors, hiding every other finding in the tree. A stale file left behind in
-  the working tree is enough to hide what CI will report.
+- if the only issues reported come from `typecheck`, fix those first.
+  golangci-lint reports only compilation errors for a package it cannot
+  build. These errors hide every other finding in the tree. A stale file left
+  behind in the working tree is enough to hide what CI will report.
 
 ## Commit messages
 
 - Subject line is "area: summary" - lowercase area.
 
-- Say what changed, and the one consequence a reader needs. Leave out
+- Say what changed and the one consequence a reader needs. Leave out
   restatement of the diff, rationale that belongs in a comment beside the
   code, and closing summaries.
 
@@ -26,31 +26,31 @@ description: "Use for generating code and comments to nri-plugins and to e2e tes
 
 ### Length
 
-The default body is three to five lines, and no body at all for a change that
-speaks for itself.
+The default body is three to five lines. A change that speaks for itself has
+no body at all.
 
 Ask for one of these targets when a change wants a different length. They set
-the length only, never the language: the prose stays plain English either way.
+the length only. The prose stays plain English either way.
 
 - "caveman length": the shortest body that is still correct, in the spirit of
   the caveman skill. Every sentence carries something the subject line does
   not. Usually one or two lines.
 - "subject only": no body.
-- "explain it": as long as the change needs, for one whose reasoning a
-  reviewer cannot get from the diff.
+- "explain it": as long as the change needs. Use it when a reviewer cannot
+  get the reasoning from the diff.
 
 ## Code comments
 
 - Always use plain ASCII characters. Also in documentation.
 
 - Document only current state of code and usage. Never document how
-  something was done earlier because that is in git history.
+  something was done earlier. Git history has that.
 
 - Function documentation:
   - Document simple functions with a single comment line.
-  - The first comment line always tells "what" the function returns,
-    and in case of side effects, what the function does, summarized in
-    one sentence.
+  - The first comment line always tells "what" the function returns.
+    For a function with side effects, it also tells what the function
+    does. The line is one sentence.
   - In documentation of complex functions, next few sentences may give
     more details on *what* the function does. Avoid documenting what
 	the function does not do.
@@ -63,10 +63,32 @@ the length only, never the language: the prose stays plain English either way.
   - Functions with many or complex input parameters should have parameters
     documented in an itemized list, one per line.
 
+## Wording
+
+These rules apply to code comments, documentation, commit messages and PR
+descriptions. Write for readers whose first language is not English.
+
+- Use short sentences and common words. Avoid idioms.
+
+- Use one clause per sentence. Split sentences joined with "and", "but",
+  "because", "which" or a comma.
+  - Bad: "The driver removes stale specs, which keeps the CDI directory
+    clean."
+  - Good: "The driver removes stale specs. This keeps the CDI directory
+    clean."
+
+- Do not chain "of" phrases. Use a verb or a compound noun instead.
+  - Bad: "the form of the tags of main builds"
+  - Good: "Main builds have tags like ..."
+
+- Refer only to things a reviewer can see: code, git history, PRs, issues
+  and public documents. Never refer to local files, plan documents, task
+  numbers or local branches.
+
 ## E2E tests
 
 - Goal is fast test execution and robust tests.
 - Avoid timing with "sleep" as in `act; sleep 5; verify`. Instead,
-  prefer `act; wait-until-verified` that runs first verification attempt
-  immediately, and keeps repeating it in 1 second interval until
-  success or 30 second timeout is reached, for instance.
+  prefer `act; wait-until-verified`. It runs the first verification
+  attempt immediately. Then it repeats the attempt every second until
+  success or a timeout, for instance 30 seconds.
