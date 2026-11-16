@@ -18,9 +18,21 @@ description: "Use for generating code and comments to nri-plugins and to e2e tes
 
 - Subject line is "area: summary" - lowercase area.
 
+- Write the summary in the imperative mood. It completes the sentence
+  "If applied, this commit will ...".
+
+- Name concrete things in the summary, such as a test, a file or a flag.
+  Do not use terms that only a README or a design document explains.
+  - Bad: "e2e: describe the DRA test for a host of its own"
+  - Good: "e2e: document how to run test49 on real hardware"
+
 - Say what changed and the one consequence a reader needs. Leave out
   restatement of the diff, rationale that belongs in a comment beside the
   code, and closing summaries.
+
+- Write a body that makes sense without the subject.
+
+- Wrap the body at 72 columns.
 
 - Names, numbers, paths, flags and error messages are never shortened.
 
