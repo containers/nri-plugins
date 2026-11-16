@@ -34,7 +34,7 @@ description: "Use for writing, reviewing or cleaning up code, comments, commit m
 
 - Wrap the body at 72 columns.
 
-- Names, numbers, paths, flags and error messages are never shortened.
+- Never shorten names, numbers, paths, flags or error messages.
 
 - End every commit with a `Signed-off-by` line. An AI-assisted commit also
   has an `Assisted-by` line before it. This line names the model:
@@ -70,7 +70,7 @@ the length only. The prose stays plain English either way.
 
 - Do not list the commits.
 
-- End with a Testing section. It says how the change was tested.
+- End with a Testing section. It says how you tested the change.
 
 - Write each paragraph and each list item on one line. Do not wrap them.
 
@@ -96,7 +96,7 @@ the length only. The prose stays plain English either way.
 - Always use plain ASCII characters. Also in documentation.
 
 - Document only current state of code and usage. Never document how
-  something was done earlier. Git history has that.
+  the code worked earlier. Git history has that.
 
 - Function documentation:
   - Document simple functions with a single comment line.
@@ -107,15 +107,15 @@ the length only. The prose stays plain English either way.
     more details on *what* the function does. Avoid documenting what
 	the function does not do.
   - Function documentation must not document *how* the function
-    works. That is left to comment lines inside the function.
-  - Function documentation must not include guidelines or assumption on
-    why, where, or by whom the function is called. For instance, never
-    document from where the call is expected to come from or how the
-    caller is expected to continue in case of any return value.
+    works. Comment lines inside the function do that.
+  - Function documentation must not include guidelines or assumptions
+    about the callers: who calls the function, from where and why.
+    For instance, never document where the call comes from. Never
+    document how the caller continues after any return value.
   - The one exception is a lock rule on an interface method. Its
     documentation may say that a caller must or must not hold a lock.
-  - Functions with many or complex input parameters should have parameters
-    documented in an itemized list, one per line.
+  - For a function with many or complex input parameters, document the
+    parameters in an itemized list, one per line.
 
 ## Wording
 
@@ -134,6 +134,12 @@ descriptions. Write for readers whose first language is not English.
 - Do not chain "of" phrases. Use a verb or a compound noun instead.
   - Bad: "the form of the tags of main builds"
   - Good: "Main builds have tags like ..."
+
+- Use active voice. Name who does the action.
+  - Bad: "Only options which keep the host, the connection, the tasks and
+    the variables of the run are taken."
+  - Good: "Ansible gets only options that keep the host, the connection and
+    the variables."
 
 - Refer only to things a reviewer can see: code, git history, PRs, issues
   and public documents. Never refer to local files, plan documents, task
