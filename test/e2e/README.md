@@ -348,28 +348,38 @@ because the gates of a running cluster are already set. The cluster has to be:
 
 ### Passing options to Ansible
 
-Set `e2e_ansible_args` to add options to the `ansible-playbook` command that
-provisions the host. The value is split on whitespace. For instance,
-`--check --diff` only shows what provisioning would change:
+Set `ansible` to change how the `ansible-playbook` command provisions the
+host:
+
+- `ansible=dry-run` only shows what provisioning would change. It adds
+  `--check --diff`.
+- `ansible=step` asks before each task. It adds `--step --diff`. See
+  [Running a test step by step](#running-a-test-step-by-step).
+- `ansible=dry-run,step` does both.
 
 ```shell
 test_hw_addr=test@10.0.0.1 test_hw_key=~/.ssh/testbox \
-    e2e_ansible_args="--check --diff" ./run_tests.sh policies.test-suite
+    ansible=dry-run ./run_tests.sh policies.test-suite
 ```
 
-A run with `--check` or `-C` stops after the playbook. It records nothing,
-deploys no plugin and runs no test. `run_tests.sh` reports the test as
-skipped. The same goes for `--syntax-check`, `--list-hosts`, `--list-tasks`
-and `--list-tags`. Such a run previews the playbook on a recorded host too,
-without `provision` set.
+Set `e2e_ansible_args` to add other options. The value is split on
+whitespace. For instance, `e2e_ansible_args=-vv` makes the playbook more
+verbose. The options of `ansible` come first.
 
-Only these options are taken: `--check`, `-C`, `--diff`, `-D`, `--step`, `-v`
-to `-vvvv`, `--syntax-check`, `--list-hosts`, `--list-tasks`, `--list-tags`,
-`--help`, `-h` and `--version`. Write each one on its own, such as `-C -D` in
-place of `-CD`. A run with any other option fails.
+A dry run stops when the playbook finishes. It records nothing, deploys no
+plugin and runs no test. `run_tests.sh` reports the test as skipped. A run with
+`--check`, `-C`, `--syntax-check`, `--list-hosts`, `--list-tasks` or
+`--list-tags` in `e2e_ansible_args` behaves the same way. Such a run previews
+the playbook on a recorded host too, without `provision` set.
 
-`--step` asks before each task. The option applies only on an existing host.
-On a VM, vagrant runs the provisioning.
+`e2e_ansible_args` takes only these options: `--check`, `-C`,
+`--diff`, `-D`, `--step`, `-v` to `-vvvv`, `--syntax-check`, `--list-hosts`,
+`--list-tasks`, `--list-tags`, `--help`, `-h` and `--version`. Write each one
+on its own, such as `-C -D` in place of `-CD`. A run with any other option
+fails.
+
+`ansible` and `e2e_ansible_args` apply only on an existing host. On a VM,
+vagrant runs the provisioning.
 
 ### Trying it on localhost
 
@@ -408,21 +418,23 @@ run leaves behind.
 
 ### Running a test step by step
 
-`--step --diff` asks before each provisioning task and shows what the task
+`ansible=step` asks before each provisioning task and shows what the task
 changes. Answer `y` to run the task, `n` to skip it, or `c` to run the rest
 without asking:
 
 ```shell
 test_hw_addr=test@10.0.0.1 test_hw_key=~/.ssh/testbox \
-    e2e_ansible_args="--step --diff" ./run_tests.sh policies.test-suite/topology-aware/myhost
+    ansible=step ./run_tests.sh policies.test-suite/topology-aware/myhost
 ```
 
 The playbook runs only on a first run or with `provision` set. On a host
 recorded with the versions the run resolves, the run only deploys the plugin
 and runs the tests.
 
-The host is recorded as provisioned even when a task was skipped with `n`.
-Later runs do not run that task. Set `provision` to run the playbook again.
+The run lists the tasks skipped with `n` when the playbook finishes. Then it
+asks whether to record the host as provisioned. Later runs do not run the
+playbook again on a recorded host. Set `provision=all` to run it again. The run
+reads the skipped tasks from `ansible-step.log` in the output directory.
 
 To run the steps of a test by hand, end its `code.var.sh` with `breakpoint`.
 The test stops there, at a `run.sh>` prompt. Each line typed there runs as part
