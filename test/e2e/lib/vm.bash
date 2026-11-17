@@ -37,6 +37,10 @@ VM_KEY_FILE="${VM_KEY_FILE:-.e2e-vm-key}"
 # otherwise share the directory and the record in it.
 VM_HW_ADDR_FILE="${VM_HW_ADDR_FILE:-.e2e-hw-addr}"
 
+# Ansible writes this log to an output directory on a run with --step.
+# The log shows the tasks that the user skipped.
+VM_HW_STEP_LOG="${VM_HW_STEP_LOG:-ansible-step.log}"
+
 # Where a host we were given carries the versions it was provisioned with.
 # On the host, because an output directory is not evidence of what is
 # installed on it: it can be deleted, and several can name the same host.
@@ -930,20 +934,49 @@ the framework can halt a host we were given but has no way to switch it back
 on. Run this on a VM of its own, or leave it out of a run against a host."
 }
 
+vm-hw-ansible-args() {
+    # Usage: vm-hw-ansible-args
+    #
+    # Print the ansible-playbook options that ansible and e2e_ansible_args
+    # ask for, on one line. Fail on an unknown value of ansible.
+    local modes=() mode words=""
+
+    IFS=, read -r -a modes <<< "${ansible:-}"
+    for mode in "${modes[@]}"; do
+        case "$mode" in
+            dry-run)
+                words+="--check --diff "
+                ;;
+            step)
+                words+="--step --diff "
+                ;;
+            *)
+                echo "ansible=\"$ansible\": $mode is not supported. Use" \
+                     "dry-run, step or dry-run,step." >&2
+                return 1
+                ;;
+        esac
+    done
+
+    words+="${e2e_ansible_args:-}"
+    echo "${words% }"
+}
+
 vm-hw-ansible-preview() {
     # Usage: vm-hw-ansible-preview
     #
-    # Return success if e2e_ansible_args makes the playbook change nothing.
-    # Fail the run on an option which is not listed below.
-    local args=() arg preview=""
+    # Return success if ansible or e2e_ansible_args makes the playbook change
+    # nothing. Fail the run on an option that is not in the list below.
+    local args=() arg preview="" words
 
     # read takes only the first line.
-    if [[ "${e2e_ansible_args:-}" == *$'\n'* ]]; then
-        error "e2e_ansible_args must be on a single line."
+    if [[ "${ansible:-}${e2e_ansible_args:-}" == *$'\n'* ]]; then
+        error "ansible and e2e_ansible_args must be on a single line."
     fi
+    words="$(vm-hw-ansible-args)" || error "ansible is unusable, see above"
 
     # Split as vm-provision-hw splits it.
-    read -r -a args <<< "${e2e_ansible_args:-}"
+    read -r -a args <<< "$words"
     for arg in "${args[@]}"; do
         # Take only options that keep the host, the connection, the tasks
         # and the variables of the run.
@@ -969,8 +1002,8 @@ its own."
 vm-provision-hw() {
     # Usage: vm-provision-hw VAGRANTDIR
     #
-    # Run the provisioning playbook against the host. The words of
-    # e2e_ansible_args are added to its command line.
+    # Run the provisioning playbook against the host. Add the options that
+    # ansible and e2e_ansible_args ask for to its command line.
     local vagrantdir="$1"
     local playbook="$nri_resource_policy_src/test/e2e/playbook/provision.yaml"
     local login_args=()
@@ -978,18 +1011,24 @@ vm-provision-hw() {
     local reset=false
 
     mapfile -t login_args < <(vm-ansible-login-args "$VM_HOSTNAME" "$vagrantdir")
-    read -r -a extra_args <<< "${e2e_ansible_args:-}"
+    read -r -a extra_args <<< "$(vm-hw-ansible-args)"
 
     if [ "${provision:-}" = "all" ]; then
         reset=true
     fi
 
+    # Ansible appends to its log. Remove the log of an earlier run.
+    rm -f "$vagrantdir/$VM_HW_STEP_LOG"
+
     echo "provisioning $VM_HOSTNAME..."
     (cd "$vagrantdir";
      export ANSIBLE_PIPELINING=True;
-     # The words of e2e_ansible_args come before the variables of the run.
-     # A later --extra-vars wins. So the run's own variables cannot be
-     # overridden.
+     if [[ " ${extra_args[*]} " == *" --step "* ]]; then
+         export ANSIBLE_LOG_PATH="$vagrantdir/$VM_HW_STEP_LOG"
+     fi
+     # The options of ansible and e2e_ansible_args come before the variables
+     # of the run. A later --extra-vars wins. So the options cannot override
+     # the run's own variables.
      ANSIBLE_SSH_ARGS="-F $vagrantdir/.ssh-config" ansible-playbook "$playbook" \
           "${extra_args[@]}" \
           -i "$VM_HOSTNAME," "${login_args[@]}" \
@@ -997,6 +1036,56 @@ vm-provision-hw() {
           --extra-vars "@$vagrantdir/ansible-vars.json" \
           --extra-vars "kubeadm_reset=$reset"
     ) || error "failed to provision $VM_HOSTNAME"
+}
+
+vm-hw-skipped-tasks() {
+    # Usage: vm-hw-skipped-tasks VAGRANTDIR
+    #
+    # Print the tasks that the latest provisioning in VAGRANTDIR skipped, one
+    # per line.
+    local log="$1/$VM_HW_STEP_LOG"
+
+    [ -f "$log" ] || return 0
+
+    # Each prompt leaves a "Perform task: TASK: NAME" line in the log. After
+    # a yes answer, ansible logs a "TASK [NAME]" line.
+    awk '
+        / \| Perform task: TASK: / {
+            if (asked != "") print asked
+            asked = $0
+            sub(/.* \| Perform task: TASK: /, "", asked)
+            sub(/ \(N\)o\/\(y\)es\/\(c\)ontinue: .*/, "", asked)
+            next
+        }
+        / \| (TASK|RUNNING HANDLER) \[/ { asked = "" }
+        END { if (asked != "") print asked }
+    ' "$log"
+}
+
+vm-hw-confirm-record() {
+    # Usage: vm-hw-confirm-record VAGRANTDIR
+    #
+    # Return success to record the host as provisioned. Ask the user first
+    # when the latest provisioning in VAGRANTDIR skipped tasks.
+    local skipped answer
+
+    skipped="$(vm-hw-skipped-tasks "$1")"
+    [ -n "$skipped" ] || return 0
+
+    echo ""
+    echo "These provisioning tasks were skipped:"
+    sed 's/^/    /' <<< "$skipped"
+    echo "Later runs do not run the playbook again on a recorded host."
+    echo "Set provision=all to run it again."
+    read -r -p "Record the host as provisioned? [y/N] " answer || answer=""
+    case "$answer" in
+        y|Y|yes|YES)
+            return 0
+            ;;
+    esac
+
+    echo "The run does not record the host as provisioned."
+    return 1
 }
 
 vm-hw-resolve-names() {
@@ -1158,7 +1247,7 @@ vm-setup-hw() {
     [ -n "$recorded" ] || first=1
 
     # A preview runs on a recorded host, too. It changes nothing. So the
-    # record stays as it is. The run ends after the playbook.
+    # record stays as it is. The run ends when the playbook finishes.
     if vm-hw-ansible-preview; then
         vm-hw-check-provisionable "$recorded"
         # The ssh config and the variables go to a temporary directory.
@@ -1174,7 +1263,7 @@ vm-setup-hw() {
         vm-provision-hw "$previewdir"
         # The report reads the verdict from summary.txt.
         echo "Test verdict: SKIP (provisioning previewed with" \
-             "e2e_ansible_args=\"$e2e_ansible_args\")" |
+             "ansible-playbook $(vm-hw-ansible-args))" |
             tee -a "$SUMMARY_FILE"
         exit 0
     fi
@@ -1197,7 +1286,9 @@ and the next run would trust them, so one is not started."
         # After it, so that only a host which really carries these versions
         # is recorded as carrying them.
         vm-provision-hw "$vagrantdir"
-        vm-record-box-key "$vagrantdir" "$vm_key"
+        if vm-hw-confirm-record "$vagrantdir"; then
+            vm-record-box-key "$vagrantdir" "$vm_key"
+        fi
     fi
 
     mkdir -p "$COMMAND_OUTPUT_DIR"
@@ -1509,7 +1600,7 @@ vm-check-recorded-box-key() {
     # A preview changes nothing. It shows what provisioning would change.
     if vm-hw-mode && vm-hw-ansible-preview; then
         echo "" >&2
-        echo "WARNING: e2e_ansible_args=\"$e2e_ansible_args\" only previews" \
+        echo "WARNING: ansible-playbook $(vm-hw-ansible-args) only previews" \
              "provisioning." >&2
         echo "" >&2
         return 0
