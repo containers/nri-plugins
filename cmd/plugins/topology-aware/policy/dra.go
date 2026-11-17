@@ -31,6 +31,11 @@ package topologyaware
 // if it has a CPU request. A container naming only some requests of a claim
 // runs on the CPUs of those requests.
 //
+// We also publish memory devices for each NUMA node with memory, each socket
+// and the machine. A memory device has one memory type only. A socket or the
+// machine with several memory types gets a device for each type. The
+// capacity is the free memory that libmem has on the nodes of the device.
+//
 // A claim or its device class may set a memory policy for the containers
 // holding the claim, in a TopologyAwareClaimConfig. A config applies to the
 // results of the requests it names. A config naming no requests applies to
@@ -68,8 +73,19 @@ const (
 	draSocketDeviceFormat = "cpudevsocket%03d"
 	// draNUMADeviceFormat names a device after the NUMA node it publishes.
 	draNUMADeviceFormat = "cpudevnuma%03d"
+	// draMemMachineDevice names the device that publishes the machine DRAM.
+	// A device with another memory type adds the type to the name.
+	draMemMachineDevice = "memdevmachine"
+	// draMemSocketDeviceFormat names a memory device after its socket.
+	draMemSocketDeviceFormat = "memdevsocket%03d"
+	// draMemNUMADeviceFormat names a memory device after its NUMA node.
+	draMemNUMADeviceFormat = "memdevnuma%03d"
 	// draCapacityCPU is the number of CPUs a claim consumes of a device.
 	draCapacityCPU resourceapi.QualifiedName = "dra.cpu/cpu"
+	// draCapacityMemory is the memory a claim consumes of a device, in bytes.
+	draCapacityMemory resourceapi.QualifiedName = "memory"
+	// draAttrMemoryType is the memory type of a device.
+	draAttrMemoryType resourceapi.QualifiedName = "memoryType"
 	// draAttrSocketID is the socket the CPUs of a device belong to.
 	draAttrSocketID resourceapi.QualifiedName = "dra.cpu/socketID"
 	// draAttrSMTEnabled tells whether the CPUs have SMT enabled.
@@ -119,13 +135,26 @@ type claimMove struct {
 	from, to *claim
 }
 
-// draCPUGroup is a group of CPUs of the topology which we publish as a DRA
-// device: its device name, level and CPUs, and the ID attributes of its level.
-type draCPUGroup struct {
+// draGroup is a topology group that we publish as a DRA device. It has the
+// device name, the level and the ID attributes of the level.
+type draGroup struct {
 	name  string
 	level string
-	cpus  cpuset.CPUSet
 	ids   map[resourceapi.QualifiedName]int64
+}
+
+// draCPUGroup is a group of CPUs which we publish as a CPU device.
+type draCPUGroup struct {
+	draGroup
+	cpus cpuset.CPUSet
+}
+
+// draMemGroup is a group of NUMA nodes with one memory type. We publish it
+// as a memory device.
+type draMemGroup struct {
+	draGroup
+	nodes   libmem.NodeMask
+	memType libmem.Type
 }
 
 // draCPUGroups returns the NUMA nodes, the sockets and the machine.
@@ -133,60 +162,136 @@ func draCPUGroups(sys system.System) []draCPUGroup {
 	var groups []draCPUGroup
 	for _, id := range sys.NodeIDs() {
 		groups = append(groups, draCPUGroup{
-			name:  fmt.Sprintf(draNUMADeviceFormat, id),
-			level: draLevelNUMANode,
-			cpus:  sys.Node(id).CPUSet(),
-			ids: map[resourceapi.QualifiedName]int64{
-				deviceattribute.StandardDeviceAttributeNUMANode: int64(id),
-				draAttrSocketID: int64(sys.Node(id).PackageID()),
+			draGroup: draGroup{
+				name:  fmt.Sprintf(draNUMADeviceFormat, id),
+				level: draLevelNUMANode,
+				ids: map[resourceapi.QualifiedName]int64{
+					deviceattribute.StandardDeviceAttributeNUMANode: int64(id),
+					draAttrSocketID: int64(sys.Node(id).PackageID()),
+				},
 			},
+			cpus: sys.Node(id).CPUSet(),
 		})
 	}
 	for _, id := range sys.PackageIDs() {
 		groups = append(groups, draCPUGroup{
-			name:  fmt.Sprintf(draSocketDeviceFormat, id),
-			level: draLevelSocket,
-			cpus:  sys.Package(id).CPUSet(),
-			ids:   map[resourceapi.QualifiedName]int64{draAttrSocketID: int64(id)},
+			draGroup: draGroup{
+				name:  fmt.Sprintf(draSocketDeviceFormat, id),
+				level: draLevelSocket,
+				ids:   map[resourceapi.QualifiedName]int64{draAttrSocketID: int64(id)},
+			},
+			cpus: sys.Package(id).CPUSet(),
 		})
 	}
-	return append(groups, draCPUGroup{name: draMachineDevice, level: draLevelMachine, cpus: sys.CPUSet()})
+	return append(groups, draCPUGroup{
+		draGroup: draGroup{name: draMachineDevice, level: draLevelMachine},
+		cpus:     sys.CPUSet(),
+	})
 }
 
-// draDevices returns a device for each CPU group which has CPUs for claims.
+// draMemGroups returns a group for each NUMA node with memory. It also
+// returns a group for each memory type in each socket and in the machine.
+// Each group has a node with normal memory.
+func draMemGroups(sys system.System) []draMemGroup {
+	memNodes := sys.FilterNodes(sys.NodeIDs(), system.NodeHasMemory)
+	// libmem fails a request on nodes with only movable memory. Or it adds
+	// other nodes to the request. So a group needs a node with normal memory.
+	normal := libmem.NewNodeMask()
+	for _, id := range memNodes.SortedMembers() {
+		if sys.Node(id).HasNormalMemory() {
+			normal = normal.Set(id)
+		}
+	}
+	// ofType returns the nodes in ids that have memory type t.
+	ofType := func(ids []idset.ID, t libmem.Type) libmem.NodeMask {
+		nodes := libmem.NewNodeMask()
+		for _, id := range ids {
+			if memNodes.Has(id) && libmem.TypeForSysfs(sys.Node(id).GetMemoryType()) == t {
+				nodes = nodes.Set(id)
+			}
+		}
+		return nodes
+	}
+	// A DRAM device has the plain name. A device with another memory type
+	// adds the type to the name.
+	types := []libmem.Type{libmem.TypeDRAM, libmem.TypePMEM, libmem.TypeHBM}
+	suffix := func(t libmem.Type) string {
+		if t == libmem.TypeDRAM {
+			return ""
+		}
+		return strings.ToLower(t.String())
+	}
+
+	var groups []draMemGroup
+	for _, id := range normal.Slice() {
+		node := sys.Node(id)
+		ids := map[resourceapi.QualifiedName]int64{deviceattribute.StandardDeviceAttributeNUMANode: int64(id)}
+		// A node without CPUs is in no socket.
+		if !node.CPUSet().IsEmpty() {
+			ids[draAttrSocketID] = int64(node.PackageID())
+		}
+		groups = append(groups, draMemGroup{
+			draGroup: draGroup{name: fmt.Sprintf(draMemNUMADeviceFormat, id), level: draLevelNUMANode, ids: ids},
+			nodes:    libmem.NewNodeMask(id),
+			memType:  libmem.TypeForSysfs(node.GetMemoryType()),
+		})
+	}
+	for _, id := range sys.PackageIDs() {
+		for _, t := range types {
+			if nodes := ofType(sys.Package(id).NodeIDs(), t); nodes.And(normal) != 0 {
+				groups = append(groups, draMemGroup{
+					draGroup: draGroup{
+						name:  fmt.Sprintf(draMemSocketDeviceFormat, id) + suffix(t),
+						level: draLevelSocket,
+						ids:   map[resourceapi.QualifiedName]int64{draAttrSocketID: int64(id)},
+					},
+					nodes:   nodes,
+					memType: t,
+				})
+			}
+		}
+	}
+	for _, t := range types {
+		if nodes := ofType(memNodes.SortedMembers(), t); nodes.And(normal) != 0 {
+			groups = append(groups, draMemGroup{
+				draGroup: draGroup{name: draMemMachineDevice + suffix(t), level: draLevelMachine},
+				nodes:    nodes,
+				memType:  t,
+			})
+		}
+	}
+	return groups
+}
+
+// draDevices returns a device for each CPU group with CPUs for claims. It
+// also returns a device for each memory group with memory for claims.
 func (p *policy) draDevices() []resourceapi.Device {
 	var devices []resourceapi.Device
-	for _, group := range p.groups {
-		if d, ok := p.draDevice(group); ok {
+	for _, group := range p.cpuGroups {
+		if d, ok := p.draCPUDevice(group); ok {
+			devices = append(devices, d)
+		}
+	}
+	for _, group := range p.memGroups {
+		if d, ok := p.draMemDevice(group); ok {
 			devices = append(devices, d)
 		}
 	}
 	return devices
 }
 
-// draDevice returns the device of the CPU group, or false if it has no CPUs
-// for claims.
-func (p *policy) draDevice(group draCPUGroup) (resourceapi.Device, bool) {
-	cpus, _ := p.draDeviceCPUs(group.name)
-	if cpus.IsEmpty() {
-		return resourceapi.Device{}, false
-	}
-	capacity := p.draCapacity(group.name, cpus)
-	if capacity == 0 {
-		return resourceapi.Device{}, false
-	}
-
+// draAttributes returns the level and ID attributes of the group. They
+// include the PCIe roots of each socket for which has returns true.
+func (p *policy) draAttributes(group draGroup, has func(system.CPUPackage) bool) map[resourceapi.QualifiedName]resourceapi.DeviceAttribute {
 	attrs := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
-		draAttrLevel:      {StringValue: ptr.To(group.level)},
-		draAttrSMTEnabled: {BoolValue: ptr.To(p.sys.MaxThreadCount() > 1)},
-		draAttrNumCPUs:    {IntValue: ptr.To(int64(cpus.Size()))},
+		draAttrLevel: {StringValue: ptr.To(group.level)},
 	}
 	for attr, id := range group.ids {
 		attrs[attr] = resourceapi.DeviceAttribute{IntValue: ptr.To(id)}
 	}
 	var roots []string
 	for _, id := range p.sys.PackageIDs() {
-		if pkg := p.sys.Package(id); !pkg.CPUSet().Intersection(cpus).IsEmpty() {
+		if pkg := p.sys.Package(id); has(pkg) {
 			roots = append(roots, pkg.PCIeRoots()...)
 		}
 	}
@@ -197,18 +302,71 @@ func (p *policy) draDevice(group draCPUGroup) (resourceapi.Device, bool) {
 			StringValues: slices.Compact(roots),
 		}
 	}
+	return attrs
+}
+
+// draCPUDevice returns the device of the CPU group, or false if it has no
+// CPUs for claims.
+func (p *policy) draCPUDevice(group draCPUGroup) (resourceapi.Device, bool) {
+	cpus, _ := p.draDeviceCPUs(group.name)
+	if cpus.IsEmpty() {
+		return resourceapi.Device{}, false
+	}
+	capacity := p.draCapacity(group.name, cpus)
+	if capacity == 0 {
+		return resourceapi.Device{}, false
+	}
+
+	attrs := p.draAttributes(group.draGroup, func(pkg system.CPUPackage) bool {
+		return !pkg.CPUSet().Intersection(cpus).IsEmpty()
+	})
+	attrs[draAttrSMTEnabled] = resourceapi.DeviceAttribute{BoolValue: ptr.To(p.sys.MaxThreadCount() > 1)}
+	attrs[draAttrNumCPUs] = resourceapi.DeviceAttribute{IntValue: ptr.To(int64(cpus.Size()))}
 
 	return resourceapi.Device{
 		Name:                     group.name,
 		AllowMultipleAllocations: ptr.To(true),
 		Attributes:               attrs,
 		Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
-			draCapacityCPU: draCPUCapacity(capacity),
+			draCapacityCPU: draWholeCapacity(int64(capacity), *resource.NewQuantity(1, resource.DecimalSI)),
 		},
 		NodeAllocatableResources: map[v1.ResourceName]resourceapi.NodeAllocatableResource{
 			v1.ResourceCPU: {
 				Mapping: &resourceapi.NodeAllocatableMapping{
 					CapacityKey:        ptr.To(draCapacityCPU),
+					CapacityMultiplier: resource.NewQuantity(1, resource.DecimalSI),
+				},
+			},
+		},
+	}, true
+}
+
+// draMemDevice returns the device of the memory group, or false if the
+// group has less than a mebibyte free. The capacity counts the free memory
+// of the nodes in whole mebibytes.
+func (p *policy) draMemDevice(group draMemGroup) (resourceapi.Device, bool) {
+	mib := resource.MustParse("1Mi")
+	capacity := p.memAllocator.ZoneAvailable(group.nodes) / mib.Value()
+	if capacity == 0 {
+		return resourceapi.Device{}, false
+	}
+
+	attrs := p.draAttributes(group.draGroup, func(pkg system.CPUPackage) bool {
+		return slices.ContainsFunc(pkg.NodeIDs(), func(id idset.ID) bool { return group.nodes.Contains(id) })
+	})
+	attrs[draAttrMemoryType] = resourceapi.DeviceAttribute{StringValue: ptr.To(group.memType.String())}
+
+	return resourceapi.Device{
+		Name:                     group.name,
+		AllowMultipleAllocations: ptr.To(true),
+		Attributes:               attrs,
+		Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
+			draCapacityMemory: draWholeCapacity(capacity, mib),
+		},
+		NodeAllocatableResources: map[v1.ResourceName]resourceapi.NodeAllocatableResource{
+			v1.ResourceMemory: {
+				Mapping: &resourceapi.NodeAllocatableMapping{
+					CapacityKey:        ptr.To(draCapacityMemory),
 					CapacityMultiplier: resource.NewQuantity(1, resource.DecimalSI),
 				},
 			},
@@ -273,10 +431,10 @@ func (p *policy) publishDRADevices() {
 	}
 }
 
-// draCPUCapacity returns a capacity of n CPUs, which claims consume in whole
-// CPUs, one CPU if they ask for no amount.
-func draCPUCapacity(n int) resourceapi.DeviceCapacity {
-	one := resource.NewQuantity(1, resource.DecimalSI)
+// draWholeCapacity returns a capacity of n units. Claims consume it in whole
+// units. A claim that asks for no amount consumes one unit.
+func draWholeCapacity(n int64, unit resource.Quantity) resourceapi.DeviceCapacity {
+	one := &unit
 	// Without a request policy a claim asking for no amount would consume
 	// the whole device.
 	policy := &resourceapi.CapacityRequestPolicy{
@@ -284,12 +442,12 @@ func draCPUCapacity(n int) resourceapi.DeviceCapacity {
 		ValidRange: &resourceapi.CapacityRequestPolicyRange{Min: one},
 	}
 	// The API server rejects a step which does not fit in the capacity. With
-	// one CPU, the minimum alone leaves only one whole CPU to ask for.
+	// one unit, the minimum alone leaves only one whole unit to ask for.
 	if n > 1 {
 		policy.ValidRange.Step = one
 	}
 	return resourceapi.DeviceCapacity{
-		Value:         *resource.NewQuantity(int64(n), resource.DecimalSI),
+		Value:         *resource.NewQuantity(n*unit.Value(), unit.Format),
 		RequestPolicy: policy,
 	}
 }
@@ -630,6 +788,9 @@ func (p *policy) draRequests(results []resourceapi.DeviceRequestAllocationResult
 
 	reqs := make([]draRequest, 0, len(results))
 	for i, r := range results {
+		if slices.ContainsFunc(p.memGroups, func(g draMemGroup) bool { return g.name == r.Device }) {
+			return nil, fmt.Errorf("result %d: memory device %q: memory claims are not implemented", i, r.Device)
+		}
 		deviceCPUs, ok := p.draDeviceCPUs(r.Device)
 		if !ok {
 			return nil, fmt.Errorf("result %d: unknown device %q", i, r.Device)
@@ -657,7 +818,7 @@ func (p *policy) draRequests(results []resourceapi.DeviceRequestAllocationResult
 // draDeviceCPUs returns the grantable CPUs of the device, or false for an
 // unknown device.
 func (p *policy) draDeviceCPUs(device string) (cpuset.CPUSet, bool) {
-	for _, group := range p.groups {
+	for _, group := range p.cpuGroups {
 		if group.name == device {
 			return group.cpus.Intersection(grantableCPUs(p.root.GetSupply())), true
 		}

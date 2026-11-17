@@ -15,18 +15,23 @@
 package topologyaware
 
 import (
+	"reflect"
 	"sync"
 	"testing"
 	"time"
 
 	libmem "github.com/containers/nri-plugins/pkg/resmgr/lib/memory"
+	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 // testOwner reports whether UpdateContainers was called with the lock held.
+// It keeps the DRA devices published last.
 type testOwner struct {
 	sync.Mutex
 	updated chan bool
+	devices []resourceapi.Device
 }
 
 func (o *testOwner) UpdateContainers() error {
@@ -38,13 +43,18 @@ func (o *testOwner) UpdateContainers() error {
 	return nil
 }
 
-func (*testOwner) DRAEnabled() bool                             { return false }
-func (*testOwner) PublishDRADevices([]resourceapi.Device) error { return nil }
-func (*testOwner) DRAListAttributesSupported() bool             { return false }
+func (*testOwner) DRAEnabled() bool                 { return true }
+func (*testOwner) DRAListAttributesSupported() bool { return false }
+
+func (o *testOwner) PublishDRADevices(devices []resourceapi.Device) error {
+	o.devices = devices
+	return nil
+}
 
 func TestColdStart(t *testing.T) {
 	// With cold start the container first gets PMEM only. DRAM is added
-	// when the cold start timer fires.
+	// when the cold start timer fires. The policy then publishes the new
+	// memory device capacities.
 	p := setupTestPolicy(t)
 
 	owner := &testOwner{updated: make(chan bool, 1)}
@@ -53,6 +63,10 @@ func TestColdStart(t *testing.T) {
 	ctr := &mockContainer{
 		name:                "coldstart",
 		returnValueForGetID: "1234",
+		returnValueForGetResourceRequirements: v1.ResourceRequirements{
+			Requests: v1.ResourceList{v1.ResourceMemory: resource.MustParse("1Gi")},
+			Limits:   v1.ResourceList{v1.ResourceMemory: resource.MustParse("1Gi")},
+		},
 		pod: &mockPod{
 			annotations: map[string]string{
 				preferMemoryTypeKey: "dram,pmem",
@@ -68,6 +82,8 @@ func TestColdStart(t *testing.T) {
 	if typ := p.memZoneType(g.GetMemoryZone()); typ != libmem.TypeMaskPMEM {
 		t.Fatalf("expected PMEM before cold start, got %s", typ)
 	}
+	p.publishDRADevices()
+	before := draMemDeviceSummary(owner.devices)
 
 	// The resource manager holds the lock while the policy handles StartContainer.
 	owner.Lock()
@@ -90,5 +106,12 @@ func TestColdStart(t *testing.T) {
 	defer owner.Unlock()
 	if typ := p.memZoneType(g.GetMemoryZone()); typ != libmem.TypeMaskDRAM|libmem.TypeMaskPMEM {
 		t.Errorf("expected DRAM and PMEM after cold start, got %s", typ)
+	}
+	after := draMemDeviceSummary(p.draDevices())
+	if reflect.DeepEqual(after, before) {
+		t.Errorf("memory devices %v did not change in cold start", after)
+	}
+	if got := draMemDeviceSummary(owner.devices); !reflect.DeepEqual(got, after) {
+		t.Errorf("published memory devices %v after cold start, expected %v", got, after)
 	}
 }

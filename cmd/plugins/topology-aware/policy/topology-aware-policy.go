@@ -59,7 +59,8 @@ type policy struct {
 	cfg          *cfgapi.Config
 	cache        cache.Cache               // pod/container cache
 	sys          system.System             // system/HW topology info
-	groups       []draCPUGroup             // groups of CPUs we publish as DRA devices
+	cpuGroups    []draCPUGroup             // groups of CPUs we publish as DRA devices
+	memGroups    []draMemGroup             // groups of memory we publish as DRA devices
 	allowed      cpuset.CPUSet             // bounding set of CPUs we're allowed to use
 	reserved     cpuset.CPUSet             // system-/kube-reserved CPUs
 	reserveCnt   int                       // number of CPUs to reserve if given as resource.Quantity
@@ -107,7 +108,8 @@ func (p *policy) Setup(opts *policyapi.BackendOptions) error {
 	p.cfg = cfg
 	p.cache = opts.Cache
 	p.sys = opts.System
-	p.groups = draCPUGroups(opts.System)
+	p.cpuGroups = draCPUGroups(opts.System)
+	p.memGroups = draMemGroups(opts.System)
 	p.options = opts
 	p.cpuAllocator = cpuallocator.NewCPUAllocator(opts.System)
 	p.memAllocator, err = libmem.NewAllocator(libmem.WithSystemNodes(opts.System))
