@@ -45,10 +45,10 @@ type resctrlManager interface {
 }
 
 // setupMetrics registers OTel instruments via the goresctrl adapter.
-func setupMetrics(mgr resctrlManager, cfg telemetryConfig, resctrlRoot string, meter otelmetric.Meter) (*monitor.Registration, error) {
+func setupMetrics(mgr resctrlManager, cfg telemetryConfig, resctrlRoot, groupBy string, meter otelmetric.Meter) (*monitor.Registration, error) {
 	return mgr.RegisterOTelInstruments(meter,
 		monitor.WithFilter(perfCounterFilter(cfg)),
-		monitor.WithAttributes(groupAttributesFor(resctrlRoot)),
+		monitor.WithAttributes(groupAttributesFor(resctrlRoot, groupBy)),
 	)
 }
 
@@ -91,9 +91,18 @@ func perfCounterFilter(cfg telemetryConfig) monitor.FilterFunc {
 
 // groupAttributesFor returns a per-group OTel attribute function bound to the
 // configured resctrl root, which is needed to recognize the root ctrl_group.
-func groupAttributesFor(resctrlRoot string) monitor.AttributeFunc {
+// In namespace mode the group key is "ns-<namespace>" and is reported as
+// k8s.namespace.name instead of k8s.pod.uid.
+func groupAttributesFor(resctrlRoot, groupBy string) monitor.AttributeFunc {
 	root := filepath.Clean(resctrlRoot)
 	return func(key, path string) []attribute.KeyValue {
+		if groupBy == groupByNamespace {
+			return []attribute.KeyValue{
+				attribute.String("k8s.namespace.name", strings.TrimPrefix(key, namespaceKeyPrefix)),
+				attribute.String("resctrl.control_group", controlGroupOf(root, path)),
+				attribute.String("resctrl.group.source", "namespace"),
+			}
+		}
 		return []attribute.KeyValue{
 			attribute.String("k8s.pod.uid", key),
 			attribute.String("resctrl.control_group", controlGroupOf(root, path)),

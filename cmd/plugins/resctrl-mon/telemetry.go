@@ -373,7 +373,7 @@ func (p *plugin) startTelemetry(ctx context.Context) error {
 	}
 
 	meter := state.provider.Meter("nri-resctrl-mon")
-	reg, err := setupMetrics(p.mgr, cfg, p.config.ResctrlPath, meter)
+	reg, err := setupMetrics(p.mgr, cfg, p.config.ResctrlPath, p.config.GroupBy, meter)
 	if err != nil {
 		state.shutdown(ctx)
 		return fmt.Errorf("metrics registration: %w", err)

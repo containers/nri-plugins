@@ -52,6 +52,31 @@ Mon_groups are named with the Kubernetes pod UID:
 This enables Kepler to correlate monitoring data with Kubernetes metadata
 by querying the K8s API using the pod UID extracted from the directory name.
 
+## Namespace Granularity
+
+With `groupBy: namespace`, the plugin creates one `mon_group` per namespace on
+each node instead of one per pod:
+
+```
+/sys/fs/resctrl/[<rdt-class>/]mon_groups/ns-<namespace>/
+```
+
+- All monitored pods of the namespace on that node share one RMID, so RMID use
+  grows with the number of namespaces, not pods. The counters are the sum over
+  those pods; per-pod values are not available.
+- The group is removed together with the namespace's last pod sandbox on the
+  node. The `ns-` prefix keeps these names apart from pod-UID names, so
+  reconciliation never reaps groups that other tooling owns.
+- Metrics carry `k8s_namespace_name` instead of `k8s_pod_uid`, and
+  `resctrl_group_source` is `namespace`. resctrl is per node, so a namespace
+  spread over several nodes has one series per node; add them with
+  `sum by (k8s_namespace_name)`.
+- `namespaces` and `labelSelector` still select which pods are monitored.
+- One group has one parent control group: a pod whose container is in a
+  different RDT class from the one that created the group is not monitored.
+- Changing `groupBy` needs a restart. Groups left by the previous mode no
+  longer match the key shape and are not reaped; remove them by hand.
+
 ## Plugin Configuration
 
 Configuration is loaded from a YAML file specified with the `-config` flag
@@ -62,6 +87,11 @@ apply a change, restart the plugin (for example
 ```yaml
 # Path to the resctrl filesystem. Override for testing.
 resctrlPath: /sys/fs/resctrl
+
+# Monitoring granularity. "pod" (default): one mon_group, and so one RMID, per
+# pod, named with the pod UID. "namespace": one mon_group named
+# "ns-<namespace>" per namespace on the node, shared by all its monitored pods.
+groupBy: pod
 
 # Namespace filter: only create mon_groups for pods in these namespaces.
 # Empty list = all namespaces.

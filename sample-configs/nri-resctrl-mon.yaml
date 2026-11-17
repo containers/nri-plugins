@@ -1,4 +1,5 @@
 resctrlPath: /sys/fs/resctrl
+groupBy: pod
 namespaces: []
 labelSelector: {}
 telemetry:

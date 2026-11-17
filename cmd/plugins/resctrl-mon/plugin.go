@@ -83,22 +83,81 @@ type pluginConfig struct {
 	// Empty map means all pods.
 	LabelSelector map[string]string `json:"labelSelector"`
 
+	// GroupBy selects the monitoring granularity: "pod" (default) creates one
+	// mon_group, and so uses one RMID, per pod; "namespace" creates one
+	// mon_group per namespace on the node, shared by all its monitored pods.
+	GroupBy string `json:"groupBy"`
+
 	// Telemetry configures the embedded OTel exporter (Prometheus + OTLP).
 	Telemetry telemetryConfig `json:"telemetry"`
 }
 
-const defaultResctrlPath = "/sys/fs/resctrl"
+const (
+	defaultResctrlPath = "/sys/fs/resctrl"
+
+	groupByPod       = "pod"
+	groupByNamespace = "namespace"
+
+	// namespaceKeyPrefix marks namespace-scoped mon_group names. The prefix
+	// keeps them distinct from pod-UID names, so reconciliation never reaps
+	// groups that other tooling owns.
+	namespaceKeyPrefix = "ns-"
+)
+
+// isNamespaceMode reports whether mon_groups are shared per namespace.
+func (c *pluginConfig) isNamespaceMode() bool {
+	return c.GroupBy == groupByNamespace
+}
+
+// keyFuncs returns the mon_group key validator and canonicalizer for the
+// configured granularity.
+func (c *pluginConfig) keyFuncs() (func(string) bool, func(string) string) {
+	if c.isNamespaceMode() {
+		return namespaceKeyValidator, func(k string) string { return k }
+	}
+	return monitor.PodUIDValidator, monitor.CanonicalizePodUID
+}
+
+// namespaceKeyValidator accepts "ns-<namespace>" keys.
+func namespaceKeyValidator(key string) bool {
+	return strings.HasPrefix(key, namespaceKeyPrefix) &&
+		len(key) > len(namespaceKeyPrefix) &&
+		monitor.DefaultKeyValidator(key)
+}
+
+// newManager creates the resctrl monitor manager for cfg.
+func newManager(cfg *pluginConfig) (*monitor.Manager, error) {
+	valid, canon := cfg.keyFuncs()
+	return monitor.New(monitor.Options{
+		ResctrlRoot:      cfg.ResctrlPath,
+		KeyValidator:     valid,
+		KeyCanonicalizer: canon,
+	})
+}
+
+// groupKey returns the mon_group key a pod belongs to: its UID, or in
+// namespace mode "ns-<namespace>". The caller must hold opMu or otherwise
+// ensure p.config is stable.
+func (p *plugin) groupKey(pod *api.PodSandbox) string {
+	if p.config.isNamespaceMode() {
+		return namespaceKeyPrefix + pod.GetNamespace()
+	}
+	return pod.GetUid()
+}
+
+// canonKey returns the canonical form of a mon_group key, as used for tracking.
+func (p *plugin) canonKey(key string) string {
+	_, canon := p.config.keyFuncs()
+	return canon(key)
+}
 
 func newPlugin() *plugin {
 	cfg := &pluginConfig{
 		ResctrlPath: defaultResctrlPath,
+		GroupBy:     groupByPod,
 		Telemetry:   defaultTelemetryConfig(),
 	}
-	mgr, err := monitor.New(monitor.Options{
-		ResctrlRoot:      cfg.ResctrlPath,
-		KeyValidator:     monitor.PodUIDValidator,
-		KeyCanonicalizer: monitor.CanonicalizePodUID,
-	})
+	mgr, err := newManager(cfg)
 	if err != nil {
 		log.Fatalf("failed to create monitor manager: %v", err)
 	}
@@ -178,10 +237,18 @@ func (p *plugin) setConfig(data []byte) error {
 	log.Tracef("setConfig: parsing\n---8<---\n%s\n--->8---", data)
 	cfg := pluginConfig{
 		ResctrlPath: defaultResctrlPath,
+		GroupBy:     groupByPod,
 		Telemetry:   defaultTelemetryConfig(),
 	}
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return fmt.Errorf("setConfig: cannot parse configuration: %w", err)
+	}
+	switch cfg.GroupBy {
+	case "":
+		cfg.GroupBy = groupByPod
+	case groupByPod, groupByNamespace:
+	default:
+		return fmt.Errorf("setConfig: groupBy must be %q or %q, got %q", groupByPod, groupByNamespace, cfg.GroupBy)
 	}
 	resctrlPath := filepath.Clean(cfg.ResctrlPath)
 	if resctrlPath == "" || !filepath.IsAbs(resctrlPath) {
@@ -203,12 +270,9 @@ func (p *plugin) setConfig(data []byte) error {
 		return errors.New("setConfig: configuration cannot change after startup; restart the plugin")
 	}
 
-	if p.config == nil || cfg.ResctrlPath != p.config.ResctrlPath {
-		mgr, err := monitor.New(monitor.Options{
-			ResctrlRoot:      cfg.ResctrlPath,
-			KeyValidator:     monitor.PodUIDValidator,
-			KeyCanonicalizer: monitor.CanonicalizePodUID,
-		})
+	if p.config == nil || cfg.ResctrlPath != p.config.ResctrlPath ||
+		cfg.isNamespaceMode() != p.config.isNamespaceMode() {
+		mgr, err := newManager(&cfg)
 		if err != nil {
 			return fmt.Errorf("setConfig: failed to create monitor manager: %w", err)
 		}
@@ -216,8 +280,8 @@ func (p *plugin) setConfig(data []byte) error {
 	}
 	p.config = &cfg
 
-	log.Debugf("configuration: resctrlPath=%s namespaces=%v labelSelector=%v",
-		cfg.ResctrlPath, cfg.Namespaces, cfg.LabelSelector)
+	log.Debugf("configuration: resctrlPath=%s groupBy=%s namespaces=%v labelSelector=%v",
+		cfg.ResctrlPath, cfg.GroupBy, cfg.Namespaces, cfg.LabelSelector)
 	return nil
 }
 
@@ -260,9 +324,9 @@ func (p *plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, contai
 	}
 	// Adopt each monitored pod's existing group under its original class first,
 	// so container order cannot create a duplicate under another class.
-	existing := existingGroupClasses(p.config.ResctrlPath)
+	existing := existingGroupClasses(p.config)
 	for _, pod := range pods {
-		uid := monitor.CanonicalizePodUID(pod.GetUid())
+		uid := p.canonKey(p.groupKey(pod))
 		class, ok := existing[uid]
 		if !ok || !p.shouldMonitorPod(pod) {
 			continue
@@ -280,7 +344,7 @@ func (p *plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, contai
 		if !p.shouldMonitorPod(pod) {
 			continue
 		}
-		podUID := pod.GetUid()
+		podUID := p.groupKey(pod)
 		rdtClass, ok := groupClass(pod, ctr)
 		if !ok {
 			log.Debugf("Synchronize: not monitoring %s: its RDT class differs from the pod's", pprintCtr(pod, ctr))
@@ -383,7 +447,7 @@ func (p *plugin) startReconciler() {
 // RMID once the kernel releases the directory. The caller must hold opMu.
 func (p *plugin) reconcile(mgr resctrlManager) {
 	for key := range p.pendingRemoval {
-		if _, live := p.sandboxes[monitor.CanonicalizePodUID(key)]; live {
+		if _, live := p.sandboxes[p.canonKey(key)]; live {
 			delete(p.pendingRemoval, key)
 			continue
 		}
@@ -404,10 +468,11 @@ func (p *plugin) reconcile(mgr resctrlManager) {
 	}
 }
 
-// addSandbox records a live sandbox under its pod's canonical UID, the form
-// mgr.List() reports. The caller must hold opMu.
+// addSandbox records a live sandbox under its mon_group's canonical key (the
+// pod UID, or the namespace key in namespace mode), the form mgr.List()
+// reports. The caller must hold opMu.
 func (p *plugin) addSandbox(pod *api.PodSandbox) {
-	uid := monitor.CanonicalizePodUID(pod.GetUid())
+	uid := p.canonKey(p.groupKey(pod))
 	if p.sandboxes == nil {
 		p.sandboxes = make(map[string]map[string]struct{})
 	}
@@ -417,9 +482,11 @@ func (p *plugin) addSandbox(pod *api.PodSandbox) {
 	p.sandboxes[uid][pod.GetId()] = struct{}{}
 }
 
-// existingGroupClasses maps each pod-UID-named mon_group on disk to its parent
-// RDT class ("" for the root group).
-func existingGroupClasses(root string) map[string]string {
+// existingGroupClasses maps each mon_group on disk whose name matches the
+// configured key shape to its parent RDT class ("" for the root group).
+func existingGroupClasses(cfg *pluginConfig) map[string]string {
+	root := cfg.ResctrlPath
+	valid, canon := cfg.keyFuncs()
 	classes := make(map[string]string)
 	scan := func(class, dir string) {
 		entries, err := os.ReadDir(filepath.Join(dir, "mon_groups"))
@@ -427,8 +494,8 @@ func existingGroupClasses(root string) map[string]string {
 			return
 		}
 		for _, e := range entries {
-			if e.IsDir() && monitor.PodUIDValidator(e.Name()) {
-				classes[monitor.CanonicalizePodUID(e.Name())] = class
+			if e.IsDir() && valid(e.Name()) {
+				classes[canon(e.Name())] = class
 			}
 		}
 	}
@@ -458,7 +525,7 @@ func (p *plugin) reconcileLiveSet(mgr resctrlManager) []string {
 func (p *plugin) PostCreateContainer(ctx context.Context, pod *api.PodSandbox, ctr *api.Container) error {
 	p.opMu.Lock()
 	defer p.opMu.Unlock()
-	podUID := pod.GetUid()
+	podUID := p.groupKey(pod)
 	ctrName := pprintCtr(pod, ctr)
 
 	log.Debugf("PostCreateContainer %s: pid=%d (expected 0)", ctrName, ctr.GetPid())
@@ -492,7 +559,7 @@ func (p *plugin) PostCreateContainer(ctx context.Context, pod *api.PodSandbox, c
 func (p *plugin) StartContainer(ctx context.Context, pod *api.PodSandbox, ctr *api.Container) error {
 	p.opMu.Lock()
 	defer p.opMu.Unlock()
-	podUID := pod.GetUid()
+	podUID := p.groupKey(pod)
 	ctrName := pprintCtr(pod, ctr)
 	pid := int(ctr.GetPid())
 
@@ -533,7 +600,7 @@ func (p *plugin) StartContainer(ctx context.Context, pod *api.PodSandbox, ctr *a
 func (p *plugin) PostStartContainer(ctx context.Context, pod *api.PodSandbox, ctr *api.Container) error {
 	p.opMu.Lock()
 	defer p.opMu.Unlock()
-	podUID := pod.GetUid()
+	podUID := p.groupKey(pod)
 	ctrName := pprintCtr(pod, ctr)
 	pid := int(ctr.GetPid())
 
@@ -591,8 +658,8 @@ func (p *plugin) RunPodSandbox(ctx context.Context, pod *api.PodSandbox) error {
 func (p *plugin) RemovePodSandbox(ctx context.Context, pod *api.PodSandbox) error {
 	p.opMu.Lock()
 	defer p.opMu.Unlock()
-	podUID := pod.GetUid()
-	uid := monitor.CanonicalizePodUID(podUID)
+	podUID := p.groupKey(pod)
+	uid := p.canonKey(podUID)
 
 	if ids := p.sandboxes[uid]; ids != nil {
 		delete(ids, pod.GetId())
