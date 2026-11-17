@@ -72,6 +72,8 @@ func (p *policy) finishColdStart(c cache.Container) error {
 	} else {
 		log.Infof("reallocated %s", g)
 		p.saveAllocations()
+		// The new memory zone changes the free memory of the memory devices.
+		p.publishDRADevices()
 	}
 	g.ClearTimer()
 

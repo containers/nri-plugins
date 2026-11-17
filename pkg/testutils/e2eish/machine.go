@@ -112,6 +112,7 @@ type Host struct {
 	Caches   string // the OVERRIDE_SYS_CACHES JSON of an e2e helm config
 	NoNUMA   bool   // the kernel has NUMA disabled
 	Isolated string // CPUs isolated on the kernel command line
+	Movable  string // nodes with only movable memory, like 2-3
 }
 
 // NewMachine builds the machine qemu gives the e2e VM of the topology. CPUs
@@ -196,7 +197,7 @@ func NewMachine(t *testing.T, topo Topology, host Host) system.System {
 		fsys   = map[string]string{}
 		cpu    = 0
 		all    = cpuset.New()
-		normal = cpuset.New()
+		online = cpuset.New()
 		dies   = map[[2]int]cpuset.CPUSet{}
 	)
 	// Die IDs are global, in the order of the packages.
@@ -253,7 +254,7 @@ func NewMachine(t *testing.T, topo Topology, host Host) system.System {
 		fsys[dir+"/distance"] = file("%s", strings.Join(row, " "))
 		fsys[dir+"/meminfo"] = file("Node %d MemTotal: %d kB\nNode %d MemFree: %d kB",
 			id, n.memKB, id, n.memKB)
-		normal = normal.Union(cpuset.New(id))
+		online = online.Union(cpuset.New(id))
 		all = all.Union(nodeCPUs)
 	}
 
@@ -276,9 +277,11 @@ func NewMachine(t *testing.T, topo Topology, host Host) system.System {
 	fsys["sys/devices/system/cpu/present"] = file("%s", all)
 	fsys["sys/devices/system/cpu/possible"] = file("%s", all)
 	fsys["sys/devices/system/cpu/isolated"] = file("%s", host.Isolated)
-	fsys["sys/devices/system/node/has_normal_memory"] = file("%s", normal)
-	fsys["sys/devices/system/node/has_memory"] = file("%s", normal)
-	fsys["sys/devices/system/node/online"] = file("%s", normal)
+	movable, err := cpuset.Parse(host.Movable)
+	require.NoError(t, err, "bad movable nodes %q", host.Movable)
+	fsys["sys/devices/system/node/has_normal_memory"] = file("%s", online.Difference(movable))
+	fsys["sys/devices/system/node/has_memory"] = file("%s", online)
+	fsys["sys/devices/system/node/online"] = file("%s", online)
 
 	if host.NoNUMA {
 		cpuNode := regexp.MustCompile(`^sys/devices/system/cpu/cpu[0-9]+/node[0-9]+/`)
