@@ -11,7 +11,7 @@ spec:
           deviceClassName: topology-aware.nri.io
           selectors:
           - cel:
-              expression: device.attributes[\"dra.cpu\"].level == \"machine\"
+              expression: device.attributes[\"topology-aware.nri.io\"].level == \"machine\"
           capacity:
             requests:
               dra.cpu/cpu: '${CPUS}'

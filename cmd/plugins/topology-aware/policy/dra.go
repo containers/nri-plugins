@@ -74,8 +74,9 @@ const (
 	draAttrSocketID resourceapi.QualifiedName = "dra.cpu/socketID"
 	// draAttrSMTEnabled tells whether the CPUs have SMT enabled.
 	draAttrSMTEnabled resourceapi.QualifiedName = "dra.cpu/smtEnabled"
-	// draAttrLevel is the level of the topology a device publishes.
-	draAttrLevel resourceapi.QualifiedName = "dra.cpu/level"
+	// draAttrLevel is the level of the topology a device publishes. The
+	// name has no domain. It is in the domain of our driver.
+	draAttrLevel resourceapi.QualifiedName = "level"
 	// draAttrNumCPUs is the number of CPUs of a device, used or not.
 	draAttrNumCPUs resourceapi.QualifiedName = "dra.cpu/numCPUs"
 	// The levels of our devices.

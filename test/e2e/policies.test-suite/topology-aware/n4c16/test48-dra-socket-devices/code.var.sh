@@ -112,7 +112,7 @@ wait-capacities "$idle"
 for socket in 0 1; do
     name=$(printf "cpudevsocket%03d" "$socket")
     cpus=$((8 - socket))
-    got=$(dra-device "$name" '"\(.attributes["dra.cpu/level"].string)/\(.attributes["dra.cpu/socketID"].int)/\(.attributes["dra.cpu/smtEnabled"].bool)/\(.attributes["dra.cpu/numCPUs"].int)/\(.attributes["resource.kubernetes.io/numaNode"])"')
+    got=$(dra-device "$name" '"\(.attributes["level"].string)/\(.attributes["dra.cpu/socketID"].int)/\(.attributes["dra.cpu/smtEnabled"].bool)/\(.attributes["dra.cpu/numCPUs"].int)/\(.attributes["resource.kubernetes.io/numaNode"])"')
     [ "$got" == "socket/$socket/true/$cpus/null" ] ||
         error "device $name has level/socketID/smtEnabled/numCPUs/numaNode $got, expected socket/$socket/true/$cpus/null"
     policy=$(dra-device "$name" '.capacity["dra.cpu/cpu"].requestPolicy | "\(.default)/\(.validRange.min)/\(.validRange.step)"')
@@ -121,7 +121,7 @@ for socket in 0 1; do
 done
 for node in 0 1 2 3; do
     name=$(printf "cpudevnuma%03d" "$node")
-    level=$(dra-device "$name" '.attributes["dra.cpu/level"].string')
+    level=$(dra-device "$name" '.attributes["level"].string')
     [ "$level" == "numanode" ] ||
         error "device $name has level $level, expected numanode"
 done

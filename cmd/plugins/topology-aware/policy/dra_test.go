@@ -364,7 +364,7 @@ func TestDRADeviceShape(t *testing.T) {
 			Name:                     name,
 			AllowMultipleAllocations: ptr.To(true),
 			Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
-				"dra.cpu/level":      {StringValue: ptr.To(level)},
+				"level":              {StringValue: ptr.To(level)},
 				"dra.cpu/socketID":   {IntValue: ptr.To(int64(0))},
 				"dra.cpu/smtEnabled": {BoolValue: ptr.To(true)},
 				"dra.cpu/numCPUs":    {IntValue: ptr.To(int64(2))},

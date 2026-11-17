@@ -1480,7 +1480,7 @@ already allocated keep their CPUs. The devices have these attributes:
 
 | Attribute | Type | Value |
 |---|---|---|
-| `dra.cpu/level` | string | `machine`, `socket` or `numanode` |
+| `level` | string | `machine`, `socket` or `numanode` |
 | `dra.cpu/socketID` | int | the ID of the socket, on NUMA and socket devices |
 | `resource.kubernetes.io/numaNode` | int | the ID of the NUMA node, on NUMA devices |
 | `dra.cpu/smtEnabled` | bool | whether the CPUs have hyperthreading enabled |
@@ -1491,6 +1491,12 @@ Which IDs a device has depends only on its level, so a selector works the
 same way on every machine. A socket device has no `numaNode`, even when its
 socket has one NUMA node, and the machine device has no IDs, even on a machine
 with one socket.
+
+The `level` attribute has no domain. It is in the domain of the driver,
+`topology-aware.nri.io`. A selector reads it as
+`device.attributes["topology-aware.nri.io"].level`. A constraint names it
+`topology-aware.nri.io/level`. Version v0.15.1 of the plugin published it as
+`dra.cpu/level`. Claims written for that version need the new name.
 
 With sub-NUMA clustering, the kernel gives each PCIe root the CPUs of one
 NUMA node, but the root serves the whole socket. So every device of a socket
@@ -1519,11 +1525,11 @@ A selector which reads an attribute that a device does not
 have fails the allocation of the claim on the node, instead of skipping the
 device. A selector on `numaNode` therefore first checks the level, for
 instance
-`device.attributes["dra.cpu"].level == "numanode" && device.attributes["resource.kubernetes.io"].numaNode == 1`.
+`device.attributes["topology-aware.nri.io"].level == "numanode" && device.attributes["resource.kubernetes.io"].numaNode == 1`.
 Claims written for earlier versions of the plugin, which had NUMA devices
 only, select `numaNode` without this check, and need it now. The machine
 device has no `socketID`, so a selector on `socketID` checks the level too:
-`device.attributes["dra.cpu"].level != "machine" && device.attributes["dra.cpu"].socketID == 0`
+`device.attributes["topology-aware.nri.io"].level != "machine" && device.attributes["dra.cpu"].socketID == 0`
 matches every device inside socket 0, and the scheduler picks one of them.
 
 ### Claims
@@ -1547,7 +1553,7 @@ spec:
           selectors:
           - cel:
               expression: >-
-                device.attributes["dra.cpu"].level == "numanode" &&
+                device.attributes["topology-aware.nri.io"].level == "numanode" &&
                 device.attributes["resource.kubernetes.io"].numaNode == 1
           capacity:
             requests:
@@ -1576,7 +1582,7 @@ spec:
           selectors:
           - cel:
               expression: >-
-                device.attributes["dra.cpu"].level == "socket" &&
+                device.attributes["topology-aware.nri.io"].level == "socket" &&
                 device.attributes["dra.cpu"].socketID == 0
           capacity:
             requests:
@@ -1622,7 +1628,7 @@ spec:
           selectors:
           - cel:
               expression: >-
-                device.attributes["dra.cpu"].level == "numanode" &&
+                device.attributes["topology-aware.nri.io"].level == "numanode" &&
                 device.attributes["resource.kubernetes.io"].numaNode == 0
       - name: second
         exactly:
@@ -1630,7 +1636,7 @@ spec:
           selectors:
           - cel:
               expression: >-
-                device.attributes["dra.cpu"].level == "numanode" &&
+                device.attributes["topology-aware.nri.io"].level == "numanode" &&
                 device.attributes["resource.kubernetes.io"].numaNode == 1
       config:
       - opaque:

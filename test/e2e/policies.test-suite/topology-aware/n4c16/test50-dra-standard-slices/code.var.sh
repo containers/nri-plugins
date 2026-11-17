@@ -201,7 +201,7 @@ std-diff() {
     # devices, one per line.
     jq -r -n --arg level "$1" --arg allowed "$std_allowed" \
        --slurpfile ours "$std_dir/ours.json" --slurpfile std "$std_dir/std-$1.json" '
-        ($ours[0] | map(select(.attributes["dra.cpu/level"].string == $level)) |
+        ($ours[0] | map(select(.attributes["level"].string == $level)) |
             INDEX(.name)) as $ours |
         ($allowed | split(" ")) as $allowed |
         $std[0][] | . as $ref | $ours[.name] as $our |
@@ -234,7 +234,7 @@ std-print() {
             ([.attributes | to_entries[] | "\(.key)=\(.value[] | tojson)"] +
              [.capacity | to_entries[] | "capacity \(.key)=\(.value.value)"] +
              ["allowMultipleAllocations=\(.allowMultipleAllocations)"] | join(" "));
-        ($ours[0] | map(select(.attributes["dra.cpu/level"].string == $level)) |
+        ($ours[0] | map(select(.attributes["level"].string == $level)) |
             INDEX(.name)) as $ours |
         $std[0][] |
         (if $ours[.name] then $ours[.name] | line else "\(.name): no device of ours" end),

@@ -11,7 +11,7 @@ spec:
           deviceClassName: topology-aware.nri.io
           selectors:
           - cel:
-              expression: device.attributes[\"dra.cpu\"].level == \"socket\" && device.attributes[\"dra.cpu\"].socketID == ${SOCKET}
+              expression: device.attributes[\"topology-aware.nri.io\"].level == \"socket\" && device.attributes[\"dra.cpu\"].socketID == ${SOCKET}
           capacity:
             requests:
               dra.cpu/cpu: '${CPUS}'
