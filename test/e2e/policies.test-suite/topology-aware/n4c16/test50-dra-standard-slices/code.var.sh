@@ -245,7 +245,11 @@ std-print() {
 # driver. The test leaves it and its devices alone. A leftover reference
 # release would hide such a driver. Without the release, any $std_driver
 # slice belongs to another driver. The cleanup deletes the same slices.
-std_releases=$(vm-command-q "helm list -n kube-system -a -q --filter '^$std_release\$'") ||
+# Helm 4 has no -a. The status flags list the releases in any status, with
+# Helm 3 and 4.
+std_releases=$(vm-command-q "helm list -n kube-system -q --filter '^$std_release\$' \
+                                 --deployed --failed --pending --superseded \
+                                 --uninstalled --uninstalling") ||
     error "failed to list the helm releases in kube-system"
 [ -z "$std_releases" ] ||
     error "$std_release is installed in kube-system: uninstall it first"
