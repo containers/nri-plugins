@@ -1445,13 +1445,16 @@ capacity, and the policy runs the containers of the pod on the claimed CPUs.
   claims and CPU requests together cannot overcommit the node. Without it,
   allocation works, but the scheduler does not count claimed CPUs against the
   `cpu` of the node. With the gate, a claim cannot be shared by several pods.
+  The gate also makes the scheduler count claimed memory against the `memory`
+  resource of the node.
 - The `DRAListTypeAttributes` feature gate (alpha) is optional. The plugin
   checks at start whether the API server accepts list attributes, and
   publishes the `pcieRoot` attribute only then.
 
 ### Devices
 
-The policy publishes a device for each group of CPUs of the topology:
+The policy publishes CPU devices and memory devices. It publishes a CPU
+device for each group of CPUs in the topology:
 
 | Device | Level | CPUs |
 |---|---|---|
@@ -1492,24 +1495,71 @@ same way on every machine. A socket device has no `numaNode`, even when its
 socket has one NUMA node, and the machine device has no IDs, even on a machine
 with one socket.
 
-The `level` attribute has no domain. It is in the domain of the driver,
-`topology-aware.nri.io`. A selector reads it as
-`device.attributes["topology-aware.nri.io"].level`. A constraint names it
-`topology-aware.nri.io/level`. Version v0.15.1 of the plugin published it as
-`dra.cpu/level`. Claims written for that version need the new name.
-
 With sub-NUMA clustering, the kernel gives each PCIe root the CPUs of one
 NUMA node, but the root serves the whole socket. So every device of a socket
 lists every PCIe root of the socket. A claim which needs CPUs of one NUMA node
 selects the node with `numaNode` as well.
 
-A request consumes a number of whole CPUs of one device. A request without an
-amount gets one CPU, not the whole device. The policy picks the CPUs by
-topology: two CPUs are the two threads of one core when possible. A request
-gets CPUs of the smallest group inside its device which has enough free CPUs.
-For instance, a request on the machine device gets CPUs of one NUMA node when
-a node has enough free CPUs, otherwise CPUs of one socket, otherwise CPUs of
-several sockets.
+The policy also publishes a memory device for each group of NUMA nodes with
+memory:
+
+| Device | Level | Memory |
+|---|---|---|
+| `memdevmachine` | `machine` | all DRAM |
+| `memdevsocket000`, `memdevsocket001`, ... | `socket` | the DRAM in a socket |
+| `memdevnuma000`, `memdevnuma001`, ... | `numanode` | the memory in a NUMA node |
+
+A memory device has memory of one type. A socket or the machine has one
+memory device for each memory type of its nodes. The name of a device with
+HBM or PMEM ends with the type, for instance `memdevsocket000hbm` or
+`memdevmachinepmem`. A NUMA node without CPUs, such as an HBM or PMEM node,
+has a memory device. It has no CPU device.
+
+Each memory device has a node with normal memory. The kernel cannot place its
+own allocations in movable memory. So a node with only movable memory has no
+memory device of its own. A socket or machine device has such a node only if
+it also has a node with normal memory. The `daxctl` tool often onlines PMEM
+as movable memory. Then the policy publishes no PMEM devices.
+
+A memory device has the capacity `memory`: the free memory on its nodes, in
+bytes. Memory that containers hold is not free. A container can hold memory
+in a group of several nodes. A device on any of these nodes then has no more
+capacity than the free memory in that group. The policy publishes the capacity again
+whenever it changes. The policy does not publish a device with less than 1Mi
+free. The memory devices have these attributes:
+
+| Attribute | Type | Value |
+|---|---|---|
+| `level` | string | `machine`, `socket` or `numanode` |
+| `memoryType` | string | `DRAM`, `PMEM` or `HBM` |
+| `dra.cpu/socketID` | int | the ID of the socket, on NUMA and socket devices |
+| `resource.kubernetes.io/numaNode` | int | the ID of the NUMA node, on NUMA devices |
+| `resource.kubernetes.io/pcieRoot` | list of strings | the PCIe roots of the device's sockets, with `DRAListTypeAttributes` only |
+
+The memory device of a NUMA node without CPUs has no `socketID`.
+
+The `level` and `memoryType` attributes and the `memory` capacity have no
+domain. They are in the domain of the driver, `topology-aware.nri.io`. A
+selector reads them as `device.attributes["topology-aware.nri.io"].level`
+and `device.capacity["topology-aware.nri.io"].memory`. A constraint names
+the attribute `topology-aware.nri.io/level`. A claim names the capacity
+`memory`. Version v0.15.1 of the plugin published `level` as
+`dra.cpu/level`. Claims written for that version need the new name.
+
+A request names its amount: `dra.cpu/cpu` for CPUs, `memory` for memory. A
+request on a CPU device consumes a number of whole CPUs. A request on a
+memory device consumes a number of whole mebibytes, at least 1Mi. A request
+without an amount matches both kinds of devices. The scheduler then takes the
+first device that fits. On a CPU device such a request gets one CPU, not the
+whole device. On a memory device it gets 1Mi. Version v0.15 of the plugin
+published CPU devices only. There, a request without an amount always got
+one CPU. Claims written for that version need a `dra.cpu/cpu` amount now.
+
+The policy picks the CPUs by topology: two CPUs are the two threads of one
+core when possible. A request gets CPUs of the smallest group inside its
+device which has enough free CPUs. For instance, a request on the machine
+device gets CPUs of one NUMA node when a node has enough free CPUs, otherwise
+CPUs of one socket, otherwise CPUs of several sockets.
 
 A claim is not bound to its CPUs. When a claim on a smaller device inside its
 device needs them, for instance a claim on a NUMA node of a socket, the claim
@@ -1520,7 +1570,12 @@ Their memory stays on the nodes it was on.
 
 ### Selecting Devices
 
-The `topology-aware.nri.io` device class matches the devices of every level.
+The `topology-aware.nri.io` device class matches the CPU and memory devices
+of every level. The capacity a request names picks the kind of device. The
+scheduler skips a device without that capacity. So a request for
+`dra.cpu/cpu: "2"` never gets a memory device. A request for `memory: 4Gi`
+never gets a CPU device.
+
 A selector which reads an attribute that a device does not
 have fails the allocation of the claim on the node, instead of skipping the
 device. A selector on `numaNode` therefore first checks the level, for
@@ -1530,7 +1585,8 @@ Claims written for earlier versions of the plugin, which had NUMA devices
 only, select `numaNode` without this check, and need it now. The machine
 device has no `socketID`, so a selector on `socketID` checks the level too:
 `device.attributes["topology-aware.nri.io"].level != "machine" && device.attributes["dra.cpu"].socketID == 0`
-matches every device inside socket 0, and the scheduler picks one of them.
+matches every CPU and memory device inside socket 0. The scheduler picks one
+of them that has the capacity the request names.
 
 ### Claims
 
@@ -1702,6 +1758,8 @@ leaves running, such as DaemonSet pods, lose the CPUs of their claims.
 
 ### Known Limitations
 
+- A claim on a memory device fails to prepare. The policy does not allocate
+  memory to claims yet.
 - A claim can fail to prepare when the node has too few free CPUs for it. The
   pod then waits until enough CPUs are free. This happens when the scheduler
   places the claim before the policy publishes a new capacity, or when shared
