@@ -157,10 +157,11 @@ type draMemGroup struct {
 	memType libmem.Type
 }
 
-// draCPUGroups returns the NUMA nodes, the sockets and the machine.
+// draCPUGroups returns the NUMA nodes with CPUs, the sockets and the machine.
+// A node without CPUs has no CPU device. It can also be in no socket.
 func draCPUGroups(sys system.System) []draCPUGroup {
 	var groups []draCPUGroup
-	for _, id := range sys.NodeIDs() {
+	for _, id := range sys.FilterNodes(sys.NodeIDs(), system.NodeHasLocalCPUs).SortedMembers() {
 		groups = append(groups, draCPUGroup{
 			draGroup: draGroup{
 				name:  fmt.Sprintf(draNUMADeviceFormat, id),
@@ -226,9 +227,8 @@ func draMemGroups(sys system.System) []draMemGroup {
 	for _, id := range normal.Slice() {
 		node := sys.Node(id)
 		ids := map[resourceapi.QualifiedName]int64{deviceattribute.StandardDeviceAttributeNUMANode: int64(id)}
-		// A node without CPUs is in no socket.
-		if !node.CPUSet().IsEmpty() {
-			ids[draAttrSocketID] = int64(node.PackageID())
+		if pkg := node.PackageID(); pkg != idset.Unknown {
+			ids[draAttrSocketID] = int64(pkg)
 		}
 		groups = append(groups, draMemGroup{
 			draGroup: draGroup{name: fmt.Sprintf(draMemNUMADeviceFormat, id), level: draLevelNUMANode, ids: ids},
@@ -238,7 +238,7 @@ func draMemGroups(sys system.System) []draMemGroup {
 	}
 	for _, id := range sys.PackageIDs() {
 		for _, t := range types {
-			if nodes := ofType(sys.Package(id).NodeIDs(), t); nodes.And(normal) != 0 {
+			if nodes := ofType(draSocketNodes(sys, id), t); nodes.And(normal) != 0 {
 				groups = append(groups, draMemGroup{
 					draGroup: draGroup{
 						name:  fmt.Sprintf(draMemSocketDeviceFormat, id) + suffix(t),
@@ -261,6 +261,12 @@ func draMemGroups(sys system.System) []draMemGroup {
 		}
 	}
 	return groups
+}
+
+// draSocketNodes returns the nodes in the socket. They include the nodes
+// without CPUs that sysfs puts in the socket.
+func draSocketNodes(sys system.System, socket idset.ID) []idset.ID {
+	return slices.DeleteFunc(sys.NodeIDs(), func(id idset.ID) bool { return sys.Node(id).PackageID() != socket })
 }
 
 // draDevices returns a device for each CPU group with CPUs for claims. It
@@ -352,7 +358,7 @@ func (p *policy) draMemDevice(group draMemGroup) (resourceapi.Device, bool) {
 	}
 
 	attrs := p.draAttributes(group.draGroup, func(pkg system.CPUPackage) bool {
-		return slices.ContainsFunc(pkg.NodeIDs(), func(id idset.ID) bool { return group.nodes.Contains(id) })
+		return slices.ContainsFunc(draSocketNodes(p.sys, pkg.ID()), func(id idset.ID) bool { return group.nodes.Contains(id) })
 	})
 	attrs[draAttrMemoryType] = resourceapi.DeviceAttribute{StringValue: ptr.To(group.memType.String())}
 

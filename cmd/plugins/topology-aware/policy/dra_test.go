@@ -476,18 +476,20 @@ func TestDRAMemDevices(t *testing.T) {
 	p, owner := draTestPolicy(t, testServerSystem(t), draTestConfig("", "cpuset:0,1"))
 
 	// Socket 0 has DRAM nodes 0 and 2. Socket 1 has DRAM nodes 1 and 3. PMEM
-	// nodes 4 and 5 have no CPUs. They are in no socket.
+	// nodes 4 and 5 have no CPUs. Their closest nodes are 0 and 2. So they
+	// are in socket 0.
 	expected := map[string]draMemDevice{
-		"memdevnuma000":     {level: "numanode", numaNode: 0, socketID: 0, memType: "DRAM", bytes: draTestMiB(p, 0)},
-		"memdevnuma001":     {level: "numanode", numaNode: 1, socketID: 1, memType: "DRAM", bytes: draTestMiB(p, 1)},
-		"memdevnuma002":     {level: "numanode", numaNode: 2, socketID: 0, memType: "DRAM", bytes: draTestMiB(p, 2)},
-		"memdevnuma003":     {level: "numanode", numaNode: 3, socketID: 1, memType: "DRAM", bytes: draTestMiB(p, 3)},
-		"memdevnuma004":     {level: "numanode", numaNode: 4, socketID: -1, memType: "PMEM", bytes: draTestMiB(p, 4)},
-		"memdevnuma005":     {level: "numanode", numaNode: 5, socketID: -1, memType: "PMEM", bytes: draTestMiB(p, 5)},
-		"memdevsocket000":   {level: "socket", numaNode: -1, socketID: 0, memType: "DRAM", bytes: draTestMiB(p, 0, 2)},
-		"memdevsocket001":   {level: "socket", numaNode: -1, socketID: 1, memType: "DRAM", bytes: draTestMiB(p, 1, 3)},
-		"memdevmachine":     {level: "machine", numaNode: -1, socketID: -1, memType: "DRAM", bytes: draTestMiB(p, 0, 1, 2, 3)},
-		"memdevmachinepmem": {level: "machine", numaNode: -1, socketID: -1, memType: "PMEM", bytes: draTestMiB(p, 4, 5)},
+		"memdevnuma000":       {level: "numanode", numaNode: 0, socketID: 0, memType: "DRAM", bytes: draTestMiB(p, 0)},
+		"memdevnuma001":       {level: "numanode", numaNode: 1, socketID: 1, memType: "DRAM", bytes: draTestMiB(p, 1)},
+		"memdevnuma002":       {level: "numanode", numaNode: 2, socketID: 0, memType: "DRAM", bytes: draTestMiB(p, 2)},
+		"memdevnuma003":       {level: "numanode", numaNode: 3, socketID: 1, memType: "DRAM", bytes: draTestMiB(p, 3)},
+		"memdevnuma004":       {level: "numanode", numaNode: 4, socketID: 0, memType: "PMEM", bytes: draTestMiB(p, 4)},
+		"memdevnuma005":       {level: "numanode", numaNode: 5, socketID: 0, memType: "PMEM", bytes: draTestMiB(p, 5)},
+		"memdevsocket000":     {level: "socket", numaNode: -1, socketID: 0, memType: "DRAM", bytes: draTestMiB(p, 0, 2)},
+		"memdevsocket000pmem": {level: "socket", numaNode: -1, socketID: 0, memType: "PMEM", bytes: draTestMiB(p, 4, 5)},
+		"memdevsocket001":     {level: "socket", numaNode: -1, socketID: 1, memType: "DRAM", bytes: draTestMiB(p, 1, 3)},
+		"memdevmachine":       {level: "machine", numaNode: -1, socketID: -1, memType: "DRAM", bytes: draTestMiB(p, 0, 1, 2, 3)},
+		"memdevmachinepmem":   {level: "machine", numaNode: -1, socketID: -1, memType: "PMEM", bytes: draTestMiB(p, 4, 5)},
 	}
 	if summary := draMemDeviceSummary(owner.devices); !reflect.DeepEqual(summary, expected) {
 		t.Errorf("published memory devices %v, expected %v", summary, expected)
@@ -496,30 +498,41 @@ func TestDRAMemDevices(t *testing.T) {
 
 // TestDRAMemDevicesHBM checks that an HBM node without CPUs gets a memory
 // device and no CPU device. It also checks that each socket and machine
-// device has one memory type.
+// device has one memory type. A node without CPUs is in the socket of its
+// closest DRAM node with CPUs.
 func TestDRAMemDevicesHBM(t *testing.T) {
 	sys := harness.NewMachine(t, genN6HbmCxl, harness.Host{})
 	_, owner := draTestPolicy(t, sys, draTestConfig("", "cpuset:0"))
 
-	types := map[string]string{}
+	type device struct {
+		memType  string
+		socketID int64
+	}
+	devices := map[string]device{}
 	for name, d := range draMemDeviceSummary(owner.devices) {
-		types[name] = d.memType
+		devices[name] = device{d.memType, d.socketID}
 	}
-	expected := map[string]string{
-		"memdevnuma000":     "DRAM",
-		"memdevnuma001":     "DRAM",
-		"memdevnuma002":     "HBM",
-		"memdevnuma003":     "HBM",
-		"memdevnuma004":     "PMEM",
-		"memdevnuma005":     "PMEM",
-		"memdevsocket000":   "DRAM",
-		"memdevsocket001":   "DRAM",
-		"memdevmachine":     "DRAM",
-		"memdevmachinepmem": "PMEM",
-		"memdevmachinehbm":  "HBM",
+	// Nodes 2 and 4 are closest to node 0 in socket 0. Nodes 3 and 5 are
+	// closest to node 1 in socket 1.
+	expected := map[string]device{
+		"memdevnuma000":       {"DRAM", 0},
+		"memdevnuma001":       {"DRAM", 1},
+		"memdevnuma002":       {"HBM", 0},
+		"memdevnuma003":       {"HBM", 1},
+		"memdevnuma004":       {"PMEM", 0},
+		"memdevnuma005":       {"PMEM", 1},
+		"memdevsocket000":     {"DRAM", 0},
+		"memdevsocket000hbm":  {"HBM", 0},
+		"memdevsocket000pmem": {"PMEM", 0},
+		"memdevsocket001":     {"DRAM", 1},
+		"memdevsocket001hbm":  {"HBM", 1},
+		"memdevsocket001pmem": {"PMEM", 1},
+		"memdevmachine":       {"DRAM", -1},
+		"memdevmachinepmem":   {"PMEM", -1},
+		"memdevmachinehbm":    {"HBM", -1},
 	}
-	if !reflect.DeepEqual(types, expected) {
-		t.Errorf("published memory devices of types %v, expected %v", types, expected)
+	if !reflect.DeepEqual(devices, expected) {
+		t.Errorf("published memory devices %v, expected %v", devices, expected)
 	}
 	for name := range draDeviceSummary(owner.devices) {
 		if name != draMachineDevice && !slices.Contains([]string{"cpudevnuma000", "cpudevnuma001", "cpudevsocket000", "cpudevsocket001"}, name) {
@@ -528,14 +541,30 @@ func TestDRAMemDevicesHBM(t *testing.T) {
 	}
 }
 
+// TestDRAMemDevicesEquidistant checks the memory device of a node without
+// CPUs. Nodes in two sockets are equally close to it. Its device has no
+// socket.
+func TestDRAMemDevicesEquidistant(t *testing.T) {
+	sys := harness.NewMachine(t, harness.Topology{
+		{Mem: "2G", Cores: 2, Packages: 2},
+		{Mem: "1G", NodeDist: map[int]int{0: 20, 1: 20}},
+	}, harness.Host{})
+	_, owner := draTestPolicy(t, sys, draTestConfig("", "cpuset:0"))
+
+	d, ok := draMemDeviceSummary(owner.devices)["memdevnuma002"]
+	if !ok || d.socketID != -1 {
+		t.Errorf("published memdevnuma002 %v (%v), expected one without a socket", d, ok)
+	}
+}
+
 // TestDRAMemDevicesMovable checks that each memory device has a node with
-// normal memory. The HBM nodes 2 and 3 may have only movable memory.
+// normal memory. HBM nodes 2 and 3 are in sockets 0 and 1.
 func TestDRAMemDevicesMovable(t *testing.T) {
 	for _, tc := range []struct {
 		movable  string
 		expected []string
 	}{
-		{movable: "3", expected: []string{"memdevmachinehbm", "memdevnuma002"}},
+		{movable: "3", expected: []string{"memdevmachinehbm", "memdevnuma002", "memdevsocket000hbm"}},
 		{movable: "2-3"},
 	} {
 		t.Run(tc.movable, func(t *testing.T) {
@@ -747,8 +776,6 @@ func TestDRAPCIeRoots(t *testing.T) {
 		"cpudevnuma003":   {"pci0000:00", "pci0000:80"},
 		"cpudevsocket001": {"pci0000:00", "pci0000:80"},
 		"cpudevmachine":   {"pci0000:00", "pci0000:5d", "pci0000:80"},
-		// PMEM nodes 4 and 5 have no CPUs. They are in no socket. So the PMEM
-		// machine device has no roots either.
 		"memdevnuma000":   {"pci0000:00", "pci0000:5d"},
 		"memdevnuma002":   {"pci0000:00", "pci0000:5d"},
 		"memdevsocket000": {"pci0000:00", "pci0000:5d"},
@@ -756,6 +783,11 @@ func TestDRAPCIeRoots(t *testing.T) {
 		"memdevnuma003":   {"pci0000:00", "pci0000:80"},
 		"memdevsocket001": {"pci0000:00", "pci0000:80"},
 		"memdevmachine":   {"pci0000:00", "pci0000:5d", "pci0000:80"},
+		// PMEM nodes 4 and 5 have no CPUs. They are in socket 0.
+		"memdevnuma004":       {"pci0000:00", "pci0000:5d"},
+		"memdevnuma005":       {"pci0000:00", "pci0000:5d"},
+		"memdevsocket000pmem": {"pci0000:00", "pci0000:5d"},
+		"memdevmachinepmem":   {"pci0000:00", "pci0000:5d"},
 	}
 	if got := published(); !reflect.DeepEqual(got, expected) {
 		t.Errorf("published PCIe roots %v, expected %v", got, expected)
@@ -767,17 +799,21 @@ func TestDRAPCIeRoots(t *testing.T) {
 		t.Fatalf("failed to reconfigure policy: %v", err)
 	}
 	expected = map[string][]string{
-		"cpudevnuma000":   {"pci0000:00", "pci0000:5d"},
-		"cpudevnuma002":   {"pci0000:00", "pci0000:5d"},
-		"cpudevsocket000": {"pci0000:00", "pci0000:5d"},
-		"cpudevmachine":   {"pci0000:00", "pci0000:5d"},
-		"memdevnuma000":   {"pci0000:00", "pci0000:5d"},
-		"memdevnuma002":   {"pci0000:00", "pci0000:5d"},
-		"memdevsocket000": {"pci0000:00", "pci0000:5d"},
-		"memdevnuma001":   {"pci0000:00", "pci0000:80"},
-		"memdevnuma003":   {"pci0000:00", "pci0000:80"},
-		"memdevsocket001": {"pci0000:00", "pci0000:80"},
-		"memdevmachine":   {"pci0000:00", "pci0000:5d", "pci0000:80"},
+		"cpudevnuma000":       {"pci0000:00", "pci0000:5d"},
+		"cpudevnuma002":       {"pci0000:00", "pci0000:5d"},
+		"cpudevsocket000":     {"pci0000:00", "pci0000:5d"},
+		"cpudevmachine":       {"pci0000:00", "pci0000:5d"},
+		"memdevnuma000":       {"pci0000:00", "pci0000:5d"},
+		"memdevnuma002":       {"pci0000:00", "pci0000:5d"},
+		"memdevsocket000":     {"pci0000:00", "pci0000:5d"},
+		"memdevnuma001":       {"pci0000:00", "pci0000:80"},
+		"memdevnuma003":       {"pci0000:00", "pci0000:80"},
+		"memdevsocket001":     {"pci0000:00", "pci0000:80"},
+		"memdevmachine":       {"pci0000:00", "pci0000:5d", "pci0000:80"},
+		"memdevnuma004":       {"pci0000:00", "pci0000:5d"},
+		"memdevnuma005":       {"pci0000:00", "pci0000:5d"},
+		"memdevsocket000pmem": {"pci0000:00", "pci0000:5d"},
+		"memdevmachinepmem":   {"pci0000:00", "pci0000:5d"},
 	}
 	if got := published(); !reflect.DeepEqual(got, expected) {
 		t.Errorf("published PCIe roots %v with CPUs of socket 0 only, expected %v", got, expected)

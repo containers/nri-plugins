@@ -454,6 +454,7 @@ func (sys *system) Discover(flags DiscoveryFlag) error {
 				}
 			}
 		}
+		sys.setCPULessNodePackages()
 	}
 
 	if sys.DebugEnabled() {
@@ -1620,6 +1621,31 @@ func (sys *system) parseMemTypeOverrides(overridesJson string) (map[int]MemoryTy
 	return overrides, nil
 }
 
+// setCPULessNodePackages puts each node without CPUs in the package of its
+// closest DRAM node with CPUs. A node with equally close nodes in two
+// packages gets idset.Unknown.
+func (sys *system) setCPULessNodePackages() {
+	for _, node := range sys.nodes {
+		if node.cpus.Size() > 0 {
+			continue
+		}
+		node.pkg = idset.Unknown
+		closest, _ := sys.ClosestNodes(node.id, NodeOfDRAMType, NodeHasLocalCPUs)
+		if len(closest) == 0 {
+			continue
+		}
+		pkgs := idset.NewIDSet()
+		for _, id := range closest[0].Members() {
+			pkgs.Add(sys.nodes[id].pkg)
+		}
+		if pkgs.Size() > 1 {
+			sys.Infof("node %d is in no package: packages %s are equally close", node.id, pkgs)
+			continue
+		}
+		node.pkg = pkgs.Members()[0]
+	}
+}
+
 // Discover details of the given NUMA node.
 func (sys *system) discoverNode(path string) error {
 	node := &node{path: path, id: getEnumeratedID(path)}
@@ -1641,7 +1667,8 @@ func (n *node) ID() idset.ID {
 	return n.id
 }
 
-// PackageID returns the package id for this node.
+// PackageID returns the package id for this node, or idset.Unknown if the
+// node is in no package.
 func (n *node) PackageID() idset.ID {
 	return n.pkg
 }
@@ -2145,7 +2172,8 @@ func (p *cpuPackage) DieIDs() []idset.ID {
 	return p.dies.SortedMembers()
 }
 
-// NodeIDs returns the NUMA node ids for this package.
+// NodeIDs returns the ids of the NUMA nodes with CPUs in this package. A node
+// without CPUs can also have this package as its PackageID.
 func (p *cpuPackage) NodeIDs() []idset.ID {
 	return p.nodes.SortedMembers()
 }

@@ -25,8 +25,9 @@ import (
 
 func TestMemoryPolicyNodes(t *testing.T) {
 	// Nodes 0-3 have CPUs, 0 and 2 in package 0, 1 and 3 in package 1.
-	// Nodes 4-7 have memory only. From node 1, node 3 is at distance 11
-	// and node 6 at 17.
+	// Nodes 4-7 have memory only. Nodes 4 and 5 are closest to package 0.
+	// Nodes 6 and 7 are closest to package 1. From node 1, node 3 is at
+	// distance 11 and node 6 at 17.
 	sys, err := sysfs.DiscoverSystemAt("./testdata/sample2/sys")
 	require.NoError(t, err)
 
@@ -47,7 +48,7 @@ func TestMemoryPolicyNodes(t *testing.T) {
 		{mode: "MPOL_INTERLEAVE", nodes: "", cpus: node1CPUs, expect: mems},
 		{mode: "MPOL_INTERLEAVE", nodes: "cpu-nodes", cpus: node1CPUs, expect: NewNodeMask(1)},
 		{mode: "MPOL_INTERLEAVE", nodes: "cpu-nodes", cpus: cpuset.New(0, 1), expect: NewNodeMask(0, 1)},
-		{mode: "MPOL_INTERLEAVE", nodes: "cpu-packages", cpus: node1CPUs, expect: NewNodeMask(1, 3)},
+		{mode: "MPOL_INTERLEAVE", nodes: "cpu-packages", cpus: node1CPUs, expect: NewNodeMask(1, 3, 6, 7)},
 		{mode: "MPOL_INTERLEAVE", nodes: "max-dist:11", cpus: node1CPUs, expect: NewNodeMask(1, 3)},
 		{mode: "MPOL_INTERLEAVE", nodes: "max-dist:17", cpus: node1CPUs, expect: NewNodeMask(1, 3, 6)},
 		{mode: "MPOL_INTERLEAVE", nodes: "0,2-3", cpus: node1CPUs, expect: NewNodeMask(0, 2, 3)},
