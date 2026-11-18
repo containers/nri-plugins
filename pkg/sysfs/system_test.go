@@ -15,12 +15,14 @@
 package sysfs_test
 
 import (
+	"maps"
 	"os"
 	"path"
 	"slices"
 	"testing"
 
 	"github.com/containers/nri-plugins/pkg/sysfs"
+	harness "github.com/containers/nri-plugins/pkg/testutils/e2eish"
 	"github.com/containers/nri-plugins/pkg/utils/cpuset"
 	idset "github.com/intel/goresctrl/pkg/utils"
 )
@@ -242,5 +244,49 @@ func TestRecordedPCIeRoots(t *testing.T) {
 		if got := sys.Package(id).PCIeRoots(); !slices.Equal(got, want) {
 			t.Errorf("package %d: got PCIe roots %v, want %v", id, got, want)
 		}
+	}
+}
+
+// TestCPULessNodePackages checks that a node without CPUs is in the package
+// of its closest DRAM node with CPUs. A node with equally close nodes in two
+// packages is in no package.
+func TestCPULessNodePackages(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		topo harness.Topology
+		want map[idset.ID]idset.ID
+	}{
+		{
+			// Two sockets with one DRAM node each, then two HBM nodes and two
+			// PMEM nodes without CPUs.
+			name: "n6-hbm-cxl",
+			topo: harness.Topology{
+				{Mem: "2G", Cores: 2, Threads: 2, Nodes: 1, Packages: 2},
+				{Mem: "1G", NodeDist: map[int]int{0: 15, 1: 30, 2: 10, 3: 35}},
+				{Mem: "1G", NodeDist: map[int]int{0: 30, 1: 15, 2: 35, 3: 10}},
+				{Mem: "4G", NodeDist: map[int]int{0: 60, 1: 70, 2: 62, 3: 72, 4: 10, 5: 75}},
+				{Mem: "4G", NodeDist: map[int]int{0: 70, 1: 60, 2: 72, 3: 62, 4: 75, 5: 10}},
+			},
+			want: map[idset.ID]idset.ID{0: 0, 1: 1, 2: 0, 3: 1, 4: 0, 5: 1},
+		},
+		{
+			name: "equidistant",
+			topo: harness.Topology{
+				{Mem: "2G", Cores: 2, Packages: 2},
+				{Mem: "1G", NodeDist: map[int]int{0: 20, 1: 20}},
+			},
+			want: map[idset.ID]idset.ID{0: 0, 1: 1, 2: idset.Unknown},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sys := harness.NewMachine(t, tc.topo, harness.Host{})
+			got := map[idset.ID]idset.ID{}
+			for _, id := range sys.NodeIDs() {
+				got[id] = sys.Node(id).PackageID()
+			}
+			if !maps.Equal(got, tc.want) {
+				t.Errorf("got node packages %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

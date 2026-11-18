@@ -1536,7 +1536,10 @@ free. The memory devices have these attributes:
 | `resource.kubernetes.io/numaNode` | int | the ID of the NUMA node, on NUMA devices |
 | `resource.kubernetes.io/pcieRoot` | list of strings | the PCIe roots of the device's sockets, with `DRAListTypeAttributes` only |
 
-The memory device of a NUMA node without CPUs has no `socketID`.
+A NUMA node without CPUs is in the socket of its closest DRAM node with CPUs.
+Its memory device has the `socketID` of that socket. Some nodes without
+CPUs are equally close to nodes in two sockets. Such a node is in no
+socket. Its memory device has no `socketID`. The policy logs such a node.
 
 The `level` and `memoryType` attributes and the `memory` capacity have no
 domain. They are in the domain of the driver, `topology-aware.nri.io`. A
