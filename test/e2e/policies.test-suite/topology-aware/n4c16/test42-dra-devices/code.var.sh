@@ -60,10 +60,13 @@ vm-command "kubectl get resourceslices -o yaml"
 
 devices=$(dra-devices)
 
-# One device per NUMA node, one per socket and one for the machine.
-count=$(jq length <<< "$devices")
-[ "$count" == "7" ] ||
-    error "published $count devices, expected 7"
+# One CPU device and one memory device per NUMA node, per socket and for the
+# machine. n4c16 has DRAM only.
+names=$(jq -r '[.[].name] | sort | join(" ")' <<< "$devices")
+expected="cpudevmachine cpudevnuma000 cpudevnuma001 cpudevnuma002 cpudevnuma003 cpudevsocket000 cpudevsocket001"
+expected+=" memdevmachine memdevnuma000 memdevnuma001 memdevnuma002 memdevnuma003 memdevsocket000 memdevsocket001"
+[ "$names" == "$expected" ] ||
+    error "published devices \"$names\", expected \"$expected\""
 
 # The API server drops the CPU mapping without DRANodeAllocatableResources.
 node_allocatable=false

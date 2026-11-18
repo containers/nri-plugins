@@ -16,14 +16,15 @@ cleanup() {
 capacities() {
     # Usage: capacities
     #
-    # Print NAME=CAPACITY of each of our devices, sorted, on one line.
-    dra-devices | jq -r '.[] | "\(.name)=\(.capacity["dra.cpu/cpu"].value)"' | sort | tr '\n' ' '
+    # Print NAME=CAPACITY of each of our CPU devices, sorted, on one line.
+    dra-devices | jq -r '.[] | select(.name | startswith("cpudev")) |
+                         "\(.name)=\(.capacity["dra.cpu/cpu"].value)"' | sort | tr '\n' ' '
 }
 
 wait-capacities() {
     # Usage: wait-capacities EXPECTED
     #
-    # Wait until the capacities of our devices are EXPECTED.
+    # Wait until the capacities of our CPU devices are EXPECTED.
     local expected="$1"
     retry-until --timeout 30 --message "device capacities \"$expected\"" \
         '[ "$(capacities)" == "$expected " ]' ||
