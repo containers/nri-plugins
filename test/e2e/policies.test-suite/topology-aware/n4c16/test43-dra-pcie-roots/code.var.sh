@@ -9,7 +9,7 @@ cleanup() {
 cleanup
 
 list_attributes_supported=true
-dra-list-attributes || list_attributes_supported=false
+k8s-feature-enabled DRAListTypeAttributes || list_attributes_supported=false
 
 # The VM's roots report all CPUs, so every device lists all roots.
 roots=$(vm-command-q "ls -d /sys/devices/pci[0-9a-f][0-9a-f][0-9a-f][0-9a-f]:[0-9a-f][0-9a-f] |

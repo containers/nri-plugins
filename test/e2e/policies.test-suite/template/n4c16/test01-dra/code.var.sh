@@ -28,7 +28,7 @@ helm_config=$(AVAILABLE_CPU="cpuset:4-7" DRA_ENABLED=true instantiate helm-confi
 
 wait-dra-devices
 
-dra-consumable-capacity ||
+k8s-feature-enabled DRAConsumableCapacity ||
     { cleanup; skip-test "DRAConsumableCapacity is not enabled"; }
 
 capacity=$(dra-devices | jq -r '.[0].capacity["dra.cpu/cpu"].value')

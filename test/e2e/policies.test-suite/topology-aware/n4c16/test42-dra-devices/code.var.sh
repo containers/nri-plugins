@@ -53,7 +53,7 @@ helm_config=$(RESERVED_CPU="cpuset:15" DRA_ENABLED=true instantiate helm-config.
 
 wait-dra-devices
 
-dra-consumable-capacity ||
+k8s-feature-enabled DRAConsumableCapacity ||
     { cleanup; skip-test "DRAConsumableCapacity is not enabled"; }
 
 vm-command "kubectl get resourceslices -o yaml"
@@ -64,6 +64,10 @@ devices=$(dra-devices)
 count=$(jq length <<< "$devices")
 [ "$count" == "7" ] ||
     error "published $count devices, expected 7"
+
+# The API server drops the CPU mapping without DRANodeAllocatableResources.
+node_allocatable=false
+k8s-feature-enabled DRANodeAllocatableResources && node_allocatable=true
 
 for node in 0 1 2 3; do
     name=$(printf "cpudevnuma%03d" "$node")
@@ -99,12 +103,12 @@ for node in 0 1 2 3; do
     [ "$multi" == "true" ] ||
         error "device $name has allowMultipleAllocations \"$multi\", expected true"
 
-    # DRANodeAllocatableResources (k8s 1.37+): pre-1.37 API servers drop
-    # this field silently, so only check it when the server kept it.
-    mapping=$(dra-device "$name" '.nodeAllocatableResources.cpu.mapping |
-                              select(. != null) | "\(.capacityKey) x \(.capacityMultiplier)"')
-    [ -z "$mapping" ] || [ "$mapping" == "dra.cpu/cpu x 1" ] ||
-        error "device $name maps nodeAllocatableResources.cpu to $mapping, expected dra.cpu/cpu x 1"
+    if $node_allocatable; then
+        mapping=$(dra-device "$name" '.nodeAllocatableResources.cpu.mapping |
+                                  "\(.capacityKey) x \(.capacityMultiplier)"')
+        [ "$mapping" == "dra.cpu/cpu x 1" ] ||
+            error "device $name maps nodeAllocatableResources.cpu to $mapping, expected dra.cpu/cpu x 1"
+    fi
 
     echo "$name: numaNode $numa, socketID $socket, smtEnabled $smt, $cpus CPUs"
 done

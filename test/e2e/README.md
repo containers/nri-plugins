@@ -932,13 +932,14 @@ available:
   | verifying the state | `wait-verify` |
   | metrics | `verify-metrics-has-line`, `verify-metrics-has-no-line` |
   | node resource topology | `nrt-query`, `nrt-query-q`, `nrt-dump`, `nrt-verify-zone-attribute`, `nrt-verify-zone-resource` |
+  | Kubernetes features | `k8s-feature-enabled` |
   | node state | `require-kernel-version`, `verify-kubepods-cpus`, `clear-isolcpus`, `disable-numa`, `enable-numa` |
   | CPU lists | `expand-cpulist`, `cpulist-difference`, `container-cpus`, `container-mems`, `allowed-cpu-ids`, `wait-cpuset-change` |
   | resizing containers | `resize-cpu` |
   | extended resources | `get-node-resource`, `wait-node-resource` |
   | fake device plugins | `install-fake-device-plugin`, `start-fake-device-plugin`, `stop-fake-device-plugins` |
   | resources exported to containers | `exported-resource` |
-  | dynamic resource allocation | `dra-devices`, `dra-device`, `wait-dra-devices`, `dra-consumable-capacity`, `dra-list-attributes`, `dra-claimed-cpus` |
+  | dynamic resource allocation | `dra-devices`, `dra-device`, `wait-dra-devices`, `dra-claimed-cpus` |
   | interrupts | `resolve-irq`, `irq-cpu-ids`, `verify-irq-cpus` |
   | scheduling | `verify-sched`, `SCHED_*` |
   | generated test scripts | `run-generated-tests` |
