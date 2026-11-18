@@ -98,7 +98,7 @@ helm_config=$(RESERVED_CPU="cpuset:15" DRA_ENABLED=true instantiate helm-config.
 
 wait-dra-devices
 
-dra-consumable-capacity ||
+k8s-feature-enabled DRAConsumableCapacity ||
     { cleanup; skip-test "DRAConsumableCapacity is not enabled"; }
 
 vm-command "kubectl get resourceslices -o yaml"

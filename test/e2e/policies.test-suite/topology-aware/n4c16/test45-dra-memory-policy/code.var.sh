@@ -28,7 +28,7 @@ helm_config=$(DRA_ENABLED=true instantiate helm-config.yaml) helm-launch topolog
 
 wait-dra-devices
 
-dra-consumable-capacity ||
+k8s-feature-enabled DRAConsumableCapacity ||
     { cleanup; skip-test "DRAConsumableCapacity is not enabled"; }
 
 # pod0's claim asks for one CPU of node 0 and one of node 1, both in package

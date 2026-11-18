@@ -270,7 +270,7 @@ helm_config=$(RESERVED_CPU="cpuset:$reserved" DRA_ENABLED=true instantiate helm-
 
 wait-dra-devices
 
-dra-consumable-capacity ||
+k8s-feature-enabled DRAConsumableCapacity ||
     { cleanup; trap - EXIT; skip-test "DRAConsumableCapacity is not enabled"; }
 
 std-list-tags
@@ -294,7 +294,7 @@ host-command "$SCP -r \"$std_dir/repo/$std_chart\" $VM_HOSTNAME:$std_vm_chart" |
 # The reference driver lists the PCIe roots only if the API server accepts
 # list attributes.
 std_pcie=false
-dra-list-attributes && std_pcie=true
+k8s-feature-enabled DRAListTypeAttributes && std_pcie=true
 
 differences=0
 for level in numanode socket; do

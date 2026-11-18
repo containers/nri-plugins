@@ -359,6 +359,76 @@ nrt-verify-zone-resource() { # script API
 }
 
 ###
+### Kubernetes features
+###
+
+k8s-feature-enabled() { # script API
+    # Usage: k8s-feature-enabled GATE
+    #
+    # Succeed if the feature gate GATE is enabled in the cluster. Fail if it
+    # is disabled. Fail the test if the check itself fails. Fail the test if
+    # GATE has no check. Only DRAConsumableCapacity, DRAListTypeAttributes and
+    # DRANodeAllocatableResources have one.
+    #
+    # Example:
+    #   k8s-feature-enabled DRAConsumableCapacity ||
+    #       { cleanup; skip-test "DRAConsumableCapacity is not enabled"; }
+    local gate=$1 field path want
+
+    # field is a device field that needs GATE. path tells where field is in
+    # the device. want is what the API server returns if it keeps field.
+    case "$gate" in
+        DRAConsumableCapacity)
+            field='allowMultipleAllocations: true'
+            path=.allowMultipleAllocations
+            want=true
+            ;;
+        DRAListTypeAttributes)
+            field='attributes: {probe: {strings: [a, b]}}'
+            path=.attributes.probe.strings
+            want='["a","b"]'
+            ;;
+        DRANodeAllocatableResources)
+            field='nodeAllocatableResources: {cpu: {mapping: {deviceMultiplier: 1}}}'
+            path=.nodeAllocatableResources.cpu.mapping.deviceMultiplier
+            want=1
+            ;;
+        *)
+            error "no check for feature gate $gate"
+            ;;
+    esac
+
+    # Without GATE, the API server drops field. A server dry run of a slice
+    # with field tells whether the server keeps it. With --validate=false, an
+    # API server older than field drops it too.
+    vm-command "kubectl create --dry-run=server --validate=false -f - \
+                    -o jsonpath='{.spec.devices[0]$path}' <<EOF
+apiVersion: resource.k8s.io/v1
+kind: ResourceSlice
+metadata:
+  generateName: feature-gate-probe-
+spec:
+  driver: probe.nri.io
+  nodeName: ${VM_HOSTNAME:-\$(hostname)}
+  pool:
+    name: probe
+    generation: 0
+    resourceSliceCount: 1
+  devices:
+  - name: probe
+    $field
+EOF" || {
+        # Without DRAListTypeAttributes, the API server drops the list. It
+        # then rejects the empty attribute. No other gate fails the dry run.
+        # The other gates fail the check below.
+        [[ "$COMMAND_OUTPUT" == *"must specify one of"* ]] ||
+            error "failed to check feature gate $gate: $COMMAND_OUTPUT"
+        return 1
+    }
+    [ "$COMMAND_OUTPUT" == "$want" ]
+}
+
+###
 ### Node state
 ###
 
@@ -919,72 +989,6 @@ wait-dra-devices() { # script API
     retry-until --timeout "$timeout" --message "the plugin to publish its devices" \
         "[ -n \"\$(dra-devices $1 | jq -r '.[0].name // empty')\" ]" ||
         error "the plugin published no devices"
-}
-
-dra-consumable-capacity() { # script API
-    # Usage: dra-consumable-capacity
-    #
-    # Succeed if the DRAConsumableCapacity feature gate is enabled.
-    #
-    # The API server silently drops allowMultipleAllocations of a device
-    # unless the gate is enabled. A dry run of a ResourceSlice with the field
-    # tells whether the server keeps it.
-    #
-    # Example:
-    #   dra-consumable-capacity ||
-    #       { cleanup; skip-test "DRAConsumableCapacity is not enabled"; }
-    [ "$(vm-command-q "kubectl create --dry-run=server -f - \
-                          -o jsonpath='{.spec.devices[0].allowMultipleAllocations}' <<EOF
-apiVersion: resource.k8s.io/v1
-kind: ResourceSlice
-metadata:
-  name: consumable-capacity-probe
-spec:
-  driver: probe.nri.io
-  nodeName: ${VM_HOSTNAME:-\$(hostname)}
-  pool:
-    name: probe
-    generation: 0
-    resourceSliceCount: 1
-  devices:
-  - name: probe
-    allowMultipleAllocations: true
-EOF")" == "true" ]
-}
-
-dra-list-attributes() { # script API
-    # Usage: dra-list-attributes
-    #
-    # Succeed if the API server accepts device attributes with a list of
-    # values. They need the DRAListTypeAttributes feature gate. Fail if the
-    # server rejects them. Fail the test if the check itself fails.
-
-    # A server dry run of a slice with a list attribute tells whether the
-    # gate is on. With --validate=false, an API server older than list
-    # attributes drops the unknown field.
-    vm-command "kubectl create --dry-run=server --validate=false -f - <<EOF
-apiVersion: resource.k8s.io/v1
-kind: ResourceSlice
-metadata:
-  generateName: list-attribute-probe-
-spec:
-  driver: probe.nri.io
-  nodeName: ${VM_HOSTNAME:-\$(hostname)}
-  pool:
-    name: probe
-    generation: 0
-    resourceSliceCount: 1
-  devices:
-  - name: probe
-    attributes:
-      probe:
-        strings: [a, b]
-EOF" && return 0
-    # Without the gate, the API server drops the list and rejects the empty
-    # attribute.
-    [[ "$COMMAND_OUTPUT" == *"must specify one of"* ]] ||
-        error "failed to check for list attributes: $COMMAND_OUTPUT"
-    return 1
 }
 
 dra-claimed-cpus() { # script API
