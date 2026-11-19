@@ -778,6 +778,7 @@ func (c *claim) clone(clones map[*claim]*claim) *claim {
 		Grant:   c.Clone(),
 		results: slices.Clone(c.results),
 		devices: slices.Clone(c.devices),
+		memory:  slices.Clone(c.memory),
 		mpols:   slices.Clone(c.mpols),
 	}
 	clones[c] = o
