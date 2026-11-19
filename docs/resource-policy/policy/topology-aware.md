@@ -1426,20 +1426,21 @@ metadata:
 
 ## Dynamic Resource Allocation (DRA)
 
-The topology-aware policy can allocate CPUs to Kubernetes
+The topology-aware policy can allocate CPUs and memory to Kubernetes
 [Dynamic Resource Allocation](https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/)
 (DRA) claims. With DRA enabled (`config.dra.enabled: true` in the Helm
 chart), the plugin registers the DRA driver `topology-aware.nri.io`, and the
-chart adds a `DeviceClass` of the same name. A pod claims CPUs of a NUMA node
-or of a socket with a `ResourceClaim`. The scheduler picks a node with enough
-capacity, and the policy runs the containers of the pod on the claimed CPUs.
+chart adds a `DeviceClass` of the same name. A pod uses a `ResourceClaim` to
+claim CPUs or memory on a NUMA node, a socket or the machine. The scheduler
+picks a node with enough capacity. The policy runs the containers of the pod
+on the claimed CPUs and memory nodes.
 
 ### Requirements
 
 - Kubernetes 1.34 or later, with the `DRAConsumableCapacity` feature gate
   enabled. The gate is on by default from Kubernetes 1.36. It lets several
-  claims share a device, each consuming a number of CPUs. Without it, no claim
-  can be prepared.
+  claims share a device. Each claim consumes some CPUs or memory of the
+  device. Without it, no claim can be prepared.
 - The `DRANodeAllocatableResources` feature gate (alpha) is optional. With it,
   the scheduler counts claimed CPUs against the `cpu` resource of the node, so
   claims and CPU requests together cannot overcommit the node. Without it,
@@ -1521,12 +1522,16 @@ memory device of its own. A socket or machine device has such a node only if
 it also has a node with normal memory. The `daxctl` tool often onlines PMEM
 as movable memory. Then the policy publishes no PMEM devices.
 
-A memory device has the capacity `memory`: the free memory on its nodes, in
-bytes. Memory that containers hold is not free. A container can hold memory
-in a group of several nodes. A device on any of these nodes then has no more
-capacity than the free memory in that group. The policy publishes the capacity again
-whenever it changes. The policy does not publish a device with less than 1Mi
-free. The memory devices have these attributes:
+A memory device has the capacity `memory`, in bytes. The capacity counts the
+free memory on the device nodes. It also counts the memory that claims on the
+device hold. The scheduler subtracts these claims from the capacity itself.
+Memory that containers or claims on other devices hold is not free. A
+container or a claim can hold memory in a group of several nodes. A device on
+any of these nodes then has no more free memory than that group. The policy
+publishes the capacity again whenever it changes. The policy leaves out a
+device when its capacity is less than 1Mi. A device with claims on it stays
+published, even when it has no free memory left. The memory devices have
+these attributes:
 
 | Attribute | Type | Value |
 |---|---|---|
@@ -1589,7 +1594,9 @@ only, select `numaNode` without this check, and need it now. The machine
 device has no `socketID`, so a selector on `socketID` checks the level too:
 `device.attributes["topology-aware.nri.io"].level != "machine" && device.attributes["dra.cpu"].socketID == 0`
 matches every CPU and memory device inside socket 0. The scheduler picks one
-of them that has the capacity the request names.
+of them that has the capacity the request names. CPU devices have no
+`memoryType`. A selector on `memoryType` first checks that the device has it:
+`"memoryType" in device.attributes["topology-aware.nri.io"] && device.attributes["topology-aware.nri.io"].memoryType == "HBM"`.
 
 ### Claims
 
@@ -1653,16 +1660,81 @@ the free CPUs of the node. If the node has too few free CPUs, preparing fails,
 and the pod events say why. The claimed CPUs stay allocated until the claim is
 released, and no other container runs on them.
 
+A request with a `memory` amount gets memory of a memory device. A request on
+a NUMA memory device gets memory of that node. For a request on a socket or
+machine memory device, the policy picks the smallest group of nodes inside
+the device that has enough free memory: one node, otherwise one socket,
+otherwise several sockets. The memory has the type of the device. This claim
+asks for four CPUs and 8Gi of DRAM in one socket:
+
+```yaml
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: cpus-and-memory
+spec:
+  spec:
+    devices:
+      requests:
+      - name: cpus
+        exactly:
+          deviceClassName: topology-aware.nri.io
+          capacity:
+            requests:
+              dra.cpu/cpu: "4"
+      - name: memory
+        exactly:
+          deviceClassName: topology-aware.nri.io
+          selectors:
+          - cel:
+              expression: >-
+                "memoryType" in device.attributes["topology-aware.nri.io"] &&
+                device.attributes["topology-aware.nri.io"].memoryType == "DRAM"
+          capacity:
+            requests:
+              memory: 8Gi
+      constraints:
+      - matchAttribute: dra.cpu/socketID
+```
+
+The machine devices have no `socketID`. So the constraint keeps both requests
+off them. A claim which needs the memory on the NUMA node of its CPUs uses
+`matchAttribute: resource.kubernetes.io/numaNode` instead.
+
+The policy allocates the memory of a claim when the kubelet prepares it. If
+the device has too little free memory, preparing fails. The error names the
+device and its free memory. The claimed memory stays allocated until the
+claim is released. It stays on its nodes when the CPUs of the claim move. A
+container which no longer fits next to the claimed memory gets memory on more
+nodes. If no group of nodes fits, the container fails to start.
+
 ### Containers
 
 A container which holds a claim runs on the CPUs of the claim. A container
 with a CPU request of its own runs on both its own CPUs and the claimed ones.
 A container which names only some requests of a claim runs on the CPUs of
-those requests. The memory of the container comes from the NUMA nodes of its
-CPUs, as for any other container.
+those requests. The container gets its own CPUs and memory from the pool of
+the claimed CPUs.
 
-The policy tells a container which CPUs its claims got in
-`/.nri-resource-policy/resources.sh`, for instance `CLAIMED_CPUS="2-3"`.
+A container which holds a memory claim has the nodes of the claim in its
+`cpuset.mems`. It also has the nodes of its own memory zone. The policy gives
+every container a memory zone in its pool, even a container without a memory
+request. This zone can include the HBM or PMEM nodes of the pool. A container
+which holds memory claims and no CPU claims gets its own CPUs and memory from
+the pool of the claimed nodes. This pool can have too few CPUs for the
+container. The container then goes to the closest larger pool with enough
+CPUs.
+A container which names only some requests of a claim gets the nodes of those
+requests. With `pinMemory: false`, the policy does not set `cpuset.mems`. A
+container with the `memory.preserve.resource-policy.nri.io` annotation keeps
+its `cpuset.mems`. It does not get the claimed nodes.
+
+The policy does not set the memory limit of a container from its claims. The
+limit is the one in the pod spec.
+
+The policy tells a container which CPUs and memory nodes its claims got in
+`/.nri-resource-policy/resources.sh`, for instance `CLAIMED_CPUS="2-3"` and
+`CLAIMED_MEMS="0-1"`.
 
 ### Memory Policy of a Claim
 
@@ -1689,6 +1761,9 @@ spec:
               expression: >-
                 device.attributes["topology-aware.nri.io"].level == "numanode" &&
                 device.attributes["resource.kubernetes.io"].numaNode == 0
+          capacity:
+            requests:
+              dra.cpu/cpu: "1"
       - name: second
         exactly:
           deviceClassName: topology-aware.nri.io
@@ -1697,6 +1772,9 @@ spec:
               expression: >-
                 device.attributes["topology-aware.nri.io"].level == "numanode" &&
                 device.attributes["resource.kubernetes.io"].numaNode == 1
+          capacity:
+            requests:
+              dra.cpu/cpu: "1"
       config:
       - opaque:
           driver: topology-aware.nri.io
@@ -1727,9 +1805,12 @@ short names instead of the `MPOL_` names: `interleave` stands for
 memory policy of a container. Use one or the other for a container.
 
 The nodes are resolved for each container, from the CPUs it runs on and the
-memory nodes it is allowed to use. If the memory of the container is not
-pinned (`pinMemory: false`), all nodes are allowed. A container which names
-only some requests of a claim gets the nodes of those requests. A config with
+memory nodes it is allowed to use. A container may also use the nodes of its
+memory claims. So a claim with CPUs on node 0 and HBM on node 4 can
+interleave the memory of its containers over nodes 0 and 4. If the memory of
+the container is not pinned (`pinMemory: false`), all nodes are allowed. A
+container which names only some requests of a claim gets the nodes of those
+requests. A config with
 a `requests` list applies to the containers holding those requests only, so
 the requests of a claim can have different memory policies. A container which
 holds requests with different memory policies is refused.
@@ -1751,7 +1832,13 @@ few CPUs left for the claim, the plugin fails to start, and the status of the
 configuration names the claim. Revert the configuration to start the plugin
 again.
 
-If there is no configuration to revert to, drain the node, remove the cache
+Claims also keep their memory nodes. A memory claim does not move. A new
+configuration does not change the memory of a claim. A node can have less
+memory after a restart, for example after a hardware change. If the node then
+has too little memory for a claim, the plugin fails to start. The status of
+the configuration names the claim.
+
+If reverting the configuration does not help, drain the node, remove the cache
 file `/var/lib/nri-resource-policy/cache` on the node, and restart the plugin.
 A drain alone does not help. The plugin keeps a claim until the kubelet
 unprepares it, and the kubelet cannot do that while the plugin is down, so the
@@ -1761,18 +1848,31 @@ leaves running, such as DaemonSet pods, lose the CPUs of their claims.
 
 ### Known Limitations
 
-- A claim on a memory device fails to prepare. The policy does not allocate
-  memory to claims yet.
-- A claim can fail to prepare when the node has too few free CPUs for it. The
-  pod then waits until enough CPUs are free. This happens when the scheduler
-  places the claim before the policy publishes a new capacity, or when shared
-  containers in a pool above the NUMA nodes need the CPUs: their need is not
-  in the capacity of any one node.
+- A claim can fail to prepare when the node has too few free CPUs or too
+  little free memory for it. The pod then waits until enough is free. This
+  happens when the scheduler places the claim before the policy publishes a
+  new capacity. It also happens when shared containers in a pool above the
+  NUMA nodes need the CPUs. Their need is not in the capacity of any one node.
 - The scheduler counts the capacity of each device on its own, also of devices
-  which share CPUs, such as a NUMA node and its socket. A claim can ask for
-  more CPUs of such devices than they have together, and so can claims which
-  the scheduler places before the policy publishes new capacities. Such a
-  claim fails to prepare, and its pod does not start.
+  which share CPUs or memory, such as a NUMA node and its socket. A claim can
+  ask for more CPUs or memory of such devices than they have together. So can
+  claims which the scheduler places before the policy publishes new
+  capacities. Such a claim fails to prepare. Its pod does not start.
+- The policy counts the memory of a claim. It does not limit how much memory
+  the containers of a claim use. These containers can use more memory on the
+  claimed nodes than the claim holds. Only the memory limit of a container
+  stops this.
+- The memory capacity of a device leaves out only the memory of containers
+  and claims. It still counts the memory of the kernel and the memory that
+  `kube-reserved` and `system-reserved` set aside. Without
+  `DRANodeAllocatableResources`, claims and pods together can get more memory
+  than the node allocatable.
+- A container which does not fit next to claimed memory gets memory on more
+  nodes. It keeps these nodes after the claim is released.
+- The memory zone of a container can have both DRAM and HBM or PMEM nodes.
+  The policy counts the memory of such a container in the whole zone. So the
+  capacity of a DRAM device in the zone does not drop by that memory. The
+  kernel can still place the memory of the container on the DRAM node.
 
 ## Cookbook
 
