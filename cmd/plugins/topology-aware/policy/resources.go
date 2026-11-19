@@ -104,6 +104,9 @@ type Request interface {
 	GetContainer() cache.Container
 	// ClaimedCPUs returns the CPUs of the DRA claims the container holds.
 	ClaimedCPUs() cpuset.CPUSet
+	// ClaimedMems returns the memory nodes of the DRA claims the container
+	// holds.
+	ClaimedMems() libmem.NodeMask
 	// String returns a printable representation of this request.
 	String() string
 	// CPUType returns the type of requested CPU.
@@ -181,6 +184,15 @@ type Grant interface {
 	ClaimedCPUs() cpuset.CPUSet
 	// SetClaimedCPUs sets the CPUs of the DRA claims the container holds.
 	SetClaimedCPUs(cpuset.CPUSet)
+	// ClaimedMems returns the memory nodes of the DRA claims the container
+	// holds.
+	ClaimedMems() libmem.NodeMask
+	// SetClaimedMems sets the memory nodes of the DRA claims the container
+	// holds.
+	SetClaimedMems(libmem.NodeMask)
+	// CpusetMems returns the memory nodes the container is pinned to: its
+	// memory zone and its claimed memory nodes.
+	CpusetMems() libmem.NodeMask
 	// ClaimedMemoryPolicy returns the memory policy of the container's claims,
 	// or nil.
 	ClaimedMemoryPolicy() *cfgapi.MemoryPolicy
@@ -260,6 +272,7 @@ type request struct {
 	pickByHints bool            // preference to pick resources by hints
 	irqs        *IrqAffinity    // IRQ affinity for this request
 	claimed     cpuset.CPUSet   // CPUs of the DRA claims the container holds
+	claimedMems libmem.NodeMask // memory nodes of the DRA claims the container holds
 
 	// mpol is the memory policy of the container's claims.
 	mpol *cfgapi.MemoryPolicy
@@ -289,6 +302,7 @@ type grant struct {
 	cpuClass       string          // CPU class to apply to exclusive CPUs
 	irqs           *IrqAffinity    // IRQ affinity for this request
 	claimed        cpuset.CPUSet   // CPUs of the DRA claims the container holds
+	claimedMems    libmem.NodeMask // memory nodes of the DRA claims the container holds
 
 	// mpol is the memory policy of the container's claims.
 	mpol *cfgapi.MemoryPolicy
@@ -451,6 +465,7 @@ func (cs *supply) AllocateCPU(r Request) (Grant, error) {
 
 	grant := newGrant(cs.node, cr.GetContainer(), cpuType, cpuClass, exclusive, 0, 0, irqs, 0)
 	grant.SetClaimedCPUs(cr.claimed)
+	grant.SetClaimedMems(cr.claimedMems)
 	grant.SetClaimedMemoryPolicy(cr.mpol)
 	grant.AccountAllocateCPU()
 
@@ -821,13 +836,18 @@ func (p *policy) newRequest(container cache.Container, types libmem.TypeMask) (R
 
 	// The DRA claims of a container are fixed for its lifetime, so they are
 	// looked up once, here. A container keeping its own CPUs is not pinned
-	// to its claims, but it gets their memory policy.
-	claimed, mpol, err := p.containerClaims(container)
+	// to the claimed CPUs. A container keeping its own memory pinning is not
+	// pinned to the claimed memory nodes. Both get the memory policy of the
+	// claims.
+	claimed, claimedMems, mpol, err := p.containerClaims(container)
 	if err != nil {
 		return nil, err
 	}
 	if cpuType == cpuPreserve {
 		claimed = cpuset.New()
+	}
+	if mtype == memoryPreserve {
+		claimedMems = 0
 	}
 
 	coldStart := time.Duration(0)
@@ -894,6 +914,7 @@ func (p *policy) newRequest(container cache.Container, types libmem.TypeMask) (R
 		pickByHints: pickByHintsPreference(pod, container),
 		irqs:        irqs,
 		claimed:     claimed,
+		claimedMems: claimedMems,
 		mpol:        mpol,
 	}, nil
 }
@@ -906,6 +927,11 @@ func (cr *request) GetContainer() cache.Container {
 // ClaimedCPUs returns the CPUs of the DRA claims the container holds.
 func (cr *request) ClaimedCPUs() cpuset.CPUSet {
 	return cr.claimed
+}
+
+// ClaimedMems returns the memory nodes of the DRA claims the container holds.
+func (cr *request) ClaimedMems() libmem.NodeMask {
+	return cr.claimedMems
 }
 
 // String returns aprintable representation of the CPU request.
@@ -1408,18 +1434,19 @@ func (cg *grant) SetColdstart(period time.Duration) {
 // Clone creates a copy of this grant.
 func (cg *grant) Clone() Grant {
 	return &grant{
-		node:       cg.GetCPUNode(),
-		container:  cg.GetContainer(),
-		exclusive:  cg.ExclusiveCPUs(),
-		cpuType:    cg.CPUType(),
-		cpuClass:   cg.CPUClass(),
-		cpuPortion: cg.SharedPortion(),
-		memType:    cg.MemoryType(),
-		memZone:    cg.GetMemoryZone(),
-		memSize:    cg.GetMemorySize(),
-		coldStart:  cg.ColdStart(),
-		claimed:    cg.ClaimedCPUs(),
-		mpol:       cg.ClaimedMemoryPolicy(),
+		node:        cg.GetCPUNode(),
+		container:   cg.GetContainer(),
+		exclusive:   cg.ExclusiveCPUs(),
+		cpuType:     cg.CPUType(),
+		cpuClass:    cg.CPUClass(),
+		cpuPortion:  cg.SharedPortion(),
+		memType:     cg.MemoryType(),
+		memZone:     cg.GetMemoryZone(),
+		memSize:     cg.GetMemorySize(),
+		coldStart:   cg.ColdStart(),
+		claimed:     cg.ClaimedCPUs(),
+		claimedMems: cg.ClaimedMems(),
+		mpol:        cg.ClaimedMemoryPolicy(),
 	}
 }
 
@@ -1446,6 +1473,22 @@ func (cg *grant) ClaimedCPUs() cpuset.CPUSet {
 // SetClaimedCPUs sets the CPUs of the DRA claims the container holds.
 func (cg *grant) SetClaimedCPUs(cpus cpuset.CPUSet) {
 	cg.claimed = cpus
+}
+
+// ClaimedMems returns the memory nodes of the DRA claims the container holds.
+func (cg *grant) ClaimedMems() libmem.NodeMask {
+	return cg.claimedMems
+}
+
+// SetClaimedMems sets the memory nodes of the DRA claims the container holds.
+func (cg *grant) SetClaimedMems(mems libmem.NodeMask) {
+	cg.claimedMems = mems
+}
+
+// CpusetMems returns the memory nodes the container is pinned to: its memory
+// zone and its claimed memory nodes.
+func (cg *grant) CpusetMems() libmem.NodeMask {
+	return cg.memZone.Or(cg.claimedMems)
 }
 
 // ClaimedMemoryPolicy returns the memory policy of the container's claims, or
@@ -1598,7 +1641,7 @@ func (cg *grant) ReallocMemory(types libmem.TypeMask) error {
 
 	cg.SetMemoryZone(zone)
 	if opt.PinMemory {
-		cg.container.SetCpusetMems(zone.MemsetString())
+		cg.container.SetCpusetMems(cg.CpusetMems().MemsetString())
 	}
 
 	cg.node.Policy().updateMemoryZones(updates)

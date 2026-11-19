@@ -248,3 +248,85 @@ func TestE2eishDRAResumeReleasesClaims(t *testing.T) {
 	s.DeleteAllPodsIn("default")
 	s.Terminate()
 }
+
+// e2eishMemClaimTemplate returns a ResourceClaimTemplate with one request.
+// The request asks for mem of memory on the given NUMA node.
+func e2eishMemClaimTemplate(name, mem string, node int) string {
+	return fmt.Sprintf(`
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: %s
+spec:
+  spec:
+    devices:
+      requests:
+      - exactly:
+          capacity:
+            requests:
+              memory: %s
+          deviceClassName: %s
+          selectors:
+          - cel:
+              expression: device.attributes["topology-aware.nri.io"].level == "numanode" && device.attributes["resource.kubernetes.io"].numaNode == %d
+        name: mem
+`, name, mem, draDriverName, node)
+}
+
+// A container that holds only a memory claim runs in the pool of the claimed
+// node. Its cpuset.mems is the claimed node. A container that holds a claim
+// with a CPU request and a memory request runs on the claimed CPU. Its
+// cpuset.mems has its own memory node and the claimed node.
+func TestE2eishDRAMemoryClaims(t *testing.T) {
+	s := harness.NewScript(t, e2eishPlugin)
+	s.Launch(genN4c16, genN4c16BaseConfig, e2eishDRAConfig)
+	s.SyncWithRuntimePods(genN4c16Pods...)
+
+	s.CreateClaimTemplate("default", e2eishMemClaimTemplate("pod0", "1Gi", 1))
+	s.CreatePod("pod0",
+		harness.FromClaimTemplate("mem", "pod0"),
+		harness.WithContainers(harness.NewContainer("pod0c0", harness.WithClaim("mem", ""))),
+	)
+	require.Equal(t, s.NodeIDs(1), s.Mems("pod0c0"), "the claimed node")
+	require.Equal(t, s.NodeIDs(1), s.Nodes("pod0c0"), "CPUs from the pool of the claimed node")
+
+	s.CreateClaimTemplate("default", fmt.Sprintf(`
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: pod1
+spec:
+  spec:
+    devices:
+      requests:
+      - exactly:
+          capacity:
+            requests:
+              dra.cpu/cpu: "1"
+          deviceClassName: %[1]s
+          selectors:
+          - cel:
+              expression: device.attributes["topology-aware.nri.io"].level == "numanode" && device.attributes["resource.kubernetes.io"].numaNode == 0
+        name: cpus
+      - exactly:
+          capacity:
+            requests:
+              memory: 1Gi
+          deviceClassName: %[1]s
+          selectors:
+          - cel:
+              expression: device.attributes["topology-aware.nri.io"].level == "numanode" && device.attributes["resource.kubernetes.io"].numaNode == 3
+        name: mem
+`, draDriverName))
+	s.CreatePod("pod1",
+		harness.FromClaimTemplate("both", "pod1"),
+		harness.WithContainers(harness.NewContainer("pod1c0",
+			harness.WithRequests("", "100Mi"), harness.WithClaim("both", ""))),
+	)
+	require.Len(t, s.CPUs("pod1c0"), 1, "the claimed CPU")
+	require.Equal(t, s.NodeIDs(0), s.Nodes("pod1c0"), "the claimed CPU")
+	require.Equal(t, s.NodeIDs(0, 3), s.Mems("pod1c0"), "its own memory node and the claimed one")
+
+	s.DeleteAllPodsIn("default")
+	s.Terminate()
+}
