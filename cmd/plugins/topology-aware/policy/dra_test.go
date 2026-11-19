@@ -708,19 +708,332 @@ func TestDRAMemDevicesFollowFreeMemory(t *testing.T) {
 	check("after releasing everything", nil)
 }
 
-// TestDRAMemClaimNotImplemented checks that a memory claim fails to prepare.
-func TestDRAMemClaimNotImplemented(t *testing.T) {
-	p, _ := draTestPolicy(t, testServerSystem(t), draTestConfig("", "cpuset:0,1"))
+// draTestMemResult returns an allocation result on the named memory device.
+// The result consumes mem.
+func draTestMemResult(device, mem string) resourceapi.DeviceRequestAllocationResult {
+	r := draTestDeviceResult(device, "")
+	r.Request = "mem"
+	r.ConsumedCapacity = map[resourceapi.QualifiedName]resource.Quantity{draCapacityMemory: resource.MustParse(mem)}
+	return r
+}
 
-	r := draTestDeviceResult("memdevnuma000", "")
-	r.ConsumedCapacity = map[resourceapi.QualifiedName]resource.Quantity{draCapacityMemory: resource.MustParse("1Gi")}
-	_, err := p.AllocateClaim(draTestClaim("a"), []resourceapi.DeviceRequestAllocationResult{r})
-	if err == nil || !strings.Contains(err.Error(), "not implemented") {
-		t.Errorf("memory claim prepared with error %v, expected not implemented", err)
+// draMemCapacities returns the capacities the policy publishes now for its
+// memory devices, by device name.
+func draMemCapacities(p *policy) map[string]int64 {
+	capacities := map[string]int64{}
+	for name, d := range draMemDeviceSummary(p.draDevices()) {
+		capacities[name] = d.bytes
 	}
-	if _, ok := p.allocations.claims["a"]; ok {
-		t.Errorf("memory claim a is held")
+	return capacities
+}
+
+// draTestMemPolicy returns a policy on the e2e VM. There, socket 0 has nodes 0
+// and 1. Socket 1 has nodes 2 and 3. Each node has 2Gi of DRAM.
+func draTestMemPolicy(t *testing.T) *policy {
+	p, _ := draTestPolicy(t, harness.NewMachine(t, genN4c16, harness.Host{}), draTestConfig("", "cpuset:15"))
+	return p
+}
+
+// TestAllocateMemClaim checks the nodes a memory claim gets. It also checks
+// the device capacities after the claim and after its release. The claim's
+// device keeps its capacity. The scheduler subtracts the claim from that
+// device itself.
+func TestAllocateMemClaim(t *testing.T) {
+	gi := int64(1 << 30)
+	for _, tc := range []struct {
+		name   string
+		result resourceapi.DeviceRequestAllocationResult
+		zone   libmem.NodeMask
+		// lower are the capacities the claim takes from the other devices.
+		lower map[string]int64
+		// atMost caps the capacity of every other device while the claim
+		// exists. 0 means no cap.
+		atMost int64
+	}{
+		{
+			name:   "NUMA device",
+			result: draTestMemResult("memdevnuma000", "1Gi"),
+			zone:   libmem.NewNodeMask(0),
+			lower:  map[string]int64{"memdevsocket000": gi, "memdevmachine": gi},
+		},
+		{
+			// The claim fits in node 2. Socket 1 keeps the free memory of
+			// node 3 for claims that need a whole node.
+			name:   "socket device, one node",
+			result: draTestMemResult("memdevsocket001", "1Gi"),
+			zone:   libmem.NewNodeMask(2),
+			lower:  map[string]int64{"memdevnuma002": gi, "memdevmachine": gi},
+		},
+		{
+			// The claim is on both nodes of socket 0. Each node then has no
+			// more free memory than the socket.
+			name:   "socket device larger than a node",
+			result: draTestMemResult("memdevsocket000", "3Gi"),
+			zone:   libmem.NewNodeMask(0, 1),
+			lower:  map[string]int64{"memdevnuma000": gi, "memdevnuma001": gi, "memdevmachine": 3 * gi},
+		},
+		{
+			// The claim leaves 3Gi free in all. So no node and no socket has
+			// more.
+			name:   "machine device larger than a socket",
+			result: draTestMemResult("memdevmachine", "5Gi"),
+			zone:   libmem.NewNodeMask(0, 1, 2, 3),
+			atMost: 3 * gi,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := draTestMemPolicy(t)
+			idle := draMemCapacities(p)
+
+			allocateClaim(t, p, "a", tc.result)
+			if got := p.allocations.claims["a"].memory; len(got) != 1 || got[0].Zone != tc.zone {
+				t.Errorf("claim a holds memory %v, expected nodes %s", got, tc.zone)
+			}
+			if zone, ok := p.memAllocator.AssignedZone(draMemID("a", 0)); !ok || zone != tc.zone {
+				t.Errorf("libmem has claim a on nodes %s (%v), expected %s", zone, ok, tc.zone)
+			}
+
+			expected := map[string]int64{}
+			for name, n := range idle {
+				expected[name] = n - tc.lower[name]
+				if tc.atMost > 0 && name != tc.result.Device {
+					expected[name] = min(expected[name], tc.atMost)
+				}
+			}
+			if got := draMemCapacities(p); !reflect.DeepEqual(got, expected) {
+				t.Errorf("memory capacities %v with claim a, expected %v", got, expected)
+			}
+
+			if err := p.ReleaseClaim("a", false); err != nil {
+				t.Fatalf("failed to release claim a: %v", err)
+			}
+			if _, ok := p.memAllocator.AssignedZone(draMemID("a", 0)); ok {
+				t.Errorf("libmem still holds claim a after its release")
+			}
+			if got := draMemCapacities(p); !reflect.DeepEqual(got, idle) {
+				t.Errorf("memory capacities %v after releasing claim a, expected %v", got, idle)
+			}
+		})
 	}
+}
+
+// TestAllocateMemClaimHBM checks that an HBM claim gets memory of HBM nodes
+// only. A claim with CPUs and HBM gets each from its own device.
+func TestAllocateMemClaimHBM(t *testing.T) {
+	sys := harness.NewMachine(t, genN6HbmCxl, harness.Host{})
+	p, _ := draTestPolicy(t, sys, draTestConfig("", "cpuset:0"))
+
+	// HBM node 2 is in socket 0. HBM node 3 is in socket 1.
+	allocateClaim(t, p, "a", draTestMemResult("memdevsocket000hbm", "512Mi"))
+	if zone, _ := p.memAllocator.AssignedZone(draMemID("a", 0)); zone != libmem.NewNodeMask(2) {
+		t.Errorf("claim a got memory on nodes %s, expected HBM node 2", zone)
+	}
+
+	cpus := allocateClaim(t, p, "b", draTestResult(1, "1"), draTestMemResult("memdevnuma003", "512Mi"))
+	if !cpus.IsSubsetOf(sys.Node(1).CPUSet()) {
+		t.Errorf("claim b got CPUs %s, expected CPUs of node 1", cpus)
+	}
+	if zone, _ := p.memAllocator.AssignedZone(draMemID("b", 1)); zone != libmem.NewNodeMask(3) {
+		t.Errorf("claim b got memory on nodes %s, expected HBM node 3", zone)
+	}
+	if _, ok := p.memAllocator.AssignedZone(draMemID("b", 0)); ok {
+		t.Errorf("claim b got memory for its CPU result")
+	}
+}
+
+// TestAllocateMemClaimTooLarge checks that a claim fails to prepare when its
+// device has too little free memory. The error names the device and its free
+// memory. A failed claim holds neither CPUs nor memory.
+func TestAllocateMemClaimTooLarge(t *testing.T) {
+	p := draTestMemPolicy(t)
+	idle := draMemCapacities(p)
+	free := freeCPUs(p)
+
+	for _, results := range [][]resourceapi.DeviceRequestAllocationResult{
+		{draTestMemResult("memdevnuma000", "3Gi")},
+		{draTestResult(0, "1"), draTestMemResult("memdevnuma000", "3Gi")},
+		{draTestMemResult("memdevnuma001", "1Gi"), draTestMemResult("memdevnuma000", "3Gi")},
+	} {
+		_, err := p.AllocateClaim(draTestClaim("a"), results)
+		if err == nil || !strings.Contains(err.Error(), "device memdevnuma000: 3Gi of memory requested, only 2Gi free") {
+			t.Errorf("claim with results %v prepared with error %v, expected too little memory", results, err)
+		}
+		if _, ok := p.allocations.claims["a"]; ok {
+			t.Fatalf("failed claim a is held")
+		}
+		if got := draMemCapacities(p); !reflect.DeepEqual(got, idle) {
+			t.Errorf("memory capacities %v after a failed claim, expected %v", got, idle)
+		}
+		if got := freeCPUs(p); !got.Equals(free) {
+			t.Errorf("free CPUs %s after a failed claim, expected %s", got, free)
+		}
+	}
+}
+
+// TestAllocateMemClaimAgain checks that a memory claim prepared again keeps
+// its memory. Preparing it again with another amount fails.
+func TestAllocateMemClaimAgain(t *testing.T) {
+	p := draTestMemPolicy(t)
+
+	allocateClaim(t, p, "a", draTestMemResult("memdevsocket000", "1Gi"))
+	capacities := draMemCapacities(p)
+	zone, _ := p.memAllocator.AssignedZone(draMemID("a", 0))
+
+	allocateClaim(t, p, "a", draTestMemResult("memdevsocket000", "1Gi"))
+	if again, _ := p.memAllocator.AssignedZone(draMemID("a", 0)); again != zone {
+		t.Errorf("claim a got memory on nodes %s the second time, %s the first", again, zone)
+	}
+	if got := draMemCapacities(p); !reflect.DeepEqual(got, capacities) {
+		t.Errorf("memory capacities %v after preparing claim a again, expected %v", got, capacities)
+	}
+
+	_, err := p.AllocateClaim(draTestClaim("a"), []resourceapi.DeviceRequestAllocationResult{
+		draTestMemResult("memdevsocket000", "2Gi"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "holds 1073741824 bytes but consumed 2147483648 bytes of device memdevsocket000") {
+		t.Errorf("got error %v, expected a size mismatch", err)
+	}
+}
+
+// TestMemClaimKeepsContainerOut checks that a container that does not fit
+// next to a memory claim gets a wider memory zone. The claim keeps its node.
+func TestMemClaimKeepsContainerOut(t *testing.T) {
+	p := draTestMemPolicy(t)
+
+	allocateClaim(t, p, "a", draTestMemResult("memdevnuma000", "1536Mi"))
+	c := draTestMemContainer("c", "1", "1Gi")
+	if err := p.allocateResources(c, "NUMA node #0"); err != nil {
+		t.Fatalf("failed to allocate: %v", err)
+	}
+
+	if zone, _ := p.memAllocator.AssignedZone(draMemID("a", 0)); zone != libmem.NewNodeMask(0) {
+		t.Errorf("claim a has memory on nodes %s, expected node 0", zone)
+	}
+	zone := p.allocations.grants["c"].GetMemoryZone()
+	if !zone.Contains(0) || zone == libmem.NewNodeMask(0) {
+		t.Errorf("container c has memory zone %s, expected node 0 and more", zone)
+	}
+}
+
+// TestMemClaimLeavesContainer checks that a memory claim does not move the
+// memory of a container. The claim fails to prepare if the node has too little
+// free memory next to the container.
+func TestMemClaimLeavesContainer(t *testing.T) {
+	p := draTestMemPolicy(t)
+
+	c := draTestMemContainer("c", "1", "1Gi")
+	if err := p.allocateResources(c, "NUMA node #0"); err != nil {
+		t.Fatalf("failed to allocate: %v", err)
+	}
+	_, err := p.AllocateClaim(draTestClaim("a"), []resourceapi.DeviceRequestAllocationResult{
+		draTestMemResult("memdevnuma000", "1536Mi"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "device memdevnuma000: 1536Mi of memory requested, only 1Gi free") {
+		t.Errorf("claim a prepared with error %v, expected too little memory", err)
+	}
+	if zone := p.allocations.grants["c"].GetMemoryZone(); zone != libmem.NewNodeMask(0) {
+		t.Errorf("container c has memory zone %s, expected node 0", zone)
+	}
+}
+
+// TestRestoreMemClaims checks that memory claims keep their nodes across a
+// restart. The devices then have the same capacities as before.
+func TestRestoreMemClaims(t *testing.T) {
+	sys := harness.NewMachine(t, genN4c16, harness.Host{})
+	dir := t.TempDir()
+	cfg := draTestConfig("", "cpuset:15")
+	p, err := draRestart(t, dir, sys, cfg)
+	if err != nil {
+		t.Fatalf("failed to set up policy: %v", err)
+	}
+
+	allocateClaim(t, p, "a", draTestMemResult("memdevnuma000", "1Gi"))
+	cpus := allocateClaim(t, p, "b", draTestResult(2, "1"), draTestMemResult("memdevsocket001", "3Gi"))
+	memory := map[string][]claimMemory{"a": p.allocations.claims["a"].memory, "b": p.allocations.claims["b"].memory}
+	capacities := draMemCapacities(p)
+
+	p, err = draRestart(t, dir, sys, cfg)
+	if err != nil {
+		t.Fatalf("failed to restart policy: %v", err)
+	}
+	checkClaims(t, p, "a", "b")
+	for uid, expected := range memory {
+		if got := p.allocations.claims[uid].memory; !reflect.DeepEqual(got, expected) {
+			t.Errorf("claim %s holds memory %v after a restart, expected %v", uid, got, expected)
+		}
+		for i, m := range expected {
+			zone, ok := p.memAllocator.AssignedZone(draMemID(uid, i))
+			if ok != (m.Size > 0) || zone != m.Zone {
+				t.Errorf("libmem has result %d of claim %s on nodes %s (%v), expected %s", i, uid, zone, ok, m.Zone)
+			}
+		}
+	}
+	if got := p.allocations.claims["b"].ExclusiveCPUs(); !got.Equals(cpus) {
+		t.Errorf("claim b has CPUs %s after a restart, expected %s", got, cpus)
+	}
+	if got := draMemCapacities(p); !reflect.DeepEqual(got, capacities) {
+		t.Errorf("memory capacities %v after a restart, expected %v", got, capacities)
+	}
+}
+
+// TestRestoreMemClaimRefused checks that a restart fails when the node of a
+// memory claim has too little memory for it. The saved claim stays. A restart
+// on the machine with the old memory restores it.
+func TestRestoreMemClaimRefused(t *testing.T) {
+	sys := harness.NewMachine(t, genN4c16, harness.Host{})
+	small := harness.NewMachine(t, harness.Topology{{Mem: "1G", Cores: 2, Nodes: 2, Packages: 2}}, harness.Host{})
+	dir := t.TempDir()
+	cfg := draTestConfig("", "cpuset:15")
+	p, err := draRestart(t, dir, sys, cfg)
+	if err != nil {
+		t.Fatalf("failed to set up policy: %v", err)
+	}
+	allocateClaim(t, p, "a", draTestMemResult("memdevnuma000", "1536Mi"))
+
+	_, err = draRestart(t, dir, small, cfg)
+	if err == nil || !strings.Contains(err.Error(), "failed to reinstate DRA claim a") {
+		t.Fatalf("got error %v restarting with less memory, expected one naming claim a", err)
+	}
+
+	p, err = draRestart(t, dir, sys, cfg)
+	if err != nil {
+		t.Fatalf("failed to restart policy with the old memory: %v", err)
+	}
+	if zone, _ := p.memAllocator.AssignedZone(draMemID("a", 0)); zone != libmem.NewNodeMask(0) {
+		t.Errorf("claim a has memory on nodes %s after a restart, expected node 0", zone)
+	}
+}
+
+// TestRestoreMemClaimMovable checks a restart after the node of a memory
+// claim lost its normal memory. libmem adds HBM node 2 to the claim. The
+// claim then holds memory on both HBM nodes. The policy no longer publishes
+// the device of the claim. Preparing the claim again still succeeds.
+func TestRestoreMemClaimMovable(t *testing.T) {
+	sys := harness.NewMachine(t, genN6HbmCxl, harness.Host{})
+	movable := harness.NewMachine(t, genN6HbmCxl, harness.Host{Movable: "3"})
+	dir := t.TempDir()
+	cfg := draTestConfig("", "cpuset:0")
+	p, err := draRestart(t, dir, sys, cfg)
+	if err != nil {
+		t.Fatalf("failed to set up policy: %v", err)
+	}
+	allocateClaim(t, p, "a", draTestMemResult("memdevnuma003", "512Mi"))
+
+	p, err = draRestart(t, dir, movable, cfg)
+	if err != nil {
+		t.Fatalf("failed to restart policy: %v", err)
+	}
+	expected := libmem.NewNodeMask(2, 3)
+	if zone, _ := p.memAllocator.AssignedZone(draMemID("a", 0)); zone != expected {
+		t.Errorf("libmem has claim a on nodes %s after a restart, expected %s", zone, expected)
+	}
+	if got := p.allocations.claims["a"].memory; len(got) != 1 || got[0].Zone != expected {
+		t.Errorf("claim a holds memory %v after a restart, expected nodes %s", got, expected)
+	}
+	if _, ok := draMemCapacities(p)["memdevnuma003"]; ok {
+		t.Errorf("memdevnuma003 is published, expected no device for a node with only movable memory")
+	}
+	allocateClaim(t, p, "a", draTestMemResult("memdevnuma003", "512Mi"))
 }
 
 // pcieSystem adds PCIe roots to the packages of a test system.
@@ -1211,7 +1524,7 @@ func TestAllocateClaimAgain(t *testing.T) {
 	// Nor move them to another node.
 	if _, err := p.AllocateClaim(draTestClaim("a"), []resourceapi.DeviceRequestAllocationResult{
 		draTestResult(1, "2"),
-	}); err == nil || !strings.Contains(err.Error(), "holds CPUs of device cpudevnuma000, not of cpudevnuma001") {
+	}); err == nil || !strings.Contains(err.Error(), "holds device cpudevnuma000, not cpudevnuma001") {
 		t.Errorf("got error %v, expected a node mismatch", err)
 	}
 }

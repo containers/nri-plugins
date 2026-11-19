@@ -501,18 +501,7 @@ func (p *policy) allocatePool(container cache.Container, poolHint string) (Grant
 			request, supply.DumpAllocatable(), err)
 	}
 
-	for id, z := range updates {
-		g, ok := p.allocations.getGrant(id)
-		if !ok {
-			log.Errorf("offer commit returned zone update %s for unknown container %s", z, id)
-		} else {
-			log.Infof("updating memory allocation for %s to %s", g.GetContainer().PrettyName(), z)
-			g.SetMemoryZone(z)
-			if opt.PinMemory {
-				g.GetContainer().SetCpusetMems(z.MemsetString())
-			}
-		}
-	}
+	p.updateMemoryZones(updates)
 
 	log.Debugf("allocated req '%s' to memory zone %s", container.PrettyName(),
 		grant.GetMemoryZone())
@@ -708,6 +697,23 @@ func (p *policy) releasePool(container cache.Container) (Grant, bool) {
 	p.resetCpuClass(container.PrettyName(), grant.ExclusiveCPUs())
 
 	return grant, true
+}
+
+// updateMemoryZones sets the new memory zones of the containers libmem moved.
+// With pinMemory, it also updates their cpuset.mems.
+func (p *policy) updateMemoryZones(updates map[string]libmem.NodeMask) {
+	for id, z := range updates {
+		g, ok := p.allocations.getGrant(id)
+		if !ok {
+			log.Errorf("offer commit returned zone update %s for unknown container %s", z, id)
+		} else {
+			log.Infof("updating memory allocation for %s to %s", g.GetContainer().PrettyName(), z)
+			g.SetMemoryZone(z)
+			if opt.PinMemory {
+				g.GetContainer().SetCpusetMems(z.MemsetString())
+			}
+		}
+	}
 }
 
 // Update shared allocations effected by agrant.

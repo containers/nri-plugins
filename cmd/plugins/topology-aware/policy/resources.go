@@ -1601,18 +1601,7 @@ func (cg *grant) ReallocMemory(types libmem.TypeMask) error {
 		cg.container.SetCpusetMems(zone.MemsetString())
 	}
 
-	for id, z := range updates {
-		g, ok := cg.node.Policy().allocations.getGrant(id)
-		if !ok {
-			log.Errorf("offer commit returned zone update %s for unknown container %s", z, id)
-		} else {
-			log.Infof("updating memory allocation for %s to %s", g.GetContainer().PrettyName(), z)
-			g.SetMemoryZone(z)
-			if opt.PinMemory {
-				g.GetContainer().SetCpusetMems(z.MemsetString())
-			}
-		}
-	}
+	cg.node.Policy().updateMemoryZones(updates)
 
 	return nil
 }
