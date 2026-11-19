@@ -1,0 +1,17 @@
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: ${NAME}
+spec:
+  spec:
+    devices:
+      requests:
+      - name: memory
+        exactly:
+          deviceClassName: topology-aware.nri.io
+          selectors:
+          - cel:
+              expression: ${EXPR}
+          capacity:
+            requests:
+              memory: ${MEM}
