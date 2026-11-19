@@ -111,6 +111,9 @@ const (
 	// ExportClaimedCPUs is the shell variable used to export the CPUs of the DRA
 	// claims of a container.
 	ExportClaimedCPUs = "CLAIMED_CPUS"
+	// ExportClaimedMems is the shell variable for the memory nodes of the DRA
+	// claims a container holds.
+	ExportClaimedMems = "CLAIMED_MEMS"
 )
 
 // Backend is the policy (decision making logic) interface exposed by implementations.

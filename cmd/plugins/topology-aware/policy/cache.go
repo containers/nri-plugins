@@ -201,7 +201,7 @@ func (p *policy) reinstateGrants(grants map[string]Grant) error {
 			} else {
 				ug.SetMemoryZone(uZone)
 				if opt.PinMemory {
-					ug.GetContainer().SetCpusetMems(uZone.MemsetString())
+					ug.GetContainer().SetCpusetMems(ug.CpusetMems().MemsetString())
 				}
 				log.Infof("updated grant %s to memory zone %s", uID, uZone)
 			}

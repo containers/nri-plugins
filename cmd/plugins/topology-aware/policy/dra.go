@@ -695,13 +695,14 @@ func (p *policy) pruneMoves() {
 	}
 }
 
-// containerClaims returns the CPUs and the memory policy of the claim results
-// a container holds. It ignores results we do not know, with a warning for
-// an unknown claim, and fails if the results have different memory
-// policies.
-func (p *policy) containerClaims(c cache.Container) (cpuset.CPUSet, *cfgapi.MemoryPolicy, error) {
+// containerClaims returns the CPUs, the memory nodes and the memory policy of
+// the claim results a container holds. It ignores results we do not know,
+// with a warning for an unknown claim. It fails if the results have different
+// memory policies.
+func (p *policy) containerClaims(c cache.Container) (cpuset.CPUSet, libmem.NodeMask, *cfgapi.MemoryPolicy, error) {
 	var (
 		cpus = cpuset.New()
+		mems libmem.NodeMask
 		mpol *cfgapi.MemoryPolicy
 		from types.UID
 	)
@@ -716,18 +717,21 @@ func (p *policy) containerClaims(c cache.Container) (cpuset.CPUSet, *cfgapi.Memo
 				continue
 			}
 			cpus = cpus.Union(claim.results[i])
+			if i < len(claim.memory) {
+				mems = mems.Or(claim.memory[i].Zone)
+			}
 			if i >= len(claim.mpols) || claim.mpols[i] == nil {
 				continue
 			}
 			if mpol == nil {
 				mpol, from = claim.mpols[i], uid
 			} else if !mpol.DeepEqual(claim.mpols[i]) {
-				return cpuset.New(), nil, fmt.Errorf("memory policy %s of claim %s conflicts with %s of claim %s",
+				return cpuset.New(), 0, nil, fmt.Errorf("memory policy %s of claim %s conflicts with %s of claim %s",
 					claim.mpols[i], uid, mpol, from)
 			}
 		}
 	}
-	return cpus, mpol, nil
+	return cpus, mems, mpol, nil
 }
 
 // claimMemoryPolicies returns the memory policies of the claim results, or nil
@@ -1127,7 +1131,7 @@ func (p *policy) repinHolders(uids []string) {
 			if !slices.Contains(uids, string(uid)) {
 				continue
 			}
-			claimed, _, err := p.containerClaims(ctr)
+			claimed, _, _, err := p.containerClaims(ctr)
 			if err != nil {
 				log.Errorf("%s: failed to follow its moved DRA claims: %v", ctr.PrettyName(), err)
 				break
@@ -1449,15 +1453,41 @@ func (p *policy) largerDevice(device string, cpus cpuset.CPUSet) bool {
 // the root, a shallow tree stops at the socket, and L3 cache pools can sit
 // below a node.
 func (p *policy) poolForCPUs(cpus cpuset.CPUSet) Node {
-	pool := p.root
 	if cpus.IsEmpty() {
-		return pool
+		return p.root
 	}
+	return p.deepestPool(func(n Node) bool {
+		return cpus.IsSubsetOf(grantableCPUs(n.GetSupply()))
+	})
+}
 
+// poolForMems returns the deepest pool that has all the memory nodes. Of pools
+// with the same memory nodes, it returns the one closest to the root. A node
+// without CPUs belongs to the pool of its closest DRAM node with CPUs.
+func (p *policy) poolForMems(mems libmem.NodeMask) Node {
+	if mems == 0 {
+		return p.root
+	}
+	poolMems := func(n Node) libmem.NodeMask {
+		return libmem.NewNodeMask(n.GetMemset(memoryAll).Members()...)
+	}
+	// The L3 cache pools of a NUMA node all have the memory of the node. A
+	// pool with the same memory nodes as its parent is skipped. So the
+	// container can run on all CPUs next to the memory.
+	return p.deepestPool(func(n Node) bool {
+		nodes := poolMems(n)
+		return nodes.And(mems) == mems && nodes != poolMems(n.Parent())
+	})
+}
+
+// deepestPool returns the deepest pool for which has is true. It returns the
+// root if has is false for every child of the root.
+func (p *policy) deepestPool(has func(Node) bool) Node {
+	pool := p.root
 	for deeper := true; deeper; {
 		deeper = false
 		for _, child := range pool.Children() {
-			if cpus.IsSubsetOf(grantableCPUs(child.GetSupply())) {
+			if has(child) {
 				pool, deeper = child, true
 				break
 			}

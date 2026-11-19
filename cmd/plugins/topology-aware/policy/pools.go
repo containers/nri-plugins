@@ -429,13 +429,25 @@ func (p *policy) allocatePool(container cache.Container, poolHint string) (Grant
 		request.SetCPUType(cpuNormal)
 	}
 
-	if claimed := request.ClaimedCPUs(); !claimed.IsEmpty() && request.CPUType() == cpuNormal {
+	if claimed, mems := request.ClaimedCPUs(), request.ClaimedMems(); (!claimed.IsEmpty() || mems != 0) &&
+		request.CPUType() == cpuNormal {
 		// A container holding DRA claims goes to the pool of their CPUs,
 		// so that its memory and its own CPUs come from there. A container
-		// with reserved CPUs stays in the root pool below: the claim's pool
-		// usually has no reserved CPUs, and the container would get normal
-		// CPUs instead.
-		pool = p.poolForCPUs(claimed)
+		// with only memory claims goes to the pool of the claimed nodes.
+		// It goes to a wider pool if its own CPUs do not fit there.
+		// A container with reserved CPUs stays in the root pool below: the
+		// claim's pool usually has no reserved CPUs, and the container
+		// would get normal CPUs instead.
+		if claimed.IsEmpty() {
+			pool = p.poolForMems(mems)
+			// This pool can have too few CPUs for the container. Then
+			// the closest pool above it with enough CPUs takes it.
+			for !pool.IsRootNode() && pool.GetScore(request).SharedCapacity() < 0 {
+				pool = pool.Parent()
+			}
+		} else {
+			pool = p.poolForCPUs(claimed)
+		}
 		o, err := p.getMemOffer(pool, request)
 		if err != nil {
 			return nil, policyError("failed to get offer for request %s: %v", request, err)
@@ -572,7 +584,7 @@ func (p *policy) applyGrant(grant Grant) {
 
 	mems := libmem.NodeMask(0)
 	if opt.PinMemory {
-		mems = grant.GetMemoryZone()
+		mems = grant.CpusetMems()
 	}
 
 	claimed := grant.ClaimedCPUs()
@@ -650,8 +662,9 @@ func (p *policy) applyGrant(grant Grant) {
 
 	// A memory policy can only be set for a new container. Its nodes are
 	// resolved for the CPUs the container runs on: its own CPUs, if any, and
-	// its claimed CPUs. Preserved or unpinned CPUs and preserved memory are
-	// read from the container.
+	// its claimed CPUs. They are also resolved for its memory nodes. These
+	// include its claimed memory nodes. Preserved or unpinned CPUs and
+	// preserved memory are read from the container.
 	if mpol := grant.ClaimedMemoryPolicy(); mpol != nil && container.GetState() == cache.ContainerStateCreating {
 		own := exclusive
 		if cpuPortion > 0 {
@@ -710,7 +723,7 @@ func (p *policy) updateMemoryZones(updates map[string]libmem.NodeMask) {
 			log.Infof("updating memory allocation for %s to %s", g.GetContainer().PrettyName(), z)
 			g.SetMemoryZone(z)
 			if opt.PinMemory {
-				g.GetContainer().SetCpusetMems(z.MemsetString())
+				g.GetContainer().SetCpusetMems(g.CpusetMems().MemsetString())
 			}
 		}
 	}

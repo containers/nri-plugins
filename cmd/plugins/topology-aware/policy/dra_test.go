@@ -1030,6 +1030,280 @@ func TestRestoreMemClaimMovable(t *testing.T) {
 	}
 }
 
+// TestPinClaimedMems checks the cpuset.mems and the pool of a container
+// holding memory claims. It also checks the memory nodes the policy exports
+// to the container. The test runs on the e2e VM. There, each node has 2Gi.
+// The mock container panics if the policy sets its memory limit.
+func TestPinClaimedMems(t *testing.T) {
+	sys := harness.NewMachine(t, genN4c16, harness.Host{})
+	for _, tc := range []struct {
+		name    string
+		results []resourceapi.DeviceRequestAllocationResult
+		holds   []int
+		// mem is the memory request of the container. A container with mem
+		// also asks for 1 CPU. A container with no mem is besteffort.
+		mem string
+		// preserved is the cpuset.mems the container keeps, if not "".
+		preserved string
+		// unpinned turns pinMemory off.
+		unpinned bool
+		pool     string
+		mems     string
+		claimed  string
+	}{
+		{
+			name:    "memory claim only",
+			results: []resourceapi.DeviceRequestAllocationResult{draTestMemResult("memdevnuma001", "1Gi")},
+			holds:   []int{0},
+			pool:    "NUMA node #1",
+			mems:    "1",
+			claimed: "1",
+		},
+		{
+			// The container gets its own CPU and memory from the pool of the
+			// claimed node.
+			name:    "memory claim and a memory request",
+			results: []resourceapi.DeviceRequestAllocationResult{draTestMemResult("memdevnuma001", "1Gi")},
+			holds:   []int{0},
+			mem:     "256Mi",
+			pool:    "NUMA node #1",
+			mems:    "1",
+			claimed: "1",
+		},
+		{
+			// The container goes to the pool of the claimed CPU. Its own
+			// memory is on node 0.
+			name: "CPU and memory claim and a memory request",
+			results: []resourceapi.DeviceRequestAllocationResult{
+				draTestResult(0, "1"), draTestMemResult("memdevnuma001", "1Gi"),
+			},
+			holds:   []int{0, 1},
+			mem:     "256Mi",
+			pool:    "NUMA node #0",
+			mems:    "0-1",
+			claimed: "1",
+		},
+		{
+			name: "one request of two",
+			results: []resourceapi.DeviceRequestAllocationResult{
+				draTestMemResult("memdevnuma000", "512Mi"), draTestMemResult("memdevnuma003", "512Mi"),
+			},
+			holds:   []int{1},
+			pool:    "NUMA node #3",
+			mems:    "3",
+			claimed: "3",
+		},
+		{
+			name:    "socket claim larger than a node",
+			results: []resourceapi.DeviceRequestAllocationResult{draTestMemResult("memdevsocket000", "3Gi")},
+			holds:   []int{0},
+			pool:    "socket #0",
+			mems:    "0-1",
+			claimed: "0-1",
+		},
+		{
+			// A container that keeps its own memory pinning is not pinned to
+			// its claim. The policy does not export the claimed nodes to it.
+			name:      "preserved memory",
+			results:   []resourceapi.DeviceRequestAllocationResult{draTestMemResult("memdevnuma001", "1Gi")},
+			holds:     []int{0},
+			preserved: "3",
+			mems:      "3",
+		},
+		{
+			// Without pinMemory the policy does not pin the container to the
+			// claimed nodes. It still exports them.
+			name:     "memory not pinned",
+			results:  []resourceapi.DeviceRequestAllocationResult{draTestMemResult("memdevnuma001", "1Gi")},
+			holds:    []int{0},
+			unpinned: true,
+			pool:     "NUMA node #1",
+			mems:     "",
+			claimed:  "1",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := draTestConfig("", "cpuset:15")
+			cfg.PinCPU, cfg.PinMemory = true, !tc.unpinned
+			p, _ := draTestPolicy(t, sys, cfg)
+			allocateClaim(t, p, "a", tc.results...)
+
+			c := draTestContainer(tc.name, v1.PodQOSBestEffort, "0")
+			if tc.mem != "" {
+				c = draTestMemContainer(tc.name, "1", tc.mem)
+			}
+			c.devices = holds("a", tc.holds...)
+			c.mems, c.preserveMems = tc.preserved, tc.preserved != ""
+			grant, err := p.allocatePool(c, "")
+			if err != nil {
+				t.Fatalf("failed to allocate: %v", err)
+			}
+			p.applyGrant(grant)
+			p.allocations.addGrant(grant)
+
+			if tc.pool != "" && grant.GetCPUNode().Name() != tc.pool {
+				t.Errorf("container is in pool %s, expected %s", grant.GetCPUNode().Name(), tc.pool)
+			}
+			if c.mems != tc.mems {
+				t.Errorf("container has cpuset.mems %q, expected %q", c.mems, tc.mems)
+			}
+			got, ok := p.ExportResourceData(c)[policyapi.ExportClaimedMems]
+			if ok != (tc.claimed != "") || got != tc.claimed {
+				t.Errorf("exported %s=%q (%v), expected %q", policyapi.ExportClaimedMems, got, ok, tc.claimed)
+			}
+		})
+	}
+}
+
+// TestClaimedMemsFollowZoneUpdate checks that a container keeps its claimed
+// memory nodes when libmem moves its own memory zone.
+func TestClaimedMemsFollowZoneUpdate(t *testing.T) {
+	cfg := draTestConfig("", "cpuset:15")
+	cfg.PinMemory = true
+	p, _ := draTestPolicy(t, harness.NewMachine(t, genN4c16, harness.Host{}), cfg)
+
+	allocateClaim(t, p, "a", draTestMemResult("memdevnuma001", "512Mi"))
+	c := draTestMemContainer("c", "1", "256Mi")
+	c.devices = holds("a", 0)
+	if err := p.allocateResources(c, ""); err != nil {
+		t.Fatalf("failed to allocate container c: %v", err)
+	}
+
+	p.updateMemoryZones(map[string]libmem.NodeMask{"c": libmem.NewNodeMask(2, 3)})
+	if c.mems != "1-3" {
+		t.Errorf("container c has cpuset.mems %q, expected 1-3", c.mems)
+	}
+}
+
+// TestClaimedHBMInterleave checks that a container holding a CPU claim and an
+// HBM claim runs with the HBM node in cpuset.mems. Its interleave memory
+// policy is over the HBM node too.
+func TestClaimedHBMInterleave(t *testing.T) {
+	sys := harness.NewMachine(t, genN6HbmCxl, harness.Host{})
+	cfg := draTestConfig("", "cpuset:0")
+	cfg.PinCPU, cfg.PinMemory = true, true
+	p, _ := draTestPolicy(t, sys, cfg)
+
+	// HBM node 2 is in socket 0, next to DRAM node 0.
+	claim := draTestClaimWithConfigs("a",
+		draTestMemoryPolicy(resourceapi.AllocationConfigSourceClaim, "interleave", ""))
+	results := []resourceapi.DeviceRequestAllocationResult{
+		draTestResult(0, "1"), draTestMemResult("memdevnuma002", "512Mi"),
+	}
+	if _, err := p.AllocateClaim(claim, results); err != nil {
+		t.Fatalf("failed to allocate claim a: %v", err)
+	}
+
+	c := draTestContainer("c", v1.PodQOSBestEffort, "0")
+	c.devices = holds("a", 0, 1)
+	c.state = cache.ContainerStateCreating
+	grant, err := p.allocatePool(c, "")
+	if err != nil {
+		t.Fatalf("failed to allocate: %v", err)
+	}
+	p.applyGrant(grant)
+
+	mems := grant.GetMemoryZone().Set(2)
+	if !mems.Contains(0) || c.mems != mems.MemsetString() {
+		t.Errorf("container has cpuset.mems %q, expected node 0, HBM node 2 and its own zone %s",
+			c.mems, grant.GetMemoryZone())
+	}
+	if expected := "MPOL_INTERLEAVE:" + mems.MemsetString() + "[]"; c.mpol != expected {
+		t.Errorf("got memory policy %q, expected %q", c.mpol, expected)
+	}
+	if !cpuset.MustParse(c.cpus).IsSubsetOf(sys.Node(0).CPUSet()) {
+		t.Errorf("container runs on CPUs %s, expected CPUs of node 0", c.cpus)
+	}
+}
+
+// TestClaimedHBMOnly checks that a besteffort container holding only an HBM
+// claim goes to the pool of the HBM node. Its cpuset.mems has the HBM node and
+// its own memory zone.
+func TestClaimedHBMOnly(t *testing.T) {
+	sys := harness.NewMachine(t, genN6HbmCxl, harness.Host{})
+	cfg := draTestConfig("", "cpuset:0")
+	cfg.PinCPU, cfg.PinMemory = true, true
+	p, _ := draTestPolicy(t, sys, cfg)
+
+	// HBM node 2 and PMEM node 4 are in socket 0, next to DRAM node 0.
+	allocateClaim(t, p, "a", draTestMemResult("memdevnuma002", "512Mi"))
+	c := draTestContainer("c", v1.PodQOSBestEffort, "0")
+	c.devices = holds("a", 0)
+	grant, err := p.allocatePool(c, "")
+	if err != nil {
+		t.Fatalf("failed to allocate: %v", err)
+	}
+	p.applyGrant(grant)
+
+	if pool := grant.GetCPUNode().Name(); pool != "socket #0" {
+		t.Errorf("container is in pool %s, expected socket #0", pool)
+	}
+	if zone := grant.GetMemoryZone(); zone != libmem.NewNodeMask(0, 4) {
+		t.Errorf("container has memory zone %s, expected nodes 0 and 4", zone)
+	}
+	if c.mems != "0,2,4" {
+		t.Errorf("container has cpuset.mems %q, expected 0,2,4", c.mems)
+	}
+}
+
+// TestClaimedMemsL3Pools checks that containers holding only a memory claim go
+// to the NUMA node pool of the claimed node. They do not all go to the first
+// L3 cache pool of that node.
+func TestClaimedMemsL3Pools(t *testing.T) {
+	// Each NUMA node has two L3 caches of two CPUs.
+	sys := harness.NewMachine(t, genN4c16, harness.Host{
+		Caches: `[{"cpusets":["0-1","2-3","4-5","6-7","8-9","10-11","12-13","14-15"],"level":3,"size":"16M"}]`,
+	})
+	cfg := draTestConfig("", "cpuset:15")
+	cfg.PinCPU, cfg.PinMemory = true, true
+	p, _ := draTestPolicy(t, sys, cfg)
+
+	allocateClaim(t, p, "a", draTestMemResult("memdevnuma000", "512Mi"))
+	cpus := cpuset.New()
+	for _, id := range []string{"c0", "c1", "c2", "c3"} {
+		c := draTestMemContainer(id, "1", "64Mi")
+		c.devices = holds("a", 0)
+		grant, err := p.allocatePool(c, "")
+		if err != nil {
+			t.Fatalf("failed to allocate container %s: %v", id, err)
+		}
+		p.applyGrant(grant)
+		if pool := grant.GetCPUNode().Name(); pool != "NUMA node #0" {
+			t.Errorf("container %s is in pool %s, expected NUMA node #0", id, pool)
+		}
+		cpus = cpus.Union(cpuset.MustParse(c.cpus))
+	}
+	if !cpus.Equals(sys.Node(0).CPUSet()) {
+		t.Errorf("the containers run on CPUs %s, expected all CPUs of node 0", cpus)
+	}
+}
+
+// TestClaimedMemsWiderPool checks that a container holding only a memory
+// claim goes to a wider pool if its CPUs do not fit in the pool of the claimed
+// node. It keeps the claimed node in cpuset.mems.
+func TestClaimedMemsWiderPool(t *testing.T) {
+	cfg := draTestConfig("", "cpuset:15")
+	cfg.PinCPU, cfg.PinMemory = true, true
+	p, _ := draTestPolicy(t, harness.NewMachine(t, genN4c16, harness.Host{}), cfg)
+
+	// Node 1 has 4 CPUs. Socket 0 has 8.
+	allocateClaim(t, p, "a", draTestMemResult("memdevnuma001", "512Mi"))
+	c := draTestMemContainer("c", "6", "64Mi")
+	c.devices = holds("a", 0)
+	grant, err := p.allocatePool(c, "")
+	if err != nil {
+		t.Fatalf("failed to allocate: %v", err)
+	}
+	p.applyGrant(grant)
+
+	if pool := grant.GetCPUNode().Name(); pool != "socket #0" {
+		t.Errorf("container is in pool %s, expected socket #0", pool)
+	}
+	if c.mems != "0-1" {
+		t.Errorf("container has cpuset.mems %q, expected 0-1", c.mems)
+	}
+}
+
 // pcieSystem adds PCIe roots to the packages of a test system.
 type pcieSystem struct {
 	system.System
