@@ -4,6 +4,10 @@
 ---
 resctrlPath: /sys/fs/resctrl
 
+# Monitoring granularity: "pod" creates one mon_group (one RMID) per pod,
+# "namespace" one per namespace on each node.
+groupBy: pod
+
 # Telemetry configuration — embedded OTel exporter.
 telemetry:
   prometheus:

@@ -11,6 +11,12 @@
             "description": "Mount point of the resctrl filesystem",
             "default": "/sys/fs/resctrl"
         },
+        "groupBy": {
+            "type": "string",
+            "description": "Monitoring granularity: one mon_group (RMID) per pod or per namespace",
+            "enum": ["pod", "namespace"],
+            "default": "pod"
+        },
         "image": {
             "type": "object",
             "required": [

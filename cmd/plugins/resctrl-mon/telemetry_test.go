@@ -113,7 +113,7 @@ func TestTelemetryPrometheusEndpoint(t *testing.T) {
 	defer state.shutdown(context.Background())
 
 	meter := state.provider.Meter("nri-resctrl-mon-test")
-	_, err = setupMetrics(mgr, cfg, root, meter)
+	_, err = setupMetrics(mgr, cfg, root, groupByPod, meter)
 	require.NoError(t, err)
 
 	// Scrape the actual address the listener bound to.

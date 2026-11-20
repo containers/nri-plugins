@@ -8,6 +8,7 @@ metadata:
 data:
   config.yaml: |
     resctrlPath: {{ .Values.resctrlPath }}
+    groupBy: {{ .Values.groupBy | default "pod" }}
     namespaces: []
     labelSelector: {}
     telemetry:
