@@ -1,4 +1,4 @@
-ARG GO_VERSION=1.26
+ARG GO_VERSION=1.26.11
 
 FROM golang:${GO_VERSION}-bookworm AS builder
 

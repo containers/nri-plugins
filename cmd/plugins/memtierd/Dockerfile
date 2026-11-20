@@ -1,4 +1,4 @@
-ARG GO_VERSION=1.26
+ARG GO_VERSION=1.26.11
 
 FROM golang:${GO_VERSION}-bookworm AS builder
 
@@ -13,10 +13,10 @@ WORKDIR /go/builder
 
 RUN --mount=type=cache,target=/go/pkg/mod/ \
     --mount=type=cache,target="/root/.cache/go-build" \
-    GOBIN=/bin go install \
+    GOBIN=/bin GOTOOLCHAIN=auto go install \
         -tags osusergo,netgo \
         -ldflags "-extldflags=-static" \
-        github.com/intel/memtierd/cmd/memtierd@v0.1.1
+        github.com/intel/memtierd/cmd/memtierd@9bb410f86df5fe61c8f157af37d24a79d2cf7c69
 
 # Fetch go dependencies in a separate layer for caching
 COPY go.mod go.sum .

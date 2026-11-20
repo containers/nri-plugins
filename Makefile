@@ -36,7 +36,7 @@ GO_TEST    := $(GO_CMD) test
 GO_FMT     := gofmt
 GO_VET     := $(GO_CMD) vet
 GO_DEPS    := $(GO_CMD) list -f '{{ join .Deps "\n" }}'
-GO_VERSION ?= 1.26.0
+GO_VERSION ?= 1.26.11
 
 GO_MODULES := $(shell $(GO_CMD) list ./...)
 
