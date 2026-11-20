@@ -8,9 +8,6 @@ metadata:
 data:
   config.yaml: |
     classes:
-    - name: bronze
-      swaplimitratio: 0.5
-    - name: silver
-      swaplimitratio: 0.2
+    {{- toYaml .Values.config.classes | nindent 6 }}
     unifiedannotations:
     {{- toYaml .Values.config.unifiedAnnotations | nindent 6 }}
