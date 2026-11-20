@@ -44,6 +44,20 @@ Before running E2E tests ensure that you have all the required components locall
     ./run_tests.sh policies.test-suite/balloons/n4c16/test0[1-5]*
     ```
 
+    Block I/O comparisons use the same structure in `io.test-suite`. Build
+    `nri-blockio` and its image first, then select the comparison runtime:
+
+    ```shell
+    k8scri=crio ./run_tests.sh io.test-suite
+    ```
+
+    The tests reuse the existing `n4c16` VM topology. Private runtime comparisons
+    deploy the binary directly; a Helm test deploys the image and checks that
+    configuration rollouts affect new containers while preserving existing
+    containers' settings. The VM must support
+    cgroup v2 and BFQ on disposable loop devices. See the
+    [blockio validation instructions](../../docs/blockio.md#validation).
+
     The default test output directory name is generated from the used topology
     and runtime name and the directory is created under test/e2e.
     The test output directory can be given with the `-o` option.

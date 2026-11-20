@@ -522,6 +522,7 @@ helm-launch() { # script API
     #
     # Supported TARGETs:
     #     topology-aware, balloons, template: launch the given NRI resource policy plugin on VM.
+    #     memory-policy, memtierd, blockio: launch the given NRI plugin on VM.
     #
     # Environment variables:
     #     helm_config: configuration helm override values for the plugin
@@ -595,6 +596,10 @@ helm-launch() { # script API
             *memtierd*)
                 ds_name=nri-memtierd
                 ctr_name=nri-memtierd
+                ;;
+            blockio)
+                ds_name=nri-blockio
+                ctr_name=nri-blockio
                 ;;
             *)
                 error "Can't wait for plugin $plugin to start, daemonset_name not set"
