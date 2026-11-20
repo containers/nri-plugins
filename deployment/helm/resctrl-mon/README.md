@@ -102,9 +102,11 @@ By default the container runs without an AppArmor profile (`appArmorProfile.type
 Unconfined`). The runtimes' default profiles, containerd's
 `cri-containerd.apparmor.d` and CRI-O's `crio-default`, deny writes under
 `/sys/fs/[^c]*`, which includes `/sys/fs/resctrl`. Under either profile the
-plugin still becomes Ready, but it logs only `permission denied` warnings and
-tracks no `mon_groups`. On Kubernetes older than 1.30, which lacks the
-`appArmorProfile` field, the chart sets the equivalent pod annotation
+plugin still becomes Ready, but it logs one error and then only `permission
+denied` warnings, counts the failures in
+`resctrl_mon_errors_total{error_type="EACCES"}`, and tracks no `mon_groups`. On
+Kubernetes older than 1.30, which lacks the `appArmorProfile` field, the chart
+sets the equivalent pod annotation
 `container.apparmor.security.beta.kubernetes.io/nri-resctrl-mon` instead.
 
 The Prometheus `/metrics` endpoint is unauthenticated. Collection is
