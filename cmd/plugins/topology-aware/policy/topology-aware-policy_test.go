@@ -87,3 +87,102 @@ func TestReconfigureRefusedKeepsConfig(t *testing.T) {
 		})
 	}
 }
+
+// unreservedLeaf returns a leaf pool with more than one sharable CPU and no
+// reserved ones.
+func unreservedLeaf(t *testing.T, p *policy) Node {
+	t.Helper()
+	var leaf Node
+	for _, n := range p.pools {
+		s := n.GetSupply()
+		if n.IsLeafNode() && s.ReservedCPUs().IsEmpty() && s.SharableCPUs().Size() > 1 {
+			leaf = n
+		}
+	}
+	if leaf == nil {
+		t.Fatal("no leaf pool without reserved CPUs")
+	}
+	return leaf
+}
+
+// cpuContainer returns a guaranteed container asking for cpu CPUs.
+func cpuContainer(cpu string) *mockContainer {
+	q := resource.MustParse(cpu)
+	return &mockContainer{
+		name:                "c",
+		returnValueForGetID: "c",
+		returnValueForGetResourceRequirements: v1.ResourceRequirements{
+			Requests: v1.ResourceList{v1.ResourceCPU: q},
+			Limits:   v1.ResourceList{v1.ResourceCPU: q},
+		},
+	}
+}
+
+// A reconfiguration that leaves no CPUs in the pool of a shared grant moves
+// the container to a pool with room instead of failing.
+func TestReconfigureMovesGrantOffExcludedPool(t *testing.T) {
+	p := setupTestPolicy(t)
+	p.options.Owner = &testOwner{updated: make(chan bool, 1)}
+
+	leaf := unreservedLeaf(t, p)
+	excluded := leaf.GetSupply().SharableCPUs()
+
+	c := cpuContainer("1500m")
+	grant, err := p.allocatePool(c, leaf.Name())
+	if err != nil {
+		t.Fatalf("failed to allocate a grant from %s: %v", leaf.Name(), err)
+	}
+	p.applyGrant(grant)
+
+	err = p.Reconfigure(&cfgapi.Config{
+		ReservedResources:  cfgapi.Constraints{cfgapi.CPU: "750m"},
+		AvailableResources: cfgapi.Constraints{cfgapi.CPU: cfgapi.Amount("exclude-cpuset:" + excluded.String())},
+	})
+	if err != nil {
+		t.Fatalf("failed to reconfigure: %v", err)
+	}
+
+	g, ok := p.allocations.grants["c"]
+	if !ok {
+		t.Fatal("container lost its grant")
+	}
+	if g.GetCPUNode().Name() == leaf.Name() {
+		t.Errorf("grant still in %s, which has no CPUs left", leaf.Name())
+	}
+	if cpus := g.SharedCPUs(); !cpus.Intersection(excluded).IsEmpty() {
+		t.Errorf("grant has excluded CPUs %s", cpus.Intersection(excluded))
+	}
+}
+
+// A container resized beyond the CPUs of its pool moves to a pool with room
+// instead of failing the update.
+func TestUpdateResourcesMovesGrantOffFullPool(t *testing.T) {
+	p := setupTestPolicy(t)
+	p.options.Owner = &testOwner{updated: make(chan bool, 1)}
+
+	leaf := unreservedLeaf(t, p)
+	size := leaf.GetSupply().SharableCPUs().Size()
+
+	c := cpuContainer("1")
+	grant, err := p.allocatePool(c, leaf.Name())
+	if err != nil {
+		t.Fatalf("failed to allocate a grant from %s: %v", leaf.Name(), err)
+	}
+	p.applyGrant(grant)
+
+	c.returnValueForGetResourceRequirements = cpuContainer(strconv.Itoa(size + 1)).returnValueForGetResourceRequirements
+	if err := p.UpdateResources(c); err != nil {
+		t.Fatalf("failed to update resources: %v", err)
+	}
+
+	g, ok := p.allocations.grants["c"]
+	if !ok {
+		t.Fatal("container lost its grant")
+	}
+	if g.GetCPUNode().Name() == leaf.Name() {
+		t.Errorf("grant still in %s, which has only %d CPUs", leaf.Name(), size)
+	}
+	if n := g.ExclusiveCPUs().Size(); n != size+1 {
+		t.Errorf("grant has %d exclusive CPUs, expected %d", n, size+1)
+	}
+}
