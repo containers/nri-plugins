@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -75,7 +76,9 @@ func (p *policy) restoreAllocations(allocations *allocations) error {
 
 // restoreClaims restores the DRA claims saved before a restart. A claim whose
 // pool is gone or whose CPUs we cannot grant any more moves to other CPUs of
-// the same devices. It fails only if a device has too few CPUs for a claim.
+// the same devices. A claim keeps the memory nodes it had. It fails if a
+// device has too few CPUs for a claim. It also fails if the nodes of a claim
+// have too little memory for it.
 func (p *policy) restoreClaims() error {
 	saved := p.newAllocations()
 	if !p.cache.GetPolicyEntry(keyAllocations, &saved) {
@@ -102,6 +105,13 @@ func (p *policy) restoreClaims() error {
 			return err
 		}
 	}
+	// The memory of a claim does not move. The start fails if the nodes of a
+	// claim no longer have room for its memory.
+	for _, uid := range slices.Sorted(maps.Keys(p.allocations.claims)) {
+		if err := p.reinstateClaimMemory(uid, p.allocations.claims[uid]); err != nil {
+			return err
+		}
+	}
 
 	p.saveAllocations()
 	return nil
@@ -109,6 +119,8 @@ func (p *policy) restoreClaims() error {
 
 // reinstateClaims restores the given claim grants.
 func (p *policy) reinstateClaims(claims map[string]*claim) error {
+	// This restores the CPUs of the claims only. libmem still holds their
+	// memory.
 	for uid, c := range claims {
 		if err := p.reinstateClaim(uid, c); err != nil {
 			return err
@@ -189,7 +201,7 @@ func (p *policy) reinstateGrants(grants map[string]Grant) error {
 			} else {
 				ug.SetMemoryZone(uZone)
 				if opt.PinMemory {
-					ug.GetContainer().SetCpusetMems(uZone.MemsetString())
+					ug.GetContainer().SetCpusetMems(ug.CpusetMems().MemsetString())
 				}
 				log.Infof("updated grant %s to memory zone %s", uID, uZone)
 			}
@@ -224,6 +236,8 @@ type cachedGrant struct {
 	Results []string `json:",omitempty"`
 	// Devices are the devices of the claim results.
 	Devices []string `json:",omitempty"`
+	// Memory has the size and the nodes of each claim result.
+	Memory []claimMemory `json:",omitempty"`
 	// MemoryPolicies are the memory policies of the claim results.
 	MemoryPolicies []*cfgapi.MemoryPolicy `json:",omitempty"`
 }
@@ -307,6 +321,7 @@ func (a *allocations) MarshalJSON() ([]byte, error) {
 			ccg.Results = append(ccg.Results, cpus.String())
 		}
 		ccg.Devices = c.devices
+		ccg.Memory = c.memory
 		ccg.MemoryPolicies = c.mpols
 		cgrants[keyClaimPrefix+uid] = ccg
 	}
@@ -341,7 +356,7 @@ func (a *allocations) UnmarshalJSON(data []byte) error {
 			a.grants[id] = g
 			continue
 		}
-		c := &claim{Grant: g, mpols: ccg.MemoryPolicies}
+		c := &claim{Grant: g, memory: ccg.Memory, mpols: ccg.MemoryPolicies}
 		for _, value := range ccg.Results {
 			cpus, err := cpuset.Parse(value)
 			if err != nil {

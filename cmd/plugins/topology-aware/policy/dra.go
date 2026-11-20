@@ -31,6 +31,21 @@ package topologyaware
 // if it has a CPU request. A container naming only some requests of a claim
 // runs on the CPUs of those requests.
 //
+// We also publish memory devices for each NUMA node with memory, each socket
+// and the machine. A memory device has one memory type only. A socket or the
+// machine with several memory types gets a device for each type. The
+// capacity is the free memory that libmem has on the nodes of the device.
+//
+// The policy reserves memory in libmem for each claim result on a memory
+// device. The size is the memory capacity that the result consumed. This
+// happens after the claim gets its CPUs. The bytes come from the smallest node
+// group in the device with enough free memory. The libmem request has the
+// reservation priority. So libmem never moves it. A container that does not
+// fit next to the claim gets a wider memory zone. A claim keeps its memory
+// nodes. It keeps them across a restart too. The capacity of a device also
+// counts the memory of its own claims. The scheduler subtracts
+// these claims itself.
+//
 // A claim or its device class may set a memory policy for the containers
 // holding the claim, in a TopologyAwareClaimConfig. A config applies to the
 // results of the requests it names. A config naming no requests applies to
@@ -68,14 +83,26 @@ const (
 	draSocketDeviceFormat = "cpudevsocket%03d"
 	// draNUMADeviceFormat names a device after the NUMA node it publishes.
 	draNUMADeviceFormat = "cpudevnuma%03d"
+	// draMemMachineDevice names the device that publishes the machine DRAM.
+	// A device with another memory type adds the type to the name.
+	draMemMachineDevice = "memdevmachine"
+	// draMemSocketDeviceFormat names a memory device after its socket.
+	draMemSocketDeviceFormat = "memdevsocket%03d"
+	// draMemNUMADeviceFormat names a memory device after its NUMA node.
+	draMemNUMADeviceFormat = "memdevnuma%03d"
 	// draCapacityCPU is the number of CPUs a claim consumes of a device.
 	draCapacityCPU resourceapi.QualifiedName = "dra.cpu/cpu"
+	// draCapacityMemory is the memory a claim consumes of a device, in bytes.
+	draCapacityMemory resourceapi.QualifiedName = "memory"
+	// draAttrMemoryType is the memory type of a device.
+	draAttrMemoryType resourceapi.QualifiedName = "memoryType"
 	// draAttrSocketID is the socket the CPUs of a device belong to.
 	draAttrSocketID resourceapi.QualifiedName = "dra.cpu/socketID"
 	// draAttrSMTEnabled tells whether the CPUs have SMT enabled.
 	draAttrSMTEnabled resourceapi.QualifiedName = "dra.cpu/smtEnabled"
-	// draAttrLevel is the level of the topology a device publishes.
-	draAttrLevel resourceapi.QualifiedName = "dra.cpu/level"
+	// draAttrLevel is the level of the topology a device publishes. The
+	// name has no domain. It is in the domain of our driver.
+	draAttrLevel resourceapi.QualifiedName = "level"
 	// draAttrNumCPUs is the number of CPUs of a device, used or not.
 	draAttrNumCPUs resourceapi.QualifiedName = "dra.cpu/numCPUs"
 	// The levels of our devices.
@@ -90,17 +117,33 @@ const (
 // draDriverName is the name of our DRA driver.
 var draDriverName = dra.DriverName(PolicyName)
 
-// claim is a DRA claim we allocated. It has a grant of all of its CPUs, and
-// the CPUs, the device and the memory policy of each of its allocation
-// results, in result order. mpols is nil if no result has a memory policy.
-// moves are the claims allocating it moved to other CPUs, by UID. They are
-// not saved.
+// claim is a DRA claim we allocated. It has a grant with all of its CPUs. For
+// each allocation result, in result order, it has the CPUs, the device, the
+// memory and the memory policy. memory is nil if no result is on a memory
+// device. mpols is nil if no result has a memory policy. moves are the claims
+// allocating it moved to other CPUs, by UID. They are not saved.
 type claim struct {
 	Grant
 	results []cpuset.CPUSet
 	devices []string
+	memory  []claimMemory
 	mpols   []*cfgapi.MemoryPolicy
 	moves   map[string]claimMove
+}
+
+// claimMemory is the memory a claim result holds. It has the size in bytes
+// and the nodes libmem gave it. A result on a CPU device has no memory.
+type claimMemory struct {
+	Zone libmem.NodeMask
+	Size int64
+}
+
+// memorySize returns the bytes the claim result i holds.
+func (c *claim) memorySize(i int) int64 {
+	if i >= len(c.memory) {
+		return 0
+	}
+	return c.memory[i].Size
 }
 
 // cpus returns the CPUs of the claim's results.
@@ -112,80 +155,185 @@ func (c *claim) cpus() cpuset.CPUSet {
 	return cpus
 }
 
+// movedFrom returns the claims that the allocation of c moved, by UID. Each
+// claim is as it was before the move.
+func (c *claim) movedFrom() map[string]*claim {
+	from := map[string]*claim{}
+	for uid, m := range c.moves {
+		from[uid] = m.from
+	}
+	return from
+}
+
 // claimMove is a claim moved to other CPUs, as it was before and after the
 // move.
 type claimMove struct {
 	from, to *claim
 }
 
-// draCPUGroup is a group of CPUs of the topology which we publish as a DRA
-// device: its device name, level and CPUs, and the ID attributes of its level.
-type draCPUGroup struct {
+// draGroup is a topology group that we publish as a DRA device. It has the
+// device name, the level and the ID attributes of the level.
+type draGroup struct {
 	name  string
 	level string
-	cpus  cpuset.CPUSet
 	ids   map[resourceapi.QualifiedName]int64
 }
 
-// draCPUGroups returns the NUMA nodes, the sockets and the machine.
+// draCPUGroup is a group of CPUs which we publish as a CPU device.
+type draCPUGroup struct {
+	draGroup
+	cpus cpuset.CPUSet
+}
+
+// draMemGroup is a group of NUMA nodes with one memory type. We publish it
+// as a memory device.
+type draMemGroup struct {
+	draGroup
+	nodes   libmem.NodeMask
+	memType libmem.Type
+}
+
+// draCPUGroups returns the NUMA nodes with CPUs, the sockets and the machine.
+// A node without CPUs has no CPU device. It can also be in no socket.
 func draCPUGroups(sys system.System) []draCPUGroup {
 	var groups []draCPUGroup
-	for _, id := range sys.NodeIDs() {
+	for _, id := range sys.FilterNodes(sys.NodeIDs(), system.NodeHasLocalCPUs).SortedMembers() {
 		groups = append(groups, draCPUGroup{
-			name:  fmt.Sprintf(draNUMADeviceFormat, id),
-			level: draLevelNUMANode,
-			cpus:  sys.Node(id).CPUSet(),
-			ids: map[resourceapi.QualifiedName]int64{
-				deviceattribute.StandardDeviceAttributeNUMANode: int64(id),
-				draAttrSocketID: int64(sys.Node(id).PackageID()),
+			draGroup: draGroup{
+				name:  fmt.Sprintf(draNUMADeviceFormat, id),
+				level: draLevelNUMANode,
+				ids: map[resourceapi.QualifiedName]int64{
+					deviceattribute.StandardDeviceAttributeNUMANode: int64(id),
+					draAttrSocketID: int64(sys.Node(id).PackageID()),
+				},
 			},
+			cpus: sys.Node(id).CPUSet(),
 		})
 	}
 	for _, id := range sys.PackageIDs() {
 		groups = append(groups, draCPUGroup{
-			name:  fmt.Sprintf(draSocketDeviceFormat, id),
-			level: draLevelSocket,
-			cpus:  sys.Package(id).CPUSet(),
-			ids:   map[resourceapi.QualifiedName]int64{draAttrSocketID: int64(id)},
+			draGroup: draGroup{
+				name:  fmt.Sprintf(draSocketDeviceFormat, id),
+				level: draLevelSocket,
+				ids:   map[resourceapi.QualifiedName]int64{draAttrSocketID: int64(id)},
+			},
+			cpus: sys.Package(id).CPUSet(),
 		})
 	}
-	return append(groups, draCPUGroup{name: draMachineDevice, level: draLevelMachine, cpus: sys.CPUSet()})
+	return append(groups, draCPUGroup{
+		draGroup: draGroup{name: draMachineDevice, level: draLevelMachine},
+		cpus:     sys.CPUSet(),
+	})
 }
 
-// draDevices returns a device for each CPU group which has CPUs for claims.
+// draMemGroups returns a group for each NUMA node with memory. It also
+// returns a group for each memory type in each socket and in the machine.
+// Each group has a node with normal memory.
+func draMemGroups(sys system.System) []draMemGroup {
+	memNodes := sys.FilterNodes(sys.NodeIDs(), system.NodeHasMemory)
+	// libmem fails a request on nodes with only movable memory. Or it adds
+	// other nodes to the request. So a group needs a node with normal memory.
+	normal := libmem.NewNodeMask()
+	for _, id := range memNodes.SortedMembers() {
+		if sys.Node(id).HasNormalMemory() {
+			normal = normal.Set(id)
+		}
+	}
+	// ofType returns the nodes in ids that have memory type t.
+	ofType := func(ids []idset.ID, t libmem.Type) libmem.NodeMask {
+		nodes := libmem.NewNodeMask()
+		for _, id := range ids {
+			if memNodes.Has(id) && libmem.TypeForSysfs(sys.Node(id).GetMemoryType()) == t {
+				nodes = nodes.Set(id)
+			}
+		}
+		return nodes
+	}
+	// A DRAM device has the plain name. A device with another memory type
+	// adds the type to the name.
+	types := []libmem.Type{libmem.TypeDRAM, libmem.TypePMEM, libmem.TypeHBM}
+	suffix := func(t libmem.Type) string {
+		if t == libmem.TypeDRAM {
+			return ""
+		}
+		return strings.ToLower(t.String())
+	}
+
+	var groups []draMemGroup
+	for _, id := range normal.Slice() {
+		node := sys.Node(id)
+		ids := map[resourceapi.QualifiedName]int64{deviceattribute.StandardDeviceAttributeNUMANode: int64(id)}
+		if pkg := node.PackageID(); pkg != idset.Unknown {
+			ids[draAttrSocketID] = int64(pkg)
+		}
+		groups = append(groups, draMemGroup{
+			draGroup: draGroup{name: fmt.Sprintf(draMemNUMADeviceFormat, id), level: draLevelNUMANode, ids: ids},
+			nodes:    libmem.NewNodeMask(id),
+			memType:  libmem.TypeForSysfs(node.GetMemoryType()),
+		})
+	}
+	for _, id := range sys.PackageIDs() {
+		for _, t := range types {
+			if nodes := ofType(draSocketNodes(sys, id), t); nodes.And(normal) != 0 {
+				groups = append(groups, draMemGroup{
+					draGroup: draGroup{
+						name:  fmt.Sprintf(draMemSocketDeviceFormat, id) + suffix(t),
+						level: draLevelSocket,
+						ids:   map[resourceapi.QualifiedName]int64{draAttrSocketID: int64(id)},
+					},
+					nodes:   nodes,
+					memType: t,
+				})
+			}
+		}
+	}
+	for _, t := range types {
+		if nodes := ofType(memNodes.SortedMembers(), t); nodes.And(normal) != 0 {
+			groups = append(groups, draMemGroup{
+				draGroup: draGroup{name: draMemMachineDevice + suffix(t), level: draLevelMachine},
+				nodes:    nodes,
+				memType:  t,
+			})
+		}
+	}
+	return groups
+}
+
+// draSocketNodes returns the nodes in the socket. They include the nodes
+// without CPUs that sysfs puts in the socket.
+func draSocketNodes(sys system.System, socket idset.ID) []idset.ID {
+	return slices.DeleteFunc(sys.NodeIDs(), func(id idset.ID) bool { return sys.Node(id).PackageID() != socket })
+}
+
+// draDevices returns a device for each CPU group with CPUs for claims. It
+// also returns a device for each memory group with memory for claims.
 func (p *policy) draDevices() []resourceapi.Device {
 	var devices []resourceapi.Device
-	for _, group := range p.groups {
-		if d, ok := p.draDevice(group); ok {
+	for _, group := range p.cpuGroups {
+		if d, ok := p.draCPUDevice(group); ok {
+			devices = append(devices, d)
+		}
+	}
+	for _, group := range p.memGroups {
+		if d, ok := p.draMemDevice(group); ok {
 			devices = append(devices, d)
 		}
 	}
 	return devices
 }
 
-// draDevice returns the device of the CPU group, or false if it has no CPUs
-// for claims.
-func (p *policy) draDevice(group draCPUGroup) (resourceapi.Device, bool) {
-	cpus, _ := p.draDeviceCPUs(group.name)
-	if cpus.IsEmpty() {
-		return resourceapi.Device{}, false
-	}
-	capacity := p.draCapacity(group.name, cpus)
-	if capacity == 0 {
-		return resourceapi.Device{}, false
-	}
-
+// draAttributes returns the level and ID attributes of the group. They
+// include the PCIe roots of each socket for which has returns true.
+func (p *policy) draAttributes(group draGroup, has func(system.CPUPackage) bool) map[resourceapi.QualifiedName]resourceapi.DeviceAttribute {
 	attrs := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
-		draAttrLevel:      {StringValue: ptr.To(group.level)},
-		draAttrSMTEnabled: {BoolValue: ptr.To(p.sys.MaxThreadCount() > 1)},
-		draAttrNumCPUs:    {IntValue: ptr.To(int64(cpus.Size()))},
+		draAttrLevel: {StringValue: ptr.To(group.level)},
 	}
 	for attr, id := range group.ids {
 		attrs[attr] = resourceapi.DeviceAttribute{IntValue: ptr.To(id)}
 	}
 	var roots []string
 	for _, id := range p.sys.PackageIDs() {
-		if pkg := p.sys.Package(id); !pkg.CPUSet().Intersection(cpus).IsEmpty() {
+		if pkg := p.sys.Package(id); has(pkg) {
 			roots = append(roots, pkg.PCIeRoots()...)
 		}
 	}
@@ -196,18 +344,81 @@ func (p *policy) draDevice(group draCPUGroup) (resourceapi.Device, bool) {
 			StringValues: slices.Compact(roots),
 		}
 	}
+	return attrs
+}
+
+// draCPUDevice returns the device of the CPU group, or false if it has no
+// CPUs for claims.
+func (p *policy) draCPUDevice(group draCPUGroup) (resourceapi.Device, bool) {
+	cpus, _ := p.draDeviceCPUs(group.name)
+	if cpus.IsEmpty() {
+		return resourceapi.Device{}, false
+	}
+	capacity := p.draCapacity(group.name, cpus)
+	if capacity == 0 {
+		return resourceapi.Device{}, false
+	}
+
+	attrs := p.draAttributes(group.draGroup, func(pkg system.CPUPackage) bool {
+		return !pkg.CPUSet().Intersection(cpus).IsEmpty()
+	})
+	attrs[draAttrSMTEnabled] = resourceapi.DeviceAttribute{BoolValue: ptr.To(p.sys.MaxThreadCount() > 1)}
+	attrs[draAttrNumCPUs] = resourceapi.DeviceAttribute{IntValue: ptr.To(int64(cpus.Size()))}
 
 	return resourceapi.Device{
 		Name:                     group.name,
 		AllowMultipleAllocations: ptr.To(true),
 		Attributes:               attrs,
 		Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
-			draCapacityCPU: draCPUCapacity(capacity),
+			draCapacityCPU: draWholeCapacity(int64(capacity), *resource.NewQuantity(1, resource.DecimalSI)),
 		},
 		NodeAllocatableResources: map[v1.ResourceName]resourceapi.NodeAllocatableResource{
 			v1.ResourceCPU: {
 				Mapping: &resourceapi.NodeAllocatableMapping{
 					CapacityKey:        ptr.To(draCapacityCPU),
+					CapacityMultiplier: resource.NewQuantity(1, resource.DecimalSI),
+				},
+			},
+		},
+	}, true
+}
+
+// draMemDevice returns the device of the memory group, or false if the
+// group has less than a mebibyte for claims. The capacity counts the free
+// memory on the group nodes. It also counts the memory that claims on the
+// device hold. The scheduler subtracts these claims from the capacity itself.
+// The capacity is in whole mebibytes.
+func (p *policy) draMemDevice(group draMemGroup) (resourceapi.Device, bool) {
+	mib := resource.MustParse("1Mi")
+	bytes := p.memAllocator.ZoneAvailable(group.nodes)
+	for _, c := range p.allocations.claims {
+		for i, device := range c.devices {
+			if device == group.name {
+				bytes += c.memorySize(i)
+			}
+		}
+	}
+	capacity := bytes / mib.Value()
+	if capacity == 0 {
+		return resourceapi.Device{}, false
+	}
+
+	attrs := p.draAttributes(group.draGroup, func(pkg system.CPUPackage) bool {
+		return slices.ContainsFunc(draSocketNodes(p.sys, pkg.ID()), func(id idset.ID) bool { return group.nodes.Contains(id) })
+	})
+	attrs[draAttrMemoryType] = resourceapi.DeviceAttribute{StringValue: ptr.To(group.memType.String())}
+
+	return resourceapi.Device{
+		Name:                     group.name,
+		AllowMultipleAllocations: ptr.To(true),
+		Attributes:               attrs,
+		Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
+			draCapacityMemory: draWholeCapacity(capacity, mib),
+		},
+		NodeAllocatableResources: map[v1.ResourceName]resourceapi.NodeAllocatableResource{
+			v1.ResourceMemory: {
+				Mapping: &resourceapi.NodeAllocatableMapping{
+					CapacityKey:        ptr.To(draCapacityMemory),
 					CapacityMultiplier: resource.NewQuantity(1, resource.DecimalSI),
 				},
 			},
@@ -272,10 +483,10 @@ func (p *policy) publishDRADevices() {
 	}
 }
 
-// draCPUCapacity returns a capacity of n CPUs, which claims consume in whole
-// CPUs, one CPU if they ask for no amount.
-func draCPUCapacity(n int) resourceapi.DeviceCapacity {
-	one := resource.NewQuantity(1, resource.DecimalSI)
+// draWholeCapacity returns a capacity of n units. Claims consume it in whole
+// units. A claim that asks for no amount consumes one unit.
+func draWholeCapacity(n int64, unit resource.Quantity) resourceapi.DeviceCapacity {
+	one := &unit
 	// Without a request policy a claim asking for no amount would consume
 	// the whole device.
 	policy := &resourceapi.CapacityRequestPolicy{
@@ -283,12 +494,12 @@ func draCPUCapacity(n int) resourceapi.DeviceCapacity {
 		ValidRange: &resourceapi.CapacityRequestPolicyRange{Min: one},
 	}
 	// The API server rejects a step which does not fit in the capacity. With
-	// one CPU, the minimum alone leaves only one whole CPU to ask for.
+	// one unit, the minimum alone leaves only one whole unit to ask for.
 	if n > 1 {
 		policy.ValidRange.Step = one
 	}
 	return resourceapi.DeviceCapacity{
-		Value:         *resource.NewQuantity(int64(n), resource.DecimalSI),
+		Value:         *resource.NewQuantity(n*unit.Value(), unit.Format),
 		RequestPolicy: policy,
 	}
 }
@@ -304,7 +515,8 @@ func (p *policy) AllocateClaim(
 ) ([]specs.ContainerEdits, error) {
 	uid := string(claim.UID)
 
-	reqs, err := p.draRequests(results)
+	c, ok := p.allocations.claims[uid]
+	reqs, err := p.draRequests(results, c)
 	if err != nil {
 		return nil, fmt.Errorf("claim %s: %w", uid, err)
 	}
@@ -313,10 +525,14 @@ func (p *policy) AllocateClaim(
 		return nil, fmt.Errorf("claim %s: %w", uid, err)
 	}
 
-	c, ok := p.allocations.claims[uid]
 	if !ok {
 		c, err = p.allocateClaim(reqs, true)
 		if err != nil {
+			return nil, fmt.Errorf("claim %s: %w", uid, err)
+		}
+		if err := p.allocateClaimMemory(uid, c, reqs); err != nil {
+			c.Release()
+			p.swapClaims(c.movedFrom())
 			return nil, fmt.Errorf("claim %s: %w", uid, err)
 		}
 		c.mpols = mpols
@@ -327,7 +543,7 @@ func (p *policy) AllocateClaim(
 		p.updateSharedAllocations(nil)
 	}
 
-	if err := checkClaimCPUs(c, reqs); err != nil {
+	if err := checkClaimResults(c, reqs); err != nil {
 		return nil, fmt.Errorf("claim %s: %w", uid, err)
 	}
 	// The claim's configs do not change after it is allocated.
@@ -339,15 +555,22 @@ func (p *policy) AllocateClaim(
 	return nil, nil
 }
 
-// checkClaimCPUs verifies that every result of the claim holds the requested
-// number of CPUs of its device.
-func checkClaimCPUs(c *claim, reqs []draRequest) error {
+// checkClaimResults returns an error if a claim result does not hold the CPUs
+// or bytes its request consumed.
+func checkClaimResults(c *claim, reqs []draRequest) error {
 	if len(c.results) != len(reqs) || len(c.devices) != len(reqs) {
 		return fmt.Errorf("holds %d results but has %d", len(c.results), len(reqs))
 	}
 	for i, req := range reqs {
 		if c.devices[i] != req.device {
-			return fmt.Errorf("result %d holds CPUs of device %s, not of %s", i, c.devices[i], req.device)
+			return fmt.Errorf("result %d holds device %s, not %s", i, c.devices[i], req.device)
+		}
+		if req.memory != nil {
+			if held := c.memorySize(i); held != req.bytes {
+				return fmt.Errorf("result %d holds %d bytes but consumed %d bytes of device %s",
+					i, held, req.bytes, req.device)
+			}
+			continue
 		}
 		if held := c.results[i]; held.Size() != req.cpus || !held.IsSubsetOf(req.deviceCPUs) {
 			return fmt.Errorf("result %d holds CPUs %s but consumed %d CPUs of device %s", i, held, req.cpus, req.device)
@@ -356,8 +579,8 @@ func checkClaimCPUs(c *claim, reqs []draRequest) error {
 	return nil
 }
 
-// ReleaseClaim releases the claim's CPUs. If undo is true, it also moves the
-// claims allocating it moved back to the CPUs they had.
+// ReleaseClaim releases the claim's CPUs and memory. If undo is true, it also
+// moves the claims allocating it moved back to the CPUs they had.
 func (p *policy) ReleaseClaim(uid types.UID, undo bool) error {
 	c, ok := p.allocations.claims[string(uid)]
 	if !ok {
@@ -368,6 +591,7 @@ func (p *policy) ReleaseClaim(uid types.UID, undo bool) error {
 	// stopped, and their grants went with them, so no grant holds the
 	// claim's CPUs by now.
 	c.Release()
+	p.releaseClaimMemory(string(uid), c)
 	delete(p.allocations.claims, string(uid))
 	if undo {
 		p.moveClaimsBack(c)
@@ -471,13 +695,14 @@ func (p *policy) pruneMoves() {
 	}
 }
 
-// containerClaims returns the CPUs and the memory policy of the claim results
-// a container holds. It ignores results we do not know, with a warning for
-// an unknown claim, and fails if the results have different memory
-// policies.
-func (p *policy) containerClaims(c cache.Container) (cpuset.CPUSet, *cfgapi.MemoryPolicy, error) {
+// containerClaims returns the CPUs, the memory nodes and the memory policy of
+// the claim results a container holds. It ignores results we do not know,
+// with a warning for an unknown claim. It fails if the results have different
+// memory policies.
+func (p *policy) containerClaims(c cache.Container) (cpuset.CPUSet, libmem.NodeMask, *cfgapi.MemoryPolicy, error) {
 	var (
 		cpus = cpuset.New()
+		mems libmem.NodeMask
 		mpol *cfgapi.MemoryPolicy
 		from types.UID
 	)
@@ -492,18 +717,21 @@ func (p *policy) containerClaims(c cache.Container) (cpuset.CPUSet, *cfgapi.Memo
 				continue
 			}
 			cpus = cpus.Union(claim.results[i])
+			if i < len(claim.memory) {
+				mems = mems.Or(claim.memory[i].Zone)
+			}
 			if i >= len(claim.mpols) || claim.mpols[i] == nil {
 				continue
 			}
 			if mpol == nil {
 				mpol, from = claim.mpols[i], uid
 			} else if !mpol.DeepEqual(claim.mpols[i]) {
-				return cpuset.New(), nil, fmt.Errorf("memory policy %s of claim %s conflicts with %s of claim %s",
+				return cpuset.New(), 0, nil, fmt.Errorf("memory policy %s of claim %s conflicts with %s of claim %s",
 					claim.mpols[i], uid, mpol, from)
 			}
 		}
 	}
-	return cpus, mpol, nil
+	return cpus, mems, mpol, nil
 }
 
 // claimMemoryPolicies returns the memory policies of the claim results, or nil
@@ -614,21 +842,44 @@ func (p *policy) applyMemoryPolicy(c cache.Container, mpol *cfgapi.MemoryPolicy,
 	c.SetMemoryPolicy(mode, nodes.MemsetString(), flags...)
 }
 
-// draRequest is what one allocation result requests: CPUs of a device.
+// draRequest is what one allocation result requests. A result on a CPU device
+// requests CPUs. A result on a memory device requests bytes. memory is the
+// group of the memory device. It is nil for a CPU device.
 type draRequest struct {
 	device     string
 	deviceCPUs cpuset.CPUSet
 	cpus       int
+	memory     *draMemGroup
+	bytes      int64
 }
 
-// draRequests translates claim allocation results into draRequests.
-func (p *policy) draRequests(results []resourceapi.DeviceRequestAllocationResult) ([]draRequest, error) {
+// draRequests translates claim allocation results into draRequests. held is
+// the claim that already holds the results, or nil for a new claim.
+func (p *policy) draRequests(results []resourceapi.DeviceRequestAllocationResult, held *claim) ([]draRequest, error) {
 	if len(results) == 0 {
 		return nil, fmt.Errorf("no allocation results")
 	}
 
 	reqs := make([]draRequest, 0, len(results))
 	for i, r := range results {
+		group, ok := p.draMemGroup(r.Device)
+		if !ok && held != nil && held.memorySize(i) > 0 && i < len(held.devices) && held.devices[i] == r.Device {
+			// A restart can leave a claim on a memory device that we no
+			// longer publish. The claim still holds its memory.
+			group, ok = draMemGroup{draGroup: draGroup{name: r.Device}}, true
+		}
+		if ok {
+			q, ok := r.ConsumedCapacity[draCapacityMemory]
+			if !ok {
+				return nil, fmt.Errorf("result %d consumed no %s", i, draCapacityMemory)
+			}
+			if q.Sign() <= 0 {
+				return nil, fmt.Errorf("result %d consumed %s %s, not a positive amount",
+					i, q.String(), draCapacityMemory)
+			}
+			reqs = append(reqs, draRequest{device: r.Device, memory: &group, bytes: q.Value()})
+			continue
+		}
 		deviceCPUs, ok := p.draDeviceCPUs(r.Device)
 		if !ok {
 			return nil, fmt.Errorf("result %d: unknown device %q", i, r.Device)
@@ -656,12 +907,22 @@ func (p *policy) draRequests(results []resourceapi.DeviceRequestAllocationResult
 // draDeviceCPUs returns the grantable CPUs of the device, or false for an
 // unknown device.
 func (p *policy) draDeviceCPUs(device string) (cpuset.CPUSet, bool) {
-	for _, group := range p.groups {
+	for _, group := range p.cpuGroups {
 		if group.name == device {
 			return group.cpus.Intersection(grantableCPUs(p.root.GetSupply())), true
 		}
 	}
 	return cpuset.New(), false
+}
+
+// draMemGroup returns the group of the memory device, or false if it is not a
+// memory device.
+func (p *policy) draMemGroup(device string) (draMemGroup, bool) {
+	i := slices.IndexFunc(p.memGroups, func(g draMemGroup) bool { return g.name == device })
+	if i < 0 {
+		return draMemGroup{}, false
+	}
+	return p.memGroups[i], true
 }
 
 // numaDevices returns the NUMA device of the first CPU of each result, or nil if
@@ -684,9 +945,10 @@ func (p *policy) numaDevices(results []cpuset.CPUSet) []string {
 }
 
 // allocateClaim returns a claim with the requested CPUs reserved for it, each
-// result with CPUs of its own. If move is true, it moves claims on larger
-// devices off the CPUs a request needs, and records the moves in the returned
-// claim. On failure, every claim keeps its CPUs.
+// result with CPUs of its own. A result on a memory device gets no CPUs. If
+// move is true, it moves claims on larger devices off the CPUs a request
+// needs, and records the moves in the returned claim. On failure, every claim
+// keeps its CPUs.
 func (p *policy) allocateClaim(reqs []draRequest, move bool) (*claim, error) {
 	// Requests on smaller devices pick first, so a request on a larger
 	// device does not take the CPUs they need.
@@ -704,6 +966,11 @@ func (p *policy) allocateClaim(reqs []draRequest, move bool) (*claim, error) {
 	moved := map[string]*claim{}
 	for _, i := range order {
 		req := reqs[i]
+		c.devices[i] = req.device
+		if req.memory != nil {
+			c.results[i] = cpuset.New()
+			continue
+		}
 		picked, err := p.pickCPUs(req, cpus)
 		if err != nil && move {
 			short := req.cpus - p.availableCPUs(req.deviceCPUs, cpus).Size()
@@ -716,7 +983,6 @@ func (p *policy) allocateClaim(reqs []draRequest, move bool) (*claim, error) {
 		}
 		cpus = cpus.Union(picked)
 		c.results[i] = picked
-		c.devices[i] = req.device
 	}
 
 	if err := p.reserveClaim(c); err != nil {
@@ -765,7 +1031,8 @@ func (p *policy) moveClaimsOff(box, target cpuset.CPUSet, n int, taken cpuset.CP
 			// claim.
 			c = p.allocations.claims[uid]
 			// The claim keeps its own moves, which a failed prepare still undoes.
-			next := &claim{results: slices.Clone(c.results), devices: c.devices, mpols: c.mpols, moves: c.moves}
+			next := &claim{results: slices.Clone(c.results), devices: c.devices, memory: c.memory, mpols: c.mpols,
+				moves: c.moves}
 			next.results[i] = c.results[i].Difference(give).Union(replace)
 			if p.swapClaim(uid, c, next) {
 				if _, ok := moved[uid]; !ok {
@@ -871,7 +1138,7 @@ func (p *policy) repinHolders(uids []string) {
 			if !slices.Contains(uids, string(uid)) {
 				continue
 			}
-			claimed, _, err := p.containerClaims(ctr)
+			claimed, _, _, err := p.containerClaims(ctr)
 			if err != nil {
 				log.Errorf("%s: failed to follow its moved DRA claims: %v", ctr.PrettyName(), err)
 				break
@@ -895,6 +1162,11 @@ func (p *policy) moveClaim(uid string, c *claim, why error) error {
 	old := cpuset.New()
 	reqs := make([]draRequest, 0, len(c.results))
 	for i, cpus := range c.results {
+		// The memory of the claim does not move.
+		if group, ok := p.draMemGroup(c.devices[i]); ok {
+			reqs = append(reqs, draRequest{device: c.devices[i], memory: &group})
+			continue
+		}
 		deviceCPUs, ok := p.draDeviceCPUs(c.devices[i])
 		if !ok {
 			return fmt.Errorf("%w, and failed to move it: unknown device %q for result #%d, CPUs %s",
@@ -909,10 +1181,123 @@ func (p *policy) moveClaim(uid string, c *claim, why error) error {
 	if err != nil {
 		return fmt.Errorf("%w, and failed to move it: %w", why, err)
 	}
+	moved.memory = c.memory
 	moved.mpols = c.mpols
 	p.allocations.claims[uid] = moved
 	log.Warnf("%v, moved it from CPUs %s to %s", why, old, moved.ExclusiveCPUs())
 	return nil
+}
+
+// draMemID returns the libmem request ID of the claim result i.
+func draMemID(uid string, i int) string {
+	return fmt.Sprintf("%s/%d", uid, i)
+}
+
+// allocateClaimMemory gives each claim result on a memory device its bytes in
+// libmem. Results on smaller devices go first. On failure, the claim holds no
+// memory.
+func (p *policy) allocateClaimMemory(uid string, c *claim, reqs []draRequest) error {
+	var order []int
+	for i, req := range reqs {
+		if req.memory != nil {
+			order = append(order, i)
+		}
+	}
+	slices.SortStableFunc(order, func(a, b int) int {
+		return reqs[a].memory.nodes.Size() - reqs[b].memory.nodes.Size()
+	})
+
+	for _, i := range order {
+		zone, err := p.pickMemory(reqs[i])
+		if err == nil {
+			zone, err = p.allocateClaimZone(draMemID(uid, i), zone, reqs[i].bytes)
+		}
+		if err != nil {
+			p.releaseClaimMemory(uid, c)
+			c.memory = nil
+			return err
+		}
+		if c.memory == nil {
+			c.memory = make([]claimMemory, len(reqs))
+		}
+		c.memory[i] = claimMemory{Zone: zone, Size: reqs[i].bytes}
+	}
+	return nil
+}
+
+// pickMemory returns the nodes for a request on a memory device. They are the
+// smallest node group in the device with enough free memory. It prefers the
+// group with less free memory when two groups have the same number of nodes.
+func (p *policy) pickMemory(req draRequest) (libmem.NodeMask, error) {
+	var (
+		fit     libmem.NodeMask
+		fitFree int64
+	)
+	for _, group := range p.memGroups {
+		if group.memType != req.memory.memType || req.memory.nodes.And(group.nodes) != group.nodes {
+			continue
+		}
+		free := p.memAllocator.ZoneAvailable(group.nodes)
+		if free < req.bytes {
+			continue
+		}
+		size, fitSize := group.nodes.Size(), fit.Size()
+		if fit == 0 || size < fitSize || size == fitSize && free < fitFree {
+			fit, fitFree = group.nodes, free
+		}
+	}
+	if fit == 0 {
+		free := p.memAllocator.ZoneAvailable(req.memory.nodes)
+		return 0, fmt.Errorf("device %s: %s of memory requested, only %s free", req.device,
+			resource.NewQuantity(req.bytes, resource.BinarySI), resource.NewQuantity(free, resource.BinarySI))
+	}
+	return fit, nil
+}
+
+// allocateClaimZone allocates size bytes for the zone in libmem under request
+// ID id. It returns the nodes that libmem gives the request.
+func (p *policy) allocateClaimZone(id string, zone libmem.NodeMask, size int64) (libmem.NodeMask, error) {
+	req := libmem.NewRequest(id, size, zone,
+		libmem.WithName("DRA claim "+id),
+		libmem.WithPriority(libmem.Reservation),
+		libmem.WithStrictTypes(p.memAllocator.ZoneType(zone)),
+	)
+	// libmem moves no container to make room. A new claim gets nodes with
+	// enough free memory. At a restart libmem has no containers yet.
+	nodes, _, err := p.memAllocator.Allocate(req)
+	if err != nil {
+		return 0, fmt.Errorf("failed to allocate %s of memory on nodes %s: %w",
+			resource.NewQuantity(size, resource.BinarySI), zone.MemsetString(), err)
+	}
+	return nodes, nil
+}
+
+// reinstateClaimMemory allocates the memory of a restored claim on the nodes
+// it had.
+func (p *policy) reinstateClaimMemory(uid string, c *claim) error {
+	for i, m := range c.memory {
+		if m.Size == 0 {
+			continue
+		}
+		zone, err := p.allocateClaimZone(draMemID(uid, i), m.Zone, m.Size)
+		if err != nil {
+			return policyError("failed to reinstate DRA claim %s: %w", uid, err)
+		}
+		c.memory[i].Zone = zone
+	}
+	return nil
+}
+
+// releaseClaimMemory releases the claim memory in libmem.
+func (p *policy) releaseClaimMemory(uid string, c *claim) {
+	for i, m := range c.memory {
+		if m.Size == 0 {
+			continue
+		}
+		if err := p.memAllocator.Release(draMemID(uid, i)); err != nil {
+			log.Errorf("claim %s: failed to release the memory of result %d: %v", uid, i, err)
+		}
+	}
 }
 
 // pickCPUs returns as many free CPUs of the device as the request asks for,
@@ -1075,15 +1460,41 @@ func (p *policy) largerDevice(device string, cpus cpuset.CPUSet) bool {
 // the root, a shallow tree stops at the socket, and L3 cache pools can sit
 // below a node.
 func (p *policy) poolForCPUs(cpus cpuset.CPUSet) Node {
-	pool := p.root
 	if cpus.IsEmpty() {
-		return pool
+		return p.root
 	}
+	return p.deepestPool(func(n Node) bool {
+		return cpus.IsSubsetOf(grantableCPUs(n.GetSupply()))
+	})
+}
 
+// poolForMems returns the deepest pool that has all the memory nodes. Of pools
+// with the same memory nodes, it returns the one closest to the root. A node
+// without CPUs belongs to the pool of its closest DRAM node with CPUs.
+func (p *policy) poolForMems(mems libmem.NodeMask) Node {
+	if mems == 0 {
+		return p.root
+	}
+	poolMems := func(n Node) libmem.NodeMask {
+		return libmem.NewNodeMask(n.GetMemset(memoryAll).Members()...)
+	}
+	// The L3 cache pools of a NUMA node all have the memory of the node. The
+	// search skips a pool with the same memory nodes as its parent. So the
+	// container can run on all CPUs next to the memory.
+	return p.deepestPool(func(n Node) bool {
+		nodes := poolMems(n)
+		return nodes.And(mems) == mems && nodes != poolMems(n.Parent())
+	})
+}
+
+// deepestPool returns the deepest pool for which has is true. It returns the
+// root if has is false for every child of the root.
+func (p *policy) deepestPool(has func(Node) bool) Node {
+	pool := p.root
 	for deeper := true; deeper; {
 		deeper = false
 		for _, child := range pool.Children() {
-			if cpus.IsSubsetOf(grantableCPUs(child.GetSupply())) {
+			if has(child) {
 				pool, deeper = child, true
 				break
 			}
