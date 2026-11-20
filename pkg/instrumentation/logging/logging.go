@@ -21,9 +21,9 @@ import (
 
 	logger "github.com/containers/nri-plugins/pkg/log"
 	"go.opentelemetry.io/contrib/bridges/otelslog"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
-	"go.opentelemetry.io/otel/log/global"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/resource"
 )
@@ -103,7 +103,7 @@ func Start(loggerName string, resource *resource.Resource, opts ...Option) error
 			sdklog.NewBatchProcessor(exp, sdklog.WithExportInterval(interval)),
 		),
 	)
-	global.SetLoggerProvider(provider)
+	otel.SetLoggerProvider(provider)
 
 	otelLogger := otelslog.NewLogger(loggerName, otelslog.WithLoggerProvider(provider))
 	logger.SetOtelHandler(otelLogger.Handler())
