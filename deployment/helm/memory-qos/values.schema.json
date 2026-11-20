@@ -46,6 +46,24 @@
         "config": {
             "type": "object",
             "properties": {
+                "classes": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["name", "swaplimitratio"],
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            "swaplimitratio": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1
+                            }
+                        }
+                    }
+                },
                 "unifiedAnnotations": {
                     "type": "array",
                     "items": {

@@ -9,6 +9,12 @@ image:
   pullPolicy: Always
 
 config:
+  # Memory QoS classes selected by the class.memory-qos.nri.io annotation.
+  classes:
+  - name: bronze
+    swaplimitratio: 0.5
+  - name: silver
+    swaplimitratio: 0.2
   # unifiedAnnotations lists the cgroup v2 memory.* parameters that pods
   # are allowed to set directly using annotations of the form <parameter>.memory-qos.nri.io: <value>
   unifiedAnnotations:
