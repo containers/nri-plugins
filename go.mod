@@ -11,7 +11,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/intel/goresctrl v0.14.0
-	github.com/intel/memtierd v0.1.1
+	github.com/intel/memtierd v0.1.2-0.20261119135817-9bb410f86df5
 	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.3
 	github.com/klauspost/compress v1.19.1
 	github.com/pelletier/go-toml/v2 v2.4.3

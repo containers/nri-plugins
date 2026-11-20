@@ -16,7 +16,7 @@ RUN --mount=type=cache,target=/go/pkg/mod/ \
     GOBIN=/bin go install \
         -tags osusergo,netgo \
         -ldflags "-extldflags=-static" \
-        github.com/intel/memtierd/cmd/memtierd@v0.1.1
+        github.com/intel/memtierd/cmd/memtierd@9bb410f86df5fe61c8f157af37d24a79d2cf7c69
 
 # Fetch go dependencies in a separate layer for caching
 COPY go.mod go.sum .
