@@ -15,8 +15,10 @@
 package topologyaware
 
 import (
-	"errors"
 	"fmt"
+	"maps"
+	"math"
+	"slices"
 	"strconv"
 	"time"
 
@@ -504,7 +506,7 @@ func (cs *supply) pickExclusiveCPUs(r Request, cnt int, dryRun bool) (cpuset.CPU
 
 	case cs.AllocatableSharedCPU() >= 1000*cnt:
 		var (
-			slice, err = cs.SliceableCPUs()
+			slice, err = cs.sliceableCPUs(cs.node, cnt, cr.hintedCPUSets())
 			pick       cpuset.CPUSet
 		)
 
@@ -985,6 +987,27 @@ func (cr *request) PickByHints() bool {
 	return cr.pickByHints
 }
 
+// hintedCPUSets returns the CPUs of each pod resource topology hint of the
+// request, ordered by provider, if it picks resources by hints.
+func (cr *request) hintedCPUSets() []cpuset.CPUSet {
+	if !cr.PickByHints() {
+		return nil
+	}
+	var (
+		hints = cr.GetContainer().GetTopologyHints()
+		sets  []cpuset.CPUSet
+	)
+	for _, provider := range slices.Sorted(maps.Keys(hints)) {
+		if !podresapi.IsPodResourceHint(provider) {
+			continue
+		}
+		if cpus, err := cpuset.Parse(hints[provider].CPUs); err == nil {
+			sets = append(sets, cpus)
+		}
+	}
+	return sets
+}
+
 // IrqAffinity returns the IRQ affinity for the request.
 func (cr *request) IrqAffinity() *IrqAffinity {
 	return cr.irqs
@@ -1265,49 +1288,66 @@ func (cs *supply) AllocatableSharedCPU(quiet ...bool) int {
 
 // SliceableCPUs calculates the shared cpuset we can slice exclusive CPUs off of.
 func (cs *supply) SliceableCPUs() (cpuset.CPUSet, error) {
-	var (
-		sliceable = cpuset.New()
-		errs      []error
-	)
+	return cs.sliceableCPUs(cs.node, math.MaxInt, nil)
+}
 
-	// We need to avoid slicing any shared pool in child nodes below its
-	// current allocation. To do so we go through the subtree collecting
-	// CPUs from shared pools for allocation but leaving off enough full
-	// CPUs in each for their current BestEffort and Burstable QoS class
-	// shared allocations.
-
-	cs.node.DepthFirst(func(n Node) (done bool) {
-		if n.IsSameNode(cs.node) && !n.IsLeafNode() {
-			return
-		}
-
-		ns := n.FreeSupply()
-		if ns == nil {
-			return false
-		}
-
-		cpus := ns.SharableCPUs()
-		free := ns.AllocatableSharedCPU(true) / 1000
-
-		// TODO(klihub): We should ideally take also into account the CPU
-		// priority preference of any ongoing allocation, trying to slice
-		// CPUs with a matching preference. We don't do that ATM.
-
-		cset, err := cs.takeCPUs(&cpus, nil, free, nonePrio)
+// sliceableCPUs returns the CPUs of n from which cnt exclusive CPUs can be
+// sliced off without taking n or any pool below it under its shared
+// allocations. The non-leaf pool of cs offers the CPUs its children offer.
+// Other pools also offer their CPUs in no child. A pool offers at most its
+// free whole CPUs, unless it is a non-leaf pool with at least cnt of them.
+// Pools which offer only some of their CPUs offer an equal share of them out
+// of each of the hinted CPU sets first.
+func (cs *supply) sliceableCPUs(n Node, cnt int, hints []cpuset.CPUSet) (cpuset.CPUSet, error) {
+	cpus := n.FreeSupply().SharableCPUs()
+	if n.IsSameNode(cs.node) && !n.IsLeafNode() {
+		cpus = cpuset.New()
+	}
+	for _, c := range n.Children() {
+		offer, err := cs.sliceableCPUs(c, cnt, hints)
 		if err != nil {
-			errs = append(errs, err)
-			return false
+			return cpuset.New(), err
 		}
-
-		sliceable = sliceable.Union(cset)
-		return false
-	})
-
-	if len(errs) > 0 {
-		return cpuset.New(), errors.Join(errs...)
+		cpus = cpus.Difference(c.FreeSupply().SharableCPUs()).Union(offer)
 	}
 
-	return sliceable, nil
+	// Slicing off cnt CPUs can't take a pool with at least cnt free whole
+	// CPUs under its shared allocations, so such a non-leaf pool offers all
+	// that it has. Leaf pools always offer at most their free whole CPUs.
+	free := max(0, n.FreeSupply().AllocatableSharedCPU(true)/1000)
+	if cpus.Size() <= free || (free >= cnt && !n.IsLeafNode()) {
+		return cpus, nil
+	}
+
+	// TODO(klihub): We should ideally take also into account the CPU
+	// priority preference of any ongoing allocation, trying to slice
+	// CPUs with a matching preference. We don't do that ATM.
+
+	// Offer an equal number of CPUs from each hinted CPU set in the pool,
+	// then any other CPUs.
+	var (
+		inPool []cpuset.CPUSet
+		offer  = cpuset.New()
+	)
+	for _, h := range hints {
+		if h = h.Intersection(cpus); !h.IsEmpty() {
+			inPool = append(inPool, h)
+		}
+	}
+	for _, h := range inPool {
+		from := h.Difference(offer)
+		pick, err := cs.takeCPUs(&from, nil, min(free/len(inPool), from.Size()), nonePrio)
+		if err != nil {
+			return cpuset.New(), err
+		}
+		offer = offer.Union(pick)
+	}
+	rest := cpus.Difference(offer)
+	more, err := cs.takeCPUs(&rest, nil, free-offer.Size(), nonePrio)
+	if err != nil {
+		return cpuset.New(), err
+	}
+	return offer.Union(more), nil
 }
 
 func (score *score) Supply() Supply {
