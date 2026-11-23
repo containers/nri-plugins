@@ -82,7 +82,9 @@ jobs:
           go-version-file: go.mod
       - run: |
           go test -short -race \
-              ./pkg/cxl/...
+              ./pkg/cxl/... \
+              ./pkg/udev/... \
+              ./scripts/cxl-dump/...
 
   verify-docs:
     name: Documentation
