@@ -1,0 +1,718 @@
+test90-mbt-stress: the contract between the model and the executor
+===================================================================
+The model (model/, the Go program mbt-cxl) chooses the steps of a run and
+predicts what the cluster looks like after each of them. The executor
+(code.var.sh, mbt.source.sh and the observer mbt-observe.py) runs the
+steps on the cluster and reports what it observes. This file is the
+contract between the two: the names, the kinds of pods, the slots, the
+actions, the protocol, the observations, the oracle and the
+configuration (sections 1 to 8), and the rules that refine them (A1 to
+A44, section 9). The code cites a section as "contract N" and a rule by
+its id.
+
+1. Names
+--------
+VM ids: vm2 (the control plane, $POOL_VM2_NAME, VM directory
+$OUTPUT_DIR), vm1 ($POOL_VM1_NAME), vm0 ($POOL_VM0_NAME). The model knows
+only the ids; the executor maps ids to Kubernetes node names and VM
+directories.
+
+Pools, each a pool server and a pool controller as in test19-many-pools:
+  a  pool-a, cabled to vm1 and vm2 at host bridge 0
+  b  pool-b, cabled to vm0 at host bridge 0
+  c  pool-c, cabled to vm0, vm1 and vm2 at host bridge 1, over HMP
+
+Devices (name, serial, size, kind):
+  a-pooled0 0xc1ee0001 512Mi unshared     a-shared0 0xc1ae0001 256Mi shared
+  b-pooled0 0xc1ee1001 512Mi unshared     b-shared0 0xc1ae1001 256Mi shared
+  c-pooled0 0xc1ee2001 256Mi unshared     c-shared0 0xc1ae2001 256Mi shared
+  c-pmem0   0xc1ae2002 256Mi shared persistent (A22)
+  c-pmem1   0xc1ee2002 256Mi unshared persistent (A22)
+  the local memdev 0xc100e2e1 of every VM: 8 blocks on vm2, 2 on vm1 and
+  vm0 (a block is 128Mi); attached at the setup by the pool server that
+  knows it (pool-a: vm2, vm1; pool-b: vm0), owner e2e:dra-local-device,
+  never by Kubernetes.
+
+NUMA nodes: the memory under host bridge 0 (the local memdev, pool-a and
+pool-b devices) is NUMA node 2 of its VM, under host bridge 1 (pool-c)
+NUMA node 3 (flags --numa-node-hb0 2 --numa-node-hb1 3). The oracle
+reports a region on another NUMA node plainly.
+
+2. Kinds
+--------
+One ResourceClaimTemplate per kind and pool, made at the setup in
+DRA_NS. Every pod has one claim "c0", or none (plain), or two (dnuma,
+A39). The environment is that of CXL_<KEY>_ with KEY the serial in
+upper-case hex.
+
+kind     claim                                   environment
+xnuma-P  cxl-pool, serial of P-pooled0           MODE=numa SHARED=0 SIZE=<device> NUMA_NODE=<hb NUMA node>
+xdax-P   cxl-pool, P-pooled0, device.mode dax    MODE=dax SHARED=0 SIZE=<device> DAX=/dev/dax* READ_ONLY=0
+sdax-P   cxl-pool-shared, P-shared0, shares "1"  MODE=dax SHARED=1 SIZE=256Mi DAX READ_ONLY=0
+sro-P    as sdax-P, device.readOnly true         ... READ_ONLY=1
+sexcl-P  cxl-pool-shared, P-shared0, no shares   MODE=dax SHARED=1 SIZE=256Mi DAX READ_ONLY=0
+lnuma    cxl-local, memory 128Mi                 MODE=numa SHARED=0 SIZE=134217728 NUMA_NODE=2
+ldax     cxl-local, 128Mi, device.mode dax       MODE=dax SHARED=0 SIZE=134217728 DAX READ_ONLY=0
+lsteer   as lnuma, container.steering.policy auto    as lnuma
+lease    cxl-lease                               CXL_LEASE_SOCKET=/run/cxl/cxl.sock
+plain    no claim                                no CXL_* variable
+P is a, b or c. The kinds of persistent devices are in A22, dnuma in A39.
+Every memdev result also has SERIAL=<serial>; every claimed container
+has a marker CXL_CLAIM_<uid>_<n>=1 (not checked).
+
+Every pod: restartPolicy Always, terminationGracePeriodSeconds 2, the
+label mbt.slot=<slot label>, the nodeSelector kubernetes.io/hostname of
+its VM unless its slot is "any", the image $DRA_TOOLS_IMAGE with the
+ConfigMap tools at /tools. Its main process is a shell whose child is
+the workload (sleep). The shell exits with the child's status when the
+child dies of a signal, so a SIGSEGV of the child is a crash (exit 139)
+and the container restarts (PID 1 ignores SIGSEGV).
+
+3. Slots and profiles
+---------------------
+A slot is KIND@VM#I (VM vm0, vm1, vm2 or any). It holds at most one pod.
+Its label (a Kubernetes label value) is KIND_VM_I, the name of its pod
+mbt-KIND-VM-I-g<gen>, gen counted per slot by the executor from 1. A
+profile is a list of slots (model/kinds.go, profiles): "full", "fullp"
+(the default: full with the slots of the persistent kinds), "pmem",
+"small" and others. "any" slots exist only on-line. The executor does
+not depend on the list.
+
+4. Actions
+----------
+One line: VERB ARGS..., words separated by one space.
+create SLOT          apply the pod of SLOT (a new gen), return at once
+delete SLOT          kubectl delete pod --wait=false, return at once
+crash SLOT           SIGSEGV to the workload child of the main container
+write SLOT           dax kinds: write "mbt-<step>" and a NUL at offset 0 of
+                     $CXL_<KEY>_DAX in the container (dax-rw.py write)
+read SLOT            dax kinds: read the string at offset 0
+lease-get SLOT M     lease kind: cxl-request request --source local --mode M
+                     --size 128Mi --wait 60s, M numa or dax; one lease
+                     per slot at a time; persistent modes in A23
+lease-put SLOT       cxl-request release --all
+settle               observe until the oracle says ok (section 7)
+driver-kill VM       SIGKILL of the driver process of VM (kubelet restarts
+                     the container in place), return at once
+driver-restart VM    delete the driver pod of VM, wait for a new ready
+                     pod (A15)
+ctrl-kill P          SIGKILL of the controller unit of pool P (it stays down)
+ctrl-start P         reset-failed and start the unit with the command line
+                     of dra-install
+ctrl-restart P       systemctl stop (graceful: deletes the slices), start
+server-restart P     stop the pool server P (SIGTERM) and start it again on
+                     the same configuration, state file and log; wait for
+                     its status to answer
+kubelet-restart VM   systemctl restart kubelet, wait for the node and the
+                     driver (A15)
+containerd-restart VM  systemctl restart containerd, wait for the node and
+                     the driver (A8, A15)
+The persistent verbs are in A23, fencing-switch in A37, node-reboot in
+A42. The executor refuses an unknown verb, or a verb with the wrong
+arguments, with status 2 (the oracle fails the step).
+
+5. Protocol
+-----------
+On-line the model runs as a coprocess; its stdout goes to the executor,
+the executor writes its stdin. The model writes one line each:
+  step N VERB ARGS...   execute step N
+  ok N                  step N is accepted
+  wait N MESSAGE        settle: not there yet, observe again after MBT_POLL
+  fail N MESSAGE        the step failed the oracle: the executor reports
+                        MESSAGE and the files of section 7, and fails
+  end MESSAGE           no more steps: the executor goes to the teardown
+The executor writes one line each:
+  done N STATUS JSON    a step other than settle ended with exit STATUS
+                        and the observation JSON ({} if none; 6.2)
+  observe N JSON        one settle observation (6.1)
+After "step N settle" the executor sends observe lines until the model
+answers ok or fail; the model enforces MBT_SETTLE_TIMEOUT and fails
+with the last difference. For other verbs the model answers ok or fail
+to done. Every line is a single line; MESSAGE is a summary, the details
+are in the model's files. Nothing else goes to the model's stdin. The
+model logs to stderr, which code.var.sh writes to mbt-cxl.log of the
+test output directory.
+
+Off-line, code.gen.sh of "mbt-cxl generate" has
+  mbt-step N VERB ARGS...
+  mbt-expect N <<'EOF'
+  <the prediction JSON of step N>
+  EOF
+mbt-expect polls like settle and runs "$MBT_BIN" check --step N --expect
+FILE --observed FILE, which prints ok, wait MESSAGE or fail MESSAGE as
+above (exit 0, 3, 1). A step other than settle that returns an
+observation gets an mbt-expect too (A14).
+
+6. Observations
+---------------
+6.1 settle: one JSON object with the step, the poll count, the slot pods
+(slot, name, uid, gen, node, phase, ready, deleting, restarts, the
+waiting reason of the main container, unschedulable, its claim and
+claims, its Warning events), the lease companions, other pods of
+DRA_NS, the attachments of every pool, the driver pods, the controller
+units, the observation of every VM (6.3), the environment of the pods
+inspected in this observation, the cxl.nri.io and cxl-pool.nri.io
+ResourceSlices, and the persistent devices' content (A24). "inspect" has
+the pods that are Running and Ready and whose (uid, restarts) the
+executor has not inspected yet: one kubectl exec each, for the
+environment and, of a lease pod, cxl-request list.
+6.2 done: write and read {"text": <the string read> or null, "stderr":
+<its first 200 bytes>}; lease-get {"lease": <id> or null, "stderr"};
+the others {} or what their rule says. STATUS is the exit status of the
+command in the container (a write on a read-only claim: nonzero).
+6.3 per VM: mbt-observe.py, run as root in the VM, prints one JSON line:
+the boot id, the CXL memdevs, the regions with their dax devices, the
+ports with committed decoders, the NUMA nodes, the records of the
+driver's state.json, the device names of the CDI specs, and per running
+container of DRA_NS its cpuset.mems, cpuset.mems.effective, memory.high
+and device nodes, with the parts of A13, A24 and A44.
+The field names are those of mbt-observe.py's docstring (the producer)
+and of model/observe.go (the consumer). A part that cannot be read is
+null, and the reason is in "errors" next to it.
+
+7. Oracle and files
+-------------------
+At every settle the model checks:
+  O1 the pods per slot: phase, ready, node, restarts; no unexpected pod
+     (lease companions are expected); Pending pods unschedulable or
+     waiting for the attach as predicted.
+  O2 the attachments per pool: device to hosts and the single-host flag
+     as predicted; none attaching, detaching, failed or adopted.
+  O3 per VM: the regions on CXL memdevs (serial, mode, online size) and
+     the local slices (count, sizes, modes) as predicted.
+  O4 per VM: the records of state.json agree with the prepared claims of
+     the VM.
+  O5 fencing and memory.high (exact in A38).
+  O6 the environment of a pod that started or restarted, as section 2
+     says.
+  O7 (at write and read) a dax read returns what the model knows the
+     device holds: pool dax devices keep their bytes, local dax slices
+     are zeroed, a write on a read-only claim fails.
+  O8 the driver pods are ready, their restarts come only from the
+     faults of the run, and their logs have no panic (A13).
+The fencing set F of a VM is the CXL NUMA nodes that its driver onlined
+since it last started, seeded at a start with the NUMA nodes of the
+numa claims prepared on it.
+"Stable" for a settle: no pod deleting; every pod predicted Running is
+Running and Ready; pods predicted Pending are Pending; no attachment in
+a transient state; the driver pods ready; the controllers as predicted.
+On a failure the model writes mbt-fail.txt (the step, the action, the
+model state, the prediction, the last observation, the differences). It
+keeps mbt-steps.txt (every action executed, one per line, after a
+header of the seed, the profile and the flags) current after every
+step. Both are in the test output directory.
+
+8. Configuration
+----------------
+code.var.sh lists its parameters (MBT_MODE, MBT_SEED, MBT_DURATION,
+MBT_STEPS, MBT_DEPTH, MBT_PROFILE, MBT_UNSETTLED, MBT_SETTLE_TIMEOUT,
+MBT_POLL, MBT_AVOID, MBT_FENCING, MBT_REBOOT, MBT_STALL_WINDOW,
+MBT_REPLAY, MBT_SCRIPT, MBT_ARGS and those of the executor) with their
+defaults; "mbt-cxl online -h" lists the flags of the model. The
+executor measures facts of the setup and passes them as flags:
+--local-blocks vm2=8,vm1=2,vm0=2 (the capacity of memdev-c100e2e1 in the
+cxl.nri.io slice of each node in blocks of 128Mi; the address line probe
+may publish less), --numa-node-hb0 2 and --numa-node-hb1 3.
+
+9. Rules
+--------
+A1 A lease pod is inspected again after every lease-get and lease-put:
+   its leases change without a restart.
+A2 Observations may have fields that this contract does not name; the
+   oracle decodes them leniently and ignores them.
+A3 The attachment lists have the local memdevs of the setup (owner
+   e2e:dra-local-device); the oracle ignores attachments whose owner
+   does not start with "k8s:".
+A4 Off-line, the observed file holds the JSON of an on-line observe
+   line; check accepts it.
+A5 Polling is the executor's (MBT_POLL); the model has no poll flag.
+   MBT_ARGS passes more flags to the model.
+A6 "wait" or "fail": the pod status shows a crash after a moment;
+   kubelet's restart back-off (10, 20, 40 s) applies to a crash and to
+   a driver-kill alike; a restarted driver fences after its start.
+A7 A deleting pod may be in phase Succeeded or Failed (its workload
+   exits 0 on SIGTERM): terminal phases are normal while deleting.
+A8 containerd-restart VM makes the driver of VM exit (status 1) when
+   its NRI connection is lost: its container restarts in place
+   (restarts +1, exit code 1), as at driver-kill; the fencing set F of
+   VM is seeded again; the containers created between the runtime's
+   restart and the new driver's Synchronize are fenced by its first
+   fence pass.
+A9 Decoder stacks. Per VM and host bridge the model keeps the stack of
+   the regions through it: hb0 has the region of the local memdev and
+   the regions of P-pooled0 and P-shared0 of pool a (vm1, vm2) or b
+   (vm0); hb1 those of pool c. Lifetimes on a node: an unshared pool
+   device lives as its claim (Prepare to Unprepare), a shared pool
+   device from the first to the last claim on the node, the local
+   memdev from the first to the last claim or lease slice (numa and
+   dax slices share it). A new region is pushed; destroying the top
+   pops it and every hole below it; destroying another one leaves a
+   hole. A Prepare that needs a new region through a stack with a hole
+   fails: the pod is Blocked (Pending, ContainerCreating), and one of
+   its Warning events has "CXL decoders released out of order". Faults
+   neither create nor destroy regions. When the hole clears the pod
+   must run within --unblock-timeout (kubelet caps its Prepare back-off
+   at 5 min); a settle accepts it as ContainerCreating meanwhile,
+   without waiting for it. Region-creating operations on one stack at
+   once race for the order: the oracle adopts the observed order
+   (A10); generate never has two of them in flight on one stack.
+   --avoid-holes: no action that destroys a region below the top of its
+   stack.
+A10 The observation has per VM "ports" (each port, its kind hostbridge,
+   switch or endpoint, its host bridge, the count of committed decoders
+   and the committed decoders with their region, start and size), and
+   per pod "event": its newest Warning event.
+A11 Completeness: every running container of a DRA_NS pod is in
+   "containers" of its VM with a cpuset.mems and an effective one; a
+   missing container, an empty field or a VM part that is null is
+   "wait" (a fail at the timeout), never "ok".
+A12 Per pod "events": its Warning events (reason, message of up to 4000
+   bytes, count, last timestamp), newest first, at most 5, next to
+   "event". The Blocked check of A9 searches all of them. kubelet
+   retries a failed Prepare at the resync of the pod, per pod: the
+   order of the retries is taken from the observed decoders, never
+   assumed.
+A13 Per VM "driverLog": the current driver container, its count of
+   panics and the first lines that match "panic|fatal error|SIGSEGV"
+   since its start. Settle "slices": the cxl.nri.io ResourceSlice of
+   each node (name, serial, shared of every device). The oracle checks
+   no panic; memdev-c100e2e1 published on every node; no pool serial in
+   a cxl.nri.io slice; the leases of state.json agree with the model's.
+A14 Off-line, mbt-step passes the status and the observation of every
+   action to "$MBT_BIN" check as an on-line done line does; generate
+   writes an mbt-expect for every step.
+A15 A driver is ready when a container of it runs on the node, the log
+   of that container has "NRI fence: lends restored" (its last line of
+   the start, in every fencing mode), the node's cxl.nri.io
+   ResourceSlice and both dra.sock files are there. driver-restart,
+   containerd-restart and kubelet-restart wait for that; driver-kill
+   lets the next settle wait; a settle takes a driver that is not ready
+   as "wait".
+A16 replay reads the profile and the flags from the header of the steps
+   file (the environment may only add). A seed gives the same steps
+   again only with --plan-time 0 or --max-paths.
+A17 After any restart of a driver, graceful or not (driver-kill,
+   containerd-restart), a running lsteer container has memory.high max
+   and is fenced as an unsteered container with its claim; a later
+   restart of the container is steered again (memory.high set).
+A18 Settle "poolSlices": the cxl-pool.nri.io slices per pool (name,
+   devices, the VM ids of its node selector; [] for none). A graceful
+   controller stop (ctrl-restart) deletes the pool's slices and the new
+   controller publishes them again. A ctrl-kill before that leaves the
+   pool without slices until ctrl-start: new claims of the pool are
+   then Unschedulable ("cannot allocate all claims"), not allocated and
+   waiting. The model takes the presence of the slices from
+   "poolSlices"; without the field it accepts either outcome.
+A19 kube-scheduler keeps the device of a deleted pod's claim that was
+   allocated and waiting for its binding conditions for a moment after
+   the delete (the hold). A contender pending before the delete, or
+   created within that moment, may stay Pending (stalled) until the
+   first of: a ResourceSlice added or updated (a driver's republish,
+   kubelet-restart, ctrl-restart; not ctrl-start after ctrl-kill),
+   another claim's deallocation after the hold, a Node or DeviceClass
+   change, or the scheduler's flush of unschedulable pods after five
+   minutes. The oracle accepts Pending or the promoted state within the
+   stall window (A28) of the delete, and requires the promotion after
+   it; settles do not wait for it. A holder that was bound already
+   (Running, or ContainerCreating on its node) hands the device over at
+   once.
+A20 Refinements of A18 and A19:
+   - ctrl-start makes absent slices unknown: republished soon; a
+     ctrl-kill before that leaves either outcome.
+   - The hold of A19 applies across a settle (it may outlive a short
+     settle; the oracle clears it after the hold, "#adopt
+     held=DEV:off"), and to a promotion after any unbound delete of the
+     device in the window; off-line no unbound pool delete is
+     generated.
+   - After the binding timeout (600 s) a waiting claim may take the
+     device of another (the swap): accepted from 420 s on.
+   - While the slices of a pool are not known to be back, one claim per
+     device; the others are contested.
+   - The claim of a pod gone at the last settle may not be deallocated
+     yet: its device is contested.
+A21 Refinements of A19 and A9:
+   - A contender stalled by the hold may be promoted at any moment of
+     its window: the bytes of a numa contender's device are unknown from
+     the stall on (its Prepare onlines the device).
+   - No window is generated in which a contender that fits at once,
+     stalled only by the hold, shares a decoder stack with the release
+     of another claim of its device: the promotion before or after that
+     release gives different stacks. A contender that waits for the
+     release of its device gets it after that release.
+   - A pod that got its pool device from a claim released in its window
+     prepares after that claim's Unprepare, also when its controller was
+     down and the prepare comes with ctrl-start.
+A22 Persistent devices: pool-c has c-pmem0 and c-pmem1 (section 1) in
+   every profile; their data and LSA files are removed before pool-c
+   starts and at the cleanup. Kinds (claim c0, class
+   cxl-pool-persistent, a serial selector; SIZE the size of the
+   namespace, 266338304 for 256Mi):
+     pwr-P   no shares, device {mode: block}
+             MODE=block SHARED=1 READ_ONLY=0 PATH=/dev/pmem* SIZE
+     pfsd-P  shares 1, {mode: fs, readOnly: true}
+             MODE=fs ACCESS=direct READ_ONLY=1 PATH=/run/cxl-fs/<KEY>
+     pfsc-P  shares 1, {mode: fs, readOnly: true, access: cached,
+             path: /models}  MODE=fs ACCESS=cached PATH=/models
+     pbro-P  shares 1, {mode: block, readOnly: true}  READ_ONLY=1
+     pbad-P  shares 1, {mode: block}: refused at every Prepare
+     xpb-P, xpf-P  c-pmem1, no capacity, block read-write and fs direct,
+             SHARED=0
+     plse    cxl-lease (template mbt-lease) with persistent leases (A23)
+   An fs container has no /dev/pmem*, a block container exactly PATH.
+   The profiles "pmem" and "fullp" have these slots.
+A23 The persistent verbs:
+   pwrite SLOT img|junk  the writer kinds and plse with a pbw lease: img
+     writes the erofs template whose hello.txt and bytes 0-63 hold
+     "mbt-<step>" padded, then fsync; junk writes zeros over the first
+     8192 bytes. done {"text": <token> or null, "stderr"}; nonzero on a
+     read-only claim or fd.
+   pread SLOT  fs kinds: hello.txt under PATH (claim) or under the
+     lease's path; block kinds and pbw or pbr leases: bytes 0-63. done
+     {"text"}.
+   hold SLOT, unhold SLOT  fs claims and fs leases: a background process
+     maps hello.txt read-only until unhold; crash and delete end it.
+     done {}.
+   lease-get SLOT pbw|pbr|pfd|pfc  plse: cxl-request request --serial of
+     c-pmem0 with --mode block | --share --read-only --mode block |
+     --share --read-only --mode fs --name mbt | the same with --access
+     cached; --wait 60s; done as lease-get. lease-put as before (A30).
+   pwipe P DEV  on the host: zero the LSA file of DEV and the first 4
+     MiB of its data file; refused (status 2) while the server lists an
+     attachment of DEV.
+   driver-kill-at VM MARKER  MARKER region, ns, mount or bind: arm a
+     one-shot watcher that kills the driver of VM at the marker of the
+     next persistent Prepare there; return at once. The next done or
+     observe line has "killAt" (A30, A31).
+   The executor refuses these verbs on other kinds with status 2.
+A24 The observation of persistent devices: per VM "pmem", "fsMounts",
+   "leaseBinds", "leaseDirs", "loops", "ctrMounts", "poolClaims",
+   "cdiPool" and "kernel", and the counts of driverLog; settle "pdevs":
+   per persistent device the state of its LSA (zero or labels) and its
+   hash, the pfn block, its data offset, whether it holds an erofs, the
+   token and the raw bytes; the inspection adds the mountinfo line of
+   PATH and the /dev/pmem* nodes of the container. The observer opens no
+   file under a node mount or a lease bind and never opens /dev/pmem*.
+   A null part is "wait" (A11).
+A25 Predictions of persistent devices:
+   - Phase Refused: an allocated, attached claim whose Prepare the
+     device refuses (fs: no fsdax namespace or no erofs; block
+     read-only: no namespace) or the configuration refuses (pbad). It is
+     Pending, ContainerCreating, a Warning event names the cause; kubelet
+     retries it; it holds its share; its region may be seen or not. Its
+     share keeps every writer out, so the content cannot become valid:
+     Refused lasts until the pod is deleted.
+   - The device content (namespace, filesystem, token) changes only at
+     a writer's Prepare on a device without a namespace, at pwrite and
+     at pwipe. A writer deleted or killed while starting leaves the
+     namespace unknown, adopted from "pdevs".
+   - LeaseBusy: lease-put of a held fs lease leaves the lease
+     Releasing, its companion Terminating, its bind, node mount and
+     region in place and pread working, until unhold, crash or delete;
+     then the lease is released.
+   - A persistent region on a VM lives from the first to the last
+     prepared claim of the device on the VM (the shared device rule of
+     A9); a Refused claim's retry pushes and pops it at the top.
+   - Faults change neither the content nor the mounts and binds; after
+     any driver restart the node mounts and binds of prepared claims are
+     those of before.
+A26 Invariants of persistent devices, checked at every settle:
+   P1 the node mounts of a VM are one per (serial, access) of the fs
+      claims and fs companions prepared there; direct: erofs on the
+      namespace's /dev/pmemK with dax=always; cached: erofs on a loop
+      device over /dev/pmemK with direct I/O and read-only, without
+      dax=always; ro, nosuid, nodev; nothing else under mounts/.
+   P2 the lease binds are one per Ready or LeaseBusy fs lease, at
+      lease-fs/<lease claim uid>/<name>, with the source of its node
+      mount, ro, nosuid, nodev; the requester's /run/cxl/fs/<name> is in
+      its container; no other mount under lease-fs.
+   P3 the loop devices over pmem are those of the cached node mounts.
+   P4 a pmem region of a persistent device is on a VM if and only if a
+      claim of it is prepared there (Refused: either); with a namespace
+      it is fsdax with map mem, and its block device is the poolClaims
+      blockDevice, the CDI device node and PATH of block claims.
+   P5 no namespace is lost: once the device has one, every region of it
+      on any VM has the fsdax namespace of the adopted UUID; the LSA
+      hash changes only at a writer's Prepare without a namespace and at
+      pwipe.
+   P6 the data is intact: "pdevs" token, raw bytes and erofs are the
+      model's after every step; readers and faults change neither the
+      data nor the LSA hash.
+   P7 no busy region is released: the kernel log has no new BUG, Oops,
+      WARNING or pmem and erofs errors; the boot id is the same (but at
+      A42); no attachment of a persistent device is failed or leaked.
+   P8 lease-fs/<uid> and leases/<uid> exist if and only if the lease
+      claim is prepared or still has a bind; no other directory under
+      mounts/.
+   P9 an attachment is single-host on the writer's VM only while a
+      writer holds the device; a VM with a reader claim has a shared
+      attachment.
+   P10 CDI devices and environment as A22: fs claims have no /dev/pmem*
+      in the container, block claims exactly PATH, companions no CDI
+      device.
+   P11 writes on pbro, pfs* and pbr leases fail; pread of a reader
+      gives the model's content.
+A27 Generation off-line: no driver-kill-at; no pwipe while a claim of
+   the device may be allocating; no Refused claim next to a pool-c
+   region change on the same VM; a pwrite only by a Running pod; hold
+   only on a Running fs kind; at most one persistent lease per plse
+   slot. MBT_AVOID can name pwipe, driver-kill-at and hold.
+A28 --stall-window D (MBT_STALL_WINDOW) bounds how long a stalled
+   contender of A19 may stay Pending, counted from the start of the
+   settle that first saw it stalled; the default is 6m. If D is not
+   longer than MBT_SETTLE_TIMEOUT, a stalled contender is not settled:
+   the settle waits for its promotion (allocated and waiting for the
+   attach, or Running) and fails when D is over. The generator rules of
+   A19 stay. The header of the steps file has the flag (A16). A
+   kube-scheduler that requeues the contender at once allows a short
+   window, such as --stall-window=30s; code.var.sh passes that when the
+   control plane runs such a scheduler, and MBT_STALL_WINDOW wins.
+A29 (a) The JSON names of A24 are those of mbt-observe.py. (b) pwrite is
+   generated by a Running pod of any persistent kind: on a read-only
+   claim or fd it must fail (P11). (c) lease-put of a held fs lease
+   returns nonzero (cxl-request release --wait exits 3) and leaves the
+   lease LeaseBusy (A25). (d) A lease-get while driver-kill-at bind is
+   armed on its VM either returns 0 with the lease Ready (after the
+   driver's restart and the broker's reconcile) or nonzero with the
+   lease Failed and released; the oracle accepts both and adopts the
+   observed one.
+A30 The erofs image is the 8 KiB template hello.erofs.hex patched (the
+   superblock checksum covers bytes 1024-4095 only). A failed write on a
+   read-only kind exits 1 (status 2 stays "verb refused for this
+   kind"). lease-put on plse waits MBT_LEASE_PUT_WAIT and exits 3 on a
+   held lease (A29 c). "killAt" is on every done and observe line until
+   one has "done": true ("fired": false is final only then). A node
+   mount appears once in mountinfo. "raw" is null without a namespace.
+A31 A driver-kill-at watcher is bound to the driver process it was
+   armed against (a pidfd): it never kills another process.
+   driver-kill, driver-restart, containerd-restart, fencing-switch and
+   node-reboot on its VM disarm it first: the done line of that step has
+   killAt done true, fired false, reason "disarmed by <verb>" (or the
+   fired or ended state if that came first). kubelet-restart does not
+   disarm it. If its process ends otherwise, it ends with done true,
+   fired false, reason "driver restarted". killAt.reason is one of
+   fired, expired, driver restarted, disarmed by VERB, no running driver
+   container.
+A32 An armed driver-kill-at watcher may fire at any time while a Prepare
+   that comes without an event (a refused claim's retry, a blocked or
+   unblocking pod's retry, a stalled contender's promotion) may show its
+   marker on its VM, also after the observation of the settle that saw
+   it armed. A driver fault on that VM is not generated in a window in
+   which such a Prepare existed before any of its steps, also when its
+   claim is gone; the settle of that window has the outcome with the
+   kill.
+A33 A lease-get under an armed bind watcher that fires returns nonzero
+   (EOF); the lease stays Lending until kubelet's retry of its
+   companion's Prepare makes it Ready, or it is released; until it is
+   Ready its requester has no /run/cxl/fs/<name> (a wait, not a fail).
+   The executor inspects a pod again while it lists a lease that is
+   Creating, Pending or Lending.
+A34 A kubelet-restart of VM while the driver container of VM may be
+   being created again after a kill (a driver-kill of VM earlier in the
+   window with no kubelet-restart of VM since; or an armed
+   driver-kill-at watcher of VM that may have fired before it) may give
+   the driver pod one restart more than its kills: the old kubelet
+   created the container and was stopped before it started it, the new
+   one creates it again. The settle accepts the driver pod's restarts
+   from R to R+1 and adopts the observed count (#adopt N restarts=VM:R+0).
+   containerd-restart, driver-restart and kubelet-restart wait for the
+   driver; a later kubelet restart adds none.
+A35 (a) A writer whose Prepare is Blocked by a decoder hole (A9) makes no
+   namespace: the region fails before the namespace is created. (b)
+   Under A18 the attachment of a lease released in the window of a
+   ctrl-kill may be kept or detached (adopted). (c) Under A19, at
+   ctrl-start a claim that waited for its pool's slices stalls if its
+   device is still in the scheduler's hold. A settle that the outcome
+   bound cuts off keeps its state before the settle and settles again
+   with the observed nodes of its "any" pods and the observed bindings
+   of its pods whose Prepare may come after a ctrl-kill (bound or with
+   the pool claim Attached: their Prepares come; neither: they do not).
+   The adoption records have any=SLOT:VM, then SLOT:bound and
+   SLOT:unbound (in slot order) before alt=J; generate --from narrows
+   alike.
+A36 The fencing mode of a run, MBT_FENCING: allowed-mems (the driver's
+   default), none, or switch (the default of the test). none: the
+   driver configuration (DRA_DRIVER_CONFIG of dra-install) has
+   "defaults: {container: {fencing: none}}". The model gets
+   --fencing=allowed-mems|none|switch; switch starts in allowed-mems.
+   After dra-install the executor checks that the driver of every VM
+   logged "defaults.container.fencing: MODE" of the start mode.
+A37 The verb fencing-switch (no argument; only with --fencing=switch,
+   else status 2): the executor patches defaults.container.fencing of
+   config.yaml in the ConfigMap nri-dra-driver-cxl-config of kube-system
+   to the other mode, and restarts the driver pods of vm2, vm1 and vm0
+   in that order as driver-restart does. A new driver pod that logs the
+   old mode is deleted once more (its ConfigMap volume may lag); a second
+   pod of the old mode, or a pod that logs no mode, fails the verb
+   (status 1). On a failure the verb stops at that VM: the VMs after it
+   keep their old pod and mode. done status 0 when all three are ready
+   with the new mode, and the JSON {"fencing": "<new mode>"}; the model
+   fails the step when that is not the mode it switched to ({} is
+   accepted). The model flips the mode and applies a driver restart to
+   every VM. It generates the verb when a driver-restart of every VM
+   would be generated, at most once per window, and counts it as a VM
+   fault of all three VMs for A34. The cleanup restores the ConfigMap
+   with the helm uninstall.
+   Loose containers: those of the pods running, starting, restarting,
+   unblocking or stalled at a switch to none, and the companions of the
+   leases held then, may keep their cpuset.mems until their container is
+   created again (A38). A crash after the switch, a new pod or a new
+   lease ends it; a switch to allowed-mems ends every one (the new
+   drivers' first fence pass makes them exact). Coverage C2 of a switch:
+   "fault fencing-switch>MODE KIND" per pod with a container (MODE the
+   new one, am or none).
+A38 O5 is exact. For each observed container of a slot or a companion
+   on VM v: D = the DRAM NUMA nodes (0, 1); M = the CXL NUMA nodes with
+   memory on v (predicted); E = the numa NUMA nodes of its claims and the
+   NUMA nodes lent to it (a held numa lease: node 2). A NUMA node
+   without memory is never in cpuset.mems.effective, so E is a subset of
+   M.
+     allowed-mems, not steered: effective = D + E + (M - F), where a
+       NUMA node in FMaybe may be present or absent.
+     none: effective = D + M, also for a lease requester (a lend or a
+       revoke never narrows a container in mode none).
+     steered or loose (A37): E present, no CXL NUMA node outside E + M;
+       D is not required (the steering writes the NUMA nodes of its steps
+       and the nearest NUMA node with normal memory). Steered: an lsteer
+       container with memory.high set (SteerOn), or either (SteerAny);
+       with fencing none also one whose steering a driver restart ended.
+   Companions have E = {}. Otherwise a wait, and the settle fails at
+   its timeout. driverLog "fencing", when observed and not null, must
+   be the predicted mode (else a wait); "nriSynced" is decoded, not
+   checked.
+A39 The kind dnuma: one container with two claims, c0 from the template
+   mbt-lnuma (a local numa slice, NUMA node 2) and c1 from mbt-xnuma-c
+   (c-pooled0 in numa, NUMA node 3); the main container uses both. Slots
+   dnuma@vm0#0 and dnuma@vm1#0 in the profiles full and fullp, with
+   xnuma-c@vm0#0 and xnuma-c@vm2#0. Label dnuma_VM_I, pod
+   mbt-dnuma-VM-I-gN; the kind has no pool suffix. It is Running only
+   with both claims allocated; it holds one local slice and c-pooled0.
+   Verbs: create, delete, crash (write and read return 2: no dax
+   device). Every pod's observation has "claims": one object as "claim"
+   per entry of spec.resourceClaims, in that order ("claim" stays the
+   first); the model reads a dnuma pod's claims from it (by the driver
+   of their devices once allocated, by the order before) and fails a
+   dnuma pod without it. Its environment has CXL_C100E2E1_{MODE=numa,
+   NUMA_NODE=2, SERIAL, SHARED=0, SIZE=134217728} and CXL_C1EE2001_{
+   MODE=numa, NUMA_NODE=3, SERIAL, SHARED=0, SIZE=268435456}, and a
+   marker per claim. Its local claim is a record of cxl.nri.io in
+   state.json and cxl-claims.json, its pool claim one of cxl-pool.nri.io
+   and cxl-pool-claims.json. E = {2, 3}. The model generates no step
+   after which one of its two Prepares could be refused by a decoder
+   hole (A9), nor a stalled dnuma over a hole: it is never Blocked. Nor
+   is a dnuma pod deleted before it is bound: its local claim would stay
+   in flight in the scheduler like its pool claim (A19). While a dnuma
+   pod waits for pool-c's slices or is stalled, no other claim or lease
+   takes a block of its VM's local memdev.
+A40 Coverage: at every settle one string per running container of the
+   predicted state, "mems|MODE|e=E|f=F|m=M" (MODE am or none, the sets
+   restricted to the CXL NUMA nodes, "-" if empty; E of a companion "-";
+   F the driver's F, not FMaybe), counted with the weight of C2.
+   fencing-switch is a fault in context (C2). The fencing mode and the
+   reboot variant configure the cluster and the model, so they always
+   agree: a replay (MBT_REPLAY) and an off-line run (MBT_SCRIPT, the
+   "# --profile ..." line of its code.gen.sh) run in the --fencing and
+   --reboot of the file's header (a header without them: allowed-mems,
+   no reboot; a file without a header: the MBT_* or their defaults). An
+   MBT_FENCING or MBT_REBOOT that the user set (also set empty:
+   MBT_FENCING= is allowed-mems, MBT_REBOOT= no reboot) and that differs
+   fails the test at the start. The model refuses (exit 2) a --fencing
+   or --reboot of the command line that contradicts the header of
+   --replay or --from; the other flags of the header replace those of
+   the command line (A16).
+A41 The reboot variant of a run, MBT_REBOOT: guest (systemctl reboot in
+   the guest; qemu keeps running with its devices) or qemu (the qemu
+   process restarted: a power cycle, after which the pool controllers
+   attach their devices again and the executor the local memdev); empty,
+   the default: no node-reboot. The model gets --reboot=guest|qemu,
+   recorded in the steps header like --fencing ("--reboot=" for none).
+   MBT_AVOID=node-reboot removes the verb. guest needs, in the qemu
+   processes of vm1 and vm0, a qemu whose cxl-type3 device resets its
+   CXL DVSEC at a guest reset (the function ct3d_reset_device_dvsec of
+   hw/mem/cxl_type3.c, found in the debug information of the binary);
+   the executor checks it at the start: a binary that /proc/PID/exe
+   shows as "(deleted)", or one without the function, fails; a binary
+   without debug information gives a warning. Both variants have the
+   same prediction; the reference pool of the model drops and attaches
+   again the attachments of the VM in the qemu variant only.
+A42 The verb node-reboot VM, VM vm0 or vm1 (status 2 for another
+   argument or in a run without MBT_REBOOT). In order: disarm a
+   driver-kill-at watcher of VM (A31); save the log of the running driver
+   container as nri-dra-driver-cxl.<vm>.<pod>.r<N>.log; read the boot id;
+   guest: systemctl reboot over an ssh connection of its own; qemu: the
+   VM restarted as vmdir-restart does (the qemu pid must change); wait
+   up to MBT_REBOOT_WAIT for ssh with another boot id;
+   auto_online_blocks offline; the kernel part of the observer (A24)
+   reset, its counts kept; qemu: once the pool lists the local memdev
+   detached, dra-local-device attaches it again; the trace collectors of
+   VM again; wait for the driver (A15). The driver pod keeps its name
+   (restarts +1); the executor records the new count, so the next
+   observation sees no restart of its own. done status 0 (1 on a
+   failure) with {"boot": "<id>"} ("boot" null when the step failed
+   before ssh came back) and killAt (A31).
+   The model generates it for vm0 and vm1 only after a settle and
+   followed by a settle (only synchronous steps of pods elsewhere
+   between), when every pool controller runs with its slices, no armed
+   driver-kill-at watcher of the VM may have fired, and no pod that is
+   or may be on the VM is Unblocking, Stalled, Attaching or Unsched.
+   Pending pods are not bound: untouched. A held lease of the VM is
+   released by the boot: the broker drops it at its start and its first
+   reconcile deletes the companion; a Prepare of the companion's claim
+   before that fails before it touches a device. Off-line (no adoption)
+   only when no stack of the VM gets two or more regions. "boot" must
+   differ from the boot id known before (fail), and is adopted as the
+   VM's; a done without it lets the settle want another one than before.
+A43 The prediction of a node-reboot: the pods of VM keep their UIDs;
+   every container of a Running pod on VM restarts once (claimed pods
+   exactly +1; a pod without a claim and the driver pod may restart once
+   more, the observed count adopted); claims keep their allocations;
+   devices are prepared again with new dax and pmem names; a pod
+   Blocked by a decoder hole on VM is prepared after the boot (no hole:
+   Running, restarts unchanged); a Refused one stays Refused. The stacks
+   of VM are empty at the boot and get the regions of the claims
+   prepared again; with two or more regions on a stack any permutation
+   of the predicted regions (no hole) fits and is adopted (#adopt
+   stack=...). The waiter of a block or of c-pmem0 that a released
+   lease held gets it (Running, restarts 0). The volatile dax content of
+   xdax, sdax, sro and sexcl of a Running pod on VM is "token or zeros":
+   a read decides it, a write makes it known (the expectation has
+   "|zero" after the token, the done "orZero": true). ldax slices read
+   "", numa bytes are unknown, persistent content and the LSA and head
+   hashes are unchanged. lsteer containers on VM are steered strictly
+   (SteerOn), no container on VM is loose (A37), its holds end, the
+   leases of VM and their companions go (companions still listed are a
+   wait). Guest: the attachments are unchanged; qemu: attached again. F
+   of VM is seeded again from the claims prepared after the boot. The
+   settle has MBT_SETTLE_TIMEOUT: pods Running with a terminated
+   container, not ready, restarts 0 (the boot's first Prepares) are a
+   wait as any pod that is not Running yet.
+A44 Each VM's boot id is "bootID" of 6.3: a new one after each
+   node-reboot of it and never otherwise (fail; off-line not checked).
+   Per container "devices": its device nodes (path, type, major, minor,
+   dev) from /proc/PID/root/dev, the top level and one directory below
+   (not pts, shm, mqueue, nor runc's null, zero, full, random, urandom,
+   tty, console and ptmx), with "devicesFrom" proc, or spec when /proc
+   could not be read. Per VM "cxlDevices": the dax devices of "regions"
+   and the block devices of the namespaces of "pmem" (name, path, kind
+   dax or pmem, major, minor, dev, driver, region, the serial of the
+   memdev of the region's first target, serials); null if either part is
+   null. Containers that the pod status calls running and crictl does
+   not list are in "missing" (a wait, A11).
+   Rules: (1) the boot id is learnt at every settle; after a node-reboot
+   it must differ from the one before, else it must be the one learnt.
+   (2) For every container of a slot's pod that the model has Running on
+   the VM (not companions), each dax or pmem node is a device of
+   "cxlDevices" of that name with the same major:minor, of the claim's
+   serial and kind (the local memdev for ldax); dax kinds and block kinds
+   (pwr, pbro, xpb) have exactly one, the others (numa, fs, plain,
+   dnuma) none; lease kinds (lease, plse) are not counted (a lease's
+   device is an fd), their nodes must only be current. A difference is a
+   wait (a fail at the settle's timeout); a null part a wait. (3) In the
+   environment of an inspected pod CXL_<KEY>_DAX (dax kinds) or _PATH
+   (block kinds) is a current cxlDevices name of the claim's serial and
+   kind (fail: an inspection is not repeated), and CXL_<KEY>_NUMA_NODE
+   has memory on the pod's VM (wait). (4) Per claim ("claim" and
+   "claims") "attachFailed": true if and only if a pool device of its
+   allocation has the condition cxl-pool.nri.io/AttachFailed True, false
+   for an allocated pool claim without it, null for a claim without pool
+   devices. On a pod that the model has Running it is a wait in the
+   settle of a node-reboot of its VM, a fail at any other settle.
