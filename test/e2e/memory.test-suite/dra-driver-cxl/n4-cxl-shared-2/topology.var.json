@@ -1,0 +1,11 @@
+[
+    {"mem": "4G", "threads":2, "cores": 2, "nodes": 1, "packages": 2},
+    {"hdm-for-passthrough": true,
+     "cxl": [
+	      [{"switch": [{"pool-slot": "1G"},
+			   {"pool-slot": "1G"},
+			   {"pool-slot": "256M"},
+			   {"mem": "1G", "present": false, "sn": "0xc100e2e1"}]}],
+	      [{"switch": [{"pool-slot": "1G"}, {"pool-slot": "1G"}, {"pool-slot": "1G"}, {"pool-slot": "1G"}]}]
+	    ]}
+]
