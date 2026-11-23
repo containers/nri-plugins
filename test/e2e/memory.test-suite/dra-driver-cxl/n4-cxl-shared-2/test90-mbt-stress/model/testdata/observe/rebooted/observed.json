@@ -1,0 +1,16 @@
+{
+  "poolClaims": {},
+  "state": {
+    "bootID": "boot-2",
+    "leaseClaims": [
+      "11111111-0000-0000-0000-000000000007"
+    ],
+    "leases": [],
+    "localMemdevs": [],
+    "prepared": {
+      "cxl-pool.nri.io": [],
+      "cxl.nri.io": []
+    },
+    "unusedDax": []
+  }
+}

@@ -1,0 +1,175 @@
+{
+  "poolClaims": {
+    "33333333-0000-0000-0000-000000000001": {
+      "claimName": "demo/c-pnuma",
+      "devices": [
+        {
+          "access": null,
+          "blockDevice": null,
+          "loopDevice": null,
+          "mode": "numa",
+          "nodeMount": null,
+          "path": null,
+          "persistent": null,
+          "readOnly": null,
+          "serial": "0xc1ae2003"
+        }
+      ],
+      "lend": null
+    },
+    "33333333-0000-0000-0000-000000000002": {
+      "claimName": "demo/c-pfs",
+      "devices": [
+        {
+          "access": null,
+          "blockDevice": "/dev/pmem8",
+          "loopDevice": null,
+          "mode": "block",
+          "nodeMount": null,
+          "path": null,
+          "persistent": true,
+          "readOnly": true,
+          "serial": "0xc1ae2002"
+        }
+      ],
+      "lend": null
+    },
+    "33333333-0000-0000-0000-000000000003": {
+      "claimName": "demo/c-pdax",
+      "devices": [
+        {
+          "access": null,
+          "blockDevice": null,
+          "loopDevice": null,
+          "mode": "dax",
+          "nodeMount": null,
+          "path": null,
+          "persistent": null,
+          "readOnly": null,
+          "serial": "0xc1ae2004"
+        }
+      ],
+      "lend": null
+    },
+    "44444444-0000-0000-0000-000000000001": {
+      "claimName": "demo/cxl-lease-1b2c3d4e",
+      "devices": [
+        {
+          "access": "cached",
+          "blockDevice": "/dev/pmem8",
+          "loopDevice": "/dev/loop0",
+          "mode": "fs",
+          "nodeMount": "/var/lib/kubelet/plugins/cxl-pool.nri.io/mounts/c1ae2002-cached",
+          "path": "/run/cxl-fs/C1AE2002",
+          "persistent": true,
+          "readOnly": true,
+          "serial": "0xc1ae2002"
+        }
+      ],
+      "lend": {
+        "container": "intent",
+        "fsDir": null,
+        "lease": "1b2c3d4e",
+        "mounts": [
+          "/var/lib/kubelet/plugins/cxl.nri.io/lease-fs/11111111-0000-0000-0000-000000000007/mbt"
+        ],
+        "name": "intent",
+        "pod": {
+          "name": "requester",
+          "namespace": "demo",
+          "uid": "55555555-0000-0000-0000-000000000001"
+        }
+      }
+    }
+  },
+  "state": {
+    "bootID": "boot-1",
+    "leaseClaims": [
+      "11111111-0000-0000-0000-000000000007",
+      "66666666-0000-0000-0000-000000000001"
+    ],
+    "leases": [
+      {
+        "id": "0a1b2c3d",
+        "mode": "numa",
+        "pod": "requester",
+        "state": "Ready"
+      },
+      {
+        "id": "1b2c3d4e",
+        "mode": "fs",
+        "pod": "requester",
+        "state": "Releasing"
+      },
+      {
+        "id": "f0f0f0f0",
+        "mode": "dax",
+        "pod": "requester",
+        "state": "Creating"
+      },
+      {
+        "id": "f0f0f0f1",
+        "mode": "dax",
+        "pod": "requester",
+        "state": "Pending"
+      },
+      {
+        "id": "f0f0f0f2",
+        "mode": "dax",
+        "pod": "requester",
+        "state": "Lending"
+      },
+      {
+        "id": "f0f0f0f3",
+        "mode": "dax",
+        "pod": "requester",
+        "state": "Failed"
+      },
+      {
+        "id": "f0f0f0f4",
+        "mode": "dax",
+        "pod": "requester",
+        "state": ""
+      }
+    ],
+    "localMemdevs": [
+      {
+        "claims": {
+          "11111111-0000-0000-0000-000000000001": 1,
+          "11111111-0000-0000-0000-000000000002": 1,
+          "11111111-0000-0000-0000-000000000005": 0,
+          "22222222-0000-0000-0000-000000000001": 1
+        },
+        "serial": "0xc100e2e1"
+      },
+      {
+        "claims": {
+          "11111111-0000-0000-0000-000000000003": 0,
+          "11111111-0000-0000-0000-000000000004": 0
+        },
+        "serial": "0xc100e2e2"
+      },
+      {
+        "claims": {
+          "11111111-0000-0000-0000-000000000006": 1
+        },
+        "serial": "0xc1ae2001"
+      }
+    ],
+    "prepared": {
+      "cxl-pool.nri.io": [
+        "33333333-0000-0000-0000-000000000001",
+        "33333333-0000-0000-0000-000000000002",
+        "33333333-0000-0000-0000-000000000003",
+        "44444444-0000-0000-0000-000000000001"
+      ],
+      "cxl.nri.io": [
+        "11111111-0000-0000-0000-000000000001",
+        "11111111-0000-0000-0000-000000000006",
+        "11111111-0000-0000-0000-000000000007",
+        "22222222-0000-0000-0000-000000000001"
+      ]
+    },
+    "unusedDax": []
+  }
+}

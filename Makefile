@@ -45,10 +45,16 @@ GO_TEST_PKGS ?= $(shell find . -name \*_test.go -exec dirname {} \; | \
                        [ ! -e $$dir/go.mod ] && echo $$dir; \
                    done)
 
-GO_TEST_MODS ?= $(shell find . -name \*_test.go -exec dirname {} \; | \
+# The test90 model module is left out of GO_TEST_MODS. Its tests are too
+# slow under --race. The verify workflow runs them with -short and without
+# --race.
+TEST90_MODEL_DIR := ./test/e2e/memory.test-suite/dra-driver-cxl/n4-cxl-shared-2/test90-mbt-stress/model
+
+GO_TEST_MODS ?= $(filter-out $(TEST90_MODEL_DIR), \
+                $(shell find . -name \*_test.go -exec dirname {} \; | \
                    sort -u | while read dir; do \
                        [ -e $$dir/go.mod ] && echo $$dir; \
-                   done)
+                   done))
 
 GOLANG_CILINT := golangci-lint
 TEST_SETUP    := test-setup.sh
