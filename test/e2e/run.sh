@@ -522,6 +522,7 @@ helm-launch() { # script API
     #
     # Supported TARGETs:
     #     topology-aware, balloons, template: launch the given NRI resource policy plugin on VM.
+    #     dra-driver-cxl: launch the CXL DRA driver on VM.
     #
     # Environment variables:
     #     helm_config: configuration helm override values for the plugin
@@ -599,6 +600,10 @@ helm-launch() { # script API
             *memtierd*)
                 ds_name=nri-memtierd
                 ctr_name=nri-memtierd
+                ;;
+            *dra-driver-cxl*)
+                ds_name=nri-dra-driver-cxl
+                ctr_name=nri-dra-driver-cxl
                 ;;
             *)
                 error "Can't wait for plugin $plugin to start, daemonset_name not set"
