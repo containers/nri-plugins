@@ -1,0 +1,576 @@
+{
+    "$schema": "http://json-schema.org/schema#",
+    "required": [
+        "image",
+        "resources",
+        "nri",
+        "pool",
+        "leases"
+    ],
+    "definitions": {
+        "quantity": {
+            "type": "string",
+            "$comment": "a Kubernetes quantity",
+            "pattern": "^(\\+|-)?(([0-9]+(\\.[0-9]*)?)|(\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\+|-)?(([0-9]+(\\.[0-9]*)?)|(\\.[0-9]+))))?$"
+        },
+        "fsType": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$"
+        },
+        "volatileDevice": {
+            "type": "object",
+            "$comment": "the device section of a class of devices of volatile memory: cxl-local, cxl-pool",
+            "additionalProperties": false,
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": ["numa", "dax"]
+                },
+                "readOnly": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "sharedDevice": {
+            "type": "object",
+            "$comment": "the device section of a class of shared devices of volatile memory: cxl-local-shared, cxl-pool-shared",
+            "additionalProperties": false,
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": ["dax"]
+                },
+                "readOnly": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "persistentDevice": {
+            "type": "object",
+            "$comment": "the device section of a class of devices of persistent memory: cxl-local-persistent, cxl-pool-persistent",
+            "additionalProperties": false,
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": ["block", "fs"]
+                },
+                "readOnly": {
+                    "type": "boolean"
+                },
+                "access": {
+                    "type": "string",
+                    "enum": ["direct", "cached"]
+                },
+                "path": {
+                    "type": "string",
+                    "pattern": "^/"
+                },
+                "fsType": {
+                    "$ref": "#/definitions/fsType"
+                }
+            }
+        },
+        "numaDevice": {
+            "type": "object",
+            "$comment": "the device section of cxl-region and cxl-dram: numa only",
+            "additionalProperties": false,
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": ["numa"]
+                }
+            }
+        },
+        "leaseDevice": {
+            "type": "object",
+            "$comment": "the device section of cxl-lease: the lease device has no device settings, readOnly false (the default) only",
+            "additionalProperties": false,
+            "properties": {
+                "readOnly": {
+                    "enum": [false]
+                }
+            }
+        },
+        "steering": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "policy": {
+                    "type": "string",
+                    "enum": ["none", "auto", "first-dram", "first-cxl", "start-interleaved", "end-interleaved", "waypoints"]
+                },
+                "waypoints": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "targetUsages": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "memoryType",
+                                        "usage"
+                                    ],
+                                    "properties": {
+                                        "memoryType": {
+                                            "type": "string",
+                                            "enum": ["DRAM", "CXL"]
+                                        },
+                                        "usage": {
+                                            "$ref": "#/definitions/quantity"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "minStep": {
+                    "$ref": "#/definitions/quantity"
+                },
+                "maxStep": {
+                    "$ref": "#/definitions/quantity"
+                }
+            }
+        },
+        "container": {
+            "type": "object",
+            "$comment": "fencing is set by config.defaults.container only",
+            "additionalProperties": false,
+            "properties": {
+                "steering": {
+                    "$ref": "#/definitions/steering"
+                }
+            }
+        },
+        "pool": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "opaque": {
+                    "type": "object",
+                    "$comment": "controller key -> an object that the controller defines",
+                    "additionalProperties": {
+                        "type": "object"
+                    }
+                }
+            }
+        }
+    },
+    "properties": {
+        "image": {
+            "type": "object",
+            "required": [
+                "name",
+                "pullPolicy"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "tag": {
+                    "type": "string"
+                },
+                "pullPolicy": {
+                    "type": "string",
+                    "enum": ["Never", "Always", "IfNotPresent"]
+                }
+            }
+        },
+        "initContainerImage": {
+            "type": "object",
+            "required": [
+                "name",
+                "pullPolicy"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "tag": {
+                    "type": "string"
+                },
+                "pullPolicy": {
+                    "type": "string",
+                    "enum": ["Never", "Always", "IfNotPresent"]
+                }
+            }
+        },
+        "resources": {
+            "type": "object",
+            "required": [
+                "cpu",
+                "memory"
+            ],
+            "properties": {
+                "cpu": {
+                    "type": "string"
+                },
+                "memory": {
+                    "type": "string"
+                }
+            }
+        },
+        "nri": {
+            "type": "object",
+            "required": [
+                "plugin",
+                "runtime"
+            ],
+            "properties": {
+                "plugin": {
+                    "type": "object",
+                    "required": [
+                        "index"
+                    ],
+                    "properties": {
+                        "index": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 99
+                        }
+                    }
+                },
+                "runtime": {
+                    "type": "object",
+                    "required": [
+                        "patchConfig"
+                    ],
+                    "properties": {
+                        "patchConfig": {
+                            "type": "boolean"
+                        },
+                        "config": {
+                            "type": "object",
+                            "required": [
+                                "pluginRegistrationTimeout",
+                                "pluginRequestTimeout"
+                            ],
+                            "properties": {
+                                "pluginRegistrationTimeout": {
+                                    "type": "string",
+                                    "$comment": "allowed range is 5-30s",
+                                    "pattern": "^(([5-9])|([1-2][0-9])|(30))s$"
+                                },
+                                "pluginRequestTimeout": {
+                                    "type": "string",
+                                    "$comment": "allowed range is 2-30s",
+                                    "pattern": "^(([2-9])|([1-2][0-9])|(30))s$"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "pool": {
+            "type": "object",
+            "required": [
+                "enabled",
+                "prepareTimeout"
+            ],
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "prepareTimeout": {
+                    "type": "string",
+                    "$comment": "a Go duration",
+                    "pattern": "^(0|([0-9]+(\\.[0-9]+)?(ns|us|ms|s|m|h))+)$"
+                }
+            }
+        },
+        "leases": {
+            "type": "object",
+            "required": [
+                "enabled",
+                "wait",
+                "companionImage"
+            ],
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "wait": {
+                    "type": "string",
+                    "$comment": "a Go duration, at most 1h",
+                    "pattern": "^(0|([0-9]+(\\.[0-9]+)?(ns|us|ms|s|m|h))+)$"
+                },
+                "companionImage": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "priorityClassNames": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                },
+                "namespaceLabels": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "maxConnections": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "idleTimeout": {
+                    "type": "string",
+                    "$comment": "a Go duration",
+                    "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|ms|s|m|h))+$"
+                },
+                "requestsPerMinute": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "maxPerPod": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "maxPerNode": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "config": {
+            "type": "object",
+            "$comment": "the driver configuration file (docs/memory/cxl/usage.md); fsTypes defaults to [erofs]: every other type trusts the raw writers of the devices",
+            "additionalProperties": false,
+            "properties": {
+                "ignoreMemdevs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "sharedMemdevs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "ignoreRegions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "ignoreNUMANodes": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                },
+                "ignoreDRAM": {
+                    "type": "boolean"
+                },
+                "manageMemdevs": {
+                    "type": "boolean"
+                },
+                "memdevSettings": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "memdev"
+                        ],
+                        "properties": {
+                            "memdev": {
+                                "type": "string"
+                            },
+                            "usableSize": {
+                                "$ref": "#/definitions/quantity"
+                            },
+                            "coherent": {
+                                "type": "boolean"
+                            }
+                        }
+                    }
+                },
+                "fsTypes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/fsType"
+                    }
+                },
+                "verifyAddressing": {
+                    "type": "boolean"
+                },
+                "defaults": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "container": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "steering": {
+                                    "$ref": "#/definitions/steering"
+                                },
+                                "fencing": {
+                                    "type": "string",
+                                    "enum": ["allowed-mems", "none"]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "deviceClassConfig": {
+            "type": "object",
+            "$comment": "DeviceClass name -> the body of a MemoryConfig, rendered into the class's spec.config",
+            "additionalProperties": false,
+            "properties": {
+                "cxl-local": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "device": {
+                            "$ref": "#/definitions/volatileDevice"
+                        },
+                        "container": {
+                            "$ref": "#/definitions/container"
+                        }
+                    }
+                },
+                "cxl-local-shared": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "device": {
+                            "$ref": "#/definitions/sharedDevice"
+                        },
+                        "container": {
+                            "$ref": "#/definitions/container"
+                        }
+                    }
+                },
+                "cxl-local-persistent": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "device": {
+                            "$ref": "#/definitions/persistentDevice"
+                        },
+                        "container": {
+                            "$ref": "#/definitions/container"
+                        }
+                    }
+                },
+                "cxl-pool": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "device": {
+                            "$ref": "#/definitions/volatileDevice"
+                        },
+                        "container": {
+                            "$ref": "#/definitions/container"
+                        },
+                        "pool": {
+                            "$ref": "#/definitions/pool"
+                        }
+                    }
+                },
+                "cxl-pool-shared": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "device": {
+                            "$ref": "#/definitions/sharedDevice"
+                        },
+                        "container": {
+                            "$ref": "#/definitions/container"
+                        },
+                        "pool": {
+                            "$ref": "#/definitions/pool"
+                        }
+                    }
+                },
+                "cxl-pool-persistent": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "device": {
+                            "$ref": "#/definitions/persistentDevice"
+                        },
+                        "container": {
+                            "$ref": "#/definitions/container"
+                        },
+                        "pool": {
+                            "$ref": "#/definitions/pool"
+                        }
+                    }
+                },
+                "cxl-region": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "device": {
+                            "$ref": "#/definitions/numaDevice"
+                        },
+                        "container": {
+                            "$ref": "#/definitions/container"
+                        }
+                    }
+                },
+                "cxl-dram": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "device": {
+                            "$ref": "#/definitions/numaDevice"
+                        },
+                        "container": {
+                            "$ref": "#/definitions/container"
+                        }
+                    }
+                },
+                "cxl-lease": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "device": {
+                            "$ref": "#/definitions/leaseDevice"
+                        },
+                        "container": {
+                            "$ref": "#/definitions/container"
+                        }
+                    }
+                }
+            }
+        },
+        "logLevel": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "extraEnv": {
+            "type": "object",
+            "additionalProperties": {
+                "type": ["string", "number", "boolean"]
+            }
+        },
+        "tolerations": {
+            "type": "array"
+        },
+        "affinity": {
+            "type": "object"
+        },
+        "nodeSelector": {
+            "type": "object"
+        },
+        "podPriorityClassNodeCritical": {
+            "type": "boolean"
+        }
+    }
+}

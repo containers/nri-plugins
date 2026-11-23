@@ -51,6 +51,7 @@ topology-aware.md
 template.md
 memory-qos.md
 memtierd.md
+dra-driver-cxl.md
 sgx-epc.md
 resctrl-mon.md
 resource-annotator.md

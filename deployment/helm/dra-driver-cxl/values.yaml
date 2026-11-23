@@ -1,0 +1,173 @@
+# Default values for dra-driver-cxl.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+---
+image:
+  name: ghcr.io/containers/nri-plugins/nri-dra-driver-cxl
+  # tag, if defined will use the given image tag, otherwise Chart.AppVersion will be used
+  #tag: unstable
+  pullPolicy: Always
+
+resources:
+  cpu: 10m
+  memory: 128Mi
+
+nri:
+  plugin:
+    # Through NRI the driver keeps containers off the CXL memory they did
+    # not claim, steers containers that opt in, and lends memory to
+    # running containers.
+    index: 30
+  runtime:
+    patchConfig: false
+#   config:
+#     pluginRegistrationTimeout: 5s
+#     pluginRequestTimeout: 2s
+
+pool:
+  # Run the pool driver cxl-pool.nri.io and install its DeviceClasses.
+  enabled: true
+  # How long the pool driver waits for the memdev of a pool device to appear.
+  prepareTimeout: 30s
+
+leases:
+  # Lend memory to running containers.
+  enabled: true
+  # How long a lease request waits for Ready when it does not say, at most 1h.
+  wait: 120s
+  # Image of the companion pods of leases. The admission policy of the
+  # companions allows only this image: a digest (image@sha256:...) pins it.
+  companionImage: registry.k8s.io/pause:3.10
+  # Priority classes that companion pods may have. A companion has the
+  # priority class of the pod that requests the lease. With [] a companion
+  # may have any class but system-node-critical and system-cluster-critical.
+  # A list must include the globalDefault PriorityClass of the cluster, if
+  # it has one.
+  priorityClassNames: []
+  # Labels that a namespace must have so that its ResourceClaims and
+  # ResourceClaimTemplates may request the device class cxl-lease. With {}
+  # every namespace may.
+  namespaceLabels: {}
+  # Limits of the lease sockets: open connections of the socket of a lease
+  # claim, how long a connection may stay without a request, and lease
+  # requests of a lease claim per minute (also their burst).
+  maxConnections: 64
+  idleTimeout: 10m
+  requestsPerMinute: 32
+  # Leases of the containers of a pod, and of the node.
+  maxPerPod: 16
+  maxPerNode: 32
+
+# Driver configuration, see docs/memory/cxl/usage.md. The driver reads it
+# only when it starts; a change restarts the DaemonSet.
+config: {}
+#
+# Example:
+#
+# config:
+#   ignoreMemdevs: ["mem0"]
+#   manageMemdevs: true
+#   # local devices shared by the claims of class cxl-local-shared
+#   sharedMemdevs: ["0xc100e2e1"]
+#   # the filesystem types that mode fs mounts on the node; without the
+#   # key erofs only, the type built for images of untrusted writers. The
+#   # node's kernel parses what the writer of a device wrote: adding a type
+#   # (ext4, xfs, btrfs, squashfs, gfs2 are not hardened against crafted
+#   # images) trusts every party that can write the devices raw, that is
+#   # read-write block claims and leases on any node of any cluster that
+#   # shares the pool
+#   fsTypes: [erofs, ext4]
+#   # settings of individual local memdevs: coherent declares the memory
+#   # of a memdev of sharedMemdevs coherent between the hosts that share it
+#   memdevSettings:
+#   - memdev: "0xc100e2e1"
+#     coherent: true
+#   # node defaults of the settings of containers, which the
+#   # MemoryConfigs of their claims override
+#   defaults:
+#     container:
+#       # none (default): not steered; auto steers every container with
+#       # numa memory. Steering injects system calls into the processes
+#       # of the container with ptrace and can crash threaded programs:
+#       # see Steering in docs/memory/cxl/usage.md
+#       steering: {policy: none}
+#       # keep containers off the CXL nodes of the driver that they did not
+#       # claim: allowed-mems (default) | none; none next to an
+#       # NRI resource policy that sets cpuset.mems (balloons,
+#       # topology-aware)
+#       fencing: allowed-mems
+
+# MemoryConfig presets of the DeviceClasses of the chart: class name ->
+# the body of a MemoryConfig (device, container; pool for the cxl-pool*
+# classes; container only for cxl-lease, the lease device has no device
+# settings). The chart renders it into the spec.config of the class as an
+# opaque entry of the class's driver, apiVersion cxl.nri.io/v1alpha1, kind
+# MemoryConfig. Claims of the class change it field by field. See
+# docs/memory/cxl/usage.md.
+deviceClassConfig: {}
+#
+# Example: steering on for the containers with local CXL memory, unless
+# their claim says container: {steering: {policy: none}}. Steering can
+# crash threaded programs: use it for experiments or simple programs
+# (Steering in docs/memory/cxl/usage.md).
+#
+# deviceClassConfig:
+#   cxl-local:
+#     container:
+#       steering: {policy: auto}
+
+# Log verbosity (-v).
+logLevel: 2
+
+# Extra environment variables to inject.
+extraEnv: {}
+#
+# Example:
+#
+# extraEnv:
+#   VAR1: VAL1
+#   VAR2: VAL2
+
+initContainerImage:
+  name: ghcr.io/containers/nri-plugins/nri-config-manager
+  # If not defined Chart.AppVersion will be used
+  #tag: unstable
+  pullPolicy: Always
+
+tolerations: []
+#
+# Example:
+#
+# tolerations:
+# - key: "node-role.kubernetes.io/control-plane"
+#   operator: "Exists"
+#   effect: "NoSchedule"
+
+affinity: {}
+#
+# Example:
+#
+# affinity:
+#   nodeAffinity:
+#     requiredDuringSchedulingIgnoredDuringExecution:
+#       nodeSelectorTerms:
+#       - matchExpressions:
+#         - key: topology.kubernetes.io/disk
+#           operator: In
+#           values:
+#           - ssd
+
+nodeSelector: {}
+#
+# Example:
+#
+# nodeSelector:
+#  kubernetes.io/disk: "ssd"
+
+# NRI plugins should be considered as part of the container runtime.
+# By default we make them part of the system-node-critical priority
+# class. This should mitigate the potential risk of a plugin getting
+# evicted under heavy system load. It should also ensure that during
+# autoscaling enough new nodes are brought up to leave room for the
+# plugin on each new node.
+podPriorityClassNodeCritical: true
