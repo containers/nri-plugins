@@ -18,7 +18,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"syscall"
 
@@ -64,9 +63,11 @@ func NewReader() (*Reader, error) {
 		return nil, fmt.Errorf("failed to create udev reader: %w", err)
 	}
 
+	// Pid 0: the kernel assigns the port id, so that several readers of
+	// one process can coexist (the pid is the id of the first one only).
 	addr := syscall.SockaddrNetlink{
 		Family: syscall.AF_NETLINK,
-		Pid:    uint32(os.Getpid()),
+		Pid:    0,
 		Groups: 1,
 	}
 
