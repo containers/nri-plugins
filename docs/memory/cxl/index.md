@@ -93,6 +93,8 @@ For developers:
   memory, how a restart recovers, its files on the node
 - [States of the driver's records](states.md): every state field and
   its transitions, generated from the code
+- [Developer's guide](e2e.md): building, unit tests and the e2e suite on
+  qemu VMs with a fake CXL memory pool
 
 ```{toctree}
 :maxdepth: 1
@@ -105,4 +107,5 @@ persistent.md
 leases.md
 design.md
 states.md
+e2e.md
 ```
