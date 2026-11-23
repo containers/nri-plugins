@@ -3,7 +3,7 @@ module github.com/containers/nri-plugins
 go 1.27.0
 
 require (
-	github.com/askervin/gofmbt v0.0.0-20260730061456-f663bfa65cdf
+	github.com/askervin/gofmbt v0.0.0-20261027151000-bc12d421910e
 	github.com/containerd/nri v0.12.2
 	github.com/containerd/otelttrpc v0.1.0
 	github.com/containerd/ttrpc v1.2.9
