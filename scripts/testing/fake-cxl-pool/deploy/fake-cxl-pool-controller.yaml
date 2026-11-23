@@ -1,0 +1,121 @@
+# fake-cxl-pool-controller as a Deployment with its own ServiceAccount and
+# RBAC (docs/memory/cxl/pool.md of the CXL DRA driver, "What the pool
+# controller writes"): the controller of one fake-cxl-pool server in a pod,
+# the way a cluster runs the controller of a pool appliance.
+#
+# The image: "make -C scripts/testing/fake-cxl-pool image" builds
+# localhost/fake-cxl-pool-controller:testing (../Dockerfile) and saves it to
+# bin/fake-cxl-pool-controller-image.tar. Without a registry, import that
+# into the container runtime of every node, for instance with
+# "ctr -n k8s.io images import FILE".
+#
+# hostNetwork: the pod reaches the fake-cxl-pool server on the VM host at
+# the slirp gateway 192.168.76.2, from any node of the e2e VMs. Run one
+# controller per server in a cluster; several clusters may share one
+# server. For a second server, copy the Deployment with another name and
+# app.kubernetes.io/instance, and its -server: the pool name is the name of
+# the server (no -dra-pool-name).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fake-cxl-pool
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fake-cxl-pool-controller
+  namespace: fake-cxl-pool
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fake-cxl-pool-controller
+rules:
+- apiGroups: [resource.k8s.io]
+  resources: [resourceslices]
+  verbs: [list, watch, create, update, delete]
+- apiGroups: [resource.k8s.io]
+  resources: [resourceclaims]
+  verbs: [get, list, watch]
+- apiGroups: [resource.k8s.io]
+  resources: [resourceclaims/status]
+  verbs: [update]
+- apiGroups: [resource.k8s.io]
+  resources: [resourceclaims/driver]
+  verbs: ["arbitrary-node:update"]
+  resourceNames: ["cxl-pool.nri.io"]
+- apiGroups: [""]
+  resources: [nodes]
+  verbs: [list, watch]
+- apiGroups: [""]
+  resources: [events]
+  verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fake-cxl-pool-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fake-cxl-pool-controller
+subjects:
+- kind: ServiceAccount
+  name: fake-cxl-pool-controller
+  namespace: fake-cxl-pool
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fake-cxl-pool-controller
+  namespace: fake-cxl-pool
+  labels:
+    app.kubernetes.io/name: fake-cxl-pool-controller
+    app.kubernetes.io/instance: fake-cxl-pool-controller
+spec:
+  replicas: 1
+  # never two controllers at a time: Recreate, not RollingUpdate
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: fake-cxl-pool-controller
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fake-cxl-pool-controller
+        app.kubernetes.io/instance: fake-cxl-pool-controller
+    spec:
+      serviceAccountName: fake-cxl-pool-controller
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: controller
+        image: localhost/fake-cxl-pool-controller:testing
+        imagePullPolicy: IfNotPresent
+        # -v: every attach, detach and status write in the log.
+        args:
+        - -server
+        - http://192.168.76.2:9909
+        - -v
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+      # SIGTERM: the controller deletes its ResourceSlice before it exits
+      terminationGracePeriodSeconds: 30

@@ -18,8 +18,9 @@ It talks to the management interface of the pool, so it is specific to
 the pool product; this repository has none for a product. The driver
 works on the node and needs only what the controller writes into the
 claim status. The fake pool controller, `fake-cxl-pool-controller`,
-implements the contract for a fake pool of qemu VMs; the e2e tests use
-it.
+implements the contract for a fake pool of qemu VMs
+([`scripts/testing/fake-cxl-pool`](tree:/scripts/testing/fake-cxl-pool));
+the e2e tests use it.
 
 ```
  pool controller
