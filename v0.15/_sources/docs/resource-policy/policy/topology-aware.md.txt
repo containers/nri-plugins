@@ -1696,8 +1696,6 @@ leaves running, such as DaemonSet pods, lose the CPUs of their claims.
 
 ### Known Limitations
 
-- The CDI spec files of claims which ended while the plugin was not running
-  are left behind.
 - A claim can fail to prepare when the node has too few free CPUs for it. The
   pod then waits until enough CPUs are free. This happens when the scheduler
   places the claim before the policy publishes a new capacity, or when shared
