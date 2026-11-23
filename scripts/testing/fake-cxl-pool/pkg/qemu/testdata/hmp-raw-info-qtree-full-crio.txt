@@ -1,0 +1,837 @@
+QEMU 11.1.1 monitor - type 'help' for more information
+(qemu) i[K[Din[K[D[Dinf[K[D[D[Dinfo[K[D[D[D[Dinfo [K[D[D[D[D[Dinfo q[K[D[D[D[D[D[Dinfo qt[K[D[D[D[D[D[D[Dinfo qtr[K[D[D[D[D[D[D[D[Dinfo qtre[K[D[D[D[D[D[D[D[D[Dinfo qtree[K
+bus: main-system-bus
+  type System
+  dev: pxb-cxl-host, id ""
+    x-config-reg-migration-enabled = true
+    bypass-iommu = false
+    mmio ffffffffffffffff/0000000000010000
+    bus: cxlhb1
+      type pxb-cxl-bus
+      dev: cxl-rp, id "cxlrp0hb1"
+        bus-reserve = 4294967295 (0xffffffff)
+        io-reserve = 18446744073709551615 (16 EiB)
+        mem-reserve = 18446744073709551615 (16 EiB)
+        pref32-reserve = 18446744073709551615 (16 EiB)
+        pref64-reserve = 18446744073709551615 (16 EiB)
+        x-speed = "64"
+        x-width = "32"
+        x-256b-flit = true
+        power_controller_present = true
+        chassis = 193 (0xc1)
+        slot = 3 (0x3)
+        hotplug = true
+        x-do-not-expose-native-hotplug-cap = false
+        port = 3 (0x3)
+        aer_log_max = 8 (0x8)
+        x-pci-express-writeable-slt-bug = false
+        addr = 00.0
+        romfile = ""
+        romsize = 4294967295 (0xffffffff)
+        rombar = -1 (0xffffffffffffffff)
+        multifunction = false
+        x-pcie-lnksta-dllla = true
+        failover_pair_id = ""
+        acpi-index = 0 (0x0)
+        x-pcie-err-unc-mask = true
+        x-pcie-ari-nextfn-1 = false
+        x-max-bounce-buffer-size = 4096 (4 KiB)
+        sriov-pf = ""
+        x-pcie-ext-tag = true
+        busnr = 24 (0x18)
+        class PCI bridge, addr 18:00.0, pci id 8086:7075 (sub 0e05:0000)
+        bar 0: mem at 0xe0000010000 [0xe000001ffff]
+        bus: cxlrp0hb1
+          type CXL
+          dev: cxl-upstream, id "cxlsw_usrp0hb1"
+            sn = -1 (0xffffffffffffffff)
+            cdat = ""
+            x-speed = "32"
+            x-width = "16"
+            x-256b-flit = false
+            port = 0 (0x0)
+            aer_log_max = 8 (0x8)
+            x-pci-express-writeable-slt-bug = false
+            addr = 00.0
+            romfile = ""
+            romsize = 4294967295 (0xffffffff)
+            rombar = -1 (0xffffffffffffffff)
+            multifunction = false
+            x-pcie-lnksta-dllla = true
+            failover_pair_id = ""
+            acpi-index = 0 (0x0)
+            x-pcie-err-unc-mask = true
+            x-pcie-ari-nextfn-1 = false
+            x-max-bounce-buffer-size = 4096 (4 KiB)
+            sriov-pf = ""
+            x-pcie-ext-tag = true
+            busnr = 25 (0x19)
+            class PCI bridge, addr 19:00.0, pci id 19e5:a128 (sub 0e05:0000)
+            bar 0: mem at 0xfde00000 [0xfde0ffff]
+            bus: cxlsw_usrp0hb1
+              type PCIE
+              dev: cxl-downstream, id "cxlsw_ds1_usrp0hb1"
+                x-speed = "64"
+                x-width = "16"
+                x-256b-flit = true
+                chassis = 193 (0xc1)
+                slot = 5 (0x5)
+                hotplug = true
+                x-do-not-expose-native-hotplug-cap = false
+                port = 5 (0x5)
+                aer_log_max = 8 (0x8)
+                x-pci-express-writeable-slt-bug = false
+                addr = 01.0
+                romfile = ""
+                romsize = 4294967295 (0xffffffff)
+                rombar = -1 (0xffffffffffffffff)
+                multifunction = false
+                x-pcie-lnksta-dllla = true
+                failover_pair_id = ""
+                acpi-index = 0 (0x0)
+                x-pcie-err-unc-mask = true
+                x-pcie-ari-nextfn-1 = false
+                x-max-bounce-buffer-size = 4096 (4 KiB)
+                sriov-pf = ""
+                x-pcie-ext-tag = true
+                busnr = 26 (0x1a)
+                class PCI bridge, addr 1a:01.0, pci id 19e5:a129 (sub 0e03:0000)
+                bar 0: mem at 0xfdc10000 [0xfdc1ffff]
+                bus: cxlsw_ds1_usrp0hb1
+                  type PCIE
+              dev: cxl-downstream, id "cxlsw_ds0_usrp0hb1"
+                x-speed = "64"
+                x-width = "16"
+                x-256b-flit = true
+                chassis = 193 (0xc1)
+                slot = 4 (0x4)
+                hotplug = true
+                x-do-not-expose-native-hotplug-cap = false
+                port = 4 (0x4)
+                aer_log_max = 8 (0x8)
+                x-pci-express-writeable-slt-bug = false
+                addr = 00.0
+                romfile = ""
+                romsize = 4294967295 (0xffffffff)
+                rombar = -1 (0xffffffffffffffff)
+                multifunction = false
+                x-pcie-lnksta-dllla = true
+                failover_pair_id = ""
+                acpi-index = 0 (0x0)
+                x-pcie-err-unc-mask = true
+                x-pcie-ari-nextfn-1 = false
+                x-max-bounce-buffer-size = 4096 (4 KiB)
+                sriov-pf = ""
+                x-pcie-ext-tag = true
+                busnr = 26 (0x1a)
+                class PCI bridge, addr 1a:00.0, pci id 19e5:a129 (sub 0e05:0000)
+                bar 0: mem at 0xfdc00000 [0xfdc0ffff]
+                bus: cxlsw_ds0_usrp0hb1
+                  type PCIE
+                  dev: cxl-type3, id "cxl_memdev2.hp3"
+                    memdev = ""
+                    persistent-memdev = ""
+                    volatile-memdev = "/objects/beram_cxl_memdev2__bus_cxlsw_ds0_usrp0hb1__sn_0xc100e2e2"
+                    lsa = ""
+                    sn = 3238060770 (0xc100e2e2)
+                    cdat = ""
+                    num-dc-regions = 0 (0x0)
+                    volatile-dc-memdev = ""
+                    x-speed = "32"
+                    x-width = "16"
+                    x-256b-flit = false
+                    hdm-db = false
+                    addr = 00.0
+                    romfile = ""
+                    romsize = 4294967295 (0xffffffff)
+                    rombar = -1 (0xffffffffffffffff)
+                    multifunction = false
+                    x-pcie-lnksta-dllla = true
+                    failover_pair_id = ""
+                    acpi-index = 0 (0x0)
+                    x-pcie-err-unc-mask = true
+                    x-pcie-ari-nextfn-1 = false
+                    x-max-bounce-buffer-size = 4096 (4 KiB)
+                    sriov-pf = ""
+                    x-pcie-ext-tag = true
+                    busnr = 27 (0x1b)
+                    class Class 0502, addr 1b:00.0, pci id 8086:0d93 (sub 1af4:1100)
+                    bar 0: mem at 0xfda00000 [0xfda0ffff]
+                    bar 2: mem at 0xfda10000 [0xfda10fff]
+                    bar 4: mem at 0xfda11000 [0xfda11fff]
+  dev: pxb-cxl-host, id ""
+    x-config-reg-migration-enabled = true
+    bypass-iommu = false
+    mmio ffffffffffffffff/0000000000010000
+    bus: cxlhb0
+      type pxb-cxl-bus
+      dev: cxl-rp, id "cxlrp0hb0"
+        bus-reserve = 4294967295 (0xffffffff)
+        io-reserve = 18446744073709551615 (16 EiB)
+        mem-reserve = 18446744073709551615 (16 EiB)
+        pref32-reserve = 18446744073709551615 (16 EiB)
+        pref64-reserve = 18446744073709551615 (16 EiB)
+        x-speed = "64"
+        x-width = "32"
+        x-256b-flit = true
+        power_controller_present = true
+        chassis = 193 (0xc1)
+        slot = 0 (0x0)
+        hotplug = true
+        x-do-not-expose-native-hotplug-cap = false
+        port = 0 (0x0)
+        aer_log_max = 8 (0x8)
+        x-pci-express-writeable-slt-bug = false
+        addr = 00.0
+        romfile = ""
+        romsize = 4294967295 (0xffffffff)
+        rombar = -1 (0xffffffffffffffff)
+        multifunction = false
+        x-pcie-lnksta-dllla = true
+        failover_pair_id = ""
+        acpi-index = 0 (0x0)
+        x-pcie-err-unc-mask = true
+        x-pcie-ari-nextfn-1 = false
+        x-max-bounce-buffer-size = 4096 (4 KiB)
+        sriov-pf = ""
+        x-pcie-ext-tag = true
+        busnr = 12 (0xc)
+        class PCI bridge, addr 0c:00.0, pci id 8086:7075 (sub 0e09:0000)
+        bar 0: mem at 0xe0000000000 [0xe000000ffff]
+        bus: cxlrp0hb0
+          type CXL
+          dev: cxl-upstream, id "cxlsw_usrp0hb0"
+            sn = -1 (0xffffffffffffffff)
+            cdat = ""
+            x-speed = "32"
+            x-width = "16"
+            x-256b-flit = false
+            port = 0 (0x0)
+            aer_log_max = 8 (0x8)
+            x-pci-express-writeable-slt-bug = false
+            addr = 00.0
+            romfile = ""
+            romsize = 4294967295 (0xffffffff)
+            rombar = -1 (0xffffffffffffffff)
+            multifunction = false
+            x-pcie-lnksta-dllla = true
+            failover_pair_id = ""
+            acpi-index = 0 (0x0)
+            x-pcie-err-unc-mask = true
+            x-pcie-ari-nextfn-1 = false
+            x-max-bounce-buffer-size = 4096 (4 KiB)
+            sriov-pf = ""
+            x-pcie-ext-tag = true
+            busnr = 13 (0xd)
+            class PCI bridge, addr 0d:00.0, pci id 19e5:a128 (sub 0e09:0000)
+            bar 0: mem at 0xfe600000 [0xfe60ffff]
+            bus: cxlsw_usrp0hb0
+              type PCIE
+              dev: cxl-downstream, id "cxlsw_ds1_usrp0hb0"
+                x-speed = "64"
+                x-width = "16"
+                x-256b-flit = true
+                chassis = 193 (0xc1)
+                slot = 2 (0x2)
+                hotplug = true
+                x-do-not-expose-native-hotplug-cap = false
+                port = 2 (0x2)
+                aer_log_max = 8 (0x8)
+                x-pci-express-writeable-slt-bug = false
+                addr = 01.0
+                romfile = ""
+                romsize = 4294967295 (0xffffffff)
+                rombar = -1 (0xffffffffffffffff)
+                multifunction = false
+                x-pcie-lnksta-dllla = true
+                failover_pair_id = ""
+                acpi-index = 0 (0x0)
+                x-pcie-err-unc-mask = true
+                x-pcie-ari-nextfn-1 = false
+                x-max-bounce-buffer-size = 4096 (4 KiB)
+                sriov-pf = ""
+                x-pcie-ext-tag = true
+                busnr = 14 (0xe)
+                class PCI bridge, addr 0e:01.0, pci id 19e5:a129 (sub 0e07:0000)
+                bar 0: mem at 0xfe410000 [0xfe41ffff]
+                bus: cxlsw_ds1_usrp0hb0
+                  type PCIE
+                  dev: cxl-type3, id "cxl_memdev1.hp2"
+                    memdev = ""
+                    persistent-memdev = ""
+                    volatile-memdev = "/objects/beram_cxl_memdev1__bus_cxlsw_ds1_usrp0hb0__sn_0xc100e2e1"
+                    lsa = ""
+                    sn = 3238060769 (0xc100e2e1)
+                    cdat = ""
+                    num-dc-regions = 0 (0x0)
+                    volatile-dc-memdev = ""
+                    x-speed = "32"
+                    x-width = "16"
+                    x-256b-flit = false
+                    hdm-db = false
+                    addr = 00.0
+                    romfile = ""
+                    romsize = 4294967295 (0xffffffff)
+                    rombar = -1 (0xffffffffffffffff)
+                    multifunction = false
+                    x-pcie-lnksta-dllla = true
+                    failover_pair_id = ""
+                    acpi-index = 0 (0x0)
+                    x-pcie-err-unc-mask = true
+                    x-pcie-ari-nextfn-1 = false
+                    x-max-bounce-buffer-size = 4096 (4 KiB)
+                    sriov-pf = ""
+                    x-pcie-ext-tag = true
+                    busnr = 16 (0x10)
+                    class Class 0502, addr 10:00.0, pci id 8086:0d93 (sub 1af4:1100)
+                    bar 0: mem at 0xfe000000 [0xfe00ffff]
+                    bar 2: mem at 0xfe010000 [0xfe010fff]
+                    bar 4: mem at 0xfe011000 [0xfe011fff]
+              dev: cxl-downstream, id "cxlsw_ds0_usrp0hb0"
+                x-speed = "64"
+                x-width = "16"
+                x-256b-flit = true
+                chassis = 193 (0xc1)
+                slot = 1 (0x1)
+                hotplug = true
+                x-do-not-expose-native-hotplug-cap = false
+                port = 1 (0x1)
+                aer_log_max = 8 (0x8)
+                x-pci-express-writeable-slt-bug = false
+                addr = 00.0
+                romfile = ""
+                romsize = 4294967295 (0xffffffff)
+                rombar = -1 (0xffffffffffffffff)
+                multifunction = false
+                x-pcie-lnksta-dllla = true
+                failover_pair_id = ""
+                acpi-index = 0 (0x0)
+                x-pcie-err-unc-mask = true
+                x-pcie-ari-nextfn-1 = false
+                x-max-bounce-buffer-size = 4096 (4 KiB)
+                sriov-pf = ""
+                x-pcie-ext-tag = true
+                busnr = 14 (0xe)
+                class PCI bridge, addr 0e:00.0, pci id 19e5:a129 (sub 0e09:0000)
+                bar 0: mem at 0xfe400000 [0xfe40ffff]
+                bus: cxlsw_ds0_usrp0hb0
+                  type PCIE
+                  dev: cxl-type3, id "cxl_memdev0.hp1"
+                    memdev = ""
+                    persistent-memdev = ""
+                    volatile-memdev = "/objects/beram_cxl_memdev0__bus_cxlsw_ds0_usrp0hb0__sn_0xc100e2e0"
+                    lsa = ""
+                    sn = 3238060768 (0xc100e2e0)
+                    cdat = ""
+                    num-dc-regions = 0 (0x0)
+                    volatile-dc-memdev = ""
+                    x-speed = "32"
+                    x-width = "16"
+                    x-256b-flit = false
+                    hdm-db = false
+                    addr = 00.0
+                    romfile = ""
+                    romsize = 4294967295 (0xffffffff)
+                    rombar = -1 (0xffffffffffffffff)
+                    multifunction = false
+                    x-pcie-lnksta-dllla = true
+                    failover_pair_id = ""
+                    acpi-index = 0 (0x0)
+                    x-pcie-err-unc-mask = true
+                    x-pcie-ari-nextfn-1 = false
+                    x-max-bounce-buffer-size = 4096 (4 KiB)
+                    sriov-pf = ""
+                    x-pcie-ext-tag = true
+                    busnr = 15 (0xf)
+                    class Class 0502, addr 0f:00.0, pci id 8086:0d93 (sub 1af4:1100)
+                    bar 0: mem at 0xfe200000 [0xfe20ffff]
+                    bar 2: mem at 0xfe210000 [0xfe210fff]
+                    bar 4: mem at 0xfe211000 [0xfe211fff]
+  dev: ps2-mouse, id ""
+    gpio-out "" 1
+  dev: ps2-kbd, id ""
+    gpio-out "" 1
+  dev: hpet, id ""
+    gpio-in "" 2
+    gpio-out "" 1
+    gpio-out "sysbus-irq" 32
+    timers = 3 (0x3)
+    msi = false
+    hpet-intcap = 16711940 (0xff0104)
+    mmio 00000000fed00000/0000000000000400
+  dev: ioapic, id ""
+    gpio-in "" 24
+    version = 32 (0x20)
+    mmio 00000000fec00000/0000000000001000
+  dev: q35-pcihost, id ""
+    MCFG = 2952790016 (0xb0000000)
+    pci-hole64-size = 34359738368 (32 GiB)
+    below-4g-mem-size = 2147483648 (2 GiB)
+    above-4g-mem-size = 6442450944 (6 GiB)
+    smm-ranges = true
+    x-pci-hole64-fix = true
+    x-config-reg-migration-enabled = true
+    bypass-iommu = false
+    bus: pcie.0
+      type PCIE
+      dev: pxb-cxl, id "cxlhb1"
+        hdm_for_passthrough = false
+        bus_nr = 24 (0x18)
+        numa_node = 1 (0x1)
+        bypass_iommu = false
+        addr = 04.0
+        romfile = ""
+        romsize = 4294967295 (0xffffffff)
+        rombar = -1 (0xffffffffffffffff)
+        multifunction = false
+        x-pcie-lnksta-dllla = true
+        failover_pair_id = ""
+        acpi-index = 0 (0x0)
+        x-pcie-err-unc-mask = true
+        x-pcie-ari-nextfn-1 = false
+        x-max-bounce-buffer-size = 4096 (4 KiB)
+        sriov-pf = ""
+        x-pcie-ext-tag = true
+        busnr = 0 (0x0)
+        class Host bridge, addr 00:04.0, pci id 1b36:000b (sub 1af4:1100)
+      dev: pxb-cxl, id "cxlhb0"
+        hdm_for_passthrough = false
+        bus_nr = 12 (0xc)
+        numa_node = 0 (0x0)
+        bypass_iommu = false
+        addr = 03.0
+        romfile = ""
+        romsize = 4294967295 (0xffffffff)
+        rombar = -1 (0xffffffffffffffff)
+        multifunction = false
+        x-pcie-lnksta-dllla = true
+        failover_pair_id = ""
+        acpi-index = 0 (0x0)
+        x-pcie-err-unc-mask = true
+        x-pcie-ari-nextfn-1 = false
+        x-max-bounce-buffer-size = 4096 (4 KiB)
+        sriov-pf = ""
+        x-pcie-ext-tag = true
+        busnr = 0 (0x0)
+        class Host bridge, addr 00:03.0, pci id 1b36:000b (sub 1af4:1100)
+      dev: pcie-root-port, id "rp_disk"
+        bus-reserve = 4294967295 (0xffffffff)
+        io-reserve = 18446744073709551615 (16 EiB)
+        mem-reserve = 18446744073709551615 (16 EiB)
+        pref32-reserve = 18446744073709551615 (16 EiB)
+        pref64-reserve = 18446744073709551615 (16 EiB)
+        x-speed = "16"
+        x-width = "32"
+        power_controller_present = true
+        chassis = 5 (0x5)
+        slot = 0 (0x0)
+        hotplug = true
+        x-do-not-expose-native-hotplug-cap = false
+        port = 9 (0x9)
+        aer_log_max = 8 (0x8)
+        x-pci-express-writeable-slt-bug = false
+        addr = 02.0
+        romfile = ""
+        romsize = 4294967295 (0xffffffff)
+        rombar = -1 (0xffffffffffffffff)
+        multifunction = false
+        x-pcie-lnksta-dllla = true
+        failover_pair_id = ""
+        acpi-index = 0 (0x0)
+        x-pcie-err-unc-mask = true
+        x-pcie-ari-nextfn-1 = false
+        x-max-bounce-buffer-size = 4096 (4 KiB)
+        sriov-pf = ""
+        x-pcie-ext-tag = true
+        busnr = 0 (0x0)
+        class PCI bridge, addr 00:02.0, pci id 1b36:000c (sub 0e0b:0000)
+        bar 0: mem at 0x80301000 [0x80301fff]
+        bus: rp_disk
+          type PCIE
+          dev: virtio-blk-pci, id "virtio_disk0"
+            disable-legacy = "on"
+            disable-modern = false
+            class = 0 (0x0)
+            ioeventfd = true
+            vectors = 9 (0x9)
+            virtio-pci-bus-master-bug-migration = false
+            modern-pio-notify = false
+            page-per-vq = false
+            ats = false
+            x-ats-page-aligned = true
+            x-pcie-pm-no-soft-reset = false
+            x-pcie-flr-init = true
+            aer = false
+            addr = 00.0
+            romfile = ""
+            romsize = 4294967295 (0xffffffff)
+            rombar = -1 (0xffffffffffffffff)
+            multifunction = false
+            x-pcie-lnksta-dllla = true
+            failover_pair_id = ""
+            acpi-index = 0 (0x0)
+            x-pcie-err-unc-mask = true
+            x-pcie-ari-nextfn-1 = false
+            x-max-bounce-buffer-size = 4096 (4 KiB)
+            sriov-pf = ""
+            x-pcie-ext-tag = true
+            busnr = 1 (0x1)
+            class SCSI controller, addr 01:00.0, pci id 1af4:1042 (sub 1af4:1100)
+            bar 1: mem at 0x80100000 [0x80100fff]
+            bar 4: mem at 0xe0a00000000 [0xe0a00003fff]
+            bus: virtio-bus
+              type virtio-pci-bus
+              dev: virtio-blk-device, id ""
+                drive = "disk0"
+                backend_defaults = "auto"
+                logical_block_size = 512 (512 B)
+                physical_block_size = 512 (512 B)
+                min_io_size = 0 (0 B)
+                opt_io_size = 0 (0 B)
+                discard_granularity = 4294967295 (4 GiB)
+                write-cache = "auto"
+                share-rw = false
+                account-invalid = "auto"
+                account-failed = "auto"
+                stats-intervals = <null>
+                rerror = "auto"
+                werror = "auto"
+                cyls = 16383 (0x3fff)
+                heads = 16 (0x10)
+                secs = 63 (0x3f)
+                lcyls = 0 (0x0)
+                lheads = 0 (0x0)
+                lsecs = 0 (0x0)
+                serial = ""
+                config-wce = true
+                request-merging = true
+                num-queues = 8 (0x8)
+                queue-size = 256 (0x100)
+                seg-max-adjust = true
+                iothread = ""
+                iothread-vq-mapping = <null>
+                discard = true
+                report-discard-granularity = true
+                write-zeroes = true
+                max-discard-sectors = 4194303 (0x3fffff)
+                max-write-zeroes-sectors = 4194303 (0x3fffff)
+                x-enable-wce-if-config-wce = true
+                indirect_desc = true
+                event_idx = true
+                notify_on_empty = true
+                any_layout = true
+                iommu_platform = false
+                packed = false
+                queue_reset = true
+                in_order = false
+                use-started = true
+                use-disabled-flag = true
+                x-disable-legacy-check = false
+      dev: virtio-net-pci, id ""
+        disable-legacy = "off"
+        disable-modern = false
+        ioeventfd = true
+        vectors = 4 (0x4)
+        virtio-pci-bus-master-bug-migration = false
+        modern-pio-notify = false
+        page-per-vq = false
+        ats = false
+        x-ats-page-aligned = true
+        x-pcie-pm-no-soft-reset = false
+        x-pcie-flr-init = true
+        aer = false
+        addr = 01.0
+        romfile = "efi-virtio.rom"
+        romsize = 1048576 (0x100000)
+        rombar = -1 (0xffffffffffffffff)
+        multifunction = false
+        x-pcie-lnksta-dllla = true
+        failover_pair_id = ""
+        acpi-index = 0 (0x0)
+        x-pcie-err-unc-mask = true
+        x-pcie-ari-nextfn-1 = false
+        x-max-bounce-buffer-size = 4096 (4 KiB)
+        sriov-pf = ""
+        x-pcie-ext-tag = true
+        busnr = 0 (0x0)
+        class Ethernet controller, addr 00:01.0, pci id 1af4:1000 (sub 1af4:0001)
+        bar 0: i/o at 0xc040 [0xc05f]
+        bar 1: mem at 0x80300000 [0x80300fff]
+        bar 4: mem at 0xe0c00000000 [0xe0c00003fff]
+        bar 6: mem at 0xffffffffffffffff [0xffffe]
+        bus: virtio-bus
+          type virtio-pci-bus
+          dev: virtio-net-device, id ""
+            csum = true
+            guest_csum = true
+            gso = true
+            guest_tso4 = true
+            guest_tso6 = true
+            guest_ecn = true
+            guest_ufo = true
+            guest_announce = true
+            host_tso4 = true
+            host_tso6 = true
+            host_ecn = true
+            host_ufo = true
+            mrg_rxbuf = true
+            status = true
+            ctrl_vq = true
+            ctrl_rx = true
+            ctrl_vlan = true
+            ctrl_rx_extra = true
+            ctrl_mac_addr = true
+            ctrl_guest_offloads = true
+            mq = false
+            rss = false
+            hash = false
+            ebpf-rss-fds = <null>
+            guest_rsc_ext = false
+            rsc_interval = 300000 (0x493e0)
+            mac = "52:54:00:12:34:56"
+            netdev = "net0"
+            x-txtimer = 150000 (0x249f0)
+            x-txburst = 256 (0x100)
+            tx = ""
+            rx_queue_size = 256 (0x100)
+            tx_queue_size = 256 (0x100)
+            host_mtu = 0 (0x0)
+            speed = -1 (0xffffffffffffffff)
+            duplex = ""
+            failover = false
+            guest_uso4 = true
+            guest_uso6 = true
+            host_uso = true
+            hash-ipv4 = "auto"
+            hash-tcp4 = "auto"
+            hash-udp4 = "auto"
+            hash-ipv6 = "auto"
+            hash-tcp6 = "auto"
+            hash-udp6 = "auto"
+            hash-ipv6ex = "auto"
+            hash-tcp6ex = "auto"
+            hash-udp6ex = "auto"
+            host_tunnel = true
+            host_tunnel_csum = true
+            guest_tunnel = true
+            guest_tunnel_csum = true
+            indirect_desc = true
+            event_idx = true
+            notify_on_empty = true
+            any_layout = true
+            iommu_platform = false
+            packed = false
+            queue_reset = true
+            in_order = false
+            use-started = true
+            use-disabled-flag = true
+            x-disable-legacy-check = false
+      dev: ICH9-SMB, id ""
+        addr = 1f.3
+        romfile = ""
+        romsize = 4294967295 (0xffffffff)
+        rombar = -1 (0xffffffffffffffff)
+        multifunction = true
+        x-pcie-lnksta-dllla = true
+        failover_pair_id = ""
+        acpi-index = 0 (0x0)
+        x-pcie-err-unc-mask = true
+        x-pcie-ari-nextfn-1 = false
+        x-max-bounce-buffer-size = 4096 (4 KiB)
+        sriov-pf = ""
+        x-pcie-ext-tag = true
+        busnr = 0 (0x0)
+        class SMBus, addr 00:1f.3, pci id 8086:2930 (sub 1af4:1100)
+        bar 4: i/o at 0x700 [0x73f]
+        bus: i2c
+          type i2c-bus
+          dev: smbus-eeprom, id ""
+            address = 87 (0x57)
+          dev: smbus-eeprom, id ""
+            address = 86 (0x56)
+          dev: smbus-eeprom, id ""
+            address = 85 (0x55)
+          dev: smbus-eeprom, id ""
+            address = 84 (0x54)
+          dev: smbus-eeprom, id ""
+            address = 83 (0x53)
+          dev: smbus-eeprom, id ""
+            address = 82 (0x52)
+          dev: smbus-eeprom, id ""
+            address = 81 (0x51)
+          dev: smbus-eeprom, id ""
+            address = 80 (0x50)
+      dev: ich9-ahci, id ""
+        addr = 1f.2
+        romfile = ""
+        romsize = 4294967295 (0xffffffff)
+        rombar = -1 (0xffffffffffffffff)
+        multifunction = true
+        x-pcie-lnksta-dllla = true
+        failover_pair_id = ""
+        acpi-index = 0 (0x0)
+        x-pcie-err-unc-mask = true
+        x-pcie-ari-nextfn-1 = false
+        x-max-bounce-buffer-size = 4096 (4 KiB)
+        sriov-pf = ""
+        x-pcie-ext-tag = true
+        busnr = 0 (0x0)
+        class SATA controller, addr 00:1f.2, pci id 8086:2922 (sub 1af4:1100)
+        bar 4: i/o at 0xc060 [0xc07f]
+        bar 5: mem at 0x80302000 [0x80302fff]
+        bus: ide.5
+          type IDE
+        bus: ide.4
+          type IDE
+        bus: ide.3
+          type IDE
+        bus: ide.2
+          type IDE
+          dev: ide-cd, id ""
+            drive = "ide2-cd0"
+            backend_defaults = "auto"
+            logical_block_size = 512 (512 B)
+            physical_block_size = 512 (512 B)
+            min_io_size = 0 (0 B)
+            opt_io_size = 0 (0 B)
+            discard_granularity = 512 (512 B)
+            write-cache = "auto"
+            share-rw = false
+            account-invalid = "auto"
+            account-failed = "auto"
+            stats-intervals = <null>
+            rerror = "auto"
+            werror = "auto"
+            ver = "2.5+"
+            wwn = 0 (0x0)
+            serial = "QM00005"
+            model = ""
+            unit = 0 (0x0)
+            win2k-install-hack = false
+        bus: ide.1
+          type IDE
+        bus: ide.0
+          type IDE
+      dev: ICH9-LPC, id ""
+        gpio-out "gsi" 24
+        noreboot = false
+        smm-compat = false
+        smm-enabled = true
+        x-smi-broadcast = true
+        x-smi-cpu-hotplug = true
+        x-smi-cpu-hotunplug = true
+        x-smi-swsmi-timer = true
+        x-smi-periodic-timer = true
+        addr = 1f.0
+        romfile = ""
+        romsize = 4294967295 (0xffffffff)
+        rombar = -1 (0xffffffffffffffff)
+        multifunction = true
+        x-pcie-lnksta-dllla = true
+        failover_pair_id = ""
+        acpi-index = 0 (0x0)
+        x-pcie-err-unc-mask = true
+        x-pcie-ari-nextfn-1 = false
+        x-max-bounce-buffer-size = 4096 (4 KiB)
+        sriov-pf = ""
+        x-pcie-ext-tag = true
+        busnr = 0 (0x0)
+        class ISA bridge, addr 00:1f.0, pci id 8086:2918 (sub 1af4:1100)
+        bus: isa.0
+          type ISA
+          dev: port92, id ""
+            gpio-out "a20" 1
+          dev: vmmouse, id ""
+            i8042 = "/machine/unattached/device[20]"
+          dev: vmport, id ""
+            x-read-set-eax = true
+            x-signal-unsupported-cmd = true
+            x-report-vmx-type = true
+            x-cmds-v2 = true
+            vmware-vmx-version = 6 (0x6)
+            vmware-vmx-type = 2 (0x2)
+          dev: i8042, id ""
+            gpio-in "ps2-mouse-input-irq" 1
+            gpio-in "ps2-kbd-input-irq" 1
+            gpio-out "" 2
+            gpio-out "a20" 1
+            extended-state = true
+            kbd-throttle = false
+            kbd-irq = 1 (0x1)
+            mouse-irq = 12 (0xc)
+          dev: isa-parallel, id ""
+            index = 0 (0x0)
+            iobase = 888 (0x378)
+            irq = 7 (0x7)
+            chardev = "parallel0"
+          dev: isa-serial, id ""
+            index = 0 (0x0)
+            iobase = 1016 (0x3f8)
+            irq = 4 (0x4)
+          dev: isa-pcspk, id ""
+            audiodev = ""
+            iobase = 97 (0x61)
+            pit = "/machine/unattached/device[16]"
+          dev: isa-pit, id ""
+            gpio-in "" 1
+            gpio-out "" 1
+            iobase = 64 (0x40)
+          dev: isa-i8259, id ""
+            gpio-in "" 8
+            gpio-out "" 1
+            iobase = 160 (0xa0)
+            elcr_addr = 1233 (0x4d1)
+            elcr_mask = 222 (0xde)
+            master = false
+          dev: isa-i8259, id ""
+            gpio-in "" 8
+            gpio-out "" 1
+            iobase = 32 (0x20)
+            elcr_addr = 1232 (0x4d0)
+            elcr_mask = 248 (0xf8)
+            master = true
+          dev: mc146818rtc, id ""
+            gpio-out "" 1
+            base_year = 0 (0x0)
+            iobase = 112 (0x70)
+            irq = 8 (0x8)
+            lost_tick_policy = "discard"
+          dev: i8257, id ""
+            base = 192 (0xc0)
+            page-base = 136 (0x88)
+            pageh-base = -1 (0xffffffffffffffff)
+            dshift = 1 (0x1)
+          dev: i8257, id ""
+            base = 0 (0x0)
+            page-base = 128 (0x80)
+            pageh-base = -1 (0xffffffffffffffff)
+            dshift = 0 (0x0)
+      dev: mch, id ""
+        extended-tseg-mbytes = 64 (0x40)
+        smbase-smram = true
+        addr = 00.0
+        romfile = ""
+        romsize = 4294967295 (0xffffffff)
+        rombar = -1 (0xffffffffffffffff)
+        multifunction = false
+        x-pcie-lnksta-dllla = true
+        failover_pair_id = ""
+        acpi-index = 0 (0x0)
+        x-pcie-err-unc-mask = true
+        x-pcie-ari-nextfn-1 = false
+        x-max-bounce-buffer-size = 4096 (4 KiB)
+        sriov-pf = ""
+        x-pcie-ext-tag = true
+        busnr = 0 (0x0)
+        class Host bridge, addr 00:00.0, pci id 8086:29c0 (sub 1af4:1100)
+  dev: fw_cfg_io, id ""
+    dma_enabled = true
+    x-file-slots = 32 (0x20)
+    acpi-mr-restore = true
+  dev: kvmclock, id ""
+  dev: kvmvapic, id ""
+  dev: cxl-fmw, id ""
+    mmio 00000006d0000000/0000000100000000
+  dev: cxl-fmw, id ""
+    mmio 00000005d0000000/0000000100000000
+(qemu) 
