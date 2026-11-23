@@ -95,6 +95,8 @@ For developers:
   its transitions, generated from the code
 - [Developer's guide](e2e.md): building, unit tests and the e2e suite on
   qemu VMs with a fake CXL memory pool
+- [The demo](demo.md): CXL memory sharing live on qemu VMs, and one
+  language model shared from a memory pool
 
 ```{toctree}
 :maxdepth: 1
@@ -108,4 +110,5 @@ leases.md
 design.md
 states.md
 e2e.md
+demo.md
 ```
