@@ -1,0 +1,167 @@
+# A read-only filesystem on a device of persistent memory of a memory pool
+# (DeviceClass cxl-pool-persistent), written once, read in place on many
+# nodes. The writer's claim requests no shares (the whole device,
+# exclusive) and MemoryConfig device.mode: block: its container gets the
+# block device of the fsdax namespace of the device and writes an erofs
+# image into it. Readers join after the writer is done, with one share
+# each (capacity.requests.shares: "1") and device.mode: fs: their
+# containers get the erofs mounted read-only at a path, access direct (the
+# file pages are the memory of the device) or cached (the file pages are
+# in the page cache of the node). The image must be built with
+# -Enoinline_data, else access direct silently uses the page cache.
+# Apply it in two steps, the second when the pod of the first has
+# completed:
+#   kubectl apply -f pool-persistent-erofs.yaml -l step=1
+#   kubectl apply -f pool-persistent-erofs.yaml -l step=2
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  name: persistent-writer
+  labels:
+    step: "1"
+spec:
+  devices:
+    requests:
+    - name: mem
+      exactly:
+        deviceClassName: cxl-pool-persistent
+        selectors:
+        - cel:
+            expression: 'device.attributes["cxl-pool.nri.io"].serial == "0xc1ae0002"'
+        # no capacity request: the whole device, the only claim of it
+    config:
+    - opaque:
+        driver: cxl-pool.nri.io
+        parameters:
+          apiVersion: cxl.nri.io/v1alpha1
+          kind: MemoryConfig
+          device:
+            mode: block
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: persistent-writer
+  labels:
+    step: "1"
+spec:
+  restartPolicy: Never
+  resourceClaims:
+  - name: mem
+    resourceClaimName: persistent-writer
+  containers:
+  - name: writer
+    image: registry.fedoraproject.org/fedora:43
+    command:
+    - sh
+    - -ec
+    - |
+      dnf install -q -y erofs-utils
+      mkdir -p /tmp/stage
+      head -c 64M /dev/urandom > /tmp/stage/data.bin
+      sha256sum /tmp/stage/data.bin
+      mkfs.erofs -b4096 --dsunit=512 -Enoinline_data /tmp/image.erofs /tmp/stage
+      dev=$CXL_C1AE0002_PATH
+      [ "$(stat -c %s /tmp/image.erofs)" -le "$CXL_C1AE0002_SIZE" ]
+      dd if=/tmp/image.erofs of="$dev" bs=2M oflag=direct conv=fsync
+      echo "wrote the image into $dev"
+    resources:
+      claims:
+      - name: mem
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: persistent-reader-direct
+  labels:
+    step: "2"
+spec:
+  spec:
+    devices:
+      requests:
+      - name: mem
+        exactly:
+          deviceClassName: cxl-pool-persistent
+          selectors:
+          - cel:
+              expression: 'device.attributes["cxl-pool.nri.io"].serial == "0xc1ae0002"'
+          capacity:
+            requests:
+              shares: "1"  # one share
+      config:
+      - opaque:
+          driver: cxl-pool.nri.io
+          parameters:
+            apiVersion: cxl.nri.io/v1alpha1
+            kind: MemoryConfig
+            device:
+              mode: fs
+              readOnly: true
+              path: /data
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: persistent-reader-cached
+  labels:
+    step: "2"
+spec:
+  spec:
+    devices:
+      requests:
+      - name: mem
+        exactly:
+          deviceClassName: cxl-pool-persistent
+          selectors:
+          - cel:
+              expression: 'device.attributes["cxl-pool.nri.io"].serial == "0xc1ae0002"'
+          capacity:
+            requests:
+              shares: "1"  # one share
+      config:
+      - opaque:
+          driver: cxl-pool.nri.io
+          parameters:
+            apiVersion: cxl.nri.io/v1alpha1
+            kind: MemoryConfig
+            device:
+              mode: fs
+              readOnly: true
+              access: cached
+              path: /data
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: persistent-reader-direct
+  labels:
+    step: "2"
+spec:
+  resourceClaims:
+  - name: mem
+    resourceClaimTemplateName: persistent-reader-direct
+  containers:
+  - name: reader
+    image: docker.io/library/busybox:stable
+    command: ["sh", "-c", "env | grep ^CXL_ | sort; sha256sum /data/data.bin; touch /data/x || true; sleep 1000000"]
+    resources:
+      claims:
+      - name: mem
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: persistent-reader-cached
+  labels:
+    step: "2"
+spec:
+  resourceClaims:
+  - name: mem
+    resourceClaimTemplateName: persistent-reader-cached
+  containers:
+  - name: reader
+    image: docker.io/library/busybox:stable
+    command: ["sh", "-c", "env | grep ^CXL_ | sort; sha256sum /data/data.bin; sleep 1000000"]
+    resources:
+      claims:
+      - name: mem

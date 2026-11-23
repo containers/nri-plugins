@@ -1,0 +1,56 @@
+# 256Mi as a devdax device, of a CXL memory device attached to the node if
+# one has room, else of a memory pool: a prioritized list (firstAvailable)
+# of a cxl-local and a cxl-pool subrequest, and a MemoryConfig with
+# device.mode: dax for each driver: the two entries differ in driver only.
+# The container prints which one it got: the CXL_* environment is the same
+# for both.
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  name: local-then-pool-dax
+spec:
+  devices:
+    requests:
+    - name: mem
+      firstAvailable:
+      - name: local
+        deviceClassName: cxl-local
+        capacity:
+          requests:
+            memory: 256Mi
+      - name: pool
+        deviceClassName: cxl-pool
+        capacity:
+          requests:
+            memory: 256Mi
+    config:
+    - opaque:
+        driver: cxl.nri.io
+        parameters:
+          apiVersion: cxl.nri.io/v1alpha1
+          kind: MemoryConfig
+          device:
+            mode: dax
+    - opaque:
+        driver: cxl-pool.nri.io
+        parameters:
+          apiVersion: cxl.nri.io/v1alpha1
+          kind: MemoryConfig
+          device:
+            mode: dax
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: local-then-pool-dax
+spec:
+  resourceClaims:
+  - name: mem
+    resourceClaimName: local-then-pool-dax
+  containers:
+  - name: app
+    image: docker.io/library/python:3-alpine
+    command: ["sh", "-c", "env | grep ^CXL_ | sort; sleep infinity"]
+    resources:
+      claims:
+      - name: mem
