@@ -82,6 +82,7 @@ jobs:
           go-version-file: go.mod
       - run: |
           go test -short -race \
+              ./cmd/cxl-request/... \
               ./cmd/plugins/dra-driver-cxl/... \
               ./pkg/cxl/... \
               ./pkg/udev/... \
