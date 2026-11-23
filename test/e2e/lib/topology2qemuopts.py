@@ -89,6 +89,12 @@ EOF
 
 CXL structures:
 "cxl"                 List of host bridge connections.
+"hdm-for-passthrough" (optional, next to "cxl" in the same group) true gives
+                      every host bridge HDM decoders of its own
+                      (pxb-cxl hdm_for_passthrough=on). Without them a host
+                      bridge with a single root port passes addresses
+                      through, which allows only one CXL region behind
+                      the host bridge. The default is false.
 
                       New host bridge (pxb-cxl) is created for each list
                       of host bridge connections.
@@ -113,10 +119,46 @@ CXL structures:
                                   present at vm boot (true, the default)
                                   or if it can be hotplugged later (false).
                                   All devices can be hotremoved.
+                        "file"    (optional) absolute path of a file that
+                                  backs the memory of the device
+                                  (memory-backend-file) instead of anonymous
+                                  memory of the qemu process
+                                  (memory-backend-ram). Qemu creates the file
+                                  and sets its size if the file does not
+                                  exist or is empty, but the directory of the
+                                  file must exist. Qemus that are given the
+                                  same file share the memory.
+                        "sn"      (optional) serial number of the device, for
+                                  instance "0xc1ae0000". The default is
+                                  0xc100e2e0 + index of the device. Give the
+                                  same "file" and "sn" to a device in many
+                                  VMs to make them see the same device.
+                                  Scheme: 0xc100.... boot-time devices of one
+                                  VM (the default), 0xc1ae.... shared and
+                                  0xc1ee.... unshared devices of a CXL
+                                  memory pool.
+                        "shared"  (optional) true declares that the device is
+                                  meant to be shared with other VMs. Requires
+                                  "file". Changes nothing in qemu options:
+                                  all CXL memory is mapped with share=on.
+
+                      The qemu memory backend of a device is always created,
+                      even if the device is not present at boot. The id of
+                      the backend tells how to hotplug the device:
+                      be<ram|file>_cxl_memdev<N>__bus_<BUS>__sn_<SN>.
 
                       CXL switches (cxl-upstream, cxl-downstream):
                         "switch"  specifies a list of CXL memory devices
                                   attached to the switch.
+
+                      Empty slots for hotplugging devices that are not
+                      declared in the topology (cxl-rp or cxl-downstream
+                      without a memory backend or a device):
+                        "pool-slot" specifies the size of the largest device
+                                  expected in the slot. It is counted in
+                                  total CXL memory, like "mem" of a declared
+                                  device, which sets the size of CXL memory
+                                  windows.
 
   CXL Examples:
 
@@ -136,6 +178,25 @@ CXL structures:
           {"switch": [
               {"mem": "1G", "present": false}, # cxl_memdev1, not present at boot
               {"mem": "1G", "present": false}, # cxl_memdev2, not present at boot
+          ]}
+      ]
+  ]}
+
+  # Two VMs sharing CXL memory. Give the same topology to both VMs. Both qemus
+  # map the same file, so the VMs see the same memory device: same size and
+  # serial number, same content. Neither VM has the device at boot. Hotplug it
+  # with "vm-cxl-hotplug cxl_memdev0" in each VM. Both VMs have also two empty
+  # slots (cxl-downstream ports of the switch) for hotplugging devices
+  # that are not declared here, for instance by a CXL memory pool emulator.
+  # Each device behind the host bridge can be in a region of its own.
+  {"hdm-for-passthrough": true,
+   "cxl": [
+      [
+          {"switch": [
+              {"mem": "256M", "present": false, "shared": true,
+               "file": "/tmp/cxl-pool/static-shared0.raw", "sn": "0xc1ae0000"},
+              {"pool-slot": "1G"},
+              {"pool-slot": "1G"}
           ]}
       ]
   ]}
@@ -175,7 +236,7 @@ def validate(numalist):
                       "cpus-present",
                       "node-dist", "dist-all",
                       "dist-other-package", "dist-same-package", "dist-same-die",
-                      "cxl"))
+                      "cxl", "hdm-for-passthrough"))
     int_range_keys = {'cores': ('>= 0', lambda v: v >= 0),
                       'threads': ('> 0', lambda v: v > 0),
                       'nodes': ('> 0', lambda v: v > 0),
@@ -276,7 +337,7 @@ def dists(numalist):
                         dist_dict[sourcenode][destnode] = dist_other_package
     return dist_dict
 
-def qemucxlopts(cxl_host_bridges):
+def qemucxlopts(cxl_host_bridges, hdm_for_passthrough=False):
     cxl_objectparams = []      # qemu -object parameters needed for CXL.
     cxl_deviceparams = []      # qemu -device parameters needed for CXL.
     total_mem_sizeM = 0        # total memory in CXL memory devices in megabytes.
@@ -285,37 +346,89 @@ def qemucxlopts(cxl_host_bridges):
     bus_nr = 12                # bus_nr partitions the 0..255 bus number space.
     slot = 0
     chassis = 0xc1             # (slot, chassis) must be unique for each root port.
+    serials = set()            # serial numbers of CXL memory devices, must be unique.
+
+    def cxlsizeM(size):
+        """Return CXL memory size string ("256M", "1G") in megabytes."""
+        if size.endswith("G"):
+            return int(size[:-1]) * 1024
+        elif size.endswith("M"):
+            return int(size[:-1])
+        raise ValueError('CXL memory size must be in M or G, got %r' % (size,))
+
+    def cxlserial(device):
+        """Return serial number of a CXL memory device with explicit "sn"."""
+        try:
+            sn = device["sn"]
+            if isinstance(sn, str):
+                sn = int(sn, 0)
+            if not isinstance(sn, int) or isinstance(sn, bool) or not 0 <= sn < 2**64:
+                raise ValueError("not a 64-bit unsigned integer")
+        except Exception as e:
+            raise ValueError('bad "sn" in CXL memory device %s: %s' % (device, e))
+        return "0x%x" % (sn,)
 
     def cxlmemopts(device, bus_id):
         """Create CXL memory device -object and -device that connect it to bus_id."""
         nonlocal mem_count, total_mem_sizeM
+        unknown_keys = set(device.keys()) - {"mem", "present", "file", "sn", "shared"}
+        if unknown_keys:
+            raise ValueError('unsupported key(s) %s in CXL memory device %s' % (", ".join(sorted(unknown_keys)), device))
         mem_size = device["mem"]
         mem_type = "volatile" # non-volatile to be added, possibly as memory device["nvmem"]
         try:
-            if mem_size.endswith("G"):
-                sizeM = int(mem_size[:-1]) * 1024
-            elif mem_size.endswith("M"):
-                sizeM = int(mem_size[:-1])
-            else:
-                raise ValueError('CXL memory size must be in M or G, got %r' % (mem_size,))
+            sizeM = cxlsizeM(mem_size)
         except Exception as e:
             raise Exception("bad memory size in CXL memory device %s: %s" % (device, e))
+        mem_file = device.get("file", None)
+        if mem_file is not None:
+            # The file is relative to the working directory of qemu
+            # unless it is absolute, and a comma would end it.
+            if not isinstance(mem_file, str) or not os.path.isabs(mem_file) or "," in mem_file:
+                raise ValueError('"file" must be an absolute path without commas in CXL memory device %s' % (device,))
+        if device.get("shared", False) and mem_file is None:
+            raise ValueError('"shared" requires "file" in CXL memory device %s' % (device,))
         if mem_type == "volatile":
-            sn = "0xc100%x" % (0xe2e0 + mem_count,)
+            if "sn" in device:
+                sn = cxlserial(device)
+            else:
+                sn = "0xc100%x" % (0xe2e0 + mem_count,)
+            if sn in serials:
+                raise ValueError('duplicate serial number %s in CXL memory device %s' % (sn, device))
+            serials.add(sn)
             memdev_id = f"cxl_memdev{mem_count}"
             # Even if a CXL memory device is not present at boot time, we still create
             # a Qemu memory backend device for it.
             # The backend device id contains all necessary information for hotplugging
             # the CXL memory device later on, and on the other hand, hotremoving and
             # hotplugging the device again, even if it was present at start.
-            backend_id = f"beram_{memdev_id}__bus_{bus_id}__sn_{sn}"
-            cxl_objectparams.extend(["-object", f"memory-backend-ram,id={backend_id},share=on,size={mem_size}"])
+            if mem_file is None:
+                backend_id = f"beram_{memdev_id}__bus_{bus_id}__sn_{sn}"
+                cxl_objectparams.extend(["-object", f"memory-backend-ram,id={backend_id},share=on,size={mem_size}"])
+            else:
+                backend_id = f"befile_{memdev_id}__bus_{bus_id}__sn_{sn}"
+                cxl_objectparams.extend(["-object", f"memory-backend-file,id={backend_id},share=on,mem-path={mem_file},size={mem_size}"])
             if device.get("present", True):
                 cxl_deviceparams.extend(["-device", f"cxl-type3,bus={bus_id},volatile-memdev={backend_id},id={memdev_id},sn={sn}"])
         else:
             raise ValueError('unsupported CXL memory type %r' % (mem_type,))
         total_mem_sizeM += sizeM
         mem_count += 1
+
+    def cxlpoolslotopts(device):
+        """Account for an empty slot. The caller has created its port."""
+        nonlocal total_mem_sizeM
+        if set(device.keys()) != {"pool-slot"}:
+            raise ValueError('"pool-slot" cannot be combined with other keys in %s' % (device,))
+        try:
+            # Count the largest expected device in total CXL memory,
+            # so that CXL memory windows are large enough for it.
+            # Like the memory of declared devices, this ends up in
+            # maxmem, too. Neither needs qemu memory slots (-m slots):
+            # cxl-type3 is not a pc-dimm like memory device.
+            total_mem_sizeM += cxlsizeM(device["pool-slot"])
+        except Exception as e:
+            raise Exception("bad size in CXL pool slot %s: %s" % (device, e))
 
     def cxlswitchopts(device, bus_id):
         """Create CXL switch upstream (to bus_id) and downstream buses"""
@@ -331,13 +444,18 @@ def qemucxlopts(cxl_host_bridges):
                 cxlmemopts(downstream_device, downstream_id)
             elif "switch" in downstream_device:
                 cxlswitchopts(downstream_device, downstream_id)
+            elif "pool-slot" in downstream_device:
+                cxlpoolslotopts(downstream_device)
             else:
                 raise ValueError('unsupported CXL device in switch %r' % (downstream_device,))
 
     firmware_targets = []
     for host_bridge, root_ports in enumerate(cxl_host_bridges):
         host_bridge_id = f"cxlhb{host_bridge}"
-        cxl_deviceparams.extend(["-device", f"pxb-cxl,bus_nr={bus_nr},bus=pcie.0,id={host_bridge_id},numa_node={host_bridge}"])
+        pxb_cxl_opts = f"pxb-cxl,bus_nr={bus_nr},bus=pcie.0,id={host_bridge_id},numa_node={host_bridge}"
+        if hdm_for_passthrough:
+            pxb_cxl_opts += ",hdm_for_passthrough=on"
+        cxl_deviceparams.extend(["-device", pxb_cxl_opts])
         firmware_targets.append(host_bridge_id)
         bus_nr += 12
         for root_port, device in enumerate(root_ports):
@@ -349,6 +467,8 @@ def qemucxlopts(cxl_host_bridges):
                 cxlmemopts(device, root_port_id)
             elif "switch" in device:
                 cxlswitchopts(device, root_port_id)
+            elif "pool-slot" in device: # empty root port
+                cxlpoolslotopts(device)
 
     # Firmware size must be larger than total memory size.
     # Round up to nearest 4GB.
@@ -391,9 +511,12 @@ def qemuopts(numalist):
         # CXL structure
         cxl_spec = numaspec.get("cxl", None)
         if cxl_spec:
-            if set(numaspec.keys()) - {"cxl"}:
-                raise ValueError("when 'cxl' is defined, no other keys are supported in the same group, got %r" % (numaspec.keys(),))
-            cxl_objectparams, cxl_deviceparams, cxl_Mparams, totalcxlmem = qemucxlopts(cxl_spec)
+            if set(numaspec.keys()) - {"cxl", "hdm-for-passthrough"}:
+                raise ValueError("when 'cxl' is defined, no other keys than 'hdm-for-passthrough' are supported in the same group, got %r" % (numaspec.keys(),))
+            hdm_for_passthrough = numaspec.get("hdm-for-passthrough", False)
+            if not isinstance(hdm_for_passthrough, bool):
+                raise ValueError("'hdm-for-passthrough' must be true or false, got %r" % (hdm_for_passthrough,))
+            cxl_objectparams, cxl_deviceparams, cxl_Mparams, totalcxlmem = qemucxlopts(cxl_spec, hdm_for_passthrough)
             if cxl_deviceparams:
                 objectparams.extend(cxl_objectparams)
                 deviceparams.extend(cxl_deviceparams)
@@ -402,6 +525,8 @@ def qemuopts(numalist):
                 if ",cxl=on" not in machineparam:
                     machineparam += ",cxl=on"
             continue
+        if "hdm-for-passthrough" in numaspec:
+            raise ValueError("'hdm-for-passthrough' requires 'cxl' in the same group, got %r" % (numaspec,))
 
         # NUMA node group definition
         numalist_with_dist.append(numaspec)
