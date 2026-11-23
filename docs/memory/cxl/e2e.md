@@ -27,9 +27,12 @@ image tar: rebuild it after every change of the driver.
 ```bash
 go test ./cmd/plugins/dra-driver-cxl/... ./pkg/cxl/... ./cmd/cxl-request/...
 go test ./scripts/testing/fake-cxl-pool/...
+(cd test/e2e/memory.test-suite/dra-driver-cxl/n4-cxl-shared-2/test90-mbt-stress/model &&
+    GOWORK=off go test ./...)
 ```
 
-`-short` leaves out the long model tests of the engine. `go generate ./generate.go` in
+`-short` leaves out the long model tests of the engine. The model of
+test90 is a module of its own (gofmbt). `go generate ./generate.go` in
 `cmd/plugins/dra-driver-cxl` renders [states.md](states.md) from the
 state tables; a test fails while the file is stale, and another one
 while a link of design.md into states.md names no heading.
@@ -159,9 +162,15 @@ the test reads commands from the terminal until `exit`.
 | `test20-dra-fs-read-write` | filesystems of every type on a persistent pool device: ReadWriteOnce, remounts, access cached, recovery, refusals, fs leases |
 | `test21-dra-local-persistent` | a persistent local memdev: a block writer, `fsTypes`, read-write and read-only claims, an fs lease |
 | `test22-dra-admission-policy` | the admission policies of the chart, rule by rule |
+| `test90-mbt-stress` | model-based stress (gofmbt): pods, claims, leases, writes and faults chosen by a model, the cluster checked after each step; a long test, run with `skip_long_tests=no` |
 
 The tests need the ports 9909 to 9912 of the host for their pool
-servers.
+servers. `test90-mbt-stress` takes its parameters (`MBT_DURATION`,
+`MBT_PROFILE`, `MBT_FENCING` and others) from the environment; its
+`code.var.sh` lists them. Its model and its executor follow the
+[contract](blob:/test/e2e/memory.test-suite/dra-driver-cxl/n4-cxl-shared-2/test90-mbt-stress/contract.txt):
+the kinds of pods, the actions, the protocol, the observations, the
+oracle and the rules A1 to A44 that the code cites.
 
 The tests on real hardware are in
 [`test/hw/dra-driver-cxl-local`](tree:/test/hw/dra-driver-cxl-local).
