@@ -71,6 +71,19 @@ jobs:
       - run: |
           make verify-build
 
+  verify-unit-tests-cxl:
+    name: Unit Tests (CXL)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: |
+          go test -short -race \
+              ./pkg/cxl/...
+
   verify-docs:
     name: Documentation
     runs-on: ubuntu-24.04
