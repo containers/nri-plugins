@@ -179,7 +179,7 @@ tests-dir-filters() {
     TESTS_TEST_FILTER=""
     # shellcheck disable=SC2053
     if [[ "$(basename "$TESTS_DIR")" == $root_dir_glob ]]; then
-        TESTS_ROOT_DIR="$TESTS_DIR"
+        TESTS_ROOT_DIR=$(realpath "$TESTS_DIR")
     elif [[ "$(basename "$(realpath "$TESTS_DIR"/..)")" == $root_dir_glob ]]; then
         TESTS_ROOT_DIR=$(realpath "$TESTS_DIR/..")
         TESTS_POLICY_FILTER=$(basename "${TESTS_DIR}")
