@@ -105,7 +105,8 @@ PLUGINS ?= \
 	nri-memory-qos \
 	nri-memtierd \
         nri-sgx-epc \
-	nri-resctrl-mon
+	nri-resctrl-mon \
+	nri-dra-driver-cxl
 
 BINARIES ?= \
 	config-manager \
