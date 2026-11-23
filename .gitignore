@@ -25,4 +25,7 @@ test/e2e/**/output
 test/statistics-analysis/output
 
 *.test
-testdata/
+# the testdata directories that tests extract from tarballs
+pkg/sysfs/testdata/
+pkg/topology/testdata/
+pkg/resmgr/lib/memory/testdata/
