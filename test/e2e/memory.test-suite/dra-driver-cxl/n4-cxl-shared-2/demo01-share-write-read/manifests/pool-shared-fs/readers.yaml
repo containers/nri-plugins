@@ -1,0 +1,82 @@
+# pool-shared-fs demo: three readers: reader-a on vm2, reader-b on vm2, reader-c on vm1.
+# The erofs of their leases appears at /run/cxl/fs/hello in their containers.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: reader-a
+  labels: {app: cxl-demo}
+spec:
+  nodeSelector:
+    cxl-demo/node: vm2          # the label of demo setup: vm1 or vm2
+  terminationGracePeriodSeconds: 2
+  restartPolicy: Never
+  resourceClaims:
+  - name: cxl
+    resourceClaimTemplateName: cxl-lease
+  volumes:
+  - name: demo
+    configMap: {name: demo-tools, defaultMode: 0755}
+  containers:
+  - name: main
+    image: localhost/cxl-demo-tools:demo   # demo setup imports it, never pulled
+    imagePullPolicy: Never
+    command: ["sh", "-c", "trap 'exit 0' TERM; sleep infinity & wait"]
+    volumeMounts:
+    - {name: demo, mountPath: /demo}
+    resources:
+      claims:
+      - name: cxl
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: reader-b
+  labels: {app: cxl-demo}
+spec:
+  nodeSelector:
+    cxl-demo/node: vm2          # the label of demo setup: vm1 or vm2
+  terminationGracePeriodSeconds: 2
+  restartPolicy: Never
+  resourceClaims:
+  - name: cxl
+    resourceClaimTemplateName: cxl-lease
+  volumes:
+  - name: demo
+    configMap: {name: demo-tools, defaultMode: 0755}
+  containers:
+  - name: main
+    image: localhost/cxl-demo-tools:demo   # demo setup imports it, never pulled
+    imagePullPolicy: Never
+    command: ["sh", "-c", "trap 'exit 0' TERM; sleep infinity & wait"]
+    volumeMounts:
+    - {name: demo, mountPath: /demo}
+    resources:
+      claims:
+      - name: cxl
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: reader-c
+  labels: {app: cxl-demo}
+spec:
+  nodeSelector:
+    cxl-demo/node: vm1          # the label of demo setup: vm1 or vm2
+  terminationGracePeriodSeconds: 2
+  restartPolicy: Never
+  resourceClaims:
+  - name: cxl
+    resourceClaimTemplateName: cxl-lease
+  volumes:
+  - name: demo
+    configMap: {name: demo-tools, defaultMode: 0755}
+  containers:
+  - name: main
+    image: localhost/cxl-demo-tools:demo   # demo setup imports it, never pulled
+    imagePullPolicy: Never
+    command: ["sh", "-c", "trap 'exit 0' TERM; sleep infinity & wait"]
+    volumeMounts:
+    - {name: demo, mountPath: /demo}
+    resources:
+      claims:
+      - name: cxl

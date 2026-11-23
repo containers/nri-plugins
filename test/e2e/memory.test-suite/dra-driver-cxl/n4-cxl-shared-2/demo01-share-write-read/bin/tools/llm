@@ -1,0 +1,3 @@
+#!/bin/sh
+# /demo/llm: see /demo/cxl-llm.py
+exec python3 /demo/cxl-llm.py "$@"

@@ -1,0 +1,21 @@
+#!/bin/sh
+# /demo/llm-mem: the memory of a reader of the llm-share demo, in its
+# container (llama.cpp's image has no python), as one line of KEY=VALUE:
+#   memAvailableKb memFreeKb cachedKb   /proc/meminfo of the VM
+#   pgscan pgsteal                       /proc/vmstat of the VM (kswapd + direct)
+#   cgFileKb cgAnonKb cgFileMappedKb     memory.stat of the cgroup of the container
+#   rssKb rssAnonKb rssFileKb            /proc/1/status: llama-server
+#   ggufRssKb ggufPath                   /proc/1/smaps: its mapping of the gguf
+# Usage: /demo/llm-mem [NAME]: NAME (default the hostname) first on the line.
+name="${1:-$(hostname)}"
+meminfo=$(awk '$1 == "MemAvailable:" {a = $2} $1 == "MemFree:" {f = $2} $1 == "Cached:" {c = $2}
+     END {printf "memAvailableKb=%.0f memFreeKb=%.0f cachedKb=%.0f", a, f, c}' /proc/meminfo)
+vmstat=$(awk '$1 ~ /^pgscan_(kswapd|direct)$/ {s += $2} $1 ~ /^pgsteal_(kswapd|direct)$/ {t += $2}
+     END {printf "pgscan=%.0f pgsteal=%.0f", s, t}' /proc/vmstat)
+cgroup=$(awk '$1 == "file" {f = $2} $1 == "anon" {a = $2} $1 == "file_mapped" {m = $2}
+     END {printf "cgFileKb=%.0f cgAnonKb=%.0f cgFileMappedKb=%.0f", f / 1024, a / 1024, m / 1024}' /sys/fs/cgroup/memory.stat)
+status=$(awk '$1 == "VmRSS:" {r = $2} $1 == "RssAnon:" {a = $2} $1 == "RssFile:" {f = $2}
+     END {printf "rssKb=%.0f rssAnonKb=%.0f rssFileKb=%.0f", r, a, f}' /proc/1/status)
+smaps=$(awk '/^[0-9a-f]+-[0-9a-f]+ / {g = ($NF ~ /\.gguf$/); if (g) p = $NF} g && $1 == "Rss:" {r += $2}
+     END {printf "ggufRssKb=%.0f ggufPath=%s", r, p ? p : "-"}' /proc/1/smaps)
+echo "$name $meminfo $vmstat $cgroup $status $smaps"

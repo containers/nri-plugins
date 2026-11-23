@@ -1,0 +1,3 @@
+#!/bin/sh
+# /demo/read: see /demo/cxl-demo.py
+exec python3 /demo/cxl-demo.py read "$@"

@@ -1,0 +1,31 @@
+# llm-share demo: the claim of each reader (readers.yaml) for the model, in
+# access cached: a share of llm0 (serial 0xc1ae0001, persistent, shared),
+# read-only, mode fs: the node mounts the erofs through a read-only loop
+# device, so the gguf is read into the page cache of the VM once and
+# llama-server maps that copy. model-direct.yaml is the same with access
+# direct.
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: llm-model
+  labels: {app: cxl-demo}
+spec:
+  spec:
+    devices:
+      requests:
+      - name: model
+        exactly:
+          deviceClassName: cxl-pool-persistent
+          selectors:
+          - cel:
+              expression: 'device.attributes["cxl-pool.nri.io"].serial == "0xc1ae0001"'
+          capacity:
+            requests:
+              shares: "1"
+      config:
+      - opaque:
+          driver: cxl-pool.nri.io
+          parameters:
+            apiVersion: cxl.nri.io/v1alpha1
+            kind: MemoryConfig
+            device: {mode: fs, readOnly: true, access: cached, path: /models}

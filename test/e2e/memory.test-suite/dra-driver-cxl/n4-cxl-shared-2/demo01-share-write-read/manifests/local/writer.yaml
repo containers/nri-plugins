@@ -1,0 +1,41 @@
+# local demo: the writer, on vm2. It has no CXL memory until it asks.
+# The lease claim of every demo pod: with it a running container may ask
+# for CXL memory (cxl-request, docs/memory/cxl/leases.md).
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: cxl-lease
+spec:
+  spec:
+    devices:
+      requests:
+      - name: lease
+        exactly:
+          deviceClassName: cxl-lease
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: writer
+  labels: {app: cxl-demo}
+spec:
+  nodeSelector:
+    cxl-demo/node: vm2          # the label of demo setup: vm1 or vm2
+  terminationGracePeriodSeconds: 2
+  restartPolicy: Never
+  resourceClaims:
+  - name: cxl
+    resourceClaimTemplateName: cxl-lease
+  volumes:
+  - name: demo
+    configMap: {name: demo-tools, defaultMode: 0755}
+  containers:
+  - name: main
+    image: docker.io/library/python:3-alpine
+    imagePullPolicy: IfNotPresent
+    command: ["sh", "-c", "trap 'exit 0' TERM; sleep infinity & wait"]
+    volumeMounts:
+    - {name: demo, mountPath: /demo}
+    resources:
+      claims:
+      - name: cxl
