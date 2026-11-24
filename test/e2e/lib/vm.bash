@@ -3147,9 +3147,11 @@ wait-for-node-ready() {
 }
 
 containerd-check-unreadable-blobs() {
-    vm-command "journalctl -u containerd -I | grep blob | grep 'operation not supported' | \
-                   head -1"
-    return $?
+    # Succeed only if containerd has logged a blob it cannot read. The status
+    # of a pipeline is that of its last command, so grep is last: head would
+    # succeed whether or not anything matched.
+    vm-command "journalctl -u containerd -I | grep blob | \
+                   grep -m 1 'operation not supported'"
 }
 
 containerd-fix-unreadable-blobs() {
@@ -3221,6 +3223,7 @@ containerd-reimport-image() {
 
 crio-check-unreadable-blobs() {
     echo "TODO: implement unreadable blob check for CRI-O... assuming no errors for now"
+    return 1
 }
 
 crio-fix-unreadable-blobs() {
