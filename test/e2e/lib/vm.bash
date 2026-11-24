@@ -1296,6 +1296,7 @@ and the next run would trust them, so one is not started."
 
     # The cluster may have been built days ago, on a host rebooted since.
     wait-for-node-ready
+    wait-for-cluster-recovery
     wait-for-dns-ready
 }
 
@@ -2116,10 +2117,11 @@ EOF
 
     # A VM which has just booted from a box, or which was brought back up after
     # being packaged, has a cluster which is still starting up. Wait for it
-    # before letting the tests run. Both waits need vm-command, so they cannot
+    # before letting the tests run. The waits need vm-command, so they cannot
     # happen before the ssh config above is in place.
     if [ -n "$use_cached_box" ] || [ -n "$package_box" ]; then
         wait-for-node-ready
+        wait-for-cluster-recovery
         wait-for-dns-ready
     fi
 }
@@ -2209,7 +2211,8 @@ vm-reboot() { # script API
     # Usage: vm-reboot
     #
     # Reboots the virtual machine and waits that the ssh server starts
-    # responding again.
+    # responding again. The cluster is still recovering then: follow with
+    # vm-post-reboot-runtime-check before using it.
 
     local _deadline=${deadline:-}
     local _vagrantdir=${1:-$OUTPUT_DIR}
@@ -2917,8 +2920,9 @@ vm-set-kernel-cmdline-reboot() { # script API
     # Usage: [timeout=SECS] vm-set-kernel-cmdline-reboot [CMDLINE]
     #
     # Set the kernel command line parameters of the VM to CMDLINE, none by
-    # default, reboot the VM, and wait until the node is ready again. Verify
-    # that CMDLINE took effect, and fail the test if it did not.
+    # default, reboot the VM, and wait until the cluster has recovered, see
+    # wait-for-cluster-recovery. Verify that CMDLINE took effect, and fail the
+    # test if it did not.
     #
     # timeout is the time to wait for the VM to reboot, 600 seconds by default.
     local cmdline="$1"
@@ -2936,6 +2940,7 @@ vm-set-kernel-cmdline-reboot() { # script API
     fi
     e2eish-mark machine cmdline="$cmdline"
     vm-restart-kubelet
+    timeout=$CLUSTER_READY_TIMEOUT wait-for-cluster-recovery
 }
 
 vm-kernel-pkgs-install() { # script API
@@ -3069,22 +3074,41 @@ vm-kernel-pkgs-uninstall() { # script API
 }
 
 vm-post-reboot-runtime-check() { # script API
-    # Usage: vm-post-reboot-runtime-check [image_type]
+    # Usage: [timeout=SECS] vm-post-reboot-runtime-check [image_type]
     #
-    # Check whether a reboot rendered some runtime image blobs unreadable
-    # and try to fix it. Optionally also reimport and tag a local image
-    # from a tarball for the given (balloons or topology-aware) image type.
+    # Wait until the cluster has recovered from a reboot, as
+    # wait-for-cluster-recovery does. Meanwhile check whether the reboot
+    # rendered some runtime image blobs unreadable and try to fix it. If it
+    # did, optionally also reimport and tag a local image from a tarball for
+    # the given (balloons or topology-aware) image type.
     #
     # The blob problem is known to be triggerable when the underlying fs
     # is BTRFS and the old or new running kernel was from Torvalds tree
     # ('vanilla' in provisioning). The exact reasons are unknown.
 
     local image_type=$1
+    local blobs_fixed=""
 
-    if ! $k8scri-check-unreadable-blobs; then
+    wait-for-cluster-recovery vm-fix-unreadable-blobs-once
+
+    if [ -z "$blobs_fixed" ]; then
         echo "no post-boot runtime blob read failures detected..."
         return 0
     fi
+
+    $k8scri-reimport-image $image_type
+}
+
+vm-fix-unreadable-blobs-once() {
+    # Usage: vm-fix-unreadable-blobs-once
+    #
+    # Fix the runtime if it has logged image blobs which it cannot read, and
+    # set blobs_fixed, unless it is set already. This is the hook which
+    # vm-post-reboot-runtime-check gives to wait-for-cluster-recovery: the
+    # runtime logs the blobs when it starts the first containers after the
+    # boot, which can be later than a single check would look.
+    [ -z "$blobs_fixed" ] || return 0
+    $k8scri-check-unreadable-blobs || return 0
 
     echo "post-boot runtime blob read failures detected... trying to fix them"
     vm-command "systemctl stop kubelet"
@@ -3098,10 +3122,7 @@ vm-post-reboot-runtime-check() { # script API
 
     vm-command "systemctl start $k8scri"
     vm-command "systemctl start kubelet"
-
-    wait-for-node-ready
-
-    $k8scri-reimport-image $image_type
+    blobs_fixed=1
 }
 
 wait-for-dns-ready() {
@@ -3121,6 +3142,101 @@ wait-for-dns-ready() {
     vm-command "kubectl -n kube-system wait deployments/coredns \
                     --for=condition=Available --timeout=${timeout}s" ||
         command-error "cluster DNS did not become available in ${timeout}s"
+}
+
+wait-for-cluster-recovery() { # script API
+    # Usage: [timeout=SECS] wait-for-cluster-recovery [HOOK]
+    #
+    # Wait until the cluster has recovered from a boot of the VM,
+    # $CLUSTER_READY_TIMEOUT seconds at most. Run HOOK, if given, each time
+    # the cluster is found still recovering. See vm-cluster-pending for what
+    # a recovered cluster is.
+    #
+    # The API server first serves what it stored before the boot: the node
+    # and its pods are Ready and the leases are held, by processes which no
+    # longer run. Waiting for the node to be Ready is not enough then. A test
+    # which starts too early finds no scheduler or controller manager to run
+    # its pods, and can time out for reasons which have nothing to do with
+    # what it tests.
+    local timeout="${timeout:-$CLUSTER_READY_TIMEOUT}"
+    local hook="$1"
+    local deadline=$(( $(date +%s) + timeout ))
+    local pending="" reported=""
+
+    while pending=$(vm-cluster-pending); [ -n "$pending" ]; do
+        if [ "$pending" != "$reported" ]; then
+            echo "waiting for the cluster: $pending"
+            reported="$pending"
+        fi
+        if [ "$(date +%s)" -ge "$deadline" ]; then
+            command-error "the cluster did not recover in ${timeout}s: $pending"
+        fi
+        [ -z "$hook" ] || $hook
+        sleep 2
+    done
+    echo "the cluster has recovered since the boot of $VM_HOSTNAME"
+}
+
+vm-cluster-pending() {
+    # Usage: vm-cluster-pending
+    #
+    # Print why the cluster has not recovered yet from the boot of the VM,
+    # print nothing if it has. It has recovered when
+    # - the kubelet has reported the node since the boot, and it is Ready,
+    # - the control plane, kube-proxy, cluster DNS and cilium pods on the
+    #   node are Ready, and their containers are running, and
+    # - the controller manager and scheduler on the node, if any, hold their
+    #   leases, taken since they started.
+    local script output
+
+    script=$(cat <<'EOF'
+pending() { echo "$*"; exit 1; }
+
+info=$(kubectl get node "$node" -o jsonpath='{.status.nodeInfo.bootID} {.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null) ||
+    pending "cannot get node $node from the API server"
+[ "${info% *}" = "$(cat /proc/sys/kernel/random/boot_id)" ] ||
+    pending "the kubelet has not reported node $node since the boot"
+[ "${info#* }" = "True" ] ||
+    pending "node $node is not Ready"
+
+running=$(crictl ps -q --no-trunc 2>/dev/null) ||
+    pending "cannot list the running containers"
+running=" $(tr '\n' ' ' <<< "$running") "
+for sel in "tier=control-plane" "k8s-app in (kube-proxy,kube-dns,cilium)"; do
+    pods=$(kubectl get pods -n kube-system --field-selector "spec.nodeName=$node" -l "$sel" -o jsonpath='{range .items[*]}{.metadata.name}{"|"}{.status.conditions[?(@.type=="Ready")].status}{"|"}{.status.containerStatuses[*].containerID}{"\n"}{end}' 2>/dev/null) ||
+        pending "cannot list the pods of $sel"
+    while IFS='|' read -r pod ready ids; do
+        [ -n "$pod" ] || continue
+        [ "$ready" = "True" ] ||
+            pending "pod $pod is not Ready"
+        for id in $ids; do
+            id=${id#*://}
+            [[ "$running" == *" $id "* ]] ||
+                pending "pod $pod: container ${id:0:13} is not running"
+        done
+    done <<< "$pods"
+done
+
+for c in kube-controller-manager kube-scheduler; do
+    started=$(kubectl get pod -n kube-system "$c-$node" --ignore-not-found -o jsonpath='{.status.containerStatuses[0].state.running.startedAt}' 2>/dev/null) ||
+        pending "cannot get pod $c-$node"
+    [ -n "$started" ] || continue
+    lease=$(kubectl get lease -n kube-system "$c" --ignore-not-found -o jsonpath='{.spec.holderIdentity} {.spec.acquireTime}' 2>/dev/null) ||
+        pending "cannot get the lease of $c"
+    [ -n "$lease" ] || continue
+    holder=${lease% *} acquired=${lease#* }
+    [ -n "$holder" ] ||
+        pending "nobody holds the lease of $c"
+    # Another node of the control plane leads.
+    [[ "$holder" == "${node}_"* ]] || continue
+    [ "$(date -d "$acquired" +%s)" -ge "$(date -d "$started" +%s)" ] ||
+        pending "$c has not taken its lease since it started"
+done
+EOF
+)
+    output=$(vm-command-q "node=$VM_HOSTNAME
+$script" 2>&1) && return 0
+    echo "${output:-no answer from $VM_HOSTNAME}" | tail -n 1
 }
 
 wait-for-node-ready() {
@@ -3149,9 +3265,10 @@ wait-for-node-ready() {
 containerd-check-unreadable-blobs() {
     # Succeed only if containerd has logged a blob it cannot read. The status
     # of a pipeline is that of its last command, so grep is last: head would
-    # succeed whether or not anything matched.
-    vm-command "journalctl -u containerd -I | grep blob | \
-                   grep -m 1 'operation not supported'"
+    # succeed whether or not anything matched. Quiet, as it is checked again
+    # and again while the cluster recovers from a reboot.
+    vm-command-q "journalctl -u containerd -I | grep blob | \
+                     grep -m 1 'operation not supported'"
 }
 
 containerd-fix-unreadable-blobs() {
@@ -3222,7 +3339,9 @@ containerd-reimport-image() {
 }
 
 crio-check-unreadable-blobs() {
-    echo "TODO: implement unreadable blob check for CRI-O... assuming no errors for now"
+    # TODO: implement unreadable blob check for CRI-O. Assume no errors for
+    # now, quietly, as this is checked again and again while the cluster
+    # recovers from a reboot.
     return 1
 }
 

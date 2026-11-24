@@ -10,6 +10,7 @@ if [[ "$distro" != *"fedora"* ]]; then
 fi
 
 vm-kernel-pkgs-install
+vm-post-reboot-runtime-check
 
 vm-command "command -v cxl || dnf install -y /usr/bin/cxl numactl"
 
