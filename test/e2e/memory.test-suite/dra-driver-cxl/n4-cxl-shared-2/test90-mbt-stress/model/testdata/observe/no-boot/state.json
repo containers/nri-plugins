@@ -1,0 +1,1163 @@
+{
+  "schema": 1,
+  "generation": 7,
+  "memdevs": [
+    {
+      "serial": "0xc100e2e1",
+      "name": "mem0",
+      "source": "local",
+      "facts": {
+        "numaAffinity": 0
+      },
+      "regions": [
+        "region0"
+      ],
+      "grants": [
+        {
+          "claim": "11111111-0000-0000-0000-000000000001",
+          "result": 0
+        },
+        {
+          "claim": "11111111-0000-0000-0000-000000000002",
+          "result": 0
+        },
+        {
+          "claim": "11111111-0000-0000-0000-000000000005",
+          "result": 0
+        },
+        {
+          "claim": "22222222-0000-0000-0000-000000000001",
+          "result": 0
+        }
+      ],
+      "state": "ACTIVE"
+    },
+    {
+      "serial": "0xc100e2e2",
+      "name": "mem1",
+      "source": "local",
+      "facts": {
+        "shared": true,
+        "numaAffinity": 0
+      },
+      "regions": [
+        "region1"
+      ],
+      "grants": [
+        {
+          "claim": "11111111-0000-0000-0000-000000000003",
+          "result": 0
+        },
+        {
+          "claim": "11111111-0000-0000-0000-000000000004",
+          "result": 1
+        }
+      ],
+      "state": "ACTIVE"
+    },
+    {
+      "serial": "0xc1ae2001",
+      "name": "mem2",
+      "source": "local",
+      "facts": {
+        "persistent": true
+      },
+      "regions": [
+        "region2"
+      ],
+      "grants": [
+        {
+          "claim": "11111111-0000-0000-0000-000000000006",
+          "result": 0
+        }
+      ],
+      "state": "ACTIVE"
+    },
+    {
+      "serial": "0xc1ae2002",
+      "name": "mem3",
+      "source": "pool",
+      "facts": {
+        "shared": true,
+        "persistent": true
+      },
+      "regions": [
+        "region3"
+      ],
+      "grants": [
+        {
+          "claim": "33333333-0000-0000-0000-000000000002",
+          "result": 0
+        },
+        {
+          "claim": "44444444-0000-0000-0000-000000000001",
+          "result": 0
+        }
+      ],
+      "state": "ACTIVE",
+      "staleBinds": [
+        "/var/lib/kubelet/plugins/cxl.nri.io/lease-fs/11111111-0000-0000-0000-000000000007/mbt"
+      ]
+    },
+    {
+      "serial": "0xc1ae2003",
+      "name": "mem4",
+      "source": "pool",
+      "facts": {},
+      "regions": [
+        "region4"
+      ],
+      "grants": [
+        {
+          "claim": "33333333-0000-0000-0000-000000000001",
+          "result": 0
+        }
+      ],
+      "state": "ACTIVE"
+    },
+    {
+      "serial": "0xc1ae2004",
+      "name": "mem5",
+      "source": "pool",
+      "facts": {
+        "shared": true
+      },
+      "regions": [
+        "region6"
+      ],
+      "grants": [
+        {
+          "claim": "33333333-0000-0000-0000-000000000003",
+          "result": 0
+        }
+      ],
+      "state": "ACTIVE"
+    }
+  ],
+  "regions": [
+    {
+      "name": "region0",
+      "notedName": "region0",
+      "mode": "ram",
+      "targets": [
+        "0xc100e2e1"
+      ],
+      "owner": "ours",
+      "state": "OWNED",
+      "setUp": true,
+      "numaNode": 2,
+      "size": 1073741824,
+      "daxDevices": [
+        {
+          "name": "dax0.0",
+          "dev": {
+            "major": 252,
+            "minor": 0
+          },
+          "state": "SEED",
+          "whole": true
+        },
+        {
+          "name": "dax0.1",
+          "dev": {
+            "major": 252,
+            "minor": 1
+          },
+          "size": 134217728,
+          "driver": "kmem",
+          "state": "KMEM_ONLINE",
+          "users": [
+            {
+              "claim": "11111111-0000-0000-0000-000000000001",
+              "result": 0
+            }
+          ]
+        },
+        {
+          "name": "dax0.2",
+          "dev": {
+            "major": 252,
+            "minor": 2
+          },
+          "size": 134217728,
+          "driver": "device_dax",
+          "state": "DEVICE_DAX",
+          "users": [
+            {
+              "claim": "11111111-0000-0000-0000-000000000002",
+              "result": 0
+            }
+          ]
+        },
+        {
+          "name": "dax0.3",
+          "dev": {
+            "major": 252,
+            "minor": 3
+          },
+          "size": 134217728,
+          "driver": "kmem",
+          "state": "KMEM_ONLINE",
+          "users": [
+            {
+              "claim": "22222222-0000-0000-0000-000000000001",
+              "result": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "region1",
+      "notedName": "region1",
+      "mode": "ram",
+      "targets": [
+        "0xc100e2e2"
+      ],
+      "owner": "ours",
+      "state": "OWNED",
+      "setUp": true,
+      "zeroed": true,
+      "numaNode": 3,
+      "size": 536870912,
+      "daxDevices": [
+        {
+          "name": "dax1.0",
+          "dev": {
+            "major": 252,
+            "minor": 4
+          },
+          "size": 536870912,
+          "driver": "device_dax",
+          "state": "DEVICE_DAX",
+          "users": [
+            {
+              "claim": "11111111-0000-0000-0000-000000000003",
+              "result": 0
+            },
+            {
+              "claim": "11111111-0000-0000-0000-000000000004",
+              "result": 1
+            }
+          ],
+          "whole": true
+        }
+      ]
+    },
+    {
+      "name": "region2",
+      "notedName": "region2",
+      "mode": "pmem",
+      "targets": [
+        "0xc1ae2001"
+      ],
+      "owner": "ours",
+      "state": "OWNED",
+      "setUp": true,
+      "size": 1073741824,
+      "pmem": {
+        "ndRegion": "region7",
+        "namespace": "namespace7.0",
+        "blockDevice": {
+          "name": "/dev/pmem7",
+          "dev": {
+            "major": 259,
+            "minor": 0
+          }
+        }
+      },
+      "mounts": [
+        {
+          "access": "direct",
+          "path": "/var/lib/kubelet/plugins/cxl.nri.io/mounts/c1ae2001-direct",
+          "state": "MOUNTED_RO",
+          "fsType": "erofs",
+          "users": [
+            {
+              "claim": "11111111-0000-0000-0000-000000000006",
+              "result": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "region3",
+      "notedName": "region3",
+      "mode": "pmem",
+      "targets": [
+        "0xc1ae2002"
+      ],
+      "owner": "ours",
+      "state": "OWNED",
+      "setUp": true,
+      "size": 1073741824,
+      "pmem": {
+        "ndRegion": "region8",
+        "namespace": "namespace8.0",
+        "blockDevice": {
+          "name": "/dev/pmem8",
+          "dev": {
+            "major": 259,
+            "minor": 1
+          }
+        }
+      },
+      "mounts": [
+        {
+          "access": "cached",
+          "path": "/var/lib/kubelet/plugins/cxl-pool.nri.io/mounts/c1ae2002-cached",
+          "state": "MOUNTED_RO",
+          "loop": "/dev/loop0",
+          "fsType": "erofs",
+          "users": [
+            {
+              "claim": "33333333-0000-0000-0000-000000000002",
+              "result": 0
+            },
+            {
+              "claim": "44444444-0000-0000-0000-000000000001",
+              "result": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "region4",
+      "notedName": "region4",
+      "mode": "ram",
+      "targets": [
+        "0xc1ae2003"
+      ],
+      "owner": "ours",
+      "state": "OWNED",
+      "setUp": true,
+      "numaNode": 4,
+      "size": 1073741824,
+      "daxDevices": [
+        {
+          "name": "dax4.0",
+          "dev": {
+            "major": 252,
+            "minor": 5
+          },
+          "size": 1073741824,
+          "driver": "kmem",
+          "state": "KMEM_ONLINE",
+          "users": [
+            {
+              "claim": "33333333-0000-0000-0000-000000000001",
+              "result": 0
+            }
+          ],
+          "whole": true
+        }
+      ]
+    },
+    {
+      "name": "region5",
+      "mode": "ram",
+      "targets": [
+        "0xc100e2e5"
+      ],
+      "owner": "foreign",
+      "state": "FOREIGN",
+      "numaNode": 5,
+      "size": 2147483648
+    },
+    {
+      "name": "region6",
+      "notedName": "region6",
+      "mode": "ram",
+      "targets": [
+        "0xc1ae2004"
+      ],
+      "owner": "ours",
+      "state": "OWNED",
+      "setUp": true,
+      "numaNode": 6,
+      "size": 1073741824,
+      "daxDevices": [
+        {
+          "name": "dax6.0",
+          "dev": {
+            "major": 252,
+            "minor": 6
+          },
+          "size": 1073741824,
+          "driver": "device_dax",
+          "state": "DEVICE_DAX",
+          "users": [
+            {
+              "claim": "33333333-0000-0000-0000-000000000003",
+              "result": 0
+            }
+          ],
+          "whole": true
+        }
+      ]
+    }
+  ],
+  "grants": [
+    {
+      "ref": {
+        "claim": "11111111-0000-0000-0000-000000000001",
+        "result": 0
+      },
+      "serial": "0xc100e2e1",
+      "asked": {
+        "source": "local",
+        "kind": "local",
+        "mode": "numa",
+        "size": 134217728
+      },
+      "intent": {
+        "region": "region0"
+      },
+      "got": {
+        "region": "region0",
+        "dax": "dax0.1",
+        "numaNode": 2,
+        "size": 134217728
+      },
+      "state": "REALISED"
+    },
+    {
+      "ref": {
+        "claim": "11111111-0000-0000-0000-000000000002",
+        "result": 0
+      },
+      "serial": "0xc100e2e1",
+      "asked": {
+        "source": "local",
+        "kind": "local",
+        "mode": "dax",
+        "readOnly": true,
+        "size": 134217728
+      },
+      "intent": {
+        "region": "region0"
+      },
+      "got": {
+        "region": "region0",
+        "dax": "dax0.2",
+        "size": 134217728
+      },
+      "state": "REALISED"
+    },
+    {
+      "ref": {
+        "claim": "11111111-0000-0000-0000-000000000003",
+        "result": 0
+      },
+      "serial": "0xc100e2e2",
+      "asked": {
+        "source": "local",
+        "kind": "local-shared",
+        "mode": "dax",
+        "shared": true
+      },
+      "intent": {
+        "region": "region1"
+      },
+      "got": {
+        "region": "region1",
+        "dax": "dax1.0",
+        "size": 536870912
+      },
+      "state": "REALISED"
+    },
+    {
+      "ref": {
+        "claim": "11111111-0000-0000-0000-000000000004",
+        "result": 1
+      },
+      "serial": "0xc100e2e2",
+      "asked": {
+        "source": "local",
+        "kind": "local-shared",
+        "mode": "dax",
+        "readOnly": true,
+        "shared": true
+      },
+      "intent": {
+        "region": "region1"
+      },
+      "got": {
+        "region": "region1",
+        "dax": "dax1.0",
+        "size": 536870912
+      },
+      "state": "REALISED"
+    },
+    {
+      "ref": {
+        "claim": "11111111-0000-0000-0000-000000000005",
+        "result": 0
+      },
+      "serial": "0xc100e2e1",
+      "asked": {
+        "source": "local",
+        "kind": "local",
+        "mode": "numa",
+        "size": 134217728
+      },
+      "intent": {
+        "region": "region0"
+      },
+      "state": "JOURNALED"
+    },
+    {
+      "ref": {
+        "claim": "11111111-0000-0000-0000-000000000006",
+        "result": 0
+      },
+      "serial": "0xc1ae2001",
+      "asked": {
+        "source": "local",
+        "kind": "local-persistent",
+        "mode": "fs",
+        "readOnly": true,
+        "path": "/run/cxl-fs/C1AE2001"
+      },
+      "intent": {
+        "region": "region2",
+        "ndRegion": "region7",
+        "mountPath": "/var/lib/kubelet/plugins/cxl.nri.io/mounts/c1ae2001-direct"
+      },
+      "got": {
+        "region": "region2",
+        "size": 1073741824,
+        "namespace": "namespace7.0",
+        "blockDevice": {
+          "name": "/dev/pmem7",
+          "dev": {
+            "major": 259,
+            "minor": 0
+          }
+        },
+        "mount": "direct"
+      },
+      "state": "REALISED"
+    },
+    {
+      "ref": {
+        "claim": "11111111-0000-0000-0000-000000000008",
+        "result": 0
+      },
+      "serial": "0xc100e2e9",
+      "asked": {
+        "source": "local",
+        "kind": "local",
+        "mode": "numa",
+        "size": 134217728
+      },
+      "state": "REALISED"
+    },
+    {
+      "ref": {
+        "claim": "22222222-0000-0000-0000-000000000001",
+        "result": 0
+      },
+      "serial": "0xc100e2e1",
+      "asked": {
+        "source": "local",
+        "kind": "local",
+        "mode": "numa",
+        "size": 134217728
+      },
+      "intent": {
+        "region": "region0",
+        "lend": {
+          "lease": "0a1b2c3d",
+          "pod": {
+            "namespace": "demo",
+            "name": "requester",
+            "uid": "55555555-0000-0000-0000-000000000001"
+          },
+          "container": "main",
+          "numaNode": 2
+        }
+      },
+      "got": {
+        "region": "region0",
+        "dax": "dax0.3",
+        "numaNode": 2,
+        "size": 134217728,
+        "lend": {
+          "lease": "0a1b2c3d",
+          "pod": {
+            "namespace": "demo",
+            "name": "requester",
+            "uid": "55555555-0000-0000-0000-000000000001"
+          },
+          "container": "main",
+          "numaNode": 2
+        }
+      },
+      "state": "REALISED"
+    },
+    {
+      "ref": {
+        "claim": "33333333-0000-0000-0000-000000000001",
+        "result": 0
+      },
+      "serial": "0xc1ae2003",
+      "asked": {
+        "source": "pool",
+        "kind": "pool",
+        "mode": "numa",
+        "size": 1073741824
+      },
+      "intent": {
+        "region": "region4"
+      },
+      "got": {
+        "region": "region4",
+        "dax": "dax4.0",
+        "numaNode": 4,
+        "size": 1073741824
+      },
+      "state": "REALISED"
+    },
+    {
+      "ref": {
+        "claim": "33333333-0000-0000-0000-000000000002",
+        "result": 0
+      },
+      "serial": "0xc1ae2002",
+      "asked": {
+        "source": "pool",
+        "kind": "pool-persistent",
+        "mode": "fs",
+        "readOnly": true,
+        "access": "cached",
+        "path": "/run/cxl-fs/C1AE2002",
+        "size": 1073741824,
+        "shared": true
+      },
+      "intent": {
+        "region": "region3",
+        "ndRegion": "region8",
+        "mountPath": "/var/lib/kubelet/plugins/cxl-pool.nri.io/mounts/c1ae2002-cached"
+      },
+      "got": {
+        "region": "region3",
+        "size": 1073741824,
+        "namespace": "namespace8.0",
+        "blockDevice": {
+          "name": "/dev/pmem8",
+          "dev": {
+            "major": 259,
+            "minor": 1
+          }
+        },
+        "mount": "cached"
+      },
+      "state": "REALISED"
+    },
+    {
+      "ref": {
+        "claim": "33333333-0000-0000-0000-000000000003",
+        "result": 0
+      },
+      "serial": "0xc1ae2004",
+      "asked": {
+        "source": "pool",
+        "kind": "pool-shared",
+        "mode": "dax",
+        "size": 1073741824,
+        "shared": true
+      },
+      "intent": {
+        "region": "region6"
+      },
+      "got": {
+        "region": "region6",
+        "dax": "dax6.0",
+        "size": 1073741824
+      },
+      "state": "REALISED"
+    },
+    {
+      "ref": {
+        "claim": "44444444-0000-0000-0000-000000000001",
+        "result": 0
+      },
+      "serial": "0xc1ae2002",
+      "asked": {
+        "source": "pool",
+        "kind": "pool-persistent",
+        "mode": "fs",
+        "readOnly": true,
+        "access": "cached",
+        "path": "/run/cxl-fs/C1AE2002",
+        "size": 1073741824,
+        "shared": true
+      },
+      "intent": {
+        "region": "region3",
+        "ndRegion": "region8",
+        "mountPath": "/var/lib/kubelet/plugins/cxl-pool.nri.io/mounts/c1ae2002-cached",
+        "bindTarget": "/var/lib/kubelet/plugins/cxl.nri.io/lease-fs/11111111-0000-0000-0000-000000000007/mbt",
+        "lend": {
+          "lease": "1b2c3d4e",
+          "pod": {
+            "namespace": "demo",
+            "name": "requester",
+            "uid": "55555555-0000-0000-0000-000000000001"
+          },
+          "container": "main",
+          "fsDir": "/var/lib/kubelet/plugins/cxl.nri.io/lease-fs/11111111-0000-0000-0000-000000000007",
+          "name": "mbt"
+        }
+      },
+      "got": {
+        "region": "region3",
+        "size": 1073741824,
+        "namespace": "namespace8.0",
+        "blockDevice": {
+          "name": "/dev/pmem8",
+          "dev": {
+            "major": 259,
+            "minor": 1
+          }
+        },
+        "mount": "cached",
+        "bind": {
+          "target": "/var/lib/kubelet/plugins/cxl.nri.io/lease-fs/11111111-0000-0000-0000-000000000007/mbt",
+          "state": "STALE"
+        },
+        "lend": {
+          "lease": "1b2c3d4e",
+          "pod": {
+            "namespace": "demo",
+            "name": "requester",
+            "uid": "55555555-0000-0000-0000-000000000001"
+          },
+          "container": "main",
+          "fsDir": "/var/lib/kubelet/plugins/cxl.nri.io/lease-fs/11111111-0000-0000-0000-000000000007",
+          "name": "mbt"
+        }
+      },
+      "state": "REALISED"
+    }
+  ],
+  "preparations": [
+    {
+      "uid": "11111111-0000-0000-0000-000000000001",
+      "driver": "cxl.nri.io",
+      "claimName": "demo/c-numa",
+      "state": "PREPARED",
+      "results": [
+        {
+          "index": 0,
+          "kind": "grant",
+          "request": "mem",
+          "pool": "node-1",
+          "device": "memdev-c100e2e1",
+          "settings": {
+            "container": {
+              "steering": {
+                "policy": "auto"
+              }
+            },
+            "origins": {
+              "container.steering.policy": "claim"
+            }
+          },
+          "grant": {
+            "claim": "11111111-0000-0000-0000-000000000001",
+            "result": 0
+          }
+        }
+      ]
+    },
+    {
+      "uid": "11111111-0000-0000-0000-000000000002",
+      "driver": "cxl.nri.io",
+      "claimName": "demo/c-dax",
+      "state": "PREPARED",
+      "results": [
+        {
+          "index": 0,
+          "kind": "grant",
+          "request": "mem",
+          "pool": "node-1",
+          "device": "memdev-c100e2e1",
+          "grant": {
+            "claim": "11111111-0000-0000-0000-000000000002",
+            "result": 0
+          }
+        }
+      ]
+    },
+    {
+      "uid": "11111111-0000-0000-0000-000000000003",
+      "driver": "cxl.nri.io",
+      "claimName": "demo/c-shared",
+      "state": "UNPREPARING",
+      "results": [
+        {
+          "index": 0,
+          "kind": "grant",
+          "request": "mem",
+          "pool": "node-1",
+          "device": "memdev-c100e2e2",
+          "grant": {
+            "claim": "11111111-0000-0000-0000-000000000003",
+            "result": 0
+          }
+        }
+      ]
+    },
+    {
+      "uid": "11111111-0000-0000-0000-000000000004",
+      "driver": "cxl.nri.io",
+      "claimName": "demo/c-mixed",
+      "state": "PREPARED",
+      "results": [
+        {
+          "index": 0,
+          "kind": "region",
+          "request": "region",
+          "pool": "node-1",
+          "device": "region5-numa5",
+          "region": {
+            "name": "region5",
+            "numaNode": 5,
+            "size": 2147483648,
+            "consumed": 1073741824,
+            "numaAffinity": [
+              1
+            ]
+          }
+        },
+        {
+          "index": 1,
+          "kind": "grant",
+          "request": "shared",
+          "pool": "node-1",
+          "device": "memdev-c100e2e2",
+          "grant": {
+            "claim": "11111111-0000-0000-0000-000000000004",
+            "result": 1
+          }
+        },
+        {
+          "index": 2,
+          "kind": "dram",
+          "request": "dram",
+          "pool": "node-1",
+          "device": "dram",
+          "dram": {
+            "numaNodes": [
+              0,
+              1
+            ],
+            "size": 68719476736
+          }
+        }
+      ]
+    },
+    {
+      "uid": "11111111-0000-0000-0000-000000000005",
+      "driver": "cxl.nri.io",
+      "claimName": "demo/c-kept",
+      "state": "KEPT",
+      "results": [
+        {
+          "index": 0,
+          "kind": "grant",
+          "request": "mem",
+          "pool": "node-1",
+          "device": "memdev-c100e2e1",
+          "grant": {
+            "claim": "11111111-0000-0000-0000-000000000005",
+            "result": 0
+          }
+        }
+      ]
+    },
+    {
+      "uid": "11111111-0000-0000-0000-000000000006",
+      "driver": "cxl.nri.io",
+      "claimName": "demo/c-fs",
+      "state": "PREPARED_UNRESTORED",
+      "results": [
+        {
+          "index": 0,
+          "kind": "grant",
+          "request": "pmem",
+          "pool": "node-1",
+          "device": "memdev-c1ae2001",
+          "grant": {
+            "claim": "11111111-0000-0000-0000-000000000006",
+            "result": 0
+          }
+        }
+      ]
+    },
+    {
+      "uid": "11111111-0000-0000-0000-000000000007",
+      "driver": "cxl.nri.io",
+      "claimName": "demo/c-lease",
+      "state": "PREPARED",
+      "results": [
+        {
+          "index": 0,
+          "kind": "leaseClaim",
+          "request": "lease",
+          "pool": "node-1",
+          "device": "lease",
+          "leaseClaim": {
+            "uid": "11111111-0000-0000-0000-000000000007"
+          }
+        }
+      ]
+    },
+    {
+      "uid": "11111111-0000-0000-0000-000000000008",
+      "driver": "cxl.nri.io",
+      "claimName": "demo/c-stale",
+      "state": "PREPARED_STALE",
+      "results": [
+        {
+          "index": 0,
+          "kind": "grant",
+          "request": "mem",
+          "pool": "node-1",
+          "device": "memdev-c100e2e9",
+          "grant": {
+            "claim": "11111111-0000-0000-0000-000000000008",
+            "result": 0
+          }
+        }
+      ]
+    },
+    {
+      "uid": "22222222-0000-0000-0000-000000000001",
+      "driver": "cxl.nri.io",
+      "claimName": "demo/cxl-lease-0a1b2c3d",
+      "state": "PREPARED",
+      "lease": "0a1b2c3d",
+      "results": [
+        {
+          "index": 0,
+          "kind": "grant",
+          "request": "memory",
+          "pool": "node-1",
+          "device": "memdev-c100e2e1",
+          "grant": {
+            "claim": "22222222-0000-0000-0000-000000000001",
+            "result": 0
+          }
+        }
+      ]
+    },
+    {
+      "uid": "33333333-0000-0000-0000-000000000001",
+      "driver": "cxl-pool.nri.io",
+      "claimName": "demo/c-pnuma",
+      "state": "PREPARED",
+      "results": [
+        {
+          "index": 0,
+          "kind": "grant",
+          "request": "mem",
+          "pool": "pool-a",
+          "device": "pooled3",
+          "grant": {
+            "claim": "33333333-0000-0000-0000-000000000001",
+            "result": 0
+          }
+        }
+      ]
+    },
+    {
+      "uid": "33333333-0000-0000-0000-000000000002",
+      "driver": "cxl-pool.nri.io",
+      "claimName": "demo/c-pfs",
+      "state": "PREPARED",
+      "results": [
+        {
+          "index": 0,
+          "kind": "grant",
+          "request": "mem",
+          "pool": "pool-c",
+          "device": "pooled2",
+          "shareID": "aaaaaaaa-0000-0000-0000-000000000001",
+          "grant": {
+            "claim": "33333333-0000-0000-0000-000000000002",
+            "result": 0
+          }
+        }
+      ]
+    },
+    {
+      "uid": "33333333-0000-0000-0000-000000000003",
+      "driver": "cxl-pool.nri.io",
+      "claimName": "demo/c-pdax",
+      "state": "PREPARED",
+      "results": [
+        {
+          "index": 0,
+          "kind": "grant",
+          "request": "mem",
+          "pool": "pool-b",
+          "device": "pooled4",
+          "shareID": "aaaaaaaa-0000-0000-0000-000000000002",
+          "grant": {
+            "claim": "33333333-0000-0000-0000-000000000003",
+            "result": 0
+          }
+        }
+      ]
+    },
+    {
+      "uid": "44444444-0000-0000-0000-000000000001",
+      "driver": "cxl-pool.nri.io",
+      "claimName": "demo/cxl-lease-1b2c3d4e",
+      "state": "UNPREPARING",
+      "lease": "1b2c3d4e",
+      "results": [
+        {
+          "index": 0,
+          "kind": "grant",
+          "request": "memory",
+          "pool": "pool-c",
+          "device": "pooled2",
+          "shareID": "aaaaaaaa-0000-0000-0000-000000000003",
+          "grant": {
+            "claim": "44444444-0000-0000-0000-000000000001",
+            "result": 0
+          }
+        }
+      ]
+    }
+  ],
+  "leaseClaims": [
+    {
+      "uid": "11111111-0000-0000-0000-000000000007",
+      "namespace": "demo",
+      "name": "c-lease",
+      "pods": [
+        {
+          "namespace": "demo",
+          "name": "requester",
+          "uid": "55555555-0000-0000-0000-000000000001"
+        }
+      ],
+      "state": "OPEN"
+    }
+  ],
+  "leases": [
+    {
+      "id": "0a1b2c3d",
+      "claim": "11111111-0000-0000-0000-000000000007",
+      "requestID": "req-1",
+      "pod": {
+        "namespace": "demo",
+        "name": "requester",
+        "uid": "55555555-0000-0000-0000-000000000001"
+      },
+      "container": "main",
+      "asked": {
+        "source": "local",
+        "mode": "numa",
+        "size": "128Mi"
+      },
+      "got": {
+        "source": "local",
+        "serial": "0xc100e2e1",
+        "size": 134217728
+      },
+      "state": "READY",
+      "lend": {
+        "numaNode": 2
+      },
+      "created": "2026-11-05T12:00:00Z"
+    },
+    {
+      "id": "1b2c3d4e",
+      "claim": "11111111-0000-0000-0000-000000000007",
+      "pod": {
+        "namespace": "demo",
+        "name": "requester",
+        "uid": "55555555-0000-0000-0000-000000000001"
+      },
+      "container": "main",
+      "asked": {
+        "mode": "fs",
+        "sharedDevice": true,
+        "access": "cached",
+        "name": "mbt",
+        "serial": "0xc1ae2002"
+      },
+      "got": {
+        "source": "pool",
+        "serial": "0xc1ae2002",
+        "sharedDevice": true,
+        "access": "cached",
+        "fsType": "erofs",
+        "path": "/run/cxl/fs/mbt",
+        "size": 1073741824
+      },
+      "state": "RELEASING_BUSY",
+      "releaseRequested": true,
+      "deletionRequested": true,
+      "lend": {
+        "bindTarget": "/var/lib/kubelet/plugins/cxl.nri.io/lease-fs/11111111-0000-0000-0000-000000000007/mbt"
+      },
+      "created": "2026-11-05T12:01:00Z"
+    }
+  ],
+  "provenance": [
+    {
+      "serial": "0xc100e2e1",
+      "state": "LOCAL",
+      "lastSeen": "2026-11-05T12:00:00Z"
+    },
+    {
+      "serial": "0xc100e2e2",
+      "state": "LOCAL",
+      "lastSeen": "2026-11-05T12:00:00Z"
+    },
+    {
+      "serial": "0xc1ae2001",
+      "state": "LOCAL",
+      "lastSeen": "2026-11-05T12:00:00Z"
+    },
+    {
+      "serial": "0xc1ae2002",
+      "state": "POOL",
+      "pool": "cxl-pool.nri.io/pool-c",
+      "lastSeen": "2026-11-05T12:00:00Z"
+    },
+    {
+      "serial": "0xc1ae2003",
+      "state": "POOL",
+      "pool": "cxl-pool.nri.io/pool-a",
+      "lastSeen": "2026-11-05T12:00:00Z"
+    },
+    {
+      "serial": "0xc1ae2004",
+      "state": "POOL",
+      "pool": "cxl-pool.nri.io/pool-b",
+      "lastSeen": "2026-11-05T12:00:00Z"
+    },
+    {
+      "serial": "0xc1ae2005",
+      "state": "HELD",
+      "heldSince": "2026-11-05T12:00:00Z",
+      "heldReason": "pool ResourceSlices never listed"
+    }
+  ],
+  "steered": [
+    {
+      "container": "c0ffee",
+      "cgroupDir": "/sys/fs/cgroup/kubepods.slice/c0ffee"
+    }
+  ]
+}
