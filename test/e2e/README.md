@@ -168,8 +168,9 @@ Worth knowing:
   framework says so and provisions from scratch.
 
 - A VM which has just booted from a box has a cluster which is still starting
-  up, so the framework waits for the node and for the cluster DNS before
-  running any test. Raise `CLUSTER_READY_TIMEOUT` (300 seconds by default) if a
+  up, so the framework waits for the node, the system pods on it and the
+  cluster DNS before running any test. It waits the same way after a test
+  reboots the VM. Raise `CLUSTER_READY_TIMEOUT` (300 seconds by default) if a
   large topology needs longer.
 
 ## Reusing an output directory

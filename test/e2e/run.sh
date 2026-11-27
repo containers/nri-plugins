@@ -546,7 +546,7 @@ helm-launch() { # script API
     local helm_name="${helm_name:-test}" timeout="${launch_timeout:-20s}"
     local expect_error="${expect_error:-0}"
     local plugin="$1" cfgresource=${cfgresource:-} cfgstatus
-    local deadline rollback may_fail
+    local deadline rollback may_fail launched statustimeout
     shift
 
     if [ "$expect_error" == 0 ]; then
@@ -606,19 +606,24 @@ helm-launch() { # script API
     deadline=$(deadline-for-timeout $timeout)
     vm-command "kubectl wait -n kube-system ds/${ds_name} --timeout=$timeout \
                     --for=jsonpath='{.status.numberAvailable}'=1"
+    launched=$COMMAND_STATUS
+    statustimeout=$(timeout-for-deadline $deadline)
+    # Before telling whether the plugin started and configured itself: a test
+    # which fails then is left with the log of this plugin, not with the log
+    # of the one before it. The plugin keeps the time this takes.
+    vm-start-log-collection -n kube-system ds/$ds_name -c $ctr_name
     # When expect_error=1, numberAvailable may happen to be 0 or 1,
-    # depending on crash timing, and COMMAND_STATUS zero or non-zero.
+    # depending on crash timing, and launched zero or non-zero.
     # Skip exit and cfgresource status checks to avoid failing the
     # test on expected errors.
     if [ "$expect_error" == 0 ]; then
-        if [ "$COMMAND_STATUS" != "0" ]; then
+        if [ "$launched" != "0" ]; then
             error "Timeout while waiting daemonset/${ds_name} to be available"
         fi
         # Read cfgresource status only when errors are not expected.
         # Otherwise test may fail due to issues that were expected.
         if [ -n "$cfgresource" ]; then
-            timeout=$(timeout-for-deadline $deadline)
-            timeout=$timeout wait-config-node-status $cfgresource
+            timeout=$statustimeout wait-config-node-status $cfgresource
 
             result=$(get-config-node-status-result $cfgresource)
             if [ "$result" != "Success" ]; then
@@ -635,7 +640,6 @@ helm-launch() { # script API
         fi
     fi
 
-    vm-start-log-collection -n kube-system ds/$ds_name -c $ctr_name
     vm-port-forward-enable
 }
 
