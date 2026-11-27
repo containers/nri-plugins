@@ -107,6 +107,19 @@ Before running E2E tests ensure that you have all the required components locall
     policies.test-suite balloons test10-health-checking : PASS
     ```
 
+## Transparent huge pages for the qemu of a VM
+
+When the host has transparent huge pages (THP) set to `always`
+(`cat /sys/kernel/mm/transparent_hugepage/enabled`), Ruby turns them off for
+its own process, and the qemu that vagrant starts inherits that: the guest
+RAM and any file-backed memory of the VM, like the backing file of a CXL
+memory device, then have 4 KiB pages only (`THP_enabled: 0` in
+`/proc/<qemu pid>/status`). `vm-setup` therefore adds a few lines of Ruby to
+the `Vagrantfile` and `Vagrantfile.erb` of every VM, new or existing, that
+allow them again (`vm-thp-patch-vagrantfile`). An existing VM gets huge pages
+at the next start of its qemu. With the host setting `madvise` or `never`
+nothing changes.
+
 ## Caching a provisioned VM
 
 Most of the time a test run spends before the first test case goes into
@@ -172,6 +185,19 @@ Worth knowing:
   cluster DNS before running any test. It waits the same way after a test
   reboots the VM. Raise `CLUSTER_READY_TIMEOUT` (300 seconds by default) if a
   large topology needs longer.
+
+## Another qemu for a VM
+
+`qemu_bin` gives a VM that a run creates another qemu than the one in the
+`PATH`, for instance one with patches that a test suite needs:
+
+```shell
+qemu_bin=/path/to/qemu-system-x86_64 ./run_tests.sh memory.test-suite/dra-driver-cxl
+```
+
+The VM keeps it: the run records it as `QEMU_BIN` in the `env` file of the
+output directory, and later runs start the VM with it and ignore
+`qemu_bin`.
 
 ## Reusing an output directory
 
@@ -945,6 +971,8 @@ available:
   | scheduling | `verify-sched`, `SCHED_*` |
   | generated test scripts | `run-generated-tests` |
   | ending the test early | `skip-test` |
+  | other VMs | `vmdir-of`, `vmdir-command`, `vmdir-put-file`, `vmdir-up`, `vmdir-restart` (`lib/k8s.bash`) |
+  | cluster shapes | `vm-k8s-reinit`, `vm-k8s-shape`, `vm-k8s-node-ip`, `vm-vmnet-ensure` (`lib/k8s.bash`) |
 
   Some of them are configured by variables a test case can set, notably
   `plugin_log_filter`, which restricts the log assertions to the log lines of
@@ -959,3 +987,46 @@ available:
 test suite directory and ending in the test case directory, `lib/test.bash`
 being the first one. Therefore a test case, or all test cases of a policy or a
 topology, can override any shared helper simply by redefining it.
+
+## Multi-node clusters
+
+Every VM is provisioned as a single-node cluster. A test can make other
+shapes of existing VMs, for instance one cluster of two VMs, and back, with
+`vm-k8s-reinit` (`lib/k8s.bash`):
+
+```bash
+vm-k8s-reinit "$POOL_VM2_DIR $POOL_VM1_DIR"     # one cluster: VM2 control plane, VM1 worker
+vm-k8s-reinit "$POOL_VM2_DIR" "$POOL_VM1_DIR"   # two single-node clusters
+```
+
+Each argument is a cluster: VM names or output directories, the control
+plane first. A cluster that has its shape is left alone, which is quick.
+The others are rebuilt with `kubeadm reset`, `kubeadm init` and `kubeadm
+join`, which loses all cluster state: deploy what the test needs after it.
+`kubeadm init` takes the configuration that provisioning wrote in the
+control plane VM, `/root/kubeadm-config.yaml`. So the rebuilt cluster keeps
+its feature gates and kubelet settings. `vm-k8s-reinit` and
+`vm-vmnet-ensure` refuse to run against a host which is not a VM.
+Pods run on every node, and every node has the admin kubeconfig. A rebuild
+loses all cluster state, so a test suite makes its shape once, in one test,
+and the other tests only check it: the first test of the topology makes
+one cluster of its VMs, and the other tests fail at once, pointing to
+that test, if the VMs have another shape.
+
+The VMs of a multi-node cluster need a VM network: their topologies set
+`vm_network`, the name of the network, in a `vm_network.var.sh` of the
+suite. Each such VM gets a
+second NIC on a qemu multicast socket of the host loopback, which needs no
+host privileges. The address and MAC of the VM and the multicast group of
+the network are derived and recorded as `VMNET_*` in the `env` file of the
+VM. An existing VM gets the NIC in its `Vagrantfile` and is restarted once
+by `vm-vmnet-ensure`. In a multi-node cluster the nodes use their VM
+network addresses, and the bridge CNI of every node hands out addresses of
+the node's pod CIDR only, with routes to the pod CIDRs of the other nodes.
+Only the bridge CNI is supported.
+
+To bring the VMs back to single-node clusters by hand, call
+`vm-k8s-reinit` with one VM per cluster, for instance in the interactive
+mode of a test (`breakpoint`). The first test of the topology makes its
+cluster again.
+

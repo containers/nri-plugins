@@ -284,8 +284,15 @@ run-tests-in() {
                 if ! [ -d "$TOPOLOGY_DIR" ]; then
                     continue
                 fi
-                if ! [[ "$(basename "$TOPOLOGY_DIR")" =~ .*"$TESTS_TOPOLOGY_FILTER".* ]]; then
-                    continue
+
+                if [ -n "$TESTS_TOPOLOGY_FILTER" ]; then
+                    if [ -d "$POLICY_DIR/$TESTS_TOPOLOGY_FILTER" ]; then
+                        if [ "$(basename "$TOPOLOGY_DIR")" != "$TESTS_TOPOLOGY_FILTER" ]; then
+                            continue
+                        fi
+                    elif ! [[ "$(basename "$TOPOLOGY_DIR")" =~ .*"$TESTS_TOPOLOGY_FILTER".* ]]; then
+                        continue
+                    fi
                 fi
                 if [ "$(basename "$TOPOLOGY_DIR")" == "vm-files" ]; then
                     continue

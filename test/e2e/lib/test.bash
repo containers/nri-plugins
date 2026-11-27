@@ -1534,3 +1534,8 @@ kill-test-processes() { # script API
     vm-command 'pkill -9 -f "sleep[ ]inf"
                 pkill -9 -f "echo[ ]pod"' || :
 }
+
+# Commands in VMs other than the VM of the test (vmdir-*), VM networks in
+# the VMs (vm-vmnet-ensure) and Kubernetes clusters of several VMs
+# (vm-k8s-reinit).
+source "$(dirname "${BASH_SOURCE[0]}")/k8s.bash"
