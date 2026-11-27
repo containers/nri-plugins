@@ -1,0 +1,62 @@
+{{- if index .Values.openshift "grant-scc" }}
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: {{ include "nri-plugin.sccName" . }}
+  labels:
+    {{- include "nri-plugin.labels" . | nindent 4 }}
+allowPrivilegedContainer: false
+allowPrivilegeEscalation: false
+allowHostDirVolumePlugin: true
+allowHostNetwork: false
+allowHostPorts: false
+allowHostPID: false
+allowHostIPC: false
+readOnlyRootFilesystem: false
+requiredDropCapabilities:
+  - ALL
+allowedCapabilities: []
+defaultAddCapabilities: []
+runAsUser:
+  type: RunAsAny
+seLinuxContext:
+  type: RunAsAny
+fsGroup:
+  type: RunAsAny
+supplementalGroups:
+  type: RunAsAny
+seccompProfiles:
+  - runtime/default
+volumes:
+  - hostPath
+  - configMap
+  - projected
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "nri-plugin.sccName" . }}-use
+  labels:
+    {{- include "nri-plugin.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["security.openshift.io"]
+    resources: ["securitycontextconstraints"]
+    resourceNames: [{{ include "nri-plugin.sccName" . | quote }}]
+    verbs: ["use"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nri-blockio-scc-use
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nri-plugin.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "nri-plugin.sccName" . }}-use
+subjects:
+  - kind: ServiceAccount
+    name: nri-blockio
+    namespace: {{ .Release.Namespace }}
+{{- end }}

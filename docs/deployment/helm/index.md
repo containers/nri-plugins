@@ -47,6 +47,7 @@ maxdepth: 2
 caption: Contents
 ---
 balloons.md
+blockio.md
 topology-aware.md
 template.md
 memory-qos.md

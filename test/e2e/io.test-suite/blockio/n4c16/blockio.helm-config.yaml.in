@@ -1,0 +1,25 @@
+tolerations:
+  - operator: Exists
+config:
+  Classes:
+    gold:
+      - Weight: ${BLOCKIO_WEIGHT:-400}
+      - Devices: ['${blockio_devices[0]}']
+        ThrottleReadBps: ${BLOCKIO_RATE:-0}
+    bronze:
+      - Weight: 100
+      - Devices: ['${blockio_devices[0]}', '${blockio_devices[1]}']
+        Weight: 50
+        ThrottleReadBps: 50M
+        ThrottleWriteBps: 10Mi
+        ThrottleReadIOPS: 10k
+        ThrottleWriteIOPS: 5k
+      - Devices: ['${blockio_devices[1]}']
+        Weight: 200
+        ThrottleReadBps: 25M
+        ThrottleWriteBps: 20M
+        ThrottleReadIOPS: 2k
+    empty: []
+    zero:
+      - Devices: ['${blockio_devices[0]}']
+        ThrottleWriteBps: 0
