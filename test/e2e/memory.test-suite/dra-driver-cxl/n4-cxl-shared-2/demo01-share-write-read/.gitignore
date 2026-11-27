@@ -1,0 +1,7 @@
+# The demo: run/ (state, logs) and captures/ are of a live demo; testdata/
+# (the samples of the selftest) and bin/tools/ (the pod tools) are files of
+# the demo despite the rules above this directory.
+run/
+captures/
+!testdata/
+!bin/tools/

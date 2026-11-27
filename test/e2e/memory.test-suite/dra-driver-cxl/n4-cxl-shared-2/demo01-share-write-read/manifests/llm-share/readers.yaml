@@ -1,0 +1,163 @@
+# llm-share demo: three readers, reader-0 on vm0, reader-1 on vm1 and
+# reader-2 on vm2, each llama-server (stock llama.cpp) on the model in the
+# erofs of llm0, claimed through the template llm-model (model-direct.yaml
+# or model-cached.yaml) at /models. -nr keeps the weights in the mapping of
+# the gguf instead of a copy in the memory of the process; the threads are
+# the CPU limit of the pod. The headless Service llm-readers gives them the
+# names reader-N.llm-readers for the client (client.yaml).
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-readers
+  labels: {app: cxl-demo}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    cxl-demo/role: llm-reader
+  ports:
+  - {name: http, port: 8080}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: reader-0
+  labels: {app: cxl-demo, cxl-demo/role: llm-reader}
+spec:
+  nodeSelector:
+    cxl-demo/node: vm0          # the label of demo setup: vm0, vm1 or vm2
+  hostname: reader-0
+  subdomain: llm-readers
+  terminationGracePeriodSeconds: 2
+  restartPolicy: Never
+  resourceClaims:
+  - name: model
+    resourceClaimTemplateName: llm-model
+  volumes:
+  - name: demo
+    configMap: {name: demo-tools, defaultMode: 0755}
+  containers:
+  - name: main
+    image: ghcr.io/ggml-org/llama.cpp:server-b11681
+    imagePullPolicy: IfNotPresent
+    command:
+    - sh
+    - -c
+    - |
+      ls -l /models
+      exec /app/llama-server -m "/models/$LLM_MODEL_FILE" -nr -t "$LLM_THREADS" -c 4096 -np 1 \
+          --reasoning off --host 0.0.0.0 --port 8080
+    env:
+    - name: LLM_THREADS
+      valueFrom:
+        resourceFieldRef: {resource: limits.cpu, divisor: "1"}
+    envFrom:
+    - configMapRef: {name: llm-model}
+    ports:
+    - containerPort: 8080
+    readinessProbe:
+      httpGet: {path: /health, port: 8080}
+      periodSeconds: 1
+    volumeMounts:
+    - {name: demo, mountPath: /demo}
+    resources:
+      requests: {cpu: "6", memory: 3Gi}
+      limits: {cpu: "6", memory: 3Gi}
+      claims:
+      - name: model
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: reader-1
+  labels: {app: cxl-demo, cxl-demo/role: llm-reader}
+spec:
+  nodeSelector:
+    cxl-demo/node: vm1          # the label of demo setup: vm0, vm1 or vm2
+  hostname: reader-1
+  subdomain: llm-readers
+  terminationGracePeriodSeconds: 2
+  restartPolicy: Never
+  resourceClaims:
+  - name: model
+    resourceClaimTemplateName: llm-model
+  volumes:
+  - name: demo
+    configMap: {name: demo-tools, defaultMode: 0755}
+  containers:
+  - name: main
+    image: ghcr.io/ggml-org/llama.cpp:server-b11681
+    imagePullPolicy: IfNotPresent
+    command:
+    - sh
+    - -c
+    - |
+      ls -l /models
+      exec /app/llama-server -m "/models/$LLM_MODEL_FILE" -nr -t "$LLM_THREADS" -c 4096 -np 1 \
+          --reasoning off --host 0.0.0.0 --port 8080
+    env:
+    - name: LLM_THREADS
+      valueFrom:
+        resourceFieldRef: {resource: limits.cpu, divisor: "1"}
+    envFrom:
+    - configMapRef: {name: llm-model}
+    ports:
+    - containerPort: 8080
+    readinessProbe:
+      httpGet: {path: /health, port: 8080}
+      periodSeconds: 1
+    volumeMounts:
+    - {name: demo, mountPath: /demo}
+    resources:
+      requests: {cpu: "6", memory: 3Gi}
+      limits: {cpu: "6", memory: 3Gi}
+      claims:
+      - name: model
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: reader-2
+  labels: {app: cxl-demo, cxl-demo/role: llm-reader}
+spec:
+  nodeSelector:
+    cxl-demo/node: vm2          # the label of demo setup: vm0, vm1 or vm2
+  hostname: reader-2
+  subdomain: llm-readers
+  terminationGracePeriodSeconds: 2
+  restartPolicy: Never
+  resourceClaims:
+  - name: model
+    resourceClaimTemplateName: llm-model
+  volumes:
+  - name: demo
+    configMap: {name: demo-tools, defaultMode: 0755}
+  containers:
+  - name: main
+    image: ghcr.io/ggml-org/llama.cpp:server-b11681
+    imagePullPolicy: IfNotPresent
+    command:
+    - sh
+    - -c
+    - |
+      ls -l /models
+      exec /app/llama-server -m "/models/$LLM_MODEL_FILE" -nr -t "$LLM_THREADS" -c 4096 -np 1 \
+          --reasoning off --host 0.0.0.0 --port 8080
+    env:
+    - name: LLM_THREADS
+      valueFrom:
+        resourceFieldRef: {resource: limits.cpu, divisor: "1"}
+    envFrom:
+    - configMapRef: {name: llm-model}
+    ports:
+    - containerPort: 8080
+    readinessProbe:
+      httpGet: {path: /health, port: 8080}
+      periodSeconds: 1
+    volumeMounts:
+    - {name: demo, mountPath: /demo}
+    resources:
+      requests: {cpu: "6", memory: 3Gi}
+      limits: {cpu: "6", memory: 3Gi}
+      claims:
+      - name: model

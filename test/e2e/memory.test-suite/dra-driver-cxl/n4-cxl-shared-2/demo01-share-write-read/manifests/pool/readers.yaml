@@ -1,0 +1,81 @@
+# pool demo: three readers: reader-a on vm2, reader-b on vm2, reader-c on vm1.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: reader-a
+  labels: {app: cxl-demo}
+spec:
+  nodeSelector:
+    cxl-demo/node: vm2          # the label of demo setup: vm1 or vm2
+  terminationGracePeriodSeconds: 2
+  restartPolicy: Never
+  resourceClaims:
+  - name: cxl
+    resourceClaimTemplateName: cxl-lease
+  volumes:
+  - name: demo
+    configMap: {name: demo-tools, defaultMode: 0755}
+  containers:
+  - name: main
+    image: docker.io/library/python:3-alpine
+    imagePullPolicy: IfNotPresent
+    command: ["sh", "-c", "trap 'exit 0' TERM; sleep infinity & wait"]
+    volumeMounts:
+    - {name: demo, mountPath: /demo}
+    resources:
+      claims:
+      - name: cxl
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: reader-b
+  labels: {app: cxl-demo}
+spec:
+  nodeSelector:
+    cxl-demo/node: vm2          # the label of demo setup: vm1 or vm2
+  terminationGracePeriodSeconds: 2
+  restartPolicy: Never
+  resourceClaims:
+  - name: cxl
+    resourceClaimTemplateName: cxl-lease
+  volumes:
+  - name: demo
+    configMap: {name: demo-tools, defaultMode: 0755}
+  containers:
+  - name: main
+    image: docker.io/library/python:3-alpine
+    imagePullPolicy: IfNotPresent
+    command: ["sh", "-c", "trap 'exit 0' TERM; sleep infinity & wait"]
+    volumeMounts:
+    - {name: demo, mountPath: /demo}
+    resources:
+      claims:
+      - name: cxl
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: reader-c
+  labels: {app: cxl-demo}
+spec:
+  nodeSelector:
+    cxl-demo/node: vm1          # the label of demo setup: vm1 or vm2
+  terminationGracePeriodSeconds: 2
+  restartPolicy: Never
+  resourceClaims:
+  - name: cxl
+    resourceClaimTemplateName: cxl-lease
+  volumes:
+  - name: demo
+    configMap: {name: demo-tools, defaultMode: 0755}
+  containers:
+  - name: main
+    image: docker.io/library/python:3-alpine
+    imagePullPolicy: IfNotPresent
+    command: ["sh", "-c", "trap 'exit 0' TERM; sleep infinity & wait"]
+    volumeMounts:
+    - {name: demo, mountPath: /demo}
+    resources:
+      claims:
+      - name: cxl

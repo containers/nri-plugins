@@ -91,6 +91,9 @@ jobs:
       - working-directory: test/e2e/memory.test-suite/dra-driver-cxl/n4-cxl-shared-2/test90-mbt-stress/model
         run: |
           go test -short -timeout 10m ./...
+      - working-directory: test/e2e/memory.test-suite/dra-driver-cxl/n4-cxl-shared-2/demo01-share-write-read
+        run: |
+          python3 bin/selftest.py
 
   verify-docs:
     name: Documentation

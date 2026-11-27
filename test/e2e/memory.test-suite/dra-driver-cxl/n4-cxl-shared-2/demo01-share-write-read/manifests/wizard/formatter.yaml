@@ -1,0 +1,61 @@
+# demo setup wizard: the formatter of a persistent device (fs0 of the pool,
+# lp0 of vm2), so that the fs claims of the wizard find a filesystem: a
+# ResourceClaim of the whole device (no shares request: exclusively) in
+# mode block, writable, and a pod of the demo image that makes an ext4
+# with hello.txt on the block device (block size 4096, which DAX needs),
+# then idles until setup deletes it. Setup replaces __NAME__, __CLASS__,
+# __DRIVER__, __SERIAL__, __KEY__ and __TEXT__. The pod runs on vm2 (the
+# label of demo setup), whose driver and pool reach both devices.
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  name: __NAME__
+  labels: {app: cxl-demo-setup}
+spec:
+  devices:
+    requests:
+    - name: mem
+      exactly:
+        deviceClassName: __CLASS__
+        selectors:
+        - cel:
+            expression: 'device.attributes["__DRIVER__"].serial == "__SERIAL__"'
+    config:
+    - opaque:
+        driver: __DRIVER__
+        parameters:
+          apiVersion: cxl.nri.io/v1alpha1
+          kind: MemoryConfig
+          device:
+            mode: block
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: __NAME__
+  labels: {app: cxl-demo-setup}
+spec:
+  nodeSelector:
+    cxl-demo/node: vm2          # the label of demo setup: vm1 or vm2
+  terminationGracePeriodSeconds: 2
+  restartPolicy: Never
+  resourceClaims:
+  - name: mem
+    resourceClaimName: __NAME__
+  containers:
+  - name: main
+    image: localhost/cxl-demo-tools:demo   # demo setup imports it, never pulled
+    imagePullPolicy: Never
+    command:
+    - sh
+    - -c
+    - |
+      env | grep ^CXL_ | sort
+      mkdir -p /tmp/fs && echo "__TEXT__" > /tmp/fs/hello.txt
+      dd if=/dev/zero of="$CXL___KEY___PATH" bs=1M count=1 conv=fsync &&
+          mkfs.ext4 -q -F -b 4096 -d /tmp/fs "$CXL___KEY___PATH"
+      echo "writer exit $?"
+      trap "exit 0" TERM; sleep infinity & wait
+    resources:
+      claims:
+      - name: mem

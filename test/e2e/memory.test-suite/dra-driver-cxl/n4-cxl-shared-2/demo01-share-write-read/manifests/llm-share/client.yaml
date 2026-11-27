@@ -1,0 +1,27 @@
+# llm-share demo: the client, on vm2: /demo/llm asks the readers
+# (reader-N.llm-readers, readers.yaml) for chat completions over HTTP, the
+# way an agent asks its model, and measures the time to the first token
+# (TTFT) and per output token (TPOT). It never uses the proxies of
+# llm-model.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: client
+  labels: {app: cxl-demo}
+spec:
+  nodeSelector:
+    cxl-demo/node: vm2          # the label of demo setup: vm0, vm1 or vm2
+  terminationGracePeriodSeconds: 2
+  restartPolicy: Never
+  volumes:
+  - name: demo
+    configMap: {name: demo-tools, defaultMode: 0755}
+  containers:
+  - name: main
+    image: localhost/cxl-demo-tools:demo   # demo setup imports it, never pulled
+    imagePullPolicy: Never
+    command: ["sh", "-c", "trap 'exit 0' TERM; sleep infinity & wait"]
+    envFrom:
+    - configMapRef: {name: llm-model}   # the model and LLM_REPEAT, for the record
+    volumeMounts:
+    - {name: demo, mountPath: /demo}

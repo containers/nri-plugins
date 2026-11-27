@@ -35,7 +35,9 @@ go test ./scripts/testing/fake-cxl-pool/...
 test90 is a module of its own (gofmbt). `go generate ./generate.go` in
 `cmd/plugins/dra-driver-cxl` renders [states.md](states.md) from the
 state tables; a test fails while the file is stale, and another one
-while a link of design.md into states.md names no heading.
+while a link of design.md into states.md names no heading. The demo has
+a selftest of its own
+([`demo01-share-write-read`](tree:/test/e2e/memory.test-suite/dra-driver-cxl/n4-cxl-shared-2/demo01-share-write-read)).
 
 ## The e2e setup
 
@@ -163,6 +165,7 @@ the test reads commands from the terminal until `exit`.
 | `test21-dra-local-persistent` | a persistent local memdev: a block writer, `fsTypes`, read-write and read-only claims, an fs lease |
 | `test22-dra-admission-policy` | the admission policies of the chart, rule by rule |
 | `test90-mbt-stress` | model-based stress (gofmbt): pods, claims, leases, writes and faults chosen by a model, the cluster checked after each step; a long test, run with `skip_long_tests=no` |
+| `test98-demo-setup`, `test99-demo-teardown` | the setup and teardown of the demo ([demo.md](demo.md)); a run of the suite skips them |
 
 The tests need the ports 9909 to 9912 of the host for their pool
 servers. `test90-mbt-stress` takes its parameters (`MBT_DURATION`,
