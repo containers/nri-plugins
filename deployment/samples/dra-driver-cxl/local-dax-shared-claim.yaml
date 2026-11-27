@@ -1,0 +1,83 @@
+# Two pods that share a devdax slice of a CXL memory device attached to
+# their node: both reference one ResourceClaim (cxl-local, MemoryConfig
+# device.mode: dax), so the scheduler puts them on the node of the claim's
+# device and kubelet prepares the claim once. Both get the same
+# /dev/daxX.Y (CXL_<KEY>_DAX). The writer writes a message, the reader
+# prints it.
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  name: local-dax-shared
+spec:
+  devices:
+    requests:
+    - name: mem
+      exactly:
+        deviceClassName: cxl-local
+        capacity:
+          requests:
+            memory: 64Mi
+    config:
+    - opaque:
+        driver: cxl.nri.io
+        parameters:
+          apiVersion: cxl.nri.io/v1alpha1
+          kind: MemoryConfig
+          device:
+            mode: dax
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: local-dax-writer
+spec:
+  resourceClaims:
+  - name: mem
+    resourceClaimName: local-dax-shared
+  containers:
+  - name: writer
+    image: docker.io/library/python:3-alpine
+    command:
+    - python3
+    - -u
+    - -c
+    - |
+      import mmap, os, time
+      key = [k[:-len("DAX")] for k in os.environ if k.startswith("CXL_") and k.endswith("_DAX")][0]
+      dax, size = os.environ[key + "DAX"], int(os.environ[key + "SIZE"])
+      # devdax needs MAP_SHARED and a mapping aligned to the device alignment
+      m = mmap.mmap(os.open(dax, os.O_RDWR), size, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE)
+      msg = b"hello from local-dax-writer\0"
+      m[0:len(msg)] = msg
+      print("wrote to", dax)
+      time.sleep(1e9)
+    resources:
+      claims:
+      - name: mem
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: local-dax-reader
+spec:
+  resourceClaims:
+  - name: mem
+    resourceClaimName: local-dax-shared
+  containers:
+  - name: reader
+    image: docker.io/library/python:3-alpine
+    command:
+    - python3
+    - -u
+    - -c
+    - |
+      import mmap, os, time
+      key = [k[:-len("DAX")] for k in os.environ if k.startswith("CXL_") and k.endswith("_DAX")][0]
+      dax, size = os.environ[key + "DAX"], int(os.environ[key + "SIZE"])
+      m = mmap.mmap(os.open(dax, os.O_RDWR), size, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE)
+      while True:
+          print("read from", dax + ":", bytes(m[0:4096]).split(b"\0", 1)[0].decode(errors="replace"))
+          time.sleep(10)
+    resources:
+      claims:
+      - name: mem

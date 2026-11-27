@@ -1,0 +1,165 @@
+# A read-write filesystem on a CXL memory device of persistent memory
+# attached to the node (DeviceClass cxl-local-persistent), with a writer
+# and a reader. The device is local to its node: no other host has it
+# (unless the driver configuration lists it in sharedMemdevs), so a
+# read-write filesystem on it is safe, and both pods run on its node.
+# The formatter's claim requests no shares (the whole device, exclusive:
+# a persistent local device is writable in mode block only so) and
+# MemoryConfig device.mode: block: its container gets the block device of
+# the fsdax namespace of the device and makes an ext4 on it (block size
+# 4096, which DAX needs), then finishes. The writer and the reader join
+# after it with one share each (capacity.requests.shares: "1") and
+# device.mode: fs: the writer opts in to write with readOnly: false, the
+# reader has no readOnly (read-only). The node mounts the ext4 once at
+# /var/lib/kubelet/plugins/cxl.nri.io/mounts/c100f5e1-direct and gives
+# each container a bind of it, read-write or read-only.
+# The nodes mount erofs only unless the driver configuration lists more
+# types: this sample needs fsTypes: [erofs, ext4] (Helm value
+# config.fsTypes), which trusts every party that can write the device raw
+# (its read-write block claims and leases) not to plant a crafted ext4.
+# Apply it in two steps, the second when the pod of the first has
+# completed:
+#   kubectl apply -f local-persistent-fs.yaml -l step=1
+#   kubectl apply -f local-persistent-fs.yaml -l step=2
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  name: local-fs-formatter
+  labels:
+    step: "1"
+spec:
+  devices:
+    requests:
+    - name: mem
+      exactly:
+        deviceClassName: cxl-local-persistent
+        selectors:
+        - cel:
+            expression: 'device.attributes["cxl.nri.io"].serial == "0xc100f5e1"'
+        # no capacity request: the whole device, the only claim of it
+    config:
+    - opaque:
+        driver: cxl.nri.io
+        parameters:
+          apiVersion: cxl.nri.io/v1alpha1
+          kind: MemoryConfig
+          device:
+            mode: block
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: local-fs-formatter
+  labels:
+    step: "1"
+spec:
+  restartPolicy: Never
+  resourceClaims:
+  - name: mem
+    resourceClaimName: local-fs-formatter
+  containers:
+  - name: formatter
+    image: registry.fedoraproject.org/fedora:43
+    command:
+    - sh
+    - -ec
+    - |
+      dnf install -q -y e2fsprogs
+      mkfs.ext4 -F -b 4096 "$CXL_C100F5E1_PATH"
+      echo "made an ext4 on $CXL_C100F5E1_PATH"
+    resources:
+      claims:
+      - name: mem
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  name: local-fs-writer
+  labels:
+    step: "2"
+spec:
+  devices:
+    requests:
+    - name: mem
+      exactly:
+        deviceClassName: cxl-local-persistent
+        selectors:
+        - cel:
+            expression: 'device.attributes["cxl.nri.io"].serial == "0xc100f5e1"'
+        capacity:
+          requests:
+            shares: "1"  # one share
+    config:
+    - opaque:
+        driver: cxl.nri.io
+        parameters:
+          apiVersion: cxl.nri.io/v1alpha1
+          kind: MemoryConfig
+          device:
+            mode: fs
+            readOnly: false  # the opt-in to write
+            path: /data
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  name: local-fs-reader
+  labels:
+    step: "2"
+spec:
+  devices:
+    requests:
+    - name: mem
+      exactly:
+        deviceClassName: cxl-local-persistent
+        selectors:
+        - cel:
+            expression: 'device.attributes["cxl.nri.io"].serial == "0xc100f5e1"'
+        capacity:
+          requests:
+            shares: "1"  # one share
+    config:
+    - opaque:
+        driver: cxl.nri.io
+        parameters:
+          apiVersion: cxl.nri.io/v1alpha1
+          kind: MemoryConfig
+          device:
+            mode: fs     # read-only: no readOnly
+            path: /data
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: local-fs-writer
+  labels:
+    step: "2"
+spec:
+  resourceClaims:
+  - name: mem
+    resourceClaimName: local-fs-writer
+  containers:
+  - name: writer
+    image: docker.io/library/busybox:stable
+    command: ["sh", "-c", "env | grep ^CXL_ | sort; date > /data/hello.txt; sync; cat /data/hello.txt; sleep 1000000"]
+    resources:
+      claims:
+      - name: mem
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: local-fs-reader
+  labels:
+    step: "2"
+spec:
+  resourceClaims:
+  - name: mem
+    resourceClaimName: local-fs-reader
+  containers:
+  - name: reader
+    image: docker.io/library/busybox:stable
+    command: ["sh", "-c", "env | grep ^CXL_ | sort; until cat /data/hello.txt; do sleep 1; done; touch /data/x || echo 'read-only, as expected'; sleep 1000000"]
+    resources:
+      claims:
+      - name: mem

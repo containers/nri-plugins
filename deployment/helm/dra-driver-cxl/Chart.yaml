@@ -1,0 +1,12 @@
+apiVersion: v2
+appVersion: unstable
+description: |
+  The dra-driver-cxl NRI plugin is a Dynamic Resource Allocation (DRA)
+  driver for CXL memory. It gives CXL memory devices, regions and DRAM
+  to containers and steers their memory allocations.
+name: nri-dra-driver-cxl
+sources:
+ - https://github.com/containers/nri-plugins
+home: https://github.com/containers/nri-plugins
+type: application
+version: v0.0.0

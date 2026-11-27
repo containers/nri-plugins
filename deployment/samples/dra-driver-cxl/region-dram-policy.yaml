@@ -1,0 +1,51 @@
+# Steering, opted in: the container's allocations go to DRAM first, then
+# to the CXL NUMA node of a region that existed before the driver: 64Mi of
+# DeviceClass cxl-dram and 64Mi of cxl-region, and a MemoryConfig with
+# container.steering.policy first-dram (auto would interleave DRAM and
+# CXL). Without container.steering the container is not steered. It
+# prints its CXL_* environment and its cpuset.mems. Steering is unsafe
+# for threaded programs: see Steering in docs/memory/cxl/usage.md.
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  name: region-dram-policy
+spec:
+  devices:
+    requests:
+    - name: dram
+      exactly:
+        deviceClassName: cxl-dram
+        capacity:
+          requests:
+            memory: 64Mi
+    - name: cxl
+      exactly:
+        deviceClassName: cxl-region
+        capacity:
+          requests:
+            memory: 64Mi
+    config:
+    - opaque:
+        driver: cxl.nri.io
+        parameters:
+          apiVersion: cxl.nri.io/v1alpha1
+          kind: MemoryConfig
+          container:
+            steering:
+              policy: first-dram
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: region-dram-policy
+spec:
+  resourceClaims:
+  - name: mem
+    resourceClaimName: region-dram-policy
+  containers:
+  - name: app
+    image: docker.io/library/python:3-alpine
+    command: ["sh", "-c", "env | grep ^CXL_ | sort; echo cpuset.mems: $(cat /sys/fs/cgroup/cpuset.mems.effective); sleep infinity"]
+    resources:
+      claims:
+      - name: mem

@@ -1,0 +1,188 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    {{- include "nri-plugin.labels" . | nindent 4 }}
+  name: nri-dra-driver-cxl
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    matchLabels:
+    {{- include "nri-plugin.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+      {{- include "nri-plugin.labels" . | nindent 8 }}
+      annotations:
+        # The driver reads its configuration only when it starts.
+        checksum/config: {{ toYaml .Values.config | sha256sum }}
+    spec:
+    {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+    {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      serviceAccountName: nri-dra-driver-cxl
+      # The lease broker identifies its callers by SO_PEERCRED, whose pid is
+      # only meaningful in the host PID namespace.
+      hostPID: true
+      nodeSelector:
+        kubernetes.io/os: "linux"
+    {{- with .Values.nodeSelector }}
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      {{- if .Values.nri.runtime.patchConfig }}
+      initContainers:
+      - name: patch-runtime
+        {{- if (not (or (eq .Values.nri.runtime.config nil) (eq .Values.nri.runtime.config.pluginRegistrationTimeout ""))) }}
+        args:
+          - -nri-plugin-registration-timeout
+          - {{ .Values.nri.runtime.config.pluginRegistrationTimeout }}
+          - -nri-plugin-request-timeout
+          - {{ .Values.nri.runtime.config.pluginRequestTimeout }}
+        {{- end }}
+        image: {{ .Values.initContainerImage.name }}:{{ .Values.initContainerImage.tag | default .Chart.AppVersion }}
+        imagePullPolicy: {{ .Values.initContainerImage.pullPolicy }}
+        volumeMounts:
+        - name: containerd-config
+          mountPath: /etc/containerd
+        - name: crio-config
+          mountPath: /etc/crio/crio.conf.d
+        - name: dbus-socket
+          mountPath: /var/run/dbus/system_bus_socket
+        securityContext:
+          privileged: true
+      {{- end }}
+      containers:
+        - name: nri-dra-driver-cxl
+          args:
+            - --nri-idx
+            - "{{ .Values.nri.plugin.index | int | printf "%02d" }}"
+            - --pool={{ .Values.pool.enabled }}
+            - --pool-prepare-timeout
+            - {{ .Values.pool.prepareTimeout | quote }}
+            - --leases={{ .Values.leases.enabled }}
+            - --lease-wait
+            - {{ .Values.leases.wait | quote }}
+            - --lease-companion-image
+            - {{ .Values.leases.companionImage | quote }}
+            {{- with .Values.leases }}
+            - --lease-max-connections={{ .maxConnections | default 64 }}
+            - --lease-idle-timeout={{ .idleTimeout | default "10m" }}
+            - --lease-requests-per-minute={{ .requestsPerMinute | default 32 }}
+            - --lease-max-per-pod={{ .maxPerPod | default 16 }}
+            - --lease-max-per-node={{ .maxPerNode | default 32 }}
+            {{- end }}
+            # The driver copies cxl-request of the image to the host, from
+            # where lease claims mount it into containers.
+            - --lease-cli
+            - /var/lib/kubelet/plugins/cxl.nri.io/cxl-request
+            - --lease-cli-source
+            - /bin/cxl-request
+            - --config
+            - /etc/nri/dra-driver-cxl/config.yaml
+            - -v
+            - "{{ .Values.logLevel }}"
+          env:
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+          {{- range $name, $value := .Values.extraEnv }}
+          - name: {{ $name }}
+            value: {{ $value | quote }}
+          {{- end }}
+          image: {{ .Values.image.name }}:{{ .Values.image.tag | default .Chart.AppVersion }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            # The driver writes sysfs and cgroupfs, onlines memory, runs the
+            # cxl and ndctl tools, and mounts filesystems of
+            # persistent memory.
+            privileged: true
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: {{ .Values.resources.cpu }}
+              memory: {{ .Values.resources.memory }}
+          volumeMounts:
+          - name: dra-driver-cxl-config-vol
+            mountPath: /etc/nri/dra-driver-cxl
+          # Sockets and data of the DRA drivers, and cxl-request for leases.
+          # The node mounts of mode fs of both drivers (cxl.nri.io/mounts,
+          # cxl-pool.nri.io/mounts) and the binds of fs leases
+          # (cxl.nri.io/lease-fs) must reach the host, where the runtime
+          # binds them into containers.
+          - name: kubelet-plugins
+            mountPath: /var/lib/kubelet/plugins
+            mountPropagation: Bidirectional
+          - name: kubelet-plugins-registry
+            mountPath: /var/lib/kubelet/plugins_registry
+          # CDI specs of prepared claims.
+          - name: cdi-run
+            mountPath: /var/run/cdi
+          - name: nrisockets
+            mountPath: /var/run/nri
+            readOnly: true
+          - name: sysfs
+            mountPath: /sys
+          # Device nodes that appear after the start, like /dev/dax* and
+          # /dev/pmem*.
+          - name: devfs
+            mountPath: /dev
+          # The cxl and ndctl tools look up kernel modules through
+          # libkmod.
+          - name: kernel-modules
+            mountPath: /lib/modules
+            readOnly: true
+      {{- if .Values.podPriorityClassNodeCritical }}
+      priorityClassName: system-node-critical
+      {{- end }}
+      volumes:
+      - name: dra-driver-cxl-config-vol
+        configMap:
+          name: nri-dra-driver-cxl-config
+      - name: kubelet-plugins
+        hostPath:
+          path: /var/lib/kubelet/plugins
+          type: DirectoryOrCreate
+      - name: kubelet-plugins-registry
+        hostPath:
+          path: /var/lib/kubelet/plugins_registry
+          type: DirectoryOrCreate
+      - name: cdi-run
+        hostPath:
+          path: /var/run/cdi
+          type: DirectoryOrCreate
+      - name: nrisockets
+        hostPath:
+          path: /var/run/nri
+          type: DirectoryOrCreate
+      - name: sysfs
+        hostPath:
+          path: /sys
+          type: Directory
+      - name: devfs
+        hostPath:
+          path: /dev
+          type: Directory
+      - name: kernel-modules
+        hostPath:
+          path: /lib/modules
+          type: Directory
+      {{- if .Values.nri.runtime.patchConfig }}
+      - name: containerd-config
+        hostPath:
+          path: /etc/containerd/
+          type: DirectoryOrCreate
+      - name: crio-config
+        hostPath:
+          path: /etc/crio/crio.conf.d/
+          type: DirectoryOrCreate
+      - name: dbus-socket
+        hostPath:
+          path: /var/run/dbus/system_bus_socket
+          type: Socket
+      {{- end }}

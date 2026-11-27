@@ -1,0 +1,36 @@
+# 512Mi of exclusive CXL memory of a memory pool (DeviceClass cxl-pool): a
+# whole pool device of at least 512Mi. The pool controller attaches it to
+# the node that the scheduler picked, and the driver onlines it as a new
+# NUMA node, CXL_<KEY>_NUMA_NODE, in the container's cpuset.mems. The container
+# is not steered to the node: it uses numactl or mbind. A MemoryConfig
+# with container: {steering: {policy: auto}} (driver cxl-pool.nri.io)
+# would steer it like local CXL memory. It prints its CXL_* environment.
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  name: pool-numa
+spec:
+  devices:
+    requests:
+    - name: mem
+      exactly:
+        deviceClassName: cxl-pool
+        capacity:
+          requests:
+            memory: 512Mi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pool-numa
+spec:
+  resourceClaims:
+  - name: mem
+    resourceClaimName: pool-numa
+  containers:
+  - name: app
+    image: docker.io/library/python:3-alpine
+    command: ["sh", "-c", "env | grep ^CXL_ | sort; grep -H MemTotal /sys/devices/system/node/node*/meminfo; sleep infinity"]
+    resources:
+      claims:
+      - name: mem

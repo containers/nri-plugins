@@ -1,0 +1,179 @@
+# Single-writer data sharing with a shared local device: a CXL memory
+# device of the node that the driver configuration lists in sharedMemdevs
+# (Helm value config.sharedMemdevs: ["0xc100e2e2"]), published with
+# shared: true and selected by the DeviceClass cxl-local-shared. Every
+# claim maps the whole device as devdax; the plugin zeroes it only when it
+# creates its region, never while the region exists.
+# The writer's claim requests no shares, so it has the device exclusively
+# and no other claim gets the device while it exists; readers created
+# meanwhile stay pending. The writer writes a message and finishes. The
+# three readers join with one share each (capacity.requests.shares: "1")
+# and MemoryConfig device.readOnly: true: their device node allows reads
+# only.
+# Apply it in two steps, the second when the pod of the first has
+# completed:
+#   kubectl apply -f local-shared-writer-readers.yaml -l step=1
+#   kubectl apply -f local-shared-writer-readers.yaml -l step=2
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  name: local-shared-writer
+  labels:
+    step: "1"
+spec:
+  devices:
+    requests:
+    - name: mem
+      exactly:
+        deviceClassName: cxl-local-shared
+        selectors:
+        - cel:
+            expression: 'device.attributes["cxl.nri.io"].serial == "0xc100e2e2"'
+        # no capacity request: the whole device, exclusive
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: local-shared-writer
+  labels:
+    step: "1"
+spec:
+  restartPolicy: Never
+  resourceClaims:
+  - name: mem
+    resourceClaimName: local-shared-writer
+  containers:
+  - name: writer
+    image: docker.io/library/python:3-alpine
+    command:
+    - python3
+    - -u
+    - -c
+    - |
+      import mmap, os
+      key = [k[:-len("DAX")] for k in os.environ if k.startswith("CXL_") and k.endswith("_DAX")][0]
+      dax, size = os.environ[key + "DAX"], int(os.environ[key + "SIZE"])
+      # devdax needs MAP_SHARED and a mapping aligned to the device alignment
+      m = mmap.mmap(os.open(dax, os.O_RDWR), size, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE)
+      msg = b"hello from local-shared-writer\0"
+      m[0:len(msg)] = msg
+      print("wrote to", dax)
+    resources:
+      claims:
+      - name: mem
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: local-shared-reader
+  labels:
+    step: "2"
+spec:
+  spec:
+    devices:
+      requests:
+      - name: mem
+        exactly:
+          deviceClassName: cxl-local-shared
+          selectors:
+          - cel:
+              expression: 'device.attributes["cxl.nri.io"].serial == "0xc100e2e2"'
+          capacity:
+            requests:
+              shares: "1"  # one share
+      config:
+      - opaque:
+          driver: cxl.nri.io
+          parameters:
+            apiVersion: cxl.nri.io/v1alpha1
+            kind: MemoryConfig
+            device:
+              readOnly: true
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: local-shared-reader-a
+  labels:
+    step: "2"
+spec:
+  resourceClaims:
+  - name: mem
+    resourceClaimTemplateName: local-shared-reader
+  containers:
+  - name: reader
+    image: docker.io/library/python:3-alpine
+    command:
+    - python3
+    - -u
+    - -c
+    - |
+      import mmap, os, time
+      key = [k[:-len("DAX")] for k in os.environ if k.startswith("CXL_") and k.endswith("_DAX")][0]
+      dax, size = os.environ[key + "DAX"], int(os.environ[key + "SIZE"])
+      m = mmap.mmap(os.open(dax, os.O_RDONLY), size, mmap.MAP_SHARED, mmap.PROT_READ)
+      print("read:", bytes(m[0:4096]).split(b"\0", 1)[0].decode(errors="replace"))
+      try:
+          os.open(dax, os.O_RDWR)
+      except PermissionError as e:
+          print("open for writing refused:", e)
+      time.sleep(1e9)
+    resources:
+      claims:
+      - name: mem
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: local-shared-reader-b
+  labels:
+    step: "2"
+spec:
+  resourceClaims:
+  - name: mem
+    resourceClaimTemplateName: local-shared-reader
+  containers:
+  - name: reader
+    image: docker.io/library/python:3-alpine
+    command:
+    - python3
+    - -u
+    - -c
+    - |
+      import mmap, os, time
+      key = [k[:-len("DAX")] for k in os.environ if k.startswith("CXL_") and k.endswith("_DAX")][0]
+      dax, size = os.environ[key + "DAX"], int(os.environ[key + "SIZE"])
+      m = mmap.mmap(os.open(dax, os.O_RDONLY), size, mmap.MAP_SHARED, mmap.PROT_READ)
+      print("read:", bytes(m[0:4096]).split(b"\0", 1)[0].decode(errors="replace"))
+      time.sleep(1e9)
+    resources:
+      claims:
+      - name: mem
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: local-shared-reader-c
+  labels:
+    step: "2"
+spec:
+  resourceClaims:
+  - name: mem
+    resourceClaimTemplateName: local-shared-reader
+  containers:
+  - name: reader
+    image: docker.io/library/python:3-alpine
+    command:
+    - python3
+    - -u
+    - -c
+    - |
+      import mmap, os, time
+      key = [k[:-len("DAX")] for k in os.environ if k.startswith("CXL_") and k.endswith("_DAX")][0]
+      dax, size = os.environ[key + "DAX"], int(os.environ[key + "SIZE"])
+      m = mmap.mmap(os.open(dax, os.O_RDONLY), size, mmap.MAP_SHARED, mmap.PROT_READ)
+      print("read:", bytes(m[0:4096]).split(b"\0", 1)[0].decode(errors="replace"))
+      time.sleep(1e9)
+    resources:
+      claims:
+      - name: mem

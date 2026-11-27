@@ -1,0 +1,53 @@
+# An exclusive device of a memory pool as a devdax device: DeviceClass
+# cxl-pool with MemoryConfig device.mode: dax. The memory is never
+# onlined, and the device keeps its bytes until they are written again,
+# also when the next claim gets it on another node: the container prints
+# what it finds and writes "hello".
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  name: pool-dax
+spec:
+  devices:
+    requests:
+    - name: mem
+      exactly:
+        deviceClassName: cxl-pool
+        capacity:
+          requests:
+            memory: 512Mi
+    config:
+    - opaque:
+        driver: cxl-pool.nri.io
+        parameters:
+          apiVersion: cxl.nri.io/v1alpha1
+          kind: MemoryConfig
+          device:
+            mode: dax
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pool-dax
+spec:
+  resourceClaims:
+  - name: mem
+    resourceClaimName: pool-dax
+  containers:
+  - name: app
+    image: docker.io/library/python:3-alpine
+    command:
+    - python3
+    - -u
+    - -c
+    - |
+      import mmap, os, time
+      key = [k[:-len("DAX")] for k in os.environ if k.startswith("CXL_") and k.endswith("_DAX")][0]
+      dax, size = os.environ[key + "DAX"], int(os.environ[key + "SIZE"])
+      m = mmap.mmap(os.open(dax, os.O_RDWR), size, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE)
+      print("found:", bytes(m[0:4096]).split(b"\0", 1)[0].decode(errors="replace"))
+      m[0:6] = b"hello\0"
+      time.sleep(1e9)
+    resources:
+      claims:
+      - name: mem

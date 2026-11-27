@@ -1,0 +1,57 @@
+{{- with .Values.leases.namespaceLabels }}
+{{- $labels := list }}
+{{- range $k, $v := . }}
+{{- $labels = append $labels (printf "%s=%s" $k $v) }}
+{{- end }}
+# Only namespaces with the labels of leases.namespaceLabels may have
+# ResourceClaims and ResourceClaimTemplates that request the device class
+# cxl-lease. The policy binds every user.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: lease-namespaces-policy-nri-dra-driver-cxl
+  labels:
+    {{- include "nri-plugin.labels" $ | nindent 4 }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups:   ["resource.k8s.io"]
+      apiVersions: ["v1"]
+      operations:  ["CREATE"]
+      resources:   ["resourceclaims", "resourceclaimtemplates"]
+  variables:
+  # A claim without requests has requests: null.
+  - name: requests
+    expression: >-
+      optional.ofNonZeroValue(request.resource.resource == "resourceclaims" ?
+        object.spec.?devices.?requests.orValue([]) :
+        object.spec.spec.?devices.?requests.orValue([])).orValue([])
+  - name: requestsLease
+    expression: >-
+      variables.requests.exists(r, r.?exactly.?deviceClassName.orValue('') == 'cxl-lease' ||
+        r.?firstAvailable.orValue([]).exists(s, s.deviceClassName == 'cxl-lease'))
+  - name: requiredLabels
+    expression: >-
+      {{ toJson . }}
+  - name: namespaceLabels
+    expression: >-
+      namespaceObject.metadata.?labels.orValue({})
+  validations:
+  - expression: >-
+      !variables.requestsLease ||
+      variables.requiredLabels.all(k, variables.namespaceLabels[?k].orValue('') == variables.requiredLabels[k])
+    messageExpression: >-
+      "namespace " + request.namespace + " may not have " + request.resource.resource +
+      " of the device class cxl-lease: only namespaces with the labels {{ join ", " $labels }} may"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: lease-namespaces-policy-nri-dra-driver-cxl
+  labels:
+    {{- include "nri-plugin.labels" $ | nindent 4 }}
+spec:
+  policyName: lease-namespaces-policy-nri-dra-driver-cxl
+  validationActions: [Deny]
+{{- end }}
