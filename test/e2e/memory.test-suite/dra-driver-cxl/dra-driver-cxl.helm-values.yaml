@@ -1,0 +1,8 @@
+# Helm values of nri-dra-driver-cxl in the e2e tests of dra-driver-cxl, on
+# top of the values that the e2e framework gives every plugin
+# (helm-set-args). dra-install of dra.source.sh installs the driver with
+# these in every cluster of a test.
+
+# The tests read the log of the driver: verbosity 4 has the lines they
+# look for.
+logLevel: 4

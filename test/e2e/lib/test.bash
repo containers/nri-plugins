@@ -1071,6 +1071,7 @@ plugin-daemonset() { # script API
         *template*)       echo nri-resource-policy-template;;
         *memory-policy*)  echo nri-memory-policy;;
         *memtierd*)       echo nri-memtierd;;
+        *dra-driver-cxl*) echo nri-dra-driver-cxl;;
         *)                error "plugin-daemonset: unknown plugin \"$plugin\"";;
     esac
 }
