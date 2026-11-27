@@ -1,0 +1,3 @@
+# The build context of the controller image (Dockerfile): its binary only.
+*
+!bin/fake-cxl-pool-controller

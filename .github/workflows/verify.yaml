@@ -86,7 +86,8 @@ jobs:
               ./cmd/plugins/dra-driver-cxl/... \
               ./pkg/cxl/... \
               ./pkg/udev/... \
-              ./scripts/cxl-dump/...
+              ./scripts/cxl-dump/... \
+              ./scripts/testing/fake-cxl-pool/...
 
   verify-docs:
     name: Documentation

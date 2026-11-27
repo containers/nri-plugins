@@ -1,0 +1,107 @@
+# fake-cxl-pool-server configuration example.
+# Run: bin/fake-cxl-pool-server -config config.example.yaml [-state FILE] [-v]
+# Every key is optional; without a config file the server uses the
+# defaults shown here.
+
+# Name of the server (the pool appliance): a DNS label (lower-case
+# letters, digits, '-'). fake-cxl-pool-controller publishes the devices
+# under this DRA pool name (GET /status "name"). Several servers on one
+# host have distinct names: see "Several pool servers" below.
+name: fake-cxl-pool
+
+# Listen address. VMs with slirp networking reach the host loopback at
+# 192.168.76.2, so clients in e2e VMs use http://192.168.76.2:9909.
+listen: 127.0.0.1:9909
+
+# Serials of devices created without one: the next free serial above the
+# base of their kind (base+1, +2, ...). 0xc1 = CXL, then 0xae = shared,
+# 0xee = unshared pool devices; 0xc100.... are devices present at boot
+# (the e2e topology's local devices are 0xc100e2e0+i).
+sharedSerialBase: 0xc1ae0000
+serialBase: 0xc1ee0000
+
+# The directory of the device backing files <dir>/<device>.raw, created
+# if missing. The persistent state (devices created over the API,
+# attachments, hotplug counters) is in <dir>.state.json unless -state
+# gives another file ("-" disables persistence).
+dir: /tmp/fake-cxl-pool
+
+# Static inventory: created at startup (backing files too) if missing.
+# Sizes must be multiples of 256Mi (CXL capacity unit); 256M and 268435456
+# are accepted, too. Every device has a serial.
+# persistent: true makes a persistent memory device (default: volatile).
+# It has two files: the data file and a 256 KiB label storage area (LSA)
+# file, the data file with its extension replaced by .lsa (llm0.raw ->
+# llm0.lsa). Both are created and removed together. Every qemu that
+# attaches the device maps the same two files, so the namespace labels in
+# the LSA are shared by all VMs.
+devices:
+  - name: shared0
+    size: 256Mi
+    shared: true                   # file: /tmp/fake-cxl-pool/shared0.raw
+    serial: 0xc1ae0001
+  - name: pooled0
+    size: 512Mi
+    serial: 0xc1ee0001
+  - name: llm0
+    size: 512Mi
+    shared: true
+    persistent: true               # files: llm0.raw (data) and llm0.lsa (labels)
+    serial: 0xc1ae0002
+
+discovery:
+  # Scan /proc for qemu-system-* processes. The VM name comes from
+  # .vagrant/machines/<name>/ in a -drive path, sockets from -qmp, -monitor
+  # and -chardev socket + -mon, relative to the vagrant project dir (qemu
+  # -daemonize chdirs to /). qmp-e2e.sock is never used: it belongs to the
+  # test framework's vm-qmp.
+  interval: 10s
+  # Only VMs whose name matches one of these patterns (default: all).
+  # names: ["n4-cxl-shared-*"]
+  # Pre-declared beram_* backends of qemu command lines become devices of
+  # scope "local": memdevs present at boot, which cxl.nri.io publishes as
+  # source local.
+  localDevices: true
+  # Monitor protocol of every host (qmp|hmp; default: qmp if the VM has a
+  # QMP socket, else hmp).
+  # control: hmp
+  # The CXL slots (ports) the server is cabled to: path.Match patterns on
+  # the slot bus name, e.g. ["*hb1"] or ["cxlsw_ds[01]_usrp0hb0"] (default:
+  # every slot). The server knows and uses only matching slots; it cannot
+  # attach a local device whose slot does not match (set localDevices:
+  # false or include their slots).
+  # slots: ["*hb0"]
+
+# How long DELETE .../attachments/{host} waits for qemu to delete the
+# device (DEVICE_DELETED, which comes after the guest's own hot-unplug
+# delay when the guest has released the device).
+detachTimeout: 15s
+
+# Several pool servers
+# --------------------
+# A pool appliance is one server process with a config of its own: a
+# distinct name (the DRA pool name), listen address and dir, and the VMs
+# it is cabled to (discovery.names). Its devices need unique serials over
+# all servers of a cluster, because a guest and the DRA drivers find a
+# device by its serial: give each server serial bases of its own,
+# 0xc1aeP000 and 0xc1eeP000 for pool index P. Device names are unique
+# over the servers cabled to one VM (qemu ids are fcp_<device>.hp<N>). A
+# QMP socket serves one client: a second server cabled to a VM that
+# another server holds over QMP uses HMP (discovery.control: hmp, a
+# connection per command on monitor.sock, device events polled) and CXL
+# ports of its own (discovery.slots).
+# A second server, cabled to the VMs whose names start with vm0-:
+#
+#   name: pool-b
+#   listen: 127.0.0.1:9910
+#   sharedSerialBase: 0xc1ae1000
+#   serialBase: 0xc1ee1000
+#   dir: /tmp/fake-cxl-pool-b
+#   devices:
+#     - name: b-pooled0            # not a device name of another server
+#       size: 512Mi
+#       serial: 0xc1ee1001
+#   discovery:
+#     names: ["vm0-*"]
+#     # control: hmp            # if another server holds the VM over QMP
+#     # slots: ["*hb1"]         # the CXL ports this server is cabled to
